@@ -66,6 +66,11 @@ final class FileRewindPickerController
         $this->overlay = null;
     }
 
+    public function isOpen(): bool
+    {
+        return $this->overlay?->isOpen() ?? false;
+    }
+
     private function openTurnPicker(TurnTreeView $tree): void
     {
         $tui = $this->tui;

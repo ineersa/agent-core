@@ -124,23 +124,26 @@ final class FileRewindService implements FileRewindPreviewProviderInterface
         try {
             $currentTree = $this->backend->captureTreeSha($gitDir, $this->projectCwd, $tmpIndex, $scope);
             $targetTree = $this->backendCommitTree($gitDir, $target);
-            $currentPaths = array_flip($this->backend->listTreePaths($gitDir, $this->projectCwd, $currentTree));
+            $currentPaths = $this->backend->listTreePaths($gitDir, $this->projectCwd, $currentTree);
             $targetPaths = $this->backend->listTreePaths($gitDir, $this->projectCwd, $targetTree);
+            $currentSet = array_flip($currentPaths);
+            $targetSet = array_flip($targetPaths);
+            $allPaths = array_unique(array_merge($targetPaths, $currentPaths));
             $out = [];
-            foreach ($targetPaths as $path) {
+            foreach ($allPaths as $path) {
                 if ($scope->shouldExcludeRelativePath($path)) {
                     continue;
                 }
-                $status = isset($currentPaths[$path]) ? 'modified' : 'added';
-                $out[] = new FileRewindPreviewEntryDTO($path, $status, 0, 0, false, false);
-            }
-            foreach (array_keys($currentPaths) as $path) {
-                if ($scope->shouldExcludeRelativePath($path)) {
-                    continue;
+                $inCurrent = isset($currentSet[$path]);
+                $inTarget = isset($targetSet[$path]);
+                if ($inCurrent && $inTarget) {
+                    $status = 'modified';
+                } elseif ($inTarget) {
+                    $status = 'added';
+                } else {
+                    $status = 'deleted';
                 }
-                if (!\in_array($path, $targetPaths, true)) {
-                    $out[] = new FileRewindPreviewEntryDTO($path, 'deleted', 0, 0, false, false);
-                }
+                $out[] = $this->buildPreviewEntry($gitDir, $currentTree, $targetTree, $path, $status);
             }
             usort($out, static fn ($a, $b) => strcmp($a->path, $b->path));
 
@@ -249,6 +252,134 @@ final class FileRewindService implements FileRewindPreviewProviderInterface
             $this->paths->tmpDir($identity),
         );
         unset($this->lastTreeShaByRunProject[$runId.'|'.$identity->projectHash]);
+    }
+
+    private function buildPreviewEntry(
+        string $gitDir,
+        string $currentTree,
+        string $targetTree,
+        string $path,
+        string $status,
+    ): FileRewindPreviewEntryDTO {
+        if ('deleted' === $status) {
+            return new FileRewindPreviewEntryDTO($path, $status, 0, 0, false, false);
+        }
+        $currentBlob = $this->treeBlobSha($gitDir, $currentTree, $path);
+        $targetBlob = $this->treeBlobSha($gitDir, $targetTree, $path);
+        if (null === $targetBlob && null === $currentBlob) {
+            return new FileRewindPreviewEntryDTO($path, $status, 0, 0, false, true);
+        }
+        if (null !== $currentBlob && null !== $targetBlob && $currentBlob === $targetBlob) {
+            return new FileRewindPreviewEntryDTO($path, $status, 0, 0, false, false);
+        }
+        $currentBytes = $this->readBlobBytes($gitDir, $currentBlob);
+        $targetBytes = $this->readBlobBytes($gitDir, $targetBlob);
+        if ($this->isBinaryBlob($currentBytes) || $this->isBinaryBlob($targetBytes)) {
+            return new FileRewindPreviewEntryDTO($path, $status, 0, 0, true, false);
+        }
+        $maxBytes = $this->config->maxFileBytes;
+        if ((null !== $currentBytes && \strlen($currentBytes) > $maxBytes)
+            || (null !== $targetBytes && \strlen($targetBytes) > $maxBytes)) {
+            return new FileRewindPreviewEntryDTO($path, $status, 0, 0, false, true);
+        }
+        [$added, $removed] = $this->countLineDiff($currentBytes ?? '', $targetBytes ?? '');
+
+        return new FileRewindPreviewEntryDTO($path, $status, $added, $removed, false, false);
+    }
+
+    private function treeBlobSha(string $gitDir, string $treeSha, string $path): ?string
+    {
+        $env = ['GIT_DIR' => $gitDir, 'GIT_WORK_TREE' => $this->projectCwd];
+        $r = $this->gitRunner->run(['ls-tree', $treeSha, '--', $path], $env);
+        if (0 !== $r->exitCode || '' === trim($r->stdout)) {
+            return null;
+        }
+        $line = trim(explode("\n", trim($r->stdout))[0]);
+        if (!preg_match('/^\d+ blob ([0-9a-f]{4,40})\t/', $line, $m)) {
+            return null;
+        }
+
+        return strtolower($m[1]);
+    }
+
+    private function readBlobBytes(string $gitDir, ?string $blobSha): ?string
+    {
+        if (null === $blobSha || '' === $blobSha) {
+            return null;
+        }
+        $env = ['GIT_DIR' => $gitDir, 'GIT_WORK_TREE' => $this->projectCwd];
+        $r = $this->gitRunner->run(['cat-file', 'blob', $blobSha], $env);
+        if (0 !== $r->exitCode) {
+            return null;
+        }
+
+        return $r->stdout;
+    }
+
+    private function isBinaryBlob(?string $bytes): bool
+    {
+        if (null === $bytes || '' === $bytes) {
+            return false;
+        }
+        if (str_contains($bytes, "\0")) {
+            return true;
+        }
+
+        return !mb_check_encoding($bytes, 'UTF-8');
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function splitLines(string $text): array
+    {
+        if ('' === $text) {
+            return [];
+        }
+        $parts = preg_split('/\r\n|\n|\r/', $text);
+
+        return false === $parts ? [] : $parts;
+    }
+
+    /**
+     * @return array{0: int, 1: int}
+     */
+    private function countLineDiff(string $current, string $target): array
+    {
+        $currentLines = $this->splitLines($current);
+        $targetLines = $this->splitLines($target);
+        $lcs = $this->longestCommonSubsequenceLength($currentLines, $targetLines);
+        $removed = \count($currentLines) - $lcs;
+        $added = \count($targetLines) - $lcs;
+
+        return [$added, $removed];
+    }
+
+    /**
+     * @param list<string> $a
+     * @param list<string> $b
+     */
+    private function longestCommonSubsequenceLength(array $a, array $b): int
+    {
+        $m = \count($a);
+        $n = \count($b);
+        if (0 === $m || 0 === $n) {
+            return 0;
+        }
+        $prev = array_fill(0, $n + 1, 0);
+        $curr = array_fill(0, $n + 1, 0);
+        for ($i = 1; $i <= $m; ++$i) {
+            for ($j = 1; $j <= $n; ++$j) {
+                if ($a[$i - 1] === $b[$j - 1]) {
+                    $curr[$j] = $prev[$j - 1] + 1;
+                } else {
+                    $curr[$j] = max($prev[$j], $curr[$j - 1]);
+                }
+            }
+            [$prev, $curr] = [$curr, array_fill(0, $n + 1, 0)];
+        }
+
+        return $prev[$n];
     }
 
     private function backendCommitTree(string $gitDir, string $commitSha): string

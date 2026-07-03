@@ -21,6 +21,7 @@ use Ineersa\CodingAgent\Extension\ExtensionHookRegistry;
 use Ineersa\CodingAgent\Extension\ExtensionToolHookEventSubscriber;
 use Ineersa\CodingAgent\Extension\NoninteractiveChildRunProbe;
 use Ineersa\CodingAgent\Extension\ExtensionToolRegistryBridge;
+use Ineersa\CodingAgent\Extension\FileRewind\FileRewindRuntimePorts;
 use Ineersa\CodingAgent\Tool\RegistryBackedToolbox;
 use Ineersa\CodingAgent\Tool\ToolHandlerInterface;
 use Ineersa\CodingAgent\Tool\ToolRegistry;
@@ -61,6 +62,7 @@ final class ExtensionToolHookEventSubscriberTest extends TestCase
             $appConfig,
             $this->stubExecBridge(),
             $this->stubCommandRegistry(),
+            new FileRewindRuntimePorts(),
         );
         $seenContext = null;
         $bridge->registerToolCallHook(new class($seenContext) implements ToolCallHookInterface {
