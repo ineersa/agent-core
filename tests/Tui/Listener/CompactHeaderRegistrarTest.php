@@ -55,6 +55,33 @@ final class CompactHeaderRegistrarTest extends TestCase
         TestDirectoryIsolation::removeDirectory($this->tmpDir);
     }
 
+
+    #[Test]
+    public function snapshotFailureDoesNotPropagateFromTick(): void
+    {
+        $harness = new VirtualTuiHarness(sessionId: 'throws-reg');
+        $state = new TuiSessionState('throws-reg');
+
+        $provider = new CompactHeaderSnapshotProvider(
+            $this->promptCatalog(),
+            $this->skillDiscovery(),
+            $this->agentDiscovery(),
+            $this->throwingMcpStore(),
+        );
+
+        $context = $this->buildTuiContext()
+            ->withTui($harness->tui())
+            ->withState($state)
+            ->withScreen($harness->screen())
+            ->build();
+
+        (new CompactHeaderRegistrar($provider, new NullLogger()))->register($context);
+        $context->ticks->dispatch(new TickEvent());
+
+        $widgets = $harness->screen()->registry()->getWidgetsByPlacement(WidgetPlacementEnum::AboveEditor);
+        self::assertCount(0, $widgets);
+    }
+
     #[Test]
     public function registersPinnedWidgetOnFirstTickRegardlessOfResume(): void
     {
@@ -127,6 +154,14 @@ final class CompactHeaderRegistrarTest extends TestCase
     {
         $store = $this->createStub(McpToolCatalogStoreInterface::class);
         $store->method('read')->willReturn(null);
+
+        return $store;
+    }
+
+    private function throwingMcpStore(): McpToolCatalogStoreInterface
+    {
+        $store = $this->createStub(McpToolCatalogStoreInterface::class);
+        $store->method('read')->willThrowException(new \RuntimeException('MCP catalog run ID must not be empty.'));
 
         return $store;
     }

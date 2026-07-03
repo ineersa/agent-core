@@ -472,15 +472,16 @@ mutating individual widget refs.
 ### Widget tree owned by ChatScreen
 
 ```
-ChatScreen (13 widgets)
+ChatScreen (14 widgets)
   ├── topMarginWidget    (LiveTextWidget)  4 blank lines (configurable)
   ├── headerWidget       (LiveTextWidget)  ← HeaderWidget.render()
   ├── headerSeparator    (LiveTextWidget)  ─── at live terminal width
+  ├── loadedResourcesWidget (LiveTextWidget)  LoadedResourcesWidget (startup summary; ctrl+r)
   ├── transcriptWidget   (LiveTextWidget)  ← TranscriptWidget + entries
   ├── pendingWidget      (LiveTextWidget)  PendingMessagesWidget
   ├── workingWidget      (LiveTextWidget)  WorkingStatusWidget (via registry)
   ├── statusPanelWidget  (LiveTextWidget)  StatusPanelWidget (via registry)
-  ├── aboveEditorWidget  (LiveTextWidget)  extension widgets (combined)
+  ├── aboveEditorWidget  (LiveTextWidget)  extension widgets (combined, ordered by `order`; compact-header pinned last)
   ├── editorSeparator    (LiveTextWidget)  ─── at live terminal width
   ├── editorWidget       (EditorWidget)    ← real Symfony TUI editor
   ├── belowEditorWidget  (LiveTextWidget)  extension widgets (combined)

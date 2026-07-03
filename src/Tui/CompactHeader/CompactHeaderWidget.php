@@ -58,9 +58,11 @@ final class CompactHeaderWidget implements TuiWidget
         }
 
         if ([] !== $this->snapshot->agentNames) {
+            $agentNames = $this->snapshot->agentNames;
+            sort($agentNames, \SORT_STRING);
             $items = array_map(
                 static fn (string $name): string => $theme->accent($name),
-                $this->formatAgentNameItems($this->snapshot->agentNames),
+                $agentNames,
             );
             $lines = array_merge($lines, $this->wrapLabel($theme->muted('available'), $items, $width));
         }
@@ -75,26 +77,6 @@ final class CompactHeaderWidget implements TuiWidget
         }
 
         return $lines;
-    }
-
-    /**
-     * @param list<string> $names
-     *
-     * @return list<string>
-     */
-    private function formatAgentNameItems(array $names): array
-    {
-        $counts = [];
-        foreach ($names as $name) {
-            $counts[$name] = ($counts[$name] ?? 0) + 1;
-        }
-        ksort($counts, \SORT_STRING);
-        $items = [];
-        foreach ($counts as $name => $count) {
-            $items[] = $count > 1 ? $name.'×'.$count : $name;
-        }
-
-        return $items;
     }
 
     /**

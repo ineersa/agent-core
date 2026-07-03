@@ -40,7 +40,8 @@ final class CompactHeaderSnapshotProvider
         sort($agentNames, \SORT_STRING);
 
         $mcpServers = [];
-        $mcpDto = $this->catalogStore->read($sessionId);
+        // Draft sessions (empty run id) have no MCP catalog yet; skip the read.
+        $mcpDto = '' !== $sessionId ? $this->catalogStore->read($sessionId) : null;
         if (null !== $mcpDto) {
             $entries = $mcpDto->servers;
             ksort($entries, \SORT_STRING);
@@ -53,19 +54,12 @@ final class CompactHeaderSnapshotProvider
                         toolCount: $toolCount,
                         statusText: 'connected',
                     );
-                } elseif (McpServerCatalogStatusEnum::FAILED === $entry->status) {
+                } else {
                     $mcpServers[] = new McpServerHeaderEntry(
                         name: $entry->serverName,
                         icon: '✗',
                         toolCount: null,
                         statusText: 'failed',
-                    );
-                } else {
-                    $mcpServers[] = new McpServerHeaderEntry(
-                        name: $entry->serverName,
-                        icon: '○',
-                        toolCount: $toolCount > 0 ? $toolCount : null,
-                        statusText: 'cached',
                     );
                 }
             }

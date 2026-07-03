@@ -118,6 +118,76 @@ final class CompactHeaderSnapshotProviderTest extends TestCase
         self::assertSame('✗', $byName['bad']->icon);
     }
 
+
+    #[Test]
+    public function emptySessionIdSkipsMcpRead(): void
+    {
+        $promptCatalog = new class implements PromptTemplateCatalogInterface {
+            public function allPromptTemplateCommands(): array
+            {
+                return [];
+            }
+        };
+
+        $skillDiscovery = new SkillDiscovery(
+            config: new SkillsConfig(noSkills: true),
+            pathResolver: new SettingsPathResolver($this->tmpDir, $this->tmpDir),
+            appConfig: $this->appConfig(),
+            extractor: new MarkdownFrontmatterExtractor(),
+            logger: new NullLogger(),
+        );
+
+        $agentDiscovery = new AgentDefinitionDiscovery(
+            agentsConfig: new AgentsConfig(enabled: false),
+            pathResolver: new SettingsPathResolver($this->tmpDir, $this->tmpDir),
+            parser: $this->agentParser(),
+            cwd: $this->tmpDir,
+        );
+
+        $mcpStore = $this->createStub(McpToolCatalogStoreInterface::class);
+        $mcpStore->method('read')->willReturnCallback(static function (string $runId): never {
+            if ('' === $runId) {
+                throw new \RuntimeException('must not be called');
+            }
+            throw new \RuntimeException('unexpected');
+        });
+
+        $snapshot = (new CompactHeaderSnapshotProvider($promptCatalog, $skillDiscovery, $agentDiscovery, $mcpStore))->build('');
+
+        self::assertSame([], $snapshot->mcpServers);
+    }
+
+    #[Test]
+    public function nonEmptySessionIdReadsMcpCatalog(): void
+    {
+        $promptCatalog = new class implements PromptTemplateCatalogInterface {
+            public function allPromptTemplateCommands(): array
+            {
+                return [];
+            }
+        };
+
+        $skillDiscovery = new SkillDiscovery(
+            config: new SkillsConfig(noSkills: true),
+            pathResolver: new SettingsPathResolver($this->tmpDir, $this->tmpDir),
+            appConfig: $this->appConfig(),
+            extractor: new MarkdownFrontmatterExtractor(),
+            logger: new NullLogger(),
+        );
+
+        $agentDiscovery = new AgentDefinitionDiscovery(
+            agentsConfig: new AgentsConfig(enabled: false),
+            pathResolver: new SettingsPathResolver($this->tmpDir, $this->tmpDir),
+            parser: $this->agentParser(),
+            cwd: $this->tmpDir,
+        );
+
+        $mcpStore = $this->createMock(McpToolCatalogStoreInterface::class);
+        $mcpStore->expects(self::once())->method('read')->with('sess-nonempty')->willReturn(null);
+
+        (new CompactHeaderSnapshotProvider($promptCatalog, $skillDiscovery, $agentDiscovery, $mcpStore))->build('sess-nonempty');
+    }
+
     #[Test]
     public function nullMcpCatalogOmitsServers(): void
     {

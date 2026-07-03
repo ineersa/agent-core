@@ -467,7 +467,6 @@ parameters:
       - AppSkills
       - AppAgent
       - AppMcpCatalog
-      - TuiTheme
       - TuiWidget
 
     TuiWidget:
