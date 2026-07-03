@@ -130,5 +130,53 @@ final class FileRewindServicePreviewTest extends TestCase
         self::assertSame(0, $rows[0]->removedLines);
     }
 
+    public function testRepeatedPreviewForTurnReturnsConsistentRows(): void
+    {
+        $runId = 'run-repeat';
+        $identity = RewindProjectIdentity::fromProjectRoot($this->projectDir);
+        $paths = new RewindStoragePaths($this->projectDir);
+        $backend = new HiddenGitSnapshotBackend($this->runner, new NullLogger());
+        $scope = new RewindPathScope($this->projectDir);
+        $gitDir = $paths->hiddenGitDir($identity);
+        $idx = $paths->tmpDir($identity).'/cap3.index';
+        @mkdir(dirname($idx), 0700, true);
+
+        file_put_contents($this->projectDir.'/a.txt', "one
+");
+        $tree1 = $backend->captureTreeSha($gitDir, $this->projectDir, $idx, $scope);
+        $commit1 = $backend->treeShaToCommitSha($gitDir, $this->projectDir, $tree1, 't1');
+        (new FileRewindLedgerStore($this->projectDir))->appendCheckpoint($identity, [
+            'run_id' => $runId,
+            'turn_no' => 1,
+            'anchor_seq' => 1,
+            'kind' => FileRewindCheckpointKindEnum::TurnBoundary->value,
+            'project_hash' => $identity->projectHash,
+            'snapshot_commit_sha' => $commit1,
+        ]);
+        file_put_contents($this->projectDir.'/a.txt', "one
+two
+");
+
+        $service = new FileRewindService(
+            backend: $backend,
+            gitRunner: $this->runner,
+            paths: $paths,
+            ledgerStore: new FileRewindLedgerStore($this->projectDir),
+            ledgerProjector: new FileRewindLedgerProjector(),
+            config: new FileRewindConfig(enabled: true, maxRetainedTurns: 10, maxFileBytes: 1_048_576),
+            logger: new NullLogger(),
+            projectCwd: $this->projectDir,
+        );
+
+        $first = $service->previewForTurn($runId, 1);
+        $second = $service->previewForTurn($runId, 1);
+        self::assertSame(count($first), count($second));
+        if ([] !== $first) {
+            self::assertSame($first[0]->path, $second[0]->path);
+            self::assertSame($first[0]->status, $second[0]->status);
+        }
+    }
+
+
 }
 

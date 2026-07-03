@@ -17,6 +17,10 @@ final class FileRewindService implements FileRewindPreviewProviderInterface
     /** @var array<string, string> */
     private array $lastTreeShaByRunProject = [];
 
+    /** Cached worktree tree for picker preview (avoids git add --all per arrow key). */
+    /** @var array<string, string> */
+    private array $previewCurrentTreeByProjectHash = [];
+
     private ?bool $gitOperationalCache = null;
 
     public function __construct(
@@ -65,6 +69,7 @@ final class FileRewindService implements FileRewindPreviewProviderInterface
                     return;
                 }
                 $this->lastTreeShaByRunProject[$cacheKey] = $treeSha;
+                $this->invalidatePreviewCurrentTree($identity);
                 $commitSha = $this->backend->treeShaToCommitSha($gitDir, $this->projectCwd, $treeSha, 'hatfield file rewind');
                 $this->ledgerStore->appendCheckpoint($identity, [
                     'run_id' => $runId,
@@ -122,9 +127,8 @@ final class FileRewindService implements FileRewindPreviewProviderInterface
         $target = $byTurn[$turnNo]->snapshotCommitSha;
         $scope = new RewindPathScope($this->projectCwd);
         $gitDir = $this->paths->hiddenGitDir($identity);
-        $tmpIndex = $this->paths->tmpDir($identity).'/preview-'.bin2hex(random_bytes(4)).'.index';
         try {
-            $currentTree = $this->backend->captureTreeSha($gitDir, $this->projectCwd, $tmpIndex, $scope);
+            $currentTree = $this->currentTreeShaForPreview($identity, $gitDir, $scope);
             $targetTree = $this->backendCommitTree($gitDir, $target);
             $currentPaths = $this->backend->listTreePaths($gitDir, $this->projectCwd, $currentTree);
             $targetPaths = $this->backend->listTreePaths($gitDir, $this->projectCwd, $targetTree);
@@ -154,10 +158,6 @@ final class FileRewindService implements FileRewindPreviewProviderInterface
             $this->logger->debug('file_rewind.preview_failed', ['error' => $e->getMessage()]);
 
             return [];
-        } finally {
-            if (is_file($tmpIndex)) {
-                @unlink($tmpIndex);
-            }
         }
     }
 
@@ -227,6 +227,7 @@ final class FileRewindService implements FileRewindPreviewProviderInterface
             }
             $this->pruneRetainedRefs($identity);
             unset($this->lastTreeShaByRunProject[$runId.'|'.$identity->projectHash]);
+            $this->invalidatePreviewCurrentTree($identity);
         } finally {
             if (is_file($tmpIndex)) {
                 @unlink($tmpIndex);
@@ -254,6 +255,31 @@ final class FileRewindService implements FileRewindPreviewProviderInterface
             $this->paths->tmpDir($identity),
         );
         unset($this->lastTreeShaByRunProject[$runId.'|'.$identity->projectHash]);
+        $this->invalidatePreviewCurrentTree($identity);
+    }
+
+    private function currentTreeShaForPreview(RewindProjectIdentity $identity, string $gitDir, RewindPathScope $scope): string
+    {
+        $key = $identity->projectHash;
+        if (isset($this->previewCurrentTreeByProjectHash[$key])) {
+            return $this->previewCurrentTreeByProjectHash[$key];
+        }
+        $tmpIndex = $this->paths->tmpDir($identity).'/preview-'.bin2hex(random_bytes(4)).'.index';
+        try {
+            $treeSha = $this->backend->captureTreeSha($gitDir, $this->projectCwd, $tmpIndex, $scope);
+            $this->previewCurrentTreeByProjectHash[$key] = $treeSha;
+
+            return $treeSha;
+        } finally {
+            if (is_file($tmpIndex)) {
+                @unlink($tmpIndex);
+            }
+        }
+    }
+
+    private function invalidatePreviewCurrentTree(RewindProjectIdentity $identity): void
+    {
+        unset($this->previewCurrentTreeByProjectHash[$identity->projectHash]);
     }
 
     private function buildPreviewEntry(

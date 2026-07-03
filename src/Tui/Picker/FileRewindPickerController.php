@@ -114,6 +114,7 @@ final class FileRewindPickerController
         }
         $this->screen->setStatus('rewind', $this->formatPreviewSummary($sessionId, $turnNo));
         $this->screen->refresh();
+        $this->screen->requestRender();
     }
 
     private function formatPreviewSummary(string $sessionId, int $turnNo): string
