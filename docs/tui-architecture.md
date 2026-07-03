@@ -502,7 +502,7 @@ producer receives the current `RenderContext` and sizes output accordingly.
 
 | Method | Purpose |
 |--------|---------|
-| `mount(Tui): void` | Create and attach all 13 widgets to TUI |
+| `mount(Tui): void` | Create and attach all 14 widgets to TUI |
 | `setTranscriptBlocks(TranscriptBlock[]): void` | Replace transcript content |
 | `appendTranscriptBlock(TranscriptBlock): void` | Add one block to transcript |
 | `clearEditor(): void` | Reset editor to empty |
