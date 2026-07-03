@@ -73,6 +73,22 @@ final class SubagentLiveCatalogTest extends TestCase
         self::assertSame(SubagentLiveStatusEnum::Completed, $catalog->findByArtifactId('a2')?->status);
     }
 
+
+    public function testApplyChildStatusOptimisticallyUpdatesWaitingHuman(): void
+    {
+        $catalog = new SubagentLiveCatalog();
+        $catalog->ingestRuntimeEvent($this->progressEvent('parent-1', [
+            'mode' => 'single', 'status' => 'waiting_human', 'agent_name' => 'scout',
+            'artifact_id' => 'agent_a', 'agent_run_id' => 'child-run-1', 'task_summary' => 'Task',
+        ]));
+
+        $catalog->applyChildStatus('agent_a', SubagentLiveStatusEnum::Running);
+        $child = $catalog->findByArtifactId('agent_a');
+        self::assertNotNull($child);
+        self::assertSame(SubagentLiveStatusEnum::Running, $child->status);
+        self::assertNull($catalog->firstChildNeedingAttention());
+    }
+
     /** @param array<string, mixed> $progress */
     private function progressEvent(string $runId, array $progress): RuntimeEvent
     {

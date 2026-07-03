@@ -11,7 +11,6 @@ use Ineersa\Tui\Command\SlashCommand;
 use Ineersa\Tui\Command\SlashCommandHandler;
 use Ineersa\Tui\Command\SlashCommandRegistry;
 use Ineersa\Tui\Command\SubagentLiveInputPolicy;
-use Ineersa\Tui\Listener\AgentsCancelCommandHandler;
 use Ineersa\Tui\Listener\SubagentLiveCommandRegistrar;
 use Ineersa\Tui\Picker\SubagentLivePickerController;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
@@ -29,13 +28,12 @@ use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 
 #[CoversClass(SubagentLiveCommandRegistrar::class)]
-#[CoversClass(AgentsCancelCommandHandler::class)]
 final class SubagentLiveCommandRegistrarTest extends TestCase
 {
     use TuiRuntimeContextBuilderTrait;
 
     #[Test]
-    public function registersAgentsCancelWithSlashCommandHandlerContract(): void
+    public function registersAgentsLiveAndAgentsMainWithoutAgentsCancel(): void
     {
         $registry = new SlashCommandRegistry();
         $harness = new VirtualTuiHarness(sessionId: 'subagent-live-registrar');
@@ -49,68 +47,9 @@ final class SubagentLiveCommandRegistrarTest extends TestCase
         $registrar = $this->createRegistrar($registry);
         $registrar->register($context);
 
-        self::assertTrue($registry->has('agents-cancel'));
-
-        $meta = $registry->getMetadata('agents-cancel');
-        self::assertInstanceOf(CommandMetadata::class, $meta);
-        self::assertSame('agents-cancel', $meta->name);
-        self::assertSame('/agents-cancel', $meta->usage);
-
-        $result = $registry->execute(new SlashCommand('agents-cancel', '', '/agents-cancel'));
-        self::assertInstanceOf(NoOp::class, $result);
-    }
-
-    #[Test]
-    public function agentsCancelDispatchesChildCancelWhenLiveViewChildIsActive(): void
-    {
-        $registry = new SlashCommandRegistry();
-        $harness = new VirtualTuiHarness(sessionId: 'subagent-live-cancel');
-        $state = new TuiSessionState('subagent-live-cancel');
-        $child = new SubagentLiveChildDTO(
-            agentRunId: 'child-run-9',
-            artifactId: 'agent_abc',
-            agentName: 'scout',
-            status: SubagentLiveStatusEnum::Running,
-            taskSummary: 'task',
-            lastActivityAtMs: 1,
-        );
-        $state->subagentLiveView->enter($child);
-        $state->subagentLiveView->childActivity = RunActivityStateEnum::Running;
-
-        /** @var AgentSessionClient&MockObject $client */
-        $client = $this->createMock(AgentSessionClient::class);
-        $client->expects(self::once())
-            ->method('cancel')
-            ->with('child-run-9');
-
-        $context = $this->buildTuiContext()
-            ->withTui($harness->tui())
-            ->withState($state)
-            ->withScreen($harness->screen())
-            ->withClient($client)
-            ->build();
-
-        $registrar = $this->createRegistrar($registry);
-        $registrar->register($context);
-
-        $result = $registry->execute(new SlashCommand('agents-cancel', '', '/agents-cancel'));
-
-        self::assertInstanceOf(NoOp::class, $result);
-        self::assertSame(RunActivityStateEnum::Cancelling, $state->subagentLiveView->childActivity);
-    }
-
-    #[Test]
-    public function agentsCancelHandlerImplementsSlashCommandHandler(): void
-    {
-        $handler = new AgentsCancelCommandHandler(
-            new TuiSessionState('contract-check'),
-            (new VirtualTuiHarness(sessionId: 'contract-check'))->screen(),
-            $this->createStub(AgentSessionClient::class),
-            new SubagentLiveInputPolicy(),
-            new NullLogger(),
-        );
-
-        self::assertInstanceOf(SlashCommandHandler::class, $handler);
+        self::assertTrue($registry->has('agents-live'));
+        self::assertTrue($registry->has('agents-main'));
+        self::assertFalse($registry->has('agents-cancel'));
     }
 
     private function createRegistrar(SlashCommandRegistry $registry): SubagentLiveCommandRegistrar

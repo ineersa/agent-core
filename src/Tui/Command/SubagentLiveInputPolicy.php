@@ -21,7 +21,6 @@ final readonly class SubagentLiveInputPolicy
         'agents-main',
         'main',
         'agents-live',
-        'agents-cancel',
     ];
 
     public function __construct(
@@ -34,9 +33,9 @@ final readonly class SubagentLiveInputPolicy
         return 'Leave subagent live view first with /agents-main before running other commands.';
     }
 
-    public function childCancelUnavailableMessage(): string
+    public function parseSubmitted(string $submittedText): NormalPromptCommand|SlashCommand|ShellCommand
     {
-        return 'No active subagent to cancel in live view. Use /agents-main to return.';
+        return $this->parser->parse($submittedText);
     }
 
     public function terminalChildInputBlockedMessage(): string

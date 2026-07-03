@@ -106,6 +106,7 @@ final class SubagentLiveChildViewPoller
         }
 
         $live->childTranscript = $this->projector->blocks();
+        $live->persistCurrentChildCache();
 
         return $live->childTranscript;
     }

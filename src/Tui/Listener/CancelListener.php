@@ -9,7 +9,9 @@ use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\Tui\Question\QuestionController;
 use Ineersa\Tui\Question\QuestionCoordinator;
+use Ineersa\Tui\Question\QuestionKind;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
+use Ineersa\Tui\Runtime\SubagentLiveAttention;
 use Ineersa\Tui\Runtime\SubagentLiveChildDTO;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
 use Psr\Log\LoggerInterface;
@@ -60,7 +62,20 @@ final class CancelListener implements TuiListenerRegistrar
                 return;
             }
 
-            if ($questionCoordinator->actionRequired() && $questionController->isOpen()) {
+            if ($questionCoordinator->actionRequired()) {
+                $active = $questionCoordinator->activeRequest();
+                if (null !== $active && QuestionKind::Text === $active->kind) {
+                    $questionCoordinator->cancel();
+                    $questionController->close();
+                    SubagentLiveAttention::clearWaitingHumanForRun($state, $screen, $active->runId);
+
+                    return;
+                }
+
+                if ($questionController->isOpen()) {
+                    return;
+                }
+
                 return;
             }
 
@@ -95,6 +110,7 @@ final class CancelListener implements TuiListenerRegistrar
                 }
 
                 $live->childActivity = RunActivityStateEnum::Cancelling;
+                SubagentLiveAttention::markCancelledForRun($state, $screen, $child->agentRunId);
                 $screen->setWorkingMessage(\sprintf('Cancelling child %s...', $child->agentName));
                 $screen->setStatus('agents-live', \sprintf('Cancelling child %s (%s).', $child->agentName, $child->artifactId));
 

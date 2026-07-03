@@ -41,26 +41,6 @@ final class SubagentLiveCommandRegistrar implements TuiListenerRegistrar
         }
 
         $mainHandler = new AgentsMainCommandHandler($context->state, $context->screen);
-        $cancelHandler = new AgentsCancelCommandHandler(
-            $context->state,
-            $context->screen,
-            $context->client,
-            $this->liveInputPolicy,
-            $this->logger,
-        );
-        if ($this->commandRegistry->has('agents-cancel')) {
-            $this->commandRegistry->setHandler('agents-cancel', $cancelHandler);
-        } else {
-            $this->commandRegistry->register(
-                new CommandMetadata(
-                    name: 'agents-cancel',
-                    description: 'Cancel the selected subagent in live view',
-                    usage: '/agents-cancel',
-                    acceptsArguments: false,
-                ),
-                $cancelHandler,
-            );
-        }
 
         if ($this->commandRegistry->has('agents-main')) {
             $this->commandRegistry->setHandler('agents-main', $mainHandler);

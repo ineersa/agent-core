@@ -15,6 +15,7 @@ use Ineersa\Tui\Command\DispatchShellCommand;
 use Ineersa\Tui\Command\ExitApplication;
 use Ineersa\Tui\Command\Hotkey\HotkeyBindingDTO;
 use Ineersa\Tui\Command\Hotkey\HotkeyTableData;
+use Ineersa\Tui\Command\SlashCommand;
 use Ineersa\Tui\Command\StatusUpdate;
 use Ineersa\Tui\Command\SubagentLiveInputPolicy;
 use Ineersa\Tui\Command\SubmissionRouter;
@@ -22,6 +23,7 @@ use Ineersa\Tui\Command\TranscriptMessage;
 use Ineersa\Tui\Question\QuestionController;
 use Ineersa\Tui\Question\QuestionCoordinator;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
+use Ineersa\Tui\Runtime\SubagentLiveAttention;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Screen\ChatScreen;
@@ -85,8 +87,22 @@ final class SubmitListener implements TuiListenerRegistrar
 
             // ── Question interception: route editor text to active question ──
             if ($questionCoordinator->actionRequired()) {
+                if ($state->subagentLiveView->active && self::isLiveViewNavigationSlash($text, $subagentLiveInputPolicy)) {
+                    $commandResult = $router->route($text);
+                    if (null !== $commandResult && !($commandResult instanceof DispatchRuntime) && !($commandResult instanceof DispatchShellCommand)) {
+                        self::applyCommandResult($commandResult, $state, $screen, $sessionStore, $tui, $blockFactory);
+
+                        return;
+                    }
+                }
+
+                $active = $questionCoordinator->activeRequest();
+                $answerRunId = null !== $active ? $active->runId : null;
                 $questionCoordinator->answer($text);
                 $questionController->close();
+                if (null !== $answerRunId && '' !== $answerRunId) {
+                    SubagentLiveAttention::clearWaitingHumanForRun($state, $screen, $answerRunId);
+                }
 
                 return;
             }
@@ -645,5 +661,15 @@ final class SubmitListener implements TuiListenerRegistrar
         }
 
         return $result;
+    }
+
+    private static function isLiveViewNavigationSlash(string $text, SubagentLiveInputPolicy $policy): bool
+    {
+        $parseResult = $policy->parseSubmitted($text);
+        if (!$parseResult instanceof SlashCommand) {
+            return false;
+        }
+
+        return $policy->isAllowedSlashCommand($parseResult->name);
     }
 }

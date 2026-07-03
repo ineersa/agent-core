@@ -96,10 +96,10 @@ final class BackgroundProcessCompletionPoller
         // this refresh, findPendingNotifications() below would never
         // select it because the query requires finishedAt IS NOT NULL.
         //
-        // When sessionId is set, only processes for the current session
-        // are refreshed to avoid O(N) cross-session filesystem scans.
+        // Child runs use their own session_id on backgrounded bash processes; refresh
+        // all unfinished rows in this controller DB so completion can notify child runs.
         try {
-            $this->processManager->refreshAllUnfinished($this->sessionId);
+            $this->processManager->refreshAllUnfinished(null);
         } catch (\Throwable $e) {
             $this->logger->warning('bg_process_completion.refresh_failed', [
                 'component' => 'bg_process_completion.poller',
@@ -111,11 +111,12 @@ final class BackgroundProcessCompletionPoller
         }
 
         try {
-            $processes = $this->processStore->findPendingNotifications($this->sessionId);
+            $processes = $this->processStore->findPendingNotifications(null);
         } catch (\Throwable $e) {
             $this->logger->warning('bg_process_completion.poller_query_failed', [
                 'component' => 'bg_process_completion.poller',
                 'event_type' => 'bg_process_completion.poller_query_failed',
+                'controller_session_id' => $this->sessionId,
                 'exception' => $e->getMessage(),
             ]);
 

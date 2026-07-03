@@ -170,7 +170,10 @@ final class SubagentLivePickerController
 
     private function enterLiveView(SubagentLiveChildDTO $child, TuiSessionState $state, ChatScreen $screen): void
     {
-        $resetProjection = $state->subagentLiveView->shouldResetProjectionFor($child);
+        $cached = $state->subagentLiveView->childCaches[$child->agentRunId] ?? null;
+        $hasCachedTranscript = null !== $cached && [] !== $cached['transcript'];
+
+        $resetProjection = !$hasCachedTranscript && $state->subagentLiveView->shouldResetProjectionFor($child);
         if ($resetProjection) {
             $this->childPoller->resetProjection();
         }
@@ -179,6 +182,7 @@ final class SubagentLivePickerController
 
         if ($resetProjection && [] === $state->subagentLiveView->childTranscript) {
             $state->subagentLiveView->childTranscript = $state->subagentLiveView->placeholderTranscriptFor($child);
+            $state->subagentLiveView->persistCurrentChildCache();
         }
 
         $screen->setStatus('agents-live', \sprintf(

@@ -374,6 +374,40 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
         $this->assertNotNull($entity->completionNotifiedAt, 'completionNotifiedAt must be set after notification');
     }
 
+
+    public function testPollNotifiesChildSessionBackgroundCompletion(): void
+    {
+        $logPath = $this->tmpDir.'/child-bg.log';
+        file_put_contents($logPath, "child background output\n");
+        $now = new \DateTimeImmutable();
+
+        $this->persistProcess(
+            pid: 60001,
+            logPath: $logPath,
+            command: 'sleep 1',
+            backgroundedAt: $now->modify('-30 seconds'),
+            finishedAt: $now,
+            exitCode: 0,
+            status: BackgroundProcessStatusEnum::Finished,
+            sessionId: 'child-run-bg',
+        );
+
+        $store = self::getContainer()->get(ProcessStore::class);
+        $bgConfig = $this->createBgConfig();
+        $lifecycle = new ProcessLifecycle($bgConfig, new NullLogger());
+        $manager = new BackgroundProcessManager($store, $lifecycle, $bgConfig, new NullLogger());
+
+        $poller = $this->createPoller($store, $manager);
+        $ref = new \ReflectionMethod($poller, 'poll');
+        $ref->invoke($poller);
+
+        $this->assertCount(1, $this->sentCommands);
+        [$runId, $command] = $this->sentCommands[0];
+        $this->assertSame('child-run-bg', $runId);
+        $this->assertSame('append_message', $command->type);
+        $this->assertStringContainsString('[BG_PROCESS_DONE]', $command->text ?? '');
+    }
+
     private function createPoller(ProcessStore $store, BackgroundProcessManager $manager): BackgroundProcessCompletionPoller
     {
         return new BackgroundProcessCompletionPoller(

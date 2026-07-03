@@ -47,6 +47,27 @@ final class SubagentLiveCatalog
         return $this->byArtifactId[$artifactId] ?? null;
     }
 
+    /**
+     * Optimistic catalog update when the TUI knows a child left waiting_human
+     * before the next parent subagent_progress event (answer, dismiss, cancel).
+     */
+    public function applyChildStatus(string $artifactId, SubagentLiveStatusEnum $status): void
+    {
+        $existing = $this->byArtifactId[$artifactId] ?? null;
+        if (null === $existing) {
+            return;
+        }
+
+        $this->byArtifactId[$artifactId] = new SubagentLiveChildDTO(
+            agentRunId: $existing->agentRunId,
+            artifactId: $existing->artifactId,
+            agentName: $existing->agentName,
+            status: $status,
+            taskSummary: $existing->taskSummary,
+            lastActivityAtMs: (int) (microtime(true) * 1000),
+        );
+    }
+
     public function ingestRuntimeEvent(RuntimeEvent $event): void
     {
         if (!str_contains($event->type, 'tool_execution')) {

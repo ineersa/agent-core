@@ -15,6 +15,7 @@ use Ineersa\Tui\Question\QuestionRequest;
 use Ineersa\Tui\Question\QuestionSource;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
 use Ineersa\Tui\Runtime\RuntimeEventPoller;
+use Ineersa\Tui\Runtime\SubagentLiveAttention;
 use Ineersa\Tui\Runtime\SubagentLiveChildViewPoller;
 use Ineersa\Tui\Runtime\SubagentLiveStatusEnum;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
@@ -80,10 +81,10 @@ final class TickPollListener implements TuiListenerRegistrar
                     $state->subagentLiveView,
                     $client,
                     onHumanInputRequested: static function (RuntimeEvent $event) use ($client, $questionCoordinator, $state): void {
-                        self::handleHumanInputRequested($event, $client, $questionCoordinator, $state);
+                        self::handleHumanInputRequested($event, $client, $questionCoordinator, $state, $screen);
                     },
                     onToolQuestionRequested: static function (RuntimeEvent $event) use ($client, $questionCoordinator, $state): void {
-                        self::handleToolQuestionRequested($event, $client, $questionCoordinator, $state);
+                        self::handleToolQuestionRequested($event, $client, $questionCoordinator, $state, $screen);
                     },
                     onToolTerminal: static function (RuntimeEvent $event) use ($questionCoordinator, $questionController): void {
                         self::handleToolTerminal($event, $questionCoordinator, $questionController);
@@ -225,7 +226,7 @@ final class TickPollListener implements TuiListenerRegistrar
                 default => 'Working...',
             };
 
-            self::syncSubagentAttentionStatus($state, $screen);
+            SubagentLiveAttention::syncMainAttention($state, $screen);
 
             $screen->setWorkingMessage($msg);
 
@@ -264,6 +265,7 @@ final class TickPollListener implements TuiListenerRegistrar
         AgentSessionClient $client,
         QuestionCoordinator $questionCoordinator,
         ?TuiSessionState $sessionState = null,
+        ?ChatScreen $screen = null,
     ): void {
         $p = $event->payload;
         $questionId = (string) ($p['question_id'] ?? '');
@@ -311,7 +313,7 @@ final class TickPollListener implements TuiListenerRegistrar
         // unrecognized answers as denied.
         $questionCoordinator->enqueue(
             $request,
-            onAnswer: static function (mixed $answer) use ($client, $runId, $questionId, $kind): void {
+            onAnswer: static function (mixed $answer) use ($client, $runId, $questionId, $kind, $sessionState, $screen): void {
                 if (QuestionKind::Confirm === $kind) {
                     $boolAnswer = \is_string($answer) && 'yes' === strtolower($answer);
 
@@ -322,21 +324,23 @@ final class TickPollListener implements TuiListenerRegistrar
                             'answer' => $boolAnswer,
                         ],
                     ));
+                } else {
+                    $answerStr = \is_scalar($answer) ? (string) $answer : 'cancel';
 
-                    return;
+                    $client->send($runId, new UserCommand(
+                        type: 'answer_human',
+                        payload: [
+                            'question_id' => $questionId,
+                            'answer' => $answerStr,
+                        ],
+                    ));
                 }
 
-                $answerStr = \is_scalar($answer) ? (string) $answer : 'cancel';
-
-                $client->send($runId, new UserCommand(
-                    type: 'answer_human',
-                    payload: [
-                        'question_id' => $questionId,
-                        'answer' => $answerStr,
-                    ],
-                ));
+                if (null !== $sessionState && null !== $screen) {
+                    SubagentLiveAttention::clearWaitingHumanForRun($sessionState, $screen, $runId);
+                }
             },
-            onCancel: static function () use ($client, $runId, $questionId): void {
+            onCancel: static function () use ($client, $runId, $questionId, $sessionState, $screen): void {
                 $client->send($runId, new UserCommand(
                     type: 'answer_human',
                     payload: [
@@ -344,6 +348,10 @@ final class TickPollListener implements TuiListenerRegistrar
                         'answer' => 'Cancelled by user',
                     ],
                 ));
+
+                if (null !== $sessionState && null !== $screen) {
+                    SubagentLiveAttention::markCancelledForRun($sessionState, $screen, $runId);
+                }
             },
         );
     }
@@ -522,6 +530,7 @@ final class TickPollListener implements TuiListenerRegistrar
         AgentSessionClient $client,
         QuestionCoordinator $questionCoordinator,
         ?TuiSessionState $sessionState = null,
+        ?ChatScreen $screen = null,
     ): void {
         $p = $event->payload;
         $requestIdFromPayload = (string) ($p['request_id'] ?? '');
@@ -548,13 +557,13 @@ final class TickPollListener implements TuiListenerRegistrar
         $isBoolean = ($schema['type'] ?? '') === 'boolean';
 
         if ($hasEnum) {
-            self::handleChoiceToolQuestion($p, $schema, $requestId, $runId, $requestIdFromPayload, $client, $questionCoordinator, $sessionState);
+            self::handleChoiceToolQuestion($p, $schema, $requestId, $runId, $requestIdFromPayload, $client, $questionCoordinator, $sessionState, $screen);
 
             return;
         }
 
         if ($isBoolean || 'confirm' === $kind) {
-            self::handleConfirmToolQuestion($p, $requestId, $runId, $requestIdFromPayload, $client, $questionCoordinator, $sessionState);
+            self::handleConfirmToolQuestion($p, $requestId, $runId, $requestIdFromPayload, $client, $questionCoordinator, $sessionState, $screen);
 
             return;
         }
@@ -562,7 +571,7 @@ final class TickPollListener implements TuiListenerRegistrar
         // Degenerate fallback: unknown non-confirm schemas degrade to the generic choice
         // overlay instead of throwing (which would drop later poll-batch events). Producers
         // should supply enum or string schemas so choices are usable; this path is best-effort.
-        self::handleChoiceToolQuestion($p, $schema, $requestId, $runId, $requestIdFromPayload, $client, $questionCoordinator, $sessionState);
+        self::handleChoiceToolQuestion($p, $schema, $requestId, $runId, $requestIdFromPayload, $client, $questionCoordinator, $sessionState, $screen);
     }
 
     /**
@@ -583,6 +592,7 @@ final class TickPollListener implements TuiListenerRegistrar
         AgentSessionClient $client,
         QuestionCoordinator $questionCoordinator,
         ?TuiSessionState $sessionState = null,
+        ?ChatScreen $screen = null,
     ): void {
         $enum = $schema['enum'] ?? [];
         $choices = array_map(
@@ -608,8 +618,7 @@ final class TickPollListener implements TuiListenerRegistrar
 
         $questionCoordinator->enqueue(
             $request,
-            onAnswer: static function (mixed $answer) use ($client, $runId, $requestIdFromPayload): void {
-                // Choice returns the label string directly.
+            onAnswer: static function (mixed $answer) use ($client, $runId, $requestIdFromPayload, $sessionState, $screen): void {
                 $answerStr = \is_scalar($answer) ? (string) $answer : '';
 
                 $client->send($runId, new UserCommand(
@@ -620,6 +629,10 @@ final class TickPollListener implements TuiListenerRegistrar
                         'kind' => 'approval',
                     ],
                 ));
+
+                if (null !== $sessionState && null !== $screen) {
+                    SubagentLiveAttention::clearWaitingHumanForRun($sessionState, $screen, $runId);
+                }
             },
             onCancel: static function () use ($client, $runId, $requestIdFromPayload): void {
                 $client->send($runId, new UserCommand(
@@ -739,21 +752,6 @@ final class TickPollListener implements TuiListenerRegistrar
         }
 
         return null;
-    }
-
-    private static function syncSubagentAttentionStatus(TuiSessionState $state, ChatScreen $screen): void
-    {
-        $child = $state->subagentLiveCatalog->firstChildNeedingAttention();
-        if (null !== $child) {
-            $screen->setStatus(
-                'subagent_live',
-                \sprintf('⚠ Subagent %s needs your input — /agents-live', $child->agentName),
-            );
-
-            return;
-        }
-
-        $screen->setStatus('subagent_live', null);
     }
 
     private static function shouldRejectOrphanedQuestion(TuiSessionState $state, QuestionRequest $activeRequest): bool
