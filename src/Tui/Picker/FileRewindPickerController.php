@@ -86,11 +86,11 @@ final class FileRewindPickerController
         $selected = TreePickerController::initialSelectedIndex($tree);
         $items = TreePickerController::buildItems($tree, $theme, selectedIndex: $selected);
         $list = new SelectListWidget(items: $items, maxVisible: 10, keybindings: $kb);
+        $list->setSelectedIndex(max(0, $selected));
         $picker = $this;
         $sessionId = (string) $this->sessionId;
         $turnOrder = TreePickerController::flattenTurnOrder($tree);
         $initialTurn = $turnOrder[$selected] ?? 0;
-        $picker->updatePreviewWidget($sessionId, $initialTurn);
         $list->onSelect(static function (SelectEvent $event) use ($picker, $sessionId): void {
             $turnNo = (int) $event->getItem()['value'];
             $picker->closePicker();
@@ -104,8 +104,7 @@ final class FileRewindPickerController
         });
         $this->overlay = new PickerOverlay();
         $this->overlay->mount($tui, $screen, $list, $header);
-        $screen->setStatus('rewind', 'Select a turn, then choose restore action');
-        $screen->refresh();
+        $picker->updatePreviewWidget($sessionId, $initialTurn);
     }
 
     private function updatePreviewWidget(string $sessionId, int $turnNo): void

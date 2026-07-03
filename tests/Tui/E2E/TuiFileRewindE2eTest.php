@@ -281,30 +281,85 @@ final class TuiFileRewindE2eTest extends TestCase
         );
     }
 
+    private function selectedRewindPickerTurn(string $capture): ?int
+    {
+        foreach (explode("\n", $capture) as $line) {
+            if (!str_contains($line, '→')) {
+                continue;
+            }
+            if (preg_match('/Turn (\d+):/', $line, $matches)) {
+                return (int) $matches[1];
+            }
+        }
+
+        return null;
+    }
+
     private function selectRewindTurnWithCheckpoint(TmuxPane $pane, int $turnNo): void
     {
-        $noCheckpoint = 'Turn '.$turnNo.': no file checkpoint';
-        $hasPreview = static fn (string $cap): bool => str_contains($cap, 'Turn '.$turnNo.':')
-            && !str_contains($cap, $noCheckpoint)
-            && (
-                str_contains($cap, 'Turn '.$turnNo.': modified')
-                || str_contains($cap, 'Turn '.$turnNo.': added')
-                || str_contains($cap, 'Turn '.$turnNo.': deleted')
-                || str_contains($cap, 'Turn '.$turnNo.': preview unavailable')
-            );
+        $statusShowsCheckpoint = static fn (string $cap): bool => (
+            str_contains($cap, 'Turn '.$turnNo.': modified')
+            || str_contains($cap, 'Turn '.$turnNo.': added')
+            || str_contains($cap, 'Turn '.$turnNo.': deleted')
+            || str_contains($cap, 'Turn '.$turnNo.': preview unavailable')
+        );
 
-        for ($nav = 0; $nav < 14; ++$nav) {
-            $cap = $this->tmux->capturePlainWithHistory($pane, 1200);
-            if ($hasPreview($cap)) {
+        $this->tmux->waitForCallback(
+            $pane,
+            static fn (string $cap): bool => str_contains($cap, 'File rewind') && str_contains($cap, '→'),
+            timeout: 10.0,
+            message: '/rewind turn picker did not appear before turn selection',
+            history: 2000,
+        );
+
+        for ($nav = 0; $nav < 24; ++$nav) {
+            $cap = $this->tmux->capturePlainWithHistory($pane, 2000);
+            $selectedTurn = $this->selectedRewindPickerTurn($cap);
+            if ($selectedTurn === $turnNo && $statusShowsCheckpoint($cap)) {
                 break;
             }
-            $this->tmux->sendKey($pane, 'Up');
-            usleep(150_000);
+            if ($selectedTurn === $turnNo) {
+                $this->tmux->waitForCallback(
+                    $pane,
+                    $statusShowsCheckpoint,
+                    timeout: 12.0,
+                    message: 'Turn '.$turnNo.' selected but checkpoint preview did not load',
+                    history: 2000,
+                );
+                break;
+            }
+            if (null !== $selectedTurn && $selectedTurn <= $turnNo) {
+                break;
+            }
+
+            $beforeUp = $selectedTurn;
+            for ($retry = 0; $retry < 3; ++$retry) {
+                $this->tmux->sendKey($pane, 'Up');
+                usleep(200_000);
+                try {
+                    $this->tmux->waitForCallback(
+                        $pane,
+                        function (string $cap) use ($beforeUp): bool {
+                            $current = $this->selectedRewindPickerTurn($cap);
+
+                            return null !== $current && $current !== $beforeUp;
+                        },
+                        timeout: 8.0,
+                        message: 'Rewind picker selection did not move after Up (stuck on turn '.($beforeUp ?? 'unknown').')',
+                        history: 2000,
+                    );
+                    break;
+                } catch (\RuntimeException $e) {
+                    if (2 === $retry) {
+                        throw $e;
+                    }
+                }
+            }
         }
 
         $this->tmux->waitForCallback(
             $pane,
-            $hasPreview,
+            fn (string $cap): bool => $this->selectedRewindPickerTurn($cap) === $turnNo && $statusShowsCheckpoint($cap),
             timeout: 8.0,
             message: 'Did not select turn '.$turnNo.' with a file checkpoint in /rewind picker',
             history: 2000,
