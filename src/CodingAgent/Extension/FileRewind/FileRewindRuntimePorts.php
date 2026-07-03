@@ -48,20 +48,8 @@ final class FileRewindRuntimePorts implements FileRewindTurnPreviewPortInterface
 
     public function preview(string $sessionId, int $turnNo): array
     {
-        if (null === $this->previewProvider) {
-            return [];
-        }
-        $rows = [];
-        foreach ($this->previewProvider->previewForTurn($sessionId, $turnNo) as $entry) {
-            $rows[] = [
-                'path' => $entry->path,
-                'status' => $entry->status,
-                'added' => $entry->addedLines,
-                'removed' => $entry->removedLines,
-            ];
-        }
-
-        return $rows;
+        // Live diff preview disabled in v1 (picker uses checkpoint availability only).
+        return [];
     }
 
     public function execute(string $sessionId, int $turnNo, string $action): void

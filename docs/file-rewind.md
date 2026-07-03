@@ -49,6 +49,6 @@ extensions:
 
 - Hidden snapshots may contain secrets from captured files.
 - Restore is not fully transactional across arbitrary failure modes.
-- Preview line counts are best-effort (status/path focused in v1).
-- Large/binary files may be skipped or summarized as unavailable.
+- Live file diff preview in the `/rewind` picker is **intentionally disabled in v1**. Hidden-git indexing (`git add --all` / worktree capture) must not run on picker open or arrow navigation; restore/undo still uses hidden git on explicit user action.
+- The picker shows only whether a turn has a file checkpoint and generic action guidance.
 - Checkpoint capture/restore diagnostics rely on best-effort logging only in v1 (no structured extension logger seam yet).

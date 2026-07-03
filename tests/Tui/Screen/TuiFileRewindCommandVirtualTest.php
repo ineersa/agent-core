@@ -73,7 +73,7 @@ final class TuiFileRewindCommandVirtualTest extends TestCase
 
             public function previewForTurn(string $runId, int $turnNo): array
             {
-                return [new FileRewindPreviewEntryDTO('a.txt', 'modified', 2, 1, false, false)];
+                return [];
             }
         };
         $action = new class implements FileRewindActionHandlerInterface {

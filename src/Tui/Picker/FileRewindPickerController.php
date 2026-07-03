@@ -100,39 +100,30 @@ final class FileRewindPickerController
             $picker->closePicker();
         });
         $list->onSelectionChange(static function (SelectionChangeEvent $event) use ($picker, $sessionId): void {
-            $picker->updatePreviewWidget($sessionId, (int) $event->getItem()['value']);
+            $picker->updateStatusForTurn($sessionId, (int) $event->getItem()['value']);
         });
         $this->overlay = new PickerOverlay();
         $this->overlay->mount($tui, $screen, $list, $header);
-        $picker->updatePreviewWidget($sessionId, $initialTurn);
+        $picker->updateStatusForTurn($sessionId, $initialTurn);
     }
 
-    private function updatePreviewWidget(string $sessionId, int $turnNo): void
+    private function updateStatusForTurn(string $sessionId, int $turnNo): void
     {
         if (null === $this->screen) {
             return;
         }
-        $this->screen->setStatus('rewind', $this->formatPreviewSummary($sessionId, $turnNo));
+        $this->screen->setStatus('rewind', $this->formatTurnStatus($sessionId, $turnNo));
         $this->screen->refresh();
         $this->screen->requestRender();
     }
 
-    private function formatPreviewSummary(string $sessionId, int $turnNo): string
+    private function formatTurnStatus(string $sessionId, int $turnNo): string
     {
         if (!$this->previewPort->hasCheckpoint($sessionId, $turnNo)) {
-            return 'Turn '.$turnNo.': no file checkpoint';
+            return 'Turn '.$turnNo.': no file checkpoint — select a turn, then choose restore action';
         }
-        $rows = $this->previewPort->preview($sessionId, $turnNo);
-        if ([] === $rows) {
-            return 'Turn '.$turnNo.': preview unavailable';
-        }
-        $parts = [];
-        foreach (\array_slice($rows, 0, 3) as $row) {
-            $parts[] = \sprintf('%s %s', $row['status'] ?? '?', $row['path'] ?? '');
-        }
-        $suffix = \count($rows) > 3 ? ' …' : '';
 
-        return 'Turn '.$turnNo.': '.implode('; ', $parts).$suffix;
+        return 'Turn '.$turnNo.': file checkpoint available — select a turn, then choose restore action';
     }
 
     private function openActionPicker(string $sessionId, int $turnNo): void

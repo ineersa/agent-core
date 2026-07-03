@@ -33,6 +33,6 @@ final class FileRewindRuntimePortsTest extends TestCase
 
         self::assertTrue($ports->hasCheckpoint('s', 2));
         self::assertFalse($ports->hasCheckpoint('s', 1));
-        self::assertSame([['path' => 'a.txt', 'status' => 'modified', 'added' => 1, 'removed' => 2]], $ports->preview('s', 2));
+        self::assertSame([], $ports->preview('s', 2));
     }
 }

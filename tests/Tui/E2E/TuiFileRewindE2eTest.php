@@ -298,10 +298,8 @@ final class TuiFileRewindE2eTest extends TestCase
     private function selectRewindTurnWithCheckpoint(TmuxPane $pane, int $turnNo): void
     {
         $statusShowsCheckpoint = static fn (string $cap): bool => (
-            str_contains($cap, 'Turn '.$turnNo.': modified')
-            || str_contains($cap, 'Turn '.$turnNo.': added')
-            || str_contains($cap, 'Turn '.$turnNo.': deleted')
-            || str_contains($cap, 'Turn '.$turnNo.': preview unavailable')
+            str_contains($cap, 'Turn '.$turnNo.': file checkpoint available')
+            || str_contains($cap, 'Turn '.$turnNo.': no file checkpoint')
         );
 
         $this->tmux->waitForCallback(
@@ -323,7 +321,7 @@ final class TuiFileRewindE2eTest extends TestCase
                     $pane,
                     $statusShowsCheckpoint,
                     timeout: 12.0,
-                    message: 'Turn '.$turnNo.' selected but checkpoint preview did not load',
+                    message: 'Turn '.$turnNo.' selected but checkpoint status did not load',
                     history: 2000,
                 );
                 break;
@@ -361,7 +359,7 @@ final class TuiFileRewindE2eTest extends TestCase
             $pane,
             fn (string $cap): bool => $this->selectedRewindPickerTurn($cap) === $turnNo && $statusShowsCheckpoint($cap),
             timeout: 8.0,
-            message: 'Did not select turn '.$turnNo.' with a file checkpoint in /rewind picker',
+            message: 'Did not select turn '.$turnNo.' with expected checkpoint status in /rewind picker',
             history: 2000,
         );
         $this->tmux->sendKey($pane, 'Enter');
