@@ -20,10 +20,9 @@ final readonly class FileRewindAfterTurnCommitHook implements AfterTurnCommitHoo
         if (!$this->config->enabled || !$this->service->isOperational()) {
             return;
         }
-        // v1: skip tool-effect commits so checkpoints align with plain assistant turns (pre-edit restore target).
+        // Skip orchestration / mid-tool commits. Capture only on stable turn boundaries.
         if ($this->has($context, 'run_started')
             || $this->has($context, 'tool_execution_start')
-            || $this->has($context, 'tool_batch_committed')
             || $this->has($context, 'agent_command_queued')
             || $this->has($context, 'agent_command_applied')
         ) {
@@ -32,19 +31,42 @@ final readonly class FileRewindAfterTurnCommitHook implements AfterTurnCommitHoo
         if ($context->effectsCount > 0) {
             return;
         }
-        $anchorSeq = 0;
-        $capture = false;
-        foreach ($context->events as $event) {
-            if ('turn_end' === $event->type || 'agent_end' === $event->type) {
-                $anchorSeq = $event->seq;
-                $capture = true;
-                break;
-            }
+        // Mid-tool batch commit: tools finished but assistant follow-up not committed yet.
+        if ($this->has($context, 'tool_batch_committed')
+            && !$this->has($context, 'turn_end')
+            && !$this->has($context, 'agent_end')
+            && !$this->has($context, 'llm_step_completed')
+        ) {
+            return;
         }
-        if (!$capture) {
+        $anchorSeq = $this->resolveCaptureAnchorSeq($context);
+        if (null === $anchorSeq) {
             return;
         }
         $this->service->recordTurnCheckpoint($context->runId, $context->turnNo, $anchorSeq);
+    }
+
+    private function resolveCaptureAnchorSeq(AfterTurnCommitHookContextDTO $context): ?int
+    {
+        foreach ($context->events as $event) {
+            if ('turn_end' === $event->type || 'agent_end' === $event->type) {
+                return $event->seq;
+            }
+        }
+
+        // Completed assistant step without a new tool batch in this commit (post-tool final answer).
+        if ($this->has($context, 'llm_step_completed')
+            && !$this->has($context, 'tool_execution_start')
+            && !$this->has($context, 'tool_call_result_received')
+        ) {
+            foreach ($context->events as $event) {
+                if ('llm_step_completed' === $event->type) {
+                    return $event->seq;
+                }
+            }
+        }
+
+        return null;
     }
 
     private function has(AfterTurnCommitHookContextDTO $context, string $type): bool

@@ -51,7 +51,7 @@ final class FileRewindAfterTurnCommitHookTest extends TestCase
         TestDirectoryIsolation::removeDirectory($this->projectDir);
     }
 
-    public function testSkipsCheckpointWhenToolBatchCommittedPresent(): void
+    public function testRecordsCheckpointWhenToolBatchAndTurnEndShareCommit(): void
     {
         $hook = new FileRewindAfterTurnCommitHook(
             $this->service,
@@ -69,7 +69,7 @@ final class FileRewindAfterTurnCommitHookTest extends TestCase
             effectsCount: 0,
         ));
 
-        self::assertFalse($this->service->hasCheckpointForTurn('run-hook', 2));
+        self::assertTrue($this->service->hasCheckpointForTurn('run-hook', 2));
     }
 
     public function testRecordsCheckpointOnPlainAssistantTurnEnd(): void
@@ -88,6 +88,72 @@ final class FileRewindAfterTurnCommitHookTest extends TestCase
         ));
 
         self::assertTrue($this->service->hasCheckpointForTurn('run-hook', 1));
+    }
+
+
+    public function testSkipsMidToolBatchWithoutFinalAssistantBoundary(): void
+    {
+        $hook = new FileRewindAfterTurnCommitHook(
+            $this->service,
+            new FileRewindConfig(enabled: true, maxRetainedTurns: 10, maxFileBytes: 1024),
+        );
+
+        $hook->onAfterTurnCommit(new AfterTurnCommitHookContextDTO(
+            runId: 'run-hook',
+            turnNo: 2,
+            status: 'running',
+            events: [
+                new AfterTurnCommitEventSummaryDTO(1, 'tool_batch_committed'),
+            ],
+            effectsCount: 0,
+        ));
+
+        self::assertFalse($this->service->hasCheckpointForTurn('run-hook', 2));
+    }
+
+    public function testRecordsCheckpointOnPostToolFinalAssistantLlmStepCompleted(): void
+    {
+        file_put_contents($this->projectDir.'/marker.txt', "after-tool
+");
+        $hook = new FileRewindAfterTurnCommitHook(
+            $this->service,
+            new FileRewindConfig(enabled: true, maxRetainedTurns: 10, maxFileBytes: 1024),
+        );
+
+        $hook->onAfterTurnCommit(new AfterTurnCommitHookContextDTO(
+            runId: 'run-hook',
+            turnNo: 2,
+            status: 'running',
+            events: [
+                new AfterTurnCommitEventSummaryDTO(9, 'llm_step_completed'),
+            ],
+            effectsCount: 0,
+        ));
+
+        self::assertTrue($this->service->hasCheckpointForTurn('run-hook', 2));
+    }
+
+    public function testRecordsCheckpointWhenToolBatchAndFinalAssistantShareCommit(): void
+    {
+        file_put_contents($this->projectDir.'/marker.txt', "one-line
+");
+        $hook = new FileRewindAfterTurnCommitHook(
+            $this->service,
+            new FileRewindConfig(enabled: true, maxRetainedTurns: 10, maxFileBytes: 1024),
+        );
+
+        $hook->onAfterTurnCommit(new AfterTurnCommitHookContextDTO(
+            runId: 'run-hook',
+            turnNo: 2,
+            status: 'running',
+            events: [
+                new AfterTurnCommitEventSummaryDTO(1, 'tool_batch_committed'),
+                new AfterTurnCommitEventSummaryDTO(2, 'llm_step_completed'),
+            ],
+            effectsCount: 0,
+        ));
+
+        self::assertTrue($this->service->hasCheckpointForTurn('run-hook', 2));
     }
 
     public function testSkipsWhenDisabled(): void

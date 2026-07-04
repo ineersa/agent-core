@@ -31,6 +31,7 @@ File rewind is a **built-in Hatfield extension** (`FileRewindExtension`) registe
 - `/tree` stays conversation-only.
 - `/rewind` lists **file checkpoint targets only** (turns with a persisted hidden-git checkpoint and a meaningful label). Internal/tool turns without checkpoints are hidden.
 - Checkpoints and restore targets are scoped to the **active session** (`session_id` / `run_id`); older sessions in the same project cwd do not appear in `/rewind` and are not used for restore.
+- Checkpoints are recorded on stable completed turn boundaries: plain assistant turns and the **final assistant step after tool execution** (`llm_step_completed` / `agent_end`). Mid-tool batch commits alone do not create restore targets.
 - Action menu (Enter on a checkpoint):
   - **Restore files to this turn**
   - **Restore files + conversation rewind** (files first; conversation rewind rolls back files if conversation rewind fails)
