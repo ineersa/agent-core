@@ -64,12 +64,16 @@ final class TuiCompactHeaderE2eTest extends TestCase
         $fixtureEnv = is_file($startupFixture)
             ? 'HATFIELD_LLM_REPLAY_FIXTURE_PATH='.escapeshellarg($startupFixture).' '
             : '';
-        $dbPath = 'app_test-tui-compact-'.bin2hex(random_bytes(4)).'.sqlite';
+        $paths = TuiE2eDatabaseEnv::allocatePaths('tui-compact-');
+
+        $dbPath = $paths['app'];
+
+        $transportDbPath = $paths['transport'];
         $promptArg = $withPrompt ? ' --prompt="hello"' : '';
 
         return \sprintf(
-            'APP_ENV=test HATFIELD_TEST_DATABASE_PATH=%s HOME=%s %s %s %s agent --model=llama_cpp_test/test%s --tools-excluded=bash 2>&1',
-            escapeshellarg($dbPath),
+            'APP_ENV=test %sHOME=%s %s %s %s agent --model=llama_cpp_test/test%s --tools-excluded=bash 2>&1',
+            TuiE2eDatabaseEnv::shellPrefix($dbPath, $transportDbPath),
             escapeshellarg($this->testProjectDir.'/home'),
             $fixtureEnv,
             escapeshellarg($php),

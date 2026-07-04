@@ -243,13 +243,17 @@ final class TuiToolOutputE2eTest extends TestCase
         $projectDir = ProjectDir::get();
         $php = \PHP_BINARY;
         $script = $projectDir.'/bin/console';
-        $dbPath = 'app_test-tui-tool-edit-'.bin2hex(random_bytes(4)).'.sqlite';
+        $paths = TuiE2eDatabaseEnv::allocatePaths('tui-tool-edit-');
+
+        $dbPath = $paths['app'];
+
+        $transportDbPath = $paths['transport'];
 
         return \sprintf(
-            'APP_ENV=test HATFIELD_TEST_DATABASE_PATH=%s HOME=%s %s %s %s agent '
+            'APP_ENV=test %sHOME=%s %s %s %s agent '
                 .'--model=llama_cpp_test/test '
                 .'--tools-excluded=bash 2>&1',
-            \escapeshellarg($dbPath),
+            TuiE2eDatabaseEnv::shellPrefix($dbPath, $transportDbPath),
             \escapeshellarg($this->testProjectDir.'/home'),
             $fixtureEnv,
             \escapeshellarg($php),
@@ -276,13 +280,19 @@ final class TuiToolOutputE2eTest extends TestCase
         $php = \PHP_BINARY;
         $script = $projectDir.'/bin/console';
 
-        $dbPath = 'app_test-tui-tool-output-'.bin2hex(random_bytes(4)).'.sqlite';
+        $paths = TuiE2eDatabaseEnv::allocatePaths('tui-tool-output-');
+
+
+        $dbPath = $paths['app'];
+
+
+        $transportDbPath = $paths['transport'];
 
         return \sprintf(
-            'APP_ENV=test HATFIELD_TEST_DATABASE_PATH=%s HOME=%s %s %s %s agent '
+            'APP_ENV=test %sHOME=%s %s %s %s agent '
                 .'--model=llama_cpp_test/test '
                 .'--tools-excluded=bash 2>&1',
-            \escapeshellarg($dbPath),
+            TuiE2eDatabaseEnv::shellPrefix($dbPath, $transportDbPath),
             \escapeshellarg($this->testProjectDir.'/home'),
             $fixtureEnv,
             \escapeshellarg($php),

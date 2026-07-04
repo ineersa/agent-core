@@ -116,6 +116,7 @@ function qa_check_run_env_command(): string
         'HATFIELD_QA_TMP_DIR',
         'HATFIELD_CACHE_DIR',
         'HATFIELD_TEST_DATABASE_PATH',
+        'HATFIELD_TEST_MESSENGER_TRANSPORT_DATABASE_PATH',
     ] as $name) {
         $value = getenv($name);
         if (false === $value || '' === trim((string) $value)) {

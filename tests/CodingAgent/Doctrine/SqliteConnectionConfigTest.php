@@ -68,4 +68,5 @@ final class SqliteConnectionConfigTest extends IsolatedKernelTestCase
         $this->assertNotNull($version);
         $this->assertStringContainsString('.', (string) $version);
     }
+
 }
