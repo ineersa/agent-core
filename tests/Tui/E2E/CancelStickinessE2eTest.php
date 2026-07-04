@@ -183,9 +183,7 @@ final class CancelStickinessE2eTest extends TestCase
 
         $paths = TuiE2eDatabaseEnv::allocatePaths('tui-cancel-sticky-');
 
-
         $dbPath = $paths['app'];
-
 
         $transportDbPath = $paths['transport'];
 

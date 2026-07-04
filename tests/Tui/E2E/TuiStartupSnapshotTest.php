@@ -108,9 +108,7 @@ final class TuiStartupSnapshotTest extends TestCase
 
         $paths = TuiE2eDatabaseEnv::allocatePaths('tui-snapshot-');
 
-
         $dbPath = $paths['app'];
-
 
         $transportDbPath = $paths['transport'];
         $promptArg = $withPrompt ? ' --prompt="hello from tmux e2e"' : '';

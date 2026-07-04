@@ -177,9 +177,7 @@ final class TuiQueuedSteerE2eTest extends TestCase
 
         $paths = TuiE2eDatabaseEnv::allocatePaths('tui-queued-steer-');
 
-
         $dbPath = $paths['app'];
-
 
         $transportDbPath = $paths['transport'];
 

@@ -113,15 +113,15 @@ PHP);
         $timeout = time() + 5;
         while (!is_file($envDump) || 0 === filesize($envDump)) {
             if (time() > $timeout) {
-                self::fail('Timeout waiting for env dump at '.$envDump);
+                $this->fail('Timeout waiting for env dump at '.$envDump);
             }
             usleep(50_000);
         }
 
         $raw = file_get_contents($envDump);
-        self::assertIsString($raw);
+        $this->assertIsString($raw);
         /** @var array<string, string> $env */
-        $env = json_decode($raw, true, 512, JSON_THROW_ON_ERROR);
+        $env = json_decode($raw, true, 512, \JSON_THROW_ON_ERROR);
 
         foreach ([
             'HATFIELD_RUN_CONTROL_TRANSPORT_DSN',
@@ -130,16 +130,14 @@ PHP);
             'HATFIELD_AGENT_TRANSPORT_DSN',
             'HATFIELD_MCP_TRANSPORT_DSN',
         ] as $dsnKey) {
-            self::assertStringStartsWith('doctrine://messenger_transport?', $env[$dsnKey], $dsnKey);
+            $this->assertStringStartsWith('doctrine://messenger_transport?', $env[$dsnKey], $dsnKey);
         }
 
-        self::assertStringContainsString('run_control_session-42', $env['HATFIELD_RUN_CONTROL_TRANSPORT_DSN']);
-        self::assertStringContainsString('llm_session-42', $env['HATFIELD_LLM_TRANSPORT_DSN']);
-        self::assertStringContainsString('tool_session-42', $env['HATFIELD_TOOL_TRANSPORT_DSN']);
-        self::assertStringNotContainsString('doctrine://default', implode(' ', $env));
+        $this->assertStringContainsString('run_control_session-42', $env['HATFIELD_RUN_CONTROL_TRANSPORT_DSN']);
+        $this->assertStringContainsString('llm_session-42', $env['HATFIELD_LLM_TRANSPORT_DSN']);
+        $this->assertStringContainsString('tool_session-42', $env['HATFIELD_TOOL_TRANSPORT_DSN']);
+        $this->assertStringNotContainsString('doctrine://default', implode(' ', $env));
     }
-
-
 
     public function testSpawnedControllerForwardsExplicitTestDatabaseEnvFromParentProcess(): void
     {
@@ -162,8 +160,8 @@ PHP);
             $client->start(new StartRunRequest(prompt: 'hello', runId: 'session-env'));
 
             $env = $this->waitForEnvDump($envDump);
-            self::assertSame($appPath, $env['HATFIELD_TEST_DATABASE_PATH']);
-            self::assertSame($transportPath, $env['HATFIELD_TEST_MESSENGER_TRANSPORT_DATABASE_PATH']);
+            $this->assertSame($appPath, $env['HATFIELD_TEST_DATABASE_PATH']);
+            $this->assertSame($transportPath, $env['HATFIELD_TEST_MESSENGER_TRANSPORT_DATABASE_PATH']);
         } finally {
             $this->restoreTestDatabaseEnv($saved);
         }
@@ -244,17 +242,16 @@ PHP);
         $timeout = time() + 5;
         while (!is_file($envDump) || 0 === filesize($envDump)) {
             if (time() > $timeout) {
-                self::fail('Timeout waiting for env dump at '.$envDump);
+                $this->fail('Timeout waiting for env dump at '.$envDump);
             }
             usleep(50_000);
         }
 
         $raw = file_get_contents($envDump);
-        self::assertIsString($raw);
+        $this->assertIsString($raw);
         /** @var array<string, string> $decoded */
-        $decoded = json_decode($raw, true, 512, JSON_THROW_ON_ERROR);
+        $decoded = json_decode($raw, true, 512, \JSON_THROW_ON_ERROR);
 
         return $decoded;
     }
-
 }

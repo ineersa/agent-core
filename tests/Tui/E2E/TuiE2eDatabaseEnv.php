@@ -34,6 +34,7 @@ final class TuiE2eDatabaseEnv
             escapeshellarg($transportDbPath),
         );
     }
+
     /**
      * Derive paired transport filename from an app_test-*.sqlite basename.
      */
@@ -64,5 +65,4 @@ final class TuiE2eDatabaseEnv
     {
         return 'APP_ENV=test '.self::shellPrefix($appDbPath, $transportDbPath);
     }
-
 }
