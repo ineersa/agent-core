@@ -96,6 +96,7 @@ final class ExtensionToolHookEventSubscriberTest extends TestCase
             arguments: ['cmd' => 'rm -rf var'],
             orderIndex: 7,
             runId: 'run-safe',
+            timeoutSeconds: 30,
             context: ['turn_no' => 3],
         ));
 
