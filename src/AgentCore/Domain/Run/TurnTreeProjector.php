@@ -640,9 +640,6 @@ final class TurnTreeProjector
         $stepId = \is_array($anchorEvent?->payload) && \is_string($anchorEvent->payload['step_id'] ?? null)
             ? $anchorEvent->payload['step_id']
             : '';
-        if (str_starts_with($stepId, 'advance-after-tools')) {
-            return 'assistant';
-        }
 
         $parentAnchorIndex = $this->parentAnchorIndexForTurn($turnNo, $anchorIndex, $sortedEvents);
         for ($i = $anchorIndex - 1; $i > $parentAnchorIndex; --$i) {
@@ -668,6 +665,10 @@ final class TurnTreeProjector
                     break;
                 }
             }
+        }
+
+        if (str_starts_with($stepId, 'advance-after-tools')) {
+            return 'assistant';
         }
 
         return 'assistant';

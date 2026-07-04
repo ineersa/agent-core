@@ -521,6 +521,42 @@ final class TurnTreeProjectorTest extends TestCase
         self::assertStringContainsString('append LINE_TWO', $tree->nodesByTurnNo[2]->title);
     }
 
+    public function testDisplayRoleUserWhenSteerAppliedInParentTurnBeforeAdvanceAfterToolsAnchor(): void
+    {
+        // Mirrors live PHAR smoke events.jsonl: follow-up steer is stamped on turn 1
+        // (seq 12) but turn 2 opens via advance-after-tools; title window includes the steer.
+        $events = [
+            $this->runEvent('run_started', 1, 0, [
+                'payload' => ['messages' => [
+                    ['role' => 'user', 'content' => [['type' => 'text', 'text' => '[overlay-verify] create test.txt']]],
+                ]],
+            ]),
+            $this->turnAdvancedEvent(2, 1, null, 'start-follow-up-1'),
+            $this->leafSetEvent(3, 1, null, null, 'continue'),
+            $this->runEvent('llm_step_completed', 5, 1, ['text' => '']),
+            $this->runEvent('tool_batch_committed', 11, 1, []),
+            $this->runEvent('agent_command_applied', 12, 1, [
+                'kind' => 'steer',
+                'text' => '[overlay-verify] append LINE_TWO as second line to test.txt',
+            ]),
+            $this->turnAdvancedEvent(13, 2, 1, 'advance-after-tools-2'),
+            $this->leafSetEvent(14, 2, 1, 1, 'continue'),
+            $this->runEvent('llm_step_completed', 15, 2, ['text' => '']),
+            $this->runEvent('tool_batch_committed', 21, 2, []),
+            $this->turnAdvancedEvent(22, 3, 2, 'advance-after-tools-3'),
+            $this->leafSetEvent(23, 3, 2, 2, 'continue'),
+            $this->runEvent('llm_step_completed', 24, 3, ['text' => 'Done. test.txt now contains two lines.']),
+        ];
+
+        $tree = $this->projector->build($this->runId, $events);
+
+        self::assertSame('user', $tree->nodesByTurnNo[1]->displayRole);
+        self::assertSame('user', $tree->nodesByTurnNo[2]->displayRole);
+        self::assertSame('assistant', $tree->nodesByTurnNo[3]->displayRole);
+        self::assertStringContainsString('append LINE_TWO', $tree->nodesByTurnNo[2]->title);
+        self::assertStringContainsString('Done.', $tree->nodesByTurnNo[3]->title);
+    }
+
     public function testPlaceholderTitleUsesRoleNotRawTurnN(): void
     {
         $events = [
