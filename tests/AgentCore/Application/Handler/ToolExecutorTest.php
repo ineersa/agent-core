@@ -20,6 +20,7 @@ use Symfony\AI\Agent\Toolbox\ToolboxInterface;
 use Symfony\AI\Agent\Toolbox\ToolResult as SymfonyToolResult;
 use Symfony\AI\Platform\Result\ToolCall as SymfonyToolCall;
 use Symfony\Component\EventDispatcher\EventDispatcher;
+use Symfony\Component\Clock\MockClock;
 
 final class ToolExecutorTest extends TestCase
 {
@@ -427,13 +428,15 @@ final class ToolExecutorTest extends TestCase
     }
     public function testNoPostHocTimeoutWhenPolicyTimeoutIsNull(): void
     {
-        $toolbox = new SlowToolbox();
+        $clock = new MockClock();
+        $toolbox = new ClockAdvancingToolbox($clock, 301);
         $executor = new ToolExecutor(
             defaultMode: 'parallel',
             defaultTimeoutSeconds: null,
             maxParallelism: 2,
             toolbox: $toolbox,
             resultStore: new ToolExecutionResultStore(),
+            clock: $clock,
         );
 
         $result = $executor->execute(ToolCallBuilder::create('call-slow')
@@ -444,18 +447,20 @@ final class ToolExecutorTest extends TestCase
             ->build());
 
         $this->assertFalse($result->isError);
-        $this->assertSame('slow-ok', $result->content[0]['text']);
+        $this->assertSame('clock-ok', $result->content[0]['text']);
         $this->assertNull($result->details['timeout_seconds'] ?? null);
     }
     public function testNullCallTimeoutIgnoresGlobalDefaultPostHocCap(): void
     {
-        $toolbox = new SlowToolbox();
+        $clock = new MockClock();
+        $toolbox = new ClockAdvancingToolbox($clock, 301);
         $executor = new ToolExecutor(
             defaultMode: 'parallel',
             defaultTimeoutSeconds: 300,
             maxParallelism: 2,
             toolbox: $toolbox,
             resultStore: new ToolExecutionResultStore(),
+            clock: $clock,
         );
 
         $result = $executor->execute(ToolCallBuilder::create('call-subagent')
@@ -466,19 +471,21 @@ final class ToolExecutorTest extends TestCase
             ->build());
 
         self::assertFalse($result->isError);
-        self::assertSame('slow-ok', $result->content[0]['text']);
+        self::assertSame('clock-ok', $result->content[0]['text']);
         self::assertNull($result->details['timeout_seconds'] ?? null);
     }
 
     public function testExplicitCallTimeoutStillEnforcesPostHocCap(): void
     {
-        $toolbox = new PostHocTimeoutToolbox();
+        $clock = new MockClock();
+        $toolbox = new ClockAdvancingToolbox($clock, 2);
         $executor = new ToolExecutor(
             defaultMode: 'parallel',
             defaultTimeoutSeconds: 300,
             maxParallelism: 2,
             toolbox: $toolbox,
             resultStore: new ToolExecutionResultStore(),
+            clock: $clock,
         );
 
         $result = $executor->execute(ToolCallBuilder::create('call-read')
@@ -599,28 +606,19 @@ final class SymfonySearchTool
 }
 
 
-final class SlowToolbox implements ToolboxInterface
+final class ClockAdvancingToolbox implements ToolboxInterface
 {
-    public function execute(SymfonyToolCall $toolCall): SymfonyToolResult
-    {
-        usleep(50_000);
-
-        return new SymfonyToolResult($toolCall, 'slow-ok');
+    public function __construct(
+        private readonly MockClock $clock,
+        private readonly int $advanceSeconds,
+    ) {
     }
 
-    public function getTools(): array
-    {
-        return [];
-    }
-}
-
-final class PostHocTimeoutToolbox implements ToolboxInterface
-{
     public function execute(SymfonyToolCall $toolCall): SymfonyToolResult
     {
-        usleep(1_100_000);
+        $this->clock->sleep($this->advanceSeconds);
 
-        return new SymfonyToolResult($toolCall, 'late-ok');
+        return new SymfonyToolResult($toolCall, 'clock-ok');
     }
 
     public function getTools(): array

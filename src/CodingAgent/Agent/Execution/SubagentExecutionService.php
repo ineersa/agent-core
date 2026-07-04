@@ -24,6 +24,8 @@ use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionDTO;
 use Ineersa\CodingAgent\Config\AgentsConfig;
 use Ineersa\CodingAgent\Skills\SkillsContextBuilder;
 use Psr\Log\LoggerInterface;
+use Symfony\Component\Clock\ClockInterface;
+use Symfony\Component\Clock\NativeClock;
 use Symfony\Component\Uid\Uuid;
 
 /**
@@ -62,6 +64,7 @@ final class SubagentExecutionService
         private readonly AgentsConfig $agentsConfig,
         private readonly SubagentProgressSnapshotBuilder $progressSnapshotBuilder,
         private readonly SubagentChildProgressSummaryBuilder $childProgressSummaryBuilder,
+        private readonly ClockInterface $clock = new NativeClock(),
     ) {
     }
 
@@ -166,11 +169,11 @@ final class SubagentExecutionService
             startedAt: $startedAt,
         );
 
-        $progressStartedHr = hrtime(true);
+        $progressStartedMicros = $this->nowMicros();
 
         // 11. Poll child until terminal, timeout, or cancellation.
         $timeoutSeconds = $this->timeoutSeconds();
-        $deadline = hrtime(true) + $timeoutSeconds * 1_000_000_000;
+        $deadline = $this->nowMicros() + $timeoutSeconds * 1_000_000;
         $context = $this->contextAccessor->current();
         $cancelToken = $context?->cancellationToken();
 
@@ -205,7 +208,7 @@ final class SubagentExecutionService
                         state: $cancelState,
                         terminalStatus: 'cancelled',
                         seq: $progressSeq,
-                        progressStartedHr: $progressStartedHr,
+                        progressStartedMicros: $progressStartedMicros,
                     );
                     $this->advanceParentSequence($parentRunId, $progressSeq);
                 }
@@ -214,7 +217,7 @@ final class SubagentExecutionService
             }
 
             // Check timeout.
-            if (hrtime(true) > $deadline) {
+            if ($this->nowMicros() > $deadline) {
                 $this->agentRunner->cancel($agentRunId, 'Subagent timed out.');
                 $timeoutState = $this->runStore->get($agentRunId);
                 if (null !== $timeoutState) {
@@ -228,7 +231,7 @@ final class SubagentExecutionService
                         state: $timeoutState,
                         terminalStatus: 'failed',
                         seq: $progressSeq,
-                        progressStartedHr: $progressStartedHr,
+                        progressStartedMicros: $progressStartedMicros,
                     );
                     $this->advanceParentSequence($parentRunId, $progressSeq);
                     ++$progressSeq;
@@ -247,7 +250,7 @@ final class SubagentExecutionService
 
             $state = $this->runStore->get($agentRunId);
             if (null === $state) {
-                usleep(self::DEFAULT_POLL_MICROS);
+                $this->sleepPollInterval();
                 continue;
             }
 
@@ -280,14 +283,14 @@ final class SubagentExecutionService
                         definitionModel: $definition->model,
                         state: $state,
                         seq: $progressSeq,
-                        progressStartedHr: $progressStartedHr,
+                        progressStartedMicros: $progressStartedMicros,
                     );
                     $this->advanceParentSequence($parentRunId, $progressSeq);
                     ++$progressSeq;
                     $lastSingleProgressSignature = $signature;
                 }
 
-                usleep(self::DEFAULT_POLL_MICROS);
+                $this->sleepPollInterval();
                 continue;
             }
 
@@ -314,7 +317,7 @@ final class SubagentExecutionService
                         definitionModel: $definition->model,
                         state: $state,
                         seq: $progressSeq,
-                        progressStartedHr: $progressStartedHr,
+                        progressStartedMicros: $progressStartedMicros,
                         progressStatus: 'waiting_human',
                     );
                     $this->advanceParentSequence($parentRunId, $progressSeq);
@@ -322,7 +325,7 @@ final class SubagentExecutionService
                     $lastSingleProgressSignature = $signature;
                 }
 
-                usleep(self::DEFAULT_POLL_MICROS);
+                $this->sleepPollInterval();
                 continue;
             }
 
@@ -338,7 +341,7 @@ final class SubagentExecutionService
                 state: $state,
                 terminalStatus: $terminalStatus,
                 seq: $progressSeq,
-                progressStartedHr: $progressStartedHr,
+                progressStartedMicros: $progressStartedMicros,
             );
             $this->advanceParentSequence($parentRunId, $progressSeq);
             ++$progressSeq;
@@ -487,12 +490,12 @@ final class SubagentExecutionService
         }
 
         $timeoutSeconds = $this->timeoutSeconds();
-        $deadline = hrtime(true) + $timeoutSeconds * 1_000_000_000;
+        $deadline = $this->nowMicros() + $timeoutSeconds * 1_000_000;
         $context = $this->contextAccessor->current();
         $cancelToken = $context?->cancellationToken();
         $progressSeq = $this->resolveNextProgressSeq($parentRunId);
         $lastProgressSignature = null;
-        $parallelProgressStartedHr = hrtime(true);
+        $parallelProgressStartedMicros = $this->nowMicros();
 
         while ($this->hasActiveParallelChildren($reports)) {
             if (null !== $cancelToken && $cancelToken->isCancellationRequested()) {
@@ -521,7 +524,7 @@ final class SubagentExecutionService
                     $reports,
                     $this->parallelActiveTurns($reports),
                     $progressSeq,
-                    $parallelProgressStartedHr,
+                    $parallelProgressStartedMicros,
                     aggregateStatus: 'cancelled',
                 );
                 $this->advanceParentSequence($parentRunId, $progressSeq);
@@ -529,7 +532,7 @@ final class SubagentExecutionService
                 throw new ToolCallException("Parallel subagent tool cancelled by parent run.\n\n".$this->formatParallelReport($reports), retryable: false);
             }
 
-            if (hrtime(true) > $deadline) {
+            if ($this->nowMicros() > $deadline) {
                 foreach ($reports as $agentRunId => $report) {
                     if ($report['terminal']) {
                         continue;
@@ -631,13 +634,13 @@ final class SubagentExecutionService
 
             $signature = $this->parallelProgressSignature($parentRunId, $reports, $activeTurns);
             if (null === $lastProgressSignature || $signature !== $lastProgressSignature) {
-                $this->emitParallelProgressUpdate($parentRunId, $reports, $activeTurns, $progressSeq, $parallelProgressStartedHr);
+                $this->emitParallelProgressUpdate($parentRunId, $reports, $activeTurns, $progressSeq, $parallelProgressStartedMicros);
                 $this->advanceParentSequence($parentRunId, $progressSeq);
                 ++$progressSeq;
                 $lastProgressSignature = $signature;
             }
 
-            usleep(self::DEFAULT_POLL_MICROS);
+            $this->sleepPollInterval();
         }
 
         $this->emitParallelProgressUpdate(
@@ -645,7 +648,7 @@ final class SubagentExecutionService
             $reports,
             $this->parallelActiveTurns($reports),
             $progressSeq,
-            $parallelProgressStartedHr,
+            $parallelProgressStartedMicros,
             aggregateStatus: $this->resolveParallelAggregateStatus($reports),
         );
         $this->advanceParentSequence($parentRunId, $progressSeq);
@@ -842,7 +845,7 @@ final class SubagentExecutionService
         array $reports,
         array $activeTurns,
         int $seq,
-        int $progressStartedHr,
+        int $progressStartedMicros,
         string $aggregateStatus = 'running',
     ): void {
         $context = $this->contextAccessor->current();
@@ -850,7 +853,7 @@ final class SubagentExecutionService
             return;
         }
 
-        $elapsedMs = (int) ((hrtime(true) - $progressStartedHr) / 1_000_000);
+        $elapsedMs = $this->elapsedMsSince($progressStartedMicros);
         $enrichmentByRun = $this->buildParallelEnrichmentByRun($parentRunId, $reports);
 
         $progress = $this->progressSnapshotBuilder->parallelSnapshot(
@@ -1281,14 +1284,14 @@ TXT;
         RunState $state,
         string $terminalStatus,
         int $seq,
-        int $progressStartedHr,
+        int $progressStartedMicros,
     ): void {
         $context = $this->contextAccessor->current();
         if (null === $context) {
             return;
         }
 
-        $elapsedMs = (int) ((hrtime(true) - $progressStartedHr) / 1_000_000);
+        $elapsedMs = $this->elapsedMsSince($progressStartedMicros);
         $enrichment = $this->childProgressSummaryBuilder->summarize(
             $parentRunId,
             $agentRunId,
@@ -1439,7 +1442,7 @@ TXT;
         ?string $definitionModel,
         RunState $state,
         int $seq,
-        int $progressStartedHr,
+        int $progressStartedMicros,
         string $progressStatus = 'running',
     ): void {
         $context = $this->contextAccessor->current();
@@ -1447,7 +1450,7 @@ TXT;
             return;
         }
 
-        $elapsedMs = (int) ((hrtime(true) - $progressStartedHr) / 1_000_000);
+        $elapsedMs = $this->elapsedMsSince($progressStartedMicros);
         $enrichment = $this->childProgressSummaryBuilder->summarize(
             $parentRunId,
             $agentRunId,
@@ -1630,5 +1633,24 @@ TXT;
     private function timeoutSeconds(): int
     {
         return $this->agentsConfig->subagentToolTimeoutSeconds;
+    }
+
+    private function nowMicros(): int
+    {
+        $instant = $this->clock->now();
+        $seconds = (int) $instant->format('U');
+        $micro = (int) $instant->format('u');
+
+        return ($seconds * 1_000_000) + $micro;
+    }
+
+    private function sleepPollInterval(): void
+    {
+        $this->clock->sleep(self::DEFAULT_POLL_MICROS / 1_000_000);
+    }
+
+    private function elapsedMsSince(int $startedMicros): int
+    {
+        return (int) (($this->nowMicros() - $startedMicros) / 1000);
     }
 }
