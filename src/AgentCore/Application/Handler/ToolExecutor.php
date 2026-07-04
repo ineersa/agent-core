@@ -23,7 +23,7 @@ use Symfony\AI\Agent\Toolbox\ToolboxInterface;
 use Symfony\AI\Agent\Toolbox\ToolResult as SymfonyToolResult;
 use Symfony\AI\Platform\Result\ToolCall as SymfonyToolCall;
 use Symfony\Component\Clock\ClockInterface;
-use Symfony\Component\Clock\NativeClock;
+use Symfony\Component\Clock\MonotonicClock;
 
 final class ToolExecutor implements ToolExecutorInterface
 {
@@ -56,7 +56,7 @@ final class ToolExecutor implements ToolExecutorInterface
         $this->toolResultProcessors = \is_array($toolResultProcessors)
             ? array_values($toolResultProcessors)
             : iterator_to_array($toolResultProcessors, false);
-        $this->clock = $clock ?? new NativeClock();
+        $this->clock = $clock ?? new MonotonicClock();
     }
 
     /**

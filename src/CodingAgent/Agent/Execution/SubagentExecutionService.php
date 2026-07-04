@@ -25,7 +25,7 @@ use Ineersa\CodingAgent\Config\AgentsConfig;
 use Ineersa\CodingAgent\Skills\SkillsContextBuilder;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Clock\ClockInterface;
-use Symfony\Component\Clock\NativeClock;
+use Symfony\Component\Clock\MonotonicClock;
 use Symfony\Component\Uid\Uuid;
 
 /**
@@ -64,7 +64,7 @@ final class SubagentExecutionService
         private readonly AgentsConfig $agentsConfig,
         private readonly SubagentProgressSnapshotBuilder $progressSnapshotBuilder,
         private readonly SubagentChildProgressSummaryBuilder $childProgressSummaryBuilder,
-        private readonly ClockInterface $clock = new NativeClock(),
+        private readonly ClockInterface $clock = new MonotonicClock(),
     ) {
     }
 
