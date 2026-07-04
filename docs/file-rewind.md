@@ -1,6 +1,6 @@
 # File rewind (built-in extension)
 
-File rewind is a **built-in Hatfield extension** (`FileRewindExtension`) registered by default. It captures Hatfield-owned hidden-git checkpoints after completed turns and exposes an extension-owned `/rewind` command for restore/undo with optional conversation rewind.
+File rewind is a **project-level Hatfield extension** (`Ineersa\HatfieldExt\FileRewind\FileRewindExtension` under `.hatfield/extensions/file-rewind/`). It captures Hatfield-owned hidden-git checkpoints after completed turns and exposes `/rewind` for **file-only** restore via an extension-owned Symfony TUI picker (generic `TuiExtensionContextInterface` overlay APIs — no file-rewind-specific runtime ports).
 
 ## Compared to SESSION-08 prototype (PR #249)
 
@@ -35,10 +35,8 @@ File rewind is a **built-in Hatfield extension** (`FileRewindExtension`) registe
   - Plain assistant turns (`turn_end` / `agent_end` / post-tool `llm_step_completed` without in-flight tool events in the same commit).
   - **Post-tool file state** on `tool_batch_committed` when that commit is the stable boundary (tool effects applied on disk, `effectsCount === 0`, no `tool_execution_start` in the same commit). The same commit may include `tool_call_result_received` / `message_end`; that is expected.
   - Mid-tool-only commits (`tool_execution_start`, `effectsCount > 0`, or batches without a stable boundary) do not create restore targets.
-- Action menu (Enter on a checkpoint):
-  - **Restore files to this turn**
-  - **(removed in v1 — file-only restore)** (files first; conversation rewind rolls back files if conversation rewind fails)
-- **Esc** closes pickers (cancel). There is no separate Cancel action and no **Undo last file restore** menu item in v1 (undo metadata remains internal for safety).
+- **Enter** on a checkpoint row restores files to that checkpoint (file-only v1).
+- **Esc** closes the picker. Undo metadata remains internal for safety; there is no undo menu item in v1.
 - No live diff preview in the picker.
 
 
@@ -47,7 +45,7 @@ File rewind is a **built-in Hatfield extension** (`FileRewindExtension`) registe
 ```yaml
 extensions:
   enabled:
-    - Ineersa\CodingAgent\Extension\Builtin\FileRewind\FileRewindExtension
+    - Ineersa\HatfieldExt\FileRewind\FileRewindExtension
   settings:
     file_rewind:
       enabled: true
@@ -55,6 +53,8 @@ extensions:
       max_file_bytes: 2097152
       git_timeout_seconds: 30
 ```
+
+Install extension deps after pull: `composer install -d .hatfield/extensions`.
 
 ## Safety invariants
 

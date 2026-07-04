@@ -1421,6 +1421,8 @@ end-to-end flow.
 
 ### `extensions.settings.file_rewind`
 
+Project extension class: `Ineersa\HatfieldExt\FileRewind\FileRewindExtension` (enable in `extensions.enabled`; package under `.hatfield/extensions/file-rewind/`).
+
 - `enabled` (default `true`)
 - `max_retained_turns` (default `100`)
 - `max_file_bytes` (default `2097152`)

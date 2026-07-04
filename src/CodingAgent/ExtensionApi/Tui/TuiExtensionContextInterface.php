@@ -8,6 +8,12 @@ use Symfony\Component\Tui\Widget\AbstractWidget;
 
 /**
  * Public TUI surface for extension-owned overlays and status.
+ *
+ * Uses Symfony TUI widget types on purpose: project extensions under `.hatfield/extensions/`
+ * implement {@see TuiExtensionInterface} and mount their own {@see AbstractWidget} trees
+ * below the editor via the host bridge ({@see \Ineersa\Tui\Runtime\BridgeTuiExtensionContext}).
+ *
+ * Must stay free of Hatfield feature-specific DTOs and must not reference `Ineersa\Tui\*` internals.
  */
 interface TuiExtensionContextInterface
 {

@@ -680,6 +680,7 @@ parameters:
 
     McpSdk: ~
 
+    # ExtensionApi generic TUI contracts (Symfony\Component\Tui\*) — intentional public UI API.
     AppExtensionApi:
       - SymfonyTui
     HatfieldExtTaskWorkflow:

@@ -158,6 +158,13 @@ final class TuiRuntimeContextBuilder
         return $this;
     }
 
+    public function withTurnTreeProvider(TurnTreeProviderInterface $turnTreeProvider): self
+    {
+        $this->turnTreeProvider = $turnTreeProvider;
+
+        return $this;
+    }
+
     public function build(): TuiRuntimeContext
     {
         return new TuiRuntimeContext(

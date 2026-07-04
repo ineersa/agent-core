@@ -300,6 +300,13 @@ Extensions interact with the TUI through explicit slots, not direct widget mutat
 - `src/Tui/Layout/TuiSlotRegistry.php` — central slot registry
 - `src/Tui/Layout/ChatLayout.php` — assembles layout from slots
 
+### Project extensions: Symfony TUI overlays (`ExtensionApi`)
+
+Built-in slot APIs (`TuiExtensionContext` on the host) cover header/footer/editor widgets. **Project extensions** under `.hatfield/extensions/` can additionally implement `Ineersa\Hatfield\ExtensionApi\Tui\TuiExtensionInterface` and receive `TuiExtensionContextInterface` at TUI startup. That context exposes Symfony TUI primitives (`insertOverlayAfterEditor`, `removeOverlay`, `setFocus`, `requestRender`) plus themed helpers and generic turn-row metadata for checkpoint pickers.
+
+The host adapts runtime state in `src/Tui/Runtime/BridgeTuiExtensionContext.php` and wires extensions from `TuiProjectExtensionRegistrar`. Extension-owned pickers (for example `/rewind`) build `SelectListWidget` / `TextWidget` trees in the extension package and mount them below the editor — no feature-specific types in `ExtensionApi` beyond the generic TUI contract.
+
+
 ## Footer & status providers
 
 Extensions contribute footer segments via `FooterSegmentProvider`:
