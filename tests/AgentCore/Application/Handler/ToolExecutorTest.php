@@ -447,6 +447,51 @@ final class ToolExecutorTest extends TestCase
         $this->assertSame('slow-ok', $result->content[0]['text']);
         $this->assertNull($result->details['timeout_seconds'] ?? null);
     }
+    public function testNullCallTimeoutIgnoresGlobalDefaultPostHocCap(): void
+    {
+        $toolbox = new SlowToolbox();
+        $executor = new ToolExecutor(
+            defaultMode: 'parallel',
+            defaultTimeoutSeconds: 300,
+            maxParallelism: 2,
+            toolbox: $toolbox,
+            resultStore: new ToolExecutionResultStore(),
+        );
+
+        $result = $executor->execute(ToolCallBuilder::create('call-subagent')
+            ->withToolName('subagent')
+            ->withArguments(['agent' => 'scout', 'task' => 'work'])
+            ->withOrderIndex(0)
+            ->withTimeoutSeconds(null)
+            ->build());
+
+        self::assertFalse($result->isError);
+        self::assertSame('slow-ok', $result->content[0]['text']);
+        self::assertNull($result->details['timeout_seconds'] ?? null);
+    }
+
+    public function testExplicitCallTimeoutStillEnforcesPostHocCap(): void
+    {
+        $toolbox = new PostHocTimeoutToolbox();
+        $executor = new ToolExecutor(
+            defaultMode: 'parallel',
+            defaultTimeoutSeconds: 300,
+            maxParallelism: 2,
+            toolbox: $toolbox,
+            resultStore: new ToolExecutionResultStore(),
+        );
+
+        $result = $executor->execute(ToolCallBuilder::create('call-read')
+            ->withToolName('read')
+            ->withArguments(['path' => 'README.md'])
+            ->withOrderIndex(0)
+            ->withTimeoutSeconds(1)
+            ->build());
+
+        self::assertTrue($result->isError);
+        self::assertStringContainsString('timed out after 1 second', $result->content[0]['text']);
+    }
+
 
 }
 
@@ -561,6 +606,21 @@ final class SlowToolbox implements ToolboxInterface
         usleep(50_000);
 
         return new SymfonyToolResult($toolCall, 'slow-ok');
+    }
+
+    public function getTools(): array
+    {
+        return [];
+    }
+}
+
+final class PostHocTimeoutToolbox implements ToolboxInterface
+{
+    public function execute(SymfonyToolCall $toolCall): SymfonyToolResult
+    {
+        usleep(1_100_000);
+
+        return new SymfonyToolResult($toolCall, 'late-ok');
     }
 
     public function getTools(): array

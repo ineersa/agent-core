@@ -286,19 +286,21 @@ final class ToolExecutor implements ToolExecutorInterface
 
         return new ToolExecutionPolicy(
             mode: $toolCall->mode ?? $resolved->mode,
-            timeoutSeconds: $this->resolveTimeoutSeconds($toolCall->timeoutSeconds, $resolved->timeoutSeconds),
+            // ExecuteToolCall.timeoutSeconds is stamped by LlmStepResultHandler from per-tool
+            // ActiveToolSet overrides only. Null means no ToolExecutor post-hoc cap — do not
+            // fall back to tools.execution.timeout_seconds (subagent relies on internal poll).
+            timeoutSeconds: $this->resolveTimeoutSeconds($toolCall->timeoutSeconds),
             maxParallelism: max(1, (int) ($toolCall->context['max_parallelism'] ?? $resolved->maxParallelism)),
         );
     }
 
-    private function resolveTimeoutSeconds(?int $callTimeout, ?int $resolvedTimeout): ?int
+    private function resolveTimeoutSeconds(?int $callTimeout): ?int
     {
-        $effective = $callTimeout ?? $resolvedTimeout;
-        if (null === $effective || $effective <= 0) {
+        if (null === $callTimeout || $callTimeout <= 0) {
             return null;
         }
 
-        return max(1, $effective);
+        return max(1, $callTimeout);
     }
 
     private function rememberAndReturn(

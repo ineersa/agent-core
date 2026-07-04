@@ -1208,6 +1208,90 @@ CHILD_SKILL_BODY_UNIQUE",
     }
 
 
+
+    public function testInternalPollTimeoutCancelsChildAndMarksArtifactFailed(): void
+    {
+        $runningState = new RunState(
+            runId: 'child-timeout-1',
+            status: RunStatus::Running,
+            version: 1,
+            turnNo: 2,
+            lastSeq: 4,
+            messages: [],
+            pendingToolCalls: ['tc-bash-1' => true],
+        );
+
+        $runStore = $this->createStub(RunStoreInterface::class);
+        $runStore->method('get')->willReturn($runningState);
+
+        $agentRunner = $this->createMock(AgentRunnerInterface::class);
+        $agentRunner->expects(self::once())
+            ->method('start')
+            ->willReturnCallback(static function (StartRunInput $input): string {
+                return $input->runId;
+            });
+        $agentRunner->expects(self::once())
+            ->method('cancel')
+            ->with(self::anything(), 'Subagent timed out.');
+
+        $def = new AgentDefinitionDTO(
+            name: 'scout',
+            description: 'Scout',
+            tools: ['read'],
+            mcp: new McpPolicyDTO(mode: McpAgentModeEnum::None),
+            instructions: 'Scout instructions.',
+        );
+
+        $registry = self::getContainer()->get(AgentArtifactRegistry::class);
+        $contextAccessor = new StackToolExecutionContextAccessor();
+        $toolContext = new ToolContext(
+            runId: 'parent-timeout-single',
+            turnNo: 1,
+            toolCallId: 'tc-timeout-single',
+            toolName: 'subagent',
+            cancellationToken: new NullCancellationToken(),
+            timeoutSeconds: null,
+        );
+        $appendedEvents = [];
+        $eventStore = $this->createStub(EventStoreInterface::class);
+        $eventStore->method('append')
+            ->willReturnCallback(function (RunEvent $event) use (&$appendedEvents): void {
+                $appendedEvents[] = $event;
+            });
+        $eventStore->method('allFor')
+            ->willReturnCallback(static function (string $runId) use (&$appendedEvents): array {
+                return array_values(array_filter(
+                    $appendedEvents,
+                    static fn (RunEvent $e): bool => $e->runId === $runId,
+                ));
+            });
+
+        $service = $this->makeService([
+            'catalog' => new AgentDefinitionCatalog([$def]),
+            'agentRunner' => $agentRunner,
+            'runStore' => $runStore,
+            'eventStore' => $eventStore,
+            'contextAccessor' => $contextAccessor,
+            'agentsConfig' => new AgentsConfig(subagentToolTimeoutSeconds: 60),
+        ]);
+
+        $result = $contextAccessor->with($toolContext, fn (): string => $service->execute('parent-timeout-single', 'scout', 'Long task'));
+
+        self::assertStringContainsString('timed out after 60 seconds', $result);
+        self::assertStringContainsString('Artifact: agent_', $result);
+
+        $entries = $registry->list('parent-timeout-single');
+        self::assertCount(1, $entries);
+        self::assertSame(AgentArtifactStatusEnum::Failed, $entries[0]->status);
+
+        $progressEvents = array_values(array_filter(
+            $appendedEvents,
+            static fn (RunEvent $e): bool => RunEventTypeEnum::ToolExecutionUpdate->value === $e->type,
+        ));
+        self::assertNotEmpty($progressEvents);
+        self::assertSame('failed', $progressEvents[count($progressEvents) - 1]->payload['subagent_progress']['status'] ?? null);
+    }
+
     public function testParentCancellationSingleSubagentThrowsRichMessageAndWritesCancelledHandoff(): void
     {
         $runningState = new RunState(
