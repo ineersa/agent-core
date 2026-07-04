@@ -129,6 +129,9 @@ final readonly class MoveTaskHandler implements ExtensionToolHandlerInterface
         if ($wtResult->vendorCopied) {
             $notes[] = 'Copied vendor directory into '.$wtResult->worktree.'.';
         }
+        if ($wtResult->extensionsVendorInstalled) {
+            $notes[] = 'Installed extensions vendor into '.$wtResult->worktree.'.';
+        }
         if ($wtResult->veraCopied) {
             $notes[] = 'Copied .vera index into '.$wtResult->worktree.'.';
         }

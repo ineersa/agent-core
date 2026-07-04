@@ -12,6 +12,7 @@ final readonly class WorktreeCreateResult
         public string $output,
         public bool $veraCopied,
         public bool $vendorCopied,
+        public bool $extensionsVendorInstalled,
         public bool $ideaExclusionsUpdated,
         public ?string $ideaNote = null,
     ) {

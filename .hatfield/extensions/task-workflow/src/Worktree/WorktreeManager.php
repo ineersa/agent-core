@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\HatfieldExt\TaskWorkflow\Worktree;
 
+use Ineersa\Hatfield\ExtensionApi\Exec\ExecInterface;
+use Ineersa\Hatfield\ExtensionApi\Exec\ExecOptionsDTO;
 use Ineersa\HatfieldExt\TaskWorkflow\Exec\GitExecutor;
 use Ineersa\HatfieldExt\TaskWorkflow\Store\TaskInfo;
 
@@ -24,6 +26,7 @@ final class WorktreeManager
 
     public function __construct(
         private readonly GitExecutor $git,
+        private readonly ExecInterface $exec,
     ) {
     }
 
@@ -101,6 +104,7 @@ final class WorktreeManager
         $vendorCopied = $this->copyTreeIfMissing($codeRoot.'/vendor', $worktree.'/vendor');
         $veraCopied = $this->copyTreeIfMissing($codeRoot.'/.vera', $worktree.'/.vera');
         $exclusion = $this->addWorktreeExclusions($slug, $base);
+        $extensionsVendorInstalled = $this->installExtensionsVendor($worktree);
 
         return new WorktreeCreateResult(
             branch: $branch,
@@ -108,6 +112,7 @@ final class WorktreeManager
             output: trim('' !== $result->stdout ? $result->stdout : $result->stderr),
             veraCopied: $veraCopied,
             vendorCopied: $vendorCopied,
+            extensionsVendorInstalled: $extensionsVendorInstalled,
             ideaExclusionsUpdated: $exclusion['updated'],
             ideaNote: $exclusion['note'] ?? null,
         );
@@ -297,6 +302,30 @@ final class WorktreeManager
         } catch (\Throwable) {
             // Non-fatal: vendor/.vera are developer-convenience copies; the worker can run
             // composer install or fall back to absolute-path reads. Do not hard-fail here.
+            return false;
+        }
+    }
+
+    private function installExtensionsVendor(string $worktree): bool
+    {
+        $extensionsDir = $worktree.'/.hatfield/extensions';
+        if (!is_dir($extensionsDir) || !is_file($extensionsDir.'/composer.json')) {
+            return false;
+        }
+        try {
+            $result = $this->exec->exec(
+                'composer',
+                ['install', '-d', $extensionsDir, '--no-interaction', '--no-progress'],
+                new ExecOptionsDTO(cwd: $worktree, timeout: 120.0),
+            );
+            if (0 !== $result->exitCode) {
+                return false;
+            }
+
+            return true;
+        } catch (\Throwable) {
+            // Non-fatal: extensions vendor is a developer-convenience; the worker
+            // can run composer install manually or fall back. Do not hard-fail here.
             return false;
         }
     }
