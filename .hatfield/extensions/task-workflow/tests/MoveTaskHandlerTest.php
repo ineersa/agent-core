@@ -30,6 +30,13 @@ final class MoveTaskHandlerTest extends TestCase
         $this->repoRoot = TestDirectoryIsolation::createProjectTempDir('tw-git');
         $this->initGitRepo($this->repoRoot);
         $this->runGit($this->repoRoot, ['remote', 'add', 'origin', 'https://example.com/repo.git']);
+        // The real project has .hatfield/extensions/ tracked in git.
+        // Simulate it so installExtensionsVendor() finds composer.json in the worktree.
+        $extDir = $this->repoRoot.'/.hatfield/extensions';
+        mkdir($extDir, 0o755, true);
+        file_put_contents($extDir.'/composer.json', '{"name": "test/extensions"}');
+        $this->runGit($this->repoRoot, ['add', '.hatfield/']);
+        $this->runGit($this->repoRoot, ['commit', '-m', 'add extensions']);
         $this->boardRoot = TestDirectoryIsolation::createProjectTempDir('tw-board');
         foreach (TaskStatusEnum::all() as $s) {
             mkdir($this->boardRoot.'/'.$s->value, 0o755, true);
@@ -54,7 +61,7 @@ final class MoveTaskHandlerTest extends TestCase
         $handler = new MoveTaskHandler(
             $store,
             $git,
-            new WorktreeManager($git),
+            new WorktreeManager($git, $exec),
             new PrManager($exec),
             $exec,
             new TaskWorkflowSettings(taskRoot: $this->boardRoot),
@@ -177,10 +184,91 @@ final class MoveTaskHandlerTest extends TestCase
         $slug = 'dirty-claim';
         file_put_contents($this->boardRoot.'/TODO/'.$slug.'.md', TaskMarkdown::renderTask('Dirty'));
 
-        $handler = new MoveTaskHandler($store, $git, new WorktreeManager($git), new PrManager($exec), $exec, new TaskWorkflowSettings(), $this->repoRoot);
+        $handler = new MoveTaskHandler($store, $git, new WorktreeManager($git, $exec), new PrManager($exec), $exec, new TaskWorkflowSettings(), $this->repoRoot);
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('Integration checkout is not clean');
         ($handler)(['task' => $slug, 'to' => 'IN-PROGRESS', 'worktreeBase' => $this->worktreesBase]);
+    }
+
+    #[Test]
+    public function composerInstallRunsOnWorktreeCreation(): void
+    {
+        // Thesis: without this test, move_task → IN-PROGRESS could skip running
+        // composer install -d .hatfield/extensions in the new worktree.
+        $slug = '2026-01-01-ext-vendor';
+
+        $inner = new StubExec($this->gitStub(...));
+        $recording = new RecordingExec($inner);
+        $handler = $this->makeHandler($recording);
+
+        file_put_contents($this->boardRoot.'/TODO/'.$slug.'.md', TaskMarkdown::renderTask('Ext vendor'));
+        $r = ($handler)(['task' => $slug, 'to' => 'IN-PROGRESS', 'worktreeBase' => $this->worktreesBase]);
+
+        $this->assertStringContainsString('Installed extensions vendor', $r['content'][0]['text']);
+
+        $composerCalls = $this->findCallsByCommand($recording, 'composer');
+        $this->assertNotEmpty($composerCalls, 'composer install must run on worktree creation');
+
+        $call = $composerCalls[0];
+        $this->assertContains('install', $call['args']);
+        $dashDIndex = array_search('-d', $call['args'], true);
+        $this->assertNotFalse($dashDIndex);
+        $this->assertStringEndsWith('/.hatfield/extensions', $call['args'][$dashDIndex + 1]);
+        $this->assertNotNull($call['cwd']);
+        $this->assertStringContainsString($slug, $call['cwd']);
+    }
+
+    #[Test]
+    public function composerInstallFailureIsNotFatal(): void
+    {
+        // Thesis: without this test, a failing composer install could block
+        // the task from moving to IN-PROGRESS.
+        $slug = '2026-01-01-ext-fail';
+
+        $inner = new StubExec(function (string $command, array $args, ?ExecOptionsDTO $options): ExecResultDTO {
+            if ('composer' === $command) {
+                return new ExecResultDTO('', 'composer failed', 1);
+            }
+
+            return $this->gitStub($command, $args, $options);
+        });
+        $recording = new RecordingExec($inner);
+        $handler = $this->makeHandler($recording);
+
+        file_put_contents($this->boardRoot.'/TODO/'.$slug.'.md', TaskMarkdown::renderTask('Ext fail'));
+        $r = ($handler)(['task' => $slug, 'to' => 'IN-PROGRESS', 'worktreeBase' => $this->worktreesBase]);
+
+        $this->assertStringContainsString('Moved task', $r['content'][0]['text']);
+        $this->assertFileExists($this->boardRoot.'/IN-PROGRESS/'.$slug.'.md');
+        $this->assertDirectoryExists($this->worktreesBase.'/'.$slug);
+    }
+
+    #[Test]
+    public function skipsComposerInstallWhenExtensionsDirMissing(): void
+    {
+        // Thesis: branches without .hatfield/extensions/ should not fail
+        // or attempt a phantom composer install on worktree creation.
+        $slug = '2026-01-01-ext-missing';
+        $branch = 'task/'.$slug;
+        $worktree = $this->worktreesBase.'/'.$slug;
+
+        // Create the worktree branch FROM the initial commit (before
+        // setUp committed .hatfield/extensions/), so the worktree has no
+        // extensions directory. We can't use the default repo HEAD since
+        // setUp already committed .hatfield/extensions/.
+        $initHash = trim($this->runGitCapture($this->repoRoot, ['rev-parse', 'HEAD~1']));
+        $this->runGit($this->repoRoot, ['branch', $branch, $initHash]);
+
+        $inner = new StubExec($this->gitStub(...));
+        $recording = new RecordingExec($inner);
+        $handler = $this->makeHandler($recording);
+
+        file_put_contents($this->boardRoot.'/TODO/'.$slug.'.md', TaskMarkdown::renderTask('Ext missing'));
+        $r = ($handler)(['task' => $slug, 'to' => 'IN-PROGRESS', 'worktreeBase' => $this->worktreesBase]);
+
+        $this->assertStringContainsString('Moved task', $r['content'][0]['text']);
+        $composerCalls = $this->findCallsByCommand($recording, 'composer');
+        $this->assertEmpty($composerCalls, 'must not call composer when extensions dir is missing');
     }
 
     public function gitStubForCodeReview(int $timeoutExitCode): callable
@@ -250,7 +338,7 @@ final class MoveTaskHandlerTest extends TestCase
         return new MoveTaskHandler(
             new TaskBoardStore($this->repoRoot, new TaskWorkflowSettings(taskRoot: $this->boardRoot)),
             $git,
-            new WorktreeManager($git),
+            new WorktreeManager($git, $exec),
             new PrManager($exec),
             $exec,
             new TaskWorkflowSettings(taskRoot: $this->boardRoot, castorCheckTimeoutSeconds: 480),
@@ -299,6 +387,29 @@ final class MoveTaskHandlerTest extends TestCase
         if (0 !== $code) {
             throw new \RuntimeException('git failed: '.$cmd.' code='.$code);
         }
+    }
+
+    /**
+     * @param list<string> $args
+     */
+    private function runGitCapture(string $cwd, array $args): string
+    {
+        $cmd = 'git '.implode(' ', array_map('escapeshellarg', $args));
+        $descriptor = [1 => ['pipe', 'w'], 2 => ['pipe', 'w']];
+        $proc = proc_open($cmd, $descriptor, $pipes, $cwd);
+        if (!\is_resource($proc)) {
+            throw new \RuntimeException('proc_open failed');
+        }
+        $stdout = stream_get_contents($pipes[1]) ?: '';
+        stream_get_contents($pipes[2]);
+        fclose($pipes[1]);
+        fclose($pipes[2]);
+        $code = proc_close($proc);
+        if (0 !== $code) {
+            throw new \RuntimeException('git failed: '.$cmd.' code='.$code);
+        }
+
+        return $stdout;
     }
 
     private function branchExists(string $branch): bool
