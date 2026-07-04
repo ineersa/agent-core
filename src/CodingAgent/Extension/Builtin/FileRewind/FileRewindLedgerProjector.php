@@ -11,10 +11,13 @@ final class FileRewindLedgerProjector
      *
      * @return array<int, FileRewindLedgerEntry>
      */
-    public function checkpointsByTurn(array $checkpoints, int $maxRetainedTurns): array
+    public function checkpointsByTurn(array $checkpoints, int $maxRetainedTurns, ?string $runId = null): array
     {
         $records = [];
         foreach ($checkpoints as $row) {
+            if (null !== $runId && (string) ($row['run_id'] ?? '') !== $runId) {
+                continue;
+            }
             $turnNo = (int) ($row['turn_no'] ?? 0);
             $commit = (string) ($row['snapshot_commit_sha'] ?? '');
             $kind = FileRewindCheckpointKindEnum::tryFrom((string) ($row['kind'] ?? ''));

@@ -27,7 +27,7 @@ final class TuiFileRewindPickerCheckpointTargetsVirtualTest extends TestCase
         $treeProvider->method('forSession')->willReturn($this->sampleTree($sessionId));
 
         $previewPort = $this->createMock(FileRewindTurnPreviewPortInterface::class);
-        $previewPort->method('hasCheckpoint')->willReturnCallback(static fn (string $sid, int $turnNo): bool => 1 === $turnNo || 3 === $turnNo);
+        $previewPort->method('hasCheckpoint')->willReturnCallback(static fn (string $sid, int $turnNo): bool => 'rewind-targets-session' === $sid && (1 === $turnNo || 3 === $turnNo));
         $previewPort->expects($this->never())->method('preview');
 
         $actionPort = $this->createStub(FileRewindTurnActionPortInterface::class);

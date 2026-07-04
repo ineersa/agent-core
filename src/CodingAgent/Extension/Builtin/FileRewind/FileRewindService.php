@@ -98,6 +98,7 @@ final class FileRewindService implements FileRewindPreviewProviderInterface
         $byTurn = $this->ledgerProjector->checkpointsByTurn(
             $this->ledgerStore->readCheckpoints($identity),
             $this->config->maxRetainedTurns,
+            $sessionId,
         );
 
         return isset($byTurn[$turnNo]) && !$byTurn[$turnNo]->pruned;
@@ -129,6 +130,7 @@ final class FileRewindService implements FileRewindPreviewProviderInterface
         $byTurn = $this->ledgerProjector->checkpointsByTurn(
             $this->ledgerStore->readCheckpoints($identity),
             $this->config->maxRetainedTurns,
+            $runId,
         );
         if (!isset($byTurn[$targetTurnNo])) {
             throw new \RuntimeException('No file checkpoint for turn '.$targetTurnNo.'.');

@@ -28,4 +28,31 @@ final class FileRewindLedgerProjectorTest extends TestCase
         self::assertTrue($byTurn[1]->pruned);
         self::assertFalse($byTurn[3]->pruned);
     }
+
+    public function testCheckpointsByTurnFiltersByRunId(): void
+    {
+        $projector = new FileRewindLedgerProjector();
+        $rows = [
+            [
+                'run_id' => 'session-a',
+                'turn_no' => 1,
+                'anchor_seq' => 1,
+                'kind' => FileRewindCheckpointKindEnum::TurnBoundary->value,
+                'snapshot_commit_sha' => str_repeat('a', 40),
+                'project_hash' => 'h',
+            ],
+            [
+                'run_id' => 'session-b',
+                'turn_no' => 1,
+                'anchor_seq' => 1,
+                'kind' => FileRewindCheckpointKindEnum::TurnBoundary->value,
+                'snapshot_commit_sha' => str_repeat('b', 40),
+                'project_hash' => 'h',
+            ],
+        ];
+        $byTurn = $projector->checkpointsByTurn($rows, 100, 'session-b');
+        self::assertCount(1, $byTurn);
+        self::assertSame('session-b', $byTurn[1]->runId);
+        self::assertSame(str_repeat('b', 40), $byTurn[1]->snapshotCommitSha);
+    }
 }
