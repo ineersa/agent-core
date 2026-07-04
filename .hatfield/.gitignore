@@ -15,3 +15,7 @@ messenger.sqlite
 messenger.sqlite-journal
 messenger.sqlite-wal
 messenger.sqlite-shm
+messenger-transport.sqlite
+messenger-transport.sqlite-journal
+messenger-transport.sqlite-wal
+messenger-transport.sqlite-shm

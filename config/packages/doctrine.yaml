@@ -7,6 +7,10 @@
 # Splitting queue persistence from app-state writes prevents app DB write locks
 # from blocking Messenger retry/redelivery (session-6 class failures).
 #
+# options key 2 = PDO::ATTR_TIMEOUT (seconds). SQLite maps this to PRAGMA
+# busy_timeout (milliseconds = seconds × 1000), so 5 → 5000ms on both connections.
+# Reduces immediate "database is locked" under concurrent workers sharing each file.
+#
 # ORM entities on the default connection:
 #   - background_process  — BackgroundProcessManager durable tracking
 #   - tool_batch_state    — DbalToolBatchStore parallel tool execution state

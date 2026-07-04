@@ -53,6 +53,7 @@ final class MessengerTransportSqliteIsolationTest extends IsolatedKernelTestCase
     public function testTransportWriteSucceedsWhileDefaultConnectionHoldsWriteTransaction(): void
     {
         $transportPath = $this->sqliteFilePath($this->transportConnection);
+        $queueName = 'isolation_test_'.bin2hex(random_bytes(8));
 
         // DAMA wraps the kernel DBAL connections in a test transaction, so WAL
         // setup and queue writes use a fresh connection to the same transport file.
@@ -72,16 +73,23 @@ final class MessengerTransportSqliteIsolationTest extends IsolatedKernelTestCase
         try {
             $freshTransport->executeStatement(
                 "INSERT INTO messenger_messages (body, headers, queue_name, created_at, available_at)
-                 VALUES ('body', '[]', 'isolation_test', datetime('now'), datetime('now'))",
+                 VALUES ('body', '[]', ?, datetime('now'), datetime('now'))",
+                [$queueName],
             );
+
+            $count = (int) $freshTransport->fetchOne(
+                'SELECT COUNT(*) FROM messenger_messages WHERE queue_name = ?',
+                [$queueName],
+            );
+            $this->assertSame(1, $count);
         } finally {
             $this->defaultConnection->rollBack();
+            $freshTransport->executeStatement(
+                'DELETE FROM messenger_messages WHERE queue_name = ?',
+                [$queueName],
+            );
+            $freshTransport->close();
         }
-
-        $count = (int) $freshTransport->fetchOne(
-            "SELECT COUNT(*) FROM messenger_messages WHERE queue_name = 'isolation_test'",
-        );
-        $this->assertSame(1, $count);
     }
 
     private function sqliteFilePath(Connection $connection): string

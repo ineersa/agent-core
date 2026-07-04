@@ -70,21 +70,21 @@ Focus on topology, message flow, event delivery, and process supervision.
 │  └──────┬───────┘ └──────┬───────┘ └──────┬───────┘ └──────┬───────┘ │
 │         │                │                │                │         │
 │         ▼                ▼                ▼                ▼         │
-│  ┌─────────────────────────────────────────────────────────────┐ │
-│  │             Doctrine SQLite (.hatfield/messenger.sqlite)     │ │
-│  │  Per-session queues (sessionId = runId):                    │ │
-│  │   run_control_{sessionId} | llm_{sessionId} | tool_{sessionId} │ │
-│  │   | agent_{sessionId}                                       │ │
-│  │  PhpSerializer (run_control) | Symfony Serializer (llm,    │ │
-│  │   tool, agent)                                              │ │
-│  └─────────────────────────────────────────────────────────────┘ │
+│  ┌──────────────────────────────┐ ┌────────────────────────────┐ │
+│  │ App/runtime SQLite           │ │ Messenger transport SQLite   │ │
+│  │ (.hatfield/messenger.sqlite) │ │ (.hatfield/messenger-       │ │
+│  │ ORM: tool_batch_state, …     │ │  transport.sqlite)         │ │
+│  │                              │ │ Per-session queue_name:      │ │
+│  │                              │ │ run_control/llm/tool/agent   │ │
+│  │                              │ │ _{sessionId}                 │ │
+│  └──────────────────────────────┘ └────────────────────────────┘ │
 └──────────────────────────────────────────────────────────────────┘
 ```
 
 **Key boundaries:**
 - **TUI → Controller**: JSONL over stdin/stdout pipe (proc_open)
 - **Controller → Consumers**: Symfony Process spawn
-- **Consumers ↔ each other**: Doctrine SQLite messenger queues
+- **Consumers ↔ each other**: Doctrine SQLite messenger queues (`.hatfield/messenger-transport.sqlite`, separate from app-state DB)
 - **Subagent vs tool workers**: Built-in `subagent` `ExecuteToolCall` messages are
   stamped to the dedicated `agent` transport (`agent_{sessionId}` queue, one
   `messenger:consume agent` process per controller session). Parent subagent
@@ -341,9 +341,10 @@ Per-session scoping:
     targeted orphan process cleanup.
 
 Storage:
-  .hatfield/messenger.sqlite
-  auto_setup: true (fallback safety net; messenger_messages table is created
-  ahead-of-time by StartupDatabaseMigrator to prevent concurrency race)
+  .hatfield/messenger.sqlite — app/runtime ORM state (sessions metadata, tool_batch_state, …)
+  .hatfield/messenger-transport.sqlite — Messenger doctrine transport only
+  Transport table is ensured by MessengerTransportSchemaEnsurer at startup;
+  messenger transport auto_setup remains a fallback safety net.
   PDO SQLite auto-creates DB file if parent dir is writable
 
 Result routing (within consumer process):
@@ -633,17 +634,18 @@ pgrep -f messenger:consume
 .hatfield/
 ├── settings.yaml              Project-local settings (LLM config, themes)
 │
-├── messenger.sqlite           Doctrine SQLite transport
-│   └── messenger_messages     Queue table (created by migration; auto_setup fallback)
+├── messenger.sqlite           App/runtime ORM state (not Messenger queues)
+├── messenger-transport.sqlite Messenger doctrine transport
+│   └── messenger_messages     Queue table (MessengerTransportSchemaEnsurer; auto_setup fallback)
 │       queue_name column filters by session:
 │         run_control_{runId}, llm_{runId}, tool_{runId}, agent_{runId}
 │
 ├── env vars (set by JsonlProcessAgentSessionClient::spawnProcess):
 │   HATFIELD_SESSION_ID=<runId>
-│   HATFIELD_RUN_CONTROL_TRANSPORT_DSN=doctrine://default?queue_name=run_control_<runId>
-│   HATFIELD_LLM_TRANSPORT_DSN=doctrine://default?queue_name=llm_<runId>
-│   HATFIELD_TOOL_TRANSPORT_DSN=doctrine://default?queue_name=tool_<runId>
-│   HATFIELD_AGENT_TRANSPORT_DSN=doctrine://default?queue_name=agent_<runId>
+│   HATFIELD_RUN_CONTROL_TRANSPORT_DSN=doctrine://messenger_transport?queue_name=run_control_<runId>
+│   HATFIELD_LLM_TRANSPORT_DSN=doctrine://messenger_transport?queue_name=llm_<runId>
+│   HATFIELD_TOOL_TRANSPORT_DSN=doctrine://messenger_transport?queue_name=tool_<runId>
+│   HATFIELD_AGENT_TRANSPORT_DSN=doctrine://messenger_transport?queue_name=agent_<runId>
 │
 └── sessions/
     └── <runId>/               runId = session_id (DB-issued numeric string)
