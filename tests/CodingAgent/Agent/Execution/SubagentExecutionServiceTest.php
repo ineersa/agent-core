@@ -1207,8 +1207,6 @@ CHILD_SKILL_BODY_UNIQUE",
         rmdir($dir);
     }
 
-
-
     public function testInternalPollTimeoutCancelsChildAndMarksArtifactFailed(): void
     {
         $runningState = new RunState(
@@ -1272,12 +1270,12 @@ CHILD_SKILL_BODY_UNIQUE",
             'runStore' => $runStore,
             'eventStore' => $eventStore,
             'contextAccessor' => $contextAccessor,
-            'agentsConfig' => new AgentsConfig(subagentToolTimeoutSeconds: 60),
+            'agentsConfig' => new AgentsConfig(subagentToolTimeoutSeconds: 1),
         ]);
 
         $result = $contextAccessor->with($toolContext, fn (): string => $service->execute('parent-timeout-single', 'scout', 'Long task'));
 
-        self::assertStringContainsString('timed out after 60 seconds', $result);
+        self::assertStringContainsString('timed out after 1 seconds', $result);
         self::assertStringContainsString('Artifact: agent_', $result);
 
         $entries = $registry->list('parent-timeout-single');
