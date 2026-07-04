@@ -1,9 +1,17 @@
 # Doctrine DBAL + ORM configuration for SQLite-backed storage.
 #
-# DBAL connection is shared between Symfony Messenger Doctrine transport
-# (run_control, llm, tool, publish) and project-owned entity tables.
+# Two SQLite files under .hatfield/ (CWD-relative; see Kernel app.cwd):
+#   - state.sqlite          — app/runtime state (ORM entities, sessions metadata)
+#   - messenger-transport.sqlite — Symfony Messenger doctrine transport only
 #
-# ORM entities are mapped under CodingAgent for:
+# Splitting queue persistence from app-state writes prevents app DB write locks
+# from blocking Messenger retry/redelivery (session-6 class failures).
+#
+# options key 2 = PDO::ATTR_TIMEOUT (seconds). SQLite maps this to PRAGMA
+# busy_timeout (milliseconds = seconds × 1000), so 5 → 5000ms on both connections.
+# Reduces immediate "database is locked" under concurrent workers sharing each file.
+#
+# ORM entities on the default connection:
 #   - background_process  — BackgroundProcessManager durable tracking
 #   - tool_batch_state    — DbalToolBatchStore parallel tool execution state
 #   - tool_question       — ToolQuestionStore cross-process tool-local questions
@@ -14,14 +22,13 @@ doctrine:
         connections:
             default:
                 driver: pdo_sqlite
-                # CWD-based: .hatfield/ lives relative to the user's working directory,
-                # not the app install root. See Kernel::build() where app.cwd is set.
-                path: '%app.cwd%/.hatfield/messenger.sqlite'
+                path: '%app.cwd%/.hatfield/state.sqlite'
+                options:
+                    2: 5
 
-                # SQLite busy timeout: PDO::ATTR_TIMEOUT (int 2, seconds).
-                # SQLite interprets this as wait-for-writelock duration.
-                # 5s → PRAGMA busy_timeout = 5000ms. Prevents SQLITE_BUSY
-                # under multi-process write contention (#228).
+            messenger_transport:
+                driver: pdo_sqlite
+                path: '%app.cwd%/.hatfield/messenger-transport.sqlite'
                 options:
                     2: 5
 

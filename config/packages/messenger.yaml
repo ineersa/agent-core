@@ -11,8 +11,9 @@
 #                          their respective queues and dispatch results back to
 #                          agent.command.bus within the same consumer process.
 #
-# Transports use Doctrine SQLite backed by .hatfield/messenger.sqlite.
-# See config/packages/doctrine.yaml for DBAL configuration.
+# Async Doctrine transports use DBAL connection "messenger_transport"
+# (.hatfield/messenger-transport.sqlite). App/runtime ORM state stays on
+# connection "default" (.hatfield/state.sqlite). See doctrine.yaml.
 #
 # After ASYNC-05:
 # - StartRun → run_control transport (messenger:consume run_control)

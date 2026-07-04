@@ -36,6 +36,7 @@ final class TuiResumeModelRestoreE2eTest extends TestCase
     private string $testProjectDir;
     private string $snapshotDir;
     private string $dbPath;
+    private string $transportDbPath;
     private string $sessionId = '';
 
     protected function setUp(): void
@@ -49,8 +50,10 @@ final class TuiResumeModelRestoreE2eTest extends TestCase
         $this->snapshotDir = $this->testProjectDir.'/.hatfield/tmp/tui/smoke';
         @\mkdir($this->snapshotDir, 0o777, true);
 
-        // Shared DB path so both TUI launches use the same database.
-        $this->dbPath = 'app_test-tui-model-resume-'.bin2hex(random_bytes(4)).'.sqlite';
+        // Shared DB paths so both TUI launches use the same databases.
+        $paths = TuiE2eDatabaseEnv::allocatePaths('tui-model-resume');
+        $this->dbPath = $paths['app'];
+        $this->transportDbPath = $paths['transport'];
     }
 
     protected function tearDown(): void
@@ -229,7 +232,7 @@ final class TuiResumeModelRestoreE2eTest extends TestCase
 
         return \sprintf(
             'APP_ENV=test '
-                .'HATFIELD_TEST_DATABASE_PATH=%s '
+                .TuiE2eDatabaseEnv::shellPrefix($this->dbPath, $this->transportDbPath)
                 .'HOME=%s '
                 .'HATFIELD_LLM_REPLAY_FIXTURE_PATH=%s '
                 .'%s %s agent '
@@ -237,7 +240,6 @@ final class TuiResumeModelRestoreE2eTest extends TestCase
                 .'--prompt=hi '
                 .'--tools-excluded=bash '
                 .'2>&1',
-            \escapeshellarg($this->dbPath),
             \escapeshellarg($this->testProjectDir.'/home'),
             \escapeshellarg($fixturePath),
             \escapeshellarg(\PHP_BINARY),
@@ -255,14 +257,13 @@ final class TuiResumeModelRestoreE2eTest extends TestCase
 
         return \sprintf(
             'APP_ENV=test '
-                .'HATFIELD_TEST_DATABASE_PATH=%s '
+                .TuiE2eDatabaseEnv::shellPrefix($this->dbPath, $this->transportDbPath)
                 .'HOME=%s '
                 .'HATFIELD_LLM_REPLAY_FIXTURE_PATH=%s '
                 .'%s %s agent '
                 .'--resume=%s '
                 .'--tools-excluded=bash '
                 .'2>&1',
-            \escapeshellarg($this->dbPath),
             \escapeshellarg($this->testProjectDir.'/home'),
             \escapeshellarg($fixturePath),
             \escapeshellarg(\PHP_BINARY),

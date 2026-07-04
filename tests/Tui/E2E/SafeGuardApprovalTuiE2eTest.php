@@ -216,7 +216,9 @@ final class SafeGuardApprovalTuiE2eTest extends TestCase
         $projectDir = ProjectDir::get();
         $php = \PHP_BINARY;
         $script = $projectDir.'/bin/console';
-        $dbPath = 'app_test-tui-sg-'.bin2hex(random_bytes(4)).'.sqlite';
+        $paths = TuiE2eDatabaseEnv::allocatePaths('tui-sg');
+        $dbPath = $paths['app'];
+        $transportDbPath = $paths['transport'];
 
         $fixturePath = \implode(';', [
             $this->testProjectDir.'/fixture-write.json',
@@ -225,7 +227,7 @@ final class SafeGuardApprovalTuiE2eTest extends TestCase
 
         return \sprintf(
             'APP_ENV=test '
-            .'HATFIELD_TEST_DATABASE_PATH=%s '
+            .TuiE2eDatabaseEnv::shellPrefix($dbPath, $transportDbPath)
             .'HOME=%s '
             .'HATFIELD_LLM_REPLAY_FIXTURE_PATH=%s '
             .'HATFIELD_APPROVAL_CHANNEL=controller '
@@ -234,7 +236,6 @@ final class SafeGuardApprovalTuiE2eTest extends TestCase
             .'--tools-excluded=bash '
             .'--prompt="Write a file to ../%s/sg-%s.txt with content hello" '
             .'2>&1',
-            \escapeshellarg($dbPath),
             \escapeshellarg($this->testProjectDir.'/home'),
             \escapeshellarg($fixturePath),
             \escapeshellarg($php),

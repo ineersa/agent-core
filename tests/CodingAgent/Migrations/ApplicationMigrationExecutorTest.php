@@ -17,8 +17,8 @@ use Psr\Log\NullLogger;
 
 /**
  * Regression: runtime startup uses ApplicationMigrationExecutor's explicit
- * KNOWN_MIGRATIONS list (not filesystem discovery). Omission of
- * Version20260617141000 leaves messenger_messages missing and consumers fail.
+ * KNOWN_MIGRATIONS list (not filesystem discovery). Messenger queue DDL is
+ * ensured separately on messenger_transport via MessengerTransportSchemaEnsurer.
  */
 final class ApplicationMigrationExecutorTest extends TestCase
 {
@@ -36,28 +36,19 @@ final class ApplicationMigrationExecutorTest extends TestCase
         parent::tearDown();
     }
 
-    public function testEmptySqliteDatabaseGetsMessengerMessagesAfterStartupExecutor(): void
+    public function testEmptySqliteDatabaseGetsAppSchemaAfterStartupExecutor(): void
     {
         $connection = $this->createSqliteConnection($this->isolatedDir.'/empty.sqlite');
         $executor = new ApplicationMigrationExecutor($connection, new NullLogger());
 
         $executor();
 
-        $this->assertTrue(
+        $this->assertFalse(
             $connection->createSchemaManager()->tablesExist(['messenger_messages']),
-            'messenger_messages must exist after runtime startup migrations (Version20260617141000)',
+            'messenger_messages must not be created on the default app connection (queue uses messenger_transport DB)',
         );
 
-        $recorded = $connection->fetchOne(
-            'SELECT 1 FROM doctrine_migration_versions WHERE version = ?',
-            ['Version20260617141000'],
-        );
-        $this->assertNotFalse(
-            $recorded,
-            'Version20260617141000 must be recorded in doctrine_migration_versions',
-        );
-
-        // Verify the new background_process index migration was also applied.
+        // Verify the background_process index migration was applied.
         $recordedNew = $connection->fetchOne(
             'SELECT 1 FROM doctrine_migration_versions WHERE version = ?',
             ['Version20260628140000'],
@@ -115,7 +106,7 @@ final class ApplicationMigrationExecutorTest extends TestCase
 
         $count = (int) $connection->fetchOne(
             'SELECT COUNT(*) FROM doctrine_migration_versions WHERE version = ?',
-            ['Version20260617141000'],
+            ['Version20260628140000'],
         );
         $this->assertSame(1, $count);
 

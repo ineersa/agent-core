@@ -16,6 +16,7 @@ trait BashBackgroundE2eTestSupport
     private TmuxHarness $tmux;
     private string $testProjectDir;
     private string $testDatabasePath;
+    private string $testMessengerTransportDatabasePath;
     private string $leakTag;
 
     protected function setUpBashBackgroundE2e(string $leakTagPrefix, string $tempDirPrefix): void
@@ -26,7 +27,9 @@ trait BashBackgroundE2eTestSupport
 
         $this->tmux = new TmuxHarness();
         $this->testProjectDir = $this->createIsolatedBashBackgroundProjectDir($tempDirPrefix);
-        $this->testDatabasePath = 'app_test-'.$tempDirPrefix.'-'.bin2hex(random_bytes(4)).'.sqlite';
+        $paths = TuiE2eDatabaseEnv::allocatePaths($tempDirPrefix);
+        $this->testDatabasePath = $paths['app'];
+        $this->testMessengerTransportDatabasePath = $paths['transport'];
         $this->leakTag = $leakTagPrefix.'-'.bin2hex(random_bytes(8));
     }
 
@@ -54,8 +57,8 @@ trait BashBackgroundE2eTestSupport
         $projectDir = ProjectDir::get();
 
         return \sprintf(
-            'APP_ENV=test HATFIELD_TEST_DATABASE_PATH=%s HATFIELD_E2E_LEAK_TAG=%s HOME=%s %s%s %s agent --model=llama_cpp_test/test 2>&1',
-            escapeshellarg($this->testDatabasePath),
+            'APP_ENV=test %sHATFIELD_E2E_LEAK_TAG=%s HOME=%s %s%s %s agent --model=llama_cpp_test/test 2>&1',
+            TuiE2eDatabaseEnv::shellPrefix($this->testDatabasePath, $this->testMessengerTransportDatabasePath),
             escapeshellarg($this->leakTag),
             escapeshellarg($this->testProjectDir.'/home'),
             $fixtureEnv,

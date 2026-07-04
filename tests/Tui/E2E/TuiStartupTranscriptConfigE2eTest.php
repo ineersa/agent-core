@@ -105,13 +105,19 @@ final class TuiStartupTranscriptConfigE2eTest extends TestCase
         $php = \PHP_BINARY;
         $script = $this->projectRoot.'/bin/console';
 
-        $dbPath = 'app_test-tui-transcript-config-'.bin2hex(random_bytes(4)).'.sqlite';
+        $paths = TuiE2eDatabaseEnv::allocatePaths('tui-transcript-config-');
+
+
+        $dbPath = $paths['app'];
+
+
+        $transportDbPath = $paths['transport'];
 
         return \sprintf(
-            'APP_ENV=test HATFIELD_TEST_DATABASE_PATH=%s HOME=%s %s %s agent '
+            'APP_ENV=test %sHOME=%s %s %s agent '
                 .'--model=llama_cpp_test/test '
                 .'--tools-excluded=bash 2>&1',
-            escapeshellarg($dbPath),
+            TuiE2eDatabaseEnv::shellPrefix($dbPath, $transportDbPath),
             escapeshellarg($this->testProjectDir.'/home'),
             escapeshellarg($php),
             escapeshellarg($script),
