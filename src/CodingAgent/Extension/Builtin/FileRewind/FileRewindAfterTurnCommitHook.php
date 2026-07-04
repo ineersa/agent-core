@@ -65,13 +65,13 @@ final readonly class FileRewindAfterTurnCommitHook implements AfterTurnCommitHoo
             }
         }
 
-        // Post-tool stable file state: tool batch committed, no assistant boundary in same commit.
+        // Post-tool stable file state: tool_batch_committed marks applied tool effects on disk.
+        // The same commit batch includes tool_call_result_received / message_end — that is expected.
         if ($this->has($context, 'tool_batch_committed')
             && !$this->has($context, 'llm_step_completed')
             && !$this->has($context, 'turn_end')
             && !$this->has($context, 'agent_end')
             && !$this->has($context, 'tool_execution_start')
-            && !$this->has($context, 'tool_call_result_received')
         ) {
             foreach ($context->events as $event) {
                 if ('tool_batch_committed' === $event->type) {
