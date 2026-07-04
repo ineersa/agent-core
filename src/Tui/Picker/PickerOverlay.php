@@ -94,11 +94,18 @@ final class PickerOverlay
      * After SelectListWidget item rebuilds (navigation), force the overlay
      * subtree and a full frame repaint so ScreenWriter clears prior list height.
      */
+    /**
+     * After list item rebuild on navigation: invalidate overlay subtree only.
+     *
+     * Non-forced render lets ScreenWriter differentially update the overlay
+     * band; full reset on every arrow caused visible flicker/jump in live TUI.
+     * Mount/close still use requestRender(true) to avoid stale rows on open.
+     */
     public function invalidateListPaint(Tui $tui): void
     {
         $this->container?->invalidate();
         $this->listWidget?->invalidate();
-        $tui->requestRender(true);
+        $tui->requestRender();
     }
 
     public function isOpen(): bool

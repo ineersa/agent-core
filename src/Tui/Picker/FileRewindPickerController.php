@@ -110,7 +110,9 @@ final class FileRewindPickerController
         $list->onCancel(static function (CancelEvent $event) use ($picker): void {
             $picker->closePicker();
         });
-        $list->onSelectionChange(static function (SelectionChangeEvent $event) use ($picker, $list, $targets, $theme): void {
+        $this->overlay = new PickerOverlay();
+        $overlayRef = $this->overlay;
+        $list->onSelectionChange(static function (SelectionChangeEvent $event) use ($picker, $list, $targets, $theme, $tui, $overlayRef): void {
             $turnNo = (int) $event->getItem()['value'];
             $selectedIdx = 0;
             foreach ($targets as $i => $target) {
@@ -122,8 +124,8 @@ final class FileRewindPickerController
             $list->setItems($picker->buildCheckpointItems($targets, $theme, $selectedIdx));
             $list->setSelectedIndex(max(0, $selectedIdx));
             $picker->updateHeaderForTurn($turnNo, $targets[$selectedIdx]['title'] ?? ('Turn '.$turnNo));
+            $overlayRef->invalidateListPaint($tui);
         });
-        $this->overlay = new PickerOverlay();
         $this->overlay->mount($tui, $screen, $list, $this->headerWidget);
         $initial = $targets[$selected];
         $this->updateHeaderForTurn($initial['turnNo'], $initial['title']);
@@ -137,7 +139,7 @@ final class FileRewindPickerController
         $label = mb_strimwidth($title, 0, 60, '…');
         $this->headerWidget->setText($this->screen->theme()->muted('Checkpoint turn '.$turnNo.': '.$label.' (Esc to close)'));
         $this->screen->setStatus('rewind', null);
-        $this->tui?->requestRender(true);
+        $this->tui?->requestRender();
     }
 
     /**
@@ -150,9 +152,10 @@ final class FileRewindPickerController
         $items = [];
         foreach ($targets as $idx => $target) {
             $turnNo = $target['turnNo'];
-            $title = mb_strimwidth($target['title'], 0, 60, '…');
+            $body = mb_strimwidth(PickerListLabelFormatter::sanitizeTitle($target['title']), 0, 52, '…');
             $marker = $idx === $selectedIndex ? '◉ ' : '○ ';
-            $label = $marker.'Turn '.$turnNo.': '.$title;
+            $prefix = PickerListLabelFormatter::formatRolePrefix($theme, 'assistant');
+            $label = $marker.$prefix.' checkpoint '.$turnNo.': '.$body;
             if ($idx === $selectedIndex) {
                 $label = $theme->color(ThemeColorEnum::Accent, $label);
             }

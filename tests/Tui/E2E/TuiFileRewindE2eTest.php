@@ -83,7 +83,7 @@ final class TuiFileRewindE2eTest extends TestCase
             $this->runSlashCommand($pane, '/tree');
             $treeCapture = $this->tmux->waitForCallback(
                 $pane,
-                static fn (string $cap): bool => str_contains($cap, 'Turn 1:') && str_contains($cap, 'rewind'),
+                static fn (string $cap): bool => str_contains($cap, 'Session turn tree') && str_contains($cap, 'rewind'),
                 timeout: 10.0,
                 message: '/tree conversation picker did not appear',
                 history: 2000,
@@ -153,7 +153,7 @@ final class TuiFileRewindE2eTest extends TestCase
             $this->runSlashCommand($pane, '/tree');
             $treeCapture = $this->tmux->waitForCallback(
                 $pane,
-                static fn (string $cap): bool => str_contains($cap, 'Turn 1:') && str_contains($cap, 'rewind'),
+                static fn (string $cap): bool => str_contains($cap, 'Session turn tree') && str_contains($cap, 'rewind'),
                 timeout: 10.0,
                 message: '/tree conversation picker did not appear after edit journey',
                 history: 2000,
@@ -161,8 +161,8 @@ final class TuiFileRewindE2eTest extends TestCase
             self::assertStringNotContainsString('Restore files to this turn', $treeCapture);
             self::assertStringNotContainsString('Undo last file restore', $treeCapture);
             self::assertStringNotContainsString('File rewind', $treeCapture);
-            self::assertSame(1, substr_count($treeCapture, 'Turn 1:'), 'Tree picker should list Turn 1 once (no duplicate-turn regression in overlay capture)');
-            self::assertLessThanOrEqual(1, substr_count($treeCapture, 'Turn 2:'), 'Tree picker should not duplicate Turn 2 entries in overlay capture');
+            self::assertSame(1, substr_count($treeCapture, 'Session turn tree — Enter to rewind'), 'Tree picker should show a single tree header (no stacked overlay regression)');
+            self::assertStringContainsString('Session turn tree', $treeCapture, 'Tree picker should open for conversation-only rewind');
 
             $this->saveAnsiSnapshot($pane, 'file-rewind-edit-tool');
             $this->tmux->sendKey($pane, 'Escape');
@@ -228,7 +228,7 @@ final class TuiFileRewindE2eTest extends TestCase
             if (!str_contains($line, '→')) {
                 continue;
             }
-            if (preg_match('/Turn (\d+):/', $line, $matches)) {
+            if (preg_match('/checkpoint (\d+):/i', $line, $matches)) {
                 return (int) $matches[1];
             }
         }
@@ -238,7 +238,7 @@ final class TuiFileRewindE2eTest extends TestCase
 
     private function selectRewindTurnWithCheckpoint(TmuxPane $pane, int $turnNo): void
     {
-        $rowShowsTurn = static fn (string $cap): bool => str_contains($cap, 'Turn '.$turnNo.':');
+        $rowShowsTurn = static fn (string $cap): bool => str_contains($cap, 'checkpoint '.$turnNo.':');
 
         $this->tmux->waitForCallback(
             $pane,

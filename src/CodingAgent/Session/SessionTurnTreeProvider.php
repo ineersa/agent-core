@@ -46,6 +46,7 @@ final readonly class SessionTurnTreeProvider implements TurnTreeProviderInterfac
                 promptPreview: $node->promptPreview,
                 createdAt: $node->createdAt,
                 isCurrentLeaf: $node->isCurrentLeaf,
+                displayRole: $node->displayRole,
             );
         }
 

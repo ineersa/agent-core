@@ -47,14 +47,14 @@ final class TuiPickerOverlayRenderVirtualTest extends TestCase
         $header = 'Session turn tree — Enter to rewind (Esc to close)';
 
         self::assertSame(1, substr_count($screen, $header), $screen);
-        self::assertSame(1, substr_count($screen, 'Turn 1: Turn 1'), $screen);
-        self::assertSame(1, substr_count($screen, 'Turn 2: Turn 2'), $screen);
-        self::assertSame(1, substr_count($screen, 'Turn 3: Turn 3'), $screen);
+        self::assertSame(1, substr_count($screen, 'hello'), $screen);
+        self::assertSame(1, substr_count($screen, 'Can you create file'), $screen);
+        self::assertSame(1, substr_count($screen, 'Done! Created file'), $screen);
         self::assertSame(1, substr_count($screen, 'session '.$sessionId), $screen);
 
         $footerPos = strpos($screen, 'session '.$sessionId);
         self::assertNotFalse($footerPos);
-        self::assertGreaterThan(strpos($screen, 'Turn 3: Turn 3'), $footerPos, 'Footer session line must stay below picker rows');
+        self::assertGreaterThan(strpos($screen, 'Done! Created file'), $footerPos, 'Footer session line must stay below picker rows');
     }
 
     #[Test]
@@ -84,14 +84,14 @@ final class TuiPickerOverlayRenderVirtualTest extends TestCase
         $screen = $harness->plainScreenText();
 
         self::assertSame(1, substr_count($screen, 'Checkpoint turn'), $screen);
-        self::assertSame(1, substr_count($screen, 'Turn 1:'), $screen);
-        self::assertSame(1, substr_count($screen, 'Turn 2:'), $screen);
-        self::assertSame(1, substr_count($screen, 'Turn 3:'), $screen);
+        self::assertSame(1, substr_count($screen, 'checkpoint 1:'), $screen);
+        self::assertSame(1, substr_count($screen, 'checkpoint 2:'), $screen);
+        self::assertSame(1, substr_count($screen, 'checkpoint 3:'), $screen);
         self::assertSame(1, substr_count($screen, 'session '.$sessionId), $screen);
 
         $footerPos = strpos($screen, 'session '.$sessionId);
         self::assertNotFalse($footerPos);
-        self::assertGreaterThan(strrpos($screen, 'Turn 3:'), $footerPos);
+        self::assertGreaterThan(strrpos($screen, 'checkpoint 3:'), $footerPos);
     }
 
     private function sampleTree(string $sessionId): TurnTreeView
@@ -99,9 +99,9 @@ final class TuiPickerOverlayRenderVirtualTest extends TestCase
         return new TurnTreeView(
             runId: $sessionId,
             nodesByTurnNo: [
-                1 => new TurnTreeNodeView(1, null, [2], 2, 'Turn 1', 'Hey!', null, false),
-                2 => new TurnTreeNodeView(2, 1, [3], 4, 'Turn 2', 'Follow up', null, false),
-                3 => new TurnTreeNodeView(3, 2, [], 6, 'Turn 3', 'Third', null, true),
+                1 => new TurnTreeNodeView(1, null, [2], 2, 'hello', 'Hey!', null, false, 'user'),
+                2 => new TurnTreeNodeView(2, 1, [3], 4, 'Can you create file', 'Follow up', null, false, 'user'),
+                3 => new TurnTreeNodeView(3, 2, [], 6, 'Done! Created file', 'Third', null, true, 'assistant'),
             ],
             rootTurnNos: [1],
             currentLeafTurnNo: 3,

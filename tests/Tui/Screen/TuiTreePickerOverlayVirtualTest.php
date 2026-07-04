@@ -32,9 +32,9 @@ final class TuiTreePickerOverlayVirtualTest extends TestCase
 
         $screen = $harness->plainScreenText();
         self::assertSame(1, substr_count($screen, 'Session turn tree — Enter to rewind (Esc to close)'));
-        self::assertSame(1, substr_count($screen, 'Turn 1: Turn 1'));
-        self::assertSame(1, substr_count($screen, 'Turn 2: Turn 2'));
-        self::assertSame(1, substr_count($screen, 'Turn 3: Turn 3'));
+        self::assertSame(1, substr_count($screen, 'hello'));
+        self::assertSame(1, substr_count($screen, 'Can you create file'));
+        self::assertSame(1, substr_count($screen, 'Done! Created file'));
     }
 
     #[Test]
@@ -52,7 +52,7 @@ final class TuiTreePickerOverlayVirtualTest extends TestCase
         $picker->open();
         $screen = $harness->plainScreenText();
         self::assertSame(1, substr_count($screen, 'Session turn tree — Enter to rewind (Esc to close)'));
-        self::assertSame(1, substr_count($screen, 'Turn 1: Turn 1'));
+        self::assertSame(1, substr_count($screen, 'hello'));
     }
 
     #[Test]
@@ -79,10 +79,10 @@ final class TuiTreePickerOverlayVirtualTest extends TestCase
         $picker->setRuntimeRefs($harness->tui(), $harness->screen(), new TuiSessionState($sessionId));
         (new TreeCommandHandler($picker))->handle(new SlashCommand('tree', '', '/tree'));
         $screen = $harness->plainScreenText();
-        self::assertSame(1, substr_count($screen, 'Turn 3: Create test.txt'));
-        self::assertSame(1, substr_count($screen, 'Turn 4: Created test.txt'));
-        self::assertSame(1, substr_count($screen, 'Turn 5: Okay add 1 more line'));
-        self::assertSame(1, substr_count($screen, 'Turn 6: Added second line'));
+        self::assertSame(1, substr_count($screen, 'Create test.txt'));
+        self::assertSame(1, substr_count($screen, 'Created test.txt'));
+        self::assertSame(1, substr_count($screen, 'Okay add 1 more line'));
+        self::assertSame(1, substr_count($screen, 'Added second line'));
     }
 
     private function sampleTree(string $sessionId): TurnTreeView
@@ -90,9 +90,9 @@ final class TuiTreePickerOverlayVirtualTest extends TestCase
         return new TurnTreeView(
             runId: $sessionId,
             nodesByTurnNo: [
-                1 => new TurnTreeNodeView(1, null, [2], 2, 'Turn 1', 'Hey!', null, false),
-                2 => new TurnTreeNodeView(2, 1, [3], 4, 'Turn 2', 'Follow up', null, false),
-                3 => new TurnTreeNodeView(3, 2, [], 6, 'Turn 3', 'Third', null, true),
+                1 => new TurnTreeNodeView(1, null, [2], 2, 'hello', 'Hey!', null, false, 'user'),
+                2 => new TurnTreeNodeView(2, 1, [3], 4, 'Can you create file', 'Follow up', null, false, 'user'),
+                3 => new TurnTreeNodeView(3, 2, [], 6, 'Done! Created file', 'Third', null, true, 'assistant'),
             ],
             rootTurnNos: [1],
             currentLeafTurnNo: 3,

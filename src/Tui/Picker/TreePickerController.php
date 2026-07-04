@@ -311,11 +311,17 @@ final class TreePickerController
             }
 
             $leafMarker = $node->isCurrentLeaf ? '◉ ' : '○ ';
-            $label = $nodePrefix.$leafMarker.\sprintf(
-                'Turn %d: %s',
+            [$body, $role] = PickerListLabelFormatter::bodyAndRoleFromNodeTitle(
+                $node->title,
+                $node->promptPreview,
                 $node->turnNo,
-                mb_strimwidth($node->title, 0, 60, '…'),
             );
+            if ('' !== $node->displayRole) {
+                $role = $node->displayRole;
+            }
+            $body = mb_strimwidth(PickerListLabelFormatter::sanitizeTitle($body), 0, 52, '…');
+            $prefix = PickerListLabelFormatter::formatRolePrefix($theme, $role);
+            $label = $nodePrefix.$leafMarker.$prefix.' '.$body;
 
             $idx = \count($items);
             if ($idx === $selectedIndex) {

@@ -37,8 +37,8 @@ final class TuiFileRewindPickerCheckpointTargetsVirtualTest extends TestCase
         $picker->open($sessionId);
 
         $screen = $harness->plainScreenText();
-        self::assertStringContainsString('Turn 1: hello', $screen);
-        self::assertStringContainsString('Turn 3: Create test.txt', $screen);
+        self::assertStringContainsString('checkpoint 1: hello', $screen);
+        self::assertStringContainsString('checkpoint 3: Create test.txt', $screen);
         self::assertStringNotContainsString('Turn 2:', $screen);
         self::assertStringNotContainsString('Turn 4:', $screen);
         self::assertStringNotContainsString('Turn 5:', $screen);
@@ -71,7 +71,7 @@ final class TuiFileRewindPickerCheckpointTargetsVirtualTest extends TestCase
         $picker->open($sessionId);
 
         $screen = $harness->plainScreenText();
-        self::assertStringContainsString('Turn 3: Checkpoint (turn 3)', $screen);
+        self::assertStringContainsString('checkpoint 3: Checkpoint (turn 3)', $screen);
         self::assertStringNotContainsString('No file rewind checkpoints are available yet.', $screen);
     }
 

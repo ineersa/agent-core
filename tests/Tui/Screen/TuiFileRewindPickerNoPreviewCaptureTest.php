@@ -46,7 +46,7 @@ final class TuiFileRewindPickerNoPreviewCaptureTest extends TestCase
         self::assertTrue($picker->isOpen());
         $screen = $harness->plainScreenText();
         self::assertStringContainsString('Checkpoint turn', $screen);
-        self::assertStringContainsString('Turn 1: one', $screen);
-        self::assertStringContainsString('Turn 2: two', $screen);
+        self::assertStringContainsString('checkpoint 1: one', $screen);
+        self::assertStringContainsString('checkpoint 2: two', $screen);
     }
 }

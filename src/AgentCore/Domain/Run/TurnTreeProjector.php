@@ -163,7 +163,12 @@ final class TurnTreeProjector
         $rootTurnNos = [];
 
         foreach ($turnInfo as $turnNo => $info) {
-            $title = $this->titleForTurn($turnNo, $info['anchorIndex'], $sorted);
+            $rawTitle = $this->titleForTurn($turnNo, $info['anchorIndex'], $sorted);
+            $title = $this->sanitizeTurnTitle($rawTitle);
+            if ('' === $title) {
+                $title = "Turn {$turnNo}";
+            }
+            $displayRole = $this->classifyDisplayRole($title, $turnNo, $info['anchorIndex'], $sorted);
 
             $node = new TurnTreeNodeDTO(
                 turnNo: $turnNo,
@@ -176,6 +181,7 @@ final class TurnTreeProjector
                 createdAt: $info['createdAt'],
                 isCurrentLeaf: $turnNo === $currentLeafTurnNo,
                 reason: $info['reason'] ?? null,
+                displayRole: $displayRole,
             );
 
             $nodesByTurnNo[$turnNo] = $node;
@@ -598,6 +604,63 @@ final class TurnTreeProjector
     private function truncate(string $text, int $maxLen): string
     {
         return u($text)->truncate($maxLen, '…')->toString();
+    }
+
+    /**
+     * Sort events ascending by sequence number.
+     *
+     * @return list<RunEvent>
+     */
+
+    /**
+     * Collapse multiline/markdown assistant text into one picker-safe line.
+     */
+    private function sanitizeTurnTitle(string $title): string
+    {
+        $text = str_replace(["\r\n", "\r", "\n"], ' ', $title);
+        $text = preg_replace('/\s+/u', ' ', $text) ?? $text;
+        $text = trim($text);
+        if ('' === $text) {
+            return '';
+        }
+
+        $text = preg_replace('/^>\s*/u', '', $text) ?? $text;
+        $text = preg_replace('/^[-*]\s+/u', '', $text) ?? $text;
+        $text = preg_replace('/^#+\s+/u', '', $text) ?? $text;
+
+        return trim($text);
+    }
+
+    /**
+     * @param list<RunEvent> $sortedEvents
+     */
+    private function classifyDisplayRole(string $title, int $turnNo, int $anchorIndex, array $sortedEvents): string
+    {
+        $anchorEvent = $sortedEvents[$anchorIndex] ?? null;
+        $stepId = \is_array($anchorEvent?->payload) && \is_string($anchorEvent->payload['step_id'] ?? null)
+            ? $anchorEvent->payload['step_id']
+            : '';
+        if (str_starts_with($stepId, 'advance-after-tools')) {
+            return 'assistant';
+        }
+
+        $parentAnchorIndex = $this->parentAnchorIndexForTurn($turnNo, $anchorIndex, $sortedEvents);
+        for ($i = $anchorIndex - 1; $i > $parentAnchorIndex; --$i) {
+            $event = $sortedEvents[$i];
+            if (RunEventTypeEnum::AgentCommandApplied->value === $event->type) {
+                $kind = \is_string($event->payload['kind'] ?? null) ? $event->payload['kind'] : null;
+                if (\in_array($kind, ['steer', 'follow_up', 'append_message'], true)) {
+                    return 'user';
+                }
+            }
+        }
+
+        $lower = mb_strtolower($title);
+        if (preg_match('/^(can you|please|good!|hello|hi\b|now |add |create |write )/u', $lower)) {
+            return 'user';
+        }
+
+        return 'assistant';
     }
 
     /**
