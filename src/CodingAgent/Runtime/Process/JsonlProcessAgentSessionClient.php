@@ -498,6 +498,8 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
             'HATFIELD_APPROVAL_CHANNEL' => 'controller',
         ]);
 
+        $env = $this->applyTestMessengerTransportDatabasePathToEnv($env);
+
         $pipes = [];
         $process = @proc_open(
             [
@@ -526,6 +528,53 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
         stream_set_blocking($this->pipes[0], true);
         stream_set_blocking($this->pipes[1], false);
         stream_set_blocking($this->pipes[2], false);
+    }
+
+    /**
+     * Pair Messenger transport SQLite filename with app test DB when only
+     * HATFIELD_TEST_DATABASE_PATH is set (common in TUI tmux children).
+     *
+     * Maps app_test-*.sqlite → messenger_transport_test-*.sqlite; other
+     * basenames get messenger_transport_<basename> in the same directory.
+     */
+    private function deriveTestMessengerTransportDatabasePath(string $appDatabasePath): string
+    {
+        $basename = basename($appDatabasePath);
+        if (str_starts_with($basename, 'app_test-')) {
+            $transportBasename = 'messenger_transport_test-'.substr($basename, \strlen('app_test-'));
+        } else {
+            $transportBasename = 'messenger_transport_'.$basename;
+        }
+
+        $dir = \dirname($appDatabasePath);
+        if ('.' === $dir || '' === $dir) {
+            return $transportBasename;
+        }
+
+        return $dir.'/'.$transportBasename;
+    }
+
+    /**
+     * @param array<string, string> $env
+     *
+     * @return array<string, string>
+     */
+    private function applyTestMessengerTransportDatabasePathToEnv(array $env): array
+    {
+        $appEnv = (string) ($env['APP_ENV'] ?? 'dev');
+        if ('test' !== $appEnv) {
+            return $env;
+        }
+
+        $appPath = trim((string) ($env['HATFIELD_TEST_DATABASE_PATH'] ?? ''));
+        $transportPath = trim((string) ($env['HATFIELD_TEST_MESSENGER_TRANSPORT_DATABASE_PATH'] ?? ''));
+        if ('' === $appPath || '' !== $transportPath) {
+            return $env;
+        }
+
+        $env['HATFIELD_TEST_MESSENGER_TRANSPORT_DATABASE_PATH'] = $this->deriveTestMessengerTransportDatabasePath($appPath);
+
+        return $env;
     }
 
     /**

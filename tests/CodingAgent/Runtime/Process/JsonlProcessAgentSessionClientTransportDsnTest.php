@@ -51,6 +51,8 @@ $keys = [
     'HATFIELD_TOOL_TRANSPORT_DSN',
     'HATFIELD_AGENT_TRANSPORT_DSN',
     'HATFIELD_MCP_TRANSPORT_DSN',
+    'HATFIELD_TEST_DATABASE_PATH',
+    'HATFIELD_TEST_MESSENGER_TRANSPORT_DATABASE_PATH',
 ];
 $out = [];
 foreach ($keys as $key) {
@@ -121,8 +123,14 @@ PHP);
         /** @var array<string, string> $env */
         $env = json_decode($raw, true, 512, JSON_THROW_ON_ERROR);
 
-        foreach ($env as $key => $dsn) {
-            self::assertStringStartsWith('doctrine://messenger_transport?', $dsn, $key);
+        foreach ([
+            'HATFIELD_RUN_CONTROL_TRANSPORT_DSN',
+            'HATFIELD_LLM_TRANSPORT_DSN',
+            'HATFIELD_TOOL_TRANSPORT_DSN',
+            'HATFIELD_AGENT_TRANSPORT_DSN',
+            'HATFIELD_MCP_TRANSPORT_DSN',
+        ] as $dsnKey) {
+            self::assertStringStartsWith('doctrine://messenger_transport?', $env[$dsnKey], $dsnKey);
         }
 
         self::assertStringContainsString('run_control_session-42', $env['HATFIELD_RUN_CONTROL_TRANSPORT_DSN']);
@@ -130,4 +138,151 @@ PHP);
         self::assertStringContainsString('tool_session-42', $env['HATFIELD_TOOL_TRANSPORT_DSN']);
         self::assertStringNotContainsString('doctrine://default', implode(' ', $env));
     }
+
+    public function testSpawnedControllerDerivesPairedMessengerTransportDatabasePath(): void
+    {
+        $appPath = 'app_test-tui-abc123.sqlite';
+        $expectedTransport = 'messenger_transport_test-tui-abc123.sqlite';
+
+        $envDump = $this->runEnvDumpWithTestDatabasePaths($appPath, null);
+
+        self::assertSame($appPath, $envDump['HATFIELD_TEST_DATABASE_PATH']);
+        self::assertSame($expectedTransport, $envDump['HATFIELD_TEST_MESSENGER_TRANSPORT_DATABASE_PATH']);
+    }
+
+    public function testSpawnedControllerPreservesExplicitMessengerTransportDatabasePath(): void
+    {
+        $appPath = 'app_test-tui-abc123.sqlite';
+        $explicitTransport = 'messenger_transport_test-custom.sqlite';
+
+        $envDump = $this->runEnvDumpWithTestDatabasePaths($appPath, $explicitTransport);
+
+        self::assertSame($appPath, $envDump['HATFIELD_TEST_DATABASE_PATH']);
+        self::assertSame($explicitTransport, $envDump['HATFIELD_TEST_MESSENGER_TRANSPORT_DATABASE_PATH']);
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function runEnvDumpWithTestDatabasePaths(string $appDatabasePath, ?string $transportDatabasePath): array
+    {
+        $saved = $this->snapshotTestDatabaseEnv();
+        try {
+            putenv('APP_ENV=test');
+            $_ENV['APP_ENV'] = 'test';
+            $_SERVER['APP_ENV'] = 'test';
+            putenv('HATFIELD_TEST_DATABASE_PATH='.$appDatabasePath);
+            $_ENV['HATFIELD_TEST_DATABASE_PATH'] = $appDatabasePath;
+            $_SERVER['HATFIELD_TEST_DATABASE_PATH'] = $appDatabasePath;
+
+            if (null === $transportDatabasePath) {
+                putenv('HATFIELD_TEST_MESSENGER_TRANSPORT_DATABASE_PATH');
+                unset($_ENV['HATFIELD_TEST_MESSENGER_TRANSPORT_DATABASE_PATH'], $_SERVER['HATFIELD_TEST_MESSENGER_TRANSPORT_DATABASE_PATH']);
+            } else {
+                putenv('HATFIELD_TEST_MESSENGER_TRANSPORT_DATABASE_PATH='.$transportDatabasePath);
+                $_ENV['HATFIELD_TEST_MESSENGER_TRANSPORT_DATABASE_PATH'] = $transportDatabasePath;
+                $_SERVER['HATFIELD_TEST_MESSENGER_TRANSPORT_DATABASE_PATH'] = $transportDatabasePath;
+            }
+
+            $envDumpPath = $this->tmpDir.'/env-db-'.bin2hex(random_bytes(4)).'.json';
+            $client = $this->createClientWithEnvDump($envDumpPath);
+            $client->start(new StartRunRequest(
+                prompt: 'hello',
+                runId: 'session-db',
+            ));
+
+            return $this->waitForEnvDump($envDumpPath);
+        } finally {
+            $this->restoreTestDatabaseEnv($saved);
+        }
+    }
+
+    /**
+     * @return array{app_env: ?string, app_path: ?string, transport_path: ?string}
+     */
+    private function snapshotTestDatabaseEnv(): array
+    {
+        $transport = getenv('HATFIELD_TEST_MESSENGER_TRANSPORT_DATABASE_PATH');
+
+        return [
+            'app_env' => getenv('APP_ENV') ?: null,
+            'app_path' => getenv('HATFIELD_TEST_DATABASE_PATH') ?: null,
+            'transport_path' => false === $transport ? null : ($transport ?: null),
+        ];
+    }
+
+    /**
+     * @param array{app_env: ?string, app_path: ?string, transport_path: ?string} $saved
+     */
+    private function restoreTestDatabaseEnv(array $saved): void
+    {
+        $this->restoreEnvVar('APP_ENV', $saved['app_env']);
+        $this->restoreEnvVar('HATFIELD_TEST_DATABASE_PATH', $saved['app_path']);
+        $this->restoreEnvVar('HATFIELD_TEST_MESSENGER_TRANSPORT_DATABASE_PATH', $saved['transport_path']);
+    }
+
+    private function restoreEnvVar(string $name, ?string $value): void
+    {
+        if (null === $value) {
+            putenv($name);
+            unset($_ENV[$name], $_SERVER[$name]);
+        } else {
+            putenv($name.'='.$value);
+            $_ENV[$name] = $value;
+            $_SERVER[$name] = $value;
+        }
+    }
+
+    private function createClientWithEnvDump(string $envDumpPath): JsonlProcessAgentSessionClient
+    {
+        $dumpFlag = '--env-dump='.$envDumpPath;
+        $runtimeConfig = new RuntimeProcessConfig(
+            executableLocator: new class($this->fakeScript, $dumpFlag) implements AppExecutableLocator {
+                public function __construct(
+                    private readonly string $script,
+                    private readonly string $dumpFlag,
+                ) {
+                }
+
+                public function command(): array
+                {
+                    return [\PHP_BINARY, $this->script, $this->dumpFlag];
+                }
+
+                public function path(): string
+                {
+                    return $this->script;
+                }
+            },
+            runtimeCwd: $this->tmpDir,
+        );
+
+        return new JsonlProcessAgentSessionClient(
+            runtimeConfig: $runtimeConfig,
+            promptTemplatesConfig: new PromptTemplatesRuntimeConfig(),
+            logger: new TestLogger(),
+        );
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function waitForEnvDump(string $envDump): array
+    {
+        $timeout = time() + 5;
+        while (!is_file($envDump) || 0 === filesize($envDump)) {
+            if (time() > $timeout) {
+                self::fail('Timeout waiting for env dump at '.$envDump);
+            }
+            usleep(50_000);
+        }
+
+        $raw = file_get_contents($envDump);
+        self::assertIsString($raw);
+        /** @var array<string, string> $decoded */
+        $decoded = json_decode($raw, true, 512, JSON_THROW_ON_ERROR);
+
+        return $decoded;
+    }
+
 }
