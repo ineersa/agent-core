@@ -8,6 +8,8 @@ use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+use Ineersa\CodingAgent\Session\SessionOccupancyGuard;
+use Ineersa\CodingAgent\Session\SessionOccupiedException;
 use Ineersa\Tui\Editor\PromptEditor;
 use Ineersa\Tui\Listener\TuiListenerRegistrar;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
@@ -69,6 +71,7 @@ final readonly class InteractiveMode
         private TuiSessionSwitchService $switchService,
         private AppConfig $appConfig,
         private TranscriptDisplayConfigMapper $transcriptConfigMapper,
+        private SessionOccupancyGuard $occupancyGuard,
     ) {
     }
 
@@ -145,6 +148,11 @@ final readonly class InteractiveMode
         // shutdown.
         $needsTerminalClear = false;
 
+        $isFirstIteration = true;
+        $lastActiveSessionId = $sessionId;
+        $lastActiveIsDraft = ('' === $sessionId && null === $request);
+        $lastActiveRequest = $request;
+
         // Map the immutable TranscriptDisplayConfig once before the session
         // loop; it is derived from Hatfield config which does not change
         // within a TUI lifetime. Each new session still gets a fresh mutable
@@ -162,6 +170,39 @@ final readonly class InteractiveMode
                 // `bin/console agent --prompt ...` starts a run immediately.
                 $state = $this->sessionInit->initialize('', $targetRequest);
             }
+
+            if ('' !== $state->sessionId) {
+                // Occupancy must gate before activation; TuiSessionLifecycle events fire after.
+                if (!$this->occupancyGuard->tryAcquire($state->sessionId)) {
+                    if ($isFirstIteration) {
+                        throw new SessionOccupiedException($state->sessionId);
+                    }
+
+                    // Bounce back to the previous session. Its lock was released
+                    // in the prior iteration's finally, so reacquiring it can also
+                    // fail if another instance grabbed it during the switch window.
+                    // If the bounce-back target IS the session we just failed to
+                    // acquire, fall through to a fresh draft instead of looping
+                    // forever on an unreachable target.
+                    if ('' !== $lastActiveSessionId && $lastActiveSessionId === $state->sessionId) {
+                        $isDraft = true;
+                        $targetSessionId = '';
+                        $targetRequest = null;
+                    } elseif ($lastActiveIsDraft) {
+                        $isDraft = true;
+                        $targetSessionId = '';
+                        $targetRequest = $lastActiveRequest;
+                    } else {
+                        $isDraft = false;
+                        $targetSessionId = $lastActiveSessionId;
+                        $targetRequest = null;
+                    }
+                    $needsTerminalClear = true;
+
+                    continue;
+                }
+            }
+
             $state->transcript = $this->sessionInit->buildInitialTranscript($state);
 
             // ── Initialize per-session transcript display state ──
@@ -250,7 +291,19 @@ final readonly class InteractiveMode
             );
 
             $tui->setFocus($screen->editorWidget());
-            $tui->run();
+            $activatedSessionId = $state->sessionId;
+            try {
+                $tui->run();
+            } finally {
+                if ('' !== $activatedSessionId) {
+                    $this->occupancyGuard->release();
+                }
+            }
+
+            $isFirstIteration = false;
+            $lastActiveSessionId = $state->sessionId;
+            $lastActiveIsDraft = ('' === $state->sessionId);
+            $lastActiveRequest = $targetRequest;
 
             // ── Determine exit reason and dispatch session ended ──
             $switchTarget = $this->switchService->consumePendingSwitch();

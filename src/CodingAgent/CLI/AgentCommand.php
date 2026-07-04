@@ -16,6 +16,7 @@ use Ineersa\CodingAgent\Runtime\Protocol\JsonlCodec;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeCommand;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+use Ineersa\CodingAgent\Session\SessionOccupiedException;
 use Ineersa\CodingAgent\Skills\SkillsConfig;
 use Ineersa\CodingAgent\Tool\ToolRegistryInterface;
 use Ineersa\Tui\Application\InteractiveMode;
@@ -170,6 +171,16 @@ final class AgentCommand
             }
 
             return $this->runTui($transport, $prompt, $resume, $model, $reasoning);
+        } catch (SessionOccupiedException $e) {
+            $this->logger->warning('Resume blocked: session occupied', [
+                'component' => 'AgentCommand',
+                'event_type' => 'resume_blocked_occupied',
+                'session_id' => $e->sessionId(),
+            ]);
+
+            $output->writeln('<error>'.$e->getMessage().'</error>');
+
+            return Command::FAILURE;
         } catch (\Throwable $e) {
             $this->logger->error('Unhandled exception in agent command', [
                 'exception' => $e,
