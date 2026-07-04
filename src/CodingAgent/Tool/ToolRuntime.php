@@ -28,9 +28,6 @@ use Symfony\Component\Process\Process;
  */
 final readonly class ToolRuntime
 {
-    /** Minimum interval between DB-backed cancellation token checks during process polling. */
-    private const int CANCELLATION_POLL_INTERVAL_NS = 1_000_000_000;
-
     public function __construct(
         private StackToolExecutionContextAccessor $contextAccessor,
     ) {
@@ -120,10 +117,20 @@ final readonly class ToolRuntime
         $process->setIdleTimeout(null);
         $process->start();
 
-        $lastCancellationPollNs = hrtime(true);
-
         while ($process->isRunning()) {
-            // Monotonic timeout deadline before cooperative cancellation polling.
+            // Cooperative cancellation check from ToolContext.
+            if (null !== $cancelToken && $cancelToken->isCancellationRequested()) {
+                $process->stop($graceSeconds);
+
+                return new CancellableProcessResult(
+                    stdout: $process->getOutput(),
+                    stderr: $process->getErrorOutput(),
+                    exitCode: $process->getExitCode(),
+                    cancelled: true,
+                );
+            }
+
+            // Monotonic timeout deadline.
             if (null !== $deadline && hrtime(true) > $deadline) {
                 $process->stop($graceSeconds);
 
@@ -133,25 +140,6 @@ final readonly class ToolRuntime
                     exitCode: $process->getExitCode(),
                     timedOut: true,
                 );
-            }
-
-            // Throttle DB-backed cancellation checks so short-lived subprocesses
-            // (e.g. read pipelines) can finish without repeated RunStore lookups.
-            if (null !== $cancelToken) {
-                $now = hrtime(true);
-                if (($now - $lastCancellationPollNs) >= self::CANCELLATION_POLL_INTERVAL_NS) {
-                    $lastCancellationPollNs = $now;
-                    if ($cancelToken->isCancellationRequested()) {
-                        $process->stop($graceSeconds);
-
-                        return new CancellableProcessResult(
-                            stdout: $process->getOutput(),
-                            stderr: $process->getErrorOutput(),
-                            exitCode: $process->getExitCode(),
-                            cancelled: true,
-                        );
-                    }
-                }
             }
 
             usleep($pollIntervalMicros);

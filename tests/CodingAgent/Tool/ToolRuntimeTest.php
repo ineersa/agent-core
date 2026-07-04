@@ -105,9 +105,9 @@ final class ToolRuntimeTest extends TestCase
 
     public function testCancellableProcessCancelled(): void
     {
-        $process = new Process(['php', '-r', 'usleep(2_000_000); echo "interrupted";']);
+        $process = new Process(['php', '-r', 'usleep(200000); echo "interrupted";']);
 
-        // Cancellation token returns true — process is stopped after the first throttled poll (~1s).
+        // Cancellation token returns true — process should be stopped immediately.
         $result = $this->contextAccessor->with(
             $this->contextWithToken($this->createToken(true)),
             fn (): CancellableProcessResult => $this->toolRuntime->runCancellableProcess(
@@ -118,7 +118,7 @@ final class ToolRuntimeTest extends TestCase
             ),
         );
 
-        $this->assertTrue($result->cancelled, 'Process should be marked cancelled after throttled poll');
+        $this->assertTrue($result->cancelled, 'Process should be marked cancelled');
         $this->assertFalse($result->timedOut);
     }
 
@@ -155,59 +155,6 @@ final class ToolRuntimeTest extends TestCase
         );
 
         $this->assertSame('no_context', $result->stdout);
-        $this->assertSame(0, $result->exitCode);
-        $this->assertFalse($result->cancelled);
-        $this->assertFalse($result->timedOut);
-    }
-
-
-    public function testCancellableProcessFastCompletionDoesNotRequireCancellationPoll(): void
-    {
-        $token = $this->createMock(CancellationTokenInterface::class);
-        $token->expects($this->never())
-            ->method('isCancellationRequested');
-
-        $process = new Process(['php', '-r', 'echo "fast"; exit(0);']);
-
-        $result = $this->contextAccessor->with(
-            $this->contextWithToken($token),
-            fn (): CancellableProcessResult => $this->toolRuntime->runCancellableProcess(
-                $process,
-                graceSeconds: 1,
-                timeoutSeconds: 30,
-                pollIntervalMicros: 50_000,
-            ),
-        );
-
-        $this->assertSame('fast', $result->stdout);
-        $this->assertSame(0, $result->exitCode);
-        $this->assertFalse($result->cancelled);
-        $this->assertFalse($result->timedOut);
-    }
-
-    public function testCancellableProcessThrottlesCancellationPollingWhileRunning(): void
-    {
-        $token = $this->createMock(CancellationTokenInterface::class);
-        // Inner loop polls every 10ms; without throttling, false would be read ~130+ times over 1.3s.
-        $token->expects($this->atLeastOnce())
-            ->method('isCancellationRequested')
-            ->willReturn(false);
-        $token->expects($this->atMost(3))
-            ->method('isCancellationRequested');
-
-        $process = new Process(['php', '-r', 'usleep(1_300_000); echo "done";']);
-
-        $result = $this->contextAccessor->with(
-            $this->contextWithToken($token),
-            fn (): CancellableProcessResult => $this->toolRuntime->runCancellableProcess(
-                $process,
-                graceSeconds: 1,
-                timeoutSeconds: 10,
-                pollIntervalMicros: 10_000,
-            ),
-        );
-
-        $this->assertSame('done', $result->stdout);
         $this->assertSame(0, $result->exitCode);
         $this->assertFalse($result->cancelled);
         $this->assertFalse($result->timedOut);
