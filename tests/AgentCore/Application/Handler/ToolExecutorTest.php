@@ -475,6 +475,30 @@ final class ToolExecutorTest extends TestCase
         self::assertNull($result->details['timeout_seconds'] ?? null);
     }
 
+    public function testNullCallTimeoutUsesGlobalDefaultForNonSubagentTools(): void
+    {
+        $clock = new MockClock();
+        $toolbox = new ClockAdvancingToolbox($clock, 0);
+        $executor = new ToolExecutor(
+            defaultMode: 'parallel',
+            defaultTimeoutSeconds: 30,
+            maxParallelism: 2,
+            toolbox: $toolbox,
+            resultStore: new ToolExecutionResultStore(),
+            clock: $clock,
+        );
+
+        $result = $executor->execute(ToolCallBuilder::create('call-read')
+            ->withToolName('read')
+            ->withArguments(['path' => 'README.md'])
+            ->withOrderIndex(0)
+            ->withTimeoutSeconds(null)
+            ->build());
+
+        self::assertFalse($result->isError);
+        self::assertSame(30, $result->details['timeout_seconds'] ?? null);
+    }
+
     public function testExplicitCallTimeoutStillEnforcesPostHocCap(): void
     {
         $clock = new MockClock();
