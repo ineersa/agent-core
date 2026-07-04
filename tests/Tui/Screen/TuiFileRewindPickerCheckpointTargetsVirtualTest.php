@@ -45,6 +45,36 @@ final class TuiFileRewindPickerCheckpointTargetsVirtualTest extends TestCase
         self::assertStringNotContainsString('no file checkpoint', $screen);
     }
 
+
+    #[Test]
+    public function testRewindPickerShowsCheckpointWithPlaceholderTreeTitle(): void
+    {
+        $sessionId = 'rewind-placeholder-session';
+        $harness = new VirtualTuiHarness(sessionId: $sessionId);
+
+        $treeProvider = $this->createStub(TurnTreeProviderInterface::class);
+        $treeProvider->method('forSession')->willReturn(new TurnTreeView(
+            runId: $sessionId,
+            nodesByTurnNo: [
+                3 => new TurnTreeNodeView(3, 2, [4], 6, 'Turn 3', 'Turn 3', null, true),
+            ],
+            rootTurnNos: [3],
+            currentLeafTurnNo: 3,
+            activePathTurnNos: [3],
+        ));
+
+        $previewPort = $this->createStub(FileRewindTurnPreviewPortInterface::class);
+        $previewPort->method('hasCheckpoint')->willReturnCallback(static fn (string $sid, int $turnNo): bool => 'rewind-placeholder-session' === $sid && 3 === $turnNo);
+
+        $picker = new FileRewindPickerController($treeProvider, $previewPort, $this->createStub(FileRewindTurnActionPortInterface::class));
+        $picker->setRuntimeRefs($harness->tui(), $harness->screen(), new TuiSessionState($sessionId));
+        $picker->open($sessionId);
+
+        $screen = $harness->plainScreenText();
+        self::assertStringContainsString('Turn 3: Checkpoint (turn 3)', $screen);
+        self::assertStringNotContainsString('No file rewind checkpoints are available yet.', $screen);
+    }
+
     private function sampleTree(string $sessionId): TurnTreeView
     {
         return new TurnTreeView(

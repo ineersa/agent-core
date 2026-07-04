@@ -23,24 +23,23 @@ final readonly class FileRewindAfterTurnCommitHook implements AfterTurnCommitHoo
         // Skip orchestration / mid-tool commits. Capture only on stable turn boundaries.
         if ($this->has($context, 'run_started')
             || $this->has($context, 'tool_execution_start')
-            || $this->has($context, 'agent_command_queued')
-            || $this->has($context, 'agent_command_applied')
         ) {
             return;
         }
         if ($context->effectsCount > 0) {
             return;
         }
-        // Mid-tool batch commit: tools finished but assistant follow-up not committed yet.
-        if ($this->has($context, 'tool_batch_committed')
-            && !$this->has($context, 'turn_end')
-            && !$this->has($context, 'agent_end')
-            && !$this->has($context, 'llm_step_completed')
-        ) {
-            return;
-        }
         $anchorSeq = $this->resolveCaptureAnchorSeq($context);
         if (null === $anchorSeq) {
+            return;
+        }
+        // Pure command mailbox commits (no stable file boundary in this batch).
+        if (($this->has($context, 'agent_command_queued') || $this->has($context, 'agent_command_applied'))
+            && !$this->has($context, 'tool_batch_committed')
+            && !$this->has($context, 'llm_step_completed')
+            && !$this->has($context, 'turn_end')
+            && !$this->has($context, 'agent_end')
+        ) {
             return;
         }
         $this->service->recordTurnCheckpoint($context->runId, $context->turnNo, $anchorSeq);
@@ -54,13 +53,28 @@ final readonly class FileRewindAfterTurnCommitHook implements AfterTurnCommitHoo
             }
         }
 
-        // Completed assistant step without a new tool batch in this commit (post-tool final answer).
+        // Completed assistant step without in-flight tool work in this commit (post-tool final answer).
         if ($this->has($context, 'llm_step_completed')
             && !$this->has($context, 'tool_execution_start')
             && !$this->has($context, 'tool_call_result_received')
         ) {
             foreach ($context->events as $event) {
                 if ('llm_step_completed' === $event->type) {
+                    return $event->seq;
+                }
+            }
+        }
+
+        // Post-tool stable file state: tool batch committed, no assistant boundary in same commit.
+        if ($this->has($context, 'tool_batch_committed')
+            && !$this->has($context, 'llm_step_completed')
+            && !$this->has($context, 'turn_end')
+            && !$this->has($context, 'agent_end')
+            && !$this->has($context, 'tool_execution_start')
+            && !$this->has($context, 'tool_call_result_received')
+        ) {
+            foreach ($context->events as $event) {
+                if ('tool_batch_committed' === $event->type) {
                     return $event->seq;
                 }
             }

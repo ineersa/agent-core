@@ -91,7 +91,29 @@ final class FileRewindAfterTurnCommitHookTest extends TestCase
     }
 
 
-    public function testSkipsMidToolBatchWithoutFinalAssistantBoundary(): void
+    public function testRecordsCheckpointOnPostToolToolBatchCommitted(): void
+    {
+        file_put_contents($this->projectDir.'/test.txt', "LINE_ONE
+");
+        $hook = new FileRewindAfterTurnCommitHook(
+            $this->service,
+            new FileRewindConfig(enabled: true, maxRetainedTurns: 10, maxFileBytes: 1024),
+        );
+
+        $hook->onAfterTurnCommit(new AfterTurnCommitHookContextDTO(
+            runId: 'run-hook',
+            turnNo: 1,
+            status: 'running',
+            events: [
+                new AfterTurnCommitEventSummaryDTO(11, 'tool_batch_committed'),
+            ],
+            effectsCount: 0,
+        ));
+
+        self::assertTrue($this->service->hasCheckpointForTurn('run-hook', 1));
+    }
+
+    public function testSkipsMidToolBatchWhenEffectsStillPending(): void
     {
         $hook = new FileRewindAfterTurnCommitHook(
             $this->service,
@@ -105,7 +127,7 @@ final class FileRewindAfterTurnCommitHookTest extends TestCase
             events: [
                 new AfterTurnCommitEventSummaryDTO(1, 'tool_batch_committed'),
             ],
-            effectsCount: 0,
+            effectsCount: 1,
         ));
 
         self::assertFalse($this->service->hasCheckpointForTurn('run-hook', 2));
@@ -154,6 +176,29 @@ final class FileRewindAfterTurnCommitHookTest extends TestCase
         ));
 
         self::assertTrue($this->service->hasCheckpointForTurn('run-hook', 2));
+    }
+
+
+    public function testRecordsCheckpointWhenToolBatchSharesCommitWithAgentCommandApplied(): void
+    {
+        file_put_contents($this->projectDir.'/test.txt', "LINE_ONE\n");
+        $hook = new FileRewindAfterTurnCommitHook(
+            $this->service,
+            new FileRewindConfig(enabled: true, maxRetainedTurns: 10, maxFileBytes: 1024),
+        );
+
+        $hook->onAfterTurnCommit(new AfterTurnCommitHookContextDTO(
+            runId: 'run-hook',
+            turnNo: 1,
+            status: 'running',
+            events: [
+                new AfterTurnCommitEventSummaryDTO(11, 'tool_batch_committed'),
+                new AfterTurnCommitEventSummaryDTO(12, 'agent_command_applied'),
+            ],
+            effectsCount: 0,
+        ));
+
+        self::assertTrue($this->service->hasCheckpointForTurn('run-hook', 1));
     }
 
     public function testSkipsWhenDisabled(): void

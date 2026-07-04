@@ -176,17 +176,24 @@ final class FileRewindPickerController
             if (!$node instanceof TurnTreeNodeView) {
                 continue;
             }
-            $title = trim($node->title);
-            if ('' === $title || preg_match('/^Turn \d+$/', $title)) {
-                $title = trim($node->promptPreview);
-            }
-            if ('' === $title || preg_match('/^Turn \d+$/', $title)) {
-                continue;
-            }
+            $title = $this->checkpointRowTitle($node, $turnNo);
             $targets[] = ['turnNo' => $turnNo, 'title' => $title];
         }
 
         return $targets;
+    }
+
+    private function checkpointRowTitle(TurnTreeNodeView $node, int $turnNo): string
+    {
+        $title = trim($node->title);
+        if ('' === $title || preg_match('/^Turn \d+$/', $title)) {
+            $title = trim($node->promptPreview);
+        }
+        if ('' === $title || preg_match('/^Turn \d+$/', $title)) {
+            return 'Checkpoint (turn '.$turnNo.')';
+        }
+
+        return $title;
     }
 
     private function openActionPicker(string $sessionId, int $turnNo): void

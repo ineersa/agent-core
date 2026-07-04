@@ -75,4 +75,43 @@ final class FileRewindPostToolCheckpointRestoreTest extends TestCase
         self::assertSame("LINE_ONE\n", file_get_contents($this->projectDir.'/test.txt'));
         self::assertFileExists($this->projectDir.'/test.txt');
     }
+
+    public function testLiveLikeToolCycleSequenceRestoresOneLineAfterAppend(): void
+    {
+        $runId = '1';
+        file_put_contents($this->projectDir.'/test.txt', "LINE_ONE\n");
+
+        $this->hook->onAfterTurnCommit(new AfterTurnCommitHookContextDTO(
+            runId: $runId,
+            turnNo: 1,
+            status: 'running',
+            events: [new AfterTurnCommitEventSummaryDTO(11, 'tool_batch_committed')],
+            effectsCount: 0,
+        ));
+
+        file_put_contents($this->projectDir.'/test.txt', "LINE_ONE\nLINE_TWO\n");
+
+        $this->hook->onAfterTurnCommit(new AfterTurnCommitHookContextDTO(
+            runId: $runId,
+            turnNo: 2,
+            status: 'running',
+            events: [new AfterTurnCommitEventSummaryDTO(21, 'tool_batch_committed')],
+            effectsCount: 0,
+        ));
+
+        $this->hook->onAfterTurnCommit(new AfterTurnCommitHookContextDTO(
+            runId: $runId,
+            turnNo: 3,
+            status: 'completed',
+            events: [new AfterTurnCommitEventSummaryDTO(25, 'agent_end')],
+            effectsCount: 0,
+        ));
+
+        self::assertTrue($this->service->hasCheckpointForTurn($runId, 1), 'post-create tool_batch should checkpoint one-line state');
+        self::assertTrue($this->service->hasCheckpointForTurn($runId, 2), 'append tool_batch should checkpoint two-line state');
+
+        $this->service->restoreForTurn($runId, 1);
+
+        self::assertSame("LINE_ONE\n", file_get_contents($this->projectDir.'/test.txt'));
+    }
 }
