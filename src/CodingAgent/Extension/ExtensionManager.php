@@ -8,7 +8,7 @@ use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Runtime\Contract\LoadedExtensionItemDTO;
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
 use Ineersa\Hatfield\ExtensionApi\HatfieldExtensionInterface;
-use Ineersa\Hatfield\ExtensionApi\Tui\TuiProjectExtensionInterface;
+use Ineersa\Hatfield\ExtensionApi\Tui\TuiExtensionInterface;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -33,8 +33,8 @@ final class ExtensionManager
     /** @var list<LoadedExtensionItemDTO> */
     private array $loadOutcomes = [];
 
-    /** @var list<TuiProjectExtensionInterface> */
-    private array $tuiProjectExtensions = [];
+    /** @var list<TuiExtensionInterface> */
+    private array $tuiExtensions = [];
 
     public function __construct(
         private readonly AppConfig $config,
@@ -44,19 +44,18 @@ final class ExtensionManager
     }
 
     /**
+     * @return list<TuiExtensionInterface>
+     */
+    public function getTuiExtensions(): array
+    {
+        return $this->tuiExtensions;
+    }
+
+    /**
      * Structured outcomes from the most recent {@see loadExtensions()} call.
      *
      * @return list<LoadedExtensionItemDTO>
      */
-
-    /**
-     * @return list<TuiProjectExtensionInterface>
-     */
-    public function getTuiProjectExtensions(): array
-    {
-        return $this->tuiProjectExtensions;
-    }
-
     public function getLoadOutcomes(): array
     {
         return $this->loadOutcomes;
@@ -76,7 +75,7 @@ final class ExtensionManager
     public function loadExtensions(): array
     {
         $this->loadOutcomes = [];
-        $this->tuiProjectExtensions = [];
+        $this->tuiExtensions = [];
         $enabled = $this->getEnabledClasses();
 
         if ([] === $enabled) {
@@ -186,8 +185,8 @@ final class ExtensionManager
         }
 
         $this->loadOutcomes[] = new LoadedExtensionItemDTO($className, true);
-        if ($instance instanceof TuiProjectExtensionInterface) {
-            $this->tuiProjectExtensions[] = $instance;
+        if ($instance instanceof TuiExtensionInterface) {
+            $this->tuiExtensions[] = $instance;
         }
 
         return null;

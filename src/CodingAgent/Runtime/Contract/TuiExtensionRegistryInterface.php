@@ -9,8 +9,8 @@ namespace Ineersa\CodingAgent\Runtime\Contract;
  *
  * @phpstan-return list<object> each element should implement registerTui(object): void
  */
-interface TuiProjectExtensionRegistryInterface
+interface TuiExtensionRegistryInterface
 {
     /** @return list<object> */
-    public function getTuiProjectExtensions(): array;
+    public function getTuiExtensions(): array;
 }

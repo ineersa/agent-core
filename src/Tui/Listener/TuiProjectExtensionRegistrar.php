@@ -4,22 +4,24 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Listener;
 
-use Ineersa\CodingAgent\Runtime\Contract\TuiProjectExtensionRegistryInterface;
+use Ineersa\CodingAgent\Runtime\Contract\TuiExtensionRegistryInterface;
+use Ineersa\Hatfield\ExtensionApi\Tui\TuiExtensionInterface;
+use Ineersa\Tui\Runtime\BridgeTuiExtensionContext;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
 
 final class TuiProjectExtensionRegistrar implements TuiListenerRegistrar
 {
-    public function __construct(private readonly TuiProjectExtensionRegistryInterface $tuiExtensions)
+    public function __construct(private readonly TuiExtensionRegistryInterface $tuiExtensions)
     {
     }
 
     public function register(TuiRuntimeContext $context): void
     {
-        foreach ($this->tuiExtensions->getTuiProjectExtensions() as $extension) {
-            if (!\is_object($extension) || !method_exists($extension, 'registerTui')) {
-                continue;
+        $bridge = new BridgeTuiExtensionContext($context);
+        foreach ($this->tuiExtensions->getTuiExtensions() as $extension) {
+            if ($extension instanceof TuiExtensionInterface) {
+                $extension->registerTui($bridge);
             }
-            $extension->registerTui($context);
         }
     }
 }

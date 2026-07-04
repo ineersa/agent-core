@@ -187,7 +187,7 @@ services:
     arguments:
       $extensionApi: '@Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface'
 
-  Ineersa\CodingAgent\Runtime\Contract\TuiProjectExtensionRegistryInterface:
+  Ineersa\CodingAgent\Runtime\Contract\TuiExtensionRegistryInterface:
     alias: Ineersa\CodingAgent\Extension\ExtensionManager
 
   Ineersa\Tui\Listener\TuiProjectExtensionRegistrar:

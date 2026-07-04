@@ -6,6 +6,7 @@ namespace Ineersa\Tui\Command;
 
 use Ineersa\Tui\Command\Hotkey\HotkeyRegistry;
 use Ineersa\Tui\Command\Hotkey\HotkeyTableData;
+use Ineersa\Tui\Extension\ExtensionSlashCommandHandler;
 
 /**
  * Registry of slash commands with built-in help, lookup, and dispatch.

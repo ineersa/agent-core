@@ -361,6 +361,7 @@ parameters:
       - SymfonyConsole
 
     TuiListener:
+      - AppExtensionApi
       - AppRuntimeContract
       - AppRuntimeProjection
       - AppSession
@@ -382,12 +383,14 @@ parameters:
       - SymfonyTui
 
     TuiRuntime:
+      - AppExtensionApi
       - AppRuntimeContract
       - AppRuntimeProjection
       - AppSession
       - TuiTranscript
       - TuiScreen
       - TuiTheme
+      - TuiPicker
       - SymfonyTui
 
     TuiScreen:
@@ -421,6 +424,8 @@ parameters:
       - TuiFooter
       - TuiTheme
       - TuiCommand
+      - TuiRuntime
+      - TuiPicker
 
     TuiHeader:
       - TuiWidget
@@ -437,7 +442,8 @@ parameters:
       - TuiWidget
       - TuiTheme
 
-    TuiCommand: ~
+    TuiCommand:
+      - TuiExtension
 
     TuiCompletion:
       - TuiCommand
@@ -674,17 +680,13 @@ parameters:
 
     McpSdk: ~
 
-    AppExtensionApi: ~
+    AppExtensionApi:
+      - SymfonyTui
     HatfieldExtTaskWorkflow:
       - AppExtensionApi
       - HatfieldExtTaskWorkflow
     HatfieldExtFileRewind:
       - AppExtensionApi
-      - AppRuntimeContract
-      - TuiPicker
-      - TuiScreen
-      - TuiRuntime
-      - TuiWidget
       - SymfonyTui
     AppExtensionBuiltin:
       - AppExtensionApi

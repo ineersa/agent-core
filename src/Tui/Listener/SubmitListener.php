@@ -78,7 +78,7 @@ final class SubmitListener implements TuiListenerRegistrar
 
         $context->tui->addListener(static function (SubmitEvent $event) use (
             $client, $sessionStore, $state, $screen, $tui, $router, $blockFactory,
-            $questionCoordinator, $questionController, $subagentLiveInputPolicy, $logger,
+            $questionCoordinator, $questionController, $subagentLiveInputPolicy, $logger, $lifecycle,
         ) {
             $text = $screen->extract();
             if ('' === $text) {
@@ -134,7 +134,7 @@ final class SubmitListener implements TuiListenerRegistrar
                 if ($commandResult instanceof DispatchRuntime) {
                     self::dispatchToRuntime(
                         $commandResult->payload, $state, $screen,
-                        $sessionStore, $blockFactory, $client, $logger, $tui,
+                        $sessionStore, $blockFactory, $client, $logger, $tui, $lifecycle,
                     );
 
                     return;
@@ -150,7 +150,7 @@ final class SubmitListener implements TuiListenerRegistrar
             // No local echo or persistence: canonical runtime events project
             // user blocks (avoiding duplicate block IDs), and events.jsonl is
             // the single source of truth for transcript replay on resume.
-            self::dispatchToRuntime($text, $state, $screen, $sessionStore, $blockFactory, $client, $logger, $tui);
+            self::dispatchToRuntime($text, $state, $screen, $sessionStore, $blockFactory, $client, $logger, $tui, $lifecycle);
         });
     }
 
@@ -237,6 +237,7 @@ final class SubmitListener implements TuiListenerRegistrar
         \Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient $client,
         LoggerInterface $logger,
         Tui $tui,
+        TuiSessionLifecycleDispatcher $lifecycle,
     ): void {
         // Show immediate visual feedback (◐ Working...) before heavy
         // synchronous work (session creation, system prompt discovery,
