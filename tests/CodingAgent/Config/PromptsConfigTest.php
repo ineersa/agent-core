@@ -16,37 +16,37 @@ final class PromptsConfigTest extends TestCase
     public function testDefaultIsEmpty(): void
     {
         $config = new PromptsConfig();
-        self::assertSame([], $config->paths);
+        $this->assertSame([], $config->paths);
     }
 
     public function testFromRawWithNull(): void
     {
         $config = PromptsConfig::fromRaw(null);
-        self::assertSame([], $config->paths);
+        $this->assertSame([], $config->paths);
     }
 
     public function testFromRawWithNonArray(): void
     {
         $config = PromptsConfig::fromRaw('not-an-array');
-        self::assertSame([], $config->paths);
+        $this->assertSame([], $config->paths);
     }
 
     public function testFromRawWithValidPaths(): void
     {
         $config = PromptsConfig::fromRaw(['path/to/a.md', '/absolute/b.md']);
-        self::assertSame(['path/to/a.md', '/absolute/b.md'], $config->paths);
+        $this->assertSame(['path/to/a.md', '/absolute/b.md'], $config->paths);
     }
 
     public function testFromRawFiltersNonStringEntries(): void
     {
         $config = PromptsConfig::fromRaw(['valid.md', 42, null, ['nested'], 'also-valid.md']);
-        self::assertSame(['valid.md', 'also-valid.md'], $config->paths);
+        $this->assertSame(['valid.md', 'also-valid.md'], $config->paths);
     }
 
     public function testFromRawFiltersBlankEntries(): void
     {
         $config = PromptsConfig::fromRaw(['  ', '', "\t", 'valid.md']);
-        self::assertSame(['valid.md'], $config->paths);
+        $this->assertSame(['valid.md'], $config->paths);
     }
 
     public function testFromAppConfig(): void
@@ -60,7 +60,7 @@ final class PromptsConfigTest extends TestCase
         );
 
         $derived = PromptsConfig::fromAppConfig($appConfig);
-        self::assertSame(['a.md', 'b.md'], $derived->paths);
+        $this->assertSame(['a.md', 'b.md'], $derived->paths);
     }
 
     public function testPathResolutionViaAppConfigLoader(): void
@@ -89,11 +89,11 @@ final class PromptsConfigTest extends TestCase
             $loader = new AppConfigLoader($pathResolver);
             $data = $loader->load($defaultsDir.'/hatfield.defaults.yaml', $cwd);
 
-            self::assertArrayHasKey('prompts', $data);
+            $this->assertArrayHasKey('prompts', $data);
             $prompts = $data['prompts'];
-            self::assertCount(1, $prompts);
+            $this->assertCount(1, $prompts);
             // The tilde should be expanded to the home directory.
-            self::assertSame($homeDir.'/my-prompts', $prompts[0]);
+            $this->assertSame($homeDir.'/my-prompts', $prompts[0]);
         } finally {
             TestDirectoryIsolation::removeDirectory($tmpDir);
         }
@@ -127,10 +127,10 @@ final class PromptsConfigTest extends TestCase
             $data = $loader->load($defaultsDir.'/hatfield.defaults.yaml', $cwd);
 
             // Project list replaces home list — only proj-prompts should be present.
-            self::assertArrayHasKey('prompts', $data);
+            $this->assertArrayHasKey('prompts', $data);
             $prompts = $data['prompts'];
-            self::assertCount(1, $prompts);
-            self::assertStringContainsString('proj-prompts', $prompts[0]);
+            $this->assertCount(1, $prompts);
+            $this->assertStringContainsString('proj-prompts', $prompts[0]);
         } finally {
             TestDirectoryIsolation::removeDirectory($tmpDir);
         }

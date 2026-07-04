@@ -38,6 +38,45 @@ abstract class ControllerE2eTestCase extends TestCase
      */
     protected ?string $parentRunIdForCollection = null;
 
+    // ── Lifecycle ──
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        if (false === getenv('LLAMA_CPP_SMOKE_TEST') || '' === getenv('LLAMA_CPP_SMOKE_TEST')) {
+            $this->markTestSkipped(
+                'LLAMA_CPP_SMOKE_TEST is not set. Run `castor test:llm-real` or set '
+                .'LLAMA_CPP_SMOKE_TEST=1 to enable the real llama.cpp smoke test.'
+            );
+        }
+
+        $this->projectDir = \Ineersa\CodingAgent\Tests\Support\ProjectDir::get();
+
+        $this->sessionId = substr(bin2hex(random_bytes(16)), 0, 12);
+        $this->tempDir = TestDirectoryIsolation::createProjectTempDir($this->tempDirPrefix());
+
+        $this->createIsolatedProjectDir();
+
+        $this->process = null;
+        $this->pipes = [];
+        $this->stdoutBuf = '';
+        $this->stderrBuf = '';
+        $this->runId = '';
+        $this->parentRunIdForCollection = null;
+    }
+
+    protected function tearDown(): void
+    {
+        $this->stopProcess();
+
+        if (isset($this->tempDir) && '' !== $this->tempDir) {
+            TestDirectoryIsolation::removeDirectory($this->tempDir);
+        }
+
+        parent::tearDown();
+    }
+
     // ── Overridable hooks ──
 
     /**
@@ -58,7 +97,7 @@ abstract class ControllerE2eTestCase extends TestCase
 
     /**
      * @return list<string> Extra CLI arguments appended to `agent --controller`.
-     *                         Default excludes bash for deterministic E2E tests.
+     *                      Default excludes bash for deterministic E2E tests.
      */
     protected function controllerExtraArgs(): array
     {
@@ -74,7 +113,7 @@ abstract class ControllerE2eTestCase extends TestCase
     }
 
     /**
-     * @return array<string, string> Extra lines for diagnostics output.
+     * @return array<string, string> extra lines for diagnostics output
      */
     protected function extraDiagnostics(): array
     {
@@ -134,51 +173,12 @@ abstract class ControllerE2eTestCase extends TestCase
         return 12.0;
     }
 
-    // ── Lifecycle ──
-
-    protected function setUp(): void
-    {
-        parent::setUp();
-
-        if (false === getenv('LLAMA_CPP_SMOKE_TEST') || '' === getenv('LLAMA_CPP_SMOKE_TEST')) {
-            self::markTestSkipped(
-                'LLAMA_CPP_SMOKE_TEST is not set. Run `castor test:llm-real` or set '
-                .'LLAMA_CPP_SMOKE_TEST=1 to enable the real llama.cpp smoke test.'
-            );
-        }
-
-        $this->projectDir = \Ineersa\CodingAgent\Tests\Support\ProjectDir::get();
-
-        $this->sessionId = substr(bin2hex(random_bytes(16)), 0, 12);
-        $this->tempDir = TestDirectoryIsolation::createProjectTempDir($this->tempDirPrefix());
-
-        $this->createIsolatedProjectDir();
-
-        $this->process = null;
-        $this->pipes = [];
-        $this->stdoutBuf = '';
-        $this->stderrBuf = '';
-        $this->runId = '';
-        $this->parentRunIdForCollection = null;
-    }
-
-    protected function tearDown(): void
-    {
-        $this->stopProcess();
-
-        if (isset($this->tempDir) && '' !== $this->tempDir) {
-            TestDirectoryIsolation::removeDirectory($this->tempDir);
-        }
-
-        parent::tearDown();
-    }
-
     // ── Process lifecycle ──
 
     protected function spawnController(): void
     {
         [$php, $script] = AgentTestExecutable::sourceConsoleCommand();
-        self::assertFileExists($script, 'Agent executable not found at '.$script);
+        $this->assertFileExists($script, 'Agent executable not found at '.$script);
 
         $descriptors = [
             0 => ['pipe', 'r'],
@@ -309,40 +309,6 @@ abstract class ControllerE2eTestCase extends TestCase
         return $this->parseBuffer($this->stdoutBuf);
     }
 
-    /**
-     * @return list<array<string, mixed>>
-     */
-    private function parseBuffer(string &$buf): array
-    {
-        $lastNewline = strrpos($buf, "\n");
-        if (false === $lastNewline) {
-            return [];
-        }
-
-        $complete = substr($buf, 0, $lastNewline + 1);
-        $buf = substr($buf, $lastNewline + 1);
-
-        $events = [];
-        foreach (explode("\n", $complete) as $line) {
-            $trimmed = trim($line);
-            if ('' === $trimmed) {
-                continue;
-            }
-
-            try {
-                /** @var array<string, mixed> $decoded */
-                $decoded = json_decode($trimmed, true, 512, \JSON_THROW_ON_ERROR);
-                if (\is_array($decoded)) {
-                    $events[] = $decoded;
-                }
-            } catch (\JsonException) {
-                $this->stderrBuf .= "\n[malformed stdout] ".$trimmed;
-            }
-        }
-
-        return $events;
-    }
-
     protected function drainStderr(): void
     {
         if (!isset($this->pipes[2]) || !\is_resource($this->pipes[2])) {
@@ -361,6 +327,7 @@ abstract class ControllerE2eTestCase extends TestCase
      * Index events by type, returning `[type => [event, ...]]`.
      *
      * @param list<array<string, mixed>> $events
+     *
      * @return array<string, list<array<string, mixed>>>
      */
     protected function indexByType(array $events): array
@@ -402,7 +369,7 @@ abstract class ControllerE2eTestCase extends TestCase
      */
     protected function assertStartRunAcked(array $events, string $cmdId): void
     {
-        self::assertTrue(
+        $this->assertTrue(
             $this->foundAck($events, $cmdId),
             'Expected command.ack for start_run (cmdId='.$cmdId.'). '
             .$this->collectDiagnostics($events),
@@ -428,7 +395,7 @@ abstract class ControllerE2eTestCase extends TestCase
         }
 
         $events = $this->parseBuffer($this->stdoutBuf);
-        self::fail(
+        $this->fail(
             'Timed out waiting for '.$type.' after '.$timeout.'s. '
             .$this->collectDiagnostics($events),
         );
@@ -538,7 +505,6 @@ abstract class ControllerE2eTestCase extends TestCase
         return $events;
     }
 
-
     /**
      * @param array<string, mixed> $event
      */
@@ -583,10 +549,9 @@ abstract class ControllerE2eTestCase extends TestCase
     }
 
     protected function assertRunning(string $context): void
-
     {
         if (null !== $this->process && !$this->isRunning()) {
-            self::fail(
+            $this->fail(
                 'Controller process exited while '.$context.'. '
                 .'Stderr: '.$this->stderrBuf,
             );
@@ -607,7 +572,7 @@ abstract class ControllerE2eTestCase extends TestCase
             'Run ID: '.$this->runId,
             'Controller running: '.($this->isRunning() ? 'yes' : 'no'),
             'Stderr: '.$this->stderrBuf,
-            'Events collected: '.count($events),
+            'Events collected: '.\count($events),
             'Event types: '.implode(', ', array_unique(array_map(
                 static fn (array $e): string => (string) ($e['type'] ?? 'unknown'),
                 $events,
@@ -622,13 +587,13 @@ abstract class ControllerE2eTestCase extends TestCase
 
         $transportDb = $this->tempDir.'/.hatfield/messenger-transport.sqlite';
         if (is_file($transportDb)) {
-            $chunks[] = 'Messenger transport DB: '.\filesize($transportDb).' bytes';
+            $chunks[] = 'Messenger transport DB: '.filesize($transportDb).' bytes';
             try {
                 $db = new \PDO('sqlite:'.$transportDb);
                 $rows = $db->query('SELECT count(*), queue_name FROM messenger_messages GROUP BY queue_name');
                 if (false !== $rows) {
                     foreach ($rows as $row) {
-                        $chunks[] = '  '.($row[0] ?? 0).' messages in '.\escapeshellarg($row[1] ?? '?');
+                        $chunks[] = '  '.($row[0] ?? 0).' messages in '.escapeshellarg($row[1] ?? '?');
                     }
                 }
             } catch (\Throwable $e) {
@@ -647,7 +612,7 @@ abstract class ControllerE2eTestCase extends TestCase
             return 'Session dir: missing';
         }
 
-        $dirs = \glob($sessionsDir.'/*', \GLOB_ONLYDIR) ?: [];
+        $dirs = glob($sessionsDir.'/*', \GLOB_ONLYDIR) ?: [];
         $lines = ['Session dir: '.$sessionsDir."\nSessions: ".implode(', ', array_map('basename', $dirs))];
 
         foreach ($dirs as $sessionDir) {
@@ -683,7 +648,7 @@ abstract class ControllerE2eTestCase extends TestCase
             }
         }
 
-        self::assertEmpty(
+        $this->assertEmpty(
             $missing,
             'Missing or empty session artifacts: '.implode(', ', $missing)."\n"
             .$this->collectDiagnostics($events),
@@ -756,4 +721,37 @@ YAML;
         file_put_contents($this->tempDir.'/.hatfield/.gitignore', "*\n");
     }
 
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function parseBuffer(string &$buf): array
+    {
+        $lastNewline = strrpos($buf, "\n");
+        if (false === $lastNewline) {
+            return [];
+        }
+
+        $complete = substr($buf, 0, $lastNewline + 1);
+        $buf = substr($buf, $lastNewline + 1);
+
+        $events = [];
+        foreach (explode("\n", $complete) as $line) {
+            $trimmed = trim($line);
+            if ('' === $trimmed) {
+                continue;
+            }
+
+            try {
+                /** @var array<string, mixed> $decoded */
+                $decoded = json_decode($trimmed, true, 512, \JSON_THROW_ON_ERROR);
+                if (\is_array($decoded)) {
+                    $events[] = $decoded;
+                }
+            } catch (\JsonException) {
+                $this->stderrBuf .= "\n[malformed stdout] ".$trimmed;
+            }
+        }
+
+        return $events;
+    }
 }

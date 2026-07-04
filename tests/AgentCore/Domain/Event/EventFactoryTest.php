@@ -25,11 +25,11 @@ final class EventFactoryTest extends TestCase
             payload: ['turn' => 2],
         );
 
-        self::assertSame('run-factory', $event->runId);
-        self::assertSame(10, $event->seq);
-        self::assertSame(2, $event->turnNo);
-        self::assertSame('turn_start', $event->type);
-        self::assertSame(['turn' => 2], $event->payload);
+        $this->assertSame('run-factory', $event->runId);
+        $this->assertSame(10, $event->seq);
+        $this->assertSame(2, $event->turnNo);
+        $this->assertSame('turn_start', $event->type);
+        $this->assertSame(['turn' => 2], $event->payload);
     }
 
     /* ─── EventFactory::eventsFromSpecs() ─── */
@@ -48,9 +48,9 @@ final class EventFactoryTest extends TestCase
             ],
         );
 
-        self::assertCount(2, $events);
-        self::assertSame(5, $events[0]->seq);
-        self::assertSame(6, $events[1]->seq);
+        $this->assertCount(2, $events);
+        $this->assertSame(5, $events[0]->seq);
+        $this->assertSame(6, $events[1]->seq);
     }
 
     public function testEventsFromSpecsRespectsTurnNoOverride(): void
@@ -67,9 +67,9 @@ final class EventFactoryTest extends TestCase
             ],
         );
 
-        self::assertCount(2, $events);
-        self::assertSame(2, $events[0]->turnNo);
-        self::assertSame(1, $events[1]->turnNo);
+        $this->assertCount(2, $events);
+        $this->assertSame(2, $events[0]->turnNo);
+        $this->assertSame(1, $events[1]->turnNo);
     }
 
     /* ─── EventFactory::incrementStateVersion() ─── */
@@ -91,18 +91,18 @@ final class EventFactoryTest extends TestCase
         $factory = new EventFactory();
         $newState = $factory->incrementStateVersion($state, 3);
 
-        self::assertSame('run-version', $newState->runId);
-        self::assertSame(RunStatus::Running, $newState->status);
-        self::assertSame(6, $newState->version);       // 5 + 1
-        self::assertSame(3, $newState->turnNo);          // unchanged
-        self::assertSame(13, $newState->lastSeq);        // 10 + 3
-        self::assertTrue($newState->isStreaming);         // unchanged
-        self::assertSame(['delta' => 'abc'], $newState->streamingMessage);  // unchanged
-        self::assertSame(['call-1' => true], $newState->pendingToolCalls);   // unchanged
-        self::assertSame('prev error', $newState->errorMessage);             // unchanged
-        self::assertSame([], $newState->messages);                           // unchanged (was empty)
-        self::assertSame('step-99', $newState->activeStepId);                // unchanged
-        self::assertTrue($newState->retryableFailure);                        // unchanged
+        $this->assertSame('run-version', $newState->runId);
+        $this->assertSame(RunStatus::Running, $newState->status);
+        $this->assertSame(6, $newState->version);       // 5 + 1
+        $this->assertSame(3, $newState->turnNo);          // unchanged
+        $this->assertSame(13, $newState->lastSeq);        // 10 + 3
+        $this->assertTrue($newState->isStreaming);         // unchanged
+        $this->assertSame(['delta' => 'abc'], $newState->streamingMessage);  // unchanged
+        $this->assertSame(['call-1' => true], $newState->pendingToolCalls);   // unchanged
+        $this->assertSame('prev error', $newState->errorMessage);             // unchanged
+        $this->assertSame([], $newState->messages);                           // unchanged (was empty)
+        $this->assertSame('step-99', $newState->activeStepId);                // unchanged
+        $this->assertTrue($newState->retryableFailure);                        // unchanged
     }
 
     public function testIncrementStateVersionWithZeroEventCount(): void
@@ -111,7 +111,7 @@ final class EventFactoryTest extends TestCase
         $factory = new EventFactory();
         $newState = $factory->incrementStateVersion($state, 0);
 
-        self::assertSame(4, $newState->version);   // 3 + 1 always
-        self::assertSame(7, $newState->lastSeq);    // 7 + 0
+        $this->assertSame(4, $newState->version);   // 3 + 1 always
+        $this->assertSame(7, $newState->lastSeq);    // 7 + 0
     }
 }

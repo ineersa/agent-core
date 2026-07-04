@@ -20,9 +20,9 @@ final class ToolExecutionPolicyResolverTest extends TestCase
 
         $policy = $resolver->resolve('read');
 
-        self::assertSame(ToolExecutionMode::Sequential, $policy->mode);
-        self::assertNull($policy->timeoutSeconds);
-        self::assertSame(4, $policy->maxParallelism);
+        $this->assertSame(ToolExecutionMode::Sequential, $policy->mode);
+        $this->assertNull($policy->timeoutSeconds);
+        $this->assertSame(4, $policy->maxParallelism);
     }
 
     public function testResolveReturnsConfiguredDefaultMode(): void
@@ -31,7 +31,7 @@ final class ToolExecutionPolicyResolverTest extends TestCase
 
         $policy = $resolver->resolve('any_tool');
 
-        self::assertSame(ToolExecutionMode::Parallel, $policy->mode);
+        $this->assertSame(ToolExecutionMode::Parallel, $policy->mode);
     }
 
     public function testResolveWithZeroDefaultTimeoutMeansNoPostHocTimeout(): void
@@ -40,7 +40,7 @@ final class ToolExecutionPolicyResolverTest extends TestCase
 
         $policy = $resolver->resolve('any_tool');
 
-        self::assertNull($policy->timeoutSeconds);
+        $this->assertNull($policy->timeoutSeconds);
     }
 
     public function testResolveWithExplicitDefaultTimeout(): void
@@ -49,7 +49,7 @@ final class ToolExecutionPolicyResolverTest extends TestCase
 
         $policy = $resolver->resolve('any_tool');
 
-        self::assertSame(45, $policy->timeoutSeconds);
+        $this->assertSame(45, $policy->timeoutSeconds);
     }
 
     public function testResolveClampsMaxParallelismToAtLeastOne(): void
@@ -58,7 +58,7 @@ final class ToolExecutionPolicyResolverTest extends TestCase
 
         $policy = $resolver->resolve('any_tool');
 
-        self::assertSame(1, $policy->maxParallelism);
+        $this->assertSame(1, $policy->maxParallelism);
     }
 
     public function testResolveFromSettings(): void
@@ -72,6 +72,6 @@ final class ToolExecutionPolicyResolverTest extends TestCase
 
         $policy = $resolver->resolve('any_tool');
 
-        self::assertSame(ToolExecutionMode::Sequential, $policy->mode);
+        $this->assertSame(ToolExecutionMode::Sequential, $policy->mode);
     }
 }

@@ -75,7 +75,7 @@ final class RunLogContextTest extends TestCase
         try {
             RunLogContext::scoped(
                 ['run_id' => 'run-1'],
-                function (): never {
+                static function (): never {
                     throw new \RuntimeException('test error');
                 },
             );
@@ -134,7 +134,7 @@ final class RunLogContextTest extends TestCase
     {
         RunLogContext::enter(['run_id' => 'main-run', 'component' => 'runtime']);
 
-        $fiber = new \Fiber(function (): void {
+        $fiber = new \Fiber(static function (): void {
             // Fiber should NOT see the main context
             self::assertSame([], RunLogContext::current(), 'Fiber must not inherit main thread context');
 
@@ -156,27 +156,27 @@ final class RunLogContextTest extends TestCase
         $fiber->start();
 
         // Main thread context should be untouched
-        self::assertSame('main-run', RunLogContext::current()['run_id']);
+        $this->assertSame('main-run', RunLogContext::current()['run_id']);
 
         // Resume the fiber
         $fiber->resume();
 
         // Main thread context still unchanged
-        self::assertSame('main-run', RunLogContext::current()['run_id']);
+        $this->assertSame('main-run', RunLogContext::current()['run_id']);
 
         RunLogContext::leave();
     }
 
     public function testTwoFibersHaveIsolatedContexts(): void
     {
-        $fiber1 = new \Fiber(function (): void {
+        $fiber1 = new \Fiber(static function (): void {
             RunLogContext::enter(['run_id' => 'fiber-1', 'component' => 'tool']);
             \Fiber::suspend();
             self::assertSame('fiber-1', RunLogContext::current()['run_id']);
             RunLogContext::leave();
         });
 
-        $fiber2 = new \Fiber(function (): void {
+        $fiber2 = new \Fiber(static function (): void {
             RunLogContext::enter(['run_id' => 'fiber-2', 'component' => 'llm']);
             RunLogContext::enter(['model' => 'gpt-4']);
             \Fiber::suspend();
@@ -193,19 +193,19 @@ final class RunLogContextTest extends TestCase
         $fiber2->start();
 
         // Main thread has no context
-        self::assertSame([], RunLogContext::current());
+        $this->assertSame([], RunLogContext::current());
 
         // Resume and finish both
         $fiber1->resume();
         $fiber2->resume();
 
-        self::assertTrue($fiber1->isTerminated());
-        self::assertTrue($fiber2->isTerminated());
+        $this->assertTrue($fiber1->isTerminated());
+        $this->assertTrue($fiber2->isTerminated());
     }
 
     public function testFiberContextSurvivesMultipleSuspendResumeCycles(): void
     {
-        $fiber = new \Fiber(function (): void {
+        $fiber = new \Fiber(static function (): void {
             RunLogContext::enter(['run_id' => 'fiber-run', 'step' => 0]);
 
             // First suspend: context has step=0
@@ -241,7 +241,7 @@ final class RunLogContextTest extends TestCase
         // Cycle 4: back to step=0
         $fiber->resume();
 
-        self::assertTrue($fiber->isTerminated());
+        $this->assertTrue($fiber->isTerminated());
     }
 
     public function testFiberResetDoesNotAffectMainContext(): void
@@ -249,7 +249,7 @@ final class RunLogContextTest extends TestCase
         // Set context on main thread
         RunLogContext::enter(['run_id' => 'main-run']);
 
-        $fiber = new \Fiber(function (): void {
+        $fiber = new \Fiber(static function (): void {
             // Set and reset fiber context
             RunLogContext::enter(['run_id' => 'fiber-only']);
             RunLogContext::reset();
@@ -259,14 +259,14 @@ final class RunLogContextTest extends TestCase
         $fiber->start();
 
         // Main context must survive fiber's reset
-        self::assertSame('main-run', RunLogContext::current()['run_id']);
+        $this->assertSame('main-run', RunLogContext::current()['run_id']);
 
         RunLogContext::leave();
     }
 
     public function testFiberContextDoesNotLeakToMainAfterFiberFinishes(): void
     {
-        $fiber = new \Fiber(function (): void {
+        $fiber = new \Fiber(static function (): void {
             RunLogContext::enter(['run_id' => 'fiber-run']);
             \Fiber::suspend();
             // Leave happens naturally as fiber finishes
@@ -277,7 +277,7 @@ final class RunLogContextTest extends TestCase
         $fiber->resume();
 
         // Fiber finished. Main thread should be empty.
-        self::assertSame([], RunLogContext::current());
-        self::assertTrue($fiber->isTerminated());
+        $this->assertSame([], RunLogContext::current());
+        $this->assertTrue($fiber->isTerminated());
     }
 }

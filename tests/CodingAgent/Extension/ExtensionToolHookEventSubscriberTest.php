@@ -5,11 +5,11 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Extension;
 
 use Ineersa\AgentCore\Application\Handler\ToolExecutionResultStore;
+use Ineersa\AgentCore\Application\Handler\ToolExecutor;
+use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
-use Ineersa\AgentCore\Application\Handler\ToolExecutor;
-use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Domain\Tool\ToolCall;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\ExtensionsConfig;
@@ -19,19 +19,19 @@ use Ineersa\CodingAgent\Config\ToolsConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Extension\ExtensionHookRegistry;
 use Ineersa\CodingAgent\Extension\ExtensionToolHookEventSubscriber;
-use Ineersa\CodingAgent\Extension\NoninteractiveChildRunProbe;
 use Ineersa\CodingAgent\Extension\ExtensionToolRegistryBridge;
+use Ineersa\CodingAgent\Extension\NoninteractiveChildRunProbe;
 use Ineersa\CodingAgent\Tool\RegistryBackedToolbox;
 use Ineersa\CodingAgent\Tool\ToolHandlerInterface;
 use Ineersa\CodingAgent\Tool\ToolRegistry;
+use Ineersa\Hatfield\ExtensionApi\Approval\ApprovalAnswerContextDTO;
+use Ineersa\Hatfield\ExtensionApi\Approval\ApprovalAnswerHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Command\CommandDefinitionDTO;
 use Ineersa\Hatfield\ExtensionApi\Command\CommandRegistryInterface;
+use Ineersa\Hatfield\ExtensionApi\Command\ExtensionCommandHandlerInterface;
 use Ineersa\Hatfield\ExtensionApi\Exec\ExecInterface;
 use Ineersa\Hatfield\ExtensionApi\Exec\ExecOptionsDTO;
 use Ineersa\Hatfield\ExtensionApi\Exec\ExecResultDTO;
-use Ineersa\Hatfield\ExtensionApi\Command\ExtensionCommandHandlerInterface;
-use Ineersa\Hatfield\ExtensionApi\Approval\ApprovalAnswerContextDTO;
-use Ineersa\Hatfield\ExtensionApi\Approval\ApprovalAnswerHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallContextDTO;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallDecisionDTO;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallHookInterface;
@@ -164,7 +164,7 @@ final class ExtensionToolHookEventSubscriberTest extends TestCase
 
         // The requestId is generated from crc32b of the hook class + context runId + toolCallId.
         // When no context accessor provides a runId, the runId component is empty → ``.
-        $hookId = \hash('crc32b', $hook::class);
+        $hookId = hash('crc32b', $hook::class);
         $expectedRequestId = \sprintf('%s__call-approve-1', $hookId);
 
         $existingQuestion = new \Ineersa\CodingAgent\Entity\ToolQuestion();
@@ -214,7 +214,7 @@ final class ExtensionToolHookEventSubscriberTest extends TestCase
         });
         $hookRegistry->addToolCallHook($hook);
 
-        $hookId = \hash('crc32b', $hook::class);
+        $hookId = hash('crc32b', $hook::class);
         $expectedRequestId = \sprintf('%s__call-deny', $hookId);
 
         $existingQuestion = new \Ineersa\CodingAgent\Entity\ToolQuestion();
@@ -243,7 +243,7 @@ final class ExtensionToolHookEventSubscriberTest extends TestCase
         // Handler must NOT have run because resolveApprovalAnswer returns block() for "Deny".
         $this->assertSame(0, $handler->calls);
         $this->assertIsArray($result->getResult());
-        $this->assertSame(true, $result->getResult()['denied'] ?? null);
+        $this->assertTrue($result->getResult()['denied'] ?? null);
         $this->assertSame('denied_by_test', $result->getResult()['reason'] ?? null);
     }
 
@@ -267,7 +267,7 @@ final class ExtensionToolHookEventSubscriberTest extends TestCase
             return ToolCallDecisionDTO::block('should not reach');
         }));
 
-        $hookId = \hash('crc32b', $hook::class);
+        $hookId = hash('crc32b', $hook::class);
         $expectedRequestId = \sprintf('%s__call-multi', $hookId);
 
         $existingQuestion = new \Ineersa\CodingAgent\Entity\ToolQuestion();
@@ -366,7 +366,7 @@ final class ExtensionToolHookEventSubscriberTest extends TestCase
         );
         $hookRegistry->addToolCallHook($dummyHook);
 
-        $hookId = \hash('crc32b', $dummyHook::class);
+        $hookId = hash('crc32b', $dummyHook::class);
         $expectedRequestId = \sprintf('%s__call-dummy-1', $hookId);
 
         // Pre-answer the question with the dummy extension's own vocabulary.
@@ -420,7 +420,7 @@ final class ExtensionToolHookEventSubscriberTest extends TestCase
         );
         $hookRegistry2->addToolCallHook($dummyHook2);
 
-        $hookId2 = \hash('crc32b', $dummyHook2::class);
+        $hookId2 = hash('crc32b', $dummyHook2::class);
         $expectedRequestId2 = \sprintf('%s__call-dummy-2', $hookId2);
 
         $existingQuestion2 = new \Ineersa\CodingAgent\Entity\ToolQuestion();
@@ -449,7 +449,7 @@ final class ExtensionToolHookEventSubscriberTest extends TestCase
         // Handler must NOT have run — 'Abort' → block('dummy_denied')
         $this->assertSame(0, $handler2->calls);
         $this->assertIsArray($result2->getResult());
-        $this->assertSame(true, $result2->getResult()['denied'] ?? null);
+        $this->assertTrue($result2->getResult()['denied'] ?? null);
         $this->assertSame('dummy_denied', $result2->getResult()['reason'] ?? null);
         $this->assertStringContainsString('Aborted', $result2->getResult()['message'] ?? '');
     }
@@ -479,7 +479,7 @@ final class ExtensionToolHookEventSubscriberTest extends TestCase
                     questionId: 'qid_ctx',
                 );
             },
-            resolveApprovalAnswer: function (ApprovalAnswerContextDTO $context) use (&$receivedContext): ToolCallDecisionDTO {
+            resolveApprovalAnswer: static function (ApprovalAnswerContextDTO $context) use (&$receivedContext): ToolCallDecisionDTO {
                 $receivedContext = $context;
 
                 return ToolCallDecisionDTO::allow();
@@ -487,7 +487,7 @@ final class ExtensionToolHookEventSubscriberTest extends TestCase
         );
         $hookRegistry->addToolCallHook($hook);
 
-        $hookId = \hash('crc32b', $hook::class);
+        $hookId = hash('crc32b', $hook::class);
         $expectedRequestId = \sprintf('%s__call-ctx', $hookId);
 
         $existingQuestion = new \Ineersa\CodingAgent\Entity\ToolQuestion();
@@ -522,50 +522,6 @@ final class ExtensionToolHookEventSubscriberTest extends TestCase
         $this->assertNotNull($receivedContext, 'Expected resolveApprovalAnswer to be called with context');
         $this->assertSame('run-ctx', $receivedContext->runId);
         $this->assertSame('call-ctx', $receivedContext->toolCallId);
-    }
-
-    /**
-     * Build a hook stub that implements both ToolCallHookInterface and
-     * ApprovalAnswerHookInterface, allowing tests to control the
-     * resolveApprovalAnswer outcome without needing the real SafeGuard hook.
-     *
-     * @param callable(ToolCallContextDTO): ToolCallDecisionDTO $onToolCall
-     * @param callable(ApprovalAnswerContextDTO): ToolCallDecisionDTO $resolveApprovalAnswer
-     */
-    private function approvalAwareHook(
-        callable $onToolCall,
-        ?callable $resolveApprovalAnswer = null,
-    ): ToolCallHookInterface&ApprovalAnswerHookInterface {
-        return new class($onToolCall, $resolveApprovalAnswer) implements ToolCallHookInterface, ApprovalAnswerHookInterface {
-            /**
-             * @param callable(ToolCallContextDTO): ToolCallDecisionDTO $onToolCall
-             * @param callable(ApprovalAnswerContextDTO): ToolCallDecisionDTO|null $resolveApprovalAnswer
-             */
-            public function __construct(
-                private readonly mixed $onToolCall,
-                private readonly mixed $resolveApprovalAnswer = null,
-            ) {
-            }
-
-            public function onToolCall(ToolCallContextDTO $context): ToolCallDecisionDTO
-            {
-                return ($this->onToolCall)($context);
-            }
-
-            public function onApprovalAnswered(ApprovalAnswerContextDTO $context): void
-            {
-                // No-op for tests
-            }
-
-            public function resolveApprovalAnswer(ApprovalAnswerContextDTO $context): ToolCallDecisionDTO
-            {
-                if (null !== $this->resolveApprovalAnswer) {
-                    return ($this->resolveApprovalAnswer)($context);
-                }
-
-                return ToolCallDecisionDTO::allow();
-            }
-        };
     }
 
     public function testRequireApprovalDeniedImmediatelyForNoninteractiveChildRun(): void
@@ -632,10 +588,13 @@ final class ExtensionToolHookEventSubscriberTest extends TestCase
             toolCallId: 'call-child-1',
             toolName: 'approval-tool',
             cancellationToken: new class implements \Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface {
-                public function isCancellationRequested(): bool { return false; }
+                public function isCancellationRequested(): bool
+                {
+                    return false;
+                }
             },
             timeoutSeconds: null,
-        ), fn () => $executor->execute(new ToolCall(
+        ), static fn () => $executor->execute(new ToolCall(
             toolCallId: 'call-child-1',
             toolName: 'approval-tool',
             arguments: ['cmd' => 'cat ~/.bashrc'],
@@ -650,6 +609,49 @@ final class ExtensionToolHookEventSubscriberTest extends TestCase
         $this->assertTrue($result->details['raw_result']['noninteractive_child_run'] ?? null);
     }
 
+    /**
+     * Build a hook stub that implements both ToolCallHookInterface and
+     * ApprovalAnswerHookInterface, allowing tests to control the
+     * resolveApprovalAnswer outcome without needing the real SafeGuard hook.
+     *
+     * @param callable(ToolCallContextDTO): ToolCallDecisionDTO       $onToolCall
+     * @param callable(ApprovalAnswerContextDTO): ToolCallDecisionDTO $resolveApprovalAnswer
+     */
+    private function approvalAwareHook(
+        callable $onToolCall,
+        ?callable $resolveApprovalAnswer = null,
+    ): ToolCallHookInterface&ApprovalAnswerHookInterface {
+        return new class($onToolCall, $resolveApprovalAnswer) implements ToolCallHookInterface, ApprovalAnswerHookInterface {
+            /**
+             * @param callable(ToolCallContextDTO): ToolCallDecisionDTO            $onToolCall
+             * @param callable(ApprovalAnswerContextDTO): ToolCallDecisionDTO|null $resolveApprovalAnswer
+             */
+            public function __construct(
+                private readonly mixed $onToolCall,
+                private readonly mixed $resolveApprovalAnswer = null,
+            ) {
+            }
+
+            public function onToolCall(ToolCallContextDTO $context): ToolCallDecisionDTO
+            {
+                return ($this->onToolCall)($context);
+            }
+
+            public function onApprovalAnswered(ApprovalAnswerContextDTO $context): void
+            {
+                // No-op for tests
+            }
+
+            public function resolveApprovalAnswer(ApprovalAnswerContextDTO $context): ToolCallDecisionDTO
+            {
+                if (null !== $this->resolveApprovalAnswer) {
+                    return ($this->resolveApprovalAnswer)($context);
+                }
+
+                return ToolCallDecisionDTO::allow();
+            }
+        };
+    }
 
     private function toolCallHook(callable $callback): ToolCallHookInterface
     {
@@ -728,7 +730,9 @@ final class ExtensionToolHookEventSubscriberTest extends TestCase
     private function stubCommandRegistry(): CommandRegistryInterface
     {
         return new readonly class implements CommandRegistryInterface {
-            public function register(CommandDefinitionDTO $definition, ExtensionCommandHandlerInterface $handler): void {}
+            public function register(CommandDefinitionDTO $definition, ExtensionCommandHandlerInterface $handler): void
+            {
+            }
         };
     }
 }

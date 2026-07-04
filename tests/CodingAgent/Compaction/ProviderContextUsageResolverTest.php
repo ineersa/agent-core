@@ -34,112 +34,20 @@ final class ProviderContextUsageResolverTest extends TestCase
         $this->resolver = new ProviderContextUsageResolver($this->eventStore);
     }
 
-    /**
-     * Configure the mock to return events for allFor() calls.
-     *
-     * The resolver may call allFor() multiple times per method
-     * (once for provider measurement, once for auto start lookup).
-     */
-    private function mockEvents(array $events): void
-    {
-        $this->eventStore->method('allFor')
-            ->willReturn($events);
-    }
-
-    // ── Helpers ───────────────────────────────────────────────────
-
-    private function makeLlmStepCompleted(int $seq, int $inputTokens): RunEvent
-    {
-        return new RunEvent(
-            runId: 'run-1',
-            seq: $seq,
-            turnNo: 1,
-            type: RunEventTypeEnum::LlmStepCompleted->value,
-            payload: [
-                'step_id' => 'step-' . $seq,
-                'stop_reason' => 'stop',
-                'usage' => [
-                    'input_tokens' => $inputTokens,
-                    'output_tokens' => 100,
-                    'total_tokens' => $inputTokens + 100,
-                ],
-            ],
-        );
-    }
-
-    private function makeLlmStepAborted(int $seq, int $inputTokens): RunEvent
-    {
-        return new RunEvent(
-            runId: 'run-1',
-            seq: $seq,
-            turnNo: 1,
-            type: RunEventTypeEnum::LlmStepAborted->value,
-            payload: [
-                'step_id' => 'step-' . $seq,
-                'stop_reason' => 'aborted',
-                'usage' => [
-                    'input_tokens' => $inputTokens,
-                ],
-            ],
-        );
-    }
-
-    private function makeAutoCompactionStarted(int $seq): RunEvent
-    {
-        return new RunEvent(
-            runId: 'run-1',
-            seq: $seq,
-            turnNo: 1,
-            type: RunEventTypeEnum::ContextCompactionStarted->value,
-            payload: [
-                'step_id' => 'compact-' . $seq,
-                'trigger' => 'auto',
-                'estimated_tokens' => 1000,
-                'keep_recent_tokens' => 500,
-                'messages_before' => 10,
-                'messages_to_summarize' => 5,
-                'messages_retained' => 5,
-                'first_retained_index' => 5,
-                'prior_summary_present' => false,
-            ],
-        );
-    }
-
-    private function makeManualCompactionStarted(int $seq): RunEvent
-    {
-        return new RunEvent(
-            runId: 'run-1',
-            seq: $seq,
-            turnNo: 1,
-            type: RunEventTypeEnum::ContextCompactionStarted->value,
-            payload: [
-                'step_id' => 'compact-manual-' . $seq,
-                'trigger' => 'manual',
-                'estimated_tokens' => 1000,
-                'keep_recent_tokens' => 500,
-                'messages_before' => 10,
-                'messages_to_summarize' => 5,
-                'messages_retained' => 5,
-                'first_retained_index' => 5,
-                'prior_summary_present' => false,
-            ],
-        );
-    }
-
     // ── getLatestInputTokens (raw, no eligibility check) ──────────
 
     public function testGetLatestInputTokensReturnsTokensWhenProviderEventExists(): void
     {
         $this->mockEvents([$this->makeLlmStepCompleted(1, 30755)]);
 
-        self::assertSame(30755, $this->resolver->getLatestInputTokens('run-1'));
+        $this->assertSame(30755, $this->resolver->getLatestInputTokens('run-1'));
     }
 
     public function testGetLatestInputTokensReturnsNullWhenNoProviderEvent(): void
     {
         $this->mockEvents([]);
 
-        self::assertNull($this->resolver->getLatestInputTokens('run-1'));
+        $this->assertNull($this->resolver->getLatestInputTokens('run-1'));
     }
 
     public function testGetLatestInputTokensUsesPromptTokensFallback(): void
@@ -160,7 +68,7 @@ final class ProviderContextUsageResolverTest extends TestCase
 
         $this->mockEvents([$event]);
 
-        self::assertSame(20000, $this->resolver->getLatestInputTokens('run-1'));
+        $this->assertSame(20000, $this->resolver->getLatestInputTokens('run-1'));
     }
 
     // ── getLatestEligibleInputTokens (event-log authoritative) ────
@@ -174,7 +82,7 @@ final class ProviderContextUsageResolverTest extends TestCase
     {
         $this->mockEvents([$this->makeLlmStepCompleted(5, 30755)]);
 
-        self::assertSame(30755, $this->resolver->getLatestEligibleInputTokens('run-1'));
+        $this->assertSame(30755, $this->resolver->getLatestEligibleInputTokens('run-1'));
     }
 
     /**
@@ -190,7 +98,7 @@ final class ProviderContextUsageResolverTest extends TestCase
             $this->makeAutoCompactionStarted(11),
         ]);
 
-        self::assertNull($this->resolver->getLatestEligibleInputTokens('run-1'));
+        $this->assertNull($this->resolver->getLatestEligibleInputTokens('run-1'));
     }
 
     /**
@@ -205,7 +113,7 @@ final class ProviderContextUsageResolverTest extends TestCase
             $this->makeAutoCompactionStarted(10),
         ]);
 
-        self::assertNull($this->resolver->getLatestEligibleInputTokens('run-1'));
+        $this->assertNull($this->resolver->getLatestEligibleInputTokens('run-1'));
     }
 
     /**
@@ -222,7 +130,7 @@ final class ProviderContextUsageResolverTest extends TestCase
             $this->makeLlmStepCompleted(20, 32660),
         ]);
 
-        self::assertSame(32660, $this->resolver->getLatestEligibleInputTokens('run-1'));
+        $this->assertSame(32660, $this->resolver->getLatestEligibleInputTokens('run-1'));
     }
 
     /**
@@ -238,7 +146,7 @@ final class ProviderContextUsageResolverTest extends TestCase
         ]);
 
         // Manual start at seq 11 does NOT block provider measurement at seq 10.
-        self::assertSame(30755, $this->resolver->getLatestEligibleInputTokens('run-1'));
+        $this->assertSame(30755, $this->resolver->getLatestEligibleInputTokens('run-1'));
     }
 
     /**
@@ -255,7 +163,7 @@ final class ProviderContextUsageResolverTest extends TestCase
         ]);
 
         // In-flight auto at seq 12 covers provider measurement at seq 10.
-        self::assertNull($this->resolver->getLatestEligibleInputTokens('run-1'));
+        $this->assertNull($this->resolver->getLatestEligibleInputTokens('run-1'));
     }
 
     /**
@@ -283,7 +191,7 @@ final class ProviderContextUsageResolverTest extends TestCase
         ]);
 
         // Failed auto start at seq 11 still covers provider measurement at seq 10.
-        self::assertNull($this->resolver->getLatestEligibleInputTokens('run-1'));
+        $this->assertNull($this->resolver->getLatestEligibleInputTokens('run-1'));
     }
 
     /**
@@ -307,7 +215,7 @@ final class ProviderContextUsageResolverTest extends TestCase
 
         // Older measurement at seq 10 was handled by auto start at 11.
         // Newer measurement at seq 20 is eligible.
-        self::assertSame(32660, $this->resolver->getLatestEligibleInputTokens('run-1'));
+        $this->assertSame(32660, $this->resolver->getLatestEligibleInputTokens('run-1'));
     }
 
     /**
@@ -317,7 +225,7 @@ final class ProviderContextUsageResolverTest extends TestCase
     {
         $this->mockEvents([$this->makeLlmStepAborted(5, 15000)]);
 
-        self::assertSame(15000, $this->resolver->getLatestEligibleInputTokens('run-1'));
+        $this->assertSame(15000, $this->resolver->getLatestEligibleInputTokens('run-1'));
     }
 
     // ── Structural failure-only marker tests (session 3 class) ─────
@@ -352,7 +260,7 @@ final class ProviderContextUsageResolverTest extends TestCase
         ]);
 
         // Failed-only at seq 79 covers provider measurement at seq 74.
-        self::assertNull($this->resolver->getLatestEligibleInputTokens('run-1'));
+        $this->assertNull($this->resolver->getLatestEligibleInputTokens('run-1'));
     }
 
     /**
@@ -392,7 +300,7 @@ final class ProviderContextUsageResolverTest extends TestCase
         ]);
 
         // Newer measurement at seq 90 IS eligible — after failure-only marker at seq 79.
-        self::assertSame(35000, $this->resolver->getLatestEligibleInputTokens('run-1'));
+        $this->assertSame(35000, $this->resolver->getLatestEligibleInputTokens('run-1'));
     }
 
     /**
@@ -419,7 +327,7 @@ final class ProviderContextUsageResolverTest extends TestCase
         ]);
 
         // Both started (11) and failed (12) cover measurement at 10.
-        self::assertNull($this->resolver->getLatestEligibleInputTokens('run-1'));
+        $this->assertNull($this->resolver->getLatestEligibleInputTokens('run-1'));
     }
 
     /**
@@ -443,7 +351,7 @@ final class ProviderContextUsageResolverTest extends TestCase
         ]);
 
         // Manual failure does NOT block auto eligibility.
-        self::assertSame(30755, $this->resolver->getLatestEligibleInputTokens('run-1'));
+        $this->assertSame(30755, $this->resolver->getLatestEligibleInputTokens('run-1'));
     }
 
     /**
@@ -467,7 +375,99 @@ final class ProviderContextUsageResolverTest extends TestCase
 
         $this->mockEvents([$event]);
 
-        self::assertNull($this->resolver->getLatestInputTokens('run-1'));
-        self::assertNull($this->resolver->getLatestEligibleInputTokens('run-1'));
+        $this->assertNull($this->resolver->getLatestInputTokens('run-1'));
+        $this->assertNull($this->resolver->getLatestEligibleInputTokens('run-1'));
+    }
+
+    /**
+     * Configure the mock to return events for allFor() calls.
+     *
+     * The resolver may call allFor() multiple times per method
+     * (once for provider measurement, once for auto start lookup).
+     */
+    private function mockEvents(array $events): void
+    {
+        $this->eventStore->method('allFor')
+            ->willReturn($events);
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────
+
+    private function makeLlmStepCompleted(int $seq, int $inputTokens): RunEvent
+    {
+        return new RunEvent(
+            runId: 'run-1',
+            seq: $seq,
+            turnNo: 1,
+            type: RunEventTypeEnum::LlmStepCompleted->value,
+            payload: [
+                'step_id' => 'step-'.$seq,
+                'stop_reason' => 'stop',
+                'usage' => [
+                    'input_tokens' => $inputTokens,
+                    'output_tokens' => 100,
+                    'total_tokens' => $inputTokens + 100,
+                ],
+            ],
+        );
+    }
+
+    private function makeLlmStepAborted(int $seq, int $inputTokens): RunEvent
+    {
+        return new RunEvent(
+            runId: 'run-1',
+            seq: $seq,
+            turnNo: 1,
+            type: RunEventTypeEnum::LlmStepAborted->value,
+            payload: [
+                'step_id' => 'step-'.$seq,
+                'stop_reason' => 'aborted',
+                'usage' => [
+                    'input_tokens' => $inputTokens,
+                ],
+            ],
+        );
+    }
+
+    private function makeAutoCompactionStarted(int $seq): RunEvent
+    {
+        return new RunEvent(
+            runId: 'run-1',
+            seq: $seq,
+            turnNo: 1,
+            type: RunEventTypeEnum::ContextCompactionStarted->value,
+            payload: [
+                'step_id' => 'compact-'.$seq,
+                'trigger' => 'auto',
+                'estimated_tokens' => 1000,
+                'keep_recent_tokens' => 500,
+                'messages_before' => 10,
+                'messages_to_summarize' => 5,
+                'messages_retained' => 5,
+                'first_retained_index' => 5,
+                'prior_summary_present' => false,
+            ],
+        );
+    }
+
+    private function makeManualCompactionStarted(int $seq): RunEvent
+    {
+        return new RunEvent(
+            runId: 'run-1',
+            seq: $seq,
+            turnNo: 1,
+            type: RunEventTypeEnum::ContextCompactionStarted->value,
+            payload: [
+                'step_id' => 'compact-manual-'.$seq,
+                'trigger' => 'manual',
+                'estimated_tokens' => 1000,
+                'keep_recent_tokens' => 500,
+                'messages_before' => 10,
+                'messages_to_summarize' => 5,
+                'messages_retained' => 5,
+                'first_retained_index' => 5,
+                'prior_summary_present' => false,
+            ],
+        );
     }
 }

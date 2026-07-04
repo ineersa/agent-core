@@ -35,28 +35,28 @@ final class DbalToolBatchStoreConcurrencyTest extends IsolatedKernelTestCase
             $this->executeToolCall('run-par', 2, 'step-par', 'call-3', 2),
         ]);
 
-        self::assertCount(3, $initial);
+        $this->assertCount(3, $initial);
 
         $first = $collector->collect($this->toolResult('run-par', 2, 'step-par', 'call-1', 0));
-        self::assertTrue($first->accepted);
-        self::assertFalse($first->complete);
+        $this->assertTrue($first->accepted);
+        $this->assertFalse($first->complete);
 
         $second = $collector->collect($this->toolResult('run-par', 2, 'step-par', 'call-2', 1));
-        self::assertTrue($second->accepted);
-        self::assertFalse($second->complete);
+        $this->assertTrue($second->accepted);
+        $this->assertFalse($second->complete);
 
         $third = $collector->collect($this->toolResult('run-par', 2, 'step-par', 'call-3', 2));
-        self::assertTrue($third->accepted);
-        self::assertTrue($third->complete);
-        self::assertSame(['call-1', 'call-2', 'call-3'], array_map(
+        $this->assertTrue($third->accepted);
+        $this->assertTrue($third->complete);
+        $this->assertSame(['call-1', 'call-2', 'call-3'], array_map(
             static fn (ToolCallResult $result): string => $result->toolCallId,
             $third->orderedResults,
         ));
 
         $loaded = $this->store->load('run-par', 2, 'step-par');
-        self::assertIsArray($loaded);
-        self::assertTrue($loaded['finalized']);
-        self::assertCount(3, $loaded['result_data']);
+        $this->assertIsArray($loaded);
+        $this->assertTrue($loaded['finalized']);
+        $this->assertCount(3, $loaded['result_data']);
     }
 
     public function testMutateUsesPessimisticWriteLockForSameBatchKey(): void
@@ -75,14 +75,14 @@ final class DbalToolBatchStoreConcurrencyTest extends IsolatedKernelTestCase
             'max_parallelism' => 4,
         ]);
 
-        $this->store->mutate($runId, $turnNo, $stepId, function (?array $current) {
+        $this->store->mutate($runId, $turnNo, $stepId, static function (?array $current) {
             self::assertIsArray($current);
             $current['result_data']['call-1'] = ['toolCallId' => 'call-1', 'orderIndex' => 0, 'result' => 'a', 'isError' => false, 'error' => null];
 
             return new \Ineersa\AgentCore\Contract\Tool\ToolBatchStoreMutation(null, $current);
         });
 
-        $this->store->mutate($runId, $turnNo, $stepId, function (?array $current) {
+        $this->store->mutate($runId, $turnNo, $stepId, static function (?array $current) {
             self::assertIsArray($current);
             self::assertArrayHasKey('call-1', $current['result_data']);
             $current['result_data']['call-2'] = ['toolCallId' => 'call-2', 'orderIndex' => 1, 'result' => 'b', 'isError' => false, 'error' => null];
@@ -91,10 +91,10 @@ final class DbalToolBatchStoreConcurrencyTest extends IsolatedKernelTestCase
         });
 
         $loaded = $this->store->load($runId, $turnNo, $stepId);
-        self::assertIsArray($loaded);
-        self::assertCount(2, $loaded['result_data']);
-        self::assertArrayHasKey('call-1', $loaded['result_data']);
-        self::assertArrayHasKey('call-2', $loaded['result_data']);
+        $this->assertIsArray($loaded);
+        $this->assertCount(2, $loaded['result_data']);
+        $this->assertArrayHasKey('call-1', $loaded['result_data']);
+        $this->assertArrayHasKey('call-2', $loaded['result_data']);
     }
 
     private function executeToolCall(string $runId, int $turnNo, string $stepId, string $toolCallId, int $orderIndex): ExecuteToolCall

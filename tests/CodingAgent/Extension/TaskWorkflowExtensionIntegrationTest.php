@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Extension;
 
-use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\ExtensionsConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
@@ -13,6 +12,7 @@ use Ineersa\CodingAgent\Extension\ExtensionExecBridge;
 use Ineersa\CodingAgent\Extension\ExtensionHookRegistry;
 use Ineersa\CodingAgent\Extension\ExtensionManager;
 use Ineersa\CodingAgent\Extension\ExtensionToolRegistryBridge;
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tool\ToolRegistry;
 use Ineersa\HatfieldExt\TaskWorkflow\TaskWorkflowExtension;
 use Ineersa\Tui\Command\SlashCommandRegistry;

@@ -8,12 +8,12 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\AI\Platform\Bridge\OpenAICodex\CodexModel;
 use Symfony\AI\Platform\Bridge\OpenAICodex\Contract\CodexContract;
-use Symfony\AI\Platform\Bridge\OpenAICodex\Contract\CodexToolNormalizer;
 use Symfony\AI\Platform\Bridge\OpenAICodex\Contract\CodexToolCallNormalizer;
+use Symfony\AI\Platform\Bridge\OpenAICodex\Contract\CodexToolNormalizer;
 use Symfony\AI\Platform\Bridge\OpenAICodex\Contract\Message\CodexAssistantMessageNormalizer;
+use Symfony\AI\Platform\Message\AssistantMessage;
 use Symfony\AI\Platform\Message\Content\Text;
 use Symfony\AI\Platform\Message\Content\Thinking;
-use Symfony\AI\Platform\Message\AssistantMessage;
 use Symfony\AI\Platform\Message\Message;
 use Symfony\AI\Platform\Message\MessageBag;
 use Symfony\AI\Platform\Result\ToolCall;
@@ -35,7 +35,7 @@ final class CodexContractTest extends TestCase
 
         $payload = $contract->createRequestPayload($model, $messageBag, []);
 
-        self::assertEquals($expected, $payload);
+        $this->assertEquals($expected, $payload);
     }
 
     public static function requestPayloadProvider(): \Generator
@@ -164,8 +164,8 @@ final class CodexContractTest extends TestCase
 
         $payload = $contract->createRequestPayload($model, $messageBag, []);
 
-        self::assertArrayNotHasKey('messages', $payload);
-        self::assertArrayHasKey('input', $payload);
+        $this->assertArrayNotHasKey('messages', $payload);
+        $this->assertArrayHasKey('input', $payload);
     }
 
     public function testUserContentIsTypedInputText(): void
@@ -177,10 +177,10 @@ final class CodexContractTest extends TestCase
         $payload = $contract->createRequestPayload($model, $messageBag, []);
 
         $userInput = $payload['input'][0];
-        self::assertSame('user', $userInput['role']);
-        self::assertIsArray($userInput['content']);
-        self::assertSame('input_text', $userInput['content'][0]['type']);
-        self::assertSame('Hello world', $userInput['content'][0]['text']);
+        $this->assertSame('user', $userInput['role']);
+        $this->assertIsArray($userInput['content']);
+        $this->assertSame('input_text', $userInput['content'][0]['type']);
+        $this->assertSame('Hello world', $userInput['content'][0]['text']);
     }
 
     public function testToolNormalizerIncludesStrictNull(): void
@@ -195,12 +195,12 @@ final class CodexContractTest extends TestCase
 
         $result = $normalizer->normalize($tool, context: ['model' => new CodexModel('gpt-5.5')]);
 
-        self::assertSame('function', $result['type']);
-        self::assertSame('get_weather', $result['name']);
-        self::assertSame('Get current weather', $result['description']);
-        self::assertArrayHasKey('strict', $result);
-        self::assertNull($result['strict']);
-        self::assertArrayHasKey('parameters', $result);
+        $this->assertSame('function', $result['type']);
+        $this->assertSame('get_weather', $result['name']);
+        $this->assertSame('Get current weather', $result['description']);
+        $this->assertArrayHasKey('strict', $result);
+        $this->assertNull($result['strict']);
+        $this->assertArrayHasKey('parameters', $result);
     }
 
     public function testToolNormalizerOmitsStrictWhenNoParameters(): void
@@ -214,8 +214,8 @@ final class CodexContractTest extends TestCase
 
         $result = $normalizer->normalize($tool, context: ['model' => new CodexModel('gpt-5.5')]);
 
-        self::assertArrayNotHasKey('parameters', $result);
-        self::assertArrayNotHasKey('strict', $result);
+        $this->assertArrayNotHasKey('parameters', $result);
+        $this->assertArrayNotHasKey('strict', $result);
     }
 
     public function testToolCallNormalizerIncludesIdAndCallId(): void
@@ -225,11 +225,11 @@ final class CodexContractTest extends TestCase
 
         $result = $normalizer->normalize($toolCall, context: ['model' => new CodexModel('gpt-5.5')]);
 
-        self::assertSame('call-xyz', $result['id']);
-        self::assertSame('call-xyz', $result['call_id']);
-        self::assertSame('search', $result['name']);
-        self::assertSame('function_call', $result['type']);
-        self::assertStringContainsString('"q"', $result['arguments']);
+        $this->assertSame('call-xyz', $result['id']);
+        $this->assertSame('call-xyz', $result['call_id']);
+        $this->assertSame('search', $result['name']);
+        $this->assertSame('function_call', $result['type']);
+        $this->assertStringContainsString('"q"', $result['arguments']);
     }
 
     // -- Tool result (function_call_output) regression guard (#182) --

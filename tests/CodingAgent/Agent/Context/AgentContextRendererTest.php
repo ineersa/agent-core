@@ -35,16 +35,16 @@ final class AgentContextRendererTest extends TestCase
 
         $output = $this->renderer->renderAvailableAgents($agents);
 
-        self::assertStringContainsString('<agents_instructions>', $output);
-        self::assertStringContainsString('<available_agents>', $output);
-        self::assertStringContainsString('<name>scout</name>', $output);
-        self::assertStringContainsString('<description>Explore the codebase</description>', $output);
-        self::assertStringNotContainsString('# Scout body', $output);
+        $this->assertStringContainsString('<agents_instructions>', $output);
+        $this->assertStringContainsString('<available_agents>', $output);
+        $this->assertStringContainsString('<name>scout</name>', $output);
+        $this->assertStringContainsString('<description>Explore the codebase</description>', $output);
+        $this->assertStringNotContainsString('# Scout body', $output);
     }
 
     public function testRenderAvailableAgentsEmptyReturnsEmptyString(): void
     {
-        self::assertSame('', $this->renderer->renderAvailableAgents([]));
+        $this->assertSame('', $this->renderer->renderAvailableAgents([]));
     }
 
     public function testRenderAvailableAgentsSortsByName(): void
@@ -55,7 +55,7 @@ final class AgentContextRendererTest extends TestCase
         ];
 
         $output = $this->renderer->renderAvailableAgents($agents);
-        self::assertLessThan(strpos($output, '<name>zeta</name>'), strpos($output, '<name>alpha</name>'));
+        $this->assertLessThan(strpos($output, '<name>zeta</name>'), strpos($output, '<name>alpha</name>'));
     }
 
     public function testXmlEscapingInDescription(): void
@@ -72,7 +72,7 @@ final class AgentContextRendererTest extends TestCase
 
         $output = $this->renderer->renderAvailableAgents($agents);
 
-        self::assertStringContainsString('review&amp;er', $output);
-        self::assertStringNotContainsString('SECRET_INSTRUCTIONS', $output);
+        $this->assertStringContainsString('review&amp;er', $output);
+        $this->assertStringNotContainsString('SECRET_INSTRUCTIONS', $output);
     }
 }

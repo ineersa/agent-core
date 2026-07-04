@@ -15,10 +15,10 @@ use Ineersa\CodingAgent\Mcp\Catalog\McpToolCatalogDTO;
 use Ineersa\CodingAgent\Mcp\Catalog\McpToolCatalogStoreInterface;
 use Ineersa\CodingAgent\Mcp\Catalog\McpToolDefinitionDTO;
 use Ineersa\CodingAgent\Mcp\Config\McpConfigDTO;
-use Ineersa\CodingAgent\Tests\Support\Mcp\TestMcpConfigLoaderFactory;
 use Ineersa\CodingAgent\Mcp\Config\McpServerAvailabilityEnum;
 use Ineersa\CodingAgent\Mcp\Config\McpServerDefinitionDTO;
 use Ineersa\CodingAgent\Mcp\Config\McpTransportTypeEnum;
+use Ineersa\CodingAgent\Tests\Support\Mcp\TestMcpConfigLoaderFactory;
 use Ineersa\CodingAgent\Tool\ToolRegistryInterface;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
@@ -30,7 +30,7 @@ final class AgentToolPolicyResolverTest extends TestCase
     {
         $resolver = new AgentToolPolicyResolver($this->registry(['read']), $this->mcpResolver([]));
         $policy = $resolver->resolve($this->definition(['read', 'subagent']), 'run-1');
-        self::assertNotContains('subagent', $policy['tools']);
+        $this->assertNotContains('subagent', $policy['tools']);
     }
 
     public function testOmittedToolsInheritsRegistryAndGlobalMcp(): void
@@ -40,16 +40,16 @@ final class AgentToolPolicyResolverTest extends TestCase
             $this->mcpResolver(['context7_resolve']),
         );
         $policy = $resolver->resolve($this->definition(null), 'run-1');
-        self::assertContains('read', $policy['tools']);
-        self::assertContains('context7_resolve', $policy['tools']);
-        self::assertNotContains('subagent', $policy['tools']);
+        $this->assertContains('read', $policy['tools']);
+        $this->assertContains('context7_resolve', $policy['tools']);
+        $this->assertNotContains('subagent', $policy['tools']);
     }
 
     public function testExplicitToolsMergeMcpSelectors(): void
     {
         $resolver = new AgentToolPolicyResolver($this->registry(['read']), $this->mcpResolver(['context7_resolve', 'websearch_search'], allServers: true));
         $policy = $resolver->resolve($this->definition(['read', 'mcp:websearch_search']), 'run-1');
-        self::assertSame(['read', 'websearch_search'], $policy['tools']);
+        $this->assertSame(['read', 'websearch_search'], $policy['tools']);
     }
 
     /** @param list<string> $globalTools */

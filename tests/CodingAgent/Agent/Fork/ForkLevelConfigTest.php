@@ -32,23 +32,23 @@ final class ForkLevelConfigTest extends TestCase
 
     public function testEnumCases(): void
     {
-        self::assertSame('junior', ForkLevelEnum::Junior->value);
-        self::assertSame('middle', ForkLevelEnum::Middle->value);
-        self::assertSame('senior', ForkLevelEnum::Senior->value);
+        $this->assertSame('junior', ForkLevelEnum::Junior->value);
+        $this->assertSame('middle', ForkLevelEnum::Middle->value);
+        $this->assertSame('senior', ForkLevelEnum::Senior->value);
     }
 
     public function testFromStringOrNull(): void
     {
-        self::assertSame(ForkLevelEnum::Junior, ForkLevelEnum::fromStringOrNull('junior'));
-        self::assertSame(ForkLevelEnum::Middle, ForkLevelEnum::fromStringOrNull('middle'));
-        self::assertSame(ForkLevelEnum::Senior, ForkLevelEnum::fromStringOrNull('senior'));
-        self::assertNull(ForkLevelEnum::fromStringOrNull('unknown'));
-        self::assertNull(ForkLevelEnum::fromStringOrNull(null));
+        $this->assertSame(ForkLevelEnum::Junior, ForkLevelEnum::fromStringOrNull('junior'));
+        $this->assertSame(ForkLevelEnum::Middle, ForkLevelEnum::fromStringOrNull('middle'));
+        $this->assertSame(ForkLevelEnum::Senior, ForkLevelEnum::fromStringOrNull('senior'));
+        $this->assertNull(ForkLevelEnum::fromStringOrNull('unknown'));
+        $this->assertNull(ForkLevelEnum::fromStringOrNull(null));
     }
 
     public function testDefault(): void
     {
-        self::assertSame(ForkLevelEnum::Middle, ForkLevelEnum::default());
+        $this->assertSame(ForkLevelEnum::Middle, ForkLevelEnum::default());
     }
 
     // ── ForkLevelConfigDTO ───────────────────────────────────────────────
@@ -56,16 +56,16 @@ final class ForkLevelConfigTest extends TestCase
     public function testLevelConfigDefaults(): void
     {
         $junior = ForkLevelConfigDTO::juniorDefault();
-        self::assertNull($junior->model);
-        self::assertSame(ForkLevelConfigDTO::DEFAULT_DESCRIPTION_JUNIOR, $junior->description);
+        $this->assertNull($junior->model);
+        $this->assertSame(ForkLevelConfigDTO::DEFAULT_DESCRIPTION_JUNIOR, $junior->description);
 
         $middle = ForkLevelConfigDTO::middleDefault();
-        self::assertNull($middle->model);
-        self::assertSame(ForkLevelConfigDTO::DEFAULT_DESCRIPTION_MIDDLE, $middle->description);
+        $this->assertNull($middle->model);
+        $this->assertSame(ForkLevelConfigDTO::DEFAULT_DESCRIPTION_MIDDLE, $middle->description);
 
         $senior = ForkLevelConfigDTO::seniorDefault();
-        self::assertNull($senior->model);
-        self::assertSame(ForkLevelConfigDTO::DEFAULT_DESCRIPTION_SENIOR, $senior->description);
+        $this->assertNull($senior->model);
+        $this->assertSame(ForkLevelConfigDTO::DEFAULT_DESCRIPTION_SENIOR, $senior->description);
     }
 
     public function testLevelConfigCustom(): void
@@ -75,8 +75,8 @@ final class ForkLevelConfigTest extends TestCase
             description: 'Custom description',
         );
 
-        self::assertSame('openai/gpt-4', $config->model);
-        self::assertSame('Custom description', $config->description);
+        $this->assertSame('openai/gpt-4', $config->model);
+        $this->assertSame('Custom description', $config->description);
     }
 
     // ── ForksConfigDTO ───────────────────────────────────────────────────
@@ -85,21 +85,21 @@ final class ForkLevelConfigTest extends TestCase
     {
         $config = new ForksConfigDTO();
 
-        self::assertSame(1, $config->maxConcurrent);
-        self::assertSame(ForkLevelEnum::Middle, $config->defaultLevel);
-        self::assertSame([], $config->levels);
+        $this->assertSame(1, $config->maxConcurrent);
+        $this->assertSame(ForkLevelEnum::Middle, $config->defaultLevel);
+        $this->assertSame([], $config->levels);
     }
 
     public function testForksConfigDefaultInstance(): void
     {
         $config = ForksConfigDTO::defaultInstance();
 
-        self::assertSame(1, $config->maxConcurrent);
-        self::assertSame(ForkLevelEnum::Middle, $config->defaultLevel);
-        self::assertCount(3, $config->levels);
-        self::assertArrayHasKey('junior', $config->levels);
-        self::assertArrayHasKey('middle', $config->levels);
-        self::assertArrayHasKey('senior', $config->levels);
+        $this->assertSame(1, $config->maxConcurrent);
+        $this->assertSame(ForkLevelEnum::Middle, $config->defaultLevel);
+        $this->assertCount(3, $config->levels);
+        $this->assertArrayHasKey('junior', $config->levels);
+        $this->assertArrayHasKey('middle', $config->levels);
+        $this->assertArrayHasKey('senior', $config->levels);
     }
 
     public function testLevelConfigFallsBackToDefaults(): void
@@ -108,16 +108,16 @@ final class ForkLevelConfigTest extends TestCase
 
         // With empty levels, levelConfig falls back to built-in defaults.
         $junior = $config->levelConfig(ForkLevelEnum::Junior);
-        self::assertNull($junior->model);
-        self::assertSame(ForkLevelConfigDTO::DEFAULT_DESCRIPTION_JUNIOR, $junior->description);
+        $this->assertNull($junior->model);
+        $this->assertSame(ForkLevelConfigDTO::DEFAULT_DESCRIPTION_JUNIOR, $junior->description);
 
         $middle = $config->levelConfig(ForkLevelEnum::Middle);
-        self::assertNull($middle->model);
-        self::assertSame(ForkLevelConfigDTO::DEFAULT_DESCRIPTION_MIDDLE, $middle->description);
+        $this->assertNull($middle->model);
+        $this->assertSame(ForkLevelConfigDTO::DEFAULT_DESCRIPTION_MIDDLE, $middle->description);
 
         $senior = $config->levelConfig(ForkLevelEnum::Senior);
-        self::assertNull($senior->model);
-        self::assertSame(ForkLevelConfigDTO::DEFAULT_DESCRIPTION_SENIOR, $senior->description);
+        $this->assertNull($senior->model);
+        $this->assertSame(ForkLevelConfigDTO::DEFAULT_DESCRIPTION_SENIOR, $senior->description);
     }
 
     public function testLevelConfigReturnsConfigured(): void
@@ -130,11 +130,11 @@ final class ForkLevelConfigTest extends TestCase
         $config = new ForksConfigDTO(levels: $levels);
 
         $junior = $config->levelConfig(ForkLevelEnum::Junior);
-        self::assertSame('fast/model', $junior->model);
+        $this->assertSame('fast/model', $junior->model);
 
         $middle = $config->levelConfig(ForkLevelEnum::Middle);
-        self::assertNull($middle->model);
-        self::assertSame('Custom middle', $middle->description);
+        $this->assertNull($middle->model);
+        $this->assertSame('Custom middle', $middle->description);
     }
 
     // ── ForkConfigResolver ───────────────────────────────────────────────
@@ -146,9 +146,9 @@ final class ForkLevelConfigTest extends TestCase
 
         $resolved = $resolver->resolve(null);
 
-        self::assertSame(ForkLevelEnum::Middle, $resolved->level);
-        self::assertNull($resolved->resolvedModel);
-        self::assertSame(ForkLevelConfigDTO::DEFAULT_DESCRIPTION_MIDDLE, $resolved->levelConfig->description);
+        $this->assertSame(ForkLevelEnum::Middle, $resolved->level);
+        $this->assertNull($resolved->resolvedModel);
+        $this->assertSame(ForkLevelConfigDTO::DEFAULT_DESCRIPTION_MIDDLE, $resolved->levelConfig->description);
     }
 
     public function testResolverRequestedLevel(): void
@@ -158,8 +158,8 @@ final class ForkLevelConfigTest extends TestCase
 
         $resolved = $resolver->resolve(ForkLevelEnum::Senior);
 
-        self::assertSame(ForkLevelEnum::Senior, $resolved->level);
-        self::assertNull($resolved->resolvedModel);
+        $this->assertSame(ForkLevelEnum::Senior, $resolved->level);
+        $this->assertNull($resolved->resolvedModel);
     }
 
     public function testResolverConfiguredLevelModelWins(): void
@@ -172,8 +172,8 @@ final class ForkLevelConfigTest extends TestCase
 
         $resolved = $resolver->resolve(ForkLevelEnum::Senior);
 
-        self::assertSame(ForkLevelEnum::Senior, $resolved->level);
-        self::assertSame('openai/gpt-4', $resolved->resolvedModel);
+        $this->assertSame(ForkLevelEnum::Senior, $resolved->level);
+        $this->assertSame('openai/gpt-4', $resolved->resolvedModel);
     }
 
     public function testResolverNullModelFallsBackToSession(): void
@@ -184,7 +184,7 @@ final class ForkLevelConfigTest extends TestCase
         // Middle default has null model → resolvedModel is null (session fallback).
         $resolved = $resolver->resolve(null);
 
-        self::assertNull($resolved->resolvedModel);
+        $this->assertNull($resolved->resolvedModel);
     }
 
     public function testResolverCustomDefaultLevel(): void
@@ -199,8 +199,8 @@ final class ForkLevelConfigTest extends TestCase
 
         $resolved = $resolver->resolve(null);
 
-        self::assertSame(ForkLevelEnum::Senior, $resolved->level);
-        self::assertSame('openai/gpt-4', $resolved->resolvedModel);
+        $this->assertSame(ForkLevelEnum::Senior, $resolved->level);
+        $this->assertSame('openai/gpt-4', $resolved->resolvedModel);
     }
 
     public function testResolverDefaultLevelModelFallback(): void
@@ -211,8 +211,8 @@ final class ForkLevelConfigTest extends TestCase
 
         $resolved = $resolver->resolve(null);
 
-        self::assertSame(ForkLevelEnum::Middle, $resolved->level);
-        self::assertNull($resolved->resolvedModel);
+        $this->assertSame(ForkLevelEnum::Middle, $resolved->level);
+        $this->assertNull($resolved->resolvedModel);
     }
 
     public function testResolverUnconfiguredLevelFallsBackToDefaults(): void
@@ -227,8 +227,8 @@ final class ForkLevelConfigTest extends TestCase
         // Even though requested, junior falls back to built-in defaults.
         $resolved = $resolver->resolve(ForkLevelEnum::Junior);
 
-        self::assertSame(ForkLevelEnum::Junior, $resolved->level);
-        self::assertNull($resolved->resolvedModel);
-        self::assertSame(ForkLevelConfigDTO::DEFAULT_DESCRIPTION_JUNIOR, $resolved->levelConfig->description);
+        $this->assertSame(ForkLevelEnum::Junior, $resolved->level);
+        $this->assertNull($resolved->resolvedModel);
+        $this->assertSame(ForkLevelConfigDTO::DEFAULT_DESCRIPTION_JUNIOR, $resolved->levelConfig->description);
     }
 }

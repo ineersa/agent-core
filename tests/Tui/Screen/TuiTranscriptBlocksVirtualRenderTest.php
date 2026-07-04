@@ -44,8 +44,8 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
 
         $text = $harness->plainScreenText();
 
-        self::assertStringContainsString('❯', $text, 'User message glyph missing');
-        self::assertStringContainsString('Hello world', $text, 'User message text missing');
+        $this->assertStringContainsString('❯', $text, 'User message glyph missing');
+        $this->assertStringContainsString('Hello world', $text, 'User message text missing');
     }
 
     #[Test]
@@ -65,8 +65,8 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
 
         $text = $harness->plainScreenText();
 
-        self::assertStringContainsString('◇', $text, 'Assistant message glyph missing');
-        self::assertStringContainsString('Here is the answer', $text, 'Assistant message text missing');
+        $this->assertStringContainsString('◇', $text, 'Assistant message glyph missing');
+        $this->assertStringContainsString('Here is the answer', $text, 'Assistant message text missing');
     }
 
     #[Test]
@@ -101,8 +101,8 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
         $text = $harness->plainScreenText();
         $separator = str_repeat(TranscriptGlyphs::TURN_SEPARATOR_CHAR, 80);
 
-        self::assertStringContainsString($separator, $text, 'User-turn separator missing before later user message');
-        self::assertLessThan(strpos($text, 'second prompt'), strpos($text, $separator), 'Separator should appear before the later user message');
+        $this->assertStringContainsString($separator, $text, 'User-turn separator missing before later user message');
+        $this->assertLessThan(strpos($text, 'second prompt'), strpos($text, $separator), 'Separator should appear before the later user message');
     }
 
     public function testMultipleBlocksRenderInOrder(): void
@@ -136,19 +136,19 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
         $text = $harness->plainScreenText();
 
         // Verify all glyphs are present
-        self::assertStringContainsString('❯', $text, 'User message glyph missing');
-        self::assertStringContainsString('◇', $text, 'Assistant message glyph missing');
+        $this->assertStringContainsString('❯', $text, 'User message glyph missing');
+        $this->assertStringContainsString('◇', $text, 'Assistant message glyph missing');
 
         // Verify ordering: first message comes before second
         $posFirst = strpos($text, 'first prompt');
         $posSecond = strpos($text, 'first response');
         $posThird = strpos($text, 'second prompt');
 
-        self::assertNotFalse($posFirst, 'First block text not found');
-        self::assertNotFalse($posSecond, 'Second block text not found');
-        self::assertNotFalse($posThird, 'Third block text not found');
-        self::assertLessThan($posSecond, $posFirst, 'Blocks out of order: first should appear before second');
-        self::assertLessThan($posThird, $posSecond, 'Blocks out of order: second should appear before third');
+        $this->assertNotFalse($posFirst, 'First block text not found');
+        $this->assertNotFalse($posSecond, 'Second block text not found');
+        $this->assertNotFalse($posThird, 'Third block text not found');
+        $this->assertLessThan($posSecond, $posFirst, 'Blocks out of order: first should appear before second');
+        $this->assertLessThan($posThird, $posSecond, 'Blocks out of order: second should appear before third');
     }
 
     #[Test]
@@ -177,9 +177,9 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
 
         $text = $harness->plainScreenText();
 
-        self::assertStringContainsString('●', $text, 'Tool glyph missing');
-        self::assertStringContainsString('read', $text, 'Tool name missing');
-        self::assertStringContainsString('3 lines read', $text, 'Tool result text missing');
+        $this->assertStringContainsString('●', $text, 'Tool glyph missing');
+        $this->assertStringContainsString('read', $text, 'Tool name missing');
+        $this->assertStringContainsString('3 lines read', $text, 'Tool result text missing');
     }
 
     #[Test]
@@ -199,8 +199,8 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
 
         $text = $harness->plainScreenText();
 
-        self::assertStringContainsString('⋯', $text, 'Thinking glyph missing');
-        self::assertStringContainsString('reasoning step 1', $text, 'Thinking text missing');
+        $this->assertStringContainsString('⋯', $text, 'Thinking glyph missing');
+        $this->assertStringContainsString('reasoning step 1', $text, 'Thinking text missing');
     }
 
     #[Test]
@@ -220,8 +220,8 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
 
         $text = $harness->plainScreenText();
 
-        self::assertStringContainsString('✕', $text, 'Error glyph missing');
-        self::assertStringContainsString('something went wrong', $text, 'Error text missing');
+        $this->assertStringContainsString('✕', $text, 'Error glyph missing');
+        $this->assertStringContainsString('something went wrong', $text, 'Error text missing');
     }
 
     #[Test]
@@ -243,8 +243,8 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
 
         $text = $harness->plainScreenText();
 
-        self::assertStringContainsString('[thinking]', $text, 'Empty thinking fallback missing');
-        self::assertStringContainsString('⋯', $text, 'Thinking glyph missing');
+        $this->assertStringContainsString('[thinking]', $text, 'Empty thinking fallback missing');
+        $this->assertStringContainsString('⋯', $text, 'Thinking glyph missing');
     }
 
     #[Test]
@@ -265,8 +265,8 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
 
         $text = $harness->plainScreenText();
 
-        self::assertStringContainsString('ℹ', $text, 'System info glyph missing');
-        self::assertStringContainsString('info note', $text, 'System text missing');
+        $this->assertStringContainsString('ℹ', $text, 'System info glyph missing');
+        $this->assertStringContainsString('info note', $text, 'System text missing');
     }
 
     #[Test]
@@ -317,14 +317,14 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
         // Strip ANSI codes for pure text matching
         $plain = preg_replace('/\x1b\[[0-9;]*m/', '', $text);
 
-        self::assertStringContainsString(TranscriptGlyphs::GLYPH_USER_MESSAGE, $plain);
-        self::assertStringContainsString(TranscriptGlyphs::GLYPH_ASSISTANT_MESSAGE, $plain);
-        self::assertStringContainsString(TranscriptGlyphs::GLYPH_ASSISTANT_THINKING, $plain);
-        self::assertStringContainsString(TranscriptGlyphs::GLYPH_TOOL, $plain);
-        self::assertStringContainsString(TranscriptGlyphs::GLYPH_PROGRESS, $plain);
-        self::assertStringContainsString(TranscriptGlyphs::GLYPH_APPROVAL, $plain);
-        self::assertStringContainsString(TranscriptGlyphs::GLYPH_QUESTION, $plain);
-        self::assertStringContainsString(TranscriptGlyphs::GLYPH_CANCELLED, $plain);
+        $this->assertStringContainsString(TranscriptGlyphs::GLYPH_USER_MESSAGE, $plain);
+        $this->assertStringContainsString(TranscriptGlyphs::GLYPH_ASSISTANT_MESSAGE, $plain);
+        $this->assertStringContainsString(TranscriptGlyphs::GLYPH_ASSISTANT_THINKING, $plain);
+        $this->assertStringContainsString(TranscriptGlyphs::GLYPH_TOOL, $plain);
+        $this->assertStringContainsString(TranscriptGlyphs::GLYPH_PROGRESS, $plain);
+        $this->assertStringContainsString(TranscriptGlyphs::GLYPH_APPROVAL, $plain);
+        $this->assertStringContainsString(TranscriptGlyphs::GLYPH_QUESTION, $plain);
+        $this->assertStringContainsString(TranscriptGlyphs::GLYPH_CANCELLED, $plain);
     }
 
     #[Test]
@@ -345,8 +345,8 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
 
         $text = $harness->plainScreenText();
 
-        self::assertStringContainsString('partial', $text, 'Streaming block text missing');
-        self::assertStringContainsString('...', $text, 'Streaming suffix missing');
+        $this->assertStringContainsString('partial', $text, 'Streaming block text missing');
+        $this->assertStringContainsString('...', $text, 'Streaming suffix missing');
     }
 
     #[Test]
@@ -366,8 +366,8 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
 
         $text = $harness->plainScreenText();
 
-        self::assertStringContainsString('🔐', $text, 'Approval glyph missing');
-        self::assertStringContainsString('Approve?', $text, 'Approval text missing');
+        $this->assertStringContainsString('🔐', $text, 'Approval glyph missing');
+        $this->assertStringContainsString('Approve?', $text, 'Approval text missing');
     }
 
     #[Test]
@@ -387,8 +387,8 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
 
         $text = $harness->plainScreenText();
 
-        self::assertStringContainsString('?', $text, 'Question glyph missing');
-        self::assertStringContainsString('What?', $text, 'Question text missing');
+        $this->assertStringContainsString('?', $text, 'Question glyph missing');
+        $this->assertStringContainsString('What?', $text, 'Question text missing');
     }
 
     #[Test]
@@ -408,8 +408,8 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
 
         $text = $harness->plainScreenText();
 
-        self::assertStringContainsString('✕', $text, 'Cancelled glyph missing');
-        self::assertStringContainsString('aborted', $text, 'Cancelled text missing');
+        $this->assertStringContainsString('✕', $text, 'Cancelled glyph missing');
+        $this->assertStringContainsString('aborted', $text, 'Cancelled text missing');
     }
 
     /* ───── RENDER-03: Markdown and thinking behavior ───── */
@@ -438,11 +438,11 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
         $text = $harness->plainScreenText();
 
         // The placeholder glyph and text must appear
-        self::assertStringContainsString('⋯', $text, 'Thinking glyph missing for hidden block');
-        self::assertStringContainsString('Thinking', $text, 'Thinking placeholder text missing');
+        $this->assertStringContainsString('⋯', $text, 'Thinking glyph missing for hidden block');
+        $this->assertStringContainsString('Thinking', $text, 'Thinking placeholder text missing');
 
         // Raw content must NOT appear
-        self::assertStringNotContainsString('private reasoning', $text);
+        $this->assertStringNotContainsString('private reasoning', $text);
     }
 
     #[Test]
@@ -466,7 +466,7 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
 
         $text = $harness->plainScreenText();
 
-        self::assertStringContainsString('collapsed but visible', $text,
+        $this->assertStringContainsString('collapsed but visible', $text,
             'Collapsed thinking must show content when config says visible',
         );
     }
@@ -494,12 +494,12 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
 
         $text = $harness->plainScreenText();
 
-        self::assertStringNotContainsString('secret', $text,
+        $this->assertStringNotContainsString('secret', $text,
             'Collapsed thinking must NOT show content when config says hidden',
         );
         // Placeholder must still appear
-        self::assertStringContainsString('⋯', $text);
-        self::assertStringContainsString('Thinking', $text);
+        $this->assertStringContainsString('⋯', $text);
+        $this->assertStringContainsString('Thinking', $text);
     }
 
     #[Test]
@@ -520,11 +520,11 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
         $text = $harness->plainScreenText();
 
         // Markdown bold should be rendered (not shown as literal **bold**)
-        self::assertStringContainsString('bold', $text);
-        self::assertStringNotContainsString('**bold**', $text,
+        $this->assertStringContainsString('bold', $text);
+        $this->assertStringNotContainsString('**bold**', $text,
             'Markdown bold delimiters must not appear literally',
         );
-        self::assertStringContainsString('◇', $text, 'Assistant glyph missing');
+        $this->assertStringContainsString('◇', $text, 'Assistant glyph missing');
     }
 
     #[Test]
@@ -545,11 +545,11 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
         $text = $harness->plainScreenText();
 
         // Inline code should be rendered (backticks consumed)
-        self::assertStringContainsString('bin/console', $text);
-        self::assertStringNotContainsString('`bin/console`', $text,
+        $this->assertStringContainsString('bin/console', $text);
+        $this->assertStringNotContainsString('`bin/console`', $text,
             'Inline code backticks must not appear literally',
         );
-        self::assertStringContainsString('❯', $text, 'User glyph missing');
+        $this->assertStringContainsString('❯', $text, 'User glyph missing');
     }
 
     #[Test]
@@ -571,18 +571,17 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
         $text = $harness->plainScreenText();
 
         // Markdown rendered, raw delimiters consumed
-        self::assertStringContainsString('reasoning with', $text);
-        self::assertStringContainsString('italic', $text);
-        self::assertStringContainsString('code', $text);
-        self::assertStringNotContainsString('*italic*', $text,
+        $this->assertStringContainsString('reasoning with', $text);
+        $this->assertStringContainsString('italic', $text);
+        $this->assertStringContainsString('code', $text);
+        $this->assertStringNotContainsString('*italic*', $text,
             'Italic delimiters must not appear literally',
         );
-        self::assertStringNotContainsString('`code`', $text,
+        $this->assertStringNotContainsString('`code`', $text,
             'Code backticks must not appear literally',
         );
-        self::assertStringContainsString('⋯', $text, 'Thinking glyph missing');
+        $this->assertStringContainsString('⋯', $text, 'Thinking glyph missing');
     }
-
 
     #[Test]
     public function testVirtualToolCallShowsYamlArgsWithoutFences(): void
@@ -605,10 +604,10 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
 
         $text = $harness->plainScreenText();
 
-        self::assertStringContainsString('read', $text);
-        self::assertStringNotContainsString('```', $text);
-        self::assertStringContainsString('path:', $text);
-        self::assertStringContainsString('./virtual.txt', $text);
+        $this->assertStringContainsString('read', $text);
+        $this->assertStringNotContainsString('```', $text);
+        $this->assertStringContainsString('path:', $text);
+        $this->assertStringContainsString('./virtual.txt', $text);
     }
 
     #[Test]
@@ -633,10 +632,10 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
 
         $text = $harness->plainScreenText();
 
-        self::assertStringContainsString('v0', $text);
-        self::assertStringContainsString('v1', $text);
-        self::assertStringNotContainsString('v3', $text);
-        self::assertStringContainsString('more line', $text);
+        $this->assertStringContainsString('v0', $text);
+        $this->assertStringContainsString('v1', $text);
+        $this->assertStringNotContainsString('v3', $text);
+        $this->assertStringContainsString('more line', $text);
     }
 
     #[Test]
@@ -662,8 +661,8 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
 
         $text = $harness->plainScreenText();
 
-        self::assertStringContainsString('full2', $text);
-        self::assertStringNotContainsString('more line', $text);
+        $this->assertStringContainsString('full2', $text);
+        $this->assertStringNotContainsString('more line', $text);
     }
 
     #[Test]
@@ -673,8 +672,8 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
         for ($i = 0; $i < 8; ++$i) {
             $patchLines[] = '+line'.$i;
         }
-        $patch = implode("
-", array_merge(['---', '+++', '@@'], $patchLines));
+        $patch = implode('
+', array_merge(['---', '+++', '@@'], $patchLines));
         $harness = new VirtualTuiHarness(
             sessionId: self::SESSION_ID,
             displayConfig: new TranscriptDisplayConfig(diffPreviewLines: 3),
@@ -697,10 +696,10 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
 
         $text = $harness->plainScreenText();
 
-        self::assertStringContainsString('path: /tmp/test.md', $text);
-        self::assertStringNotContainsString('patch: |', $text);
-        self::assertStringNotContainsString('+line7', $text);
-        self::assertStringContainsString('more line', $text);
+        $this->assertStringContainsString('path: /tmp/test.md', $text);
+        $this->assertStringNotContainsString('patch: |', $text);
+        $this->assertStringNotContainsString('+line7', $text);
+        $this->assertStringContainsString('more line', $text);
     }
 
     #[Test]
@@ -710,8 +709,8 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
         for ($i = 0; $i < 5; ++$i) {
             $patchLines[] = '+line'.$i;
         }
-        $patch = implode("
-", array_merge(['---', '+++', '@@'], $patchLines));
+        $patch = implode('
+', array_merge(['---', '+++', '@@'], $patchLines));
         $harness = new VirtualTuiHarness(
             sessionId: self::SESSION_ID,
             displayConfig: new TranscriptDisplayConfig(diffPreviewLines: 2),
@@ -734,10 +733,9 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
 
         $text = $harness->plainScreenText();
 
-        self::assertStringContainsString('+line4', $text);
-        self::assertStringNotContainsString('more line', $text);
+        $this->assertStringContainsString('+line4', $text);
+        $this->assertStringNotContainsString('more line', $text);
     }
-
 
     #[Test]
     public function testVirtualEditToolCallRendersDiffInCardBody(): void
@@ -761,10 +759,10 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
 
         $text = $harness->plainScreenText();
 
-        self::assertStringContainsString('edit', $text);
-        self::assertStringContainsString('path: src/Foo.php', $text);
-        self::assertStringContainsString('+new', $text);
-        self::assertStringNotContainsString('patch: |', $text);
+        $this->assertStringContainsString('edit', $text);
+        $this->assertStringContainsString('path: src/Foo.php', $text);
+        $this->assertStringContainsString('+new', $text);
+        $this->assertStringNotContainsString('patch: |', $text);
     }
 
     #[Test]
@@ -788,14 +786,11 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
 
         $text = $harness->plainScreenText();
 
-        self::assertStringContainsString('write', $text);
-        self::assertStringContainsString('path: out.txt', $text);
-        self::assertStringContainsString('alpha', $text);
-        self::assertStringNotContainsString('content: |', $text);
+        $this->assertStringContainsString('write', $text);
+        $this->assertStringContainsString('path: out.txt', $text);
+        $this->assertStringContainsString('alpha', $text);
+        $this->assertStringNotContainsString('content: |', $text);
     }
-
-
-
 
     #[Test]
     public function testVirtualAskHumanSequenceShowsQuestionWithoutPayloadNoise(): void
@@ -836,13 +831,13 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
 
         $plain = preg_replace('/\x1b\[[0-9;]*m/', '', $harness->plainScreenText());
 
-        self::assertStringContainsString(TranscriptGlyphs::GLYPH_QUESTION, $plain);
-        self::assertStringContainsString('first', $plain);
-        self::assertStringNotContainsString('**first**', $plain);
-        self::assertStringNotContainsString('kind":"interrupt', $plain);
-        self::assertStringNotContainsString('question_id', $plain);
-        self::assertStringNotContainsString('schema', $plain);
-        self::assertStringNotContainsString('ask_human', $plain);
+        $this->assertStringContainsString(TranscriptGlyphs::GLYPH_QUESTION, $plain);
+        $this->assertStringContainsString('first', $plain);
+        $this->assertStringNotContainsString('**first**', $plain);
+        $this->assertStringNotContainsString('kind":"interrupt', $plain);
+        $this->assertStringNotContainsString('question_id', $plain);
+        $this->assertStringNotContainsString('schema', $plain);
+        $this->assertStringNotContainsString('ask_human', $plain);
     }
 
     #[Test]
@@ -892,9 +887,9 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
         $harness->screen()->setWorkingVisible(false);
 
         $text = $harness->plainScreenText();
-        self::assertSame(1, substr_count($text, 'bash'), 'Expected one collapsed bash card: '.$text);
-        self::assertStringContainsString('composer install', $text);
-        self::assertStringContainsString('Installing dependencies', $text);
+        $this->assertSame(1, substr_count($text, 'bash'), 'Expected one collapsed bash card: '.$text);
+        $this->assertStringContainsString('composer install', $text);
+        $this->assertStringContainsString('Installing dependencies', $text);
     }
 
     #[Test]
@@ -931,9 +926,8 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
         $harness->screen()->setWorkingVisible(false);
 
         $text = $harness->plainScreenText();
-        self::assertSame(1, substr_count($text, 'bash'), 'Collapsed exchange should show one bash header: '.$text);
-        self::assertStringContainsString('find bin', $text);
-        self::assertStringContainsString('/path/bin/console', $text);
+        $this->assertSame(1, substr_count($text, 'bash'), 'Collapsed exchange should show one bash header: '.$text);
+        $this->assertStringContainsString('find bin', $text);
+        $this->assertStringContainsString('/path/bin/console', $text);
     }
-
 }

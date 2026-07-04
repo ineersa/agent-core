@@ -89,10 +89,10 @@ class AppConfigTest extends TestCase
     {
         $config = $this->buildConfig();
 
-        self::assertNotNull($config->ai);
-        self::assertSame('deepseek/deepseek-v4-pro', $config->ai->defaultModel);
-        self::assertNotNull($config->catalog);
-        self::assertTrue($config->catalog->isAvailable('deepseek/deepseek-v4-pro'));
+        $this->assertNotNull($config->ai);
+        $this->assertSame('deepseek/deepseek-v4-pro', $config->ai->defaultModel);
+        $this->assertNotNull($config->catalog);
+        $this->assertTrue($config->catalog->isAvailable('deepseek/deepseek-v4-pro'));
     }
 
     // ──────────────────────────────────────────────
@@ -127,9 +127,9 @@ class AppConfigTest extends TestCase
 
         $config = $this->buildConfig();
 
-        self::assertNotNull($config->ai);
-        self::assertNull($config->ai->defaultModel);
-        self::assertNotNull($config->catalog);
+        $this->assertNotNull($config->ai);
+        $this->assertNull($config->ai->defaultModel);
+        $this->assertNotNull($config->catalog);
     }
 
     // ──────────────────────────────────────────────
@@ -237,14 +237,14 @@ class AppConfigTest extends TestCase
 
         // theme_paths uses #[SerializedName('theme_paths')]; this assertion
         // proves the test serializer correctly reads SerializedName attributes.
-        self::assertSame(['/app/config/themes'], $config->tui->themePaths);
+        $this->assertSame(['/app/config/themes'], $config->tui->themePaths);
 
         $transcript = $config->tui->transcript;
-        self::assertTrue($transcript->thinking->visible);
-        self::assertSame('dim_italic', $transcript->thinking->style);
-        self::assertFalse($transcript->previews->expandedByDefault);
-        self::assertSame(8, $transcript->previews->toolResultLines);
-        self::assertSame(20, $transcript->previews->diffLines);
+        $this->assertTrue($transcript->thinking->visible);
+        $this->assertSame('dim_italic', $transcript->thinking->style);
+        $this->assertFalse($transcript->previews->expandedByDefault);
+        $this->assertSame(8, $transcript->previews->toolResultLines);
+        $this->assertSame(20, $transcript->previews->diffLines);
     }
 
     public function testTranscriptConfigHydratesFromYaml(): void
@@ -291,11 +291,11 @@ class AppConfigTest extends TestCase
         $config = $this->buildConfig();
 
         $transcript = $config->tui->transcript;
-        self::assertFalse($transcript->thinking->visible);
-        self::assertSame('dim', $transcript->thinking->style);
-        self::assertTrue($transcript->previews->expandedByDefault);
-        self::assertSame(12, $transcript->previews->toolResultLines);
-        self::assertSame(30, $transcript->previews->diffLines);
+        $this->assertFalse($transcript->thinking->visible);
+        $this->assertSame('dim', $transcript->thinking->style);
+        $this->assertTrue($transcript->previews->expandedByDefault);
+        $this->assertSame(12, $transcript->previews->toolResultLines);
+        $this->assertSame(30, $transcript->previews->diffLines);
     }
 
     // ──────────────────────────────────────────────
@@ -344,6 +344,4 @@ class AppConfigTest extends TestCase
             encoders: [],
         );
     }
-
-
 }

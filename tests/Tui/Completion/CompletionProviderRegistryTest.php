@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace Ineersa\Tests\Tui\Completion;
 
-use Ineersa\Tui\Completion\CompletionProviderRegistry;
 use Ineersa\Tui\Completion\CompletionContext;
-use Ineersa\Tui\Completion\CompletionSuggestion;
 use Ineersa\Tui\Completion\CompletionProvider;
+use Ineersa\Tui\Completion\CompletionProviderRegistry;
+use Ineersa\Tui\Completion\CompletionSuggestion;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;

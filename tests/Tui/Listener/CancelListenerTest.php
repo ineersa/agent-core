@@ -18,10 +18,9 @@ use Ineersa\Tui\Listener\CancelListener;
 use Ineersa\Tui\Question\QuestionController;
 use Ineersa\Tui\Question\QuestionCoordinator;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
-use Ineersa\Tui\Runtime\TuiRuntimeContext;
 use Ineersa\Tui\Runtime\TuiSessionState;
-use Ineersa\Tui\Tests\Support\TuiRuntimeContextBuilderTrait;
 use Ineersa\Tui\Screen\ChatScreen;
+use Ineersa\Tui\Tests\Support\TuiRuntimeContextBuilderTrait;
 use Ineersa\Tui\Theme\DefaultTheme;
 use Ineersa\Tui\Theme\ThemePalette;
 use PHPUnit\Framework\Attributes\Test;
@@ -304,14 +303,14 @@ class CancelListenerTest extends TestCase
         $qcRef = new \ReflectionClass($qc);
         $awaitProp = $qcRef->getProperty('awaitingFreeForm');
         $awaitProp->setValue($qc, true);
-        self::assertTrue($qc->isAwaitingFreeForm());
+        $this->assertTrue($qc->isAwaitingFreeForm());
 
         // Pass the pre-configured controller to dispatchCancelEvent
         $this->dispatchCancelEvent(captureErrorEnv: '1', questionController: $qc);
 
         // After dispatch, restoreFromFreeForm() should have reset the flag
         // (regardless of whether it could re-open — no screen in this path)
-        self::assertFalse($qc->isAwaitingFreeForm(), 'restoreFromFreeForm must reset awaitingFreeForm');
+        $this->assertFalse($qc->isAwaitingFreeForm(), 'restoreFromFreeForm must reset awaitingFreeForm');
 
         // THE KEY ASSERTION: client->cancel() was never called despite the
         // run being active with a valid handle and awaitingFreeForm=true.

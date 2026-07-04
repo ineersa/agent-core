@@ -43,9 +43,9 @@ final class InProcessAttachDoesNotContinueTest extends IsolatedKernelTestCase
 
         $handle = $client->attach('session-attach-42');
 
-        self::assertSame('session-attach-42', $handle->runId);
-        self::assertSame('attached', $handle->status);
-        self::assertSame(0, $this->spyRunner->continueCount, 'attach must not call AgentRunnerInterface::continue');
+        $this->assertSame('session-attach-42', $handle->runId);
+        $this->assertSame('attached', $handle->status);
+        $this->assertSame(0, $this->spyRunner->continueCount, 'attach must not call AgentRunnerInterface::continue');
     }
 }
 

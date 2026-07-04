@@ -36,14 +36,14 @@ final class TuiMarkdownRenderE2eTest extends TestCase
     protected function setUp(): void
     {
         if (!TmuxHarness::isAvailable()) {
-            self::markTestSkipped('tmux is not installed. Skipping TUI e2e tests.');
+            $this->markTestSkipped('tmux is not installed. Skipping TUI e2e tests.');
         }
 
         $this->tmux = new TmuxHarness();
         $this->projectRoot = ProjectDir::get();
         $this->testProjectDir = $this->createIsolatedProjectDir();
         $this->snapshotDir = $this->testProjectDir.'/.hatfield/tmp/tui/smoke';
-        @\mkdir($this->snapshotDir, 0o777, true);
+        @mkdir($this->snapshotDir, 0o777, true);
     }
 
     protected function tearDown(): void
@@ -83,56 +83,56 @@ final class TuiMarkdownRenderE2eTest extends TestCase
 
             // Submit a prompt matching the replay fixture
             $this->tmux->sendKey($pane, 'C-u');
-            \usleep(100_000);
+            usleep(100_000);
             $this->tmux->sendLiteral($pane, 'hello');
             $this->tmux->sendKey($pane, 'Enter');
 
             // Wait for the assistant block glyph — proves widget-tree path
             $capture = $this->tmux->waitForCallback(
                 $pane,
-                static fn (string $cap): bool => \str_contains($cap, '◇'),
+                static fn (string $cap): bool => str_contains($cap, '◇'),
                 timeout: TmuxHarness::TUI_ASSISTANT_BLOCK_TIMEOUT_PARALLEL,
                 message: 'Assistant block (◇) never appeared — widget-tree renderer may not be rendering transcript blocks',
                 history: 2000,
             );
 
             // 1) Raw thinking content must NOT be visible (hidden by config)
-            self::assertStringNotContainsString(
+            $this->assertStringNotContainsString(
                 'I need to respond with a friendly markdown message.',
                 $capture,
                 'Thinking content leaked despite thinking.visible=false in settings',
             );
 
             // 2) Markdown **bold** delimiters must NOT appear literally
-            self::assertStringNotContainsString(
+            $this->assertStringNotContainsString(
                 '**bold**',
                 $capture,
                 'Markdown bold delimiters leaked through — MarkdownWidget not rendering',
             );
 
             // 3) Markdown `code` backtick delimiters must NOT appear literally
-            self::assertStringNotContainsString(
+            $this->assertStringNotContainsString(
                 '`code`',
                 $capture,
                 'Markdown code backticks leaked through — MarkdownWidget not rendering',
             );
 
             // 4) The assistant response text (rendered) must appear
-            self::assertStringContainsString(
+            $this->assertStringContainsString(
                 'Hello!',
                 $capture,
                 'Assistant response text not found',
             );
 
             // 5) The thinking placeholder glyph must appear
-            self::assertStringContainsString(
+            $this->assertStringContainsString(
                 '⋯',
                 $capture,
                 'Thinking placeholder glyph (⋯) not found for hidden thinking block',
             );
 
             // 6) The user message glyph must appear
-            self::assertStringContainsString(
+            $this->assertStringContainsString(
                 '❯',
                 $capture,
                 'User message glyph (❯) not found',
@@ -160,7 +160,7 @@ final class TuiMarkdownRenderE2eTest extends TestCase
     private function agentCommand(): string
     {
         $fixturePath = __DIR__.'/fixtures/tui-markdown-thinking-response.json';
-        if (!\is_file($fixturePath)) {
+        if (!is_file($fixturePath)) {
             $this->fail("Replay fixture not found: {$fixturePath}");
         }
 
@@ -177,18 +177,18 @@ final class TuiMarkdownRenderE2eTest extends TestCase
                 .'--model=llama_cpp_test/test '
                 .'--tools-excluded=bash 2>&1',
             TuiE2eDatabaseEnv::shellPrefix($dbPath, $transportDbPath),
-            \escapeshellarg($this->testProjectDir.'/home'),
-            \escapeshellarg($fixturePath),
-            \escapeshellarg($php),
-            \escapeshellarg($script),
+            escapeshellarg($this->testProjectDir.'/home'),
+            escapeshellarg($fixturePath),
+            escapeshellarg($php),
+            escapeshellarg($script),
         );
     }
 
     private function createIsolatedProjectDir(): string
     {
         $dir = TestDirectoryIsolation::createProjectTempDir('tui-e2e-markdown-render');
-        @\mkdir($dir.'/.hatfield', 0o777, true);
-        @\mkdir($dir.'/home/.hatfield', 0o777, true);
+        @mkdir($dir.'/.hatfield', 0o777, true);
+        @mkdir($dir.'/home/.hatfield', 0o777, true);
 
         $settings = [
             'ai' => [
@@ -227,8 +227,8 @@ final class TuiMarkdownRenderE2eTest extends TestCase
         ];
 
         $yaml = Yaml::dump($settings, 6, 4);
-        \file_put_contents($dir.'/.hatfield/settings.yaml', $yaml);
-        \file_put_contents($dir.'/home/.hatfield/settings.yaml', $yaml);
+        file_put_contents($dir.'/.hatfield/settings.yaml', $yaml);
+        file_put_contents($dir.'/home/.hatfield/settings.yaml', $yaml);
 
         return $dir;
     }
@@ -236,8 +236,8 @@ final class TuiMarkdownRenderE2eTest extends TestCase
     private function saveAnsiSnapshot(TmuxPane $pane, string $tag): void
     {
         $ansi = $this->tmux->captureAnsi($pane);
-        $ts = \date('Ymd-His');
+        $ts = date('Ymd-His');
         $path = \sprintf('%s/%s-%s.ansi', $this->snapshotDir, $tag, $ts);
-        \file_put_contents($path, $ansi);
+        file_put_contents($path, $ansi);
     }
 }

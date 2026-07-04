@@ -87,7 +87,6 @@ final class SubagentProgressEventsFixture
             ], $now);
         }
 
-
         $progressTerminal = $progressBase;
         $progressTerminal['turn_no'] = 3;
         $progressTerminal['status'] = 'completed';

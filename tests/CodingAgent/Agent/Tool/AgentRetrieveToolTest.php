@@ -19,13 +19,13 @@ final class AgentRetrieveToolTest extends IsolatedKernelTestCase
         $tool = self::getContainer()->get(AgentRetrieveTool::class);
         $def = $tool->definition();
 
-        self::assertSame('agent_retrieve', $def->name);
-        self::assertFalse($def->parametersJsonSchema['additionalProperties']);
-        self::assertSame(
+        $this->assertSame('agent_retrieve', $def->name);
+        $this->assertFalse($def->parametersJsonSchema['additionalProperties']);
+        $this->assertSame(
             ['handoff', 'metadata', 'events', 'history', 'debug'],
             $def->parametersJsonSchema['properties']['mode']['enum'] ?? [],
         );
-        self::assertSame(\Ineersa\AgentCore\Domain\Tool\ToolExecutionMode::Sequential, $def->executionMode);
+        $this->assertSame(\Ineersa\AgentCore\Domain\Tool\ToolExecutionMode::Sequential, $def->executionMode);
     }
 
     public function testInvokeRejectsWithoutToolContext(): void
@@ -47,13 +47,16 @@ final class AgentRetrieveToolTest extends IsolatedKernelTestCase
             toolCallId: 'tc-1',
             toolName: 'agent_retrieve',
             cancellationToken: new class implements \Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface {
-                public function isCancellationRequested(): bool { return false; }
+                public function isCancellationRequested(): bool
+                {
+                    return false;
+                }
             },
             timeoutSeconds: 30,
             orderIndex: 0,
         );
 
-        $accessor->with($context, function () use ($tool): void {
+        $accessor->with($context, static function () use ($tool): void {
             try {
                 $tool->__invoke([]);
                 self::fail('Expected ToolCallException');

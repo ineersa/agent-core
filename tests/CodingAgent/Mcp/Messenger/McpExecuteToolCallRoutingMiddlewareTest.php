@@ -15,8 +15,6 @@ use Ineersa\CodingAgent\Mcp\Messenger\McpExecuteToolCallRoutingMiddleware;
 use Ineersa\CodingAgent\Tests\Support\Messenger\TestStack;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Messenger\Envelope;
-use Symfony\Component\Messenger\Middleware\MiddlewareInterface;
-use Symfony\Component\Messenger\Middleware\StackInterface;
 use Symfony\Component\Messenger\Stamp\ReceivedStamp;
 use Symfony\Component\Messenger\Stamp\TransportNamesStamp;
 
@@ -193,7 +191,10 @@ final class McpExecuteToolCallRoutingMiddlewareTest extends TestCase
     public function testRethrowsCatalogReadFailure(): void
     {
         $failingStore = new class implements McpToolCatalogStoreInterface {
-            public function write(string $runId, McpToolCatalogDTO $catalog): void {}
+            public function write(string $runId, McpToolCatalogDTO $catalog): void
+            {
+            }
+
             public function read(string $runId): ?McpToolCatalogDTO
             {
                 throw new \RuntimeException('Catalog I/O failure');
@@ -297,8 +298,14 @@ final class McpExecuteToolCallRoutingMiddlewareTest extends TestCase
     {
         $store = new class($storeData) implements McpToolCatalogStoreInterface {
             /** @param array<string, McpToolCatalogDTO> $data */
-            public function __construct(private array $data) {}
-            public function write(string $runId, McpToolCatalogDTO $catalog): void {}
+            public function __construct(private array $data)
+            {
+            }
+
+            public function write(string $runId, McpToolCatalogDTO $catalog): void
+            {
+            }
+
             public function read(string $runId): ?McpToolCatalogDTO
             {
                 return $this->data[$runId] ?? null;

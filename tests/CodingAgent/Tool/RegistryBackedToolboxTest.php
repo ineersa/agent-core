@@ -420,7 +420,7 @@ final class RegistryBackedToolboxTest extends TestCase
                 public function rewriteArguments(ToolCallContextDTO $context): ?array
                 {
                     $args = $context->arguments;
-                    $args['command'] = 'LLM_MODE=true ' . $args['command'];
+                    $args['command'] = 'LLM_MODE=true '.$args['command'];
 
                     return $args;
                 }
@@ -465,7 +465,7 @@ final class RegistryBackedToolboxTest extends TestCase
                 public function rewriteArguments(ToolCallContextDTO $context): ?array
                 {
                     $args = $context->arguments;
-                    $args['command'] = 'LLM_MODE=true ' . $args['command'];
+                    $args['command'] = 'LLM_MODE=true '.$args['command'];
 
                     return $args;
                 }
@@ -496,7 +496,7 @@ final class RegistryBackedToolboxTest extends TestCase
                 public function rewriteArguments(ToolCallContextDTO $context): ?array
                 {
                     $args = $context->arguments;
-                    $args['prefix'] = ($args['prefix'] ?? '') . 'first|';
+                    $args['prefix'] = ($args['prefix'] ?? '').'first|';
 
                     return $args;
                 }
@@ -505,7 +505,7 @@ final class RegistryBackedToolboxTest extends TestCase
                 public function rewriteArguments(ToolCallContextDTO $context): ?array
                 {
                     $args = $context->arguments;
-                    $args['prefix'] = ($args['prefix'] ?? '') . 'second';
+                    $args['prefix'] = ($args['prefix'] ?? '').'second';
 
                     return $args;
                 }
