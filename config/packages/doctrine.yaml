@@ -1,7 +1,7 @@
 # Doctrine DBAL + ORM configuration for SQLite-backed storage.
 #
 # Two SQLite files under .hatfield/ (CWD-relative; see Kernel app.cwd):
-#   - messenger.sqlite          — app/runtime state (ORM entities, sessions metadata)
+#   - state.sqlite          — app/runtime state (ORM entities, sessions metadata)
 #   - messenger-transport.sqlite — Symfony Messenger doctrine transport only
 #
 # Splitting queue persistence from app-state writes prevents app DB write locks
@@ -22,7 +22,7 @@ doctrine:
         connections:
             default:
                 driver: pdo_sqlite
-                path: '%app.cwd%/.hatfield/messenger.sqlite'
+                path: '%app.cwd%/.hatfield/state.sqlite'
                 options:
                     2: 5
 

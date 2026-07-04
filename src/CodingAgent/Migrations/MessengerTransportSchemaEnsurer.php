@@ -15,7 +15,7 @@ use Psr\Log\LoggerInterface;
  * WHY THIS EXISTS
  * ───────────────
  * Queue rows (messenger_messages) live in .hatfield/messenger-transport.sqlite,
- * separate from app/runtime state in .hatfield/messenger.sqlite. Startup
+ * separate from app/runtime state in .hatfield/state.sqlite. Startup
  * migrations on the default connection must not be required for transport
  * persistence — otherwise app-state write locks can still block queue setup.
  *

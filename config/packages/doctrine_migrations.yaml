@@ -4,7 +4,7 @@
 # They must be generated via Symfony console (bin/console doctrine:migrations:diff)
 # from entity metadata — never hand-written.
 #
-# Migration version metadata lives on the default app DB (.hatfield/messenger.sqlite).
+# Migration version metadata lives on the default app DB (.hatfield/state.sqlite).
 doctrine_migrations:
     migrations_paths:
         # Namespace must NOT conflict with src/ PSR-4 auto-discovery

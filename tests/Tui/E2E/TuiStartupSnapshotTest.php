@@ -15,7 +15,7 @@ use PHPUnit\Framework\TestCase;
  * asserts it appears in the pane, then sends Ctrl+D to exit.
  *
  * Runs in an isolated project directory under var/tmp/tui-e2e-* so it does NOT
- * hit the stale project-root .hatfield/messenger.sqlite.
+ * hit the stale project-root .hatfield/state.sqlite.
  *
  * Element-level startup layout assertions live in
  * {@see \Ineersa\Tui\Tests\Screen\TuiStartupVirtualRenderTest} (no tmux).

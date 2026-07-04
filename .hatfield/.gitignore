@@ -11,11 +11,16 @@ sessions/
 tmp/
 cache/
 logs/
-messenger.sqlite
-messenger.sqlite-journal
-messenger.sqlite-wal
-messenger.sqlite-shm
+state.sqlite
+state.sqlite-journal
+state.sqlite-wal
+state.sqlite-shm
 messenger-transport.sqlite
 messenger-transport.sqlite-journal
 messenger-transport.sqlite-wal
 messenger-transport.sqlite-shm
+# Stale local runtime artifacts after manual rename to state.sqlite
+messenger.sqlite
+messenger.sqlite-journal
+messenger.sqlite-wal
+messenger.sqlite-shm

@@ -72,7 +72,7 @@ Focus on topology, message flow, event delivery, and process supervision.
 │         ▼                ▼                ▼                ▼         │
 │  ┌──────────────────────────────┐ ┌────────────────────────────┐ │
 │  │ App/runtime SQLite           │ │ Messenger transport SQLite   │ │
-│  │ (.hatfield/messenger.sqlite) │ │ (.hatfield/messenger-       │ │
+│  │ (.hatfield/state.sqlite)          │ │ (.hatfield/messenger-       │ │
 │  │ ORM: tool_batch_state, …     │ │  transport.sqlite)         │ │
 │  │                              │ │ Per-session queue_name:      │ │
 │  │                              │ │ run_control/llm/tool/agent   │ │
@@ -341,7 +341,7 @@ Per-session scoping:
     targeted orphan process cleanup.
 
 Storage:
-  .hatfield/messenger.sqlite — app/runtime ORM state (sessions metadata, tool_batch_state, …)
+  .hatfield/state.sqlite — app/runtime ORM state (sessions metadata, tool_batch_state, …)
   .hatfield/messenger-transport.sqlite — Messenger doctrine transport only
   Transport table is ensured by MessengerTransportSchemaEnsurer at startup;
   messenger transport auto_setup remains a fallback safety net.
@@ -634,7 +634,7 @@ pgrep -f messenger:consume
 .hatfield/
 ├── settings.yaml              Project-local settings (LLM config, themes)
 │
-├── messenger.sqlite           App/runtime ORM state (not Messenger queues)
+├── state.sqlite           App/runtime ORM state (not Messenger queues)
 ├── messenger-transport.sqlite Messenger doctrine transport
 │   └── messenger_messages     Queue table (MessengerTransportSchemaEnsurer; auto_setup fallback)
 │       queue_name column filters by session:
