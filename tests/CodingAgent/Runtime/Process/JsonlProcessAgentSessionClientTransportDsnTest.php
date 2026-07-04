@@ -139,59 +139,31 @@ PHP);
         self::assertStringNotContainsString('doctrine://default', implode(' ', $env));
     }
 
-    public function testSpawnedControllerDerivesPairedMessengerTransportDatabasePath(): void
-    {
-        $appPath = 'app_test-tui-abc123.sqlite';
-        $expectedTransport = 'messenger_transport_test-tui-abc123.sqlite';
 
-        $envDump = $this->runEnvDumpWithTestDatabasePaths($appPath, null);
 
-        self::assertSame($appPath, $envDump['HATFIELD_TEST_DATABASE_PATH']);
-        self::assertSame($expectedTransport, $envDump['HATFIELD_TEST_MESSENGER_TRANSPORT_DATABASE_PATH']);
-    }
-
-    public function testSpawnedControllerPreservesExplicitMessengerTransportDatabasePath(): void
-    {
-        $appPath = 'app_test-tui-abc123.sqlite';
-        $explicitTransport = 'messenger_transport_test-custom.sqlite';
-
-        $envDump = $this->runEnvDumpWithTestDatabasePaths($appPath, $explicitTransport);
-
-        self::assertSame($appPath, $envDump['HATFIELD_TEST_DATABASE_PATH']);
-        self::assertSame($explicitTransport, $envDump['HATFIELD_TEST_MESSENGER_TRANSPORT_DATABASE_PATH']);
-    }
-
-    /**
-     * @return array<string, string>
-     */
-    private function runEnvDumpWithTestDatabasePaths(string $appDatabasePath, ?string $transportDatabasePath): array
+    public function testSpawnedControllerForwardsExplicitTestDatabaseEnvFromParentProcess(): void
     {
         $saved = $this->snapshotTestDatabaseEnv();
         try {
+            $appPath = 'app_test-explicit.sqlite';
+            $transportPath = 'messenger_transport_test-explicit.sqlite';
             putenv('APP_ENV=test');
             $_ENV['APP_ENV'] = 'test';
             $_SERVER['APP_ENV'] = 'test';
-            putenv('HATFIELD_TEST_DATABASE_PATH='.$appDatabasePath);
-            $_ENV['HATFIELD_TEST_DATABASE_PATH'] = $appDatabasePath;
-            $_SERVER['HATFIELD_TEST_DATABASE_PATH'] = $appDatabasePath;
+            putenv('HATFIELD_TEST_DATABASE_PATH='.$appPath);
+            $_ENV['HATFIELD_TEST_DATABASE_PATH'] = $appPath;
+            $_SERVER['HATFIELD_TEST_DATABASE_PATH'] = $appPath;
+            putenv('HATFIELD_TEST_MESSENGER_TRANSPORT_DATABASE_PATH='.$transportPath);
+            $_ENV['HATFIELD_TEST_MESSENGER_TRANSPORT_DATABASE_PATH'] = $transportPath;
+            $_SERVER['HATFIELD_TEST_MESSENGER_TRANSPORT_DATABASE_PATH'] = $transportPath;
 
-            if (null === $transportDatabasePath) {
-                putenv('HATFIELD_TEST_MESSENGER_TRANSPORT_DATABASE_PATH');
-                unset($_ENV['HATFIELD_TEST_MESSENGER_TRANSPORT_DATABASE_PATH'], $_SERVER['HATFIELD_TEST_MESSENGER_TRANSPORT_DATABASE_PATH']);
-            } else {
-                putenv('HATFIELD_TEST_MESSENGER_TRANSPORT_DATABASE_PATH='.$transportDatabasePath);
-                $_ENV['HATFIELD_TEST_MESSENGER_TRANSPORT_DATABASE_PATH'] = $transportDatabasePath;
-                $_SERVER['HATFIELD_TEST_MESSENGER_TRANSPORT_DATABASE_PATH'] = $transportDatabasePath;
-            }
+            $envDump = $this->tmpDir.'/env-explicit.json';
+            $client = $this->createClientWithEnvDump($envDump);
+            $client->start(new StartRunRequest(prompt: 'hello', runId: 'session-env'));
 
-            $envDumpPath = $this->tmpDir.'/env-db-'.bin2hex(random_bytes(4)).'.json';
-            $client = $this->createClientWithEnvDump($envDumpPath);
-            $client->start(new StartRunRequest(
-                prompt: 'hello',
-                runId: 'session-db',
-            ));
-
-            return $this->waitForEnvDump($envDumpPath);
+            $env = $this->waitForEnvDump($envDump);
+            self::assertSame($appPath, $env['HATFIELD_TEST_DATABASE_PATH']);
+            self::assertSame($transportPath, $env['HATFIELD_TEST_MESSENGER_TRANSPORT_DATABASE_PATH']);
         } finally {
             $this->restoreTestDatabaseEnv($saved);
         }

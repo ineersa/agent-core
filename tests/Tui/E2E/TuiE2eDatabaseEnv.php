@@ -34,4 +34,35 @@ final class TuiE2eDatabaseEnv
             escapeshellarg($transportDbPath),
         );
     }
+    /**
+     * Derive paired transport filename from an app_test-*.sqlite basename.
+     */
+    public static function transportPathForAppBasename(string $appBasename): string
+    {
+        if (str_starts_with($appBasename, 'app_test-')) {
+            return 'messenger_transport_test-'.substr($appBasename, \strlen('app_test-'));
+        }
+
+        return 'messenger_transport_'.$appBasename;
+    }
+
+    /**
+     * @return array{app: string, transport: string}
+     */
+    public static function allocatePathsFromAppBasename(string $appBasename): array
+    {
+        return [
+            'app' => $appBasename,
+            'transport' => self::transportPathForAppBasename($appBasename),
+        ];
+    }
+
+    /**
+     * Prefix for tmux agent shell commands: APP_ENV=test plus paired DB env vars.
+     */
+    public static function agentShellPrefix(string $appDbPath, string $transportDbPath): string
+    {
+        return 'APP_ENV=test '.self::shellPrefix($appDbPath, $transportDbPath);
+    }
+
 }
