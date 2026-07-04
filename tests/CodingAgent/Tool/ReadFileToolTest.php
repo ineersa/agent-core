@@ -40,6 +40,14 @@ final class ReadFileToolTest extends TestCase
         $this->readFileTool = new ReadFileTool($this->toolRuntime);
     }
 
+
+    public function testDefinitionIncludesReadTimeoutSeconds(): void
+    {
+        $definition = $this->readFileTool->definition();
+
+        self::assertSame(30, $definition->timeoutSeconds);
+    }
+
     protected function tearDown(): void
     {
         $this->rmDir($this->tmpDir);

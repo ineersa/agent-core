@@ -30,6 +30,9 @@ final class ReadFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
     /** Default maximum lines for an unrestricted read. */
     private const int DEFAULT_LINE_LIMIT = 2000;
 
+    /** Per-tool execution timeout for shell read pipelines (seconds). */
+    private const int READ_TIMEOUT_SECONDS = 30;
+
     /** Maximum bytes to read for content inspection (8KB sample + 3-byte lookahead for UTF-8 multi-byte boundary). */
     private const int INSPECTION_SAMPLE_BYTES = 8192;
 
@@ -143,6 +146,7 @@ final class ReadFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
             ],
             handler: $this,
             executionMode: ToolExecutionMode::Parallel,
+            timeoutSeconds: self::READ_TIMEOUT_SECONDS,
             promptLine: 'read path [offset=N] [limit=N] — read a text file with cat -n line numbers; supports offset and limit for partial reads; use view_image for images',
             promptGuidelines: [
                 'Output uses cat -n line numbering with original file line numbers.',
@@ -487,7 +491,7 @@ final class ReadFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
         }
 
         $process = new Process(['bash', '-c', $cmd]);
-        $result = $this->toolRuntime->runCancellableProcess($process);
+        $result = $this->toolRuntime->runCancellableProcess($process, timeoutSeconds: self::READ_TIMEOUT_SECONDS);
 
         if ($result->cancelled) {
             throw new \RuntimeException('Tool execution was cancelled during file read.');
@@ -573,7 +577,7 @@ final class ReadFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
     private function countTotalLines(string $resolvedPath): ?int
     {
         $wcProcess = new Process(['bash', '-c', \sprintf("awk 'END {print NR}' %s", escapeshellarg($resolvedPath))]);
-        $wcResult = $this->toolRuntime->runCancellableProcess($wcProcess);
+        $wcResult = $this->toolRuntime->runCancellableProcess($wcProcess, timeoutSeconds: self::READ_TIMEOUT_SECONDS);
 
         if ($wcResult->cancelled || $wcResult->timedOut || 0 !== $wcResult->exitCode || '' === trim($wcResult->stdout)) {
             return null; // Cannot determine total, graceful degradation
