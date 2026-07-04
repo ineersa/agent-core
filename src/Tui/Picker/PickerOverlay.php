@@ -32,8 +32,11 @@ final class PickerOverlay
      * inserts it below the editor (same visual slot as completion menus),
      * and sets focus to the list.
      *
-     * Uses {@see ChatScreen::insertOverlayAfterEditor()} so the picker
-     * renders above the footer, not below it.
+     * Uses {@see ChatScreen::insertOverlayBeforeEditor()} so the picker
+     * renders in the dedicated overlay slot above the editor (same as
+     * question overlays). The below-editor slot shared with footer/status
+     * caused incremental ScreenWriter paint to leave stale rows and bleed
+     * footer/session text into picker lines in live tmux.
      */
     public function mount(Tui $tui, ChatScreen $screen, SelectListWidget $listWidget, TextWidget $header): void
     {
@@ -48,7 +51,7 @@ final class PickerOverlay
         $this->container->add($header);
         $this->container->add($this->listWidget);
 
-        $screen->insertOverlayAfterEditor($this->container);
+        $screen->insertOverlayBeforeEditor($this->container);
         $tui->setFocus($this->listWidget);
         // Force full clear+redraw on mount so ScreenWriter does not leave stale
         // picker rows in the overlay slot when incremental dirty regions miss prior list height.
@@ -85,6 +88,17 @@ final class PickerOverlay
         $this->listWidget = null;
         $this->screen = null;
         $this->isOpen = false;
+    }
+
+    /**
+     * After SelectListWidget item rebuilds (navigation), force the overlay
+     * subtree and a full frame repaint so ScreenWriter clears prior list height.
+     */
+    public function invalidateListPaint(Tui $tui): void
+    {
+        $this->container?->invalidate();
+        $this->listWidget?->invalidate();
+        $tui->requestRender(true);
     }
 
     public function isOpen(): bool

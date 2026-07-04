@@ -119,12 +119,16 @@ final class TreePickerController
         );
         $listWidget->setSelectedIndex(max(0, $initialSelectedIndex));
 
+        // ── Mount shell (handlers need overlay ref for post-navigation repaint) ──
+        $this->overlay = new PickerOverlay();
+
         // ── Arrows → rebuild items so newly selected row gets accent colour ──
         // setSelectedIndex() does NOT re-dispatch SelectionChangeEvent
         // (verified in SelectListWidget.php), so calling it after
         // setItems() is safe and does not cause infinite recursion.
+        $overlayRef = $this->overlay;
         $listWidget->onSelectionChange(
-            static function (SelectionChangeEvent $event) use ($listWidget, $tree, $theme, $flattenedOrder): void {
+            static function (SelectionChangeEvent $event) use ($listWidget, $tree, $theme, $flattenedOrder, $tui, $overlayRef): void {
                 $selectedValue = $event->getItem()['value'];
                 $selectedIdx = -1;
 
@@ -139,6 +143,7 @@ final class TreePickerController
                 $newItems = self::buildItems($tree, $theme, selectedIndex: $selectedIdx);
                 $listWidget->setItems($newItems);
                 $listWidget->setSelectedIndex(max(0, $selectedIdx));
+                $overlayRef->invalidateListPaint($tui);
             },
         );
 
@@ -164,8 +169,6 @@ final class TreePickerController
             $picker->closePicker();
         });
 
-        // ── Mount via PickerOverlay ──
-        $this->overlay = new PickerOverlay();
         $this->overlay->mount($tui, $screen, $listWidget, $header);
     }
 

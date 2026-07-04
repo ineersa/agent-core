@@ -137,7 +137,7 @@ final class FileRewindPickerController
         $label = mb_strimwidth($title, 0, 60, '…');
         $this->headerWidget->setText($this->screen->theme()->muted('Checkpoint turn '.$turnNo.': '.$label.' (Esc to close)'));
         $this->screen->setStatus('rewind', null);
-        $this->tui?->requestRender();
+        $this->tui?->requestRender(true);
     }
 
     /**
