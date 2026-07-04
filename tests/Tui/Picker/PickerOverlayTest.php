@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Tests\Picker;
 
 use Ineersa\Tui\Picker\PickerOverlay;
-use Ineersa\Tui\Picker\PickerOverlayPlacementEnum;
 use Ineersa\Tui\Screen\ChatScreen;
 use Symfony\Component\Tui\Widget\ContainerWidget;
 use Ineersa\Tui\Editor\PromptEditor;
@@ -178,39 +177,6 @@ final class PickerOverlayTest extends TestCase
         self::assertLessThan($footerIdx, $overlayIdx, 'Default picker overlay must render above the footer');
     }
 
-    public function testBeforeEditorMountInsertsOverlayAboveEditor(): void
-    {
-        $promptEditor = new PromptEditor();
-        $screen = new ChatScreen(
-            new DefaultTheme(new ThemePalette('test', [])),
-            'test-session',
-            $promptEditor,
-        );
-
-        $tui = new Tui();
-        $screen->mount($tui);
-
-        $editorIdx = $this->rootChildIndex($tui, $screen->promptEditor()->getWidget());
-
-        $listWidget = new SelectListWidget(items: [
-            ['value' => 'a', 'label' => 'A'],
-        ]);
-        $header = new TextWidget(text: 'Test', truncate: true);
-
-        $overlay = new PickerOverlay();
-        $overlay->mount(
-            $tui,
-            $screen,
-            $listWidget,
-            $header,
-            PickerOverlayPlacementEnum::BeforeEditor,
-        );
-
-        $container = $this->pickerContainerFromOverlay($overlay);
-        $overlayIdx = $this->rootChildIndex($tui, $container);
-
-        self::assertLessThan($editorIdx, $overlayIdx, '/tree and /rewind must opt into above-editor placement');
-    }
 
     /**
      * @return list<\Symfony\Component\Tui\Widget\AbstractWidget>

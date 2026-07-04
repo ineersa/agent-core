@@ -820,10 +820,10 @@ final class TreePickerControllerTest extends TestCase
         self::assertStringContainsString('…', $items[0]['label'], 'Truncation ellipsis should be present');
     }
 
-    // ── buildItems: accent selected index ────────────────────────────────────
+    // ── buildItems: static labels (selection styling is SelectListWidget-owned) ──
 
     #[Test]
-    public function testBuildItemsAccentsSelectedIndex(): void
+    public function testBuildItemsLabelsAreStableRegardlessOfSelection(): void
     {
         $nodes = [
             1 => new TurnTreeNodeView(
@@ -835,6 +835,7 @@ final class TreePickerControllerTest extends TestCase
                 promptPreview: 'One',
                 createdAt: null,
                 isCurrentLeaf: false,
+                displayRole: 'user',
             ),
             2 => new TurnTreeNodeView(
                 turnNo: 2,
@@ -845,6 +846,7 @@ final class TreePickerControllerTest extends TestCase
                 promptPreview: 'Two',
                 createdAt: null,
                 isCurrentLeaf: true,
+                displayRole: 'assistant',
             ),
         ];
 
@@ -856,12 +858,13 @@ final class TreePickerControllerTest extends TestCase
             activePathTurnNos: [1, 2],
         );
 
-        $palette = new ThemePalette('test', ['accent' => '#FF00FF']);
-        $theme = new DefaultTheme($palette);
-        $items = TreePickerController::buildItems($tree, $theme, selectedIndex: 0);
+        $theme = new DefaultTheme(new ThemePalette('test', []));
+        $items = TreePickerController::buildItems($tree, $theme);
 
-        self::assertStringContainsString("\x1b", $items[0]['label'], 'Selected item should have ANSI accent');
-        self::assertStringNotContainsString("\x1b", $items[1]['label'], 'Unselected item should not have ANSI accent');
+        self::assertSame($items, TreePickerController::buildItems($tree, $theme));
+        self::assertStringContainsString('◉', $items[1]['label'], 'Current leaf marker is semantic, not selection cursor');
+        self::assertStringContainsString('○', $items[0]['label']);
+        self::assertStringNotContainsString("\n", $items[0]['label']);
     }
 
     // ── open/close lifecycle ────────────────────────────────────────────────

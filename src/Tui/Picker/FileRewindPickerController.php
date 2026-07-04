@@ -11,7 +11,6 @@ use Ineersa\CodingAgent\Runtime\Protocol\TurnTreeNodeView;
 use Ineersa\CodingAgent\Runtime\Protocol\TurnTreeView;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Screen\ChatScreen;
-use Ineersa\Tui\Theme\ThemeColorEnum;
 use Ineersa\Tui\Theme\TuiTheme;
 use Symfony\Component\Tui\Event\CancelEvent;
 use Symfony\Component\Tui\Event\SelectEvent;
@@ -97,7 +96,7 @@ final class FileRewindPickerController
             'select_cancel' => [Key::ESCAPE, Key::ctrl('c')],
         ]);
         $selected = max(0, \count($targets) - 1);
-        $items = $this->buildCheckpointItems($targets, $theme, $selected);
+        $items = $this->buildCheckpointItems($targets, $theme);
         $list = new SelectListWidget(items: $items, maxVisible: 10, keybindings: $kb);
         $list->setSelectedIndex($selected);
         $picker = $this;
@@ -110,23 +109,19 @@ final class FileRewindPickerController
         $list->onCancel(static function (CancelEvent $event) use ($picker): void {
             $picker->closePicker();
         });
-        $this->overlay = new PickerOverlay();
-        $overlayRef = $this->overlay;
-        $list->onSelectionChange(static function (SelectionChangeEvent $event) use ($picker, $list, $targets, $theme, $tui, $overlayRef): void {
+        $list->onSelectionChange(static function (SelectionChangeEvent $event) use ($picker, $targets): void {
             $turnNo = (int) $event->getItem()['value'];
-            $selectedIdx = 0;
-            foreach ($targets as $i => $target) {
+            $title = 'Turn '.$turnNo;
+            foreach ($targets as $target) {
                 if ($target['turnNo'] === $turnNo) {
-                    $selectedIdx = $i;
+                    $title = $target['title'];
                     break;
                 }
             }
-            $list->setItems($picker->buildCheckpointItems($targets, $theme, $selectedIdx));
-            $list->setSelectedIndex(max(0, $selectedIdx));
-            $picker->updateHeaderForTurn($turnNo, $targets[$selectedIdx]['title'] ?? ('Turn '.$turnNo));
-            $overlayRef->invalidateListPaint($tui);
+            $picker->updateHeaderForTurn($turnNo, $title);
         });
-        $this->overlay->mount($tui, $screen, $list, $this->headerWidget, PickerOverlayPlacementEnum::BeforeEditor);
+        $this->overlay = new PickerOverlay();
+        $this->overlay->mount($tui, $screen, $list, $this->headerWidget);
         $initial = $targets[$selected];
         $this->updateHeaderForTurn($initial['turnNo'], $initial['title']);
     }
@@ -147,21 +142,17 @@ final class FileRewindPickerController
      *
      * @return list<array{value:string,label:string}>
      */
-    private function buildCheckpointItems(array $targets, TuiTheme $theme, int $selectedIndex): array
+    private function buildCheckpointItems(array $targets, TuiTheme $theme): array
     {
         $items = [];
-        foreach ($targets as $idx => $target) {
+        foreach ($targets as $target) {
             $turnNo = $target['turnNo'];
             $body = mb_strimwidth(PickerListLabelFormatter::sanitizeTitle($target['title']), 0, 52, '…');
-            $marker = $idx === $selectedIndex ? '◉ ' : '○ ';
             $role = \is_string($target['displayRole'] ?? null) && '' !== $target['displayRole']
                 ? $target['displayRole']
                 : 'assistant';
             $prefix = PickerListLabelFormatter::formatRolePrefix($theme, $role);
-            $label = $marker.$prefix.' checkpoint '.$turnNo.': '.$body;
-            if ($idx === $selectedIndex) {
-                $label = $theme->color(ThemeColorEnum::Accent, $label);
-            }
+            $label = $prefix.' checkpoint '.$turnNo.': '.$body;
             $items[] = ['value' => (string) $turnNo, 'label' => $label];
         }
 
@@ -242,6 +233,6 @@ final class FileRewindPickerController
             $picker->closePicker();
         });
         $this->overlay = new PickerOverlay();
-        $this->overlay->mount($this->tui, $this->screen, $list, $this->headerWidget, PickerOverlayPlacementEnum::BeforeEditor);
+        $this->overlay->mount($this->tui, $this->screen, $list, $this->headerWidget);
     }
 }
