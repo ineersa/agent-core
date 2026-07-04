@@ -536,6 +536,10 @@ final class TickPollListener implements TuiListenerRegistrar
             return;
         }
 
+        if (null !== $sessionState && null !== $screen) {
+            SubagentLiveAttention::markChildNeedsInputForRun($sessionState, $screen, $runId);
+        }
+
         // Parse schema to determine the overlay type.
         $kind = (string) ($p['kind'] ?? '');
         $rawSchema = $p['schema'] ?? null;

@@ -66,7 +66,7 @@ final class TuiSubagentChildHitlCancellationE2eTest extends TestCase
             $this->tmux->waitForCaptureContains($pane, '⚠ needs input', 10.0, 'Picker must mark waiting child');
 
             $this->tmux->sendKey($pane, 'Enter');
-            $this->tmux->waitForCaptureContains($pane, 'needs your input — answer below', 10.0, 'Live view must show child waiting status');
+            $this->tmux->waitForCaptureContains($pane, 'Child waiting for your input', 10.0, 'Live view working line must show child waiting');
             $this->tmux->waitForCaptureContains($pane, 'Which file should the scout inspect next?', 12.0, 'Child question overlay prompt must appear');
             $this->tmux->waitForCaptureContains($pane, 'awaiting answer', 10.0, 'Child HITL must surface in transcript');
             // Child cancel target/precedence: SubagentLiveCommandRegistrarTest + CancelListenerTest (overlay blocks ESC/cancel underneath).

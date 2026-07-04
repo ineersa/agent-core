@@ -12,6 +12,31 @@ use Ineersa\Tui\Screen\ChatScreen;
  */
 final class SubagentLiveAttention
 {
+    public static function markChildNeedsInputForRun(TuiSessionState $state, ChatScreen $screen, string $agentRunId): void
+    {
+        foreach ($state->subagentLiveCatalog->all() as $catalogChild) {
+            if ($catalogChild->agentRunId !== $agentRunId) {
+                continue;
+            }
+
+            if (SubagentLiveStatusEnum::WaitingHuman !== $catalogChild->status) {
+                $state->subagentLiveCatalog->applyChildStatus($catalogChild->artifactId, SubagentLiveStatusEnum::WaitingHuman);
+            }
+            break;
+        }
+
+        $live = $state->subagentLiveView;
+        if ($live->active && null !== $live->selected && $live->selected->agentRunId === $agentRunId) {
+            $refreshed = $state->subagentLiveCatalog->findByArtifactId($live->selected->artifactId);
+            if (null !== $refreshed) {
+                $live->selected = $refreshed;
+            }
+            $live->childActivity = RunActivityStateEnum::WaitingHuman;
+        }
+
+        self::refreshAttentionFooter($state, $screen);
+    }
+
     public static function clearWaitingHumanForRun(TuiSessionState $state, ChatScreen $screen, string $agentRunId): void
     {
         foreach ($state->subagentLiveCatalog->all() as $catalogChild) {
@@ -110,9 +135,8 @@ final class SubagentLiveAttention
     }
 
     /**
-     * Keeps subagent_live and agents-live footer keys aligned with the catalog,
-     * including while subagent live view is active (main-only sync previously
-     * left the warning stuck after answer/cancel/finish).
+     * Keeps the main-screen subagent_live attention marker aligned with the catalog.
+     * Live-view context uses working message and transcript — not status-panel keys.
      */
     public static function refreshAttentionFooter(TuiSessionState $state, ChatScreen $screen): void
     {
@@ -126,23 +150,7 @@ final class SubagentLiveAttention
             $screen->setStatus('subagent_live', null);
         }
 
-        $live = $state->subagentLiveView;
-        if (!$live->active || null === $live->selected) {
-            // agents-live is live-view-only; stale rows must not persist on main.
-            $screen->setStatus('agents-live', null);
-
-            return;
-        }
-
-        $refreshed = $state->subagentLiveCatalog->findByArtifactId($live->selected->artifactId) ?? $live->selected;
-        $live->selected = $refreshed;
-        $liveStatus = $refreshed->needsAttention()
-            ? \sprintf('Subagent live: %s needs your input — answer below; /agents-main to return.', $refreshed->agentName)
-            : \sprintf(
-                'Subagent live: %s [%s] — type to steer next step; /agents-main to return.',
-                $refreshed->agentName,
-                $refreshed->statusLabel(),
-            );
-        $screen->setStatus('agents-live', $liveStatus);
+        // Defensive: never show keyed status rows for live-view-only context.
+        $screen->setStatus('agents-live', null);
     }
 }

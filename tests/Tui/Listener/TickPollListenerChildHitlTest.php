@@ -12,6 +12,13 @@ use Ineersa\Tui\Listener\TickPollListener;
 use Ineersa\Tui\Question\QuestionCoordinator;
 use Ineersa\Tui\Question\QuestionKind;
 use Ineersa\Tui\Question\QuestionSource;
+use Ineersa\Tui\Runtime\RunActivityStateEnum;
+use Ineersa\Tui\Runtime\SubagentLiveChildDTO;
+use Ineersa\Tui\Runtime\SubagentLiveStatusEnum;
+use Ineersa\Tui\Screen\ChatScreen;
+use Ineersa\Tui\Theme\DefaultTheme;
+use Ineersa\Tui\Theme\ThemePalette;
+use Ineersa\Tui\Editor\PromptEditor;
 use PHPUnit\Framework\TestCase;
 
 final class TickPollListenerChildHitlTest extends TestCase
@@ -30,11 +37,11 @@ final class TickPollListenerChildHitlTest extends TestCase
 
         $coordinator = new QuestionCoordinator();
         $state = new \Ineersa\Tui\Runtime\TuiSessionState('parent-1');
-        $state->subagentLiveView->enter(new \Ineersa\Tui\Runtime\SubagentLiveChildDTO(
+        $state->subagentLiveView->enter(new SubagentLiveChildDTO(
             $childRunId,
             'agent_a',
             'scout',
-            \Ineersa\Tui\Runtime\SubagentLiveStatusEnum::WaitingHuman,
+            SubagentLiveStatusEnum::WaitingHuman,
             'task',
             1,
         ));
@@ -64,6 +71,87 @@ final class TickPollListenerChildHitlTest extends TestCase
         self::assertSame('answer_human', $sent[1]->type);
         self::assertSame('q_child_1', $sent[1]->payload['question_id'] ?? null);
         self::assertTrue($sent[1]->payload['answer'] ?? false);
+    }
+
+    public function testChildToolQuestionEnqueuesRunScopedRequestAndMarksNeedsInput(): void
+    {
+        $childRunId = 'child-run-tool-q-1';
+        $sent = null;
+        $client = $this->createMock(AgentSessionClient::class);
+        $client->expects(self::once())->method('send')->willReturnCallback(
+            static function (string $runId, UserCommand $cmd) use (&$sent, $childRunId): void {
+                $sent = [$runId, $cmd];
+                self::assertSame($childRunId, $runId);
+            },
+        );
+
+        $coordinator = new QuestionCoordinator();
+        $state = new \Ineersa\Tui\Runtime\TuiSessionState('parent-1');
+        $state->subagentLiveCatalog->ingestRuntimeEvent(new RuntimeEvent(
+            type: RuntimeEventTypeEnum::ToolExecutionOutputDelta->value,
+            runId: 'parent-1',
+            seq: 1,
+            payload: [
+                'tool_call_id' => 'tc1',
+                'tool_name' => 'subagent',
+                'delta' => '',
+                'subagent_progress' => [
+                    'mode' => 'single',
+                    'status' => 'running',
+                    'agent_name' => 'scout',
+                    'artifact_id' => 'agent_a',
+                    'agent_run_id' => $childRunId,
+                    'task_summary' => 'Task',
+                ],
+            ],
+        ));
+        $state->subagentLiveView->enter(new SubagentLiveChildDTO(
+            $childRunId,
+            'agent_a',
+            'scout',
+            SubagentLiveStatusEnum::Running,
+            'Task',
+            1,
+        ));
+        $state->subagentLiveView->childActivity = RunActivityStateEnum::Running;
+
+        $screen = new ChatScreen(
+            new DefaultTheme(new ThemePalette('test')),
+            'parent-1',
+            new PromptEditor(),
+        );
+
+        $ref = new \ReflectionMethod(TickPollListener::class, 'handleToolQuestionRequested');
+        $event = new RuntimeEvent(
+            type: RuntimeEventTypeEnum::ToolQuestionRequested->value,
+            runId: $childRunId,
+            seq: 0,
+            payload: [
+                'request_id' => 'rq_safe_1',
+                'prompt' => 'Allow bash?',
+                'kind' => 'confirm',
+                'schema' => ['type' => 'boolean'],
+                'tool_call_id' => 'tc_bash',
+                'tool_name' => 'bash',
+            ],
+        );
+        $ref->invoke(null, $event, $client, $coordinator, $state, $screen);
+
+        $active = $coordinator->activeRequest();
+        self::assertNotNull($active);
+        self::assertSame($childRunId, $active->runId);
+        self::assertSame(QuestionSource::Tui, $active->source);
+        self::assertSame(QuestionKind::Confirm, $active->kind);
+
+        $child = $state->subagentLiveCatalog->findByArtifactId('agent_a');
+        self::assertNotNull($child);
+        self::assertSame(SubagentLiveStatusEnum::WaitingHuman, $child->status);
+        self::assertSame(RunActivityStateEnum::WaitingHuman, $state->subagentLiveView->childActivity);
+
+        $coordinator->answer('yes');
+        self::assertNotNull($sent);
+        self::assertSame('answer_tool_question', $sent[1]->type);
+        self::assertSame('rq_safe_1', $sent[1]->payload['request_id'] ?? null);
     }
 
     public function testToolTerminalDoesNotCancelParentQuestionWithSameToolCallId(): void

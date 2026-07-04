@@ -549,7 +549,7 @@ final class SubmitListener implements TuiListenerRegistrar
     ): void {
         $child = $state->subagentLiveView->selected;
         if (null === $child) {
-            $screen->setStatus('agents-live', 'No subagent selected for live view.');
+            $screen->setWorkingMessage('No subagent selected for live view.');
 
             return;
         }
@@ -576,9 +576,9 @@ final class SubmitListener implements TuiListenerRegistrar
             // Let TickPollListener re-apply the computed parent|child working line on the next tick.
             $state->subagentLiveView->lastLiveWorkingMessage = null;
 
-            $screen->setStatus('agents-live', $policy->dispatchConfirmationMessage($commandType, $child->agentName));
+            $screen->setWorkingMessage($policy->dispatchConfirmationMessage($commandType, $child->agentName));
         } catch (\Throwable $e) {
-            $screen->setStatus('agents-live', 'Failed to send to subagent: '.$e->getMessage());
+            $screen->setWorkingMessage('Failed to send to subagent: '.$e->getMessage());
             $logger->error('SubmitListener: child live steer/follow_up failed', [
                 'component' => 'SubmitListener',
                 'event_type' => 'child_live_dispatch_failed',
@@ -603,7 +603,7 @@ final class SubmitListener implements TuiListenerRegistrar
             \count($state->subagentLiveView->childTranscript) + 1,
         );
         $screen->setTranscriptBlocks($state->subagentLiveView->childTranscript);
-        $screen->setStatus('agents-live', $message);
+        $screen->setWorkingMessage($message);
     }
 
     private static function showLiveViewTerminalChildInput(
@@ -619,7 +619,7 @@ final class SubmitListener implements TuiListenerRegistrar
             \count($state->subagentLiveView->childTranscript) + 1,
         );
         $screen->setTranscriptBlocks($state->subagentLiveView->childTranscript);
-        $screen->setStatus('agents-live', $message);
+        $screen->setWorkingMessage($message);
     }
 
     private static function blockForTranscriptMessage(

@@ -83,7 +83,7 @@ final class SubmitListenerSubagentLiveInputTest extends TestCase
 
         $screen = $this->dispatchSubmit('next step please');
 
-        self::assertStringContainsString('Sent steer to subagent scout', $this->agentsLiveStatus($screen));
+        self::assertStringContainsString('Sent steer to subagent scout', $this->liveWorkingMessage($screen));
         self::assertSame([], $this->state->transcript, 'Child-directed text must not echo into parent transcript');
     }
 
@@ -97,8 +97,8 @@ final class SubmitListenerSubagentLiveInputTest extends TestCase
 
         $screen = $this->dispatchSubmit('continue after completion');
 
-        self::assertStringContainsString('/agents-main', $this->agentsLiveStatus($screen));
-        self::assertStringContainsString('finished', strtolower($this->agentsLiveStatus($screen)));
+        self::assertStringContainsString('/agents-main', $this->liveWorkingMessage($screen));
+        self::assertStringContainsString('finished', strtolower($this->liveWorkingMessage($screen)));
         self::assertNotEmpty($this->state->subagentLiveView->childTranscript);
         self::assertSame(TranscriptBlockKindEnum::Error, $this->state->subagentLiveView->childTranscript[0]->kind);
         self::assertSame(RunActivityStateEnum::Completed, $this->state->subagentLiveView->childActivity);
@@ -112,7 +112,7 @@ final class SubmitListenerSubagentLiveInputTest extends TestCase
 
         foreach (['/new', '/resume sid', '/tasks', '/rename x', '!pwd'] as $text) {
             $screen = $this->dispatchSubmit($text);
-            self::assertStringContainsString('/agents-main', $this->agentsLiveStatus($screen), $text);
+            self::assertStringContainsString('/agents-main', $this->liveWorkingMessage($screen), $text);
             self::assertSame(0, $this->handlerCalls[$text] ?? 0, $text);
             self::assertNotEmpty($this->state->subagentLiveView->childTranscript, $text);
             self::assertSame(
@@ -220,13 +220,13 @@ final class SubmitListenerSubagentLiveInputTest extends TestCase
         $this->handlerCalls[$text] = ($this->handlerCalls[$text] ?? 0) + 1;
     }
 
-    private function agentsLiveStatus(ChatScreen $screen): string
+    private function liveWorkingMessage(ChatScreen $screen): string
     {
         $ref = new \ReflectionClass(ChatScreen::class);
-        $prop = $ref->getProperty('footerDataProvider');
-        $provider = $prop->getValue($screen);
+        $prop = $ref->getProperty('registry');
+        $registry = $prop->getValue($screen);
 
-        return $provider->getStatusEntries()['agents-live'] ?? '';
+        return $registry->getWorkingMessage();
     }
 
     private function dispatchSubmit(string $text): ChatScreen

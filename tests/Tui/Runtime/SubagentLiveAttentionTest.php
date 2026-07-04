@@ -86,7 +86,7 @@ final class SubagentLiveAttentionTest extends TestCase
         self::assertSame(SubagentLiveStatusEnum::Cancelled, $child->status);
         self::assertNull($state->subagentLiveCatalog->firstChildNeedingAttention());
         self::assertNull($this->statusText($screen, 'subagent_live'));
-        self::assertStringContainsString('[cancelled]', (string) $this->statusText($screen, 'agents-live'));
+        self::assertNull($this->statusText($screen, 'agents-live'));
     }
 
 
@@ -114,6 +114,40 @@ final class SubagentLiveAttentionTest extends TestCase
         self::assertSame(SubagentLiveStatusEnum::Cancelled, $child->status);
         self::assertNull($state->subagentLiveCatalog->firstChildNeedingAttention());
         self::assertNull($this->statusText($screen, 'subagent_live'));
+    }
+
+    public function testMarkChildNeedsInputForRunSetsWaitingHumanInCatalogAndLiveView(): void
+    {
+        $state = new TuiSessionState('parent-session');
+        $state->subagentLiveCatalog->ingestRuntimeEvent($this->progressEvent([
+            'mode' => 'single', 'status' => 'running', 'agent_name' => 'scout',
+            'artifact_id' => 'agent_a', 'agent_run_id' => 'child-run-1', 'task_summary' => 'Task',
+        ]));
+        $state->subagentLiveView->enter(new SubagentLiveChildDTO(
+            agentRunId: 'child-run-1',
+            artifactId: 'agent_a',
+            agentName: 'scout',
+            status: SubagentLiveStatusEnum::Running,
+            taskSummary: 'Task',
+            lastActivityAtMs: 1,
+        ));
+        $state->subagentLiveView->childActivity = RunActivityStateEnum::Running;
+
+        $screen = new ChatScreen(
+            new DefaultTheme(new ThemePalette('test')),
+            'parent-session',
+            new PromptEditor(),
+            new TranscriptDisplayConfig(),
+            new TranscriptDisplayState(),
+        );
+        SubagentLiveAttention::markChildNeedsInputForRun($state, $screen, 'child-run-1');
+
+        $child = $state->subagentLiveCatalog->findByArtifactId('agent_a');
+        self::assertNotNull($child);
+        self::assertSame(SubagentLiveStatusEnum::WaitingHuman, $child->status);
+        self::assertSame(RunActivityStateEnum::WaitingHuman, $state->subagentLiveView->childActivity);
+        self::assertStringContainsString('needs your input', (string) $this->statusText($screen, 'subagent_live'));
+        self::assertNull($this->statusText($screen, 'agents-live'));
     }
 
     public function testRefreshAttentionFooterClearsStaleAgentsLiveWhenLiveViewInactive(): void
@@ -159,6 +193,36 @@ final class SubagentLiveAttentionTest extends TestCase
         self::assertNull($this->statusText($screen, 'agents-live'));
     }
 
+
+    public function testRefreshAttentionFooterClearsAgentsLiveEvenWhenLiveViewActive(): void
+    {
+        $state = new TuiSessionState('parent-session');
+        $state->subagentLiveCatalog->ingestRuntimeEvent($this->progressEvent([
+            'mode' => 'single', 'status' => 'running', 'agent_name' => 'scout',
+            'artifact_id' => 'agent_a', 'agent_run_id' => 'child-run-1', 'task_summary' => 'Task',
+        ]));
+        $state->subagentLiveView->enter(new SubagentLiveChildDTO(
+            agentRunId: 'child-run-1',
+            artifactId: 'agent_a',
+            agentName: 'scout',
+            status: SubagentLiveStatusEnum::Running,
+            taskSummary: 'Task',
+            lastActivityAtMs: 1,
+        ));
+
+        $screen = new ChatScreen(
+            new DefaultTheme(new ThemePalette('test')),
+            'parent-session',
+            new PromptEditor(),
+            new TranscriptDisplayConfig(),
+            new TranscriptDisplayState(),
+        );
+        $screen->setStatus('agents-live', 'Subagent live: scout [running] — type to steer next step; /agents-main to return.');
+
+        SubagentLiveAttention::refreshAttentionFooter($state, $screen);
+
+        self::assertNull($this->statusText($screen, 'agents-live'));
+    }
 
     private function statusText(ChatScreen $screen, string $key): ?string
     {

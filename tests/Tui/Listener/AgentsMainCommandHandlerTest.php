@@ -4,88 +4,79 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\Listener;
 
-use Ineersa\Tui\Command\NoOp;
 use Ineersa\Tui\Command\SlashCommand;
-use Ineersa\Tui\Editor\PromptEditor;
 use Ineersa\Tui\Listener\AgentsMainCommandHandler;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
 use Ineersa\Tui\Runtime\SubagentLiveChildDTO;
 use Ineersa\Tui\Runtime\SubagentLiveStatusEnum;
+use Ineersa\Tui\Runtime\SubagentLiveViewState;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Screen\ChatScreen;
 use Ineersa\Tui\Theme\DefaultTheme;
 use Ineersa\Tui\Theme\ThemePalette;
-use Ineersa\Tui\Transcript\TranscriptDisplayConfig;
-use Ineersa\Tui\Transcript\TranscriptDisplayState;
-use PHPUnit\Framework\Attributes\Test;
+use Ineersa\Tui\Editor\PromptEditor;
 use PHPUnit\Framework\TestCase;
 
 final class AgentsMainCommandHandlerTest extends TestCase
 {
-    #[Test]
-    public function agentsMainClearsAgentsLiveStatusKeyWithNullNotEmptyString(): void
+    public function testAgentsMainClearsLiveWorkingMessageAndDoesNotUseAgentsLiveStatusKey(): void
     {
-        $state = new TuiSessionState('parent-session');
-        $child = new SubagentLiveChildDTO(
-            agentRunId: 'child-run-1',
-            artifactId: 'agent_a',
-            agentName: 'scout',
-            status: SubagentLiveStatusEnum::Running,
-            taskSummary: 'Task',
-            lastActivityAtMs: 1,
-        );
-        $state->subagentLiveView->enter($child);
-        $state->subagentLiveView->childActivity = RunActivityStateEnum::Running;
+        $state = new TuiSessionState('parent-1');
+        $state->subagentLiveView->enter(new SubagentLiveChildDTO(
+            'child-1',
+            'agent_a',
+            'scout',
+            SubagentLiveStatusEnum::Running,
+            'task',
+            1,
+        ));
+        $state->subagentLiveView->lastLiveWorkingMessage = 'Child agent working...';
 
-        $screen = $this->newScreen();
-        $screen->setStatus('agents-live', 'Subagent live: scout [running] — type to steer next step; /agents-main to return.');
+        $screen = $this->screen();
+        $screen->setStatus('agents-live', 'stale live text');
+        $screen->setWorkingMessage('Child agent working...');
 
         $handler = new AgentsMainCommandHandler($state, $screen);
-        $result = $handler->handle(new SlashCommand('agents-main', '', '/agents-main'));
+        $handler->handle(new SlashCommand('agents-main', '', '/agents-main'));
 
-        $this->assertInstanceOf(NoOp::class, $result);
-        $this->assertFalse($state->subagentLiveView->active);
-        $this->assertNull($this->statusText($screen, 'agents-live'));
-        $this->assertArrayNotHasKey('agents-live', $this->allStatusEntries($screen));
+        self::assertFalse($state->subagentLiveView->active);
+        self::assertNull($this->statusText($screen, 'agents-live'));
+        self::assertArrayNotHasKey('agents-live', $this->allStatusEntries($screen));
     }
 
-    #[Test]
-    public function agentsMainNoOpWhenNotInLiveView(): void
+    public function testAgentsMainNoOpWhenNotInLiveView(): void
     {
-        $state = new TuiSessionState('parent-session');
-        $screen = $this->newScreen();
+        $state = new TuiSessionState('parent-1');
+        $screen = $this->screen();
         $screen->setStatus('agents-live', 'stale live text');
 
         $handler = new AgentsMainCommandHandler($state, $screen);
-        $result = $handler->handle(new SlashCommand('agents-main', '', '/agents-main'));
+        $handler->handle(new SlashCommand('agents-main', '', '/agents-main'));
 
-        $this->assertInstanceOf(NoOp::class, $result);
-        $this->assertSame('stale live text', $this->statusText($screen, 'agents-live'));
+        self::assertFalse($state->subagentLiveView->active);
+        self::assertSame('stale live text', $this->statusText($screen, 'agents-live'));
     }
 
-    private function newScreen(): ChatScreen
+    private function screen(): ChatScreen
     {
-        return new ChatScreen(
-            new DefaultTheme(new ThemePalette('test')),
-            'parent-session',
-            new PromptEditor(),
-            new TranscriptDisplayConfig(),
-            new TranscriptDisplayState(),
-        );
+        $theme = new DefaultTheme(new ThemePalette('test'));
+
+        return new ChatScreen($theme, 'parent-1', new PromptEditor());
     }
 
     private function statusText(ChatScreen $screen, string $key): ?string
     {
-        return $this->allStatusEntries($screen)[$key] ?? null;
+        $entries = $this->allStatusEntries($screen);
+
+        return $entries[$key] ?? null;
     }
 
     /** @return array<string, string> */
     private function allStatusEntries(ChatScreen $screen): array
     {
-        $ref = new \ReflectionClass($screen);
-        $providerProp = $ref->getProperty('footerDataProvider');
-        $data = $providerProp->getValue($screen);
+        $ref = new \ReflectionClass(ChatScreen::class);
+        $prop = $ref->getProperty('footerDataProvider');
 
-        return $data->getStatusEntries();
+        return $prop->getValue($screen)->getStatusEntries();
     }
 }

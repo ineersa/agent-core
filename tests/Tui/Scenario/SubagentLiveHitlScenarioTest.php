@@ -177,8 +177,7 @@ final class SubagentLiveHitlScenarioTest extends TestCase
         $h->refreshAttentionFooter();
 
         $this->assertTrue($h->state->subagentLiveView->active);
-        $this->assertNotNull($h->statusText('agents-live'));
-        $this->assertStringContainsString('Subagent live:', (string) $h->statusText('agents-live'));
+        $this->assertNull($h->statusText('agents-live'));
 
         $h->agentsMain();
 

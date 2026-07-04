@@ -115,7 +115,7 @@ final class CancelListener implements TuiListenerRegistrar
                         'artifact_id' => $child->artifactId,
                         'exception' => $e,
                     ]);
-                    $screen->setStatus('agents-live', 'Child cancel failed: '.$e->getMessage());
+                    $screen->setWorkingMessage('Child cancel failed: '.$e->getMessage());
 
                     return;
                 }
@@ -123,7 +123,7 @@ final class CancelListener implements TuiListenerRegistrar
                 $live->childActivity = RunActivityStateEnum::Cancelling;
                 SubagentLiveAttention::markCancelledForRun($state, $screen, $child->agentRunId);
                 $screen->setWorkingMessage(\sprintf('Cancelling child %s...', $child->agentName));
-                $screen->setStatus('agents-live', \sprintf('Cancelling child %s (%s).', $child->agentName, $child->artifactId));
+                $screen->setWorkingMessage(\sprintf('Cancelling child %s (%s).', $child->agentName, $child->artifactId));
 
                 return;
             }

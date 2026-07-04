@@ -64,7 +64,7 @@ final class TuiSubagentLiveViewE2eTest extends TestCase
             $this->tmux->waitForCaptureContains($pane, 'agent_e2e_progress_fixture', 10.0, 'Picker must list subagent artifact');
 
             $this->tmux->sendKey($pane, 'Enter');
-            $this->tmux->waitForCaptureContains($pane, 'Subagent live:', 10.0, 'Interactive live view status must appear');
+            $this->tmux->waitForCaptureContains($pane, 'Child agent', 10.0, 'Live view working line must appear');
             $this->tmux->waitForCaptureContains($pane, '[completed]', 10.0, 'Fixture child must show completed status in live view');
 
             $this->tmux->sendKey($pane, 'C-u');
