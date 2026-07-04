@@ -87,7 +87,7 @@ final class SubmitListener implements TuiListenerRegistrar
 
             // ── Question interception: route editor text to active question ──
             if ($questionCoordinator->actionRequired()) {
-                if ($state->subagentLiveView->active && self::isLiveViewNavigationSlash($text, $subagentLiveInputPolicy)) {
+                if ($state->subagentLiveView->active && $subagentLiveInputPolicy->isAllowedLiveViewNavigationSlash($text)) {
                     $commandResult = $router->route($text);
                     if (null !== $commandResult && !($commandResult instanceof DispatchRuntime) && !($commandResult instanceof DispatchShellCommand)) {
                         self::applyCommandResult($commandResult, $state, $screen, $sessionStore, $tui, $blockFactory);
@@ -663,13 +663,4 @@ final class SubmitListener implements TuiListenerRegistrar
         return $result;
     }
 
-    private static function isLiveViewNavigationSlash(string $text, SubagentLiveInputPolicy $policy): bool
-    {
-        $parseResult = $policy->parseSubmitted($text);
-        if (!$parseResult instanceof SlashCommand) {
-            return false;
-        }
-
-        return $policy->isAllowedSlashCommand($parseResult->name);
-    }
 }

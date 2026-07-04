@@ -20,35 +20,45 @@ final class SubagentLiveInputPolicyTest extends TestCase
     #[Test]
     public function blocksShellAndUnrelatedSlashCommandsInLiveView(): void
     {
-        self::assertTrue($this->policy->shouldBlockInLiveView('!pwd'));
-        self::assertTrue($this->policy->shouldBlockInLiveView('!!pwd'));
-        self::assertTrue($this->policy->shouldBlockInLiveView('/new'));
-        self::assertTrue($this->policy->shouldBlockInLiveView('/resume abc'));
-        self::assertTrue($this->policy->shouldBlockInLiveView('/tasks'));
-        self::assertFalse($this->policy->shouldBlockInLiveView('/agents-main'));
-        self::assertFalse($this->policy->shouldBlockInLiveView('/main'));
-        self::assertFalse($this->policy->shouldBlockInLiveView('/agents-live'));
-        self::assertFalse($this->policy->shouldBlockInLiveView('steer this child'));
+        $this->assertTrue($this->policy->shouldBlockInLiveView('!pwd'));
+        $this->assertTrue($this->policy->shouldBlockInLiveView('!!pwd'));
+        $this->assertTrue($this->policy->shouldBlockInLiveView('/new'));
+        $this->assertTrue($this->policy->shouldBlockInLiveView('/resume abc'));
+        $this->assertTrue($this->policy->shouldBlockInLiveView('/tasks'));
+        $this->assertFalse($this->policy->shouldBlockInLiveView('/agents-main'));
+        $this->assertFalse($this->policy->shouldBlockInLiveView('/main'));
+        $this->assertFalse($this->policy->shouldBlockInLiveView('/agents-live'));
+        $this->assertFalse($this->policy->shouldBlockInLiveView('steer this child'));
     }
 
     #[Test]
     public function childUserCommandTypeUsesActivity(): void
     {
-        self::assertSame('steer', $this->policy->childUserCommandType(true));
-        self::assertSame('follow_up', $this->policy->childUserCommandType(false));
+        $this->assertSame('steer', $this->policy->childUserCommandType(true));
+        $this->assertSame('follow_up', $this->policy->childUserCommandType(false));
     }
 
     #[Test]
     public function dispatchConfirmationMessages(): void
     {
-        self::assertStringContainsString('steer', $this->policy->dispatchConfirmationMessage('steer', 'scout'));
-        self::assertStringContainsString('follow_up', $this->policy->dispatchConfirmationMessage('follow_up', 'scout'));
+        $this->assertStringContainsString('steer', $this->policy->dispatchConfirmationMessage('steer', 'scout'));
+        $this->assertStringContainsString('follow_up', $this->policy->dispatchConfirmationMessage('follow_up', 'scout'));
+    }
+
+    #[Test]
+    public function allowedLiveViewNavigationSlashCommands(): void
+    {
+        $this->assertTrue($this->policy->isAllowedLiveViewNavigationSlash('/agents-main'));
+        $this->assertTrue($this->policy->isAllowedLiveViewNavigationSlash('/main'));
+        $this->assertTrue($this->policy->isAllowedLiveViewNavigationSlash('/agents-live'));
+        $this->assertFalse($this->policy->isAllowedLiveViewNavigationSlash('/new'));
+        $this->assertFalse($this->policy->isAllowedLiveViewNavigationSlash('steer child'));
     }
 
     #[Test]
     public function terminalChildInputBlockedMessageMentionsAgentsMain(): void
     {
-        self::assertStringContainsString('/agents-main', $this->policy->terminalChildInputBlockedMessage());
-        self::assertStringContainsString('finished', strtolower($this->policy->terminalChildInputBlockedMessage()));
+        $this->assertStringContainsString('/agents-main', $this->policy->terminalChildInputBlockedMessage());
+        $this->assertStringContainsString('finished', strtolower($this->policy->terminalChildInputBlockedMessage()));
     }
 }

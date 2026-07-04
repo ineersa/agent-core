@@ -27,8 +27,8 @@ use Ineersa\Tui\Command\TranscriptMessage;
 use Ineersa\Tui\Editor\PromptEditor;
 use Ineersa\Tui\Listener\AgentsMainCommandHandler;
 use Ineersa\Tui\Listener\CancelListener;
+use Ineersa\Tui\Listener\RuntimeQuestionEventHandler;
 use Ineersa\Tui\Listener\SubmitListener;
-use Ineersa\Tui\Listener\TickPollListener;
 use Ineersa\Tui\Picker\SubagentLivePickerController;
 use Ineersa\Tui\Question\QuestionController;
 use Ineersa\Tui\Question\QuestionCoordinator;
@@ -235,8 +235,8 @@ final class SubagentLiveScenarioHarness
             ],
         );
 
-        $ref = new \ReflectionMethod(TickPollListener::class, 'handleHumanInputRequested');
-        $ref->invoke(null, $event, $this->client, $this->questionCoordinator, $this->state, $this->screen);
+        $ref = new \ReflectionMethod(RuntimeQuestionEventHandler::class, 'handleHumanInputRequested');
+        $ref->invoke($this->runtimeQuestionHandler(), $event, $this->client, $this->questionCoordinator, $this->state, $this->screen);
     }
 
     public function enqueueParentHumanInputViaTickPoll(
@@ -256,8 +256,8 @@ final class SubagentLiveScenarioHarness
             ],
         );
 
-        $ref = new \ReflectionMethod(TickPollListener::class, 'handleHumanInputRequested');
-        $ref->invoke(null, $event, $this->client, $this->questionCoordinator, $this->state, $this->screen);
+        $ref = new \ReflectionMethod(RuntimeQuestionEventHandler::class, 'handleHumanInputRequested');
+        $ref->invoke($this->runtimeQuestionHandler(), $event, $this->client, $this->questionCoordinator, $this->state, $this->screen);
     }
 
     public function ingestChildProgress(
@@ -325,6 +325,11 @@ final class SubagentLiveScenarioHarness
         $items = SubagentLivePickerController::buildItems($children, $this->screen->theme());
 
         return array_map(static fn (array $row): string => $row['label'], $items);
+    }
+
+    private function runtimeQuestionHandler(): RuntimeQuestionEventHandler
+    {
+        return new RuntimeQuestionEventHandler();
     }
 
     /** @param array<string, mixed> $progress */

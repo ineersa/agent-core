@@ -8,7 +8,8 @@ use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
-use Ineersa\Tui\Listener\TickPollListener;
+use Ineersa\Tui\Editor\PromptEditor;
+use Ineersa\Tui\Listener\RuntimeQuestionEventHandler;
 use Ineersa\Tui\Question\QuestionCoordinator;
 use Ineersa\Tui\Question\QuestionKind;
 use Ineersa\Tui\Question\QuestionSource;
@@ -18,7 +19,6 @@ use Ineersa\Tui\Runtime\SubagentLiveStatusEnum;
 use Ineersa\Tui\Screen\ChatScreen;
 use Ineersa\Tui\Theme\DefaultTheme;
 use Ineersa\Tui\Theme\ThemePalette;
-use Ineersa\Tui\Editor\PromptEditor;
 use PHPUnit\Framework\TestCase;
 
 final class TickPollListenerChildHitlTest extends TestCase
@@ -28,7 +28,7 @@ final class TickPollListenerChildHitlTest extends TestCase
         $childRunId = 'child-run-hitl-1';
         $sent = null;
         $client = $this->createMock(AgentSessionClient::class);
-        $client->expects(self::once())->method('send')->willReturnCallback(
+        $client->expects($this->once())->method('send')->willReturnCallback(
             static function (string $runId, UserCommand $cmd) use (&$sent, $childRunId): void {
                 $sent = [$runId, $cmd];
                 self::assertSame($childRunId, $runId);
@@ -46,7 +46,7 @@ final class TickPollListenerChildHitlTest extends TestCase
             1,
         ));
 
-        $ref = new \ReflectionMethod(TickPollListener::class, 'handleHumanInputRequested');
+        $ref = new \ReflectionMethod(RuntimeQuestionEventHandler::class, 'handleHumanInputRequested');
         $event = new RuntimeEvent(
             type: RuntimeEventTypeEnum::HumanInputRequested->value,
             runId: $childRunId,
@@ -58,19 +58,19 @@ final class TickPollListenerChildHitlTest extends TestCase
                 'schema' => ['type' => 'boolean'],
             ],
         );
-        $ref->invoke(null, $event, $client, $coordinator, $state);
+        $ref->invoke($this->runtimeQuestionHandler(), $event, $client, $coordinator, $state);
 
         $active = $coordinator->activeRequest();
-        self::assertNotNull($active);
-        self::assertSame($childRunId, $active->runId);
-        self::assertSame(QuestionSource::AgentCore, $active->source);
-        self::assertSame('Subagent scout asks', $active->header);
+        $this->assertNotNull($active);
+        $this->assertSame($childRunId, $active->runId);
+        $this->assertSame(QuestionSource::AgentCore, $active->source);
+        $this->assertSame('Subagent scout asks', $active->header);
 
         $coordinator->answer('yes');
-        self::assertNotNull($sent);
-        self::assertSame('answer_human', $sent[1]->type);
-        self::assertSame('q_child_1', $sent[1]->payload['question_id'] ?? null);
-        self::assertTrue($sent[1]->payload['answer'] ?? false);
+        $this->assertNotNull($sent);
+        $this->assertSame('answer_human', $sent[1]->type);
+        $this->assertSame('q_child_1', $sent[1]->payload['question_id'] ?? null);
+        $this->assertTrue($sent[1]->payload['answer'] ?? false);
     }
 
     public function testChildToolQuestionEnqueuesRunScopedRequestAndMarksNeedsInput(): void
@@ -78,7 +78,7 @@ final class TickPollListenerChildHitlTest extends TestCase
         $childRunId = 'child-run-tool-q-1';
         $sent = null;
         $client = $this->createMock(AgentSessionClient::class);
-        $client->expects(self::once())->method('send')->willReturnCallback(
+        $client->expects($this->once())->method('send')->willReturnCallback(
             static function (string $runId, UserCommand $cmd) use (&$sent, $childRunId): void {
                 $sent = [$runId, $cmd];
                 self::assertSame($childRunId, $runId);
@@ -121,7 +121,7 @@ final class TickPollListenerChildHitlTest extends TestCase
             new PromptEditor(),
         );
 
-        $ref = new \ReflectionMethod(TickPollListener::class, 'handleToolQuestionRequested');
+        $ref = new \ReflectionMethod(RuntimeQuestionEventHandler::class, 'handleToolQuestionRequested');
         $event = new RuntimeEvent(
             type: RuntimeEventTypeEnum::ToolQuestionRequested->value,
             runId: $childRunId,
@@ -135,23 +135,23 @@ final class TickPollListenerChildHitlTest extends TestCase
                 'tool_name' => 'bash',
             ],
         );
-        $ref->invoke(null, $event, $client, $coordinator, $state, $screen);
+        $ref->invoke($this->runtimeQuestionHandler(), $event, $client, $coordinator, $state, $screen);
 
         $active = $coordinator->activeRequest();
-        self::assertNotNull($active);
-        self::assertSame($childRunId, $active->runId);
-        self::assertSame(QuestionSource::Tui, $active->source);
-        self::assertSame(QuestionKind::Confirm, $active->kind);
+        $this->assertNotNull($active);
+        $this->assertSame($childRunId, $active->runId);
+        $this->assertSame(QuestionSource::Tui, $active->source);
+        $this->assertSame(QuestionKind::Confirm, $active->kind);
 
         $child = $state->subagentLiveCatalog->findByArtifactId('agent_a');
-        self::assertNotNull($child);
-        self::assertSame(SubagentLiveStatusEnum::WaitingHuman, $child->status);
-        self::assertSame(RunActivityStateEnum::WaitingHuman, $state->subagentLiveView->childActivity);
+        $this->assertNotNull($child);
+        $this->assertSame(SubagentLiveStatusEnum::WaitingHuman, $child->status);
+        $this->assertSame(RunActivityStateEnum::WaitingHuman, $state->subagentLiveView->childActivity);
 
         $coordinator->answer('yes');
-        self::assertNotNull($sent);
-        self::assertSame('answer_tool_question', $sent[1]->type);
-        self::assertSame('rq_safe_1', $sent[1]->payload['request_id'] ?? null);
+        $this->assertNotNull($sent);
+        $this->assertSame('answer_tool_question', $sent[1]->type);
+        $this->assertSame('rq_safe_1', $sent[1]->payload['request_id'] ?? null);
     }
 
     public function testToolTerminalDoesNotCancelParentQuestionWithSameToolCallId(): void
@@ -171,7 +171,7 @@ final class TickPollListenerChildHitlTest extends TestCase
             ),
         );
 
-        $ref = new \ReflectionMethod(TickPollListener::class, 'handleToolTerminal');
+        $ref = new \ReflectionMethod(RuntimeQuestionEventHandler::class, 'handleToolTerminal');
         $event = new RuntimeEvent(
             type: RuntimeEventTypeEnum::ToolExecutionCompleted->value,
             runId: 'child-run',
@@ -179,8 +179,13 @@ final class TickPollListenerChildHitlTest extends TestCase
             payload: ['tool_call_id' => 'tc_shared'],
         );
         $controller = (new \ReflectionClass(\Ineersa\Tui\Question\QuestionController::class))->newInstanceWithoutConstructor();
-        $ref->invoke(null, $event, $coordinator, $controller);
+        $ref->invoke($this->runtimeQuestionHandler(), $event, $coordinator, $controller);
 
-        self::assertTrue($coordinator->actionRequired(), 'Parent question must remain when child terminal event run id differs');
+        $this->assertTrue($coordinator->actionRequired(), 'Parent question must remain when child terminal event run id differs');
+    }
+
+    private function runtimeQuestionHandler(): RuntimeQuestionEventHandler
+    {
+        return new RuntimeQuestionEventHandler();
     }
 }
