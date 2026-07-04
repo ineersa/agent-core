@@ -45,6 +45,10 @@ if ('' !== $qaRunSegment) {
 putenv("HATFIELD_TEST_DATABASE_PATH={$dbPath}");
 $_ENV['HATFIELD_TEST_DATABASE_PATH'] = $dbPath;
 
+$transportDbPath = 'messenger_transport_test-T'.$token.'.sqlite';
+putenv("HATFIELD_TEST_MESSENGER_TRANSPORT_DATABASE_PATH={$transportDbPath}");
+$_ENV['HATFIELD_TEST_MESSENGER_TRANSPORT_DATABASE_PATH'] = $transportDbPath;
+
 // ── Per-worker cache dir ──
 if ('' !== $qaRunSegment) {
     $cacheDir = '.hatfield/cache-'.$qaRunSegment.'-paraT'.$token;

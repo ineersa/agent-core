@@ -17,8 +17,10 @@ use Doctrine\Migrations\AbstractMigration;
  * CREATE TABLE — only the first succeeds, the rest fail with "table already
  * exists".
  *
- * By creating the table ahead-of-time via the StartupDatabaseMigrator (which
- * runs before consumers), auto_setup finds the table and skips creation.
+ * Legacy: table was created on the default DB via StartupDatabaseMigrator.
+ * Runtime now uses MessengerTransportSchemaEnsurer on connection
+ * messenger_transport (.hatfield/messenger-transport.sqlite). This migration
+ * remains for dev doctrine:migrations history on existing checkouts.
  *
  * @see \Symfony\Component\Messenger\Bridge\Doctrine\Transport\Connection::configureSchemaTable()
  * @see src/CodingAgent/Migrations/StartupDatabaseMigrator.php

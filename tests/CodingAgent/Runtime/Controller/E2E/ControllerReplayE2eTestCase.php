@@ -163,11 +163,11 @@ abstract class ControllerReplayE2eTestCase extends ControllerE2eTestCase
             // shared test DB already).  The path is relative to
             // %kernel.project_dir%/var/test/ per config/packages/test/doctrine.yaml.
             'HATFIELD_TEST_DATABASE_PATH' => 'app_test-replay-'.$this->sessionId.'.sqlite',
-            'HATFIELD_RUN_CONTROL_TRANSPORT_DSN' => "doctrine://default?queue_name=run_control_{$this->sessionId}",
-            'HATFIELD_LLM_TRANSPORT_DSN' => "doctrine://default?queue_name=llm_{$this->sessionId}",
-            'HATFIELD_TOOL_TRANSPORT_DSN' => "doctrine://default?queue_name=tool_{$this->sessionId}",
-            'HATFIELD_AGENT_TRANSPORT_DSN' => "doctrine://default?queue_name=agent_{$this->sessionId}",
-            'HATFIELD_MCP_TRANSPORT_DSN' => "doctrine://default?queue_name=mcp_{$this->sessionId}",
+            'HATFIELD_RUN_CONTROL_TRANSPORT_DSN' => "doctrine://messenger_transport?queue_name=run_control_{$this->sessionId}",
+            'HATFIELD_LLM_TRANSPORT_DSN' => "doctrine://messenger_transport?queue_name=llm_{$this->sessionId}",
+            'HATFIELD_TOOL_TRANSPORT_DSN' => "doctrine://messenger_transport?queue_name=tool_{$this->sessionId}",
+            'HATFIELD_AGENT_TRANSPORT_DSN' => "doctrine://messenger_transport?queue_name=agent_{$this->sessionId}",
+            'HATFIELD_MCP_TRANSPORT_DSN' => "doctrine://messenger_transport?queue_name=mcp_{$this->sessionId}",
             'HATFIELD_SESSION_ID' => $this->sessionId,
             // Replay activation — consumed by ControllerReplayHttpClientFactory
             'HATFIELD_LLM_REPLAY_FIXTURE_PATH' => implode(';', $fixturePaths),

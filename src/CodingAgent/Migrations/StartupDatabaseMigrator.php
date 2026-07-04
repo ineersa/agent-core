@@ -29,6 +29,7 @@ final class StartupDatabaseMigrator
 
     public function __construct(
         private readonly ApplicationMigrationExecutor $executor,
+        private readonly MessengerTransportSchemaEnsurer $transportSchemaEnsurer,
         private readonly LoggerInterface $logger,
     ) {
     }
@@ -48,6 +49,7 @@ final class StartupDatabaseMigrator
 
         try {
             ($this->executor)();
+            ($this->transportSchemaEnsurer)();
         } catch (\Throwable $e) {
             $this->logger->error('migration_runner.failed', [
                 'component' => 'migration_runner',
