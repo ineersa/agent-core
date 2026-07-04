@@ -116,6 +116,50 @@ final class SubagentLiveAttentionTest extends TestCase
         self::assertNull($this->statusText($screen, 'subagent_live'));
     }
 
+    public function testRefreshAttentionFooterClearsStaleAgentsLiveWhenLiveViewInactive(): void
+    {
+        $state = new TuiSessionState('parent-session');
+        self::assertFalse($state->subagentLiveView->active);
+
+        $screen = new ChatScreen(
+            new DefaultTheme(new ThemePalette('test')),
+            'parent-session',
+            new PromptEditor(),
+            new TranscriptDisplayConfig(),
+            new TranscriptDisplayState(),
+        );
+        $screen->setStatus('agents-live', 'Subagent live: scout [running] — stale after exit.');
+
+        SubagentLiveAttention::refreshAttentionFooter($state, $screen);
+
+        self::assertNull($this->statusText($screen, 'agents-live'));
+    }
+
+    public function testRefreshAttentionFooterKeepsSubagentLiveMarkerWhileClearingAgentsLiveOnMain(): void
+    {
+        $state = new TuiSessionState('parent-session');
+        $state->subagentLiveCatalog->ingestRuntimeEvent($this->progressEvent([
+            'mode' => 'single', 'status' => 'waiting_human', 'agent_name' => 'scout',
+            'artifact_id' => 'agent_a', 'agent_run_id' => 'child-run-1', 'task_summary' => 'Task',
+        ]));
+        self::assertFalse($state->subagentLiveView->active);
+
+        $screen = new ChatScreen(
+            new DefaultTheme(new ThemePalette('test')),
+            'parent-session',
+            new PromptEditor(),
+            new TranscriptDisplayConfig(),
+            new TranscriptDisplayState(),
+        );
+        $screen->setStatus('agents-live', 'Subagent live: scout [waiting_human] — stale.');
+
+        SubagentLiveAttention::refreshAttentionFooter($state, $screen);
+
+        self::assertStringContainsString('needs your input', (string) $this->statusText($screen, 'subagent_live'));
+        self::assertNull($this->statusText($screen, 'agents-live'));
+    }
+
+
     private function statusText(ChatScreen $screen, string $key): ?string
     {
         $ref = new \ReflectionClass($screen);

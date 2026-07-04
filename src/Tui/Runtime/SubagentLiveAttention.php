@@ -128,6 +128,9 @@ final class SubagentLiveAttention
 
         $live = $state->subagentLiveView;
         if (!$live->active || null === $live->selected) {
+            // agents-live is live-view-only; stale rows must not persist on main.
+            $screen->setStatus('agents-live', null);
+
             return;
         }
 

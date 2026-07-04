@@ -167,6 +167,25 @@ final class SubagentLiveHitlScenarioTest extends TestCase
         $this->assertSame(SubagentLiveStatusEnum::Cancelled, $child?->status);
     }
 
+
+    #[Test]
+    public function agentsMainReturnClearsAgentsLiveStatusRowOnMainScreen(): void
+    {
+        $h = $this->newHarness();
+        $h->seedChildInCatalog(self::ARTIFACT, self::CHILD_RUN, 'running');
+        $h->enterLiveView(self::ARTIFACT, self::CHILD_RUN, RunActivityStateEnum::Running, SubagentLiveStatusEnum::Running);
+        $h->refreshAttentionFooter();
+
+        $this->assertTrue($h->state->subagentLiveView->active);
+        $this->assertNotNull($h->statusText('agents-live'));
+        $this->assertStringContainsString('Subagent live:', (string) $h->statusText('agents-live'));
+
+        $h->agentsMain();
+
+        $this->assertFalse($h->state->subagentLiveView->active);
+        $this->assertNull($h->statusText('agents-live'));
+    }
+
     #[Test]
     public function completedProgressClearsLiveWarningForSelectedChild(): void
     {

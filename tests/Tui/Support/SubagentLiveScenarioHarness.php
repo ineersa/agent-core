@@ -25,6 +25,7 @@ use Ineersa\Tui\Command\SubagentLiveInputPolicy;
 use Ineersa\Tui\Command\SubmissionRouter;
 use Ineersa\Tui\Command\TranscriptMessage;
 use Ineersa\Tui\Editor\PromptEditor;
+use Ineersa\Tui\Listener\AgentsMainCommandHandler;
 use Ineersa\Tui\Listener\CancelListener;
 use Ineersa\Tui\Listener\SubmitListener;
 use Ineersa\Tui\Listener\TickPollListener;
@@ -279,6 +280,12 @@ final class SubagentLiveScenarioHarness
     public function refreshAttentionFooter(): void
     {
         SubagentLiveAttention::refreshAttentionFooter($this->state, $this->screen);
+    }
+
+    public function agentsMain(): void
+    {
+        $handler = new AgentsMainCommandHandler($this->state, $this->screen);
+        $handler->handle(new SlashCommand('agents-main', '', '/agents-main'));
     }
 
     public function submit(string $text): void
