@@ -264,7 +264,7 @@ final class TurnTreeProjectorTest extends TestCase
 
         $tree = $this->projector->build($this->runId, $events);
 
-        self::assertSame('Turn 1', $tree->nodesByTurnNo[1]->title);
+        self::assertSame('Assistant response (turn 1)', $tree->nodesByTurnNo[1]->title);
     }
 
     // ── Node metadata ────────────────────────────────────────────────────────
@@ -492,6 +492,51 @@ final class TurnTreeProjectorTest extends TestCase
         $this->projector->build($this->runId, $events);
     }
 
+
+    public function testDisplayRoleUserForFollowUpAndInitialTurn(): void
+    {
+        $events = [
+            $this->runEvent('run_started', 1, 0, [
+                'payload' => ['messages' => [
+                    ['role' => 'user', 'content' => [['type' => 'text', 'text' => '[overlay-verify] create test.txt']]],
+                ]],
+            ]),
+            $this->turnAdvancedEvent(2, 1, null),
+            $this->leafSetEvent(3, 1, null, null, 'continue'),
+            $this->runEvent('llm_step_completed', 4, 1, ['text' => 'Created file']),
+            $this->runEvent('agent_command_applied', 5, 1, [
+                'kind' => 'follow_up',
+                'text' => '[overlay-verify] append LINE_TWO',
+            ]),
+            $this->turnAdvancedEvent(6, 2, 1, 'follow_up-2'),
+            $this->leafSetEvent(7, 2, 1, 1, 'continue'),
+            $this->runEvent('llm_step_completed', 8, 2, ['text' => 'Done. two lines.']),
+        ];
+
+        $tree = $this->projector->build($this->runId, $events);
+
+        self::assertSame('user', $tree->nodesByTurnNo[1]->displayRole);
+        self::assertSame('user', $tree->nodesByTurnNo[2]->displayRole);
+        self::assertStringContainsString('create test.txt', $tree->nodesByTurnNo[1]->title);
+        self::assertStringContainsString('append LINE_TWO', $tree->nodesByTurnNo[2]->title);
+    }
+
+    public function testPlaceholderTitleUsesRoleNotRawTurnN(): void
+    {
+        $events = [
+            $this->runEvent('run_started', 1, 0, ['payload' => ['messages' => []]]),
+            $this->turnAdvancedEvent(2, 1, null, 'advance-after-tools-1'),
+            $this->leafSetEvent(3, 1, null, null, 'continue'),
+        ];
+
+        $tree = $this->projector->build($this->runId, $events);
+
+        self::assertSame('assistant', $tree->nodesByTurnNo[1]->displayRole);
+        self::assertStringContainsString('Assistant response', $tree->nodesByTurnNo[1]->title);
+        self::assertStringNotContainsString('assistant: Turn', $tree->nodesByTurnNo[1]->title);
+        self::assertDoesNotMatchRegularExpression('/^Turn \d+$/', $tree->nodesByTurnNo[1]->title);
+    }
+
     public function testToolCycleTurnsDoNotReusePreviousUserPromptAsTitle(): void
     {
         $events = [
@@ -531,6 +576,10 @@ final class TurnTreeProjectorTest extends TestCase
         self::assertStringContainsString('Okay add 1 more line', $tree->nodesByTurnNo[5]->title);
         self::assertStringContainsString('Added second line', $tree->nodesByTurnNo[6]->title);
         self::assertNotSame($tree->nodesByTurnNo[5]->title, $tree->nodesByTurnNo[6]->title);
+        self::assertSame('user', $tree->nodesByTurnNo[3]->displayRole);
+        self::assertSame('assistant', $tree->nodesByTurnNo[4]->displayRole);
+        self::assertSame('user', $tree->nodesByTurnNo[5]->displayRole);
+        self::assertSame('assistant', $tree->nodesByTurnNo[6]->displayRole);
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────

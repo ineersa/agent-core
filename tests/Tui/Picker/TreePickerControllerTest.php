@@ -1104,4 +1104,68 @@ final class TreePickerControllerTest extends TestCase
         self::assertStringContainsString('assistant:', $items[0]['label']);
         self::assertStringContainsString('Done!', $items[0]['label']);
     }
+
+    #[Test]
+    public function testBuildItemsUserPromptUsesUserPrefixFromDisplayRole(): void
+    {
+        $nodes = [
+            1 => new TurnTreeNodeView(
+                turnNo: 1,
+                parentTurnNo: null,
+                childTurnNos: [2],
+                anchorSeq: 2,
+                title: '[overlay-verify] create ./test.txt one line LINE_ONE',
+                promptPreview: 'create',
+                createdAt: null,
+                isCurrentLeaf: false,
+                displayRole: 'user',
+            ),
+            2 => new TurnTreeNodeView(
+                turnNo: 2,
+                parentTurnNo: 1,
+                childTurnNos: [],
+                anchorSeq: 5,
+                title: 'Done. `test.txt` now has two lines: 1. `LINE_ONE` 2. `LINE_TWO`',
+                promptPreview: 'Done',
+                createdAt: null,
+                isCurrentLeaf: true,
+                displayRole: 'assistant',
+            ),
+        ];
+        $tree = new TurnTreeView('run', $nodes, [1], 2, [1, 2]);
+        $theme = new DefaultTheme(new ThemePalette('test'));
+        $items = TreePickerController::buildItems($tree, $theme);
+        self::assertCount(2, $items);
+        self::assertStringContainsString('user:', $items[0]['label']);
+        self::assertStringNotContainsString('assistant:', $items[0]['label']);
+        self::assertStringContainsString('create ./test.txt', $items[0]['label']);
+        self::assertStringContainsString('assistant:', $items[1]['label']);
+        self::assertStringNotContainsString('assistant: Turn', $items[1]['label']);
+    }
+
+    #[Test]
+    public function testBuildItemsPlaceholderTitleUsesRoleSpecificFallback(): void
+    {
+        $nodes = [
+            3 => new TurnTreeNodeView(
+                turnNo: 3,
+                parentTurnNo: 2,
+                childTurnNos: [],
+                anchorSeq: 6,
+                title: 'Assistant response (turn 3)',
+                promptPreview: 'Assistant response (turn 3)',
+                createdAt: null,
+                isCurrentLeaf: true,
+                displayRole: 'assistant',
+            ),
+        ];
+        $tree = new TurnTreeView('run', $nodes, [3], 3, [3]);
+        $theme = new DefaultTheme(new ThemePalette('test'));
+        $items = TreePickerController::buildItems($tree, $theme);
+        self::assertStringContainsString('assistant:', $items[0]['label']);
+        self::assertStringContainsString('Assistant response', $items[0]['label']);
+        self::assertStringNotContainsString('Turn 3', $items[0]['label']);
+    }
+
+
 }

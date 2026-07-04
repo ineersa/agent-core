@@ -49,7 +49,7 @@ final class PickerListLabelFormatter
             $body = self::sanitizeTitle($promptPreview);
         }
         if ('' === $body || preg_match('/^Turn \d+$/', $body)) {
-            return ['Turn '.$turnNo, 'assistant'];
+            return ['Turn '.$turnNo, $role];
         }
 
         $lower = mb_strtolower($body);

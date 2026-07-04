@@ -143,7 +143,7 @@ final class FileRewindPickerController
     }
 
     /**
-     * @param list<array{turnNo:int,title:string}> $targets
+     * @param list<array{turnNo:int,title:string,displayRole?:string}> $targets
      *
      * @return list<array{value:string,label:string}>
      */
@@ -154,7 +154,10 @@ final class FileRewindPickerController
             $turnNo = $target['turnNo'];
             $body = mb_strimwidth(PickerListLabelFormatter::sanitizeTitle($target['title']), 0, 52, '…');
             $marker = $idx === $selectedIndex ? '◉ ' : '○ ';
-            $prefix = PickerListLabelFormatter::formatRolePrefix($theme, 'assistant');
+            $role = \is_string($target['displayRole'] ?? null) && '' !== $target['displayRole']
+                ? $target['displayRole']
+                : 'assistant';
+            $prefix = PickerListLabelFormatter::formatRolePrefix($theme, $role);
             $label = $marker.$prefix.' checkpoint '.$turnNo.': '.$body;
             if ($idx === $selectedIndex) {
                 $label = $theme->color(ThemeColorEnum::Accent, $label);
@@ -166,7 +169,7 @@ final class FileRewindPickerController
     }
 
     /**
-     * @return list<array{turnNo:int,title:string}>
+     * @return list<array{turnNo:int,title:string,displayRole:string}>
      */
     private function restorableTargets(string $sessionId, TurnTreeView $tree): array
     {
@@ -180,7 +183,7 @@ final class FileRewindPickerController
                 continue;
             }
             $title = $this->checkpointRowTitle($node, $turnNo);
-            $targets[] = ['turnNo' => $turnNo, 'title' => $title];
+            $targets[] = ['turnNo' => $turnNo, 'title' => $title, 'displayRole' => $node->displayRole];
         }
 
         return $targets;

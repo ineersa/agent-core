@@ -165,10 +165,10 @@ final class TurnTreeProjector
         foreach ($turnInfo as $turnNo => $info) {
             $rawTitle = $this->titleForTurn($turnNo, $info['anchorIndex'], $sorted);
             $title = $this->sanitizeTurnTitle($rawTitle);
-            if ('' === $title) {
-                $title = "Turn {$turnNo}";
+            $displayRole = $this->classifyDisplayRole($turnNo, $info['anchorIndex'], $sorted);
+            if ('' === $title || preg_match('/^Turn \d+$/', $title)) {
+                $title = $this->placeholderTitleForTurn($turnNo, $displayRole);
             }
-            $displayRole = $this->classifyDisplayRole($title, $turnNo, $info['anchorIndex'], $sorted);
 
             $node = new TurnTreeNodeDTO(
                 turnNo: $turnNo,
@@ -634,7 +634,7 @@ final class TurnTreeProjector
     /**
      * @param list<RunEvent> $sortedEvents
      */
-    private function classifyDisplayRole(string $title, int $turnNo, int $anchorIndex, array $sortedEvents): string
+    private function classifyDisplayRole(int $turnNo, int $anchorIndex, array $sortedEvents): string
     {
         $anchorEvent = $sortedEvents[$anchorIndex] ?? null;
         $stepId = \is_array($anchorEvent?->payload) && \is_string($anchorEvent->payload['step_id'] ?? null)
@@ -655,12 +655,30 @@ final class TurnTreeProjector
             }
         }
 
-        $lower = mb_strtolower($title);
-        if (preg_match('/^(can you|please|good!|hello|hi\b|now |add |create |write )/u', $lower)) {
+        if (str_starts_with($stepId, 'follow_up') || str_starts_with($stepId, 'steer')) {
             return 'user';
         }
 
+        if ($parentAnchorIndex < 0) {
+            foreach ($sortedEvents as $event) {
+                if (RunEventTypeEnum::RunStarted->value === $event->type) {
+                    if ('' !== $this->extractInitialUserText($event)) {
+                        return 'user';
+                    }
+                    break;
+                }
+            }
+        }
+
         return 'assistant';
+    }
+
+    private function placeholderTitleForTurn(int $turnNo, string $displayRole): string
+    {
+        return match ($displayRole) {
+            'user' => 'User message (turn '.$turnNo.')',
+            default => 'Assistant response (turn '.$turnNo.')',
+        };
     }
 
     /**
