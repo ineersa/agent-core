@@ -8,7 +8,6 @@ enum FileRewindActionEnum: string
 {
     case RestoreFiles = 'restore_files';
     case RestoreFilesAndConversation = 'restore_files_and_conversation';
-    case ConversationOnly = 'conversation_only';
     case UndoLastRestore = 'undo_last_restore';
     case Cancel = 'cancel';
 }

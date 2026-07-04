@@ -31,7 +31,10 @@ File rewind is a **built-in Hatfield extension** (`FileRewindExtension`) registe
 - `/tree` stays conversation-only.
 - `/rewind` lists **file checkpoint targets only** (turns with a persisted hidden-git checkpoint and a meaningful label). Internal/tool turns without checkpoints are hidden.
 - Checkpoints and restore targets are scoped to the **active session** (`session_id` / `run_id`); older sessions in the same project cwd do not appear in `/rewind` and are not used for restore.
-- Checkpoints are recorded on stable completed turn boundaries: plain assistant turns and the **final assistant step after tool execution** (`llm_step_completed` / `agent_end`). Mid-tool batch commits alone do not create restore targets.
+- Checkpoints are recorded on stable completed turn boundaries:
+  - Plain assistant turns (`turn_end` / `agent_end` / post-tool `llm_step_completed` without in-flight tool events in the same commit).
+  - **Post-tool file state** on `tool_batch_committed` when that commit is the stable boundary (tool effects applied on disk, `effectsCount === 0`, no `tool_execution_start` in the same commit). The same commit may include `tool_call_result_received` / `message_end`; that is expected.
+  - Mid-tool-only commits (`tool_execution_start`, `effectsCount > 0`, or batches without a stable boundary) do not create restore targets.
 - Action menu (Enter on a checkpoint):
   - **Restore files to this turn**
   - **Restore files + conversation rewind** (files first; conversation rewind rolls back files if conversation rewind fails)
@@ -67,3 +70,4 @@ extensions:
 - Live file diff preview in the `/rewind` picker is **intentionally disabled in v1**. Hidden-git indexing (`git add --all` / worktree capture) must not run on picker open or arrow navigation; restore/undo still uses hidden git on explicit user action.
 - The picker shows only whether a turn has a file checkpoint and generic action guidance.
 - Checkpoint capture/restore diagnostics rely on best-effort logging only in v1 (no structured extension logger seam yet).
+- **Retention / pruning** is **project-scoped** (per cwd / project hash under `.hatfield/rewind/`): `max_retained_turns` keeps the newest N checkpoint rows across all sessions in that project ledger; hidden-git refs are pruned accordingly. There is no per-session retention cap in v1.

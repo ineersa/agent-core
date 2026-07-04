@@ -50,18 +50,8 @@ final class PickerOverlay
 
         $screen->insertOverlayAfterEditor($this->container);
         $tui->setFocus($this->listWidget);
-        // Use a non-forced render request so ScreenWriter performs
-        // a differential update instead of a full clear+redraw.
-        // fullRender(clear=true) writes \x1b[2J\x1b[3J\x1b[H inside
-        // DECSET 2026 synchronized-output brackets, which causes
-        // visible flicker and scrollback artifacts in some terminal
-        // multiplexers.  When the diff cannot be handled incrementally
-        // (e.g. the first changed line is outside the viewport),
-        // ScreenWriter naturally falls back to fullRender on its own.
-        // Force a full clear+redraw when opening pickers. Incremental
-        // ScreenWriter updates can leave stale picker rows in the overlay
-        // slot (below editor) when the viewport dirty region does not cover
-        // prior list height — users see duplicated headers/turn rows.
+        // Force full clear+redraw on mount so ScreenWriter does not leave stale
+        // picker rows in the overlay slot when incremental dirty regions miss prior list height.
         $tui->requestRender(true);
         $this->isOpen = true;
     }

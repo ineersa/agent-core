@@ -22,14 +22,12 @@ final class FileRewindTuiActionHandler implements FileRewindActionHandlerInterfa
         $this->conversationRewind = $port;
     }
 
+    /**
+     * @param string $sessionId active session id (Hatfield: session_id === run_id for ledger/restore)
+     */
     public function execute(string $sessionId, int $turnNo, FileRewindActionEnum $action): void
     {
         if (FileRewindActionEnum::Cancel === $action) {
-            return;
-        }
-        if (FileRewindActionEnum::ConversationOnly === $action) {
-            $this->requireConversation()->rewindToTurn($turnNo);
-
             return;
         }
         if (FileRewindActionEnum::RestoreFilesAndConversation === $action) {
