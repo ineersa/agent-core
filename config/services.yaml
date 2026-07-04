@@ -280,9 +280,18 @@ services:
   # doctrine:migrations:migrate console command to avoid phar:// filesystem
   # scanning issues inside the PHAR. Dev doctrine:migrations commands are
   # still available from the source checkout.
+  Ineersa\CodingAgent\Migrations\ApplicationMigrationExecutor:
+    arguments:
+      $connection: '@doctrine.dbal.default_connection'
+
+  Ineersa\CodingAgent\Migrations\MessengerTransportSchemaEnsurer:
+    arguments:
+      $connection: '@doctrine.dbal.messenger_transport_connection'
+
   Ineersa\CodingAgent\Migrations\StartupDatabaseMigrator:
     arguments:
       $executor: '@Ineersa\CodingAgent\Migrations\ApplicationMigrationExecutor'
+      $transportSchemaEnsurer: '@Ineersa\CodingAgent\Migrations\MessengerTransportSchemaEnsurer'
 
   # HatfieldModelCatalog — build from AppConfig.ai so all consumers share the
   # same catalog populated from settings, not an auto-wired empty default.

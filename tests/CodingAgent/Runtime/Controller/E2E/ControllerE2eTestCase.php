@@ -193,11 +193,12 @@ abstract class ControllerE2eTestCase extends TestCase
             'APP_ENV' => 'test',
             'APP_DEBUG' => '1',
             'HATFIELD_TEST_DATABASE_PATH' => 'app_test-live-'.$this->sessionId.'.sqlite',
-            'HATFIELD_RUN_CONTROL_TRANSPORT_DSN' => "doctrine://default?queue_name=run_control_{$this->sessionId}",
-            'HATFIELD_LLM_TRANSPORT_DSN' => "doctrine://default?queue_name=llm_{$this->sessionId}",
-            'HATFIELD_TOOL_TRANSPORT_DSN' => "doctrine://default?queue_name=tool_{$this->sessionId}",
-            'HATFIELD_AGENT_TRANSPORT_DSN' => "doctrine://default?queue_name=agent_{$this->sessionId}",
-            'HATFIELD_MCP_TRANSPORT_DSN' => "doctrine://default?queue_name=mcp_{$this->sessionId}",
+            'HATFIELD_TEST_MESSENGER_TRANSPORT_DATABASE_PATH' => 'messenger_transport_test-live-'.$this->sessionId.'.sqlite',
+            'HATFIELD_RUN_CONTROL_TRANSPORT_DSN' => "doctrine://messenger_transport?queue_name=run_control_{$this->sessionId}",
+            'HATFIELD_LLM_TRANSPORT_DSN' => "doctrine://messenger_transport?queue_name=llm_{$this->sessionId}",
+            'HATFIELD_TOOL_TRANSPORT_DSN' => "doctrine://messenger_transport?queue_name=tool_{$this->sessionId}",
+            'HATFIELD_AGENT_TRANSPORT_DSN' => "doctrine://messenger_transport?queue_name=agent_{$this->sessionId}",
+            'HATFIELD_MCP_TRANSPORT_DSN' => "doctrine://messenger_transport?queue_name=mcp_{$this->sessionId}",
             'HATFIELD_SESSION_ID' => $this->sessionId,
             'LLAMA_CPP_SMOKE_TEST' => '1',
         ];
@@ -619,11 +620,11 @@ abstract class ControllerE2eTestCase extends TestCase
 
         $chunks[] = $this->dumpSessionDir($this->tempDir.'/.hatfield/sessions');
 
-        $messengerDb = $this->tempDir.'/.hatfield/messenger.sqlite';
-        if (is_file($messengerDb)) {
-            $chunks[] = 'Messenger DB: '.\filesize($messengerDb).' bytes';
+        $transportDb = $this->tempDir.'/.hatfield/messenger-transport.sqlite';
+        if (is_file($transportDb)) {
+            $chunks[] = 'Messenger transport DB: '.\filesize($transportDb).' bytes';
             try {
-                $db = new \PDO('sqlite:'.$messengerDb);
+                $db = new \PDO('sqlite:'.$transportDb);
                 $rows = $db->query('SELECT count(*), queue_name FROM messenger_messages GROUP BY queue_name');
                 if (false !== $rows) {
                     foreach ($rows as $row) {
@@ -631,10 +632,10 @@ abstract class ControllerE2eTestCase extends TestCase
                     }
                 }
             } catch (\Throwable $e) {
-                $chunks[] = '  Messenger DB read error: '.$e->getMessage();
+                $chunks[] = '  Messenger transport DB read error: '.$e->getMessage();
             }
         } else {
-            $chunks[] = 'Messenger DB: missing';
+            $chunks[] = 'Messenger transport DB: missing';
         }
 
         return "\n\n".implode("\n", $chunks)."\n\n";

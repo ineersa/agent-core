@@ -228,6 +228,7 @@ function initialize_qa_check_run(): string
     $tmpRel = 'var/tmp/'.$id;
     $cacheRel = '.hatfield/cache-'.$id;
     $dbFile = 'app_test-'.$id.'.sqlite';
+    $transportDbFile = 'messenger_transport_test-'.$id.'.sqlite';
 
     $vars = [
         'HATFIELD_QA_RUN_ID' => $id,
@@ -235,6 +236,7 @@ function initialize_qa_check_run(): string
         'HATFIELD_QA_TMP_DIR' => $tmpRel,
         'HATFIELD_CACHE_DIR' => $cacheRel,
         'HATFIELD_TEST_DATABASE_PATH' => $dbFile,
+        'HATFIELD_TEST_MESSENGER_TRANSPORT_DATABASE_PATH' => $transportDbFile,
     ];
 
     foreach ($vars as $name => $value) {

@@ -64,14 +64,32 @@ final class TuiSubagentLiveViewE2eTest extends TestCase
             $this->tmux->waitForCaptureContains($pane, 'agent_e2e_progress_fixture', 10.0, 'Picker must list subagent artifact');
 
             $this->tmux->sendKey($pane, 'Enter');
-            $this->tmux->waitForCaptureContains($pane, 'Live view (readonly)', 10.0, 'Readonly live view status must appear');
+            $this->tmux->waitForCaptureContains($pane, 'Subagent live:', 10.0, 'Interactive live view status must appear');
+            $this->tmux->waitForCaptureContains($pane, '[completed]', 10.0, 'Fixture child must show completed status in live view');
+
+            $this->tmux->sendKey($pane, 'C-u');
+            usleep(50_000);
+            $this->tmux->sendLiteral($pane, 'continue after completion');
+            $this->tmux->sendKey($pane, 'Enter');
+            $this->tmux->waitForCaptureContains($pane, 'has finished', 10.0, 'Terminal child input must show finished-subagent warning');
+            $capAfterTerminal = $this->tmux->capturePlainWithHistory($pane, 2500);
+            self::assertStringContainsString('has finished', strtolower($capAfterTerminal), 'Terminal child warning must mention finished subagent');
+
+            $this->tmux->sendKey($pane, 'C-u');
+            usleep(50_000);
+            $this->tmux->sendLiteral($pane, '/new');
+            $this->tmux->sendKey($pane, 'Enter');
+            $this->tmux->waitForCaptureContains($pane, 'Leave subagent live view', 10.0, 'Blocked slash must show leave-live-view warning');
+            $capAfterBlock = $this->tmux->capturePlainWithHistory($pane, 2500);
+            self::assertStringContainsString('agent_e2e_progress_fixture', $capAfterBlock, 'Must remain in live view after blocked /new');
+            self::assertStringNotContainsString('subagent scout running', $capAfterBlock, 'Must not switch back to parent transcript after blocked /new');
 
             $this->tmux->sendKey($pane, 'C-u');
             usleep(50_000);
             $this->tmux->sendLiteral($pane, '/agents-main');
             $this->tmux->sendKey($pane, 'Enter');
             $this->tmux->waitForCaptureContains($pane, 'subagent scout', 10.0, 'Parent transcript must restore after /agents-main');
-            self::assertStringNotContainsString('Live view (readonly)', $this->tmux->capturePlainWithHistory($pane, 2500));
+            self::assertStringNotContainsString('Subagent live:', $this->tmux->capturePlainWithHistory($pane, 2500));
 
             $this->tmux->sendKey($pane, 'C-d');
         } catch (\Throwable $e) {
@@ -103,10 +121,14 @@ final class TuiSubagentLiveViewE2eTest extends TestCase
     {
         $fixturePath = __DIR__.'/fixtures/tui-resume-minimal.json';
         $projectDir = ProjectDir::get();
-        $dbPath = 'app_test-tui-subagent-live-'.bin2hex(random_bytes(4)).'.sqlite';
+        $paths = TuiE2eDatabaseEnv::allocatePaths('tui-subagent-live-');
+
+        $dbPath = $paths['app'];
+
+        $transportDbPath = $paths['transport'];
         return sprintf(
-            'APP_ENV=test HATFIELD_TEST_DATABASE_PATH=%s HOME=%s HATFIELD_LLM_REPLAY_FIXTURE_PATH=%s %s %s agent --model=llama_cpp_test/test --tools-excluded=bash 2>&1',
-            escapeshellarg($dbPath),
+            'APP_ENV=test %sHOME=%s HATFIELD_LLM_REPLAY_FIXTURE_PATH=%s %s %s agent --model=llama_cpp_test/test --tools-excluded=bash 2>&1',
+            TuiE2eDatabaseEnv::shellPrefix($dbPath, $transportDbPath),
             escapeshellarg($this->testProjectDir.'/home'),
             escapeshellarg($fixturePath),
             escapeshellarg(\PHP_BINARY),

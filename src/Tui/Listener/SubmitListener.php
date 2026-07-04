@@ -17,6 +17,7 @@ use Ineersa\Tui\Command\Hotkey\HotkeyBindingDTO;
 use Ineersa\Tui\Command\Hotkey\HotkeyTableData;
 use Ineersa\Tui\Command\SlashCommandRegistry;
 use Ineersa\Tui\Command\StatusUpdate;
+use Ineersa\Tui\Command\SubagentLiveInputPolicy;
 use Ineersa\Tui\Command\SubmissionRouter;
 use Ineersa\Tui\Command\TranscriptMessage;
 use Ineersa\Tui\Question\QuestionController;
@@ -50,6 +51,7 @@ final class SubmitListener implements TuiListenerRegistrar
         private readonly TranscriptBlockFactory $blockFactory,
         private readonly QuestionCoordinator $coordinator,
         private readonly QuestionController $questionController,
+        private readonly SubagentLiveInputPolicy $subagentLiveInputPolicy,
         private readonly LoggerInterface $logger,
         private readonly SlashCommandRegistry $slashCommandRegistry,
     ) {
@@ -70,13 +72,14 @@ final class SubmitListener implements TuiListenerRegistrar
 
         $logger = $this->logger;
         $slashCommandRegistry = $this->slashCommandRegistry;
+        $subagentLiveInputPolicy = $this->subagentLiveInputPolicy;
 
         // Wire the question controller with TUI runtime references
         $questionController->setRuntimeRefs($context, $screen);
 
         $context->tui->addListener(static function (SubmitEvent $event) use (
             $client, $sessionStore, $state, $screen, $tui, $router, $blockFactory,
-            $questionCoordinator, $questionController, $logger, $slashCommandRegistry,
+            $questionCoordinator, $questionController, $subagentLiveInputPolicy, $logger, $slashCommandRegistry,
         ) {
             $text = $screen->extract();
             if ('' === $text) {
@@ -89,6 +92,29 @@ final class SubmitListener implements TuiListenerRegistrar
                 $questionController->close();
 
                 return;
+            }
+
+            // ── Subagent live view: block parent/session commands; route plain text to child run ──
+            if ($state->subagentLiveView->active) {
+                if ($subagentLiveInputPolicy->shouldBlockInLiveView($text)) {
+                    self::showLiveViewBlockedInput($state, $screen, $blockFactory, $subagentLiveInputPolicy);
+
+                    return;
+                }
+
+                if ($subagentLiveInputPolicy->isNormalPrompt($text)) {
+                    self::dispatchToChildLiveView(
+                        $text,
+                        $state,
+                        $screen,
+                        $client,
+                        $blockFactory,
+                        $subagentLiveInputPolicy,
+                        $logger,
+                    );
+
+                    return;
+                }
             }
 
             // ── Route through command parser/registry ──
@@ -496,6 +522,95 @@ final class SubmitListener implements TuiListenerRegistrar
                 'exception' => $e,
             ]);
         }
+    }
+
+    /**
+     * Route plain editor text to the selected child subagent run (steer or follow_up).
+     *
+     * Does not echo into the parent transcript; child canonical events project the message.
+     */
+    private static function dispatchToChildLiveView(
+        string $text,
+        TuiSessionState $state,
+        ChatScreen $screen,
+        \Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient $client,
+        TranscriptBlockFactory $blockFactory,
+        SubagentLiveInputPolicy $policy,
+        LoggerInterface $logger,
+    ): void {
+        $child = $state->subagentLiveView->selected;
+        if (null === $child) {
+            $screen->setStatus('agents-live', 'No subagent selected for live view.');
+
+            return;
+        }
+
+        if ($child->isTerminal()) {
+            self::showLiveViewTerminalChildInput($state, $screen, $blockFactory, $policy);
+
+            return;
+        }
+
+        $commandType = $policy->childUserCommandType($state->subagentLiveView->childActivity->isActive());
+        $screen->setWorkingMessage('Sending to subagent...');
+
+        try {
+            $client->send(
+                $child->agentRunId,
+                new UserCommand(type: $commandType, text: $text),
+            );
+
+            if (!$state->subagentLiveView->childActivity->isActive()) {
+                $state->subagentLiveView->childActivity = RunActivityStateEnum::Starting;
+            }
+
+            // Let TickPollListener re-apply the computed parent|child working line on the next tick.
+            $state->subagentLiveView->lastLiveWorkingMessage = null;
+
+            $screen->setStatus('agents-live', $policy->dispatchConfirmationMessage($commandType, $child->agentName));
+        } catch (\Throwable $e) {
+            $screen->setStatus('agents-live', 'Failed to send to subagent: '.$e->getMessage());
+            $logger->error('SubmitListener: child live steer/follow_up failed', [
+                'component' => 'SubmitListener',
+                'event_type' => 'child_live_dispatch_failed',
+                'session_id' => $state->sessionId,
+                'child_run_id' => $child->agentRunId,
+                'artifact_id' => $child->artifactId,
+                'exception' => $e,
+            ]);
+        }
+    }
+
+    private static function showLiveViewBlockedInput(
+        TuiSessionState $state,
+        ChatScreen $screen,
+        TranscriptBlockFactory $blockFactory,
+        SubagentLiveInputPolicy $policy,
+    ): void {
+        $message = $policy->blockedLeaveLiveViewMessage();
+        $state->subagentLiveView->childTranscript[] = $blockFactory->error(
+            $state->sessionId,
+            $message,
+            \count($state->subagentLiveView->childTranscript) + 1,
+        );
+        $screen->setTranscriptBlocks($state->subagentLiveView->childTranscript);
+        $screen->setStatus('agents-live', $message);
+    }
+
+    private static function showLiveViewTerminalChildInput(
+        TuiSessionState $state,
+        ChatScreen $screen,
+        TranscriptBlockFactory $blockFactory,
+        SubagentLiveInputPolicy $policy,
+    ): void {
+        $message = $policy->terminalChildInputBlockedMessage();
+        $state->subagentLiveView->childTranscript[] = $blockFactory->error(
+            $state->sessionId,
+            $message,
+            \count($state->subagentLiveView->childTranscript) + 1,
+        );
+        $screen->setTranscriptBlocks($state->subagentLiveView->childTranscript);
+        $screen->setStatus('agents-live', $message);
     }
 
     private static function blockForTranscriptMessage(

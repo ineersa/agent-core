@@ -102,8 +102,13 @@ final class TickPollListener implements TuiListenerRegistrar
                             $state->subagentLiveView->childActivity = RunActivityStateEnum::WaitingHuman;
                         } elseif ($refreshed->isRunning()) {
                             $state->subagentLiveView->childActivity = RunActivityStateEnum::Running;
-                        } elseif (!$state->subagentLiveView->childActivity->isActive()) {
-                            $state->subagentLiveView->childActivity = RunActivityStateEnum::Completed;
+                        } elseif ($refreshed->isTerminal()) {
+                            $state->subagentLiveView->childActivity = match ($refreshed->status) {
+                                SubagentLiveStatusEnum::Completed, SubagentLiveStatusEnum::Done => RunActivityStateEnum::Completed,
+                                SubagentLiveStatusEnum::Failed => RunActivityStateEnum::Failed,
+                                SubagentLiveStatusEnum::Cancelled => RunActivityStateEnum::Cancelled,
+                                default => RunActivityStateEnum::Completed,
+                            };
                         }
                     }
                 }
@@ -184,7 +189,7 @@ final class TickPollListener implements TuiListenerRegistrar
                 $selected = $state->subagentLiveView->selected;
                 if (null !== $selected) {
                     $liveStatus = \sprintf(
-                        'Live view (readonly): %s [%s] — /agents-main to return.',
+                        'Subagent live: %s [%s] — type to steer next step; /agents-main to return.',
                         $selected->agentName,
                         $selected->statusLabel(),
                     );

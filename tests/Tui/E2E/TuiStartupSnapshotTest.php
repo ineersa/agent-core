@@ -15,7 +15,7 @@ use PHPUnit\Framework\TestCase;
  * asserts it appears in the pane, then sends Ctrl+D to exit.
  *
  * Runs in an isolated project directory under var/tmp/tui-e2e-* so it does NOT
- * hit the stale project-root .hatfield/messenger.sqlite.
+ * hit the stale project-root .hatfield/state.sqlite.
  *
  * Element-level startup layout assertions live in
  * {@see \Ineersa\Tui\Tests\Screen\TuiStartupVirtualRenderTest} (no tmux).
@@ -106,12 +106,16 @@ final class TuiStartupSnapshotTest extends TestCase
             ? 'HATFIELD_LLM_REPLAY_FIXTURE_PATH='.escapeshellarg($startupFixture).' '
             : '';
 
-        $dbPath = 'app_test-tui-snapshot-'.bin2hex(random_bytes(4)).'.sqlite';
+        $paths = TuiE2eDatabaseEnv::allocatePaths('tui-snapshot-');
+
+        $dbPath = $paths['app'];
+
+        $transportDbPath = $paths['transport'];
         $promptArg = $withPrompt ? ' --prompt="hello from tmux e2e"' : '';
 
         return \sprintf(
-            'APP_ENV=test HATFIELD_TEST_DATABASE_PATH=%s HOME=%s %s %s %s agent --model=llama_cpp_test/test%s --tools-excluded=bash 2>&1',
-            escapeshellarg($dbPath),
+            'APP_ENV=test %sHOME=%s %s %s %s agent --model=llama_cpp_test/test%s --tools-excluded=bash 2>&1',
+            TuiE2eDatabaseEnv::shellPrefix($dbPath, $transportDbPath),
             escapeshellarg($this->testProjectDir.'/home'),
             $fixtureEnv,
             escapeshellarg($php),

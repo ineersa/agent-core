@@ -69,7 +69,8 @@ final class ApplicationMigrationExecutor
         \DoctrineMigrations\Version20260606140000::class,
         \DoctrineMigrations\Version20260607000000::class,
         \DoctrineMigrations\Version20260608162000::class,
-        \DoctrineMigrations\Version20260617141000::class,
+        // Version20260617141000 (messenger_messages) omitted: queue table is created
+        // on doctrine.dbal.messenger_transport_connection via MessengerTransportSchemaEnsurer.
         \DoctrineMigrations\Version20260617141001::class,
         \DoctrineMigrations\Version20260617141002::class,
         \DoctrineMigrations\Version20260628140000::class,

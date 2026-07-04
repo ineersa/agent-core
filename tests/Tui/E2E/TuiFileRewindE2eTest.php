@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\E2E;
 
+use Ineersa\Tui\Tests\E2E\TuiE2eDatabaseEnv;
+
 use Ineersa\CodingAgent\Tests\Support\ProjectDir;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\Attributes\Group;
@@ -381,9 +383,11 @@ final class TuiFileRewindE2eTest extends TestCase
             ? 'HATFIELD_LLM_REPLAY_FIXTURE_PATH='.\escapeshellarg(\implode(';', $paths)).' '
             : '';
 
+        $paths = TuiE2eDatabaseEnv::allocatePaths('tui-file-rewind-');
+
         return \sprintf(
-            'APP_ENV=test HATFIELD_TEST_DATABASE_PATH=%s HOME=%s %s %s %s agent --model=llama_cpp_test/test --tools-excluded=bash 2>&1',
-            \escapeshellarg('app_test-tui-file-rewind-'.bin2hex(random_bytes(4)).'.sqlite'),
+            'APP_ENV=test %sHOME=%s %s %s %s agent --model=llama_cpp_test/test --tools-excluded=bash 2>&1',
+            TuiE2eDatabaseEnv::shellPrefix($paths['app'], $paths['transport']),
             \escapeshellarg($this->testProjectDir.'/home'),
             $fixtureEnv,
             \escapeshellarg(\PHP_BINARY),

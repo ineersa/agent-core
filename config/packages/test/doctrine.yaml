@@ -12,6 +12,7 @@
 # PHPUnit execution.
 parameters:
     test.db.filename: 'app_test.sqlite'
+    test.messenger_transport.db.filename: 'messenger_transport_test.sqlite'
 
 doctrine:
     dbal:
@@ -20,3 +21,11 @@ doctrine:
             default:
                 driver: pdo_sqlite
                 path: '%kernel.project_dir%/var/test/%env(default:test.db.filename:string:HATFIELD_TEST_DATABASE_PATH)%'
+                options:
+                    2: 5
+
+            messenger_transport:
+                driver: pdo_sqlite
+                path: '%kernel.project_dir%/var/test/%env(default:test.messenger_transport.db.filename:string:HATFIELD_TEST_MESSENGER_TRANSPORT_DATABASE_PATH)%'
+                options:
+                    2: 5
