@@ -363,6 +363,21 @@ Hatfield session store). Both scopes lock the same ID.
 directories). Locks are automatically released when the lock object is
 destroyed, or explicitly via `$lock->release()` in `finally` blocks.
 
+These locks are short-lived critical sections: they protect individual
+reads/writes and release immediately after. There is **no long-lived "a TUI is
+actively attached to this session" lock**. Consequently, running two Hatfield
+TUI instances against the same session concurrently is unsupported and produces
+confusing results: each instance spawns its own controller subprocess and event
+poller, both write to the same `events.jsonl` / `state.json`, and the two
+conversations interleave in one event stream. A message sent in one instance is
+picked up by the other instance's poller, and both agents may respond into the
+same session. Individual writes stay atomic (no structural file corruption),
+but the turn tree, transcript projection, and run state become semantically
+incoherent.
+
+Do not attach a second TUI to a session another TUI is actively using. Resume a
+session only from the instance that owns it, or after the owner has exited.
+
 ## Why no `.hatfield/runs/` directory
 
 Storing run data separately from session data would require a run→session
