@@ -149,7 +149,7 @@ final class SlashCommandRegistry
             }
 
             $handler = $this->handlers[$canonical];
-            if ($handler instanceof SessionAwareSlashCommandHandler && null !== $this->activeSessionId) {
+            if ($handler instanceof ExtensionSlashCommandHandler && null !== $this->activeSessionId) {
                 $handler->setSessionId($this->activeSessionId);
             }
 

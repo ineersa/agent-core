@@ -37,28 +37,4 @@ final class PickerListLabelFormatter
             default => $theme->color(ThemeColorEnum::AssistantMessage, 'assistant:'),
         };
     }
-
-    /**
-     * @return array{0: string, 1: string} [body, displayRole]
-     */
-    public static function bodyAndRoleFromNodeTitle(string $title, string $promptPreview, int $turnNo): array
-    {
-        $body = self::sanitizeTitle($title);
-        $role = 'assistant';
-        if ('' === $body || preg_match('/^Turn \d+$/', $body)) {
-            $body = self::sanitizeTitle($promptPreview);
-        }
-        if ('' === $body || preg_match('/^Turn \d+$/', $body)) {
-            return ['Turn '.$turnNo, $role];
-        }
-
-        $lower = mb_strtolower($body);
-        if (preg_match('/^(can you|please|good!|hello|hi\b|now |add |create |write )/u', $lower)) {
-            $role = 'user';
-        } elseif (preg_match('/^(done!|done\.|created|added|okay|the file|let me)/u', $lower)) {
-            $role = 'assistant';
-        }
-
-        return [$body, $role];
-    }
 }

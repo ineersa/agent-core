@@ -7,7 +7,6 @@ namespace Ineersa\Tui\Extension;
 use Ineersa\Hatfield\ExtensionApi\Command\ExtensionCommandHandlerInterface;
 use Ineersa\Tui\Command\CommandResult;
 use Ineersa\Tui\Command\NoOp;
-use Ineersa\Tui\Command\SessionAwareSlashCommandHandler;
 use Ineersa\Tui\Command\SlashCommand;
 use Ineersa\Tui\Command\SlashCommandHandler;
 use Ineersa\Tui\Command\TranscriptMessage;
@@ -22,7 +21,7 @@ use Ineersa\Tui\Command\TranscriptMessage;
  * nothing was notified, or TranscriptMessage with severity-mapped
  * role/style).
  */
-final class ExtensionSlashCommandHandler implements SlashCommandHandler, SessionAwareSlashCommandHandler
+final class ExtensionSlashCommandHandler implements SlashCommandHandler
 {
     private string $sessionId = '';
 

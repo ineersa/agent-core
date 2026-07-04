@@ -280,13 +280,15 @@ final class TreePickerController
             }
 
             $leafMarker = $node->isCurrentLeaf ? '◉ ' : '○ ';
-            [$body, $fallbackRole] = PickerListLabelFormatter::bodyAndRoleFromNodeTitle(
-                $node->title,
-                $node->promptPreview,
-                $node->turnNo,
-            );
-            $role = '' !== $node->displayRole ? $node->displayRole : $fallbackRole;
-            $body = mb_strimwidth(PickerListLabelFormatter::sanitizeTitle($body), 0, 52, '…');
+            $body = PickerListLabelFormatter::sanitizeTitle($node->title);
+            if ('' === $body || preg_match('/^Turn \d+$/', $body)) {
+                $body = PickerListLabelFormatter::sanitizeTitle($node->promptPreview);
+            }
+            if ('' === $body || preg_match('/^Turn \d+$/', $body)) {
+                $body = 'Turn '.$node->turnNo;
+            }
+            $body = mb_strimwidth($body, 0, 52, '…');
+            $role = $node->displayRole;
             $prefix = PickerListLabelFormatter::formatRolePrefix($theme, $role);
             $label = $nodePrefix.$leafMarker.$prefix.' '.$body;
 

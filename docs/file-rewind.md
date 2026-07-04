@@ -37,7 +37,7 @@ File rewind is a **built-in Hatfield extension** (`FileRewindExtension`) registe
   - Mid-tool-only commits (`tool_execution_start`, `effectsCount > 0`, or batches without a stable boundary) do not create restore targets.
 - Action menu (Enter on a checkpoint):
   - **Restore files to this turn**
-  - **Restore files + conversation rewind** (files first; conversation rewind rolls back files if conversation rewind fails)
+  - **(removed in v1 — file-only restore)** (files first; conversation rewind rolls back files if conversation rewind fails)
 - **Esc** closes pickers (cancel). There is no separate Cancel action and no **Undo last file restore** menu item in v1 (undo metadata remains internal for safety).
 - No live diff preview in the picker.
 

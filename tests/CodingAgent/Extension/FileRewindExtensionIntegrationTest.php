@@ -8,12 +8,11 @@ use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\ExtensionsConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
-use Ineersa\CodingAgent\Extension\Builtin\FileRewind\FileRewindExtension;
+use Ineersa\HatfieldExt\FileRewind\FileRewindExtension;
 use Ineersa\CodingAgent\Extension\ExtensionExecBridge;
 use Ineersa\CodingAgent\Extension\ExtensionHookRegistry;
 use Ineersa\CodingAgent\Extension\ExtensionManager;
 use Ineersa\CodingAgent\Extension\ExtensionToolRegistryBridge;
-use Ineersa\CodingAgent\Extension\FileRewind\FileRewindRuntimePorts;
 use Ineersa\CodingAgent\Tests\Support\ProjectDir;
 use Ineersa\CodingAgent\Tool\ToolRegistry;
 use Ineersa\Tui\Command\SlashCommandRegistry;
@@ -42,8 +41,7 @@ final class FileRewindExtensionIntegrationTest extends TestCase
             new ExtensionHookRegistry(),
             $appConfig,
             new ExtensionExecBridge(),
-            new TuiCommandRegistryAdapter($slashRegistry),
-            new FileRewindRuntimePorts(),
+            new TuiCommandRegistryAdapter($slashRegistry)
         );
 
         $diagnostics = (new ExtensionManager($appConfig, $bridge, new NullLogger()))->loadExtensions();

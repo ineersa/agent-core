@@ -8,6 +8,7 @@ use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Runtime\Contract\LoadedExtensionItemDTO;
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
 use Ineersa\Hatfield\ExtensionApi\HatfieldExtensionInterface;
+use Ineersa\Hatfield\ExtensionApi\Tui\TuiProjectExtensionInterface;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -32,6 +33,9 @@ final class ExtensionManager
     /** @var list<LoadedExtensionItemDTO> */
     private array $loadOutcomes = [];
 
+    /** @var list<TuiProjectExtensionInterface> */
+    private array $tuiProjectExtensions = [];
+
     public function __construct(
         private readonly AppConfig $config,
         private readonly ExtensionApiInterface $extensionApi,
@@ -44,6 +48,15 @@ final class ExtensionManager
      *
      * @return list<LoadedExtensionItemDTO>
      */
+
+    /**
+     * @return list<TuiProjectExtensionInterface>
+     */
+    public function getTuiProjectExtensions(): array
+    {
+        return $this->tuiProjectExtensions;
+    }
+
     public function getLoadOutcomes(): array
     {
         return $this->loadOutcomes;
@@ -63,6 +76,7 @@ final class ExtensionManager
     public function loadExtensions(): array
     {
         $this->loadOutcomes = [];
+        $this->tuiProjectExtensions = [];
         $enabled = $this->getEnabledClasses();
 
         if ([] === $enabled) {
@@ -172,6 +186,9 @@ final class ExtensionManager
         }
 
         $this->loadOutcomes[] = new LoadedExtensionItemDTO($className, true);
+        if ($instance instanceof TuiProjectExtensionInterface) {
+            $this->tuiProjectExtensions[] = $instance;
+        }
 
         return null;
     }

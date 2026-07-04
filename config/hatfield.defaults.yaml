@@ -228,7 +228,7 @@ tools:
 extensions:
     enabled:
         - Ineersa\CodingAgent\Extension\Builtin\SafeGuard\SafeGuardExtension
-        - Ineersa\CodingAgent\Extension\Builtin\FileRewind\FileRewindExtension
+        - Ineersa\HatfieldExt\FileRewind\FileRewindExtension
 
     # Generic extension settings exposed via the Extension API.
     # Each extension reads its own section by key.

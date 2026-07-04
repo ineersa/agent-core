@@ -6,7 +6,6 @@ namespace Ineersa\Hatfield\ExtensionApi;
 
 use Ineersa\Hatfield\ExtensionApi\Command\CommandDefinitionDTO;
 use Ineersa\Hatfield\ExtensionApi\Command\ExtensionCommandHandlerInterface;
-use Ineersa\Hatfield\ExtensionApi\Command\InteractiveCommandHostInterface;
 use Ineersa\Hatfield\ExtensionApi\Exec\ExecInterface;
 use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterTurnCommitHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Prompt\PromptContributorInterface;
@@ -125,17 +124,4 @@ interface ExtensionApiInterface
      * Register a hook invoked after AgentCore commits a turn.
      */
     public function registerAfterTurnCommitHook(AfterTurnCommitHookInterface $hook): void;
-
-    /**
-     * Optional interactive command host (TUI). Null in headless contexts.
-     */
-    public function interactiveCommandHost(): ?InteractiveCommandHostInterface;
-
-    /**
-     * Bind file rewind preview/action handlers for TUI runtime ports.
-     */
-    public function bindFileRewindRuntime(
-        Command\FileRewindPreviewProviderInterface $previewProvider,
-        Command\FileRewindActionHandlerInterface $actionHandler,
-    ): void;
 }

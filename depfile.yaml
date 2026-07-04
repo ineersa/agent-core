@@ -136,6 +136,11 @@ parameters:
         - type: classNameRegex
           value: '#^Ineersa\\HatfieldExt\\TaskWorkflow\\#'
 
+    - name: HatfieldExtFileRewind
+      collectors:
+        - type: classNameRegex
+          value: '#^Ineersa\\HatfieldExt\\FileRewind\\#'
+
     - name: AppExtensionBuiltin
       collectors:
         - type: classNameRegex
@@ -673,6 +678,14 @@ parameters:
     HatfieldExtTaskWorkflow:
       - AppExtensionApi
       - HatfieldExtTaskWorkflow
+    HatfieldExtFileRewind:
+      - AppExtensionApi
+      - AppRuntimeContract
+      - TuiPicker
+      - TuiScreen
+      - TuiRuntime
+      - TuiWidget
+      - SymfonyTui
     AppExtensionBuiltin:
       - AppExtensionApi
       - AppRuntimeContract

@@ -478,7 +478,6 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
             questionController: $this->questionController,
             subagentLiveInputPolicy: new SubagentLiveInputPolicy(),
             logger: $this->logger,
-            slashCommandRegistry: $this->registry,
         );
         $listener->register($context);
 

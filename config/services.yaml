@@ -170,7 +170,6 @@ services:
       $appConfig: '@Ineersa\CodingAgent\Config\AppConfig'
       $execBridge: '@Ineersa\CodingAgent\Extension\ExtensionExecBridge'
       $commandRegistry: '@Ineersa\Hatfield\ExtensionApi\Command\CommandRegistryInterface'
-      $interactiveCommandHost: '@Ineersa\Tui\Extension\TuiInteractiveCommandHost'
 
   Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface:
     alias: Ineersa\CodingAgent\Extension\ExtensionToolRegistryBridge
@@ -188,21 +187,12 @@ services:
     arguments:
       $extensionApi: '@Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface'
 
-  Ineersa\Tui\Extension\TuiInteractiveCommandHost: ~
-  Ineersa\Tui\Runtime\FileRewind\TuiFileRewindPickerFlow: ~
-  Ineersa\Tui\Picker\FileRewindPickerController: ~
-  Ineersa\Tui\Listener\RewindCommandRegistrar:
+  Ineersa\CodingAgent\Runtime\Contract\TuiProjectExtensionRegistryInterface:
+    alias: Ineersa\CodingAgent\Extension\ExtensionManager
+
+  Ineersa\Tui\Listener\TuiProjectExtensionRegistrar:
     tags: ['app.tui_listener']
 
-  Ineersa\CodingAgent\Extension\FileRewind\FileRewindRuntimePorts: ~
-  Ineersa\CodingAgent\Runtime\Contract\FileRewindTurnPreviewPortInterface:
-    alias: Ineersa\CodingAgent\Extension\FileRewind\FileRewindRuntimePorts
-  Ineersa\CodingAgent\Runtime\Contract\FileRewindTurnActionPortInterface:
-    alias: Ineersa\CodingAgent\Extension\FileRewind\FileRewindRuntimePorts
-  Ineersa\CodingAgent\Runtime\Contract\FileRewindConversationRewindBindPortInterface:
-    alias: Ineersa\CodingAgent\Extension\FileRewind\FileRewindRuntimePorts
-  Ineersa\CodingAgent\Runtime\Contract\FileRewindPickerFlowInterface:
-    alias: Ineersa\Tui\Runtime\FileRewind\TuiFileRewindPickerFlow
 
   # LoggingConfig is derived from AppConfig and autowireable.
   Ineersa\CodingAgent\Config\LoggingConfig:

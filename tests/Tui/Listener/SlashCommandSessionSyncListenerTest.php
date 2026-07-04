@@ -4,15 +4,11 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\Listener;
 
-use Ineersa\Tui\Command\CommandMetadata;
-use Ineersa\Tui\Command\SessionAwareSlashCommandHandler;
-use Ineersa\Tui\Command\SlashCommand;
-use Ineersa\Tui\Command\SlashCommandHandler;
 use Ineersa\Tui\Command\SlashCommandRegistry;
-use Ineersa\Tui\Command\TranscriptMessage;
 use Ineersa\Tui\Editor\PromptEditor;
 use Ineersa\Tui\Listener\SlashCommandSessionSyncListener;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
+use Ineersa\Tui\Runtime\TuiSessionLifecycleDispatcher;
 use Ineersa\Tui\Runtime\TuiSessionLifecycleEventDTO;
 use Ineersa\Tui\Runtime\TuiSessionLifecycleEventTypeEnum;
 use Ineersa\Tui\Runtime\TuiSessionState;
@@ -32,24 +28,6 @@ final class SlashCommandSessionSyncListenerTest extends TestCase
     public function sessionResumedLifecycleEventUpdatesActiveSessionForSlashCommands(): void
     {
         $registry = new SlashCommandRegistry();
-        $captured = new class implements SlashCommandHandler, SessionAwareSlashCommandHandler {
-            public string $sessionId = '';
-
-            public function setSessionId(string $sessionId): void
-            {
-                $this->sessionId = $sessionId;
-            }
-
-            public function handle(SlashCommand $command): TranscriptMessage
-            {
-                return new TranscriptMessage($this->sessionId, 'system');
-            }
-        };
-        $registry->register(
-            new CommandMetadata(name: 'probe', description: 'probe'),
-            $captured,
-        );
-
         $context = $this->lifecycleContext();
         (new SlashCommandSessionSyncListener($registry))->register($context);
 
@@ -61,9 +39,7 @@ final class SlashCommandSessionSyncListenerTest extends TestCase
             previousSessionId: '7',
         ));
 
-        $result = $registry->execute(new SlashCommand('probe', '', '/probe'));
-        self::assertInstanceOf(TranscriptMessage::class, $result);
-        self::assertSame('42', $result->text);
+        self::assertSame('42', $this->activeSessionId($registry));
     }
 
     #[Test]
@@ -71,24 +47,6 @@ final class SlashCommandSessionSyncListenerTest extends TestCase
     {
         $registry = new SlashCommandRegistry();
         $registry->setActiveSessionId('stale');
-        $captured = new class implements SlashCommandHandler, SessionAwareSlashCommandHandler {
-            public string $sessionId = 'unset';
-
-            public function setSessionId(string $sessionId): void
-            {
-                $this->sessionId = $sessionId;
-            }
-
-            public function handle(SlashCommand $command): TranscriptMessage
-            {
-                return new TranscriptMessage($this->sessionId, 'system');
-            }
-        };
-        $registry->register(
-            new CommandMetadata(name: 'probe', description: 'probe'),
-            $captured,
-        );
-
         $context = $this->lifecycleContext();
         (new SlashCommandSessionSyncListener($registry))->register($context);
 
@@ -100,9 +58,16 @@ final class SlashCommandSessionSyncListenerTest extends TestCase
             previousSessionId: 'stale',
         ));
 
-        $result = $registry->execute(new SlashCommand('probe', '', '/probe'));
-        self::assertInstanceOf(TranscriptMessage::class, $result);
-        self::assertSame('unset', $result->text);
+        self::assertNull($this->activeSessionId($registry));
+    }
+
+    private function activeSessionId(SlashCommandRegistry $registry): ?string
+    {
+        $ref = new \ReflectionClass($registry);
+        $prop = $ref->getProperty('activeSessionId');
+        $prop->setAccessible(true);
+
+        return $prop->getValue($registry);
     }
 
     private function lifecycleContext(): TuiRuntimeContext
@@ -116,6 +81,7 @@ final class SlashCommandSessionSyncListenerTest extends TestCase
             ->withTui($tui)
             ->withState($state)
             ->withScreen($screen)
+            ->withLifecycle(new TuiSessionLifecycleDispatcher())
             ->build();
     }
 }

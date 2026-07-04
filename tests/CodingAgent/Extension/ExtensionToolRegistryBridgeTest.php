@@ -11,7 +11,6 @@ use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Extension\ExtensionHookRegistry;
 use Ineersa\CodingAgent\Extension\ExtensionToolHandlerAdapter;
 use Ineersa\CodingAgent\Extension\ExtensionToolRegistryBridge;
-use Ineersa\CodingAgent\Extension\FileRewind\FileRewindRuntimePorts;
 use Ineersa\CodingAgent\Tests\Extension\Support\NoOpExtensionToolHandler;
 use Ineersa\CodingAgent\Tests\Extension\Support\RecordingExtensionToolHandler;
 use Ineersa\CodingAgent\Tool\ToolRegistry;
@@ -432,7 +431,7 @@ final class ExtensionToolRegistryBridgeTest extends TestCase
             $appConfig ?? $this->testAppConfig(),
             $execBridge ?? $this->dummyExecBridge(),
             $commandRegistry ?? $this->dummyCommandRegistry(),
-            new FileRewindRuntimePorts(),
+            
         );
     }
 
