@@ -169,7 +169,13 @@ final class TreePickerController
             $picker->closePicker();
         });
 
-        $this->overlay->mount($tui, $screen, $listWidget, $header);
+        $this->overlay->mount(
+            $tui,
+            $screen,
+            $listWidget,
+            $header,
+            PickerOverlayPlacementEnum::BeforeEditor,
+        );
     }
 
     /**

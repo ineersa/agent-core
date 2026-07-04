@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Tests\Picker;
 
 use Ineersa\Tui\Picker\PickerOverlay;
+use Ineersa\Tui\Picker\PickerOverlayPlacementEnum;
 use Ineersa\Tui\Screen\ChatScreen;
 use Symfony\Component\Tui\Widget\ContainerWidget;
 use Ineersa\Tui\Editor\PromptEditor;
@@ -147,9 +148,8 @@ final class PickerOverlayTest extends TestCase
         self::assertNull($overlay->screen());
     }
 
-    public function testMountUsesInsertOverlayAfterEditor(): void
+    public function testDefaultMountInsertsOverlayAfterEditor(): void
     {
-        // The overlay should mount below the editor, not at TUI root.
         $promptEditor = new PromptEditor();
         $screen = new ChatScreen(
             new DefaultTheme(new ThemePalette('test', [])),
@@ -160,6 +160,9 @@ final class PickerOverlayTest extends TestCase
         $tui = new Tui();
         $screen->mount($tui);
 
+        $editorIdx = $this->rootChildIndex($tui, $screen->promptEditor()->getWidget());
+        $footerIdx = $this->rootChildIndex($tui, $this->footerWidget($screen));
+
         $listWidget = new SelectListWidget(items: [
             ['value' => 'a', 'label' => 'A'],
         ]);
@@ -168,7 +171,84 @@ final class PickerOverlayTest extends TestCase
         $overlay = new PickerOverlay();
         $overlay->mount($tui, $screen, $listWidget, $header);
 
-        self::assertTrue($overlay->isOpen());
-        self::assertSame($listWidget, $overlay->listWidget());
+        $container = $this->pickerContainerFromOverlay($overlay);
+        $overlayIdx = $this->rootChildIndex($tui, $container);
+
+        self::assertGreaterThan($editorIdx, $overlayIdx, 'Default picker overlay must render below the editor');
+        self::assertLessThan($footerIdx, $overlayIdx, 'Default picker overlay must render above the footer');
+    }
+
+    public function testBeforeEditorMountInsertsOverlayAboveEditor(): void
+    {
+        $promptEditor = new PromptEditor();
+        $screen = new ChatScreen(
+            new DefaultTheme(new ThemePalette('test', [])),
+            'test-session',
+            $promptEditor,
+        );
+
+        $tui = new Tui();
+        $screen->mount($tui);
+
+        $editorIdx = $this->rootChildIndex($tui, $screen->promptEditor()->getWidget());
+
+        $listWidget = new SelectListWidget(items: [
+            ['value' => 'a', 'label' => 'A'],
+        ]);
+        $header = new TextWidget(text: 'Test', truncate: true);
+
+        $overlay = new PickerOverlay();
+        $overlay->mount(
+            $tui,
+            $screen,
+            $listWidget,
+            $header,
+            PickerOverlayPlacementEnum::BeforeEditor,
+        );
+
+        $container = $this->pickerContainerFromOverlay($overlay);
+        $overlayIdx = $this->rootChildIndex($tui, $container);
+
+        self::assertLessThan($editorIdx, $overlayIdx, '/tree and /rewind must opt into above-editor placement');
+    }
+
+    /**
+     * @return list<\Symfony\Component\Tui\Widget\AbstractWidget>
+     */
+    private function rootChildren(Tui $tui): array
+    {
+        $rootProp = new \ReflectionProperty(Tui::class, 'root');
+        /** @var ContainerWidget $root */
+        $root = $rootProp->getValue($tui);
+
+        return array_values($root->all());
+    }
+
+    private function rootChildIndex(Tui $tui, object $widget): int
+    {
+        $children = $this->rootChildren($tui);
+        foreach ($children as $i => $child) {
+            if ($child === $widget) {
+                return $i;
+            }
+        }
+
+        self::fail('Widget not found in TUI root children');
+    }
+
+    private function pickerContainerFromOverlay(PickerOverlay $overlay): ContainerWidget
+    {
+        $prop = new \ReflectionProperty(PickerOverlay::class, 'container');
+        /** @var ContainerWidget $container */
+        $container = $prop->getValue($overlay);
+
+        return $container;
+    }
+
+    private function footerWidget(ChatScreen $screen): object
+    {
+        $prop = new \ReflectionProperty(ChatScreen::class, 'footerWidget');
+
+        return $prop->getValue($screen);
     }
 }

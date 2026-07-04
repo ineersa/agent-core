@@ -26,20 +26,20 @@ final class PickerOverlay
     private ?ChatScreen $screen = null;
 
     /**
-     * Mount the overlay below the editor via the ChatScreen overlay API.
+     * Mount the picker overlay in the ChatScreen overlay slot.
      *
-     * Creates a ContainerWidget wrapping the header and list widgets,
-     * inserts it below the editor (same visual slot as completion menus),
-     * and sets focus to the list.
-     *
-     * Uses {@see ChatScreen::insertOverlayBeforeEditor()} so the picker
-     * renders in the dedicated overlay slot above the editor (same as
-     * question overlays). The below-editor slot shared with footer/status
-     * caused incremental ScreenWriter paint to leave stale rows and bleed
-     * footer/session text into picker lines in live tmux.
+     * Default {@see PickerOverlayPlacementEnum::AfterEditor} matches completion menus
+     * (below editor). /tree and /rewind pass {@see PickerOverlayPlacementEnum::BeforeEditor}
+     * because dynamic list rebuilds in the below-editor band caused live stale rows and
+     * footer/status bleed in tmux.
      */
-    public function mount(Tui $tui, ChatScreen $screen, SelectListWidget $listWidget, TextWidget $header): void
-    {
+    public function mount(
+        Tui $tui,
+        ChatScreen $screen,
+        SelectListWidget $listWidget,
+        TextWidget $header,
+        PickerOverlayPlacementEnum $placement = PickerOverlayPlacementEnum::AfterEditor,
+    ): void {
         if ($this->isOpen) {
             return;
         }
@@ -51,7 +51,11 @@ final class PickerOverlay
         $this->container->add($header);
         $this->container->add($this->listWidget);
 
-        $screen->insertOverlayBeforeEditor($this->container);
+        if (PickerOverlayPlacementEnum::BeforeEditor === $placement) {
+            $screen->insertOverlayBeforeEditor($this->container);
+        } else {
+            $screen->insertOverlayAfterEditor($this->container);
+        }
         $tui->setFocus($this->listWidget);
         // Force full clear+redraw on mount so ScreenWriter does not leave stale
         // picker rows in the overlay slot when incremental dirty regions miss prior list height.
@@ -90,10 +94,6 @@ final class PickerOverlay
         $this->isOpen = false;
     }
 
-    /**
-     * After SelectListWidget item rebuilds (navigation), force the overlay
-     * subtree and a full frame repaint so ScreenWriter clears prior list height.
-     */
     /**
      * After list item rebuild on navigation: invalidate overlay subtree only.
      *

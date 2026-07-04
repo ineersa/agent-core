@@ -126,7 +126,7 @@ final class FileRewindPickerController
             $picker->updateHeaderForTurn($turnNo, $targets[$selectedIdx]['title'] ?? ('Turn '.$turnNo));
             $overlayRef->invalidateListPaint($tui);
         });
-        $this->overlay->mount($tui, $screen, $list, $this->headerWidget);
+        $this->overlay->mount($tui, $screen, $list, $this->headerWidget, PickerOverlayPlacementEnum::BeforeEditor);
         $initial = $targets[$selected];
         $this->updateHeaderForTurn($initial['turnNo'], $initial['title']);
     }
@@ -242,6 +242,6 @@ final class FileRewindPickerController
             $picker->closePicker();
         });
         $this->overlay = new PickerOverlay();
-        $this->overlay->mount($this->tui, $this->screen, $list, $this->headerWidget);
+        $this->overlay->mount($this->tui, $this->screen, $list, $this->headerWidget, PickerOverlayPlacementEnum::BeforeEditor);
     }
 }
