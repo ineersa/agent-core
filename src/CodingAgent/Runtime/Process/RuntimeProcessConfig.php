@@ -52,7 +52,8 @@ final class RuntimeProcessConfig
      * Canonical runtime working directory for the agent session.
      *
      * This is the Hatfield project CWD where settings, sessions, logs,
-     * and the runtime DB (messenger.sqlite) are resolved. It is NOT
+     * and the runtime DBs (state.sqlite, messenger-transport.sqlite) are
+     * resolved. It is NOT
      * the app installation directory (kernel.project_dir).
      */
     public function runtimeCwd(): string

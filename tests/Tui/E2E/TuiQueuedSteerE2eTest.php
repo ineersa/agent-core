@@ -175,13 +175,17 @@ final class TuiQueuedSteerE2eTest extends TestCase
             ? 'HATFIELD_LLM_REPLAY_FIXTURE_PATH='.escapeshellarg($fixturePath).' '
             : '';
 
-        $dbPath = 'app_test-tui-queued-steer-'.bin2hex(random_bytes(4)).'.sqlite';
+        $paths = TuiE2eDatabaseEnv::allocatePaths('tui-queued-steer-');
+
+        $dbPath = $paths['app'];
+
+        $transportDbPath = $paths['transport'];
 
         return \sprintf(
-            'APP_ENV=test HATFIELD_TEST_DATABASE_PATH=%s HOME=%s %s %s %s agent '
+            'APP_ENV=test %sHOME=%s %s %s %s agent '
             .'--model=llama_cpp_test/test '
             .'2>&1',
-            escapeshellarg($dbPath),
+            TuiE2eDatabaseEnv::shellPrefix($dbPath, $transportDbPath),
             escapeshellarg($this->testProjectDir.'/home'),
             $fixtureEnv,
             escapeshellarg(\PHP_BINARY),

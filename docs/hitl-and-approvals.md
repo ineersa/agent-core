@@ -139,7 +139,7 @@ raw answer value.
   call. After the poll returns, the real handler runs, and only the REAL result
   reaches the LLM.
 - **Cross-process safe.** The ToolQuestion row lives in the shared SQLite DB
-  (`messenger.sqlite`), accessible from all consumer processes. The tool worker
+  (`state.sqlite`), accessible from all consumer processes. The tool worker
   blocks on the poll; the controller process writes the answer; the poll breaks.
 - **OCP-correct.** Any extension implementing `ToolCallHookInterface` +
   `ApprovalAnswerHookInterface` can drive the approval flow with its OWN
@@ -308,7 +308,7 @@ and outcome mapping.
 
 | Aspect | Effect |
 |--------|-------|
-| Tool question store | Shared SQLite (`messenger.sqlite`), accessible from all processes |
+| Tool question store | Shared SQLite (`state.sqlite`), accessible from all processes |
 | Poll location | Tool consumer process — blocks the tool-worker thread |
 | Answer location | Controller or worker process — writes to shared SQLite |
 | Polling seam | `ExtensionToolHookEventSubscriber::handleRequireApproval()` |

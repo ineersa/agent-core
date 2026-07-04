@@ -166,13 +166,17 @@ final class TuiMarkdownRenderE2eTest extends TestCase
 
         $php = \PHP_BINARY;
         $script = $this->projectRoot.'/bin/console';
-        $dbPath = 'app_test-tui-markdown-render-'.bin2hex(random_bytes(4)).'.sqlite';
+        $paths = TuiE2eDatabaseEnv::allocatePaths('tui-markdown-render-');
+
+        $dbPath = $paths['app'];
+
+        $transportDbPath = $paths['transport'];
 
         return \sprintf(
-            'APP_ENV=test HATFIELD_TEST_DATABASE_PATH=%s HOME=%s HATFIELD_LLM_REPLAY_FIXTURE_PATH=%s %s %s agent '
+            'APP_ENV=test %sHOME=%s HATFIELD_LLM_REPLAY_FIXTURE_PATH=%s %s %s agent '
                 .'--model=llama_cpp_test/test '
                 .'--tools-excluded=bash 2>&1',
-            \escapeshellarg($dbPath),
+            TuiE2eDatabaseEnv::shellPrefix($dbPath, $transportDbPath),
             \escapeshellarg($this->testProjectDir.'/home'),
             \escapeshellarg($fixturePath),
             \escapeshellarg($php),

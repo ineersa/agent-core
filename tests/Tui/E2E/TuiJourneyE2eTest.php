@@ -319,7 +319,9 @@ final class TuiJourneyE2eTest extends TestCase
         // Use an isolated test DB so StartupDatabaseMigrator can auto-migrate
         // on startup without colliding with the shared app_test.sqlite that
         // already has migrations applied.
-        $dbPath = 'app_test-tui-journey-'.bin2hex(random_bytes(4)).'.sqlite';
+        $paths = TuiE2eDatabaseEnv::allocatePaths('tui-journey');
+        $dbPath = $paths['app'];
+        $transportDbPath = $paths['transport'];
 
         // Do NOT use --prompt (auto-submit) — the journey controls
         // submission timing explicitly.  Phase 9 submits follow-up after inline shell.
@@ -327,10 +329,10 @@ final class TuiJourneyE2eTest extends TestCase
         // later submitted, ControllerReplayHttpClientFactory serves the
         // fixture response.
         return \sprintf(
-            'APP_ENV=test HATFIELD_TEST_DATABASE_PATH=%s HOME=%s %s %s %s agent '
+            'APP_ENV=test %sHOME=%s %s %s %s agent '
                 .'--model=llama_cpp_test/test '
                 .'--tools-excluded=bash 2>&1',
-            \escapeshellarg($dbPath),
+            TuiE2eDatabaseEnv::shellPrefix($dbPath, $transportDbPath),
             \escapeshellarg($this->testProjectDir.'/home'),
             $fixtureEnv,
             \escapeshellarg($php),

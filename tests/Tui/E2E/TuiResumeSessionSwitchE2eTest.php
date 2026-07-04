@@ -162,11 +162,15 @@ final class TuiResumeSessionSwitchE2eTest extends TestCase
         }
 
         $projectDir = ProjectDir::get();
-        $dbPath = 'app_test-tui-resume-'.bin2hex(random_bytes(4)).'.sqlite';
+        $paths = TuiE2eDatabaseEnv::allocatePaths('tui-resume-');
+
+        $dbPath = $paths['app'];
+
+        $transportDbPath = $paths['transport'];
 
         return \sprintf(
-            'APP_ENV=test HATFIELD_TEST_DATABASE_PATH=%s HOME=%s HATFIELD_LLM_REPLAY_FIXTURE_PATH=%s %s %s agent --model=llama_cpp_test/test --tools-excluded=bash 2>&1',
-            escapeshellarg($dbPath),
+            'APP_ENV=test %sHOME=%s HATFIELD_LLM_REPLAY_FIXTURE_PATH=%s %s %s agent --model=llama_cpp_test/test --tools-excluded=bash 2>&1',
+            TuiE2eDatabaseEnv::shellPrefix($dbPath, $transportDbPath),
             escapeshellarg($this->testProjectDir.'/home'),
             escapeshellarg($fixturePath),
             escapeshellarg(\PHP_BINARY),
