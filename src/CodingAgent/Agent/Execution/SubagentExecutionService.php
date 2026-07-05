@@ -24,6 +24,8 @@ use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionDTO;
 use Ineersa\CodingAgent\Config\AgentsConfig;
 use Ineersa\CodingAgent\Skills\SkillsContextBuilder;
 use Psr\Log\LoggerInterface;
+use Symfony\Component\Clock\ClockInterface;
+use Symfony\Component\Clock\MonotonicClock;
 use Symfony\Component\Uid\Uuid;
 
 /**
@@ -37,9 +39,8 @@ use Symfony\Component\Uid\Uuid;
  *  5. Poll child RunState until terminal, timeout, or cancellation.
  *  6. Finalize registry, handoff, and return result text.
  *
- * Only non-interactive foreground mode is supported.
- * (WaitingHuman) is unsupported — the child is cancelled and
- * the artifact is finalized as Failed (invariant failure).
+ * Foreground subagents launch as interactive-capable child runs (session.interactive=true).
+ * WaitingHuman is supported: parent progress emits waiting_human until the child resumes or is cancelled.
  */
 final class SubagentExecutionService
 {
@@ -63,6 +64,7 @@ final class SubagentExecutionService
         private readonly AgentsConfig $agentsConfig,
         private readonly SubagentProgressSnapshotBuilder $progressSnapshotBuilder,
         private readonly SubagentChildProgressSummaryBuilder $childProgressSummaryBuilder,
+        private readonly ClockInterface $clock = new MonotonicClock(),
     ) {
     }
 
@@ -140,7 +142,7 @@ final class SubagentExecutionService
                 'parent_run_id' => $parentRunId,
                 'agent_name' => $agentName,
                 'artifact_id' => $artifactId,
-                'interactive' => false,
+                'interactive' => true,
             ],
             model: $definition->model,
             reasoning: $definition->thinking,
@@ -167,11 +169,11 @@ final class SubagentExecutionService
             startedAt: $startedAt,
         );
 
-        $progressStartedHr = hrtime(true);
+        $progressStartedMicros = $this->nowMicros();
 
         // 11. Poll child until terminal, timeout, or cancellation.
         $timeoutSeconds = $this->timeoutSeconds();
-        $deadline = hrtime(true) + $timeoutSeconds * 1_000_000_000;
+        $deadline = $this->nowMicros() + $timeoutSeconds * 1_000_000;
         $context = $this->contextAccessor->current();
         $cancelToken = $context?->cancellationToken();
 
@@ -195,11 +197,27 @@ final class SubagentExecutionService
                     childState: $cancelState,
                 );
 
+                if (null !== $cancelState) {
+                    $this->emitTerminalProgressUpdate(
+                        parentRunId: $parentRunId,
+                        agentRunId: $agentRunId,
+                        agentName: $agentName,
+                        artifactId: $artifactId,
+                        taskSummary: $task,
+                        definitionModel: $definition->model,
+                        state: $cancelState,
+                        terminalStatus: 'cancelled',
+                        seq: $progressSeq,
+                        progressStartedMicros: $progressStartedMicros,
+                    );
+                    $this->advanceParentSequence($parentRunId, $progressSeq);
+                }
+
                 throw new ToolCallException($this->formatParentCancelledSingleMessage($agentName, $artifactId), retryable: false);
             }
 
             // Check timeout.
-            if (hrtime(true) > $deadline) {
+            if ($this->nowMicros() > $deadline) {
                 $this->agentRunner->cancel($agentRunId, 'Subagent timed out.');
                 $timeoutState = $this->runStore->get($agentRunId);
                 if (null !== $timeoutState) {
@@ -213,7 +231,7 @@ final class SubagentExecutionService
                         state: $timeoutState,
                         terminalStatus: 'failed',
                         seq: $progressSeq,
-                        progressStartedHr: $progressStartedHr,
+                        progressStartedMicros: $progressStartedMicros,
                     );
                     $this->advanceParentSequence($parentRunId, $progressSeq);
                     ++$progressSeq;
@@ -232,13 +250,22 @@ final class SubagentExecutionService
 
             $state = $this->runStore->get($agentRunId);
             if (null === $state) {
-                usleep(self::DEFAULT_POLL_MICROS);
+                $this->sleepPollInterval();
                 continue;
             }
 
             $status = $state->status;
 
             if (RunStatus::Running === $status || RunStatus::Queued === $status || RunStatus::Compacting === $status) {
+                $entry = $this->artifactRegistry->get($parentRunId, $artifactId);
+                if (null !== $entry && AgentArtifactStatusEnum::NeedsClarification === $entry->status) {
+                    $this->artifactRegistry->update(
+                        parentRunId: $parentRunId,
+                        artifactId: $artifactId,
+                        status: AgentArtifactStatusEnum::Running,
+                    );
+                }
+
                 $signature = $this->singleProgressSignature(
                     $parentRunId,
                     $agentRunId,
@@ -256,44 +283,50 @@ final class SubagentExecutionService
                         definitionModel: $definition->model,
                         state: $state,
                         seq: $progressSeq,
-                        progressStartedHr: $progressStartedHr,
+                        progressStartedMicros: $progressStartedMicros,
                     );
                     $this->advanceParentSequence($parentRunId, $progressSeq);
                     ++$progressSeq;
                     $lastSingleProgressSignature = $signature;
                 }
 
-                usleep(self::DEFAULT_POLL_MICROS);
+                $this->sleepPollInterval();
                 continue;
             }
 
-            // WaitingHuman should not occur for non-interactive child runs.
             if (RunStatus::WaitingHuman === $status) {
-                $this->agentRunner->cancel($agentRunId, 'Child entered unsupported WaitingHuman state.');
-                $this->emitTerminalProgressUpdate(
-                    parentRunId: $parentRunId,
-                    agentRunId: $agentRunId,
-                    agentName: $agentName,
-                    artifactId: $artifactId,
-                    taskSummary: $task,
-                    definitionModel: $definition->model,
-                    state: $state,
-                    terminalStatus: 'failed',
-                    seq: $progressSeq,
-                    progressStartedHr: $progressStartedHr,
-                );
-                $this->advanceParentSequence($parentRunId, $progressSeq);
-                ++$progressSeq;
-                $this->finalize(
+                $this->artifactRegistry->update(
                     parentRunId: $parentRunId,
                     artifactId: $artifactId,
-                    status: AgentArtifactStatusEnum::Failed,
-                    failureReason: 'Child agent attempted unsupported human interaction or approval.',
-                    summary: 'Child run entered WaitingHuman; foreground subagents are non-interactive.',
+                    status: AgentArtifactStatusEnum::NeedsClarification,
                 );
+                $signature = $this->singleProgressSignature(
+                    $parentRunId,
+                    $agentRunId,
+                    $artifactId,
+                    $state,
+                    $definition->model,
+                );
+                if (null === $lastSingleProgressSignature || $signature !== $lastSingleProgressSignature) {
+                    $this->emitProgressUpdate(
+                        parentRunId: $parentRunId,
+                        agentRunId: $agentRunId,
+                        agentName: $agentName,
+                        artifactId: $artifactId,
+                        taskSummary: $task,
+                        definitionModel: $definition->model,
+                        state: $state,
+                        seq: $progressSeq,
+                        progressStartedMicros: $progressStartedMicros,
+                        progressStatus: 'waiting_human',
+                    );
+                    $this->advanceParentSequence($parentRunId, $progressSeq);
+                    ++$progressSeq;
+                    $lastSingleProgressSignature = $signature;
+                }
 
-                return \sprintf('Subagent %s failed: unsupported human interaction or approval. Artifact: %s',
-                    $agentName, $artifactId);
+                $this->sleepPollInterval();
+                continue;
             }
 
             // Terminal states only — emit final structured snapshot before returning.
@@ -308,7 +341,7 @@ final class SubagentExecutionService
                 state: $state,
                 terminalStatus: $terminalStatus,
                 seq: $progressSeq,
-                progressStartedHr: $progressStartedHr,
+                progressStartedMicros: $progressStartedMicros,
             );
             $this->advanceParentSequence($parentRunId, $progressSeq);
             ++$progressSeq;
@@ -426,7 +459,7 @@ final class SubagentExecutionService
                         'parent_run_id' => $parentRunId,
                         'agent_name' => $launch['agentName'],
                         'artifact_id' => $launch['artifactId'],
-                        'interactive' => false,
+                        'interactive' => true,
                     ],
                     model: $launch['definition']->model,
                     reasoning: $launch['definition']->thinking,
@@ -457,12 +490,12 @@ final class SubagentExecutionService
         }
 
         $timeoutSeconds = $this->timeoutSeconds();
-        $deadline = hrtime(true) + $timeoutSeconds * 1_000_000_000;
+        $deadline = $this->nowMicros() + $timeoutSeconds * 1_000_000;
         $context = $this->contextAccessor->current();
         $cancelToken = $context?->cancellationToken();
         $progressSeq = $this->resolveNextProgressSeq($parentRunId);
         $lastProgressSignature = null;
-        $parallelProgressStartedHr = hrtime(true);
+        $parallelProgressStartedMicros = $this->nowMicros();
 
         while ($this->hasActiveParallelChildren($reports)) {
             if (null !== $cancelToken && $cancelToken->isCancellationRequested()) {
@@ -486,10 +519,20 @@ final class SubagentExecutionService
                     $reports[$agentRunId]['message'] = 'Cancelled by parent run.';
                 }
 
+                $this->emitParallelProgressUpdate(
+                    $parentRunId,
+                    $reports,
+                    $this->parallelActiveTurns($reports),
+                    $progressSeq,
+                    $parallelProgressStartedMicros,
+                    aggregateStatus: 'cancelled',
+                );
+                $this->advanceParentSequence($parentRunId, $progressSeq);
+
                 throw new ToolCallException("Parallel subagent tool cancelled by parent run.\n\n".$this->formatParallelReport($reports), retryable: false);
             }
 
-            if (hrtime(true) > $deadline) {
+            if ($this->nowMicros() > $deadline) {
                 foreach ($reports as $agentRunId => $report) {
                     if ($report['terminal']) {
                         continue;
@@ -525,22 +568,27 @@ final class SubagentExecutionService
                 $activeTurns[$agentRunId] = $state->turnNo;
                 $status = $state->status;
                 if (RunStatus::Running === $status || RunStatus::Queued === $status || RunStatus::Compacting === $status) {
+                    if (AgentArtifactStatusEnum::NeedsClarification === $reports[$agentRunId]['status']) {
+                        $this->artifactRegistry->update(
+                            parentRunId: $parentRunId,
+                            artifactId: $report['artifactId'],
+                            status: AgentArtifactStatusEnum::Running,
+                        );
+                        $reports[$agentRunId]['status'] = AgentArtifactStatusEnum::Running;
+                    }
+
                     continue;
                 }
 
                 match ($status) {
                     RunStatus::WaitingHuman => (function () use ($parentRunId, $agentRunId, $report, &$reports): void {
-                        $this->agentRunner->cancel($agentRunId, 'Child entered unsupported WaitingHuman state.');
-                        $this->finalize(
+                        $this->artifactRegistry->update(
                             parentRunId: $parentRunId,
                             artifactId: $report['artifactId'],
-                            status: AgentArtifactStatusEnum::Failed,
-                            failureReason: 'Child agent attempted unsupported human interaction or approval.',
-                            summary: 'Child run entered WaitingHuman; foreground subagents are non-interactive.',
+                            status: AgentArtifactStatusEnum::NeedsClarification,
                         );
-                        $reports[$agentRunId]['terminal'] = true;
-                        $reports[$agentRunId]['status'] = AgentArtifactStatusEnum::Failed;
-                        $reports[$agentRunId]['message'] = 'Unsupported human interaction or approval.';
+                        $reports[$agentRunId]['status'] = AgentArtifactStatusEnum::NeedsClarification;
+                        $reports[$agentRunId]['message'] = 'Waiting for human input.';
                     })(),
                     RunStatus::Completed => (function () use ($parentRunId, $agentRunId, $state, $report, &$reports): void {
                         $summary = $this->extractLastMessage($state);
@@ -586,13 +634,13 @@ final class SubagentExecutionService
 
             $signature = $this->parallelProgressSignature($parentRunId, $reports, $activeTurns);
             if (null === $lastProgressSignature || $signature !== $lastProgressSignature) {
-                $this->emitParallelProgressUpdate($parentRunId, $reports, $activeTurns, $progressSeq, $parallelProgressStartedHr);
+                $this->emitParallelProgressUpdate($parentRunId, $reports, $activeTurns, $progressSeq, $parallelProgressStartedMicros);
                 $this->advanceParentSequence($parentRunId, $progressSeq);
                 ++$progressSeq;
                 $lastProgressSignature = $signature;
             }
 
-            usleep(self::DEFAULT_POLL_MICROS);
+            $this->sleepPollInterval();
         }
 
         $this->emitParallelProgressUpdate(
@@ -600,7 +648,7 @@ final class SubagentExecutionService
             $reports,
             $this->parallelActiveTurns($reports),
             $progressSeq,
-            $parallelProgressStartedHr,
+            $parallelProgressStartedMicros,
             aggregateStatus: $this->resolveParallelAggregateStatus($reports),
         );
         $this->advanceParentSequence($parentRunId, $progressSeq);
@@ -729,6 +777,12 @@ final class SubagentExecutionService
                 continue;
             }
 
+            if (AgentArtifactStatusEnum::NeedsClarification === $report['status']) {
+                $parts[] = $agentRunId.':waiting_human:'.(string) ($activeTurns[$agentRunId] ?? 0);
+
+                continue;
+            }
+
             $enrichment = $enrichmentByRun[$agentRunId] ?? null;
             if (null === $enrichment) {
                 $parts[] = $agentRunId.':active:'.($activeTurns[$agentRunId] ?? 0);
@@ -791,7 +845,7 @@ final class SubagentExecutionService
         array $reports,
         array $activeTurns,
         int $seq,
-        int $progressStartedHr,
+        int $progressStartedMicros,
         string $aggregateStatus = 'running',
     ): void {
         $context = $this->contextAccessor->current();
@@ -799,7 +853,7 @@ final class SubagentExecutionService
             return;
         }
 
-        $elapsedMs = (int) ((hrtime(true) - $progressStartedHr) / 1_000_000);
+        $elapsedMs = $this->elapsedMsSince($progressStartedMicros);
         $enrichmentByRun = $this->buildParallelEnrichmentByRun($parentRunId, $reports);
 
         $progress = $this->progressSnapshotBuilder->parallelSnapshot(
@@ -1230,14 +1284,14 @@ TXT;
         RunState $state,
         string $terminalStatus,
         int $seq,
-        int $progressStartedHr,
+        int $progressStartedMicros,
     ): void {
         $context = $this->contextAccessor->current();
         if (null === $context) {
             return;
         }
 
-        $elapsedMs = (int) ((hrtime(true) - $progressStartedHr) / 1_000_000);
+        $elapsedMs = $this->elapsedMsSince($progressStartedMicros);
         $enrichment = $this->childProgressSummaryBuilder->summarize(
             $parentRunId,
             $agentRunId,
@@ -1388,14 +1442,15 @@ TXT;
         ?string $definitionModel,
         RunState $state,
         int $seq,
-        int $progressStartedHr,
+        int $progressStartedMicros,
+        string $progressStatus = 'running',
     ): void {
         $context = $this->contextAccessor->current();
         if (null === $context) {
             return;
         }
 
-        $elapsedMs = (int) ((hrtime(true) - $progressStartedHr) / 1_000_000);
+        $elapsedMs = $this->elapsedMsSince($progressStartedMicros);
         $enrichment = $this->childProgressSummaryBuilder->summarize(
             $parentRunId,
             $agentRunId,
@@ -1411,6 +1466,7 @@ TXT;
             $state,
             $elapsedMs,
             $enrichment,
+            $progressStatus,
         );
         $this->appendSubagentProgressEvent($parentRunId, $context, $seq, $progress);
     }
@@ -1577,5 +1633,24 @@ TXT;
     private function timeoutSeconds(): int
     {
         return $this->agentsConfig->subagentToolTimeoutSeconds;
+    }
+
+    private function nowMicros(): int
+    {
+        $instant = $this->clock->now();
+        $seconds = (int) $instant->format('U');
+        $micro = (int) $instant->format('u');
+
+        return ($seconds * 1_000_000) + $micro;
+    }
+
+    private function sleepPollInterval(): void
+    {
+        $this->clock->sleep(self::DEFAULT_POLL_MICROS / 1_000_000);
+    }
+
+    private function elapsedMsSince(int $startedMicros): int
+    {
+        return (int) (($this->nowMicros() - $startedMicros) / 1000);
     }
 }

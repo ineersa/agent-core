@@ -20,6 +20,9 @@ use Ineersa\Tui\Editor\PromptEditor;
 use Ineersa\Tui\Listener\SubmitListener;
 use Ineersa\Tui\Question\QuestionController;
 use Ineersa\Tui\Question\QuestionCoordinator;
+use Ineersa\Tui\Question\QuestionKind;
+use Ineersa\Tui\Question\QuestionRequest;
+use Ineersa\Tui\Question\QuestionSource;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
 use Ineersa\Tui\Runtime\SubagentLiveChildDTO;
 use Ineersa\Tui\Runtime\SubagentLiveStatusEnum;
@@ -80,7 +83,7 @@ final class SubmitListenerSubagentLiveInputTest extends TestCase
 
         $screen = $this->dispatchSubmit('next step please');
 
-        $this->assertStringContainsString('Sent steer to subagent scout', $this->agentsLiveStatus($screen));
+        $this->assertStringContainsString('Sent steer to subagent scout', $this->liveWorkingMessage($screen));
         $this->assertSame([], $this->state->transcript, 'Child-directed text must not echo into parent transcript');
     }
 
@@ -94,8 +97,8 @@ final class SubmitListenerSubagentLiveInputTest extends TestCase
 
         $screen = $this->dispatchSubmit('continue after completion');
 
-        $this->assertStringContainsString('/agents-main', $this->agentsLiveStatus($screen));
-        $this->assertStringContainsString('finished', strtolower($this->agentsLiveStatus($screen)));
+        $this->assertStringContainsString('/agents-main', $this->liveWorkingMessage($screen));
+        $this->assertStringContainsString('finished', strtolower($this->liveWorkingMessage($screen)));
         $this->assertNotEmpty($this->state->subagentLiveView->childTranscript);
         $this->assertSame(TranscriptBlockKindEnum::Error, $this->state->subagentLiveView->childTranscript[0]->kind);
         $this->assertSame(RunActivityStateEnum::Completed, $this->state->subagentLiveView->childActivity);
@@ -109,7 +112,7 @@ final class SubmitListenerSubagentLiveInputTest extends TestCase
 
         foreach (['/new', '/resume sid', '/tasks', '/rename x', '!pwd'] as $text) {
             $screen = $this->dispatchSubmit($text);
-            $this->assertStringContainsString('/agents-main', $this->agentsLiveStatus($screen), $text);
+            $this->assertStringContainsString('/agents-main', $this->liveWorkingMessage($screen), $text);
             $this->assertSame(0, $this->handlerCalls[$text] ?? 0, $text);
             $this->assertNotEmpty($this->state->subagentLiveView->childTranscript, $text);
             $this->assertSame(
@@ -131,6 +134,34 @@ final class SubmitListenerSubagentLiveInputTest extends TestCase
         $this->enterLiveView('child-run-1', RunActivityStateEnum::Running);
         $this->dispatchSubmit('/agents-live');
         $this->assertGreaterThan(0, $this->handlerCalls['/agents-live'] ?? 0);
+    }
+
+    #[Test]
+    public function liveViewNavigationSlashBypassesActiveQuestionAnswer(): void
+    {
+        $answered = false;
+        $this->questionCoordinator->enqueue(
+            new QuestionRequest(
+                requestId: 'child_hitl_submit_bypass',
+                source: QuestionSource::AgentCore,
+                kind: QuestionKind::Text,
+                prompt: 'Which file should the scout inspect next?',
+                schema: ['type' => 'string'],
+                runId: 'child-run-1',
+                questionId: 'q_submit_bypass',
+            ),
+            onAnswer: static function (mixed $answer) use (&$answered): void {
+                $answered = true;
+            },
+        );
+
+        $this->client->expects($this->never())->method('send');
+
+        $this->dispatchSubmit('/agents-live');
+
+        $this->assertGreaterThan(0, $this->handlerCalls['/agents-live'] ?? 0);
+        $this->assertFalse($answered, 'Navigation slash must not be consumed as the active question answer');
+        $this->assertTrue($this->questionCoordinator->actionRequired(), 'Question must remain active after navigation slash');
     }
 
     #[Test]
@@ -189,13 +220,13 @@ final class SubmitListenerSubagentLiveInputTest extends TestCase
         );
     }
 
-    private function agentsLiveStatus(ChatScreen $screen): string
+    private function liveWorkingMessage(ChatScreen $screen): string
     {
         $ref = new \ReflectionClass(ChatScreen::class);
-        $prop = $ref->getProperty('footerDataProvider');
-        $provider = $prop->getValue($screen);
+        $prop = $ref->getProperty('registry');
+        $registry = $prop->getValue($screen);
 
-        return $provider->getStatusEntries()['agents-live'] ?? '';
+        return $registry->getWorkingMessage();
     }
 
     private function dispatchSubmit(string $text): ChatScreen

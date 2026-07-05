@@ -22,6 +22,7 @@ use Ineersa\Tui\Command\TranscriptMessage;
 use Ineersa\Tui\Question\QuestionController;
 use Ineersa\Tui\Question\QuestionCoordinator;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
+use Ineersa\Tui\Runtime\SubagentLiveAttention;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Screen\ChatScreen;
@@ -85,8 +86,22 @@ final class SubmitListener implements TuiListenerRegistrar
 
             // ── Question interception: route editor text to active question ──
             if ($questionCoordinator->actionRequired()) {
+                if ($state->subagentLiveView->active && $subagentLiveInputPolicy->isAllowedLiveViewNavigationSlash($text)) {
+                    $commandResult = $router->route($text);
+                    if (null !== $commandResult && !($commandResult instanceof DispatchRuntime) && !($commandResult instanceof DispatchShellCommand)) {
+                        self::applyCommandResult($commandResult, $state, $screen, $sessionStore, $tui, $blockFactory);
+
+                        return;
+                    }
+                }
+
+                $active = $questionCoordinator->activeRequest();
+                $answerRunId = null !== $active ? $active->runId : null;
                 $questionCoordinator->answer($text);
                 $questionController->close();
+                if (null !== $answerRunId && '' !== $answerRunId) {
+                    SubagentLiveAttention::clearWaitingHumanForRun($state, $screen, $answerRunId);
+                }
 
                 return;
             }
@@ -533,7 +548,7 @@ final class SubmitListener implements TuiListenerRegistrar
     ): void {
         $child = $state->subagentLiveView->selected;
         if (null === $child) {
-            $screen->setStatus('agents-live', 'No subagent selected for live view.');
+            $screen->setWorkingMessage('No subagent selected for live view.');
 
             return;
         }
@@ -560,9 +575,9 @@ final class SubmitListener implements TuiListenerRegistrar
             // Let TickPollListener re-apply the computed parent|child working line on the next tick.
             $state->subagentLiveView->lastLiveWorkingMessage = null;
 
-            $screen->setStatus('agents-live', $policy->dispatchConfirmationMessage($commandType, $child->agentName));
+            $screen->setWorkingMessage($policy->dispatchConfirmationMessage($commandType, $child->agentName));
         } catch (\Throwable $e) {
-            $screen->setStatus('agents-live', 'Failed to send to subagent: '.$e->getMessage());
+            $screen->setWorkingMessage('Failed to send to subagent: '.$e->getMessage());
             $logger->error('SubmitListener: child live steer/follow_up failed', [
                 'component' => 'SubmitListener',
                 'event_type' => 'child_live_dispatch_failed',
@@ -587,7 +602,7 @@ final class SubmitListener implements TuiListenerRegistrar
             \count($state->subagentLiveView->childTranscript) + 1,
         );
         $screen->setTranscriptBlocks($state->subagentLiveView->childTranscript);
-        $screen->setStatus('agents-live', $message);
+        $screen->setWorkingMessage($message);
     }
 
     private static function showLiveViewTerminalChildInput(
@@ -603,7 +618,7 @@ final class SubmitListener implements TuiListenerRegistrar
             \count($state->subagentLiveView->childTranscript) + 1,
         );
         $screen->setTranscriptBlocks($state->subagentLiveView->childTranscript);
-        $screen->setStatus('agents-live', $message);
+        $screen->setWorkingMessage($message);
     }
 
     private static function blockForTranscriptMessage(

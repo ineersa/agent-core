@@ -131,7 +131,7 @@ final readonly class AgentPromptBuilder
             role: 'user-context',
             content: [[
                 'type' => 'text',
-                'text' => $this->buildNonInteractiveContract(
+                'text' => $this->buildInteractiveForegroundContract(
                     artifactId: $artifactId,
                     allowedTools: $allowedTools,
                 ),
@@ -153,7 +153,7 @@ final readonly class AgentPromptBuilder
     /**
      * @param list<string> $allowedTools
      */
-    private function buildNonInteractiveContract(
+    private function buildInteractiveForegroundContract(
         string $artifactId,
         array $allowedTools,
     ): string {
@@ -167,14 +167,13 @@ You are a foreground child agent running inside a parent agent's tool call.
 Artifact ID: {$artifactId}
 Allowed tools: {$toolList}
 
-## Non-interactive contract
+## Interactive foreground contract
 
-- You are a non-interactive foreground worker.
-- Return a dense, complete handoff. Do NOT ask the human interactively.
-- If you lack information or need approval/HITL, STOP and explain exactly what
-  information or approval is needed. Do NOT enter an interactive waiting state.
-- Do NOT ask questions mid-run. If you cannot continue, return a handoff
-  explaining what's missing and why.
+- You are an interactive foreground child agent. You may use ask_human and tool
+  approval flows when clarification or approval is truly necessary to complete the task.
+- Return a dense, complete handoff when finished. Prefer concrete file paths, class names,
+  and code snippets over vague descriptions.
+- Do not block on optional questions; ask only when the task cannot proceed safely without input.
 - Your handoff will be returned to the parent LLM as the tool result.
 - Be concise. Prefer concrete file paths, class names, and code snippets
   over vague descriptions.

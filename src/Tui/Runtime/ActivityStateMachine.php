@@ -152,6 +152,8 @@ final class ActivityStateMachine
             RuntimeEventTypeEnum::RunStarted->value,
             RuntimeEventTypeEnum::TurnStarted->value,
             RuntimeEventTypeEnum::UserMessageSubmitted->value,
+            RuntimeEventTypeEnum::HumanInputRequested->value,
+            RuntimeEventTypeEnum::ApprovalRequested->value,
             RuntimeEventTypeEnum::ToolCallStarted->value,
             RuntimeEventTypeEnum::ToolCallArgumentsDelta->value,
             RuntimeEventTypeEnum::ToolCallArgumentsCompleted->value,

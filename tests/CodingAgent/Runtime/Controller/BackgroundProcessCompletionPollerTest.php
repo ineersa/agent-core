@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Runtime\Controller;
 
 use Doctrine\ORM\EntityManagerInterface;
+use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
+use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
 use Ineersa\CodingAgent\Entity\BackgroundProcess;
 use Ineersa\CodingAgent\Entity\BackgroundProcessStatusEnum;
@@ -258,6 +260,7 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
                 logger: $this->createStub(LoggerInterface::class),
             ),
             logger: $this->createStub(LoggerInterface::class),
+            artifactRegistry: self::getContainer()->get(AgentArtifactRegistry::class),
             sessionId: '',
         );
 
@@ -305,7 +308,7 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
         $lifecycle = new ProcessLifecycle($bgConfig, new NullLogger());
         $manager = new BackgroundProcessManager($store, $lifecycle, $bgConfig, new NullLogger());
 
-        $poller = $this->createPoller($store, $manager);
+        $poller = $this->createPoller($store, $manager, 'test-regression-run');
         $ref = new \ReflectionMethod($poller, 'poll');
         $ref->invoke($poller);
 
@@ -324,6 +327,94 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
         $this->assertNotNull($entity->finishedAt, 'finishedAt must be populated after refresh');
         $this->assertSame(BackgroundProcessStatusEnum::Finished, $entity->status);
         $this->assertNotNull($entity->completionNotifiedAt, 'completionNotifiedAt must be set after notification');
+    }
+
+    public function testPollNotifiesChildSessionBackgroundCompletion(): void
+    {
+        $registry = self::getContainer()->get(AgentArtifactRegistry::class);
+        $registry->create(
+            parentRunId: 'test-poller-run',
+            artifactId: 'agent_child_bg',
+            agentRunId: 'child-run-bg',
+            agentName: 'scout',
+            kind: AgentArtifactKindEnum::Subagent,
+        );
+
+        $logPath = $this->tmpDir.'/child-bg.log';
+        file_put_contents($logPath, "child background output\n");
+        $now = new \DateTimeImmutable();
+
+        $this->persistProcess(
+            pid: 60001,
+            logPath: $logPath,
+            command: 'sleep 1',
+            backgroundedAt: $now->modify('-30 seconds'),
+            finishedAt: $now,
+            exitCode: 0,
+            status: BackgroundProcessStatusEnum::Finished,
+            sessionId: 'child-run-bg',
+        );
+
+        $store = self::getContainer()->get(ProcessStore::class);
+        $bgConfig = $this->createBgConfig();
+        $lifecycle = new ProcessLifecycle($bgConfig, new NullLogger());
+        $manager = new BackgroundProcessManager($store, $lifecycle, $bgConfig, new NullLogger());
+
+        $poller = $this->createPoller($store, $manager);
+        $ref = new \ReflectionMethod($poller, 'poll');
+        $ref->invoke($poller);
+
+        $this->assertCount(1, $this->sentCommands);
+        [$runId, $command] = $this->sentCommands[0];
+        $this->assertSame('child-run-bg', $runId);
+        $this->assertSame('append_message', $command->type);
+        $this->assertStringContainsString('[BG_PROCESS_DONE]', $command->text ?? '');
+    }
+
+    public function testPollIgnoresForeignSessionWhenControllerScoped(): void
+    {
+        $now = new \DateTimeImmutable();
+        $foreignLog = $this->tmpDir.'/foreign-bg.log';
+        file_put_contents($foreignLog, "foreign output\n");
+        $ownedLog = $this->tmpDir.'/owned-bg.log';
+        file_put_contents($ownedLog, "owned output\n");
+
+        $this->persistProcess(
+            pid: 70001,
+            logPath: $foreignLog,
+            command: 'sleep 1',
+            backgroundedAt: $now->modify('-30 seconds'),
+            finishedAt: $now,
+            exitCode: 0,
+            status: BackgroundProcessStatusEnum::Finished,
+            sessionId: 'foreign-other-session',
+        );
+
+        $this->persistProcess(
+            pid: 70002,
+            logPath: $ownedLog,
+            command: 'sleep 2',
+            backgroundedAt: $now->modify('-30 seconds'),
+            finishedAt: $now,
+            exitCode: 0,
+            status: BackgroundProcessStatusEnum::Finished,
+            sessionId: 'test-poller-run',
+        );
+
+        $store = self::getContainer()->get(ProcessStore::class);
+        $bgConfig = $this->createBgConfig();
+        $lifecycle = new ProcessLifecycle($bgConfig, new NullLogger());
+        $manager = new BackgroundProcessManager($store, $lifecycle, $bgConfig, new NullLogger());
+
+        $poller = $this->createPoller($store, $manager, 'test-poller-run');
+        $ref = new \ReflectionMethod($poller, 'poll');
+        $ref->invoke($poller);
+
+        $this->assertCount(1, $this->sentCommands);
+        [$runId, $command] = $this->sentCommands[0];
+        $this->assertSame('test-poller-run', $runId);
+        $this->assertStringContainsString('PID 70002', $command->text ?? '');
+        $this->assertStringNotContainsString('PID 70001', $command->text ?? '');
     }
 
     /**
@@ -375,7 +466,7 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
         );
     }
 
-    private function createPoller(ProcessStore $store, BackgroundProcessManager $manager): BackgroundProcessCompletionPoller
+    private function createPoller(ProcessStore $store, BackgroundProcessManager $manager, ?string $controllerSessionId = 'test-poller-run'): BackgroundProcessCompletionPoller
     {
         return new BackgroundProcessCompletionPoller(
             processStore: $store,
@@ -387,6 +478,8 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
                 logger: $this->createStub(LoggerInterface::class),
             ),
             logger: $this->createStub(LoggerInterface::class),
+            artifactRegistry: self::getContainer()->get(AgentArtifactRegistry::class),
+            sessionId: $controllerSessionId,
         );
     }
 

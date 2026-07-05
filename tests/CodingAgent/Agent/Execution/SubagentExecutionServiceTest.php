@@ -51,6 +51,8 @@ use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tool\ToolRegistryInterface;
 use PHPUnit\Framework\Attributes\CoversClass;
+use Symfony\Component\Clock\MockClock;
+use Symfony\Component\Clock\NativeClock;
 
 #[CoversClass(SubagentExecutionService::class)]
 final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
@@ -260,34 +262,30 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
         $this->assertSame('Tool call failed: file not found', $entries[0]->failureReason);
     }
 
-    public function testWaitingHumanFinalizesAsFailedUnsupportedInteraction(): void
+    public function testWaitingHumanKeepsPollingUntilChildCompletes(): void
     {
         $waitingState = new RunState(
             runId: 'child-waiting',
             status: RunStatus::WaitingHuman,
             version: 2,
+            messages: [],
+        );
+        $completedState = new RunState(
+            runId: 'child-waiting',
+            status: RunStatus::Completed,
+            version: 3,
             messages: [
-                new AgentMessage(
-                    role: 'assistant',
-                    content: [
-                        ['type' => 'text', 'text' => 'Would you like me to delete Foo.php?'],
-                    ],
-                ),
+                new AgentMessage(role: 'assistant', content: [['type' => 'text', 'text' => 'Done after answer.']]),
             ],
         );
 
         $runStore = $this->createStub(RunStoreInterface::class);
-        $runStore->method('get')->willReturn($waitingState);
+        $runStore->method('get')->willReturnOnConsecutiveCalls($waitingState, $waitingState, $completedState);
 
         $parentRunStore = $this->createStub(RunStoreInterface::class);
-
         $agentRunner = $this->createMock(AgentRunnerInterface::class);
         $agentRunner->expects($this->once())->method('start');
-        $agentRunner->expects($this->once())->method('cancel')
-            ->with(
-                $this->callback(static fn (mixed $id): bool => \is_string($id)),
-                $this->stringContains('WaitingHuman'),
-            );
+        $agentRunner->expects($this->never())->method('cancel');
 
         $def = new AgentDefinitionDTO(
             name: 'asker',
@@ -323,15 +321,12 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             childProgressSummaryBuilder: new SubagentChildProgressSummaryBuilder(self::getContainer()->get(AgentChildRunEventStoreFactory::class)),
         );
 
-        $result = $service->execute('parent-3', 'asker', 'Should I delete Foo.php?');
+        $result = $service->execute('parent-waiting', 'asker', 'Need clarification');
 
-        $this->assertStringContainsString('unsupported human interaction', $result);
-        $this->assertStringContainsString('Artifact:', $result);
-
-        // Verify artifact finalized as Failed.
-        $entries = $registry->list('parent-3');
+        $this->assertStringContainsString('Done after answer', $result);
+        $entries = $registry->list('parent-waiting');
         $this->assertCount(1, $entries);
-        $this->assertSame(AgentArtifactStatusEnum::Failed, $entries[0]->status);
+        $this->assertSame(AgentArtifactStatusEnum::Completed, $entries[0]->status);
     }
 
     public function testNestedSubagentLaunchBlockedWhenParentIsAgentChild(): void
@@ -1141,6 +1136,90 @@ CHILD_SKILL_BODY_UNIQUE',
         $this->assertStringContainsString('AGENTS_INHERIT_OK', $capturedInput->systemPrompt);
     }
 
+    public function testInternalPollTimeoutCancelsChildAndMarksArtifactFailed(): void
+    {
+        $runningState = new RunState(
+            runId: 'child-timeout-1',
+            status: RunStatus::Running,
+            version: 1,
+            turnNo: 2,
+            lastSeq: 4,
+            messages: [],
+            pendingToolCalls: ['tc-bash-1' => true],
+        );
+
+        $runStore = $this->createStub(RunStoreInterface::class);
+        $runStore->method('get')->willReturn($runningState);
+
+        $agentRunner = $this->createMock(AgentRunnerInterface::class);
+        $agentRunner->expects($this->once())
+            ->method('start')
+            ->willReturnCallback(static function (StartRunInput $input): string {
+                return $input->runId;
+            });
+        $agentRunner->expects($this->once())
+            ->method('cancel')
+            ->with($this->anything(), 'Subagent timed out.');
+
+        $def = new AgentDefinitionDTO(
+            name: 'scout',
+            description: 'Scout',
+            tools: ['read'],
+            mcp: new McpPolicyDTO(mode: McpAgentModeEnum::None),
+            instructions: 'Scout instructions.',
+        );
+
+        $registry = self::getContainer()->get(AgentArtifactRegistry::class);
+        $contextAccessor = new StackToolExecutionContextAccessor();
+        $toolContext = new ToolContext(
+            runId: 'parent-timeout-single',
+            turnNo: 1,
+            toolCallId: 'tc-timeout-single',
+            toolName: 'subagent',
+            cancellationToken: new NullCancellationToken(),
+            timeoutSeconds: null,
+        );
+        $appendedEvents = [];
+        $eventStore = $this->createStub(EventStoreInterface::class);
+        $eventStore->method('append')
+            ->willReturnCallback(static function (RunEvent $event) use (&$appendedEvents): void {
+                $appendedEvents[] = $event;
+            });
+        $eventStore->method('allFor')
+            ->willReturnCallback(static function (string $runId) use (&$appendedEvents): array {
+                return array_values(array_filter(
+                    $appendedEvents,
+                    static fn (RunEvent $e): bool => $e->runId === $runId,
+                ));
+            });
+
+        $service = $this->makeService([
+            'catalog' => new AgentDefinitionCatalog([$def]),
+            'agentRunner' => $agentRunner,
+            'runStore' => $runStore,
+            'eventStore' => $eventStore,
+            'contextAccessor' => $contextAccessor,
+            'agentsConfig' => new AgentsConfig(subagentToolTimeoutSeconds: 60),
+            'clock' => new MockClock(),
+        ]);
+
+        $result = $contextAccessor->with($toolContext, static fn (): string => $service->execute('parent-timeout-single', 'scout', 'Long task'));
+
+        $this->assertStringContainsString('timed out after 60 seconds', $result);
+        $this->assertStringContainsString('Artifact: agent_', $result);
+
+        $entries = $registry->list('parent-timeout-single');
+        $this->assertCount(1, $entries);
+        $this->assertSame(AgentArtifactStatusEnum::Failed, $entries[0]->status);
+
+        $progressEvents = array_values(array_filter(
+            $appendedEvents,
+            static fn (RunEvent $e): bool => RunEventTypeEnum::ToolExecutionUpdate->value === $e->type,
+        ));
+        $this->assertNotEmpty($progressEvents);
+        $this->assertSame('failed', $progressEvents[\count($progressEvents) - 1]->payload['subagent_progress']['status'] ?? null);
+    }
+
     public function testParentCancellationSingleSubagentThrowsRichMessageAndWritesCancelledHandoff(): void
     {
         $runningState = new RunState(
@@ -1196,11 +1275,26 @@ CHILD_SKILL_BODY_UNIQUE',
             timeoutSeconds: 120,
         );
 
+        $appendedEvents = [];
+        $eventStore = $this->createStub(EventStoreInterface::class);
+        $eventStore->method('append')
+            ->willReturnCallback(static function (RunEvent $event) use (&$appendedEvents): void {
+                $appendedEvents[] = $event;
+            });
+        $eventStore->method('allFor')
+            ->willReturnCallback(static function (string $runId) use (&$appendedEvents): array {
+                return array_values(array_filter(
+                    $appendedEvents,
+                    static fn (RunEvent $e): bool => $e->runId === $runId,
+                ));
+            });
+
         $service = $this->makeService([
             'catalog' => new AgentDefinitionCatalog([$def]),
             'agentRunner' => $agentRunner,
             'runStore' => $runStore,
             'contextAccessor' => $contextAccessor,
+            'eventStore' => $eventStore,
         ]);
 
         try {
@@ -1222,7 +1316,12 @@ CHILD_SKILL_BODY_UNIQUE',
         $this->assertStringContainsString('## Partial context', $handoff);
         $this->assertStringContainsString('turn_no: 3', $handoff);
         $this->assertStringContainsString('Partial scout findings before cancel.', $handoff);
-        $this->assertStringContainsString('agent_retrieve', $handoff);
+        $progressEvents = array_values(array_filter(
+            $appendedEvents,
+            static fn (RunEvent $e): bool => RunEventTypeEnum::ToolExecutionUpdate->value === $e->type,
+        ));
+        $this->assertCount(1, $progressEvents);
+        $this->assertSame('cancelled', $progressEvents[0]->payload['subagent_progress']['status'] ?? null);
     }
 
     public function testChildRunCancelledStatusIncludesPartialContextInHandoff(): void
@@ -1555,6 +1654,7 @@ CHILD_SKILL_BODY_UNIQUE',
             'agentsConfig' => new AgentsConfig(maxAgents: 8),
             'progressSnapshotBuilder' => new \Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder(),
             'childProgressSummaryBuilder' => new SubagentChildProgressSummaryBuilder(self::getContainer()->get(AgentChildRunEventStoreFactory::class)),
+            'clock' => new NativeClock(),
         ];
 
         $args = array_merge($defaults, $overrides);
@@ -1577,6 +1677,7 @@ CHILD_SKILL_BODY_UNIQUE',
             agentsConfig: $args['agentsConfig'],
             progressSnapshotBuilder: $args['progressSnapshotBuilder'],
             childProgressSummaryBuilder: $args['childProgressSummaryBuilder'],
+            clock: $args['clock'],
         );
     }
 }

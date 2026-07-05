@@ -26,6 +26,14 @@ final class SubagentLiveViewState
 
     public float $childLastPoll = 0.0;
 
+    /**
+     * Per-child transcript/seq cache keyed by agentRunId so switching picker rows
+     * does not discard completed transcripts (JSONL pipe events are consumed once).
+     *
+     * @var array<string, array{transcript: list<TranscriptBlock>, lastSeq: int, lastPoll: float, activity: RunActivityStateEnum}>
+     */
+    public array $childCaches = [];
+
     public RunActivityStateEnum $childActivity = RunActivityStateEnum::Idle;
 
     /**
@@ -53,9 +61,51 @@ final class SubagentLiveViewState
         return [] === $this->childTranscript;
     }
 
+    public function persistCurrentChildCache(): void
+    {
+        if (null === $this->selected || '' === $this->selected->agentRunId) {
+            return;
+        }
+
+        $this->childCaches[$this->selected->agentRunId] = [
+            'transcript' => $this->childTranscript,
+            'lastSeq' => $this->childLastSeq,
+            'lastPoll' => $this->childLastPoll,
+            'activity' => $this->childActivity,
+        ];
+    }
+
+    public function restoreChildCacheFor(SubagentLiveChildDTO $child): void
+    {
+        $cached = $this->childCaches[$child->agentRunId] ?? null;
+        if (null === $cached) {
+            return;
+        }
+
+        $this->childTranscript = $cached['transcript'];
+        $this->childLastSeq = $cached['lastSeq'];
+        $this->childLastPoll = $cached['lastPoll'];
+        $this->childActivity = $cached['activity'];
+    }
+
     public function enter(SubagentLiveChildDTO $child): void
     {
         $this->active = true;
+
+        if (!$this->isSameChild($child)) {
+            $this->persistCurrentChildCache();
+        }
+
+        $cached = $this->childCaches[$child->agentRunId] ?? null;
+        if (null !== $cached && [] !== $cached['transcript']) {
+            $this->selected = $child;
+            $this->childTranscript = $cached['transcript'];
+            $this->childLastSeq = $cached['lastSeq'];
+            $this->childLastPoll = $cached['lastPoll'];
+            $this->childActivity = $cached['activity'];
+
+            return;
+        }
 
         if ($this->shouldResetProjectionFor($child)) {
             $this->selected = $child;
