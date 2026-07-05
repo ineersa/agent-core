@@ -307,20 +307,13 @@ final class TuiFileRewindE2eTest extends TestCase
 
     private function confirmRestoreFilesToSelectedTurn(TmuxPane $pane): string
     {
+        // v1 /rewind restores files directly on Enter (no secondary action menu).
         $this->tmux->waitForCallback(
             $pane,
-            static fn (string $cap): bool => str_contains($cap, 'Restore files to this turn'),
-            timeout: 10.0,
-            message: 'File rewind action menu did not appear',
-            history: 2000,
-        );
-        $this->tmux->sendKey($pane, 'Enter');
-
-        $this->tmux->waitForCallback(
-            $pane,
-            static fn (string $cap): bool => !str_contains($cap, 'choose action'),
+            static fn (string $cap): bool => !str_contains($cap, 'File rewind — select checkpoint')
+                && !str_contains($cap, 'Checkpoint turn'),
             timeout: 15.0,
-            message: 'Restore action menu did not close',
+            message: 'File rewind picker did not close after restore',
             history: 2000,
         );
 
@@ -437,7 +430,7 @@ final class TuiFileRewindE2eTest extends TestCase
             'extensions' => [
                 'enabled' => [
                     'Ineersa\\CodingAgent\\Extension\\Builtin\\SafeGuard\\SafeGuardExtension',
-                    'Ineersa\\CodingAgent\\Extension\\Builtin\\FileRewind\\FileRewindExtension',
+                    'Ineersa\\HatfieldExt\\FileRewind\\FileRewindExtension',
                 ],
                 'settings' => [
                     'file_rewind' => ['enabled' => true, 'max_retained_turns' => 100, 'max_file_bytes' => 2097152],
