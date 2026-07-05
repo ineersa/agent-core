@@ -135,11 +135,10 @@ final class TuiFileRewindE2eTest extends TestCase
             $this->submitPrompt($pane, 'Edit target.txt');
             $this->waitAssistantBlock($pane);
             $this->assertNotStuckWorking($pane);
-
-            self::assertStringContainsString(
+            $this->waitForTargetFileContains(
                 'after',
-                (string) file_get_contents($this->testProjectDir.'/target.txt'),
-                'Edit tool must change target.txt from before to after',
+                timeoutSeconds: TmuxHarness::TUI_GATE_CALLBACK_TIMEOUT_PARALLEL,
+                message: 'Edit tool must change target.txt from before to after',
             );
 
             $this->openRewindTurnPicker($pane);
@@ -187,6 +186,24 @@ final class TuiFileRewindE2eTest extends TestCase
         $hash = hash('sha256', str_replace('\\', '/', $real));
 
         return $this->testProjectDir.'/.hatfield/rewind/snapshots/'.$hash.'/ledger.json';
+    }
+
+    private function waitForTargetFileContains(string $needle, float $timeoutSeconds = 30.0, string $message = ''): void
+    {
+        $path = $this->testProjectDir.'/target.txt';
+        $deadline = microtime(true) + $timeoutSeconds;
+        while (microtime(true) < $deadline) {
+            if (is_file($path)) {
+                $contents = (string) file_get_contents($path);
+                if (str_contains($contents, $needle)) {
+                    return;
+                }
+            }
+            usleep(100_000);
+        }
+
+        $final = is_file($path) ? (string) file_get_contents($path) : '(missing)';
+        self::fail($message !== '' ? $message : 'Timed out waiting for target.txt to contain '.$needle.'; final='.$final);
     }
 
     private function waitForTurnCheckpointRecorded(int $turnNo, float $timeoutSeconds = 20.0): void
