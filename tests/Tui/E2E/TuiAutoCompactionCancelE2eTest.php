@@ -50,14 +50,14 @@ final class TuiAutoCompactionCancelE2eTest extends TestCase
     protected function setUp(): void
     {
         if (!TmuxHarness::isAvailable()) {
-            self::markTestSkipped('tmux is not installed. Skipping TUI e2e tests.');
+            $this->markTestSkipped('tmux is not installed. Skipping TUI e2e tests.');
         }
 
         $this->tmux = new TmuxHarness();
         $this->projectRoot = ProjectDir::get();
         $this->testProjectDir = $this->createIsolatedProjectDir();
-        $this->snapshotDir = $this->testProjectDir . '/.hatfield/tmp/tui/smoke';
-        @\mkdir($this->snapshotDir, 0o777, true);
+        $this->snapshotDir = $this->testProjectDir.'/.hatfield/tmp/tui/smoke';
+        @mkdir($this->snapshotDir, 0o777, true);
     }
 
     protected function tearDown(): void
@@ -136,9 +136,9 @@ final class TuiAutoCompactionCancelE2eTest extends TestCase
             // Compacting; evidence may be activity text (Cancelling/Cancelled)
             // or a dynamic transcript/status line (e.g. "run cancelled").
             $hasCancellation = false;
-            $deadline = \microtime(true) + 10.0;
+            $deadline = microtime(true) + 10.0;
 
-            while (\microtime(true) < $deadline) {
+            while (microtime(true) < $deadline) {
                 $capture = $this->tmux->captureAnsi($pane);
 
                 // User-visible cancellation evidence:
@@ -159,13 +159,13 @@ final class TuiAutoCompactionCancelE2eTest extends TestCase
                 usleep(200_000);
             }
 
-            self::assertTrue(
+            $this->assertTrue(
                 $hasCancellation,
                 "TUI must show 'Cancelling', 'Cancelled', or dynamic 'run cancelled' after Escape during auto-compaction.\n"
-                . "On HEAD (RED): Completed.isActive() is false, so CancelListener clears "
-                . "the editor instead of sending cancel.  The TUI shows no cancellation evidence.\n"
-                . "Lowercase 'cancel' alone (footer/hotkey) is NOT sufficient evidence.\n"
-                . "Final capture:\n" . ($this->tmux->captureAnsi($pane)),
+                .'On HEAD (RED): Completed.isActive() is false, so CancelListener clears '
+                ."the editor instead of sending cancel.  The TUI shows no cancellation evidence.\n"
+                ."Lowercase 'cancel' alone (footer/hotkey) is NOT sufficient evidence.\n"
+                ."Final capture:\n".$this->tmux->captureAnsi($pane),
             );
 
             // Post-cancellation: wait for any retry/cleanup to settle.
@@ -197,19 +197,19 @@ final class TuiAutoCompactionCancelE2eTest extends TestCase
      */
     private function assertCancelCommandAfterCompactionStarted(): void
     {
-        $eventLog = $this->testProjectDir . '/.hatfield/sessions/1/events.jsonl';
+        $eventLog = $this->testProjectDir.'/.hatfield/sessions/1/events.jsonl';
 
-        if (!\is_file($eventLog)) {
-            self::fail('events.jsonl not found at ' . $eventLog);
+        if (!is_file($eventLog)) {
+            $this->fail('events.jsonl not found at '.$eventLog);
         }
 
-        $lines = \file($eventLog, \FILE_IGNORE_NEW_LINES | \FILE_SKIP_EMPTY_LINES);
+        $lines = file($eventLog, \FILE_IGNORE_NEW_LINES | \FILE_SKIP_EMPTY_LINES);
 
         $compactionStartedSeq = null;
         $cancelEvents = [];
 
         foreach ($lines as $line) {
-            $event = \json_decode($line, true);
+            $event = json_decode($line, true);
             if (!\is_array($event)) {
                 continue;
             }
@@ -235,25 +235,25 @@ final class TuiAutoCompactionCancelE2eTest extends TestCase
             }
         }
 
-        self::assertNotNull(
+        $this->assertNotNull(
             $compactionStartedSeq,
             'events.jsonl must contain context_compaction_started before cancel.',
         );
 
-        self::assertNotEmpty(
+        $this->assertNotEmpty(
             $cancelEvents,
             \sprintf(
-                "events.jsonl must contain a cancel command (agent_command_queued or "
-                . "agent_command_applied with kind=cancel) after context_compaction_started "
-                . "(seq %d).\n"
-                . "On HEAD (RED): Escape clears editor instead of sending cancel — "
-                . "zero cancel command events in the event log.\n"
-                . "agent_end reason=cancelled alone is NOT sufficient — it can appear "
-                . "without an actual cancel command in scenarios like sess-13.\n"
-                . "Found compaction_started at seq=%d, cancel events: %s",
+                'events.jsonl must contain a cancel command (agent_command_queued or '
+                .'agent_command_applied with kind=cancel) after context_compaction_started '
+                ."(seq %d).\n"
+                .'On HEAD (RED): Escape clears editor instead of sending cancel — '
+                ."zero cancel command events in the event log.\n"
+                .'agent_end reason=cancelled alone is NOT sufficient — it can appear '
+                ."without an actual cancel command in scenarios like sess-13.\n"
+                .'Found compaction_started at seq=%d, cancel events: %s',
                 $compactionStartedSeq,
                 $compactionStartedSeq,
-                \json_encode($cancelEvents),
+                json_encode($cancelEvents),
             ),
         );
     }
@@ -265,23 +265,23 @@ final class TuiAutoCompactionCancelE2eTest extends TestCase
         // Two chained fixtures:
         //   fixture 0: fast assistant response (100 tokens, above threshold)
         //   fixture 1: delayed compaction summary (3s delay)
-        $fixture0 = $this->projectRoot . '/tests/Tui/E2E/fixtures/tui-startup-prompt-response.json';
-        $fixture1 = $this->projectRoot . '/tests/Tui/E2E/fixtures/tui-compaction-summary-delayed.json';
+        $fixture0 = $this->projectRoot.'/tests/Tui/E2E/fixtures/tui-startup-prompt-response.json';
+        $fixture1 = $this->projectRoot.'/tests/Tui/E2E/fixtures/tui-compaction-summary-delayed.json';
 
         $fixtureChain = '';
-        if (\is_file($fixture0)) {
+        if (is_file($fixture0)) {
             $fixtureChain = $fixture0;
         }
-        if (\is_file($fixture1)) {
-            $fixtureChain = ('' !== $fixtureChain ? $fixtureChain . ';' : '') . $fixture1;
+        if (is_file($fixture1)) {
+            $fixtureChain = ('' !== $fixtureChain ? $fixtureChain.';' : '').$fixture1;
         }
 
         $fixtureEnv = ('' !== $fixtureChain)
-            ? 'HATFIELD_LLM_REPLAY_FIXTURE_PATH=' . \escapeshellarg($fixtureChain) . ' '
+            ? 'HATFIELD_LLM_REPLAY_FIXTURE_PATH='.escapeshellarg($fixtureChain).' '
             : '';
 
         $php = \PHP_BINARY;
-        $script = $this->projectRoot . '/bin/console';
+        $script = $this->projectRoot.'/bin/console';
         $suffix = bin2hex(random_bytes(4));
         $paths = TuiE2eDatabaseEnv::allocatePaths('tui-tui-auto-compact-cancel-');
         $dbPath = $paths['app'];
@@ -289,13 +289,13 @@ final class TuiAutoCompactionCancelE2eTest extends TestCase
 
         return \sprintf(
             'APP_ENV=test %sHOME=%s %s %s %s agent '
-                . '--model=llama_cpp_test/test '
-                . '--tools-excluded=bash 2>&1',
+                .'--model=llama_cpp_test/test '
+                .'--tools-excluded=bash 2>&1',
             TuiE2eDatabaseEnv::shellPrefix($dbPath, $transportDbPath),
-            \escapeshellarg($this->testProjectDir . '/home'),
+            escapeshellarg($this->testProjectDir.'/home'),
             $fixtureEnv,
-            \escapeshellarg($php),
-            \escapeshellarg($script),
+            escapeshellarg($php),
+            escapeshellarg($script),
         );
     }
 
@@ -316,15 +316,15 @@ final class TuiAutoCompactionCancelE2eTest extends TestCase
     private function createIsolatedProjectDirWithSettings(array $extraSettings): string
     {
         $dir = TestDirectoryIsolation::createProjectTempDir('tui-e2e-auto-compact-cancel');
-        @\mkdir($dir . '/.hatfield', 0o777, true);
+        @mkdir($dir.'/.hatfield', 0o777, true);
 
         $settings = $this->buildBaseSettings($extraSettings);
 
         $yaml = \Symfony\Component\Yaml\Yaml::dump($settings, 6, 4);
-        \file_put_contents($dir . '/.hatfield/settings.yaml', $yaml);
+        file_put_contents($dir.'/.hatfield/settings.yaml', $yaml);
 
-        @\mkdir($dir . '/home/.hatfield', 0o777, true);
-        \file_put_contents($dir . '/home/.hatfield/settings.yaml', $yaml);
+        @mkdir($dir.'/home/.hatfield', 0o777, true);
+        file_put_contents($dir.'/home/.hatfield/settings.yaml', $yaml);
 
         return $dir;
     }
@@ -407,6 +407,6 @@ final class TuiAutoCompactionCancelE2eTest extends TestCase
         $ansi = $this->tmux->captureAnsi($pane);
         $ts = date('Ymd-His');
         $path = \sprintf('%s/%s-%s.ansi', $this->snapshotDir, $tag, $ts);
-        \file_put_contents($path, $ansi);
+        file_put_contents($path, $ansi);
     }
 }

@@ -35,17 +35,17 @@ final class TurnTreeReplayFilterTest extends TestCase
 
         $seqs = array_map(static fn (RunEvent $e): int => $e->seq, $result->events);
 
-        self::assertSame([1], $result->activePathTurnNos);
-        self::assertContains(1, $seqs, 'run_started');
-        self::assertContains(2, $seqs, 'turn_advanced turn 1');
-        self::assertContains(3, $seqs, 'leaf_set turn 1');
-        self::assertContains(4, $seqs, 'llm_step_completed turn 1');
-        self::assertContains(5, $seqs, 'agent_end turn 1');
-        self::assertNotContains(6, $seqs, 'abandoned turn-2 seed agent_command_queued must be excluded');
-        self::assertNotContains(7, $seqs, 'abandoned turn-2 seed agent_command_applied must be excluded');
-        self::assertNotContains(8, $seqs, 'turn_advanced turn 2');
-        self::assertNotContains(10, $seqs, 'llm_step_completed turn 2');
-        self::assertContains(12, $seqs, 'rewind leaf_set to turn 1');
+        $this->assertSame([1], $result->activePathTurnNos);
+        $this->assertContains(1, $seqs, 'run_started');
+        $this->assertContains(2, $seqs, 'turn_advanced turn 1');
+        $this->assertContains(3, $seqs, 'leaf_set turn 1');
+        $this->assertContains(4, $seqs, 'llm_step_completed turn 1');
+        $this->assertContains(5, $seqs, 'agent_end turn 1');
+        $this->assertNotContains(6, $seqs, 'abandoned turn-2 seed agent_command_queued must be excluded');
+        $this->assertNotContains(7, $seqs, 'abandoned turn-2 seed agent_command_applied must be excluded');
+        $this->assertNotContains(8, $seqs, 'turn_advanced turn 2');
+        $this->assertNotContains(10, $seqs, 'llm_step_completed turn 2');
+        $this->assertContains(12, $seqs, 'rewind leaf_set to turn 1');
     }
 
     #[Test]
@@ -57,11 +57,11 @@ final class TurnTreeReplayFilterTest extends TestCase
 
         $seqs = array_map(static fn (RunEvent $e): int => $e->seq, $result->events);
 
-        self::assertSame([1, 2], $result->activePathTurnNos);
-        self::assertContains(6, $seqs);
-        self::assertContains(7, $seqs);
-        self::assertContains(8, $seqs);
-        self::assertContains(10, $seqs);
+        $this->assertSame([1, 2], $result->activePathTurnNos);
+        $this->assertContains(6, $seqs);
+        $this->assertContains(7, $seqs);
+        $this->assertContains(8, $seqs);
+        $this->assertContains(10, $seqs);
     }
 
     #[Test]
@@ -86,11 +86,11 @@ final class TurnTreeReplayFilterTest extends TestCase
 
         $seqs = array_map(static fn (RunEvent $e): int => $e->seq, $result->events);
 
-        self::assertSame([1, 2], $result->activePathTurnNos);
-        self::assertContains(4, $seqs);
-        self::assertContains(5, $seqs);
-        self::assertNotContains(8, $seqs);
-        self::assertNotContains(9, $seqs);
+        $this->assertSame([1, 2], $result->activePathTurnNos);
+        $this->assertContains(4, $seqs);
+        $this->assertContains(5, $seqs);
+        $this->assertNotContains(8, $seqs);
+        $this->assertNotContains(9, $seqs);
     }
 
     #[Test]
@@ -108,8 +108,8 @@ final class TurnTreeReplayFilterTest extends TestCase
 
         $seqs = array_map(static fn (RunEvent $e): int => $e->seq, $result->events);
 
-        self::assertContains(4, $seqs);
-        self::assertContains(5, $seqs);
+        $this->assertContains(4, $seqs);
+        $this->assertContains(5, $seqs);
     }
 
     /** @return list<RunEvent> */

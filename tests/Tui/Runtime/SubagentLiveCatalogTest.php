@@ -26,9 +26,9 @@ final class SubagentLiveCatalogTest extends TestCase
         ]));
 
         $all = $catalog->all();
-        self::assertCount(1, $all);
-        self::assertSame('child-run-1', $all[0]->agentRunId);
-        self::assertSame(SubagentLiveStatusEnum::Running, $all[0]->status);
+        $this->assertCount(1, $all);
+        $this->assertSame('child-run-1', $all[0]->agentRunId);
+        $this->assertSame(SubagentLiveStatusEnum::Running, $all[0]->status);
     }
 
     public function testPreservesAgentRunIdWhenLaterProgressOmitsIt(): void
@@ -44,9 +44,9 @@ final class SubagentLiveCatalogTest extends TestCase
         ]));
 
         $child = $catalog->findByArtifactId('agent_a');
-        self::assertNotNull($child);
-        self::assertSame('child-run-1', $child->agentRunId);
-        self::assertSame(SubagentLiveStatusEnum::Completed, $child->status);
+        $this->assertNotNull($child);
+        $this->assertSame('child-run-1', $child->agentRunId);
+        $this->assertSame(SubagentLiveStatusEnum::Completed, $child->status);
     }
 
     public function testIgnoresRowWithoutResolvableAgentRunId(): void
@@ -56,7 +56,7 @@ final class SubagentLiveCatalogTest extends TestCase
             'mode' => 'single', 'status' => 'running', 'agent_name' => 'scout',
             'artifact_id' => 'agent_a', 'task_summary' => 'No id',
         ]));
-        self::assertSame([], $catalog->all());
+        $this->assertSame([], $catalog->all());
     }
 
     public function testIngestsParallelChildrenRows(): void
@@ -69,8 +69,8 @@ final class SubagentLiveCatalogTest extends TestCase
                 ['agent_name' => 'worker', 'artifact_id' => 'a2', 'agent_run_id' => 'run-2', 'status' => 'completed', 'task_summary' => 'Two'],
             ],
         ]));
-        self::assertCount(2, $catalog->all());
-        self::assertSame(SubagentLiveStatusEnum::Completed, $catalog->findByArtifactId('a2')?->status);
+        $this->assertCount(2, $catalog->all());
+        $this->assertSame(SubagentLiveStatusEnum::Completed, $catalog->findByArtifactId('a2')?->status);
     }
 
     /** @param array<string, mixed> $progress */

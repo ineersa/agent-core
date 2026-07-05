@@ -52,21 +52,21 @@ final class ExecuteLlmStepWorkerTest extends TestCase
             toolsRef: 'tools-1',
         ));
 
-        self::assertCount(1, $testBus->messages);
+        $this->assertCount(1, $testBus->messages);
 
         /** @var LlmStepResult $result */
         $result = $testBus->messages[0];
-        self::assertInstanceOf(LlmStepResult::class, $result);
-        self::assertNotNull($result->assistantMessage, 'Retry must succeed with a valid assistant message.');
-        self::assertSame('Hello there', $result->assistantMessage->asText());
-        self::assertNull($result->error, 'No error when retry succeeds.');
+        $this->assertInstanceOf(LlmStepResult::class, $result);
+        $this->assertNotNull($result->assistantMessage, 'Retry must succeed with a valid assistant message.');
+        $this->assertSame('Hello there', $result->assistantMessage->asText());
+        $this->assertNull($result->error, 'No error when retry succeeds.');
 
         // Platform must have been invoked exactly twice.
-        self::assertSame(2, $platform->invocationCount);
+        $this->assertSame(2, $platform->invocationCount);
 
         // A retry warning must be logged.
         $retryLogs = $this->filterLogsByEventType($testLogger, 'llm.request.retrying_thinking_only');
-        self::assertCount(1, $retryLogs, 'Must log exactly one retry warning.');
+        $this->assertCount(1, $retryLogs, 'Must log exactly one retry warning.');
     }
 
     public function testFailsWhenBothAttemptsAreThinkingOnly(): void
@@ -89,22 +89,22 @@ final class ExecuteLlmStepWorkerTest extends TestCase
             toolsRef: 'tools-2',
         ));
 
-        self::assertCount(1, $testBus->messages);
+        $this->assertCount(1, $testBus->messages);
 
         /** @var LlmStepResult $result */
         $result = $testBus->messages[0];
-        self::assertInstanceOf(LlmStepResult::class, $result);
-        self::assertNull($result->assistantMessage, 'Both attempts thinking-only: assistant must be null.');
-        self::assertNotNull($result->error, 'Both attempts thinking-only: must be an error.');
-        self::assertSame('empty_assistant_content', $result->error['type'] ?? null);
-        self::assertFalse($result->error['retryable'] ?? true, 'empty_assistant_content must be non-retryable.');
+        $this->assertInstanceOf(LlmStepResult::class, $result);
+        $this->assertNull($result->assistantMessage, 'Both attempts thinking-only: assistant must be null.');
+        $this->assertNotNull($result->error, 'Both attempts thinking-only: must be an error.');
+        $this->assertSame('empty_assistant_content', $result->error['type'] ?? null);
+        $this->assertFalse($result->error['retryable'] ?? true, 'empty_assistant_content must be non-retryable.');
 
         // Platform must have been invoked exactly twice (not thrice).
-        self::assertSame(2, $platform->invocationCount);
+        $this->assertSame(2, $platform->invocationCount);
 
         // Exactly one retry warning must be logged.
         $retryLogs = $this->filterLogsByEventType($testLogger, 'llm.request.retrying_thinking_only');
-        self::assertCount(1, $retryLogs, 'Must log exactly one retry warning.');
+        $this->assertCount(1, $retryLogs, 'Must log exactly one retry warning.');
     }
 
     public function testSingleValidResponseProceedsNormally(): void
@@ -127,20 +127,20 @@ final class ExecuteLlmStepWorkerTest extends TestCase
             toolsRef: 'tools-3',
         ));
 
-        self::assertCount(1, $testBus->messages);
+        $this->assertCount(1, $testBus->messages);
 
         /** @var LlmStepResult $result */
         $result = $testBus->messages[0];
-        self::assertNotNull($result->assistantMessage);
-        self::assertSame('Direct response', $result->assistantMessage->asText());
-        self::assertNull($result->error);
+        $this->assertNotNull($result->assistantMessage);
+        $this->assertSame('Direct response', $result->assistantMessage->asText());
+        $this->assertNull($result->error);
 
         // Normal path: exactly one platform invocation.
-        self::assertSame(1, $platform->invocationCount);
+        $this->assertSame(1, $platform->invocationCount);
 
         // No retry warning logged.
         $retryLogs = $this->filterLogsByEventType($testLogger, 'llm.request.retrying_thinking_only');
-        self::assertCount(0, $retryLogs, 'No retry warning when first attempt succeeds.');
+        $this->assertCount(0, $retryLogs, 'No retry warning when first attempt succeeds.');
     }
 
     public function testProviderErrorOnFirstAttemptIsNotRetried(): void
@@ -168,19 +168,19 @@ final class ExecuteLlmStepWorkerTest extends TestCase
             toolsRef: 'tools-4',
         ));
 
-        self::assertCount(1, $testBus->messages);
+        $this->assertCount(1, $testBus->messages);
 
         /** @var LlmStepResult $result */
         $result = $testBus->messages[0];
-        self::assertNotNull($result->error, 'Provider error must be propagated.');
-        self::assertSame('provider_error', $result->error['type'] ?? null);
+        $this->assertNotNull($result->error, 'Provider error must be propagated.');
+        $this->assertSame('provider_error', $result->error['type'] ?? null);
 
         // Provider errors are NOT retried: only thinking-only responses are.
-        self::assertSame(1, $platform->invocationCount);
+        $this->assertSame(1, $platform->invocationCount);
 
         // No retry warning.
         $retryLogs = $this->filterLogsByEventType($testLogger, 'llm.request.retrying_thinking_only');
-        self::assertCount(0, $retryLogs, 'No retry on provider error.');
+        $this->assertCount(0, $retryLogs, 'No retry on provider error.');
     }
 
     // ── helpers ──
@@ -221,7 +221,7 @@ final class ExecuteLlmStepWorkerTest extends TestCase
             public function invoke(ModelInvocationRequest $request): PlatformInvocationResult
             {
                 $index = $this->invocationCount;
-                $this->invocationCount++;
+                ++$this->invocationCount;
 
                 $item = $this->responses[min($index, \count($this->responses) - 1)];
 

@@ -24,25 +24,6 @@ namespace Ineersa\Tui\Tests\E2E;
  */
 final class TmuxHarness
 {
-    private readonly string $root;
-    private readonly int $pid;
-
-    /** @var list<non-empty-string> */
-    private array $sessionNames = [];
-
-    /**
-     * Per-call deadline for fast interactive tmux control commands
-     * (capture, send-key, display-message, etc.). Generous enough
-     * to never flake on a healthy system.
-     */
-    private const float TMUX_CMD_TIMEOUT = 5.0;
-
-    /**
-     * Per-call deadline for session-creation commands, which can
-     * be slightly slower due to shell startup inside the pane.
-     */
-    private const float TMUX_SESSION_TIMEOUT = 10.0;
-
     /**
      * TUI logo/block-cursor startup wait when castor check runs test:tui in
      * parallel with the full unit suite and other lanes — 10s flakes with an
@@ -62,6 +43,24 @@ final class TmuxHarness
      */
     public const float TUI_GATE_CALLBACK_TIMEOUT_PARALLEL = 20.0;
 
+    /**
+     * Per-call deadline for fast interactive tmux control commands
+     * (capture, send-key, display-message, etc.). Generous enough
+     * to never flake on a healthy system.
+     */
+    private const float TMUX_CMD_TIMEOUT = 5.0;
+
+    /**
+     * Per-call deadline for session-creation commands, which can
+     * be slightly slower due to shell startup inside the pane.
+     */
+    private const float TMUX_SESSION_TIMEOUT = 10.0;
+    private readonly string $root;
+    private readonly int $pid;
+
+    /** @var list<non-empty-string> */
+    private array $sessionNames = [];
+
     public function __construct()
     {
         $this->root = \Ineersa\CodingAgent\Tests\Support\ProjectDir::get();
@@ -73,119 +72,6 @@ final class TmuxHarness
         $this->killAll();
     }
 
-    // ── internal shell ─────────────────────────────────────
-
-    /**
-     * Run a tmux command through lightweight proc_open with a
-     * per-call deadline.
-     *
-     * shell_exec() has no timeout and can hang forever if tmux
-     * deadlocks. Symfony Process adds 10-30ms per call (object
-     * allocation, signal registration, internal pipe management)
-     * which accumulates to 20-30s across 16 TUI tests in tight
-     * polling loops. This helper splits the difference: direct
-     * proc_open + non-blocking pipes + short polling loop with
-     * an explicit deadline. In the common case where tmux responds
-     * in <5ms, the overhead is the same as shell_exec (single
-     * fork/exec/wait).
-     *
-     * The shell (sh -c) merges stderr into stdout for commands
-     * that include `2>&1` (all captures, session start). For the
-     * rest stderr is drained via the separate pipe to prevent
-     * buffer deadlock.
-     *
-     * @param string $cmd            full shell command (invoked via /bin/sh -c)
-     * @param float  $timeout        seconds before the process is killed
-     * @param bool   $throwOnTimeout  when true, throw RuntimeException on timeout;
-     *                                when false, return empty string or partial output
-     *
-     * @return string trimmed stdout
-     *
-     * @throws \RuntimeException when the process times out and throwOnTimeout is true,
-     *                           or when proc_open itself fails
-     */
-    private function runTmux(string $cmd, float $timeout = 5.0, bool $throwOnTimeout = true): string
-    {
-        $descriptors = [
-            0 => ['pipe', 'r'],
-            1 => ['pipe', 'w'],
-            2 => ['pipe', 'w'],
-        ];
-
-        $pipes = [];
-        $process = @proc_open($cmd, $descriptors, $pipes);
-
-        if (!\is_resource($process)) {
-            if ($throwOnTimeout) {
-                throw new \RuntimeException('Failed to start tmux command: '.$cmd);
-            }
-
-            return '';
-        }
-
-        try {
-            // Close stdin immediately — tmux commands don't read it.
-            \fclose($pipes[0]);
-            \stream_set_blocking($pipes[1], false);
-            \stream_set_blocking($pipes[2], false);
-
-            $deadline = \microtime(true) + $timeout;
-            $stdout = '';
-
-            while (true) {
-                $chunk = @\stream_get_contents($pipes[1]);
-                if (\is_string($chunk) && '' !== $chunk) {
-                    $stdout .= $chunk;
-                }
-                // Drain stderr to prevent pipe-buffer deadlock in the child.
-                @\stream_get_contents($pipes[2]);
-
-                $status = @\proc_get_status($process);
-                if (!($status['running'] ?? true)) {
-                    // Process done — drain any last output.
-                    $stdout .= (string) @\stream_get_contents($pipes[1]);
-
-                    return \trim($stdout);
-                }
-
-                if (\microtime(true) >= $deadline) {
-                    break;
-                }
-
-                \usleep(1_000); // 1 ms — matches tmux IPC latency, avoids busy-loop
-            }
-
-            // ── Timeout ──────────────────────────────────
-            @\proc_terminate($process, \SIGKILL);
-            // Wait briefly for the signal to take effect.
-            \usleep(50_000);
-            $stdout .= (string) @\stream_get_contents($pipes[1]);
-
-            if ($throwOnTimeout) {
-                $snippet = \strlen($cmd) > 300 ? \substr($cmd, 0, 300).'...' : $cmd;
-
-                throw new \RuntimeException(\sprintf(
-                    'tmux command timed out after %.1fs: %s',
-                    $timeout,
-                    $snippet,
-                ));
-            }
-
-            return \trim($stdout);
-        } finally {
-            // Always close pipes and free the process resource,
-            // even if an exception (unexpected) escaped the handler above.
-            foreach ($pipes as $i => $pipe) {
-                if ($i > 0 && \is_resource($pipe)) {
-                    @\fclose($pipe);
-                }
-            }
-            if (\is_resource($process)) {
-                @\proc_close($process);
-            }
-        }
-    }
-
     // ── availability ──────────────────────────────────────
 
     /**
@@ -193,7 +79,7 @@ final class TmuxHarness
      */
     public static function isAvailable(): bool
     {
-        $which = \trim((new self())->runTmux(
+        $which = trim((new self())->runTmux(
             'which tmux 2>/dev/null',
             2.0,
             throwOnTimeout: false,
@@ -233,7 +119,7 @@ final class TmuxHarness
 
         $innerCmd = \sprintf(
             'cd %s && %s',
-            \escapeshellarg($cwd ?? $this->root),
+            escapeshellarg($cwd ?? $this->root),
             $command,
         );
 
@@ -241,8 +127,8 @@ final class TmuxHarness
             'tmux new-session -d -P -F "#{pane_id}" -x %d -y %d -s %s -- bash -c %s 2>&1',
             $width,
             $height,
-            \escapeshellarg($session),
-            \escapeshellarg($innerCmd),
+            escapeshellarg($session),
+            escapeshellarg($innerCmd),
         );
 
         $output = $this->runTmux($cmd, self::TMUX_SESSION_TIMEOUT);
@@ -251,14 +137,14 @@ final class TmuxHarness
         }
 
         $paneId = $output;
-        if (!\str_starts_with($paneId, '%')) {
+        if (!str_starts_with($paneId, '%')) {
             throw new \RuntimeException(\sprintf('Failed to create tmux session "%s". Output: %s', $session, $output));
         }
 
         // Some tmux servers ignore new-session -x/-y and keep the global
         // default-size (often 80x24). Force the requested deterministic size.
         $this->runTmux(
-            \sprintf('tmux resize-window -t %s -x %d -y %d 2>/dev/null', \escapeshellarg($session), $width, $height),
+            \sprintf('tmux resize-window -t %s -x %d -y %d 2>/dev/null', escapeshellarg($session), $width, $height),
             self::TMUX_CMD_TIMEOUT,
             throwOnTimeout: false,
         );
@@ -279,7 +165,7 @@ final class TmuxHarness
     public function capturePlain(TmuxPane $pane): string
     {
         return $this->runTmux(
-            \sprintf('tmux capture-pane -p -t %s 2>&1', \escapeshellarg($pane->paneId)),
+            \sprintf('tmux capture-pane -p -t %s 2>&1', escapeshellarg($pane->paneId)),
             self::TMUX_CMD_TIMEOUT,
             throwOnTimeout: false,
         );
@@ -301,7 +187,7 @@ final class TmuxHarness
             \sprintf(
                 'tmux capture-pane -p -S -%d -E - -t %s 2>&1',
                 $lines,
-                \escapeshellarg($pane->paneId),
+                escapeshellarg($pane->paneId),
             ),
             self::TMUX_CMD_TIMEOUT,
             throwOnTimeout: false,
@@ -314,7 +200,7 @@ final class TmuxHarness
     public function captureAnsi(TmuxPane $pane): string
     {
         return $this->runTmux(
-            \sprintf('tmux capture-pane -p -e -t %s 2>&1', \escapeshellarg($pane->paneId)),
+            \sprintf('tmux capture-pane -p -e -t %s 2>&1', escapeshellarg($pane->paneId)),
             self::TMUX_CMD_TIMEOUT,
             throwOnTimeout: false,
         );
@@ -330,8 +216,8 @@ final class TmuxHarness
         $this->runTmux(
             \sprintf(
                 'tmux send-keys -t %s -l %s',
-                \escapeshellarg($pane->paneId),
-                \escapeshellarg($text),
+                escapeshellarg($pane->paneId),
+                escapeshellarg($text),
             ),
             self::TMUX_CMD_TIMEOUT,
             throwOnTimeout: true,
@@ -346,8 +232,8 @@ final class TmuxHarness
         $this->runTmux(
             \sprintf(
                 'tmux send-keys -t %s %s',
-                \escapeshellarg($pane->paneId),
-                \escapeshellarg($key),
+                escapeshellarg($pane->paneId),
+                escapeshellarg($key),
             ),
             self::TMUX_CMD_TIMEOUT,
             throwOnTimeout: true,
@@ -359,13 +245,13 @@ final class TmuxHarness
         $output = $this->runTmux(
             \sprintf(
                 'tmux display-message -p -t %s "#{pane_id}" 2>/dev/null',
-                \escapeshellarg($pane->paneId),
+                escapeshellarg($pane->paneId),
             ),
             2.0,
             throwOnTimeout: false,
         );
 
-        return '' !== $output && \str_starts_with($output, '%');
+        return '' !== $output && str_starts_with($output, '%');
     }
 
     /**
@@ -377,13 +263,13 @@ final class TmuxHarness
         $output = $this->runTmux(
             \sprintf(
                 'tmux display-message -p -t %s "#{pane_pid}" 2>/dev/null',
-                \escapeshellarg($pane->paneId),
+                escapeshellarg($pane->paneId),
             ),
             2.0,
             throwOnTimeout: true,
         );
 
-        $pid = (int) \trim($output);
+        $pid = (int) trim($output);
         if ($pid <= 0) {
             throw new \RuntimeException(\sprintf('Could not read pane PID for %s (output: %s)', $pane->paneId, $output));
         }
@@ -409,47 +295,20 @@ final class TmuxHarness
         string $needle,
         float $timeout = 10.0,
     ): string {
-        $deadline = \microtime(true) + $timeout;
+        $deadline = microtime(true) + $timeout;
         $lastCapture = '';
 
-        while (\microtime(true) < $deadline) {
+        while (microtime(true) < $deadline) {
             $lastCapture = $this->capturePlain($pane);
 
-            if (\str_contains($lastCapture, $needle)) {
+            if (str_contains($lastCapture, $needle)) {
                 return $lastCapture;
             }
 
-            \usleep(100_000); // 100ms
+            usleep(100_000); // 100ms
         }
 
         throw new \RuntimeException($this->formatCaptureTimeoutDiagnostics($pane, $needle, $timeout, $lastCapture));
-    }
-
-
-    /**
-     * @param non-empty-string $needle
-     */
-    private function formatCaptureTimeoutDiagnostics(TmuxPane $pane, string $needle, float $timeout, string $lastPlainCapture): string
-    {
-        $ansi = '';
-        try {
-            $ansi = $this->captureAnsi($pane);
-        } catch (\Throwable) {
-            $ansi = '[captureAnsi failed]';
-        }
-
-        return \sprintf(
-            "Timed out after %.1fs waiting for needle \"%s\" in pane %s.\n".
-            "Last plain capture (%d lines):\n%s\n".
-            "Last ANSI capture (%d bytes):\n%s",
-            $timeout,
-            $needle,
-            $pane->paneId,
-            \substr_count($lastPlainCapture, "\n") + 1,
-            $lastPlainCapture,
-            \strlen($ansi),
-            $ansi,
-        );
     }
 
     /**
@@ -476,20 +335,20 @@ final class TmuxHarness
         float $timeout = 10.0,
         int $history = 1000,
     ): string {
-        $deadline = \microtime(true) + $timeout;
+        $deadline = microtime(true) + $timeout;
         $lastCapture = '';
 
-        while (\microtime(true) < $deadline) {
+        while (microtime(true) < $deadline) {
             $lastCapture = $this->capturePlainWithHistory($pane, $history);
 
-            if (\str_contains($lastCapture, $needle)) {
+            if (str_contains($lastCapture, $needle)) {
                 return $lastCapture;
             }
 
-            \usleep(100_000); // 100ms
+            usleep(100_000); // 100ms
         }
 
-        throw new \RuntimeException(\sprintf('Timed out after %.1fs waiting for needle "%s" in pane %s history. Last capture (%d lines):'."\n%s", $timeout, $needle, $pane->paneId, \substr_count($lastCapture, "\n") + 1, $lastCapture));
+        throw new \RuntimeException(\sprintf('Timed out after %.1fs waiting for needle "%s" in pane %s history. Last capture (%d lines):'."\n%s", $timeout, $needle, $pane->paneId, substr_count($lastCapture, "\n") + 1, $lastCapture));
     }
 
     /**
@@ -500,11 +359,8 @@ final class TmuxHarness
      * this accepts an arbitrary predicate — useful for counting occurrences
      * (e.g. second `❯` or `◇` in a multi-turn conversation).
      *
-     * @param TmuxPane              $pane     the pane to poll
-     * @param callable(string):bool $callback receives the full history capture, must return true when condition met
-     * @param float                 $timeout  seconds to wait (default 10.0)
-     * @param string                $message  diagnostic error message on timeout
-     * @param int                   $history  Maximum history lines to search
+     * @param TmuxPane $pane    the pane to poll
+     * @param float    $timeout seconds to wait (default 10.0)
      *
      * @return string the history capture that satisfied the callback
      *
@@ -534,21 +390,21 @@ final class TmuxHarness
         string $message = '',
         int $history = 1000,
     ): string {
-        $deadline = \microtime(true) + $timeout;
+        $deadline = microtime(true) + $timeout;
         $lastCapture = '';
 
-        while (\microtime(true) < $deadline) {
+        while (microtime(true) < $deadline) {
             $lastCapture = $this->capturePlainWithHistory($pane, $history);
 
             if ($callback($lastCapture)) {
                 return $lastCapture;
             }
 
-            \usleep(100_000); // 100ms
+            usleep(100_000); // 100ms
         }
 
         throw new \RuntimeException(\sprintf('%s Timed out after %.1fs. Last capture (%d lines):'.'
-%s', '' !== $message ? $message.' ' : '', $timeout, \substr_count($lastCapture, '
+%s', '' !== $message ? $message.' ' : '', $timeout, substr_count($lastCapture, '
 ') + 1, $lastCapture, ));
     }
 
@@ -571,7 +427,7 @@ final class TmuxHarness
     public function normalizeSnapshot(string $snapshot): string
     {
         // Replace run IDs (UUID v4 format)
-        $snapshot = \preg_replace(
+        $snapshot = preg_replace(
             '/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/i',
             '<run-id>',
             $snapshot,
@@ -579,14 +435,14 @@ final class TmuxHarness
 
         // Replace arbitrary hex-looking IDs that appear as Run ID: ... (already
         // handled above, but also covers the "Started run ..." line)
-        $snapshot = \preg_replace(
+        $snapshot = preg_replace(
             '/Started run <run-id>/',
             'Started run <run-id>',
             $snapshot,
         );
 
         // Replace session IDs (numeric, DB-issued)
-        $snapshot = \preg_replace(
+        $snapshot = preg_replace(
             '/\bsession \b\d+\b/',
             'session <session-id>',
             $snapshot,
@@ -596,10 +452,10 @@ final class TmuxHarness
         $snapshot = $this->normalizeFooterSegments($snapshot);
 
         // Replace absolute project root paths
-        $snapshot = \str_replace($this->root, '<root>', $snapshot);
+        $snapshot = str_replace($this->root, '<root>', $snapshot);
 
         // Collapse to at most one trailing newline
-        $snapshot = \rtrim($snapshot)."\n";
+        $snapshot = rtrim($snapshot)."\n";
 
         return $snapshot;
     }
@@ -614,13 +470,13 @@ final class TmuxHarness
         $this->runTmux(
             \sprintf(
                 'tmux kill-session -t %s 2>/dev/null',
-                \escapeshellarg($pane->session),
+                escapeshellarg($pane->session),
             ),
             self::TMUX_CMD_TIMEOUT,
             throwOnTimeout: false,
         );
-        $this->sessionNames = \array_values(
-            \array_filter($this->sessionNames, static fn (string $n) => $n !== $pane->session),
+        $this->sessionNames = array_values(
+            array_filter($this->sessionNames, static fn (string $n) => $n !== $pane->session),
         );
     }
 
@@ -635,13 +491,148 @@ final class TmuxHarness
             $this->runTmux(
                 \sprintf(
                     'tmux kill-session -t %s 2>/dev/null',
-                    \escapeshellarg($session),
+                    escapeshellarg($session),
                 ),
                 self::TMUX_CMD_TIMEOUT,
                 throwOnTimeout: false,
             );
         }
         $this->sessionNames = [];
+    }
+
+    // ── internal shell ─────────────────────────────────────
+
+    /**
+     * Run a tmux command through lightweight proc_open with a
+     * per-call deadline.
+     *
+     * shell_exec() has no timeout and can hang forever if tmux
+     * deadlocks. Symfony Process adds 10-30ms per call (object
+     * allocation, signal registration, internal pipe management)
+     * which accumulates to 20-30s across 16 TUI tests in tight
+     * polling loops. This helper splits the difference: direct
+     * proc_open + non-blocking pipes + short polling loop with
+     * an explicit deadline. In the common case where tmux responds
+     * in <5ms, the overhead is the same as shell_exec (single
+     * fork/exec/wait).
+     *
+     * The shell (sh -c) merges stderr into stdout for commands
+     * that include `2>&1` (all captures, session start). For the
+     * rest stderr is drained via the separate pipe to prevent
+     * buffer deadlock.
+     *
+     * @param string $cmd            full shell command (invoked via /bin/sh -c)
+     * @param float  $timeout        seconds before the process is killed
+     * @param bool   $throwOnTimeout when true, throw RuntimeException on timeout;
+     *                               when false, return empty string or partial output
+     *
+     * @return string trimmed stdout
+     *
+     * @throws \RuntimeException when the process times out and throwOnTimeout is true,
+     *                           or when proc_open itself fails
+     */
+    private function runTmux(string $cmd, float $timeout = 5.0, bool $throwOnTimeout = true): string
+    {
+        $descriptors = [
+            0 => ['pipe', 'r'],
+            1 => ['pipe', 'w'],
+            2 => ['pipe', 'w'],
+        ];
+
+        $pipes = [];
+        $process = @proc_open($cmd, $descriptors, $pipes);
+
+        if (!\is_resource($process)) {
+            if ($throwOnTimeout) {
+                throw new \RuntimeException('Failed to start tmux command: '.$cmd);
+            }
+
+            return '';
+        }
+
+        try {
+            // Close stdin immediately — tmux commands don't read it.
+            fclose($pipes[0]);
+            stream_set_blocking($pipes[1], false);
+            stream_set_blocking($pipes[2], false);
+
+            $deadline = microtime(true) + $timeout;
+            $stdout = '';
+
+            while (true) {
+                $chunk = @stream_get_contents($pipes[1]);
+                if (\is_string($chunk) && '' !== $chunk) {
+                    $stdout .= $chunk;
+                }
+                // Drain stderr to prevent pipe-buffer deadlock in the child.
+                @stream_get_contents($pipes[2]);
+
+                $status = @proc_get_status($process);
+                if (!($status['running'] ?? true)) {
+                    // Process done — drain any last output.
+                    $stdout .= (string) @stream_get_contents($pipes[1]);
+
+                    return trim($stdout);
+                }
+
+                if (microtime(true) >= $deadline) {
+                    break;
+                }
+
+                usleep(1_000); // 1 ms — matches tmux IPC latency, avoids busy-loop
+            }
+
+            // ── Timeout ──────────────────────────────────
+            @proc_terminate($process, \SIGKILL);
+            // Wait briefly for the signal to take effect.
+            usleep(50_000);
+            $stdout .= (string) @stream_get_contents($pipes[1]);
+
+            if ($throwOnTimeout) {
+                $snippet = \strlen($cmd) > 300 ? substr($cmd, 0, 300).'...' : $cmd;
+
+                throw new \RuntimeException(\sprintf('tmux command timed out after %.1fs: %s', $timeout, $snippet));
+            }
+
+            return trim($stdout);
+        } finally {
+            // Always close pipes and free the process resource,
+            // even if an exception (unexpected) escaped the handler above.
+            foreach ($pipes as $i => $pipe) {
+                if ($i > 0 && \is_resource($pipe)) {
+                    @fclose($pipe);
+                }
+            }
+            if (\is_resource($process)) {
+                @proc_close($process);
+            }
+        }
+    }
+
+    /**
+     * @param non-empty-string $needle
+     */
+    private function formatCaptureTimeoutDiagnostics(TmuxPane $pane, string $needle, float $timeout, string $lastPlainCapture): string
+    {
+        $ansi = '';
+        try {
+            $ansi = $this->captureAnsi($pane);
+        } catch (\Throwable) {
+            $ansi = '[captureAnsi failed]';
+        }
+
+        return \sprintf(
+            "Timed out after %.1fs waiting for needle \"%s\" in pane %s.\n".
+            "Last plain capture (%d lines):\n%s\n".
+            "Last ANSI capture (%d bytes):\n%s",
+            $timeout,
+            $needle,
+            $pane->paneId,
+            substr_count($lastPlainCapture, "\n") + 1,
+            $lastPlainCapture,
+            \strlen($ansi),
+            $ansi,
+        );
     }
 
     /**
@@ -665,13 +656,13 @@ final class TmuxHarness
     private function normalizeFooterSegments(string $snapshot): string
     {
         // 1) Collapse consecutive footer lines into one
-        $lines = \explode("\n", $snapshot);
+        $lines = explode("\n", $snapshot);
         $result = [];
         $i = 0;
 
         while ($i < \count($lines)) {
             $line = $lines[$i];
-            $isFooter = (bool) \preg_match('/[◆⌂⎇⏱↻]/u', $line) || \str_contains($line, 'session ');
+            $isFooter = (bool) preg_match('/[◆⌂⎇⏱↻]/u', $line) || str_contains($line, 'session ');
 
             if (!$isFooter) {
                 $result[] = $line;
@@ -681,41 +672,41 @@ final class TmuxHarness
             }
 
             // Collect all consecutive footer lines
-            $segments = [\ltrim($line)];
+            $segments = [ltrim($line)];
             ++$i;
 
             while ($i < \count($lines)) {
                 $next = $lines[$i];
-                $isNextFooter = (bool) \preg_match('/[◆⌂⎇⏱↻]/u', $next) || \str_contains($next, 'session ');
+                $isNextFooter = (bool) preg_match('/[◆⌂⎇⏱↻]/u', $next) || str_contains($next, 'session ');
 
                 if (!$isNextFooter) {
                     break;
                 }
 
-                $segments[] = \ltrim($next);
+                $segments[] = ltrim($next);
                 ++$i;
             }
 
             // Rejoin with the original widget separator (all footer segment
             // groups use "  |  " for the startup/toolbar layout).
-            $result[] = '  '.\implode('  |  ', $segments);
+            $result[] = '  '.implode('  |  ', $segments);
         }
 
-        $snapshot = \implode("\n", $result);
+        $snapshot = implode("\n", $result);
 
         // 2) Normalize dynamic CWD content after ⌂
         //    \S+ matches only the non-whitespace path token, preserving
         //    any trailing whitespace before the pipe separator.
-        $snapshot = \preg_replace('/⌂\s+\S+/u', '⌂ <cwd>', $snapshot);
+        $snapshot = preg_replace('/⌂\s+\S+/u', '⌂ <cwd>', $snapshot);
 
         // 3) Normalize dynamic branch content after ⎇
-        $snapshot = \preg_replace('/⎇\s+\S+/u', '⎇ <branch>', $snapshot);
+        $snapshot = preg_replace('/⎇\s+\S+/u', '⎇ <branch>', $snapshot);
 
         // 4) Normalize dynamic elapsed time after ⏱
         //    The elapsed seconds clock starts at ≈0 and ticks every second.
         //    Captured snapshots may show ⏱ 0s, ⏱ 1s, ⏱ 2s, etc. depending
         //    on timing.  Lock the golden to ⏱ 0s for deterministic comparison.
-        $snapshot = \preg_replace('/⏱\s+\S+/u', '⏱ 0s', $snapshot);
+        $snapshot = preg_replace('/⏱\s+\S+/u', '⏱ 0s', $snapshot);
 
         return $snapshot;
     }

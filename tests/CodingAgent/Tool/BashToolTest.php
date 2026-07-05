@@ -5,12 +5,12 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Tool;
 
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
-use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
-use Ineersa\CodingAgent\Config\BashToolConfig;
+use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
+use Ineersa\CodingAgent\Config\BashToolConfig;
 use Ineersa\CodingAgent\Config\OutputCapConfig;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessLifecycle;
@@ -43,12 +43,6 @@ use Psr\Log\NullLogger;
  */
 final class BashToolTest extends IsolatedKernelTestCase
 {
-    public function testBashToolConfigDefaultBackgroundPromptThresholdIsFifteenSeconds(): void
-    {
-        $config = new BashToolConfig();
-        self::assertSame(15, $config->backgroundPromptThresholdSeconds);
-    }
-
     private const string TEST_SESSION = 'bash-test-session';
 
     private BackgroundProcessManager $manager;
@@ -90,6 +84,12 @@ final class BashToolTest extends IsolatedKernelTestCase
         $this->rmDir($this->tmpDir);
 
         parent::tearDown();
+    }
+
+    public function testBashToolConfigDefaultBackgroundPromptThresholdIsFifteenSeconds(): void
+    {
+        $config = new BashToolConfig();
+        $this->assertSame(15, $config->backgroundPromptThresholdSeconds);
     }
 
     /* ── Successful completion ── */
@@ -190,7 +190,7 @@ final class BashToolTest extends IsolatedKernelTestCase
         $cancellationToken = $this->createStub(CancellationTokenInterface::class);
         $cancellationToken
             ->method('isCancellationRequested')
-            ->willReturnCallback(function () use (&$callCount) {
+            ->willReturnCallback(static function () use (&$callCount) {
                 ++$callCount;
 
                 // First call is the pre-check in ToolRuntime::run() —
@@ -416,7 +416,7 @@ final class BashToolTest extends IsolatedKernelTestCase
         $this->assertStringContainsString('bg_status stop pid=', $result);
 
         // Extract PID from result
-        \preg_match('/PID: (\d+)/', $result, $matches);
+        preg_match('/PID: (\d+)/', $result, $matches);
         $this->assertNotEmpty($matches, 'PID should be present in result');
         $pid = (int) $matches[1];
 
@@ -432,8 +432,8 @@ final class BashToolTest extends IsolatedKernelTestCase
         $this->assertNotNull($entities[0]->backgroundedAt, 'Background process should have backgroundedAt set');
 
         // Verify the log contains our unique marker
-        \usleep(50_000); // Brief wait for log flush
-        $logContent = \file_get_contents($entities[0]->logPath);
+        usleep(50_000); // Brief wait for log flush
+        $logContent = file_get_contents($entities[0]->logPath);
         $this->assertStringContainsString('background-marker-12345', $logContent ?: '');
 
         // Clean up
@@ -457,8 +457,8 @@ final class BashToolTest extends IsolatedKernelTestCase
         $promptAdapter
             ->expects($this->once())
             ->method('shouldBackground')
-            ->willReturnCallback(function (): bool {
-                \usleep(200_000); // Block while the command finishes
+            ->willReturnCallback(static function (): bool {
+                usleep(200_000); // Block while the command finishes
 
                 return true;
             });
@@ -509,7 +509,6 @@ final class BashToolTest extends IsolatedKernelTestCase
         $this->assertStringContainsString('this is a very long output', $result);
         $this->assertStringNotContainsString('Output capped', $result);
     }
-
 
     public function testParallelBatchStillInvokesBackgroundPromptAdapter(): void
     {
@@ -597,7 +596,7 @@ final class BashToolTest extends IsolatedKernelTestCase
 
         $this->assertSame('bash', $def->name);
         $this->assertSame($tool, $def->handler);
-        self::assertSame(ToolExecutionMode::Parallel, $def->executionMode);
+        $this->assertSame(ToolExecutionMode::Parallel, $def->executionMode);
 
         // Schema must have 'command' required
         $this->assertContains('command', $def->parametersJsonSchema['required'] ?? []);

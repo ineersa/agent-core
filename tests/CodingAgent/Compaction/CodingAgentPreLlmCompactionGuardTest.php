@@ -54,33 +54,6 @@ final class CodingAgentPreLlmCompactionGuardTest extends TestCase
         );
     }
 
-    private function makeTextMessage(string $role, string $text): AgentMessage
-    {
-        return AgentMessage::fromPayload([
-            'content' => [['text' => $text]],
-            'role' => $role,
-        ]);
-    }
-
-    private function makeLlmStepCompletedEvent(int $inputTokens): RunEvent
-    {
-        return new RunEvent(
-            runId: 'run-1',
-            seq: 1,
-            turnNo: 1,
-            type: RunEventTypeEnum::LlmStepCompleted->value,
-            payload: [
-                'step_id' => 'step-1',
-                'stop_reason' => 'stop',
-                'usage' => [
-                    'input_tokens' => $inputTokens,
-                    'output_tokens' => 100,
-                    'total_tokens' => $inputTokens + 100,
-                ],
-            ],
-        );
-    }
-
     // ── Provider-usage-based trigger tests ──────────────────────────
 
     /**
@@ -97,7 +70,7 @@ final class CodingAgentPreLlmCompactionGuardTest extends TestCase
         $this->eventStore->method('allFor')
             ->willReturn([$this->makeLlmStepCompletedEvent(12000)]); // 12000 > 11000
 
-        self::assertTrue(
+        $this->assertTrue(
             $this->guard->shouldCompactBeforeLlmStep('run-1', 1, $messages, null),
         );
     }
@@ -116,7 +89,7 @@ final class CodingAgentPreLlmCompactionGuardTest extends TestCase
         $this->eventStore->method('allFor')
             ->willReturn([$this->makeLlmStepCompletedEvent(5000)]); // 5000 < 11000
 
-        self::assertFalse(
+        $this->assertFalse(
             $this->guard->shouldCompactBeforeLlmStep('run-1', 1, $messages, null),
         );
     }
@@ -134,7 +107,7 @@ final class CodingAgentPreLlmCompactionGuardTest extends TestCase
         $this->eventStore->method('allFor')
             ->willReturn([]); // No llm_step_completed events at all
 
-        self::assertFalse(
+        $this->assertFalse(
             $this->guard->shouldCompactBeforeLlmStep('run-1', 1, $messages, null),
         );
     }
@@ -154,7 +127,7 @@ final class CodingAgentPreLlmCompactionGuardTest extends TestCase
             $this->makeTextMessage('user', 'Hello'),
         ];
 
-        self::assertFalse(
+        $this->assertFalse(
             $guard->shouldCompactBeforeLlmStep('run-1', 1, $messages, null),
         );
     }
@@ -166,7 +139,7 @@ final class CodingAgentPreLlmCompactionGuardTest extends TestCase
         ];
 
         // In-flight guard catches before event store is queried.
-        self::assertFalse(
+        $this->assertFalse(
             $this->guard->shouldCompactBeforeLlmStep('run-1', 1, $messages, 'compact-1234567890'),
         );
     }
@@ -181,7 +154,7 @@ final class CodingAgentPreLlmCompactionGuardTest extends TestCase
             ],
         );
         $modelResolver = $this->createMock(ActiveModelResolverInterface::class);
-        $modelResolver->expects(self::once())
+        $modelResolver->expects($this->once())
             ->method('getActiveModel')
             ->willReturn('openai/gpt-4');
 
@@ -198,14 +171,14 @@ final class CodingAgentPreLlmCompactionGuardTest extends TestCase
         $this->eventStore->method('allFor')
             ->willReturn([$this->makeLlmStepCompletedEvent(12000)]); // 12000 < 50000 override
 
-        self::assertFalse(
+        $this->assertFalse(
             $guard->shouldCompactBeforeLlmStep('run-1', 1, $messages, null),
         );
     }
 
     public function testImplementsInterface(): void
     {
-        self::assertInstanceOf(PreLlmCompactionGuardInterface::class, $this->guard);
+        $this->assertInstanceOf(PreLlmCompactionGuardInterface::class, $this->guard);
     }
 
     /**
@@ -223,13 +196,13 @@ final class CodingAgentPreLlmCompactionGuardTest extends TestCase
             ->willReturn([$this->makeLlmStepCompletedEvent(12000)]); // 12000 > 11000
 
         // First call → true (no dedup yet).
-        self::assertTrue(
+        $this->assertTrue(
             $this->guard->shouldCompactBeforeLlmStep('run-1', 1, $messages, null),
             'First call should trigger compaction',
         );
 
         // Second call with same run+turnNo → false (dedup hit).
-        self::assertFalse(
+        $this->assertFalse(
             $this->guard->shouldCompactBeforeLlmStep('run-1', 1, $messages, null),
             'Second call with same run+turnNo should be blocked by dedup',
         );
@@ -249,12 +222,12 @@ final class CodingAgentPreLlmCompactionGuardTest extends TestCase
             ->willReturn([$this->makeLlmStepCompletedEvent(12000)]); // 12000 > 11000
 
         // Turn 1 → true.
-        self::assertTrue(
+        $this->assertTrue(
             $this->guard->shouldCompactBeforeLlmStep('run-1', 1, $messages, null),
         );
 
         // Same run, different turn → true (fresh evaluation).
-        self::assertTrue(
+        $this->assertTrue(
             $this->guard->shouldCompactBeforeLlmStep('run-1', 2, $messages, null),
             'Different turnNo should not be blocked by dedup',
         );
@@ -297,7 +270,7 @@ final class CodingAgentPreLlmCompactionGuardTest extends TestCase
                 ),
             ]);
 
-        self::assertFalse(
+        $this->assertFalse(
             $this->guard->shouldCompactBeforeLlmStep('run-1', 1, $messages, null),
             'Stale measurement at seq 1 must be blocked by auto start at seq 2',
         );
@@ -344,7 +317,7 @@ final class CodingAgentPreLlmCompactionGuardTest extends TestCase
             $this->modelResolver,
         );
 
-        self::assertFalse(
+        $this->assertFalse(
             $freshGuard->shouldCompactBeforeLlmStep('run-1', 1, $messages, null),
             'Failure-only auto marker at seq 2 must block stale provider measurement at seq 1',
         );
@@ -398,9 +371,36 @@ final class CodingAgentPreLlmCompactionGuardTest extends TestCase
                 ),
             ]);
 
-        self::assertTrue(
+        $this->assertTrue(
             $this->guard->shouldCompactBeforeLlmStep('run-1', 2, $messages, null),
             'Newer measurement at seq 5 must be eligible after auto start at seq 2',
+        );
+    }
+
+    private function makeTextMessage(string $role, string $text): AgentMessage
+    {
+        return AgentMessage::fromPayload([
+            'content' => [['text' => $text]],
+            'role' => $role,
+        ]);
+    }
+
+    private function makeLlmStepCompletedEvent(int $inputTokens): RunEvent
+    {
+        return new RunEvent(
+            runId: 'run-1',
+            seq: 1,
+            turnNo: 1,
+            type: RunEventTypeEnum::LlmStepCompleted->value,
+            payload: [
+                'step_id' => 'step-1',
+                'stop_reason' => 'stop',
+                'usage' => [
+                    'input_tokens' => $inputTokens,
+                    'output_tokens' => 100,
+                    'total_tokens' => $inputTokens + 100,
+                ],
+            ],
         );
     }
 }

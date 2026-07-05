@@ -67,8 +67,8 @@ final class TuiFileCompletionRenderTest extends TestCase
             $harness->sendInput("\t");
 
             $menuScreen = $harness->plainScreenText();
-            self::assertStringContainsString('Completions', $menuScreen, 'Tab should open completion overlay');
-            self::assertTrue(
+            $this->assertStringContainsString('Completions', $menuScreen, 'Tab should open completion overlay');
+            $this->assertTrue(
                 str_contains($menuScreen, 'testfiles')
                     || str_contains($menuScreen, '@home/testfiles'),
                 'Menu should list an indexed path matching @test',
@@ -77,10 +77,10 @@ final class TuiFileCompletionRenderTest extends TestCase
             $harness->sendInput("\t");
 
             $acceptedText = $harness->screen()->promptEditor()->getText();
-            self::assertStringContainsString('@home/testfiles', $acceptedText, 'Second Tab should insert accepted @ path');
+            $this->assertStringContainsString('@home/testfiles', $acceptedText, 'Second Tab should insert accepted @ path');
 
             $afterAcceptScreen = $harness->plainScreenText();
-            self::assertStringNotContainsString(
+            $this->assertStringNotContainsString(
                 'Completions — arrows move',
                 $afterAcceptScreen,
                 'Completion menu should close after accept',

@@ -33,25 +33,24 @@ use PHPUnit\Framework\TestCase;
 #[Group('tui-e2e-replay')]
 final class TuiToolOutputE2eTest extends TestCase
 {
+    /** Sentinel that the read tool should capture from ./test.txt. */
+    private const OUTPUT_SENTINEL = 'TOOL_OUTPUT_SENTINEL_131_READ';
     private TmuxHarness $tmux;
     private string $projectRoot;
     private string $testProjectDir;
     private string $snapshotDir;
 
-    /** Sentinel that the read tool should capture from ./test.txt. */
-    private const OUTPUT_SENTINEL = 'TOOL_OUTPUT_SENTINEL_131_READ';
-
     protected function setUp(): void
     {
         if (!TmuxHarness::isAvailable()) {
-            self::markTestSkipped('tmux is not installed. Skipping TUI e2e tests.');
+            $this->markTestSkipped('tmux is not installed. Skipping TUI e2e tests.');
         }
 
         $this->tmux = new TmuxHarness();
         $this->projectRoot = ProjectDir::get();
         $this->testProjectDir = $this->createIsolatedProjectDir();
         $this->snapshotDir = $this->testProjectDir.'/.hatfield/tmp/tui/smoke';
-        @\mkdir($this->snapshotDir, 0o777, true);
+        @mkdir($this->snapshotDir, 0o777, true);
     }
 
     protected function tearDown(): void
@@ -109,7 +108,7 @@ final class TuiToolOutputE2eTest extends TestCase
             );
 
             // The turn must complete with an assistant block (not error).
-            self::assertTrue(
+            $this->assertTrue(
                 str_contains($capture, '◇'),
                 'Transcript must display an assistant block (◇) after tool execution + done response',
             );
@@ -117,26 +116,25 @@ final class TuiToolOutputE2eTest extends TestCase
             // Capture full transcript history for assertions.
             $fullCapture = $this->tmux->capturePlainWithHistory($pane, 2000);
 
-
             // Tool call card should show YAML arguments from replay fixture.
-            self::assertStringContainsString(
+            $this->assertStringContainsString(
                 'path:',
                 $fullCapture,
                 'Tool call card must render YAML arguments (path key)',
             );
-            self::assertStringContainsString(
+            $this->assertStringContainsString(
                 './test.txt',
                 $fullCapture,
                 'Tool call card must render YAML argument value from read tool call',
             );
-            self::assertStringNotContainsString(
+            $this->assertStringNotContainsString(
                 '```yaml',
                 $fullCapture,
                 'Tool call card must not include fenced YAML markers',
             );
 
             // 1. The real tool output (file content) must appear in the transcript.
-            self::assertStringContainsString(
+            $this->assertStringContainsString(
                 self::OUTPUT_SENTINEL,
                 $fullCapture,
                 'Tool result must show actual file content, not just "read completed" fallback. '
@@ -146,7 +144,7 @@ final class TuiToolOutputE2eTest extends TestCase
             // 2. The "read completed" fallback must NOT appear (real output flows now).
             // Tool name "read" may appear in the tool CALL block, but "read completed"
             // is the specific fallback label we want to prove absent.
-            self::assertStringNotContainsString(
+            $this->assertStringNotContainsString(
                 'read completed',
                 $fullCapture,
                 'Tool result fallback "read completed" must NOT appear when real output flows. '
@@ -154,7 +152,7 @@ final class TuiToolOutputE2eTest extends TestCase
             );
 
             // 3. Verify session ID in footer.
-            self::assertStringContainsString(
+            $this->assertStringContainsString(
                 'session ',
                 $fullCapture,
                 'Session ID should appear in footer after prompt submission',
@@ -175,12 +173,11 @@ final class TuiToolOutputE2eTest extends TestCase
         }
     }
 
-
     public function testEditToolCallShowsDiffPayloadPreview(): void
     {
         $this->testProjectDir = $this->createIsolatedProjectDirForEdit();
         $this->snapshotDir = $this->testProjectDir.'/.hatfield/tmp/tui/smoke';
-        @\mkdir($this->snapshotDir, 0o777, true);
+        @mkdir($this->snapshotDir, 0o777, true);
 
         $pane = $this->tmux->startDetached(
             command: $this->agentCommandForFixture('tui-tool-call-edit.json'),
@@ -208,15 +205,15 @@ final class TuiToolOutputE2eTest extends TestCase
                 history: 2000,
             );
 
-            self::assertTrue(str_contains($capture, '◇'), 'Expected assistant block after edit tool replay');
+            $this->assertTrue(str_contains($capture, '◇'), 'Expected assistant block after edit tool replay');
 
             $fullCapture = $this->tmux->capturePlainWithHistory($pane, 2000);
 
-            self::assertStringContainsString('path:', $fullCapture, 'Edit tool call card must show path metadata');
-            self::assertStringContainsString('target.txt', $fullCapture);
-            self::assertStringContainsString('+after', $fullCapture, 'Patch preview must show added diff line');
-            self::assertStringNotContainsString('patch: |', $fullCapture, 'Edit tool call must not use YAML patch block');
-            self::assertStringNotContainsString('```', $fullCapture);
+            $this->assertStringContainsString('path:', $fullCapture, 'Edit tool call card must show path metadata');
+            $this->assertStringContainsString('target.txt', $fullCapture);
+            $this->assertStringContainsString('+after', $fullCapture, 'Patch preview must show added diff line');
+            $this->assertStringNotContainsString('patch: |', $fullCapture, 'Edit tool call must not use YAML patch block');
+            $this->assertStringNotContainsString('```', $fullCapture);
 
             $this->saveAnsiSnapshot($pane, 'tool-edit-preview');
             $this->tmux->sendKey($pane, 'C-d');
@@ -232,12 +229,11 @@ final class TuiToolOutputE2eTest extends TestCase
 
     // ── Helpers ───────────────────────────────────────────────────
 
-
     private function agentCommandForFixture(string $fixtureFile): string
     {
         $fixturePath = __DIR__.'/fixtures/'.$fixtureFile;
-        $fixtureEnv = \is_file($fixturePath)
-            ? 'HATFIELD_LLM_REPLAY_FIXTURE_PATH='.\escapeshellarg($fixturePath).' '
+        $fixtureEnv = is_file($fixturePath)
+            ? 'HATFIELD_LLM_REPLAY_FIXTURE_PATH='.escapeshellarg($fixturePath).' '
             : '';
 
         $projectDir = ProjectDir::get();
@@ -254,17 +250,17 @@ final class TuiToolOutputE2eTest extends TestCase
                 .'--model=llama_cpp_test/test '
                 .'--tools-excluded=bash 2>&1',
             TuiE2eDatabaseEnv::shellPrefix($dbPath, $transportDbPath),
-            \escapeshellarg($this->testProjectDir.'/home'),
+            escapeshellarg($this->testProjectDir.'/home'),
             $fixtureEnv,
-            \escapeshellarg($php),
-            \escapeshellarg($script),
+            escapeshellarg($php),
+            escapeshellarg($script),
         );
     }
 
     private function createIsolatedProjectDirForEdit(): string
     {
         $dir = $this->createIsolatedProjectDir();
-        \file_put_contents($dir.'/target.txt', "before\n");
+        file_put_contents($dir.'/target.txt', "before\n");
 
         return $dir;
     }
@@ -272,8 +268,8 @@ final class TuiToolOutputE2eTest extends TestCase
     private function agentCommand(): string
     {
         $fixturePath = __DIR__.'/fixtures/tui-tool-call-read.json';
-        $fixtureEnv = \is_file($fixturePath)
-            ? 'HATFIELD_LLM_REPLAY_FIXTURE_PATH='.\escapeshellarg($fixturePath).' '
+        $fixtureEnv = is_file($fixturePath)
+            ? 'HATFIELD_LLM_REPLAY_FIXTURE_PATH='.escapeshellarg($fixturePath).' '
             : '';
 
         $projectDir = ProjectDir::get();
@@ -282,9 +278,7 @@ final class TuiToolOutputE2eTest extends TestCase
 
         $paths = TuiE2eDatabaseEnv::allocatePaths('tui-tool-output-');
 
-
         $dbPath = $paths['app'];
-
 
         $transportDbPath = $paths['transport'];
 
@@ -293,21 +287,21 @@ final class TuiToolOutputE2eTest extends TestCase
                 .'--model=llama_cpp_test/test '
                 .'--tools-excluded=bash 2>&1',
             TuiE2eDatabaseEnv::shellPrefix($dbPath, $transportDbPath),
-            \escapeshellarg($this->testProjectDir.'/home'),
+            escapeshellarg($this->testProjectDir.'/home'),
             $fixtureEnv,
-            \escapeshellarg($php),
-            \escapeshellarg($script),
+            escapeshellarg($php),
+            escapeshellarg($script),
         );
     }
 
     private function createIsolatedProjectDir(): string
     {
         $dir = TestDirectoryIsolation::createProjectTempDir('tui-e2e-tool-output');
-        @\mkdir($dir.'/.hatfield', 0o777, true);
+        @mkdir($dir.'/.hatfield', 0o777, true);
 
         // Create a test file the read tool will read.  The sentinel is
         // what we assert appears in the TUI transcript.
-        \file_put_contents($dir.'/test.txt', self::OUTPUT_SENTINEL."\n");
+        file_put_contents($dir.'/test.txt', self::OUTPUT_SENTINEL."\n");
 
         $settings = [
             'ai' => [
@@ -368,10 +362,10 @@ final class TuiToolOutputE2eTest extends TestCase
         ];
 
         $yaml = \Symfony\Component\Yaml\Yaml::dump($settings, 6, 4);
-        \file_put_contents($dir.'/.hatfield/settings.yaml', $yaml);
+        file_put_contents($dir.'/.hatfield/settings.yaml', $yaml);
 
-        @\mkdir($dir.'/home/.hatfield', 0o777, true);
-        \file_put_contents($dir.'/home/.hatfield/settings.yaml', $yaml);
+        @mkdir($dir.'/home/.hatfield', 0o777, true);
+        file_put_contents($dir.'/home/.hatfield/settings.yaml', $yaml);
 
         return $dir;
     }
@@ -381,6 +375,6 @@ final class TuiToolOutputE2eTest extends TestCase
         $ansi = $this->tmux->captureAnsi($pane);
         $ts = date('Ymd-His');
         $path = \sprintf('%s/%s-%s.ansi', $this->snapshotDir, $tag, $ts);
-        \file_put_contents($path, $ansi);
+        file_put_contents($path, $ansi);
     }
 }

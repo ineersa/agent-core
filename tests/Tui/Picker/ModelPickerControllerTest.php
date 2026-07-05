@@ -7,13 +7,13 @@ namespace Ineersa\Tui\Tests\Picker;
 use Ineersa\CodingAgent\Config\Ai\AiConfig;
 use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
 use Ineersa\CodingAgent\Config\AppConfig;
-use Ineersa\CodingAgent\Config\SessionsConfig;
 use Ineersa\CodingAgent\Config\HomeSettingsWriter;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\ModelResolver;
 use Ineersa\CodingAgent\Config\ModelSelectionService;
 use Ineersa\CodingAgent\Config\ModelSettingsPersister;
 use Ineersa\CodingAgent\Config\SessionMetadataStore;
+use Ineersa\CodingAgent\Config\SessionsConfig;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
@@ -65,13 +65,13 @@ class ModelPickerControllerTest extends TestCase
         $items = ModelPickerController::buildItemsStatic($service, $state, $this->createTheme());
 
         // At least 2 models configured
-        self::assertGreaterThanOrEqual(2, count($items));
+        $this->assertGreaterThanOrEqual(2, \count($items));
 
         // First item should be the favorite
-        self::assertStringContainsString('llama_cpp/flash', $items[0]['label']);
+        $this->assertStringContainsString('llama_cpp/flash', $items[0]['label']);
 
         // Favorite should have ★ marker
-        self::assertStringContainsString('★', $items[0]['label']);
+        $this->assertStringContainsString('★', $items[0]['label']);
     }
 
     #[Test]
@@ -90,7 +90,7 @@ class ModelPickerControllerTest extends TestCase
                 break;
             }
         }
-        self::assertTrue($currentFound, 'Current model should be marked with ❯');
+        $this->assertTrue($currentFound, 'Current model should be marked with ❯');
     }
 
     #[Test]
@@ -104,7 +104,7 @@ class ModelPickerControllerTest extends TestCase
         // No item should carry a description key — visual distinction is
         // handled by coloured markers, not textual metadata.
         foreach ($items as $item) {
-            self::assertArrayNotHasKey('description', $item);
+            $this->assertArrayNotHasKey('description', $item);
         }
     }
 
@@ -117,16 +117,16 @@ class ModelPickerControllerTest extends TestCase
 
         $items = FavoritePickerController::buildFavoritesItems($service, $this->createTheme());
 
-        self::assertGreaterThanOrEqual(2, count($items));
+        $this->assertGreaterThanOrEqual(2, \count($items));
 
         $favFound = false;
         foreach ($items as $item) {
             if ('llama_cpp/flash' === $item['value']) {
                 $favFound = true;
-                self::assertStringContainsString('*', $item['label']);
+                $this->assertStringContainsString('*', $item['label']);
             }
         }
-        self::assertTrue($favFound, 'Favorited model should be in items');
+        $this->assertTrue($favFound, 'Favorited model should be in items');
     }
 
     #[Test]
@@ -136,7 +136,7 @@ class ModelPickerControllerTest extends TestCase
 
         $items = FavoritePickerController::buildFavoritesItems($service, $this->createTheme());
 
-        self::assertGreaterThanOrEqual(2, count($items));
+        $this->assertGreaterThanOrEqual(2, \count($items));
 
         foreach ($items as $item) {
             $label = $item['label'];
@@ -144,8 +144,8 @@ class ModelPickerControllerTest extends TestCase
             // Non-favorites should start with a space, not with *.
             // Do NOT trim — leading space IS the marker for non-favorites.
             $firstChar = mb_substr($label, 0, 1);
-            self::assertNotSame('*', $firstChar, 'Non-favorite items should not have * marker');
-            self::assertSame(' ', $firstChar, 'Non-favorite items should have space as marker placeholder');
+            $this->assertNotSame('*', $firstChar, 'Non-favorite items should not have * marker');
+            $this->assertSame(' ', $firstChar, 'Non-favorite items should have space as marker placeholder');
         }
     }
 
@@ -158,16 +158,16 @@ class ModelPickerControllerTest extends TestCase
             ['value' => 'model-c', 'label' => 'Model C'],
         ];
 
-        self::assertSame(0, ModelPickerController::findItemIndex($items, 'model-a'));
-        self::assertSame(1, ModelPickerController::findItemIndex($items, 'model-b'));
-        self::assertSame(2, ModelPickerController::findItemIndex($items, 'model-c'));
-        self::assertNull(ModelPickerController::findItemIndex($items, 'model-d'));
+        $this->assertSame(0, ModelPickerController::findItemIndex($items, 'model-a'));
+        $this->assertSame(1, ModelPickerController::findItemIndex($items, 'model-b'));
+        $this->assertSame(2, ModelPickerController::findItemIndex($items, 'model-c'));
+        $this->assertNull(ModelPickerController::findItemIndex($items, 'model-d'));
     }
 
     #[Test]
     public function testFindItemIndexReturnsNullForEmptyArray(): void
     {
-        self::assertNull(ModelPickerController::findItemIndex([], 'anything'));
+        $this->assertNull(ModelPickerController::findItemIndex([], 'anything'));
     }
 
     // ── Helpers ──

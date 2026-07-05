@@ -89,11 +89,11 @@ PHP);
     {
         $argv = $this->startAndCaptureArgv(promptTemplatePaths: [], noPromptTemplates: false);
 
-        self::assertContains('agent', $argv);
-        self::assertContains('--controller', $argv);
-        self::assertNotContains('--no-prompt-templates', $argv);
+        $this->assertContains('agent', $argv);
+        $this->assertContains('--controller', $argv);
+        $this->assertNotContains('--no-prompt-templates', $argv);
         foreach ($argv as $arg) {
-            self::assertStringStartsNotWith('--prompt-template=', $arg);
+            $this->assertStringStartsNotWith('--prompt-template=', $arg);
         }
     }
 
@@ -101,15 +101,15 @@ PHP);
     {
         $argv = $this->startAndCaptureArgv(promptTemplatePaths: ['/path1.md', '/path2.md'], noPromptTemplates: false);
 
-        self::assertContains('--prompt-template=/path1.md', $argv);
-        self::assertContains('--prompt-template=/path2.md', $argv);
+        $this->assertContains('--prompt-template=/path1.md', $argv);
+        $this->assertContains('--prompt-template=/path2.md', $argv);
     }
 
     public function testNoPromptTemplatesFlagInChildArgv(): void
     {
         $argv = $this->startAndCaptureArgv(promptTemplatePaths: [], noPromptTemplates: true);
 
-        self::assertContains('--no-prompt-templates', $argv);
+        $this->assertContains('--no-prompt-templates', $argv);
     }
 
     public function testCombinedArgsPreserveOrder(): void
@@ -119,9 +119,9 @@ PHP);
         $noIndex = array_search('--no-prompt-templates', $argv, true);
         $ptIndex = array_search('--prompt-template=/a.md', $argv, true);
 
-        self::assertNotFalse($noIndex);
-        self::assertNotFalse($ptIndex);
-        self::assertLessThan($ptIndex, $noIndex, '--no-prompt-templates should come before --prompt-template');
+        $this->assertNotFalse($noIndex);
+        $this->assertNotFalse($ptIndex);
+        $this->assertLessThan($ptIndex, $noIndex, '--no-prompt-templates should come before --prompt-template');
     }
 
     // ── Helpers ────────────────────────────────────────────────────
@@ -148,7 +148,8 @@ PHP);
                 public function __construct(
                     private string $fakeScript,
                     private string $dumpFlag,
-                ) {}
+                ) {
+                }
 
                 public function command(): array
                 {
@@ -174,22 +175,22 @@ PHP);
             runId: 'test-run-'.bin2hex(random_bytes(4)),
         ));
 
-        self::assertSame('running', $handle->status);
+        $this->assertSame('running', $handle->status);
 
         // Wait for the process to finish writing the dump.
         $timeout = time() + 5;
         while (!is_file($argvFile) || 0 === filesize($argvFile)) {
             if (time() > $timeout) {
-                self::fail('Timeout waiting for argv dump file at '.$argvFile);
+                $this->fail('Timeout waiting for argv dump file at '.$argvFile);
             }
             usleep(50_000);
         }
 
         $json = file_get_contents($argvFile);
-        self::assertNotFalse($json, 'argv dump file should be readable');
+        $this->assertNotFalse($json, 'argv dump file should be readable');
         $data = json_decode($json, true);
-        self::assertIsArray($data, 'argv dump should be a JSON array');
-        self::assertNotEmpty($data, 'argv dump should not be empty');
+        $this->assertIsArray($data, 'argv dump should be a JSON array');
+        $this->assertNotEmpty($data, 'argv dump should not be empty');
 
         return $data;
     }

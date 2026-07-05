@@ -17,7 +17,7 @@ final class CommandBoundaryTest extends TestCase
 
     public function testCoreCommandKindAllOrderedList(): void
     {
-        self::assertSame(
+        $this->assertSame(
             ['steer', 'follow_up', 'append_message', 'cancel', 'human_response', 'continue', 'compact'],
             CoreCommandKind::ALL,
         );
@@ -26,7 +26,7 @@ final class CommandBoundaryTest extends TestCase
     #[DataProvider('coreCommandKindIsCoreProvider')]
     public function testCoreCommandKindIsCore(string $kind, bool $expected): void
     {
-        self::assertSame($expected, CoreCommandKind::isCore($kind));
+        $this->assertSame($expected, CoreCommandKind::isCore($kind));
     }
 
     /**
@@ -58,12 +58,12 @@ final class CommandBoundaryTest extends TestCase
             options: ['cancel_safe' => true],
         );
 
-        self::assertSame('core', $command->status);
-        self::assertSame('steer', $command->kind);
-        self::assertSame(['input' => 'hello'], $command->payload);
-        self::assertSame(['cancel_safe' => true], $command->options);
-        self::assertNull($command->reason);
-        self::assertFalse($command->isRejected());
+        $this->assertSame('core', $command->status);
+        $this->assertSame('steer', $command->kind);
+        $this->assertSame(['input' => 'hello'], $command->payload);
+        $this->assertSame(['cancel_safe' => true], $command->options);
+        $this->assertNull($command->reason);
+        $this->assertFalse($command->isRejected());
     }
 
     public function testRoutedCommandExtensionFactory(): void
@@ -74,12 +74,12 @@ final class CommandBoundaryTest extends TestCase
             options: [],
         );
 
-        self::assertSame('extension', $command->status);
-        self::assertSame('ext_custom_action', $command->kind);
-        self::assertSame(['action' => 'summarize'], $command->payload);
-        self::assertSame([], $command->options);
-        self::assertNull($command->reason);
-        self::assertFalse($command->isRejected());
+        $this->assertSame('extension', $command->status);
+        $this->assertSame('ext_custom_action', $command->kind);
+        $this->assertSame(['action' => 'summarize'], $command->payload);
+        $this->assertSame([], $command->options);
+        $this->assertNull($command->reason);
+        $this->assertFalse($command->isRejected());
     }
 
     public function testRoutedCommandRejectedFactory(): void
@@ -89,12 +89,12 @@ final class CommandBoundaryTest extends TestCase
             reason: 'Validation failed: input too long',
         );
 
-        self::assertSame('rejected', $command->status);
-        self::assertSame('steer', $command->kind);
-        self::assertSame([], $command->payload);
-        self::assertSame([], $command->options);
-        self::assertSame('Validation failed: input too long', $command->reason);
-        self::assertTrue($command->isRejected());
+        $this->assertSame('rejected', $command->status);
+        $this->assertSame('steer', $command->kind);
+        $this->assertSame([], $command->payload);
+        $this->assertSame([], $command->options);
+        $this->assertSame('Validation failed: input too long', $command->reason);
+        $this->assertTrue($command->isRejected());
     }
 
     /* ─── PendingCommand ─── */
@@ -107,12 +107,12 @@ final class CommandBoundaryTest extends TestCase
             idempotencyKey: 'ik-abc',
         );
 
-        self::assertSame('run-pending', $command->runId);
-        self::assertSame('steer', $command->kind);
-        self::assertSame('ik-abc', $command->idempotencyKey);
-        self::assertSame([], $command->payload);
-        self::assertInstanceOf(CommandCancellationOptions::class, $command->options);
-        self::assertFalse($command->options->safe);
+        $this->assertSame('run-pending', $command->runId);
+        $this->assertSame('steer', $command->kind);
+        $this->assertSame('ik-abc', $command->idempotencyKey);
+        $this->assertSame([], $command->payload);
+        $this->assertInstanceOf(CommandCancellationOptions::class, $command->options);
+        $this->assertFalse($command->options->safe);
     }
 
     public function testPendingCommandWithExplicitOptions(): void
@@ -126,8 +126,8 @@ final class CommandBoundaryTest extends TestCase
             options: $options,
         );
 
-        self::assertSame('cancel', $command->kind);
-        self::assertSame(['reason' => 'user requested'], $command->payload);
-        self::assertTrue($command->options->safe);
+        $this->assertSame('cancel', $command->kind);
+        $this->assertSame(['reason' => 'user requested'], $command->payload);
+        $this->assertTrue($command->options->safe);
     }
 }

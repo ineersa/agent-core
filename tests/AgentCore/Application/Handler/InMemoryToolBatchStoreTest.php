@@ -18,7 +18,7 @@ final class InMemoryToolBatchStoreTest extends TestCase
 
     public function testLoadReturnsNullForUnknownBatch(): void
     {
-        self::assertNull($this->store->load('run-1', 1, 'step-1'));
+        $this->assertNull($this->store->load('run-1', 1, 'step-1'));
     }
 
     public function testSaveAndLoadRoundTrip(): void
@@ -39,8 +39,8 @@ final class InMemoryToolBatchStoreTest extends TestCase
         $this->store->save('run-1', 1, 'step-1', $state);
         $loaded = $this->store->load('run-1', 1, 'step-1');
 
-        self::assertIsArray($loaded);
-        self::assertSame($state, $loaded);
+        $this->assertIsArray($loaded);
+        $this->assertSame($state, $loaded);
     }
 
     public function testSaveOverwritesExistingBatch(): void
@@ -52,7 +52,7 @@ final class InMemoryToolBatchStoreTest extends TestCase
         $this->store->save('run-1', 1, 'step-1', $updated);
 
         $loaded = $this->store->load('run-1', 1, 'step-1');
-        self::assertSame(2, $loaded['max_parallelism']);
+        $this->assertSame(2, $loaded['max_parallelism']);
     }
 
     public function testDeleteRemovesBatch(): void
@@ -61,7 +61,7 @@ final class InMemoryToolBatchStoreTest extends TestCase
         $this->store->save('run-1', 1, 'step-1', $state);
         $this->store->delete('run-1', 1, 'step-1');
 
-        self::assertNull($this->store->load('run-1', 1, 'step-1'));
+        $this->assertNull($this->store->load('run-1', 1, 'step-1'));
     }
 
     public function testDeleteDoesNotAffectOtherBatches(): void
@@ -73,7 +73,7 @@ final class InMemoryToolBatchStoreTest extends TestCase
 
         $this->store->delete('run-1', 1, 'step-1');
 
-        self::assertNull($this->store->load('run-1', 1, 'step-1'));
-        self::assertIsArray($this->store->load('run-1', 1, 'step-2'));
+        $this->assertNull($this->store->load('run-1', 1, 'step-1'));
+        $this->assertIsArray($this->store->load('run-1', 1, 'step-2'));
     }
 }

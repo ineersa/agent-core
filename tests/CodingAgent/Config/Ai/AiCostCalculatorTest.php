@@ -52,7 +52,7 @@ final class AiCostCalculatorTest extends TestCase
         // input: 1M × $3/M = $3.00
         // output: 500k × $15/M = $7.50
         // total: $10.50
-        self::assertEqualsWithDelta(10.50, $cost, 0.01);
+        $this->assertEqualsWithDelta(10.50, $cost, 0.01);
     }
 
     public function testCalculateCostWithThinkingTokens(): void
@@ -67,7 +67,7 @@ final class AiCostCalculatorTest extends TestCase
         // input: 100k × $3/M = $0.30
         // output + thinking: 80k × $15/M = $1.20
         // total: $1.50
-        self::assertEqualsWithDelta(1.50, $cost, 0.01);
+        $this->assertEqualsWithDelta(1.50, $cost, 0.01);
     }
 
     public function testCalculateCostWithCachedTokens(): void
@@ -82,7 +82,7 @@ final class AiCostCalculatorTest extends TestCase
         // output: 500k × $15/M = $7.50
         // cached: 200k × $3.75/M = $0.75
         // total: $11.25
-        self::assertEqualsWithDelta(11.25, $cost, 0.01);
+        $this->assertEqualsWithDelta(11.25, $cost, 0.01);
     }
 
     public function testCalculateCostNoPricingReturnsZero(): void
@@ -92,7 +92,7 @@ final class AiCostCalculatorTest extends TestCase
             'output_tokens' => 500_000,
         ]);
 
-        self::assertSame(0.0, $cost);
+        $this->assertSame(0.0, $cost);
     }
 
     public function testCalculateCostWithZeroTokens(): void
@@ -102,7 +102,7 @@ final class AiCostCalculatorTest extends TestCase
             'output_tokens' => 0,
         ]);
 
-        self::assertSame(0.0, $cost);
+        $this->assertSame(0.0, $cost);
     }
 
     public function testCalculateCostWithAllZeroPricing(): void
@@ -131,13 +131,13 @@ final class AiCostCalculatorTest extends TestCase
             'output_tokens' => 500_000,
         ]);
 
-        self::assertSame(0.0, $cost);
+        $this->assertSame(0.0, $cost);
     }
 
     public function testCalculateCostWithEmptyUsage(): void
     {
         $cost = $this->calculator->calculateCost('anthropic/claude-sonnet-4', []);
 
-        self::assertSame(0.0, $cost);
+        $this->assertSame(0.0, $cost);
     }
 }

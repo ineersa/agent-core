@@ -54,24 +54,6 @@ final class SafeGuardToolCallHookTest extends TestCase
         parent::tearDown();
     }
 
-    private function backupAndClearApprovalChannelEnv(): void
-    {
-        $value = \getenv('HATFIELD_APPROVAL_CHANNEL');
-        $this->approvalChannelEnvBackup = false === $value ? false : $value;
-        \putenv('HATFIELD_APPROVAL_CHANNEL');
-    }
-
-    private function restoreApprovalChannelEnv(): void
-    {
-        if (false === $this->approvalChannelEnvBackup) {
-            \putenv('HATFIELD_APPROVAL_CHANNEL');
-
-            return;
-        }
-
-        \putenv('HATFIELD_APPROVAL_CHANNEL='.$this->approvalChannelEnvBackup);
-    }
-
     // ── Bash tool ──
 
     public function testBashSafeCommandIsAllowed(): void
@@ -541,9 +523,9 @@ final class SafeGuardToolCallHookTest extends TestCase
 
     public function testAlwaysAllowApprovesAndPersistsToPolicyFile(): void
     {
-        $tmpDir = sys_get_temp_dir() . '/sg_hook_test_' . uniqid();
+        $tmpDir = sys_get_temp_dir().'/sg_hook_test_'.uniqid();
         mkdir($tmpDir, 0o755, true);
-        $settingsPath = $tmpDir . '/settings.yaml';
+        $settingsPath = $tmpDir.'/settings.yaml';
 
         try {
             $config = new SafeGuardConfig(autoDenyInNoninteractive: false);
@@ -848,7 +830,7 @@ final class SafeGuardToolCallHookTest extends TestCase
     {
         // Simulate interactive TUI spawning the controller with
         // HATFIELD_APPROVAL_CHANNEL=controller.
-        \putenv('HATFIELD_APPROVAL_CHANNEL=controller');
+        putenv('HATFIELD_APPROVAL_CHANNEL=controller');
 
         try {
             $hook = $this->createHook(autoDeny: true);
@@ -865,7 +847,7 @@ final class SafeGuardToolCallHookTest extends TestCase
             $this->assertArrayHasKey('question_id', $dto->details);
             $this->assertNotEmpty((string) ($dto->details['question_id'] ?? ''));
         } finally {
-            \putenv('HATFIELD_APPROVAL_CHANNEL');
+            putenv('HATFIELD_APPROVAL_CHANNEL');
         }
     }
 
@@ -883,6 +865,66 @@ final class SafeGuardToolCallHookTest extends TestCase
         ));
 
         $this->assertSame(ToolCallDecisionKindEnum::RequireApproval, $dto->kind);
+    }
+
+    public function testAutoDenyRelaxableForNoninteractiveChildDespiteApprovalChannel(): void
+    {
+        putenv('HATFIELD_APPROVAL_CHANNEL=controller');
+        try {
+            $hook = $this->createHook(autoDeny: true);
+            $dto = $hook->onToolCall(new ToolCallContextDTO(
+                toolCallId: 'call_child_rm',
+                toolName: 'bash',
+                arguments: ['command' => 'rm -rf /tmp/child-build'],
+                orderIndex: 0,
+                runId: 'child-run',
+                metadata: ['noninteractive_child_run' => true],
+            ));
+
+            $this->assertSame(ToolCallDecisionKindEnum::Block, $dto->kind);
+            $this->assertTrue((bool) ($dto->details['auto_denied'] ?? false));
+            $this->assertSame('destructive', $dto->details['category']);
+        } finally {
+            putenv('HATFIELD_APPROVAL_CHANNEL');
+        }
+    }
+
+    public function testInteractiveParentStillRequiresApprovalWithApprovalChannel(): void
+    {
+        putenv('HATFIELD_APPROVAL_CHANNEL=controller');
+        try {
+            $hook = $this->createHook(autoDeny: true);
+            $dto = $hook->onToolCall(new ToolCallContextDTO(
+                toolCallId: 'call_parent_rm',
+                toolName: 'bash',
+                arguments: ['command' => 'rm -rf /tmp/test-build'],
+                orderIndex: 0,
+                runId: 'parent-run',
+                metadata: ['noninteractive_child_run' => false],
+            ));
+
+            $this->assertSame(ToolCallDecisionKindEnum::RequireApproval, $dto->kind);
+        } finally {
+            putenv('HATFIELD_APPROVAL_CHANNEL');
+        }
+    }
+
+    private function backupAndClearApprovalChannelEnv(): void
+    {
+        $value = getenv('HATFIELD_APPROVAL_CHANNEL');
+        $this->approvalChannelEnvBackup = false === $value ? false : $value;
+        putenv('HATFIELD_APPROVAL_CHANNEL');
+    }
+
+    private function restoreApprovalChannelEnv(): void
+    {
+        if (false === $this->approvalChannelEnvBackup) {
+            putenv('HATFIELD_APPROVAL_CHANNEL');
+
+            return;
+        }
+
+        putenv('HATFIELD_APPROVAL_CHANNEL='.$this->approvalChannelEnvBackup);
     }
 
     /**
@@ -904,47 +946,4 @@ final class SafeGuardToolCallHookTest extends TestCase
             autoDenyInNoninteractive: $autoDeny,
         );
     }
-
-    public function testAutoDenyRelaxableForNoninteractiveChildDespiteApprovalChannel(): void
-    {
-        \putenv('HATFIELD_APPROVAL_CHANNEL=controller');
-        try {
-            $hook = $this->createHook(autoDeny: true);
-            $dto = $hook->onToolCall(new ToolCallContextDTO(
-                toolCallId: 'call_child_rm',
-                toolName: 'bash',
-                arguments: ['command' => 'rm -rf /tmp/child-build'],
-                orderIndex: 0,
-                runId: 'child-run',
-                metadata: ['noninteractive_child_run' => true],
-            ));
-
-            self::assertSame(ToolCallDecisionKindEnum::Block, $dto->kind);
-            self::assertTrue((bool) ($dto->details['auto_denied'] ?? false));
-            self::assertSame('destructive', $dto->details['category']);
-        } finally {
-            \putenv('HATFIELD_APPROVAL_CHANNEL');
-        }
-    }
-
-    public function testInteractiveParentStillRequiresApprovalWithApprovalChannel(): void
-    {
-        \putenv('HATFIELD_APPROVAL_CHANNEL=controller');
-        try {
-            $hook = $this->createHook(autoDeny: true);
-            $dto = $hook->onToolCall(new ToolCallContextDTO(
-                toolCallId: 'call_parent_rm',
-                toolName: 'bash',
-                arguments: ['command' => 'rm -rf /tmp/test-build'],
-                orderIndex: 0,
-                runId: 'parent-run',
-                metadata: ['noninteractive_child_run' => false],
-            ));
-
-            self::assertSame(ToolCallDecisionKindEnum::RequireApproval, $dto->kind);
-        } finally {
-            \putenv('HATFIELD_APPROVAL_CHANNEL');
-        }
-    }
-
 }

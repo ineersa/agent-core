@@ -137,7 +137,6 @@ final class RuntimeEventEmitterTest extends TestCase
         $this->assertContains(159, $seqs);
     }
 
-
     public function testDrainRegistersCursorOnRunResumedAndForwardsCanonicalEvents(): void
     {
         $runId = 'resumed-session-7';
@@ -175,7 +174,6 @@ final class RuntimeEventEmitterTest extends TestCase
         $this->assertContains(RuntimeEventTypeEnum::RunResumed->value, $types);
         $this->assertContains(RuntimeEventTypeEnum::ToolExecutionCompleted->value, $types);
     }
-
 
     public function testEmitRegistersChildRunFromSubagentProgressAndDrainForwardsChildEvents(): void
     {
@@ -223,8 +221,8 @@ final class RuntimeEventEmitterTest extends TestCase
         $stdout = $this->stdoutHandle($emitter);
         rewind($stdout);
         $raw = stream_get_contents($stdout) ?: '';
-        self::assertStringContainsString($childRunId, $raw);
-        self::assertStringContainsString('turn.started', $raw);
+        $this->assertStringContainsString($childRunId, $raw);
+        $this->assertStringContainsString('turn.started', $raw);
     }
 
     private function createEmitter(): RuntimeEventEmitter

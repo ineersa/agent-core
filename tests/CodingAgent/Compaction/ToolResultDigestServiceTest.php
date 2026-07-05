@@ -40,10 +40,10 @@ final class ToolResultDigestServiceTest extends TestCase
     public function testDigestToolResultContainsAllRequiredFields(): void
     {
         // ── Build a tool message with rich details ──
-        $originalContent = \implode("\n", [
-            \str_repeat('A', 100), // filler before important content
+        $originalContent = implode("\n", [
+            str_repeat('A', 100), // filler before important content
             'Fatal error: Call to undefined method Foo::bar() in src/Service/FooService.php:42',
-            \str_repeat('B', 1200), // body content to trigger preview split (> PREVIEW_LENGTH * 2 = 1000)
+            str_repeat('B', 1200), // body content to trigger preview split (> PREVIEW_LENGTH * 2 = 1000)
             'Traceback (most recent call last):',
         ]);
 
@@ -64,39 +64,39 @@ final class ToolResultDigestServiceTest extends TestCase
         $messages = $this->digestService->digestToolResults([$original]);
 
         // Original message must not be mutated.
-        self::assertCount(1, $messages);
-        self::assertNotSame($original, $messages[0]);
-        self::assertSame('tool', $original->role);
-        self::assertSame('bash', $original->toolName);
-        self::assertSame('call_abc123', $original->toolCallId);
-        self::assertTrue($original->isError);
+        $this->assertCount(1, $messages);
+        $this->assertNotSame($original, $messages[0]);
+        $this->assertSame('tool', $original->role);
+        $this->assertSame('bash', $original->toolName);
+        $this->assertSame('call_abc123', $original->toolCallId);
+        $this->assertTrue($original->isError);
 
         // Digest message must preserve tool identity.
         $digest = $messages[0];
-        self::assertSame('tool', $digest->role);
-        self::assertSame('bash', $digest->toolName);
-        self::assertSame('call_abc123', $digest->toolCallId);
+        $this->assertSame('tool', $digest->role);
+        $this->assertSame('bash', $digest->toolName);
+        $this->assertSame('call_abc123', $digest->toolCallId);
 
         $digestText = self::assertSingleTextContent($digest);
 
         // ── Assert required digest fields ──
-        self::assertStringContainsString('[tool output elided before summarization]', $digestText);
-        self::assertStringContainsString('tool: bash', $digestText);
-        self::assertStringContainsString('tool_call_id: call_abc123', $digestText);
-        self::assertStringContainsString('command: vendor/bin/phpunit --filter=FooTest', $digestText);
+        $this->assertStringContainsString('[tool output elided before summarization]', $digestText);
+        $this->assertStringContainsString('tool: bash', $digestText);
+        $this->assertStringContainsString('tool_call_id: call_abc123', $digestText);
+        $this->assertStringContainsString('command: vendor/bin/phpunit --filter=FooTest', $digestText);
         // exit_code normalized from string '2' to int 2
-        self::assertStringContainsString('exit_code: 2', $digestText);
+        $this->assertStringContainsString('exit_code: 2', $digestText);
         // status reflects non-zero exit code
-        self::assertStringContainsString('status: exit code 2', $digestText);
-        self::assertStringContainsString('estimated_tokens: ~', $digestText);
-        self::assertStringContainsString('char_count:', $digestText);
-        self::assertStringContainsString('full_output: /tmp/blobs/abc123.output', $digestText);
-        self::assertStringContainsString('important_lines_detected:', $digestText);
-        self::assertStringContainsString('src/Service/FooService.php:42', $digestText);
-        self::assertStringContainsString('Fatal error', $digestText);
+        $this->assertStringContainsString('status: exit code 2', $digestText);
+        $this->assertStringContainsString('estimated_tokens: ~', $digestText);
+        $this->assertStringContainsString('char_count:', $digestText);
+        $this->assertStringContainsString('full_output: /tmp/blobs/abc123.output', $digestText);
+        $this->assertStringContainsString('important_lines_detected:', $digestText);
+        $this->assertStringContainsString('src/Service/FooService.php:42', $digestText);
+        $this->assertStringContainsString('Fatal error', $digestText);
         // preview_start and preview_end (content > 1000 chars triggers split)
-        self::assertStringContainsString('preview_start:', $digestText);
-        self::assertStringContainsString('preview_end:', $digestText);
+        $this->assertStringContainsString('preview_start:', $digestText);
+        $this->assertStringContainsString('preview_end:', $digestText);
     }
 
     /**
@@ -121,11 +121,11 @@ final class ToolResultDigestServiceTest extends TestCase
         $digest = $messages[0];
         $digestText = self::assertSingleTextContent($digest);
 
-        self::assertStringContainsString('exit_code: 0', $digestText);
+        $this->assertStringContainsString('exit_code: 0', $digestText);
         // Must NOT say "exit code 0" — zero exit is normal.
-        self::assertStringNotContainsString('status: exit code 0', $digestText);
+        $this->assertStringNotContainsString('status: exit code 0', $digestText);
         // Should report status as ok (not ERROR, since isError is false by default).
-        self::assertStringContainsString('status: ok', $digestText);
+        $this->assertStringContainsString('status: ok', $digestText);
     }
 
     /**
@@ -145,9 +145,9 @@ final class ToolResultDigestServiceTest extends TestCase
 
         $messages = $this->digestService->digestToolResults([$user, $assistant]);
 
-        self::assertCount(2, $messages);
-        self::assertSame($user, $messages[0]);
-        self::assertSame($assistant, $messages[1]);
+        $this->assertCount(2, $messages);
+        $this->assertSame($user, $messages[0]);
+        $this->assertSame($assistant, $messages[1]);
     }
 
     /**

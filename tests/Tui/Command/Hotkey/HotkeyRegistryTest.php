@@ -19,7 +19,7 @@ final class HotkeyRegistryTest extends TestCase
 
     public function testAllReturnsEmptyArrayWhenNoBindingsRegistered(): void
     {
-        self::assertSame([], $this->registry->all());
+        $this->assertSame([], $this->registry->all());
     }
 
     public function testAllReturnsAddedBindings(): void
@@ -32,10 +32,10 @@ final class HotkeyRegistryTest extends TestCase
         ));
 
         $all = $this->registry->all();
-        self::assertCount(1, $all);
-        self::assertSame('Global', $all[0]->context);
-        self::assertSame(['ctrl+c'], $all[0]->keys);
-        self::assertSame('Clear editor', $all[0]->action);
+        $this->assertCount(1, $all);
+        $this->assertSame('Global', $all[0]->context);
+        $this->assertSame(['ctrl+c'], $all[0]->keys);
+        $this->assertSame('Clear editor', $all[0]->action);
     }
 
     public function testGroupedGroupsByContext(): void
@@ -57,8 +57,8 @@ final class HotkeyRegistryTest extends TestCase
 
         // Global should come before Editor per context ordering
         $contexts = array_keys($groups);
-        self::assertSame('Global', $contexts[0]);
-        self::assertSame('Editor', $contexts[1]);
+        $this->assertSame('Global', $contexts[0]);
+        $this->assertSame('Editor', $contexts[1]);
     }
 
     public function testGroupedSortsByPriorityWithinContext(): void
@@ -79,9 +79,9 @@ final class HotkeyRegistryTest extends TestCase
         $groups = $this->registry->grouped();
         $editor = $groups['Editor'];
 
-        self::assertCount(2, $editor);
-        self::assertSame('Newline', $editor[0]->action); // priority 10 first
-        self::assertSame('Submit', $editor[1]->action);  // priority 20 second
+        $this->assertCount(2, $editor);
+        $this->assertSame('Newline', $editor[0]->action); // priority 10 first
+        $this->assertSame('Submit', $editor[1]->action);  // priority 20 second
     }
 
     public function testGroupedSortsByActionNameWhenSamePriority(): void
@@ -100,8 +100,8 @@ final class HotkeyRegistryTest extends TestCase
         ));
 
         $editor = $this->registry->grouped()['Editor'];
-        self::assertSame('AAA', $editor[0]->action);
-        self::assertSame('BBB', $editor[1]->action);
+        $this->assertSame('AAA', $editor[0]->action);
+        $this->assertSame('BBB', $editor[1]->action);
     }
 
     public function testGroupedContextsInDefinedOrder(): void
@@ -113,7 +113,7 @@ final class HotkeyRegistryTest extends TestCase
         $this->registry->add(new HotkeyBindingDTO(context: 'Global', keys: ['ctrl+c'], action: 'Clear', priority: 10));
 
         $contexts = array_keys($this->registry->grouped());
-        self::assertSame(['Global', 'History', 'Editor', 'Completion', 'Model'], $contexts);
+        $this->assertSame(['Global', 'History', 'Editor', 'Completion', 'Model'], $contexts);
     }
 
     public function testGroupedUnknownContextSortedLast(): void
@@ -133,8 +133,8 @@ final class HotkeyRegistryTest extends TestCase
 
         $contexts = array_keys($this->registry->grouped());
         // Global should be before unknown context
-        self::assertSame('Global', $contexts[0]);
-        self::assertSame('CustomUnknown', $contexts[1]);
+        $this->assertSame('Global', $contexts[0]);
+        $this->assertSame('CustomUnknown', $contexts[1]);
     }
 
     public function testDedupRepeatedSameAddDoesNotDuplicate(): void
@@ -151,7 +151,7 @@ final class HotkeyRegistryTest extends TestCase
         $this->registry->add($binding);
         $this->registry->add($binding);
 
-        self::assertCount(1, $this->registry->all());
+        $this->assertCount(1, $this->registry->all());
     }
 
     public function testDedupSameContextKeysActionSourceDifferentDescription(): void
@@ -173,9 +173,9 @@ final class HotkeyRegistryTest extends TestCase
         ));
 
         // Should not duplicate — description is not part of identity
-        self::assertCount(1, $this->registry->all());
+        $this->assertCount(1, $this->registry->all());
         // The first registered entry is kept
-        self::assertSame('Original', $this->registry->all()[0]->description);
+        $this->assertSame('Original', $this->registry->all()[0]->description);
     }
 
     public function testDedupDoesNotBlockDifferentBindings(): void
@@ -201,7 +201,7 @@ final class HotkeyRegistryTest extends TestCase
             source: 'core',
         ));
 
-        self::assertCount(3, $this->registry->all());
+        $this->assertCount(3, $this->registry->all());
     }
 
     public function testClearRemovesAllBindings(): void
@@ -219,11 +219,11 @@ final class HotkeyRegistryTest extends TestCase
             source: 'core',
         ));
 
-        self::assertCount(2, $this->registry->all());
+        $this->assertCount(2, $this->registry->all());
 
         $this->registry->clear();
-        self::assertSame([], $this->registry->all());
-        self::assertSame([], $this->registry->grouped());
+        $this->assertSame([], $this->registry->all());
+        $this->assertSame([], $this->registry->grouped());
     }
 
     public function testAfterClearCanReAdd(): void
@@ -239,7 +239,7 @@ final class HotkeyRegistryTest extends TestCase
         $this->registry->clear();
         $this->registry->add($binding);
 
-        self::assertCount(1, $this->registry->all());
+        $this->assertCount(1, $this->registry->all());
     }
 
     public function testConstructorRejectsEmptyKeys(): void

@@ -15,29 +15,19 @@ use PHPUnit\Framework\TestCase;
 #[CoversClass(TuiSessionLifecycleDispatcher::class)]
 final class TuiSessionLifecycleDispatcherTest extends TestCase
 {
-    private function sessionStartedEvent(string $sessionId = 'test-session'): TuiSessionLifecycleEventDTO
-    {
-        return new TuiSessionLifecycleEventDTO(
-            type: TuiSessionLifecycleEventTypeEnum::SessionStarted,
-            sessionId: $sessionId,
-            isDraft: false,
-            resuming: false,
-        );
-    }
-
     #[Test]
     public function testDispatchCallsSingleSubscriber(): void
     {
         $dispatcher = new TuiSessionLifecycleDispatcher();
 
         $called = false;
-        $dispatcher->subscribe(function (TuiSessionLifecycleEventDTO $event) use (&$called): void {
+        $dispatcher->subscribe(static function (TuiSessionLifecycleEventDTO $event) use (&$called): void {
             $called = true;
         });
 
         $dispatcher->dispatch($this->sessionStartedEvent());
 
-        self::assertTrue($called, 'Single subscriber must be called on dispatch.');
+        $this->assertTrue($called, 'Single subscriber must be called on dispatch.');
     }
 
     #[Test]
@@ -46,19 +36,19 @@ final class TuiSessionLifecycleDispatcherTest extends TestCase
         $dispatcher = new TuiSessionLifecycleDispatcher();
 
         $order = [];
-        $dispatcher->subscribe(function (TuiSessionLifecycleEventDTO $event) use (&$order): void {
+        $dispatcher->subscribe(static function (TuiSessionLifecycleEventDTO $event) use (&$order): void {
             $order[] = 'first';
         });
-        $dispatcher->subscribe(function (TuiSessionLifecycleEventDTO $event) use (&$order): void {
+        $dispatcher->subscribe(static function (TuiSessionLifecycleEventDTO $event) use (&$order): void {
             $order[] = 'second';
         });
-        $dispatcher->subscribe(function (TuiSessionLifecycleEventDTO $event) use (&$order): void {
+        $dispatcher->subscribe(static function (TuiSessionLifecycleEventDTO $event) use (&$order): void {
             $order[] = 'third';
         });
 
         $dispatcher->dispatch($this->sessionStartedEvent());
 
-        self::assertSame(['first', 'second', 'third'], $order, 'Subscribers must be called in registration order.');
+        $this->assertSame(['first', 'second', 'third'], $order, 'Subscribers must be called in registration order.');
     }
 
     #[Test]
@@ -67,7 +57,7 @@ final class TuiSessionLifecycleDispatcherTest extends TestCase
         $dispatcher = new TuiSessionLifecycleDispatcher();
 
         $receivedType = null;
-        $dispatcher->subscribe(function (TuiSessionLifecycleEventDTO $event) use (&$receivedType): void {
+        $dispatcher->subscribe(static function (TuiSessionLifecycleEventDTO $event) use (&$receivedType): void {
             $receivedType = $event->type;
         });
 
@@ -80,7 +70,7 @@ final class TuiSessionLifecycleDispatcherTest extends TestCase
 
         $dispatcher->dispatch($event);
 
-        self::assertSame(TuiSessionLifecycleEventTypeEnum::SessionResumed, $receivedType);
+        $this->assertSame(TuiSessionLifecycleEventTypeEnum::SessionResumed, $receivedType);
     }
 
     #[Test]
@@ -89,7 +79,7 @@ final class TuiSessionLifecycleDispatcherTest extends TestCase
         $dispatcher = new TuiSessionLifecycleDispatcher();
 
         $captured = null;
-        $dispatcher->subscribe(function (TuiSessionLifecycleEventDTO $event) use (&$captured): void {
+        $dispatcher->subscribe(static function (TuiSessionLifecycleEventDTO $event) use (&$captured): void {
             $captured = $event;
         });
 
@@ -104,13 +94,13 @@ final class TuiSessionLifecycleDispatcherTest extends TestCase
 
         $dispatcher->dispatch($event);
 
-        self::assertNotNull($captured);
-        self::assertSame(TuiSessionLifecycleEventTypeEnum::SessionEnded, $captured->type);
-        self::assertSame('ending-session', $captured->sessionId);
-        self::assertFalse($captured->isDraft);
-        self::assertFalse($captured->resuming);
-        self::assertSame('previous-session', $captured->previousSessionId);
-        self::assertSame(TuiSessionLifecycleEndReasonEnum::Switch, $captured->endReason);
+        $this->assertNotNull($captured);
+        $this->assertSame(TuiSessionLifecycleEventTypeEnum::SessionEnded, $captured->type);
+        $this->assertSame('ending-session', $captured->sessionId);
+        $this->assertFalse($captured->isDraft);
+        $this->assertFalse($captured->resuming);
+        $this->assertSame('previous-session', $captured->previousSessionId);
+        $this->assertSame(TuiSessionLifecycleEndReasonEnum::Switch, $captured->endReason);
     }
 
     #[Test]
@@ -121,7 +111,7 @@ final class TuiSessionLifecycleDispatcherTest extends TestCase
         $dispatcher->dispatch($this->sessionStartedEvent());
 
         // No assertion needed — just must not throw.
-        self::assertTrue(true);
+        $this->assertTrue(true);
     }
 
     #[Test]
@@ -129,10 +119,10 @@ final class TuiSessionLifecycleDispatcherTest extends TestCase
     {
         $dispatcher = new TuiSessionLifecycleDispatcher();
 
-        $dispatcher->subscribe(function (TuiSessionLifecycleEventDTO $event): void {
+        $dispatcher->subscribe(static function (TuiSessionLifecycleEventDTO $event): void {
             throw new \RuntimeException('First subscriber error');
         });
-        $dispatcher->subscribe(function (TuiSessionLifecycleEventDTO $event): void {
+        $dispatcher->subscribe(static function (TuiSessionLifecycleEventDTO $event): void {
             self::fail('Second subscriber must NOT be reached after first throw.');
         });
 
@@ -146,18 +136,18 @@ final class TuiSessionLifecycleDispatcherTest extends TestCase
     public function testFreshDispatcherHasNoSubscribersFromPriorInstance(): void
     {
         $first = new TuiSessionLifecycleDispatcher();
-        $first->subscribe(function (TuiSessionLifecycleEventDTO $event): void {});
+        $first->subscribe(static function (TuiSessionLifecycleEventDTO $event): void {});
 
         $second = new TuiSessionLifecycleDispatcher();
 
         $secondCalled = false;
-        $second->subscribe(function (TuiSessionLifecycleEventDTO $event) use (&$secondCalled): void {
+        $second->subscribe(static function (TuiSessionLifecycleEventDTO $event) use (&$secondCalled): void {
             $secondCalled = true;
         });
 
         $second->dispatch($this->sessionStartedEvent());
 
-        self::assertTrue($secondCalled, 'Fresh dispatcher must not inherit subscriptions from prior instance.');
+        $this->assertTrue($secondCalled, 'Fresh dispatcher must not inherit subscriptions from prior instance.');
     }
 
     #[Test]
@@ -166,7 +156,7 @@ final class TuiSessionLifecycleDispatcherTest extends TestCase
         $dispatcher = new TuiSessionLifecycleDispatcher();
 
         $captured = null;
-        $dispatcher->subscribe(function (TuiSessionLifecycleEventDTO $event) use (&$captured): void {
+        $dispatcher->subscribe(static function (TuiSessionLifecycleEventDTO $event) use (&$captured): void {
             $captured = $event;
         });
 
@@ -179,10 +169,20 @@ final class TuiSessionLifecycleDispatcherTest extends TestCase
 
         $dispatcher->dispatch($event);
 
-        self::assertNotNull($captured);
-        self::assertSame(TuiSessionLifecycleEventTypeEnum::SessionDraftStarted, $captured->type);
-        self::assertSame('', $captured->sessionId);
-        self::assertTrue($captured->isDraft);
-        self::assertFalse($captured->resuming);
+        $this->assertNotNull($captured);
+        $this->assertSame(TuiSessionLifecycleEventTypeEnum::SessionDraftStarted, $captured->type);
+        $this->assertSame('', $captured->sessionId);
+        $this->assertTrue($captured->isDraft);
+        $this->assertFalse($captured->resuming);
+    }
+
+    private function sessionStartedEvent(string $sessionId = 'test-session'): TuiSessionLifecycleEventDTO
+    {
+        return new TuiSessionLifecycleEventDTO(
+            type: TuiSessionLifecycleEventTypeEnum::SessionStarted,
+            sessionId: $sessionId,
+            isDraft: false,
+            resuming: false,
+        );
     }
 }

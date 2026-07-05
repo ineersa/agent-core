@@ -10,7 +10,6 @@ use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Yaml\Yaml;
 
-
 class HomeSettingsWriterTest extends TestCase
 {
     private string $tmpDir;
@@ -20,8 +19,8 @@ class HomeSettingsWriterTest extends TestCase
     protected function setUp(): void
     {
         $this->tmpDir = TestDirectoryIsolation::createProjectTempDir('hatfield_writer');
-        \mkdir($this->tmpDir . '/.hatfield', 0o755, true);
-        $this->file = $this->tmpDir . '/.hatfield/settings.yaml';
+        mkdir($this->tmpDir.'/.hatfield', 0o755, true);
+        $this->file = $this->tmpDir.'/.hatfield/settings.yaml';
         $pathResolver = new SettingsPathResolver('/app', $this->tmpDir);
         $this->writer = new HomeSettingsWriter($pathResolver);
     }
@@ -29,22 +28,6 @@ class HomeSettingsWriterTest extends TestCase
     protected function tearDown(): void
     {
         TestDirectoryIsolation::removeDirectory($this->tmpDir);
-    }
-
-    private function write(string $content): void
-    {
-        \file_put_contents($this->file, $content);
-    }
-
-    private function read(): string
-    {
-        return (string) \file_get_contents($this->file);
-    }
-
-    /** @return array<string, mixed> */
-    private function parse(): array
-    {
-        return Yaml::parseFile($this->file) ?? [];
     }
 
     // ── writeDefaultModel ──────────────────────────────────────────────
@@ -55,8 +38,8 @@ class HomeSettingsWriterTest extends TestCase
         $this->writer->writeDefaultModel('zai/glm-5.1');
 
         $p = $this->parse();
-        self::assertSame('zai/glm-5.1', $p['ai']['default_model'] ?? null);
-        self::assertSame('medium', $p['ai']['default_reasoning'] ?? null);
+        $this->assertSame('zai/glm-5.1', $p['ai']['default_model'] ?? null);
+        $this->assertSame('medium', $p['ai']['default_reasoning'] ?? null);
     }
 
     public function testDoesNotUncommentModelKey(): void
@@ -69,14 +52,14 @@ class HomeSettingsWriterTest extends TestCase
 
         $result = $this->read();
         // The commented line survives
-        self::assertStringContainsString('# default_model: old', $result);
+        $this->assertStringContainsString('# default_model: old', $result);
         // A new active key is inserted
-        self::assertStringContainsString('default_model: deepseek/deepseek-v4-pro', $result);
+        $this->assertStringContainsString('default_model: deepseek/deepseek-v4-pro', $result);
         // The active key is not prefixed with #
-        self::assertStringNotContainsString('# default_model: deepseek', $result);
+        $this->assertStringNotContainsString('# default_model: deepseek', $result);
 
         $p = $this->parse();
-        self::assertSame('deepseek/deepseek-v4-pro', $p['ai']['default_model'] ?? null);
+        $this->assertSame('deepseek/deepseek-v4-pro', $p['ai']['default_model'] ?? null);
     }
 
     public function testInsertsModelWhenAiSectionExists(): void
@@ -85,7 +68,7 @@ class HomeSettingsWriterTest extends TestCase
         $this->writer->writeDefaultModel('zai/glm-5.1');
 
         $p = $this->parse();
-        self::assertSame('zai/glm-5.1', $p['ai']['default_model'] ?? null);
+        $this->assertSame('zai/glm-5.1', $p['ai']['default_model'] ?? null);
     }
 
     public function testAppendsAiSectionForModel(): void
@@ -94,8 +77,8 @@ class HomeSettingsWriterTest extends TestCase
         $this->writer->writeDefaultModel('llama_cpp/flash');
 
         $p = $this->parse();
-        self::assertSame('llama_cpp/flash', $p['ai']['default_model'] ?? null);
-        self::assertSame('cyberpunk', $p['tui']['theme'] ?? null);
+        $this->assertSame('llama_cpp/flash', $p['ai']['default_model'] ?? null);
+        $this->assertSame('cyberpunk', $p['tui']['theme'] ?? null);
     }
 
     public function testPreservesCommentsOnModelWrite(): void
@@ -104,9 +87,9 @@ class HomeSettingsWriterTest extends TestCase
         $this->writer->writeDefaultModel('zai/glm-5.1');
 
         $result = $this->read();
-        self::assertStringContainsString('# my settings', $result);
-        self::assertStringContainsString('# model note', $result);
-        self::assertStringContainsString('# end note', $result);
+        $this->assertStringContainsString('# my settings', $result);
+        $this->assertStringContainsString('# model note', $result);
+        $this->assertStringContainsString('# end note', $result);
     }
 
     // ── writeDefaultReasoning ──────────────────────────────────────────
@@ -120,12 +103,12 @@ class HomeSettingsWriterTest extends TestCase
 
         $result = $this->read();
         // Commented line survives
-        self::assertStringContainsString('#   default_reasoning: low', $result);
+        $this->assertStringContainsString('#   default_reasoning: low', $result);
         // A new active key is inserted
-        self::assertStringContainsString('    default_reasoning: xhigh', $result);
+        $this->assertStringContainsString('    default_reasoning: xhigh', $result);
 
         $p = $this->parse();
-        self::assertSame('xhigh', $p['ai']['default_reasoning'] ?? null);
+        $this->assertSame('xhigh', $p['ai']['default_reasoning'] ?? null);
     }
 
     public function testInsertsReasoningWhenAbsent(): void
@@ -134,7 +117,7 @@ class HomeSettingsWriterTest extends TestCase
         $this->writer->writeDefaultReasoning('minimal');
 
         $p = $this->parse();
-        self::assertSame('minimal', $p['ai']['default_reasoning'] ?? null);
+        $this->assertSame('minimal', $p['ai']['default_reasoning'] ?? null);
     }
 
     // ── writeFavoriteModels ────────────────────────────────────────────
@@ -145,8 +128,8 @@ class HomeSettingsWriterTest extends TestCase
         $this->writer->writeFavoriteModels(['zai/glm-5.1', 'llama_cpp/flash']);
 
         $p = $this->parse();
-        self::assertSame(['zai/glm-5.1', 'llama_cpp/flash'], $p['ai']['favorite_models'] ?? null);
-        self::assertStringContainsString('favorite_models: [zai/glm-5.1, llama_cpp/flash]', $this->read());
+        $this->assertSame(['zai/glm-5.1', 'llama_cpp/flash'], $p['ai']['favorite_models'] ?? null);
+        $this->assertStringContainsString('favorite_models: [zai/glm-5.1, llama_cpp/flash]', $this->read());
     }
 
     public function testWritesEmptyFavoriteModels(): void
@@ -155,8 +138,8 @@ class HomeSettingsWriterTest extends TestCase
         $this->writer->writeFavoriteModels([]);
 
         $p = $this->parse();
-        self::assertSame([], $p['ai']['favorite_models'] ?? null);
-        self::assertStringContainsString('favorite_models: []', $this->read());
+        $this->assertSame([], $p['ai']['favorite_models'] ?? null);
+        $this->assertStringContainsString('favorite_models: []', $this->read());
     }
 
     public function testReplacesActiveFavoriteModels(): void
@@ -165,7 +148,7 @@ class HomeSettingsWriterTest extends TestCase
         $this->writer->writeFavoriteModels(['new/model']);
 
         $p = $this->parse();
-        self::assertSame(['new/model'], $p['ai']['favorite_models'] ?? null);
+        $this->assertSame(['new/model'], $p['ai']['favorite_models'] ?? null);
     }
 
     public function testDoesNotUncommentFavoriteModels(): void
@@ -175,11 +158,11 @@ class HomeSettingsWriterTest extends TestCase
         $this->writer->writeFavoriteModels(['new/model']);
 
         $result = $this->read();
-        self::assertStringContainsString('#    favorite_models: [old/model]', $result);
-        self::assertStringContainsString('favorite_models: [new/model]', $result);
+        $this->assertStringContainsString('#    favorite_models: [old/model]', $result);
+        $this->assertStringContainsString('favorite_models: [new/model]', $result);
 
         $p = $this->parse();
-        self::assertSame(['new/model'], $p['ai']['favorite_models'] ?? null);
+        $this->assertSame(['new/model'], $p['ai']['favorite_models'] ?? null);
     }
 
     public function testInsertsFavoriteModelsWhenAiSectionExists(): void
@@ -188,7 +171,7 @@ class HomeSettingsWriterTest extends TestCase
         $this->writer->writeFavoriteModels(['deepseek/deepseek-v4-pro']);
 
         $p = $this->parse();
-        self::assertSame(['deepseek/deepseek-v4-pro'], $p['ai']['favorite_models'] ?? null);
+        $this->assertSame(['deepseek/deepseek-v4-pro'], $p['ai']['favorite_models'] ?? null);
     }
 
     public function testAppendsAiSectionForFavoriteModels(): void
@@ -197,8 +180,8 @@ class HomeSettingsWriterTest extends TestCase
         $this->writer->writeFavoriteModels(['zai/glm-5.1']);
 
         $p = $this->parse();
-        self::assertSame(['zai/glm-5.1'], $p['ai']['favorite_models'] ?? null);
-        self::assertSame('cyberpunk', $p['tui']['theme'] ?? null);
+        $this->assertSame(['zai/glm-5.1'], $p['ai']['favorite_models'] ?? null);
+        $this->assertSame('cyberpunk', $p['tui']['theme'] ?? null);
     }
 
     // ── YAML quoting ───────────────────────────────────────────────────
@@ -209,7 +192,7 @@ class HomeSettingsWriterTest extends TestCase
         $this->writer->writeDefaultModel('model:with:colons#hash');
 
         $result = $this->read();
-        self::assertStringContainsString("default_model: 'model:with:colons#hash'", $result);
+        $this->assertStringContainsString("default_model: 'model:with:colons#hash'", $result);
     }
 
     public function testDoesNotQuoteNormalValues(): void
@@ -217,7 +200,7 @@ class HomeSettingsWriterTest extends TestCase
         $this->write("ai:\n    default_model: old\n");
         $this->writer->writeDefaultModel('zai/glm-5.1');
 
-        self::assertStringNotContainsString("'zai/glm-5.1'", $this->read());
+        $this->assertStringNotContainsString("'zai/glm-5.1'", $this->read());
     }
 
     public function testQuotesEmptyValue(): void
@@ -225,7 +208,7 @@ class HomeSettingsWriterTest extends TestCase
         $this->write("ai:\n    default_model: old\n");
         $this->writer->writeDefaultModel('');
 
-        self::assertStringContainsString("default_model: ''", $this->read());
+        $this->assertStringContainsString("default_model: ''", $this->read());
     }
 
     // ── Error ──────────────────────────────────────────────────────────
@@ -239,5 +222,19 @@ class HomeSettingsWriterTest extends TestCase
         $writer->writeDefaultModel('x');
     }
 
+    private function write(string $content): void
+    {
+        file_put_contents($this->file, $content);
+    }
 
+    private function read(): string
+    {
+        return (string) file_get_contents($this->file);
+    }
+
+    /** @return array<string, mixed> */
+    private function parse(): array
+    {
+        return Yaml::parseFile($this->file) ?? [];
+    }
 }

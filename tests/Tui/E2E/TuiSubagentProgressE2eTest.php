@@ -68,19 +68,19 @@ final class TuiSubagentProgressE2eTest extends TestCase
 
             $capture = $this->tmux->capturePlainWithHistory($pane, 2500);
 
-            self::assertStringContainsString('subagent scout', $capture);
-            self::assertStringContainsString('completed scout', $capture);
-            self::assertStringNotContainsString('running scout |', $capture);
-            self::assertStringContainsString('Task: Inspect TUI subagent rendering', $capture);
-            self::assertStringContainsString('Artifacts:', $capture);
-            self::assertStringContainsString('agent_e2e_progress_fixture', $capture);
-            self::assertStringContainsString('3 turns', $capture);
-            self::assertStringContainsString('Use agent_retrieve', $capture);
-            self::assertStringNotContainsString('subagent scout running | turn 1 | artifact', $capture);
-            self::assertStringNotContainsString('parallel subagents running', $capture);
+            $this->assertStringContainsString('subagent scout', $capture);
+            $this->assertStringContainsString('completed scout', $capture);
+            $this->assertStringNotContainsString('running scout |', $capture);
+            $this->assertStringContainsString('Task: Inspect TUI subagent rendering', $capture);
+            $this->assertStringContainsString('Artifacts:', $capture);
+            $this->assertStringContainsString('agent_e2e_progress_fixture', $capture);
+            $this->assertStringContainsString('3 turns', $capture);
+            $this->assertStringContainsString('Use agent_retrieve', $capture);
+            $this->assertStringNotContainsString('subagent scout running | turn 1 | artifact', $capture);
+            $this->assertStringNotContainsString('parallel subagents running', $capture);
 
             $turnOneCount = substr_count($capture, 'turn 1');
-            self::assertLessThanOrEqual(1, $turnOneCount, 'Coalesced progress must not repeat stale turn 1 spam');
+            $this->assertLessThanOrEqual(1, $turnOneCount, 'Coalesced progress must not repeat stale turn 1 spam');
 
             $this->saveAnsiSnapshot($pane, 'subagent-progress-resume');
             $this->tmux->sendKey($pane, 'C-d');
@@ -112,7 +112,7 @@ final class TuiSubagentProgressE2eTest extends TestCase
 
         $firstCapture = $this->tmux->capturePlainWithHistory($pane, 2000);
         $matched = preg_match('/session\s+(\d+)/', $firstCapture, $matches);
-        self::assertSame(1, $matched, 'Footer must show numeric session ID');
+        $this->assertSame(1, $matched, 'Footer must show numeric session ID');
 
         return $matches[1];
     }
@@ -131,7 +131,7 @@ final class TuiSubagentProgressE2eTest extends TestCase
 
         $transportDbPath = $paths['transport'];
 
-        return sprintf(
+        return \sprintf(
             'APP_ENV=test %sHOME=%s HATFIELD_LLM_REPLAY_FIXTURE_PATH=%s %s %s agent --model=llama_cpp_test/test --tools-excluded=bash 2>&1',
             TuiE2eDatabaseEnv::shellPrefix($dbPath, $transportDbPath),
             escapeshellarg($this->testProjectDir.'/home'),
@@ -193,6 +193,6 @@ final class TuiSubagentProgressE2eTest extends TestCase
         $path = $this->snapshotDir.'/'.$name.'.ansi';
         $ansi = $this->tmux->captureAnsi($pane);
         $ts = date('Ymd-His');
-        file_put_contents(sprintf('%s/%s-%s.ansi', $this->snapshotDir, $name, $ts), $ansi);
+        file_put_contents(\sprintf('%s/%s-%s.ansi', $this->snapshotDir, $name, $ts), $ansi);
     }
 }

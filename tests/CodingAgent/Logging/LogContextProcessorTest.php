@@ -38,15 +38,15 @@ final class LogContextProcessorTest extends TestCase
 
         // When ddtrace is loaded (as in this env), trace IDs are injected.
         // Ambient context fields (run_id, component) should NOT appear.
-        self::assertArrayNotHasKey('run_id', $result->extra);
-        self::assertArrayNotHasKey('component', $result->extra);
+        $this->assertArrayNotHasKey('run_id', $result->extra);
+        $this->assertArrayNotHasKey('component', $result->extra);
 
         // dd.trace_id and dd.span_id may or may not be present
         // depending on whether ddtrace is loaded. We just verify
         // nothing else leaked in.
         $allowedKeys = ['dd.trace_id', 'dd.span_id'];
         foreach ($result->extra as $key => $value) {
-            self::assertContains($key, $allowedKeys, "Unexpected extra key: \"{$key}\"");
+            $this->assertContains($key, $allowedKeys, "Unexpected extra key: \"{$key}\"");
         }
     }
 
@@ -63,8 +63,8 @@ final class LogContextProcessorTest extends TestCase
 
         $result = ($this->processor)($record);
 
-        self::assertSame('run-1', $result->extra['run_id']);
-        self::assertSame('runtime', $result->extra['component']);
+        $this->assertSame('run-1', $result->extra['run_id']);
+        $this->assertSame('runtime', $result->extra['component']);
 
         RunLogContext::leave();
     }
@@ -84,9 +84,9 @@ final class LogContextProcessorTest extends TestCase
         $result = ($this->processor)($record);
 
         // Ambient run_id should not overwrite the explicitly-set extra value
-        self::assertSame('overridden', $result->extra['run_id']);
+        $this->assertSame('overridden', $result->extra['run_id']);
         // ambient component should still be injected
-        self::assertSame('runtime', $result->extra['component']);
+        $this->assertSame('runtime', $result->extra['component']);
 
         RunLogContext::leave();
     }
@@ -108,13 +108,13 @@ final class LogContextProcessorTest extends TestCase
         $result = ($this->processor)($record);
 
         // event_type should NOT appear in extra (it's in context and caller controls it)
-        self::assertArrayNotHasKey('event_type', $result->extra,
+        $this->assertArrayNotHasKey('event_type', $result->extra,
             'Ambient event_type must not leak into extra when log context provides it');
         // component should still be injected since it's not in context
-        self::assertSame('runtime', $result->extra['component']);
+        $this->assertSame('runtime', $result->extra['component']);
 
         // The original context should be preserved
-        self::assertSame('completed', $result->context['event_type']);
+        $this->assertSame('completed', $result->context['event_type']);
 
         RunLogContext::leave();
     }
@@ -136,14 +136,14 @@ final class LogContextProcessorTest extends TestCase
         $result = ($this->processor)($record);
 
         // Ambient component must not leak into extra since context provides it
-        self::assertArrayNotHasKey('component', $result->extra,
+        $this->assertArrayNotHasKey('component', $result->extra,
             'Ambient component must not leak into extra when log context provides it');
-        self::assertArrayNotHasKey('event_type', $result->extra,
+        $this->assertArrayNotHasKey('event_type', $result->extra,
             'Ambient event_type must not leak into extra when log context provides it');
 
         // Original context preserved
-        self::assertSame('storage', $result->context['component']);
-        self::assertSame('event_store.appended', $result->context['event_type']);
+        $this->assertSame('storage', $result->context['component']);
+        $this->assertSame('event_store.appended', $result->context['event_type']);
 
         RunLogContext::leave();
     }
@@ -162,11 +162,11 @@ final class LogContextProcessorTest extends TestCase
         $result = ($this->processor)($record);
 
         // run_id is null so should not be injected
-        self::assertArrayNotHasKey('run_id', $result->extra);
+        $this->assertArrayNotHasKey('run_id', $result->extra);
         // empty string key should be skipped
-        self::assertArrayNotHasKey('', $result->extra);
+        $this->assertArrayNotHasKey('', $result->extra);
         // component is valid and should be injected
-        self::assertSame('runtime', $result->extra['component']);
+        $this->assertSame('runtime', $result->extra['component']);
 
         RunLogContext::leave();
     }

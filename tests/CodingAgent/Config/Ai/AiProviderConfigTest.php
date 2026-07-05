@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Config\Ai;
 
 use Ineersa\CodingAgent\Config\Ai\AiProviderConfig;
-use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 final class AiProviderConfigTest extends TestCase

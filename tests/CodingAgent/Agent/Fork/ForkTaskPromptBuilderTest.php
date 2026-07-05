@@ -31,8 +31,8 @@ final class ForkTaskPromptBuilderTest extends TestCase
         $task = 'Implement feature X';
         $message = $this->builder->buildTaskUserMessage($task);
 
-        self::assertStringContainsString('Task:', $message);
-        self::assertStringContainsString($task, $message);
+        $this->assertStringContainsString('Task:', $message);
+        $this->assertStringContainsString($task, $message);
     }
 
     public function testBuildTaskUserMessageContainsAll11SectionHeaders(): void
@@ -54,7 +54,7 @@ final class ForkTaskPromptBuilderTest extends TestCase
         ];
 
         foreach ($expectedSections as $section) {
-            self::assertStringContainsString($section, $message, "Missing section: {$section}");
+            $this->assertStringContainsString($section, $message, "Missing section: {$section}");
         }
     }
 
@@ -62,28 +62,28 @@ final class ForkTaskPromptBuilderTest extends TestCase
     {
         $message = $this->builder->buildTaskUserMessage('Test');
 
-        self::assertStringContainsString('handoff report', $message);
-        self::assertStringContainsString('dense', $message);
+        $this->assertStringContainsString('handoff report', $message);
+        $this->assertStringContainsString('dense', $message);
     }
 
     public function testForkChildSystemPromptAppend(): void
     {
         $append = $this->builder->forkChildSystemPromptAppend();
 
-        self::assertStringContainsString('FORK MODE IS ENABLED', $append);
-        self::assertStringContainsString('forked child agent', $append);
-        self::assertStringContainsString('delegated task', $append);
-        self::assertStringContainsString('last user message', $append);
-        self::assertStringContainsString('Do not suggest launching a fork', $append);
-        self::assertStringContainsString('obey the delegated task', $append);
+        $this->assertStringContainsString('FORK MODE IS ENABLED', $append);
+        $this->assertStringContainsString('forked child agent', $append);
+        $this->assertStringContainsString('delegated task', $append);
+        $this->assertStringContainsString('last user message', $append);
+        $this->assertStringContainsString('Do not suggest launching a fork', $append);
+        $this->assertStringContainsString('obey the delegated task', $append);
     }
 
     public function testBuildTaskUserMessageWithEmptyTask(): void
     {
         $message = $this->builder->buildTaskUserMessage('');
 
-        self::assertStringContainsString('Task:', $message);
-        self::assertStringContainsString('Return a dense handoff report', $message);
+        $this->assertStringContainsString('Task:', $message);
+        $this->assertStringContainsString('Return a dense handoff report', $message);
     }
 
     public function testBuildTaskUserMessageWithComplexTask(): void
@@ -91,8 +91,8 @@ final class ForkTaskPromptBuilderTest extends TestCase
         $task = "Implement feature X:\n- Step 1\n- Step 2\n- Step 3";
         $message = $this->builder->buildTaskUserMessage($task);
 
-        self::assertStringContainsString('Step 1', $message);
-        self::assertStringContainsString('Step 2', $message);
-        self::assertStringContainsString('Step 3', $message);
+        $this->assertStringContainsString('Step 1', $message);
+        $this->assertStringContainsString('Step 2', $message);
+        $this->assertStringContainsString('Step 3', $message);
     }
 }
