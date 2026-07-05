@@ -15,8 +15,6 @@ use Ineersa\CodingAgent\Config\SessionsConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use PHPUnit\Framework\TestCase;
-use Symfony\Component\Lock\LockFactory;
-use Symfony\Component\Lock\Store\FlockStore;
 
 /**
  * Pure unit tests for ModelResolver (read-only resolution).
@@ -36,9 +34,9 @@ class ModelResolverTest extends TestCase
 
         $result = $resolver->resolveInitialModel('deepseek/deepseek-v4-pro', '');
 
-        self::assertNotNull($result);
-        self::assertSame('deepseek', $result->providerId);
-        self::assertSame('deepseek-v4-pro', $result->modelName);
+        $this->assertNotNull($result);
+        $this->assertSame('deepseek', $result->providerId);
+        $this->assertSame('deepseek-v4-pro', $result->modelName);
     }
 
     public function testDefaultModelWins(): void
@@ -47,9 +45,9 @@ class ModelResolverTest extends TestCase
 
         $result = $resolver->resolveInitialModel(null, '');
 
-        self::assertNotNull($result);
-        self::assertSame('deepseek', $result->providerId);
-        self::assertSame('deepseek-v4-pro', $result->modelName);
+        $this->assertNotNull($result);
+        $this->assertSame('deepseek', $result->providerId);
+        $this->assertSame('deepseek-v4-pro', $result->modelName);
     }
 
     public function testFirstAvailableWhenNoDefault(): void
@@ -60,7 +58,7 @@ class ModelResolverTest extends TestCase
 
         $result = $resolver->resolveInitialModel(null, '');
 
-        self::assertNotNull($result);
+        $this->assertNotNull($result);
     }
 
     public function testReturnsNullWhenNoModelsConfigured(): void
@@ -69,7 +67,7 @@ class ModelResolverTest extends TestCase
 
         $result = $resolver->resolveInitialModel(null, '');
 
-        self::assertNull($result);
+        $this->assertNull($result);
     }
 
     public function testExplicitUnavailableFallsToDefault(): void
@@ -78,9 +76,9 @@ class ModelResolverTest extends TestCase
 
         $result = $resolver->resolveInitialModel('unknown/model', '');
 
-        self::assertNotNull($result);
-        self::assertSame('deepseek', $result->providerId);
-        self::assertSame('deepseek-v4-pro', $result->modelName);
+        $this->assertNotNull($result);
+        $this->assertSame('deepseek', $result->providerId);
+        $this->assertSame('deepseek-v4-pro', $result->modelName);
     }
 
     // ──────────────────────────────────────────────
@@ -93,7 +91,7 @@ class ModelResolverTest extends TestCase
 
         $result = $resolver->resolveInitialReasoning('xhigh', '');
 
-        self::assertSame('xhigh', $result);
+        $this->assertSame('xhigh', $result);
     }
 
     public function testDefaultReasoningUsed(): void
@@ -102,7 +100,7 @@ class ModelResolverTest extends TestCase
 
         $result = $resolver->resolveInitialReasoning(null, '');
 
-        self::assertSame('medium', $result);
+        $this->assertSame('medium', $result);
     }
 
     public function testReasoningFallsBackToMedium(): void
@@ -113,7 +111,7 @@ class ModelResolverTest extends TestCase
 
         $result = $resolver->resolveInitialReasoning(null, '');
 
-        self::assertSame('medium', $result);
+        $this->assertSame('medium', $result);
     }
 
     // ──────────────────────────────────────────────
@@ -126,7 +124,7 @@ class ModelResolverTest extends TestCase
 
         $models = $resolver->getAvailableModels();
 
-        self::assertCount(3, $models);
+        $this->assertCount(3, $models);
     }
 
     public function testGetCurrentModelDelegatesToResolve(): void
@@ -135,8 +133,8 @@ class ModelResolverTest extends TestCase
 
         $result = $resolver->getCurrentModel('');
 
-        self::assertNotNull($result);
-        self::assertSame('deepseek/deepseek-v4-pro', $result->toString());
+        $this->assertNotNull($result);
+        $this->assertSame('deepseek/deepseek-v4-pro', $result->toString());
     }
 
     // ──────────────────────────────────────────────
@@ -147,7 +145,7 @@ class ModelResolverTest extends TestCase
     {
         $resolver = $this->createResolver($this->standardAiData());
 
-        self::assertTrue($resolver->supportsThinkingLevelsForSession(''));
+        $this->assertTrue($resolver->supportsThinkingLevelsForSession(''));
     }
 
     public function testSupportsThinkingLevelsReturnsFalseForNonReasoningModel(): void
@@ -156,7 +154,7 @@ class ModelResolverTest extends TestCase
         $aiData['default_model'] = 'llama_cpp/flash';
         $resolver = $this->createResolver($aiData);
 
-        self::assertFalse($resolver->supportsThinkingLevelsForSession(''));
+        $this->assertFalse($resolver->supportsThinkingLevelsForSession(''));
     }
 
     // ──────────────────────────────────────────────
@@ -169,10 +167,10 @@ class ModelResolverTest extends TestCase
 
         $levels = $resolver->getSupportedReasoningLevels('');
 
-        self::assertContains('off', $levels);
-        self::assertContains('minimal', $levels);
-        self::assertContains('high', $levels);
-        self::assertSame('off', $levels[0]);
+        $this->assertContains('off', $levels);
+        $this->assertContains('minimal', $levels);
+        $this->assertContains('high', $levels);
+        $this->assertSame('off', $levels[0]);
     }
 
     public function testGetSupportedReasoningLevelsDoesNotExposeXhighForZaiStyleModel(): void
@@ -207,11 +205,11 @@ class ModelResolverTest extends TestCase
 
         $levels = $resolver->getSupportedReasoningLevels('');
 
-        self::assertContains('off', $levels);
-        self::assertContains('minimal', $levels);
-        self::assertContains('medium', $levels);
-        self::assertContains('high', $levels);
-        self::assertNotContains('xhigh', $levels);
+        $this->assertContains('off', $levels);
+        $this->assertContains('minimal', $levels);
+        $this->assertContains('medium', $levels);
+        $this->assertContains('high', $levels);
+        $this->assertNotContains('xhigh', $levels);
     }
 
     public function testSupportsThinkingLevelsReturnsFalseWhenProviderDisabled(): void
@@ -245,7 +243,7 @@ class ModelResolverTest extends TestCase
         ];
         $resolver = $this->createResolver($aiData);
 
-        self::assertFalse($resolver->supportsThinkingLevelsForSession(''));
+        $this->assertFalse($resolver->supportsThinkingLevelsForSession(''));
     }
 
     public function testGetDisplayReasoningReturnsOffWhenProviderThinkingLevelsDisabled(): void
@@ -274,7 +272,7 @@ class ModelResolverTest extends TestCase
         ];
         $resolver = $this->createResolver($aiData);
 
-        self::assertSame('off', $resolver->getDisplayReasoning(''));
+        $this->assertSame('off', $resolver->getDisplayReasoning(''));
     }
 
     public function testGetSupportedReasoningLevelsReturnsOnlyOffForNonReasoningModel(): void
@@ -285,7 +283,7 @@ class ModelResolverTest extends TestCase
 
         $levels = $resolver->getSupportedReasoningLevels('');
 
-        self::assertSame(['off'], $levels);
+        $this->assertSame(['off'], $levels);
     }
 
     public function testGetSupportedReasoningLevelsReturnsGlobalLevelsWhenNoModel(): void
@@ -294,7 +292,7 @@ class ModelResolverTest extends TestCase
 
         $levels = $resolver->getSupportedReasoningLevels('');
 
-        self::assertSame(ModelResolver::LEVELS, $levels);
+        $this->assertSame(ModelResolver::LEVELS, $levels);
     }
 
     // ──────────────────────────────────────────────
@@ -305,7 +303,7 @@ class ModelResolverTest extends TestCase
     {
         $resolver = $this->createResolver($this->standardAiData());
 
-        self::assertSame('medium', $resolver->getDisplayReasoning(''));
+        $this->assertSame('medium', $resolver->getDisplayReasoning(''));
     }
 
     public function testGetDisplayReasoningReturnsOffForNonThinkingModel(): void
@@ -314,14 +312,14 @@ class ModelResolverTest extends TestCase
         $aiData['default_model'] = 'llama_cpp/flash';
         $resolver = $this->createResolver($aiData);
 
-        self::assertSame('off', $resolver->getDisplayReasoning(''));
+        $this->assertSame('off', $resolver->getDisplayReasoning(''));
     }
 
     public function testGetDisplayReasoningReturnsOffWhenNoCatalog(): void
     {
         $resolver = $this->createResolver([]);
 
-        self::assertSame('off', $resolver->getDisplayReasoning(''));
+        $this->assertSame('off', $resolver->getDisplayReasoning(''));
     }
 
     public function testGetDisplayReasoningReturnsOffForUnknownModel(): void
@@ -330,7 +328,7 @@ class ModelResolverTest extends TestCase
         // so no model can be resolved — display reasoning falls back to 'off'.
         $resolver = $this->createResolver(['default_model' => 'unknown/model']);
 
-        self::assertSame('off', $resolver->getDisplayReasoning(''));
+        $this->assertSame('off', $resolver->getDisplayReasoning(''));
     }
 
     // ──────────────────────────────────────────────
@@ -342,8 +340,8 @@ class ModelResolverTest extends TestCase
         $resolver = $this->createResolver($this->standardAiData());
         $model = new AiModelReference('deepseek', 'deepseek-v4-pro');
 
-        self::assertSame('xhigh', $resolver->clampReasoningLevel('xhigh', $model));
-        self::assertSame('off', $resolver->clampReasoningLevel('off', $model));
+        $this->assertSame('xhigh', $resolver->clampReasoningLevel('xhigh', $model));
+        $this->assertSame('off', $resolver->clampReasoningLevel('off', $model));
     }
 
     public function testClampReasoningLevelReturnsHighestSupportedWhenNotInMap(): void
@@ -379,11 +377,11 @@ class ModelResolverTest extends TestCase
         $model = new AiModelReference('zai', 'glm-5.1');
 
         // xhigh not in map → clamp to highest = high
-        self::assertSame('high', $resolver->clampReasoningLevel('xhigh', $model));
+        $this->assertSame('high', $resolver->clampReasoningLevel('xhigh', $model));
         // off is always preserved
-        self::assertSame('off', $resolver->clampReasoningLevel('off', $model));
+        $this->assertSame('off', $resolver->clampReasoningLevel('off', $model));
         // supported levels are preserved
-        self::assertSame('low', $resolver->clampReasoningLevel('low', $model));
+        $this->assertSame('low', $resolver->clampReasoningLevel('low', $model));
     }
 
     public function testClampReasoningLevelReturnsLevelWhenNoMap(): void
@@ -392,7 +390,7 @@ class ModelResolverTest extends TestCase
         $model = new AiModelReference('llama_cpp', 'flash');
 
         // llama_cpp/flash has no thinking_level_map — level passes through
-        self::assertSame('xhigh', $resolver->clampReasoningLevel('xhigh', $model));
+        $this->assertSame('xhigh', $resolver->clampReasoningLevel('xhigh', $model));
     }
 
     public function testClampReasoningLevelReturnsLevelWhenNoCatalog(): void
@@ -400,7 +398,7 @@ class ModelResolverTest extends TestCase
         $resolver = $this->createResolver([]);
         $model = new AiModelReference('unknown', 'unknown');
 
-        self::assertSame('xhigh', $resolver->clampReasoningLevel('xhigh', $model));
+        $this->assertSame('xhigh', $resolver->clampReasoningLevel('xhigh', $model));
     }
 
     public function testGetDisplayReasoningClampsXhighToHighForZaiStyleModel(): void
@@ -439,7 +437,7 @@ class ModelResolverTest extends TestCase
         $resolver = $this->createResolver($aiData);
 
         // default_reasoning is xhigh, model only supports up to high → clamp
-        self::assertSame('high', $resolver->getDisplayReasoning(''));
+        $this->assertSame('high', $resolver->getDisplayReasoning(''));
     }
 
     // ──────────────────────────────────────────────
@@ -450,16 +448,16 @@ class ModelResolverTest extends TestCase
     {
         $resolver = $this->createResolver($this->standardAiData());
 
-        self::assertSame('high', $resolver->cycleReasoning('medium'));
-        self::assertSame('off', $resolver->cycleReasoning('xhigh'));
-        self::assertSame('minimal', $resolver->cycleReasoning('off'));
+        $this->assertSame('high', $resolver->cycleReasoning('medium'));
+        $this->assertSame('off', $resolver->cycleReasoning('xhigh'));
+        $this->assertSame('minimal', $resolver->cycleReasoning('off'));
     }
 
     public function testCycleReasoningStartsFromBeginningForUnknownLevel(): void
     {
         $resolver = $this->createResolver($this->standardAiData());
 
-        self::assertSame('off', $resolver->cycleReasoning('unknown'));
+        $this->assertSame('off', $resolver->cycleReasoning('unknown'));
     }
 
     // ──────────────────────────────────────────────

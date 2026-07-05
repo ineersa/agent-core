@@ -8,8 +8,6 @@ use Ineersa\AgentCore\Application\Handler\ExecuteCompactionStepWorker;
 use Ineersa\AgentCore\Contract\Model\PlatformInterface;
 use Ineersa\AgentCore\Domain\Message\CompactionStepResult;
 use Ineersa\AgentCore\Domain\Message\ExecuteCompactionStep;
-use Ineersa\AgentCore\Domain\Model\ModelInvocationInput;
-use Ineersa\AgentCore\Domain\Model\ModelInvocationOptions;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationRequest;
 use Ineersa\AgentCore\Domain\Model\PlatformInvocationResult;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
@@ -32,9 +30,9 @@ final class ExecuteCompactionStepWorkerTest extends TestCase
     {
         $responseText = 'summary text';
         $assistantMsg = new AssistantMessage(new Text($responseText));
-        
+
         // Verify the AssistantMessage returns text correctly.
-        self::assertSame($responseText, $assistantMsg->asText(), 'AssistantMessage::asText() precondition');
+        $this->assertSame($responseText, $assistantMsg->asText(), 'AssistantMessage::asText() precondition');
 
         $fakePlatform = $this->createFakePlatform($responseText, model: 'openai/gpt-4.1-mini', captureRequest: true);
         $testBus = new TestMessageBus();
@@ -58,26 +56,26 @@ final class ExecuteCompactionStepWorkerTest extends TestCase
         ));
 
         // Dispatched one message to the command bus.
-        self::assertCount(1, $testBus->messages);
+        $this->assertCount(1, $testBus->messages);
 
         /** @var CompactionStepResult $result */
         $result = $testBus->messages[0];
-        self::assertInstanceOf(CompactionStepResult::class, $result);
-        self::assertSame('summary text', $result->summaryText);
-        self::assertNull($result->error);
-        self::assertSame('openai/gpt-4.1-mini', $result->model);
-        self::assertSame(['thinking_level' => 'low'], $result->modelOptions);
+        $this->assertInstanceOf(CompactionStepResult::class, $result);
+        $this->assertSame('summary text', $result->summaryText);
+        $this->assertNull($result->error);
+        $this->assertSame('openai/gpt-4.1-mini', $result->model);
+        $this->assertSame(['thinking_level' => 'low'], $result->modelOptions);
 
         // Assert the captured ModelInvocationRequest has the correct options.
         $captured = $fakePlatform->lastRequest;
-        self::assertNotNull($captured, 'Platform should have captured the request.');
-        self::assertSame('openai/gpt-4.1-mini', $captured->model);
-        self::assertFalse($captured->options->toolsEnabled, 'toolsEnabled must be false for compaction.');
-        self::assertFalse($captured->options->streamObserverEnabled, 'streamObserverEnabled must be false for compaction.');
-        self::assertSame('low', $captured->options->extraOptions['thinking_level'] ?? null);
+        $this->assertNotNull($captured, 'Platform should have captured the request.');
+        $this->assertSame('openai/gpt-4.1-mini', $captured->model);
+        $this->assertFalse($captured->options->toolsEnabled, 'toolsEnabled must be false for compaction.');
+        $this->assertFalse($captured->options->streamObserverEnabled, 'streamObserverEnabled must be false for compaction.');
+        $this->assertSame('low', $captured->options->extraOptions['thinking_level'] ?? null);
         // Messages are direct messages, not null.
-        self::assertNotNull($captured->input->messages);
-        self::assertIsArray($captured->input->messages);
+        $this->assertNotNull($captured->input->messages);
+        $this->assertIsArray($captured->input->messages);
     }
 
     public function testExplicitModelPassedInResult(): void
@@ -103,12 +101,12 @@ final class ExecuteCompactionStepWorkerTest extends TestCase
             trigger: 'manual',
         ));
 
-        self::assertCount(1, $testBus->messages);
+        $this->assertCount(1, $testBus->messages);
 
         /** @var CompactionStepResult $result */
         $result = $testBus->messages[0];
-        self::assertSame('llama_cpp/flash', $result->model);
-        self::assertSame([], $result->modelOptions);
+        $this->assertSame('llama_cpp/flash', $result->model);
+        $this->assertSame([], $result->modelOptions);
     }
 
     public function testModelErrorDispatchesResultWithError(): void
@@ -135,14 +133,14 @@ final class ExecuteCompactionStepWorkerTest extends TestCase
             trigger: 'manual',
         ));
 
-        self::assertCount(1, $testBus->messages);
+        $this->assertCount(1, $testBus->messages);
 
         /** @var CompactionStepResult $result */
         $result = $testBus->messages[0];
-        self::assertNull($result->summaryText);
-        self::assertNotNull($result->error);
-        self::assertSame('RuntimeException', $result->error['type']);
-        self::assertSame('Simulated failure', $result->error['message']);
+        $this->assertNull($result->summaryText);
+        $this->assertNotNull($result->error);
+        $this->assertSame('RuntimeException', $result->error['type']);
+        $this->assertSame('Simulated failure', $result->error['message']);
     }
 
     public function testPlatformExceptionDispatchesErrorResult(): void
@@ -168,13 +166,13 @@ final class ExecuteCompactionStepWorkerTest extends TestCase
             trigger: 'manual',
         ));
 
-        self::assertCount(1, $testBus->messages);
+        $this->assertCount(1, $testBus->messages);
 
         /** @var CompactionStepResult $result */
         $result = $testBus->messages[0];
-        self::assertNull($result->summaryText);
-        self::assertNotNull($result->error);
-        self::assertSame(\RuntimeException::class, $result->error['type']);
+        $this->assertNull($result->summaryText);
+        $this->assertNotNull($result->error);
+        $this->assertSame(\RuntimeException::class, $result->error['type']);
     }
 
     // ── helpers ──
@@ -188,7 +186,8 @@ final class ExecuteCompactionStepWorkerTest extends TestCase
                 private string $responseText,
                 private string $model,
                 private bool $captureRequest,
-            ) {}
+            ) {
+            }
 
             public function invoke(ModelInvocationRequest $request): PlatformInvocationResult
             {
@@ -215,7 +214,9 @@ final class ExecuteCompactionStepWorkerTest extends TestCase
     private function createFakePlatformWithError(array $error): PlatformInterface
     {
         return new class($error) implements PlatformInterface {
-            public function __construct(private array $error) {}
+            public function __construct(private array $error)
+            {
+            }
 
             public function invoke(ModelInvocationRequest $request): PlatformInvocationResult
             {
@@ -234,7 +235,9 @@ final class ExecuteCompactionStepWorkerTest extends TestCase
     private function createFakePlatformThatThrows(\Throwable $exception): PlatformInterface
     {
         return new class($exception) implements PlatformInterface {
-            public function __construct(private \Throwable $exception) {}
+            public function __construct(private \Throwable $exception)
+            {
+            }
 
             public function invoke(ModelInvocationRequest $request): PlatformInvocationResult
             {

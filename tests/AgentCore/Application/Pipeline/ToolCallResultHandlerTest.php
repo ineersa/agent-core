@@ -11,8 +11,8 @@ use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
-use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageToolCallSequenceValidator;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageToolCallSequenceValidator;
 use Ineersa\AgentCore\Tests\Support\Builder\RunStateBuilder;
 use Ineersa\AgentCore\Tests\Support\Builder\ToolCallResultBuilder;
 use PHPUnit\Framework\TestCase;
@@ -892,11 +892,10 @@ final class ToolCallResultHandlerTest extends TestCase
             'Cancellation + Continue produces valid assistant()->tool()->user() sequence');
     }
 
-
     public function testCancellingPreservesRichIncomingToolCallResult(): void
     {
-        $richMessage = implode("
-", [
+        $richMessage = implode('
+', [
             'Subagent scout cancelled by parent run.',
             'Artifact: agent_41d4ca5566368a6b',
             'Status: cancelled',
@@ -946,12 +945,12 @@ final class ToolCallResultHandlerTest extends TestCase
 
         $result = $handler->handle($message, $state);
 
-        self::assertSame('tool_execution_end', $result->events[1]->type);
-        self::assertSame($richMessage, $result->events[1]->payload['result']);
-        self::assertSame('tool', $result->nextState->messages[1]->role);
-        self::assertStringContainsString('Artifact: agent_41d4ca5566368a6b', $result->nextState->messages[1]->content[0]['text'] ?? '');
-        self::assertTrue($result->events[1]->payload['cancelled'] ?? false);
-        self::assertSame('user', $result->events[1]->payload['cancellation_reason'] ?? null);
+        $this->assertSame('tool_execution_end', $result->events[1]->type);
+        $this->assertSame($richMessage, $result->events[1]->payload['result']);
+        $this->assertSame('tool', $result->nextState->messages[1]->role);
+        $this->assertStringContainsString('Artifact: agent_41d4ca5566368a6b', $result->nextState->messages[1]->content[0]['text'] ?? '');
+        $this->assertTrue($result->events[1]->payload['cancelled'] ?? false);
+        $this->assertSame('user', $result->events[1]->payload['cancellation_reason'] ?? null);
     }
 
     public function testCancellingSyntheticUnresolvedToolExecutionEndHasResultAndCancellationMetadata(): void
@@ -1003,11 +1002,10 @@ final class ToolCallResultHandlerTest extends TestCase
             }
         }
 
-        self::assertNotNull($toolEnd);
-        self::assertSame('Tool execution cancelled by user.', $toolEnd->payload['result'] ?? null);
-        self::assertTrue($toolEnd->payload['cancelled'] ?? false);
-        self::assertSame('user', $toolEnd->payload['cancellation_reason'] ?? null);
-        self::assertSame('Tool execution cancelled by user.', $result->nextState->messages[1]->content[0]['text'] ?? null);
+        $this->assertNotNull($toolEnd);
+        $this->assertSame('Tool execution cancelled by user.', $toolEnd->payload['result'] ?? null);
+        $this->assertTrue($toolEnd->payload['cancelled'] ?? false);
+        $this->assertSame('user', $toolEnd->payload['cancellation_reason'] ?? null);
+        $this->assertSame('Tool execution cancelled by user.', $result->nextState->messages[1]->content[0]['text'] ?? null);
     }
 }
-

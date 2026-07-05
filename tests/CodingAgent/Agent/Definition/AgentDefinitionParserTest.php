@@ -9,7 +9,6 @@ use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionParser;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionValidationException;
 use Ineersa\CodingAgent\Agent\Definition\AgentFrontmatterParser;
 use Ineersa\CodingAgent\Agent\Definition\McpAgentModeEnum;
-use Ineersa\CodingAgent\Agent\Definition\McpPolicyDTO;
 use Ineersa\CodingAgent\Agent\Definition\SystemPromptModeEnum;
 use Ineersa\CodingAgent\Markdown\MarkdownFrontmatterExtractor;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
@@ -69,145 +68,32 @@ final class AgentDefinitionParserTest extends TestCase
         );
     }
 
-    /**
-     * @param array<string, mixed> $frontmatter
-     */
-    private function wrapContent(array $frontmatter, string $body = ''): string
-    {
-        $yaml = $this->toYaml($frontmatter);
-
-        return "---\n{$yaml}---\n{$body}";
-    }
-
-    /**
-     * @param array<string, mixed> $data
-     */
-    private function toYaml(array $data): string
-    {
-        $lines = [];
-        foreach ($data as $key => $value) {
-            if (\is_array($value)) {
-                if (array_is_list($value)) {
-                    if ([] === $value) {
-                        $lines[] = "{$key}: []";
-                    } else {
-                        $lines[] = "{$key}:";
-                        foreach ($value as $item) {
-                            if (\is_string($item)) {
-                                $lines[] = "  - ".\json_encode($item, JSON_UNESCAPED_SLASHES);
-                            } elseif (\is_bool($item)) {
-                                $lines[] = '  - '.($item ? 'true' : 'false');
-                            } else {
-                                $lines[] = "  - {$item}";
-                            }
-                        }
-                    }
-                } else {
-                    $lines[] = "{$key}:";
-                    foreach ($value as $k => $v) {
-                        if (\is_string($v)) {
-                            $lines[] = "  {$k}: ".\json_encode($v, JSON_UNESCAPED_SLASHES);
-                        } elseif (\is_bool($v)) {
-                            $lines[] = "  {$k}: ".($v ? 'true' : 'false');
-                        } elseif (\is_array($v)) {
-                            $lines[] = "  {$k}:";
-                            foreach ($v as $item) {
-                                $lines[] = '    - '.\json_encode($item, JSON_UNESCAPED_SLASHES);
-                            }
-                        } elseif (\is_int($v)) {
-                            $lines[] = "  {$k}: {$v}";
-                        } else {
-                            $lines[] = "  {$k}: ".\json_encode($v, JSON_UNESCAPED_SLASHES);
-                        }
-                    }
-                }
-            } elseif (\is_string($value)) {
-                $lines[] = "{$key}: ".\json_encode($value, JSON_UNESCAPED_SLASHES);
-            } elseif (\is_bool($value)) {
-                $lines[] = "{$key}: ".($value ? 'true' : 'false');
-            } elseif (\is_int($value)) {
-                $lines[] = "{$key}: {$value}";
-            } elseif (null === $value) {
-                $lines[] = "{$key}: null";
-            } else {
-                $lines[] = "{$key}: {$value}";
-            }
-        }
-
-        return implode("\n", $lines)."\n";
-    }
-
-    /**
-     * @param array<string, mixed> $frontmatter
-     */
-    private function parse(array $frontmatter, string $path = '/test/agent.md'): AgentDefinitionDTO
-    {
-        return $this->parser->parseContent($this->wrapContent($frontmatter), $path);
-    }
-
-    private function rawParse(string $raw, string $path = '/test/agent.md'): AgentDefinitionDTO
-    {
-        return $this->parser->parseContent($raw, $path);
-    }
-
-    // -----------------------------------------------------------------
-    //  Valid definitions
-    // -----------------------------------------------------------------
-
-    /**
-     * @return array<string, mixed>
-     */
-    private function validFrontmatter(): array
-    {
-        return [
-            'name' => 'my-scout',
-            'description' => 'A custom scout agent',
-            'tools' => ['read', 'ide_find_file', 'semantic-search'],
-            'model' => 'deepseek/deepseek-v4-flash',
-            'thinking' => 'low',
-            'skills' => ['testing'],
-            'inheritProjectContext' => true,
-            'inheritAgentsMd' => false,
-            'systemPromptMode' => 'append',
-            'maxDepth' => 2,
-            'backgroundAllowed' => true,
-            'foregroundAllowed' => true,
-            'parallelAllowed' => true,
-            'disabled' => false,
-            'handoffFormat' => 'my-handoff',
-            'mcp' => [
-                'mode' => 'specific',
-                'tools' => ['context7__query-docs', 'websearch__search'],
-            ],
-        ];
-    }
-
     public function testFullValidDefinitionPreservesBody(): void
     {
         $content = $this->wrapContent($this->validFrontmatter(), "You are a scout. Explore and report findings.\n");
 
         $dto = $this->rawParse($content);
 
-        self::assertSame('my-scout', $dto->name);
-        self::assertSame('A custom scout agent', $dto->description);
-        self::assertSame(['read', 'ide_find_file', 'semantic-search'], $dto->tools);
-        self::assertSame('deepseek/deepseek-v4-flash', $dto->model);
-        self::assertSame('low', $dto->thinking);
-        self::assertSame(['testing'], $dto->skills);
-        self::assertTrue($dto->inheritProjectContext);
-        self::assertFalse($dto->inheritAgentsMd);
-        self::assertSame(SystemPromptModeEnum::Append, $dto->systemPromptMode);
-        self::assertSame(2, $dto->maxDepth);
-        self::assertTrue($dto->backgroundAllowed);
-        self::assertTrue($dto->foregroundAllowed);
-        self::assertTrue($dto->parallelAllowed);
-        self::assertFalse($dto->disabled);
-        self::assertSame('my-handoff', $dto->handoffFormat);
-        self::assertSame(McpAgentModeEnum::Specific, $dto->mcp->mode);
-        self::assertSame(['context7__query-docs', 'websearch__search'], $dto->mcp->tools);
-        self::assertSame('You are a scout. Explore and report findings.', $dto->instructions);
-        self::assertSame('/test/agent.md', $dto->sourcePath);
-        self::assertSame('/test', $dto->sourceDirectory);
+        $this->assertSame('my-scout', $dto->name);
+        $this->assertSame('A custom scout agent', $dto->description);
+        $this->assertSame(['read', 'ide_find_file', 'semantic-search'], $dto->tools);
+        $this->assertSame('deepseek/deepseek-v4-flash', $dto->model);
+        $this->assertSame('low', $dto->thinking);
+        $this->assertSame(['testing'], $dto->skills);
+        $this->assertTrue($dto->inheritProjectContext);
+        $this->assertFalse($dto->inheritAgentsMd);
+        $this->assertSame(SystemPromptModeEnum::Append, $dto->systemPromptMode);
+        $this->assertSame(2, $dto->maxDepth);
+        $this->assertTrue($dto->backgroundAllowed);
+        $this->assertTrue($dto->foregroundAllowed);
+        $this->assertTrue($dto->parallelAllowed);
+        $this->assertFalse($dto->disabled);
+        $this->assertSame('my-handoff', $dto->handoffFormat);
+        $this->assertSame(McpAgentModeEnum::Specific, $dto->mcp->mode);
+        $this->assertSame(['context7__query-docs', 'websearch__search'], $dto->mcp->tools);
+        $this->assertSame('You are a scout. Explore and report findings.', $dto->instructions);
+        $this->assertSame('/test/agent.md', $dto->sourcePath);
+        $this->assertSame('/test', $dto->sourceDirectory);
     }
 
     public function testMinimalValidDefinitionAppliesDefaults(): void
@@ -218,23 +104,23 @@ final class AgentDefinitionParserTest extends TestCase
             'tools' => ['read'],
         ], '/test/minimal.md');
 
-        self::assertSame('minimal', $dto->name);
-        self::assertSame('Bare minimum', $dto->description);
-        self::assertSame(['read'], $dto->tools);
-        self::assertNull($dto->model);
-        self::assertNull($dto->thinking);
-        self::assertSame([], $dto->skills);
-        self::assertTrue($dto->inheritProjectContext);
-        self::assertTrue($dto->inheritAgentsMd);
-        self::assertSame(SystemPromptModeEnum::Replace, $dto->systemPromptMode);
-        self::assertSame(1, $dto->maxDepth);
-        self::assertTrue($dto->backgroundAllowed);
-        self::assertTrue($dto->foregroundAllowed);
-        self::assertTrue($dto->parallelAllowed);
-        self::assertFalse($dto->disabled);
-        self::assertNull($dto->handoffFormat);
-        self::assertSame(McpAgentModeEnum::None, $dto->mcp->mode);
-        self::assertSame([], $dto->mcp->tools);
+        $this->assertSame('minimal', $dto->name);
+        $this->assertSame('Bare minimum', $dto->description);
+        $this->assertSame(['read'], $dto->tools);
+        $this->assertNull($dto->model);
+        $this->assertNull($dto->thinking);
+        $this->assertSame([], $dto->skills);
+        $this->assertTrue($dto->inheritProjectContext);
+        $this->assertTrue($dto->inheritAgentsMd);
+        $this->assertSame(SystemPromptModeEnum::Replace, $dto->systemPromptMode);
+        $this->assertSame(1, $dto->maxDepth);
+        $this->assertTrue($dto->backgroundAllowed);
+        $this->assertTrue($dto->foregroundAllowed);
+        $this->assertTrue($dto->parallelAllowed);
+        $this->assertFalse($dto->disabled);
+        $this->assertNull($dto->handoffFormat);
+        $this->assertSame(McpAgentModeEnum::None, $dto->mcp->mode);
+        $this->assertSame([], $dto->mcp->tools);
     }
 
     public function testModesAllWithNoTools(): void
@@ -246,8 +132,8 @@ final class AgentDefinitionParserTest extends TestCase
             'mcp' => ['mode' => 'all'],
         ]);
 
-        self::assertSame(McpAgentModeEnum::All, $dto->mcp->mode);
-        self::assertSame([], $dto->mcp->tools);
+        $this->assertSame(McpAgentModeEnum::All, $dto->mcp->mode);
+        $this->assertSame([], $dto->mcp->tools);
     }
 
     public function testThinkingOff(): void
@@ -259,7 +145,7 @@ final class AgentDefinitionParserTest extends TestCase
             'thinking' => 'off',
         ]);
 
-        self::assertSame('off', $dto->thinking);
+        $this->assertSame('off', $dto->thinking);
     }
 
     public function testThinkingXhigh(): void
@@ -271,7 +157,7 @@ final class AgentDefinitionParserTest extends TestCase
             'thinking' => 'xhigh',
         ]);
 
-        self::assertSame('xhigh', $dto->thinking);
+        $this->assertSame('xhigh', $dto->thinking);
     }
 
     public function testMaxDepthZero(): void
@@ -283,7 +169,7 @@ final class AgentDefinitionParserTest extends TestCase
             'maxDepth' => 0,
         ]);
 
-        self::assertSame(0, $dto->maxDepth);
+        $this->assertSame(0, $dto->maxDepth);
     }
 
     public function testMaxDepthFive(): void
@@ -295,7 +181,7 @@ final class AgentDefinitionParserTest extends TestCase
             'maxDepth' => 5,
         ]);
 
-        self::assertSame(5, $dto->maxDepth);
+        $this->assertSame(5, $dto->maxDepth);
     }
 
     public function testParallelAllowedTrueByDefault(): void
@@ -306,7 +192,7 @@ final class AgentDefinitionParserTest extends TestCase
             'tools' => ['read'],
         ]);
 
-        self::assertTrue($dto->parallelAllowed);
+        $this->assertTrue($dto->parallelAllowed);
     }
 
     public function testParallelAllowedExplicitFalse(): void
@@ -318,7 +204,7 @@ final class AgentDefinitionParserTest extends TestCase
             'parallelAllowed' => false,
         ]);
 
-        self::assertFalse($dto->parallelAllowed);
+        $this->assertFalse($dto->parallelAllowed);
     }
 
     public function testBodyWithMarkdownPreserved(): void
@@ -331,10 +217,10 @@ final class AgentDefinitionParserTest extends TestCase
 
         $dto = $this->rawParse($content);
 
-        self::assertStringContainsString('## Instructions', $dto->instructions);
-        self::assertStringContainsString('- Step 1', $dto->instructions);
-        self::assertStringContainsString("```php", $dto->instructions);
-        self::assertStringContainsString("echo 'hello';", $dto->instructions);
+        $this->assertStringContainsString('## Instructions', $dto->instructions);
+        $this->assertStringContainsString('- Step 1', $dto->instructions);
+        $this->assertStringContainsString('```php', $dto->instructions);
+        $this->assertStringContainsString("echo 'hello';", $dto->instructions);
     }
 
     public function testThinkingNullExplicit(): void
@@ -346,7 +232,7 @@ final class AgentDefinitionParserTest extends TestCase
             'thinking' => null,
         ]);
 
-        self::assertNull($dto->thinking);
+        $this->assertNull($dto->thinking);
     }
 
     public function testModelNullExplicit(): void
@@ -358,7 +244,7 @@ final class AgentDefinitionParserTest extends TestCase
             'model' => null,
         ]);
 
-        self::assertNull($dto->model);
+        $this->assertNull($dto->model);
     }
 
     public function testClosesWithDots(): void
@@ -366,9 +252,9 @@ final class AgentDefinitionParserTest extends TestCase
         $content = "---\nname: dots-closer\ndescription: Uses dots\ntools:\n  - read\n...\n\nBody after dots\n";
 
         $dto = $this->rawParse($content);
-        self::assertSame('dots-closer', $dto->name);
-        self::assertSame('Uses dots', $dto->description);
-        self::assertSame('Body after dots', $dto->instructions);
+        $this->assertSame('dots-closer', $dto->name);
+        $this->assertSame('Uses dots', $dto->description);
+        $this->assertSame('Body after dots', $dto->instructions);
     }
 
     // -----------------------------------------------------------------
@@ -454,7 +340,7 @@ final class AgentDefinitionParserTest extends TestCase
             'description' => 'No tools',
         ], '/test/no-tools.md');
 
-        self::assertNull($dto->tools);
+        $this->assertNull($dto->tools);
     }
 
     public function testUnknownFieldThrowsWithFieldNameAndFilePath(): void
@@ -481,7 +367,7 @@ final class AgentDefinitionParserTest extends TestCase
             'tools' => 'read, grep, find, ls, bash',
         ]);
 
-        self::assertSame(['read', 'grep', 'find', 'ls', 'bash'], $dto->tools);
+        $this->assertSame(['read', 'grep', 'find', 'ls', 'bash'], $dto->tools);
     }
 
     public function testToolsCommaSeparatedStringWithoutSpaces(): void
@@ -492,7 +378,7 @@ final class AgentDefinitionParserTest extends TestCase
             'tools' => 'read,bash,grep,find,ls',
         ]);
 
-        self::assertSame(['read', 'bash', 'grep', 'find', 'ls'], $dto->tools);
+        $this->assertSame(['read', 'bash', 'grep', 'find', 'ls'], $dto->tools);
     }
 
     public function testSkillSingularStringMergesIntoSkills(): void
@@ -504,7 +390,7 @@ final class AgentDefinitionParserTest extends TestCase
             'skill' => 'improve-codebase-architecture',
         ]);
 
-        self::assertSame(['improve-codebase-architecture'], $dto->skills);
+        $this->assertSame(['improve-codebase-architecture'], $dto->skills);
     }
 
     public function testSkillsStringIsNormalized(): void
@@ -516,32 +402,32 @@ final class AgentDefinitionParserTest extends TestCase
             'skills' => 'playwright-cli',
         ]);
 
-        self::assertSame(['playwright-cli'], $dto->skills);
+        $this->assertSame(['playwright-cli'], $dto->skills);
     }
 
     public function testRepresentativeUserAgentFrontmatterShapes(): void
     {
-        $scout = $this->rawParse("---
+        $scout = $this->rawParse('---
 name: scout
 description: Fast codebase recon that returns compressed context for handoff
 model: deepseek/deepseek-v4-flash
 inheritProjectContext: true
 ---
 Body
-", '/home/user/.agents/scout.md');
-        self::assertSame('scout', $scout->name);
-        self::assertNull($scout->tools);
+', '/home/user/.agents/scout.md');
+        $this->assertSame('scout', $scout->name);
+        $this->assertNull($scout->tools);
 
-        $reviewer = $this->rawParse("---
+        $reviewer = $this->rawParse('---
 name: reviewer
 description: Senior code reviewer
 tools: read, grep, find, ls, bash
 ---
 Body
-", '/home/user/.agents/reviewer.md');
-        self::assertSame('reviewer', $reviewer->name);
-        self::assertContains('read', $reviewer->tools);
-        self::assertContains('bash', $reviewer->tools);
+', '/home/user/.agents/reviewer.md');
+        $this->assertSame('reviewer', $reviewer->name);
+        $this->assertContains('read', $reviewer->tools);
+        $this->assertContains('bash', $reviewer->tools);
     }
 
     public function testToolsEmptyListThrows(): void
@@ -852,7 +738,7 @@ Body
             'skills' => 'testing',
         ]);
 
-        self::assertSame(['testing'], $dto->skills);
+        $this->assertSame(['testing'], $dto->skills);
     }
 
     public function testDescriptionEmptyStringThrows(): void
@@ -925,7 +811,7 @@ Body
             'tools' => ['read'],
         ]);
 
-        self::assertSame('my-custom-agent-2', $dto->name);
+        $this->assertSame('my-custom-agent-2', $dto->name);
     }
 
     // -----------------------------------------------------------------
@@ -937,8 +823,8 @@ Body
         $raw = "\xEF\xBB\xBF---\nname: bom-stripped\ndescription: BOM test\ntools:\n  - read\n---\nbody\n";
 
         $dto = $this->rawParse($raw);
-        self::assertSame('bom-stripped', $dto->name);
-        self::assertSame('body', $dto->instructions);
+        $this->assertSame('bom-stripped', $dto->name);
+        $this->assertSame('body', $dto->instructions);
     }
 
     public function testClosingDelimiterNotMatchedMidToken(): void
@@ -962,8 +848,8 @@ Body
             'mcp' => null,
         ]);
 
-        self::assertSame(McpAgentModeEnum::None, $dto->mcp->mode);
-        self::assertSame([], $dto->mcp->tools);
+        $this->assertSame(McpAgentModeEnum::None, $dto->mcp->mode);
+        $this->assertSame([], $dto->mcp->tools);
     }
 
     public function testMcpToolsWithoutModeRejected(): void
@@ -990,10 +876,10 @@ Body
             file_put_contents($filePath, $raw);
 
             $dto = $this->parser->parseFile($filePath);
-            self::assertSame('real-file', $dto->name);
-            self::assertSame($filePath, $dto->sourcePath);
-            self::assertSame($tmpDir, $dto->sourceDirectory);
-            self::assertSame('body', $dto->instructions);
+            $this->assertSame('real-file', $dto->name);
+            $this->assertSame($filePath, $dto->sourcePath);
+            $this->assertSame($tmpDir, $dto->sourceDirectory);
+            $this->assertSame('body', $dto->instructions);
         } finally {
             TestDirectoryIsolation::removeDirectory($tmpDir);
         }
@@ -1103,8 +989,8 @@ Body
             'mcp' => ['mode' => null],
         ]);
 
-        self::assertSame(McpAgentModeEnum::None, $dto->mcp->mode);
-        self::assertSame([], $dto->mcp->tools);
+        $this->assertSame(McpAgentModeEnum::None, $dto->mcp->mode);
+        $this->assertSame([], $dto->mcp->tools);
     }
 
     public function testParseFileThrowsForNonExistentFile(): void
@@ -1157,7 +1043,7 @@ Body
             'tools' => ['read'],
         ]);
 
-        self::assertSame('trimmed-name', $dto->name);
+        $this->assertSame('trimmed-name', $dto->name);
     }
 
     public function testDescriptionLeadingWhitespaceTrimmed(): void
@@ -1168,7 +1054,7 @@ Body
             'tools' => ['read'],
         ]);
 
-        self::assertSame('trimmed description', $dto->description);
+        $this->assertSame('trimmed description', $dto->description);
     }
 
     // -----------------------------------------------------------------
@@ -1236,8 +1122,8 @@ Body
         $raw = "---  \nname: ws-open\ndescription: Trailing whitespace on opening line\ntools:\n  - read\n---\nbody\n";
 
         $dto = $this->rawParse($raw);
-        self::assertSame('ws-open', $dto->name);
-        self::assertSame('body', $dto->instructions);
+        $this->assertSame('ws-open', $dto->name);
+        $this->assertSame('body', $dto->instructions);
     }
 
     public function testClosingDelimiterWithTrailingJunkRejected(): void
@@ -1257,8 +1143,8 @@ Body
         $raw = "---\nname: ws-close\ndescription: Trailing whitespace on closing line\ntools:\n  - read\n---  \nbody\n";
 
         $dto = $this->rawParse($raw);
-        self::assertSame('ws-close', $dto->name);
-        self::assertSame('body', $dto->instructions);
+        $this->assertSame('ws-close', $dto->name);
+        $this->assertSame('body', $dto->instructions);
     }
 
     public function testDotsClosingDelimiterWithTrailingJunkRejected(): void
@@ -1316,5 +1202,118 @@ Body
         $this->expectExceptionMessageMatches('/"mcp\.tools".*list.*associative/');
 
         $this->parser->parseContent($raw, '/test/mcp-tools-map.md');
+    }
+
+    /**
+     * @param array<string, mixed> $frontmatter
+     */
+    private function wrapContent(array $frontmatter, string $body = ''): string
+    {
+        $yaml = $this->toYaml($frontmatter);
+
+        return "---\n{$yaml}---\n{$body}";
+    }
+
+    /**
+     * @param array<string, mixed> $data
+     */
+    private function toYaml(array $data): string
+    {
+        $lines = [];
+        foreach ($data as $key => $value) {
+            if (\is_array($value)) {
+                if (array_is_list($value)) {
+                    if ([] === $value) {
+                        $lines[] = "{$key}: []";
+                    } else {
+                        $lines[] = "{$key}:";
+                        foreach ($value as $item) {
+                            if (\is_string($item)) {
+                                $lines[] = '  - '.json_encode($item, \JSON_UNESCAPED_SLASHES);
+                            } elseif (\is_bool($item)) {
+                                $lines[] = '  - '.($item ? 'true' : 'false');
+                            } else {
+                                $lines[] = "  - {$item}";
+                            }
+                        }
+                    }
+                } else {
+                    $lines[] = "{$key}:";
+                    foreach ($value as $k => $v) {
+                        if (\is_string($v)) {
+                            $lines[] = "  {$k}: ".json_encode($v, \JSON_UNESCAPED_SLASHES);
+                        } elseif (\is_bool($v)) {
+                            $lines[] = "  {$k}: ".($v ? 'true' : 'false');
+                        } elseif (\is_array($v)) {
+                            $lines[] = "  {$k}:";
+                            foreach ($v as $item) {
+                                $lines[] = '    - '.json_encode($item, \JSON_UNESCAPED_SLASHES);
+                            }
+                        } elseif (\is_int($v)) {
+                            $lines[] = "  {$k}: {$v}";
+                        } else {
+                            $lines[] = "  {$k}: ".json_encode($v, \JSON_UNESCAPED_SLASHES);
+                        }
+                    }
+                }
+            } elseif (\is_string($value)) {
+                $lines[] = "{$key}: ".json_encode($value, \JSON_UNESCAPED_SLASHES);
+            } elseif (\is_bool($value)) {
+                $lines[] = "{$key}: ".($value ? 'true' : 'false');
+            } elseif (\is_int($value)) {
+                $lines[] = "{$key}: {$value}";
+            } elseif (null === $value) {
+                $lines[] = "{$key}: null";
+            } else {
+                $lines[] = "{$key}: {$value}";
+            }
+        }
+
+        return implode("\n", $lines)."\n";
+    }
+
+    /**
+     * @param array<string, mixed> $frontmatter
+     */
+    private function parse(array $frontmatter, string $path = '/test/agent.md'): AgentDefinitionDTO
+    {
+        return $this->parser->parseContent($this->wrapContent($frontmatter), $path);
+    }
+
+    private function rawParse(string $raw, string $path = '/test/agent.md'): AgentDefinitionDTO
+    {
+        return $this->parser->parseContent($raw, $path);
+    }
+
+    // -----------------------------------------------------------------
+    //  Valid definitions
+    // -----------------------------------------------------------------
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function validFrontmatter(): array
+    {
+        return [
+            'name' => 'my-scout',
+            'description' => 'A custom scout agent',
+            'tools' => ['read', 'ide_find_file', 'semantic-search'],
+            'model' => 'deepseek/deepseek-v4-flash',
+            'thinking' => 'low',
+            'skills' => ['testing'],
+            'inheritProjectContext' => true,
+            'inheritAgentsMd' => false,
+            'systemPromptMode' => 'append',
+            'maxDepth' => 2,
+            'backgroundAllowed' => true,
+            'foregroundAllowed' => true,
+            'parallelAllowed' => true,
+            'disabled' => false,
+            'handoffFormat' => 'my-handoff',
+            'mcp' => [
+                'mode' => 'specific',
+                'tools' => ['context7__query-docs', 'websearch__search'],
+            ],
+        ];
     }
 }

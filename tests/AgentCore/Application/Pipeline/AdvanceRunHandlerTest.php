@@ -20,7 +20,6 @@ use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\CompactRun;
 use Ineersa\AgentCore\Domain\Message\ExecuteLlmStep;
-use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore;
 use Ineersa\AgentCore\Tests\Support\Builder\AdvanceRunMessageBuilder;
@@ -770,5 +769,4 @@ final class AdvanceRunHandlerTest extends TestCase
             'ExecuteLlmStep effect must carry branch-aware turnNo=4.'
         );
     }
-
 }

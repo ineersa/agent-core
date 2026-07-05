@@ -93,23 +93,23 @@ final class PreviewExpansionInputListenerTest extends TestCase
         $harness->screen()->setWorkingVisible(false);
 
         $collapsed = $harness->plainScreenText();
-        self::assertStringContainsString('deep_line_0', $collapsed);
-        self::assertStringNotContainsString('deep_line_11', $collapsed);
-        self::assertStringContainsString('more line', $collapsed);
+        $this->assertStringContainsString('deep_line_0', $collapsed);
+        $this->assertStringNotContainsString('deep_line_11', $collapsed);
+        $this->assertStringContainsString('more line', $collapsed);
 
         $harness->sendInput("\x0f");
 
-        self::assertTrue($displayState->previewableBlocksExpanded);
+        $this->assertTrue($displayState->previewableBlocksExpanded);
         $expanded = $harness->plainScreenText();
-        self::assertStringContainsString('deep_line_11', $expanded);
-        self::assertStringNotContainsString('more line', $expanded);
+        $this->assertStringContainsString('deep_line_11', $expanded);
+        $this->assertStringNotContainsString('more line', $expanded);
 
         $harness->sendInput("\x0f");
 
-        self::assertFalse($displayState->previewableBlocksExpanded);
+        $this->assertFalse($displayState->previewableBlocksExpanded);
         $collapsedAgain = $harness->plainScreenText();
-        self::assertStringNotContainsString('deep_line_11', $collapsedAgain);
-        self::assertStringContainsString('more line', $collapsedAgain);
+        $this->assertStringNotContainsString('deep_line_11', $collapsedAgain);
+        $this->assertStringContainsString('more line', $collapsedAgain);
     }
 
     #[Test]
@@ -155,12 +155,12 @@ final class PreviewExpansionInputListenerTest extends TestCase
         $harness->sendInput("\x0f");
         $after = $harness->plainScreenText();
 
-        self::assertStringContainsString('USER_STABLE_MARKER', $before);
-        self::assertStringContainsString('ASSISTANT_STABLE_MARKER', $before);
-        self::assertStringContainsString('USER_STABLE_MARKER', $after);
-        self::assertStringContainsString('ASSISTANT_STABLE_MARKER', $after);
-        self::assertStringContainsString(TranscriptGlyphs::GLYPH_USER_MESSAGE, $after);
-        self::assertStringContainsString(TranscriptGlyphs::GLYPH_ASSISTANT_MESSAGE, $after);
+        $this->assertStringContainsString('USER_STABLE_MARKER', $before);
+        $this->assertStringContainsString('ASSISTANT_STABLE_MARKER', $before);
+        $this->assertStringContainsString('USER_STABLE_MARKER', $after);
+        $this->assertStringContainsString('ASSISTANT_STABLE_MARKER', $after);
+        $this->assertStringContainsString(TranscriptGlyphs::GLYPH_USER_MESSAGE, $after);
+        $this->assertStringContainsString(TranscriptGlyphs::GLYPH_ASSISTANT_MESSAGE, $after);
     }
 
     #[Test]
@@ -183,11 +183,11 @@ final class PreviewExpansionInputListenerTest extends TestCase
         foreach ($groups['Global'] ?? [] as $binding) {
             if (\in_array('ctrl+o', $binding->keys, true)) {
                 $found = true;
-                self::assertStringContainsString('preview', strtolower($binding->action));
+                $this->assertStringContainsString('preview', strtolower($binding->action));
                 break;
             }
         }
-        self::assertTrue($found, 'Hotkey catalog must include ctrl+o binding');
+        $this->assertTrue($found, 'Hotkey catalog must include ctrl+o binding');
 
         $renderer = new HotkeyTableRenderer();
         $styled = $renderer->render(
@@ -205,6 +205,6 @@ final class PreviewExpansionInputListenerTest extends TestCase
             $harness->screen()->theme(),
             '',
         );
-        self::assertStringContainsString('Ctrl+O', $styled);
+        $this->assertStringContainsString('Ctrl+O', $styled);
     }
 }

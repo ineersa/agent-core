@@ -1107,7 +1107,6 @@ final class TranscriptProjectorTest extends TestCase
         $this->assertFalse($block->streaming);
     }
 
-
     public function testToolExecutionFailedCreatesErrorResult(): void
     {
         $this->accept('tool_execution.started', [
@@ -1163,7 +1162,7 @@ final class TranscriptProjectorTest extends TestCase
             'schema' => ['type' => 'boolean'],
         ]);
 
-        self::assertCount(0, $this->projector->blocks(),
+        $this->assertCount(0, $this->projector->blocks(),
             'tool_question.requested must not create transcript blocks');
     }
 
@@ -1639,11 +1638,13 @@ final class TranscriptProjectorTest extends TestCase
         if ('assistant.text_delta' === $type && 'oops' === ($payload['delta'] ?? '')) {
             $this->accept($type, $payload);
             $this->assertSame([], $this->projector->blocks());
+
             return;
         }
         if ('assistant.text_completed' === $type) {
             $this->accept($type, $payload);
             $this->assertSame([], $this->projector->blocks());
+
             return;
         }
 

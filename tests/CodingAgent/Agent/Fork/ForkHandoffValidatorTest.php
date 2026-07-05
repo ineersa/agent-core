@@ -83,9 +83,9 @@ HANDOFF;
 
         $result = $this->validator->validate($handoff);
 
-        self::assertTrue($result->valid);
-        self::assertCount(0, $result->missingSections);
-        self::assertNull($result->repairInstruction);
+        $this->assertTrue($result->valid);
+        $this->assertCount(0, $result->missingSections);
+        $this->assertNull($result->repairInstruction);
     }
 
     // ── Missing mandatory sections ───────────────────────────────────────
@@ -108,9 +108,9 @@ HANDOFF;
 
         $result = $this->validator->validate($handoff);
 
-        self::assertFalse($result->valid);
-        self::assertContains('## 11. Final handoff', $result->missingSections);
-        self::assertNotEmpty($result->repairInstruction);
+        $this->assertFalse($result->valid);
+        $this->assertContains('## 11. Final handoff', $result->missingSections);
+        $this->assertNotEmpty($result->repairInstruction);
     }
 
     public function testMissingSection1Fails(): void
@@ -131,9 +131,9 @@ HANDOFF;
 
         $result = $this->validator->validate($handoff);
 
-        self::assertFalse($result->valid);
-        self::assertContains('## 1. Result / status', $result->missingSections);
-        self::assertNotNull($result->repairInstruction);
+        $this->assertFalse($result->valid);
+        $this->assertContains('## 1. Result / status', $result->missingSections);
+        $this->assertNotNull($result->repairInstruction);
     }
 
     public function testMissingSection5Fails(): void
@@ -154,9 +154,9 @@ HANDOFF;
 
         $result = $this->validator->validate($handoff);
 
-        self::assertFalse($result->valid);
-        self::assertContains('## 5. Changes made', $result->missingSections);
-        self::assertNotNull($result->repairInstruction);
+        $this->assertFalse($result->valid);
+        $this->assertContains('## 5. Changes made', $result->missingSections);
+        $this->assertNotNull($result->repairInstruction);
     }
 
     public function testMissingAllMandatorySectionsFails(): void
@@ -173,11 +173,11 @@ HANDOFF;
 
         $result = $this->validator->validate($handoff);
 
-        self::assertFalse($result->valid);
-        self::assertCount(3, $result->missingSections);
-        self::assertContains('## 1. Result / status', $result->missingSections);
-        self::assertContains('## 5. Changes made', $result->missingSections);
-        self::assertContains('## 11. Final handoff', $result->missingSections);
+        $this->assertFalse($result->valid);
+        $this->assertCount(3, $result->missingSections);
+        $this->assertContains('## 1. Result / status', $result->missingSections);
+        $this->assertContains('## 5. Changes made', $result->missingSections);
+        $this->assertContains('## 11. Final handoff', $result->missingSections);
     }
 
     // ── Conversational / non-structured reply ────────────────────────────
@@ -188,9 +188,9 @@ HANDOFF;
 
         $result = $this->validator->validate($handoff);
 
-        self::assertFalse($result->valid);
-        self::assertNotEmpty($result->missingSections);
-        self::assertNotNull($result->repairInstruction);
+        $this->assertFalse($result->valid);
+        $this->assertNotEmpty($result->missingSections);
+        $this->assertNotNull($result->repairInstruction);
     }
 
     // ── Empty input ──────────────────────────────────────────────────────
@@ -199,9 +199,9 @@ HANDOFF;
     {
         $result = $this->validator->validate('');
 
-        self::assertFalse($result->valid);
-        self::assertCount(3, $result->missingSections);
-        self::assertNotNull($result->repairInstruction);
+        $this->assertFalse($result->valid);
+        $this->assertCount(3, $result->missingSections);
+        $this->assertNotNull($result->repairInstruction);
     }
 
     // ── Filesystem statement check ───────────────────────────────────────
@@ -224,9 +224,9 @@ HANDOFF;
 
         $result = $this->validator->validate($handoff);
 
-        self::assertFalse($result->valid);
-        self::assertNotNull($result->repairInstruction);
-        self::assertStringContainsString('filesystem changes', $result->repairInstruction);
+        $this->assertFalse($result->valid);
+        $this->assertNotNull($result->repairInstruction);
+        $this->assertStringContainsString('filesystem changes', $result->repairInstruction);
     }
 
     public function testSection1WithNoFilesystemChangesPasses(): void
@@ -247,7 +247,7 @@ HANDOFF;
 
         $result = $this->validator->validate($handoff);
 
-        self::assertTrue($result->valid);
+        $this->assertTrue($result->valid);
     }
 
     public function testSection1WithFilesChangedPasses(): void
@@ -268,7 +268,7 @@ HANDOFF;
 
         $result = $this->validator->validate($handoff);
 
-        self::assertTrue($result->valid);
+        $this->assertTrue($result->valid);
     }
 
     // ── Required section headers helper ──────────────────────────────────
@@ -277,9 +277,9 @@ HANDOFF;
     {
         $headers = $this->validator->requiredSectionHeaders();
 
-        self::assertCount(3, $headers);
-        self::assertContains('## 1. Result / status', $headers);
-        self::assertContains('## 5. Changes made', $headers);
-        self::assertContains('## 11. Final handoff', $headers);
+        $this->assertCount(3, $headers);
+        $this->assertContains('## 1. Result / status', $headers);
+        $this->assertContains('## 5. Changes made', $headers);
+        $this->assertContains('## 11. Final handoff', $headers);
     }
 }

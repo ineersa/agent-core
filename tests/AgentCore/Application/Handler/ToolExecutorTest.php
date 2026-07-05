@@ -425,6 +425,7 @@ final class ToolExecutorTest extends TestCase
         $this->assertFalse($result->isError);
         $this->assertNull($accessor->current());
     }
+
     public function testNoPostHocTimeoutWhenPolicyTimeoutIsNull(): void
     {
         $toolbox = new SlowToolbox();
@@ -447,29 +448,26 @@ final class ToolExecutorTest extends TestCase
         $this->assertSame('slow-ok', $result->content[0]['text']);
         $this->assertNull($result->details['timeout_seconds'] ?? null);
     }
-
 }
 
-
-    #[AsTool(name: 'human_gate', description: 'Ask for human input.')]
-    final class InterruptTool
+#[AsTool(name: 'human_gate', description: 'Ask for human input.')]
+final class InterruptTool
+{
+    /**
+     * @return array{kind: string, question_id: string, prompt: string, schema: array{type: string}}
+     */
+    public function __invoke(): array
     {
-        /**
-         * @return array{kind: string, question_id: string, prompt: string, schema: array{type: string}}
-         */
-        public function __invoke(): array
-        {
-            return [
-                'kind' => 'interrupt',
-                'question_id' => 'test-q-1',
-                'prompt' => 'Approve deployment?',
-                'schema' => ['type' => 'boolean'],
-            ];
-        }
+        return [
+            'kind' => 'interrupt',
+            'question_id' => 'test-q-1',
+            'prompt' => 'Approve deployment?',
+            'schema' => ['type' => 'boolean'],
+        ];
     }
+}
 
-
-    final class ContextCheckingToolbox implements ToolboxInterface
+final class ContextCheckingToolbox implements ToolboxInterface
 {
     public function __construct(
         private readonly StackToolExecutionContextAccessor $accessor,
@@ -552,7 +550,6 @@ final class SymfonySearchTool
         ];
     }
 }
-
 
 final class SlowToolbox implements ToolboxInterface
 {

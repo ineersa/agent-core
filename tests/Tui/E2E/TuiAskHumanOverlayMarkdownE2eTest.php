@@ -24,13 +24,13 @@ final class TuiAskHumanOverlayMarkdownE2eTest extends TestCase
     protected function setUp(): void
     {
         if (!TmuxHarness::isAvailable()) {
-            self::markTestSkipped('tmux is not installed. Skipping TUI e2e tests.');
+            $this->markTestSkipped('tmux is not installed. Skipping TUI e2e tests.');
         }
 
         $this->tmux = new TmuxHarness();
         $this->testProjectDir = $this->createIsolatedProjectDir();
         $this->snapshotDir = $this->testProjectDir.'/.hatfield/tmp/tui/smoke';
-        @\mkdir($this->snapshotDir, 0o777, true);
+        @mkdir($this->snapshotDir, 0o777, true);
     }
 
     protected function tearDown(): void
@@ -74,19 +74,19 @@ final class TuiAskHumanOverlayMarkdownE2eTest extends TestCase
 
             $this->saveAnsiSnapshot($pane, 'ask-human-overlay-markdown');
 
-            self::assertStringContainsString('Human input required', $capture);
-            self::assertStringContainsString('Overlay proof', $capture);
-            self::assertStringContainsString('inline', $capture);
-            self::assertStringContainsString('[type answer and press Enter]', $capture);
-            self::assertStringNotContainsString('**Overlay proof**', $capture,
+            $this->assertStringContainsString('Human input required', $capture);
+            $this->assertStringContainsString('Overlay proof', $capture);
+            $this->assertStringContainsString('inline', $capture);
+            $this->assertStringContainsString('[type answer and press Enter]', $capture);
+            $this->assertStringNotContainsString('**Overlay proof**', $capture,
                 'Active overlay must not show raw markdown bold markers');
-            self::assertStringNotContainsString('`inline`', $capture,
+            $this->assertStringNotContainsString('`inline`', $capture,
                 'Active overlay must not show raw markdown code markers');
 
             // Compact left indent: header and prompt should not start at column 0.
             foreach (explode("\n", $capture) as $line) {
                 if (str_contains($line, 'Human input required') || str_contains($line, 'Overlay proof')) {
-                    self::assertMatchesRegularExpression('/^\s+\S/', $line,
+                    $this->assertMatchesRegularExpression('/^\s+\S/', $line,
                         'Overlay header/prompt lines should be indented, not flush-left');
                 }
             }
@@ -111,7 +111,7 @@ final class TuiAskHumanOverlayMarkdownE2eTest extends TestCase
         $dbPath = $paths['app'];
         $transportDbPath = $paths['transport'];
 
-        $fixturePath = \implode(';', [
+        $fixturePath = implode(';', [
             $projectDir.'/tests/Tui/E2E/fixtures/tui-ask-human-markdown-overlay.json',
             $projectDir.'/tests/Tui/E2E/fixtures/tui-ask-human-after-answer-text.json',
         ]);
@@ -127,17 +127,17 @@ final class TuiAskHumanOverlayMarkdownE2eTest extends TestCase
             .'--tools-excluded=bash,write,edit,read,subagent '
             .'--prompt="Ask me a markdown question" '
             .'2>&1',
-            \escapeshellarg($this->testProjectDir.'/home'),
-            \escapeshellarg($fixturePath),
-            \escapeshellarg($php),
-            \escapeshellarg($script),
+            escapeshellarg($this->testProjectDir.'/home'),
+            escapeshellarg($fixturePath),
+            escapeshellarg($php),
+            escapeshellarg($script),
         );
     }
 
     private function createIsolatedProjectDir(): string
     {
         $dir = TestDirectoryIsolation::createProjectTempDir('tui-ask-human-overlay');
-        @\mkdir($dir.'/.hatfield', 0o777, true);
+        @mkdir($dir.'/.hatfield', 0o777, true);
 
         $settings = [
             'ai' => [
@@ -179,9 +179,9 @@ final class TuiAskHumanOverlayMarkdownE2eTest extends TestCase
         ];
 
         $yaml = Yaml::dump($settings, 6, 4);
-        \file_put_contents($dir.'/.hatfield/settings.yaml', $yaml);
-        @\mkdir($dir.'/home/.hatfield', 0o777, true);
-        \file_put_contents($dir.'/home/.hatfield/settings.yaml', $yaml);
+        file_put_contents($dir.'/.hatfield/settings.yaml', $yaml);
+        @mkdir($dir.'/home/.hatfield', 0o777, true);
+        file_put_contents($dir.'/home/.hatfield/settings.yaml', $yaml);
 
         return $dir;
     }
@@ -189,8 +189,8 @@ final class TuiAskHumanOverlayMarkdownE2eTest extends TestCase
     private function saveAnsiSnapshot(TmuxPane $pane, string $tag): void
     {
         $ansi = $this->tmux->captureAnsi($pane);
-        $ts = \date('Ymd-His');
+        $ts = date('Ymd-His');
         $path = \sprintf('%s/%s-%s.ansi', $this->snapshotDir, $tag, $ts);
-        \file_put_contents($path, $ansi);
+        file_put_contents($path, $ansi);
     }
 }

@@ -398,7 +398,6 @@ final class ActivityStateMachineTest extends TestCase
         $this->assertSame(RunActivityStateEnum::Cancelling, $result);
     }
 
-
     public function testCancellingToolExecutionFailedTransitionsToCancelled(): void
     {
         $event = new RuntimeEvent(

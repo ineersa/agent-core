@@ -27,32 +27,6 @@ final class OutputCapReadFileControllerTest extends ControllerE2eTestCase
     private string $largeFilePath;
     private string $sentinel;
 
-    protected function tempDirPrefix(): string
-    {
-        return 'test-output-cap';
-    }
-
-    /**
-     * @return list<string>
-     */
-    protected function controllerExtraArgs(): array
-    {
-        return ['--tools=read'];
-    }
-
-    protected function extraSettingsYaml(): string
-    {
-        return <<<YAML
-tools:
-    output_cap:
-        path: .hatfield/tmp/output-cap
-        default_cap: 500
-        doc_cap: 500
-        retention: 86400
-        session_prefix: null
-YAML;
-    }
-
     protected function setUp(): void
     {
         parent::setUp();
@@ -101,30 +75,30 @@ YAML;
         $this->assertStartRunAcked($events, $startCmdId);
 
         // Mandatory: run started.
-        self::assertArrayHasKey('run.started', $byType, 'Expected run.started. '
+        $this->assertArrayHasKey('run.started', $byType, 'Expected run.started. '
             .$this->collectDiagnostics($events));
 
         $runStarted = $byType['run.started'][0];
         $this->runId = (string) ($runStarted['runId'] ?? $runStarted['payload']['runId'] ?? '');
-        self::assertNotEmpty($this->runId);
+        $this->assertNotEmpty($this->runId);
 
-        self::assertArrayHasKey('tool_execution.started', $byType, 'read tool must start. '
+        $this->assertArrayHasKey('tool_execution.started', $byType, 'read tool must start. '
             .$this->collectDiagnostics($events));
-        self::assertSame(
+        $this->assertSame(
             'read',
             $byType['tool_execution.started'][0]['payload']['tool_name'] ?? null,
             'The LLM must call the read tool with the requested relative path. '
             .$this->collectDiagnostics($events),
         );
-        self::assertArrayHasKey('tool_execution.completed', $byType, 'read tool must complete. '
+        $this->assertArrayHasKey('tool_execution.completed', $byType, 'read tool must complete. '
             .$this->collectDiagnostics($events));
-        self::assertSame(
+        $this->assertSame(
             $byType['tool_execution.started'][0]['payload']['tool_call_id'] ?? null,
             $byType['tool_execution.completed'][0]['payload']['tool_call_id'] ?? null,
             'The completed tool execution must be the same read call that started. '
             .$this->collectDiagnostics($events),
         );
-        self::assertArrayNotHasKey('tool_execution.failed', $byType, 'read tool must not fail. '
+        $this->assertArrayNotHasKey('tool_execution.failed', $byType, 'read tool must not fail. '
             .$this->collectDiagnostics($events));
 
         // Verify session artifacts are written.
@@ -134,7 +108,7 @@ YAML;
         // Output-cap directory must exist (it's created eagerly on first use).
         $outputCapDir = $this->tempDir.'/.hatfield/tmp/output-cap';
         if (!is_dir($outputCapDir)) {
-            \fwrite(\STDERR, "[INFO] Output-cap dir not created — no tool that triggers "
+            fwrite(\STDERR, '[INFO] Output-cap dir not created — no tool that triggers '
                 ."OutputCap executed during this run.\n");
         } else {
             $files = glob($outputCapDir.'/*.txt') ?: [];
@@ -147,7 +121,7 @@ YAML;
                 // If state contains "Output capped", the cap was exercised.
                 if (str_contains($stateContent, 'Output capped')) {
                     // The sentinel must NOT leak into persisted state.
-                    self::assertStringNotContainsString(
+                    $this->assertStringNotContainsString(
                         $this->sentinel,
                         $stateContent,
                         'state.json must NOT contain the full sentinel — only the capped notice',
@@ -169,7 +143,7 @@ YAML;
                         }
 
                         if (!$foundSentinel) {
-                            \fwrite(\STDERR, '[INFO] Output cap exercised but sentinel not found in '
+                            fwrite(\STDERR, '[INFO] Output cap exercised but sentinel not found in '
                                 .'persisted cap files. Cap files: '.implode(', ', $files)."\n");
                         }
                     }
@@ -178,8 +152,33 @@ YAML;
         }
 
         if (isset($byType['run.failed'])) {
-            \fwrite(\STDERR, "[INFO] Run failed — model may have refused or timed out.\n");
+            fwrite(\STDERR, "[INFO] Run failed — model may have refused or timed out.\n");
         }
     }
 
+    protected function tempDirPrefix(): string
+    {
+        return 'test-output-cap';
+    }
+
+    /**
+     * @return list<string>
+     */
+    protected function controllerExtraArgs(): array
+    {
+        return ['--tools=read'];
+    }
+
+    protected function extraSettingsYaml(): string
+    {
+        return <<<YAML
+tools:
+    output_cap:
+        path: .hatfield/tmp/output-cap
+        default_cap: 500
+        doc_cap: 500
+        retention: 86400
+        session_prefix: null
+YAML;
+    }
 }

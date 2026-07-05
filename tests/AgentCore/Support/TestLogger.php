@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Tests\Support;
 
 use Psr\Log\AbstractLogger;
-use Stringable;
 
 /**
  * Collecting PSR-3 logger for tests.
@@ -24,7 +23,7 @@ final class TestLogger extends AbstractLogger
     /** @var list<array{level: string, message: string, context: array<string, mixed>}> */
     public array $records = [];
 
-    public function log($level, Stringable|string $message, array $context = []): void
+    public function log($level, \Stringable|string $message, array $context = []): void
     {
         $this->records[] = [
             'level' => (string) $level,

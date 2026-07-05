@@ -37,9 +37,9 @@ final class TuiStartupVirtualRenderTest extends TestCase
 
         $screen = $harness->plainScreenText();
 
-        self::assertStringContainsString('█', $screen, 'Hatfield logo (box drawing) missing');
-        self::assertStringContainsString('Welcome to Hatfield', $screen, 'Welcome message missing');
-        self::assertStringContainsString('● idle', $screen, 'Idle working status missing');
-        self::assertStringContainsString('session '.self::SESSION_ID, $screen, 'Session id in footer missing');
+        $this->assertStringContainsString('█', $screen, 'Hatfield logo (box drawing) missing');
+        $this->assertStringContainsString('Welcome to Hatfield', $screen, 'Welcome message missing');
+        $this->assertStringContainsString('● idle', $screen, 'Idle working status missing');
+        $this->assertStringContainsString('session '.self::SESSION_ID, $screen, 'Session id in footer missing');
     }
 }

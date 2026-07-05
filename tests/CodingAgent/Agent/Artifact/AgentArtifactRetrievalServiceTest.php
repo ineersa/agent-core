@@ -12,26 +12,26 @@ use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
+use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactPathResolver;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRetrievalService;
-use Ineersa\CodingAgent\Agent\Artifact\AgentRetrieveArgumentsFactory;
-use Ineersa\CodingAgent\Config\AgentArtifactRetrievalLimitsConfig;
-use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
 use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunDirectory;
+use Ineersa\CodingAgent\Agent\Artifact\AgentRetrieveArgumentsFactory;
+use Ineersa\CodingAgent\Config\AgentArtifactRetrievalLimitsConfig;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use PHPUnit\Framework\Attributes\CoversClass;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\FlockStore;
 use Symfony\Component\Serializer\Encoder\JsonEncoder;
+use Symfony\Component\Serializer\NameConverter\CamelCaseToSnakeCaseNameConverter;
+use Symfony\Component\Serializer\Normalizer\ArrayDenormalizer;
 use Symfony\Component\Serializer\Normalizer\BackedEnumNormalizer;
 use Symfony\Component\Serializer\Normalizer\DateTimeNormalizer;
-use Symfony\Component\Serializer\NameConverter\CamelCaseToSnakeCaseNameConverter;
 use Symfony\Component\Serializer\Normalizer\ObjectNormalizer;
 use Symfony\Component\Serializer\Serializer;
-use Symfony\Component\Serializer\Normalizer\ArrayDenormalizer;
 use Symfony\Component\Validator\ValidatorBuilder;
 
 #[CoversClass(AgentArtifactRetrievalService::class)]
@@ -85,9 +85,9 @@ final class AgentArtifactRetrievalServiceTest extends IsolatedKernelTestCase
         $service = $this->makeService();
         $out = $service->retrieve($parent, ['artifact_id' => $artifactId, 'mode' => 'handoff']);
 
-        self::assertStringContainsString('artifact_id: agent_done', $out);
-        self::assertStringContainsString('Found routing config.', $out);
-        self::assertStringContainsString('status: completed', $out);
+        $this->assertStringContainsString('artifact_id: agent_done', $out);
+        $this->assertStringContainsString('Found routing config.', $out);
+        $this->assertStringContainsString('status: completed', $out);
     }
 
     public function testRetrievesFailedMetadataWithFailureReason(): void
@@ -106,8 +106,8 @@ final class AgentArtifactRetrievalServiceTest extends IsolatedKernelTestCase
         $service = $this->makeService();
         $out = $service->retrieve($parent, ['artifact_id' => $artifactId, 'mode' => 'metadata']);
 
-        self::assertStringContainsString('status: failed', $out);
-        self::assertStringContainsString('failure_reason: Child attempted unsupported human interaction.', $out);
+        $this->assertStringContainsString('status: failed', $out);
+        $this->assertStringContainsString('failure_reason: Child attempted unsupported human interaction.', $out);
     }
 
     public function testRetrievesNeedsClarificationMetadataWhenReservedStatusSet(): void
@@ -126,8 +126,8 @@ final class AgentArtifactRetrievalServiceTest extends IsolatedKernelTestCase
         $service = $this->makeService();
         $out = $service->retrieve($parent, ['artifact_id' => $artifactId, 'mode' => 'metadata']);
 
-        self::assertStringContainsString('status: needs_clarification', $out);
-        self::assertStringContainsString('needs_clarification: Reserved future interactive mode note.', $out);
+        $this->assertStringContainsString('status: needs_clarification', $out);
+        $this->assertStringContainsString('needs_clarification: Reserved future interactive mode note.', $out);
     }
 
     public function testResolvesByAgentRunIdInCurrentParent(): void
@@ -141,8 +141,8 @@ final class AgentArtifactRetrievalServiceTest extends IsolatedKernelTestCase
         $service = $this->makeService();
         $out = $service->retrieve($parent, ['agent_run_id' => $childRun, 'mode' => 'handoff']);
 
-        self::assertStringContainsString('artifact_id: agent_by_run', $out);
-        self::assertStringContainsString('handoff-by-run', $out);
+        $this->assertStringContainsString('artifact_id: agent_by_run', $out);
+        $this->assertStringContainsString('handoff-by-run', $out);
     }
 
     public function testRejectsMissingIdentifiers(): void
@@ -151,9 +151,9 @@ final class AgentArtifactRetrievalServiceTest extends IsolatedKernelTestCase
 
         try {
             $service->retrieve('parent-x', []);
-            self::fail('expected ToolCallException');
+            $this->fail('expected ToolCallException');
         } catch (ToolCallException $e) {
-            self::assertStringContainsString('Provide at least one identifier', $e->getMessage());
+            $this->assertStringContainsString('Provide at least one identifier', $e->getMessage());
         }
     }
 
@@ -163,9 +163,9 @@ final class AgentArtifactRetrievalServiceTest extends IsolatedKernelTestCase
 
         try {
             $service->retrieve('parent-x', ['artifact_id' => 'missing']);
-            self::fail('expected ToolCallException');
+            $this->fail('expected ToolCallException');
         } catch (ToolCallException $e) {
-            self::assertStringContainsString('Unknown artifact_id', $e->getMessage());
+            $this->assertStringContainsString('Unknown artifact_id', $e->getMessage());
         }
     }
 
@@ -181,9 +181,9 @@ final class AgentArtifactRetrievalServiceTest extends IsolatedKernelTestCase
 
         try {
             $service->retrieve('parent-current', ['agent_run_id' => $childRun]);
-            self::fail('expected ToolCallException');
+            $this->fail('expected ToolCallException');
         } catch (ToolCallException $e) {
-            self::assertStringContainsString('different parent session', $e->getMessage());
+            $this->assertStringContainsString('different parent session', $e->getMessage());
         }
     }
 
@@ -193,9 +193,9 @@ final class AgentArtifactRetrievalServiceTest extends IsolatedKernelTestCase
 
         try {
             $service->retrieve('parent-1', ['artifact_id' => '../secret']);
-            self::fail('expected ToolCallException');
+            $this->fail('expected ToolCallException');
         } catch (ToolCallException $e) {
-            self::assertStringContainsString('artifactId', $e->getMessage());
+            $this->assertStringContainsString('artifactId', $e->getMessage());
         }
     }
 
@@ -209,9 +209,9 @@ final class AgentArtifactRetrievalServiceTest extends IsolatedKernelTestCase
 
         try {
             $service->retrieve($parent, ['artifact_id' => 'artifact-one', 'agent_run_id' => 'run-two']);
-            self::fail('expected ToolCallException');
+            $this->fail('expected ToolCallException');
         } catch (ToolCallException $e) {
-            self::assertStringContainsString('different subagent artifacts', $e->getMessage());
+            $this->assertStringContainsString('different subagent artifacts', $e->getMessage());
         }
     }
 
@@ -235,16 +235,16 @@ final class AgentArtifactRetrievalServiceTest extends IsolatedKernelTestCase
         }
 
         $eventStore = $this->createMock(EventStoreInterface::class);
-        $eventStore->expects(self::once())->method('allFor')->with(self::identicalTo($childRun))->willReturn($events);
+        $eventStore->expects($this->once())->method('allFor')->with($this->identicalTo($childRun))->willReturn($events);
         $runStore = $this->createStub(RunStoreInterface::class);
 
         $service = $this->makeService($runStore, $eventStore);
         $out = $service->retrieve($parent, ['artifact_id' => $artifactId, 'mode' => 'events', 'limit' => 5]);
 
-        self::assertStringContainsString('Showing last 5 of 25 events', $out);
-        self::assertStringNotContainsString($secret, $out);
-        self::assertStringNotContainsString($secret.'-1', $out);
-        self::assertStringContainsString('tool end: bash', $out);
+        $this->assertStringContainsString('Showing last 5 of 25 events', $out);
+        $this->assertStringNotContainsString($secret, $out);
+        $this->assertStringNotContainsString($secret.'-1', $out);
+        $this->assertStringContainsString('tool end: bash', $out);
     }
 
     public function testBoundedHistorySkipsSystemAndOmitsRawText(): void
@@ -267,18 +267,18 @@ final class AgentArtifactRetrievalServiceTest extends IsolatedKernelTestCase
 
         $state = new RunState(runId: $childRun, status: RunStatus::Completed, messages: $messages);
         $runStore = $this->createMock(RunStoreInterface::class);
-        $runStore->expects(self::once())->method('get')->with(self::identicalTo($childRun))->willReturn($state);
+        $runStore->expects($this->once())->method('get')->with($this->identicalTo($childRun))->willReturn($state);
         $eventStore = $this->createStub(EventStoreInterface::class);
 
         $service = $this->makeService($runStore, $eventStore);
         $out = $service->retrieve($parent, ['artifact_id' => $artifactId, 'mode' => 'history', 'limit' => 3]);
 
-        self::assertStringContainsString('Showing last 3 of', $out);
-        self::assertStringNotContainsString($secret, $out);
-        self::assertStringNotContainsString($toolSecret, $out);
-        self::assertStringNotContainsString('role=system', $out);
-        self::assertStringNotContainsString('role=user-context', $out);
-        self::assertStringNotContainsString('role=tool', $out);
+        $this->assertStringContainsString('Showing last 3 of', $out);
+        $this->assertStringNotContainsString($secret, $out);
+        $this->assertStringNotContainsString($toolSecret, $out);
+        $this->assertStringNotContainsString('role=system', $out);
+        $this->assertStringNotContainsString('role=user-context', $out);
+        $this->assertStringNotContainsString('role=tool', $out);
     }
 
     public function testDebugModeEmitsRelativeArtifactPathsOnly(): void
@@ -289,23 +289,21 @@ final class AgentArtifactRetrievalServiceTest extends IsolatedKernelTestCase
         $this->registry->create($parent, $artifactId, $childRun, 'scout', AgentArtifactKindEnum::Subagent);
 
         $isolatedRoot = (string) getcwd();
-        self::assertNotSame('', $isolatedRoot);
+        $this->assertNotSame('', $isolatedRoot);
 
         $service = $this->makeService();
         $out = $service->retrieve($parent, ['artifact_id' => $artifactId, 'mode' => 'debug']);
 
-        self::assertStringContainsString('# Subagent artifact debug paths', $out);
-        self::assertStringContainsString('artifacts/agents/'.$artifactId.'/', $out);
-        self::assertStringContainsString('- artifact_dir: artifacts/agents/'.$artifactId, $out);
-        self::assertStringContainsString('- metadata_path: artifacts/agents/'.$artifactId.'/metadata.json', $out);
-        self::assertStringContainsString('- handoff_path: artifacts/agents/'.$artifactId.'/handoff.md', $out);
-        self::assertStringContainsString('- events_path: artifacts/agents/'.$artifactId.'/events.jsonl', $out);
-        self::assertStringContainsString('- state_path: artifacts/agents/'.$artifactId.'/state.json', $out);
-        self::assertStringNotContainsString($isolatedRoot, $out);
-        self::assertStringNotContainsString($isolatedRoot.'/.hatfield/sessions', $out);
+        $this->assertStringContainsString('# Subagent artifact debug paths', $out);
+        $this->assertStringContainsString('artifacts/agents/'.$artifactId.'/', $out);
+        $this->assertStringContainsString('- artifact_dir: artifacts/agents/'.$artifactId, $out);
+        $this->assertStringContainsString('- metadata_path: artifacts/agents/'.$artifactId.'/metadata.json', $out);
+        $this->assertStringContainsString('- handoff_path: artifacts/agents/'.$artifactId.'/handoff.md', $out);
+        $this->assertStringContainsString('- events_path: artifacts/agents/'.$artifactId.'/events.jsonl', $out);
+        $this->assertStringContainsString('- state_path: artifacts/agents/'.$artifactId.'/state.json', $out);
+        $this->assertStringNotContainsString($isolatedRoot, $out);
+        $this->assertStringNotContainsString($isolatedRoot.'/.hatfield/sessions', $out);
     }
-
-
 
     public function testRetrievesCancelledHandoffWithPartialContext(): void
     {
@@ -319,9 +317,9 @@ final class AgentArtifactRetrievalServiceTest extends IsolatedKernelTestCase
         $service = $this->makeService();
         $out = $service->retrieve($parent, ['artifact_id' => $artifactId, 'mode' => 'handoff']);
 
-        self::assertStringContainsString('status: cancelled', $out);
-        self::assertStringContainsString('artifact_id: '.$artifactId, $out);
-        self::assertStringContainsString('Partial context', $out);
+        $this->assertStringContainsString('status: cancelled', $out);
+        $this->assertStringContainsString('artifact_id: '.$artifactId, $out);
+        $this->assertStringContainsString('Partial context', $out);
     }
 
     public function testRetrievesCancelledMetadata(): void
@@ -345,9 +343,9 @@ final class AgentArtifactRetrievalServiceTest extends IsolatedKernelTestCase
         $service = $this->makeService(runStore: $runStore);
         $out = $service->retrieve($parent, ['artifact_id' => $artifactId, 'mode' => 'metadata']);
 
-        self::assertStringContainsString('status: cancelled', $out);
-        self::assertStringContainsString('turn_no: 4', $out);
-        self::assertStringContainsString('last_seq: 18', $out);
+        $this->assertStringContainsString('status: cancelled', $out);
+        $this->assertStringContainsString('turn_no: 4', $out);
+        $this->assertStringContainsString('last_seq: 18', $out);
     }
 
     private function makeService(

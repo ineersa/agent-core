@@ -40,11 +40,11 @@ final class ResumeHandlerTest extends TestCase
 
         $handler(new ControllerCommandEvent($command, $emit));
 
-        self::assertSame(['run-passive-attach'], $spy->attachRunIds);
-        self::assertCount(1, $emitted);
-        self::assertSame(RuntimeEventTypeEnum::RunResumed->value, $emitted[0]->type);
-        self::assertSame('run-passive-attach', $emitted[0]->runId);
-        self::assertSame('attached', $emitted[0]->payload['status'] ?? null);
+        $this->assertSame(['run-passive-attach'], $spy->attachRunIds);
+        $this->assertCount(1, $emitted);
+        $this->assertSame(RuntimeEventTypeEnum::RunResumed->value, $emitted[0]->type);
+        $this->assertSame('run-passive-attach', $emitted[0]->runId);
+        $this->assertSame('attached', $emitted[0]->payload['status'] ?? null);
     }
 
     public function testEmitsProtocolErrorWhenRunIdMissing(): void
@@ -60,9 +60,9 @@ final class ResumeHandlerTest extends TestCase
         $command = new RuntimeCommand(id: 'cmd_2', type: 'resume', runId: '');
         $handler(new ControllerCommandEvent($command, $emit));
 
-        self::assertSame([], $spy->attachRunIds);
-        self::assertCount(1, $emitted);
-        self::assertSame(RuntimeEventTypeEnum::ProtocolError->value, $emitted[0]->type);
+        $this->assertSame([], $spy->attachRunIds);
+        $this->assertCount(1, $emitted);
+        $this->assertSame(RuntimeEventTypeEnum::ProtocolError->value, $emitted[0]->type);
     }
 }
 

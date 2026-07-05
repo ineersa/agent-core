@@ -18,10 +18,10 @@ use Ineersa\CodingAgent\Tool\ToolRegistryInterface;
 use Ineersa\Hatfield\ExtensionApi\Command\CommandContextInterface;
 use Ineersa\Hatfield\ExtensionApi\Command\CommandDefinitionDTO;
 use Ineersa\Hatfield\ExtensionApi\Command\CommandRegistryInterface;
+use Ineersa\Hatfield\ExtensionApi\Command\ExtensionCommandHandlerInterface;
 use Ineersa\Hatfield\ExtensionApi\Exec\ExecInterface;
 use Ineersa\Hatfield\ExtensionApi\Exec\ExecOptionsDTO;
 use Ineersa\Hatfield\ExtensionApi\Exec\ExecResultDTO;
-use Ineersa\Hatfield\ExtensionApi\Command\ExtensionCommandHandlerInterface;
 use Ineersa\Hatfield\ExtensionApi\Prompt\PromptContributorInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\ExtensionToolHandlerInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallContextDTO;
@@ -407,6 +407,170 @@ final class ExtensionToolRegistryBridgeTest extends TestCase
         $this->assertSame('/home/some-project', $bridge->getCwd());
     }
 
+    // ── NEW: exec() ──
+
+    public function testExecReturnsExecInterface(): void
+    {
+        $execResult = new ExecResultDTO(stdout: 'hello', stderr: '', exitCode: 0);
+        $execBridge = $this->dummyExecBridge($execResult);
+
+        $bridge = $this->bridgeFor(new ToolRegistry(), execBridge: $execBridge);
+        $execApi = $bridge->exec();
+
+        $result = $execApi->exec('echo', ['hello']);
+        $this->assertSame('hello', $result->stdout);
+        $this->assertSame(0, $result->exitCode);
+    }
+
+    // ── NEW: registerPromptContributor() ──
+
+    public function testRegisterPromptContributorStoresInHookRegistry(): void
+    {
+        $hookRegistry = new ExtensionHookRegistry();
+        $bridge = $this->bridgeFor(new ToolRegistry(), hookRegistry: $hookRegistry);
+
+        $contributor = new readonly class implements PromptContributorInterface {
+            public function contribute(): string
+            {
+                return '# Task workflow rules';
+            }
+        };
+
+        $bridge->registerPromptContributor($contributor);
+
+        $this->assertSame([$contributor], $hookRegistry->promptContributors());
+    }
+
+    public function testRegisterMultiplePromptContributorsOrderPreserved(): void
+    {
+        $hookRegistry = new ExtensionHookRegistry();
+        $bridge = $this->bridgeFor(new ToolRegistry(), hookRegistry: $hookRegistry);
+
+        $c1 = new readonly class implements PromptContributorInterface {
+            public function contribute(): string
+            {
+                return 'first';
+            }
+        };
+        $c2 = new readonly class implements PromptContributorInterface {
+            public function contribute(): string
+            {
+                return 'second';
+            }
+        };
+
+        $bridge->registerPromptContributor($c1);
+        $bridge->registerPromptContributor($c2);
+
+        $this->assertSame([$c1, $c2], $hookRegistry->promptContributors());
+    }
+
+    // ── NEW: registerCommand() ──
+
+    public function testRegisterCommandForwardsToCommandRegistry(): void
+    {
+        $cmdRegistry = $this->dummyCommandRegistry();
+        $bridge = $this->bridgeFor(new ToolRegistry(), commandRegistry: $cmdRegistry);
+
+        $definition = new CommandDefinitionDTO(
+            name: 'tasks',
+            aliases: ['t'],
+            description: 'List tasks',
+            usage: '/tasks [filter]',
+            acceptsArguments: true,
+        );
+
+        $handler = new readonly class implements ExtensionCommandHandlerInterface {
+            public function handle(string $args, CommandContextInterface $context): void
+            {
+            }
+        };
+
+        $bridge->registerCommand($definition, $handler);
+
+        $this->assertCount(1, $cmdRegistry->registered);
+        $this->assertSame($definition, $cmdRegistry->registered[0]['definition']);
+        $this->assertSame($handler, $cmdRegistry->registered[0]['handler']);
+    }
+
+    // ── NEW: registerToolCallRewriteHook() ──
+
+    public function testRegisterToolCallRewriteHookStoresInHookRegistry(): void
+    {
+        $hookRegistry = new ExtensionHookRegistry();
+        $bridge = $this->bridgeFor(new ToolRegistry(), hookRegistry: $hookRegistry);
+
+        $hook = new readonly class implements ToolCallRewriteHookInterface {
+            public function rewriteArguments(ToolCallContextDTO $context): ?array
+            {
+                $args = $context->arguments;
+                $args['rewritten'] = true;
+
+                return $args;
+            }
+        };
+
+        $bridge->registerToolCallRewriteHook('bash', $hook);
+
+        $hooks = $hookRegistry->rewriteHooksForTool('bash');
+        $this->assertCount(1, $hooks);
+        $this->assertSame($hook, $hooks[0]);
+    }
+
+    public function testRegisterToolCallRewriteHookWildcard(): void
+    {
+        $hookRegistry = new ExtensionHookRegistry();
+        $bridge = $this->bridgeFor(new ToolRegistry(), hookRegistry: $hookRegistry);
+
+        $hook = new readonly class implements ToolCallRewriteHookInterface {
+            public function rewriteArguments(ToolCallContextDTO $context): ?array
+            {
+                return $context->arguments;
+            }
+        };
+
+        $bridge->registerToolCallRewriteHook('*', $hook);
+
+        $hooks = $hookRegistry->rewriteHooksForTool('bash');
+        $this->assertCount(1, $hooks);
+        $this->assertSame($hook, $hooks[0]);
+    }
+
+    public function testRegisterToolCallRewriteHookSpecificAndWildcardBothReturned(): void
+    {
+        $hookRegistry = new ExtensionHookRegistry();
+        $bridge = $this->bridgeFor(new ToolRegistry(), hookRegistry: $hookRegistry);
+
+        $specific = new readonly class implements ToolCallRewriteHookInterface {
+            public function rewriteArguments(ToolCallContextDTO $context): ?array
+            {
+                $args = $context->arguments;
+                $args['from'] = 'specific';
+
+                return $args;
+            }
+        };
+
+        $wildcard = new readonly class implements ToolCallRewriteHookInterface {
+            public function rewriteArguments(ToolCallContextDTO $context): ?array
+            {
+                $args = $context->arguments;
+                $args['from'] = 'wildcard';
+
+                return $args;
+            }
+        };
+
+        $bridge->registerToolCallRewriteHook('bash', $specific);
+        $bridge->registerToolCallRewriteHook('*', $wildcard);
+
+        $hooks = $hookRegistry->rewriteHooksForTool('bash');
+        $this->assertCount(2, $hooks);
+        // Specific hooks first, then wildcard
+        $this->assertSame($specific, $hooks[0]);
+        $this->assertSame($wildcard, $hooks[1]);
+    }
+
     /* ───────── Private helpers ───────── */
 
     private function testAppConfig(): AppConfig
@@ -472,7 +636,6 @@ final class ExtensionToolRegistryBridgeTest extends TestCase
         };
     }
 
-
     private function dummyExecBridge(?ExecResultDTO $result = null): ExecInterface
     {
         return new readonly class($result) implements ExecInterface {
@@ -504,158 +667,5 @@ final class ExtensionToolRegistryBridgeTest extends TestCase
                 $this->registered[] = ['definition' => $definition, 'handler' => $handler];
             }
         };
-    }
-
-    // ── NEW: exec() ──
-
-    public function testExecReturnsExecInterface(): void
-    {
-        $execResult = new ExecResultDTO(stdout: 'hello', stderr: '', exitCode: 0);
-        $execBridge = $this->dummyExecBridge($execResult);
-
-        $bridge = $this->bridgeFor(new ToolRegistry(), execBridge: $execBridge);
-        $execApi = $bridge->exec();
-
-        $result = $execApi->exec('echo', ['hello']);
-        $this->assertSame('hello', $result->stdout);
-        $this->assertSame(0, $result->exitCode);
-    }
-
-    // ── NEW: registerPromptContributor() ──
-
-    public function testRegisterPromptContributorStoresInHookRegistry(): void
-    {
-        $hookRegistry = new ExtensionHookRegistry();
-        $bridge = $this->bridgeFor(new ToolRegistry(), hookRegistry: $hookRegistry);
-
-        $contributor = new readonly class implements PromptContributorInterface {
-            public function contribute(): string
-            {
-                return '# Task workflow rules';
-            }
-        };
-
-        $bridge->registerPromptContributor($contributor);
-
-        $this->assertSame([$contributor], $hookRegistry->promptContributors());
-    }
-
-    public function testRegisterMultiplePromptContributorsOrderPreserved(): void
-    {
-        $hookRegistry = new ExtensionHookRegistry();
-        $bridge = $this->bridgeFor(new ToolRegistry(), hookRegistry: $hookRegistry);
-
-        $c1 = new readonly class implements PromptContributorInterface {
-            public function contribute(): string { return 'first'; }
-        };
-        $c2 = new readonly class implements PromptContributorInterface {
-            public function contribute(): string { return 'second'; }
-        };
-
-        $bridge->registerPromptContributor($c1);
-        $bridge->registerPromptContributor($c2);
-
-        $this->assertSame([$c1, $c2], $hookRegistry->promptContributors());
-    }
-
-    // ── NEW: registerCommand() ──
-
-    public function testRegisterCommandForwardsToCommandRegistry(): void
-    {
-        $cmdRegistry = $this->dummyCommandRegistry();
-        $bridge = $this->bridgeFor(new ToolRegistry(), commandRegistry: $cmdRegistry);
-
-        $definition = new CommandDefinitionDTO(
-            name: 'tasks',
-            aliases: ['t'],
-            description: 'List tasks',
-            usage: '/tasks [filter]',
-            acceptsArguments: true,
-        );
-
-        $handler = new readonly class implements ExtensionCommandHandlerInterface {
-            public function handle(string $args, CommandContextInterface $context): void {}
-        };
-
-        $bridge->registerCommand($definition, $handler);
-
-        $this->assertCount(1, $cmdRegistry->registered);
-        $this->assertSame($definition, $cmdRegistry->registered[0]['definition']);
-        $this->assertSame($handler, $cmdRegistry->registered[0]['handler']);
-    }
-
-    // ── NEW: registerToolCallRewriteHook() ──
-
-    public function testRegisterToolCallRewriteHookStoresInHookRegistry(): void
-    {
-        $hookRegistry = new ExtensionHookRegistry();
-        $bridge = $this->bridgeFor(new ToolRegistry(), hookRegistry: $hookRegistry);
-
-        $hook = new readonly class implements ToolCallRewriteHookInterface {
-            public function rewriteArguments(ToolCallContextDTO $context): ?array
-            {
-                $args = $context->arguments;
-                $args['rewritten'] = true;
-                return $args;
-            }
-        };
-
-        $bridge->registerToolCallRewriteHook('bash', $hook);
-
-        $hooks = $hookRegistry->rewriteHooksForTool('bash');
-        $this->assertCount(1, $hooks);
-        $this->assertSame($hook, $hooks[0]);
-    }
-
-    public function testRegisterToolCallRewriteHookWildcard(): void
-    {
-        $hookRegistry = new ExtensionHookRegistry();
-        $bridge = $this->bridgeFor(new ToolRegistry(), hookRegistry: $hookRegistry);
-
-        $hook = new readonly class implements ToolCallRewriteHookInterface {
-            public function rewriteArguments(ToolCallContextDTO $context): ?array
-            {
-                return $context->arguments;
-            }
-        };
-
-        $bridge->registerToolCallRewriteHook('*', $hook);
-
-        $hooks = $hookRegistry->rewriteHooksForTool('bash');
-        $this->assertCount(1, $hooks);
-        $this->assertSame($hook, $hooks[0]);
-    }
-
-    public function testRegisterToolCallRewriteHookSpecificAndWildcardBothReturned(): void
-    {
-        $hookRegistry = new ExtensionHookRegistry();
-        $bridge = $this->bridgeFor(new ToolRegistry(), hookRegistry: $hookRegistry);
-
-        $specific = new readonly class implements ToolCallRewriteHookInterface {
-            public function rewriteArguments(ToolCallContextDTO $context): ?array
-            {
-                $args = $context->arguments;
-                $args['from'] = 'specific';
-                return $args;
-            }
-        };
-
-        $wildcard = new readonly class implements ToolCallRewriteHookInterface {
-            public function rewriteArguments(ToolCallContextDTO $context): ?array
-            {
-                $args = $context->arguments;
-                $args['from'] = 'wildcard';
-                return $args;
-            }
-        };
-
-        $bridge->registerToolCallRewriteHook('bash', $specific);
-        $bridge->registerToolCallRewriteHook('*', $wildcard);
-
-        $hooks = $hookRegistry->rewriteHooksForTool('bash');
-        $this->assertCount(2, $hooks);
-        // Specific hooks first, then wildcard
-        $this->assertSame($specific, $hooks[0]);
-        $this->assertSame($wildcard, $hooks[1]);
     }
 }

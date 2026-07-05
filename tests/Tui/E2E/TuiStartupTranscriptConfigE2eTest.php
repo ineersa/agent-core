@@ -76,12 +76,12 @@ final class TuiStartupTranscriptConfigE2eTest extends TestCase
             // Wait for full startup (idle status + footer)
             $capture = $this->tmux->waitForTuiReadyAfterLogo($pane);
 
-            self::assertStringContainsString('█', $capture, 'Hatfield logo missing');
-            self::assertTrue(
+            $this->assertStringContainsString('█', $capture, 'Hatfield logo missing');
+            $this->assertTrue(
                 str_contains($capture, '● idle') || str_contains($capture, '◐ Work'),
                 'Working/idle status widget missing',
             );
-            self::assertStringContainsString('◆', $capture, 'Footer widget missing');
+            $this->assertStringContainsString('◆', $capture, 'Footer widget missing');
 
             // Save snapshot on success for inspection
             $this->saveAnsiSnapshot($pane, 'transcript-config-startup');
@@ -107,9 +107,7 @@ final class TuiStartupTranscriptConfigE2eTest extends TestCase
 
         $paths = TuiE2eDatabaseEnv::allocatePaths('tui-transcript-config-');
 
-
         $dbPath = $paths['app'];
-
 
         $transportDbPath = $paths['transport'];
 
@@ -207,6 +205,6 @@ final class TuiStartupTranscriptConfigE2eTest extends TestCase
         $ansi = $this->tmux->captureAnsi($pane);
         $ts = date('Ymd-His');
         $path = \sprintf('%s/%s-%s.ansi', $snapshotDir, $tag, $ts);
-        \file_put_contents($path, $ansi);
+        file_put_contents($path, $ansi);
     }
 }

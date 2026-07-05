@@ -5,18 +5,17 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Tool;
 
 use HelgeSverre\Toon\Toon;
-
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
 use Ineersa\CodingAgent\Config\OutputCapConfig;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
-use Ineersa\CodingAgent\Tool\OutputCap;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessLifecycle;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessStore;
 use Ineersa\CodingAgent\Tool\BackgroundProcessManager;
 use Ineersa\CodingAgent\Tool\BgStatusTool;
+use Ineersa\CodingAgent\Tool\OutputCap;
 use Psr\Log\NullLogger;
 
 /**
@@ -192,7 +191,7 @@ final class BgStatusToolTest extends IsolatedKernelTestCase
     public function testDefinitionUsesParallelExecutionMode(): void
     {
         $definition = $this->tool->definition();
-        self::assertSame(ToolExecutionMode::Parallel, $definition->executionMode);
+        $this->assertSame(ToolExecutionMode::Parallel, $definition->executionMode);
     }
 
     /* ── Invalid action ── */
@@ -254,13 +253,12 @@ final class BgStatusToolTest extends IsolatedKernelTestCase
         $started = $this->withContext(self::TEST_SESSION, fn () => $this->manager->start($command, self::TEST_SESSION));
         usleep(100_000);
 
-        $result = $this->withContext(self::TEST_SESSION, fn (): string => $lowCapTool(['action' => 'log', 'pid' => $started->pid]));
+        $result = $this->withContext(self::TEST_SESSION, static fn (): string => $lowCapTool(['action' => 'log', 'pid' => $started->pid]));
 
         // Tool returns raw output; capping is centralized.
         $this->assertStringNotContainsString('Output capped', $result);
         $this->assertStringContainsString($sentinel, $result, 'Large log must not be silently dropped by the tool');
     }
-
 
     /* ── Error: missing action ── */
 

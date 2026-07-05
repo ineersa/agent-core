@@ -414,7 +414,7 @@ final class OutputCapLlmTransformHookTest extends TestCase
 
         $toolMessages = array_filter(
             $messageBag->getMessages(),
-            static fn (object $m): bool => $m instanceof \Symfony\AI\Platform\Message\ToolCallMessage,
+            static fn (object $m): bool => $m instanceof ToolCallMessage,
         );
         $this->assertCount(1, $toolMessages);
 

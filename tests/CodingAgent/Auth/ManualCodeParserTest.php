@@ -68,5 +68,4 @@ final class ManualCodeParserTest extends TestCase
         $this->assertNull($result['code']);
         $this->assertNull($result['state']);
     }
-
 }

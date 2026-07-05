@@ -23,6 +23,140 @@ use PHPUnit\Framework\TestCase;
 #[CoversClass(RenameSessionCommandHandler::class)]
 final class RenameSessionCommandHandlerTest extends TestCase
 {
+    #[Test]
+    public function testHandleWithNoArgsOpensPickerAndReturnsNoOp(): void
+    {
+        $em = $this->createStub(EntityManagerInterface::class);
+        $sessionStore = new HatfieldSessionStore($this->createAppConfig(), $em);
+        $switch = $this->createSwitchStub();
+        $pickerController = new SessionPickerController($sessionStore, $switch);
+
+        $handler = new RenameSessionCommandHandler($sessionStore, $pickerController);
+
+        $result = $handler->handle(new SlashCommand('rename', '', '/rename'));
+
+        $this->assertInstanceOf(NoOp::class, $result);
+        // Picker should be opened for rename — not directly verifiable without TUI refs
+    }
+
+    #[Test]
+    public function testHandleWithValidSessionAndNameReturnsSuccess(): void
+    {
+        $sessionStore = $this->createSessionStoreWithSession(42, 'Original Name');
+        $switch = $this->createSwitchStub();
+        $pickerController = new SessionPickerController($sessionStore, $switch);
+
+        $handler = new RenameSessionCommandHandler($sessionStore, $pickerController);
+
+        $result = $handler->handle(new SlashCommand('rename', '42 New Name', '/rename 42 New Name'));
+
+        $this->assertInstanceOf(TranscriptMessage::class, $result);
+        $this->assertStringContainsString('42', $result->text);
+        $this->assertStringContainsString('New Name', $result->text);
+        $this->assertSame('system', $result->role);
+    }
+
+    #[Test]
+    public function testHandleWithValidSessionAndMultipartNameReturnsSuccess(): void
+    {
+        $sessionStore = $this->createSessionStoreWithSession(7, 'Old');
+        $switch = $this->createSwitchStub();
+        $pickerController = new SessionPickerController($sessionStore, $switch);
+
+        $handler = new RenameSessionCommandHandler($sessionStore, $pickerController);
+
+        $result = $handler->handle(new SlashCommand('rename', '7 My Awesome Session', '/rename 7 My Awesome Session'));
+
+        $this->assertInstanceOf(TranscriptMessage::class, $result);
+        $this->assertStringContainsString('7', $result->text);
+        $this->assertStringContainsString('My Awesome Session', $result->text);
+    }
+
+    #[Test]
+    public function testHandleWithMissingNameReturnsErrorWithHint(): void
+    {
+        $sessionStore = $this->createSessionStoreWithSession(42, 'Original');
+        $switch = $this->createSwitchStub();
+        $pickerController = new SessionPickerController($sessionStore, $switch);
+
+        $handler = new RenameSessionCommandHandler($sessionStore, $pickerController);
+
+        $result = $handler->handle(new SlashCommand('rename', '42', '/rename 42'));
+
+        $this->assertInstanceOf(TranscriptMessage::class, $result);
+        $this->assertStringContainsString('Provide a name', $result->text);
+        $this->assertStringContainsString('/rename 42', $result->text);
+        $this->assertSame('error', $result->role);
+    }
+
+    #[Test]
+    public function testHandleWithInvalidSessionIdReturnsError(): void
+    {
+        $em = $this->createStub(EntityManagerInterface::class);
+        $sessionStore = new HatfieldSessionStore($this->createAppConfig(), $em);
+        $switch = $this->createSwitchStub();
+        $pickerController = new SessionPickerController($sessionStore, $switch);
+
+        $handler = new RenameSessionCommandHandler($sessionStore, $pickerController);
+
+        $result = $handler->handle(new SlashCommand('rename', '999 NewName', '/rename 999 NewName'));
+
+        $this->assertInstanceOf(TranscriptMessage::class, $result);
+        $this->assertStringContainsString('999', $result->text);
+        $this->assertSame('error', $result->role);
+    }
+
+    #[Test]
+    public function testHandleWithMalformedSessionIdReturnsError(): void
+    {
+        $em = $this->createStub(EntityManagerInterface::class);
+        $sessionStore = new HatfieldSessionStore($this->createAppConfig(), $em);
+        $switch = $this->createSwitchStub();
+        $pickerController = new SessionPickerController($sessionStore, $switch);
+
+        $handler = new RenameSessionCommandHandler($sessionStore, $pickerController);
+
+        $result = $handler->handle(new SlashCommand('rename', 'abc NewName', '/rename abc NewName'));
+
+        $this->assertInstanceOf(TranscriptMessage::class, $result);
+        $this->assertStringContainsString('abc', $result->text);
+        $this->assertSame('error', $result->role);
+    }
+
+    #[Test]
+    public function testHandleWithSessionIdZeroReturnsError(): void
+    {
+        $em = $this->createStub(EntityManagerInterface::class);
+        $sessionStore = new HatfieldSessionStore($this->createAppConfig(), $em);
+        $switch = $this->createSwitchStub();
+        $pickerController = new SessionPickerController($sessionStore, $switch);
+
+        $handler = new RenameSessionCommandHandler($sessionStore, $pickerController);
+
+        $result = $handler->handle(new SlashCommand('rename', '0 NewName', '/rename 0 NewName'));
+
+        $this->assertInstanceOf(TranscriptMessage::class, $result);
+        $this->assertStringContainsString('0', $result->text);
+        $this->assertSame('error', $result->role);
+    }
+
+    #[Test]
+    public function testHandleWithWhitespaceOnlyNameReturnsError(): void
+    {
+        $sessionStore = $this->createSessionStoreWithSession(42, 'Original');
+        $switch = $this->createSwitchStub();
+        $pickerController = new SessionPickerController($sessionStore, $switch);
+
+        $handler = new RenameSessionCommandHandler($sessionStore, $pickerController);
+
+        $result = $handler->handle(new SlashCommand('rename', "42   \t  ", '/rename 42'));
+
+        $this->assertInstanceOf(TranscriptMessage::class, $result);
+        $this->assertStringContainsString('Provide a name', $result->text);
+        $this->assertStringContainsString('/rename 42', $result->text);
+        $this->assertSame('error', $result->role);
+    }
+
     private function createAppConfig(): AppConfig
     {
         return new AppConfig(
@@ -58,139 +192,5 @@ final class RenameSessionCommandHandlerTest extends TestCase
     private function createSwitchStub(): TuiSessionSwitchServiceInterface
     {
         return $this->createStub(TuiSessionSwitchServiceInterface::class);
-    }
-
-    #[Test]
-    public function testHandleWithNoArgsOpensPickerAndReturnsNoOp(): void
-    {
-        $em = $this->createStub(EntityManagerInterface::class);
-        $sessionStore = new HatfieldSessionStore($this->createAppConfig(), $em);
-        $switch = $this->createSwitchStub();
-        $pickerController = new SessionPickerController($sessionStore, $switch);
-
-        $handler = new RenameSessionCommandHandler($sessionStore, $pickerController);
-
-        $result = $handler->handle(new SlashCommand('rename', '', '/rename'));
-
-        self::assertInstanceOf(NoOp::class, $result);
-        // Picker should be opened for rename — not directly verifiable without TUI refs
-    }
-
-    #[Test]
-    public function testHandleWithValidSessionAndNameReturnsSuccess(): void
-    {
-        $sessionStore = $this->createSessionStoreWithSession(42, 'Original Name');
-        $switch = $this->createSwitchStub();
-        $pickerController = new SessionPickerController($sessionStore, $switch);
-
-        $handler = new RenameSessionCommandHandler($sessionStore, $pickerController);
-
-        $result = $handler->handle(new SlashCommand('rename', '42 New Name', '/rename 42 New Name'));
-
-        self::assertInstanceOf(TranscriptMessage::class, $result);
-        self::assertStringContainsString('42', $result->text);
-        self::assertStringContainsString('New Name', $result->text);
-        self::assertSame('system', $result->role);
-    }
-
-    #[Test]
-    public function testHandleWithValidSessionAndMultipartNameReturnsSuccess(): void
-    {
-        $sessionStore = $this->createSessionStoreWithSession(7, 'Old');
-        $switch = $this->createSwitchStub();
-        $pickerController = new SessionPickerController($sessionStore, $switch);
-
-        $handler = new RenameSessionCommandHandler($sessionStore, $pickerController);
-
-        $result = $handler->handle(new SlashCommand('rename', '7 My Awesome Session', '/rename 7 My Awesome Session'));
-
-        self::assertInstanceOf(TranscriptMessage::class, $result);
-        self::assertStringContainsString('7', $result->text);
-        self::assertStringContainsString('My Awesome Session', $result->text);
-    }
-
-    #[Test]
-    public function testHandleWithMissingNameReturnsErrorWithHint(): void
-    {
-        $sessionStore = $this->createSessionStoreWithSession(42, 'Original');
-        $switch = $this->createSwitchStub();
-        $pickerController = new SessionPickerController($sessionStore, $switch);
-
-        $handler = new RenameSessionCommandHandler($sessionStore, $pickerController);
-
-        $result = $handler->handle(new SlashCommand('rename', '42', '/rename 42'));
-
-        self::assertInstanceOf(TranscriptMessage::class, $result);
-        self::assertStringContainsString('Provide a name', $result->text);
-        self::assertStringContainsString('/rename 42', $result->text);
-        self::assertSame('error', $result->role);
-    }
-
-    #[Test]
-    public function testHandleWithInvalidSessionIdReturnsError(): void
-    {
-        $em = $this->createStub(EntityManagerInterface::class);
-        $sessionStore = new HatfieldSessionStore($this->createAppConfig(), $em);
-        $switch = $this->createSwitchStub();
-        $pickerController = new SessionPickerController($sessionStore, $switch);
-
-        $handler = new RenameSessionCommandHandler($sessionStore, $pickerController);
-
-        $result = $handler->handle(new SlashCommand('rename', '999 NewName', '/rename 999 NewName'));
-
-        self::assertInstanceOf(TranscriptMessage::class, $result);
-        self::assertStringContainsString('999', $result->text);
-        self::assertSame('error', $result->role);
-    }
-
-    #[Test]
-    public function testHandleWithMalformedSessionIdReturnsError(): void
-    {
-        $em = $this->createStub(EntityManagerInterface::class);
-        $sessionStore = new HatfieldSessionStore($this->createAppConfig(), $em);
-        $switch = $this->createSwitchStub();
-        $pickerController = new SessionPickerController($sessionStore, $switch);
-
-        $handler = new RenameSessionCommandHandler($sessionStore, $pickerController);
-
-        $result = $handler->handle(new SlashCommand('rename', 'abc NewName', '/rename abc NewName'));
-
-        self::assertInstanceOf(TranscriptMessage::class, $result);
-        self::assertStringContainsString('abc', $result->text);
-        self::assertSame('error', $result->role);
-    }
-
-    #[Test]
-    public function testHandleWithSessionIdZeroReturnsError(): void
-    {
-        $em = $this->createStub(EntityManagerInterface::class);
-        $sessionStore = new HatfieldSessionStore($this->createAppConfig(), $em);
-        $switch = $this->createSwitchStub();
-        $pickerController = new SessionPickerController($sessionStore, $switch);
-
-        $handler = new RenameSessionCommandHandler($sessionStore, $pickerController);
-
-        $result = $handler->handle(new SlashCommand('rename', '0 NewName', '/rename 0 NewName'));
-
-        self::assertInstanceOf(TranscriptMessage::class, $result);
-        self::assertStringContainsString('0', $result->text);
-        self::assertSame('error', $result->role);
-    }
-
-    #[Test]
-    public function testHandleWithWhitespaceOnlyNameReturnsError(): void
-    {
-        $sessionStore = $this->createSessionStoreWithSession(42, 'Original');
-        $switch = $this->createSwitchStub();
-        $pickerController = new SessionPickerController($sessionStore, $switch);
-
-        $handler = new RenameSessionCommandHandler($sessionStore, $pickerController);
-
-        $result = $handler->handle(new SlashCommand('rename', "42   \t  ", '/rename 42'));
-
-        self::assertInstanceOf(TranscriptMessage::class, $result);
-        self::assertStringContainsString('Provide a name', $result->text);
-        self::assertStringContainsString('/rename 42', $result->text);
-        self::assertSame('error', $result->role);
     }
 }

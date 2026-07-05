@@ -5,33 +5,33 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Tests\Listener;
 
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
+use Ineersa\CodingAgent\Runtime\Contract\RuntimeExceptionBoundary;
+use Ineersa\CodingAgent\Runtime\Contract\TurnTreeProviderInterface;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
+use Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState;
+use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
+use Ineersa\Tui\Editor\PromptEditor;
 use Ineersa\Tui\Listener\TickPollListener;
+use Ineersa\Tui\Question\QuestionController;
 use Ineersa\Tui\Question\QuestionCoordinator;
 use Ineersa\Tui\Question\QuestionKind;
 use Ineersa\Tui\Question\QuestionOption;
 use Ineersa\Tui\Question\QuestionRequest;
 use Ineersa\Tui\Question\QuestionSource;
-use Ineersa\Tui\Editor\PromptEditor;
-use Ineersa\Tui\Question\QuestionController;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
 use Ineersa\Tui\Runtime\RuntimeEventPoller;
+use Ineersa\Tui\Runtime\SubagentLiveChildViewPoller;
 use Ineersa\Tui\Runtime\TuiRuntimeEventApplier;
 use Ineersa\Tui\Runtime\TuiSessionState;
-use Ineersa\Tui\Runtime\SubagentLiveChildViewPoller;
 use Ineersa\Tui\Runtime\TuiTickDispatcher;
-use Ineersa\CodingAgent\Runtime\Contract\RuntimeExceptionBoundary;
-use Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState;
-use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
-use Ineersa\CodingAgent\Runtime\Contract\TurnTreeProviderInterface;
-use Psr\Log\LoggerInterface;
 use Ineersa\Tui\Screen\ChatScreen;
 use Ineersa\Tui\Tests\Support\TuiRuntimeContextBuilderTrait;
 use Ineersa\Tui\Theme\DefaultTheme;
 use Ineersa\Tui\Theme\ThemePalette;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\LoggerInterface;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\Tui\Tui;
 
@@ -48,6 +48,7 @@ use Symfony\Component\Tui\Tui;
 final class TickPollListenerTest extends TestCase
 {
     use TuiRuntimeContextBuilderTrait;
+
     /**
      * Test thesis: when the Choice overlay onCancel fires, the TUI sends
      * answer_tool_question with 'answer' => 'cancel' (non-empty), so
@@ -66,7 +67,7 @@ final class TickPollListenerTest extends TestCase
             ->method('send')
             ->with(
                 $this->identicalTo('run-1'),
-                $this->callback(function (UserCommand $cmd) use (&$sentCommand): bool {
+                $this->callback(static function (UserCommand $cmd) use (&$sentCommand): bool {
                     $sentCommand = $cmd;
 
                     return true;
@@ -132,12 +133,12 @@ final class TickPollListenerTest extends TestCase
 
             $ref->invoke(null, $event, $client, $coordinator);
 
-            self::assertSame([], $warnings, 'Confirm with null schema must not emit E_USER_WARNING');
-            self::assertTrue($coordinator->actionRequired());
+            $this->assertSame([], $warnings, 'Confirm with null schema must not emit E_USER_WARNING');
+            $this->assertTrue($coordinator->actionRequired());
 
             $active = $coordinator->activeRequest();
-            self::assertNotNull($active);
-            self::assertSame(QuestionKind::Confirm, $active->kind);
+            $this->assertNotNull($active);
+            $this->assertSame(QuestionKind::Confirm, $active->kind);
         } finally {
             restore_error_handler();
         }
@@ -164,8 +165,8 @@ final class TickPollListenerTest extends TestCase
         $ref->invoke(null, $event, $client, $coordinator);
 
         $active = $coordinator->activeRequest();
-        self::assertNotNull($active);
-        self::assertSame(QuestionKind::Confirm, $active->kind);
+        $this->assertNotNull($active);
+        $this->assertSame(QuestionKind::Confirm, $active->kind);
     }
 
     // ── QH-06: human_input.requested kind routing and answer normalization ──
@@ -175,20 +176,20 @@ final class TickPollListenerTest extends TestCase
         $ref = new \ReflectionMethod(TickPollListener::class, 'resolveQuestionKind');
 
         // text
-        self::assertSame(QuestionKind::Text, $ref->invoke(null, ['ui_kind' => 'text']));
+        $this->assertSame(QuestionKind::Text, $ref->invoke(null, ['ui_kind' => 'text']));
 
         // confirm
-        self::assertSame(QuestionKind::Confirm, $ref->invoke(null, ['ui_kind' => 'confirm']));
+        $this->assertSame(QuestionKind::Confirm, $ref->invoke(null, ['ui_kind' => 'confirm']));
 
         // approval maps to Confirm
-        self::assertSame(QuestionKind::Confirm, $ref->invoke(null, ['ui_kind' => 'approval']));
+        $this->assertSame(QuestionKind::Confirm, $ref->invoke(null, ['ui_kind' => 'approval']));
 
         // choice
-        self::assertSame(QuestionKind::Choice, $ref->invoke(null, ['ui_kind' => 'choice']));
+        $this->assertSame(QuestionKind::Choice, $ref->invoke(null, ['ui_kind' => 'choice']));
 
         // legacy kind fallback (no ui_kind)
-        self::assertSame(QuestionKind::Confirm, $ref->invoke(null, ['kind' => 'approval']));
-        self::assertSame(QuestionKind::Text, $ref->invoke(null, ['kind' => 'text']));
+        $this->assertSame(QuestionKind::Confirm, $ref->invoke(null, ['kind' => 'approval']));
+        $this->assertSame(QuestionKind::Text, $ref->invoke(null, ['kind' => 'text']));
     }
 
     public function testResolveQuestionKindFallsBackToSchemaBoolean(): void
@@ -199,7 +200,7 @@ final class TickPollListenerTest extends TestCase
             'schema' => ['type' => 'boolean'],
         ]);
 
-        self::assertSame(QuestionKind::Confirm, $result);
+        $this->assertSame(QuestionKind::Confirm, $result);
     }
 
     public function testResolveQuestionKindFallsBackToSchemaEnum(): void
@@ -210,16 +211,16 @@ final class TickPollListenerTest extends TestCase
             'schema' => ['type' => 'string', 'enum' => ['Yes', 'No']],
         ]);
 
-        self::assertSame(QuestionKind::Choice, $result);
+        $this->assertSame(QuestionKind::Choice, $result);
     }
 
     public function testResolveQuestionKindFallsBackToTextWhenNoHints(): void
     {
         $ref = new \ReflectionMethod(TickPollListener::class, 'resolveQuestionKind');
 
-        self::assertSame(QuestionKind::Text, $ref->invoke(null, []));
-        self::assertSame(QuestionKind::Text, $ref->invoke(null, ['schema' => ['type' => 'string']]));
-        self::assertSame(QuestionKind::Text, $ref->invoke(null, ['schema' => ['type' => 'integer']]));
+        $this->assertSame(QuestionKind::Text, $ref->invoke(null, []));
+        $this->assertSame(QuestionKind::Text, $ref->invoke(null, ['schema' => ['type' => 'string']]));
+        $this->assertSame(QuestionKind::Text, $ref->invoke(null, ['schema' => ['type' => 'integer']]));
     }
 
     public function testBuildChoicesFromPayloadChoicesField(): void
@@ -233,12 +234,12 @@ final class TickPollListenerTest extends TestCase
             ],
         ], ['type' => 'string']);
 
-        self::assertCount(2, $choices);
-        self::assertContainsOnlyInstancesOf(QuestionOption::class, $choices);
-        self::assertSame('Yes', $choices[0]->label);
-        self::assertSame('Approve the action', $choices[0]->description);
-        self::assertSame('No', $choices[1]->label);
-        self::assertSame('', $choices[1]->description, 'Missing description must default to empty string');
+        $this->assertCount(2, $choices);
+        $this->assertContainsOnlyInstancesOf(QuestionOption::class, $choices);
+        $this->assertSame('Yes', $choices[0]->label);
+        $this->assertSame('Approve the action', $choices[0]->description);
+        $this->assertSame('No', $choices[1]->label);
+        $this->assertSame('', $choices[1]->description, 'Missing description must default to empty string');
     }
 
     public function testBuildChoicesFallsBackToSchemaEnum(): void
@@ -250,19 +251,19 @@ final class TickPollListenerTest extends TestCase
             'enum' => ['Option A', 'Option B'],
         ]);
 
-        self::assertCount(2, $choices);
-        self::assertContainsOnlyInstancesOf(QuestionOption::class, $choices);
-        self::assertSame('Option A', $choices[0]->label);
-        self::assertSame('Option B', $choices[1]->label);
+        $this->assertCount(2, $choices);
+        $this->assertContainsOnlyInstancesOf(QuestionOption::class, $choices);
+        $this->assertSame('Option A', $choices[0]->label);
+        $this->assertSame('Option B', $choices[1]->label);
     }
 
     public function testBuildChoicesReturnsEmptyWhenNoSources(): void
     {
         $ref = new \ReflectionMethod(TickPollListener::class, 'buildChoices');
 
-        self::assertSame([], $ref->invoke(null, [], []));
-        self::assertSame([], $ref->invoke(null, ['choices' => []], ['type' => 'string']));
-        self::assertSame([], $ref->invoke(null, [], ['type' => 'boolean']));
+        $this->assertSame([], $ref->invoke(null, [], []));
+        $this->assertSame([], $ref->invoke(null, ['choices' => []], ['type' => 'string']));
+        $this->assertSame([], $ref->invoke(null, [], ['type' => 'boolean']));
     }
 
     public function testHandleHumanInputRequestedPassesHeaderDefaultAllowOther(): void
@@ -287,16 +288,16 @@ final class TickPollListenerTest extends TestCase
 
         $ref->invoke(null, $event, $client, $coordinator);
 
-        self::assertTrue($coordinator->actionRequired());
+        $this->assertTrue($coordinator->actionRequired());
         $active = $coordinator->activeRequest();
-        self::assertNotNull($active);
-        self::assertSame(QuestionKind::Text, $active->kind);
-        self::assertSame('Custom Rich Header', $active->header);
-        self::assertSame('default text', $active->default);
-        self::assertTrue($active->allowOther, 'HITL questions must always allow free-form input');
-        self::assertSame('hitl_q_rich', $active->requestId);
-        self::assertSame('q_rich', $active->questionId);
-        self::assertTrue($active->transcript);
+        $this->assertNotNull($active);
+        $this->assertSame(QuestionKind::Text, $active->kind);
+        $this->assertSame('Custom Rich Header', $active->header);
+        $this->assertSame('default text', $active->default);
+        $this->assertTrue($active->allowOther, 'HITL questions must always allow free-form input');
+        $this->assertSame('hitl_q_rich', $active->requestId);
+        $this->assertSame('q_rich', $active->questionId);
+        $this->assertTrue($active->transcript);
     }
 
     public function testHandleHumanInputRequestedConfirmAnswerYesNormalizesToBoolean(): void
@@ -308,7 +309,7 @@ final class TickPollListenerTest extends TestCase
             ->method('send')
             ->with(
                 $this->identicalTo('run-confirm'),
-                $this->callback(function (UserCommand $cmd) use (&$capturedAnswer): bool {
+                $this->callback(static function (UserCommand $cmd) use (&$capturedAnswer): bool {
                     $capturedAnswer = $cmd->payload['answer'] ?? null;
 
                     return true;
@@ -335,7 +336,7 @@ final class TickPollListenerTest extends TestCase
         // Simulate user selecting 'Yes' (select list returns 'yes' string)
         $coordinator->answer('yes');
 
-        self::assertTrue($capturedAnswer, 'Confirm answer for yes must be boolean true');
+        $this->assertTrue($capturedAnswer, 'Confirm answer for yes must be boolean true');
     }
 
     public function testHandleHumanInputRequestedConfirmAnswerNoNormalizesToBoolean(): void
@@ -347,7 +348,7 @@ final class TickPollListenerTest extends TestCase
             ->method('send')
             ->with(
                 $this->identicalTo('run-confirm-no'),
-                $this->callback(function (UserCommand $cmd) use (&$capturedAnswer): bool {
+                $this->callback(static function (UserCommand $cmd) use (&$capturedAnswer): bool {
                     $capturedAnswer = $cmd->payload['answer'] ?? null;
 
                     return true;
@@ -374,7 +375,7 @@ final class TickPollListenerTest extends TestCase
         // Simulate user selecting 'No' (select list returns 'no' string)
         $coordinator->answer('no');
 
-        self::assertFalse($capturedAnswer, 'Confirm answer for no must be boolean false');
+        $this->assertFalse($capturedAnswer, 'Confirm answer for no must be boolean false');
     }
 
     public function testHandleHumanInputRequestedChoiceAnswerPassesThroughAsString(): void
@@ -386,7 +387,7 @@ final class TickPollListenerTest extends TestCase
             ->method('send')
             ->with(
                 $this->identicalTo('run-choice'),
-                $this->callback(function (UserCommand $cmd) use (&$capturedAnswer): bool {
+                $this->callback(static function (UserCommand $cmd) use (&$capturedAnswer): bool {
                     $capturedAnswer = $cmd->payload['answer'] ?? null;
 
                     return true;
@@ -413,8 +414,8 @@ final class TickPollListenerTest extends TestCase
         // Simulate user selecting 'Beta'
         $coordinator->answer('Beta');
 
-        self::assertSame('Beta', $capturedAnswer, 'Choice answer must pass through as-is (string)');
-        self::assertIsString($capturedAnswer);
+        $this->assertSame('Beta', $capturedAnswer, 'Choice answer must pass through as-is (string)');
+        $this->assertIsString($capturedAnswer);
     }
 
     public function testHandleHumanInputRequestedCancelSendsCancelledByUser(): void
@@ -426,7 +427,7 @@ final class TickPollListenerTest extends TestCase
             ->method('send')
             ->with(
                 $this->identicalTo('run-cancel'),
-                $this->callback(function (UserCommand $cmd) use (&$capturedPayload): bool {
+                $this->callback(static function (UserCommand $cmd) use (&$capturedPayload): bool {
                     $capturedPayload = $cmd->payload;
 
                     return true;
@@ -453,9 +454,9 @@ final class TickPollListenerTest extends TestCase
         // Cancel the question — this fires the onCancel closure
         $coordinator->cancel();
 
-        self::assertNotNull($capturedPayload, 'Must send UserCommand on cancel');
-        self::assertSame('q_cancel', $capturedPayload['question_id'] ?? null);
-        self::assertSame('Cancelled by user', $capturedPayload['answer'] ?? null);
+        $this->assertNotNull($capturedPayload, 'Must send UserCommand on cancel');
+        $this->assertSame('q_cancel', $capturedPayload['question_id'] ?? null);
+        $this->assertSame('Cancelled by user', $capturedPayload['answer'] ?? null);
     }
 
     public function testHandleHumanInputRequestedAllowOtherDefaultsTrue(): void
@@ -483,8 +484,8 @@ final class TickPollListenerTest extends TestCase
         $ref->invoke(null, $event, $client, $coordinator);
 
         $active = $coordinator->activeRequest();
-        self::assertNotNull($active);
-        self::assertTrue($active->allowOther, 'HITL must always allow free-form input (allowOther=true)');
+        $this->assertNotNull($active);
+        $this->assertTrue($active->allowOther, 'HITL must always allow free-form input (allowOther=true)');
     }
 
     // ── QH-06 follow-up: interrupt transport marker and bare-string choices ──
@@ -501,7 +502,7 @@ final class TickPollListenerTest extends TestCase
             'schema' => ['type' => 'string'],
         ]);
 
-        self::assertSame(QuestionKind::Text, $result);
+        $this->assertSame(QuestionKind::Text, $result);
     }
 
     public function testResolveQuestionKindIgnoresInterruptTransportMarkerWithBooleanSchema(): void
@@ -515,7 +516,7 @@ final class TickPollListenerTest extends TestCase
             'schema' => ['type' => 'boolean'],
         ]);
 
-        self::assertSame(QuestionKind::Confirm, $result);
+        $this->assertSame(QuestionKind::Confirm, $result);
     }
 
     public function testResolveQuestionKindStillMatchesUiKindWhenInterruptKindPresent(): void
@@ -528,7 +529,7 @@ final class TickPollListenerTest extends TestCase
             'ui_kind' => 'choice',
         ]);
 
-        self::assertSame(QuestionKind::Choice, $result);
+        $this->assertSame(QuestionKind::Choice, $result);
     }
 
     public function testBuildChoicesHandlesBareStringEntries(): void
@@ -539,12 +540,12 @@ final class TickPollListenerTest extends TestCase
             'choices' => ['Yes', 'No'],
         ], ['type' => 'string']);
 
-        self::assertCount(2, $choices);
-        self::assertContainsOnlyInstancesOf(QuestionOption::class, $choices);
-        self::assertSame('Yes', $choices[0]->label);
-        self::assertSame('', $choices[0]->description, 'Bare string choice must default to empty description');
-        self::assertSame('No', $choices[1]->label);
-        self::assertSame('', $choices[1]->description);
+        $this->assertCount(2, $choices);
+        $this->assertContainsOnlyInstancesOf(QuestionOption::class, $choices);
+        $this->assertSame('Yes', $choices[0]->label);
+        $this->assertSame('', $choices[0]->description, 'Bare string choice must default to empty description');
+        $this->assertSame('No', $choices[1]->label);
+        $this->assertSame('', $choices[1]->description);
     }
 
     public function testBuildChoicesHandlesMixedArrayAndStringEntries(): void
@@ -558,11 +559,11 @@ final class TickPollListenerTest extends TestCase
             ],
         ], ['type' => 'string']);
 
-        self::assertCount(2, $choices);
-        self::assertSame('Structured', $choices[0]->label);
-        self::assertSame('Has description', $choices[0]->description);
-        self::assertSame('BareString', $choices[1]->label);
-        self::assertSame('', $choices[1]->description, 'Bare string in mixed list must default to empty description');
+        $this->assertCount(2, $choices);
+        $this->assertSame('Structured', $choices[0]->label);
+        $this->assertSame('Has description', $choices[0]->description);
+        $this->assertSame('BareString', $choices[1]->label);
+        $this->assertSame('', $choices[1]->description, 'Bare string in mixed list must default to empty description');
     }
 
     // ── QH-06 per-tick re-open guard + orphan self-heal ──
@@ -593,13 +594,13 @@ final class TickPollListenerTest extends TestCase
                 allowOther: true,
             ),
         );
-        self::assertTrue($coordinator->actionRequired());
+        $this->assertTrue($coordinator->actionRequired());
 
         $ctrlRef = new \ReflectionClass(QuestionController::class);
         $controller = $ctrlRef->newInstanceWithoutConstructor();
         $awaitProp = $ctrlRef->getProperty('awaitingFreeForm');
         $awaitProp->setValue($controller, true);
-        self::assertTrue($controller->isAwaitingFreeForm(), 'Precondition: awaitingFreeForm must be true');
+        $this->assertTrue($controller->isAwaitingFreeForm(), 'Precondition: awaitingFreeForm must be true');
 
         // Inject dependencies into TickPollListener via reflection
         $listenerRef = new \ReflectionClass(TickPollListener::class);
@@ -629,16 +630,16 @@ final class TickPollListenerTest extends TestCase
         // Retrieve the tick handler from TuiTickDispatcher
         $handlerRef = new \ReflectionProperty(TuiTickDispatcher::class, 'handlers');
         $handlers = $handlerRef->getValue($context->ticks);
-        self::assertCount(1, $handlers);
+        $this->assertCount(1, $handlers);
 
         // Drive one tick
         ($handlers[0])();
 
         // Assertions: guard blocked open() — overlay is still closed,
         // awaitingFreeForm is still true, and coordinator still has the request.
-        self::assertFalse($controller->isOpen(), 'Guard must prevent open() when awaitingFreeForm=true');
-        self::assertTrue($controller->isAwaitingFreeForm(), 'awaitingFreeForm must remain true after guard block');
-        self::assertTrue($coordinator->actionRequired(), 'Coordinator must still have the active request');
+        $this->assertFalse($controller->isOpen(), 'Guard must prevent open() when awaitingFreeForm=true');
+        $this->assertTrue($controller->isAwaitingFreeForm(), 'awaitingFreeForm must remain true after guard block');
+        $this->assertTrue($coordinator->actionRequired(), 'Coordinator must still have the active request');
     }
 
     public function testOrphanedQuestionHealedWhenRunTerminal(): void
@@ -667,7 +668,7 @@ final class TickPollListenerTest extends TestCase
                 allowOther: true,
             ),
         );
-        self::assertTrue($coordinator->actionRequired());
+        $this->assertTrue($coordinator->actionRequired());
 
         // Block the guard (so open() does not throw on the skeleton) by
         // setting awaitingFreeForm=true. The self-heal is independent of
@@ -705,18 +706,17 @@ final class TickPollListenerTest extends TestCase
         // Retrieve the tick handler from TuiTickDispatcher
         $handlerRef = new \ReflectionProperty(TuiTickDispatcher::class, 'handlers');
         $handlers = $handlerRef->getValue($context->ticks);
-        self::assertCount(1, $handlers);
+        $this->assertCount(1, $handlers);
 
         // Drive one tick — the self-heal must reject the orphaned question
         ($handlers[0])();
 
         // Assertions: reject() advanced the queue (actionRequired=false)
         // and close() reset isOpen/awaitingFreeForm.
-        self::assertFalse($coordinator->actionRequired(), 'Orphaned question must be rejected');
-        self::assertFalse($controller->isOpen(), 'close() must be called after self-heal');
-        self::assertFalse($controller->isAwaitingFreeForm(), 'close() must reset awaitingFreeForm after self-heal');
+        $this->assertFalse($coordinator->actionRequired(), 'Orphaned question must be rejected');
+        $this->assertFalse($controller->isOpen(), 'close() must be called after self-heal');
+        $this->assertFalse($controller->isAwaitingFreeForm(), 'close() must reset awaitingFreeForm after self-heal');
     }
-
 
     private function createIsolatedSubagentLiveChildPoller(): SubagentLiveChildViewPoller
     {
@@ -724,5 +724,4 @@ final class TickPollListenerTest extends TestCase
             new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState()),
         );
     }
-
 }

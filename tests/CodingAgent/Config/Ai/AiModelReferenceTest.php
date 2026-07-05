@@ -13,25 +13,25 @@ class AiModelReferenceTest extends TestCase
     {
         $ref = AiModelReference::parse('deepseek/deepseek-v4-pro');
 
-        self::assertSame('deepseek', $ref->providerId);
-        self::assertSame('deepseek-v4-pro', $ref->modelName);
-        self::assertSame('deepseek/deepseek-v4-pro', $ref->toString());
+        $this->assertSame('deepseek', $ref->providerId);
+        $this->assertSame('deepseek-v4-pro', $ref->modelName);
+        $this->assertSame('deepseek/deepseek-v4-pro', $ref->toString());
     }
 
     public function testParseWithMultiSegmentProvider(): void
     {
         $ref = AiModelReference::parse('llama_cpp/flash');
 
-        self::assertSame('llama_cpp', $ref->providerId);
-        self::assertSame('flash', $ref->modelName);
+        $this->assertSame('llama_cpp', $ref->providerId);
+        $this->assertSame('flash', $ref->modelName);
     }
 
     public function testParseWithMultiSegmentModel(): void
     {
         $ref = AiModelReference::parse('zai/glm-5v-turbo');
 
-        self::assertSame('zai', $ref->providerId);
-        self::assertSame('glm-5v-turbo', $ref->modelName);
+        $this->assertSame('zai', $ref->providerId);
+        $this->assertSame('glm-5v-turbo', $ref->modelName);
     }
 
     public function testParseMissingSlash(): void
@@ -69,21 +69,21 @@ class AiModelReferenceTest extends TestCase
     public function testTryParseValid(): void
     {
         $ref = AiModelReference::tryParse('deepseek/deepseek-v4-pro');
-        self::assertNotNull($ref);
-        self::assertSame('deepseek/deepseek-v4-pro', $ref->toString());
+        $this->assertNotNull($ref);
+        $this->assertSame('deepseek/deepseek-v4-pro', $ref->toString());
     }
 
     public function testTryParseInvalidReturnsNull(): void
     {
-        self::assertNull(AiModelReference::tryParse('no-slash'));
-        self::assertNull(AiModelReference::tryParse('/empty-provider'));
-        self::assertNull(AiModelReference::tryParse('empty-model/'));
-        self::assertNull(AiModelReference::tryParse(''));
+        $this->assertNull(AiModelReference::tryParse('no-slash'));
+        $this->assertNull(AiModelReference::tryParse('/empty-provider'));
+        $this->assertNull(AiModelReference::tryParse('empty-model/'));
+        $this->assertNull(AiModelReference::tryParse(''));
     }
 
     public function testToStringRoundTrip(): void
     {
         $original = 'zai/glm-5.1';
-        self::assertSame($original, AiModelReference::parse($original)->toString());
+        $this->assertSame($original, AiModelReference::parse($original)->toString());
     }
 }

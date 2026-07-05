@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Runtime\Process;
 
 use Ineersa\AgentCore\Tests\Support\TestLogger;
+use Ineersa\CodingAgent\PromptTemplate\PromptTemplatesRuntimeConfig;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
 use Ineersa\CodingAgent\Runtime\Process\AppExecutableLocator;
-use Ineersa\CodingAgent\PromptTemplate\PromptTemplatesRuntimeConfig;
 use Ineersa\CodingAgent\Runtime\Process\JsonlProcessAgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Process\RuntimeProcessConfig;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
@@ -86,7 +86,8 @@ PHP);
                 public function __construct(
                     private string $fakeScript,
                     private string $dumpFlag,
-                ) {}
+                ) {
+                }
 
                 public function command(): array
                 {
@@ -124,20 +125,20 @@ PHP);
             usleep(50_000);
         }
 
-        self::assertFileExists($commandsFile);
+        $this->assertFileExists($commandsFile);
         $commands = json_decode((string) file_get_contents($commandsFile), true);
-        self::assertIsArray($commands);
+        $this->assertIsArray($commands);
 
         $shell = null;
         foreach ($commands as $command) {
-            if (is_array($command) && 'shell_command' === ($command['type'] ?? '')) {
+            if (\is_array($command) && 'shell_command' === ($command['type'] ?? '')) {
                 $shell = $command;
                 break;
             }
         }
 
-        self::assertNotNull($shell, 'shell_command JSONL line must be written');
-        self::assertSame('ls -1', $shell['payload']['text'] ?? null);
-        self::assertTrue($shell['payload']['standalone'] ?? false);
+        $this->assertNotNull($shell, 'shell_command JSONL line must be written');
+        $this->assertSame('ls -1', $shell['payload']['text'] ?? null);
+        $this->assertTrue($shell['payload']['standalone'] ?? false);
     }
 }

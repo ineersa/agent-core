@@ -55,12 +55,12 @@ final class ToolQuestionAnswerResolverTest extends TestCase
     #[DataProvider('provideTrueAnswers')]
     public function testResolvesTrue(mixed $input, bool $expected): void
     {
-        self::assertSame($expected, $this->resolver->resolve($input));
+        $this->assertSame($expected, $this->resolver->resolve($input));
     }
 
     #[DataProvider('provideFalseAnswers')]
     public function testResolvesFalse(mixed $input, bool $expected): void
     {
-        self::assertSame($expected, $this->resolver->resolve($input));
+        $this->assertSame($expected, $this->resolver->resolve($input));
     }
 }
