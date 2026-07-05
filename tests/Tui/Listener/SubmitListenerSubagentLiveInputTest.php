@@ -221,7 +221,6 @@ final class SubmitListenerSubagentLiveInputTest extends TestCase
             questionController: $this->questionController,
             subagentLiveInputPolicy: new SubagentLiveInputPolicy(),
             logger: new NullLogger(),
-            slashCommandRegistry: new SlashCommandRegistry(),
         );
         $listener->register($context);
 
