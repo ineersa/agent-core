@@ -132,6 +132,11 @@ final class SlashCommandRegistry
         $this->activeSessionId = $sessionId;
     }
 
+    public function getActiveSessionId(): ?string
+    {
+        return $this->activeSessionId;
+    }
+
     public function execute(SlashCommand $command): CommandResult
     {
         $canonical = $this->resolveName($command->name);

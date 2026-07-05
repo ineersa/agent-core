@@ -39,7 +39,7 @@ final class SlashCommandSessionSyncListenerTest extends TestCase
             previousSessionId: '7',
         ));
 
-        self::assertSame('42', $this->activeSessionId($registry));
+        self::assertSame('42', $registry->getActiveSessionId());
     }
 
     #[Test]
@@ -58,17 +58,9 @@ final class SlashCommandSessionSyncListenerTest extends TestCase
             previousSessionId: 'stale',
         ));
 
-        self::assertNull($this->activeSessionId($registry));
+        self::assertNull($registry->getActiveSessionId());
     }
 
-    private function activeSessionId(SlashCommandRegistry $registry): ?string
-    {
-        $ref = new \ReflectionClass($registry);
-        $prop = $ref->getProperty('activeSessionId');
-        $prop->setAccessible(true);
-
-        return $prop->getValue($registry);
-    }
 
     private function lifecycleContext(): TuiRuntimeContext
     {
