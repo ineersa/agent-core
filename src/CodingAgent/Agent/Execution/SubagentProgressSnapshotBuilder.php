@@ -23,10 +23,11 @@ final class SubagentProgressSnapshotBuilder
         RunState $childState,
         int $elapsedMs,
         ?SubagentChildProgressSummary $enrichment = null,
+        string $status = 'running',
     ): array {
         $base = [
             'mode' => 'single',
-            'status' => 'running',
+            'status' => $status,
             'agent_name' => $agentName,
             'artifact_id' => $artifactId,
             'agent_run_id' => $agentRunId,
@@ -105,7 +106,9 @@ final class SubagentProgressSnapshotBuilder
             }
 
             $childStatus = 'running';
-            if ($terminal && null !== $report['status']) {
+            if (!$terminal && AgentArtifactStatusEnum::NeedsClarification === $report['status']) {
+                $childStatus = 'waiting_human';
+            } elseif ($terminal && null !== $report['status']) {
                 $childStatus = match ($report['status']) {
                     AgentArtifactStatusEnum::Completed => 'completed',
                     AgentArtifactStatusEnum::Failed => 'failed',

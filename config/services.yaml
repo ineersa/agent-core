@@ -409,8 +409,8 @@ services:
 
   Ineersa\CodingAgent\Runtime\Controller\BackgroundProcessCompletionPoller:
     arguments:
-      # Session scoping prevents O(N) cross-session filesystem scans.
-      # Null/unset means unscoped (all processes), set = scoped to one run.
+      # Parent controller session from HATFIELD_SESSION_ID; poll loop scopes refresh
+      # and notifications to that session plus child agent run IDs from the artifact registry.
       $sessionId: '%env(HATFIELD_SESSION_ID)%'
 
   # Stream observer delegates to Symfony EventDispatcher with per-delta subscribers.

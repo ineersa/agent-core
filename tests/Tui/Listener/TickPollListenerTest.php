@@ -13,6 +13,7 @@ use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Ineersa\Tui\Editor\PromptEditor;
+use Ineersa\Tui\Listener\RuntimeQuestionEventHandler;
 use Ineersa\Tui\Listener\TickPollListener;
 use Ineersa\Tui\Question\QuestionController;
 use Ineersa\Tui\Question\QuestionCoordinator;
@@ -32,6 +33,7 @@ use Ineersa\Tui\Theme\DefaultTheme;
 use Ineersa\Tui\Theme\ThemePalette;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
+use Psr\Log\NullLogger;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\Tui\Tui;
 
@@ -77,9 +79,9 @@ final class TickPollListenerTest extends TestCase
         $coordinator = new QuestionCoordinator();
 
         // Use reflection to invoke the private static handleChoiceToolQuestion
-        $ref = new \ReflectionMethod(TickPollListener::class, 'handleChoiceToolQuestion');
+        $ref = new \ReflectionMethod(RuntimeQuestionEventHandler::class, 'handleChoiceToolQuestion');
 
-        $ref->invoke(null, [
+        $ref->invoke($this->runtimeQuestionHandler(), [
             'prompt' => 'Approve write outside CWD?',
             'request_id' => 'rq_test',
             'tool_call_id' => 'tc_test',
@@ -118,7 +120,7 @@ final class TickPollListenerTest extends TestCase
             $client = $this->createStub(AgentSessionClient::class);
             $coordinator = new QuestionCoordinator();
 
-            $ref = new \ReflectionMethod(TickPollListener::class, 'handleToolQuestionRequested');
+            $ref = new \ReflectionMethod(RuntimeQuestionEventHandler::class, 'handleToolQuestionRequested');
             $event = new RuntimeEvent(
                 type: RuntimeEventTypeEnum::ToolQuestionRequested->value,
                 runId: 'run-bg',
@@ -131,7 +133,7 @@ final class TickPollListenerTest extends TestCase
                 ],
             );
 
-            $ref->invoke(null, $event, $client, $coordinator);
+            $ref->invoke($this->runtimeQuestionHandler(), $event, $client, $coordinator);
 
             $this->assertSame([], $warnings, 'Confirm with null schema must not emit E_USER_WARNING');
             $this->assertTrue($coordinator->actionRequired());
@@ -149,7 +151,7 @@ final class TickPollListenerTest extends TestCase
         $client = $this->createStub(AgentSessionClient::class);
         $coordinator = new QuestionCoordinator();
 
-        $ref = new \ReflectionMethod(TickPollListener::class, 'handleToolQuestionRequested');
+        $ref = new \ReflectionMethod(RuntimeQuestionEventHandler::class, 'handleToolQuestionRequested');
         $event = new RuntimeEvent(
             type: RuntimeEventTypeEnum::ToolQuestionRequested->value,
             runId: 'run-bg',
@@ -162,7 +164,7 @@ final class TickPollListenerTest extends TestCase
             ],
         );
 
-        $ref->invoke(null, $event, $client, $coordinator);
+        $ref->invoke($this->runtimeQuestionHandler(), $event, $client, $coordinator);
 
         $active = $coordinator->activeRequest();
         $this->assertNotNull($active);
@@ -173,30 +175,30 @@ final class TickPollListenerTest extends TestCase
 
     public function testResolveQuestionKindMapsUiKind(): void
     {
-        $ref = new \ReflectionMethod(TickPollListener::class, 'resolveQuestionKind');
+        $ref = new \ReflectionMethod(RuntimeQuestionEventHandler::class, 'resolveQuestionKind');
 
         // text
-        $this->assertSame(QuestionKind::Text, $ref->invoke(null, ['ui_kind' => 'text']));
+        $this->assertSame(QuestionKind::Text, $ref->invoke($this->runtimeQuestionHandler(), ['ui_kind' => 'text']));
 
         // confirm
-        $this->assertSame(QuestionKind::Confirm, $ref->invoke(null, ['ui_kind' => 'confirm']));
+        $this->assertSame(QuestionKind::Confirm, $ref->invoke($this->runtimeQuestionHandler(), ['ui_kind' => 'confirm']));
 
         // approval maps to Confirm
-        $this->assertSame(QuestionKind::Confirm, $ref->invoke(null, ['ui_kind' => 'approval']));
+        $this->assertSame(QuestionKind::Confirm, $ref->invoke($this->runtimeQuestionHandler(), ['ui_kind' => 'approval']));
 
         // choice
-        $this->assertSame(QuestionKind::Choice, $ref->invoke(null, ['ui_kind' => 'choice']));
+        $this->assertSame(QuestionKind::Choice, $ref->invoke($this->runtimeQuestionHandler(), ['ui_kind' => 'choice']));
 
         // legacy kind fallback (no ui_kind)
-        $this->assertSame(QuestionKind::Confirm, $ref->invoke(null, ['kind' => 'approval']));
-        $this->assertSame(QuestionKind::Text, $ref->invoke(null, ['kind' => 'text']));
+        $this->assertSame(QuestionKind::Confirm, $ref->invoke($this->runtimeQuestionHandler(), ['kind' => 'approval']));
+        $this->assertSame(QuestionKind::Text, $ref->invoke($this->runtimeQuestionHandler(), ['kind' => 'text']));
     }
 
     public function testResolveQuestionKindFallsBackToSchemaBoolean(): void
     {
-        $ref = new \ReflectionMethod(TickPollListener::class, 'resolveQuestionKind');
+        $ref = new \ReflectionMethod(RuntimeQuestionEventHandler::class, 'resolveQuestionKind');
 
-        $result = $ref->invoke(null, [
+        $result = $ref->invoke($this->runtimeQuestionHandler(), [
             'schema' => ['type' => 'boolean'],
         ]);
 
@@ -205,9 +207,9 @@ final class TickPollListenerTest extends TestCase
 
     public function testResolveQuestionKindFallsBackToSchemaEnum(): void
     {
-        $ref = new \ReflectionMethod(TickPollListener::class, 'resolveQuestionKind');
+        $ref = new \ReflectionMethod(RuntimeQuestionEventHandler::class, 'resolveQuestionKind');
 
-        $result = $ref->invoke(null, [
+        $result = $ref->invoke($this->runtimeQuestionHandler(), [
             'schema' => ['type' => 'string', 'enum' => ['Yes', 'No']],
         ]);
 
@@ -216,18 +218,18 @@ final class TickPollListenerTest extends TestCase
 
     public function testResolveQuestionKindFallsBackToTextWhenNoHints(): void
     {
-        $ref = new \ReflectionMethod(TickPollListener::class, 'resolveQuestionKind');
+        $ref = new \ReflectionMethod(RuntimeQuestionEventHandler::class, 'resolveQuestionKind');
 
-        $this->assertSame(QuestionKind::Text, $ref->invoke(null, []));
-        $this->assertSame(QuestionKind::Text, $ref->invoke(null, ['schema' => ['type' => 'string']]));
-        $this->assertSame(QuestionKind::Text, $ref->invoke(null, ['schema' => ['type' => 'integer']]));
+        $this->assertSame(QuestionKind::Text, $ref->invoke($this->runtimeQuestionHandler(), []));
+        $this->assertSame(QuestionKind::Text, $ref->invoke($this->runtimeQuestionHandler(), ['schema' => ['type' => 'string']]));
+        $this->assertSame(QuestionKind::Text, $ref->invoke($this->runtimeQuestionHandler(), ['schema' => ['type' => 'integer']]));
     }
 
     public function testBuildChoicesFromPayloadChoicesField(): void
     {
-        $ref = new \ReflectionMethod(TickPollListener::class, 'buildChoices');
+        $ref = new \ReflectionMethod(RuntimeQuestionEventHandler::class, 'buildChoices');
 
-        $choices = $ref->invoke(null, [
+        $choices = $ref->invoke($this->runtimeQuestionHandler(), [
             'choices' => [
                 ['label' => 'Yes', 'description' => 'Approve the action'],
                 ['label' => 'No'],
@@ -244,9 +246,9 @@ final class TickPollListenerTest extends TestCase
 
     public function testBuildChoicesFallsBackToSchemaEnum(): void
     {
-        $ref = new \ReflectionMethod(TickPollListener::class, 'buildChoices');
+        $ref = new \ReflectionMethod(RuntimeQuestionEventHandler::class, 'buildChoices');
 
-        $choices = $ref->invoke(null, [], [
+        $choices = $ref->invoke($this->runtimeQuestionHandler(), [], [
             'type' => 'string',
             'enum' => ['Option A', 'Option B'],
         ]);
@@ -259,18 +261,18 @@ final class TickPollListenerTest extends TestCase
 
     public function testBuildChoicesReturnsEmptyWhenNoSources(): void
     {
-        $ref = new \ReflectionMethod(TickPollListener::class, 'buildChoices');
+        $ref = new \ReflectionMethod(RuntimeQuestionEventHandler::class, 'buildChoices');
 
-        $this->assertSame([], $ref->invoke(null, [], []));
-        $this->assertSame([], $ref->invoke(null, ['choices' => []], ['type' => 'string']));
-        $this->assertSame([], $ref->invoke(null, [], ['type' => 'boolean']));
+        $this->assertSame([], $ref->invoke($this->runtimeQuestionHandler(), [], []));
+        $this->assertSame([], $ref->invoke($this->runtimeQuestionHandler(), ['choices' => []], ['type' => 'string']));
+        $this->assertSame([], $ref->invoke($this->runtimeQuestionHandler(), [], ['type' => 'boolean']));
     }
 
     public function testHandleHumanInputRequestedPassesHeaderDefaultAllowOther(): void
     {
         $client = $this->createStub(AgentSessionClient::class);
         $coordinator = new QuestionCoordinator();
-        $ref = new \ReflectionMethod(TickPollListener::class, 'handleHumanInputRequested');
+        $ref = new \ReflectionMethod(RuntimeQuestionEventHandler::class, 'handleHumanInputRequested');
 
         $event = new RuntimeEvent(
             type: RuntimeEventTypeEnum::HumanInputRequested->value,
@@ -286,7 +288,7 @@ final class TickPollListenerTest extends TestCase
             ],
         );
 
-        $ref->invoke(null, $event, $client, $coordinator);
+        $ref->invoke($this->runtimeQuestionHandler(), $event, $client, $coordinator);
 
         $this->assertTrue($coordinator->actionRequired());
         $active = $coordinator->activeRequest();
@@ -295,7 +297,7 @@ final class TickPollListenerTest extends TestCase
         $this->assertSame('Custom Rich Header', $active->header);
         $this->assertSame('default text', $active->default);
         $this->assertTrue($active->allowOther, 'HITL questions must always allow free-form input');
-        $this->assertSame('hitl_q_rich', $active->requestId);
+        $this->assertSame('hitl_'.substr(hash('sha256', 'run-rich|q_rich'), 0, 16), $active->requestId);
         $this->assertSame('q_rich', $active->questionId);
         $this->assertTrue($active->transcript);
     }
@@ -317,7 +319,7 @@ final class TickPollListenerTest extends TestCase
             );
 
         $coordinator = new QuestionCoordinator();
-        $ref = new \ReflectionMethod(TickPollListener::class, 'handleHumanInputRequested');
+        $ref = new \ReflectionMethod(RuntimeQuestionEventHandler::class, 'handleHumanInputRequested');
 
         $event = new RuntimeEvent(
             type: RuntimeEventTypeEnum::HumanInputRequested->value,
@@ -331,7 +333,7 @@ final class TickPollListenerTest extends TestCase
             ],
         );
 
-        $ref->invoke(null, $event, $client, $coordinator);
+        $ref->invoke($this->runtimeQuestionHandler(), $event, $client, $coordinator);
 
         // Simulate user selecting 'Yes' (select list returns 'yes' string)
         $coordinator->answer('yes');
@@ -356,7 +358,7 @@ final class TickPollListenerTest extends TestCase
             );
 
         $coordinator = new QuestionCoordinator();
-        $ref = new \ReflectionMethod(TickPollListener::class, 'handleHumanInputRequested');
+        $ref = new \ReflectionMethod(RuntimeQuestionEventHandler::class, 'handleHumanInputRequested');
 
         $event = new RuntimeEvent(
             type: RuntimeEventTypeEnum::HumanInputRequested->value,
@@ -370,7 +372,7 @@ final class TickPollListenerTest extends TestCase
             ],
         );
 
-        $ref->invoke(null, $event, $client, $coordinator);
+        $ref->invoke($this->runtimeQuestionHandler(), $event, $client, $coordinator);
 
         // Simulate user selecting 'No' (select list returns 'no' string)
         $coordinator->answer('no');
@@ -395,7 +397,7 @@ final class TickPollListenerTest extends TestCase
             );
 
         $coordinator = new QuestionCoordinator();
-        $ref = new \ReflectionMethod(TickPollListener::class, 'handleHumanInputRequested');
+        $ref = new \ReflectionMethod(RuntimeQuestionEventHandler::class, 'handleHumanInputRequested');
 
         $event = new RuntimeEvent(
             type: RuntimeEventTypeEnum::HumanInputRequested->value,
@@ -409,7 +411,7 @@ final class TickPollListenerTest extends TestCase
             ],
         );
 
-        $ref->invoke(null, $event, $client, $coordinator);
+        $ref->invoke($this->runtimeQuestionHandler(), $event, $client, $coordinator);
 
         // Simulate user selecting 'Beta'
         $coordinator->answer('Beta');
@@ -435,7 +437,7 @@ final class TickPollListenerTest extends TestCase
             );
 
         $coordinator = new QuestionCoordinator();
-        $ref = new \ReflectionMethod(TickPollListener::class, 'handleHumanInputRequested');
+        $ref = new \ReflectionMethod(RuntimeQuestionEventHandler::class, 'handleHumanInputRequested');
 
         $event = new RuntimeEvent(
             type: RuntimeEventTypeEnum::HumanInputRequested->value,
@@ -449,7 +451,7 @@ final class TickPollListenerTest extends TestCase
             ],
         );
 
-        $ref->invoke(null, $event, $client, $coordinator);
+        $ref->invoke($this->runtimeQuestionHandler(), $event, $client, $coordinator);
 
         // Cancel the question — this fires the onCancel closure
         $coordinator->cancel();
@@ -467,7 +469,7 @@ final class TickPollListenerTest extends TestCase
         // on QuestionKind::Choice in QuestionController::buildItems()).
         $client = $this->createStub(AgentSessionClient::class);
         $coordinator = new QuestionCoordinator();
-        $ref = new \ReflectionMethod(TickPollListener::class, 'handleHumanInputRequested');
+        $ref = new \ReflectionMethod(RuntimeQuestionEventHandler::class, 'handleHumanInputRequested');
 
         $event = new RuntimeEvent(
             type: RuntimeEventTypeEnum::HumanInputRequested->value,
@@ -481,7 +483,7 @@ final class TickPollListenerTest extends TestCase
             ],
         );
 
-        $ref->invoke(null, $event, $client, $coordinator);
+        $ref->invoke($this->runtimeQuestionHandler(), $event, $client, $coordinator);
 
         $active = $coordinator->activeRequest();
         $this->assertNotNull($active);
@@ -492,12 +494,12 @@ final class TickPollListenerTest extends TestCase
 
     public function testResolveQuestionKindIgnoresInterruptTransportMarkerWithStringSchema(): void
     {
-        $ref = new \ReflectionMethod(TickPollListener::class, 'resolveQuestionKind');
+        $ref = new \ReflectionMethod(RuntimeQuestionEventHandler::class, 'resolveQuestionKind');
 
         // kind='interrupt' with no ui_kind and a string schema should
         // fall through to schema-driven derivation (QuestionKind::Text),
         // NOT match default => Choice which would render an empty overlay.
-        $result = $ref->invoke(null, [
+        $result = $ref->invoke($this->runtimeQuestionHandler(), [
             'kind' => 'interrupt',
             'schema' => ['type' => 'string'],
         ]);
@@ -507,11 +509,11 @@ final class TickPollListenerTest extends TestCase
 
     public function testResolveQuestionKindIgnoresInterruptTransportMarkerWithBooleanSchema(): void
     {
-        $ref = new \ReflectionMethod(TickPollListener::class, 'resolveQuestionKind');
+        $ref = new \ReflectionMethod(RuntimeQuestionEventHandler::class, 'resolveQuestionKind');
 
         // kind='interrupt' with no ui_kind and a boolean schema should
         // derive Confirm, not fall to default => Choice.
-        $result = $ref->invoke(null, [
+        $result = $ref->invoke($this->runtimeQuestionHandler(), [
             'kind' => 'interrupt',
             'schema' => ['type' => 'boolean'],
         ]);
@@ -521,10 +523,10 @@ final class TickPollListenerTest extends TestCase
 
     public function testResolveQuestionKindStillMatchesUiKindWhenInterruptKindPresent(): void
     {
-        $ref = new \ReflectionMethod(TickPollListener::class, 'resolveQuestionKind');
+        $ref = new \ReflectionMethod(RuntimeQuestionEventHandler::class, 'resolveQuestionKind');
 
         // When ui_kind IS present alongside kind='interrupt', ui_kind wins.
-        $result = $ref->invoke(null, [
+        $result = $ref->invoke($this->runtimeQuestionHandler(), [
             'kind' => 'interrupt',
             'ui_kind' => 'choice',
         ]);
@@ -534,9 +536,9 @@ final class TickPollListenerTest extends TestCase
 
     public function testBuildChoicesHandlesBareStringEntries(): void
     {
-        $ref = new \ReflectionMethod(TickPollListener::class, 'buildChoices');
+        $ref = new \ReflectionMethod(RuntimeQuestionEventHandler::class, 'buildChoices');
 
-        $choices = $ref->invoke(null, [
+        $choices = $ref->invoke($this->runtimeQuestionHandler(), [
             'choices' => ['Yes', 'No'],
         ], ['type' => 'string']);
 
@@ -550,9 +552,9 @@ final class TickPollListenerTest extends TestCase
 
     public function testBuildChoicesHandlesMixedArrayAndStringEntries(): void
     {
-        $ref = new \ReflectionMethod(TickPollListener::class, 'buildChoices');
+        $ref = new \ReflectionMethod(RuntimeQuestionEventHandler::class, 'buildChoices');
 
-        $choices = $ref->invoke(null, [
+        $choices = $ref->invoke($this->runtimeQuestionHandler(), [
             'choices' => [
                 ['label' => 'Structured', 'description' => 'Has description'],
                 'BareString',
@@ -609,6 +611,7 @@ final class TickPollListenerTest extends TestCase
         $listenerRef->getProperty('subagentLiveChildPoller')->setValue($listener, $this->createIsolatedSubagentLiveChildPoller());
         $listenerRef->getProperty('questionCoordinator')->setValue($listener, $coordinator);
         $listenerRef->getProperty('questionController')->setValue($listener, $controller);
+        $listenerRef->getProperty('runtimeQuestionEventHandler')->setValue($listener, new RuntimeQuestionEventHandler());
 
         // Build TuiRuntimeContext with a real ChatScreen and Running activity
         $state = new TuiSessionState('run-guard');
@@ -685,6 +688,7 @@ final class TickPollListenerTest extends TestCase
         $listenerRef->getProperty('subagentLiveChildPoller')->setValue($listener, $this->createIsolatedSubagentLiveChildPoller());
         $listenerRef->getProperty('questionCoordinator')->setValue($listener, $coordinator);
         $listenerRef->getProperty('questionController')->setValue($listener, $controller);
+        $listenerRef->getProperty('runtimeQuestionEventHandler')->setValue($listener, new RuntimeQuestionEventHandler());
 
         // Use default Idle activity (isActive()=false) — the self-heal condition
         // !isActive() will be true.
@@ -718,10 +722,41 @@ final class TickPollListenerTest extends TestCase
         $this->assertFalse($controller->isAwaitingFreeForm(), 'close() must reset awaitingFreeForm after self-heal');
     }
 
+    public function testParentWaitingHumanQuestionNotRejectedWhenActivityWaitingHuman(): void
+    {
+        $parentRunId = 'parent-hitl-post-subagent';
+        $coordinator = new QuestionCoordinator();
+        $coordinator->enqueue(
+            new QuestionRequest(
+                requestId: 'parent_hitl_active',
+                source: QuestionSource::AgentCore,
+                kind: QuestionKind::Text,
+                prompt: 'Which docs file would you like me to inspect and summarize?',
+                schema: ['type' => 'string'],
+                runId: $parentRunId,
+                questionId: 'q_parent_docs',
+            ),
+        );
+
+        $state = new TuiSessionState($parentRunId);
+        $state->handle = new \Ineersa\CodingAgent\Runtime\Contract\RunHandle($parentRunId);
+        $state->activity = RunActivityStateEnum::WaitingHuman;
+
+        $ref = new \ReflectionMethod(RuntimeQuestionEventHandler::class, 'shouldRejectOrphanedQuestion');
+        $reject = $ref->invoke($this->runtimeQuestionHandler(), $state, $coordinator->activeRequest());
+        $this->assertFalse($reject, 'Parent WaitingHuman question must not be self-healed as orphaned');
+    }
+
+    private function runtimeQuestionHandler(): RuntimeQuestionEventHandler
+    {
+        return new RuntimeQuestionEventHandler();
+    }
+
     private function createIsolatedSubagentLiveChildPoller(): SubagentLiveChildViewPoller
     {
         return new SubagentLiveChildViewPoller(
             new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState()),
+            new NullLogger(),
         );
     }
 }

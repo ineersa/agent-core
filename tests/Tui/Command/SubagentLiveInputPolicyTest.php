@@ -46,6 +46,16 @@ final class SubagentLiveInputPolicyTest extends TestCase
     }
 
     #[Test]
+    public function allowedLiveViewNavigationSlashCommands(): void
+    {
+        $this->assertTrue($this->policy->isAllowedLiveViewNavigationSlash('/agents-main'));
+        $this->assertTrue($this->policy->isAllowedLiveViewNavigationSlash('/main'));
+        $this->assertTrue($this->policy->isAllowedLiveViewNavigationSlash('/agents-live'));
+        $this->assertFalse($this->policy->isAllowedLiveViewNavigationSlash('/new'));
+        $this->assertFalse($this->policy->isAllowedLiveViewNavigationSlash('steer child'));
+    }
+
+    #[Test]
     public function terminalChildInputBlockedMessageMentionsAgentsMain(): void
     {
         $this->assertStringContainsString('/agents-main', $this->policy->terminalChildInputBlockedMessage());

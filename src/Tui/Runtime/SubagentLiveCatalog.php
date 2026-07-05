@@ -20,7 +20,13 @@ final class SubagentLiveCatalog
     public function all(): array
     {
         $items = array_values($this->byArtifactId);
-        usort($items, static fn (SubagentLiveChildDTO $a, SubagentLiveChildDTO $b): int => $b->lastActivityAtMs <=> $a->lastActivityAtMs);
+        usort($items, static function (SubagentLiveChildDTO $a, SubagentLiveChildDTO $b): int {
+            if ($a->needsAttention() !== $b->needsAttention()) {
+                return $b->needsAttention() <=> $a->needsAttention();
+            }
+
+            return $b->lastActivityAtMs <=> $a->lastActivityAtMs;
+        });
 
         return $items;
     }
@@ -39,6 +45,27 @@ final class SubagentLiveCatalog
     public function findByArtifactId(string $artifactId): ?SubagentLiveChildDTO
     {
         return $this->byArtifactId[$artifactId] ?? null;
+    }
+
+    /**
+     * Optimistic catalog update when the TUI knows a child left waiting_human
+     * before the next parent subagent_progress event (answer, dismiss, cancel).
+     */
+    public function applyChildStatus(string $artifactId, SubagentLiveStatusEnum $status): void
+    {
+        $existing = $this->byArtifactId[$artifactId] ?? null;
+        if (null === $existing) {
+            return;
+        }
+
+        $this->byArtifactId[$artifactId] = new SubagentLiveChildDTO(
+            agentRunId: $existing->agentRunId,
+            artifactId: $existing->artifactId,
+            agentName: $existing->agentName,
+            status: $status,
+            taskSummary: $existing->taskSummary,
+            lastActivityAtMs: (int) (microtime(true) * 1000),
+        );
     }
 
     public function ingestRuntimeEvent(RuntimeEvent $event): void
@@ -94,6 +121,12 @@ final class SubagentLiveCatalog
         }
 
         if ('' === $agentRunId) {
+            return;
+        }
+
+        $existing = $this->byArtifactId[$artifactId] ?? null;
+        if (null !== $existing && $existing->status->isTerminal() && !$status->isTerminal()) {
+            // Stale in-flight progress rows must not downgrade terminal/cancelled catalog entries.
             return;
         }
 

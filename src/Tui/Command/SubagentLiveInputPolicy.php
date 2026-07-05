@@ -33,9 +33,27 @@ final readonly class SubagentLiveInputPolicy
         return 'Leave subagent live view first with /agents-main before running other commands.';
     }
 
+    public function parseSubmitted(string $submittedText): CommandParseResult
+    {
+        return $this->parser->parse($submittedText);
+    }
+
     public function terminalChildInputBlockedMessage(): string
     {
         return 'This subagent has finished. Use /agents-main to continue with the main agent.';
+    }
+
+    /**
+     * True when submitted text is an allowed live-view navigation slash (/agents-main, /main, /agents-live).
+     */
+    public function isAllowedLiveViewNavigationSlash(string $submittedText): bool
+    {
+        $parseResult = $this->parser->parse($submittedText);
+        if (!$parseResult instanceof SlashCommand) {
+            return false;
+        }
+
+        return $this->isAllowedSlashCommand($parseResult->name);
     }
 
     public function isAllowedSlashCommand(string $name): bool

@@ -18,6 +18,7 @@ use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Ineersa\Tui\Editor\PromptEditor;
+use Ineersa\Tui\Listener\RuntimeQuestionEventHandler;
 use Ineersa\Tui\Listener\TickPollListener;
 use Ineersa\Tui\Question\QuestionController;
 use Ineersa\Tui\Question\QuestionCoordinator;
@@ -76,6 +77,7 @@ final class TickPollListenerSubagentLiveTest extends TestCase
 
         $childPoller = new SubagentLiveChildViewPoller(
             new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState()),
+            new \Psr\Log\NullLogger(),
         );
 
         $tui = new Tui();
@@ -89,6 +91,7 @@ final class TickPollListenerSubagentLiveTest extends TestCase
         $listenerRef->getProperty('questionCoordinator')->setValue($listener, new QuestionCoordinator());
         $ctrlRef = new \ReflectionClass(QuestionController::class);
         $listenerRef->getProperty('questionController')->setValue($listener, $ctrlRef->newInstanceWithoutConstructor());
+        $listenerRef->getProperty('runtimeQuestionEventHandler')->setValue($listener, new RuntimeQuestionEventHandler());
 
         $context = $this->buildTuiContext()
             ->withTui($tui)
@@ -153,6 +156,7 @@ final class TickPollListenerSubagentLiveTest extends TestCase
 
         $childPoller = new SubagentLiveChildViewPoller(
             new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState()),
+            new \Psr\Log\NullLogger(),
         );
 
         $tui = new Tui();
@@ -166,6 +170,7 @@ final class TickPollListenerSubagentLiveTest extends TestCase
         $listenerRef->getProperty('questionCoordinator')->setValue($listener, new QuestionCoordinator());
         $ctrlRef = new \ReflectionClass(QuestionController::class);
         $listenerRef->getProperty('questionController')->setValue($listener, $ctrlRef->newInstanceWithoutConstructor());
+        $listenerRef->getProperty('runtimeQuestionEventHandler')->setValue($listener, new RuntimeQuestionEventHandler());
 
         $context = $this->buildTuiContext()
             ->withTui($tui)
