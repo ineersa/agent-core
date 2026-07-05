@@ -4,26 +4,16 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\Listener;
 
-use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
-use Ineersa\Tui\Command\CommandMetadata;
-use Ineersa\Tui\Command\NoOp;
-use Ineersa\Tui\Command\SlashCommand;
-use Ineersa\Tui\Command\SlashCommandHandler;
+use Ineersa\CodingAgent\Runtime\Contract\TranscriptProjectorInterface;
 use Ineersa\Tui\Command\SlashCommandRegistry;
-use Ineersa\Tui\Command\SubagentLiveInputPolicy;
 use Ineersa\Tui\Listener\SubagentLiveCommandRegistrar;
 use Ineersa\Tui\Picker\SubagentLivePickerController;
-use Ineersa\Tui\Runtime\RunActivityStateEnum;
-use Ineersa\Tui\Runtime\SubagentLiveChildDTO;
 use Ineersa\Tui\Runtime\SubagentLiveChildViewPoller;
-use Ineersa\Tui\Runtime\SubagentLiveStatusEnum;
-use Ineersa\CodingAgent\Runtime\Contract\TranscriptProjectorInterface;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Tests\Support\TuiRuntimeContextBuilderTrait;
 use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\Test;
-use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 
@@ -47,9 +37,9 @@ final class SubagentLiveCommandRegistrarTest extends TestCase
         $registrar = $this->createRegistrar($registry);
         $registrar->register($context);
 
-        self::assertTrue($registry->has('agents-live'));
-        self::assertTrue($registry->has('agents-main'));
-        self::assertFalse($registry->has('agents-cancel'));
+        $this->assertTrue($registry->has('agents-live'));
+        $this->assertTrue($registry->has('agents-main'));
+        $this->assertFalse($registry->has('agents-cancel'));
     }
 
     private function createRegistrar(SlashCommandRegistry $registry): SubagentLiveCommandRegistrar

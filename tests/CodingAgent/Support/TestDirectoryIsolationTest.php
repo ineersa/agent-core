@@ -101,7 +101,7 @@ final class TestDirectoryIsolationTest extends TestCase
     public function testRemoveDirectoryDoesNotThrowOnMissing(): void
     {
         // Must not throw
-        TestDirectoryIsolation::removeDirectory('/tmp/nonexistent-dir-'.\bin2hex(\random_bytes(4)));
+        TestDirectoryIsolation::removeDirectory('/tmp/nonexistent-dir-'.bin2hex(random_bytes(4)));
         $this->assertTrue(true);
     }
 }

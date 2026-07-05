@@ -7,16 +7,16 @@ namespace Ineersa\Tui\Listener;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
-use Ineersa\Tui\Runtime\RunActivityStateEnum;
-use Ineersa\Tui\Runtime\SubagentLiveAttention;
-use Ineersa\Tui\Runtime\TuiSessionState;
-use Ineersa\Tui\Screen\ChatScreen;
-use Ineersa\Tui\Question\QuestionCoordinator;
 use Ineersa\Tui\Question\QuestionController;
+use Ineersa\Tui\Question\QuestionCoordinator;
 use Ineersa\Tui\Question\QuestionKind;
 use Ineersa\Tui\Question\QuestionOption;
 use Ineersa\Tui\Question\QuestionRequest;
 use Ineersa\Tui\Question\QuestionSource;
+use Ineersa\Tui\Runtime\RunActivityStateEnum;
+use Ineersa\Tui\Runtime\SubagentLiveAttention;
+use Ineersa\Tui\Runtime\TuiSessionState;
+use Ineersa\Tui\Screen\ChatScreen;
 
 /**
  * Translates runtime HITL and tool-question events into QuestionCoordinator actions.
@@ -146,91 +146,6 @@ final class RuntimeQuestionEventHandler
                 }
             },
         );
-    }
-
-    /**
-     * Resolve the QuestionKind from the human_input payload.
-     *
-     * Priority order:
-     *   1. ui_kind from payload (text/confirm/choice/approval)
-     *   2. Fallback kind from payload (legacy pre-factory events)
-     *   3. Fallback to schema-driven derivation (pre-QH-04 payloads)
-     *
-     * @param array<string, mixed> $p
-     */
-    private function resolveQuestionKind(array $p): QuestionKind
-    {
-        $kind = (string) ($p['ui_kind'] ?? $p['kind'] ?? '');
-
-        // 'interrupt' is a transport marker from AskHumanPayloadFactory, not a UI
-        // kind. If ui_kind was absent and only the transport kind leaked through,
-        // fall through to schema-driven derivation instead of rendering an empty
-        // Choice overlay that the user cannot answer.
-        if ('' !== $kind && 'interrupt' !== $kind) {
-            return match ($kind) {
-                'text' => QuestionKind::Text,
-                'confirm', 'approval' => QuestionKind::Confirm,
-                'choice' => QuestionKind::Choice,
-                default => QuestionKind::Choice,
-            };
-        }
-
-        // Fallback: derive from schema
-        $schema = \is_array($p['schema'] ?? null) ? $p['schema'] : ['type' => 'string'];
-
-        if (($schema['type'] ?? '') === 'boolean') {
-            return QuestionKind::Confirm;
-        }
-
-        if (isset($schema['enum']) && \is_array($schema['enum']) && [] !== $schema['enum']) {
-            return QuestionKind::Choice;
-        }
-
-        return QuestionKind::Text;
-    }
-
-    /**
-     * Build QuestionOption list from the payload choices field or schema enum.
-     *
-     * Payload choices (structured [{label, description?}]) take priority.
-     * Falls back to schema.enum bare string labels.
-     *
-     * @param array<string, mixed> $p
-     * @param array<string, mixed> $schema
-     *
-     * @return list<QuestionOption>
-     */
-    private function buildChoices(array $p, array $schema): array
-    {
-        if (isset($p['choices']) && \is_array($p['choices']) && [] !== $p['choices']) {
-            return array_values(array_map(
-                static function (mixed $choice): QuestionOption {
-                    if (\is_array($choice)) {
-                        return new QuestionOption(
-                            label: (string) ($choice['label'] ?? ''),
-                            description: (string) ($choice['description'] ?? ''),
-                        );
-                    }
-
-                    // Bare-string choice (defensive: AskHumanPayloadFactory emits
-                    // structured entries, but bare strings are a plausible
-                    // hand-crafted shape that must not throw TypeError).
-                    return new QuestionOption(label: (string) $choice);
-                },
-                $p['choices'],
-            ));
-        }
-
-        $enum = $schema['enum'] ?? null;
-
-        if (\is_array($enum) && [] !== $enum) {
-            return array_map(
-                static fn (string $label): QuestionOption => new QuestionOption($label),
-                array_values($enum),
-            );
-        }
-
-        return [];
     }
 
     /**
@@ -368,6 +283,112 @@ final class RuntimeQuestionEventHandler
         // overlay instead of throwing (which would drop later poll-batch events). Producers
         // should supply enum or string schemas so choices are usable; this path is best-effort.
         $this->handleChoiceToolQuestion($p, $schema, $requestId, $runId, $requestIdFromPayload, $client, $questionCoordinator, $sessionState, $screen);
+    }
+
+    public function shouldRejectOrphanedQuestion(TuiSessionState $state, QuestionRequest $activeRequest): bool
+    {
+        $parentRunId = null !== $state->handle ? $state->handle->runId : $state->sessionId;
+        if ($activeRequest->runId === $parentRunId) {
+            // Parent HITL can arrive after a turn completed (e.g. post-subagent ask_human).
+            // Activity must stay WaitingHuman; never treat that as an orphaned question.
+            if (RunActivityStateEnum::WaitingHuman === $state->activity) {
+                return false;
+            }
+
+            return !$state->activity->isActive();
+        }
+
+        $live = $state->subagentLiveView;
+        if ($live->active && null !== $live->selected && $activeRequest->runId === $live->selected->agentRunId) {
+            return $live->childActivity->isTerminal();
+        }
+
+        return false;
+    }
+
+    /**
+     * Resolve the QuestionKind from the human_input payload.
+     *
+     * Priority order:
+     *   1. ui_kind from payload (text/confirm/choice/approval)
+     *   2. Fallback kind from payload (legacy pre-factory events)
+     *   3. Fallback to schema-driven derivation (pre-QH-04 payloads)
+     *
+     * @param array<string, mixed> $p
+     */
+    private function resolveQuestionKind(array $p): QuestionKind
+    {
+        $kind = (string) ($p['ui_kind'] ?? $p['kind'] ?? '');
+
+        // 'interrupt' is a transport marker from AskHumanPayloadFactory, not a UI
+        // kind. If ui_kind was absent and only the transport kind leaked through,
+        // fall through to schema-driven derivation instead of rendering an empty
+        // Choice overlay that the user cannot answer.
+        if ('' !== $kind && 'interrupt' !== $kind) {
+            return match ($kind) {
+                'text' => QuestionKind::Text,
+                'confirm', 'approval' => QuestionKind::Confirm,
+                'choice' => QuestionKind::Choice,
+                default => QuestionKind::Choice,
+            };
+        }
+
+        // Fallback: derive from schema
+        $schema = \is_array($p['schema'] ?? null) ? $p['schema'] : ['type' => 'string'];
+
+        if (($schema['type'] ?? '') === 'boolean') {
+            return QuestionKind::Confirm;
+        }
+
+        if (isset($schema['enum']) && \is_array($schema['enum']) && [] !== $schema['enum']) {
+            return QuestionKind::Choice;
+        }
+
+        return QuestionKind::Text;
+    }
+
+    /**
+     * Build QuestionOption list from the payload choices field or schema enum.
+     *
+     * Payload choices (structured [{label, description?}]) take priority.
+     * Falls back to schema.enum bare string labels.
+     *
+     * @param array<string, mixed> $p
+     * @param array<string, mixed> $schema
+     *
+     * @return list<QuestionOption>
+     */
+    private function buildChoices(array $p, array $schema): array
+    {
+        if (isset($p['choices']) && \is_array($p['choices']) && [] !== $p['choices']) {
+            return array_values(array_map(
+                static function (mixed $choice): QuestionOption {
+                    if (\is_array($choice)) {
+                        return new QuestionOption(
+                            label: (string) ($choice['label'] ?? ''),
+                            description: (string) ($choice['description'] ?? ''),
+                        );
+                    }
+
+                    // Bare-string choice (defensive: AskHumanPayloadFactory emits
+                    // structured entries, but bare strings are a plausible
+                    // hand-crafted shape that must not throw TypeError).
+                    return new QuestionOption(label: (string) $choice);
+                },
+                $p['choices'],
+            ));
+        }
+
+        $enum = $schema['enum'] ?? null;
+
+        if (\is_array($enum) && [] !== $enum) {
+            return array_map(
+                static fn (string $label): QuestionOption => new QuestionOption($label),
+                array_values($enum),
+            );
+        }
+
+        return [];
     }
 
     /**
@@ -558,26 +579,4 @@ final class RuntimeQuestionEventHandler
 
         return null;
     }
-
-    public function shouldRejectOrphanedQuestion(TuiSessionState $state, QuestionRequest $activeRequest): bool
-    {
-        $parentRunId = null !== $state->handle ? $state->handle->runId : $state->sessionId;
-        if ($activeRequest->runId === $parentRunId) {
-            // Parent HITL can arrive after a turn completed (e.g. post-subagent ask_human).
-            // Activity must stay WaitingHuman; never treat that as an orphaned question.
-            if (RunActivityStateEnum::WaitingHuman === $state->activity) {
-                return false;
-            }
-
-            return !$state->activity->isActive();
-        }
-
-        $live = $state->subagentLiveView;
-        if ($live->active && null !== $live->selected && $activeRequest->runId === $live->selected->agentRunId) {
-            return $live->childActivity->isTerminal();
-        }
-
-        return false;
-    }
-
 }

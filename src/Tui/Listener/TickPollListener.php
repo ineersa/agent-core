@@ -4,10 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Listener;
 
-use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\Tui\Question\QuestionController;
-use Ineersa\Tui\Listener\RuntimeQuestionEventHandler;
 use Ineersa\Tui\Question\QuestionCoordinator;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
 use Ineersa\Tui\Runtime\RuntimeEventPoller;
@@ -15,8 +13,6 @@ use Ineersa\Tui\Runtime\SubagentLiveAttention;
 use Ineersa\Tui\Runtime\SubagentLiveChildViewPoller;
 use Ineersa\Tui\Runtime\SubagentLiveStatusEnum;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
-use Ineersa\Tui\Runtime\TuiSessionState;
-use Ineersa\Tui\Screen\ChatScreen;
 
 /**
  * Tick listener that polls for new runtime events.
@@ -221,5 +217,4 @@ final class TickPollListener implements TuiListenerRegistrar
             return null;
         });
     }
-
 }

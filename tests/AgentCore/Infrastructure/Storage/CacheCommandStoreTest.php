@@ -8,8 +8,8 @@ use Ineersa\AgentCore\Domain\Command\PendingCommand;
 use Ineersa\AgentCore\Infrastructure\Storage\CacheCommandStore;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore;
 use PHPUnit\Framework\Attributes\CoversClass;
-use Psr\Cache\CacheItemPoolInterface;
 use Psr\Cache\CacheItemInterface;
+use Psr\Cache\CacheItemPoolInterface;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\Lock\LockFactory;
 

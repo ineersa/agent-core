@@ -50,8 +50,8 @@ final class SubagentLiveAttentionTest extends TestCase
 
         SubagentLiveAttention::clearWaitingHumanForRun($state, $screen, 'child-run-1');
 
-        self::assertNull($state->subagentLiveCatalog->firstChildNeedingAttention());
-        self::assertNull($this->statusText($screen, 'subagent_live'));
+        $this->assertNull($state->subagentLiveCatalog->firstChildNeedingAttention());
+        $this->assertNull($this->statusText($screen, 'subagent_live'));
     }
 
     public function testMarkCancelledClearsNeedsInputWhileLiveViewActive(): void
@@ -82,13 +82,12 @@ final class SubagentLiveAttentionTest extends TestCase
         SubagentLiveAttention::markCancelledForRun($state, $screen, 'child-run-1');
 
         $child = $state->subagentLiveCatalog->findByArtifactId('agent_a');
-        self::assertNotNull($child);
-        self::assertSame(SubagentLiveStatusEnum::Cancelled, $child->status);
-        self::assertNull($state->subagentLiveCatalog->firstChildNeedingAttention());
-        self::assertNull($this->statusText($screen, 'subagent_live'));
-        self::assertNull($this->statusText($screen, 'agents-live'));
+        $this->assertNotNull($child);
+        $this->assertSame(SubagentLiveStatusEnum::Cancelled, $child->status);
+        $this->assertNull($state->subagentLiveCatalog->firstChildNeedingAttention());
+        $this->assertNull($this->statusText($screen, 'subagent_live'));
+        $this->assertNull($this->statusText($screen, 'agents-live'));
     }
-
 
     public function testMarkActiveChildrenCancelledForParentCancelClearsWaitingHumanOnMain(): void
     {
@@ -110,10 +109,10 @@ final class SubagentLiveAttentionTest extends TestCase
         SubagentLiveAttention::markActiveChildrenCancelledForParentCancel($state, $screen);
 
         $child = $state->subagentLiveCatalog->findByArtifactId('agent_a');
-        self::assertNotNull($child);
-        self::assertSame(SubagentLiveStatusEnum::Cancelled, $child->status);
-        self::assertNull($state->subagentLiveCatalog->firstChildNeedingAttention());
-        self::assertNull($this->statusText($screen, 'subagent_live'));
+        $this->assertNotNull($child);
+        $this->assertSame(SubagentLiveStatusEnum::Cancelled, $child->status);
+        $this->assertNull($state->subagentLiveCatalog->firstChildNeedingAttention());
+        $this->assertNull($this->statusText($screen, 'subagent_live'));
     }
 
     public function testMarkChildNeedsInputForRunSetsWaitingHumanInCatalogAndLiveView(): void
@@ -143,17 +142,17 @@ final class SubagentLiveAttentionTest extends TestCase
         SubagentLiveAttention::markChildNeedsInputForRun($state, $screen, 'child-run-1');
 
         $child = $state->subagentLiveCatalog->findByArtifactId('agent_a');
-        self::assertNotNull($child);
-        self::assertSame(SubagentLiveStatusEnum::WaitingHuman, $child->status);
-        self::assertSame(RunActivityStateEnum::WaitingHuman, $state->subagentLiveView->childActivity);
-        self::assertStringContainsString('needs your input', (string) $this->statusText($screen, 'subagent_live'));
-        self::assertNull($this->statusText($screen, 'agents-live'));
+        $this->assertNotNull($child);
+        $this->assertSame(SubagentLiveStatusEnum::WaitingHuman, $child->status);
+        $this->assertSame(RunActivityStateEnum::WaitingHuman, $state->subagentLiveView->childActivity);
+        $this->assertStringContainsString('needs your input', (string) $this->statusText($screen, 'subagent_live'));
+        $this->assertNull($this->statusText($screen, 'agents-live'));
     }
 
     public function testRefreshAttentionFooterClearsStaleAgentsLiveWhenLiveViewInactive(): void
     {
         $state = new TuiSessionState('parent-session');
-        self::assertFalse($state->subagentLiveView->active);
+        $this->assertFalse($state->subagentLiveView->active);
 
         $screen = new ChatScreen(
             new DefaultTheme(new ThemePalette('test')),
@@ -166,7 +165,7 @@ final class SubagentLiveAttentionTest extends TestCase
 
         SubagentLiveAttention::refreshAttentionFooter($state, $screen);
 
-        self::assertNull($this->statusText($screen, 'agents-live'));
+        $this->assertNull($this->statusText($screen, 'agents-live'));
     }
 
     public function testRefreshAttentionFooterKeepsSubagentLiveMarkerWhileClearingAgentsLiveOnMain(): void
@@ -176,7 +175,7 @@ final class SubagentLiveAttentionTest extends TestCase
             'mode' => 'single', 'status' => 'waiting_human', 'agent_name' => 'scout',
             'artifact_id' => 'agent_a', 'agent_run_id' => 'child-run-1', 'task_summary' => 'Task',
         ]));
-        self::assertFalse($state->subagentLiveView->active);
+        $this->assertFalse($state->subagentLiveView->active);
 
         $screen = new ChatScreen(
             new DefaultTheme(new ThemePalette('test')),
@@ -189,10 +188,9 @@ final class SubagentLiveAttentionTest extends TestCase
 
         SubagentLiveAttention::refreshAttentionFooter($state, $screen);
 
-        self::assertStringContainsString('needs your input', (string) $this->statusText($screen, 'subagent_live'));
-        self::assertNull($this->statusText($screen, 'agents-live'));
+        $this->assertStringContainsString('needs your input', (string) $this->statusText($screen, 'subagent_live'));
+        $this->assertNull($this->statusText($screen, 'agents-live'));
     }
-
 
     public function testRefreshAttentionFooterClearsAgentsLiveEvenWhenLiveViewActive(): void
     {
@@ -221,7 +219,7 @@ final class SubagentLiveAttentionTest extends TestCase
 
         SubagentLiveAttention::refreshAttentionFooter($state, $screen);
 
-        self::assertNull($this->statusText($screen, 'agents-live'));
+        $this->assertNull($this->statusText($screen, 'agents-live'));
     }
 
     private function statusText(ChatScreen $screen, string $key): ?string

@@ -167,7 +167,6 @@ final class SubagentLiveHitlScenarioTest extends TestCase
         $this->assertSame(SubagentLiveStatusEnum::Cancelled, $child?->status);
     }
 
-
     #[Test]
     public function agentsMainReturnClearsAgentsLiveStatusRowOnMainScreen(): void
     {

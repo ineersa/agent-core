@@ -10,9 +10,9 @@ use Ineersa\CodingAgent\Agent\Definition\AgentFrontmatterParser;
 use Ineersa\CodingAgent\Config\AgentsConfig;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
-use Ineersa\CodingAgent\Config\PromptsConfig;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Config\TuiConfig;
+use Ineersa\CodingAgent\Markdown\MarkdownFrontmatterExtractor;
 use Ineersa\CodingAgent\Mcp\Catalog\McpServerCatalogEntryDTO;
 use Ineersa\CodingAgent\Mcp\Catalog\McpServerCatalogStatusEnum;
 use Ineersa\CodingAgent\Mcp\Catalog\McpToolCatalogDTO;
@@ -20,11 +20,6 @@ use Ineersa\CodingAgent\Mcp\Catalog\McpToolCatalogStoreInterface;
 use Ineersa\CodingAgent\Mcp\Config\McpConfigLoader;
 use Ineersa\CodingAgent\Mcp\Config\McpConfigValidator;
 use Ineersa\CodingAgent\Mcp\Config\McpEnvInterpolator;
-use Ineersa\CodingAgent\Markdown\MarkdownFrontmatterExtractor;
-use Ineersa\CodingAgent\PromptTemplate\PromptTemplateFrontmatterParser;
-use Ineersa\CodingAgent\PromptTemplate\PromptTemplateLoader;
-use Ineersa\CodingAgent\PromptTemplate\PromptTemplateService;
-use Ineersa\CodingAgent\PromptTemplate\PromptTemplatesRuntimeConfig;
 use Ineersa\CodingAgent\Runtime\Contract\PromptTemplateCatalogInterface;
 use Ineersa\CodingAgent\Runtime\Contract\PromptTemplateCommand;
 use Ineersa\CodingAgent\Skills\SkillDiscovery;
@@ -108,18 +103,17 @@ final class CompactHeaderSnapshotProviderTest extends TestCase
 
         $snapshot = (new CompactHeaderSnapshotProvider($promptCatalog, $skillDiscovery, $agentDiscovery, $mcpStore, $this->createMcpConfigLoader()))->build('sess-1');
 
-        self::assertSame(['plan', 'review'], $snapshot->prompts);
-        self::assertSame(['castor'], $snapshot->skills);
-        self::assertSame(['scout'], $snapshot->agentNames);
-        self::assertCount(2, $snapshot->mcpServers);
+        $this->assertSame(['plan', 'review'], $snapshot->prompts);
+        $this->assertSame(['castor'], $snapshot->skills);
+        $this->assertSame(['scout'], $snapshot->agentNames);
+        $this->assertCount(2, $snapshot->mcpServers);
         $byName = [];
         foreach ($snapshot->mcpServers as $entry) {
             $byName[$entry->name] = $entry;
         }
-        self::assertTrue($byName['browser']->isConnected);
-        self::assertFalse($byName['bad']->isConnected);
+        $this->assertTrue($byName['browser']->isConnected);
+        $this->assertFalse($byName['bad']->isConnected);
     }
-
 
     #[Test]
     public function emptySessionIdSkipsMcpRead(): void
@@ -156,7 +150,7 @@ final class CompactHeaderSnapshotProviderTest extends TestCase
 
         $snapshot = (new CompactHeaderSnapshotProvider($promptCatalog, $skillDiscovery, $agentDiscovery, $mcpStore, $this->createMcpConfigLoader()))->build('');
 
-        self::assertSame([], $snapshot->mcpServers);
+        $this->assertSame([], $snapshot->mcpServers);
     }
 
     #[Test]
@@ -185,7 +179,7 @@ final class CompactHeaderSnapshotProviderTest extends TestCase
         );
 
         $mcpStore = $this->createMock(McpToolCatalogStoreInterface::class);
-        $mcpStore->expects(self::once())->method('read')->with('sess-nonempty')->willReturn(null);
+        $mcpStore->expects($this->once())->method('read')->with('sess-nonempty')->willReturn(null);
 
         (new CompactHeaderSnapshotProvider($promptCatalog, $skillDiscovery, $agentDiscovery, $mcpStore, $this->createMcpConfigLoader()))->build('sess-nonempty');
     }
@@ -220,28 +214,8 @@ final class CompactHeaderSnapshotProviderTest extends TestCase
 
         $snapshot = (new CompactHeaderSnapshotProvider($promptCatalog, $skillDiscovery, $agentDiscovery, $mcpStore, $this->createMcpConfigLoader()))->build('sess-2');
 
-        self::assertSame([], $snapshot->mcpServers);
-        self::assertTrue($snapshot->isEmpty());
-    }
-
-    private function appConfig(): AppConfig
-    {
-        return new AppConfig(
-            tui: new TuiConfig(theme: 'default', themePaths: []),
-            logging: new LoggingConfig(),
-            cwd: $this->tmpDir,
-        );
-    }
-
-
-    private function createMcpConfigLoader(): McpConfigLoader
-    {
-        return new McpConfigLoader(
-            new SettingsPathResolver($this->tmpDir, $this->tmpDir),
-            new McpConfigValidator(),
-            new McpEnvInterpolator(),
-            $this->tmpDir,
-        );
+        $this->assertSame([], $snapshot->mcpServers);
+        $this->assertTrue($snapshot->isEmpty());
     }
 
     #[Test]
@@ -306,8 +280,27 @@ JSON;
             $byName[$entry->name] = $entry;
         }
 
-        self::assertTrue($byName['context7']->isGlobal);
-        self::assertFalse($byName['websearch']->isGlobal);
+        $this->assertTrue($byName['context7']->isGlobal);
+        $this->assertFalse($byName['websearch']->isGlobal);
+    }
+
+    private function appConfig(): AppConfig
+    {
+        return new AppConfig(
+            tui: new TuiConfig(theme: 'default', themePaths: []),
+            logging: new LoggingConfig(),
+            cwd: $this->tmpDir,
+        );
+    }
+
+    private function createMcpConfigLoader(): McpConfigLoader
+    {
+        return new McpConfigLoader(
+            new SettingsPathResolver($this->tmpDir, $this->tmpDir),
+            new McpConfigValidator(),
+            new McpEnvInterpolator(),
+            $this->tmpDir,
+        );
     }
 
     private function agentParser(): AgentDefinitionParser

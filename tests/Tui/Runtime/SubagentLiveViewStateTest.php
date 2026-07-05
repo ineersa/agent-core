@@ -29,9 +29,9 @@ final class SubagentLiveViewStateTest extends TestCase
 
         $view->enter($child);
 
-        self::assertSame([$block], $view->childTranscript);
-        self::assertSame(3, $view->childLastSeq);
-        self::assertSame(RunActivityStateEnum::Completed, $view->childActivity);
+        $this->assertSame([$block], $view->childTranscript);
+        $this->assertSame(3, $view->childLastSeq);
+        $this->assertSame(RunActivityStateEnum::Completed, $view->childActivity);
     }
 
     public function testPersistCurrentChildCacheStoresActiveChildSnapshot(): void
@@ -47,8 +47,8 @@ final class SubagentLiveViewStateTest extends TestCase
 
         $view->persistCurrentChildCache();
 
-        self::assertArrayHasKey('run-b', $view->childCaches);
-        self::assertSame('cached', $view->childCaches['run-b']['transcript'][0]->text);
+        $this->assertArrayHasKey('run-b', $view->childCaches);
+        $this->assertSame('cached', $view->childCaches['run-b']['transcript'][0]->text);
     }
 
     private function child(string $runId, string $artifactId): SubagentLiveChildDTO

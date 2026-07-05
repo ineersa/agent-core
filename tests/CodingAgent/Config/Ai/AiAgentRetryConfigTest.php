@@ -13,9 +13,9 @@ final class AiAgentRetryConfigTest extends TestCase
     public function testFromArrayEmptyUsesResolveDefaults(): void
     {
         $config = AiAgentRetryConfig::fromArray([]);
-        self::assertSame(2, $config->resolveMaxAttempts());
-        self::assertSame(1000, $config->resolveBaseDelayMs());
-        self::assertSame(60000, $config->resolveMaxDelayMs());
+        $this->assertSame(2, $config->resolveMaxAttempts());
+        $this->assertSame(1000, $config->resolveBaseDelayMs());
+        $this->assertSame(60000, $config->resolveMaxDelayMs());
     }
 
     public function testFromArrayExplicitInts(): void
@@ -25,15 +25,15 @@ final class AiAgentRetryConfigTest extends TestCase
             'base_delay_ms' => 250,
             'max_delay_ms' => 5000,
         ]);
-        self::assertSame(5, $config->resolveMaxAttempts());
-        self::assertSame(250, $config->resolveBaseDelayMs());
-        self::assertSame(5000, $config->resolveMaxDelayMs());
+        $this->assertSame(5, $config->resolveMaxAttempts());
+        $this->assertSame(250, $config->resolveBaseDelayMs());
+        $this->assertSame(5000, $config->resolveMaxDelayMs());
     }
 
     public function testFromArrayNumericString(): void
     {
         $config = AiAgentRetryConfig::fromArray(['max_attempts' => '3']);
-        self::assertSame(3, $config->resolveMaxAttempts());
+        $this->assertSame(3, $config->resolveMaxAttempts());
     }
 
     public function testAiConfigReadsAgentRetry(): void
@@ -41,8 +41,8 @@ final class AiAgentRetryConfigTest extends TestCase
         $config = AiConfig::fromArray([
             'agent_retry' => ['max_attempts' => 1, 'base_delay_ms' => 10],
         ]);
-        self::assertSame(1, $config->agentRetry->resolveMaxAttempts());
-        self::assertSame(10, $config->agentRetry->resolveBaseDelayMs());
+        $this->assertSame(1, $config->agentRetry->resolveMaxAttempts());
+        $this->assertSame(10, $config->agentRetry->resolveBaseDelayMs());
     }
 
     public function testInvalidValueThrows(): void

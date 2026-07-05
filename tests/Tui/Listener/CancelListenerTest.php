@@ -20,13 +20,12 @@ use Ineersa\Tui\Question\QuestionCoordinator;
 use Ineersa\Tui\Question\QuestionKind;
 use Ineersa\Tui\Question\QuestionRequest;
 use Ineersa\Tui\Question\QuestionSource;
+use Ineersa\Tui\Runtime\RunActivityStateEnum;
 use Ineersa\Tui\Runtime\SubagentLiveChildDTO;
 use Ineersa\Tui\Runtime\SubagentLiveStatusEnum;
-use Ineersa\Tui\Runtime\RunActivityStateEnum;
-use Ineersa\Tui\Runtime\TuiRuntimeContext;
 use Ineersa\Tui\Runtime\TuiSessionState;
-use Ineersa\Tui\Tests\Support\TuiRuntimeContextBuilderTrait;
 use Ineersa\Tui\Screen\ChatScreen;
+use Ineersa\Tui\Tests\Support\TuiRuntimeContextBuilderTrait;
 use Ineersa\Tui\Theme\DefaultTheme;
 use Ineersa\Tui\Theme\ThemePalette;
 use PHPUnit\Framework\Attributes\Test;
@@ -287,7 +286,6 @@ class CancelListenerTest extends TestCase
         $this->dispatchCancelEvent(captureErrorEnv: '0');
     }
 
-
     // ── Subagent live view: ESC targets selected child ───────────
 
     #[Test]
@@ -350,19 +348,18 @@ class CancelListenerTest extends TestCase
                 $cancelled = true;
             },
         );
-        self::assertTrue($coordinator->actionRequired());
+        $this->assertTrue($coordinator->actionRequired());
 
         $this->client->expects($this->never())
             ->method('cancel');
 
         $this->dispatchCancelEvent(questionCoordinator: $coordinator);
 
-        self::assertTrue($cancelled, 'ESC must invoke the question cancel callback for text HITL');
-        self::assertFalse($coordinator->actionRequired(), 'Text HITL should be dismissed by ESC');
+        $this->assertTrue($cancelled, 'ESC must invoke the question cancel callback for text HITL');
+        $this->assertFalse($coordinator->actionRequired(), 'Text HITL should be dismissed by ESC');
         $this->assertSame(RunActivityStateEnum::Running, $this->state->subagentLiveView->childActivity);
         $this->assertSame(RunActivityStateEnum::Running, $this->state->activity);
     }
-
 
     #[Test]
     public function escWithActiveChildConfirmQuestionCancelsQuestionNotChild(): void
@@ -420,9 +417,9 @@ class CancelListenerTest extends TestCase
 
         $this->dispatchCancelEvent(questionCoordinator: $coordinator);
 
-        self::assertTrue($cancelled);
-        self::assertFalse($coordinator->actionRequired());
-        self::assertNull($this->state->subagentLiveCatalog->firstChildNeedingAttention());
+        $this->assertTrue($cancelled);
+        $this->assertFalse($coordinator->actionRequired());
+        $this->assertNull($this->state->subagentLiveCatalog->firstChildNeedingAttention());
     }
 
     #[Test]
@@ -458,12 +455,12 @@ class CancelListenerTest extends TestCase
                 allowOther: true,
             ),
         );
-        self::assertTrue($coordinator->actionRequired());
+        $this->assertTrue($coordinator->actionRequired());
 
         $ctrlRef = new \ReflectionClass(QuestionController::class);
         $controller = $ctrlRef->newInstanceWithoutConstructor();
         $ctrlRef->getProperty('isOpen')->setValue($controller, true);
-        self::assertTrue($controller->isOpen());
+        $this->assertTrue($controller->isOpen());
 
         $this->dispatchCancelEvent(questionController: $controller, questionCoordinator: $coordinator);
 
@@ -493,14 +490,14 @@ class CancelListenerTest extends TestCase
         $qcRef = new \ReflectionClass($qc);
         $awaitProp = $qcRef->getProperty('awaitingFreeForm');
         $awaitProp->setValue($qc, true);
-        self::assertTrue($qc->isAwaitingFreeForm());
+        $this->assertTrue($qc->isAwaitingFreeForm());
 
         // Pass the pre-configured controller to dispatchCancelEvent
         $this->dispatchCancelEvent(captureErrorEnv: '1', questionController: $qc);
 
         // After dispatch, restoreFromFreeForm() should have reset the flag
         // (regardless of whether it could re-open — no screen in this path)
-        self::assertFalse($qc->isAwaitingFreeForm(), 'restoreFromFreeForm must reset awaitingFreeForm');
+        $this->assertFalse($qc->isAwaitingFreeForm(), 'restoreFromFreeForm must reset awaitingFreeForm');
 
         // THE KEY ASSERTION: client->cancel() was never called despite the
         // run being active with a valid handle and awaitingFreeForm=true.
@@ -532,8 +529,7 @@ class CancelListenerTest extends TestCase
         ?string $captureErrorEnv = '1',
         ?QuestionController $questionController = null,
         ?QuestionCoordinator $questionCoordinator = null,
-    ): ChatScreen
-    {
+    ): ChatScreen {
         $tui = new Tui();
         $theme = new DefaultTheme(new ThemePalette('test'));
         $promptEditor = new PromptEditor();

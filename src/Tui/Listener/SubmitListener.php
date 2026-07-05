@@ -15,7 +15,6 @@ use Ineersa\Tui\Command\DispatchShellCommand;
 use Ineersa\Tui\Command\ExitApplication;
 use Ineersa\Tui\Command\Hotkey\HotkeyBindingDTO;
 use Ineersa\Tui\Command\Hotkey\HotkeyTableData;
-use Ineersa\Tui\Command\SlashCommand;
 use Ineersa\Tui\Command\StatusUpdate;
 use Ineersa\Tui\Command\SubagentLiveInputPolicy;
 use Ineersa\Tui\Command\SubmissionRouter;
@@ -662,5 +661,4 @@ final class SubmitListener implements TuiListenerRegistrar
 
         return $result;
     }
-
 }

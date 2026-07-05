@@ -5,16 +5,14 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Tests\Listener;
 
 use Ineersa\Tui\Command\SlashCommand;
+use Ineersa\Tui\Editor\PromptEditor;
 use Ineersa\Tui\Listener\AgentsMainCommandHandler;
-use Ineersa\Tui\Runtime\RunActivityStateEnum;
 use Ineersa\Tui\Runtime\SubagentLiveChildDTO;
 use Ineersa\Tui\Runtime\SubagentLiveStatusEnum;
-use Ineersa\Tui\Runtime\SubagentLiveViewState;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Screen\ChatScreen;
 use Ineersa\Tui\Theme\DefaultTheme;
 use Ineersa\Tui\Theme\ThemePalette;
-use Ineersa\Tui\Editor\PromptEditor;
 use PHPUnit\Framework\TestCase;
 
 final class AgentsMainCommandHandlerTest extends TestCase
@@ -39,9 +37,9 @@ final class AgentsMainCommandHandlerTest extends TestCase
         $handler = new AgentsMainCommandHandler($state, $screen);
         $handler->handle(new SlashCommand('agents-main', '', '/agents-main'));
 
-        self::assertFalse($state->subagentLiveView->active);
-        self::assertNull($this->statusText($screen, 'agents-live'));
-        self::assertArrayNotHasKey('agents-live', $this->allStatusEntries($screen));
+        $this->assertFalse($state->subagentLiveView->active);
+        $this->assertNull($this->statusText($screen, 'agents-live'));
+        $this->assertArrayNotHasKey('agents-live', $this->allStatusEntries($screen));
     }
 
     public function testAgentsMainNoOpWhenNotInLiveView(): void
@@ -53,8 +51,8 @@ final class AgentsMainCommandHandlerTest extends TestCase
         $handler = new AgentsMainCommandHandler($state, $screen);
         $handler->handle(new SlashCommand('agents-main', '', '/agents-main'));
 
-        self::assertFalse($state->subagentLiveView->active);
-        self::assertSame('stale live text', $this->statusText($screen, 'agents-live'));
+        $this->assertFalse($state->subagentLiveView->active);
+        $this->assertSame('stale live text', $this->statusText($screen, 'agents-live'));
     }
 
     private function screen(): ChatScreen

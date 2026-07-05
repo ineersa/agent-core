@@ -13,9 +13,9 @@ use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTranslator;
 use Ineersa\CodingAgent\Session\SessionTurnTreeProvider;
-use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 
 #[CoversClass(SessionTurnTreeProvider::class)]
 final class SessionTurnTreeProviderTest extends TestCase
@@ -27,11 +27,11 @@ final class SessionTurnTreeProviderTest extends TestCase
         $provider = $this->createProvider([]);
         $tree = $provider->forSession($this->runId);
 
-        self::assertSame($this->runId, $tree->runId);
-        self::assertSame([], $tree->nodesByTurnNo);
-        self::assertSame([], $tree->rootTurnNos);
-        self::assertNull($tree->currentLeafTurnNo);
-        self::assertSame([], $tree->activePathTurnNos);
+        $this->assertSame($this->runId, $tree->runId);
+        $this->assertSame([], $tree->nodesByTurnNo);
+        $this->assertSame([], $tree->rootTurnNos);
+        $this->assertNull($tree->currentLeafTurnNo);
+        $this->assertSame([], $tree->activePathTurnNos);
     }
 
     public function testForSessionMapsLinearStreamCorrectly(): void
@@ -51,23 +51,23 @@ final class SessionTurnTreeProviderTest extends TestCase
         $provider = $this->createProvider($events);
         $tree = $provider->forSession($this->runId);
 
-        self::assertCount(2, $tree->nodesByTurnNo);
-        self::assertSame([1], $tree->rootTurnNos);
-        self::assertSame(2, $tree->currentLeafTurnNo);
-        self::assertSame([1, 2], $tree->activePathTurnNos);
+        $this->assertCount(2, $tree->nodesByTurnNo);
+        $this->assertSame([1], $tree->rootTurnNos);
+        $this->assertSame(2, $tree->currentLeafTurnNo);
+        $this->assertSame([1, 2], $tree->activePathTurnNos);
 
         $turn1 = $tree->nodesByTurnNo[1];
-        self::assertNull($turn1->parentTurnNo);
-        self::assertSame([2], $turn1->childTurnNos);
-        self::assertFalse($turn1->isCurrentLeaf);
-        self::assertSame(2, $turn1->anchorSeq);
-        self::assertStringContainsString('Hello', $turn1->title);
+        $this->assertNull($turn1->parentTurnNo);
+        $this->assertSame([2], $turn1->childTurnNos);
+        $this->assertFalse($turn1->isCurrentLeaf);
+        $this->assertSame(2, $turn1->anchorSeq);
+        $this->assertStringContainsString('Hello', $turn1->title);
 
         $turn2 = $tree->nodesByTurnNo[2];
-        self::assertSame(1, $turn2->parentTurnNo);
-        self::assertSame([], $turn2->childTurnNos);
-        self::assertTrue($turn2->isCurrentLeaf);
-        self::assertSame(4, $turn2->anchorSeq);
+        $this->assertSame(1, $turn2->parentTurnNo);
+        $this->assertSame([], $turn2->childTurnNos);
+        $this->assertTrue($turn2->isCurrentLeaf);
+        $this->assertSame(4, $turn2->anchorSeq);
     }
 
     public function testForSessionMapsBranchedStreamCorrectly(): void
@@ -93,23 +93,23 @@ final class SessionTurnTreeProviderTest extends TestCase
         $provider = $this->createProvider($events);
         $tree = $provider->forSession($this->runId);
 
-        self::assertCount(3, $tree->nodesByTurnNo);
-        self::assertSame([1], $tree->rootTurnNos);
-        self::assertSame(3, $tree->currentLeafTurnNo);
-        self::assertSame([1, 3], $tree->activePathTurnNos);
+        $this->assertCount(3, $tree->nodesByTurnNo);
+        $this->assertSame([1], $tree->rootTurnNos);
+        $this->assertSame(3, $tree->currentLeafTurnNo);
+        $this->assertSame([1, 3], $tree->activePathTurnNos);
 
         $turn1 = $tree->nodesByTurnNo[1];
-        self::assertNull($turn1->parentTurnNo);
-        self::assertSame([2, 3], $turn1->childTurnNos);
-        self::assertFalse($turn1->isCurrentLeaf);
+        $this->assertNull($turn1->parentTurnNo);
+        $this->assertSame([2, 3], $turn1->childTurnNos);
+        $this->assertFalse($turn1->isCurrentLeaf);
 
         $turn2 = $tree->nodesByTurnNo[2];
-        self::assertSame(1, $turn2->parentTurnNo);
-        self::assertFalse($turn2->isCurrentLeaf);
+        $this->assertSame(1, $turn2->parentTurnNo);
+        $this->assertFalse($turn2->isCurrentLeaf);
 
         $turn3 = $tree->nodesByTurnNo[3];
-        self::assertSame(1, $turn3->parentTurnNo);
-        self::assertTrue($turn3->isCurrentLeaf);
+        $this->assertSame(1, $turn3->parentTurnNo);
+        $this->assertTrue($turn3->isCurrentLeaf);
     }
 
     public function testActivePathRuntimeEventsFiltersToTargetLeaf(): void
@@ -149,19 +149,19 @@ final class SessionTurnTreeProviderTest extends TestCase
         $seqs = array_map(static fn (RuntimeEvent $e): int => $e->seq, $runtimeEvents);
         $types = array_map(static fn (RuntimeEvent $e): string => $e->type, $runtimeEvents);
 
-        self::assertCount(5, $runtimeEvents, 'Expected only active-path events minus dropped LeafSet');
+        $this->assertCount(5, $runtimeEvents, 'Expected only active-path events minus dropped LeafSet');
 
-        self::assertContains(1, $seqs, 'run.started must be included');
-        self::assertContains(2, $seqs, 'turn.started for turn 1 must be included');
-        self::assertContains(4, $seqs, 'assistant.message_completed for turn 1 must be included');
-        self::assertContains(9, $seqs, 'turn.started for turn 3 must be included');
-        self::assertContains(11, $seqs, 'assistant.message_completed for turn 3 must be included');
+        $this->assertContains(1, $seqs, 'run.started must be included');
+        $this->assertContains(2, $seqs, 'turn.started for turn 1 must be included');
+        $this->assertContains(4, $seqs, 'assistant.message_completed for turn 1 must be included');
+        $this->assertContains(9, $seqs, 'turn.started for turn 3 must be included');
+        $this->assertContains(11, $seqs, 'assistant.message_completed for turn 3 must be included');
 
-        self::assertNotContains(5, $seqs, 'turn.started for abandoned turn 2 must be excluded');
-        self::assertNotContains(7, $seqs, 'assistant.message_completed for abandoned turn 2 must be excluded');
+        $this->assertNotContains(5, $seqs, 'turn.started for abandoned turn 2 must be excluded');
+        $this->assertNotContains(7, $seqs, 'assistant.message_completed for abandoned turn 2 must be excluded');
 
         // Order must be by seq (filterForLeaf sorts filtered events by seq)
-        self::assertSame([1, 2, 4, 9, 11], array_values($seqs), 'Active-path events must be in seq order');
+        $this->assertSame([1, 2, 4, 9, 11], array_values($seqs), 'Active-path events must be in seq order');
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────

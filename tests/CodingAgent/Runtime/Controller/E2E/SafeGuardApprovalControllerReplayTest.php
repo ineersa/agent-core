@@ -29,11 +29,6 @@ final class SafeGuardApprovalControllerReplayTest extends ControllerReplayE2eTes
 {
     private string $targetOutsidePath = '';
 
-    protected function tempDirPrefix(): string
-    {
-        return 'test-sg-approval';
-    }
-
     protected function setUp(): void
     {
         parent::setUp();
@@ -46,58 +41,6 @@ final class SafeGuardApprovalControllerReplayTest extends ControllerReplayE2eTes
 
         // Ensure file does not exist before test
         @unlink($this->targetOutsidePath);
-    }
-
-    /**
-     * @return list<array<string, mixed>>
-     */
-    protected function replayFixtures(): array
-    {
-        $path = '../sg-'.$this->sessionId.'.txt';
-        $sessionId = $this->sessionId;
-
-        $buildDeltas = static function (string $callId) use ($sessionId, $path): array {
-            return [
-                ['type' => 'tool_call_start', 'id' => $callId, 'name' => 'write'],
-                ['type' => 'tool_input_delta', 'id' => $callId, 'name' => 'write', 'partial_json' => '{"path":"../sg'],
-                ['type' => 'tool_input_delta', 'id' => $callId, 'name' => 'write', 'partial_json' => '-'.$sessionId],
-                ['type' => 'tool_input_delta', 'id' => $callId, 'name' => 'write', 'partial_json' => '.txt","content":"h'],
-                ['type' => 'tool_input_delta', 'id' => $callId, 'name' => 'write', 'partial_json' => 'ello"}'],
-                ['type' => 'tool_call_complete', 'tool_calls' => [
-                    ['id' => $callId, 'name' => 'write', 'arguments' => ['path' => $path, 'content' => 'hello']],
-                ]],
-            ];
-        };
-
-        // First LLM call: returns a write tool call with path outside CWD.
-        $firstFixture = [
-            'model' => 'llama_cpp/test',
-            'provider_id' => 'llama_cpp',
-            'reasoning' => 'off',
-            'deltas' => $buildDeltas('call_sg_1'),
-            'stop_reason' => 'tool_call',
-        ];
-
-        // Second LLM call (after the blocking-poll returns and tool executes):
-        // the LLM sees the real write result and returns text "done".
-        $secondFixture = [
-            'model' => 'llama_cpp/test',
-            'provider_id' => 'llama_cpp',
-            'reasoning' => 'off',
-            'deltas' => [
-                ['type' => 'text', 'content' => 'done'],
-            ],
-            'stop_reason' => 'stop',
-        ];
-
-        return [$firstFixture, $secondFixture];
-    }
-
-    protected function replayExtraEnv(): array
-    {
-        return [
-            'HATFIELD_APPROVAL_CHANNEL' => 'controller',
-        ];
     }
 
     /**
@@ -319,5 +262,62 @@ final class SafeGuardApprovalControllerReplayTest extends ControllerReplayE2eTes
         $this->assertSame('hello', trim((string) file_get_contents($this->targetOutsidePath)),
             'File content must match what the LLM wrote. '
             .$this->collectDiagnostics($events));
+    }
+
+    protected function tempDirPrefix(): string
+    {
+        return 'test-sg-approval';
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    protected function replayFixtures(): array
+    {
+        $path = '../sg-'.$this->sessionId.'.txt';
+        $sessionId = $this->sessionId;
+
+        $buildDeltas = static function (string $callId) use ($sessionId, $path): array {
+            return [
+                ['type' => 'tool_call_start', 'id' => $callId, 'name' => 'write'],
+                ['type' => 'tool_input_delta', 'id' => $callId, 'name' => 'write', 'partial_json' => '{"path":"../sg'],
+                ['type' => 'tool_input_delta', 'id' => $callId, 'name' => 'write', 'partial_json' => '-'.$sessionId],
+                ['type' => 'tool_input_delta', 'id' => $callId, 'name' => 'write', 'partial_json' => '.txt","content":"h'],
+                ['type' => 'tool_input_delta', 'id' => $callId, 'name' => 'write', 'partial_json' => 'ello"}'],
+                ['type' => 'tool_call_complete', 'tool_calls' => [
+                    ['id' => $callId, 'name' => 'write', 'arguments' => ['path' => $path, 'content' => 'hello']],
+                ]],
+            ];
+        };
+
+        // First LLM call: returns a write tool call with path outside CWD.
+        $firstFixture = [
+            'model' => 'llama_cpp/test',
+            'provider_id' => 'llama_cpp',
+            'reasoning' => 'off',
+            'deltas' => $buildDeltas('call_sg_1'),
+            'stop_reason' => 'tool_call',
+        ];
+
+        // Second LLM call (after the blocking-poll returns and tool executes):
+        // the LLM sees the real write result and returns text "done".
+        $secondFixture = [
+            'model' => 'llama_cpp/test',
+            'provider_id' => 'llama_cpp',
+            'reasoning' => 'off',
+            'deltas' => [
+                ['type' => 'text', 'content' => 'done'],
+            ],
+            'stop_reason' => 'stop',
+        ];
+
+        return [$firstFixture, $secondFixture];
+    }
+
+    protected function replayExtraEnv(): array
+    {
+        return [
+            'HATFIELD_APPROVAL_CHANNEL' => 'controller',
+        ];
     }
 }

@@ -31,7 +31,7 @@ final class SymfonyAiProviderRegistryTest extends TestCase
         $factory = new EmptyStubFactory($this->appConfig, $this->createStub(EventDispatcherInterface::class));
         $registry = new SymfonyAiProviderRegistry($factory);
 
-        self::assertNull($registry->get('nonexistent'));
+        $this->assertNull($registry->get('nonexistent'));
     }
 
     public function testGetReturnsProviderById(): void
@@ -45,7 +45,7 @@ final class SymfonyAiProviderRegistryTest extends TestCase
 
         $registry = new SymfonyAiProviderRegistry($factory);
 
-        self::assertSame($provider, $registry->get('deepseek'));
+        $this->assertSame($provider, $registry->get('deepseek'));
     }
 
     public function testAllReturnsAllProviders(): void
@@ -61,9 +61,9 @@ final class SymfonyAiProviderRegistryTest extends TestCase
         $registry = new SymfonyAiProviderRegistry($factory);
 
         $all = $registry->all();
-        self::assertCount(2, $all);
-        self::assertSame($deepseek, $all['deepseek']);
-        self::assertSame($zai, $all['zai']);
+        $this->assertCount(2, $all);
+        $this->assertSame($deepseek, $all['deepseek']);
+        $this->assertSame($zai, $all['zai']);
     }
 
     public function testLazyInitializationOnlyCallsFactoryOnce(): void
@@ -75,12 +75,12 @@ final class SymfonyAiProviderRegistryTest extends TestCase
         $registry->all();
         $registry->get('anything');
 
-        self::assertSame(1, $factory->invokedCount);
+        $this->assertSame(1, $factory->invokedCount);
     }
 }
 
 /**
- * @internal Test helper — extends SymfonyAiProviderFactory to return empty providers.
+ * @internal test helper — extends SymfonyAiProviderFactory to return empty providers
  */
 final class EmptyStubFactory extends SymfonyAiProviderFactory
 {
@@ -96,7 +96,7 @@ final class EmptyStubFactory extends SymfonyAiProviderFactory
 }
 
 /**
- * @internal Test helper — extends SymfonyAiProviderFactory to return fixed providers.
+ * @internal test helper — extends SymfonyAiProviderFactory to return fixed providers
  */
 final class FixedProviderFactory extends SymfonyAiProviderFactory
 {
@@ -116,7 +116,7 @@ final class FixedProviderFactory extends SymfonyAiProviderFactory
 }
 
 /**
- * @internal Test helper — extends SymfonyAiProviderFactory to count calls.
+ * @internal test helper — extends SymfonyAiProviderFactory to count calls
  */
 final class CountingCallsFactory extends SymfonyAiProviderFactory
 {

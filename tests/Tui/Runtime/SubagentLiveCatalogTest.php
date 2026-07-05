@@ -26,9 +26,9 @@ final class SubagentLiveCatalogTest extends TestCase
         ]));
 
         $all = $catalog->all();
-        self::assertCount(1, $all);
-        self::assertSame('child-run-1', $all[0]->agentRunId);
-        self::assertSame(SubagentLiveStatusEnum::Running, $all[0]->status);
+        $this->assertCount(1, $all);
+        $this->assertSame('child-run-1', $all[0]->agentRunId);
+        $this->assertSame(SubagentLiveStatusEnum::Running, $all[0]->status);
     }
 
     public function testPreservesAgentRunIdWhenLaterProgressOmitsIt(): void
@@ -44,9 +44,9 @@ final class SubagentLiveCatalogTest extends TestCase
         ]));
 
         $child = $catalog->findByArtifactId('agent_a');
-        self::assertNotNull($child);
-        self::assertSame('child-run-1', $child->agentRunId);
-        self::assertSame(SubagentLiveStatusEnum::Completed, $child->status);
+        $this->assertNotNull($child);
+        $this->assertSame('child-run-1', $child->agentRunId);
+        $this->assertSame(SubagentLiveStatusEnum::Completed, $child->status);
     }
 
     public function testIgnoresRowWithoutResolvableAgentRunId(): void
@@ -56,7 +56,7 @@ final class SubagentLiveCatalogTest extends TestCase
             'mode' => 'single', 'status' => 'running', 'agent_name' => 'scout',
             'artifact_id' => 'agent_a', 'task_summary' => 'No id',
         ]));
-        self::assertSame([], $catalog->all());
+        $this->assertSame([], $catalog->all());
     }
 
     public function testIngestsParallelChildrenRows(): void
@@ -69,10 +69,9 @@ final class SubagentLiveCatalogTest extends TestCase
                 ['agent_name' => 'worker', 'artifact_id' => 'a2', 'agent_run_id' => 'run-2', 'status' => 'completed', 'task_summary' => 'Two'],
             ],
         ]));
-        self::assertCount(2, $catalog->all());
-        self::assertSame(SubagentLiveStatusEnum::Completed, $catalog->findByArtifactId('a2')?->status);
+        $this->assertCount(2, $catalog->all());
+        $this->assertSame(SubagentLiveStatusEnum::Completed, $catalog->findByArtifactId('a2')?->status);
     }
-
 
     public function testApplyChildStatusOptimisticallyUpdatesWaitingHuman(): void
     {
@@ -84,9 +83,9 @@ final class SubagentLiveCatalogTest extends TestCase
 
         $catalog->applyChildStatus('agent_a', SubagentLiveStatusEnum::Running);
         $child = $catalog->findByArtifactId('agent_a');
-        self::assertNotNull($child);
-        self::assertSame(SubagentLiveStatusEnum::Running, $child->status);
-        self::assertNull($catalog->firstChildNeedingAttention());
+        $this->assertNotNull($child);
+        $this->assertSame(SubagentLiveStatusEnum::Running, $child->status);
+        $this->assertNull($catalog->firstChildNeedingAttention());
     }
 
     public function testStaleWaitingHumanProgressDoesNotDowngradeCancelledCatalogEntry(): void
@@ -102,9 +101,9 @@ final class SubagentLiveCatalogTest extends TestCase
         ]));
 
         $child = $catalog->findByArtifactId('agent_a');
-        self::assertNotNull($child);
-        self::assertSame(SubagentLiveStatusEnum::Cancelled, $child->status);
-        self::assertNull($catalog->firstChildNeedingAttention());
+        $this->assertNotNull($child);
+        $this->assertSame(SubagentLiveStatusEnum::Cancelled, $child->status);
+        $this->assertNull($catalog->firstChildNeedingAttention());
     }
 
     public function testCompletedProgressClearsNeedsAttentionAfterWaitingHuman(): void
@@ -114,26 +113,15 @@ final class SubagentLiveCatalogTest extends TestCase
             'mode' => 'single', 'status' => 'waiting_human', 'agent_name' => 'scout',
             'artifact_id' => 'agent_a', 'agent_run_id' => 'child-run-1', 'task_summary' => 'Task',
         ]));
-        self::assertNotNull($catalog->firstChildNeedingAttention());
+        $this->assertNotNull($catalog->firstChildNeedingAttention());
 
         $catalog->ingestRuntimeEvent($this->progressEvent('parent-1', [
             'mode' => 'single', 'status' => 'completed', 'agent_name' => 'scout',
             'artifact_id' => 'agent_a', 'agent_run_id' => 'child-run-1', 'task_summary' => 'Done',
         ]));
 
-        self::assertNull($catalog->firstChildNeedingAttention());
-        self::assertSame(SubagentLiveStatusEnum::Completed, $catalog->findByArtifactId('agent_a')?->status);
-    }
-
-    /** @param array<string, mixed> $progress */
-    private function progressEvent(string $runId, array $progress): RuntimeEvent
-    {
-        return new RuntimeEvent(
-            type: RuntimeEventTypeEnum::ToolExecutionOutputDelta->value,
-            runId: $runId,
-            seq: 1,
-            payload: ['tool_call_id' => 'tc1', 'tool_name' => 'subagent', 'delta' => '', 'subagent_progress' => $progress],
-        );
+        $this->assertNull($catalog->firstChildNeedingAttention());
+        $this->assertSame(SubagentLiveStatusEnum::Completed, $catalog->findByArtifactId('agent_a')?->status);
     }
 
     public function testWaitingHumanChildrenSortBeforeRunning(): void
@@ -148,7 +136,18 @@ final class SubagentLiveCatalogTest extends TestCase
         ]));
 
         $all = $catalog->all();
-        self::assertSame('a2', $all[0]->artifactId);
-        self::assertTrue($all[0]->needsAttention());
+        $this->assertSame('a2', $all[0]->artifactId);
+        $this->assertTrue($all[0]->needsAttention());
+    }
+
+    /** @param array<string, mixed> $progress */
+    private function progressEvent(string $runId, array $progress): RuntimeEvent
+    {
+        return new RuntimeEvent(
+            type: RuntimeEventTypeEnum::ToolExecutionOutputDelta->value,
+            runId: $runId,
+            seq: 1,
+            payload: ['tool_call_id' => 'tc1', 'tool_name' => 'subagent', 'delta' => '', 'subagent_progress' => $progress],
+        );
     }
 }

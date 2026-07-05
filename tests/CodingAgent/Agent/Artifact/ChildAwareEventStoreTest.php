@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Agent\Artifact;
 
-use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\CodingAgent\Agent\Artifact\ChildAwareEventStore;
@@ -28,8 +27,8 @@ final class ChildAwareEventStoreTest extends IsolatedKernelTestCase
         $store->append($event);
 
         $events = $store->allFor('parent-ev-router');
-        self::assertNotEmpty($events);
-        self::assertSame('parent-ev-router', $events[0]->runId);
+        $this->assertNotEmpty($events);
+        $this->assertSame('parent-ev-router', $events[0]->runId);
     }
 
     public function testAllForReturnsEmptyForUnknownRunId(): void
@@ -37,7 +36,7 @@ final class ChildAwareEventStoreTest extends IsolatedKernelTestCase
         $store = self::getContainer()->get(ChildAwareEventStore::class);
 
         $events = $store->allFor('nonexistent-ev-id');
-        self::assertSame([], $events);
+        $this->assertSame([], $events);
     }
 
     public function testAppendManyHandlesMultipleParentEvents(): void
@@ -64,6 +63,6 @@ final class ChildAwareEventStoreTest extends IsolatedKernelTestCase
         $store->appendMany($events);
 
         $results = $store->allFor('parent-ev-many');
-        self::assertCount(2, $results);
+        $this->assertCount(2, $results);
     }
 }

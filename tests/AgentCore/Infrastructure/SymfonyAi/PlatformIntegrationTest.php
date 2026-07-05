@@ -395,18 +395,18 @@ final class PlatformIntegrationTest extends TestCase
         // The cost calculator must have been called with the resolved model ref,
         // NOT the empty request model.  This was the root cause: empty model
         // skipped cost calculation at the '' !== $modelName guard.
-        self::assertSame('test/priced-model', $costCalculator->capturedModel, 'Cost calculator should receive the resolved model, not the empty request model.');
-        self::assertSame(1000, $costCalculator->capturedUsage['input_tokens'] ?? null);
-        self::assertSame(500, $costCalculator->capturedUsage['output_tokens'] ?? null);
+        $this->assertSame('test/priced-model', $costCalculator->capturedModel, 'Cost calculator should receive the resolved model, not the empty request model.');
+        $this->assertSame(1000, $costCalculator->capturedUsage['input_tokens'] ?? null);
+        $this->assertSame(500, $costCalculator->capturedUsage['output_tokens'] ?? null);
 
         // The usage array must contain the computed cost.
-        self::assertArrayHasKey('cost', $response->usage, 'Usage should contain a cost key.');
-        self::assertSame(42.0, $response->usage['cost']);
+        $this->assertArrayHasKey('cost', $response->usage, 'Usage should contain a cost key.');
+        $this->assertSame(42.0, $response->usage['cost']);
 
         // Token counts still flow through independently.
-        self::assertSame(1000, $response->usage['input_tokens']);
-        self::assertSame(500, $response->usage['output_tokens']);
-        self::assertSame(1500, $response->usage['total_tokens']);
+        $this->assertSame(1000, $response->usage['input_tokens']);
+        $this->assertSame(500, $response->usage['output_tokens']);
+        $this->assertSame(1500, $response->usage['total_tokens']);
     }
 
     public function testStreamingCancellationReturnsAbortedWithPartialOutput(): void
@@ -758,18 +758,18 @@ final class PlatformIntegrationTest extends TestCase
         ));
 
         // The usage payload must contain the cache fields.
-        self::assertArrayHasKey('cached_tokens', $response->usage, 'Usage must contain cached_tokens');
-        self::assertSame(78, $response->usage['cached_tokens']);
+        $this->assertArrayHasKey('cached_tokens', $response->usage, 'Usage must contain cached_tokens');
+        $this->assertSame(78, $response->usage['cached_tokens']);
 
-        self::assertArrayHasKey('cache_read_tokens', $response->usage, 'Usage must contain cache_read_tokens');
-        self::assertSame(78, $response->usage['cache_read_tokens']);
+        $this->assertArrayHasKey('cache_read_tokens', $response->usage, 'Usage must contain cache_read_tokens');
+        $this->assertSame(78, $response->usage['cache_read_tokens']);
 
-        self::assertArrayNotHasKey('cache_creation_tokens', $response->usage, 'cache_creation_tokens must be absent when not reported');
+        $this->assertArrayNotHasKey('cache_creation_tokens', $response->usage, 'cache_creation_tokens must be absent when not reported');
 
         // Standard fields still present.
-        self::assertSame(100, $response->usage['input_tokens']);
-        self::assertSame(50, $response->usage['output_tokens']);
-        self::assertSame(150, $response->usage['total_tokens']);
+        $this->assertSame(100, $response->usage['input_tokens']);
+        $this->assertSame(50, $response->usage['output_tokens']);
+        $this->assertSame(150, $response->usage['total_tokens']);
     }
 
     /**
@@ -832,18 +832,18 @@ final class PlatformIntegrationTest extends TestCase
 
         // cache_read_tokens must fall back to cached_tokens when explicit
         // cache-read is absent.
-        self::assertArrayHasKey('cache_read_tokens', $response->usage);
-        self::assertSame(120, $response->usage['cache_read_tokens'], 'cache_read_tokens must fall back to cached_tokens');
-        self::assertSame(120, $response->usage['cached_tokens']);
+        $this->assertArrayHasKey('cache_read_tokens', $response->usage);
+        $this->assertSame(120, $response->usage['cache_read_tokens'], 'cache_read_tokens must fall back to cached_tokens');
+        $this->assertSame(120, $response->usage['cached_tokens']);
     }
 
     /**
      * Create an LlmPlatformAdapter with a fake Symfony AI backend,
      * a simple text-delta stream, and the given transform hooks.
      *
-     * @param \Closure(): iterable<mixed>                     $streamFactory
-     * @param iterable<TransformContextHookInterface>          $transformHooks
-     * @param iterable<ConvertToLlmHookInterface>              $convertHooks
+     * @param \Closure(): iterable<mixed>             $streamFactory
+     * @param iterable<TransformContextHookInterface> $transformHooks
+     * @param iterable<ConvertToLlmHookInterface>     $convertHooks
      */
     private function createAdapter(
         InMemoryRunStore $runStore,

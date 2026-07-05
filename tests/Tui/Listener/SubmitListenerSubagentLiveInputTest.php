@@ -5,14 +5,15 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Tests\Listener;
 
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
-use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
+use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\Tui\Command\CommandMetadata;
 use Ineersa\Tui\Command\CommandParser;
 use Ineersa\Tui\Command\SlashCommand;
 use Ineersa\Tui\Command\SlashCommandHandler;
 use Ineersa\Tui\Command\SlashCommandRegistry;
+use Ineersa\Tui\Command\SubagentLiveInputPolicy;
 use Ineersa\Tui\Command\SubmissionRouter;
 use Ineersa\Tui\Command\TranscriptMessage;
 use Ineersa\Tui\Editor\PromptEditor;
@@ -24,7 +25,6 @@ use Ineersa\Tui\Question\QuestionRequest;
 use Ineersa\Tui\Question\QuestionSource;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
 use Ineersa\Tui\Runtime\SubagentLiveChildDTO;
-use Ineersa\Tui\Command\SubagentLiveInputPolicy;
 use Ineersa\Tui\Runtime\SubagentLiveStatusEnum;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Screen\ChatScreen;
@@ -83,8 +83,8 @@ final class SubmitListenerSubagentLiveInputTest extends TestCase
 
         $screen = $this->dispatchSubmit('next step please');
 
-        self::assertStringContainsString('Sent steer to subagent scout', $this->liveWorkingMessage($screen));
-        self::assertSame([], $this->state->transcript, 'Child-directed text must not echo into parent transcript');
+        $this->assertStringContainsString('Sent steer to subagent scout', $this->liveWorkingMessage($screen));
+        $this->assertSame([], $this->state->transcript, 'Child-directed text must not echo into parent transcript');
     }
 
     #[Test]
@@ -97,11 +97,11 @@ final class SubmitListenerSubagentLiveInputTest extends TestCase
 
         $screen = $this->dispatchSubmit('continue after completion');
 
-        self::assertStringContainsString('/agents-main', $this->liveWorkingMessage($screen));
-        self::assertStringContainsString('finished', strtolower($this->liveWorkingMessage($screen)));
-        self::assertNotEmpty($this->state->subagentLiveView->childTranscript);
-        self::assertSame(TranscriptBlockKindEnum::Error, $this->state->subagentLiveView->childTranscript[0]->kind);
-        self::assertSame(RunActivityStateEnum::Completed, $this->state->subagentLiveView->childActivity);
+        $this->assertStringContainsString('/agents-main', $this->liveWorkingMessage($screen));
+        $this->assertStringContainsString('finished', strtolower($this->liveWorkingMessage($screen)));
+        $this->assertNotEmpty($this->state->subagentLiveView->childTranscript);
+        $this->assertSame(TranscriptBlockKindEnum::Error, $this->state->subagentLiveView->childTranscript[0]->kind);
+        $this->assertSame(RunActivityStateEnum::Completed, $this->state->subagentLiveView->childActivity);
     }
 
     #[Test]
@@ -112,10 +112,10 @@ final class SubmitListenerSubagentLiveInputTest extends TestCase
 
         foreach (['/new', '/resume sid', '/tasks', '/rename x', '!pwd'] as $text) {
             $screen = $this->dispatchSubmit($text);
-            self::assertStringContainsString('/agents-main', $this->liveWorkingMessage($screen), $text);
-            self::assertSame(0, $this->handlerCalls[$text] ?? 0, $text);
-            self::assertNotEmpty($this->state->subagentLiveView->childTranscript, $text);
-            self::assertSame(
+            $this->assertStringContainsString('/agents-main', $this->liveWorkingMessage($screen), $text);
+            $this->assertSame(0, $this->handlerCalls[$text] ?? 0, $text);
+            $this->assertNotEmpty($this->state->subagentLiveView->childTranscript, $text);
+            $this->assertSame(
                 TranscriptBlockKindEnum::Error,
                 $this->state->subagentLiveView->childTranscript[\count($this->state->subagentLiveView->childTranscript) - 1]->kind,
                 $text,
@@ -129,11 +129,11 @@ final class SubmitListenerSubagentLiveInputTest extends TestCase
         $this->client->expects($this->never())->method('send');
 
         $this->dispatchSubmit('/agents-main');
-        self::assertGreaterThan(0, $this->handlerCalls['/agents-main'] ?? 0);
+        $this->assertGreaterThan(0, $this->handlerCalls['/agents-main'] ?? 0);
 
         $this->enterLiveView('child-run-1', RunActivityStateEnum::Running);
         $this->dispatchSubmit('/agents-live');
-        self::assertGreaterThan(0, $this->handlerCalls['/agents-live'] ?? 0);
+        $this->assertGreaterThan(0, $this->handlerCalls['/agents-live'] ?? 0);
     }
 
     #[Test]
@@ -159,9 +159,9 @@ final class SubmitListenerSubagentLiveInputTest extends TestCase
 
         $this->dispatchSubmit('/agents-live');
 
-        self::assertGreaterThan(0, $this->handlerCalls['/agents-live'] ?? 0);
-        self::assertFalse($answered, 'Navigation slash must not be consumed as the active question answer');
-        self::assertTrue($this->questionCoordinator->actionRequired(), 'Question must remain active after navigation slash');
+        $this->assertGreaterThan(0, $this->handlerCalls['/agents-live'] ?? 0);
+        $this->assertFalse($answered, 'Navigation slash must not be consumed as the active question answer');
+        $this->assertTrue($this->questionCoordinator->actionRequired(), 'Question must remain active after navigation slash');
     }
 
     #[Test]
@@ -172,7 +172,12 @@ final class SubmitListenerSubagentLiveInputTest extends TestCase
         $this->client->expects($this->never())->method('send');
 
         $this->dispatchSubmit('/tasks');
-        self::assertGreaterThan(0, $this->handlerCalls['/tasks'] ?? 0);
+        $this->assertGreaterThan(0, $this->handlerCalls['/tasks'] ?? 0);
+    }
+
+    public function recordHandlerCall(string $text): void
+    {
+        $this->handlerCalls[$text] = ($this->handlerCalls[$text] ?? 0) + 1;
     }
 
     private function enterLiveView(
@@ -215,11 +220,6 @@ final class SubmitListenerSubagentLiveInputTest extends TestCase
         );
     }
 
-    public function recordHandlerCall(string $text): void
-    {
-        $this->handlerCalls[$text] = ($this->handlerCalls[$text] ?? 0) + 1;
-    }
-
     private function liveWorkingMessage(ChatScreen $screen): string
     {
         $ref = new \ReflectionClass(ChatScreen::class);
@@ -256,7 +256,7 @@ final class SubmitListenerSubagentLiveInputTest extends TestCase
         $listener->register($context);
 
         $listeners = $tui->getEventDispatcher()->getListeners(SubmitEvent::class);
-        self::assertNotEmpty($listeners);
+        $this->assertNotEmpty($listeners);
         ($listeners[0])(new SubmitEvent($promptEditor->getWidget(), $text));
 
         return $screen;

@@ -7,12 +7,12 @@ namespace Ineersa\Tui\Tests\Listener;
 use Ineersa\CodingAgent\Runtime\Contract\TurnTreeProviderInterface;
 use Ineersa\CodingAgent\Runtime\Protocol\TurnTreeNodeView;
 use Ineersa\CodingAgent\Runtime\Protocol\TurnTreeView;
-use Ineersa\Tui\Runtime\Contract\TuiSessionSwitchServiceInterface;
 use Ineersa\Tui\Command\NoOp;
 use Ineersa\Tui\Command\SlashCommand;
 use Ineersa\Tui\Editor\PromptEditor;
 use Ineersa\Tui\Listener\TreeCommandHandler;
 use Ineersa\Tui\Picker\TreePickerController;
+use Ineersa\Tui\Runtime\Contract\TuiSessionSwitchServiceInterface;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Screen\ChatScreen;
 use Ineersa\Tui\Theme\DefaultTheme;
@@ -68,7 +68,7 @@ final class TreeCommandHandlerTest extends TestCase
         $command = new SlashCommand(name: 'tree', args: '', originalText: '/tree');
         $result = $handler->handle($command);
 
-        self::assertInstanceOf(NoOp::class, $result);
+        $this->assertInstanceOf(NoOp::class, $result);
     }
 
     #[Test]
@@ -114,6 +114,6 @@ final class TreeCommandHandlerTest extends TestCase
         $command = new SlashCommand(name: 'tree', args: '', originalText: '/tree');
         $handler->handle($command);
 
-        self::assertTrue($picker->isOpen(), 'Handler should cause picker to open');
+        $this->assertTrue($picker->isOpen(), 'Handler should cause picker to open');
     }
 }

@@ -68,19 +68,19 @@ final class ForkRunMetadataDTOTest extends TestCase
         $json = $this->serializer->serialize($original, 'json');
         $restored = $this->serializer->deserialize($json, ForkRunMetadataDTO::class, 'json');
 
-        self::assertSame($original->runId, $restored->runId);
-        self::assertSame($original->parentRunId, $restored->parentRunId);
-        self::assertSame($original->childRunId, $restored->childRunId);
-        self::assertSame($original->level, $restored->level);
-        self::assertSame($original->resolvedModel, $restored->resolvedModel);
-        self::assertSame($original->cwd, $restored->cwd);
-        self::assertSame($original->task, $restored->task);
-        self::assertSame($original->status, $restored->status);
-        self::assertSame($original->startedAt->format(\DATE_ATOM), $restored->startedAt->format(\DATE_ATOM));
-        self::assertSame($original->completedAt->format(\DATE_ATOM), $restored->completedAt->format(\DATE_ATOM));
-        self::assertSame($original->pid, $restored->pid);
-        self::assertSame($original->error, $restored->error);
-        self::assertSame($original->validationAttempts, $restored->validationAttempts);
+        $this->assertSame($original->runId, $restored->runId);
+        $this->assertSame($original->parentRunId, $restored->parentRunId);
+        $this->assertSame($original->childRunId, $restored->childRunId);
+        $this->assertSame($original->level, $restored->level);
+        $this->assertSame($original->resolvedModel, $restored->resolvedModel);
+        $this->assertSame($original->cwd, $restored->cwd);
+        $this->assertSame($original->task, $restored->task);
+        $this->assertSame($original->status, $restored->status);
+        $this->assertSame($original->startedAt->format(\DATE_ATOM), $restored->startedAt->format(\DATE_ATOM));
+        $this->assertSame($original->completedAt->format(\DATE_ATOM), $restored->completedAt->format(\DATE_ATOM));
+        $this->assertSame($original->pid, $restored->pid);
+        $this->assertSame($original->error, $restored->error);
+        $this->assertSame($original->validationAttempts, $restored->validationAttempts);
     }
 
     public function testDefaultValues(): void
@@ -90,17 +90,17 @@ final class ForkRunMetadataDTOTest extends TestCase
             parentRunId: 'parent_001',
         );
 
-        self::assertNull($dto->childRunId);
-        self::assertSame(ForkLevelEnum::Middle, $dto->level);
-        self::assertNull($dto->resolvedModel);
-        self::assertSame('', $dto->cwd);
-        self::assertSame('', $dto->task);
-        self::assertSame(AgentArtifactStatusEnum::Pending, $dto->status);
-        self::assertNull($dto->startedAt);
-        self::assertNull($dto->completedAt);
-        self::assertNull($dto->pid);
-        self::assertNull($dto->error);
-        self::assertSame(0, $dto->validationAttempts);
+        $this->assertNull($dto->childRunId);
+        $this->assertSame(ForkLevelEnum::Middle, $dto->level);
+        $this->assertNull($dto->resolvedModel);
+        $this->assertSame('', $dto->cwd);
+        $this->assertSame('', $dto->task);
+        $this->assertSame(AgentArtifactStatusEnum::Pending, $dto->status);
+        $this->assertNull($dto->startedAt);
+        $this->assertNull($dto->completedAt);
+        $this->assertNull($dto->pid);
+        $this->assertNull($dto->error);
+        $this->assertSame(0, $dto->validationAttempts);
     }
 
     public function testSnakeCaseSerialization(): void
@@ -115,16 +115,16 @@ final class ForkRunMetadataDTOTest extends TestCase
         $data = json_decode($json, true, 512, \JSON_THROW_ON_ERROR);
 
         // Verify snake_case keys.
-        self::assertArrayHasKey('run_id', $data);
-        self::assertArrayHasKey('parent_run_id', $data);
-        self::assertArrayHasKey('child_run_id', $data);
-        self::assertArrayHasKey('resolved_model', $data);
-        self::assertArrayHasKey('validation_attempts', $data);
+        $this->assertArrayHasKey('run_id', $data);
+        $this->assertArrayHasKey('parent_run_id', $data);
+        $this->assertArrayHasKey('child_run_id', $data);
+        $this->assertArrayHasKey('resolved_model', $data);
+        $this->assertArrayHasKey('validation_attempts', $data);
 
         // Verify values.
-        self::assertSame('fork_001', $data['run_id']);
-        self::assertSame('parent_001', $data['parent_run_id']);
-        self::assertSame(3, $data['validation_attempts']);
+        $this->assertSame('fork_001', $data['run_id']);
+        $this->assertSame('parent_001', $data['parent_run_id']);
+        $this->assertSame(3, $data['validation_attempts']);
     }
 
     public function testRoundTripWithNullOptionals(): void
@@ -137,13 +137,13 @@ final class ForkRunMetadataDTOTest extends TestCase
         $json = $this->serializer->serialize($original, 'json');
         $restored = $this->serializer->deserialize($json, ForkRunMetadataDTO::class, 'json');
 
-        self::assertSame('fork_null_test', $restored->runId);
-        self::assertSame('parent_null_test', $restored->parentRunId);
-        self::assertNull($restored->childRunId);
-        self::assertNull($restored->resolvedModel);
-        self::assertNull($restored->startedAt);
-        self::assertNull($restored->completedAt);
-        self::assertNull($restored->pid);
-        self::assertNull($restored->error);
+        $this->assertSame('fork_null_test', $restored->runId);
+        $this->assertSame('parent_null_test', $restored->parentRunId);
+        $this->assertNull($restored->childRunId);
+        $this->assertNull($restored->resolvedModel);
+        $this->assertNull($restored->startedAt);
+        $this->assertNull($restored->completedAt);
+        $this->assertNull($restored->pid);
+        $this->assertNull($restored->error);
     }
 }

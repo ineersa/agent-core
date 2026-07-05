@@ -50,27 +50,27 @@ final class ExecuteShellToolCallWorkerTest extends TestCase
             standalone: true,
         ));
 
-        self::assertCount(3, $this->appendedEvents, 'Standalone shell must produce 3 events.');
+        $this->assertCount(3, $this->appendedEvents, 'Standalone shell must produce 3 events.');
 
         // Seq 1: tool_execution_start
-        self::assertSame(1, $this->appendedEvents[0]->seq);
-        self::assertSame(RunEventTypeEnum::ToolExecutionStart->value, $this->appendedEvents[0]->type);
-        self::assertSame('sh_tc_1', $this->appendedEvents[0]->payload['tool_call_id'] ?? null);
+        $this->assertSame(1, $this->appendedEvents[0]->seq);
+        $this->assertSame(RunEventTypeEnum::ToolExecutionStart->value, $this->appendedEvents[0]->type);
+        $this->assertSame('sh_tc_1', $this->appendedEvents[0]->payload['tool_call_id'] ?? null);
 
         // Seq 2: tool_execution_end
-        self::assertSame(2, $this->appendedEvents[1]->seq);
-        self::assertSame(RunEventTypeEnum::ToolExecutionEnd->value, $this->appendedEvents[1]->type);
-        self::assertSame('sh_tc_1', $this->appendedEvents[1]->payload['tool_call_id'] ?? null);
-        self::assertStringContainsString('hello', (string) ($this->appendedEvents[1]->payload['result'] ?? ''));
+        $this->assertSame(2, $this->appendedEvents[1]->seq);
+        $this->assertSame(RunEventTypeEnum::ToolExecutionEnd->value, $this->appendedEvents[1]->type);
+        $this->assertSame('sh_tc_1', $this->appendedEvents[1]->payload['tool_call_id'] ?? null);
+        $this->assertStringContainsString('hello', (string) ($this->appendedEvents[1]->payload['result'] ?? ''));
 
         // Seq 3: agent_end (final event, written only for standalone)
-        self::assertSame(3, $this->appendedEvents[2]->seq);
-        self::assertSame(RunEventTypeEnum::AgentEnd->value, $this->appendedEvents[2]->type);
-        self::assertSame('completed', $this->appendedEvents[2]->payload['reason'] ?? null);
+        $this->assertSame(3, $this->appendedEvents[2]->seq);
+        $this->assertSame(RunEventTypeEnum::AgentEnd->value, $this->appendedEvents[2]->type);
+        $this->assertSame('completed', $this->appendedEvents[2]->payload['reason'] ?? null);
 
         // Ascending seq order
-        for ($i = 1; $i < count($this->appendedEvents); ++$i) {
-            self::assertGreaterThan(
+        for ($i = 1; $i < \count($this->appendedEvents); ++$i) {
+            $this->assertGreaterThan(
                 $this->appendedEvents[$i - 1]->seq,
                 $this->appendedEvents[$i]->seq,
                 \sprintf('Event at index %d must have seq > previous', $i),
@@ -78,7 +78,7 @@ final class ExecuteShellToolCallWorkerTest extends TestCase
         }
 
         // AgentEnd must be the final lifecycle event.
-        self::assertSame(
+        $this->assertSame(
             RunEventTypeEnum::AgentEnd->value,
             $this->appendedEvents[array_key_last($this->appendedEvents)]->type,
             'AgentEnd must be the final event for standalone shell commands.',
@@ -104,13 +104,13 @@ final class ExecuteShellToolCallWorkerTest extends TestCase
             standalone: false,
         ));
 
-        self::assertCount(2, $this->appendedEvents, 'Non-standalone shell must produce only tool_exec events.');
-        self::assertSame(RunEventTypeEnum::ToolExecutionStart->value, $this->appendedEvents[0]->type);
-        self::assertSame(RunEventTypeEnum::ToolExecutionEnd->value, $this->appendedEvents[1]->type);
+        $this->assertCount(2, $this->appendedEvents, 'Non-standalone shell must produce only tool_exec events.');
+        $this->assertSame(RunEventTypeEnum::ToolExecutionStart->value, $this->appendedEvents[0]->type);
+        $this->assertSame(RunEventTypeEnum::ToolExecutionEnd->value, $this->appendedEvents[1]->type);
 
         // No AgentEnd.
         foreach ($this->appendedEvents as $event) {
-            self::assertNotSame(
+            $this->assertNotSame(
                 RunEventTypeEnum::AgentEnd->value,
                 $event->type,
                 'Non-standalone shell must not emit AgentEnd.',

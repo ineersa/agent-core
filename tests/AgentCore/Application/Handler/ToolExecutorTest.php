@@ -19,8 +19,8 @@ use Symfony\AI\Agent\Toolbox\Toolbox;
 use Symfony\AI\Agent\Toolbox\ToolboxInterface;
 use Symfony\AI\Agent\Toolbox\ToolResult as SymfonyToolResult;
 use Symfony\AI\Platform\Result\ToolCall as SymfonyToolCall;
-use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\Clock\MockClock;
+use Symfony\Component\EventDispatcher\EventDispatcher;
 
 final class ToolExecutorTest extends TestCase
 {
@@ -426,6 +426,7 @@ final class ToolExecutorTest extends TestCase
         $this->assertFalse($result->isError);
         $this->assertNull($accessor->current());
     }
+
     public function testNoPostHocTimeoutWhenPolicyTimeoutIsNull(): void
     {
         $clock = new MockClock();
@@ -450,6 +451,7 @@ final class ToolExecutorTest extends TestCase
         $this->assertSame('clock-ok', $result->content[0]['text']);
         $this->assertNull($result->details['timeout_seconds'] ?? null);
     }
+
     public function testNullCallTimeoutIgnoresGlobalDefaultPostHocCap(): void
     {
         $clock = new MockClock();
@@ -470,9 +472,9 @@ final class ToolExecutorTest extends TestCase
             ->withTimeoutSeconds(null)
             ->build());
 
-        self::assertFalse($result->isError);
-        self::assertSame('clock-ok', $result->content[0]['text']);
-        self::assertNull($result->details['timeout_seconds'] ?? null);
+        $this->assertFalse($result->isError);
+        $this->assertSame('clock-ok', $result->content[0]['text']);
+        $this->assertNull($result->details['timeout_seconds'] ?? null);
     }
 
     public function testNullCallTimeoutUsesGlobalDefaultForNonSubagentTools(): void
@@ -495,8 +497,8 @@ final class ToolExecutorTest extends TestCase
             ->withTimeoutSeconds(null)
             ->build());
 
-        self::assertFalse($result->isError);
-        self::assertSame(30, $result->details['timeout_seconds'] ?? null);
+        $this->assertFalse($result->isError);
+        $this->assertSame(30, $result->details['timeout_seconds'] ?? null);
     }
 
     public function testExplicitCallTimeoutStillEnforcesPostHocCap(): void
@@ -519,33 +521,29 @@ final class ToolExecutorTest extends TestCase
             ->withTimeoutSeconds(1)
             ->build());
 
-        self::assertTrue($result->isError);
-        self::assertStringContainsString('timed out after 1 second', $result->content[0]['text']);
+        $this->assertTrue($result->isError);
+        $this->assertStringContainsString('timed out after 1 second', $result->content[0]['text']);
     }
-
-
 }
 
-
-    #[AsTool(name: 'human_gate', description: 'Ask for human input.')]
-    final class InterruptTool
+#[AsTool(name: 'human_gate', description: 'Ask for human input.')]
+final class InterruptTool
+{
+    /**
+     * @return array{kind: string, question_id: string, prompt: string, schema: array{type: string}}
+     */
+    public function __invoke(): array
     {
-        /**
-         * @return array{kind: string, question_id: string, prompt: string, schema: array{type: string}}
-         */
-        public function __invoke(): array
-        {
-            return [
-                'kind' => 'interrupt',
-                'question_id' => 'test-q-1',
-                'prompt' => 'Approve deployment?',
-                'schema' => ['type' => 'boolean'],
-            ];
-        }
+        return [
+            'kind' => 'interrupt',
+            'question_id' => 'test-q-1',
+            'prompt' => 'Approve deployment?',
+            'schema' => ['type' => 'boolean'],
+        ];
     }
+}
 
-
-    final class ContextCheckingToolbox implements ToolboxInterface
+final class ContextCheckingToolbox implements ToolboxInterface
 {
     public function __construct(
         private readonly StackToolExecutionContextAccessor $accessor,
@@ -628,7 +626,6 @@ final class SymfonySearchTool
         ];
     }
 }
-
 
 final class ClockAdvancingToolbox implements ToolboxInterface
 {

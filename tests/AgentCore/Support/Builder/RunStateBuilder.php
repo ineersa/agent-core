@@ -42,6 +42,12 @@ final class RunStateBuilder
     private ?string $activeStepId = null;
     private bool $retryableFailure = false;
 
+    private function __construct(string $runId, RunStatus $status)
+    {
+        $this->runId = $runId;
+        $this->status = $status;
+    }
+
     /**
      * Create a builder pre-configured with Queued status.
      */
@@ -64,12 +70,6 @@ final class RunStateBuilder
     public static function create(string $runId = 'run-test'): self
     {
         return new self(runId: $runId, status: RunStatus::Queued);
-    }
-
-    private function __construct(string $runId, RunStatus $status)
-    {
-        $this->runId = $runId;
-        $this->status = $status;
     }
 
     public function withRunId(string $runId): self

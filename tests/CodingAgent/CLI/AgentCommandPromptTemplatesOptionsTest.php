@@ -24,8 +24,8 @@ final class AgentCommandPromptTemplatesOptionsTest extends IsolatedKernelTestCas
         $app = $this->getApplication();
         $command = $app->find('agent');
 
-        self::assertTrue($command->getDefinition()->hasOption('prompt-template'));
-        self::assertTrue($command->getDefinition()->hasOption('no-prompt-templates'));
+        $this->assertTrue($command->getDefinition()->hasOption('prompt-template'));
+        $this->assertTrue($command->getDefinition()->hasOption('no-prompt-templates'));
     }
 
     public function testPromptTemplateOptionIsRepeatableArray(): void
@@ -34,7 +34,7 @@ final class AgentCommandPromptTemplatesOptionsTest extends IsolatedKernelTestCas
         $command = $app->find('agent');
 
         $option = $command->getDefinition()->getOption('prompt-template');
-        self::assertTrue($option->isArray(), '--prompt-template should accept array values');
+        $this->assertTrue($option->isArray(), '--prompt-template should accept array values');
     }
 
     public function testNoPromptTemplatesHasNoShortcut(): void
@@ -43,7 +43,7 @@ final class AgentCommandPromptTemplatesOptionsTest extends IsolatedKernelTestCas
         $command = $app->find('agent');
 
         $option = $command->getDefinition()->getOption('no-prompt-templates');
-        self::assertSame('', $option->getShortcut() ?? '', '--no-prompt-templates should have no shortcut');
+        $this->assertSame('', $option->getShortcut() ?? '', '--no-prompt-templates should have no shortcut');
     }
 
     // ── Config population (simulating what AgentCommand does) ──────
@@ -52,8 +52,8 @@ final class AgentCommandPromptTemplatesOptionsTest extends IsolatedKernelTestCas
     {
         /** @var PromptTemplatesRuntimeConfig $config */
         $config = self::getContainer()->get(PromptTemplatesRuntimeConfig::class);
-        self::assertSame([], $config->promptTemplatePaths);
-        self::assertFalse($config->noPromptTemplates);
+        $this->assertSame([], $config->promptTemplatePaths);
+        $this->assertFalse($config->noPromptTemplates);
     }
 
     public function testCanPopulatePromptTemplatePaths(): void
@@ -62,7 +62,7 @@ final class AgentCommandPromptTemplatesOptionsTest extends IsolatedKernelTestCas
         $config = self::getContainer()->get(PromptTemplatesRuntimeConfig::class);
         $config->promptTemplatePaths = ['/one.md', '/two.md'];
 
-        self::assertSame(['/one.md', '/two.md'], $config->promptTemplatePaths);
+        $this->assertSame(['/one.md', '/two.md'], $config->promptTemplatePaths);
     }
 
     public function testCanSetNoPromptTemplates(): void
@@ -71,7 +71,7 @@ final class AgentCommandPromptTemplatesOptionsTest extends IsolatedKernelTestCas
         $config = self::getContainer()->get(PromptTemplatesRuntimeConfig::class);
         $config->noPromptTemplates = true;
 
-        self::assertTrue($config->noPromptTemplates);
+        $this->assertTrue($config->noPromptTemplates);
     }
 
     public function testCombinedConfig(): void
@@ -81,8 +81,8 @@ final class AgentCommandPromptTemplatesOptionsTest extends IsolatedKernelTestCas
         $config->promptTemplatePaths = ['/a.md'];
         $config->noPromptTemplates = true;
 
-        self::assertSame(['/a.md'], $config->promptTemplatePaths);
-        self::assertTrue($config->noPromptTemplates);
+        $this->assertSame(['/a.md'], $config->promptTemplatePaths);
+        $this->assertTrue($config->noPromptTemplates);
     }
 
     public function testControllerArgsOutputOrder(): void
@@ -93,7 +93,7 @@ final class AgentCommandPromptTemplatesOptionsTest extends IsolatedKernelTestCas
         $config->promptTemplatePaths = ['/first.md', '/second.md'];
 
         $args = $config->controllerArgs();
-        self::assertSame([
+        $this->assertSame([
             '--no-prompt-templates',
             '--prompt-template=/first.md',
             '--prompt-template=/second.md',

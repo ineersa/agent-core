@@ -27,8 +27,8 @@ final class FooterBarWidgetTest extends TestCase
 
         $lines = $widget->render($context);
 
-        self::assertCount(1, $lines);
-        self::assertStringContainsString('type /help for commands', $lines[0]);
+        $this->assertCount(1, $lines);
+        $this->assertStringContainsString('type /help for commands', $lines[0]);
     }
 
     public function testSingleSegment(): void
@@ -47,8 +47,8 @@ final class FooterBarWidgetTest extends TestCase
 
         $lines = $widget->render($context);
 
-        self::assertCount(1, $lines);
-        self::assertStringContainsString('◆ test', $lines[0]);
+        $this->assertCount(1, $lines);
+        $this->assertStringContainsString('◆ test', $lines[0]);
     }
 
     public function testSegmentsOrderedByPriority(): void
@@ -70,9 +70,9 @@ final class FooterBarWidgetTest extends TestCase
 
         $lines = $widget->render($context);
 
-        self::assertCount(1, $lines);
+        $this->assertCount(1, $lines);
         // priority gap 10 => "  |  " separator
-        self::assertStringContainsString('first  |  second', $lines[0]);
+        $this->assertStringContainsString('first  |  second', $lines[0]);
     }
 
     public function testMultipleProviders(): void
@@ -99,7 +99,7 @@ final class FooterBarWidgetTest extends TestCase
         $lines = $widget->render($context);
 
         // priority gap 1 => space separator
-        self::assertStringContainsString('A B', $lines[0]);
+        $this->assertStringContainsString('A B', $lines[0]);
     }
 
     public function testStatusEntriesAppearInFooter(): void
@@ -112,7 +112,7 @@ final class FooterBarWidgetTest extends TestCase
 
         $lines = $widget->render($context);
 
-        self::assertStringContainsString('$1.23', $lines[0]);
+        $this->assertStringContainsString('$1.23', $lines[0]);
     }
 
     public function testReadonlyDataProvider(): void
@@ -120,14 +120,14 @@ final class FooterBarWidgetTest extends TestCase
         $provider = new FooterDataProvider();
         $readonly = $provider->readonly();
 
-        self::assertInstanceOf(ReadonlyFooterDataProvider::class, $readonly);
-        self::assertSame([], $readonly->getSegments());
-        self::assertSame([], $readonly->getStatusEntries());
+        $this->assertInstanceOf(ReadonlyFooterDataProvider::class, $readonly);
+        $this->assertSame([], $readonly->getSegments());
+        $this->assertSame([], $readonly->getStatusEntries());
 
         // Add data through original provider
         $provider->setStatus('k', 'v');
         $readonly2 = $provider->readonly();
-        self::assertSame(['k' => 'v'], $readonly2->getStatusEntries());
+        $this->assertSame(['k' => 'v'], $readonly2->getStatusEntries());
     }
 
     public function testFooterRespectsTerminalWidth(): void
@@ -148,8 +148,8 @@ final class FooterBarWidgetTest extends TestCase
         $widget = new FooterBarWidget($provider);
         $lines = $widget->render($context);
 
-        self::assertCount(1, $lines);
-        self::assertStringStartsWith('  ', $lines[0]);
-        self::assertLessThanOrEqual(40, \mb_strlen($lines[0]));
+        $this->assertCount(1, $lines);
+        $this->assertStringStartsWith('  ', $lines[0]);
+        $this->assertLessThanOrEqual(40, mb_strlen($lines[0]));
     }
 }
