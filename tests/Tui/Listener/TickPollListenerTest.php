@@ -6,7 +6,7 @@ namespace Ineersa\Tui\Tests\Listener;
 
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeExceptionBoundary;
-use Ineersa\CodingAgent\Runtime\Contract\TurnTreeProviderInterface;
+use Ineersa\CodingAgent\Runtime\Contract\SessionTranscriptProviderInterface;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
@@ -581,7 +581,7 @@ final class TickPollListenerTest extends TestCase
         $eventApplier = (new \ReflectionClass(TuiRuntimeEventApplier::class))->newInstanceWithoutConstructor();
         $logger = $this->createStub(LoggerInterface::class);
         $boundary = (new \ReflectionClass(RuntimeExceptionBoundary::class))->newInstanceWithoutConstructor();
-        $poller = new RuntimeEventPoller($eventApplier, $logger, $boundary, $this->createStub(TurnTreeProviderInterface::class));
+        $poller = new RuntimeEventPoller($eventApplier, $logger, $boundary, $this->createStub(SessionTranscriptProviderInterface::class));
 
         $coordinator = new QuestionCoordinator();
         $coordinator->enqueue(
@@ -656,7 +656,7 @@ final class TickPollListenerTest extends TestCase
         $eventApplier = (new \ReflectionClass(TuiRuntimeEventApplier::class))->newInstanceWithoutConstructor();
         $logger = $this->createStub(LoggerInterface::class);
         $boundary = (new \ReflectionClass(RuntimeExceptionBoundary::class))->newInstanceWithoutConstructor();
-        $poller = new RuntimeEventPoller($eventApplier, $logger, $boundary, $this->createStub(TurnTreeProviderInterface::class));
+        $poller = new RuntimeEventPoller($eventApplier, $logger, $boundary, $this->createStub(SessionTranscriptProviderInterface::class));
 
         $coordinator = new QuestionCoordinator();
         $coordinator->enqueue(
