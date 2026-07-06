@@ -148,6 +148,27 @@ final readonly class FooterStateSegmentProvider implements FooterSegmentProvider
         return $segments;
     }
 
+    /**
+     * Stable fingerprint of rendered footer segments for tick coalescing.
+     *
+     * Includes text, priority, and color so elapsed/tps/token updates trigger
+     * a repaint without re-rendering on every Revolt tick when unchanged.
+     */
+    public function footerFingerprint(): string
+    {
+        $parts = [];
+        foreach ($this->getSegments() as $segment) {
+            $parts[] = \sprintf(
+                '%d:%s:%s',
+                $segment->priority,
+                $segment->text,
+                $segment->color?->value ?? '',
+            );
+        }
+
+        return implode("\n", $parts);
+    }
+
     // ── Formatting helpers ──
 
     /**

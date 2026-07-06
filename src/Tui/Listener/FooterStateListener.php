@@ -27,13 +27,19 @@ final readonly class FooterStateListener implements TuiListenerRegistrar
     {
         $this->initializer->initialize($context->state);
 
-        $context->screen->addFooterProvider(
-            new FooterStateSegmentProvider($context->state),
-        );
+        $footerProvider = new FooterStateSegmentProvider($context->state);
+        $context->screen->addFooterProvider($footerProvider);
 
         $screen = $context->screen;
         $tui = $context->tui;
-        $context->ticks->add(static function () use ($screen, $tui): ?bool {
+        $lastFooterFingerprint = null;
+        $context->ticks->add(static function () use ($screen, $tui, $footerProvider, &$lastFooterFingerprint): ?bool {
+            $fingerprint = $footerProvider->footerFingerprint();
+            if ($fingerprint === $lastFooterFingerprint) {
+                return null;
+            }
+
+            $lastFooterFingerprint = $fingerprint;
             $screen->refreshFooter();
             $tui->requestRender();
 

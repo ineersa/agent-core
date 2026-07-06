@@ -31,9 +31,10 @@ use Symfony\Component\Process\Process;
  * - Launch: creates a non-blocking Symfony Process with timeout(null)
  * - Supervision: polls isRunning() every 5s, restarts if crashed
  * - Shutdown: sends SIGTERM with configurable grace period, then SIGKILL
- * - stderr output is captured and logged on crash for diagnostics
- * - getProcess(): exposes the first Process for a transport name so
- *   HeadlessController can read the LLM consumer's stdout
+ * - stderr is drained incrementally during stdout reads; a bounded tail per
+ *   consumer key is retained for crash diagnostics (Symfony Process buffers
+ *   are cleared so idle polling does not retain the full event bus history)
+ * - getProcess(): exposes the first Process for a transport name (legacy)
  *
  * App executable and runtime CWD resolution:
  * - Uses RuntimeProcessConfig to provide both the agent binary command
@@ -56,6 +57,15 @@ final class ConsumerSupervisor implements ConsumerStdoutSourceInterface
 
     /** @var array<string, float> compositeKey => start of restart window (microtime) */
     private array $restartWindows = [];
+
+    /** Max bytes of stderr tail retained per consumer for crash diagnostics. */
+    private const int STDERR_TAIL_MAX_BYTES = 16_384;
+
+    /** Max partial stdout line retained by the poller when JSONL spans reads. */
+    public const int PARTIAL_STDOUT_MAX_BYTES = 65_536;
+
+    /** @var array<string, string> consumerKey => bounded stderr tail */
+    private array $stderrTails = [];
 
     /** Set by shutdown() to prevent pending delay callbacks from launching new consumers. */
     private bool $shuttingDown = false;
@@ -147,11 +157,44 @@ final class ConsumerSupervisor implements ConsumerStdoutSourceInterface
                 continue;
             }
 
+            $this->drainAndClearStderr($key, $process);
+
             $chunk = $process->getIncrementalOutput();
             if ('' !== $chunk) {
                 yield $key => $chunk;
+                // ConsumerStdoutPoller owns partial-line buffering; drop Symfony's
+                // cumulative stdout so idle polling does not retain the full bus.
+                $process->clearOutput();
             }
         }
+    }
+
+    /**
+     * Bounded stderr tail for a consumer (crash diagnostics only).
+     */
+    public function stderrTailFor(string $consumerKey): string
+    {
+        return $this->stderrTails[$consumerKey] ?? '';
+    }
+
+    private function drainAndClearStderr(string $key, Process $process): void
+    {
+        $chunk = $process->getIncrementalErrorOutput();
+        if ('' !== $chunk) {
+            $this->appendStderrTail($key, $chunk);
+        }
+
+        $process->clearErrorOutput();
+    }
+
+    private function appendStderrTail(string $key, string $chunk): void
+    {
+        $tail = ($this->stderrTails[$key] ?? '').$chunk;
+        if (strlen($tail) > self::STDERR_TAIL_MAX_BYTES) {
+            $tail = substr($tail, -self::STDERR_TAIL_MAX_BYTES);
+        }
+
+        $this->stderrTails[$key] = $tail;
     }
 
     /**
@@ -210,7 +253,11 @@ final class ConsumerSupervisor implements ConsumerStdoutSourceInterface
             }
 
             $exitCode = $process->getExitCode();
-            $stderr = $process->getErrorOutput();
+            $this->drainAndClearStderr($key, $process);
+            $stderr = $this->stderrTails[$key] ?? '';
+            if ('' === $stderr) {
+                $stderr = $process->getErrorOutput();
+            }
 
             $this->logger->warning('Consumer process exited unexpectedly', [
                 'key' => $key,
@@ -219,6 +266,8 @@ final class ConsumerSupervisor implements ConsumerStdoutSourceInterface
                 'exit_code' => $exitCode,
                 'stderr' => '' !== $stderr ? $stderr : null,
             ]);
+
+            unset($this->stderrTails[$key]);
 
             unset($this->consumers[$key]);
 

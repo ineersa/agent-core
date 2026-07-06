@@ -20,6 +20,9 @@ final class ConsumerStdoutPoller
 {
     private const int MAX_CONSECUTIVE_BAD_LINES = 10;
 
+    /** Guard against unbounded partial-line retention when stdout lacks newlines. */
+    private const int MAX_PARTIAL_STDOUT_BYTES = ConsumerSupervisor::PARTIAL_STDOUT_MAX_BYTES;
+
     /** @var array<string, string> consumerKey => partial line buffer */
     private array $stdoutBuffers = [];
 
@@ -62,6 +65,16 @@ final class ConsumerStdoutPoller
         $buffer = ($this->stdoutBuffers[$consumerKey] ?? '').$output;
         $lastNewline = strrpos($buffer, "\n");
         if (false === $lastNewline) {
+            if (strlen($buffer) > self::MAX_PARTIAL_STDOUT_BYTES) {
+                $this->logger->warning('Truncating oversized partial consumer stdout buffer', [
+                    'consumer_key' => $consumerKey,
+                    'bytes' => strlen($buffer),
+                    'max_bytes' => self::MAX_PARTIAL_STDOUT_BYTES,
+                    'component' => 'ConsumerStdoutPoller',
+                    'event_type' => 'consumer_stdout.partial_buffer_truncated',
+                ]);
+                $buffer = substr($buffer, -self::MAX_PARTIAL_STDOUT_BYTES);
+            }
             $this->stdoutBuffers[$consumerKey] = $buffer;
 
             return;

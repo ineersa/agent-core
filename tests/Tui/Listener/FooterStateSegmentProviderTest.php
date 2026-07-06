@@ -246,4 +246,35 @@ class FooterStateSegmentProviderTest extends TestCase
         $this->assertContains('scout [running]', $texts);
         $this->assertNotContains('parent-model', $texts);
     }
+
+    #[Test]
+    public function testFooterFingerprintChangesWhenElapsedSecondChanges(): void
+    {
+        $state = $this->state;
+        $state->footerModel = 'm';
+        $state->sessionStartTime = microtime(true) - 65.0;
+
+        $provider = new FooterStateSegmentProvider($state);
+        $first = $provider->footerFingerprint();
+
+        $state->sessionStartTime = microtime(true) - 125.0;
+        $second = $provider->footerFingerprint();
+
+        $this->assertNotSame($first, $second);
+        $this->assertStringContainsString('⏱', $second);
+    }
+
+    #[Test]
+    public function testFooterFingerprintStableWithinSameElapsedDisplay(): void
+    {
+        $state = $this->state;
+        $state->footerModel = 'm';
+        $state->sessionStartTime = microtime(true) - 10.4;
+
+        $provider = new FooterStateSegmentProvider($state);
+        $a = $provider->footerFingerprint();
+        $b = $provider->footerFingerprint();
+
+        $this->assertSame($a, $b);
+    }
 }
