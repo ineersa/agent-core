@@ -46,6 +46,8 @@ if (null === $dumpFile) {
     exit(1);
 }
 $keys = [
+    'APP_ENV',
+    'APP_DEBUG',
     'HATFIELD_RUN_CONTROL_TRANSPORT_DSN',
     'HATFIELD_LLM_TRANSPORT_DSN',
     'HATFIELD_TOOL_TRANSPORT_DSN',
@@ -56,7 +58,8 @@ $keys = [
 ];
 $out = [];
 foreach ($keys as $key) {
-    $out[$key] = getenv($key) ?: '';
+    $value = getenv($key);
+    $out[$key] = false === $value ? '' : $value;
 }
 file_put_contents($dumpFile, json_encode($out));
 fwrite(STDOUT, json_encode(['type' => 'runtime.ready', 'runId' => '', 'seq' => 0, 'payload' => ['version' => '1.0']]) . "\n");
@@ -139,6 +142,25 @@ PHP);
         $this->assertStringNotContainsString('doctrine://default', implode(' ', $env));
     }
 
+    public function testSpawnedControllerDefaultsToProductionKernelEnv(): void
+    {
+        $saved = $this->snapshotTestDatabaseEnv();
+        try {
+            $this->restoreEnvVar('APP_ENV', null);
+            $this->restoreEnvVar('APP_DEBUG', null);
+
+            $envDump = $this->tmpDir.'/env-prod-defaults.json';
+            $client = $this->createClientWithEnvDump($envDump);
+            $client->start(new StartRunRequest(prompt: 'hello', runId: 'session-prod-defaults'));
+
+            $env = $this->waitForEnvDump($envDump);
+            $this->assertSame('prod', $env['APP_ENV']);
+            $this->assertSame('0', $env['APP_DEBUG']);
+        } finally {
+            $this->restoreTestDatabaseEnv($saved);
+        }
+    }
+
     public function testSpawnedControllerForwardsExplicitTestDatabaseEnvFromParentProcess(): void
     {
         $saved = $this->snapshotTestDatabaseEnv();
@@ -168,7 +190,7 @@ PHP);
     }
 
     /**
-     * @return array{app_env: ?string, app_path: ?string, transport_path: ?string}
+     * @return array{app_env: ?string, app_debug: ?string, app_path: ?string, transport_path: ?string}
      */
     private function snapshotTestDatabaseEnv(): array
     {
@@ -176,17 +198,19 @@ PHP);
 
         return [
             'app_env' => getenv('APP_ENV') ?: null,
+            'app_debug' => getenv('APP_DEBUG') ?: null,
             'app_path' => getenv('HATFIELD_TEST_DATABASE_PATH') ?: null,
             'transport_path' => false === $transport ? null : ($transport ?: null),
         ];
     }
 
     /**
-     * @param array{app_env: ?string, app_path: ?string, transport_path: ?string} $saved
+     * @param array{app_env: ?string, app_debug: ?string, app_path: ?string, transport_path: ?string} $saved
      */
     private function restoreTestDatabaseEnv(array $saved): void
     {
         $this->restoreEnvVar('APP_ENV', $saved['app_env']);
+        $this->restoreEnvVar('APP_DEBUG', $saved['app_debug']);
         $this->restoreEnvVar('HATFIELD_TEST_DATABASE_PATH', $saved['app_path']);
         $this->restoreEnvVar('HATFIELD_TEST_MESSENGER_TRANSPORT_DATABASE_PATH', $saved['transport_path']);
     }

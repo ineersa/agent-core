@@ -481,8 +481,8 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
         $queueSuffix = $this->sessionId ?? 'default';
 
         $env = array_merge(\is_array($currentEnv) ? $currentEnv : $_ENV, [
-            'APP_ENV' => $_SERVER['APP_ENV'] ?? $_ENV['APP_ENV'] ?? 'dev',
-            'APP_DEBUG' => $_SERVER['APP_DEBUG'] ?? $_ENV['APP_DEBUG'] ?? '1',
+            'APP_ENV' => $_SERVER['APP_ENV'] ?? $_ENV['APP_ENV'] ?? 'prod',
+            'APP_DEBUG' => $_SERVER['APP_DEBUG'] ?? $_ENV['APP_DEBUG'] ?? '0',
             // Controller/worker mode must use real async queues. The parent
             // TUI process defaults to sync:// so --transport=in-process remains
             // usable without a consumer pool.
