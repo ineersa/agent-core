@@ -172,7 +172,6 @@ final class ChatScreen
                 return implode("\n", $this->transcriptRenderable->render($tuiCtx));
             },
         );
-        $this->transcriptWidget->expandVertically(true);
 
         // ── Pending messages ──
         $this->pendingWidget = new LiveTextWidget(

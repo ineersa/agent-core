@@ -8,7 +8,6 @@ use Symfony\Component\Tui\Ansi\AnsiUtils;
 use Symfony\Component\Tui\Ansi\TextWrapper;
 use Symfony\Component\Tui\Render\RenderContext;
 use Symfony\Component\Tui\Widget\AbstractWidget;
-use Symfony\Component\Tui\Widget\VerticallyExpandableInterface;
 
 /**
  * A Symfony TUI widget whose content is produced by a callable on every render.
@@ -25,7 +24,7 @@ use Symfony\Component\Tui\Widget\VerticallyExpandableInterface;
  * Blank lines are preserved (produce empty-string array entries), which
  * makes this widget suitable for top-margin / spacer rows.
  */
-final class LiveTextWidget extends AbstractWidget implements VerticallyExpandableInterface
+final class LiveTextWidget extends AbstractWidget
 {
     /** @var \Closure(RenderContext): string */
     private \Closure $producer;
@@ -42,23 +41,6 @@ final class LiveTextWidget extends AbstractWidget implements VerticallyExpandabl
         private readonly bool $truncate = false,
     ) {
         $this->producer = $producer(...);
-    }
-
-    private bool $verticallyExpanded = false;
-
-    public function expandVertically(bool $expand): static
-    {
-        if ($this->verticallyExpanded !== $expand) {
-            $this->verticallyExpanded = $expand;
-            $this->invalidate();
-        }
-
-        return $this;
-    }
-
-    public function isVerticallyExpanded(): bool
-    {
-        return $this->verticallyExpanded;
     }
 
     /** @return string[] */
@@ -88,15 +70,6 @@ final class LiveTextWidget extends AbstractWidget implements VerticallyExpandabl
             return $result;
         }
 
-        $lines = TextWrapper::wrapTextWithAnsi($normalized, $cols);
-
-        if ($this->verticallyExpanded) {
-            $rows = $context->getRows();
-            if ($rows > 0 && \count($lines) > $rows) {
-                $lines = \array_slice($lines, -$rows);
-            }
-        }
-
-        return $lines;
+        return TextWrapper::wrapTextWithAnsi($normalized, $cols);
     }
 }
