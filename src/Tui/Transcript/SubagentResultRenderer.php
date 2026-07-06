@@ -81,13 +81,9 @@ final readonly class SubagentResultRenderer
         $container->add(new TextWidget($this->renderCard($plainLines, $theme, $status, $progress, $footerHint, $block->streaming)));
 
         if ('' !== $handoffMarkdown) {
-            $borderColor = $this->borderColorForStatus($status);
-            $container->add(new TextWidget($theme->color($borderColor, '│ Handoff')));
             $container->add($this->buildHandoffMarkdownWidget($handoffMarkdown, $theme, $status));
             if ($this->handoffNeedsExpandHint($handoffMarkdown)) {
-                $container->add(new TextWidget(
-                    $theme->color($borderColor, '│ ').$theme->muted('Ctrl+O to expand handoff'),
-                ));
+                $container->add(new TextWidget($theme->muted('Ctrl+O to expand handoff')));
             }
         }
 
@@ -110,7 +106,7 @@ final readonly class SubagentResultRenderer
     private function buildHandoffMarkdownWidget(string $handoffMarkdown, TuiTheme $theme, string $status): MarkdownWidget
     {
         $preview = $this->previewHandoffLines($handoffMarkdown);
-        $mdWidget = new MarkdownWidget($preview);
+        $mdWidget = new MarkdownWidget("### Handoff\n\n".$preview);
         $colorSpec = $theme->getPalette()->get(ThemeColorEnum::ToolOutput);
         $style = '' !== $colorSpec
             ? new Style(color: $colorSpec, padding: Padding::from([0, 0, 0, 2]))
@@ -153,11 +149,20 @@ final readonly class SubagentResultRenderer
      */
     private function resolveHandoffMarkdown(array $progress, string $resultText): string
     {
+        if (!$this->isTerminalCardStatus($this->resolveCardStatus($progress))) {
+            return '';
+        }
+
         if ('' === trim($resultText) || $this->isRedundantHandoff($progress, $resultText)) {
             return '';
         }
 
         return trim($resultText);
+    }
+
+    private function isTerminalCardStatus(string $status): bool
+    {
+        return \in_array($status, ['completed', 'failed', 'cancelled'], true);
     }
 
     /**
@@ -241,7 +246,7 @@ final readonly class SubagentResultRenderer
             return $theme->color(ThemeColorEnum::ToolTitle, $line);
         }
         if (str_starts_with($line, 'Active ') || str_starts_with($line, '› ')) {
-            return $theme->accent($line);
+            return $theme->color(ThemeColorEnum::ToolOutput, $line);
         }
         if (str_starts_with($line, 'Use agent_retrieve')) {
             return $theme->muted($line);

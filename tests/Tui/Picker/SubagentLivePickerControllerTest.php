@@ -22,6 +22,21 @@ use Symfony\Component\Tui\Widget\SelectListWidget;
 
 final class SubagentLivePickerControllerTest extends TestCase
 {
+
+    #[Test]
+    public function testOpenTwiceDoesNotStackOverlay(): void
+    {
+        $harness = new VirtualTuiHarness(sessionId: 'picker-idempotent');
+        $state = new TuiSessionState('picker-idempotent');
+        $this->seedCatalogChild($state, 'agent_a', 'child-run-1', 'running');
+
+        $picker = $this->picker($harness, $state);
+        $picker->open();
+        $this->assertTrue($picker->isOpen());
+        $picker->open();
+        $this->assertTrue($picker->isOpen());
+    }
+
     #[Test]
     public function dismissKeyDoesNotRemoveRunningChild(): void
     {

@@ -7,7 +7,7 @@ namespace Ineersa\Tui\Runtime;
 use Ineersa\Tui\Screen\ChatScreen;
 
 /**
- * Clears optimistic subagent_live / picker attention when the TUI knows a child
+ * Syncs catalog/live-view child state and clears status-panel keys for subagent live.
  * left waiting_human before the next parent subagent_progress snapshot.
  */
 final class SubagentLiveAttention
@@ -135,22 +135,12 @@ final class SubagentLiveAttention
     }
 
     /**
-     * Keeps the main-screen subagent_live attention marker aligned with the catalog.
-     * Live-view context uses working message and transcript — not status-panel keys.
+     * Clears persistent subagent_live / agents-live status-panel rows on every sync.
      */
     public static function refreshAttentionFooter(TuiSessionState $state, ChatScreen $screen): void
     {
-        $child = $state->subagentLiveCatalog->firstChildNeedingAttention();
-        if (null !== $child) {
-            $screen->setStatus(
-                'subagent_live',
-                \sprintf('⚠ Subagent %s needs your input — /agents-live', $child->agentName),
-            );
-        } else {
-            $screen->setStatus('subagent_live', null);
-        }
-
-        // Defensive: never show keyed status rows for live-view-only context.
+        // Attention is shown on inline transcript cards, picker markers, and live view — not status panel rows.
+        $screen->setStatus('subagent_live', null);
         $screen->setStatus('agents-live', null);
     }
 }

@@ -44,6 +44,10 @@ final class SubagentLivePickerController
 
     public function open(): void
     {
+        if ($this->isOpen()) {
+            return;
+        }
+
         $children = $this->state?->subagentLiveCatalog->all() ?? [];
         if ([] === $children) {
             $this->screen?->setWorkingMessage('No known subagents yet. Launch a subagent first.');
@@ -98,6 +102,12 @@ final class SubagentLivePickerController
      */
     private function openWithChildren(array $children): void
     {
+        if ($this->isOpen()) {
+            return;
+        }
+
+        $this->closePicker(requestRender: false);
+
         $tui = $this->tui;
         $screen = $this->screen;
         $state = $this->state;

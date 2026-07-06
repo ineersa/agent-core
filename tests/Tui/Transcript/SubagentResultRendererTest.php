@@ -89,6 +89,50 @@ final class SubagentResultRendererTest extends TestCase
         $this->assertStringContainsString('Ctrl+\\', $joined);
     }
 
+
+    public function testActiveProgressWithResultTextDoesNotRenderHandoffSection(): void
+    {
+        $progress = [
+            'mode' => 'single', 'status' => 'running', 'agent_name' => 'scout',
+            'artifact_id' => 'agent_run', 'task_summary' => 'task', 'turn_no' => 1,
+        ];
+        $handoff = "# Premature handoff\n\nShould not show while running.";
+        $block = new TranscriptBlock(
+            id: 'tool_result_running_handoff', kind: TranscriptBlockKindEnum::ToolResult, runId: 'run1', seq: 1,
+            text: '', meta: [
+                'tool_name' => 'subagent',
+                'subagent_progress' => $progress,
+                'result' => $handoff,
+            ],
+            streaming: true,
+        );
+        $joined = implode("\n", $this->renderer()->renderBlock($block, $this->context()));
+        $this->assertStringContainsString('scout [running]', $joined);
+        $this->assertStringNotContainsString('Handoff', $joined);
+        $this->assertStringNotContainsString('Ctrl+O to expand handoff', $joined);
+        $this->assertStringNotContainsString('Premature handoff', $joined);
+    }
+
+    public function testWaitingHumanWithResultTextDoesNotRenderHandoffSection(): void
+    {
+        $progress = [
+            'mode' => 'single', 'status' => 'waiting_human', 'agent_name' => 'scout',
+            'artifact_id' => 'agent_wait', 'task_summary' => 'approve', 'turn_no' => 2,
+        ];
+        $block = new TranscriptBlock(
+            id: 'tool_result_wait_handoff', kind: TranscriptBlockKindEnum::ToolResult, runId: 'run1', seq: 1,
+            text: '', meta: [
+                'tool_name' => 'subagent',
+                'subagent_progress' => $progress,
+                'result' => "# Draft handoff\n\nNot terminal yet.",
+            ],
+        );
+        $joined = implode("\n", $this->renderer()->renderBlock($block, $this->context()));
+        $this->assertStringContainsString('needs input', $joined);
+        $this->assertStringNotContainsString('Ctrl+O to expand handoff', $joined);
+        $this->assertStringNotContainsString('Draft handoff', $joined);
+    }
+
     public function testRendersParallelProgressAsStackedCards(): void
     {
         $progress = [
@@ -141,7 +185,8 @@ final class SubagentResultRendererTest extends TestCase
         );
         $joined = implode("\n", $this->renderer(previewLines: 3)->renderBlock($block, $this->context()));
         $this->assertStringContainsString('✓ scout [completed]', $joined);
-        $this->assertStringContainsString('│ Handoff', $joined);
+        $this->assertStringContainsString('Handoff', $joined);
+        $this->assertStringNotContainsString('│ Handoff', $joined);
         $this->assertStringContainsString('Handoff title', $joined);
         $this->assertStringContainsString('Unique handoff body', $joined);
         $this->assertStringContainsString('more line', $joined);
