@@ -33,10 +33,14 @@ final class JsonlProcessAgentSessionClientEventBufferTest extends TestCase
     {
         $client = $this->createIdleClient();
         $ref = new \ReflectionClass($client);
-        $buffer = $ref->getProperty('eventBuffer')->getValue($client);
+        $buffers = $ref->getProperty('eventBuffersByRunId')->getValue($client);
 
-        $buffer->enqueue(new RuntimeEvent(RuntimeEventTypeEnum::RunCompleted->value, 'parent-run', 10, []));
-        $buffer->enqueue(new RuntimeEvent(RuntimeEventTypeEnum::TurnStarted->value, 'child-run', 5, []));
+        $buffers['parent-run'] = new \SplQueue();
+        $buffers['parent-run']->enqueue(new RuntimeEvent(RuntimeEventTypeEnum::RunCompleted->value, 'parent-run', 10, []));
+        $buffers['child-run'] = new \SplQueue();
+        $buffers['child-run']->enqueue(new RuntimeEvent(RuntimeEventTypeEnum::TurnStarted->value, 'child-run', 5, []));
+        $ref->getProperty('eventBuffersByRunId')->setValue($client, $buffers);
+        $ref->getProperty('eventBufferTotalCount')->setValue($client, 2);
 
         $childDrain = iterator_to_array($client->events('child-run'));
         $this->assertCount(1, $childDrain);
@@ -64,7 +68,54 @@ final class JsonlProcessAgentSessionClientEventBufferTest extends TestCase
         }
 
         $warnings = array_filter($logger->records, static fn (array $r): bool => 'jsonl_event_buffer.watermark' === ($r['context']['event_type'] ?? ''));
-        $this->assertNotEmpty($warnings);
+        $this->assertCount(1, $warnings);
+    }
+
+    public function testAlternatingEventsDrainDoesNotRebufferOrSpamWatermarkLogs(): void
+    {
+        $logger = new TestLogger();
+        $client = $this->createIdleClient($logger);
+        $ref = new \ReflectionClass($client);
+        $buffersProp = $ref->getProperty('eventBuffersByRunId');
+        $buffers = $buffersProp->getValue($client);
+        $buffers['parent-run'] = new \SplQueue();
+        $buffers['child-run'] = new \SplQueue();
+        for ($i = 0; $i < 1200; ++$i) {
+            $buffers['parent-run']->enqueue(new RuntimeEvent(RuntimeEventTypeEnum::TurnStarted->value, 'parent-run', $i, []));
+            $buffers['child-run']->enqueue(new RuntimeEvent(RuntimeEventTypeEnum::TurnStarted->value, 'child-run', $i, []));
+        }
+        $buffersProp->setValue($client, $buffers);
+        $ref->getProperty('eventBufferTotalCount')->setValue($client, 2400);
+
+        for ($cycle = 0; $cycle < 20; ++$cycle) {
+            iterator_to_array($client->events('child-run'));
+            iterator_to_array($client->events('parent-run'));
+        }
+
+        $remaining = $buffersProp->getValue($client);
+        $this->assertSame([], $remaining);
+
+        $warnings = array_filter($logger->records, static fn (array $r): bool => 'jsonl_event_buffer.watermark' === ($r['context']['event_type'] ?? ''));
+        $this->assertCount(0, $warnings);
+    }
+
+    public function testBufferMaxDropsOldestWithBoundedDiagnostics(): void
+    {
+        $logger = new TestLogger();
+        $client = $this->createIdleClient($logger);
+        $ref = new \ReflectionClass($client);
+        $bufferMethod = $ref->getMethod('bufferEvent');
+
+        for ($i = 0; $i < 10050; ++$i) {
+            $bufferMethod->invoke($client, new RuntimeEvent(RuntimeEventTypeEnum::TurnStarted->value, 'parent-run', $i, []), 'test');
+        }
+
+        $total = $ref->getProperty('eventBufferTotalCount')->getValue($client);
+        $this->assertSame(10000, $total);
+
+        $drops = array_filter($logger->records, static fn (array $r): bool => 'jsonl_event_buffer.drop_oldest' === ($r['context']['event_type'] ?? ''));
+        $this->assertNotEmpty($drops);
+        $this->assertLessThanOrEqual(60, \count($drops));
     }
 
     private function createIdleClient(?TestLogger $logger = null): JsonlProcessAgentSessionClient

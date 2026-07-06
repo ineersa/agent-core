@@ -63,6 +63,22 @@ final class TuiStartupVirtualRenderTest extends TestCase
         $this->assertSame($hiddenRevision, $this->workingWidgetRenderRevision($screen));
     }
 
+    #[Test]
+    public function testNoopWorkingMessageNullDoesNotInvalidateWidget(): void
+    {
+        $harness = new VirtualTuiHarness(sessionId: self::SESSION_ID);
+        $screen = $harness->screen();
+
+        $screen->setWorkingMessage(null);
+        $idleRevision = $this->workingWidgetRenderRevision($screen);
+
+        $screen->setWorkingMessage(null);
+        $this->assertSame($idleRevision, $this->workingWidgetRenderRevision($screen));
+
+        $screen->setWorkingMessage(null);
+        $this->assertSame($idleRevision, $this->workingWidgetRenderRevision($screen));
+    }
+
     private function workingWidgetRenderRevision(ChatScreen $screen): int
     {
         $property = new \ReflectionProperty($screen, 'workingWidget');

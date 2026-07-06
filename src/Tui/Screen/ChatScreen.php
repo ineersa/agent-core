@@ -402,7 +402,7 @@ final class ChatScreen
 
     public function setWorkingMessage(?string $message): void
     {
-        if ($message === $this->workingRenderable->getMessage()) {
+        if (($message ?? '') === $this->workingRenderable->getMessage()) {
             return;
         }
 
