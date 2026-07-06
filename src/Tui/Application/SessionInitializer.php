@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Application;
 
 use Ineersa\AgentCore\Domain\Event\RunEvent;
+use Ineersa\CodingAgent\Runtime\Contract\SessionTranscriptProviderInterface;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\Contract\TranscriptProjectorInterface;
 use Ineersa\CodingAgent\Runtime\Contract\TurnTreeProviderInterface;
@@ -45,6 +46,7 @@ final readonly class SessionInitializer
         private LoggerInterface $logger,
         private TuiRuntimeEventApplier $eventApplier,
         private TurnTreeProviderInterface $turnTreeProvider,
+        private SessionTranscriptProviderInterface $sessionTranscriptProvider,
     ) {
     }
 
@@ -191,22 +193,23 @@ final readonly class SessionInitializer
         // in the transcript after resume. This matches the live poller's wholesale-
         // replace behavior on RunLeafChanged.
         $replayed = false;
+        $branchAwareBlocks = [];
+        $branchAwareLeafTurnNo = null;
 
         try {
             $tree = $this->turnTreeProvider->forSession($runId);
 
             if (null !== $tree->currentLeafTurnNo) {
-                $activeEvents = $this->turnTreeProvider->activePathRuntimeEvents(
+                $branchAwareLeafTurnNo = $tree->currentLeafTurnNo;
+                $branchAwareBlocks = $this->sessionTranscriptProvider->transcriptBlocksForLeaf(
                     $runId,
-                    $tree->currentLeafTurnNo,
+                    $branchAwareLeafTurnNo,
                 );
 
-                foreach ($activeEvents as $runtimeEvent) {
-                    if ($runtimeEvent->seq > $maxMappedSeq) {
-                        $maxMappedSeq = $runtimeEvent->seq;
+                foreach ($branchAwareBlocks as $block) {
+                    if ($block->seq > $maxMappedSeq) {
+                        $maxMappedSeq = $block->seq;
                     }
-
-                    $this->eventApplier->apply($state, $runtimeEvent, replayMode: true);
                 }
 
                 $replayed = true;
@@ -272,6 +275,10 @@ final readonly class SessionInitializer
             && !$this->shouldSuppressTerminalActivityForInProgressCompaction($runEvents)) {
             $state->activity = $terminalActivity;
             $state->isCompacting = false;
+        }
+
+        if ($replayed && [] !== $branchAwareBlocks) {
+            return $branchAwareBlocks;
         }
 
         $blocks = $this->projector->blocks();

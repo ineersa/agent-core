@@ -6,7 +6,7 @@ namespace Ineersa\Tui\Runtime;
 
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeExceptionBoundary;
-use Ineersa\CodingAgent\Runtime\Contract\TurnTreeProviderInterface;
+use Ineersa\CodingAgent\Runtime\Contract\SessionTranscriptProviderInterface;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
@@ -31,7 +31,7 @@ final class RuntimeEventPoller
         private readonly TuiRuntimeEventApplier $eventApplier,
         private readonly LoggerInterface $logger,
         private readonly RuntimeExceptionBoundary $boundary,
-        private readonly TurnTreeProviderInterface $turnTreeProvider,
+        private readonly SessionTranscriptProviderInterface $sessionTranscriptProvider,
     ) {
     }
 
@@ -96,10 +96,8 @@ final class RuntimeEventPoller
                 $this->eventApplier->apply($state, $runtimeEvent);
 
                 // ── Leaf change: rebuild transcript wholesale ──
-                // The applier has reset the projector and returned early (no queued
-                // follow-up dispatch, no callback handlers, no processing placeholder
-                // removal). We now fetch active-path RuntimeEvents from the provider
-                // and replay them through the projector to rebuild the transcript.
+                // The applier resets live projector state; projected blocks come from
+                // SessionTranscriptProvider (isolated projector), not TUI local replay.
                 if (RuntimeEventTypeEnum::RunLeafChanged->value === $runtimeEvent->type) {
                     $leafTurnNo = (int) ($runtimeEvent->payload['turn_no'] ?? 0);
 
@@ -107,20 +105,16 @@ final class RuntimeEventPoller
                         $hasRunLeafChanged = true;
 
                         try {
-                            $activeEvents = $this->turnTreeProvider->activePathRuntimeEvents(
+                            $state->transcript = $this->sessionTranscriptProvider->transcriptBlocksForLeaf(
                                 $state->handle->runId,
                                 $leafTurnNo,
                             );
-                            $this->eventApplier->replayTranscriptOnly($activeEvents);
-                            $state->transcript = $this->eventApplier->projectedBlocks();
                         } catch (\Throwable $e) {
                             $this->logger->warning('runtime_event_poller.leaf_changed_rebuild_failed', [
                                 'run_id' => $state->handle->runId,
                                 'leaf_turn_no' => $leafTurnNo,
                                 'exception' => $e->getMessage(),
                             ]);
-                            // Degrade gracefully: clear transcript so user sees blank
-                            // rather than stale abandoned-branch content.
                             $state->transcript = [];
                         }
                     } else {

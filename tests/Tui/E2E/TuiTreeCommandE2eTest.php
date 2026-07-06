@@ -128,6 +128,91 @@ final class TuiTreeCommandE2eTest extends TestCase
         }
     }
 
+    public function testTreeEnterRewindsTranscriptToEarlierTurn(): void
+    {
+        $pane = $this->tmux->startDetached(
+            command: $this->agentCommandForFixtureChain(
+                'tui-tree-rewind-turn1-07c.json',
+                'tui-tree-rewind-turn2-07c.json',
+            ),
+            prefix: 'tui-tree-rewind-07c',
+            width: 120,
+            height: 60,
+            cwd: $this->testProjectDir,
+        );
+
+        try {
+            $this->tmux->waitForCaptureContains($pane, '█', TmuxHarness::TUI_STARTUP_LOGO_TIMEOUT_PARALLEL);
+            $this->tmux->waitForTuiReadyAfterLogo($pane);
+
+            $this->submitPrompt($pane, 'first-turn-marker-07c');
+            $this->waitAssistantBlock($pane);
+            $this->tmux->waitForCaptureContains($pane, 'FIRST_TURN_REPLY_07C', TmuxHarness::TUI_GATE_CALLBACK_TIMEOUT_PARALLEL);
+
+            $this->submitPrompt($pane, 'second-turn-marker-07c');
+            $this->waitAssistantBlock($pane);
+            $this->tmux->waitForCaptureContains($pane, 'second-turn-marker-07c', TmuxHarness::TUI_GATE_CALLBACK_TIMEOUT_PARALLEL);
+
+            $this->runSlashCommand($pane, '/tree');
+            $this->tmux->waitForCallback(
+                $pane,
+                static fn (string $cap): bool => str_contains($cap, 'Session turn tree') && str_contains($cap, 'rewind'),
+                timeout: 10.0,
+                message: 'Tree picker overlay did not open',
+                history: 2000,
+            );
+
+            // Open on current leaf (latest turn). One Up selects the first turn in a linear two-turn tree.
+            $this->tmux->sendKey($pane, 'Up');
+            usleep(200_000);
+
+            $this->tmux->waitForCallback(
+                $pane,
+                static fn (string $cap): bool => str_contains($cap, 'first-turn-marker-07c'),
+                timeout: 5.0,
+                message: 'Tree picker selection should highlight the first-turn row',
+                history: 2000,
+            );
+
+            $this->tmux->sendKey($pane, 'Enter');
+
+            $this->tmux->waitForCallback(
+                $pane,
+                static fn (string $cap): bool => str_contains($cap, '● idle')
+                    && !str_contains($cap, 'Session turn tree'),
+                timeout: TmuxHarness::TUI_GATE_CALLBACK_TIMEOUT_PARALLEL,
+                message: 'Tree picker did not close after Enter rewind',
+                history: 2000,
+            );
+
+            $this->tmux->waitForCallback(
+                $pane,
+                static fn (string $cap): bool => str_contains($cap, 'first-turn-marker-07c')
+                    && !str_contains($cap, 'second-turn-marker-07c'),
+                timeout: TmuxHarness::TUI_GATE_CALLBACK_TIMEOUT_PARALLEL,
+                message: 'Transcript did not rewind to first-turn leaf (second-turn marker still visible)',
+                history: 500,
+            );
+
+            $paneCapture = $this->tmux->capturePlain($pane);
+            $this->assertStringContainsString('first-turn-marker-07c', $paneCapture,
+                'Rewound transcript should still show the first-turn user marker in the current pane.');
+            $this->assertStringNotContainsString('second-turn-marker-07c', $paneCapture,
+                'Abandoned second-turn user marker must disappear from the current pane after rewind.');
+
+            $this->saveAnsiSnapshot($pane, 'tree-enter-rewind-07c');
+
+            $this->tmux->sendKey($pane, 'C-d');
+        } catch (\Throwable $e) {
+            $this->saveAnsiSnapshot($pane, 'tree-enter-rewind-07c-FAILURE');
+            try {
+                $this->tmux->sendKey($pane, 'C-d');
+            } catch (\Throwable) {
+            }
+            throw $e;
+        }
+    }
+
     private function agentCommand(): string
     {
         $fixturePath = $this->projectRoot.'/tests/Tui/E2E/fixtures/tui-followup-response.json';
@@ -150,6 +235,58 @@ final class TuiTreeCommandE2eTest extends TestCase
             $fixtureEnv,
             escapeshellarg($php),
             escapeshellarg($script),
+        );
+    }
+
+    private function submitPrompt(TmuxPane $pane, string $text): void
+    {
+        $this->tmux->sendKey($pane, 'C-u');
+        usleep(50_000);
+        $this->tmux->sendLiteral($pane, $text);
+        $this->tmux->sendKey($pane, 'Enter');
+    }
+
+    private function runSlashCommand(TmuxPane $pane, string $command): void
+    {
+        $this->tmux->sendKey($pane, 'C-u');
+        usleep(50_000);
+        $this->tmux->sendLiteral($pane, $command);
+        $this->tmux->sendKey($pane, 'Enter');
+    }
+
+    private function waitAssistantBlock(TmuxPane $pane): void
+    {
+        $this->tmux->waitForCallback(
+            $pane,
+            static fn (string $cap): bool => str_contains($cap, '◇'),
+            timeout: TmuxHarness::TUI_ASSISTANT_BLOCK_TIMEOUT_PARALLEL,
+            message: 'Assistant block (◇) did not appear',
+            history: 2000,
+        );
+    }
+
+    private function agentCommandForFixtureChain(string ...$fixtureFiles): string
+    {
+        $paths = [];
+        foreach ($fixtureFiles as $file) {
+            $path = $this->projectRoot.'/tests/Tui/E2E/fixtures/'.$file;
+            if (is_file($path)) {
+                $paths[] = $path;
+            }
+        }
+        $fixtureEnv = [] !== $paths
+            ? 'HATFIELD_LLM_REPLAY_FIXTURE_PATH='.escapeshellarg(implode(';', $paths)).' '
+            : '';
+
+        $paths = TuiE2eDatabaseEnv::allocatePaths('tui-tree-rewind-');
+
+        return \sprintf(
+            'APP_ENV=test %sHOME=%s %s %s %s agent --model=llama_cpp_test/test --tools-excluded=bash 2>&1',
+            TuiE2eDatabaseEnv::shellPrefix($paths['app'], $paths['transport']),
+            escapeshellarg($this->testProjectDir.'/home'),
+            $fixtureEnv,
+            escapeshellarg(\PHP_BINARY),
+            escapeshellarg($this->projectRoot.'/bin/console'),
         );
     }
 

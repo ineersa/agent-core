@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Runtime\Controller\CommandHandler;
 
 use Ineersa\AgentCore\Contract\Rewind\RunRewindServiceInterface;
 use Ineersa\CodingAgent\Runtime\Controller\Event\ControllerCommandEvent;
+use Ineersa\CodingAgent\Runtime\Protocol\RunLeafChangedEventFactory;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Psr\Log\LoggerInterface;
@@ -70,22 +71,7 @@ final readonly class RewindToTurnHandler
             $rebuiltState = $result['rebuiltState'];
             $leafSetSeq = $result['leafSetSeq'];
 
-            // Emit RunLeafChanged RuntimeEvent so the TUI observes the leaf change.
-            // The TUI can fetch the full tree via TurnTreeProviderInterface for richer info
-            // when rebuilding transcript blocks after the leaf change.
-            //
-            // NOTE: InProcessAgentSessionClient::handleInProcessRewind() mirrors this
-            // emission; both must emit an equivalent RunLeafChanged event so the TUI
-            // rebuilds its transcript regardless of transport. Keep them in sync.
-            $event->emit(new RuntimeEvent(
-                type: RuntimeEventTypeEnum::RunLeafChanged->value,
-                runId: $runId,
-                seq: $leafSetSeq,
-                payload: [
-                    'turn_no' => $targetTurnNo,
-                    'leaf_set_seq' => $leafSetSeq,
-                ],
-            ));
+            $event->emit(RunLeafChangedEventFactory::create($runId, $leafSetSeq, $targetTurnNo));
 
             $this->logger->info('rewind_handler.completed', [
                 'run_id' => $runId,

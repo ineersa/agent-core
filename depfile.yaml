@@ -562,6 +562,7 @@ parameters:
       - AgentCore
       - AppConfig
       - AppRuntimeContract
+      - AppRuntimeProjection
       - SymfonyConsole
       - SymfonyLock
       - SymfonyYaml

@@ -208,6 +208,12 @@ final class TuiRuntimeEventApplierTest extends TestCase
             logger: new NullLogger(),
             eventApplier: new TuiRuntimeEventApplier($projector),
             turnTreeProvider: $turnTreeProvider,
+            sessionTranscriptProvider: new class implements \Ineersa\CodingAgent\Runtime\Contract\SessionTranscriptProviderInterface {
+                public function transcriptBlocksForLeaf(string $runId, int $leafTurnNo): array
+                {
+                    return [];
+                }
+            },
         );
     }
 

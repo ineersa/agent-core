@@ -9,12 +9,12 @@ use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
+use Ineersa\CodingAgent\Runtime\Contract\SessionTranscriptProviderInterface;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\Contract\TranscriptProjectorInterface;
 use Ineersa\CodingAgent\Runtime\Contract\TurnTreeProviderInterface;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
-use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTranslator;
 use Ineersa\CodingAgent\Runtime\Protocol\TurnTreeView;
@@ -95,6 +95,12 @@ final class SessionInitializerTest extends TestCase
             logger: new NullLogger(),
             eventApplier: new TuiRuntimeEventApplier($this->projector),
             turnTreeProvider: $turnTreeProvider,
+            sessionTranscriptProvider: (function () {
+                $stub = $this->createStub(SessionTranscriptProviderInterface::class);
+                $stub->method('transcriptBlocksForLeaf')->willReturn([]);
+
+                return $stub;
+            })(),
         );
     }
 
@@ -430,23 +436,14 @@ final class SessionInitializerTest extends TestCase
                 activePathTurnNos: [1, 3],
             ));
 
-        // activePathRuntimeEvents returns filtered events (only T1 + T3)
-        $turnTreeProvider->expects($this->once())
-            ->method('activePathRuntimeEvents')
+        // transcriptBlocksForLeaf returns projected blocks (only T1 + T3)
+        $sessionTranscriptProvider = $this->createMock(SessionTranscriptProviderInterface::class);
+        $sessionTranscriptProvider->expects($this->once())
+            ->method('transcriptBlocksForLeaf')
             ->with($runId, 1)
             ->willReturn([
-                new RuntimeEvent(
-                    type: 'user.message_submitted',
-                    runId: $runId,
-                    seq: 5,
-                    payload: ['text' => 'Turn 1', 'message_id' => 'msg_t1'],
-                ),
-                new RuntimeEvent(
-                    type: 'user.message_submitted',
-                    runId: $runId,
-                    seq: 15,
-                    payload: ['text' => 'Turn 3 — new branch', 'message_id' => 'msg_t3'],
-                ),
+                new TranscriptBlock(id: 'b1', kind: TranscriptBlockKindEnum::UserMessage, runId: $runId, seq: 5, text: 'Turn 1'),
+                new TranscriptBlock(id: 'b3', kind: TranscriptBlockKindEnum::UserMessage, runId: $runId, seq: 15, text: 'Turn 3 — new branch'),
             ]);
 
         // ── Build a fresh initializer with real projector + custom provider ──
@@ -474,6 +471,7 @@ final class SessionInitializerTest extends TestCase
             logger: new NullLogger(),
             eventApplier: new TuiRuntimeEventApplier($projector),
             turnTreeProvider: $turnTreeProvider,
+            sessionTranscriptProvider: $sessionTranscriptProvider,
         );
 
         $state = new TuiSessionState($runId, true);
@@ -525,21 +523,13 @@ final class SessionInitializerTest extends TestCase
                 currentLeafTurnNo: 1,
                 activePathTurnNos: [1],
             ));
-        $turnTreeProvider->expects($this->once())
-            ->method('activePathRuntimeEvents')
+        $sessionTranscriptProvider = $this->createMock(SessionTranscriptProviderInterface::class);
+        $sessionTranscriptProvider->expects($this->once())
+            ->method('transcriptBlocksForLeaf')
             ->with($runId, 1)
-            ->willReturn([
-                new RuntimeEvent(
-                    type: 'user.message_submitted',
-                    runId: $runId,
-                    seq: 1,
-                    payload: ['text' => 'Hello', 'message_id' => 'msg_1'],
-                ),
-            ]);
+            ->willReturn([new TranscriptBlock(id: 'b1', kind: TranscriptBlockKindEnum::UserMessage, runId: $runId, seq: 1, text: 'Hello')]);
 
-        $this->projector->expects($this->exactly(1))->method('reset');
-        $this->projector->expects($this->once())->method('accept');
-        $this->projector->expects($this->once())->method('blocks')->willReturn([]);
+        $this->projector->expects($this->never())->method('accept');
 
         $appConfig = new AppConfig(
             tui: new TuiConfig(theme: 'default'),
@@ -563,6 +553,7 @@ final class SessionInitializerTest extends TestCase
             logger: new NullLogger(),
             eventApplier: new TuiRuntimeEventApplier($this->projector),
             turnTreeProvider: $turnTreeProvider,
+            sessionTranscriptProvider: $sessionTranscriptProvider,
         );
 
         $state = new TuiSessionState($runId, true);

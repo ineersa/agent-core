@@ -38,16 +38,13 @@ final readonly class TuiRuntimeEventApplier
         }
 
         if (RuntimeEventTypeEnum::RunLeafChanged->value === $event->type) {
-            // Reset projector so replayTranscriptOnly (called by RuntimeEventPoller
-            // after apply()) starts from a clean slate. The poller handles the actual
-            // transcript rebuild by fetching active-path events and replaying them
-            // through the projector only (no state mutation).
+            // Reset live projector for post-leaf events in the same poll batch.
+            // Leaf transcript blocks are assigned wholesale by RuntimeEventPoller
+            // from SessionTranscriptProvider (isolated projector).
             $this->projector->reset();
 
             $state->activity = RunActivityStateEnum::Idle;
             $state->queuedFollowUp = null;
-            // Abandoned-branch queued steer/follow-up commands must not keep
-            // rendering as ⏳ above the editor after rewind/resume.
             $state->queuedUserMessages = [];
 
             return;
@@ -78,23 +75,6 @@ final readonly class TuiRuntimeEventApplier
         $state->applyQueuedUserMessageEvent($event);
         $state->subagentLiveCatalog->ingestRuntimeEvent($event);
         $this->projector->accept($event->toArray());
-    }
-
-    /**
-     * Feed events through the projector for transcript rebuilding without touching state.
-     *
-     * The projector must already be reset (typically by the RunLeafChanged handler).
-     * Used by RuntimeEventPoller to rebuild transcript blocks after a leaf change,
-     * replaying only active-path events into the projector, then wholesale-replacing
-     * $state->transcript with the result.
-     *
-     * @param list<RuntimeEvent> $runtimeEvents
-     */
-    public function replayTranscriptOnly(array $runtimeEvents): void
-    {
-        foreach ($runtimeEvents as $event) {
-            $this->projector->accept($event->toArray());
-        }
     }
 
     /** @return list<\Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock> */

@@ -80,11 +80,6 @@ final class ResumeSessionInitializerTestFactory
                     activePathTurnNos: [],
                 );
             }
-
-            public function activePathRuntimeEvents(string $runId, int $leafTurnNo): array
-            {
-                return [];
-            }
         };
 
         return new SessionInitializer(
@@ -96,6 +91,12 @@ final class ResumeSessionInitializerTestFactory
             logger: new NullLogger(),
             eventApplier: new TuiRuntimeEventApplier($projector),
             turnTreeProvider: $turnTreeProvider,
+            sessionTranscriptProvider: new class implements \Ineersa\CodingAgent\Runtime\Contract\SessionTranscriptProviderInterface {
+                public function transcriptBlocksForLeaf(string $runId, int $leafTurnNo): array
+                {
+                    return [];
+                }
+            },
         );
     }
 }
