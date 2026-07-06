@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Extension;
 
+use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterTurnCommitHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Prompt\PromptContributorInterface;
 use Ineersa\Hatfield\ExtensionApi\Prompt\PromptContributorProviderInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallHookInterface;
@@ -65,6 +66,9 @@ final class ExtensionHookRegistry implements PromptContributorProviderInterface,
      * @var array<string, ToolCallHookInterface>
      */
     private array $hooksById = [];
+
+    /** @var list<AfterTurnCommitHookInterface> */
+    private array $afterTurnCommitHooks = [];
 
     public function addToolCallHook(ToolCallHookInterface $hook): void
     {
@@ -144,5 +148,16 @@ final class ExtensionHookRegistry implements PromptContributorProviderInterface,
     public function getHook(string $hookId): ?ToolCallHookInterface
     {
         return $this->hooksById[$hookId] ?? null;
+    }
+
+    public function addAfterTurnCommitHook(AfterTurnCommitHookInterface $hook): void
+    {
+        $this->afterTurnCommitHooks[] = $hook;
+    }
+
+    /** @return list<AfterTurnCommitHookInterface> */
+    public function afterTurnCommitHooks(): array
+    {
+        return $this->afterTurnCommitHooks;
     }
 }

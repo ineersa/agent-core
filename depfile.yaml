@@ -136,6 +136,11 @@ parameters:
         - type: classNameRegex
           value: '#^Ineersa\\HatfieldExt\\TaskWorkflow\\#'
 
+    - name: HatfieldExtFileRewind
+      collectors:
+        - type: classNameRegex
+          value: '#^Ineersa\\HatfieldExt\\FileRewind\\#'
+
     - name: AppExtensionBuiltin
       collectors:
         - type: classNameRegex
@@ -356,6 +361,7 @@ parameters:
       - SymfonyConsole
 
     TuiListener:
+      - AppExtensionApi
       - AppRuntimeContract
       - AppRuntimeProjection
       - AppSession
@@ -377,12 +383,14 @@ parameters:
       - SymfonyTui
 
     TuiRuntime:
+      - AppExtensionApi
       - AppRuntimeContract
       - AppRuntimeProjection
       - AppSession
       - TuiTranscript
       - TuiScreen
       - TuiTheme
+      - TuiPicker
       - SymfonyTui
 
     TuiScreen:
@@ -410,11 +418,14 @@ parameters:
 
     TuiExtension:
       - AppExtensionApi
+      - AppRuntimeContract
       - TuiLayout
       - TuiWidget
       - TuiFooter
       - TuiTheme
       - TuiCommand
+      - TuiRuntime
+      - TuiPicker
 
     TuiHeader:
       - TuiWidget
@@ -431,7 +442,8 @@ parameters:
       - TuiWidget
       - TuiTheme
 
-    TuiCommand: ~
+    TuiCommand:
+      - TuiExtension
 
     TuiCompletion:
       - TuiCommand
@@ -668,12 +680,18 @@ parameters:
 
     McpSdk: ~
 
-    AppExtensionApi: ~
+    # ExtensionApi generic TUI contracts (Symfony\Component\Tui\*) — intentional public UI API.
+    AppExtensionApi:
+      - SymfonyTui
     HatfieldExtTaskWorkflow:
       - AppExtensionApi
       - HatfieldExtTaskWorkflow
+    HatfieldExtFileRewind:
+      - AppExtensionApi
+      - SymfonyTui
     AppExtensionBuiltin:
       - AppExtensionApi
+      - AppRuntimeContract
       - SymfonyYaml
 
     AgentCore:

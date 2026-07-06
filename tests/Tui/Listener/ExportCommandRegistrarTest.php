@@ -102,6 +102,7 @@ final class ExportCommandRegistrarTest extends TestCase
             ticks: (new \ReflectionClass(\Ineersa\Tui\Runtime\TuiTickDispatcher::class))->newInstanceWithoutConstructor(),
             switch: $this->createStub(\Ineersa\Tui\Runtime\Contract\TuiSessionSwitchServiceInterface::class),
             lifecycle: (new \ReflectionClass(\Ineersa\Tui\Runtime\TuiSessionLifecycleDispatcher::class))->newInstanceWithoutConstructor(),
+            turnTreeProvider: $this->createStub(\Ineersa\CodingAgent\Runtime\Contract\TurnTreeProviderInterface::class),
         );
     }
 }

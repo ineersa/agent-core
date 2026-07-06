@@ -21,10 +21,10 @@ use Ineersa\Tui\Command\TranscriptMessage;
  * nothing was notified, or TranscriptMessage with severity-mapped
  * role/style).
  */
-final readonly class ExtensionSlashCommandHandler implements SlashCommandHandler
+final class ExtensionSlashCommandHandler implements SlashCommandHandler
 {
     public function __construct(
-        private ExtensionCommandHandlerInterface $extensionHandler,
+        private readonly ExtensionCommandHandlerInterface $extensionHandler,
     ) {
     }
 

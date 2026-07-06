@@ -27,6 +27,8 @@ final class SlashCommandRegistry
     /** @var array<string, SlashCommandHandler> canonical name → handler */
     private array $handlers = [];
 
+    private ?string $activeSessionId = null;
+
     /** @var array<string, CommandMetadata> canonical name → metadata */
     private array $metadata = [];
 
@@ -124,6 +126,16 @@ final class SlashCommandRegistry
      * Step 3 allows registering a custom /help handler that overrides
      * the built-in behavior.
      */
+    public function setActiveSessionId(?string $sessionId): void
+    {
+        $this->activeSessionId = $sessionId;
+    }
+
+    public function getActiveSessionId(): ?string
+    {
+        return $this->activeSessionId;
+    }
+
     public function execute(SlashCommand $command): CommandResult
     {
         $canonical = $this->resolveName($command->name);
@@ -141,7 +153,9 @@ final class SlashCommandRegistry
                 $effectiveCommand = new SlashCommand($command->name, '', $command->originalText);
             }
 
-            return $this->handlers[$canonical]->handle($effectiveCommand);
+            $handler = $this->handlers[$canonical];
+
+            return $handler->handle($effectiveCommand);
         }
 
         // Built-in help (only if no custom handler registered)

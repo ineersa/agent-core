@@ -10,6 +10,7 @@ use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\SessionsConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
+use Ineersa\CodingAgent\Runtime\Contract\TurnTreeProviderInterface;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\Tui\Runtime\Contract\TuiSessionSwitchServiceInterface;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
@@ -52,6 +53,7 @@ trait TuiRuntimeContextBuilderTrait
         $builder->switchService = $this->createStub(TuiSessionSwitchServiceInterface::class);
         $builder->ticks = new TuiTickDispatcher();
         $builder->lifecycle = new TuiSessionLifecycleDispatcher();
+        $builder->turnTreeProvider = $this->createStub(TurnTreeProviderInterface::class);
 
         return $builder;
     }
@@ -89,6 +91,7 @@ final class TuiRuntimeContextBuilder
     public TuiTickDispatcher $ticks;
     /** @internal Set by TuiRuntimeContextBuilderTrait */
     public TuiSessionLifecycleDispatcher $lifecycle;
+    public TurnTreeProviderInterface $turnTreeProvider;
 
     private ?object $tui = null;
     private ?object $state = null;
@@ -150,6 +153,13 @@ final class TuiRuntimeContextBuilder
         return $this;
     }
 
+    public function withTurnTreeProvider(TurnTreeProviderInterface $turnTreeProvider): self
+    {
+        $this->turnTreeProvider = $turnTreeProvider;
+
+        return $this;
+    }
+
     public function build(): TuiRuntimeContext
     {
         return new TuiRuntimeContext(
@@ -161,6 +171,7 @@ final class TuiRuntimeContextBuilder
             ticks: $this->ticks,
             switch: $this->switchService,
             lifecycle: $this->lifecycle,
+            turnTreeProvider: $this->turnTreeProvider ?? $this->createStub(TurnTreeProviderInterface::class),
         );
     }
 }

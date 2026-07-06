@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Runtime;
 
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
+use Ineersa\CodingAgent\Runtime\Contract\TurnTreeProviderInterface;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\Tui\Runtime\Contract\TuiSessionSwitchServiceInterface;
 use Ineersa\Tui\Screen\ChatScreen;
@@ -35,6 +36,7 @@ final readonly class TuiRuntimeContext
         public TuiTickDispatcher $ticks,
         public TuiSessionSwitchServiceInterface $switch,
         public TuiSessionLifecycleDispatcher $lifecycle,
+        public TurnTreeProviderInterface $turnTreeProvider,
     ) {
     }
 }

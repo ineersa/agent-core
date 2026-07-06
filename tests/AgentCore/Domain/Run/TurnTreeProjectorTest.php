@@ -264,7 +264,7 @@ final class TurnTreeProjectorTest extends TestCase
 
         $tree = $this->projector->build($this->runId, $events);
 
-        $this->assertSame('Turn 1', $tree->nodesByTurnNo[1]->title);
+        $this->assertSame('Assistant response (turn 1)', $tree->nodesByTurnNo[1]->title);
     }
 
     // ── Node metadata ────────────────────────────────────────────────────────
@@ -492,6 +492,131 @@ final class TurnTreeProjectorTest extends TestCase
         $this->projector->build($this->runId, $events);
     }
 
+    public function testDisplayRoleUserForFollowUpAndInitialTurn(): void
+    {
+        $events = [
+            $this->runEvent('run_started', 1, 0, [
+                'payload' => ['messages' => [
+                    ['role' => 'user', 'content' => [['type' => 'text', 'text' => '[overlay-verify] create test.txt']]],
+                ]],
+            ]),
+            $this->turnAdvancedEvent(2, 1, null),
+            $this->leafSetEvent(3, 1, null, null, 'continue'),
+            $this->runEvent('llm_step_completed', 4, 1, ['text' => 'Created file']),
+            $this->runEvent('agent_command_applied', 5, 1, [
+                'kind' => 'follow_up',
+                'text' => '[overlay-verify] append LINE_TWO',
+            ]),
+            $this->turnAdvancedEvent(6, 2, 1, 'follow_up-2'),
+            $this->leafSetEvent(7, 2, 1, 1, 'continue'),
+            $this->runEvent('llm_step_completed', 8, 2, ['text' => 'Done. two lines.']),
+        ];
+
+        $tree = $this->projector->build($this->runId, $events);
+
+        $this->assertSame('user', $tree->nodesByTurnNo[1]->displayRole);
+        $this->assertSame('user', $tree->nodesByTurnNo[2]->displayRole);
+        $this->assertStringContainsString('create test.txt', $tree->nodesByTurnNo[1]->title);
+        $this->assertStringContainsString('append LINE_TWO', $tree->nodesByTurnNo[2]->title);
+    }
+
+    public function testDisplayRoleUserWhenSteerAppliedInParentTurnBeforeAdvanceAfterToolsAnchor(): void
+    {
+        // Mirrors live PHAR smoke events.jsonl: follow-up steer is stamped on turn 1
+        // (seq 12) but turn 2 opens via advance-after-tools; title window includes the steer.
+        $events = [
+            $this->runEvent('run_started', 1, 0, [
+                'payload' => ['messages' => [
+                    ['role' => 'user', 'content' => [['type' => 'text', 'text' => '[overlay-verify] create test.txt']]],
+                ]],
+            ]),
+            $this->turnAdvancedEvent(2, 1, null, 'start-follow-up-1'),
+            $this->leafSetEvent(3, 1, null, null, 'continue'),
+            $this->runEvent('llm_step_completed', 5, 1, ['text' => '']),
+            $this->runEvent('tool_batch_committed', 11, 1, []),
+            $this->runEvent('agent_command_applied', 12, 1, [
+                'kind' => 'steer',
+                'text' => '[overlay-verify] append LINE_TWO as second line to test.txt',
+            ]),
+            $this->turnAdvancedEvent(13, 2, 1, 'advance-after-tools-2'),
+            $this->leafSetEvent(14, 2, 1, 1, 'continue'),
+            $this->runEvent('llm_step_completed', 15, 2, ['text' => '']),
+            $this->runEvent('tool_batch_committed', 21, 2, []),
+            $this->turnAdvancedEvent(22, 3, 2, 'advance-after-tools-3'),
+            $this->leafSetEvent(23, 3, 2, 2, 'continue'),
+            $this->runEvent('llm_step_completed', 24, 3, ['text' => 'Done. test.txt now contains two lines.']),
+        ];
+
+        $tree = $this->projector->build($this->runId, $events);
+
+        $this->assertSame('user', $tree->nodesByTurnNo[1]->displayRole);
+        $this->assertSame('user', $tree->nodesByTurnNo[2]->displayRole);
+        $this->assertSame('assistant', $tree->nodesByTurnNo[3]->displayRole);
+        $this->assertStringContainsString('append LINE_TWO', $tree->nodesByTurnNo[2]->title);
+        $this->assertStringContainsString('Done.', $tree->nodesByTurnNo[3]->title);
+    }
+
+    public function testPlaceholderTitleUsesRoleNotRawTurnN(): void
+    {
+        $events = [
+            $this->runEvent('run_started', 1, 0, ['payload' => ['messages' => []]]),
+            $this->turnAdvancedEvent(2, 1, null, 'advance-after-tools-1'),
+            $this->leafSetEvent(3, 1, null, null, 'continue'),
+        ];
+
+        $tree = $this->projector->build($this->runId, $events);
+
+        $this->assertSame('assistant', $tree->nodesByTurnNo[1]->displayRole);
+        $this->assertStringContainsString('Assistant response', $tree->nodesByTurnNo[1]->title);
+        $this->assertStringNotContainsString('assistant: Turn', $tree->nodesByTurnNo[1]->title);
+        $this->assertDoesNotMatchRegularExpression('/^Turn \d+$/', $tree->nodesByTurnNo[1]->title);
+    }
+
+    public function testToolCycleTurnsDoNotReusePreviousUserPromptAsTitle(): void
+    {
+        $events = [
+            $this->runEvent('run_started', 1, 0, ['payload' => ['messages' => []]]),
+            $this->turnAdvancedEvent(2, 1, null),
+            $this->leafSetEvent(3, 1, null, null, 'continue'),
+            $this->runEvent('llm_step_completed', 4, 1, ['text' => 'Removed test.txt']),
+            $this->turnAdvancedEvent(5, 2, 1, 'advance-after-tools-1'),
+            $this->leafSetEvent(6, 2, 1, 1, 'continue'),
+            $this->runEvent('llm_step_completed', 7, 2, ['text' => 'Done. test.txt removed.']),
+            $this->runEvent('agent_command_applied', 8, 2, [
+                'kind' => 'follow_up',
+                'text' => 'Create test.txt with 1 line',
+            ]),
+            $this->turnAdvancedEvent(9, 3, 2, 'follow_up-3'),
+            $this->leafSetEvent(10, 3, 2, 2, 'continue'),
+            $this->turnAdvancedEvent(11, 4, 3, 'advance-after-tools-4'),
+            $this->leafSetEvent(12, 4, 3, 3, 'continue'),
+            $this->runEvent('llm_step_completed', 13, 4, ['text' => 'Created test.txt with hello']),
+            $this->runEvent('agent_command_applied', 14, 4, [
+                'kind' => 'follow_up',
+                'text' => 'Okay add 1 more line',
+            ]),
+            $this->turnAdvancedEvent(15, 5, 4, 'follow_up-5'),
+            $this->leafSetEvent(16, 5, 4, 4, 'continue'),
+            $this->turnAdvancedEvent(17, 6, 5, 'advance-after-tools-6'),
+            $this->leafSetEvent(18, 6, 5, 5, 'continue'),
+            $this->runEvent('llm_step_completed', 19, 6, ['text' => 'Added second line to test.txt']),
+        ];
+
+        $tree = $this->projector->build($this->runId, $events);
+
+        $this->assertCount(6, $tree->nodesByTurnNo);
+        $this->assertStringContainsString('Create test.txt', $tree->nodesByTurnNo[3]->title);
+        $this->assertStringContainsString('Created test.txt', $tree->nodesByTurnNo[4]->title);
+        $this->assertNotSame($tree->nodesByTurnNo[3]->title, $tree->nodesByTurnNo[4]->title);
+        $this->assertStringContainsString('Okay add 1 more line', $tree->nodesByTurnNo[5]->title);
+        $this->assertStringContainsString('Added second line', $tree->nodesByTurnNo[6]->title);
+        $this->assertNotSame($tree->nodesByTurnNo[5]->title, $tree->nodesByTurnNo[6]->title);
+        $this->assertSame('user', $tree->nodesByTurnNo[3]->displayRole);
+        $this->assertSame('assistant', $tree->nodesByTurnNo[4]->displayRole);
+        $this->assertSame('user', $tree->nodesByTurnNo[5]->displayRole);
+        $this->assertSame('assistant', $tree->nodesByTurnNo[6]->displayRole);
+    }
+
     // ── Helpers ──────────────────────────────────────────────────────────────
 
     /**
@@ -511,11 +636,11 @@ final class TurnTreeProjectorTest extends TestCase
     /**
      * Create a turn_advanced event with optional parent_turn_no in payload.
      */
-    private function turnAdvancedEvent(int $seq, int $turnNo, ?int $parentTurnNo): RunEvent
+    private function turnAdvancedEvent(int $seq, int $turnNo, ?int $parentTurnNo, ?string $stepId = null): RunEvent
     {
         $payload = [
             'turn_no' => $turnNo,
-            'step_id' => 'step-'.$turnNo,
+            'step_id' => $stepId ?? ('step-'.$turnNo),
         ];
 
         // Include parent_turn_no key for new-style streams when explicit.

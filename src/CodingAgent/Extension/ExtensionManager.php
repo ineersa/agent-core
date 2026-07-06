@@ -6,8 +6,10 @@ namespace Ineersa\CodingAgent\Extension;
 
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Runtime\Contract\LoadedExtensionItemDTO;
+use Ineersa\CodingAgent\Runtime\Contract\TuiExtensionRegistryInterface;
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
 use Ineersa\Hatfield\ExtensionApi\HatfieldExtensionInterface;
+use Ineersa\Hatfield\ExtensionApi\Tui\TuiExtensionInterface;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -27,16 +29,27 @@ use Psr\Log\LoggerInterface;
  * This service is invoked once at the beginning of the agent command lifecycle,
  * before the interactive mode or controller loop starts.
  */
-final class ExtensionManager
+final class ExtensionManager implements TuiExtensionRegistryInterface
 {
     /** @var list<LoadedExtensionItemDTO> */
     private array $loadOutcomes = [];
+
+    /** @var list<TuiExtensionInterface> */
+    private array $tuiExtensions = [];
 
     public function __construct(
         private readonly AppConfig $config,
         private readonly ExtensionApiInterface $extensionApi,
         private readonly LoggerInterface $logger,
     ) {
+    }
+
+    /**
+     * @return list<TuiExtensionInterface>
+     */
+    public function getTuiExtensions(): array
+    {
+        return $this->tuiExtensions;
     }
 
     /**
@@ -63,6 +76,7 @@ final class ExtensionManager
     public function loadExtensions(): array
     {
         $this->loadOutcomes = [];
+        $this->tuiExtensions = [];
         $enabled = $this->getEnabledClasses();
 
         if ([] === $enabled) {
@@ -172,6 +186,9 @@ final class ExtensionManager
         }
 
         $this->loadOutcomes[] = new LoadedExtensionItemDTO($className, true);
+        if ($instance instanceof TuiExtensionInterface) {
+            $this->tuiExtensions[] = $instance;
+        }
 
         return null;
     }
