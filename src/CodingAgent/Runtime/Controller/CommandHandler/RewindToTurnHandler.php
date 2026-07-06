@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Runtime\Controller\CommandHandler;
 
-use Ineersa\AgentCore\Application\Handler\RunRewindService;
+use Ineersa\AgentCore\Contract\Rewind\RunRewindServiceInterface;
 use Ineersa\CodingAgent\Runtime\Controller\Event\ControllerCommandEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
@@ -17,14 +17,14 @@ use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
  * When the TUI user selects a turn in the /tree picker, the parent sends a
  * rewind_to_turn JSONL command with the target turn number. This handler:
  *  - Validates the command
- *  - Delegates to RunRewindService (acquires lock, appends LeafSet, rebuilds, persists)
+ *  - Delegates to RunRewindServiceInterface (acquires lock, appends LeafSet, rebuilds, persists)
  *  - Emits a RunLeafChanged RuntimeEvent so the TUI observes the leaf change
  */
 #[AsEventListener(event: ControllerCommandEvent::class)]
 final readonly class RewindToTurnHandler
 {
     public function __construct(
-        private RunRewindService $rewindService,
+        private RunRewindServiceInterface $rewindService,
         private LoggerInterface $logger,
     ) {
     }

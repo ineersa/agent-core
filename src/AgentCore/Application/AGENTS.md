@@ -62,7 +62,7 @@ Note: `CollectToolBatch` is routed to `agent.execution.bus` in `config/messenger
 - Commit persistence failures are surfaced through structured warnings (`agent_loop.commit.*`) and state rollback is attempted when event persistence fails before commit finalization.
 - `ExecuteLlmStepWorker` and `ExecuteToolCallWorker` emit execution spans (`llm.call`, `tool.call`) and feed latency/error metrics.
 - `RunMetrics` tracks active runs by status, turn-duration histogram, LLM/tool latency/error rates, command queue lag, stale-result count, and replay rebuild counters.
-- `ReplayService` increments rebuild counters and contributes replay tracing for hot-state rebuild operations.
+- `HotPromptStateRebuilderInterface (SessionHotPromptReplayService in App)` increments rebuild counters and contributes replay tracing for hot-state rebuild operations.
 - `RunDebugService` exposes the current metrics snapshot for `agent-loop:run-inspect` output.
 
 ## Turn tree replay
@@ -74,10 +74,10 @@ through narrow contracts (`BranchReplayFilterInterface`, `TurnTreeProjectorInter
 under `AgentCore\Contract\TurnTree`). See `docs/session-storage.md` "Turn tree model".
 
 Core replay integration:
-- `RunStateReplayService` — optional `BranchReplayFilterInterface` before reducing into `RunState`;
+- `RunStateRebuilderInterface` (`SessionRunStateReplayService` in App) — optional `BranchReplayFilterInterface` before reducing into `RunState`;
   integrity checks use the full canonical stream, not the filtered stream.
-- `ReplayService` — optional branch filter before replaying prompt messages; integrity from full stream.
-- `RunRewindService` — uses `TurnTreeProjectorInterface` to validate rewind targets (orchestration still in Core until SESSION-07B).
+- `HotPromptStateRebuilderInterface (SessionHotPromptReplayService in App)` — optional branch filter before replaying prompt messages; integrity from full stream.
+- `RunRewindServiceInterface` (`SessionRewindService` in App) — uses `TurnTreeProjectorInterface` to validate rewind targets.
 
 ## Maintenance rule
 

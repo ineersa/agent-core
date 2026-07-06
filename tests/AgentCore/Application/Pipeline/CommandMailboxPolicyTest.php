@@ -7,7 +7,6 @@ namespace Ineersa\AgentCore\Tests\Application\Orchestrator;
 use Ineersa\AgentCore\Application\Handler\CommandHandlerRegistry;
 use Ineersa\AgentCore\Application\Handler\CommandRouter;
 use Ineersa\AgentCore\Application\Handler\MessageIdempotencyService;
-use Ineersa\AgentCore\Application\Handler\ReplayService;
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Application\Handler\StepDispatcher;
 use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
@@ -20,6 +19,8 @@ use Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor;
 use Ineersa\AgentCore\Application\Pipeline\RunOrchestrator;
 use Ineersa\AgentCore\Application\Pipeline\StartRunHandler;
 use Ineersa\AgentCore\Application\Pipeline\ToolCallResultHandler;
+use Ineersa\AgentCore\Application\Replay\PromptStateReplayService;
+use Ineersa\AgentCore\Application\Replay\ReplayEventPreparer;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\ApplyCommand;
@@ -35,6 +36,7 @@ use Ineersa\AgentCore\Infrastructure\Storage\RunEventStore;
 use Ineersa\AgentCore\Tests\Application\Handler\InMemoryIdempotencyStore;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use Ineersa\AgentCore\Tests\Support\TestSerializerFactory;
+use Ineersa\CodingAgent\Session\Replay\SessionHotPromptReplayService;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 use Symfony\Component\Lock\LockFactory;
@@ -442,7 +444,7 @@ final class CommandMailboxPolicyTest extends TestCase
         $eventStore = new RunEventStore();
         $commandStore = new InMemoryCommandStore();
 
-        $replayService = new ReplayService($eventStore, new HotPromptStateStore());
+        $replayService = new SessionHotPromptReplayService($eventStore, new HotPromptStateStore(), new PromptStateReplayService(), new ReplayEventPreparer());
 
         $commandBus = new TestMessageBus();
         $executionBus = new TestMessageBus();
@@ -460,7 +462,7 @@ final class CommandMailboxPolicyTest extends TestCase
             runStore: $runStore,
             eventStore: $eventStore,
             commandStore: $commandStore,
-            replayService: $replayService,
+            hotPromptStateRebuilder: $replayService,
             stepDispatcher: $stepDispatcher,
             logger: new NullLogger(),
             hookDispatcher: null,

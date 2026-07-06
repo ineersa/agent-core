@@ -5,13 +5,15 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Tests\Application\Handler;
 
 use Ineersa\AgentCore\Application\Handler\RunStateReplayException;
-use Ineersa\AgentCore\Application\Handler\RunStateReplayService;
+use Ineersa\AgentCore\Application\Replay\ReplayEventPreparer;
+use Ineersa\AgentCore\Application\Replay\RunStateReducer;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Infrastructure\Storage\RunEventStore;
 use Ineersa\CodingAgent\Session\Replay\BranchReplayFilterContractAdapter;
+use Ineersa\CodingAgent\Session\Replay\SessionRunStateReplayService;
 use Ineersa\CodingAgent\Session\Replay\TurnTreeReplayFilter;
 use Ineersa\CodingAgent\Session\TurnTree\TurnTreeProjector;
 use PHPUnit\Framework\TestCase;
@@ -20,7 +22,8 @@ use Psr\Log\NullLogger;
 final class RunStateReplayServiceTest extends TestCase
 {
     private RunEventStore $eventStore;
-    private RunStateReplayService $service;
+    private SessionRunStateReplayService $service;
+    private RunStateReducer $reducer;
     private BranchReplayFilterContractAdapter $treeFilter;
     private string $runId = 'run-replay-test';
 
@@ -28,9 +31,12 @@ final class RunStateReplayServiceTest extends TestCase
     {
         $this->eventStore = new RunEventStore();
         $this->treeFilter = new BranchReplayFilterContractAdapter(new TurnTreeReplayFilter(new TurnTreeProjector()));
-        $this->service = new RunStateReplayService(
+        $this->reducer = new RunStateReducer();
+        $this->service = new SessionRunStateReplayService(
             $this->eventStore,
             new NullLogger(),
+            $this->reducer,
+            new ReplayEventPreparer(),
             $this->treeFilter,
         );
     }

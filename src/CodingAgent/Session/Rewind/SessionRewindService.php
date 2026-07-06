@@ -2,9 +2,11 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\AgentCore\Application\Handler;
+namespace Ineersa\CodingAgent\Session\Rewind;
 
+use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
+use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
 use Ineersa\AgentCore\Contract\RunStoreInterface;
 use Ineersa\AgentCore\Contract\TurnTree\TurnTreeProjectorInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
@@ -26,11 +28,11 @@ use Psr\Log\LoggerInterface;
  * persisted via compareAndSwap. The caller should emit a
  * RunLeafChanged RuntimeEvent so the TUI observes the change.
  */
-final readonly class RunRewindService
+final readonly class SessionRewindService implements \Ineersa\AgentCore\Contract\Rewind\RunRewindServiceInterface
 {
     public function __construct(
         private EventStoreInterface $eventStore,
-        private RunStateReplayService $runStateReplayService,
+        private RunStateRebuilderInterface $runStateRebuilder,
         private RunStoreInterface $runStore,
         private RunLockManager $lockManager,
         private LoggerInterface $logger,
@@ -110,7 +112,7 @@ final readonly class RunRewindService
             ]);
 
             // Rebuild state for the target leaf.
-            $replayResult = $this->runStateReplayService->rebuildForLeaf($state, $runId, $targetTurnNo);
+            $replayResult = $this->runStateRebuilder->rebuildForLeaf($state, $runId, $targetTurnNo);
 
             if (null === $replayResult->rebuiltState) {
                 throw new \RuntimeException(\sprintf('Failed to rebuild state for run %s at leaf %d.', $runId, $targetTurnNo));
