@@ -65,11 +65,26 @@ final class SubagentLivePickerControllerTest extends TestCase
 
         $this->assertCount(0, $state->subagentLiveCatalog->all());
         $msg = $this->workingMessage($harness->screen());
-        $this->assertTrue(
-            str_contains($msg, 'Removed scout from /agents-live')
-            || str_contains($msg, 'No known subagents yet'),
-            $msg,
-        );
+        // Last child dismissed: no working flash, status cleared
+        $this->assertSame('', $msg);
+        $entries = $this->statusEntries($harness->screen());
+        $this->assertArrayNotHasKey('agents-live', $entries, 'agents-live status should be cleared after last dismiss');
+    }
+
+    #[Test]
+    public function testEmptyOpenClearsWorkingMessageAndStatus(): void
+    {
+        $harness = new VirtualTuiHarness(sessionId: 'picker-empty-open');
+        $state = new TuiSessionState('picker-empty-open');
+
+        $picker = $this->picker($harness, $state);
+        $picker->open();
+
+        $this->assertFalse($picker->isOpen(), 'Picker should not open when catalog is empty');
+        $msg = $this->workingMessage($harness->screen());
+        $this->assertSame('', $msg, 'Working message should be empty');
+        $entries = $this->statusEntries($harness->screen());
+        $this->assertArrayNotHasKey('agents-live', $entries, 'agents-live status should be absent/cleared');
     }
 
     private function picker(VirtualTuiHarness $harness, TuiSessionState $state): SubagentLivePickerController
@@ -125,5 +140,16 @@ final class SubagentLivePickerControllerTest extends TestCase
         $registry = $ref->getProperty('registry');
 
         return $registry->getValue($screen)->getWorkingMessage();
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function statusEntries(ChatScreen $screen): array
+    {
+        $ref = new \ReflectionClass($screen);
+        $registry = $ref->getProperty('registry');
+
+        return $registry->getValue($screen)->getStatusEntries();
     }
 }

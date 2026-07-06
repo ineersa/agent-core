@@ -894,7 +894,7 @@ final class SubagentExecutionService
             $lines[] = \sprintf('#%d %s — %s', $report['index'], $report['agentName'], $status);
             $lines[] = 'Artifact: '.$report['artifactId'];
             if ('' !== $report['message']) {
-                $lines[] = $this->truncateParallelMessage($report['message']);
+                $lines[] = trim($report['message']);
             }
             $lines[] = '';
         }
@@ -921,7 +921,7 @@ final class SubagentExecutionService
             $lines[] = \sprintf('#%d %s — completed', $report['index'], $report['agentName']);
             $lines[] = 'Artifact: '.$report['artifactId'];
             if ('' !== $report['message']) {
-                $lines[] = $this->truncateParallelMessage($report['message']);
+                $lines[] = trim($report['message']);
             }
             $lines[] = '';
         }
@@ -929,15 +929,6 @@ final class SubagentExecutionService
         return rtrim(implode("\n", $lines));
     }
 
-    private function truncateParallelMessage(string $message): string
-    {
-        $trimmed = trim($message);
-        if (\strlen($trimmed) <= 240) {
-            return $trimmed;
-        }
-
-        return substr($trimmed, 0, 237).'...';
-    }
     // ── Private helpers ──────────────────────────────────────────────
 
     /**

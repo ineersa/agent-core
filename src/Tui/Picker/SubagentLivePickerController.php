@@ -50,7 +50,12 @@ final class SubagentLivePickerController
 
         $children = $this->state?->subagentLiveCatalog->all() ?? [];
         if ([] === $children) {
-            $this->screen?->setWorkingMessage('No known subagents yet. Launch a subagent first.');
+            $screen = $this->screen;
+            if (null !== $screen) {
+                $screen->setWorkingMessage(null);
+                $screen->setStatus('agents-live', null);
+                $screen->requestRender(true);
+            }
 
             return;
         }
@@ -241,7 +246,8 @@ final class SubagentLivePickerController
 
         if ([] === $children) {
             $this->closePicker();
-            $screen->setWorkingMessage('No known subagents yet. Launch a subagent first.');
+            $screen->setWorkingMessage(null);
+            $screen->setStatus('agents-live', null);
             $screen->requestRender(true);
 
             return;
