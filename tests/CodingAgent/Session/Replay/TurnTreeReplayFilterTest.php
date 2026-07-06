@@ -2,15 +2,17 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\AgentCore\Tests\Application\Replay;
+namespace Ineersa\CodingAgent\Tests\Session\Replay;
 
-use Ineersa\AgentCore\Application\Replay\TurnTreeReplayFilter;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
-use Ineersa\AgentCore\Domain\Run\TurnTreeProjector;
+use Ineersa\CodingAgent\Session\Replay\TurnTreeReplayFilter;
+use Ineersa\CodingAgent\Session\TurnTree\TurnTreeProjector;
+use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
+#[CoversClass(TurnTreeReplayFilter::class)]
 final class TurnTreeReplayFilterTest extends TestCase
 {
     private TurnTreeReplayFilter $filter;

@@ -2,12 +2,11 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\AgentCore\Application\Replay;
+namespace Ineersa\CodingAgent\Session\Replay;
 
-use Ineersa\AgentCore\Application\Dto\TurnBranchReplayDTO;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
-use Ineersa\AgentCore\Domain\Run\TurnTreeProjector;
+use Ineersa\CodingAgent\Session\TurnTree\TurnTreeProjector;
 
 /**
  * Filters a canonical event stream to only the events on the active turn branch path.

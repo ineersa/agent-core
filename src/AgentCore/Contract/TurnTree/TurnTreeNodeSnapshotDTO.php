@@ -2,17 +2,12 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\CodingAgent\Runtime\Protocol;
+namespace Ineersa\AgentCore\Contract\TurnTree;
 
 /**
- * AgentCore-free view of a single turn node for TUI presentation.
- *
- * Mirrors {@see \Ineersa\CodingAgent\Session\TurnTree\TurnTreeNodeDTO} but lives
- * in Runtime/Protocol so the TUI layer never imports AgentCore types.
- *
- * @see TurnTreeView for the full tree container
+ * Read-only turn node in a {@see TurnTreeSnapshotDTO}.
  */
-final readonly class TurnTreeNodeView
+final readonly class TurnTreeNodeSnapshotDTO
 {
     /**
      * @param list<int> $childTurnNos
@@ -22,10 +17,12 @@ final readonly class TurnTreeNodeView
         public ?int $parentTurnNo,
         public array $childTurnNos,
         public int $anchorSeq,
+        public int $lastSeq,
         public string $title,
         public string $promptPreview,
         public ?\DateTimeImmutable $createdAt,
         public bool $isCurrentLeaf,
+        public ?string $reason = null,
         public string $displayRole = 'assistant',
     ) {
     }

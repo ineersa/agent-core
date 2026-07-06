@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\AgentCore\Domain\Run;
+namespace Ineersa\CodingAgent\Session\TurnTree;
 
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;

@@ -6,10 +6,10 @@ namespace Ineersa\AgentCore\Application\Handler;
 
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\RunStoreInterface;
+use Ineersa\AgentCore\Contract\TurnTree\TurnTreeProjectorInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Run\RunState;
-use Ineersa\AgentCore\Domain\Run\TurnTreeProjector;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -34,6 +34,7 @@ final readonly class RunRewindService
         private RunStoreInterface $runStore,
         private RunLockManager $lockManager,
         private LoggerInterface $logger,
+        private TurnTreeProjectorInterface $turnTreeProjector,
     ) {
     }
 
@@ -55,8 +56,7 @@ final readonly class RunRewindService
             }
 
             // Build the turn tree to validate the target turn exists.
-            $projector = new TurnTreeProjector();
-            $tree = $projector->build($runId, $events);
+            $tree = $this->turnTreeProjector->build($runId, $events);
 
             if (!isset($tree->nodesByTurnNo[$targetTurnNo])) {
                 throw new \RuntimeException(\sprintf('Cannot rewind run %s: target turn %d does not exist in the turn tree.', $runId, $targetTurnNo));
