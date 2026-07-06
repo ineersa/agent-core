@@ -4,15 +4,14 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Runtime\Contract;
 
-use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
-
 /**
- * Projects transcript blocks for a session leaf without exposing raw runtime events to TUI.
+ * Projects transcript and active-path replay events for a session leaf.
+ *
+ * TUI consumes projected transcript blocks directly and replays returned runtime
+ * events through TuiRuntimeEventApplier for non-transcript state (usage, queues,
+ * activity). Raw active-path event filtering stays inside the app session layer.
  */
 interface SessionTranscriptProviderInterface
 {
-    /**
-     * @return list<TranscriptBlock>
-     */
-    public function transcriptBlocksForLeaf(string $runId, int $leafTurnNo): array;
+    public function transcriptForLeaf(string $runId, int $leafTurnNo): SessionTranscriptSnapshotDTO;
 }

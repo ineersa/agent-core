@@ -105,16 +105,19 @@ final class RuntimeEventPoller
                         $hasRunLeafChanged = true;
 
                         try {
-                            $state->transcript = $this->sessionTranscriptProvider->transcriptBlocksForLeaf(
+                            $snapshot = $this->sessionTranscriptProvider->transcriptForLeaf(
                                 $state->handle->runId,
                                 $leafTurnNo,
                             );
+                            $state->transcript = $snapshot->transcriptBlocks;
                         } catch (\Throwable $e) {
                             $this->logger->warning('runtime_event_poller.leaf_changed_rebuild_failed', [
                                 'run_id' => $state->handle->runId,
                                 'leaf_turn_no' => $leafTurnNo,
                                 'exception' => $e->getMessage(),
                             ]);
+                            // Intentional degradation: clear transcript rather than show stale
+                            // abandoned-branch content when leaf projection fails.
                             $state->transcript = [];
                         }
                     } else {

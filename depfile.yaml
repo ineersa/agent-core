@@ -341,6 +341,7 @@ parameters:
   ruleset:
     TuiApplication:
       - AppRuntimeContract
+      # Session transcript provider contract returns TranscriptBlock DTOs.
       - AppRuntimeProjection
       - AppSession
       - AppConfig

@@ -92,9 +92,9 @@ final class ResumeSessionInitializerTestFactory
             eventApplier: new TuiRuntimeEventApplier($projector),
             turnTreeProvider: $turnTreeProvider,
             sessionTranscriptProvider: new class implements \Ineersa\CodingAgent\Runtime\Contract\SessionTranscriptProviderInterface {
-                public function transcriptBlocksForLeaf(string $runId, int $leafTurnNo): array
+                public function transcriptForLeaf(string $runId, int $leafTurnNo): \Ineersa\CodingAgent\Runtime\Contract\SessionTranscriptSnapshotDTO
                 {
-                    return [];
+                    return new \Ineersa\CodingAgent\Runtime\Contract\SessionTranscriptSnapshotDTO([], []);
                 }
             },
         );

@@ -151,7 +151,7 @@ final class TuiTreeCommandE2eTest extends TestCase
 
             $this->submitPrompt($pane, 'second-turn-marker-07c');
             $this->waitAssistantBlock($pane);
-            $this->tmux->waitForCaptureContains($pane, 'second-turn-marker-07c', TmuxHarness::TUI_GATE_CALLBACK_TIMEOUT_PARALLEL);
+            $this->tmux->waitForCaptureContains($pane, 'SECOND_TURN_REPLY_07C', TmuxHarness::TUI_GATE_CALLBACK_TIMEOUT_PARALLEL);
 
             $this->runSlashCommand($pane, '/tree');
             $this->tmux->waitForCallback(
@@ -188,17 +188,23 @@ final class TuiTreeCommandE2eTest extends TestCase
             $this->tmux->waitForCallback(
                 $pane,
                 static fn (string $cap): bool => str_contains($cap, 'first-turn-marker-07c')
-                    && !str_contains($cap, 'second-turn-marker-07c'),
+                    && str_contains($cap, 'FIRST_TURN_REPLY_07C')
+                    && !str_contains($cap, 'second-turn-marker-07c')
+                    && !str_contains($cap, 'SECOND_TURN_REPLY_07C'),
                 timeout: TmuxHarness::TUI_GATE_CALLBACK_TIMEOUT_PARALLEL,
-                message: 'Transcript did not rewind to first-turn leaf (second-turn marker still visible)',
+                message: 'Transcript did not rewind to first-turn leaf (second-turn content still visible)',
                 history: 500,
             );
 
             $paneCapture = $this->tmux->capturePlain($pane);
             $this->assertStringContainsString('first-turn-marker-07c', $paneCapture,
                 'Rewound transcript should still show the first-turn user marker in the current pane.');
+            $this->assertStringContainsString('FIRST_TURN_REPLY_07C', $paneCapture,
+                'Rewound transcript should still show the first-turn assistant reply in the current pane.');
             $this->assertStringNotContainsString('second-turn-marker-07c', $paneCapture,
                 'Abandoned second-turn user marker must disappear from the current pane after rewind.');
+            $this->assertStringNotContainsString('SECOND_TURN_REPLY_07C', $paneCapture,
+                'Abandoned second-turn assistant reply must disappear from the current pane after rewind.');
 
             $this->saveAnsiSnapshot($pane, 'tree-enter-rewind-07c');
 

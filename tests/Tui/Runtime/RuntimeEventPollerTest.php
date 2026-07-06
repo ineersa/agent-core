@@ -8,6 +8,7 @@ use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeExceptionBoundary;
 use Ineersa\CodingAgent\Runtime\Contract\SessionTranscriptProviderInterface;
+use Ineersa\CodingAgent\Runtime\Contract\SessionTranscriptSnapshotDTO;
 use Ineersa\CodingAgent\Runtime\Contract\TranscriptProjectorInterface;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
@@ -56,7 +57,7 @@ final class RuntimeEventPollerTest extends TestCase
         $this->projector->method('reset');
         $this->projector->method('blocks')->willReturn([]);
         $this->sessionTranscriptProvider = $this->createMock(SessionTranscriptProviderInterface::class);
-        $this->sessionTranscriptProvider->method('transcriptBlocksForLeaf')->willReturn([]);
+        $this->sessionTranscriptProvider->method('transcriptForLeaf')->willReturn(new SessionTranscriptSnapshotDTO([], []));
         $this->logger = $this->createMock(LoggerInterface::class);
 
         $this->poller = new RuntimeEventPoller(
@@ -717,9 +718,9 @@ final class RuntimeEventPollerTest extends TestCase
             ),
         ];
         $sessionTranscriptProvider->expects($this->once())
-            ->method('transcriptBlocksForLeaf')
+            ->method('transcriptForLeaf')
             ->with('test-run', 3)
-            ->willReturn($rebuiltBlocks);
+            ->willReturn(new SessionTranscriptSnapshotDTO($rebuiltBlocks, []));
 
         $eventApplier = new TuiRuntimeEventApplier($this->projector);
         $poller = new RuntimeEventPoller(
@@ -766,7 +767,7 @@ final class RuntimeEventPollerTest extends TestCase
 
     public function testPollGracefullyDegradesOnLeafChangeRebuildFailure(): void
     {
-        // Thesis: when transcriptBlocksForLeaf throws, the poller catches the
+        // Thesis: when transcriptForLeaf throws, the poller catches the
         // exception, logs a structured warning, clears the transcript (so stale
         // abandoned-branch blocks are not shown), and does not crash.
 
@@ -783,7 +784,7 @@ final class RuntimeEventPollerTest extends TestCase
 
         // Provider throws on rebuild
         $sessionTranscriptProvider = $this->createMock(SessionTranscriptProviderInterface::class);
-        $sessionTranscriptProvider->method('transcriptBlocksForLeaf')
+        $sessionTranscriptProvider->method('transcriptForLeaf')
             ->willThrowException(new \RuntimeException('Events file not found'));
 
         $this->client->expects($this->once())
@@ -926,9 +927,9 @@ final class RuntimeEventPollerTest extends TestCase
 
         $sessionTranscriptProvider = $this->createMock(SessionTranscriptProviderInterface::class);
         $sessionTranscriptProvider->expects($this->once())
-            ->method('transcriptBlocksForLeaf')
+            ->method('transcriptForLeaf')
             ->with('test-run', 2)
-            ->willReturn([
+            ->willReturn(new SessionTranscriptSnapshotDTO([
                 new TranscriptBlock(
                     id: 'block-seq-30',
                     kind: TranscriptBlockKindEnum::AssistantMessage,
@@ -936,7 +937,7 @@ final class RuntimeEventPollerTest extends TestCase
                     seq: 30,
                     text: 'Rebuilt active path block',
                 ),
-            ]);
+            ], []));
 
         $eventApplier = new TuiRuntimeEventApplier($projector);
         $poller = new RuntimeEventPoller(

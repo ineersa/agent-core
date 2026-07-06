@@ -9,11 +9,12 @@ use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 
 /**
- * Single reducer for replayable TUI session state from runtime events.
+ * Reduces non-transcript TUI session state from runtime events.
  *
- * Live RuntimeEventPoller and SessionInitializer::replayFromEvents() must both
- * call this for each accepted event so resume reconstructs the same visible
- * state as live processing (activity, usage, queued messages, transcript projection).
+ * Live RuntimeEventPoller and SessionInitializer branch-aware resume call this
+ * for each active-path replay event so usage, activity, queued messages, and
+ * subagent catalog match live processing. Leaf transcript blocks are assigned
+ * wholesale from SessionTranscriptProviderInterface, not from this projector.
  */
 final readonly class TuiRuntimeEventApplier
 {
@@ -45,6 +46,8 @@ final readonly class TuiRuntimeEventApplier
 
             $state->activity = RunActivityStateEnum::Idle;
             $state->queuedFollowUp = null;
+            // Abandoned-branch queued steer/follow-up commands must not keep rendering
+            // as pending after rewind/resume to an earlier leaf.
             $state->queuedUserMessages = [];
 
             return;

@@ -44,17 +44,18 @@ final class SessionTranscriptProviderTest extends TestCase
         ];
 
         $provider = $this->createProvider($events);
-        $blocks = $provider->transcriptBlocksForLeaf($this->runId, 3);
+        $snapshot = $provider->transcriptForLeaf($this->runId, 3);
+        $blocks = $snapshot->transcriptBlocks;
 
         $texts = array_map(static fn (TranscriptBlock $b): string => $b->text, $blocks);
 
+        $this->assertNotEmpty($blocks, 'Active leaf should project transcript blocks');
+        $joined = implode("\n", $texts);
         $this->assertTrue(
-            [] === $texts
-            || str_contains(implode("\n", $texts), 'Answer A')
-            || str_contains(implode("\n", $texts), 'Answer C active'),
-            'Active leaf projection should not surface abandoned branch assistant text',
+            str_contains($joined, 'Answer A') || str_contains($joined, 'Answer C active'),
+            'Active leaf projection should include active-path assistant text',
         );
-        $this->assertStringNotContainsString('Answer B abandoned', implode("\n", $texts));
+        $this->assertStringNotContainsString('Answer B abandoned', $joined);
     }
 
     /** @param list<RunEvent> $events */

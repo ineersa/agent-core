@@ -9,6 +9,7 @@ use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
+use Ineersa\CodingAgent\Runtime\Contract\SessionTranscriptSnapshotDTO;
 use Ineersa\CodingAgent\Runtime\Contract\TurnTreeProviderInterface;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState;
@@ -119,9 +120,9 @@ final class SessionInitializerReplayTest extends TestCase
             eventApplier: new TuiRuntimeEventApplier($this->projector),
             turnTreeProvider: $turnTreeProvider,
             sessionTranscriptProvider: new class implements \Ineersa\CodingAgent\Runtime\Contract\SessionTranscriptProviderInterface {
-                public function transcriptBlocksForLeaf(string $runId, int $leafTurnNo): array
+                public function transcriptForLeaf(string $runId, int $leafTurnNo): SessionTranscriptSnapshotDTO
                 {
-                    return [];
+                    return new SessionTranscriptSnapshotDTO([], []);
                 }
             },
         );

@@ -201,15 +201,14 @@ final readonly class SessionInitializer
 
             if (null !== $tree->currentLeafTurnNo) {
                 $branchAwareLeafTurnNo = $tree->currentLeafTurnNo;
-                $branchAwareBlocks = $this->sessionTranscriptProvider->transcriptBlocksForLeaf(
+                $snapshot = $this->sessionTranscriptProvider->transcriptForLeaf(
                     $runId,
                     $branchAwareLeafTurnNo,
                 );
+                $branchAwareBlocks = $snapshot->transcriptBlocks;
 
-                foreach ($branchAwareBlocks as $block) {
-                    if ($block->seq > $maxMappedSeq) {
-                        $maxMappedSeq = $block->seq;
-                    }
+                foreach ($snapshot->replayEvents as $runtimeEvent) {
+                    $this->eventApplier->apply($state, $runtimeEvent, replayMode: true);
                 }
 
                 $replayed = true;
@@ -251,7 +250,8 @@ final readonly class SessionInitializer
         }
 
         // Set lastSeq so the live poller does not re-process replayed events.
-        // Always derived from the full canonical stream max, never regressed.
+        // Always derived from the full canonical stream max (RuntimeEvent seq), never
+        // from TranscriptBlock::seq (projection-internal) and never regressed.
         $state->lastSeq = max($maxMappedSeq, $maxSourceSeq);
 
         if ($state->isShellRun = $this->inferShellOnlySessionFromCanonicalEvents($runEvents)) {
