@@ -6,6 +6,8 @@ namespace Ineersa\Tui\Tests\Transcript;
 
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
+use Ineersa\Tui\Theme\DefaultTheme;
+use Ineersa\Tui\Theme\ThemePalette;
 use Ineersa\Tui\Transcript\SubagentResultRenderer;
 use Ineersa\Tui\Transcript\TranscriptBlockRenderer;
 use Ineersa\Tui\Widget\TuiRenderContext;
@@ -29,20 +31,22 @@ final class SubagentResultRendererTest extends TestCase
             streaming: true,
         );
 
-        $renderer = new TranscriptBlockRenderer();
-        $lines = $renderer->renderBlock($block, new TuiRenderContext(terminalWidth: 100));
-        $joined = implode(' ', $lines);
-        $this->assertStringContainsString('subagent scout', $joined);
-        $this->assertStringContainsString('Task: inspect runtime events', $joined);
+        $joined = implode("\n", (new TranscriptBlockRenderer())->renderBlock($block, $this->context()));
+        $this->assertStringContainsString('╭─', $joined);
+        $this->assertStringContainsString('╰─', $joined);
+        $this->assertStringContainsString('scout', $joined);
+        $this->assertStringContainsString('[running]', $joined);
+        $this->assertStringContainsString('Task inspect runtime events', $joined);
         $this->assertStringContainsString('agent_01HX', $joined);
         $this->assertStringContainsString('3 turns', $joined);
     }
 
-    public function testRendersRichSingleProgress(): void
+    public function testRendersRichSingleProgressCard(): void
     {
         $progress = [
             'mode' => 'single', 'status' => 'running', 'agent_name' => 'scout',
-            'artifact_id' => 'agent_01HX', 'task_summary' => 'inspect runtime events', 'turn_no' => 17,
+            'artifact_id' => 'agent_01HX', 'agent_run_id' => 'run-child-abc',
+            'task_summary' => 'inspect runtime events', 'turn_no' => 17,
             'elapsed_ms' => 139000, 'tool_count' => 38, 'total_tokens' => 49000,
             'input_tokens' => 35000, 'output_tokens' => 14000, 'reasoning_tokens' => 584000,
             'cost' => 0.0104, 'model' => 'deepseek/deepseek-v4-flash',
@@ -54,18 +58,34 @@ final class SubagentResultRendererTest extends TestCase
             id: 'tool_result_tc1', kind: TranscriptBlockKindEnum::ToolResult, runId: 'run1', seq: 1,
             text: '', meta: ['tool_name' => 'subagent', 'subagent_progress' => $progress], streaming: true,
         );
-        $lines = (new TranscriptBlockRenderer())->renderBlock($block, new TuiRenderContext(terminalWidth: 120));
-        $joined = implode('
-', $lines);
-        $this->assertStringContainsString('subagent scout', $joined);
+        $joined = implode("\n", (new TranscriptBlockRenderer())->renderBlock($block, $this->context()));
+        $this->assertStringContainsString('● scout [running]', $joined);
         $this->assertStringContainsString('38 tools', $joined);
         $this->assertStringContainsString('49k tok', $joined);
+        $this->assertStringContainsString('Artifact artifacts/agents/agent_01HX', $joined);
+        $this->assertStringContainsString('Run run-child-abc', $joined);
         $this->assertStringContainsString('RuntimeEventTranslator', $joined);
         $this->assertStringContainsString('in:35k', $joined);
         $this->assertStringContainsString('deepseek/deepseek-v4-flash', $joined);
+        $this->assertStringContainsString('/agents-live', $joined);
     }
 
-    public function testRendersParallelProgressAsStackedSingleWidgets(): void
+    public function testRendersWaitingHumanNeedsInputCard(): void
+    {
+        $progress = [
+            'mode' => 'single', 'status' => 'waiting_human', 'agent_name' => 'scout',
+            'artifact_id' => 'agent_wait', 'task_summary' => 'approve edit', 'turn_no' => 2,
+        ];
+        $block = new TranscriptBlock(
+            id: 'tool_result_wait', kind: TranscriptBlockKindEnum::ToolResult, runId: 'run1', seq: 1,
+            text: '', meta: ['tool_name' => 'subagent', 'subagent_progress' => $progress],
+        );
+        $joined = implode("\n", (new TranscriptBlockRenderer())->renderBlock($block, $this->context()));
+        $this->assertStringContainsString('⚠ scout [needs input]', $joined);
+        $this->assertStringContainsString('Ctrl+\\', $joined);
+    }
+
+    public function testRendersParallelProgressAsStackedCards(): void
     {
         $progress = [
             'mode' => 'parallel', 'status' => 'running', 'completed_count' => 0, 'total_count' => 2, 'elapsed_ms' => 60000,
@@ -76,7 +96,7 @@ final class SubagentResultRendererTest extends TestCase
                     'artifact_path' => 'artifacts/agents/agent_1',
                 ],
                 [
-                    'index' => 2, 'agent_name' => 'reviewer', 'status' => 'running', 'artifact_id' => 'agent_2',
+                    'index' => 2, 'agent_name' => 'reviewer', 'status' => 'completed', 'artifact_id' => 'agent_2',
                     'task_summary' => 'Review patch', 'turn_no' => 1, 'active_tool' => 'read: path="AGENTS.md"',
                 ],
             ],
@@ -85,14 +105,15 @@ final class SubagentResultRendererTest extends TestCase
             id: 'tool_result_tc_par', kind: TranscriptBlockKindEnum::ToolResult, runId: 'run1', seq: 1,
             text: '', meta: ['tool_name' => 'subagent', 'subagent_progress' => $progress], streaming: true,
         );
-        $joined = implode('
-', (new TranscriptBlockRenderer())->renderBlock($block, new TuiRenderContext(terminalWidth: 120)));
-        $this->assertStringContainsString('parallel subagents running (0/2 completed)', $joined);
-        $this->assertStringContainsString('#1 subagent scout', $joined);
-        $this->assertStringContainsString('#2 subagent reviewer', $joined);
-        $this->assertStringContainsString('Task: Read docs', $joined);
-        $this->assertStringContainsString('Task: Review patch', $joined);
-        $this->assertStringContainsString('AGENTS.md', $joined);
+        $joined = implode("\n", (new TranscriptBlockRenderer())->renderBlock($block, $this->context()));
+        $this->assertStringContainsString('parallel subagents (0/2 completed)', $joined);
+        $this->assertStringContainsString('├─', $joined);
+        $this->assertStringContainsString('#1', $joined);
+        $this->assertStringContainsString('scout', $joined);
+        $this->assertStringContainsString('#2', $joined);
+        $this->assertStringContainsString('reviewer', $joined);
+        $this->assertStringContainsString('Task Read docs', $joined);
+        $this->assertStringContainsString('Task Review patch', $joined);
         $this->assertStringNotContainsString('running Step', $joined);
     }
 
@@ -113,10 +134,11 @@ final class SubagentResultRendererTest extends TestCase
             ],
             streaming: false,
         );
-        $lines = (new TranscriptBlockRenderer())->renderBlock($block, new TuiRenderContext(terminalWidth: 120));
-        $joined = implode("\n", $lines);
-        $this->assertStringContainsString('completed scout', $joined);
+        $joined = implode("\n", (new TranscriptBlockRenderer())->renderBlock($block, $this->context()));
+        $this->assertStringContainsString('✓ scout [completed]', $joined);
+        $this->assertStringContainsString('Handoff', $joined);
         $this->assertStringContainsString('Unique handoff body', $joined);
+        $this->assertStringContainsString('agent_retrieve', $joined);
     }
 
     public function testSubagentResultRendererSupportsMetaOnly(): void
@@ -131,5 +153,26 @@ final class SubagentResultRendererTest extends TestCase
             meta: ['tool_name' => 'subagent'],
         );
         $this->assertTrue($renderer->supports($block));
+    }
+
+    private function context(int $width = 120): TuiRenderContext
+    {
+        return new TuiRenderContext(
+            terminalWidth: $width,
+            theme: new DefaultTheme(new ThemePalette('test', [
+                'accent' => 'cyan',
+                'success' => 'green',
+                'warning' => 'yellow',
+                'error' => 'red',
+                'muted' => '#888',
+                'border_accent' => 'bright_cyan',
+                'border_muted' => '#666',
+                'tool_output' => 'white',
+                'tool_title' => 'bright_white',
+                'tool_pending_bg' => '#101010',
+                'tool_success_bg' => '#001100',
+                'tool_error_bg' => '#110000',
+            ])),
+        );
     }
 }
