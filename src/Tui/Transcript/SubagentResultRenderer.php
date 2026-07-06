@@ -8,10 +8,15 @@ use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\Tui\Theme\ThemeColorEnum;
 use Ineersa\Tui\Theme\TuiTheme;
+use Symfony\Component\Tui\Style\Padding;
 use Symfony\Component\Tui\Style\Style;
+use Symfony\Component\Tui\Widget\AbstractWidget;
+use Symfony\Component\Tui\Widget\ContainerWidget;
+use Symfony\Component\Tui\Widget\MarkdownWidget;
+use Symfony\Component\Tui\Widget\TextWidget;
 
 /**
- * Builds structured subagent tool-result content for the widget-tree renderer.
+ * Builds structured subagent tool-result widgets for the transcript renderer.
  *
  * Applies themed card borders, status colours, and compact layout on top of
  * structured {@code subagent_progress} snapshots. Runtime projection text stays
@@ -21,6 +26,9 @@ final readonly class SubagentResultRenderer
 {
     public function __construct(
         private SubagentTranscriptCardBuilder $cardBuilder = new SubagentTranscriptCardBuilder(),
+        private TranscriptDisplayConfig $displayConfig = new TranscriptDisplayConfig(),
+        private TranscriptDisplayState $displayState = new TranscriptDisplayState(),
+        private TranscriptLinePreviewService $linePreviewService = new TranscriptLinePreviewService(),
     ) {
     }
 
@@ -37,98 +45,56 @@ final readonly class SubagentResultRenderer
             || isset($block->meta['subagent_final']);
     }
 
-    /**
-     * Build ANSI-coloured card content for the widget-tree renderer.
-     */
-    public function buildContent(TranscriptBlock $block, TuiTheme $theme): string
+    public function buildWidget(TranscriptBlock $block, TuiTheme $theme): AbstractWidget
     {
         $progress = $block->meta['subagent_progress'] ?? null;
         $resultText = $this->resolveResultText($block);
-        $suffix = $block->streaming ? TranscriptGlyphs::STREAMING_SUFFIX : '';
 
         if (\is_array($progress)) {
-            $handoff = ('' !== $resultText && !$this->isRedundantHandoff($progress, $resultText))
-                ? $this->truncateResult($resultText)
-                : null;
-            $plainLines = $this->cardBuilder->buildLines($progress, $handoff);
-            $status = $this->resolveCardStatus($progress);
-            $card = $this->renderCard($plainLines, $theme, $status, $progress);
-
-            return $card.$suffix;
+            return $this->buildProgressWidget($block, $theme, $progress, $resultText);
         }
 
         if ('' !== $resultText) {
-            return $this->renderFallbackCard($resultText, $theme).$suffix;
+            return $this->buildFallbackWidget($resultText, $theme);
         }
 
-        return $theme->color(ThemeColorEnum::ToolOutput, TranscriptGlyphs::GLYPH_TOOL.' subagent').$suffix;
+        $suffix = $block->streaming ? TranscriptGlyphs::STREAMING_SUFFIX : '';
+
+        return new TextWidget($theme->color(ThemeColorEnum::ToolOutput, TranscriptGlyphs::GLYPH_TOOL.' subagent').$suffix);
     }
 
     /**
      * @param array<string, mixed> $progress
      */
-    private function resolveCardStatus(array $progress): string
-    {
-        $status = \is_string($progress['status'] ?? null) ? $progress['status'] : 'running';
+    private function buildProgressWidget(
+        TranscriptBlock $block,
+        TuiTheme $theme,
+        array $progress,
+        string $resultText,
+    ): AbstractWidget {
+        $status = $this->resolveCardStatus($progress);
+        $handoffMarkdown = $this->resolveHandoffMarkdown($progress, $resultText);
+        $plainLines = $this->cardBuilder->buildLines($progress);
+        $footerHint = $this->resolveFooterHint($plainLines, $status, $handoffMarkdown);
 
-        return match ($status) {
-            'needs_clarification' => 'waiting_human',
-            'starting' => 'running',
-            default => $status,
-        };
+        $container = new ContainerWidget();
+        $container->add(new TextWidget($this->renderCard($plainLines, $theme, $status, $progress, $footerHint, $block->streaming)));
+
+        if ('' !== $handoffMarkdown) {
+            $borderColor = $this->borderColorForStatus($status);
+            $container->add(new TextWidget($theme->color($borderColor, '│ Handoff')));
+            $container->add($this->buildHandoffMarkdownWidget($handoffMarkdown, $theme, $status));
+            if ($this->handoffNeedsExpandHint($handoffMarkdown)) {
+                $container->add(new TextWidget(
+                    $theme->color($borderColor, '│ ').$theme->muted('Ctrl+O to expand handoff'),
+                ));
+            }
+        }
+
+        return $container;
     }
 
-    /**
-     * @param list<string>         $plainLines
-     * @param array<string, mixed> $progress
-     */
-    private function renderCard(array $plainLines, TuiTheme $theme, string $status, array $progress): string
-    {
-        if ([] === $plainLines) {
-            return '';
-        }
-
-        $mode = \is_string($progress['mode'] ?? null) ? $progress['mode'] : 'single';
-        $isParallel = 'parallel' === $mode;
-        $borderColor = $this->borderColorForStatus($status);
-        $header = array_shift($plainLines);
-        $footerHint = null;
-        if ([] !== $plainLines && $this->isHintLine($plainLines[\count($plainLines) - 1])) {
-            $footerHint = array_pop($plainLines);
-        }
-
-        $top = $theme->color($borderColor, $isParallel ? '╭─ '.$header : '╭─ '.$header);
-        $styled = [$top];
-
-        $inChild = false;
-        foreach ($plainLines as $line) {
-            if ('' === $line) {
-                $inChild = false;
-                continue;
-            }
-            if ($isParallel && str_starts_with($line, '#')) {
-                $inChild = true;
-                $styled[] = $theme->color($borderColor, '├─ ').$this->styleBodyLine($theme, $line, $this->childStatusFromLine($line), true);
-                continue;
-            }
-            if (str_starts_with($line, 'Handoff')) {
-                $styled[] = $theme->color($borderColor, '│ ').$theme->color(ThemeColorEnum::ToolTitle, $line);
-                continue;
-            }
-            $rail = $isParallel && $inChild ? '│ ' : '│ ';
-            $styled[] = $theme->color($borderColor, $rail).$this->styleBodyLine($theme, $line, $status, $inChild && str_starts_with($line, '#'));
-        }
-
-        if (null !== $footerHint) {
-            $styled[] = $theme->color($borderColor, '╰─ ').$theme->muted($footerHint);
-        } else {
-            $styled[] = $theme->color($borderColor, '╰─');
-        }
-
-        return $this->applyOptionalBackground($theme, implode("\n", $styled), $status);
-    }
-
-    private function renderFallbackCard(string $resultText, TuiTheme $theme): string
+    private function buildFallbackWidget(string $resultText, TuiTheme $theme): TextWidget
     {
         $lines = explode("\n", trim($resultText));
         $header = $theme->color(ThemeColorEnum::BorderAccent, '╭─ subagent');
@@ -138,7 +104,132 @@ final readonly class SubagentResultRenderer
         }
         $bottom = $theme->color(ThemeColorEnum::BorderAccent, '╰─');
 
-        return implode("\n", array_merge([$header], $body, [$bottom]));
+        return new TextWidget(implode("\n", array_merge([$header], $body, [$bottom])));
+    }
+
+    private function buildHandoffMarkdownWidget(string $handoffMarkdown, TuiTheme $theme, string $status): MarkdownWidget
+    {
+        $preview = $this->previewHandoffLines($handoffMarkdown);
+        $mdWidget = new MarkdownWidget($preview);
+        $colorSpec = $theme->getPalette()->get(ThemeColorEnum::ToolOutput);
+        $style = '' !== $colorSpec
+            ? new Style(color: $colorSpec, padding: Padding::from([0, 0, 0, 2]))
+            : new Style(padding: Padding::from([0, 0, 0, 2]));
+        $mdWidget->setStyle($style);
+
+        return $mdWidget;
+    }
+
+    private function previewHandoffLines(string $handoffMarkdown): string
+    {
+        $lines = explode("\n", $handoffMarkdown);
+        $preview = $this->linePreviewService->apply(
+            $lines,
+            $this->displayConfig->toolResultPreviewLines,
+            fullRender: false,
+            displayState: $this->displayState,
+        );
+        $body = implode("\n", $preview['lines']);
+        if (null !== $preview['ellipsis']) {
+            $body .= "\n".$preview['ellipsis'];
+        }
+
+        return $body;
+    }
+
+    private function handoffNeedsExpandHint(string $handoffMarkdown): bool
+    {
+        if ($this->displayState->previewableBlocksExpanded) {
+            return false;
+        }
+
+        $lines = explode("\n", $handoffMarkdown);
+
+        return \count($lines) > $this->displayConfig->toolResultPreviewLines;
+    }
+
+    /**
+     * @param array<string, mixed> $progress
+     */
+    private function resolveHandoffMarkdown(array $progress, string $resultText): string
+    {
+        if ('' === trim($resultText) || $this->isRedundantHandoff($progress, $resultText)) {
+            return '';
+        }
+
+        return trim($resultText);
+    }
+
+    /**
+     * @param list<string> $plainLines
+     */
+    private function resolveFooterHint(array $plainLines, string $status, string $handoffMarkdown): ?string
+    {
+        if ([] === $plainLines) {
+            return null;
+        }
+        $last = $plainLines[\count($plainLines) - 1];
+        if (!$this->isHintLine($last)) {
+            return null;
+        }
+
+        return $last;
+    }
+
+    /**
+     * @param list<string>         $plainLines
+     * @param array<string, mixed> $progress
+     */
+    private function renderCard(
+        array $plainLines,
+        TuiTheme $theme,
+        string $status,
+        array $progress,
+        ?string $footerHint,
+        bool $streaming,
+    ): string {
+        if ([] === $plainLines && null === $footerHint) {
+            return '';
+        }
+
+        $workingLines = $plainLines;
+        if (null !== $footerHint && [] !== $workingLines && $footerHint === $workingLines[\count($workingLines) - 1]) {
+            array_pop($workingLines);
+        }
+
+        $mode = \is_string($progress['mode'] ?? null) ? $progress['mode'] : 'single';
+        $isParallel = 'parallel' === $mode;
+        $borderColor = $this->borderColorForStatus($status);
+        $header = [] !== $workingLines ? array_shift($workingLines) : 'subagent';
+        $top = $theme->color($borderColor, $isParallel ? '╭─ '.$header : '╭─ '.$header);
+        $styled = [$top];
+
+        $inChild = false;
+        foreach ($workingLines as $line) {
+            if ('' === $line) {
+                $inChild = false;
+                continue;
+            }
+            if ($isParallel && str_starts_with($line, '#')) {
+                $inChild = true;
+                $styled[] = $theme->color($borderColor, '├─ ').$this->styleBodyLine($theme, $line, $this->childStatusFromLine($line), true);
+                continue;
+            }
+            $styled[] = $theme->color($borderColor, '│ ').$this->styleBodyLine($theme, $line, $status, $inChild && str_starts_with($line, '#'));
+        }
+
+        if (null !== $footerHint) {
+            $styled[] = $theme->color($borderColor, '╰─ ').$theme->muted($footerHint);
+        } else {
+            $styled[] = $theme->color($borderColor, '╰─');
+        }
+
+        $card = implode("\n", $styled);
+        if ($streaming) {
+            $card .= TranscriptGlyphs::STREAMING_SUFFIX;
+        }
+
+        return $card;
     }
 
     private function styleBodyLine(TuiTheme $theme, string $line, string $status, bool $childHeader): string
@@ -149,7 +240,7 @@ final readonly class SubagentResultRenderer
         if (str_starts_with($line, 'Task ') || str_starts_with($line, 'Artifact ') || str_starts_with($line, 'Run ')) {
             return $theme->color(ThemeColorEnum::ToolTitle, $line);
         }
-        if (str_starts_with($line, 'Active ') || str_starts_with($line, 'Last ')) {
+        if (str_starts_with($line, 'Active ') || str_starts_with($line, '› ')) {
             return $theme->accent($line);
         }
         if (str_starts_with($line, 'Use agent_retrieve')) {
@@ -202,6 +293,20 @@ final readonly class SubagentResultRenderer
             || str_starts_with($line, 'Use agent_retrieve');
     }
 
+    /**
+     * @param array<string, mixed> $progress
+     */
+    private function resolveCardStatus(array $progress): string
+    {
+        $status = \is_string($progress['status'] ?? null) ? $progress['status'] : 'running';
+
+        return match ($status) {
+            'needs_clarification' => 'waiting_human',
+            'starting' => 'running',
+            default => $status,
+        };
+    }
+
     private function borderColorForStatus(string $status): ThemeColorEnum
     {
         return match ($status) {
@@ -211,28 +316,6 @@ final readonly class SubagentResultRenderer
             'waiting_human' => ThemeColorEnum::Warning,
             default => ThemeColorEnum::BorderAccent,
         };
-    }
-
-    private function applyOptionalBackground(TuiTheme $theme, string $text, string $status): string
-    {
-        $bgToken = match ($status) {
-            'completed' => ThemeColorEnum::ToolSuccessBg,
-            'failed' => ThemeColorEnum::ToolErrorBg,
-            'cancelled' => ThemeColorEnum::ToolPendingBg,
-            'waiting_human', 'running' => ThemeColorEnum::ToolPendingBg,
-            default => ThemeColorEnum::ToolPendingBg,
-        };
-
-        $spec = $theme->getPalette()->get($bgToken);
-        if ('' === $spec) {
-            return $text;
-        }
-
-        try {
-            return (new Style(background: $spec))->apply($text);
-        } catch (\Throwable) {
-            return $text;
-        }
     }
 
     private function resolveResultText(TranscriptBlock $block): string
@@ -254,15 +337,5 @@ final readonly class SubagentResultRenderer
         $artifactId = \is_string($progress['artifact_id'] ?? null) ? $progress['artifact_id'] : '';
 
         return '' !== $artifactId && str_contains($normalized, $artifactId) && !str_contains($normalized, "\n\n");
-    }
-
-    private function truncateResult(string $resultText): string
-    {
-        $lines = explode("\n", trim($resultText));
-        if (\count($lines) <= 8) {
-            return trim($resultText);
-        }
-
-        return implode("\n", \array_slice($lines, 0, 8))."\n…";
     }
 }

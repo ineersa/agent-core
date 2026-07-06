@@ -77,7 +77,7 @@ final class SubagentTranscriptCardBuilder
             if ($toolLine === $activeTool) {
                 continue;
             }
-            $lines[] = 'Last '.$toolLine;
+            $lines[] = '› '.$toolLine;
         }
 
         $excerpt = $this->string($progress, 'assistant_excerpt', '');

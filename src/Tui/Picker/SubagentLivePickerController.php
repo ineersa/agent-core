@@ -107,7 +107,7 @@ final class SubagentLivePickerController
 
         $theme = $screen->theme();
         $header = new TextWidget(
-            text: $theme->muted('Agents live — Enter live view, d removes, Ctrl+\\ main, Esc cancel'),
+            text: $theme->muted('Agents live — Enter live view, d dismisses finished, Ctrl+\\ main, Esc cancel'),
             truncate: true,
         );
 
@@ -196,6 +196,21 @@ final class SubagentLivePickerController
         }
 
         $artifactId = (string) ($selected['value'] ?? '');
+        $child = $state->subagentLiveCatalog->findByArtifactId($artifactId);
+        if (null === $child) {
+            return;
+        }
+
+        if ($child->isRunning()) {
+            $screen->setWorkingMessage(\sprintf(
+                'Cannot remove active subagent %s; wait for completion or cancel it first.',
+                $child->agentName,
+            ));
+            $screen->requestRender(true);
+
+            return;
+        }
+
         $removed = $state->subagentLiveCatalog->dismissArtifactId($artifactId);
         if (null === $removed) {
             return;
@@ -224,8 +239,8 @@ final class SubagentLivePickerController
 
         $idx = 0;
         $selectedValue = (string) ($selected['value'] ?? '');
-        foreach ($children as $i => $child) {
-            if ($child->artifactId === $selectedValue) {
+        foreach ($children as $i => $remainingChild) {
+            if ($remainingChild->artifactId === $selectedValue) {
                 $idx = $i;
                 break;
             }
@@ -234,9 +249,7 @@ final class SubagentLivePickerController
         $listWidget->setItems(self::buildItems($children, $theme, selectedIndex: $idx));
         $listWidget->setSelectedIndex($idx);
 
-        $msg = $removed->isRunning()
-            ? \sprintf('Removed %s from /agents-live (child continues in background).', $removed->agentName)
-            : \sprintf('Removed %s from /agents-live.', $removed->agentName);
+        $msg = \sprintf('Removed %s from /agents-live.', $removed->agentName);
         $screen->setWorkingMessage($msg);
         $screen->requestRender(true);
     }

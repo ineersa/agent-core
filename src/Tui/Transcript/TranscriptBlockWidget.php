@@ -7,6 +7,7 @@ namespace Ineersa\Tui\Transcript;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\Tui\Theme\TuiTheme;
+use Ineersa\Tui\Transcript\SubagentResultRenderer;
 use Ineersa\Tui\Widget\TuiRenderContext;
 use Ineersa\Tui\Widget\TuiWidget;
 use Symfony\Component\Tui\Widget\ContainerWidget;
@@ -40,6 +41,10 @@ final class TranscriptBlockWidget implements TuiWidget
         TranscriptDisplayState $displayState = new TranscriptDisplayState(),
     ) {
         $this->factory = new TranscriptBlockWidgetFactory(
+            subagentRenderer: new SubagentResultRenderer(
+                displayConfig: $displayConfig,
+                displayState: $displayState,
+            ),
             displayConfig: $displayConfig,
             displayState: $displayState,
         );

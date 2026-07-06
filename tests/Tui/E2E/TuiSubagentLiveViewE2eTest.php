@@ -91,7 +91,7 @@ final class TuiSubagentLiveViewE2eTest extends TestCase
             usleep(50_000);
             $this->tmux->sendLiteral($pane, '/agents-main');
             $this->tmux->sendKey($pane, 'Enter');
-            $this->tmux->waitForCaptureContains($pane, 'subagent scout', 10.0, 'Parent transcript must restore after /agents-main');
+            $this->tmux->waitForCaptureContains($pane, 'scout [completed]', 10.0, 'Parent transcript must restore after /agents-main');
             $this->assertStringNotContainsString('Subagent live:', $this->tmux->capturePlainWithHistory($pane, 2500));
 
             $this->tmux->sendKey($pane, 'C-d');

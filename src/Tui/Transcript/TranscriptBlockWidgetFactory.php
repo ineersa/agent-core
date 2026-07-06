@@ -66,7 +66,7 @@ final readonly class TranscriptBlockWidgetFactory
     {
         // Structured subagent result blocks stay on the dedicated renderer before generic ToolResult cards.
         if ($this->subagentRenderer->supports($block)) {
-            return new TextWidget($this->subagentRenderer->buildContent($block, $theme));
+            return $this->subagentRenderer->buildWidget($block, $theme);
         }
 
         // ask_human HITL: Question block is authoritative; suppress duplicate tool cards (single-block render path).

@@ -372,5 +372,5 @@ The following features are **not yet implemented**:
 - `/agents-live` opens a picker of known child runs; Enter enters interactive live view for the selected child.
 - `/agents-main` and **Ctrl+\** return to the parent transcript. Live view routes plain text to the selected child as steer/follow_up.
 - Child HITL (`ask_human`, SafeGuard) questions are labeled and answered on the child run id. ESC cancels the selected child while in live view.
-- Picker **d** removes a catalog row (UI dismiss only; running children keep executing in the background).
+- Picker **d** dismisses finished catalog rows only; active/pending/running/waiting children stay listed until they complete or you cancel them.
 - Steering applies at turn boundaries (not interruptive). Auto-delete of completed children is future settings work.
