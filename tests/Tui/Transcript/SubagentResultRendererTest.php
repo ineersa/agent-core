@@ -89,6 +89,51 @@ final class SubagentResultRendererTest extends TestCase
         $this->assertStringContainsString('Ctrl+\\', $joined);
     }
 
+    public function testMultilineTaskSummaryDoesNotEscapeCardRail(): void
+    {
+        $task = "You are a scout. Complete the following steps:\n\n1. Use `read` to list docs\n2. Summarize";
+        $progress = [
+            'mode' => 'single', 'status' => 'waiting_human', 'agent_name' => 'scout',
+            'artifact_id' => 'agent_a70', 'task_summary' => $task, 'turn_no' => 1,
+        ];
+        $block = new TranscriptBlock(
+            id: 'tool_result_multiline_task', kind: TranscriptBlockKindEnum::ToolResult, runId: 'run1', seq: 1,
+            text: '', meta: ['tool_name' => 'subagent', 'subagent_progress' => $progress],
+        );
+        $joined = implode("\n", $this->renderer()->renderBlock($block, $this->context()));
+        $plain = preg_replace('/\x1b\[[0-9;]*m/', '', $joined) ?? $joined;
+        $this->assertStringNotContainsString("\n\n1. Use", $plain);
+        $this->assertStringContainsString('1. Use', $plain);
+        $this->assertStringContainsString('│ Task ', $plain);
+        $this->assertStringContainsString('╰─', $plain);
+        $this->assertStringNotContainsString('Handoff', $plain);
+        $this->assertStringNotContainsString('Ctrl+O to expand handoff', $plain);
+    }
+
+    public function testTerminalExpandHandoffHintIsRailAlignedBeforeBottomBorder(): void
+    {
+        $progress = [
+            'mode' => 'single', 'status' => 'completed', 'agent_name' => 'scout',
+            'artifact_id' => 'agent_done', 'task_summary' => 'task', 'turn_no' => 3,
+        ];
+        $handoff = "# Handoff title\n\nUnique handoff body.\n\n- bullet one\n- bullet two\n- bullet three\n- bullet four\n- bullet five\n- bullet six\n- bullet seven\n- bullet eight\n- bullet nine";
+        $block = new TranscriptBlock(
+            id: 'tool_result_tc_hint', kind: TranscriptBlockKindEnum::ToolResult, runId: 'run1', seq: 1,
+            text: 'fallback', meta: [
+                'tool_name' => 'subagent',
+                'subagent_progress' => $progress,
+                'result' => $handoff,
+            ],
+        );
+        $joined = implode("\n", $this->renderer(previewLines: 3)->renderBlock($block, $this->context()));
+        $plain = preg_replace('/\x1b\[[0-9;]*m/', '', $joined) ?? $joined;
+        $this->assertStringContainsString('│ Ctrl+O to expand handoff', $plain);
+        $posHint = strpos($plain, '│ Ctrl+O to expand handoff');
+        $posBottom = strrpos($plain, '╰─');
+        $this->assertNotFalse($posHint);
+        $this->assertNotFalse($posBottom);
+        $this->assertLessThan($posBottom, $posHint);
+    }
 
     public function testActiveProgressWithResultTextDoesNotRenderHandoffSection(): void
     {

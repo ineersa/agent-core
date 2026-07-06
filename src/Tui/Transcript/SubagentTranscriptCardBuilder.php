@@ -26,11 +26,9 @@ final class SubagentTranscriptCardBuilder
             : $this->buildSingleLines($progress, null);
 
         if (null !== $handoffAppend && '' !== trim($handoffAppend)) {
-            $lines[] = 'Handoff';
-            foreach (explode("\n", trim($handoffAppend)) as $handoffLine) {
-                if ('' !== $handoffLine) {
-                    $lines[] = $handoffLine;
-                }
+            $collapsed = $this->sanitizeInlineValue($handoffAppend);
+            if ('' !== $collapsed) {
+                $lines[] = 'Handoff '.$this->truncate($collapsed, 200);
             }
         }
 
@@ -70,14 +68,14 @@ final class SubagentTranscriptCardBuilder
 
         $activeTool = $this->string($progress, 'active_tool', '');
         if ('' !== $activeTool && $this->isActiveStatus($status)) {
-            $lines[] = 'Active '.$activeTool;
+            $lines[] = 'Active '.$this->sanitizeInlineValue($activeTool);
         }
 
         foreach ($this->recentToolLines($progress) as $toolLine) {
             if ($toolLine === $activeTool) {
                 continue;
             }
-            $lines[] = '› '.$toolLine;
+            $lines[] = '› '.$this->sanitizeInlineValue($toolLine);
         }
 
         $excerpt = $this->string($progress, 'assistant_excerpt', '');
@@ -354,8 +352,19 @@ final class SubagentTranscriptCardBuilder
         return (int) $data[$key];
     }
 
+    private function sanitizeInlineValue(string $text): string
+    {
+        $normalized = preg_replace('/\s+/u', ' ', str_replace(["\r", "\n", "\t"], ' ', $text)) ?? $text;
+
+        return trim($normalized);
+    }
+
     private function truncate(string $text, int $max): string
     {
+        $text = $this->sanitizeInlineValue($text);
+        if ('' === $text) {
+            return '';
+        }
         if (\strlen($text) <= $max) {
             return $text;
         }

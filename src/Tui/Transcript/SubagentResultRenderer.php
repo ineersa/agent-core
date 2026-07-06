@@ -76,15 +76,23 @@ final readonly class SubagentResultRenderer
         $handoffMarkdown = $this->resolveHandoffMarkdown($progress, $resultText);
         $plainLines = $this->cardBuilder->buildLines($progress);
         $footerHint = $this->resolveFooterHint($plainLines, $status, $handoffMarkdown);
+        $expandHandoffHint = ('' !== $handoffMarkdown && $this->handoffNeedsExpandHint($handoffMarkdown))
+            ? 'Ctrl+O to expand handoff'
+            : null;
 
         $container = new ContainerWidget();
-        $container->add(new TextWidget($this->renderCard($plainLines, $theme, $status, $progress, $footerHint, $block->streaming)));
+        $container->add(new TextWidget($this->renderCard(
+            $plainLines,
+            $theme,
+            $status,
+            $progress,
+            $footerHint,
+            $block->streaming,
+            $expandHandoffHint,
+        )));
 
         if ('' !== $handoffMarkdown) {
             $container->add($this->buildHandoffMarkdownWidget($handoffMarkdown, $theme, $status));
-            if ($this->handoffNeedsExpandHint($handoffMarkdown)) {
-                $container->add(new TextWidget($theme->muted('Ctrl+O to expand handoff')));
-            }
         }
 
         return $container;
@@ -192,6 +200,7 @@ final readonly class SubagentResultRenderer
         array $progress,
         ?string $footerHint,
         bool $streaming,
+        ?string $inCardTrailingHint = null,
     ): string {
         if ([] === $plainLines && null === $footerHint) {
             return '';
@@ -224,10 +233,12 @@ final readonly class SubagentResultRenderer
         }
 
         if (null !== $footerHint) {
-            $styled[] = $theme->color($borderColor, '╰─ ').$theme->muted($footerHint);
-        } else {
-            $styled[] = $theme->color($borderColor, '╰─');
+            $styled[] = $theme->color($borderColor, '│ ').$theme->muted($footerHint);
         }
+        if (null !== $inCardTrailingHint) {
+            $styled[] = $theme->color($borderColor, '│ ').$theme->muted($inCardTrailingHint);
+        }
+        $styled[] = $theme->color($borderColor, '╰─');
 
         $card = implode("\n", $styled);
         if ($streaming) {
@@ -295,6 +306,7 @@ final readonly class SubagentResultRenderer
     private function isHintLine(string $line): bool
     {
         return str_starts_with($line, 'Ctrl+\\')
+            || str_starts_with($line, 'Ctrl+O')
             || str_starts_with($line, 'Use agent_retrieve');
     }
 
