@@ -474,7 +474,6 @@ services:
   Ineersa\CodingAgent\Runtime\Contract\SessionTranscriptProviderInterface:
     alias: Ineersa\CodingAgent\Session\SessionTranscriptProvider
 
-
   Ineersa\AgentCore\Contract\TurnTree\TurnTreeProjectorInterface:
     alias: Ineersa\CodingAgent\Session\TurnTree\TurnTreeProjectorContractAdapter
 
