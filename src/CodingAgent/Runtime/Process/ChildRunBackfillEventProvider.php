@@ -15,8 +15,14 @@ use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
  * Uses the EventStoreInterface (which resolves through DI to ChildAwareEventStore)
  * to load stored RunEvents, then maps them to RuntimeEvents via RuntimeEventMapper.
  *
- * Tracks which run IDs have been backfilled to avoid re-reading on every poll tick.
- * The first call for a run ID loads all events; subsequent calls return empty.
+ * One-shot resume backfill guard: the first call for a run ID loads all stored
+ * events and marks the run as backfilled.  Subsequent calls return empty without
+ * re-reading storage.  This is intentional:
+ *  - Resumed children need their stored events projected exactly once.
+ *  - Active child runs stream new events through the stdout path (ConsumerStdoutPoller),
+ *    so repeated file reads are unnecessary.
+ *  - Retrying empty/unknown child stores every poll tick would reintroduce the
+ *    hot file polling that the stdout streaming pivot eliminated.
  */
 final class ChildRunBackfillEventProvider implements BackfillEventProviderInterface
 {
@@ -35,6 +41,11 @@ final class ChildRunBackfillEventProvider implements BackfillEventProviderInterf
             return [];
         }
 
+        // Mark before read: one-shot resume backfill.  Even if the store returns
+        // empty (unknown run), we do not retry on subsequent poll ticks — the
+        // active child stdout stream will cover new events for known runs, and
+        // retrying empty stores would reintroduce the hot file polling that the
+        // stdout streaming pivot eliminated.
         $this->backfilled[$runId] = true;
 
         $storedEvents = $this->eventStore->allFor($runId);
@@ -55,10 +66,5 @@ final class ChildRunBackfillEventProvider implements BackfillEventProviderInterf
         \usort($runtimeEvents, static fn (RuntimeEvent $a, RuntimeEvent $b): int => $a->seq <=> $b->seq);
 
         return $runtimeEvents;
-    }
-
-    public function markBackfilled(string $runId): void
-    {
-        $this->backfilled[$runId] = true;
     }
 }

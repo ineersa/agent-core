@@ -75,7 +75,7 @@ final class SubagentLiveChildViewPollerBackfillTest extends TestCase
 
         $state = $this->createLiveViewState(RunActivityStateEnum::WaitingHuman);
 
-        $hitlCallback = function (RuntimeEvent $event) use (&$backfillHit, &$backfillEvent): void {
+        $hitlCallback = static function (RuntimeEvent $event) use (&$backfillHit, &$backfillEvent): void {
             $backfillHit = true;
             $backfillEvent = $event;
         };
@@ -96,13 +96,13 @@ final class SubagentLiveChildViewPollerBackfillTest extends TestCase
     }
 
     #[Test]
-    public function secondPollDoesNotCallBackfillProviderAgain(): void
+    public function secondPollReturnsNullWhenBackfillProviderHasNoEvents(): void
     {
         $projector = $this->createStub(TranscriptProjectorInterface::class);
         $projector->method('blocks')->willReturn([]);
 
-        // The poller calls getStoredEvents() every time; idempotency is handled
-        // by the provider internally (second call returns empty).
+        // Provider is called each poll but returns empty idempotently (internal
+        // once-per-run guard).  Second poll with no source events → null.
         $backfillProvider = $this->createMock(BackfillEventProviderInterface::class);
         $backfillProvider->expects($this->exactly(2))
             ->method('getStoredEvents')
@@ -251,7 +251,7 @@ final class SubagentLiveChildViewPollerBackfillTest extends TestCase
         $poller->poll(
             live: $state,
             client: $client,
-            onHumanInputRequested: function (RuntimeEvent $event) use (&$callbackCalled, &$callbackSeq): void {
+            onHumanInputRequested: static function (RuntimeEvent $event) use (&$callbackCalled, &$callbackSeq): void {
                 $callbackCalled = true;
                 $callbackSeq = $event->seq;
             },

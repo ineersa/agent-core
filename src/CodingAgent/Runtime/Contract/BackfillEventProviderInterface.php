@@ -32,11 +32,4 @@ interface BackfillEventProviderInterface
      * @return list<RuntimeEvent>
      */
     public function getStoredEvents(string $runId): array;
-
-    /**
-     * Mark a run ID as already backfilled so subsequent calls return
-     * empty without re-reading storage.  Useful when the live streaming
-     * path has already covered all events for this run.
-     */
-    public function markBackfilled(string $runId): void;
 }
