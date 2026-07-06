@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Application\Handler;
 
 use Ineersa\AgentCore\Application\Dto\RunStateReplayResult;
-use Ineersa\AgentCore\Application\Replay\TurnTreeReplayFilter;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
+use Ineersa\AgentCore\Contract\TurnTree\BranchReplayFilterInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
@@ -33,7 +33,7 @@ final readonly class RunStateReplayService
     public function __construct(
         private EventStoreInterface $eventStore,
         private LoggerInterface $logger,
-        private ?TurnTreeReplayFilter $turnTreeReplayFilter = null,
+        private ?BranchReplayFilterInterface $turnTreeReplayFilter = null,
     ) {
     }
 

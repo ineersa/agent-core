@@ -6,13 +6,14 @@ namespace Ineersa\AgentCore\Tests\Application\Handler;
 
 use Ineersa\AgentCore\Application\Handler\RunStateReplayException;
 use Ineersa\AgentCore\Application\Handler\RunStateReplayService;
-use Ineersa\AgentCore\Application\Replay\TurnTreeReplayFilter;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
-use Ineersa\AgentCore\Domain\Run\TurnTreeProjector;
 use Ineersa\AgentCore\Infrastructure\Storage\RunEventStore;
+use Ineersa\CodingAgent\Session\Replay\BranchReplayFilterContractAdapter;
+use Ineersa\CodingAgent\Session\Replay\TurnTreeReplayFilter;
+use Ineersa\CodingAgent\Session\TurnTree\TurnTreeProjector;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 
@@ -20,13 +21,13 @@ final class RunStateReplayServiceTest extends TestCase
 {
     private RunEventStore $eventStore;
     private RunStateReplayService $service;
-    private TurnTreeReplayFilter $treeFilter;
+    private BranchReplayFilterContractAdapter $treeFilter;
     private string $runId = 'run-replay-test';
 
     protected function setUp(): void
     {
         $this->eventStore = new RunEventStore();
-        $this->treeFilter = new TurnTreeReplayFilter(new TurnTreeProjector());
+        $this->treeFilter = new BranchReplayFilterContractAdapter(new TurnTreeReplayFilter(new TurnTreeProjector()));
         $this->service = new RunStateReplayService(
             $this->eventStore,
             new NullLogger(),

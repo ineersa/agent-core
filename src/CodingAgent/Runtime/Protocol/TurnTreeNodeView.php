@@ -7,7 +7,7 @@ namespace Ineersa\CodingAgent\Runtime\Protocol;
 /**
  * AgentCore-free view of a single turn node for TUI presentation.
  *
- * Mirrors {@see \Ineersa\AgentCore\Domain\Run\TurnTreeNodeDTO} but lives
+ * Mirrors {@see \Ineersa\CodingAgent\Session\TurnTree\TurnTreeNodeDTO} but lives
  * in Runtime/Protocol so the TUI layer never imports AgentCore types.
  *
  * @see TurnTreeView for the full tree container

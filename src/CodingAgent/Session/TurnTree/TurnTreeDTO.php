@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\AgentCore\Domain\Run;
+namespace Ineersa\CodingAgent\Session\TurnTree;
 
 /**
  * Read-only turn tree for a single session/run.

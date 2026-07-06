@@ -4,13 +4,13 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Session;
 
-use Ineersa\AgentCore\Application\Replay\TurnTreeReplayFilter;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
-use Ineersa\AgentCore\Domain\Run\TurnTreeProjector;
 use Ineersa\CodingAgent\Runtime\Contract\TurnTreeProviderInterface;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
 use Ineersa\CodingAgent\Runtime\Protocol\TurnTreeNodeView;
 use Ineersa\CodingAgent\Runtime\Protocol\TurnTreeView;
+use Ineersa\CodingAgent\Session\Replay\TurnTreeReplayFilter;
+use Ineersa\CodingAgent\Session\TurnTree\TurnTreeProjector;
 
 /**
  * Session-backed TurnTreeProviderInterface.
