@@ -22,6 +22,8 @@ use Symfony\AI\Agent\Toolbox\Source\SourceCollection;
 use Symfony\AI\Agent\Toolbox\ToolboxInterface;
 use Symfony\AI\Agent\Toolbox\ToolResult as SymfonyToolResult;
 use Symfony\AI\Platform\Result\ToolCall as SymfonyToolCall;
+use Symfony\Component\Clock\ClockInterface;
+use Symfony\Component\Clock\MonotonicClock;
 
 final class ToolExecutor implements ToolExecutorInterface
 {
@@ -31,6 +33,8 @@ final class ToolExecutor implements ToolExecutorInterface
 
     /** @var list<ToolResultProcessorInterface> */
     private readonly array $toolResultProcessors;
+
+    private readonly ClockInterface $clock;
 
     /**
      * @param iterable<ToolResultProcessorInterface> $toolResultProcessors
@@ -45,12 +49,14 @@ final class ToolExecutor implements ToolExecutorInterface
         private readonly ?StackToolExecutionContextAccessor $contextAccessor = null,
         private readonly ?ToolSetResolverInterface $toolSetResolver = null,
         iterable $toolResultProcessors = [],
+        ?ClockInterface $clock = null,
     ) {
         $this->policyResolver = new ToolExecutionPolicyResolver($defaultMode, $defaultTimeoutSeconds, $maxParallelism);
         $this->faultTolerantToolbox = null !== $toolbox ? new FaultTolerantToolbox($toolbox) : null;
         $this->toolResultProcessors = \is_array($toolResultProcessors)
             ? array_values($toolResultProcessors)
             : iterator_to_array($toolResultProcessors, false);
+        $this->clock = $clock ?? new MonotonicClock();
     }
 
     /**
@@ -64,6 +70,7 @@ final class ToolExecutor implements ToolExecutorInterface
         ?StackToolExecutionContextAccessor $contextAccessor = null,
         ?ToolSetResolverInterface $toolSetResolver = null,
         iterable $toolResultProcessors = [],
+        ?ClockInterface $clock = null,
     ): self {
         return new self(
             defaultMode: $settings->defaultMode(),
@@ -75,6 +82,7 @@ final class ToolExecutor implements ToolExecutorInterface
             contextAccessor: $contextAccessor,
             toolSetResolver: $toolSetResolver,
             toolResultProcessors: $toolResultProcessors,
+            clock: $clock,
         );
     }
 
@@ -131,7 +139,7 @@ final class ToolExecutor implements ToolExecutorInterface
             );
         }
 
-        $startedAt = hrtime(true);
+        $startedAt = $this->nowMicros();
 
         try {
             $result = $this->executeToolCall($toolCall, $policy);
@@ -165,7 +173,7 @@ final class ToolExecutor implements ToolExecutorInterface
             }
         }
 
-        $durationMs = (hrtime(true) - $startedAt) / 1_000_000;
+        $durationMs = ($this->nowMicros() - $startedAt) / 1000;
 
         if (null !== $policy->timeoutSeconds && $durationMs > $policy->timeoutSeconds * 1000) {
             $result = $this->errorResult(
@@ -286,19 +294,29 @@ final class ToolExecutor implements ToolExecutorInterface
 
         return new ToolExecutionPolicy(
             mode: $toolCall->mode ?? $resolved->mode,
-            timeoutSeconds: $this->resolveTimeoutSeconds($toolCall->timeoutSeconds, $resolved->timeoutSeconds),
+            // Per-call timeout from LlmStepResultHandler / ActiveToolSet wins when set.
+            // When null: non-subagent tools keep tools.execution.timeout_seconds post-hoc cap;
+            // subagent has no ToolExecutor cap (agents.subagent_tool_timeout_seconds internal poll).
+            timeoutSeconds: $this->resolveTimeoutSeconds($toolCall->toolName, $toolCall->timeoutSeconds, $resolved->timeoutSeconds),
             maxParallelism: max(1, (int) ($toolCall->context['max_parallelism'] ?? $resolved->maxParallelism)),
         );
     }
 
-    private function resolveTimeoutSeconds(?int $callTimeout, ?int $resolvedTimeout): ?int
+    private function resolveTimeoutSeconds(string $toolName, ?int $callTimeout, ?int $resolvedTimeout): ?int
     {
-        $effective = $callTimeout ?? $resolvedTimeout;
-        if (null === $effective || $effective <= 0) {
+        if (null !== $callTimeout && $callTimeout > 0) {
+            return max(1, $callTimeout);
+        }
+
+        if ('subagent' === $toolName) {
             return null;
         }
 
-        return max(1, $effective);
+        if (null === $resolvedTimeout || $resolvedTimeout <= 0) {
+            return null;
+        }
+
+        return max(1, $resolvedTimeout);
     }
 
     private function rememberAndReturn(
@@ -530,5 +548,14 @@ final class ToolExecutor implements ToolExecutorInterface
         $encoded = json_encode($result, \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE);
 
         return false === $encoded ? '{}' : $encoded;
+    }
+
+    private function nowMicros(): int
+    {
+        $instant = $this->clock->now();
+        $seconds = (int) $instant->format('U');
+        $micro = (int) $instant->format('u');
+
+        return ($seconds * 1_000_000) + $micro;
     }
 }

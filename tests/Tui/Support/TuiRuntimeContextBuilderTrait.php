@@ -14,11 +14,8 @@ use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\Tui\Runtime\Contract\TuiSessionSwitchServiceInterface;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
 use Ineersa\Tui\Runtime\TuiSessionLifecycleDispatcher;
-use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\CodingAgent\Runtime\Contract\TurnTreeProviderInterface;
 use Ineersa\Tui\Runtime\TuiTickDispatcher;
-use Ineersa\Tui\Screen\ChatScreen;
-use Symfony\Component\Tui\Tui;
 
 /**
  * Trait that provides {@see TuiRuntimeContext} construction with sensible
@@ -39,8 +36,6 @@ trait TuiRuntimeContextBuilderTrait
 {
     /**
      * Create a builder pre-loaded with sensible defaults.
-     *
-     * @return TuiRuntimeContextBuilder
      */
     private function buildTuiContext(): TuiRuntimeContextBuilder
     {

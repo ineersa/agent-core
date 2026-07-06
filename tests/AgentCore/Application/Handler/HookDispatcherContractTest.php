@@ -57,10 +57,10 @@ final class HookDispatcherContractTest extends TestCase
             effectsCount: 3,
         ));
 
-        self::assertSame('run-stage-01', $result->runId);
-        self::assertSame('mutated-by-subscriber', $result->status);
-        self::assertSame(4, $result->effectsCount);
-        self::assertContainsOnlyInstancesOf(AfterTurnCommitEventSummary::class, $result->events);
+        $this->assertSame('run-stage-01', $result->runId);
+        $this->assertSame('mutated-by-subscriber', $result->status);
+        $this->assertSame(4, $result->effectsCount);
+        $this->assertContainsOnlyInstancesOf(AfterTurnCommitEventSummary::class, $result->events);
     }
 
     public function testEventDispatcherListenerCanMutatePayloadBeforeSubscribers(): void
@@ -88,9 +88,9 @@ final class HookDispatcherContractTest extends TestCase
             effectsCount: 1,
         ));
 
-        self::assertSame('mutated-by-listener', $result->status);
-        self::assertSame(10, $result->effectsCount);
-        self::assertContainsOnlyInstancesOf(AfterTurnCommitEventSummary::class, $result->events);
+        $this->assertSame('mutated-by-listener', $result->status);
+        $this->assertSame(10, $result->effectsCount);
+        $this->assertContainsOnlyInstancesOf(AfterTurnCommitEventSummary::class, $result->events);
     }
 
     private function serializer(): Serializer

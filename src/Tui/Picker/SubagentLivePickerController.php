@@ -45,7 +45,7 @@ final class SubagentLivePickerController
     {
         $children = $this->state?->subagentLiveCatalog->all() ?? [];
         if ([] === $children) {
-            $this->screen?->setStatus('agents-live', 'No known subagents yet. Launch a subagent first.');
+            $this->screen?->setWorkingMessage('No known subagents yet. Launch a subagent first.');
 
             return;
         }
@@ -170,7 +170,10 @@ final class SubagentLivePickerController
 
     private function enterLiveView(SubagentLiveChildDTO $child, TuiSessionState $state, ChatScreen $screen): void
     {
-        $resetProjection = $state->subagentLiveView->shouldResetProjectionFor($child);
+        $cached = $state->subagentLiveView->childCaches[$child->agentRunId] ?? null;
+        $hasCachedTranscript = null !== $cached && [] !== $cached['transcript'];
+
+        $resetProjection = !$hasCachedTranscript && $state->subagentLiveView->shouldResetProjectionFor($child);
         if ($resetProjection) {
             $this->childPoller->resetProjection();
         }
@@ -179,13 +182,9 @@ final class SubagentLivePickerController
 
         if ($resetProjection && [] === $state->subagentLiveView->childTranscript) {
             $state->subagentLiveView->childTranscript = $state->subagentLiveView->placeholderTranscriptFor($child);
+            $state->subagentLiveView->persistCurrentChildCache();
         }
 
-        $screen->setStatus('agents-live', \sprintf(
-            'Subagent live: %s [%s] — type to steer next step; /agents-main to return.',
-            $child->agentName,
-            $child->statusLabel(),
-        ));
         $screen->setTranscriptBlocks($state->subagentLiveView->childTranscript);
         $screen->setWorkingMessage($child->isRunning() ? 'Child agent working...' : 'Child agent idle');
         $screen->requestRender(true);

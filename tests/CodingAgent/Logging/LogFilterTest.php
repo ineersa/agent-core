@@ -44,45 +44,45 @@ final class LogFilterTest extends TestCase
     {
         $filter = new LogFilter();
 
-        self::assertTrue($filter->matches($this->infoEntry));
-        self::assertTrue($filter->matches($this->warningEntry));
-        self::assertTrue($filter->matches($this->errorEntry));
+        $this->assertTrue($filter->matches($this->infoEntry));
+        $this->assertTrue($filter->matches($this->warningEntry));
+        $this->assertTrue($filter->matches($this->errorEntry));
     }
 
     public function testLevelFilterMatchesExactLevel(): void
     {
         $filter = new LogFilter(level: 'ERROR');
 
-        self::assertFalse($filter->matches($this->infoEntry));
-        self::assertFalse($filter->matches($this->warningEntry));
-        self::assertTrue($filter->matches($this->errorEntry));
+        $this->assertFalse($filter->matches($this->infoEntry));
+        $this->assertFalse($filter->matches($this->warningEntry));
+        $this->assertTrue($filter->matches($this->errorEntry));
     }
 
     public function testLevelFilterIsCaseInsensitive(): void
     {
         $filter = new LogFilter(level: 'error');
 
-        self::assertTrue($filter->matches($this->errorEntry));
+        $this->assertTrue($filter->matches($this->errorEntry));
 
         $lowerFilter = new LogFilter(level: 'info');
-        self::assertTrue($lowerFilter->matches($this->infoEntry));
+        $this->assertTrue($lowerFilter->matches($this->infoEntry));
     }
 
     public function testSearchFilterMatchesMessage(): void
     {
         $filter = new LogFilter(search: 'timeout');
 
-        self::assertFalse($filter->matches($this->infoEntry));
-        self::assertFalse($filter->matches($this->warningEntry));
-        self::assertTrue($filter->matches($this->errorEntry));
+        $this->assertFalse($filter->matches($this->infoEntry));
+        $this->assertFalse($filter->matches($this->warningEntry));
+        $this->assertTrue($filter->matches($this->errorEntry));
     }
 
     public function testSearchFilterMatchesContext(): void
     {
         $filter = new LogFilter(search: 'PDOException');
 
-        self::assertFalse($filter->matches($this->infoEntry));
-        self::assertTrue($filter->matches($this->errorEntry));
+        $this->assertFalse($filter->matches($this->infoEntry));
+        $this->assertTrue($filter->matches($this->errorEntry));
     }
 
     public function testSearchFilterMatchesNestedContext(): void
@@ -96,32 +96,32 @@ final class LogFilterTest extends TestCase
         );
 
         $filter = new LogFilter(search: '/api/users');
-        self::assertTrue($filter->matches($entry));
+        $this->assertTrue($filter->matches($entry));
     }
 
     public function testSearchFilterIsCaseInsensitive(): void
     {
         $filter = new LogFilter(search: 'TIMEOUT');
 
-        self::assertTrue($filter->matches($this->errorEntry));
+        $this->assertTrue($filter->matches($this->errorEntry));
     }
 
     public function testFromFilterExcludesEarlierEntries(): void
     {
         $filter = new LogFilter(from: new \DateTimeImmutable('2026-05-18T11:00:00+00:00'));
 
-        self::assertFalse($filter->matches($this->infoEntry));
-        self::assertTrue($filter->matches($this->warningEntry));
-        self::assertTrue($filter->matches($this->errorEntry));
+        $this->assertFalse($filter->matches($this->infoEntry));
+        $this->assertTrue($filter->matches($this->warningEntry));
+        $this->assertTrue($filter->matches($this->errorEntry));
     }
 
     public function testToFilterExcludesLaterEntries(): void
     {
         $filter = new LogFilter(to: new \DateTimeImmutable('2026-05-18T11:00:00+00:00'));
 
-        self::assertTrue($filter->matches($this->infoEntry));
-        self::assertTrue($filter->matches($this->warningEntry)); // datetime <= 11:00
-        self::assertFalse($filter->matches($this->errorEntry));
+        $this->assertTrue($filter->matches($this->infoEntry));
+        $this->assertTrue($filter->matches($this->warningEntry)); // datetime <= 11:00
+        $this->assertFalse($filter->matches($this->errorEntry));
     }
 
     public function testFromAndToCombination(): void
@@ -131,18 +131,18 @@ final class LogFilterTest extends TestCase
             to: new \DateTimeImmutable('2026-05-18T11:30:00+00:00'),
         );
 
-        self::assertFalse($filter->matches($this->infoEntry));
-        self::assertTrue($filter->matches($this->warningEntry));
-        self::assertFalse($filter->matches($this->errorEntry));
+        $this->assertFalse($filter->matches($this->infoEntry));
+        $this->assertTrue($filter->matches($this->warningEntry));
+        $this->assertFalse($filter->matches($this->errorEntry));
     }
 
     public function testCombinedFilters(): void
     {
         $filter = new LogFilter(level: 'ERROR', search: 'timeout');
 
-        self::assertTrue($filter->matches($this->errorEntry));
+        $this->assertTrue($filter->matches($this->errorEntry));
 
         $wrongLevel = new LogFilter(level: 'INFO', search: 'timeout');
-        self::assertFalse($wrongLevel->matches($this->errorEntry));
+        $this->assertFalse($wrongLevel->matches($this->errorEntry));
     }
 }

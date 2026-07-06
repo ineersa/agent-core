@@ -43,10 +43,10 @@ final class AnswerHumanHandlerTest extends TestCase
         $event = new ControllerCommandEvent($command, static function (): void {});
         $handler($event);
 
-        self::assertNotNull($this->spyClient->lastCommand);
-        self::assertSame('answer_human', $this->spyClient->lastCommand->type);
-        self::assertSame('sg_abc', $this->spyClient->lastCommand->payload['question_id'] ?? null);
-        self::assertSame('Allow once', $this->spyClient->lastCommand->payload['answer'] ?? null);
+        $this->assertNotNull($this->spyClient->lastCommand);
+        $this->assertSame('answer_human', $this->spyClient->lastCommand->type);
+        $this->assertSame('sg_abc', $this->spyClient->lastCommand->payload['question_id'] ?? null);
+        $this->assertSame('Allow once', $this->spyClient->lastCommand->payload['answer'] ?? null);
     }
 
     public function testEmitsProtocolErrorWhenRunIdMissing(): void
@@ -68,9 +68,9 @@ final class AnswerHumanHandlerTest extends TestCase
         $event = new ControllerCommandEvent($command, $emit);
         $handler($event);
 
-        self::assertNull($this->spyClient->lastCommand);
-        self::assertCount(1, $emittedEvents);
-        self::assertSame(RuntimeEventTypeEnum::ProtocolError->value, $emittedEvents[0]->type);
+        $this->assertNull($this->spyClient->lastCommand);
+        $this->assertCount(1, $emittedEvents);
+        $this->assertSame(RuntimeEventTypeEnum::ProtocolError->value, $emittedEvents[0]->type);
     }
 
     public function testEmitsProtocolErrorWhenQuestionIdMissing(): void
@@ -92,10 +92,10 @@ final class AnswerHumanHandlerTest extends TestCase
         $event = new ControllerCommandEvent($command, $emit);
         $handler($event);
 
-        self::assertNull($this->spyClient->lastCommand);
-        self::assertCount(1, $emittedEvents);
-        self::assertSame(RuntimeEventTypeEnum::ProtocolError->value, $emittedEvents[0]->type);
-        self::assertSame('run-456', $emittedEvents[0]->runId);
+        $this->assertNull($this->spyClient->lastCommand);
+        $this->assertCount(1, $emittedEvents);
+        $this->assertSame(RuntimeEventTypeEnum::ProtocolError->value, $emittedEvents[0]->type);
+        $this->assertSame('run-456', $emittedEvents[0]->runId);
     }
 
     public function testIgnoresNonAnswerHumanCommands(): void
@@ -112,7 +112,7 @@ final class AnswerHumanHandlerTest extends TestCase
         $event = new ControllerCommandEvent($command, static function (): void {});
         $handler($event);
 
-        self::assertNull($this->spyClient->lastCommand);
+        $this->assertNull($this->spyClient->lastCommand);
         $this->addToAssertionCount(1);
     }
 
@@ -137,9 +137,9 @@ final class AnswerHumanHandlerTest extends TestCase
 
         // Missing answer must be rejected with protocol.error — safety-critical
         // approvals must never pass null/missing through silently.
-        self::assertNull($this->spyClient->lastCommand);
-        self::assertCount(1, $emittedEvents);
-        self::assertSame(RuntimeEventTypeEnum::ProtocolError->value, $emittedEvents[0]->type);
+        $this->assertNull($this->spyClient->lastCommand);
+        $this->assertCount(1, $emittedEvents);
+        $this->assertSame(RuntimeEventTypeEnum::ProtocolError->value, $emittedEvents[0]->type);
     }
 
     public function testEmitsProtocolErrorWhenAnswerEmpty(): void
@@ -161,9 +161,9 @@ final class AnswerHumanHandlerTest extends TestCase
         $event = new ControllerCommandEvent($command, $emit);
         $handler($event);
 
-        self::assertNull($this->spyClient->lastCommand);
-        self::assertCount(1, $emittedEvents);
-        self::assertSame(RuntimeEventTypeEnum::ProtocolError->value, $emittedEvents[0]->type);
+        $this->assertNull($this->spyClient->lastCommand);
+        $this->assertCount(1, $emittedEvents);
+        $this->assertSame(RuntimeEventTypeEnum::ProtocolError->value, $emittedEvents[0]->type);
     }
 
     public function testEmitsProtocolErrorWhenAnswerNonScalar(): void
@@ -185,9 +185,9 @@ final class AnswerHumanHandlerTest extends TestCase
         $event = new ControllerCommandEvent($command, $emit);
         $handler($event);
 
-        self::assertNull($this->spyClient->lastCommand);
-        self::assertCount(1, $emittedEvents);
-        self::assertSame(RuntimeEventTypeEnum::ProtocolError->value, $emittedEvents[0]->type);
+        $this->assertNull($this->spyClient->lastCommand);
+        $this->assertCount(1, $emittedEvents);
+        $this->assertSame(RuntimeEventTypeEnum::ProtocolError->value, $emittedEvents[0]->type);
     }
 
     // ── QH-06 follow-up: boolean false must pass the gate (regression guard) ──
@@ -213,10 +213,10 @@ final class AnswerHumanHandlerTest extends TestCase
         // line ~61 accepts is_scalar(false) and is not a string, so it must
         // NOT be rejected as ProtocolError. If a future refactor reverts the
         // gate to '' === (string) $answer, this test fails.
-        self::assertNotNull($this->spyClient->lastCommand);
-        self::assertSame('answer_human', $this->spyClient->lastCommand->type);
-        self::assertSame('q_confirm', $this->spyClient->lastCommand->payload['question_id'] ?? null);
-        self::assertFalse($this->spyClient->lastCommand->payload['answer'] ?? null);
+        $this->assertNotNull($this->spyClient->lastCommand);
+        $this->assertSame('answer_human', $this->spyClient->lastCommand->type);
+        $this->assertSame('q_confirm', $this->spyClient->lastCommand->payload['question_id'] ?? null);
+        $this->assertFalse($this->spyClient->lastCommand->payload['answer'] ?? null);
     }
 
     public function testDispatchesBooleanTrueAnswer(): void
@@ -237,10 +237,10 @@ final class AnswerHumanHandlerTest extends TestCase
         $handler($event);
 
         // Boolean true must dispatch (confirm "Yes" answers).
-        self::assertNotNull($this->spyClient->lastCommand);
-        self::assertSame('answer_human', $this->spyClient->lastCommand->type);
-        self::assertSame('q_confirm', $this->spyClient->lastCommand->payload['question_id'] ?? null);
-        self::assertTrue($this->spyClient->lastCommand->payload['answer'] ?? null);
+        $this->assertNotNull($this->spyClient->lastCommand);
+        $this->assertSame('answer_human', $this->spyClient->lastCommand->type);
+        $this->assertSame('q_confirm', $this->spyClient->lastCommand->payload['question_id'] ?? null);
+        $this->assertTrue($this->spyClient->lastCommand->payload['answer'] ?? null);
     }
 
     public function testEmitsProtocolErrorWhenAnswerIsExplicitNull(): void
@@ -267,9 +267,9 @@ final class AnswerHumanHandlerTest extends TestCase
 
         // Explicit null is not scalar → must be rejected. Protects against
         // a future gate relaxing is_scalar without guarding null.
-        self::assertNull($this->spyClient->lastCommand);
-        self::assertCount(1, $emittedEvents);
-        self::assertSame(RuntimeEventTypeEnum::ProtocolError->value, $emittedEvents[0]->type);
+        $this->assertNull($this->spyClient->lastCommand);
+        $this->assertCount(1, $emittedEvents);
+        $this->assertSame(RuntimeEventTypeEnum::ProtocolError->value, $emittedEvents[0]->type);
     }
 }
 

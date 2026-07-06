@@ -219,6 +219,18 @@ final class ActivityStateMachineTest extends TestCase
         $this->assertSame(RunActivityStateEnum::Running, $result);
     }
 
+    public function testCompletedAllowsHumanInputRequestedContinuation(): void
+    {
+        $event = new RuntimeEvent(
+            type: RuntimeEventTypeEnum::HumanInputRequested->value,
+            runId: 'parent-1',
+            seq: 42,
+            payload: ['question_id' => 'q1', 'prompt' => 'Which docs file?'],
+        );
+        $result = ActivityStateMachine::transition(RunActivityStateEnum::Completed, $event);
+        $this->assertSame(RunActivityStateEnum::WaitingHuman, $result);
+    }
+
     public function testCompletedThenCancelSequenceEndsCancelled(): void
     {
         $activity = RunActivityStateEnum::Completed;
@@ -397,7 +409,6 @@ final class ActivityStateMachineTest extends TestCase
         $result = ActivityStateMachine::transition(RunActivityStateEnum::Cancelling, $event);
         $this->assertSame(RunActivityStateEnum::Cancelling, $result);
     }
-
 
     public function testCancellingToolExecutionFailedTransitionsToCancelled(): void
     {

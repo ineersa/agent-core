@@ -27,14 +27,14 @@ final class CompactionTokenEstimatorTest extends TestCase
         $msg = new AgentMessage(
             role: 'user',
             content: [['type' => 'text', 'text' => 'hello world']],
-            metadata: ['compact_summary' => true, 'large_key' => \str_repeat('x', 1000)],
+            metadata: ['compact_summary' => true, 'large_key' => str_repeat('x', 1000)],
         );
 
         $tokens = $this->estimator->estimateTokens([$msg]);
 
         // ~11 chars for "hello world" → ceil(11/3.25) = 4 tokens
         // If JSON was included, it would be hundreds.
-        self::assertLessThan(10, $tokens, 'Token estimate should be text-only, not JSON-envelope');
+        $this->assertLessThan(10, $tokens, 'Token estimate should be text-only, not JSON-envelope');
     }
 
     /**
@@ -50,8 +50,8 @@ final class CompactionTokenEstimatorTest extends TestCase
         $tokens = $this->estimator->estimateTokens([$msg]);
 
         // '[custom_role] hello' ≈ 20 chars → ceil(20/3.25) ≈ 7
-        self::assertGreaterThan(3, $tokens, 'Custom role prefix adds to token estimate');
-        self::assertLessThan(15, $tokens);
+        $this->assertGreaterThan(3, $tokens, 'Custom role prefix adds to token estimate');
+        $this->assertLessThan(15, $tokens);
     }
 
     /**
@@ -66,6 +66,6 @@ final class CompactionTokenEstimatorTest extends TestCase
 
         $tokens = $this->estimator->estimateTokens([$msg]);
 
-        self::assertSame(0, $tokens);
+        $this->assertSame(0, $tokens);
     }
 }

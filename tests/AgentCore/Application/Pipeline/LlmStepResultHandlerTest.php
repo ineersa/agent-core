@@ -10,10 +10,9 @@ use Ineersa\AgentCore\Application\Handler\StepDispatcher;
 use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
 use Ineersa\AgentCore\Application\Pipeline\CommandMailboxPolicy;
 use Ineersa\AgentCore\Application\Pipeline\LlmStepResultHandler;
+use Ineersa\AgentCore\Application\Pipeline\ToolCallExtractor;
 use Ineersa\AgentCore\Contract\Tool\ActiveToolSet;
 use Ineersa\AgentCore\Contract\Tool\ToolSetResolverInterface;
-use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
-use Ineersa\AgentCore\Application\Pipeline\ToolCallExtractor;
 use Ineersa\AgentCore\Domain\Command\CoreCommandKind;
 use Ineersa\AgentCore\Domain\Command\PendingCommand;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
@@ -23,6 +22,7 @@ use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\LlmStepResult;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
+use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore;
 use Ineersa\AgentCore\Tests\Support\SymfonyAiTestMessages;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
@@ -425,7 +425,6 @@ final class LlmStepResultHandlerTest extends TestCase
         );
     }
 
-
     public function testRetryableErrorBelowCapSchedulesAutomaticContinue(): void
     {
         $executionBus = new TestMessageBus();
@@ -655,7 +654,7 @@ final class LlmStepResultHandlerTest extends TestCase
             $callback();
         }
         foreach ($commandBus->messages as $dispatched) {
-            if ($dispatched instanceof \Ineersa\AgentCore\Domain\Message\CompactRun) {
+            if ($dispatched instanceof CompactRun) {
                 $hasCompact = true;
             }
             $this->assertNotInstanceOf(\Ineersa\AgentCore\Domain\Message\ApplyCommand::class, $dispatched);
@@ -769,14 +768,12 @@ final class LlmStepResultHandlerTest extends TestCase
         );
 
         $result = $handler->handle($message, $state);
-        self::assertCount(1, $result->postCommit);
+        $this->assertCount(1, $result->postCommit);
         ($result->postCommit[0])();
 
-        self::assertCount(1, $executionBus->messages);
+        $this->assertCount(1, $executionBus->messages);
         $execute = $executionBus->messages[0];
-        self::assertInstanceOf(ExecuteToolCall::class, $execute);
-        self::assertNull($execute->timeoutSeconds);
+        $this->assertInstanceOf(ExecuteToolCall::class, $execute);
+        $this->assertNull($execute->timeoutSeconds);
     }
-
-
 }

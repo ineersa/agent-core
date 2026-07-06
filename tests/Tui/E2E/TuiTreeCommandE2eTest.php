@@ -94,7 +94,7 @@ final class TuiTreeCommandE2eTest extends TestCase
                 'Tree picker should show a role-prefixed turn row in the capture.'
             );
 
-            self::assertStringContainsString('rewind', $treeCapture,
+            $this->assertStringContainsString('rewind', $treeCapture,
                 'Tree picker header should indicate rewind mode.'
             );
 
@@ -109,9 +109,9 @@ final class TuiTreeCommandE2eTest extends TestCase
             $postCloseCapture = $this->tmux->capturePlainWithHistory($pane, 500);
 
             // Verify the session is still running (idle indicator present)
-            self::assertStringContainsString('● idle', $postCloseCapture,
+            $this->assertStringContainsString('● idle', $postCloseCapture,
                 'Session should remain in idle state after closing tree picker');
-            self::assertStringContainsString('◆', $postCloseCapture,
+            $this->assertStringContainsString('◆', $postCloseCapture,
                 'Footer model indicator should still be present after closing tree picker');
 
             $this->saveAnsiSnapshot($pane, 'tree-picker-closed-idle');

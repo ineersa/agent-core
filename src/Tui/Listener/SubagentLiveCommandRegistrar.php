@@ -28,7 +28,7 @@ final class SubagentLiveCommandRegistrar implements TuiListenerRegistrar
             $this->commandRegistry->register(
                 new CommandMetadata(
                     name: 'agents-live',
-                    description: 'Open readonly live view for a running subagent',
+                    description: 'Open interactive live view for a subagent',
                     usage: '/agents-live',
                     acceptsArguments: false,
                 ),
@@ -37,6 +37,7 @@ final class SubagentLiveCommandRegistrar implements TuiListenerRegistrar
         }
 
         $mainHandler = new AgentsMainCommandHandler($context->state, $context->screen);
+
         if ($this->commandRegistry->has('agents-main')) {
             $this->commandRegistry->setHandler('agents-main', $mainHandler);
         } else {

@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Tests\Domain\Run;
 
-use Ineersa\AgentCore\Domain\Run\TurnTreeProjector;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
+use Ineersa\AgentCore\Domain\Run\TurnTreeProjector;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 
@@ -27,11 +27,11 @@ final class TurnTreeProjectorTest extends TestCase
     {
         $tree = $this->projector->build($this->runId, []);
 
-        self::assertSame($this->runId, $tree->runId);
-        self::assertSame([], $tree->nodesByTurnNo);
-        self::assertSame([], $tree->rootTurnNos);
-        self::assertNull($tree->currentLeafTurnNo);
-        self::assertSame([], $tree->activePathTurnNos);
+        $this->assertSame($this->runId, $tree->runId);
+        $this->assertSame([], $tree->nodesByTurnNo);
+        $this->assertSame([], $tree->rootTurnNos);
+        $this->assertNull($tree->currentLeafTurnNo);
+        $this->assertSame([], $tree->activePathTurnNos);
     }
 
     // ── Old-style linear stream (no leaf_set, no parent_turn_no) ─────────────
@@ -60,26 +60,26 @@ final class TurnTreeProjectorTest extends TestCase
 
         $tree = $this->projector->build($this->runId, $events);
 
-        self::assertCount(2, $tree->nodesByTurnNo);
-        self::assertSame([1], $tree->rootTurnNos);
-        self::assertSame(2, $tree->currentLeafTurnNo);
-        self::assertSame([1, 2], $tree->activePathTurnNos);
+        $this->assertCount(2, $tree->nodesByTurnNo);
+        $this->assertSame([1], $tree->rootTurnNos);
+        $this->assertSame(2, $tree->currentLeafTurnNo);
+        $this->assertSame([1, 2], $tree->activePathTurnNos);
 
         // Turn 1 is root, parent derived as null
         $turn1 = $tree->nodesByTurnNo[1];
-        self::assertNull($turn1->parentTurnNo);
-        self::assertSame([2], $turn1->childTurnNos);
-        self::assertSame(2, $turn1->anchorSeq);
-        self::assertFalse($turn1->isCurrentLeaf);
-        self::assertStringContainsString('Hello', $turn1->title, 'Turn 1 title comes from initial user message');
+        $this->assertNull($turn1->parentTurnNo);
+        $this->assertSame([2], $turn1->childTurnNos);
+        $this->assertSame(2, $turn1->anchorSeq);
+        $this->assertFalse($turn1->isCurrentLeaf);
+        $this->assertStringContainsString('Hello', $turn1->title, 'Turn 1 title comes from initial user message');
 
         // Turn 2 parent derived as turn 1
         $turn2 = $tree->nodesByTurnNo[2];
-        self::assertSame(1, $turn2->parentTurnNo);
-        self::assertSame([], $turn2->childTurnNos);
-        self::assertSame(5, $turn2->anchorSeq);
-        self::assertTrue($turn2->isCurrentLeaf);
-        self::assertStringContainsString('Write a test', $turn2->title, 'Turn 2 title comes from follow-up user message');
+        $this->assertSame(1, $turn2->parentTurnNo);
+        $this->assertSame([], $turn2->childTurnNos);
+        $this->assertSame(5, $turn2->anchorSeq);
+        $this->assertTrue($turn2->isCurrentLeaf);
+        $this->assertStringContainsString('Write a test', $turn2->title, 'Turn 2 title comes from follow-up user message');
     }
 
     // ── New-style linear stream (explicit parent_turn_no + leaf_set) ─────────
@@ -112,20 +112,20 @@ final class TurnTreeProjectorTest extends TestCase
 
         $tree = $this->projector->build($this->runId, $events);
 
-        self::assertCount(2, $tree->nodesByTurnNo);
-        self::assertSame([1], $tree->rootTurnNos);
-        self::assertSame(2, $tree->currentLeafTurnNo, 'Last leaf_set points to turn 2');
-        self::assertSame([1, 2], $tree->activePathTurnNos);
+        $this->assertCount(2, $tree->nodesByTurnNo);
+        $this->assertSame([1], $tree->rootTurnNos);
+        $this->assertSame(2, $tree->currentLeafTurnNo, 'Last leaf_set points to turn 2');
+        $this->assertSame([1, 2], $tree->activePathTurnNos);
 
         $turn1 = $tree->nodesByTurnNo[1];
-        self::assertNull($turn1->parentTurnNo);
-        self::assertSame(2, $turn1->anchorSeq);
-        self::assertFalse($turn1->isCurrentLeaf);
+        $this->assertNull($turn1->parentTurnNo);
+        $this->assertSame(2, $turn1->anchorSeq);
+        $this->assertFalse($turn1->isCurrentLeaf);
 
         $turn2 = $tree->nodesByTurnNo[2];
-        self::assertSame(1, $turn2->parentTurnNo);
-        self::assertSame(6, $turn2->anchorSeq);
-        self::assertTrue($turn2->isCurrentLeaf);
+        $this->assertSame(1, $turn2->parentTurnNo);
+        $this->assertSame(6, $turn2->anchorSeq);
+        $this->assertTrue($turn2->isCurrentLeaf);
     }
 
     // ── Branch from earlier turn ─────────────────────────────────────────────
@@ -156,23 +156,23 @@ final class TurnTreeProjectorTest extends TestCase
 
         $tree = $this->projector->build($this->runId, $events);
 
-        self::assertCount(3, $tree->nodesByTurnNo);
-        self::assertSame([1], $tree->rootTurnNos);
-        self::assertSame(3, $tree->currentLeafTurnNo, 'Last leaf_set points to turn 3');
-        self::assertSame([1, 3], $tree->activePathTurnNos, 'Active path is 1→3, turn 2 is abandoned');
+        $this->assertCount(3, $tree->nodesByTurnNo);
+        $this->assertSame([1], $tree->rootTurnNos);
+        $this->assertSame(3, $tree->currentLeafTurnNo, 'Last leaf_set points to turn 3');
+        $this->assertSame([1, 3], $tree->activePathTurnNos, 'Active path is 1→3, turn 2 is abandoned');
 
         $turn1 = $tree->nodesByTurnNo[1];
-        self::assertNull($turn1->parentTurnNo);
-        self::assertSame([2, 3], $turn1->childTurnNos, 'Turn 1 has two children: 2 and 3');
-        self::assertFalse($turn1->isCurrentLeaf);
+        $this->assertNull($turn1->parentTurnNo);
+        $this->assertSame([2, 3], $turn1->childTurnNos, 'Turn 1 has two children: 2 and 3');
+        $this->assertFalse($turn1->isCurrentLeaf);
 
         $turn2 = $tree->nodesByTurnNo[2];
-        self::assertSame(1, $turn2->parentTurnNo);
-        self::assertFalse($turn2->isCurrentLeaf);
+        $this->assertSame(1, $turn2->parentTurnNo);
+        $this->assertFalse($turn2->isCurrentLeaf);
 
         $turn3 = $tree->nodesByTurnNo[3];
-        self::assertSame(1, $turn3->parentTurnNo);
-        self::assertTrue($turn3->isCurrentLeaf);
+        $this->assertSame(1, $turn3->parentTurnNo);
+        $this->assertTrue($turn3->isCurrentLeaf);
     }
 
     // ── Multiple sequential branches ─────────────────────────────────────────
@@ -201,20 +201,20 @@ final class TurnTreeProjectorTest extends TestCase
 
         $tree = $this->projector->build($this->runId, $events);
 
-        self::assertCount(4, $tree->nodesByTurnNo);
-        self::assertSame(4, $tree->currentLeafTurnNo);
-        self::assertSame([1, 2, 4], $tree->activePathTurnNos, 'Active path: 1→2→4');
+        $this->assertCount(4, $tree->nodesByTurnNo);
+        $this->assertSame(4, $tree->currentLeafTurnNo);
+        $this->assertSame([1, 2, 4], $tree->activePathTurnNos, 'Active path: 1→2→4');
 
         $turn1 = $tree->nodesByTurnNo[1];
-        self::assertSame([2, 3], $turn1->childTurnNos);
+        $this->assertSame([2, 3], $turn1->childTurnNos);
 
         $turn2 = $tree->nodesByTurnNo[2];
-        self::assertSame([4], $turn2->childTurnNos);
-        self::assertFalse($turn2->isCurrentLeaf);
+        $this->assertSame([4], $turn2->childTurnNos);
+        $this->assertFalse($turn2->isCurrentLeaf);
 
         $turn4 = $tree->nodesByTurnNo[4];
-        self::assertSame(2, $turn4->parentTurnNo);
-        self::assertTrue($turn4->isCurrentLeaf);
+        $this->assertSame(2, $turn4->parentTurnNo);
+        $this->assertTrue($turn4->isCurrentLeaf);
     }
 
     // ── Title generation ─────────────────────────────────────────────────────
@@ -233,7 +233,7 @@ final class TurnTreeProjectorTest extends TestCase
 
         $tree = $this->projector->build($this->runId, $events);
 
-        self::assertStringContainsString('Write a README', $tree->nodesByTurnNo[1]->title);
+        $this->assertStringContainsString('Write a README', $tree->nodesByTurnNo[1]->title);
     }
 
     public function testTitleFromFollowUpMessage(): void
@@ -252,7 +252,7 @@ final class TurnTreeProjectorTest extends TestCase
 
         $tree = $this->projector->build($this->runId, $events);
 
-        self::assertStringContainsString('Add unit tests please', $tree->nodesByTurnNo[2]->title);
+        $this->assertStringContainsString('Add unit tests please', $tree->nodesByTurnNo[2]->title);
     }
 
     public function testTitleFallbackToTurnN(): void
@@ -288,10 +288,10 @@ final class TurnTreeProjectorTest extends TestCase
         $tree = $this->projector->build($this->runId, $events);
 
         $turn1 = $tree->nodesByTurnNo[1];
-        self::assertNull($turn1->parentTurnNo, 'Explicit parent_turn_no => null should yield null parent');
-        self::assertSame(1, $turn1->anchorSeq);
-        self::assertNotNull($turn1->createdAt);
-        self::assertSame($createdAt->getTimestamp(), $turn1->createdAt->getTimestamp());
+        $this->assertNull($turn1->parentTurnNo, 'Explicit parent_turn_no => null should yield null parent');
+        $this->assertSame(1, $turn1->anchorSeq);
+        $this->assertNotNull($turn1->createdAt);
+        $this->assertSame($createdAt->getTimestamp(), $turn1->createdAt->getTimestamp());
     }
 
     // ── Last sequence projection ─────────────────────────────────────────────
@@ -313,10 +313,10 @@ final class TurnTreeProjectorTest extends TestCase
         $tree = $this->projector->build($this->runId, $events);
 
         // Turn 1 is not the current leaf. Its last event is seq 5 (agent_command_applied).
-        self::assertSame(5, $tree->nodesByTurnNo[1]->lastSeq, 'Turn 1 lastSeq covers its own scoped events only');
+        $this->assertSame(5, $tree->nodesByTurnNo[1]->lastSeq, 'Turn 1 lastSeq covers its own scoped events only');
 
         // Turn 2 is the current leaf. Its anchor is seq 6, max scoped seq is 8.
-        self::assertSame(8, $tree->nodesByTurnNo[2]->lastSeq, 'Turn 2 lastSeq covers its own scoped events up to max');
+        $this->assertSame(8, $tree->nodesByTurnNo[2]->lastSeq, 'Turn 2 lastSeq covers its own scoped events up to max');
     }
 
     public function testLastSeqRewindOnlyNoNewBranch(): void
@@ -340,17 +340,17 @@ final class TurnTreeProjectorTest extends TestCase
 
         $tree = $this->projector->build($this->runId, $events);
 
-        self::assertCount(2, $tree->nodesByTurnNo);
-        self::assertSame(1, $tree->currentLeafTurnNo, 'Leaf should be back at turn 1 after rewind');
-        self::assertSame([1], $tree->activePathTurnNos);
+        $this->assertCount(2, $tree->nodesByTurnNo);
+        $this->assertSame(1, $tree->currentLeafTurnNo, 'Leaf should be back at turn 1 after rewind');
+        $this->assertSame([1], $tree->activePathTurnNos);
 
         // Turn 1 is now the current leaf. The rewind leaf_set at seq 9 is scoped to turn 1,
         // so turn 1 lastSeq should include it, not stop at the next anchor (seq 5).
-        self::assertSame(9, $tree->nodesByTurnNo[1]->lastSeq, 'Rewound turn 1 lastSeq includes rewind leaf_set');
+        $this->assertSame(9, $tree->nodesByTurnNo[1]->lastSeq, 'Rewound turn 1 lastSeq includes rewind leaf_set');
 
         // Turn 2 is abandoned. Its last event is seq 8 (agent_command_applied).
         // It must NOT claim the canonical max (seq 9) because leaf_set belongs to turn 1.
-        self::assertSame(8, $tree->nodesByTurnNo[2]->lastSeq, 'Abandoned turn 2 lastSeq is capped at its own events');
+        $this->assertSame(8, $tree->nodesByTurnNo[2]->lastSeq, 'Abandoned turn 2 lastSeq is capped at its own events');
     }
 
     public function testLastSeqAbandonedTurnDoesNotClaimActiveBranchMax(): void
@@ -376,20 +376,20 @@ final class TurnTreeProjectorTest extends TestCase
 
         $tree = $this->projector->build($this->runId, $events);
 
-        self::assertSame(3, $tree->currentLeafTurnNo, 'Current leaf is turn 3');
-        self::assertSame([1, 3], $tree->activePathTurnNos);
+        $this->assertSame(3, $tree->currentLeafTurnNo, 'Current leaf is turn 3');
+        $this->assertSame([1, 3], $tree->activePathTurnNos);
 
         // Turn 2 is abandoned. Its own last event is seq 7 (llm_step_completed).
         // It must NOT capture rewind leaf_set (seq 8, scoped to turn 1) or
         // active branch events (seq 9+, scoped to turn 3).
-        self::assertSame(7, $tree->nodesByTurnNo[2]->lastSeq, 'Abandoned turn 2 must not claim active branch max seq');
+        $this->assertSame(7, $tree->nodesByTurnNo[2]->lastSeq, 'Abandoned turn 2 must not claim active branch max seq');
 
         // Turn 1's lastSeq includes the rewind leaf_set (seq 8) scoped to turn 1,
         // not capped by turn 3's later anchor.
-        self::assertSame(8, $tree->nodesByTurnNo[1]->lastSeq, 'Turn 1 lastSeq includes rewind leaf_set before turn 3');
+        $this->assertSame(8, $tree->nodesByTurnNo[1]->lastSeq, 'Turn 1 lastSeq includes rewind leaf_set before turn 3');
 
         // Turn 3 (current leaf) includes its own max scoped seq (11).
-        self::assertSame(11, $tree->nodesByTurnNo[3]->lastSeq, 'Turn 3 lastSeq includes its own scoped max');
+        $this->assertSame(11, $tree->nodesByTurnNo[3]->lastSeq, 'Turn 3 lastSeq includes its own scoped max');
     }
 
     public function testPromptPreviewTruncationUsesUnicodeEllipsis(): void
@@ -414,10 +414,10 @@ final class TurnTreeProjectorTest extends TestCase
         // Title is truncated at 80 chars; promptPreview at 60 chars.
         // Both must use the same Unicode ellipsis (…) from the truncate() helper,
         // never ASCII "...".
-        self::assertStringEndsWith('…', $title, 'Title should end with Unicode ellipsis when truncated');
-        self::assertStringEndsWith('…', $preview, 'promptPreview should end with Unicode ellipsis, not ASCII dots');
-        self::assertLessThan(\strlen($title), \strlen($preview), 'promptPreview should be shorter than title');
-        self::assertLessThanOrEqual(60, mb_strlen($preview), 'promptPreview should be at most 60 characters');
+        $this->assertStringEndsWith('…', $title, 'Title should end with Unicode ellipsis when truncated');
+        $this->assertStringEndsWith('…', $preview, 'promptPreview should end with Unicode ellipsis, not ASCII dots');
+        $this->assertLessThan(\strlen($title), \strlen($preview), 'promptPreview should be shorter than title');
+        $this->assertLessThanOrEqual(60, mb_strlen($preview), 'promptPreview should be at most 60 characters');
     }
 
     // ── Cycle detection ──────────────────────────────────────────────────────
@@ -460,17 +460,17 @@ final class TurnTreeProjectorTest extends TestCase
         $tree = $this->projector->build($this->runId, $events);
 
         // leaf should be turn 3
-        self::assertSame(3, $tree->currentLeafTurnNo);
+        $this->assertSame(3, $tree->currentLeafTurnNo);
         // active path must include event-backed root turn 1, but NOT
         // the abandoned sibling turn 2 (leaf_set rewinded before
         // turn 3 was created).
-        self::assertSame([1, 3], $tree->activePathTurnNos);
+        $this->assertSame([1, 3], $tree->activePathTurnNos);
 
         // Turns 2 and 3 both have turn 1 as parent
-        self::assertSame(1, $tree->nodesByTurnNo[2]->parentTurnNo);
-        self::assertSame(1, $tree->nodesByTurnNo[3]->parentTurnNo);
+        $this->assertSame(1, $tree->nodesByTurnNo[2]->parentTurnNo);
+        $this->assertSame(1, $tree->nodesByTurnNo[3]->parentTurnNo);
         // Turn 1 itself has no node (no turn_advanced anchor)
-        self::assertFalse(isset($tree->nodesByTurnNo[1]), 'Turn 1 has no turn_advanced anchor, so no node');
+        $this->assertFalse(isset($tree->nodesByTurnNo[1]), 'Turn 1 has no turn_advanced anchor, so no node');
     }
 
     public function testDanglingParentTurnNoThrowsException(): void

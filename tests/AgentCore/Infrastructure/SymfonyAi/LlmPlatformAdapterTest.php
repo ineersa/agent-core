@@ -9,7 +9,6 @@ use Ineersa\AgentCore\Domain\Model\ModelInvocationOptions;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationRequest;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmPlatformAdapter;
 use PHPUnit\Framework\TestCase;
-use ReflectionClass;
 
 /**
  * @covers \Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmPlatformAdapter
@@ -35,12 +34,12 @@ final class LlmPlatformAdapterTest extends TestCase
             ),
         ));
 
-        self::assertSame('toolset:run-1:turn-7', $options['tools_ref']);
-        self::assertSame(7, $options['turn_no']);
-        self::assertSame('run-1', $options['run_id']);
-        self::assertSame('low', $options['thinking_level']);
-        self::assertSame(0.2, $options['temperature']);
-        self::assertSame([], $options['tools'], 'toolsEnabled:false must override any tools key from generic extra options.');
+        $this->assertSame('toolset:run-1:turn-7', $options['tools_ref']);
+        $this->assertSame(7, $options['turn_no']);
+        $this->assertSame('run-1', $options['run_id']);
+        $this->assertSame('low', $options['thinking_level']);
+        $this->assertSame(0.2, $options['temperature']);
+        $this->assertSame([], $options['tools'], 'toolsEnabled:false must override any tools key from generic extra options.');
     }
 
     /**
@@ -48,7 +47,7 @@ final class LlmPlatformAdapterTest extends TestCase
      */
     private function buildInputOptions(ModelInvocationRequest $request): array
     {
-        $reflection = new ReflectionClass(LlmPlatformAdapter::class);
+        $reflection = new \ReflectionClass(LlmPlatformAdapter::class);
         $adapter = $reflection->newInstanceWithoutConstructor();
         $method = $reflection->getMethod('buildInputOptions');
 

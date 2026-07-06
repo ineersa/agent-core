@@ -6,17 +6,17 @@ namespace Ineersa\Tests\Tui\Runtime;
 
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
-use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeExceptionBoundary;
 use Ineersa\CodingAgent\Runtime\Contract\TranscriptProjectorInterface;
 use Ineersa\CodingAgent\Runtime\Contract\TurnTreeProviderInterface;
+use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
+use Ineersa\Tui\Runtime\RunActivityStateEnum;
 use Ineersa\Tui\Runtime\RuntimeEventPoller;
 use Ineersa\Tui\Runtime\TuiRuntimeEventApplier;
-use Ineersa\Tui\Runtime\RunActivityStateEnum;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use PHPUnit\Framework\MockObject\MockObject;
@@ -70,21 +70,21 @@ final class RuntimeEventPollerTest extends TestCase
         $state = new TuiSessionState('test-session');
         $result = $this->poller->poll($state, $this->client);
 
-        self::assertNull($result);
+        $this->assertNull($result);
     }
 
     public function testPollReturnsNullForEmptyEvents(): void
     {
-        $this->client->expects(self::once())
+        $this->client->expects($this->once())
             ->method('events')
             ->with('test-run')
             ->willReturn([]);
 
         $result = $this->poller->poll($this->state, $this->client);
 
-        self::assertNull($result);
-        self::assertSame(0, $this->state->runtimePollErrorCount);
-        self::assertSame('', $this->state->lastRuntimePollError);
+        $this->assertNull($result);
+        $this->assertSame(0, $this->state->runtimePollErrorCount);
+        $this->assertSame('', $this->state->lastRuntimePollError);
     }
 
     public function testPollProcessesEventAndAdvancesSeq(): void
@@ -95,24 +95,24 @@ final class RuntimeEventPollerTest extends TestCase
             seq: 5,
         );
 
-        $this->client->expects(self::once())
+        $this->client->expects($this->once())
             ->method('events')
             ->with('test-run')
             ->willReturn([$event]);
 
-        $this->projector->expects(self::once())
+        $this->projector->expects($this->once())
             ->method('accept')
             ->with($event->toArray());
 
-        $this->projector->expects(self::once())
+        $this->projector->expects($this->once())
             ->method('blocks')
             ->willReturn([]);
 
         $result = $this->poller->poll($this->state, $this->client);
 
         // Empty projected blocks returns empty array
-        self::assertSame([], $result);
-        self::assertSame(5, $this->state->lastSeq);
+        $this->assertSame([], $result);
+        $this->assertSame(5, $this->state->lastSeq);
     }
 
     public function testPollDeduplicatesBySeq(): void
@@ -125,18 +125,18 @@ final class RuntimeEventPollerTest extends TestCase
             seq: 5, // <= lastSeq, should be skipped
         );
 
-        $this->client->expects(self::once())
+        $this->client->expects($this->once())
             ->method('events')
             ->with('test-run')
             ->willReturn([$event]);
 
-        $this->projector->expects(self::never())
+        $this->projector->expects($this->never())
             ->method('accept');
 
         $result = $this->poller->poll($this->state, $this->client);
 
-        self::assertNull($result);
-        self::assertSame(10, $this->state->lastSeq); // Not advanced
+        $this->assertNull($result);
+        $this->assertSame(10, $this->state->lastSeq); // Not advanced
     }
 
     public function testSeqZeroEventsAlwaysPassThrough(): void
@@ -147,22 +147,22 @@ final class RuntimeEventPollerTest extends TestCase
             seq: 0, // Streaming event, not deduplicated
         );
 
-        $this->client->expects(self::once())
+        $this->client->expects($this->once())
             ->method('events')
             ->with('test-run')
             ->willReturn([$event]);
 
-        $this->projector->expects(self::once())
+        $this->projector->expects($this->once())
             ->method('accept');
 
-        $this->projector->expects(self::once())
+        $this->projector->expects($this->once())
             ->method('blocks')
             ->willReturn([]);
 
         $result = $this->poller->poll($this->state, $this->client);
 
         // Empty projected blocks returns empty array
-        self::assertSame([], $result);
+        $this->assertSame([], $result);
     }
 
     public function testTurnStartedResetsUsage(): void
@@ -178,26 +178,26 @@ final class RuntimeEventPollerTest extends TestCase
             seq: 1,
         );
 
-        $this->client->expects(self::once())
+        $this->client->expects($this->once())
             ->method('events')
             ->with('test-run')
             ->willReturn([$event]);
 
-        $this->projector->expects(self::once())
+        $this->projector->expects($this->once())
             ->method('accept');
 
-        $this->projector->expects(self::once())
+        $this->projector->expects($this->once())
             ->method('blocks')
             ->willReturn([]);
 
         $this->poller->poll($this->state, $this->client);
 
         // Per-turn fields should be reset
-        self::assertSame(0, $this->state->usage->turnOutputTokens);
-        self::assertSame(0.0, $this->state->usage->llmEndTime);
+        $this->assertSame(0, $this->state->usage->turnOutputTokens);
+        $this->assertSame(0.0, $this->state->usage->llmEndTime);
         // latestInputTokens must be preserved across turns so the context
         // window % footer does not flicker to 0% during Working/streaming.
-        self::assertSame(200, $this->state->usage->latestInputTokens);
+        $this->assertSame(200, $this->state->usage->latestInputTokens);
     }
 
     public function testAssistantMessageCompletedAccumulatesUsage(): void
@@ -215,24 +215,24 @@ final class RuntimeEventPollerTest extends TestCase
             ],
         );
 
-        $this->client->expects(self::once())
+        $this->client->expects($this->once())
             ->method('events')
             ->with('test-run')
             ->willReturn([$event]);
 
-        $this->projector->expects(self::once())
+        $this->projector->expects($this->once())
             ->method('accept');
 
-        $this->projector->expects(self::once())
+        $this->projector->expects($this->once())
             ->method('blocks')
             ->willReturn([]);
 
         $this->poller->poll($this->state, $this->client);
 
-        self::assertSame(150, $this->state->usage->inputTokens);
-        self::assertSame(75, $this->state->usage->outputTokens);
-        self::assertSame(75, $this->state->usage->turnOutputTokens);
-        self::assertEqualsWithDelta(0.003, $this->state->usage->totalCost, 0.00001);
+        $this->assertSame(150, $this->state->usage->inputTokens);
+        $this->assertSame(75, $this->state->usage->outputTokens);
+        $this->assertSame(75, $this->state->usage->turnOutputTokens);
+        $this->assertEqualsWithDelta(0.003, $this->state->usage->totalCost, 0.00001);
     }
 
     public function testActivityTransitionsOnEvent(): void
@@ -246,99 +246,99 @@ final class RuntimeEventPollerTest extends TestCase
             seq: 1,
         );
 
-        $this->client->expects(self::once())
+        $this->client->expects($this->once())
             ->method('events')
             ->with('test-run')
             ->willReturn([$event]);
 
-        $this->projector->expects(self::once())
+        $this->projector->expects($this->once())
             ->method('accept');
 
-        $this->projector->expects(self::once())
+        $this->projector->expects($this->once())
             ->method('blocks')
             ->willReturn([]);
 
         $this->poller->poll($this->state, $this->client);
 
         // TurnStarted should transition to Running
-        self::assertSame(RunActivityStateEnum::Running, $this->state->activity);
+        $this->assertSame(RunActivityStateEnum::Running, $this->state->activity);
     }
 
     public function testPollHandlesExceptionWithTransientRetry(): void
     {
-        $this->client->expects(self::once())
+        $this->client->expects($this->once())
             ->method('events')
             ->with('test-run')
             ->willThrowException(new \RuntimeException('Connection timeout'));
 
-        $this->logger->expects(self::once())
+        $this->logger->expects($this->once())
             ->method('warning')
-            ->with('RuntimeEventPoller polling error', self::anything());
+            ->with('RuntimeEventPoller polling error', $this->anything());
 
         $result = $this->poller->poll($this->state, $this->client);
 
-        self::assertNull($result); // Transient retry
-        self::assertSame(1, $this->state->runtimePollErrorCount);
-        self::assertStringContainsString('Connection timeout', $this->state->lastRuntimePollError);
+        $this->assertNull($result); // Transient retry
+        $this->assertSame(1, $this->state->runtimePollErrorCount);
+        $this->assertStringContainsString('Connection timeout', $this->state->lastRuntimePollError);
     }
 
     public function testPollHandlesFatalErrorWithErrorBlock(): void
     {
-        $this->client->expects(self::once())
+        $this->client->expects($this->once())
             ->method('events')
             ->with('test-run')
             ->willThrowException(new \RuntimeException('pipe broken')); // "pipe" is in fatal list
 
-        $this->logger->expects(self::once())
+        $this->logger->expects($this->once())
             ->method('warning');
 
         $result = $this->poller->poll($this->state, $this->client);
 
         // Should return an error block (fatal on first hit since fatal errors skip retry)
-        self::assertIsArray($result);
-        self::assertCount(1, $result);
-        self::assertSame(RunActivityStateEnum::Failed, $this->state->activity);
-        self::assertStringContainsString('Runtime transport error', $result[0]->text);
+        $this->assertIsArray($result);
+        $this->assertCount(1, $result);
+        $this->assertSame(RunActivityStateEnum::Failed, $this->state->activity);
+        $this->assertStringContainsString('Runtime transport error', $result[0]->text);
     }
 
     public function testPollHandlesControllerRestartLimitWithFailedStateAndPollError(): void
     {
         $message = 'Controller process has crashed too many times (3 restarts in 60s).';
 
-        $this->client->expects(self::once())
+        $this->client->expects($this->once())
             ->method('events')
             ->with('test-run')
             ->willThrowException(new \RuntimeException($message));
 
-        $this->logger->expects(self::once())
+        $this->logger->expects($this->once())
             ->method('warning');
 
         $handleBefore = $this->state->handle;
 
         $result = $this->poller->poll($this->state, $this->client);
 
-        self::assertIsArray($result);
-        self::assertCount(1, $result);
-        self::assertSame(RunActivityStateEnum::Failed, $this->state->activity);
-        self::assertSame($handleBefore, $this->state->handle);
-        self::assertSame($message, $this->state->lastRuntimePollError);
-        self::assertStringContainsString('Runtime transport error', $result[0]->text);
-        self::assertStringContainsString('crashed too many times', $result[0]->text);
+        $this->assertIsArray($result);
+        $this->assertCount(1, $result);
+        $this->assertSame(RunActivityStateEnum::Failed, $this->state->activity);
+        $this->assertSame($handleBefore, $this->state->handle);
+        $this->assertSame($message, $this->state->lastRuntimePollError);
+        $this->assertStringContainsString('Runtime transport error', $result[0]->text);
+        $this->assertStringContainsString('crashed too many times', $result[0]->text);
     }
 
     public function testErrorCountResetOnSuccessfulPoll(): void
     {
         $this->state->runtimePollErrorCount = 3;
 
-        $this->client->expects(self::once())
+        $this->client->expects($this->once())
             ->method('events')
             ->with('test-run')
             ->willReturn([]);
 
         $this->poller->poll($this->state, $this->client);
 
-        self::assertSame(0, $this->state->runtimePollErrorCount);
-        self::assertSame('', $this->state->lastRuntimePollError);
+        $this->assertSame(0, $this->state->runtimePollErrorCount);
+        $this->assertSame('', $this->state->lastRuntimePollError);
     }
 
     public function testOnToolTerminalCallbackFiresForCompleted(): void
@@ -350,7 +350,7 @@ final class RuntimeEventPollerTest extends TestCase
             payload: ['tool_call_id' => 'tc-123', 'is_error' => false],
         );
 
-        $this->client->expects(self::once())
+        $this->client->expects($this->once())
             ->method('events')
             ->with('test-run')
             ->willReturn([$event]);
@@ -365,9 +365,9 @@ final class RuntimeEventPollerTest extends TestCase
 
         $this->poller->poll($this->state, $this->client, onToolTerminal: $callback);
 
-        self::assertNotNull($called);
-        self::assertSame(RuntimeEventTypeEnum::ToolExecutionCompleted->value, $called->type);
-        self::assertSame('tc-123', $called->payload['tool_call_id'] ?? null);
+        $this->assertNotNull($called);
+        $this->assertSame(RuntimeEventTypeEnum::ToolExecutionCompleted->value, $called->type);
+        $this->assertSame('tc-123', $called->payload['tool_call_id'] ?? null);
     }
 
     public function testOnToolTerminalCallbackFiresForFailed(): void
@@ -379,7 +379,7 @@ final class RuntimeEventPollerTest extends TestCase
             payload: ['tool_call_id' => 'tc-456', 'is_error' => true],
         );
 
-        $this->client->expects(self::once())
+        $this->client->expects($this->once())
             ->method('events')
             ->with('test-run')
             ->willReturn([$event]);
@@ -394,9 +394,9 @@ final class RuntimeEventPollerTest extends TestCase
 
         $this->poller->poll($this->state, $this->client, onToolTerminal: $callback);
 
-        self::assertNotNull($called);
-        self::assertSame(RuntimeEventTypeEnum::ToolExecutionFailed->value, $called->type);
-        self::assertSame('tc-456', $called->payload['tool_call_id'] ?? null);
+        $this->assertNotNull($called);
+        $this->assertSame(RuntimeEventTypeEnum::ToolExecutionFailed->value, $called->type);
+        $this->assertSame('tc-456', $called->payload['tool_call_id'] ?? null);
     }
 
     public function testQueuedFollowUpDispatchedOnRunCancelled(): void
@@ -410,18 +410,17 @@ final class RuntimeEventPollerTest extends TestCase
             seq: 10,
         );
 
-        $this->client->expects(self::once())
+        $this->client->expects($this->once())
             ->method('events')
             ->with('test-run')
             ->willReturn([$event]);
 
         // Expect the client to receive a follow_up command with the queued text
-        $this->client->expects(self::once())
+        $this->client->expects($this->once())
             ->method('send')
             ->with(
                 'test-run',
-                self::callback(static fn ($cmd): bool =>
-                    $cmd instanceof UserCommand
+                $this->callback(static fn ($cmd): bool => $cmd instanceof UserCommand
                     && 'follow_up' === $cmd->type
                     && 'Continue after cancel' === $cmd->text
                 ),
@@ -433,12 +432,11 @@ final class RuntimeEventPollerTest extends TestCase
         $this->poller->poll($this->state, $this->client);
 
         // Queued text should be cleared after dispatch
-        self::assertNull($this->state->queuedFollowUp);
+        $this->assertNull($this->state->queuedFollowUp);
         // Activity should transition to Cancelled (from RunCancelled event),
         // then to Starting (from the follow_up dispatch)
-        self::assertSame(RunActivityStateEnum::Starting, $this->state->activity);
+        $this->assertSame(RunActivityStateEnum::Starting, $this->state->activity);
     }
-
 
     public function testCancellingClearsToCancelledOnRunCancelledWithoutQueuedFollowUp(): void
     {
@@ -459,20 +457,20 @@ final class RuntimeEventPollerTest extends TestCase
             ),
         ];
 
-        $this->client->expects(self::once())
+        $this->client->expects($this->once())
             ->method('events')
             ->with('test-run')
             ->willReturn($events);
 
-        $this->client->expects(self::never())->method('send');
+        $this->client->expects($this->never())->method('send');
 
         $this->projector->method('accept');
         $this->projector->method('blocks')->willReturn([]);
 
         $this->poller->poll($this->state, $this->client);
 
-        self::assertSame(RunActivityStateEnum::Cancelled, $this->state->activity);
-        self::assertFalse($this->state->activity->isActive());
+        $this->assertSame(RunActivityStateEnum::Cancelled, $this->state->activity);
+        $this->assertFalse($this->state->activity->isActive());
     }
 
     public function testCancellingClearsToCancelledOnToolExecutionCancelledWithoutRunCancelled(): void
@@ -492,20 +490,20 @@ final class RuntimeEventPollerTest extends TestCase
             ),
         ];
 
-        $this->client->expects(self::once())
+        $this->client->expects($this->once())
             ->method('events')
             ->with('test-run')
             ->willReturn($events);
 
-        $this->client->expects(self::never())->method('send');
+        $this->client->expects($this->never())->method('send');
 
         $this->projector->method('accept');
         $this->projector->method('blocks')->willReturn([]);
 
         $this->poller->poll($this->state, $this->client);
 
-        self::assertSame(RunActivityStateEnum::Cancelled, $this->state->activity);
-        self::assertFalse($this->state->activity->isActive());
+        $this->assertSame(RunActivityStateEnum::Cancelled, $this->state->activity);
+        $this->assertFalse($this->state->activity->isActive());
     }
 
     public function testQueuedFollowUpNotDispatchedWithoutRunCancelled(): void
@@ -518,12 +516,12 @@ final class RuntimeEventPollerTest extends TestCase
             seq: 10,
         );
 
-        $this->client->expects(self::once())
+        $this->client->expects($this->once())
             ->method('events')
             ->with('test-run')
             ->willReturn([$event]);
 
-        $this->client->expects(self::never())
+        $this->client->expects($this->never())
             ->method('send');
 
         $this->projector->method('accept');
@@ -532,8 +530,8 @@ final class RuntimeEventPollerTest extends TestCase
         $this->poller->poll($this->state, $this->client);
 
         // Queued text should persist — only cleared on RunCancelled
-        self::assertNotNull($this->state->queuedFollowUp);
-        self::assertSame('Waiting message', $this->state->queuedFollowUp);
+        $this->assertNotNull($this->state->queuedFollowUp);
+        $this->assertSame('Waiting message', $this->state->queuedFollowUp);
     }
 
     public function testOnToolTerminalNotCalledForNonTerminalEvents(): void
@@ -545,7 +543,7 @@ final class RuntimeEventPollerTest extends TestCase
             payload: ['tool_call_id' => 'tc-789'],
         );
 
-        $this->client->expects(self::once())
+        $this->client->expects($this->once())
             ->method('events')
             ->with('test-run')
             ->willReturn([$event]);
@@ -560,7 +558,7 @@ final class RuntimeEventPollerTest extends TestCase
 
         $this->poller->poll($this->state, $this->client, onToolTerminal: $callback);
 
-        self::assertFalse($called);
+        $this->assertFalse($called);
     }
 
     /**
@@ -580,13 +578,13 @@ final class RuntimeEventPollerTest extends TestCase
             seq: 10,
         );
 
-        $this->client->expects(self::once())
+        $this->client->expects($this->once())
             ->method('events')
             ->with('test-run')
             ->willReturn([$event]);
 
         // Must NOT dispatch — send() should not be called
-        $this->client->expects(self::never())
+        $this->client->expects($this->never())
             ->method('send');
 
         $this->projector->method('accept');
@@ -595,10 +593,10 @@ final class RuntimeEventPollerTest extends TestCase
         $this->poller->poll($this->state, $this->client);
 
         // Queued text must survive for the RunCancelled branch
-        self::assertNotNull($this->state->queuedFollowUp);
-        self::assertSame('Continue after cancel', $this->state->queuedFollowUp);
+        $this->assertNotNull($this->state->queuedFollowUp);
+        $this->assertSame('Continue after cancel', $this->state->queuedFollowUp);
         // Activity stays Cancelling (not overwritten to Starting)
-        self::assertSame(RunActivityStateEnum::Cancelling, $this->state->activity);
+        $this->assertSame(RunActivityStateEnum::Cancelling, $this->state->activity);
     }
 
     /**
@@ -617,12 +615,12 @@ final class RuntimeEventPollerTest extends TestCase
             seq: 11,
         );
 
-        $this->client->expects(self::once())
+        $this->client->expects($this->once())
             ->method('events')
             ->with('test-run')
             ->willReturn([$event]);
 
-        $this->client->expects(self::never())
+        $this->client->expects($this->never())
             ->method('send');
 
         $this->projector->method('accept');
@@ -630,9 +628,9 @@ final class RuntimeEventPollerTest extends TestCase
 
         $this->poller->poll($this->state, $this->client);
 
-        self::assertNotNull($this->state->queuedFollowUp);
-        self::assertSame('Resume after failed compact', $this->state->queuedFollowUp);
-        self::assertSame(RunActivityStateEnum::Cancelling, $this->state->activity);
+        $this->assertNotNull($this->state->queuedFollowUp);
+        $this->assertSame('Resume after failed compact', $this->state->queuedFollowUp);
+        $this->assertSame(RunActivityStateEnum::Cancelling, $this->state->activity);
     }
 
     public function testPollContinuesAfterToolQuestionCallbackThrows(): void
@@ -649,23 +647,23 @@ final class RuntimeEventPollerTest extends TestCase
             seq: 11,
         );
 
-        $this->client->expects(self::once())
+        $this->client->expects($this->once())
             ->method('events')
             ->with('test-run')
             ->willReturn([$toolQuestion, $cancelled]);
 
-        $this->projector->expects(self::exactly(2))
+        $this->projector->expects($this->exactly(2))
             ->method('accept');
 
-        $this->projector->expects(self::once())
+        $this->projector->expects($this->once())
             ->method('blocks')
             ->willReturn([]);
 
-        $this->logger->expects(self::once())
+        $this->logger->expects($this->once())
             ->method('warning')
             ->with(
                 'RuntimeEventPoller event callback failed',
-                self::callback(static function (array $context): bool {
+                $this->callback(static function (array $context): bool {
                     return 'onToolQuestionRequested' === ($context['callback'] ?? null)
                         && RuntimeEventTypeEnum::ToolQuestionRequested->value === ($context['runtime_event_type'] ?? null);
                 }),
@@ -679,8 +677,8 @@ final class RuntimeEventPollerTest extends TestCase
             },
         );
 
-        self::assertSame(11, $this->state->lastSeq);
-        self::assertSame(RunActivityStateEnum::Cancelled, $this->state->activity);
+        $this->assertSame(11, $this->state->lastSeq);
+        $this->assertSame(RunActivityStateEnum::Cancelled, $this->state->activity);
     }
 
     public function testPollWholesaleReplacesTranscriptOnRunLeafChanged(): void
@@ -713,7 +711,7 @@ final class RuntimeEventPollerTest extends TestCase
                 payload: ['text' => 'New active path response'],
             ),
         ];
-        $turnTreeProvider->expects(self::once())
+        $turnTreeProvider->expects($this->once())
             ->method('activePathRuntimeEvents')
             ->with('test-run', 3)
             ->willReturn($activeEvents);
@@ -760,7 +758,7 @@ final class RuntimeEventPollerTest extends TestCase
             $turnTreeProvider,
         );
 
-        $this->client->expects(self::once())
+        $this->client->expects($this->once())
             ->method('events')
             ->with('test-run')
             ->willReturn([
@@ -775,22 +773,22 @@ final class RuntimeEventPollerTest extends TestCase
         $result = $poller->poll($this->state, $this->client);
 
         // Transcript wholesale replaced (old block gone, new block present)
-        self::assertNotNull($result);
-        self::assertCount(1, $result);
-        self::assertSame($result, $this->state->transcript);
-        self::assertSame('block-seq-35', $result[0]->id);
-        self::assertSame('New active path response', $result[0]->text);
-        self::assertCount(1, $this->state->transcript, 'Old abandoned-branch block must be gone');
+        $this->assertNotNull($result);
+        $this->assertCount(1, $result);
+        $this->assertSame($result, $this->state->transcript);
+        $this->assertSame('block-seq-35', $result[0]->id);
+        $this->assertSame('New active path response', $result[0]->text);
+        $this->assertCount(1, $this->state->transcript, 'Old abandoned-branch block must be gone');
 
         // Activity becomes Idle after RunLeafChanged
-        self::assertSame(RunActivityStateEnum::Idle, $this->state->activity);
+        $this->assertSame(RunActivityStateEnum::Idle, $this->state->activity);
 
         // queuedFollowUp cleared
-        self::assertNull($this->state->queuedFollowUp);
-        self::assertSame([], $this->state->queuedUserMessages, 'Abandoned-branch queued commands must not linger as ⏳');
+        $this->assertNull($this->state->queuedFollowUp);
+        $this->assertSame([], $this->state->queuedUserMessages, 'Abandoned-branch queued commands must not linger as ⏳');
 
         // lastSeq advanced to RunLeafChanged seq (not moved backward by rebuild)
-        self::assertSame(20, $this->state->lastSeq);
+        $this->assertSame(20, $this->state->lastSeq);
     }
 
     public function testPollGracefullyDegradesOnLeafChangeRebuildFailure(): void
@@ -817,9 +815,18 @@ final class RuntimeEventPollerTest extends TestCase
 
         // Stub projector (never reached, but required by TuiRuntimeEventApplier)
         $projector = new class implements TranscriptProjectorInterface {
-            public function accept(array $event): void {}
-            public function blocks(): array { return []; }
-            public function reset(): void {}
+            public function accept(array $event): void
+            {
+            }
+
+            public function blocks(): array
+            {
+                return [];
+            }
+
+            public function reset(): void
+            {
+            }
         };
 
         $eventApplier = new TuiRuntimeEventApplier($projector);
@@ -832,7 +839,7 @@ final class RuntimeEventPollerTest extends TestCase
             $turnTreeProvider,
         );
 
-        $this->client->expects(self::once())
+        $this->client->expects($this->once())
             ->method('events')
             ->with('test-run')
             ->willReturn([
@@ -844,20 +851,20 @@ final class RuntimeEventPollerTest extends TestCase
                 ),
             ]);
 
-        $this->logger->expects(self::once())
+        $this->logger->expects($this->once())
             ->method('warning')
-            ->with('runtime_event_poller.leaf_changed_rebuild_failed', self::anything());
+            ->with('runtime_event_poller.leaf_changed_rebuild_failed', $this->anything());
 
         $result = $poller->poll($this->state, $this->client);
 
         // Transcript cleared on failure — stale blocks must not linger
-        self::assertSame([], $this->state->transcript, 'Transcript must be empty on rebuild failure');
+        $this->assertSame([], $this->state->transcript, 'Transcript must be empty on rebuild failure');
 
         // Poll returns the (empty) transcript so the renderer redraws as blank
-        self::assertSame([], $result);
+        $this->assertSame([], $result);
 
         // lastSeq still advanced to the RunLeafChanged seq
-        self::assertSame(20, $this->state->lastSeq);
+        $this->assertSame(20, $this->state->lastSeq);
     }
 
     /**
@@ -881,7 +888,7 @@ final class RuntimeEventPollerTest extends TestCase
             ),
         ];
 
-        $this->client->expects(self::once())
+        $this->client->expects($this->once())
             ->method('events')
             ->with('test-run')
             ->willReturn([
@@ -893,9 +900,9 @@ final class RuntimeEventPollerTest extends TestCase
                 ),
             ]);
 
-        $this->logger->expects(self::once())
+        $this->logger->expects($this->once())
             ->method('warning')
-            ->with('runtime_event_poller.leaf_changed_malformed', self::anything());
+            ->with('runtime_event_poller.leaf_changed_malformed', $this->anything());
 
         $this->projector->method('accept');
         $this->projector->method('blocks')->willReturn([]);
@@ -903,11 +910,11 @@ final class RuntimeEventPollerTest extends TestCase
         $result = $this->poller->poll($this->state, $this->client);
 
         // Stale blocks must be removed
-        self::assertSame([], $this->state->transcript, 'Transcript must be empty after malformed RunLeafChanged');
-        self::assertSame([], $result);
+        $this->assertSame([], $this->state->transcript, 'Transcript must be empty after malformed RunLeafChanged');
+        $this->assertSame([], $result);
 
         // lastSeq still advanced
-        self::assertSame(20, $this->state->lastSeq);
+        $this->assertSame(20, $this->state->lastSeq);
     }
 
     /**
@@ -955,7 +962,7 @@ final class RuntimeEventPollerTest extends TestCase
         };
 
         $turnTreeProvider = $this->createMock(TurnTreeProviderInterface::class);
-        $turnTreeProvider->expects(self::once())
+        $turnTreeProvider->expects($this->once())
             ->method('activePathRuntimeEvents')
             ->with('test-run', 2)
             ->willReturn([
@@ -977,7 +984,7 @@ final class RuntimeEventPollerTest extends TestCase
             $turnTreeProvider,
         );
 
-        $this->client->expects(self::once())
+        $this->client->expects($this->once())
             ->method('events')
             ->with('test-run')
             ->willReturn([
@@ -999,15 +1006,14 @@ final class RuntimeEventPollerTest extends TestCase
         $result = $poller->poll($this->state, $this->client);
 
         // Both the rebuilt active-path block AND the post-leaf block must appear
-        self::assertNotNull($result, 'Result must not be null when events were processed');
-        self::assertCount(2, $result, 'Both rebuilt and post-leaf blocks must be present');
-        self::assertSame('block-seq-30', $result[0]->id);
-        self::assertSame('Rebuilt active path block', $result[0]->text);
-        self::assertSame('block-seq-35', $result[1]->id);
-        self::assertSame('Post-leaf event', $result[1]->text);
+        $this->assertNotNull($result, 'Result must not be null when events were processed');
+        $this->assertCount(2, $result, 'Both rebuilt and post-leaf blocks must be present');
+        $this->assertSame('block-seq-30', $result[0]->id);
+        $this->assertSame('Rebuilt active path block', $result[0]->text);
+        $this->assertSame('block-seq-35', $result[1]->id);
+        $this->assertSame('Post-leaf event', $result[1]->text);
 
         // lastSeq advanced to the highest seq in the batch (35, not 20)
-        self::assertSame(35, $this->state->lastSeq);
+        $this->assertSame(35, $this->state->lastSeq);
     }
-
 }

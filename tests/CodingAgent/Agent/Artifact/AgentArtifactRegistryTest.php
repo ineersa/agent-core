@@ -17,9 +17,9 @@ use PHPUnit\Framework\TestCase;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\FlockStore;
 use Symfony\Component\Serializer\Encoder\JsonEncoder;
+use Symfony\Component\Serializer\NameConverter\CamelCaseToSnakeCaseNameConverter;
 use Symfony\Component\Serializer\Normalizer\BackedEnumNormalizer;
 use Symfony\Component\Serializer\Normalizer\DateTimeNormalizer;
-use Symfony\Component\Serializer\NameConverter\CamelCaseToSnakeCaseNameConverter;
 use Symfony\Component\Serializer\Normalizer\ObjectNormalizer;
 use Symfony\Component\Serializer\Serializer;
 use Symfony\Component\Validator\ValidatorBuilder;
@@ -93,22 +93,22 @@ final class AgentArtifactRegistryTest extends TestCase
 
         $entry = $this->registry->create($parentRunId, $artifactId, $agentRunId, 'scout', AgentArtifactKindEnum::Subagent);
 
-        self::assertSame($artifactId, $entry->artifactId);
-        self::assertSame($parentRunId, $entry->parentRunId);
-        self::assertSame($agentRunId, $entry->agentRunId);
-        self::assertSame('scout', $entry->agentName);
-        self::assertSame(AgentArtifactStatusEnum::Pending, $entry->status);
-        self::assertSame("artifacts/agents/{$artifactId}", $entry->paths->artifactDir);
+        $this->assertSame($artifactId, $entry->artifactId);
+        $this->assertSame($parentRunId, $entry->parentRunId);
+        $this->assertSame($agentRunId, $entry->agentRunId);
+        $this->assertSame('scout', $entry->agentName);
+        $this->assertSame(AgentArtifactStatusEnum::Pending, $entry->status);
+        $this->assertSame("artifacts/agents/{$artifactId}", $entry->paths->artifactDir);
 
         // Verify files exist on disk
         $base = $this->projectDir.'/.hatfield/sessions/'.$parentRunId.'/artifacts/agents';
-        self::assertFileExists($base.'/registry.json');
-        self::assertFileExists($base.'/'.$artifactId.'/metadata.json');
-        self::assertFileExists($base.'/'.$artifactId.'/handoff.md');
-        self::assertDirectoryExists($base.'/'.$artifactId);
+        $this->assertFileExists($base.'/registry.json');
+        $this->assertFileExists($base.'/'.$artifactId.'/metadata.json');
+        $this->assertFileExists($base.'/'.$artifactId.'/handoff.md');
+        $this->assertDirectoryExists($base.'/'.$artifactId);
 
         // Verify no top-level child session directory was created
-        self::assertDirectoryDoesNotExist($this->projectDir.'/.hatfield/sessions/'.$agentRunId);
+        $this->assertDirectoryDoesNotExist($this->projectDir.'/.hatfield/sessions/'.$agentRunId);
     }
 
     public function testCreateWithDifferentArtifactIds(): void
@@ -118,11 +118,11 @@ final class AgentArtifactRegistryTest extends TestCase
         $entry1 = $this->registry->create($parentRunId, 'scout-001', 'child-a', 'scout', AgentArtifactKindEnum::Subagent);
         $entry2 = $this->registry->create($parentRunId, 'scout-002', 'child-b', 'scout', AgentArtifactKindEnum::Subagent);
 
-        self::assertSame('scout-001', $entry1->artifactId);
-        self::assertSame('scout-002', $entry2->artifactId);
+        $this->assertSame('scout-001', $entry1->artifactId);
+        $this->assertSame('scout-002', $entry2->artifactId);
 
         $all = $this->registry->list($parentRunId);
-        self::assertCount(2, $all);
+        $this->assertCount(2, $all);
     }
 
     public function testCreateRejectsDuplicateArtifactIdInSameParent(): void
@@ -193,15 +193,15 @@ final class AgentArtifactRegistryTest extends TestCase
         $path = $this->projectDir.'/.hatfield/sessions/'.$parentRunId.'/artifacts/agents/registry.json';
         $data = json_decode(file_get_contents($path), true, 512, \JSON_THROW_ON_ERROR);
 
-        self::assertSame(1, $data['schema_version']);
-        self::assertIsArray($data['entries']);
-        self::assertCount(1, $data['entries']);
-        self::assertSame('agent_01HX', $data['entries'][0]['artifact_id']);
-        self::assertSame('scout', $data['entries'][0]['agent_name']);
-        self::assertSame('pending', $data['entries'][0]['status']);
+        $this->assertSame(1, $data['schema_version']);
+        $this->assertIsArray($data['entries']);
+        $this->assertCount(1, $data['entries']);
+        $this->assertSame('agent_01HX', $data['entries'][0]['artifact_id']);
+        $this->assertSame('scout', $data['entries'][0]['agent_name']);
+        $this->assertSame('pending', $data['entries'][0]['status']);
         // Paths are nested (serializer-native shape)
-        self::assertIsArray($data['entries'][0]['paths']);
-        self::assertSame('artifacts/agents/agent_01HX', $data['entries'][0]['paths']['artifact_dir']);
+        $this->assertIsArray($data['entries'][0]['paths']);
+        $this->assertSame('artifacts/agents/agent_01HX', $data['entries'][0]['paths']['artifact_dir']);
     }
 
     // ── Get ───────────────────────────────────────────────────────────────
@@ -213,16 +213,16 @@ final class AgentArtifactRegistryTest extends TestCase
 
         $entry = $this->registry->get($parentRunId, 'scout-001');
 
-        self::assertNotNull($entry);
-        self::assertSame('scout-001', $entry->artifactId);
-        self::assertSame('scout', $entry->agentName);
+        $this->assertNotNull($entry);
+        $this->assertSame('scout-001', $entry->artifactId);
+        $this->assertSame('scout', $entry->agentName);
     }
 
     public function testGetReturnsNullForMissingArtifactId(): void
     {
         $parentRunId = 'parent-'.bin2hex(random_bytes(4));
 
-        self::assertNull($this->registry->get($parentRunId, 'nonexistent'));
+        $this->assertNull($this->registry->get($parentRunId, 'nonexistent'));
     }
 
     public function testGetReturnsNullForDifferentParent(): void
@@ -231,7 +231,7 @@ final class AgentArtifactRegistryTest extends TestCase
         $parentB = 'parent-b-'.bin2hex(random_bytes(4));
         $this->registry->create($parentA, 'agent_01HX', 'child-a', 'scout', AgentArtifactKindEnum::Subagent);
 
-        self::assertNull($this->registry->get($parentB, 'agent_01HX'));
+        $this->assertNull($this->registry->get($parentB, 'agent_01HX'));
     }
 
     public function testGetRejectsPathTraversalInParentRunId(): void
@@ -266,12 +266,12 @@ final class AgentArtifactRegistryTest extends TestCase
 
         // Find by agentRunId
         $entry = $this->registry->findByAgentRunId($parentRunId, 'child-run-abc');
-        self::assertNotNull($entry);
-        self::assertSame('agent_01HX', $entry->artifactId);
-        self::assertSame('scout', $entry->agentName);
+        $this->assertNotNull($entry);
+        $this->assertSame('agent_01HX', $entry->artifactId);
+        $this->assertSame('scout', $entry->agentName);
 
         // Missing agentRunId
-        self::assertNull($this->registry->findByAgentRunId($parentRunId, 'nonexistent'));
+        $this->assertNull($this->registry->findByAgentRunId($parentRunId, 'nonexistent'));
     }
 
     // ── Update ────────────────────────────────────────────────────────────
@@ -288,14 +288,14 @@ final class AgentArtifactRegistryTest extends TestCase
             startedAt: new \DateTimeImmutable('2026-06-22T12:00:00+00:00'),
         );
 
-        self::assertNotNull($updated);
-        self::assertSame(AgentArtifactStatusEnum::Running, $updated->status);
-        self::assertNotNull($updated->startedAt);
+        $this->assertNotNull($updated);
+        $this->assertSame(AgentArtifactStatusEnum::Running, $updated->status);
+        $this->assertNotNull($updated->startedAt);
 
         // Re-read from registry confirms persistence
         $reloaded = $this->registry->get($parentRunId, 'agent_01HX');
-        self::assertNotNull($reloaded);
-        self::assertSame(AgentArtifactStatusEnum::Running, $reloaded->status);
+        $this->assertNotNull($reloaded);
+        $this->assertSame(AgentArtifactStatusEnum::Running, $reloaded->status);
     }
 
     public function testUpdateTransitionsToCompleted(): void
@@ -311,15 +311,15 @@ final class AgentArtifactRegistryTest extends TestCase
             completedAt: new \DateTimeImmutable('2026-06-22T12:05:00+00:00'),
         );
 
-        self::assertNotNull($updated);
-        self::assertSame(AgentArtifactStatusEnum::Completed, $updated->status);
-        self::assertSame('Found 3 files, 2 risks', $updated->summary);
+        $this->assertNotNull($updated);
+        $this->assertSame(AgentArtifactStatusEnum::Completed, $updated->status);
+        $this->assertSame('Found 3 files, 2 risks', $updated->summary);
 
         // Reload confirms
         $reloaded = $this->registry->get($parentRunId, 'agent_01HX');
-        self::assertNotNull($reloaded);
-        self::assertSame(AgentArtifactStatusEnum::Completed, $reloaded->status);
-        self::assertSame('Found 3 files, 2 risks', $reloaded->summary);
+        $this->assertNotNull($reloaded);
+        $this->assertSame(AgentArtifactStatusEnum::Completed, $reloaded->status);
+        $this->assertSame('Found 3 files, 2 risks', $reloaded->summary);
     }
 
     public function testUpdateTransitionsToFailed(): void
@@ -335,9 +335,9 @@ final class AgentArtifactRegistryTest extends TestCase
             completedAt: new \DateTimeImmutable(),
         );
 
-        self::assertNotNull($updated);
-        self::assertSame(AgentArtifactStatusEnum::Failed, $updated->status);
-        self::assertSame('Tool execution error', $updated->failureReason);
+        $this->assertNotNull($updated);
+        $this->assertSame(AgentArtifactStatusEnum::Failed, $updated->status);
+        $this->assertSame('Tool execution error', $updated->failureReason);
     }
 
     public function testUpdateTransitionsToNeedsClarification(): void
@@ -353,9 +353,9 @@ final class AgentArtifactRegistryTest extends TestCase
             completedAt: new \DateTimeImmutable(),
         );
 
-        self::assertNotNull($updated);
-        self::assertSame(AgentArtifactStatusEnum::NeedsClarification, $updated->status);
-        self::assertSame('Which approach: monorepo or multi-repo?', $updated->needsClarification);
+        $this->assertNotNull($updated);
+        $this->assertSame(AgentArtifactStatusEnum::NeedsClarification, $updated->status);
+        $this->assertSame('Which approach: monorepo or multi-repo?', $updated->needsClarification);
     }
 
     public function testUpdatePreservesIdentityFields(): void
@@ -369,17 +369,17 @@ final class AgentArtifactRegistryTest extends TestCase
             status: AgentArtifactStatusEnum::Completed,
         );
 
-        self::assertNotNull($updated);
+        $this->assertNotNull($updated);
         // Identity fields preserved
-        self::assertSame('agent_01HX', $updated->artifactId);
-        self::assertSame($parentRunId, $updated->parentRunId);
-        self::assertSame('child-a', $updated->agentRunId);
-        self::assertSame('scout', $updated->agentName);
+        $this->assertSame('agent_01HX', $updated->artifactId);
+        $this->assertSame($parentRunId, $updated->parentRunId);
+        $this->assertSame('child-a', $updated->agentRunId);
+        $this->assertSame('scout', $updated->agentName);
     }
 
     public function testUpdateReturnsNullForMissingArtifact(): void
     {
-        self::assertNull(
+        $this->assertNull(
             $this->registry->update('parent-1', 'nonexistent', status: AgentArtifactStatusEnum::Completed),
         );
     }
@@ -412,7 +412,7 @@ final class AgentArtifactRegistryTest extends TestCase
 
     public function testListReturnsEmptyForNoArtifacts(): void
     {
-        self::assertCount(0, $this->registry->list('parent-never-created'));
+        $this->assertCount(0, $this->registry->list('parent-never-created'));
     }
 
     public function testListReturnsAllEntriesForParent(): void
@@ -422,11 +422,11 @@ final class AgentArtifactRegistryTest extends TestCase
         $this->registry->create($parentRunId, 'reviewer-001', 'child-b', 'reviewer', AgentArtifactKindEnum::Subagent);
 
         $entries = $this->registry->list($parentRunId);
-        self::assertCount(2, $entries);
+        $this->assertCount(2, $entries);
 
         $names = array_map(static fn ($e) => $e->agentName, $entries);
-        self::assertContains('scout', $names);
-        self::assertContains('reviewer', $names);
+        $this->assertContains('scout', $names);
+        $this->assertContains('reviewer', $names);
     }
 
     public function testListRejectsPathTraversal(): void
@@ -444,7 +444,7 @@ final class AgentArtifactRegistryTest extends TestCase
         $parentRunId = 'parent-'.bin2hex(random_bytes(4));
         $expected = $this->projectDir.'/.hatfield/sessions/'.$parentRunId.'/artifacts/agents';
 
-        self::assertSame($expected, $this->pathResolver->resolveArtifactsBasePath($parentRunId));
+        $this->assertSame($expected, $this->pathResolver->resolveArtifactsBasePath($parentRunId));
     }
 
     public function testResolveArtifactsBasePathRejectsPathTraversal(): void
@@ -460,7 +460,7 @@ final class AgentArtifactRegistryTest extends TestCase
         $parentRunId = 'parent-'.bin2hex(random_bytes(4));
         $expected = $this->projectDir.'/.hatfield/sessions/'.$parentRunId.'/artifacts/agents/agent_01HX';
 
-        self::assertSame($expected, $this->pathResolver->resolveArtifactDir($parentRunId, 'agent_01HX'));
+        $this->assertSame($expected, $this->pathResolver->resolveArtifactDir($parentRunId, 'agent_01HX'));
     }
 
     public function testResolveArtifactDirRejectsDotInArtifactId(): void
@@ -501,14 +501,14 @@ final class AgentArtifactRegistryTest extends TestCase
         );
 
         $entry = $this->registry->get($parentRunId, 'agent_01HX');
-        self::assertNotNull($entry);
-        self::assertSame(AgentArtifactStatusEnum::Completed, $entry->status);
-        self::assertSame('All done', $entry->summary);
+        $this->assertNotNull($entry);
+        $this->assertSame(AgentArtifactStatusEnum::Completed, $entry->status);
+        $this->assertSame('All done', $entry->summary);
 
         // Registry JSON is still valid
         $path = $this->projectDir.'/.hatfield/sessions/'.$parentRunId.'/artifacts/agents/registry.json';
         $data = json_decode(file_get_contents($path), true, 512, \JSON_THROW_ON_ERROR);
-        self::assertCount(1, $data['entries']);
+        $this->assertCount(1, $data['entries']);
     }
 
     public function testMultipleArtifactsDifferentParentsDoNotInterfere(): void
@@ -524,8 +524,8 @@ final class AgentArtifactRegistryTest extends TestCase
 
         // Parent B entry remains Pending
         $entryB = $this->registry->get($parentB, 'agent_b');
-        self::assertNotNull($entryB);
-        self::assertSame(AgentArtifactStatusEnum::Pending, $entryB->status);
+        $this->assertNotNull($entryB);
+        $this->assertSame(AgentArtifactStatusEnum::Pending, $entryB->status);
     }
 
     // ── Metadata files ────────────────────────────────────────────────────
@@ -536,17 +536,17 @@ final class AgentArtifactRegistryTest extends TestCase
         $this->registry->create($parentRunId, 'agent_01HX', 'child-a', 'scout', AgentArtifactKindEnum::Subagent);
 
         $metadataPath = $this->projectDir.'/.hatfield/sessions/'.$parentRunId.'/artifacts/agents/agent_01HX/metadata.json';
-        self::assertFileExists($metadataPath);
+        $this->assertFileExists($metadataPath);
 
         $meta = json_decode(file_get_contents($metadataPath), true, 512, \JSON_THROW_ON_ERROR);
         // Serializer-native nested shape (no "kind" — metadata mirrors registry entry)
-        self::assertSame('agent_01HX', $meta['artifact_id']);
-        self::assertSame($parentRunId, $meta['parent_run_id']);
-        self::assertSame('child-a', $meta['agent_run_id']);
-        self::assertSame('scout', $meta['agent_name']);
-        self::assertSame('pending', $meta['status']);
-        self::assertIsArray($meta['paths']);
-        self::assertSame('artifacts/agents/agent_01HX', $meta['paths']['artifact_dir']);
+        $this->assertSame('agent_01HX', $meta['artifact_id']);
+        $this->assertSame($parentRunId, $meta['parent_run_id']);
+        $this->assertSame('child-a', $meta['agent_run_id']);
+        $this->assertSame('scout', $meta['agent_name']);
+        $this->assertSame('pending', $meta['status']);
+        $this->assertIsArray($meta['paths']);
+        $this->assertSame('artifacts/agents/agent_01HX', $meta['paths']['artifact_dir']);
     }
 
     public function testHandoffMdIsCreatedEmpty(): void
@@ -555,8 +555,8 @@ final class AgentArtifactRegistryTest extends TestCase
         $this->registry->create($parentRunId, 'agent_01HX', 'child-a', 'scout', AgentArtifactKindEnum::Subagent);
 
         $handoffPath = $this->projectDir.'/.hatfield/sessions/'.$parentRunId.'/artifacts/agents/agent_01HX/handoff.md';
-        self::assertFileExists($handoffPath);
-        self::assertSame('', file_get_contents($handoffPath));
+        $this->assertFileExists($handoffPath);
+        $this->assertSame('', file_get_contents($handoffPath));
     }
 
     // ── Corrupt registry / malformed entry resilience ────────────────────
@@ -778,13 +778,13 @@ final class AgentArtifactRegistryTest extends TestCase
         $agentRunId = 'child-'.bin2hex(random_bytes(4));
 
         $this->registry->create($parentRunId, $artifactId, $agentRunId, 'scout', AgentArtifactKindEnum::Subagent);
-        $this->registry->writeHandoff($parentRunId, $artifactId, "# Handoff
+        $this->registry->writeHandoff($parentRunId, $artifactId, '# Handoff
 
-Done.");
+Done.');
 
-        self::assertSame("# Handoff
+        $this->assertSame('# Handoff
 
-Done.", $this->registry->readHandoff($parentRunId, $artifactId));
+Done.', $this->registry->readHandoff($parentRunId, $artifactId));
     }
 
     public function testReadHandoffRejectsPathTraversalArtifactId(): void
@@ -792,5 +792,4 @@ Done.", $this->registry->readHandoff($parentRunId, $artifactId));
         $this->expectException(\InvalidArgumentException::class);
         $this->registry->readHandoff('parent-1', '../evil');
     }
-
 }

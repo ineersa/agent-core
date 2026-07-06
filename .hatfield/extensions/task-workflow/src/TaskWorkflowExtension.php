@@ -32,7 +32,7 @@ final readonly class TaskWorkflowExtension implements HatfieldExtensionInterface
 
         $exec = $api->exec();
         $git = new GitExecutor($exec);
-        $worktrees = new WorktreeManager($git);
+        $worktrees = new WorktreeManager($git, $exec);
         $pr = new PrManager($exec);
         $store = new TaskBoardStore($codeRoot, $config);
         $taskRoot = $store->resolveTaskRoot();

@@ -35,7 +35,7 @@ return (new PhpCsFixer\Config())
     ->setRiskyAllowed(true)
     ->setFinder(
         (new PhpCsFixer\Finder())
-            ->in([__DIR__.'/src', __DIR__.'/.castor', __DIR__.'/.hatfield/extensions'])
+            ->in([__DIR__.'/src', __DIR__.'/.castor', __DIR__.'/.hatfield/extensions', __DIR__.'/tests'])
             ->append([__FILE__, __DIR__.'/castor.php'])
             ->exclude('var')
     )

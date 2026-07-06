@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Tool;
 
-use Ineersa\CodingAgent\Tool\AskHuman\AskHumanArgumentsDTO;
 use Ineersa\CodingAgent\Tool\AskHuman\AskHumanPayloadFactory;
 use Ineersa\CodingAgent\Tool\AskHumanTool;
 use Ineersa\CodingAgent\Tool\RegistryBackedToolbox;
@@ -216,8 +215,6 @@ final class AskHumanToolTest extends TestCase
         $this->assertSame(['type' => 'string'], $result['schema']);
     }
 
-
-
     /* ── Text question ── */
 
     public function testTextQuestionDefaultKind(): void
@@ -262,8 +259,6 @@ final class AskHumanToolTest extends TestCase
         $this->assertSame('robust', $result['choices'][1]['label']);
         $this->assertSame('fast', $result['choices'][2]['label']);
     }
-
-
 
     public function testChoiceQuestionDerivedSchemaHasEnum(): void
     {
@@ -331,8 +326,6 @@ final class AskHumanToolTest extends TestCase
 
         $this->assertStringStartsWith('ah_', $result['question_id']);
     }
-
-
 
     /* ── Validation ── */
 

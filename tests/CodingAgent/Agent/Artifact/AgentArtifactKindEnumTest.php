@@ -50,8 +50,8 @@ final class AgentArtifactKindEnumTest extends TestCase
 
     public function testEnumCases(): void
     {
-        self::assertSame('subagent', AgentArtifactKindEnum::Subagent->value);
-        self::assertSame('fork', AgentArtifactKindEnum::Fork->value);
+        $this->assertSame('subagent', AgentArtifactKindEnum::Subagent->value);
+        $this->assertSame('fork', AgentArtifactKindEnum::Fork->value);
     }
 
     public function testEntryDtoRoundTripWithSubagentKind(): void
@@ -73,17 +73,17 @@ final class AgentArtifactKindEnumTest extends TestCase
         $json = $this->serializer->serialize($original, 'json');
         $data = json_decode($json, true, 512, \JSON_THROW_ON_ERROR);
 
-        self::assertArrayHasKey('kind', $data);
-        self::assertSame('subagent', $data['kind']);
-        self::assertArrayHasKey('artifact_id', $data);
-        self::assertArrayHasKey('parent_run_id', $data);
-        self::assertArrayHasKey('agent_run_id', $data);
-        self::assertArrayHasKey('agent_name', $data);
-        self::assertArrayHasKey('created_at', $data);
-        self::assertSame('test_001', $data['artifact_id']);
+        $this->assertArrayHasKey('kind', $data);
+        $this->assertSame('subagent', $data['kind']);
+        $this->assertArrayHasKey('artifact_id', $data);
+        $this->assertArrayHasKey('parent_run_id', $data);
+        $this->assertArrayHasKey('agent_run_id', $data);
+        $this->assertArrayHasKey('agent_name', $data);
+        $this->assertArrayHasKey('created_at', $data);
+        $this->assertSame('test_001', $data['artifact_id']);
 
         $restored = $this->serializer->deserialize($json, AgentArtifactEntryDTO::class, 'json');
-        self::assertSame(AgentArtifactKindEnum::Subagent, $restored->kind);
+        $this->assertSame(AgentArtifactKindEnum::Subagent, $restored->kind);
     }
 
     public function testEntryDtoRoundTripWithForkKind(): void
@@ -105,13 +105,13 @@ final class AgentArtifactKindEnumTest extends TestCase
         $json = $this->serializer->serialize($original, 'json');
         $data = json_decode($json, true, 512, \JSON_THROW_ON_ERROR);
 
-        self::assertArrayHasKey('kind', $data);
-        self::assertSame('fork', $data['kind']);
-        self::assertArrayHasKey('artifact_id', $data);
-        self::assertSame('fork_001', $data['artifact_id']);
+        $this->assertArrayHasKey('kind', $data);
+        $this->assertSame('fork', $data['kind']);
+        $this->assertArrayHasKey('artifact_id', $data);
+        $this->assertSame('fork_001', $data['artifact_id']);
 
         $restored = $this->serializer->deserialize($json, AgentArtifactEntryDTO::class, 'json');
-        self::assertSame(AgentArtifactKindEnum::Fork, $restored->kind);
-        self::assertSame(AgentArtifactStatusEnum::Running, $restored->status);
+        $this->assertSame(AgentArtifactKindEnum::Fork, $restored->kind);
+        $this->assertSame(AgentArtifactStatusEnum::Running, $restored->status);
     }
 }

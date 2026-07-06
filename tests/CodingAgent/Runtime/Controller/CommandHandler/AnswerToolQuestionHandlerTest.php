@@ -41,9 +41,9 @@ final class AnswerToolQuestionHandlerTest extends TestCase
         $event = new ControllerCommandEvent($command, static function (): void {});
         $handler($event);
 
-        self::assertNotNull($this->spyStore->lastRequestId);
-        self::assertSame('bash_bg_run-123_tc456_789', $this->spyStore->lastRequestId);
-        self::assertTrue($this->spyStore->lastAnswer);
+        $this->assertNotNull($this->spyStore->lastRequestId);
+        $this->assertSame('bash_bg_run-123_tc456_789', $this->spyStore->lastRequestId);
+        $this->assertTrue($this->spyStore->lastAnswer);
     }
 
     public function testDispatchesAnswerFalse(): void
@@ -63,7 +63,7 @@ final class AnswerToolQuestionHandlerTest extends TestCase
         $event = new ControllerCommandEvent($command, static function (): void {});
         $handler($event);
 
-        self::assertFalse($this->spyStore->lastAnswer);
+        $this->assertFalse($this->spyStore->lastAnswer);
     }
 
     public function testEmitsProtocolErrorWhenRunIdMissing(): void
@@ -85,9 +85,9 @@ final class AnswerToolQuestionHandlerTest extends TestCase
         $event = new ControllerCommandEvent($command, $emit);
         $handler($event);
 
-        self::assertNull($this->spyStore->lastRequestId);
-        self::assertCount(1, $emittedEvents);
-        self::assertSame(RuntimeEventTypeEnum::ProtocolError->value, $emittedEvents[0]->type);
+        $this->assertNull($this->spyStore->lastRequestId);
+        $this->assertCount(1, $emittedEvents);
+        $this->assertSame(RuntimeEventTypeEnum::ProtocolError->value, $emittedEvents[0]->type);
     }
 
     public function testEmitsProtocolErrorWhenRequestIdMissing(): void
@@ -109,10 +109,10 @@ final class AnswerToolQuestionHandlerTest extends TestCase
         $event = new ControllerCommandEvent($command, $emit);
         $handler($event);
 
-        self::assertNull($this->spyStore->lastRequestId);
-        self::assertCount(1, $emittedEvents);
-        self::assertSame(RuntimeEventTypeEnum::ProtocolError->value, $emittedEvents[0]->type);
-        self::assertSame('run-456', $emittedEvents[0]->runId);
+        $this->assertNull($this->spyStore->lastRequestId);
+        $this->assertCount(1, $emittedEvents);
+        $this->assertSame(RuntimeEventTypeEnum::ProtocolError->value, $emittedEvents[0]->type);
+        $this->assertSame('run-456', $emittedEvents[0]->runId);
     }
 
     public function testIgnoresNonToolQuestionCommands(): void
@@ -129,7 +129,7 @@ final class AnswerToolQuestionHandlerTest extends TestCase
         $event = new ControllerCommandEvent($command, static function (): void {});
         $handler($event);
 
-        self::assertNull($this->spyStore->lastRequestId);
+        $this->assertNull($this->spyStore->lastRequestId);
         $this->addToAssertionCount(1);
     }
 
@@ -150,7 +150,7 @@ final class AnswerToolQuestionHandlerTest extends TestCase
         $event = new ControllerCommandEvent($command, static function (): void {});
         $handler($event);
 
-        self::assertTrue($this->spyStore->lastAnswer);
+        $this->assertTrue($this->spyStore->lastAnswer);
     }
 
     public function testResolvesStringNoToFalse(): void
@@ -170,9 +170,8 @@ final class AnswerToolQuestionHandlerTest extends TestCase
         $event = new ControllerCommandEvent($command, static function (): void {});
         $handler($event);
 
-        self::assertFalse($this->spyStore->lastAnswer);
+        $this->assertFalse($this->spyStore->lastAnswer);
     }
-
 
     public function testStoredConfirmKindWithNullSchemaAcceptsBooleanFalse(): void
     {
@@ -210,10 +209,10 @@ final class AnswerToolQuestionHandlerTest extends TestCase
         $event = new ControllerCommandEvent($command, $emit);
         $handler($event);
 
-        self::assertSame([], $emittedEvents);
-        self::assertSame('bash_bg_run-confirm-null', $this->spyStore->lastRequestId);
-        self::assertFalse($this->spyStore->lastAnswer);
-        self::assertNull($this->spyStore->lastAnswerText);
+        $this->assertSame([], $emittedEvents);
+        $this->assertSame('bash_bg_run-confirm-null', $this->spyStore->lastRequestId);
+        $this->assertFalse($this->spyStore->lastAnswer);
+        $this->assertNull($this->spyStore->lastAnswerText);
     }
 
     public function testEmitsProtocolErrorOnStoreFailure(): void
@@ -240,12 +239,12 @@ final class AnswerToolQuestionHandlerTest extends TestCase
         $handler($event);
 
         // Verify the handler caught the exception and emitted a ProtocolError.
-        self::assertNull($this->spyStore->lastAnswer, 'answer() should not have reached real store logic');
-        self::assertCount(1, $emittedEvents);
-        self::assertSame(RuntimeEventTypeEnum::ProtocolError->value, $emittedEvents[0]->type);
-        self::assertSame('run-999', $emittedEvents[0]->runId);
-        self::assertStringContainsString('Failed to answer tool question', $emittedEvents[0]->payload['error'] ?? '');
-        self::assertStringContainsString('DB connection lost', $emittedEvents[0]->payload['error'] ?? '');
+        $this->assertNull($this->spyStore->lastAnswer, 'answer() should not have reached real store logic');
+        $this->assertCount(1, $emittedEvents);
+        $this->assertSame(RuntimeEventTypeEnum::ProtocolError->value, $emittedEvents[0]->type);
+        $this->assertSame('run-999', $emittedEvents[0]->runId);
+        $this->assertStringContainsString('Failed to answer tool question', $emittedEvents[0]->payload['error'] ?? '');
+        $this->assertStringContainsString('DB connection lost', $emittedEvents[0]->payload['error'] ?? '');
 
         // Verify no exception propagates to the caller.
         $this->addToAssertionCount(1);
@@ -255,7 +254,7 @@ final class AnswerToolQuestionHandlerTest extends TestCase
 /**
  * Inline spy implementation of ToolQuestionStoreInterface for testing.
  */
-final class SpyToolQuestionStore implements \Ineersa\CodingAgent\Tool\ToolQuestion\ToolQuestionStoreInterface
+final class SpyToolQuestionStore implements ToolQuestionStoreInterface
 {
     public ?string $lastRequestId = null;
     public ?bool $lastAnswer = null;

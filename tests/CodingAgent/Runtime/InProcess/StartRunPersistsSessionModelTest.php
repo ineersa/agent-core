@@ -40,7 +40,6 @@ use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
  */
 final class StartRunPersistsSessionModelTest extends IsolatedKernelTestCase
 {
-    /** @var FakeNoopAgentRunner */
     private FakeNoopAgentRunner $spyRunner;
 
     public static function setUpBeforeClass(): void
@@ -64,33 +63,294 @@ final class StartRunPersistsSessionModelTest extends IsolatedKernelTestCase
         // container is shared across methods, so this returns the
         // same spy instance each time.  lastStartInput is overwritten
         // by each start() call, so no per-method re-install is needed.
-        /** @var FakeNoopAgentRunner */
+        /* @var FakeNoopAgentRunner */
         $this->spyRunner = self::getContainer()->get(AgentRunnerInterface::class);
+    }
+
+    // ── Persistence tests ─────────────────────────────────────────
+
+    public function testStartPersistsModelAndReasoningToSessionMetadata(): void
+    {
+        $cwd = $this->isolatedCwd();
+        $sessionId = $this->createSession($cwd);
+
+        $this->client()->start(new StartRunRequest(
+            prompt: 'hi',
+            runId: $sessionId,
+            model: 'llama_cpp/flash',
+            reasoning: 'high',
+        ));
+
+        // Verify the runner was called (proves start() executed).
+        $this->assertNotNull($this->spyRunner->lastStartInput,
+            'Runner must have been called with a StartRunInput');
+
+        // Assert session metadata was persisted.
+        $meta = $this->sessionMetaStore()->readSessionMetadata($sessionId);
+        $this->assertSame('llama_cpp/flash', $meta['model'] ?? null,
+            'Session metadata must contain the persisted model reference');
+        $this->assertSame('llama_cpp', $meta['model_provider'] ?? null,
+            'Session metadata must contain the persisted model provider');
+        $this->assertSame('flash', $meta['model_name'] ?? null,
+            'Session metadata must contain the persisted model name');
+        $this->assertSame('high', $meta['reasoning'] ?? null,
+            'Session metadata must contain the persisted reasoning level');
+    }
+
+    public function testStartPersistsExplicitModelAndResolvedDefaultReasoning(): void
+    {
+        // Thesis: when an explicit model is given without reasoning,
+        // the model is persisted as-is (catalog-free tryParse) and the
+        // resolved default reasoning is persisted so resume restores
+        // both consistently (no drift from a later global default change).
+        $cwd = $this->isolatedCwd();
+        $sessionId = $this->createSession($cwd);
+
+        $this->client()->start(new StartRunRequest(
+            prompt: 'hi',
+            runId: $sessionId,
+            model: 'llama_cpp/flash',
+            reasoning: null,
+        ));
+
+        $meta = $this->sessionMetaStore()->readSessionMetadata($sessionId);
+        $this->assertSame('llama_cpp/flash', $meta['model'] ?? null,
+            'Model must be persisted even when reasoning is null');
+
+        // Resolve the expected reasoning independently via the container's
+        // ModelResolver (the same path start() uses for its fallback).
+        $expectedReasoning = $this->resolveDefaultReasoning();
+        $this->assertNotNull($expectedReasoning);
+        $this->assertSame($expectedReasoning, $meta['reasoning'] ?? null,
+            'Resolved default reasoning must be persisted when no explicit reasoning given');
+    }
+
+    public function testStartDoesNotWriteMetadataForNewSessionWithoutRunId(): void
+    {
+        // When runId is empty, no session row exists — guard must skip persistence.
+        $this->client()->start(new StartRunRequest(
+            prompt: 'hi',
+            runId: '',
+            model: 'llama_cpp/flash',
+            reasoning: 'high',
+        ));
+
+        $this->assertNotNull($this->spyRunner->lastStartInput,
+            'Runner must still be called even when no session row exists');
+
+        // No metadata must be written when no session row exists.
+        $meta = $this->hatfieldSessionStore()->loadMetadata('');
+        $this->assertEmpty($meta,
+            'No session metadata must be written for an empty session ID');
+    }
+
+    public function testStartPersistsResolvedDefaultModelWhenNoExplicitModelGiven(): void
+    {
+        // Thesis: when no explicit model is given and a catalog is available
+        // (home settings provide providers in this environment), the resolved
+        // default model is persisted to session metadata — so resume is
+        // pinned to what turn 1 actually used.
+        $cwd = $this->isolatedCwd();
+        $sessionId = $this->createSession($cwd);
+
+        $this->client()->start(new StartRunRequest(
+            prompt: 'hi',
+            runId: $sessionId,
+        ));
+
+        $meta = $this->sessionMetaStore()->readSessionMetadata($sessionId);
+
+        // Model is persisted when a catalog is available.
+        $this->assertArrayHasKey('model', $meta,
+            'model key must be set when a catalog resolves the default');
+        $this->assertNotEmpty($meta['model'],
+            'persisted model must not be empty');
+        $this->assertArrayHasKey('model_provider', $meta);
+        $this->assertArrayHasKey('model_name', $meta);
+
+        // Reasoning is always resolved (Tier 3/4 fallback).
+        $expectedReasoning = $this->resolveDefaultReasoning();
+        $this->assertSame($expectedReasoning, $meta['reasoning'] ?? null,
+            'resolved default reasoning must be persisted');
+    }
+
+    // ── Resume contract test ──────────────────────────────────────
+    //
+    // Proves that the persisted session metadata is actually used
+    // by ModelResolver on resume — the Tier-2 (session metadata)
+    // read path wins over Tier-3 (global default).
+
+    public function testResolveInitialModelReturnsPersistedSessionModel(): void
+    {
+        $cwd = $this->isolatedCwd();
+        $sessionId = $this->createSession($cwd);
+
+        // Persist model via start() — the fix under test.
+        $this->client()->start(new StartRunRequest(
+            prompt: 'hi',
+            runId: $sessionId,
+            model: 'llama_cpp/flash',
+            reasoning: 'high',
+        ));
+
+        // Build a ModelResolver with a DIFFERENT global default
+        // (deepseek/deepseek-v4-pro) so we can prove session metadata wins.
+        $resolver = $this->buildModelResolver($cwd);
+
+        // No explicit model → must resolve from session metadata (Tier 2),
+        // NOT from the global default (Tier 3).
+        $resolved = $resolver->resolveInitialModel(null, $sessionId);
+        $this->assertNotNull($resolved,
+            'Resolved model must not be null when session metadata is set');
+        $this->assertSame('llama_cpp/flash', $resolved->toString(),
+            'Resolved model must come from session metadata, not global default');
+
+        // Reasoning must also come from session metadata.
+        $resolvedReasoning = $resolver->resolveInitialReasoning(null, $sessionId);
+        $this->assertSame('high', $resolvedReasoning,
+            'Resolved reasoning must come from session metadata, not global default');
+
+        // Explicit model override still wins (Tier 1).
+        $explicitResolved = $resolver->resolveInitialModel('deepseek/deepseek-v4-pro', $sessionId);
+        $this->assertNotNull($explicitResolved);
+        $this->assertSame('deepseek/deepseek-v4-pro', $explicitResolved->toString(),
+            'Explicit model (Tier 1) must still win over session metadata (Tier 2)');
+    }
+
+    /**
+     * With the default test-kernel setup (home settings provide a catalog),
+     * start() persists the resolved default model to session metadata.
+     * The independent resolver (built with standardAiData, default =
+     * deepseek/deepseek-v4-pro) reads the persisted model from metadata
+     * (Tier 2) when it is available in its own catalog.  Reasoning is
+     * also read from metadata.
+     */
+    public function testResolverUsesPersistedMetadataFromStart(): void
+    {
+        $cwd = $this->isolatedCwd();
+        $sessionId = $this->createSession($cwd);
+
+        // Start WITHOUT model/reasoning.
+        $this->client()->start(new StartRunRequest(
+            prompt: 'hi',
+            runId: $sessionId,
+        ));
+
+        $meta = $this->sessionMetaStore()->readSessionMetadata($sessionId);
+
+        $resolver = $this->buildModelResolver($cwd);
+
+        // A model is always resolved — either from persisted metadata
+        // (Tier 2) or from the resolver's global default (Tier 3).
+        $resolved = $resolver->resolveInitialModel(null, $sessionId);
+        $this->assertNotNull($resolved,
+            'Must resolve a model from metadata or fallback');
+
+        // Reasoning was persisted by start() — resolver reads from metadata.
+        $resolvedReasoning = $resolver->resolveInitialReasoning(null, $sessionId);
+        $this->assertNotEmpty($resolvedReasoning);
+        $this->assertSame($meta['reasoning'] ?? null, $resolvedReasoning,
+            'Resolved reasoning must match persisted session metadata');
+    }
+
+    // ── Gap proof: no-explicit-model start pins the resolved default ─
+    //
+    // Thesis: when start() is called without an explicit model AND a
+    // catalog is available, the resolved global default model/reasoning
+    // is persisted to session metadata.  A later resolveInitialModel
+    // (simulating resume with a different global default) must return
+    // the PERSISTED value — not the new global default.
+    //
+    // Instead of overriding the container's ModelResolver (which fails
+    // with per-class kernel boot because the resolver is already
+    // initialized by earlier tests), this test uses the container's
+    // natural resolver to discover the resolved default, then builds
+    // a second resolver with intentionally different defaults to prove
+    // the persisted start-time value wins.
+
+    public function testStartWithNoExplicitModelLocksInResolvedDefaultForResume(): void
+    {
+        $cwd = $this->isolatedCwd();
+        $sessionId = $this->createSession($cwd);
+
+        // Start WITHOUT an explicit model — the resolved default
+        // (whatever the container's catalog provides) must be locked in.
+        $this->client()->start(new StartRunRequest(
+            prompt: 'hi',
+            runId: $sessionId,
+            // No model, no reasoning — both resolved from catalog defaults.
+        ));
+
+        $this->assertNotNull($this->spyRunner->lastStartInput,
+            'Runner must have been called');
+
+        // Use the container's natural ModelResolver to find out what
+        // default was resolved — the same resolution path start() used.
+        /** @var ModelResolver $containerResolver */
+        $containerResolver = self::getContainer()->get(ModelResolver::class);
+        $expectedRef = $containerResolver->resolveInitialModel(null, $sessionId);
+        $this->assertNotNull($expectedRef,
+            'Container resolver must resolve a default model when a catalog is available');
+        $expectedReasoning = $containerResolver->resolveInitialReasoning(null, $sessionId);
+        $this->assertNotEmpty($expectedReasoning);
+
+        // Assert the resolved defaults WERE persisted.
+        $meta = $this->sessionMetaStore()->readSessionMetadata($sessionId);
+        $this->assertSame($expectedRef->toString(), $meta['model'] ?? null,
+            'resolved global-default model must be persisted even without --model flag');
+        $this->assertSame($expectedRef->providerId, $meta['model_provider'] ?? null);
+        $this->assertSame($expectedRef->modelName, $meta['model_name'] ?? null);
+        $this->assertSame($expectedReasoning, $meta['reasoning'] ?? null,
+            'resolved default reasoning must be persisted');
+
+        // Now simulate a global-default change: build a resolver whose
+        // catalog default is DIFFERENT from the persisted value.
+        $differentModel = 'llama_cpp/flash' === $expectedRef->toString()
+            ? 'deepseek/deepseek-v4-pro'
+            : 'llama_cpp/flash';
+        $differentReasoning = 'medium' === $expectedReasoning ? 'high' : 'medium';
+        $changedDefaultResolver = $this->buildModelResolverWithDefault(
+            $cwd,
+            $differentModel,
+            $differentReasoning,
+        );
+
+        // resolveInitialModel must return the PERSISTED start-time default,
+        // NOT the new global default — this is the gap fix: without it,
+        // the new default would silently take over.
+        $resolved = $changedDefaultResolver->resolveInitialModel(null, $sessionId);
+        $this->assertNotNull($resolved);
+        $this->assertSame($expectedRef->toString(), $resolved->toString(),
+            'Resolved model must come from session metadata (start-time default), not new global default');
+
+        $resolvedReasoning = $changedDefaultResolver->resolveInitialReasoning(null, $sessionId);
+        $this->assertSame($expectedReasoning, $resolvedReasoning,
+            'Resolved reasoning must come from session metadata, not new global default');
     }
 
     // ── Helpers ───────────────────────────────────────────────────
 
     private function client(): InProcessAgentSessionClient
     {
-        /** @var InProcessAgentSessionClient */
+        /* @var InProcessAgentSessionClient */
         return self::getContainer()->get(InProcessAgentSessionClient::class);
     }
 
     private function sessionMetaStore(): SessionMetadataStore
     {
-        /** @var SessionMetadataStore */
+        /* @var SessionMetadataStore */
         return self::getContainer()->get(SessionMetadataStore::class);
     }
 
     private function hatfieldSessionStore(): HatfieldSessionStore
     {
-        /** @var HatfieldSessionStore */
+        /* @var HatfieldSessionStore */
         return self::getContainer()->get(HatfieldSessionStore::class);
     }
 
     private function entityManager(): \Doctrine\ORM\EntityManagerInterface
     {
-        /** @var \Doctrine\ORM\EntityManagerInterface */
+        /* @var \Doctrine\ORM\EntityManagerInterface */
         return self::getContainer()->get('doctrine.orm.default_entity_manager');
     }
 
@@ -123,267 +383,6 @@ final class StartRunPersistsSessionModelTest extends IsolatedKernelTestCase
         $this->entityManager()->flush();
 
         return (string) $entity->id;
-    }
-
-    // ── Persistence tests ─────────────────────────────────────────
-
-    public function testStartPersistsModelAndReasoningToSessionMetadata(): void
-    {
-        $cwd = $this->isolatedCwd();
-        $sessionId = $this->createSession($cwd);
-
-        $this->client()->start(new StartRunRequest(
-            prompt: 'hi',
-            runId: $sessionId,
-            model: 'llama_cpp/flash',
-            reasoning: 'high',
-        ));
-
-        // Verify the runner was called (proves start() executed).
-        self::assertNotNull($this->spyRunner->lastStartInput,
-            'Runner must have been called with a StartRunInput');
-
-        // Assert session metadata was persisted.
-        $meta = $this->sessionMetaStore()->readSessionMetadata($sessionId);
-        self::assertSame('llama_cpp/flash', $meta['model'] ?? null,
-            'Session metadata must contain the persisted model reference');
-        self::assertSame('llama_cpp', $meta['model_provider'] ?? null,
-            'Session metadata must contain the persisted model provider');
-        self::assertSame('flash', $meta['model_name'] ?? null,
-            'Session metadata must contain the persisted model name');
-        self::assertSame('high', $meta['reasoning'] ?? null,
-            'Session metadata must contain the persisted reasoning level');
-    }
-
-    public function testStartPersistsExplicitModelAndResolvedDefaultReasoning(): void
-    {
-        // Thesis: when an explicit model is given without reasoning,
-        // the model is persisted as-is (catalog-free tryParse) and the
-        // resolved default reasoning is persisted so resume restores
-        // both consistently (no drift from a later global default change).
-        $cwd = $this->isolatedCwd();
-        $sessionId = $this->createSession($cwd);
-
-        $this->client()->start(new StartRunRequest(
-            prompt: 'hi',
-            runId: $sessionId,
-            model: 'llama_cpp/flash',
-            reasoning: null,
-        ));
-
-        $meta = $this->sessionMetaStore()->readSessionMetadata($sessionId);
-        self::assertSame('llama_cpp/flash', $meta['model'] ?? null,
-            'Model must be persisted even when reasoning is null');
-
-        // Resolve the expected reasoning independently via the container's
-        // ModelResolver (the same path start() uses for its fallback).
-        $expectedReasoning = $this->resolveDefaultReasoning();
-        self::assertNotNull($expectedReasoning);
-        self::assertSame($expectedReasoning, $meta['reasoning'] ?? null,
-            'Resolved default reasoning must be persisted when no explicit reasoning given');
-    }
-
-    public function testStartDoesNotWriteMetadataForNewSessionWithoutRunId(): void
-    {
-        // When runId is empty, no session row exists — guard must skip persistence.
-        $this->client()->start(new StartRunRequest(
-            prompt: 'hi',
-            runId: '',
-            model: 'llama_cpp/flash',
-            reasoning: 'high',
-        ));
-
-        self::assertNotNull($this->spyRunner->lastStartInput,
-            'Runner must still be called even when no session row exists');
-
-        // No metadata must be written when no session row exists.
-        $meta = $this->hatfieldSessionStore()->loadMetadata('');
-        self::assertEmpty($meta,
-            'No session metadata must be written for an empty session ID');
-    }
-
-    public function testStartPersistsResolvedDefaultModelWhenNoExplicitModelGiven(): void
-    {
-        // Thesis: when no explicit model is given and a catalog is available
-        // (home settings provide providers in this environment), the resolved
-        // default model is persisted to session metadata — so resume is
-        // pinned to what turn 1 actually used.
-        $cwd = $this->isolatedCwd();
-        $sessionId = $this->createSession($cwd);
-
-        $this->client()->start(new StartRunRequest(
-            prompt: 'hi',
-            runId: $sessionId,
-        ));
-
-        $meta = $this->sessionMetaStore()->readSessionMetadata($sessionId);
-
-        // Model is persisted when a catalog is available.
-        self::assertArrayHasKey('model', $meta,
-            'model key must be set when a catalog resolves the default');
-        self::assertNotEmpty($meta['model'],
-            'persisted model must not be empty');
-        self::assertArrayHasKey('model_provider', $meta);
-        self::assertArrayHasKey('model_name', $meta);
-
-        // Reasoning is always resolved (Tier 3/4 fallback).
-        $expectedReasoning = $this->resolveDefaultReasoning();
-        self::assertSame($expectedReasoning, $meta['reasoning'] ?? null,
-            'resolved default reasoning must be persisted');
-    }
-
-    // ── Resume contract test ──────────────────────────────────────
-    //
-    // Proves that the persisted session metadata is actually used
-    // by ModelResolver on resume — the Tier-2 (session metadata)
-    // read path wins over Tier-3 (global default).
-
-    public function testResolveInitialModelReturnsPersistedSessionModel(): void
-    {
-        $cwd = $this->isolatedCwd();
-        $sessionId = $this->createSession($cwd);
-
-        // Persist model via start() — the fix under test.
-        $this->client()->start(new StartRunRequest(
-            prompt: 'hi',
-            runId: $sessionId,
-            model: 'llama_cpp/flash',
-            reasoning: 'high',
-        ));
-
-        // Build a ModelResolver with a DIFFERENT global default
-        // (deepseek/deepseek-v4-pro) so we can prove session metadata wins.
-        $resolver = $this->buildModelResolver($cwd);
-
-        // No explicit model → must resolve from session metadata (Tier 2),
-        // NOT from the global default (Tier 3).
-        $resolved = $resolver->resolveInitialModel(null, $sessionId);
-        self::assertNotNull($resolved,
-            'Resolved model must not be null when session metadata is set');
-        self::assertSame('llama_cpp/flash', $resolved->toString(),
-            'Resolved model must come from session metadata, not global default');
-
-        // Reasoning must also come from session metadata.
-        $resolvedReasoning = $resolver->resolveInitialReasoning(null, $sessionId);
-        self::assertSame('high', $resolvedReasoning,
-            'Resolved reasoning must come from session metadata, not global default');
-
-        // Explicit model override still wins (Tier 1).
-        $explicitResolved = $resolver->resolveInitialModel('deepseek/deepseek-v4-pro', $sessionId);
-        self::assertNotNull($explicitResolved);
-        self::assertSame('deepseek/deepseek-v4-pro', $explicitResolved->toString(),
-            'Explicit model (Tier 1) must still win over session metadata (Tier 2)');
-    }
-
-    /**
-     * With the default test-kernel setup (home settings provide a catalog),
-     * start() persists the resolved default model to session metadata.
-     * The independent resolver (built with standardAiData, default =
-     * deepseek/deepseek-v4-pro) reads the persisted model from metadata
-     * (Tier 2) when it is available in its own catalog.  Reasoning is
-     * also read from metadata.
-     */
-    public function testResolverUsesPersistedMetadataFromStart(): void
-    {
-        $cwd = $this->isolatedCwd();
-        $sessionId = $this->createSession($cwd);
-
-        // Start WITHOUT model/reasoning.
-        $this->client()->start(new StartRunRequest(
-            prompt: 'hi',
-            runId: $sessionId,
-        ));
-
-        $meta = $this->sessionMetaStore()->readSessionMetadata($sessionId);
-
-        $resolver = $this->buildModelResolver($cwd);
-
-        // A model is always resolved — either from persisted metadata
-        // (Tier 2) or from the resolver's global default (Tier 3).
-        $resolved = $resolver->resolveInitialModel(null, $sessionId);
-        self::assertNotNull($resolved,
-            'Must resolve a model from metadata or fallback');
-
-        // Reasoning was persisted by start() — resolver reads from metadata.
-        $resolvedReasoning = $resolver->resolveInitialReasoning(null, $sessionId);
-        self::assertNotEmpty($resolvedReasoning);
-        self::assertSame($meta['reasoning'] ?? null, $resolvedReasoning,
-            'Resolved reasoning must match persisted session metadata');
-    }
-
-    // ── Gap proof: no-explicit-model start pins the resolved default ─
-    //
-    // Thesis: when start() is called without an explicit model AND a
-    // catalog is available, the resolved global default model/reasoning
-    // is persisted to session metadata.  A later resolveInitialModel
-    // (simulating resume with a different global default) must return
-    // the PERSISTED value — not the new global default.
-    //
-    // Instead of overriding the container's ModelResolver (which fails
-    // with per-class kernel boot because the resolver is already
-    // initialized by earlier tests), this test uses the container's
-    // natural resolver to discover the resolved default, then builds
-    // a second resolver with intentionally different defaults to prove
-    // the persisted start-time value wins.
-
-    public function testStartWithNoExplicitModelLocksInResolvedDefaultForResume(): void
-    {
-        $cwd = $this->isolatedCwd();
-        $sessionId = $this->createSession($cwd);
-
-        // Start WITHOUT an explicit model — the resolved default
-        // (whatever the container's catalog provides) must be locked in.
-        $this->client()->start(new StartRunRequest(
-            prompt: 'hi',
-            runId: $sessionId,
-            // No model, no reasoning — both resolved from catalog defaults.
-        ));
-
-        self::assertNotNull($this->spyRunner->lastStartInput,
-            'Runner must have been called');
-
-        // Use the container's natural ModelResolver to find out what
-        // default was resolved — the same resolution path start() used.
-        /** @var ModelResolver $containerResolver */
-        $containerResolver = self::getContainer()->get(ModelResolver::class);
-        $expectedRef = $containerResolver->resolveInitialModel(null, $sessionId);
-        self::assertNotNull($expectedRef,
-            'Container resolver must resolve a default model when a catalog is available');
-        $expectedReasoning = $containerResolver->resolveInitialReasoning(null, $sessionId);
-        self::assertNotEmpty($expectedReasoning);
-
-        // Assert the resolved defaults WERE persisted.
-        $meta = $this->sessionMetaStore()->readSessionMetadata($sessionId);
-        self::assertSame($expectedRef->toString(), $meta['model'] ?? null,
-            'resolved global-default model must be persisted even without --model flag');
-        self::assertSame($expectedRef->providerId, $meta['model_provider'] ?? null);
-        self::assertSame($expectedRef->modelName, $meta['model_name'] ?? null);
-        self::assertSame($expectedReasoning, $meta['reasoning'] ?? null,
-            'resolved default reasoning must be persisted');
-
-        // Now simulate a global-default change: build a resolver whose
-        // catalog default is DIFFERENT from the persisted value.
-        $differentModel = $expectedRef->toString() === 'llama_cpp/flash'
-            ? 'deepseek/deepseek-v4-pro'
-            : 'llama_cpp/flash';
-        $differentReasoning = $expectedReasoning === 'medium' ? 'high' : 'medium';
-        $changedDefaultResolver = $this->buildModelResolverWithDefault(
-            $cwd,
-            $differentModel,
-            $differentReasoning,
-        );
-
-        // resolveInitialModel must return the PERSISTED start-time default,
-        // NOT the new global default — this is the gap fix: without it,
-        // the new default would silently take over.
-        $resolved = $changedDefaultResolver->resolveInitialModel(null, $sessionId);
-        self::assertNotNull($resolved);
-        self::assertSame($expectedRef->toString(), $resolved->toString(),
-            'Resolved model must come from session metadata (start-time default), not new global default');
-
-        $resolvedReasoning = $changedDefaultResolver->resolveInitialReasoning(null, $sessionId);
-        self::assertSame($expectedReasoning, $resolvedReasoning,
-            'Resolved reasoning must come from session metadata, not new global default');
     }
 
     // ── ModelResolver builder ─────────────────────────────────────
@@ -501,8 +500,8 @@ final class StartRunPersistsSessionModelTest extends IsolatedKernelTestCase
 }
 
 /**
- * @internal No-op runner that captures the StartRunInput without
- * executing a real agent run.
+ * @internal no-op runner that captures the StartRunInput without
+ * executing a real agent run
  */
 final class FakeNoopAgentRunner implements AgentRunnerInterface
 {

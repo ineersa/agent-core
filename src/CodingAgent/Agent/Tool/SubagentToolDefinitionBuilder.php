@@ -22,7 +22,7 @@ final class SubagentToolDefinitionBuilder
         return new ToolDefinitionDTO(
             name: 'subagent',
             description: \sprintf(
-                'Launch non-interactive foreground subagent(s). Single mode uses "agent" and "task". Parallel mode uses "tasks" with up to %d agents per call (agents.max_agents). The tool blocks until all children finish. Single-mode results include the full child handoff inline; parallel results are bounded summaries — use agent_retrieve for complete parallel handoffs or extra detail.',
+                'Launch interactive foreground subagent(s). Single mode uses "agent" and "task". Parallel mode uses "tasks" with up to %d agents per call (agents.max_agents). The tool blocks until all children finish. Single-mode results include the full child handoff inline; parallel results are bounded summaries — use agent_retrieve for complete parallel handoffs or extra detail.',
                 $maxAgents,
             ),
             parametersJsonSchema: [
@@ -57,7 +57,7 @@ final class SubagentToolDefinitionBuilder
             handler: $handler,
             executionMode: ToolExecutionMode::Sequential,
             timeoutSeconds: null,
-            promptLine: 'subagent — launch one or more non-interactive foreground subagents; single mode returns full handoff inline',
+            promptLine: 'subagent — launch one or more interactive foreground subagents; single mode returns full handoff inline',
             promptGuidelines: [
                 'Use subagent to delegate focused work to specialized child agents.',
                 \sprintf('Parallel mode: {"tasks":[{"agent":"scout","task":"..."}]} — up to %d agents per call (configured by agents.max_agents).', $maxAgents),

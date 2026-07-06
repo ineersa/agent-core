@@ -26,10 +26,11 @@ final class AgentsMainCommandHandler implements SlashCommandHandler
         }
 
         $this->state->subagentLiveView->exit();
-        $this->screen->setStatus('agents-live', '');
+        // Remove any stale keyed status row; live view must not persist in status panel.
+        $this->screen->setStatus('agents-live', null);
         // Parent transcript kept updating in memory while live view was active.
         $this->screen->setTranscriptBlocks($this->state->transcript);
-        $this->screen->setWorkingMessage('');
+        $this->screen->setWorkingMessage(null);
         $this->screen->requestRender(true);
 
         return new NoOp();

@@ -128,8 +128,6 @@ final class ThemeRegistryTest extends TestCase
         $this->assertSame('tokyo-night', $theme->name);
     }
 
-
-
     public function testBuiltinThemePathsOverlapProducesNoSelfCollisions(): void
     {
         $resources = new AppResourceLocator($this->projectRoot);
@@ -137,8 +135,8 @@ final class ThemeRegistryTest extends TestCase
         $appConfig = new AppConfig(tui: new TuiConfig('cyberpunk', [$builtin]), logging: new LoggingConfig());
         $registry = new ThemeRegistry($appConfig, $resources, new NullLogger());
 
-        self::assertSame([], $registry->getThemeCollisions());
-        self::assertTrue($registry->has('nord'));
+        $this->assertSame([], $registry->getThemeCollisions());
+        $this->assertTrue($registry->has('nord'));
     }
 
     public function testSameSourcePathDuplicateRegistrationProducesNoCollision(): void
@@ -151,8 +149,8 @@ final class ThemeRegistryTest extends TestCase
         $registry->register($palette, $themeFile);
         $registry->register($palette, $themeFile);
 
-        self::assertSame([], $registry->getThemeCollisions());
-        self::assertTrue($registry->has('dup-test'));
+        $this->assertSame([], $registry->getThemeCollisions());
+        $this->assertTrue($registry->has('dup-test'));
     }
 
     public function testDifferentSourcePathDuplicateNameRecordsCollision(): void
@@ -167,10 +165,10 @@ final class ThemeRegistryTest extends TestCase
         $registry->register(ThemePalette::fromArray(['name' => 'clash', 'accent' => '#222222']), $loserFile);
 
         $collisions = $registry->getThemeCollisions();
-        self::assertCount(1, $collisions);
-        self::assertSame('clash', $collisions[0]['name']);
-        self::assertSame($winnerFile, $collisions[0]['winnerPath']);
-        self::assertSame($loserFile, $collisions[0]['loserPath']);
+        $this->assertCount(1, $collisions);
+        $this->assertSame('clash', $collisions[0]['name']);
+        $this->assertSame($winnerFile, $collisions[0]['winnerPath']);
+        $this->assertSame($loserFile, $collisions[0]['loserPath']);
     }
 
     private function createRegistry(): ThemeRegistry
@@ -191,5 +189,4 @@ final class ThemeRegistryTest extends TestCase
 
         return new ThemeRegistry($appConfig, $resources, new NullLogger());
     }
-
 }

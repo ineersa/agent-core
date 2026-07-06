@@ -64,19 +64,6 @@ abstract class PerMethodIsolatedKernelTestCase extends KernelTestCase
         $this->afterKernelBoot();
     }
 
-    /**
-     * Override in subclasses to install spies, configure container
-     * overrides via Container::set(), or perform other per-method
-     * setup that requires a booted kernel.
-     *
-     * Called from setUp() immediately after kernel boot, before the
-     * test method body runs.
-     */
-    protected function afterKernelBoot(): void
-    {
-        // Default: no-op.
-    }
-
     protected function tearDown(): void
     {
         // Restore original CWD before kernel shutdown.
@@ -104,6 +91,19 @@ abstract class PerMethodIsolatedKernelTestCase extends KernelTestCase
 
         // Do NOT call parent::tearDown() — KernelTestCase::tearDown()
         // calls ensureKernelShutdown() which re-boots the kernel.
+    }
+
+    /**
+     * Override in subclasses to install spies, configure container
+     * overrides via Container::set(), or perform other per-method
+     * setup that requires a booted kernel.
+     *
+     * Called from setUp() immediately after kernel boot, before the
+     * test method body runs.
+     */
+    protected function afterKernelBoot(): void
+    {
+        // Default: no-op.
     }
 
     // ── Kernel factory ───────────────────────────────────────────

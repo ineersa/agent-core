@@ -30,8 +30,8 @@ final class SymfonyAiProviderFactoryCodexAuthTest extends TestCase
     {
         parent::setUp();
 
-        $this->tmpDir = \sys_get_temp_dir() . '/hatfield-factory-test-' . \bin2hex(\random_bytes(8));
-        @\mkdir($this->tmpDir . '/.hatfield', 0755, true);
+        $this->tmpDir = sys_get_temp_dir().'/hatfield-factory-test-'.bin2hex(random_bytes(8));
+        @mkdir($this->tmpDir.'/.hatfield', 0755, true);
 
         $store = new FlockStore($this->tmpDir);
         $lockFactory = new LockFactory($store);
@@ -42,35 +42,12 @@ final class SymfonyAiProviderFactoryCodexAuthTest extends TestCase
     {
         parent::tearDown();
 
-        $path = $this->tmpDir . '/' . CodexOAuthConfig::AUTH_FILE;
-        if (\file_exists($path)) {
-            @\unlink($path);
+        $path = $this->tmpDir.'/'.CodexOAuthConfig::AUTH_FILE;
+        if (file_exists($path)) {
+            @unlink($path);
         }
-        @\rmdir($this->tmpDir . '/.hatfield');
-        @\rmdir($this->tmpDir);
-    }
-
-    /**
-     * @param array<string, AiProviderConfig> $providers
-     */
-    private function createFactory(array $providers, ?CodexAuthStorage $codexAuth = null): SymfonyAiProviderFactory
-    {
-        $aiConfig = new AiConfig(
-            defaultModel: 'openai-codex/gpt-5.5',
-            providers: $providers,
-        );
-
-        $appConfig = new AppConfig(
-            tui: TuiConfig::fromArray(['theme' => 'cyberpunk']),
-            logging: new LoggingConfig(),
-            catalog: new HatfieldModelCatalog($aiConfig),
-        );
-
-        return new SymfonyAiProviderFactory(
-            appConfig: $appConfig,
-            eventDispatcher: $this->createStub(EventDispatcherInterface::class),
-            codexAuth: $codexAuth,
-        );
+        @rmdir($this->tmpDir.'/.hatfield');
+        @rmdir($this->tmpDir);
     }
 
     public function testCodexProviderWithAuthStorageCredentials(): void
@@ -92,7 +69,7 @@ final class SymfonyAiProviderFactoryCodexAuthTest extends TestCase
         $this->authStorage->saveCredentials('openai-codex', new CodexAuthRecord(
             access: 'stored-access-token',
             refresh: 'stored-refresh-token',
-            expires: \time() + 3600,
+            expires: time() + 3600,
             accountId: 'stored-account-id',
         ));
 
@@ -121,7 +98,7 @@ final class SymfonyAiProviderFactoryCodexAuthTest extends TestCase
         $this->authStorage->saveCredentials('openai-codex', new CodexAuthRecord(
             access: 'stored-access-token',
             refresh: 'stored-refresh-token',
-            expires: \time() + 3600,
+            expires: time() + 3600,
             accountId: 'stored-account-id',
         ));
 
@@ -202,9 +179,9 @@ final class SymfonyAiProviderFactoryCodexAuthTest extends TestCase
 
         // Store credentials under the expected key
         $this->authStorage->saveCredentials($storedKey, new CodexAuthRecord(
-            access: 'stored-access-token-' . $storedKey,
+            access: 'stored-access-token-'.$storedKey,
             refresh: 'stored-refresh-token',
-            expires: \time() + 3600,
+            expires: time() + 3600,
             accountId: 'stored-account-id',
         ));
 
@@ -252,7 +229,7 @@ final class SymfonyAiProviderFactoryCodexAuthTest extends TestCase
         $this->authStorage->saveCredentials('openai-codex', new CodexAuthRecord(
             access: 'default-access-token',
             refresh: 'stored-refresh-token',
-            expires: \time() + 3600,
+            expires: time() + 3600,
             accountId: 'stored-account-id',
         ));
 
@@ -282,7 +259,7 @@ final class SymfonyAiProviderFactoryCodexAuthTest extends TestCase
         $this->authStorage->saveCredentials('openai-codex', new CodexAuthRecord(
             access: 'default-access-token',
             refresh: 'stored-refresh-token',
-            expires: \time() + 3600,
+            expires: time() + 3600,
             accountId: 'stored-account-id',
         ));
 
@@ -315,7 +292,7 @@ final class SymfonyAiProviderFactoryCodexAuthTest extends TestCase
         $this->authStorage->saveCredentials('openai-codex', new CodexAuthRecord(
             access: 'default-access-token',
             refresh: 'stored-refresh-token',
-            expires: \time() + 3600,
+            expires: time() + 3600,
             accountId: 'stored-account-id',
         ));
 
@@ -354,5 +331,28 @@ final class SymfonyAiProviderFactoryCodexAuthTest extends TestCase
             $this->assertStringContainsString('bin/console auth:codex', $e->getMessage());
             $this->assertStringNotContainsString('--auth-profile=', $e->getMessage());
         }
+    }
+
+    /**
+     * @param array<string, AiProviderConfig> $providers
+     */
+    private function createFactory(array $providers, ?CodexAuthStorage $codexAuth = null): SymfonyAiProviderFactory
+    {
+        $aiConfig = new AiConfig(
+            defaultModel: 'openai-codex/gpt-5.5',
+            providers: $providers,
+        );
+
+        $appConfig = new AppConfig(
+            tui: TuiConfig::fromArray(['theme' => 'cyberpunk']),
+            logging: new LoggingConfig(),
+            catalog: new HatfieldModelCatalog($aiConfig),
+        );
+
+        return new SymfonyAiProviderFactory(
+            appConfig: $appConfig,
+            eventDispatcher: $this->createStub(EventDispatcherInterface::class),
+            codexAuth: $codexAuth,
+        );
     }
 }

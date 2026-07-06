@@ -64,7 +64,7 @@ final class TuiSubagentLiveViewE2eTest extends TestCase
             $this->tmux->waitForCaptureContains($pane, 'agent_e2e_progress_fixture', 10.0, 'Picker must list subagent artifact');
 
             $this->tmux->sendKey($pane, 'Enter');
-            $this->tmux->waitForCaptureContains($pane, 'Subagent live:', 10.0, 'Interactive live view status must appear');
+            $this->tmux->waitForCaptureContains($pane, 'Child agent', 10.0, 'Live view working line must appear');
             $this->tmux->waitForCaptureContains($pane, '[completed]', 10.0, 'Fixture child must show completed status in live view');
 
             $this->tmux->sendKey($pane, 'C-u');
@@ -73,7 +73,7 @@ final class TuiSubagentLiveViewE2eTest extends TestCase
             $this->tmux->sendKey($pane, 'Enter');
             $this->tmux->waitForCaptureContains($pane, 'has finished', 10.0, 'Terminal child input must show finished-subagent warning');
             $capAfterTerminal = $this->tmux->capturePlainWithHistory($pane, 2500);
-            self::assertStringContainsString('has finished', strtolower($capAfterTerminal), 'Terminal child warning must mention finished subagent');
+            $this->assertStringContainsString('has finished', strtolower($capAfterTerminal), 'Terminal child warning must mention finished subagent');
 
             $this->tmux->sendKey($pane, 'C-u');
             usleep(50_000);
@@ -81,19 +81,22 @@ final class TuiSubagentLiveViewE2eTest extends TestCase
             $this->tmux->sendKey($pane, 'Enter');
             $this->tmux->waitForCaptureContains($pane, 'Leave subagent live view', 10.0, 'Blocked slash must show leave-live-view warning');
             $capAfterBlock = $this->tmux->capturePlainWithHistory($pane, 2500);
-            self::assertStringContainsString('agent_e2e_progress_fixture', $capAfterBlock, 'Must remain in live view after blocked /new');
-            self::assertStringNotContainsString('subagent scout running', $capAfterBlock, 'Must not switch back to parent transcript after blocked /new');
+            $this->assertStringContainsString('agent_e2e_progress_fixture', $capAfterBlock, 'Must remain in live view after blocked /new');
+            $this->assertStringNotContainsString('subagent scout running', $capAfterBlock, 'Must not switch back to parent transcript after blocked /new');
 
             $this->tmux->sendKey($pane, 'C-u');
             usleep(50_000);
             $this->tmux->sendLiteral($pane, '/agents-main');
             $this->tmux->sendKey($pane, 'Enter');
             $this->tmux->waitForCaptureContains($pane, 'subagent scout', 10.0, 'Parent transcript must restore after /agents-main');
-            self::assertStringNotContainsString('Subagent live:', $this->tmux->capturePlainWithHistory($pane, 2500));
+            $this->assertStringNotContainsString('Subagent live:', $this->tmux->capturePlainWithHistory($pane, 2500));
 
             $this->tmux->sendKey($pane, 'C-d');
         } catch (\Throwable $e) {
-            try { $this->tmux->sendKey($pane, 'C-d'); } catch (\Throwable) {}
+            try {
+                $this->tmux->sendKey($pane, 'C-d');
+            } catch (\Throwable) {
+            }
             throw $e;
         }
     }
@@ -113,7 +116,8 @@ final class TuiSubagentLiveViewE2eTest extends TestCase
         );
         $cap = $this->tmux->capturePlainWithHistory($pane, 2000);
         preg_match('/session\s+(\d+)/', $cap, $matches);
-        self::assertNotEmpty($matches[1] ?? null);
+        $this->assertNotEmpty($matches[1] ?? null);
+
         return $matches[1];
     }
 
@@ -126,7 +130,8 @@ final class TuiSubagentLiveViewE2eTest extends TestCase
         $dbPath = $paths['app'];
 
         $transportDbPath = $paths['transport'];
-        return sprintf(
+
+        return \sprintf(
             'APP_ENV=test %sHOME=%s HATFIELD_LLM_REPLAY_FIXTURE_PATH=%s %s %s agent --model=llama_cpp_test/test --tools-excluded=bash 2>&1',
             TuiE2eDatabaseEnv::shellPrefix($dbPath, $transportDbPath),
             escapeshellarg($this->testProjectDir.'/home'),
@@ -145,6 +150,7 @@ final class TuiSubagentLiveViewE2eTest extends TestCase
         $yaml = \Symfony\Component\Yaml\Yaml::dump($settings, 6, 4);
         file_put_contents($dir.'/.hatfield/settings.yaml', $yaml);
         file_put_contents($dir.'/home/.hatfield/settings.yaml', $yaml);
+
         return $dir;
     }
 }

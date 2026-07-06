@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Tests\Application;
 
 use Ineersa\CodingAgent\Config\TuiTranscriptConfig;
-use Ineersa\CodingAgent\Config\TuiTranscriptThinkingConfig;
 use Ineersa\CodingAgent\Config\TuiTranscriptPreviewsConfig;
+use Ineersa\CodingAgent\Config\TuiTranscriptThinkingConfig;
 use Ineersa\Tui\Application\TranscriptDisplayConfigMapper;
 use Ineersa\Tui\Transcript\TranscriptDisplayState;
 use PHPUnit\Framework\TestCase;
@@ -34,11 +34,11 @@ class TranscriptDisplayConfigMapperTest extends TestCase
 
         $displayConfig = $this->mapper->map($hatfieldConfig);
 
-        self::assertTrue($displayConfig->thinkingVisible);
-        self::assertSame('dim_italic', $displayConfig->thinkingStyle);
-        self::assertFalse($displayConfig->previewsExpandedByDefault);
-        self::assertSame(8, $displayConfig->toolResultPreviewLines);
-        self::assertSame(20, $displayConfig->diffPreviewLines);
+        $this->assertTrue($displayConfig->thinkingVisible);
+        $this->assertSame('dim_italic', $displayConfig->thinkingStyle);
+        $this->assertFalse($displayConfig->previewsExpandedByDefault);
+        $this->assertSame(8, $displayConfig->toolResultPreviewLines);
+        $this->assertSame(20, $displayConfig->diffPreviewLines);
     }
 
     public function testMapWithOverrides(): void
@@ -57,11 +57,11 @@ class TranscriptDisplayConfigMapperTest extends TestCase
 
         $displayConfig = $this->mapper->map($hatfieldConfig);
 
-        self::assertFalse($displayConfig->thinkingVisible);
-        self::assertSame('dim', $displayConfig->thinkingStyle);
-        self::assertTrue($displayConfig->previewsExpandedByDefault);
-        self::assertSame(12, $displayConfig->toolResultPreviewLines);
-        self::assertSame(30, $displayConfig->diffPreviewLines);
+        $this->assertFalse($displayConfig->thinkingVisible);
+        $this->assertSame('dim', $displayConfig->thinkingStyle);
+        $this->assertTrue($displayConfig->previewsExpandedByDefault);
+        $this->assertSame(12, $displayConfig->toolResultPreviewLines);
+        $this->assertSame(30, $displayConfig->diffPreviewLines);
     }
 
     public function testDisplayStateInitializesFromExpandedByDefault(): void
@@ -73,7 +73,7 @@ class TranscriptDisplayConfigMapperTest extends TestCase
         $stateFalse = new TranscriptDisplayState(
             previewableBlocksExpanded: $configFalse->previewsExpandedByDefault,
         );
-        self::assertFalse($stateFalse->previewableBlocksExpanded);
+        $this->assertFalse($stateFalse->previewableBlocksExpanded);
 
         // When previewsExpandedByDefault is true, state starts expanded
         $configTrue = $this->mapper->map(new TuiTranscriptConfig(
@@ -82,16 +82,16 @@ class TranscriptDisplayConfigMapperTest extends TestCase
         $stateTrue = new TranscriptDisplayState(
             previewableBlocksExpanded: $configTrue->previewsExpandedByDefault,
         );
-        self::assertTrue($stateTrue->previewableBlocksExpanded);
+        $this->assertTrue($stateTrue->previewableBlocksExpanded);
     }
 
     public function testDisplayStateIsMutable(): void
     {
         // Ensure TranscriptDisplayState is actually mutable (not readonly)
         $state = new TranscriptDisplayState(previewableBlocksExpanded: false);
-        self::assertFalse($state->previewableBlocksExpanded);
+        $this->assertFalse($state->previewableBlocksExpanded);
 
         $state->previewableBlocksExpanded = true;
-        self::assertTrue($state->previewableBlocksExpanded);
+        $this->assertTrue($state->previewableBlocksExpanded);
     }
 }

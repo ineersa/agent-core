@@ -18,11 +18,6 @@ final class WriteFileToolE2eTest extends ControllerE2eTestCase
 {
     private string $targetPath;
 
-    protected function tempDirPrefix(): string
-    {
-        return 'test-write-file';
-    }
-
     protected function setUp(): void
     {
         parent::setUp();
@@ -52,40 +47,45 @@ final class WriteFileToolE2eTest extends ControllerE2eTestCase
 
         $this->assertStartRunAcked($events, $startCmdId);
 
-        self::assertArrayHasKey('run.started', $byType, 'Expected run.started. '
+        $this->assertArrayHasKey('run.started', $byType, 'Expected run.started. '
             .$this->collectDiagnostics($events));
 
         $runStarted = $byType['run.started'][0];
         $this->runId = (string) ($runStarted['runId'] ?? $runStarted['payload']['runId'] ?? '');
-        self::assertNotEmpty($this->runId);
+        $this->assertNotEmpty($this->runId);
 
         // This smoke proves the write tool path through the controller.
         // Do not require the second post-tool LLM turn to finish inside this
         // short window; ControllerSmokeTest covers terminal run completion.
-        self::assertArrayHasKey('tool_execution.started', $byType, 'write tool must start. '
+        $this->assertArrayHasKey('tool_execution.started', $byType, 'write tool must start. '
             .$this->collectDiagnostics($events));
-        self::assertSame(
+        $this->assertSame(
             'write',
             $byType['tool_execution.started'][0]['payload']['tool_name'] ?? null,
             'The LLM must call the write tool with the requested path/content. '
             .$this->collectDiagnostics($events),
         );
-        self::assertArrayHasKey('tool_execution.completed', $byType, 'write tool must complete. '
+        $this->assertArrayHasKey('tool_execution.completed', $byType, 'write tool must complete. '
             .$this->collectDiagnostics($events));
-        self::assertSame(
+        $this->assertSame(
             $byType['tool_execution.started'][0]['payload']['tool_call_id'] ?? null,
             $byType['tool_execution.completed'][0]['payload']['tool_call_id'] ?? null,
             'The completed tool execution must be the same write call that started. '
             .$this->collectDiagnostics($events),
         );
-        self::assertArrayNotHasKey('tool_execution.failed', $byType, 'write tool must not fail. '
+        $this->assertArrayNotHasKey('tool_execution.failed', $byType, 'write tool must not fail. '
             .$this->collectDiagnostics($events));
 
-        self::assertFileExists($this->targetPath, 'write tool must create the target file. '
+        $this->assertFileExists($this->targetPath, 'write tool must create the target file. '
             .$this->collectDiagnostics($events));
-        self::assertSame('hello world', trim((string) file_get_contents($this->targetPath)));
+        $this->assertSame('hello world', trim((string) file_get_contents($this->targetPath)));
 
         $sessionDir = $this->tempDir.'/.hatfield/sessions/'.$this->runId;
         $this->assertSessionArtifactsExist($sessionDir, $events);
+    }
+
+    protected function tempDirPrefix(): string
+    {
+        return 'test-write-file';
     }
 }
