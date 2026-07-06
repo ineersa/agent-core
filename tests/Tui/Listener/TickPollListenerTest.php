@@ -52,6 +52,8 @@ final class TickPollListenerTest extends TestCase
 {
     use TuiRuntimeContextBuilderTrait;
 
+    private ?TuiTickDispatcher $contextTicks = null;
+
     /**
      * Test thesis: when the Choice overlay onCancel fires, the TUI sends
      * answer_tool_question with 'answer' => 'cancel' (non-empty), so
@@ -807,6 +809,133 @@ final class TickPollListenerTest extends TestCase
         $this->assertArrayNotHasKey('action', $this->statusEntries($screen));
         $this->assertFalse($this->isWorkingVisible($screen));
         $this->assertNotSame('Working...', $this->workingMessage($screen));
+    }
+
+    /**
+     * @return array<string, array{0: RunActivityStateEnum, 1: bool, 2: ?bool}>
+     */
+    public static function activeRuntimeTickHintProvider(): array
+    {
+        return [
+            'starting' => [RunActivityStateEnum::Starting, true, true],
+            'running' => [RunActivityStateEnum::Running, true, true],
+            'waiting_human' => [RunActivityStateEnum::WaitingHuman, true, true],
+            'cancelling' => [RunActivityStateEnum::Cancelling, true, true],
+            'idle' => [RunActivityStateEnum::Idle, true, null],
+            'completed' => [RunActivityStateEnum::Completed, true, null],
+            'failed' => [RunActivityStateEnum::Failed, true, null],
+            'starting_without_handle' => [RunActivityStateEnum::Starting, false, null],
+        ];
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('activeRuntimeTickHintProvider')]
+    public function testTickHandlerReturnsBusyHintForActiveRuntimeStates(
+        RunActivityStateEnum $activity,
+        bool $withHandle,
+        ?bool $expected,
+    ): void {
+        $runId = 'tick-busy-hint';
+        $poller = $this->createNoOpPoller();
+        $listener = $this->createTickPollListener($poller);
+
+        $state = new TuiSessionState($runId);
+        $state->activity = $activity;
+        if ($withHandle) {
+            $state->handle = new RunHandle($runId);
+        }
+
+        $handler = $this->registerTickHandler($listener, $state);
+        $tickEvent = new \Symfony\Component\Tui\Event\TickEvent();
+
+        $this->assertSame($expected, $handler($tickEvent));
+        $dispatch = $this->contextTicks->dispatch($tickEvent);
+        $this->assertSame(true === $expected, true === $dispatch);
+    }
+
+    public function testLiveViewTickHandlerReturnsBusyHintWhenChildActivityActive(): void
+    {
+        $runId = 'tick-busy-live-child';
+        $poller = $this->createNoOpPoller();
+        $listener = $this->createTickPollListener($poller);
+
+        $state = new TuiSessionState($runId);
+        $state->activity = RunActivityStateEnum::Idle;
+        $state->subagentLiveView->active = true;
+        $state->subagentLiveView->childActivity = RunActivityStateEnum::Running;
+
+        $handler = $this->registerTickHandler($listener, $state);
+        $tickEvent = new \Symfony\Component\Tui\Event\TickEvent();
+
+        $this->assertTrue($handler($tickEvent));
+    }
+
+    public function testLiveViewTickHandlerReturnsNullWhenParentAndChildIdle(): void
+    {
+        $runId = 'tick-busy-live-idle';
+        $poller = $this->createNoOpPoller();
+        $listener = $this->createTickPollListener($poller);
+
+        $state = new TuiSessionState($runId);
+        $state->activity = RunActivityStateEnum::Idle;
+        $state->subagentLiveView->active = true;
+        $state->subagentLiveView->childActivity = RunActivityStateEnum::Idle;
+
+        $handler = $this->registerTickHandler($listener, $state);
+        $tickEvent = new \Symfony\Component\Tui\Event\TickEvent();
+
+        $this->assertNull($handler($tickEvent));
+    }
+
+    private function createNoOpPoller(): RuntimeEventPoller
+    {
+        $eventApplier = (new \ReflectionClass(TuiRuntimeEventApplier::class))->newInstanceWithoutConstructor();
+        $boundary = (new \ReflectionClass(RuntimeExceptionBoundary::class))->newInstanceWithoutConstructor();
+
+        return new RuntimeEventPoller(
+            $eventApplier,
+            new NullLogger(),
+            $boundary,
+            $this->createStub(TurnTreeProviderInterface::class),
+        );
+    }
+
+    private function createTickPollListener(RuntimeEventPoller $poller): TickPollListener
+    {
+        $listenerRef = new \ReflectionClass(TickPollListener::class);
+        $listener = $listenerRef->newInstanceWithoutConstructor();
+        $listenerRef->getProperty('poller')->setValue($listener, $poller);
+        $listenerRef->getProperty('subagentLiveChildPoller')->setValue($listener, $this->createIsolatedSubagentLiveChildPoller());
+        $listenerRef->getProperty('questionCoordinator')->setValue($listener, new QuestionCoordinator());
+        $listenerRef->getProperty('questionController')->setValue($listener, new QuestionController(new QuestionCoordinator()));
+        $listenerRef->getProperty('runtimeQuestionEventHandler')->setValue($listener, new RuntimeQuestionEventHandler());
+
+        return $listener;
+    }
+
+    /**
+     * @return callable(\Symfony\Component\Tui\Event\TickEvent): ?bool
+     */
+    private function registerTickHandler(TickPollListener $listener, TuiSessionState $state): callable
+    {
+        $tui = new Tui();
+        $theme = new DefaultTheme(new ThemePalette('test'));
+        $promptEditor = new PromptEditor();
+        $screen = new ChatScreen($theme, $state->sessionId, $promptEditor);
+
+        $context = $this->buildTuiContext()
+            ->withTui($tui)
+            ->withState($state)
+            ->withScreen($screen)
+            ->build();
+
+        $this->contextTicks = $context->ticks;
+        $listener->register($context);
+
+        $handlerRef = new \ReflectionProperty(TuiTickDispatcher::class, 'handlers');
+        $handlers = $handlerRef->getValue($context->ticks);
+        $this->assertCount(1, $handlers);
+
+        return $handlers[0];
     }
 
     private function runtimeQuestionHandler(): RuntimeQuestionEventHandler
