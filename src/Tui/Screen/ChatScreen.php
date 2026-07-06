@@ -413,6 +413,10 @@ final class ChatScreen
 
     public function setWorkingVisible(bool $visible): void
     {
+        if ($visible === $this->registry->isWorkingVisible()) {
+            return;
+        }
+
         $this->registry->setWorkingVisible($visible);
         $this->workingRenderable->setVisible($visible);
         $this->workingWidget->invalidate();
