@@ -513,7 +513,7 @@ Seq=0 events (transient) are never deduplicated. Seq>0 events skip if seq ≤ cu
 │  │   'messenger:consume',                         │              │
 │  │   transportName,        // run_control/llm/tool│              │
 │  │   '--no-interaction',                          │              │
-│  │   '--time-limit=3600',  // 1h max lifetime     │              │
+│  │   '--memory-limit=256M', // graceful recycle │              │
 │  │ ],                                            │              │
 │  │   cwd: cwd,                                   │              │
 │  │   timeout: null,        // non-blocking        │              │
@@ -526,10 +526,13 @@ Seq=0 events (transient) are never deduplicated. Seq>0 events skip if seq ≤ cu
 │  ┌────────────────────────────────────────────────┐              │
 │  │ for each consumer in $consumers:               │              │
 │  │   if isRunning() → OK, continue               │              │
-│  │   if crashed:                                 │              │
-│  │     log exitCode + stderr                     │              │
-│  │     unset($consumers[transport])              │              │
-│  │     → attemptRestart(transport)               │              │
+│  │   if exited:                                  │              │
+│  │     log exitCode + stderr; unset consumer       │              │
+│  │     if exitCode == 0:                         │              │
+│  │       // Messenger memory-limit (graceful)    │              │
+│  │       reset restart counters; launch() now    │              │
+│  │     else:                                     │              │
+│  │       → attemptRestart(transport)  // crash   │              │
 │  └────────────────────────────────────────────────┘              │
 │                           │                                       │
 │                           ▼                                       │
