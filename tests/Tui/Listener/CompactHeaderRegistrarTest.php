@@ -85,7 +85,7 @@ final class CompactHeaderRegistrarTest extends TestCase
     }
 
     #[Test]
-    public function registersPinnedWidgetOnFirstTickRegardlessOfResume(): void
+    public function preSeedsPinnedWidgetOnRegisterRegardlessOfResume(): void
     {
         $harness = new VirtualTuiHarness(sessionId: 'compact-reg');
         $state = new TuiSessionState('compact-reg');
@@ -106,7 +106,6 @@ final class CompactHeaderRegistrarTest extends TestCase
             ->build();
 
         (new CompactHeaderRegistrar($provider))->register($context);
-        $context->ticks->dispatch(new TickEvent());
 
         $widgets = $harness->screen()->registry()->getWidgetsByPlacement(WidgetPlacementEnum::AboveEditor);
         $this->assertCount(1, $widgets);

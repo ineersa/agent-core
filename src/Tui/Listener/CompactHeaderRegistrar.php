@@ -43,6 +43,26 @@ final class CompactHeaderRegistrar implements TuiListenerRegistrar
         $lastSnapshot = null;
         $lastBuildAt = 0.0;
 
+        if (!$state->subagentLiveView->active) {
+            try {
+                $initialSnap = $provider->build($state->sessionId);
+                $widget->setSnapshot($initialSnap);
+                $lastSnapshot = $initialSnap;
+                $lastBuildAt = microtime(true);
+                $screen->extensionContext()->setWidget(
+                    self::COMPACT_HEADER_KEY,
+                    $widget,
+                    WidgetPlacementEnum::AboveEditor,
+                    TuiSlotRegistry::ORDER_PINNED_LAST,
+                );
+                $screen->refreshAboveEditorWidgets();
+                $registered = true;
+            } catch (\Throwable $e) {
+                $logger->warning('Compact header snapshot failed', ['exception' => $e]);
+            }
+        }
+
+
         $context->ticks->add(static function (TickEvent $event) use ($widget, $screen, $tui, $state, $provider, $logger, &$registered, &$lastSnapshot, &$lastBuildAt): ?bool {
             $now = microtime(true);
 
