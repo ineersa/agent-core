@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Agent\Artifact;
 
-use Ineersa\AgentCore\Contract\CursorAwareEventStoreInterface;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 
@@ -19,7 +18,7 @@ use Ineersa\AgentCore\Domain\Event\RunEvent;
  * Child run location uses the same AgentChildRunDirectory cache as
  * {@see ChildAwareRunStore}.
  */
-final class ChildAwareEventStore implements CursorAwareEventStoreInterface
+final class ChildAwareEventStore implements EventStoreInterface
 {
     /** @var array<string, AgentChildRunEventStore> agentRunId → store */
     private array $childStores = [];
@@ -70,28 +69,6 @@ final class ChildAwareEventStore implements CursorAwareEventStoreInterface
             $childStore = $this->resolveChildStore($runId);
             if (null !== $childStore) {
                 $childStore->appendMany($childEvents);
-            }
-        }
-    }
-
-    public function allForAfter(string $runId, int $afterSeq): iterable
-    {
-        $childStore = $this->resolveChildStore($runId);
-        if (null !== $childStore) {
-            yield from $childStore->allForAfter($runId, $afterSeq);
-
-            return;
-        }
-
-        if ($this->parentStore instanceof CursorAwareEventStoreInterface) {
-            yield from $this->parentStore->allForAfter($runId, $afterSeq);
-
-            return;
-        }
-
-        foreach ($this->parentStore->allFor($runId) as $event) {
-            if ($event->seq > $afterSeq) {
-                yield $event;
             }
         }
     }

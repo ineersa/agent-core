@@ -16,8 +16,7 @@ use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
  *
  * Dispatches a start_run command to the run_control transport and immediately
  * returns to the event loop. Runtime events from the consumer process are
- * forwarded to TUI via the controller's periodic EventStore drain and LLM
- * consumer stdout streaming.
+ * forwarded to TUI via messenger consumer stdout (committed + streaming JSONL).
  */
 #[AsEventListener(event: ControllerCommandEvent::class)]
 final readonly class StartRunHandler
@@ -45,8 +44,8 @@ final readonly class StartRunHandler
         // Non-blocking: dispatches StartRun to run_control transport and returns
         // immediately. The run_control consumer picks up the message and processes
         // the run asynchronously. Events flow back through:
-        //   1. EventStore (committed by consumer) → controller event drain → TUI
-        //   2. LLM consumer stdout (streaming deltas) → controller poll → TUI
+        //   1. Consumer stdout (committed RunEvents mapped to RuntimeEvent JSONL)
+        //   2. LLM consumer stdout (transient streaming deltas, seq=0)
         $handle = $this->client->start(new StartRunRequest(
             prompt: $prompt,
             runId: $runId,
@@ -62,8 +61,7 @@ final readonly class StartRunHandler
             payload: ['status' => 'running'],
         ));
 
-        // Events are NOT iterated here — they arrive through the controller's
-        // periodic EventStore drain (canonical seq > 0) and LLM consumer
-        // stdout (transient seq = 0 streaming deltas).
+        // Events are NOT iterated here — they arrive on consumer stdout pipes and
+        // are polled by ConsumerStdoutPoller (canonical seq > 0 and streaming seq=0).
     }
 }

@@ -19,6 +19,9 @@ parameters:
     # its queries and avoids O(N) cross-session filesystem scans.
     env(HATFIELD_SESSION_ID): ''
 
+    # Controller-owned messenger consumers stream committed RuntimeEvents on stdout when '1'.
+    env(HATFIELD_CONSUMER_STDOUT_EVENTS): '0'
+
     # Single source of truth for the file mention completion index path.
     # Built from %app.cwd% so it respects --cwd.  Injected into
     # FileMentionIndexReader and CompletionFileIndexRefreshCommand
@@ -398,6 +401,13 @@ services:
   Ineersa\CodingAgent\Runtime\Controller\CommandHandler\ShellCommandHandler:
     arguments:
       $executionBus: '@agent.execution.bus'
+
+
+  Ineersa\CodingAgent\Runtime\Stream\StreamingCommittedRuntimeEventStore:
+    arguments:
+      $inner: '@Ineersa\CodingAgent\Agent\Artifact\ChildAwareEventStore'
+      $stdoutSink: '@Ineersa\CodingAgent\Runtime\Stream\CommittedRuntimeEventStdoutSink'
+      $streamCommittedEventsToStdout: '%env(bool:HATFIELD_CONSUMER_STDOUT_EVENTS)%'
 
   Ineersa\CodingAgent\Runtime\Controller\RuntimeEventEmitter:
     arguments:

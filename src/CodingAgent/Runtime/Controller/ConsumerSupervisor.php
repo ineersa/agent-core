@@ -42,7 +42,7 @@ use Symfony\Component\Process\Process;
  *   correct binary and Hatfield project CWD regardless of the controller's
  *   own --cwd or the parent process CWD
  */
-final class ConsumerSupervisor
+final class ConsumerSupervisor implements ConsumerStdoutSourceInterface
 {
     private const int MAX_RESTARTS = 3;
     private const int RESTART_WINDOW_SECONDS = 60;
@@ -88,6 +88,9 @@ final class ConsumerSupervisor
         $appCommand = $this->runtimeConfig->executableCommand();
 
         try {
+            $env = $_ENV;
+            $env['HATFIELD_CONSUMER_STDOUT_EVENTS'] = '1';
+
             $process = new Process(
                 [
                     ...$appCommand,
@@ -97,6 +100,7 @@ final class ConsumerSupervisor
                     '--time-limit=3600',
                 ],
                 cwd: $cwd,
+                env: $env,
                 timeout: null,
             );
 
@@ -129,6 +133,24 @@ final class ConsumerSupervisor
     {
         for ($i = 0; $i < $count; ++$i) {
             $this->launch($transportName, $i);
+        }
+    }
+
+
+    /**
+     * @return iterable<string, string>
+     */
+    public function readIncrementalStdoutByConsumer(): iterable
+    {
+        foreach ($this->consumers as $key => $process) {
+            if (!$process->isRunning()) {
+                continue;
+            }
+
+            $chunk = $process->getIncrementalOutput();
+            if ('' !== $chunk) {
+                yield $key => $chunk;
+            }
         }
     }
 
