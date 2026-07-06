@@ -67,17 +67,17 @@ Note: `CollectToolBatch` is routed to `agent.execution.bus` in `config/messenger
 
 ## Turn tree replay
 
-Before RunState or hot-prompt replay, `TurnTreeReplayFilter` filters the canonical
-event stream to only events on the active branch path. See `docs/session-storage.md`
-"Turn tree model" for semantics.
+Branch turn-tree projection and active-path filtering live in **CodingAgent session**
+(`CodingAgent\Session\TurnTree`, `CodingAgent\Session\Replay`). AgentCore emits
+canonical events (`turn_advanced`, `leaf_set`, `parent_turn_no`, etc.) and replays
+through narrow contracts (`BranchReplayFilterInterface`, `TurnTreeProjectorInterface`
+under `AgentCore\Contract\TurnTree`). See `docs/session-storage.md` "Turn tree model".
 
-Key replay services and their tree integration:
-- `TurnTreeProjector` (Domain) — builds `TurnTreeDTO` from canonical events (pure domain service).
-- `TurnTreeReplayFilter` (Application\Replay) — uses the projector to filter events to the active branch.
-- `RunStateReplayService` — filters events before replaying into `RunState`; runs
-  integrity checks on the full canonical stream, not the filtered stream.
-- `ReplayService` — filters events before replaying prompt messages; reports
-  integrity (eventCount, lastSeq, contiguity) from the full canonical stream.
+Core replay integration:
+- `RunStateReplayService` — optional `BranchReplayFilterInterface` before reducing into `RunState`;
+  integrity checks use the full canonical stream, not the filtered stream.
+- `ReplayService` — optional branch filter before replaying prompt messages; integrity from full stream.
+- `RunRewindService` — uses `TurnTreeProjectorInterface` to validate rewind targets (orchestration still in Core until SESSION-07B).
 
 ## Maintenance rule
 

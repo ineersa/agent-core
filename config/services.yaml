@@ -458,6 +458,12 @@ services:
   Ineersa\CodingAgent\Runtime\Contract\TurnTreeProviderInterface:
     alias: Ineersa\CodingAgent\Session\SessionTurnTreeProvider
 
+  Ineersa\AgentCore\Contract\TurnTree\TurnTreeProjectorInterface:
+    alias: Ineersa\CodingAgent\Session\TurnTree\TurnTreeProjectorContractAdapter
+
+  Ineersa\AgentCore\Contract\TurnTree\BranchReplayFilterInterface:
+    alias: Ineersa\CodingAgent\Session\Replay\BranchReplayFilterContractAdapter
+
   # ─── Symfony AI Platform wiring ───
   # PlatformInterface reads Hatfield config from autowired AppConfig,
   # so no explicit arguments are needed here.

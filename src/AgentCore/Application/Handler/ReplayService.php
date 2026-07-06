@@ -6,9 +6,9 @@ namespace Ineersa\AgentCore\Application\Handler;
 
 use Ineersa\AgentCore\Application\Dto\ReplayIntegrity;
 use Ineersa\AgentCore\Application\Dto\ResolvedReplayEvents;
-use Ineersa\AgentCore\Application\Replay\TurnTreeReplayFilter;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\PromptStateStoreInterface;
+use Ineersa\AgentCore\Contract\TurnTree\BranchReplayFilterInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Run\PromptState;
 
@@ -19,7 +19,7 @@ final readonly class ReplayService
         private PromptStateStoreInterface $promptStateStore,
         private ?RunMetrics $metrics = null,
         private ?RunTracer $tracer = null,
-        private ?TurnTreeReplayFilter $turnTreeReplayFilter = null,
+        private ?BranchReplayFilterInterface $turnTreeReplayFilter = null,
     ) {
     }
 

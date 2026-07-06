@@ -2,11 +2,11 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\AgentCore\Tests\Domain\Run;
+namespace Ineersa\CodingAgent\Tests\Session\TurnTree;
 
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
-use Ineersa\AgentCore\Domain\Run\TurnTreeProjector;
+use Ineersa\CodingAgent\Session\TurnTree\TurnTreeProjector;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 
