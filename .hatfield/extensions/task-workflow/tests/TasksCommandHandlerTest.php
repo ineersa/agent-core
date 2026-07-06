@@ -24,11 +24,6 @@ final class FakeCommandContext implements CommandContextInterface
     {
         $this->notifications[] = ['message' => $message, 'level' => $level];
     }
-
-    public function getSessionId(): string
-    {
-        return '';
-    }
 }
 
 final class TasksCommandHandlerTest extends TestCase

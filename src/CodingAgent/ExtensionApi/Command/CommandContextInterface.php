@@ -22,9 +22,4 @@ interface CommandContextInterface
      * @param string $level   Notification level: 'info', 'success', 'warning', 'error'
      */
     public function notify(string $message, string $level = 'info'): void;
-
-    /**
-     * Active Hatfield session id (run_id). Empty when unavailable.
-     */
-    public function getSessionId(): string;
 }

@@ -15,12 +15,6 @@ final readonly class FileRewindCommandHandler implements ExtensionCommandHandler
 
     public function handle(string $args, CommandContextInterface $context): void
     {
-        $sessionId = $context->getSessionId();
-        if ('' === $sessionId) {
-            $context->notify('File rewind requires an active session.', 'error');
-
-            return;
-        }
-        $this->picker->open($sessionId);
+        $this->picker->open();
     }
 }

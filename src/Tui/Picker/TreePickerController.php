@@ -287,7 +287,6 @@ final class TreePickerController
             if ('' === $body || preg_match('/^Turn \d+$/', $body)) {
                 $body = 'Turn '.$node->turnNo;
             }
-            $body = mb_strimwidth($body, 0, 52, '…');
             $role = $node->displayRole;
             $prefix = PickerListLabelFormatter::formatRolePrefix($theme, $role);
             $label = $nodePrefix.$leafMarker.$prefix.' '.$body;

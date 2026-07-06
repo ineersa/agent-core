@@ -30,8 +30,19 @@ final class FileRewindPickerController
         $this->tui = $context;
     }
 
-    public function open(string $sessionId): void
+    public function open(): void
     {
+        $tui = $this->tui;
+        if (null === $tui) {
+            return;
+        }
+        $sessionId = $tui->getSessionId();
+        if ('' === $sessionId) {
+            $tui->setStatus('rewind', 'File rewind requires an active session.');
+            $tui->requestRender();
+
+            return;
+        }
         $this->sessionId = $sessionId;
         if ($this->overlay?->isOpen() ?? false) {
             return;
@@ -128,7 +139,7 @@ final class FileRewindPickerController
         if (null === $this->headerWidget || null === $this->tui) {
             return;
         }
-        $label = mb_strimwidth($this->sanitizeTitle($title), 0, 60, '…');
+        $label = $this->sanitizeTitle($title);
         $this->headerWidget->setText($this->tui->formatMuted('Checkpoint turn '.$turnNo.': '.$label.' (Esc to close)'));
         $this->tui->setStatus('rewind', null);
         $this->tui->requestRender();
@@ -148,7 +159,7 @@ final class FileRewindPickerController
         }
         foreach ($targets as $target) {
             $turnNo = $target['turnNo'];
-            $body = mb_strimwidth($this->sanitizeTitle($target['title']), 0, 52, '…');
+            $body = $this->sanitizeTitle($target['title']);
             $role = '' !== $target['displayRole'] ? $target['displayRole'] : 'assistant';
             $prefix = $tui->formatRolePrefix($role);
             $label = $prefix.' checkpoint '.$turnNo.': '.$body;

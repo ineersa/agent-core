@@ -23,22 +23,14 @@ use Ineersa\Tui\Command\TranscriptMessage;
  */
 final class ExtensionSlashCommandHandler implements SlashCommandHandler
 {
-    private string $sessionId = '';
-
     public function __construct(
         private readonly ExtensionCommandHandlerInterface $extensionHandler,
     ) {
     }
 
-    public function setSessionId(string $sessionId): void
-    {
-        $this->sessionId = $sessionId;
-    }
-
     public function handle(SlashCommand $command): CommandResult
     {
         $context = new ExtensionCommandContext();
-        $context->setSessionId($this->sessionId);
 
         $this->extensionHandler->handle($command->args, $context);
 

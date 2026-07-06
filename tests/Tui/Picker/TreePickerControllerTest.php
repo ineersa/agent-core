@@ -789,7 +789,7 @@ final class TreePickerControllerTest extends TestCase
     #[Test]
     public function testBuildItemsTruncatesLongTitles(): void
     {
-        $longTitle = str_repeat('A very long title that should definitely be truncated by mb_strimwidth ', 3);
+        $longTitle = str_repeat('A very long title that should remain in the picker label for SelectListWidget truncation ', 3);
         $nodes = [
             1 => new TurnTreeNodeView(
                 turnNo: 1,
@@ -815,8 +815,8 @@ final class TreePickerControllerTest extends TestCase
         $items = TreePickerController::buildItems($tree, $theme);
 
         $this->assertCount(1, $items);
-        $this->assertLessThan(\strlen($longTitle), \strlen($items[0]['label']), 'Title should be truncated');
-        $this->assertStringContainsString('…', $items[0]['label'], 'Truncation ellipsis should be present');
+        $this->assertStringContainsString(trim($longTitle), $items[0]['label'], 'Full sanitized title should be passed to SelectListWidget');
+        $this->assertGreaterThan(200, \strlen($items[0]['label']), 'Long title should produce a long picker label');
     }
 
     // ── buildItems: static labels (selection styling is SelectListWidget-owned) ──

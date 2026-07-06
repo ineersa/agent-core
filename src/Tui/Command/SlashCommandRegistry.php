@@ -6,7 +6,6 @@ namespace Ineersa\Tui\Command;
 
 use Ineersa\Tui\Command\Hotkey\HotkeyRegistry;
 use Ineersa\Tui\Command\Hotkey\HotkeyTableData;
-use Ineersa\Tui\Extension\ExtensionSlashCommandHandler;
 
 /**
  * Registry of slash commands with built-in help, lookup, and dispatch.
@@ -155,9 +154,6 @@ final class SlashCommandRegistry
             }
 
             $handler = $this->handlers[$canonical];
-            if ($handler instanceof ExtensionSlashCommandHandler && null !== $this->activeSessionId) {
-                $handler->setSessionId($this->activeSessionId);
-            }
 
             return $handler->handle($effectiveCommand);
         }

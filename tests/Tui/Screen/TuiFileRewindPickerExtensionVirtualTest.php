@@ -63,7 +63,7 @@ final class TuiFileRewindPickerExtensionVirtualTest extends TestCase
 
             $picker = new FileRewindPickerController($this->makeService($projectDir));
             $picker->wire(new BridgeTuiExtensionContext($runtime));
-            $picker->open($sessionId);
+            $picker->open();
 
             $screen = $harness->plainScreenText();
             $this->assertSame(1, substr_count($screen, 'Checkpoint turn 3:'));
