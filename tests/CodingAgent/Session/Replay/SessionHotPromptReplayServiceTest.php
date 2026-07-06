@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\AgentCore\Tests\Application\Handler;
+namespace Ineersa\CodingAgent\Tests\Session\Replay;
 
 use Ineersa\AgentCore\Application\Replay\PromptStateReplayService;
 use Ineersa\AgentCore\Application\Replay\ReplayEventPreparer;
@@ -16,7 +16,7 @@ use Ineersa\CodingAgent\Session\Replay\TurnTreeReplayFilter;
 use Ineersa\CodingAgent\Session\TurnTree\TurnTreeProjector;
 use PHPUnit\Framework\TestCase;
 
-final class ReplayServiceTest extends TestCase
+final class SessionHotPromptReplayServiceTest extends TestCase
 {
     // ── Canonical llm_step_completed replay ────────────────────────────────────
 

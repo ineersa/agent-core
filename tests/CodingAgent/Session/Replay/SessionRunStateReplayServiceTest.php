@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\AgentCore\Tests\Application\Handler;
+namespace Ineersa\CodingAgent\Tests\Session\Replay;
 
 use Ineersa\AgentCore\Application\Handler\RunStateReplayException;
 use Ineersa\AgentCore\Application\Replay\ReplayEventPreparer;
@@ -19,7 +19,7 @@ use Ineersa\CodingAgent\Session\TurnTree\TurnTreeProjector;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 
-final class RunStateReplayServiceTest extends TestCase
+final class SessionRunStateReplayServiceTest extends TestCase
 {
     private RunEventStore $eventStore;
     private SessionRunStateReplayService $service;

@@ -21,6 +21,10 @@ use Ineersa\AgentCore\Domain\Run\PromptState;
 
 final readonly class RunDebugService
 {
+    /**
+     * Hot-prompt rebuild and integrity are separate narrow Core contracts;
+     * both resolve to the same App session implementation via DI aliases.
+     */
     public function __construct(
         private RunStoreInterface $runStore,
         private CommandStoreInterface $commandStore,

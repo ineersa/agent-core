@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Session\Rewind;
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
+use Ineersa\AgentCore\Contract\Rewind\RunRewindServiceInterface;
 use Ineersa\AgentCore\Contract\RunStoreInterface;
 use Ineersa\AgentCore\Contract\TurnTree\TurnTreeProjectorInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
@@ -28,7 +29,7 @@ use Psr\Log\LoggerInterface;
  * persisted via compareAndSwap. The caller should emit a
  * RunLeafChanged RuntimeEvent so the TUI observes the change.
  */
-final readonly class SessionRewindService implements \Ineersa\AgentCore\Contract\Rewind\RunRewindServiceInterface
+final readonly class SessionRewindService implements RunRewindServiceInterface
 {
     public function __construct(
         private EventStoreInterface $eventStore,

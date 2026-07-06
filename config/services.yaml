@@ -476,7 +476,6 @@ services:
   Ineersa\AgentCore\Contract\Rewind\RunRewindServiceInterface:
     alias: Ineersa\CodingAgent\Session\Rewind\SessionRewindService
 
-
   # ─── Symfony AI Platform wiring ───
   # PlatformInterface reads Hatfield config from autowired AppConfig,
   # so no explicit arguments are needed here.
