@@ -68,15 +68,18 @@ final class TuiSubagentProgressE2eTest extends TestCase
 
             $capture = $this->tmux->capturePlainWithHistory($pane, 2500);
 
-            $this->assertStringContainsString('subagent scout', $capture);
-            $this->assertStringContainsString('completed scout', $capture);
-            $this->assertStringNotContainsString('running scout |', $capture);
-            $this->assertStringContainsString('Task: Inspect TUI subagent rendering', $capture);
-            $this->assertStringContainsString('Artifacts:', $capture);
+            // Polished card format after SubagentTranscriptCardBuilder:
+            //   ✓ scout [completed] — glyph + agent_name + status badge
+            //   Task Inspect TUI subagent rendering — no colon
+            //   Artifact artifacts/agents/agent_e2e_progress_fixture — full path, singular, no colon
+            $this->assertStringContainsString('✓ scout [completed]', $capture);
+            $this->assertStringContainsString('Task Inspect TUI subagent rendering', $capture);
+            $this->assertStringContainsString('Artifact artifacts/agents/agent_e2e_progress_fixture', $capture);
             $this->assertStringContainsString('agent_e2e_progress_fixture', $capture);
             $this->assertStringContainsString('3 turns', $capture);
+            $this->assertStringContainsString('deepseek/deepseek-v4-flash', $capture);
             $this->assertStringContainsString('Use agent_retrieve', $capture);
-            $this->assertStringNotContainsString('subagent scout running | turn 1 | artifact', $capture);
+            $this->assertStringNotContainsString('running scout |', $capture);
             $this->assertStringNotContainsString('parallel subagents running', $capture);
 
             $turnOneCount = substr_count($capture, 'turn 1');

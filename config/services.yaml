@@ -451,9 +451,13 @@ services:
       $eventDispatcher: '@event_dispatcher'
       $state: '@tui.subagent_live.projection_state'
 
+  Ineersa\CodingAgent\Runtime\Contract\BackfillEventProviderInterface:
+    alias: Ineersa\CodingAgent\Runtime\Process\ChildRunBackfillEventProvider
+
   Ineersa\Tui\Runtime\SubagentLiveChildViewPoller:
     arguments:
       $projector: '@tui.subagent_live.transcript_projector'
+      $backfillProvider: '@Ineersa\CodingAgent\Runtime\Contract\BackfillEventProviderInterface'
 
 
   Ineersa\CodingAgent\Runtime\Contract\TurnTreeProviderInterface:
