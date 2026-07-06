@@ -228,6 +228,7 @@ tools:
 extensions:
     enabled:
         - Ineersa\CodingAgent\Extension\Builtin\SafeGuard\SafeGuardExtension
+        - Ineersa\HatfieldExt\FileRewind\FileRewindExtension
 
     # Generic extension settings exposed via the Extension API.
     # Each extension reads its own section by key.
@@ -255,6 +256,12 @@ extensions:
     # Writes/edits outside the current working directory (can be allowlisted).
     #
     settings:
+        file_rewind:
+            enabled: true
+            max_retained_turns: 100
+            max_file_bytes: 2097152
+            git_timeout_seconds: 30
+
         safe_guard:
             # Tool names used for matching (configurable to support custom tool aliases).
             tool_names:

@@ -66,13 +66,13 @@ final class TreePickerControllerTest extends TestCase
         $this->assertCount(2, $items, 'Linear tree should produce 2 items');
 
         // Item 0: root turn (flat, leaf marker ○, title preview)
-        $this->assertStringContainsString('○ Turn 1:', $items[0]['label']);
+        $this->assertStringContainsString('○ ', $items[0]['label']);
         $this->assertStringContainsString('Hello', $items[0]['label']);
         $this->assertSame('1', $items[0]['value']);
         $this->assertArrayNotHasKey('description', $items[0]);
 
         // Item 1: child (flat — linear only-child chain has no connectors)
-        $this->assertStringContainsString('◉ Turn 2:', $items[1]['label']);
+        $this->assertStringContainsString('◉ ', $items[1]['label']);
         $this->assertStringContainsString('Follow-up', $items[1]['label']);
         $this->assertSame('2', $items[1]['value']);
 
@@ -135,11 +135,11 @@ final class TreePickerControllerTest extends TestCase
         $this->assertCount(3, $items);
 
         // First turn: leaf marker ○ (not current leaf)
-        $this->assertStringContainsString('○ Turn 1:', $items[0]['label']);
+        $this->assertStringContainsString('○ ', $items[0]['label']);
         // Second turn: leaf marker ○ (not current leaf)
-        $this->assertStringContainsString('○ Turn 2:', $items[1]['label']);
+        $this->assertStringContainsString('○ ', $items[1]['label']);
         // Third turn: leaf marker ◉ (current leaf)
-        $this->assertStringContainsString('◉ Turn 3:', $items[2]['label']);
+        $this->assertStringContainsString('◉ ', $items[2]['label']);
 
         // Proof: linear 3-turn tree has no connector glyphs in any label
         foreach ($items as $item) {
@@ -202,17 +202,17 @@ final class TreePickerControllerTest extends TestCase
         $this->assertCount(3, $items);
 
         // Root (flat, ○ — no connector)
-        $this->assertStringContainsString('○ Turn 1:', $items[0]['label']);
+        $this->assertStringContainsString('○ ', $items[0]['label']);
         $this->assertSame('1', $items[0]['value']);
         $this->assertStringNotContainsString('├─', $items[0]['label']);
         $this->assertStringNotContainsString('└─', $items[0]['label']);
 
         // First sibling (├─ ○, not last child)
-        $this->assertStringContainsString('├─ ○ Turn 2:', $items[1]['label']);
+        $this->assertStringContainsString('├─ ○ ', $items[1]['label']);
         $this->assertSame('2', $items[1]['value']);
 
         // Last sibling (└─ ◉, current leaf)
-        $this->assertStringContainsString('└─ ◉ Turn 3:', $items[2]['label']);
+        $this->assertStringContainsString('└─ ◉ ', $items[2]['label']);
         $this->assertSame('3', $items[2]['value']);
     }
 
@@ -280,20 +280,20 @@ final class TreePickerControllerTest extends TestCase
         $this->assertCount(4, $items);
 
         // T1 (root, []): flat — no branching at root level
-        $this->assertStringContainsString('○ Turn 1:', $items[0]['label']);
+        $this->assertStringContainsString('○ ', $items[0]['label']);
         $this->assertStringNotContainsString('├─', $items[0]['label']);
         $this->assertStringNotContainsString('└─', $items[0]['label']);
 
         // T2 (first child of T1, [false]): ├─
-        $this->assertStringContainsString('├─ ○ Turn 2:', $items[1]['label']);
+        $this->assertStringContainsString('├─ ○ ', $items[1]['label']);
         $this->assertSame('2', $items[1]['value']);
 
         // T4 (only child of T2, non-consecutive): └─ under │
-        $this->assertStringContainsString('│  └─ ◉ Turn 4:', $items[2]['label']);
+        $this->assertStringContainsString('│  └─ ◉ ', $items[2]['label']);
         $this->assertSame('4', $items[2]['value']);
 
         // T3 (last child of T1, [true]): └─
-        $this->assertStringContainsString('└─ ○ Turn 3:', $items[3]['label']);
+        $this->assertStringContainsString('└─ ○ ', $items[3]['label']);
         $this->assertSame('3', $items[3]['value']);
     }
 
@@ -390,14 +390,14 @@ final class TreePickerControllerTest extends TestCase
         $items = TreePickerController::buildItems($tree, $theme);
 
         $this->assertCount(7, $items);
-        $this->assertStringContainsString('○ Turn 1:', $items[0]['label']);
-        $this->assertStringContainsString('├─ ○ Turn 2:', $items[1]['label']);
+        $this->assertStringContainsString('○ ', $items[0]['label']);
+        $this->assertStringContainsString('├─ ○ ', $items[1]['label']);
         // Turn 5 is a rewind branch (5 ≠ 2+1) → fork glyph; 6–7 are consecutive follow-ups → flat
-        $this->assertStringContainsString('│  └─ ○ Turn 5:', $items[2]['label']);
-        $this->assertStringContainsString('│     ○ Turn 6:', $items[3]['label']);
-        $this->assertStringContainsString('│     ◉ Turn 7:', $items[4]['label']);
-        $this->assertStringContainsString('└─ ○ Turn 3:', $items[5]['label']);
-        $this->assertStringContainsString('   ○ Turn 4:', $items[6]['label']);
+        $this->assertStringContainsString('│  └─ ○ ', $items[2]['label']);
+        $this->assertStringContainsString('│     ○ ', $items[3]['label']);
+        $this->assertStringContainsString('│     ◉ ', $items[4]['label']);
+        $this->assertStringContainsString('└─ ○ ', $items[5]['label']);
+        $this->assertStringContainsString('   ○ ', $items[6]['label']);
 
         // Turns 6–7 are consecutive follow-ups: flat under Turn 5 (no extra fork glyphs).
         $this->assertStringNotContainsString('└─', $items[3]['label']);
@@ -477,11 +477,11 @@ final class TreePickerControllerTest extends TestCase
         $items = TreePickerController::buildItems($tree, $theme);
 
         $this->assertCount(5, $items);
-        $this->assertSame('○ Turn 1: Hello!', $items[0]['label']);
-        $this->assertSame('├─ ○ Turn 2: Secret word is pineapple', $items[1]['label']);
-        $this->assertSame('│  └─ ○ Turn 4: What is secret word', $items[2]['label']);
-        $this->assertSame('│     ◉ Turn 5: secret word straw', $items[3]['label']);
-        $this->assertSame('└─ ○ Turn 3: secret word is apple', $items[4]['label']);
+        $this->assertStringContainsString('assistant: Hello!', $items[0]['label']);
+        $this->assertStringContainsString('Secret word is pineapple', $items[1]['label']);
+        $this->assertStringContainsString('What is secret word', $items[2]['label']);
+        $this->assertStringContainsString('secret word straw', $items[3]['label']);
+        $this->assertStringContainsString('secret word is apple', $items[4]['label']);
     }
 
     #[Test]
@@ -565,12 +565,12 @@ final class TreePickerControllerTest extends TestCase
         $items = TreePickerController::buildItems($tree, $theme);
 
         $this->assertCount(6, $items);
-        $this->assertSame('○ Turn 1: Hello!', $items[0]['label']);
-        $this->assertSame('├─ ○ Turn 2: Secret word is pineapple', $items[1]['label']);
-        $this->assertSame('│  ├─ ○ Turn 4: What is secret word', $items[2]['label']);
-        $this->assertSame('│  │  ○ Turn 5: secret word straw', $items[3]['label']);
-        $this->assertSame('│  └─ ◉ Turn 6: secret word kale', $items[4]['label']);
-        $this->assertSame('└─ ○ Turn 3: secret word is apple', $items[5]['label']);
+        $this->assertStringContainsString('assistant: Hello!', $items[0]['label']);
+        $this->assertStringContainsString('Secret word is pineapple', $items[1]['label']);
+        $this->assertStringContainsString('What is secret word', $items[2]['label']);
+        $this->assertStringContainsString('secret word straw', $items[3]['label']);
+        $this->assertStringContainsString('secret word kale', $items[4]['label']);
+        $this->assertStringContainsString('secret word is apple', $items[5]['label']);
     }
 
     #[Test]
@@ -632,13 +632,13 @@ final class TreePickerControllerTest extends TestCase
         $items = TreePickerController::buildItems($tree, $theme);
 
         $this->assertCount(4, $items);
-        $this->assertStringContainsString('○ Turn 1:', $items[0]['label']);
+        $this->assertStringContainsString('○ ', $items[0]['label']);
         $this->assertStringNotContainsString('├─', $items[0]['label']);
-        $this->assertStringContainsString('○ Turn 2:', $items[1]['label']);
+        $this->assertStringContainsString('○ ', $items[1]['label']);
         $this->assertStringNotContainsString('├─', $items[1]['label']);
         $this->assertStringNotContainsString('└─', $items[1]['label']);
-        $this->assertStringContainsString('├─ ○ Turn 3:', $items[2]['label']);
-        $this->assertStringContainsString('└─ ◉ Turn 4:', $items[3]['label']);
+        $this->assertStringContainsString('├─ ○ ', $items[2]['label']);
+        $this->assertStringContainsString('└─ ◉ ', $items[3]['label']);
     }
 
     // ── initialSelectedIndex: open on current leaf (regression) ───────────
@@ -819,10 +819,10 @@ final class TreePickerControllerTest extends TestCase
         $this->assertStringContainsString('…', $items[0]['label'], 'Truncation ellipsis should be present');
     }
 
-    // ── buildItems: accent selected index ────────────────────────────────────
+    // ── buildItems: static labels (selection styling is SelectListWidget-owned) ──
 
     #[Test]
-    public function testBuildItemsAccentsSelectedIndex(): void
+    public function testBuildItemsLabelsAreStableRegardlessOfSelection(): void
     {
         $nodes = [
             1 => new TurnTreeNodeView(
@@ -834,6 +834,7 @@ final class TreePickerControllerTest extends TestCase
                 promptPreview: 'One',
                 createdAt: null,
                 isCurrentLeaf: false,
+                displayRole: 'user',
             ),
             2 => new TurnTreeNodeView(
                 turnNo: 2,
@@ -844,6 +845,7 @@ final class TreePickerControllerTest extends TestCase
                 promptPreview: 'Two',
                 createdAt: null,
                 isCurrentLeaf: true,
+                displayRole: 'assistant',
             ),
         ];
 
@@ -855,12 +857,13 @@ final class TreePickerControllerTest extends TestCase
             activePathTurnNos: [1, 2],
         );
 
-        $palette = new ThemePalette('test', ['accent' => '#FF00FF']);
-        $theme = new DefaultTheme($palette);
-        $items = TreePickerController::buildItems($tree, $theme, selectedIndex: 0);
+        $theme = new DefaultTheme(new ThemePalette('test', []));
+        $items = TreePickerController::buildItems($tree, $theme);
 
-        $this->assertStringContainsString("\x1b", $items[0]['label'], 'Selected item should have ANSI accent');
-        $this->assertStringNotContainsString("\x1b", $items[1]['label'], 'Unselected item should not have ANSI accent');
+        $this->assertSame($items, TreePickerController::buildItems($tree, $theme));
+        $this->assertStringContainsString('◉', $items[1]['label'], 'Current leaf marker is semantic, not selection cursor');
+        $this->assertStringContainsString('○', $items[0]['label']);
+        $this->assertStringNotContainsString("\n", $items[0]['label']);
     }
 
     // ── open/close lifecycle ────────────────────────────────────────────────
@@ -1041,6 +1044,93 @@ final class TreePickerControllerTest extends TestCase
         $widget->handleInput("\r");
 
         $this->assertFalse($controller->isOpen(), 'Picker must close after selection');
+    }
+
+    #[Test]
+    public function testBuildItemsCollapsesMultilineMarkdownTitle(): void
+    {
+        $nodes = [
+            1 => new TurnTreeNodeView(
+                turnNo: 1,
+                parentTurnNo: null,
+                childTurnNos: [],
+                anchorSeq: 2,
+                title: "Done! Created `test.txt` with one line:\n\n> Hello from the hatfield",
+                promptPreview: 'Done!',
+                createdAt: null,
+                isCurrentLeaf: true,
+                displayRole: 'assistant',
+            ),
+        ];
+        $tree = new TurnTreeView('run', $nodes, [1], 1, [1]);
+        $theme = new DefaultTheme(new ThemePalette('test'));
+        $items = TreePickerController::buildItems($tree, $theme);
+        $this->assertCount(1, $items);
+        $this->assertStringNotContainsString("\n", $items[0]['label']);
+        $this->assertStringContainsString('assistant:', $items[0]['label']);
+        $this->assertStringContainsString('Done!', $items[0]['label']);
+    }
+
+    #[Test]
+    public function testBuildItemsUserPromptUsesUserPrefixFromDisplayRole(): void
+    {
+        $nodes = [
+            1 => new TurnTreeNodeView(
+                turnNo: 1,
+                parentTurnNo: null,
+                childTurnNos: [2],
+                anchorSeq: 2,
+                title: '[overlay-verify] create ./test.txt one line LINE_ONE',
+                promptPreview: 'create',
+                createdAt: null,
+                isCurrentLeaf: false,
+                displayRole: 'user',
+            ),
+            2 => new TurnTreeNodeView(
+                turnNo: 2,
+                parentTurnNo: 1,
+                childTurnNos: [],
+                anchorSeq: 5,
+                title: 'Done. `test.txt` now has two lines: 1. `LINE_ONE` 2. `LINE_TWO`',
+                promptPreview: 'Done',
+                createdAt: null,
+                isCurrentLeaf: true,
+                displayRole: 'assistant',
+            ),
+        ];
+        $tree = new TurnTreeView('run', $nodes, [1], 2, [1, 2]);
+        $theme = new DefaultTheme(new ThemePalette('test'));
+        $items = TreePickerController::buildItems($tree, $theme);
+        $this->assertCount(2, $items);
+        $this->assertStringContainsString('user:', $items[0]['label']);
+        $this->assertStringNotContainsString('assistant:', $items[0]['label']);
+        $this->assertStringContainsString('create ./test.txt', $items[0]['label']);
+        $this->assertStringContainsString('assistant:', $items[1]['label']);
+        $this->assertStringNotContainsString('assistant: Turn', $items[1]['label']);
+    }
+
+    #[Test]
+    public function testBuildItemsPlaceholderTitleUsesRoleSpecificFallback(): void
+    {
+        $nodes = [
+            3 => new TurnTreeNodeView(
+                turnNo: 3,
+                parentTurnNo: 2,
+                childTurnNos: [],
+                anchorSeq: 6,
+                title: 'Assistant response (turn 3)',
+                promptPreview: 'Assistant response (turn 3)',
+                createdAt: null,
+                isCurrentLeaf: true,
+                displayRole: 'assistant',
+            ),
+        ];
+        $tree = new TurnTreeView('run', $nodes, [3], 3, [3]);
+        $theme = new DefaultTheme(new ThemePalette('test'));
+        $items = TreePickerController::buildItems($tree, $theme);
+        $this->assertStringContainsString('assistant:', $items[0]['label']);
+        $this->assertStringContainsString('Assistant response', $items[0]['label']);
+        $this->assertStringNotContainsString('Turn 3', $items[0]['label']);
     }
 
     // ── Helpers ────────────────────────────────────────────────────────

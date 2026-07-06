@@ -38,6 +38,7 @@ final readonly class TurnTreeNodeDTO
         public ?\DateTimeImmutable $createdAt,
         public bool $isCurrentLeaf,
         public ?string $reason = null,
+        public string $displayRole = 'assistant',
     ) {
     }
 }

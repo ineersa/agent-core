@@ -26,6 +26,7 @@ final readonly class TurnTreeNodeView
         public string $promptPreview,
         public ?\DateTimeImmutable $createdAt,
         public bool $isCurrentLeaf,
+        public string $displayRole = 'assistant',
     ) {
     }
 }

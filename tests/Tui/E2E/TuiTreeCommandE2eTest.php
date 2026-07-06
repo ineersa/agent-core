@@ -83,14 +83,15 @@ final class TuiTreeCommandE2eTest extends TestCase
             // Wait for the tree overlay to appear — look for turn entry and rewind header
             $treeCapture = $this->tmux->waitForCallback(
                 $pane,
-                static fn (string $cap): bool => str_contains($cap, 'Turn 1:') && str_contains($cap, 'rewind'),
+                static fn (string $cap): bool => str_contains($cap, 'Session turn tree') && str_contains($cap, 'rewind'),
                 timeout: 10.0,
                 message: 'Tree picker overlay did not appear with turn entry and rewind header',
                 history: 2000,
             );
 
-            $this->assertStringContainsString('Turn 1:', $treeCapture,
-                'Tree picker should show a turn entry (e.g. "Turn 1:") in the capture.'
+            $this->assertTrue(
+                str_contains($treeCapture, 'user:') || str_contains($treeCapture, 'assistant:'),
+                'Tree picker should show a role-prefixed turn row in the capture.'
             );
 
             $this->assertStringContainsString('rewind', $treeCapture,

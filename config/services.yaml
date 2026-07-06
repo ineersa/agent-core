@@ -181,9 +181,18 @@ services:
 
   Ineersa\CodingAgent\Extension\ExtensionHookRegistry: ~
 
+  Ineersa\CodingAgent\Extension\ExtensionAfterTurnCommitHookSubscriber: ~
+
   Ineersa\CodingAgent\Extension\ExtensionManager:
     arguments:
       $extensionApi: '@Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface'
+
+  Ineersa\CodingAgent\Runtime\Contract\TuiExtensionRegistryInterface:
+    alias: Ineersa\CodingAgent\Extension\ExtensionManager
+
+  Ineersa\Tui\Listener\TuiProjectExtensionRegistrar:
+    tags: ['app.tui_listener']
+
 
   # LoggingConfig is derived from AppConfig and autowireable.
   Ineersa\CodingAgent\Config\LoggingConfig:

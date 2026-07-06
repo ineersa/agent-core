@@ -10,11 +10,9 @@ use Ineersa\CodingAgent\Runtime\Protocol\TurnTreeView;
 use Ineersa\Tui\Runtime\Contract\TuiSessionSwitchServiceInterface;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Screen\ChatScreen;
-use Ineersa\Tui\Theme\ThemeColorEnum;
 use Ineersa\Tui\Theme\TuiTheme;
 use Symfony\Component\Tui\Event\CancelEvent;
 use Symfony\Component\Tui\Event\SelectEvent;
-use Symfony\Component\Tui\Event\SelectionChangeEvent;
 use Symfony\Component\Tui\Input\Key;
 use Symfony\Component\Tui\Input\Keybindings;
 use Symfony\Component\Tui\Tui;
@@ -105,12 +103,10 @@ final class TreePickerController
             'select_cancel' => [Key::ESCAPE, Key::ctrl('c')],
         ]);
 
-        // ── Build items ──
+        // ── Build items (static labels; SelectListWidget highlights selection) ──
         $theme = $screen->theme();
-        // Pre-compute the depth-first order of turn numbers for selection-change indexing
-        $flattenedOrder = self::flattenTurnOrder($tree);
         $initialSelectedIndex = self::initialSelectedIndex($tree);
-        $items = self::buildItems($tree, $theme, selectedIndex: $initialSelectedIndex);
+        $items = self::buildItems($tree, $theme);
 
         $listWidget = new SelectListWidget(
             items: $items,
@@ -119,28 +115,7 @@ final class TreePickerController
         );
         $listWidget->setSelectedIndex(max(0, $initialSelectedIndex));
 
-        // ── Arrows → rebuild items so newly selected row gets accent colour ──
-        // setSelectedIndex() does NOT re-dispatch SelectionChangeEvent
-        // (verified in SelectListWidget.php), so calling it after
-        // setItems() is safe and does not cause infinite recursion.
-        $listWidget->onSelectionChange(
-            static function (SelectionChangeEvent $event) use ($listWidget, $tree, $theme, $flattenedOrder): void {
-                $selectedValue = $event->getItem()['value'];
-                $selectedIdx = -1;
-
-                foreach ($flattenedOrder as $i => $turnNo) {
-                    if ((string) $turnNo === $selectedValue) {
-                        $selectedIdx = $i;
-
-                        break;
-                    }
-                }
-
-                $newItems = self::buildItems($tree, $theme, selectedIndex: $selectedIdx);
-                $listWidget->setItems($newItems);
-                $listWidget->setSelectedIndex(max(0, $selectedIdx));
-            },
-        );
+        $this->overlay = new PickerOverlay();
 
         // ── Enter → rewind (or no-op if current leaf) ──
         $picker = $this;
@@ -164,8 +139,6 @@ final class TreePickerController
             $picker->closePicker();
         });
 
-        // ── Mount via PickerOverlay ──
-        $this->overlay = new PickerOverlay();
         $this->overlay->mount($tui, $screen, $listWidget, $header);
     }
 
@@ -205,9 +178,9 @@ final class TreePickerController
      *
      * @return list<array{value: string, label: string}>
      */
-    public static function buildItems(TurnTreeView $tree, TuiTheme $theme, int $selectedIndex = -1): array
+    public static function buildItems(TurnTreeView $tree, TuiTheme $theme): array
     {
-        return self::walk($tree, $theme, $selectedIndex)[0];
+        return self::walk($tree, $theme)[0];
     }
 
     /**
@@ -248,14 +221,14 @@ final class TreePickerController
      *
      * @return array{0: list<array{value:string,label:string}>, 1: list<int>}
      */
-    private static function walk(TurnTreeView $tree, ?TuiTheme $theme = null, int $selectedIndex = -1): array
+    private static function walk(TurnTreeView $tree, ?TuiTheme $theme = null): array
     {
         $items = [];
         $order = [];
         $visited = [];
 
         foreach ($tree->rootTurnNos as $rootTurnNo) {
-            self::walkNode($rootTurnNo, $tree->nodesByTurnNo, [], $items, $order, $visited, $theme, $selectedIndex);
+            self::walkNode($rootTurnNo, $tree->nodesByTurnNo, [], $items, $order, $visited, $theme);
         }
 
         return [$items, $order];
@@ -277,7 +250,6 @@ final class TreePickerController
         array &$order,
         array &$visited,
         ?TuiTheme $theme,
-        int $selectedIndex,
         bool $isContinuation = false,
     ): void {
         if (isset($visited[$turnNo])) {
@@ -308,16 +280,17 @@ final class TreePickerController
             }
 
             $leafMarker = $node->isCurrentLeaf ? '◉ ' : '○ ';
-            $label = $nodePrefix.$leafMarker.\sprintf(
-                'Turn %d: %s',
-                $node->turnNo,
-                mb_strimwidth($node->title, 0, 60, '…'),
-            );
-
-            $idx = \count($items);
-            if ($idx === $selectedIndex) {
-                $label = $theme->color(ThemeColorEnum::Accent, $label);
+            $body = PickerListLabelFormatter::sanitizeTitle($node->title);
+            if ('' === $body || preg_match('/^Turn \d+$/', $body)) {
+                $body = PickerListLabelFormatter::sanitizeTitle($node->promptPreview);
             }
+            if ('' === $body || preg_match('/^Turn \d+$/', $body)) {
+                $body = 'Turn '.$node->turnNo;
+            }
+            $body = mb_strimwidth($body, 0, 52, '…');
+            $role = $node->displayRole;
+            $prefix = PickerListLabelFormatter::formatRolePrefix($theme, $role);
+            $label = $nodePrefix.$leafMarker.$prefix.' '.$body;
 
             $items[] = [
                 'value' => (string) $node->turnNo,
@@ -350,7 +323,6 @@ final class TreePickerController
                 $order,
                 $visited,
                 $theme,
-                $selectedIndex,
                 $childIsContinuation,
             );
         }
