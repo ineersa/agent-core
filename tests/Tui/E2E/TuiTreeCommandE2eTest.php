@@ -89,7 +89,7 @@ final class TuiTreeCommandE2eTest extends TestCase
                 history: 2000,
             );
 
-            self::assertTrue(
+            $this->assertTrue(
                 str_contains($treeCapture, 'user:') || str_contains($treeCapture, 'assistant:'),
                 'Tree picker should show a role-prefixed turn row in the capture.'
             );

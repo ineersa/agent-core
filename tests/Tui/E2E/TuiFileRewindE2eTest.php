@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\E2E;
 
-use Ineersa\Tui\Tests\E2E\TuiE2eDatabaseEnv;
-
 use Ineersa\CodingAgent\Tests\Support\ProjectDir;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\Attributes\Group;
@@ -31,14 +29,14 @@ final class TuiFileRewindE2eTest extends TestCase
     protected function setUp(): void
     {
         if (!TmuxHarness::isAvailable()) {
-            self::markTestSkipped('tmux is not installed. Skipping TUI e2e tests.');
+            $this->markTestSkipped('tmux is not installed. Skipping TUI e2e tests.');
         }
 
         $this->tmux = new TmuxHarness();
         $this->projectRoot = ProjectDir::get();
         $this->testProjectDir = $this->createIsolatedProjectDir();
         $this->snapshotDir = $this->testProjectDir.'/.hatfield/tmp/tui/smoke';
-        @\mkdir($this->snapshotDir, 0o777, true);
+        @mkdir($this->snapshotDir, 0o777, true);
     }
 
     protected function tearDown(): void
@@ -69,14 +67,13 @@ final class TuiFileRewindE2eTest extends TestCase
 
             // Simulate post-checkpoint worktree mutation after turn-1 snapshot is persisted.
             file_put_contents($this->testProjectDir.'/target.txt', "after\n");
-            self::assertStringContainsString('after', (string) file_get_contents($this->testProjectDir.'/target.txt'));
+            $this->assertStringContainsString('after', (string) file_get_contents($this->testProjectDir.'/target.txt'));
 
             $this->openRewindTurnPicker($pane);
             $this->selectRewindTurnWithCheckpoint($pane, 1);
             $restoreCapture = $this->confirmRestoreFilesToSelectedTurn($pane);
-            self::assertStringNotContainsString('File rewind failed', $restoreCapture);
-            self::assertStringContainsString('before', (string) file_get_contents($this->testProjectDir.'/target.txt'));
-
+            $this->assertStringNotContainsString('File rewind failed', $restoreCapture);
+            $this->assertStringContainsString('before', (string) file_get_contents($this->testProjectDir.'/target.txt'));
 
             $this->submitPrompt($pane, 'follow-up check');
             $this->waitAssistantBlock($pane);
@@ -90,9 +87,9 @@ final class TuiFileRewindE2eTest extends TestCase
                 message: '/tree conversation picker did not appear',
                 history: 2000,
             );
-            self::assertStringNotContainsString('Restore files to this turn', $treeCapture);
-            self::assertStringNotContainsString('Undo last file restore', $treeCapture);
-            self::assertStringNotContainsString('File rewind', $treeCapture);
+            $this->assertStringNotContainsString('Restore files to this turn', $treeCapture);
+            $this->assertStringNotContainsString('Undo last file restore', $treeCapture);
+            $this->assertStringNotContainsString('File rewind', $treeCapture);
 
             $this->tmux->sendKey($pane, 'Escape');
             $this->tmux->sendKey($pane, 'C-d');
@@ -105,7 +102,6 @@ final class TuiFileRewindE2eTest extends TestCase
             throw $e;
         }
     }
-
 
     /**
      * Replay edit tool mutates target.txt; turn-1 checkpoint (pre-edit) restores "before" and undo returns "after".
@@ -144,8 +140,8 @@ final class TuiFileRewindE2eTest extends TestCase
             $this->openRewindTurnPicker($pane);
             $this->selectRewindTurnWithCheckpoint($pane, 1);
             $restoreCapture = $this->confirmRestoreFilesToSelectedTurn($pane);
-            self::assertStringNotContainsString('File rewind failed', $restoreCapture);
-            self::assertStringContainsString('before', (string) file_get_contents($this->testProjectDir.'/target.txt'));
+            $this->assertStringNotContainsString('File rewind failed', $restoreCapture);
+            $this->assertStringContainsString('before', (string) file_get_contents($this->testProjectDir.'/target.txt'));
 
             $this->submitPrompt($pane, 'follow-up after edit rewind');
             $this->waitAssistantBlock($pane);
@@ -159,11 +155,11 @@ final class TuiFileRewindE2eTest extends TestCase
                 message: '/tree conversation picker did not appear after edit journey',
                 history: 2000,
             );
-            self::assertStringNotContainsString('Restore files to this turn', $treeCapture);
-            self::assertStringNotContainsString('Undo last file restore', $treeCapture);
-            self::assertStringNotContainsString('File rewind', $treeCapture);
-            self::assertSame(1, substr_count($treeCapture, 'Session turn tree — Enter to rewind'), 'Tree picker should show a single tree header (no stacked overlay regression)');
-            self::assertStringContainsString('Session turn tree', $treeCapture, 'Tree picker should open for conversation-only rewind');
+            $this->assertStringNotContainsString('Restore files to this turn', $treeCapture);
+            $this->assertStringNotContainsString('Undo last file restore', $treeCapture);
+            $this->assertStringNotContainsString('File rewind', $treeCapture);
+            $this->assertSame(1, substr_count($treeCapture, 'Session turn tree — Enter to rewind'), 'Tree picker should show a single tree header (no stacked overlay regression)');
+            $this->assertStringContainsString('Session turn tree', $treeCapture, 'Tree picker should open for conversation-only rewind');
 
             $this->saveAnsiSnapshot($pane, 'file-rewind-edit-tool');
             $this->tmux->sendKey($pane, 'Escape');
@@ -177,8 +173,6 @@ final class TuiFileRewindE2eTest extends TestCase
             throw $e;
         }
     }
-
-
 
     private function ledgerPath(): string
     {
@@ -203,7 +197,7 @@ final class TuiFileRewindE2eTest extends TestCase
         }
 
         $final = is_file($path) ? (string) file_get_contents($path) : '(missing)';
-        self::fail($message !== '' ? $message : 'Timed out waiting for target.txt to contain '.$needle.'; final='.$final);
+        $this->fail('' !== $message ? $message : 'Timed out waiting for target.txt to contain '.$needle.'; final='.$final);
     }
 
     private function waitForTurnCheckpointRecorded(int $turnNo, float $timeoutSeconds = 20.0): void
@@ -213,9 +207,9 @@ final class TuiFileRewindE2eTest extends TestCase
         while (microtime(true) < $deadline) {
             if (is_file($ledgerPath)) {
                 $decoded = json_decode((string) file_get_contents($ledgerPath), true);
-                if (is_array($decoded)) {
+                if (\is_array($decoded)) {
                     foreach ($decoded['checkpoints'] ?? [] as $checkpoint) {
-                        if (!is_array($checkpoint)) {
+                        if (!\is_array($checkpoint)) {
                             continue;
                         }
                         if ((int) ($checkpoint['turn_no'] ?? 0) === $turnNo) {
@@ -226,7 +220,7 @@ final class TuiFileRewindE2eTest extends TestCase
             }
             usleep(100_000);
         }
-        self::fail('Timed out waiting for file rewind checkpoint for turn '.$turnNo.' at '.$ledgerPath);
+        $this->fail('Timed out waiting for file rewind checkpoint for turn '.$turnNo.' at '.$ledgerPath);
     }
 
     private function openRewindTurnPicker(TmuxPane $pane): void
@@ -385,12 +379,12 @@ final class TuiFileRewindE2eTest extends TestCase
         $paths = [];
         foreach ($fixtureFiles as $file) {
             $path = $this->projectRoot.'/tests/Tui/E2E/fixtures/'.$file;
-            if (\is_file($path)) {
+            if (is_file($path)) {
                 $paths[] = $path;
             }
         }
         $fixtureEnv = [] !== $paths
-            ? 'HATFIELD_LLM_REPLAY_FIXTURE_PATH='.\escapeshellarg(\implode(';', $paths)).' '
+            ? 'HATFIELD_LLM_REPLAY_FIXTURE_PATH='.escapeshellarg(implode(';', $paths)).' '
             : '';
 
         $paths = TuiE2eDatabaseEnv::allocatePaths('tui-file-rewind-');
@@ -398,18 +392,18 @@ final class TuiFileRewindE2eTest extends TestCase
         return \sprintf(
             'APP_ENV=test %sHOME=%s %s %s %s agent --model=llama_cpp_test/test --tools-excluded=bash 2>&1',
             TuiE2eDatabaseEnv::shellPrefix($paths['app'], $paths['transport']),
-            \escapeshellarg($this->testProjectDir.'/home'),
+            escapeshellarg($this->testProjectDir.'/home'),
             $fixtureEnv,
-            \escapeshellarg(\PHP_BINARY),
-            \escapeshellarg($this->projectRoot.'/bin/console'),
+            escapeshellarg(\PHP_BINARY),
+            escapeshellarg($this->projectRoot.'/bin/console'),
         );
     }
 
     private function createIsolatedProjectDir(): string
     {
         $dir = TestDirectoryIsolation::createProjectTempDir('tui-e2e-file-rewind');
-        @\mkdir($dir.'/.hatfield', 0o777, true);
-        \file_put_contents($dir.'/target.txt', "before\n");
+        @mkdir($dir.'/.hatfield', 0o777, true);
+        file_put_contents($dir.'/target.txt', "before\n");
 
         $settings = [
             'ai' => [
@@ -461,9 +455,9 @@ final class TuiFileRewindE2eTest extends TestCase
         ];
 
         $yaml = \Symfony\Component\Yaml\Yaml::dump($settings, 6, 4);
-        \file_put_contents($dir.'/.hatfield/settings.yaml', $yaml);
-        @\mkdir($dir.'/home/.hatfield', 0o777, true);
-        \file_put_contents($dir.'/home/.hatfield/settings.yaml', $yaml);
+        file_put_contents($dir.'/.hatfield/settings.yaml', $yaml);
+        @mkdir($dir.'/home/.hatfield', 0o777, true);
+        file_put_contents($dir.'/home/.hatfield/settings.yaml', $yaml);
 
         return $dir;
     }
@@ -472,6 +466,6 @@ final class TuiFileRewindE2eTest extends TestCase
     {
         $ansi = $this->tmux->captureAnsi($pane);
         $ts = date('Ymd-His');
-        \file_put_contents(\sprintf('%s/%s-%s.ansi', $this->snapshotDir, $tag, $ts), $ansi);
+        file_put_contents(\sprintf('%s/%s-%s.ansi', $this->snapshotDir, $tag, $ts), $ansi);
     }
 }

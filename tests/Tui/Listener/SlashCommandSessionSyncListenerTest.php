@@ -39,7 +39,7 @@ final class SlashCommandSessionSyncListenerTest extends TestCase
             previousSessionId: '7',
         ));
 
-        self::assertSame('42', $registry->getActiveSessionId());
+        $this->assertSame('42', $registry->getActiveSessionId());
     }
 
     #[Test]
@@ -58,9 +58,8 @@ final class SlashCommandSessionSyncListenerTest extends TestCase
             previousSessionId: 'stale',
         ));
 
-        self::assertNull($registry->getActiveSessionId());
+        $this->assertNull($registry->getActiveSessionId());
     }
-
 
     private function lifecycleContext(): TuiRuntimeContext
     {

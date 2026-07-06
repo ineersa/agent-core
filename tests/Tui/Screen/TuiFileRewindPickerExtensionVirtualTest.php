@@ -66,11 +66,11 @@ final class TuiFileRewindPickerExtensionVirtualTest extends TestCase
             $picker->open($sessionId);
 
             $screen = $harness->plainScreenText();
-            self::assertSame(1, substr_count($screen, 'Checkpoint turn 3:'));
-            self::assertStringContainsString('checkpoint 1:', $screen);
-            self::assertStringContainsString('checkpoint 3:', $screen);
-            self::assertStringNotContainsString('checkpoint 2:', $screen);
-            self::assertStringNotContainsString('Restore files + conversation', $screen);
+            $this->assertSame(1, substr_count($screen, 'Checkpoint turn 3:'));
+            $this->assertStringContainsString('checkpoint 1:', $screen);
+            $this->assertStringContainsString('checkpoint 3:', $screen);
+            $this->assertStringNotContainsString('checkpoint 2:', $screen);
+            $this->assertStringNotContainsString('Restore files + conversation', $screen);
         } finally {
             TestDirectoryIsolation::removeDirectory($projectDir);
         }

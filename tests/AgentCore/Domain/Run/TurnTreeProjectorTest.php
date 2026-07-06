@@ -264,7 +264,7 @@ final class TurnTreeProjectorTest extends TestCase
 
         $tree = $this->projector->build($this->runId, $events);
 
-        self::assertSame('Assistant response (turn 1)', $tree->nodesByTurnNo[1]->title);
+        $this->assertSame('Assistant response (turn 1)', $tree->nodesByTurnNo[1]->title);
     }
 
     // ── Node metadata ────────────────────────────────────────────────────────
@@ -492,7 +492,6 @@ final class TurnTreeProjectorTest extends TestCase
         $this->projector->build($this->runId, $events);
     }
 
-
     public function testDisplayRoleUserForFollowUpAndInitialTurn(): void
     {
         $events = [
@@ -515,10 +514,10 @@ final class TurnTreeProjectorTest extends TestCase
 
         $tree = $this->projector->build($this->runId, $events);
 
-        self::assertSame('user', $tree->nodesByTurnNo[1]->displayRole);
-        self::assertSame('user', $tree->nodesByTurnNo[2]->displayRole);
-        self::assertStringContainsString('create test.txt', $tree->nodesByTurnNo[1]->title);
-        self::assertStringContainsString('append LINE_TWO', $tree->nodesByTurnNo[2]->title);
+        $this->assertSame('user', $tree->nodesByTurnNo[1]->displayRole);
+        $this->assertSame('user', $tree->nodesByTurnNo[2]->displayRole);
+        $this->assertStringContainsString('create test.txt', $tree->nodesByTurnNo[1]->title);
+        $this->assertStringContainsString('append LINE_TWO', $tree->nodesByTurnNo[2]->title);
     }
 
     public function testDisplayRoleUserWhenSteerAppliedInParentTurnBeforeAdvanceAfterToolsAnchor(): void
@@ -550,11 +549,11 @@ final class TurnTreeProjectorTest extends TestCase
 
         $tree = $this->projector->build($this->runId, $events);
 
-        self::assertSame('user', $tree->nodesByTurnNo[1]->displayRole);
-        self::assertSame('user', $tree->nodesByTurnNo[2]->displayRole);
-        self::assertSame('assistant', $tree->nodesByTurnNo[3]->displayRole);
-        self::assertStringContainsString('append LINE_TWO', $tree->nodesByTurnNo[2]->title);
-        self::assertStringContainsString('Done.', $tree->nodesByTurnNo[3]->title);
+        $this->assertSame('user', $tree->nodesByTurnNo[1]->displayRole);
+        $this->assertSame('user', $tree->nodesByTurnNo[2]->displayRole);
+        $this->assertSame('assistant', $tree->nodesByTurnNo[3]->displayRole);
+        $this->assertStringContainsString('append LINE_TWO', $tree->nodesByTurnNo[2]->title);
+        $this->assertStringContainsString('Done.', $tree->nodesByTurnNo[3]->title);
     }
 
     public function testPlaceholderTitleUsesRoleNotRawTurnN(): void
@@ -567,10 +566,10 @@ final class TurnTreeProjectorTest extends TestCase
 
         $tree = $this->projector->build($this->runId, $events);
 
-        self::assertSame('assistant', $tree->nodesByTurnNo[1]->displayRole);
-        self::assertStringContainsString('Assistant response', $tree->nodesByTurnNo[1]->title);
-        self::assertStringNotContainsString('assistant: Turn', $tree->nodesByTurnNo[1]->title);
-        self::assertDoesNotMatchRegularExpression('/^Turn \d+$/', $tree->nodesByTurnNo[1]->title);
+        $this->assertSame('assistant', $tree->nodesByTurnNo[1]->displayRole);
+        $this->assertStringContainsString('Assistant response', $tree->nodesByTurnNo[1]->title);
+        $this->assertStringNotContainsString('assistant: Turn', $tree->nodesByTurnNo[1]->title);
+        $this->assertDoesNotMatchRegularExpression('/^Turn \d+$/', $tree->nodesByTurnNo[1]->title);
     }
 
     public function testToolCycleTurnsDoNotReusePreviousUserPromptAsTitle(): void
@@ -605,17 +604,17 @@ final class TurnTreeProjectorTest extends TestCase
 
         $tree = $this->projector->build($this->runId, $events);
 
-        self::assertCount(6, $tree->nodesByTurnNo);
-        self::assertStringContainsString('Create test.txt', $tree->nodesByTurnNo[3]->title);
-        self::assertStringContainsString('Created test.txt', $tree->nodesByTurnNo[4]->title);
-        self::assertNotSame($tree->nodesByTurnNo[3]->title, $tree->nodesByTurnNo[4]->title);
-        self::assertStringContainsString('Okay add 1 more line', $tree->nodesByTurnNo[5]->title);
-        self::assertStringContainsString('Added second line', $tree->nodesByTurnNo[6]->title);
-        self::assertNotSame($tree->nodesByTurnNo[5]->title, $tree->nodesByTurnNo[6]->title);
-        self::assertSame('user', $tree->nodesByTurnNo[3]->displayRole);
-        self::assertSame('assistant', $tree->nodesByTurnNo[4]->displayRole);
-        self::assertSame('user', $tree->nodesByTurnNo[5]->displayRole);
-        self::assertSame('assistant', $tree->nodesByTurnNo[6]->displayRole);
+        $this->assertCount(6, $tree->nodesByTurnNo);
+        $this->assertStringContainsString('Create test.txt', $tree->nodesByTurnNo[3]->title);
+        $this->assertStringContainsString('Created test.txt', $tree->nodesByTurnNo[4]->title);
+        $this->assertNotSame($tree->nodesByTurnNo[3]->title, $tree->nodesByTurnNo[4]->title);
+        $this->assertStringContainsString('Okay add 1 more line', $tree->nodesByTurnNo[5]->title);
+        $this->assertStringContainsString('Added second line', $tree->nodesByTurnNo[6]->title);
+        $this->assertNotSame($tree->nodesByTurnNo[5]->title, $tree->nodesByTurnNo[6]->title);
+        $this->assertSame('user', $tree->nodesByTurnNo[3]->displayRole);
+        $this->assertSame('assistant', $tree->nodesByTurnNo[4]->displayRole);
+        $this->assertSame('user', $tree->nodesByTurnNo[5]->displayRole);
+        $this->assertSame('assistant', $tree->nodesByTurnNo[6]->displayRole);
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────
@@ -641,7 +640,7 @@ final class TurnTreeProjectorTest extends TestCase
     {
         $payload = [
             'turn_no' => $turnNo,
-            'step_id' => $stepId ?? ('step-' . $turnNo),
+            'step_id' => $stepId ?? ('step-'.$turnNo),
         ];
 
         // Include parent_turn_no key for new-style streams when explicit.

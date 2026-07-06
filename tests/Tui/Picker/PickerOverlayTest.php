@@ -176,10 +176,9 @@ final class PickerOverlayTest extends TestCase
         $container = $this->pickerContainerFromOverlay($overlay);
         $overlayIdx = $this->rootChildIndex($tui, $container);
 
-        self::assertGreaterThan($editorIdx, $overlayIdx, 'Default picker overlay must render below the editor');
-        self::assertLessThan($footerIdx, $overlayIdx, 'Default picker overlay must render above the footer');
+        $this->assertGreaterThan($editorIdx, $overlayIdx, 'Default picker overlay must render below the editor');
+        $this->assertLessThan($footerIdx, $overlayIdx, 'Default picker overlay must render above the footer');
     }
-
 
     /**
      * @return list<\Symfony\Component\Tui\Widget\AbstractWidget>
@@ -187,7 +186,7 @@ final class PickerOverlayTest extends TestCase
     private function rootChildren(Tui $tui): array
     {
         $rootProp = new \ReflectionProperty(Tui::class, 'root');
-        /** @var \Symfony\Component\Tui\Widget\ContainerWidget $root */
+        /** @var ContainerWidget $root */
         $root = $rootProp->getValue($tui);
 
         return array_values($root->all());
@@ -202,13 +201,13 @@ final class PickerOverlayTest extends TestCase
             }
         }
 
-        self::fail('Widget not found in TUI root children');
+        $this->fail('Widget not found in TUI root children');
     }
 
-    private function pickerContainerFromOverlay(PickerOverlay $overlay): \Symfony\Component\Tui\Widget\ContainerWidget
+    private function pickerContainerFromOverlay(PickerOverlay $overlay): ContainerWidget
     {
         $prop = new \ReflectionProperty(PickerOverlay::class, 'container');
-        /** @var \Symfony\Component\Tui\Widget\ContainerWidget $container */
+        /** @var ContainerWidget $container */
         $container = $prop->getValue($overlay);
 
         return $container;

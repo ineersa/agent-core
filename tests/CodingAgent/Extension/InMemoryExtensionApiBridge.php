@@ -10,12 +10,11 @@ use Ineersa\Hatfield\ExtensionApi\Exec\ExecInterface;
 use Ineersa\Hatfield\ExtensionApi\Exec\ExecOptionsDTO;
 use Ineersa\Hatfield\ExtensionApi\Exec\ExecResultDTO;
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
+use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterTurnCommitHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Prompt\PromptContributorInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallRewriteHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolRegistrationDTO;
-use Ineersa\Hatfield\ExtensionApi\Command\InteractiveCommandHostInterface;
-use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterTurnCommitHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolResultHookInterface;
 
 /**
@@ -54,6 +53,9 @@ final class InMemoryExtensionApiBridge implements ExtensionApiInterface
      * @var list<ToolResultHookInterface>
      */
     private array $toolResultHooks = [];
+
+    /** @var list<AfterTurnCommitHookInterface> */
+    private array $afterTurnCommitHooks = [];
 
     public function __construct(?string $cwd = null)
     {
@@ -148,9 +150,6 @@ final class InMemoryExtensionApiBridge implements ExtensionApiInterface
     {
         throw new \LogicException('registerToolCallRewriteHook is not supported on the InMemoryExtensionApiBridge. Use the production ExtensionToolRegistryBridge.');
     }
-
-    /** @var list<AfterTurnCommitHookInterface> */
-    private array $afterTurnCommitHooks = [];
 
     public function registerAfterTurnCommitHook(AfterTurnCommitHookInterface $hook): void
     {

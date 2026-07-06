@@ -595,7 +595,6 @@ final class ExtensionToolRegistryBridgeTest extends TestCase
             $appConfig ?? $this->testAppConfig(),
             $execBridge ?? $this->dummyExecBridge(),
             $commandRegistry ?? $this->dummyCommandRegistry(),
-            
         );
     }
 

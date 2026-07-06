@@ -72,7 +72,6 @@ final class TaskWorkflowExtensionIntegrationTest extends TestCase
             $appConfig,
             $execBridge,
             $commandAdapter,
-            
         );
 
         $manager = new ExtensionManager($appConfig, $bridge, new NullLogger());

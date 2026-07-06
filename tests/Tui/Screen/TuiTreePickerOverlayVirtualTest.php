@@ -7,8 +7,8 @@ namespace Ineersa\Tui\Tests\Screen;
 use Ineersa\CodingAgent\Runtime\Contract\TurnTreeProviderInterface;
 use Ineersa\CodingAgent\Runtime\Protocol\TurnTreeNodeView;
 use Ineersa\CodingAgent\Runtime\Protocol\TurnTreeView;
-use Ineersa\Tui\Listener\TreeCommandHandler;
 use Ineersa\Tui\Command\SlashCommand;
+use Ineersa\Tui\Listener\TreeCommandHandler;
 use Ineersa\Tui\Picker\TreePickerController;
 use Ineersa\Tui\Runtime\Contract\TuiSessionSwitchServiceInterface;
 use Ineersa\Tui\Runtime\TuiSessionState;
@@ -31,10 +31,10 @@ final class TuiTreePickerOverlayVirtualTest extends TestCase
         (new TreeCommandHandler($picker))->handle(new SlashCommand('tree', '', '/tree'));
 
         $screen = $harness->plainScreenText();
-        self::assertSame(1, substr_count($screen, 'Session turn tree — Enter to rewind (Esc to close)'));
-        self::assertSame(1, substr_count($screen, 'hello'));
-        self::assertSame(1, substr_count($screen, 'Can you create file'));
-        self::assertSame(1, substr_count($screen, 'Done! Created file'));
+        $this->assertSame(1, substr_count($screen, 'Session turn tree — Enter to rewind (Esc to close)'));
+        $this->assertSame(1, substr_count($screen, 'hello'));
+        $this->assertSame(1, substr_count($screen, 'Can you create file'));
+        $this->assertSame(1, substr_count($screen, 'Done! Created file'));
     }
 
     #[Test]
@@ -51,8 +51,8 @@ final class TuiTreePickerOverlayVirtualTest extends TestCase
         $picker->closePicker();
         $picker->open();
         $screen = $harness->plainScreenText();
-        self::assertSame(1, substr_count($screen, 'Session turn tree — Enter to rewind (Esc to close)'));
-        self::assertSame(1, substr_count($screen, 'hello'));
+        $this->assertSame(1, substr_count($screen, 'Session turn tree — Enter to rewind (Esc to close)'));
+        $this->assertSame(1, substr_count($screen, 'hello'));
     }
 
     #[Test]
@@ -79,10 +79,10 @@ final class TuiTreePickerOverlayVirtualTest extends TestCase
         $picker->setRuntimeRefs($harness->tui(), $harness->screen(), new TuiSessionState($sessionId));
         (new TreeCommandHandler($picker))->handle(new SlashCommand('tree', '', '/tree'));
         $screen = $harness->plainScreenText();
-        self::assertSame(1, substr_count($screen, 'Create test.txt'));
-        self::assertSame(1, substr_count($screen, 'Created test.txt'));
-        self::assertSame(1, substr_count($screen, 'Okay add 1 more line'));
-        self::assertSame(1, substr_count($screen, 'Added second line'));
+        $this->assertSame(1, substr_count($screen, 'Create test.txt'));
+        $this->assertSame(1, substr_count($screen, 'Created test.txt'));
+        $this->assertSame(1, substr_count($screen, 'Okay add 1 more line'));
+        $this->assertSame(1, substr_count($screen, 'Added second line'));
     }
 
     private function sampleTree(string $sessionId): TurnTreeView

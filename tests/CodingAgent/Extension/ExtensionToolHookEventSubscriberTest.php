@@ -61,7 +61,6 @@ final class ExtensionToolHookEventSubscriberTest extends TestCase
             $appConfig,
             $this->stubExecBridge(),
             $this->stubCommandRegistry(),
-            
         );
         $seenContext = null;
         $bridge->registerToolCallHook(new class($seenContext) implements ToolCallHookInterface {
