@@ -4,9 +4,10 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Tests\Application\Pipeline;
 
-use Ineersa\AgentCore\Application\Handler\ReplayService;
 use Ineersa\AgentCore\Application\Handler\StepDispatcher;
 use Ineersa\AgentCore\Application\Pipeline\RunCommit;
+use Ineersa\AgentCore\Application\Replay\PromptStateReplayService;
+use Ineersa\AgentCore\Application\Replay\ReplayEventPreparer;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Run\RunState;
@@ -16,6 +17,7 @@ use Ineersa\AgentCore\Infrastructure\Storage\InMemoryPromptStateStore;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryRunStore;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
+use Ineersa\CodingAgent\Session\Replay\SessionHotPromptReplayService;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -31,9 +33,11 @@ final class RunCommitLoggingTest extends TestCase
 
         $eventStore = new RecordingEventStore();
 
-        $replayService = new ReplayService(
+        $replayService = new SessionHotPromptReplayService(
             eventStore: $eventStore,
             promptStateStore: new InMemoryPromptStateStore(),
+            promptStateReplayService: new PromptStateReplayService(),
+            replayEventPreparer: new ReplayEventPreparer(),
         );
 
         $stepDispatcher = new StepDispatcher(new TestMessageBus());
@@ -42,7 +46,7 @@ final class RunCommitLoggingTest extends TestCase
             runStore: $runStore,
             eventStore: $eventStore,
             commandStore: new InMemoryCommandStore(),
-            replayService: $replayService,
+            hotPromptStateRebuilder: $replayService,
             stepDispatcher: $stepDispatcher,
             logger: $logger,
         );

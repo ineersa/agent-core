@@ -464,6 +464,18 @@ services:
   Ineersa\AgentCore\Contract\TurnTree\BranchReplayFilterInterface:
     alias: Ineersa\CodingAgent\Session\Replay\BranchReplayFilterContractAdapter
 
+  Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface:
+    alias: Ineersa\CodingAgent\Session\Replay\SessionRunStateReplayService
+
+  Ineersa\AgentCore\Contract\Replay\HotPromptStateRebuilderInterface:
+    alias: Ineersa\CodingAgent\Session\Replay\SessionHotPromptReplayService
+
+  Ineersa\AgentCore\Contract\Replay\HotPromptIntegrityVerifierInterface:
+    alias: Ineersa\CodingAgent\Session\Replay\SessionHotPromptReplayService
+
+  Ineersa\AgentCore\Contract\Rewind\RunRewindServiceInterface:
+    alias: Ineersa\CodingAgent\Session\Rewind\SessionRewindService
+
   # ─── Symfony AI Platform wiring ───
   # PlatformInterface reads Hatfield config from autowired AppConfig,
   # so no explicit arguments are needed here.
@@ -684,7 +696,7 @@ services:
   Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor:
     arguments:
       $handlers: !tagged_iterator agent_core.run_message_handler
-      $runStateReplayService: '@Ineersa\AgentCore\Application\Handler\RunStateReplayService'
+      $runStateRebuilder: '@Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface'
 
   Ineersa\AgentCore\Application\Handler\StepDispatcher:
     arguments:
