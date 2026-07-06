@@ -162,7 +162,7 @@ final readonly class FooterStateSegmentProvider implements FooterSegmentProvider
                 '%d:%s:%s',
                 $segment->priority,
                 $segment->text,
-                $segment->color?->value ?? '',
+                $segment->color->value,
             );
         }
 

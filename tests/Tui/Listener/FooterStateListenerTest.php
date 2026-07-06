@@ -85,7 +85,6 @@ final class FooterStateListenerTest extends TestCase
     private function footerWidget(ChatScreen $screen): LiveTextWidget
     {
         $ref = new \ReflectionProperty(ChatScreen::class, 'footerWidget');
-        $ref->setAccessible(true);
         $widget = $ref->getValue($screen);
         $this->assertInstanceOf(LiveTextWidget::class, $widget);
 
@@ -108,7 +107,6 @@ final class FooterStateListenerTest extends TestCase
     private function firstTickHandler(object $context): callable
     {
         $ref = new \ReflectionProperty($context->ticks, 'handlers');
-        $ref->setAccessible(true);
         $handlers = $ref->getValue($context->ticks);
         $this->assertIsArray($handlers);
         $this->assertNotEmpty($handlers);

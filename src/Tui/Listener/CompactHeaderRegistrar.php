@@ -62,7 +62,6 @@ final class CompactHeaderRegistrar implements TuiListenerRegistrar
             }
         }
 
-
         $context->ticks->add(static function (TickEvent $event) use ($widget, $screen, $tui, $state, $provider, $logger, &$registered, &$lastSnapshot, &$lastBuildAt): ?bool {
             $now = microtime(true);
 
