@@ -13,7 +13,7 @@ namespace Ineersa\AgentCore\Contract\TurnTree;
 final readonly class TurnTreeSnapshotDTO
 {
     /**
-     * @param array<int, TurnTreeNodeSnapshotDTO> $nodesByTurnNo     Turn number → node map
+     * @param array<int, TurnTreeNodeSnapshotDTO> $nodesByTurnNo Turn number → node map
      */
     public function __construct(
         public string $runId,
