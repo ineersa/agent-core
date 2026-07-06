@@ -2,19 +2,21 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\AgentCore\Tests\Application\Handler;
+namespace Ineersa\CodingAgent\Tests\Session\Replay;
 
-use Ineersa\AgentCore\Application\Handler\ReplayService;
+use Ineersa\AgentCore\Application\Replay\PromptStateReplayService;
+use Ineersa\AgentCore\Application\Replay\ReplayEventPreparer;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Infrastructure\Storage\HotPromptStateStore;
 use Ineersa\AgentCore\Infrastructure\Storage\RunEventStore;
 use Ineersa\CodingAgent\Session\Replay\BranchReplayFilterContractAdapter;
+use Ineersa\CodingAgent\Session\Replay\SessionHotPromptReplayService;
 use Ineersa\CodingAgent\Session\Replay\TurnTreeReplayFilter;
 use Ineersa\CodingAgent\Session\TurnTree\TurnTreeProjector;
 use PHPUnit\Framework\TestCase;
 
-final class ReplayServiceTest extends TestCase
+final class SessionHotPromptReplayServiceTest extends TestCase
 {
     // ── Canonical llm_step_completed replay ────────────────────────────────────
 
@@ -33,7 +35,7 @@ final class ReplayServiceTest extends TestCase
     {
         $eventStore = new RunEventStore();
         $hotPromptStore = new HotPromptStateStore();
-        $replayService = new ReplayService($eventStore, $hotPromptStore);
+        $replayService = new SessionHotPromptReplayService($eventStore, $hotPromptStore, new PromptStateReplayService(), new ReplayEventPreparer());
 
         $runId = 'run-canonical-llm-step';
 
@@ -93,7 +95,7 @@ final class ReplayServiceTest extends TestCase
     {
         $eventStore = new RunEventStore();
         $hotPromptStore = new HotPromptStateStore();
-        $replayService = new ReplayService($eventStore, $hotPromptStore);
+        $replayService = new SessionHotPromptReplayService($eventStore, $hotPromptStore, new PromptStateReplayService(), new ReplayEventPreparer());
 
         $runId = 'run-canonical-tool-calls';
 
@@ -152,7 +154,7 @@ final class ReplayServiceTest extends TestCase
     {
         $eventStore = new RunEventStore();
         $hotPromptStore = new HotPromptStateStore();
-        $replayService = new ReplayService($eventStore, $hotPromptStore);
+        $replayService = new SessionHotPromptReplayService($eventStore, $hotPromptStore, new PromptStateReplayService(), new ReplayEventPreparer());
 
         $runId = 'run-canonical-thinking';
 
@@ -219,7 +221,7 @@ final class ReplayServiceTest extends TestCase
     {
         $eventStore = new RunEventStore();
         $hotPromptStore = new HotPromptStateStore();
-        $replayService = new ReplayService($eventStore, $hotPromptStore);
+        $replayService = new SessionHotPromptReplayService($eventStore, $hotPromptStore, new PromptStateReplayService(), new ReplayEventPreparer());
 
         $runId = 'run-replacement';
 
@@ -309,7 +311,7 @@ final class ReplayServiceTest extends TestCase
     {
         $eventStore = new RunEventStore();
         $hotPromptStore = new HotPromptStateStore();
-        $replayService = new ReplayService($eventStore, $hotPromptStore);
+        $replayService = new SessionHotPromptReplayService($eventStore, $hotPromptStore, new PromptStateReplayService(), new ReplayEventPreparer());
 
         $runId = 'run-append-after-replacement';
 
@@ -391,7 +393,7 @@ final class ReplayServiceTest extends TestCase
     {
         $eventStore = new RunEventStore();
         $hotPromptStore = new HotPromptStateStore();
-        $replayService = new ReplayService($eventStore, $hotPromptStore);
+        $replayService = new SessionHotPromptReplayService($eventStore, $hotPromptStore, new PromptStateReplayService(), new ReplayEventPreparer());
 
         $runId = 'run-replay-canonical';
         $eventStore->append(new RunEvent(
@@ -458,7 +460,7 @@ final class ReplayServiceTest extends TestCase
     {
         $eventStore = new RunEventStore();
         $hotPromptStore = new HotPromptStateStore();
-        $replayService = new ReplayService($eventStore, $hotPromptStore);
+        $replayService = new SessionHotPromptReplayService($eventStore, $hotPromptStore, new PromptStateReplayService(), new ReplayEventPreparer());
 
         $runId = 'run-no-events';
 
@@ -476,11 +478,8 @@ final class ReplayServiceTest extends TestCase
     {
         $eventStore = new RunEventStore();
         $hotPromptStore = new HotPromptStateStore();
-        $replayService = new ReplayService(
-            $eventStore,
-            $hotPromptStore,
-            turnTreeReplayFilter: new BranchReplayFilterContractAdapter(new TurnTreeReplayFilter(new TurnTreeProjector())),
-        );
+        $treeFilter = new BranchReplayFilterContractAdapter(new TurnTreeReplayFilter(new TurnTreeProjector()));
+        $replayService = new SessionHotPromptReplayService($eventStore, $hotPromptStore, new PromptStateReplayService(), new ReplayEventPreparer(), null, null, $treeFilter);
 
         $runId = 'run-branch-replay';
 
@@ -576,7 +575,7 @@ final class ReplayServiceTest extends TestCase
     {
         $eventStore = new RunEventStore();
         $hotPromptStore = new HotPromptStateStore();
-        $replayService = new ReplayService($eventStore, $hotPromptStore);
+        $replayService = new SessionHotPromptReplayService($eventStore, $hotPromptStore, new PromptStateReplayService(), new ReplayEventPreparer());
         $runId = 'run-hot-prompt-compacted';
 
         // Original messages (3 user messages).

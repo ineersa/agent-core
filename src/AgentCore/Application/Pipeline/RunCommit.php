@@ -5,12 +5,12 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Application\Pipeline;
 
 use Ineersa\AgentCore\Application\Handler\HookDispatcher;
-use Ineersa\AgentCore\Application\Handler\ReplayService;
 use Ineersa\AgentCore\Application\Handler\RunMetrics;
 use Ineersa\AgentCore\Application\Handler\RunTracer;
 use Ineersa\AgentCore\Application\Handler\StepDispatcher;
 use Ineersa\AgentCore\Contract\CommandStoreInterface;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
+use Ineersa\AgentCore\Contract\Replay\HotPromptStateRebuilderInterface;
 use Ineersa\AgentCore\Contract\RunStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitHookContext;
@@ -24,7 +24,7 @@ final readonly class RunCommit
         private RunStoreInterface $runStore,
         private EventStoreInterface $eventStore,
         private CommandStoreInterface $commandStore,
-        private ReplayService $replayService,
+        private HotPromptStateRebuilderInterface $hotPromptStateRebuilder,
         private StepDispatcher $stepDispatcher,
         private LoggerInterface $logger,
         private ?HookDispatcher $hookDispatcher = null,
@@ -107,7 +107,7 @@ final readonly class RunCommit
 
             if ($eventsPersisted) {
                 try {
-                    $this->replayService->rebuildHotPromptState($nextState->runId);
+                    $this->hotPromptStateRebuilder->rebuildHotPromptState($nextState->runId);
                 } catch (\Throwable $exception) {
                     // Hot prompt rebuild is best-effort — the previous
                     // hot state is still valid. Log the failure so
