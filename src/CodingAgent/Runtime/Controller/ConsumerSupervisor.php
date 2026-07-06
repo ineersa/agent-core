@@ -29,11 +29,15 @@ use Symfony\Component\Process\Process;
  *
  * Process management:
  * - Launch: creates a non-blocking Symfony Process with timeout(null)
- * - Supervision: polls isRunning() every 5s, restarts if crashed
+ *   and Symfony Messenger --memory-limit for graceful worker recycling
+ * - Supervision: polls isRunning() every 5s; exit code 0 is treated as
+ *   normal memory-limit (or other graceful) recycle with immediate relaunch;
+ *   non-zero exits use crash restart policy with exponential backoff
  * - Shutdown: sends SIGTERM with configurable grace period, then SIGKILL
  * - stderr is drained incrementally during stdout reads; a bounded tail per
- *   consumer key is retained for crash diagnostics (Symfony Process buffers
- *   are cleared so idle polling does not retain the full event bus history)
+ *   consumer key is retained for abnormal-exit diagnostics (Symfony Process
+ *   buffers are cleared so idle polling does not retain the full event bus
+ *   history)
  * - getProcess(): exposes the first Process for a transport name (legacy)
  *
  * App executable and runtime CWD resolution:
@@ -48,6 +52,9 @@ final class ConsumerSupervisor implements ConsumerStdoutSourceInterface
     private const int MAX_RESTARTS = 3;
     private const int RESTART_WINDOW_SECONDS = 60;
     private const int INITIAL_RESTART_DELAY_MS = 1000;
+
+    /** Symfony Messenger graceful worker recycle threshold for controller consumers. */
+    private const string CONSUMER_MEMORY_LIMIT = '256M';
 
     /** @var array<string, Process> compositeKey => process */
     private array $consumers = [];
@@ -107,7 +114,7 @@ final class ConsumerSupervisor implements ConsumerStdoutSourceInterface
                     'messenger:consume',
                     $transportName,
                     '--no-interaction',
-                    '--time-limit=3600',
+                    '--memory-limit='.self::CONSUMER_MEMORY_LIMIT,
                 ],
                 cwd: $cwd,
                 env: $env,
@@ -259,17 +266,42 @@ final class ConsumerSupervisor implements ConsumerStdoutSourceInterface
                 $stderr = $process->getErrorOutput();
             }
 
+            $transportName = $this->extractTransportName($key);
+            $instanceId = $this->extractInstanceId($key);
+
+            unset($this->stderrTails[$key]);
+            unset($this->consumers[$key]);
+
+            if (0 === $exitCode) {
+                $this->logger->info('Consumer process exited gracefully, recycling', [
+                    'component' => 'ConsumerSupervisor',
+                    'event_type' => 'consumer.graceful_recycle',
+                    'key' => $key,
+                    'transport' => $transportName,
+                    'instance' => $instanceId,
+                    'pid' => $process->getPid(),
+                    'exit_code' => $exitCode,
+                    'stderr' => '' !== $stderr ? $stderr : null,
+                ]);
+
+                unset($this->restartCounts[$key], $this->restartWindows[$key]);
+
+                if (!$this->shuttingDown) {
+                    $this->launch($transportName, $instanceId);
+                }
+
+                continue;
+            }
+
             $this->logger->warning('Consumer process exited unexpectedly', [
+                'component' => 'ConsumerSupervisor',
+                'event_type' => 'consumer.abnormal_exit',
                 'key' => $key,
-                'transport' => $this->extractTransportName($key),
+                'transport' => $transportName,
                 'pid' => $process->getPid(),
                 'exit_code' => $exitCode,
                 'stderr' => '' !== $stderr ? $stderr : null,
             ]);
-
-            unset($this->stderrTails[$key]);
-
-            unset($this->consumers[$key]);
 
             $this->attemptRestart($key);
         }
