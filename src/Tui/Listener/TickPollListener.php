@@ -161,6 +161,16 @@ final class TickPollListener implements TuiListenerRegistrar
                 }
             }
 
+            $mainViewPendingQuestion = !$liveActive
+                && $questionCoordinator->actionRequired()
+                && !$questionController->isAwaitingFreeForm();
+
+            if ($mainViewPendingQuestion) {
+                $screen->setWorkingVisible(false);
+            } else {
+                $screen->setWorkingVisible(true);
+            }
+
             // Update working status based on authoritative activity state.
             // SubmitListener sets 'Working...' optimistically on send;
             // this keeps it visible while active and clears it when idle/terminal.
@@ -201,6 +211,13 @@ final class TickPollListener implements TuiListenerRegistrar
                 }
 
                 SubagentLiveAttention::refreshAttentionFooter($state, $screen);
+
+                return null;
+            }
+
+            if ($mainViewPendingQuestion) {
+                $screen->setWorkingMessage(null);
+                SubagentLiveAttention::syncMainAttention($state, $screen);
 
                 return null;
             }

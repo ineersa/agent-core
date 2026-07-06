@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Tests\Listener;
 
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
+use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeExceptionBoundary;
 use Ineersa\CodingAgent\Runtime\Contract\TurnTreeProviderInterface;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
@@ -739,12 +740,73 @@ final class TickPollListenerTest extends TestCase
         );
 
         $state = new TuiSessionState($parentRunId);
-        $state->handle = new \Ineersa\CodingAgent\Runtime\Contract\RunHandle($parentRunId);
+        $state->handle = new RunHandle($parentRunId);
         $state->activity = RunActivityStateEnum::WaitingHuman;
 
         $ref = new \ReflectionMethod(RuntimeQuestionEventHandler::class, 'shouldRejectOrphanedQuestion');
         $reject = $ref->invoke($this->runtimeQuestionHandler(), $state, $coordinator->activeRequest());
         $this->assertFalse($reject, 'Parent WaitingHuman question must not be self-healed as orphaned');
+    }
+
+    public function testParentWaitingHumanTickHidesWorkingRowAndClearsQuestionPendingStatus(): void
+    {
+        $parentRunId = 'parent-hitl-chrome';
+        $eventApplier = (new \ReflectionClass(TuiRuntimeEventApplier::class))->newInstanceWithoutConstructor();
+        $logger = $this->createStub(LoggerInterface::class);
+        $boundary = (new \ReflectionClass(RuntimeExceptionBoundary::class))->newInstanceWithoutConstructor();
+        $poller = new RuntimeEventPoller($eventApplier, $logger, $boundary, $this->createStub(TurnTreeProviderInterface::class));
+
+        $coordinator = new QuestionCoordinator();
+        $coordinator->enqueue(
+            new QuestionRequest(
+                requestId: 'parent_hitl_chrome',
+                source: QuestionSource::AgentCore,
+                kind: QuestionKind::Text,
+                prompt: 'Which docs file would you like me to inspect and summarize?',
+                schema: ['type' => 'string'],
+                runId: $parentRunId,
+                questionId: 'q_parent_docs_chrome',
+            ),
+        );
+
+        $questionController = new QuestionController($coordinator);
+
+        $listenerRef = new \ReflectionClass(TickPollListener::class);
+        $listener = $listenerRef->newInstanceWithoutConstructor();
+        $listenerRef->getProperty('poller')->setValue($listener, $poller);
+        $listenerRef->getProperty('subagentLiveChildPoller')->setValue($listener, $this->createIsolatedSubagentLiveChildPoller());
+        $listenerRef->getProperty('questionCoordinator')->setValue($listener, $coordinator);
+        $listenerRef->getProperty('questionController')->setValue($listener, $questionController);
+        $listenerRef->getProperty('runtimeQuestionEventHandler')->setValue($listener, new RuntimeQuestionEventHandler());
+
+        $state = new TuiSessionState($parentRunId);
+        $state->handle = new RunHandle($parentRunId);
+        $state->activity = RunActivityStateEnum::WaitingHuman;
+
+        $tui = new Tui();
+        $theme = new DefaultTheme(new ThemePalette('test'));
+        $promptEditor = new PromptEditor();
+        $screen = new ChatScreen($theme, $parentRunId, $promptEditor);
+        $screen->mount($tui);
+        $screen->setWorkingMessage('Working...');
+        $screen->setStatus('action', '\u{26A0} Question pending');
+
+        $context = $this->buildTuiContext()
+            ->withTui($tui)
+            ->withState($state)
+            ->withScreen($screen)
+            ->build();
+
+        $listener->register($context);
+
+        $handlerRef = new \ReflectionProperty(TuiTickDispatcher::class, 'handlers');
+        $handlers = $handlerRef->getValue($context->ticks);
+        ($handlers[0])();
+
+        $this->assertTrue($questionController->isOpen(), 'Tick must open the text question overlay');
+        $this->assertArrayNotHasKey('action', $this->statusEntries($screen));
+        $this->assertFalse($this->isWorkingVisible($screen));
+        $this->assertNotSame('Working...', $this->workingMessage($screen));
     }
 
     private function runtimeQuestionHandler(): RuntimeQuestionEventHandler
@@ -758,5 +820,30 @@ final class TickPollListenerTest extends TestCase
             new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState()),
             new NullLogger(),
         );
+    }
+
+    /** @return array<string, string> */
+    private function statusEntries(ChatScreen $screen): array
+    {
+        $ref = new \ReflectionClass(ChatScreen::class);
+        $prop = $ref->getProperty('footerDataProvider');
+
+        return $prop->getValue($screen)->getStatusEntries();
+    }
+
+    private function workingMessage(ChatScreen $screen): string
+    {
+        $ref = new \ReflectionClass(ChatScreen::class);
+        $registry = $ref->getProperty('registry');
+
+        return $registry->getValue($screen)->getWorkingMessage();
+    }
+
+    private function isWorkingVisible(ChatScreen $screen): bool
+    {
+        $ref = new \ReflectionClass(ChatScreen::class);
+        $registry = $ref->getProperty('registry');
+
+        return $registry->getValue($screen)->isWorkingVisible();
     }
 }

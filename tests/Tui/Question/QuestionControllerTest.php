@@ -17,6 +17,7 @@ use Ineersa\Tui\Theme\ThemeColorEnum;
 use Ineersa\Tui\Theme\ThemePalette;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Tui\Tui;
 use Symfony\Component\Tui\Widget\ContainerWidget;
 use Symfony\Component\Tui\Widget\EditorWidget;
 use Symfony\Component\Tui\Widget\MarkdownWidget;
@@ -172,6 +173,41 @@ class QuestionControllerTest extends TestCase
         $this->assertStringContainsString('Describe your workflow.', $prompt);
         $this->assertStringNotContainsString('…', $prompt, 'Prompt should wrap, not ellipsis-truncate');
         $this->assertStringContainsString('[type answer and press Enter]', preg_replace('/\x1b\[[0-9;]*m/', '', $hint));
+    }
+
+    #[Test]
+    public function testTextOverlayMountClearsActionStatusInsteadOfQuestionPending(): void
+    {
+        $request = new QuestionRequest(
+            requestId: 'text-status',
+            source: QuestionSource::AgentCore,
+            kind: QuestionKind::Text,
+            prompt: 'Which docs file?',
+        );
+
+        $tui = new Tui();
+        $palette = new ThemePalette(
+            name: 'test',
+            colors: [
+                ThemeColorEnum::Accent->value => 'cyan',
+                ThemeColorEnum::Muted->value => 'gray',
+            ],
+        );
+        $screen = new ChatScreen(new DefaultTheme($palette), 'text-status-session', new PromptEditor());
+        $screen->mount($tui);
+        $screen->setStatus('action', 'Type your answer and press Enter');
+
+        $this->controller->setRuntimeRefs(
+            (new \ReflectionClass(\Ineersa\Tui\Runtime\TuiRuntimeContext::class))->newInstanceWithoutConstructor(),
+            $screen,
+        );
+        $this->controller->open($request);
+
+        $chatRef = new \ReflectionClass(ChatScreen::class);
+        $footerProp = $chatRef->getProperty('footerDataProvider');
+        $entries = $footerProp->getValue($screen)->getStatusEntries();
+        $this->assertArrayNotHasKey('action', $entries);
+        $this->assertTrue($this->controller->isOpen());
     }
 
     /**
