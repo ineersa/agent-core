@@ -59,6 +59,29 @@ final class SessionRunEventStoreTest extends TestCase
         }
     }
 
+    public function testAllForAfterReturnsOnlyEventsAfterCursor(): void
+    {
+        $runId = 'run-'.bin2hex(random_bytes(4));
+        for ($seq = 1; $seq <= 5; ++$seq) {
+            $this->store->append(new RunEvent(
+                runId: $runId,
+                seq: $seq,
+                turnNo: 0,
+                type: 'run_started',
+                payload: ['n' => $seq],
+            ));
+        }
+
+        $after = [];
+        foreach ($this->store->allForAfter($runId, 3) as $event) {
+            $after[] = $event;
+        }
+
+        $this->assertCount(2, $after);
+        $this->assertSame(4, $after[0]->seq);
+        $this->assertSame(5, $after[1]->seq);
+    }
+
     public function testAllForReturnsEmptyForMissingRun(): void
     {
         $events = $this->store->allFor('nonexistent');

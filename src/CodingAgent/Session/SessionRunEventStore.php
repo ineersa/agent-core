@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Session;
 
+use Ineersa\AgentCore\Contract\CursorAwareEventStoreInterface;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
@@ -26,7 +27,7 @@ use Symfony\Component\Lock\LockFactory;
  * Uses HatfieldSessionStore::resolveSessionsBasePath() as the single
  * source of truth for the sessions directory.
  */
-final class SessionRunEventStore implements EventStoreInterface
+final class SessionRunEventStore implements CursorAwareEventStoreInterface
 {
     private readonly string $sessionsBasePath;
 
@@ -68,6 +69,43 @@ final class SessionRunEventStore implements EventStoreInterface
     }
 
     /**
+     * @return iterable<int, RunEvent>
+     */
+    public function allForAfter(string $runId, int $afterSeq): iterable
+    {
+        $path = $this->eventsPath($runId);
+
+        if (!is_readable($path)) {
+            return;
+        }
+
+        $file = new \SplFileObject($path, 'r');
+        $file->setFlags(\SplFileObject::DROP_NEW_LINE | \SplFileObject::READ_AHEAD);
+
+        foreach ($file as $line) {
+            if (!\is_string($line)) {
+                continue;
+            }
+
+            $trimmedLine = trim($line);
+            if ('' === $trimmedLine) {
+                continue;
+            }
+
+            $event = $this->denormalizeLine($runId, $trimmedLine);
+            if (null === $event) {
+                continue;
+            }
+
+            if ($event->seq <= $afterSeq) {
+                continue;
+            }
+
+            yield $event;
+        }
+    }
+
+    /**
      * @return list<RunEvent>
      */
     public function allFor(string $runId): array
@@ -91,43 +129,9 @@ final class SessionRunEventStore implements EventStoreInterface
                 continue;
             }
 
-            try {
-                $payload = json_decode($trimmedLine, true, 512, \JSON_THROW_ON_ERROR);
-            } catch (\JsonException $e) {
-                throw new \RuntimeException(\sprintf('Corrupt event JSONL line for run "%s" — not parseable as JSON: %s', $runId, $e->getMessage()), previous: $e);
-            }
-
-            if (!\is_array($payload)) {
-                $this->logger->warning('SessionRunEventStore skipped non-associative JSONL line', [
-                    'run_id' => $runId,
-                    'line' => mb_substr($trimmedLine, 0, 200),
-                ]);
-
-                continue;
-            }
-
-            $event = $this->eventPayloadNormalizer->denormalizeRunEvent($payload);
+            $event = $this->denormalizeLine($runId, $trimmedLine);
             if (null === $event) {
-                if (!$this->isIncompatibleSchemaVersion($payload)) {
-                    throw new \RuntimeException(\sprintf('Corrupt event JSONL for run "%s": denormalization returned null for compatible or missing schema — line: %s', $runId, mb_substr($trimmedLine, 0, 200)));
-                }
-
-                // Schema version is present but incompatible. This is an
-                // intentional schema-version compatibility policy: events from
-                // unsupported major versions are ignored with diagnostics.
-                $this->logger->error('Skipping incompatible schema version in event JSONL', [
-                    'run_id' => $runId,
-                    'schema_version' => $payload['schema_version'] ?? null,
-                    'component' => 'session.event_store',
-                    'event_type' => 'session.incompatible_schema_skipped',
-                ]);
-
                 continue;
-            }
-
-            // Validate embedded runId matches directory (canonical source)
-            if ($event->runId !== $runId) {
-                throw new \RuntimeException(\sprintf('RunEvent integrity error at seq %d: embedded runId "%s" does not match directory "%s".', $event->seq, $event->runId, $runId));
             }
 
             $events[] = $event;
@@ -136,6 +140,46 @@ final class SessionRunEventStore implements EventStoreInterface
         usort($events, static fn (RunEvent $left, RunEvent $right): int => $left->seq <=> $right->seq);
 
         return $events;
+    }
+
+    private function denormalizeLine(string $runId, string $trimmedLine): ?RunEvent
+    {
+        try {
+            $payload = json_decode($trimmedLine, true, 512, \JSON_THROW_ON_ERROR);
+        } catch (\JsonException $e) {
+            throw new \RuntimeException(\sprintf('Corrupt event JSONL line for run "%s" — not parseable as JSON: %s', $runId, $e->getMessage()), previous: $e);
+        }
+
+        if (!\is_array($payload)) {
+            $this->logger->warning('SessionRunEventStore skipped non-associative JSONL line', [
+                'run_id' => $runId,
+                'line' => mb_substr($trimmedLine, 0, 200),
+            ]);
+
+            return null;
+        }
+
+        $event = $this->eventPayloadNormalizer->denormalizeRunEvent($payload);
+        if (null === $event) {
+            if (!$this->isIncompatibleSchemaVersion($payload)) {
+                throw new \RuntimeException(\sprintf('Corrupt event JSONL for run "%s": denormalization returned null for compatible or missing schema — line: %s', $runId, mb_substr($trimmedLine, 0, 200)));
+            }
+
+            $this->logger->error('Skipping incompatible schema version in event JSONL', [
+                'run_id' => $runId,
+                'schema_version' => $payload['schema_version'] ?? null,
+                'component' => 'session.event_store',
+                'event_type' => 'session.incompatible_schema_skipped',
+            ]);
+
+            return null;
+        }
+
+        if ($event->runId !== $runId) {
+            throw new \RuntimeException(\sprintf('RunEvent integrity error at seq %d: embedded runId "%s" does not match directory "%s".', $event->seq, $event->runId, $runId));
+        }
+
+        return $event;
     }
 
     /**

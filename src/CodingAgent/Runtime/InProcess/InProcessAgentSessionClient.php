@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Runtime\InProcess;
 
 use Ineersa\AgentCore\Application\Handler\RunRewindService;
 use Ineersa\AgentCore\Contract\AgentRunnerInterface;
+use Ineersa\AgentCore\Contract\CursorAwareEventStoreInterface;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolExecutorInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
@@ -21,6 +22,7 @@ use Ineersa\CodingAgent\Config\SessionMetadataStore;
 use Ineersa\CodingAgent\Mcp\McpSessionLifecycleDispatcher;
 use Ineersa\CodingAgent\PromptTemplate\PromptTemplateService;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
+use Ineersa\CodingAgent\Runtime\Contract\CursorAwareAgentSessionClientInterface;
 use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeEventSinkInterface;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
@@ -45,7 +47,7 @@ use Ineersa\CodingAgent\Tool\ToolQuestion\ToolQuestionStoreInterface;
  * This is the default transport during development. It must stay
  * behaviorally equivalent to JsonlProcessAgentSessionClient.
  */
-final class InProcessAgentSessionClient implements AgentSessionClient
+final class InProcessAgentSessionClient implements AgentSessionClient, CursorAwareAgentSessionClientInterface
 {
     public function __construct(
         private readonly AgentRunnerInterface $runner,
@@ -252,31 +254,38 @@ final class InProcessAgentSessionClient implements AgentSessionClient
         };
     }
 
-    public function events(string $runId): iterable
+    public function eventsAfter(string $runId, int $afterSeq): iterable
     {
-        // Yield transient streaming events BEFORE canonical events.
-        // During the LLM stream, the RuntimeEventStreamObserver emits
-        // thinking/text deltas into the in-memory sink. These arrive
-        // before coarse completion events (llm_step_completed) that
-        // finalize the message. Yielding transients first ensures the
-        // projector sees streaming block creation/updates before the
-        // completion handler tries to finalize them, preventing:
-        //   - Duplicate assistant blocks (one from completion, one
-        //     from later streaming deltas)
-        //   - Thinking blocks appearing after the main response
-        //   - Empty thinking blocks when deltas arrive too late
         if (null !== $this->transientSink && $this->transientSink instanceof InMemoryRuntimeEventSink) {
             yield from $this->transientSink->drain($runId);
         }
 
-        $runEvents = $this->eventStore->allFor($runId);
+        if ($this->eventStore instanceof CursorAwareEventStoreInterface) {
+            foreach ($this->eventStore->allForAfter($runId, $afterSeq) as $runEvent) {
+                $runtimeEvent = $this->mapper->toRuntimeEvent($runEvent);
+                if (null !== $runtimeEvent) {
+                    yield $runtimeEvent;
+                }
+            }
 
-        foreach ($runEvents as $runEvent) {
+            return;
+        }
+
+        foreach ($this->eventStore->allFor($runId) as $runEvent) {
+            if ($runEvent->seq <= $afterSeq) {
+                continue;
+            }
+
             $runtimeEvent = $this->mapper->toRuntimeEvent($runEvent);
             if (null !== $runtimeEvent) {
                 yield $runtimeEvent;
             }
         }
+    }
+
+    public function events(string $runId): iterable
+    {
+        yield from $this->eventsAfter($runId, 0);
     }
 
     public function cancel(string $runId): void

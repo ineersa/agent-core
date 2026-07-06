@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Runtime\Controller;
 
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
+use Ineersa\CodingAgent\Runtime\Contract\CursorAwareAgentSessionClientInterface;
 use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeExceptionBoundary;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
@@ -225,6 +226,42 @@ final class RuntimeEventEmitterTest extends TestCase
         $this->assertStringContainsString('turn.started', $raw);
     }
 
+    public function testDrainUsesEventsAfterWhenClientIsCursorAware(): void
+    {
+        $runId = 'cursor-run-1';
+        $client = new CursorAwareDrainAgentSessionClient(
+            eventsAfterByCall: [
+                1 => [
+                    new RuntimeEvent(RuntimeEventTypeEnum::TurnStarted->value, $runId, 10, []),
+                ],
+                2 => [
+                    new RuntimeEvent(RuntimeEventTypeEnum::TurnCompleted->value, $runId, 11, []),
+                ],
+            ],
+        );
+
+        $emitter = new RuntimeEventEmitter($client, new RuntimeExceptionBoundary(new EventDispatcher()), $this->createStub(LoggerInterface::class));
+        $emitter->openStdout();
+        $this->replaceStdoutWithMemory($emitter);
+
+        $emitter->emit(new RuntimeEvent(
+            type: RuntimeEventTypeEnum::RunStarted->value,
+            runId: $runId,
+            seq: 1,
+            payload: [],
+        ));
+
+        $emitter->drainRegisteredRunsOnce();
+        $this->assertSame(1, $client->eventsAfterCallCount);
+        $this->assertSame(0, $client->eventsAfterArgs[0]['afterSeq']);
+        $this->assertSame(0, $client->plainEventsCallCount);
+
+        $emitter->drainRegisteredRunsOnce();
+        $this->assertSame(2, $client->eventsAfterCallCount);
+        $this->assertSame(10, $client->eventsAfterArgs[1]['afterSeq']);
+        $this->assertSame(0, $client->plainEventsCallCount);
+    }
+
     private function createEmitter(): RuntimeEventEmitter
     {
         $boundary = new RuntimeExceptionBoundary(new EventDispatcher());
@@ -300,6 +337,74 @@ final class FlakySeqDrainAgentSessionClient implements AgentSessionClient
         }
 
         yield from $this->eventsByCall[$this->eventsCallCount] ?? [];
+    }
+
+    public function cancel(string $runId): void
+    {
+    }
+
+    public function shellExecute(string $command, string $sessionId, string $cwd): RunHandle
+    {
+        throw new \BadMethodCallException('not used');
+    }
+
+    public function completeRun(string $runId): void
+    {
+    }
+
+    public function compact(string $runId, ?string $customInstructions = null): void
+    {
+    }
+}
+
+/**
+ * @internal
+ */
+final class CursorAwareDrainAgentSessionClient implements AgentSessionClient, CursorAwareAgentSessionClientInterface
+{
+    public int $eventsAfterCallCount = 0;
+    public int $plainEventsCallCount = 0;
+
+    /** @var list<array{runId: string, afterSeq: int}> */
+    public array $eventsAfterArgs = [];
+
+    /** @var array<int, list<RuntimeEvent>> */
+    private array $eventsAfterByCall;
+
+    /**
+     * @param array<int, list<RuntimeEvent>> $eventsAfterByCall 1-based call index => events
+     */
+    public function __construct(array $eventsAfterByCall)
+    {
+        $this->eventsAfterByCall = $eventsAfterByCall;
+    }
+
+    public function start(StartRunRequest $request): RunHandle
+    {
+        throw new \BadMethodCallException('not used');
+    }
+
+    public function attach(string $runId): RunHandle
+    {
+        throw new \BadMethodCallException('not used');
+    }
+
+    public function send(string $runId, UserCommand $command): void
+    {
+    }
+
+    public function events(string $runId): iterable
+    {
+        ++$this->plainEventsCallCount;
+        throw new \BadMethodCallException('plain events() must not be used when cursor-aware drain is active');
+    }
+
+    public function eventsAfter(string $runId, int $afterSeq): iterable
+    {
+        ++$this->eventsAfterCallCount;
+        $this->eventsAfterArgs[] = ['runId' => $runId, 'afterSeq' => $afterSeq];
+
+        yield from $this->eventsAfterByCall[$this->eventsAfterCallCount] ?? [];
     }
 
     public function cancel(string $runId): void

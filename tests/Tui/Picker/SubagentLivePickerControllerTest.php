@@ -22,7 +22,6 @@ use Symfony\Component\Tui\Widget\SelectListWidget;
 
 final class SubagentLivePickerControllerTest extends TestCase
 {
-
     #[Test]
     public function testOpenTwiceDoesNotStackOverlay(): void
     {

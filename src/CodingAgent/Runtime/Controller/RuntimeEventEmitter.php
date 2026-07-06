@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Runtime\Controller;
 
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
+use Ineersa\CodingAgent\Runtime\Contract\CursorAwareAgentSessionClientInterface;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeExceptionBoundary;
 use Ineersa\CodingAgent\Runtime\Protocol\JsonlCodec;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
@@ -154,7 +155,11 @@ final class RuntimeEventEmitter
             }
 
             try {
-                foreach ($this->eventClient->events($runId) as $event) {
+                $eventStream = $this->eventClient instanceof CursorAwareAgentSessionClientInterface
+                    ? $this->eventClient->eventsAfter($runId, $cursor)
+                    : $this->eventClient->events($runId);
+
+                foreach ($eventStream as $event) {
                     // Skip transient streaming deltas (seq=0) — these are
                     // delivered via LLM consumer stdout pipe, not canonical events.
                     if (0 === $event->seq) {
