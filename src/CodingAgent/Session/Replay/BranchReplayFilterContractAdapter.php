@@ -32,7 +32,6 @@ final readonly class BranchReplayFilterContractAdapter implements BranchReplayFi
         return new BranchReplayResultDTO(
             events: $dto->events,
             canonicalEventCount: $dto->canonicalEventCount,
-            canonicalLastSeq: $dto->canonicalLastSeq,
             activePathTurnNos: $dto->activePathTurnNos,
             currentLeafTurnNo: $dto->currentLeafTurnNo,
         );

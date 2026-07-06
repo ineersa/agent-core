@@ -521,6 +521,11 @@ same handler execution.
 
 ### Read model: TurnTreeDTO
 
+**Implementation (SESSION-07A):** turn-tree projection and branch replay filtering live under
+`Ineersa\CodingAgent\Session\TurnTree` and `Ineersa\CodingAgent\Session\Replay`.
+AgentCore replay/rewind handlers consume narrow contracts under
+`Ineersa\AgentCore\Contract\TurnTree` (not the full session DTO shapes).
+
 `TurnTreeProjector` builds a `TurnTreeDTO` from the canonical event stream:
 - `nodesByTurnNo` — map from turn number to `TurnTreeNodeDTO` (turnNo, parentTurnNo,
   childTurnNos, anchorSeq, title, promptPreview, isCurrentLeaf).

@@ -14,15 +14,11 @@ final readonly class TurnTreeSnapshotDTO
 {
     /**
      * @param array<int, TurnTreeNodeSnapshotDTO> $nodesByTurnNo     Turn number → node map
-     * @param list<int>                           $rootTurnNos       Turn numbers with no parent
-     * @param list<int>                           $activePathTurnNos Path from root to current leaf
      */
     public function __construct(
         public string $runId,
         public array $nodesByTurnNo,
-        public array $rootTurnNos,
         public ?int $currentLeafTurnNo,
-        public array $activePathTurnNos,
     ) {
     }
 }

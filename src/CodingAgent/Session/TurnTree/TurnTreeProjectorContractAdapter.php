@@ -27,24 +27,13 @@ final readonly class TurnTreeProjectorContractAdapter implements TurnTreeProject
             $nodes[$turnNo] = new TurnTreeNodeSnapshotDTO(
                 turnNo: $node->turnNo,
                 parentTurnNo: $node->parentTurnNo,
-                childTurnNos: $node->childTurnNos,
-                anchorSeq: $node->anchorSeq,
-                lastSeq: $node->lastSeq,
-                title: $node->title,
-                promptPreview: $node->promptPreview,
-                createdAt: $node->createdAt,
-                isCurrentLeaf: $node->isCurrentLeaf,
-                reason: $node->reason,
-                displayRole: $node->displayRole,
             );
         }
 
         return new TurnTreeSnapshotDTO(
             runId: $tree->runId,
             nodesByTurnNo: $nodes,
-            rootTurnNos: $tree->rootTurnNos,
             currentLeafTurnNo: $tree->currentLeafTurnNo,
-            activePathTurnNos: $tree->activePathTurnNos,
         );
     }
 }
