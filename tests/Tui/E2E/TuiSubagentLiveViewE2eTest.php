@@ -84,6 +84,9 @@ final class TuiSubagentLiveViewE2eTest extends TestCase
             $this->assertStringContainsString('agent_e2e_progress_fixture', $capAfterBlock, 'Must remain in live view after blocked /new');
             $this->assertStringNotContainsString('subagent scout running', $capAfterBlock, 'Must not switch back to parent transcript after blocked /new');
 
+            $capLive = $this->tmux->capturePlainWithHistory($pane, 2500);
+            $this->assertStringNotContainsString('skills', strtolower($capLive), 'Compact header must be hidden in live view');
+
             $this->tmux->sendKey($pane, 'C-u');
             usleep(50_000);
             $this->tmux->sendLiteral($pane, '/agents-main');

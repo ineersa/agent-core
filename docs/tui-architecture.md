@@ -916,3 +916,8 @@ Key differences from the pre-cleanup boundary model:
 - `TuiListener` no longer depends on `TuiApplication` or `TuiWidget` — it depends
   on `TuiRuntime`/`TuiScreen`/`TuiTranscript` instead.
 - `TuiApplication` depends on `TuiRuntime`/`TuiScreen` (not the reverse).
+
+
+## Subagent live view
+
+Commands: `/agents-live`, `/agents-main`. Global **Ctrl+\** toggles picker (main) and return (live view). While live view is active: compact-header and parent footer stats are suppressed; footer shows live child identity and hints. Child queued steer/follow-up messages render in the pending queue (`⏳`). Parent prompt history (Up/Down) is disabled in live view. Process-mode JSONL client re-buffers non-matching run events with watermark/max diagnostics.

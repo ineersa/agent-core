@@ -14,6 +14,28 @@ final class SubagentLiveCatalog
     /** @var array<string, SubagentLiveChildDTO> artifactId → child */
     private array $byArtifactId = [];
 
+    /** @var array<string, true> */
+    private array $dismissedArtifactIds = [];
+
+    public function dismissArtifactId(string $artifactId): ?SubagentLiveChildDTO
+    {
+        $artifactId = trim($artifactId);
+        if ('' === $artifactId) {
+            return null;
+        }
+
+        $existing = $this->byArtifactId[$artifactId] ?? null;
+        $this->dismissedArtifactIds[$artifactId] = true;
+        unset($this->byArtifactId[$artifactId]);
+
+        return $existing;
+    }
+
+    public function isDismissed(string $artifactId): bool
+    {
+        return isset($this->dismissedArtifactIds[trim($artifactId)]);
+    }
+
     /**
      * @return list<SubagentLiveChildDTO>
      */
@@ -106,7 +128,7 @@ final class SubagentLiveCatalog
     private function upsertFromProgressRow(array $row, int $now): void
     {
         $artifactId = trim((string) ($row['artifact_id'] ?? ''));
-        if ('' === $artifactId) {
+        if ('' === $artifactId || $this->isDismissed($artifactId)) {
             return;
         }
 

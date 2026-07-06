@@ -365,3 +365,12 @@ The following features are **not yet implemented**:
 - [Session storage](session-storage.md) — child artifact layout and invariants
 - [Settings](settings.md) — `agents.enabled`, `agents.paths`
 - [Implementation plan](../.pi/plans/agents-subagents-implementation-plan.md)
+
+
+## Subagent live view (parent TUI)
+
+- `/agents-live` opens a picker of known child runs; Enter enters interactive live view for the selected child.
+- `/agents-main` and **Ctrl+\** return to the parent transcript. Live view routes plain text to the selected child as steer/follow_up.
+- Child HITL (`ask_human`, SafeGuard) questions are labeled and answered on the child run id. ESC cancels the selected child while in live view.
+- Picker **d** removes a catalog row (UI dismiss only; running children keep executing in the background).
+- Steering applies at turn boundaries (not interruptive). Auto-delete of completed children is future settings work.

@@ -35,6 +35,10 @@ final readonly class FooterStateSegmentProvider implements FooterSegmentProvider
     public function getSegments(): array
     {
         $s = $this->state;
+        if ($s->subagentLiveView->active) {
+            return $this->liveViewSegments($s);
+        }
+
         $segments = [];
 
         // ── Group 1: ◆ model (priorities 0-1) ──
@@ -162,6 +166,29 @@ final readonly class FooterStateSegmentProvider implements FooterSegmentProvider
     public static function thinkingColor(string $reasoning): ThemeColorEnum
     {
         return ThemeColorEnum::forReasoning($reasoning);
+    }
+
+    /** @return list<FooterSegment> */
+    private function liveViewSegments(TuiSessionState $s): array
+    {
+        $segments = [];
+        $segments[] = new FooterSegment(text: '◆', priority: 0, color: ThemeColorEnum::Accent);
+        $segments[] = new FooterSegment(text: 'agents-live', priority: 1, color: ThemeColorEnum::Accent);
+
+        $child = $s->subagentLiveView->selected;
+        if (null !== $child) {
+            $segments[] = new FooterSegment(
+                text: \sprintf('%s [%s]', $child->agentName, $child->statusLabel()),
+                priority: 5,
+                color: ThemeColorEnum::Working,
+            );
+        }
+
+        $segments[] = new FooterSegment(text: '/agents-main', priority: 10, color: ThemeColorEnum::Dim);
+        $segments[] = new FooterSegment(text: 'Ctrl+\\ main', priority: 11, color: ThemeColorEnum::Dim);
+        $segments[] = new FooterSegment(text: 'Esc cancel child', priority: 12, color: ThemeColorEnum::Muted);
+
+        return $segments;
     }
 
     private static function fmt(int $n): string

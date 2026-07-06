@@ -67,6 +67,7 @@ final class SubagentLiveChildViewPoller
         $changed = false;
         $scratch = new TuiSessionState($live->selected->agentRunId);
         $scratch->activity = $live->childActivity;
+        $scratch->queuedUserMessages = $live->childQueuedUserMessages;
 
         foreach ($events as $event) {
             $seq = $event->seq;
@@ -99,6 +100,7 @@ final class SubagentLiveChildViewPoller
 
         if ($changed) {
             $live->childActivity = $scratch->activity;
+            $live->childQueuedUserMessages = $scratch->queuedUserMessages;
         }
 
         if (!$changed) {

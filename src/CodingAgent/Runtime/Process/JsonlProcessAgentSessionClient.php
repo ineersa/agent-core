@@ -37,6 +37,8 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
 
     /** Sliding window in seconds for restart rate-limiting. */
     private const float RESTART_WINDOW = 60.0;
+    private const int EVENT_BUFFER_WARNING_THRESHOLD = 1000;
+    private const int EVENT_BUFFER_MAX = 10000;
     /** @var resource|null */
     private $process;
 
@@ -180,7 +182,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
                     }
 
                     // Buffer non-matching events.
-                    $this->eventBuffer->enqueue($event);
+                    $this->bufferEvent($event, 'read_events');
                 }
 
                 $this->assertProcessStillRunning('waiting for run_started');
@@ -322,7 +324,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
         }
 
         foreach ($deferred as $event) {
-            $this->eventBuffer->enqueue($event);
+            $this->bufferEvent($event, 'events_mismatch_run_id');
         }
 
         // Read new events from the process.
@@ -332,7 +334,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
             } else {
                 // Child live view polls a different runId on the same JSONL pipe.
                 // Re-buffer so the next events($parentRunId) call can consume them.
-                $this->eventBuffer->enqueue($event);
+                $this->bufferEvent($event, 'read_events');
             }
         }
     }
@@ -575,7 +577,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
                     return;
                 }
 
-                $this->eventBuffer->enqueue($event);
+                $this->bufferEvent($event, 'read_events');
             }
 
             $this->assertProcessStillRunning('waiting for runtime.ready');
@@ -584,6 +586,41 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
         }
 
         throw new \RuntimeException('Controller did not emit runtime.ready within '.$timeout.'s'."\n".$this->diagnosticOutput());
+    }
+
+    private function bufferEvent(RuntimeEvent $event, string $reason): void
+    {
+        if ($this->eventBuffer->count() >= self::EVENT_BUFFER_MAX) {
+            $dropped = 0;
+            while ($this->eventBuffer->count() >= self::EVENT_BUFFER_MAX) {
+                $this->eventBuffer->dequeue();
+                ++$dropped;
+            }
+            $this->logger->warning('JSONL event buffer dropped oldest events at max capacity', [
+                'component' => 'JsonlProcessAgentSessionClient',
+                'event_type' => 'jsonl_event_buffer.drop_oldest',
+                'session_id' => $this->sessionId ?? '',
+                'run_id' => $event->runId,
+                'buffer_size' => $this->eventBuffer->count(),
+                'threshold' => self::EVENT_BUFFER_MAX,
+                'dropped' => $dropped,
+                'reason' => $reason,
+            ]);
+        }
+
+        $this->eventBuffer->enqueue($event);
+        $size = $this->eventBuffer->count();
+        if ($size >= self::EVENT_BUFFER_WARNING_THRESHOLD) {
+            $this->logger->warning('JSONL event buffer crossed warning threshold', [
+                'component' => 'JsonlProcessAgentSessionClient',
+                'event_type' => 'jsonl_event_buffer.watermark',
+                'session_id' => $this->sessionId ?? '',
+                'run_id' => $event->runId,
+                'buffer_size' => $size,
+                'threshold' => self::EVENT_BUFFER_WARNING_THRESHOLD,
+                'reason' => $reason,
+            ]);
+        }
     }
 
     private function writeCommand(RuntimeCommand $command): void

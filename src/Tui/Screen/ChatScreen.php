@@ -391,12 +391,21 @@ final class ChatScreen
      */
     public function syncQueuedUserMessages(array $queuedMessages): void
     {
-        $this->pendingRenderable->setMessages(array_values($queuedMessages));
+        $next = array_values($queuedMessages);
+        if ($next === $this->pendingRenderable->messages()) {
+            return;
+        }
+
+        $this->pendingRenderable->setMessages($next);
         $this->pendingWidget->invalidate();
     }
 
     public function setWorkingMessage(?string $message): void
     {
+        if ($message === $this->workingRenderable->getMessage()) {
+            return;
+        }
+
         $this->registry->setWorkingMessage($message);
         $this->workingRenderable->setMessage($message);
         $this->workingWidget->invalidate();
@@ -411,6 +420,12 @@ final class ChatScreen
 
     public function setStatus(string $key, ?string $text): void
     {
+        $entries = $this->registry->getStatusEntries();
+        $current = $entries[$key] ?? null;
+        if ($text === $current) {
+            return;
+        }
+
         $this->registry->setStatus($key, $text);
         $this->statusPanelRenderable->setEntry($key, $text);
         $this->footerDataProvider->setStatus($key, $text);
@@ -460,6 +475,22 @@ final class ChatScreen
     {
         $this->footerDataProvider->addProvider($provider);
         $this->footerWidget->invalidate();
+    }
+
+    /**
+     * Invalidate only the footer widget (elapsed time and footer segments).
+     */
+    public function refreshFooter(): void
+    {
+        $this->footerWidget->invalidate();
+    }
+
+    /**
+     * Invalidate only above-editor extension widgets (compact header, etc.).
+     */
+    public function refreshAboveEditorWidgets(): void
+    {
+        $this->aboveEditorWidget->invalidate();
     }
 
     /**

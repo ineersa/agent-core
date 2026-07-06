@@ -47,7 +47,27 @@ final class JsonlProcessAgentSessionClientEventBufferTest extends TestCase
         $this->assertSame('parent-run', $parentDrain[0]->runId);
     }
 
-    private function createIdleClient(): JsonlProcessAgentSessionClient
+    public function testBufferWatermarkLogsWhenThresholdExceeded(): void
+    {
+        $logger = new TestLogger();
+        $client = $this->createIdleClient($logger);
+        $ref = new \ReflectionClass($client);
+
+        $warn = new \ReflectionClassConstant(JsonlProcessAgentSessionClient::class, 'EVENT_BUFFER_WARNING_THRESHOLD');
+        $max = new \ReflectionClassConstant(JsonlProcessAgentSessionClient::class, 'EVENT_BUFFER_MAX');
+        $this->assertSame(1000, $warn->getValue());
+        $this->assertSame(10000, $max->getValue());
+
+        $bufferMethod = $ref->getMethod('bufferEvent');
+        for ($i = 0; $i < 1001; ++$i) {
+            $bufferMethod->invoke($client, new RuntimeEvent(RuntimeEventTypeEnum::TurnStarted->value, 'parent-run', $i, []), 'test');
+        }
+
+        $warnings = array_filter($logger->records, static fn (array $r): bool => 'jsonl_event_buffer.watermark' === ($r['context']['event_type'] ?? ''));
+        $this->assertNotEmpty($warnings);
+    }
+
+    private function createIdleClient(?TestLogger $logger = null): JsonlProcessAgentSessionClient
     {
         $fakeScript = $this->tmpDir.'/idle.php';
         file_put_contents($fakeScript, '<?php fwrite(STDOUT, json_encode(["type"=>"runtime.ready","runId"=>"","seq"=>0,"payload"=>[]])."\n"); fflush(STDOUT); while(fgets(STDIN)!==false){} exit(0);');
@@ -70,7 +90,7 @@ final class JsonlProcessAgentSessionClientEventBufferTest extends TestCase
         $client = new JsonlProcessAgentSessionClient(
             runtimeConfig: new RuntimeProcessConfig($locator, $this->tmpDir),
             promptTemplatesConfig: new PromptTemplatesRuntimeConfig(),
-            logger: new TestLogger(),
+            logger: $logger ?? new TestLogger(),
         );
         $client->attach('parent-run');
 

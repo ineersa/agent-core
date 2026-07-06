@@ -6,6 +6,7 @@ namespace Ineersa\Tui\Picker;
 
 use Ineersa\Tui\Runtime\SubagentLiveChildDTO;
 use Ineersa\Tui\Runtime\SubagentLiveChildViewPoller;
+use Ineersa\Tui\Runtime\SubagentLiveMainReturn;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Screen\ChatScreen;
 use Ineersa\Tui\Theme\ThemeColorEnum;
@@ -106,7 +107,7 @@ final class SubagentLivePickerController
 
         $theme = $screen->theme();
         $header = new TextWidget(
-            text: $theme->muted('Agents live — arrows move, Enter opens live view, Esc cancels'),
+            text: $theme->muted('Agents live — Enter live view, d removes, Ctrl+\\ main, Esc cancel'),
             truncate: true,
         );
 
@@ -126,8 +127,10 @@ final class SubagentLivePickerController
             keybindings: $kb,
         );
 
+        $picker = $this;
+
         $listWidget->onSelectionChange(
-            static function (SelectionChangeEvent $event) use ($listWidget, $children, $theme): void {
+            static function (SelectionChangeEvent $event) use ($listWidget, &$children, $theme): void {
                 $selectedValue = $event->getItem()['value'];
                 $selectedIdx = -1;
 
@@ -145,7 +148,6 @@ final class SubagentLivePickerController
             },
         );
 
-        $picker = $this;
         $listWidget->onSelect(static function (SelectEvent $event) use ($picker, $screen, $state): void {
             $item = $event->getItem();
             $artifactId = (string) ($item['value'] ?? '');
@@ -164,8 +166,79 @@ final class SubagentLivePickerController
             $picker->closePicker();
         });
 
+        $listWidget->onInput(static function (string $data) use ($picker, $listWidget, &$children, $theme, $screen, $state): bool {
+            if ('d' !== $data && 'D' !== $data) {
+                return false;
+            }
+
+            $picker->dismissSelected($listWidget, $children, $theme, $screen, $state);
+
+            return true;
+        });
+
         $this->overlay = new PickerOverlay();
         $this->overlay->mount($tui, $screen, $listWidget, $header);
+    }
+
+    /**
+     * @param list<SubagentLiveChildDTO> $children
+     */
+    private function dismissSelected(
+        SelectListWidget $listWidget,
+        array &$children,
+        TuiTheme $theme,
+        ChatScreen $screen,
+        TuiSessionState $state,
+    ): void {
+        $selected = $listWidget->getSelectedItem();
+        if (null === $selected) {
+            return;
+        }
+
+        $artifactId = (string) ($selected['value'] ?? '');
+        $removed = $state->subagentLiveCatalog->dismissArtifactId($artifactId);
+        if (null === $removed) {
+            return;
+        }
+
+        $state->subagentLiveView->removeChildCache($removed->agentRunId);
+
+        if ($state->subagentLiveView->active
+            && null !== $state->subagentLiveView->selected
+            && $state->subagentLiveView->selected->artifactId === $artifactId) {
+            SubagentLiveMainReturn::returnToMain($state, $screen, requestRender: false);
+        }
+
+        $children = array_values(array_filter(
+            $children,
+            static fn (SubagentLiveChildDTO $child): bool => $child->artifactId !== $artifactId,
+        ));
+
+        if ([] === $children) {
+            $this->closePicker();
+            $screen->setWorkingMessage('No known subagents yet. Launch a subagent first.');
+            $screen->requestRender(true);
+
+            return;
+        }
+
+        $idx = 0;
+        $selectedValue = (string) ($selected['value'] ?? '');
+        foreach ($children as $i => $child) {
+            if ($child->artifactId === $selectedValue) {
+                $idx = $i;
+                break;
+            }
+        }
+        $idx = min($idx, \count($children) - 1);
+        $listWidget->setItems(self::buildItems($children, $theme, selectedIndex: $idx));
+        $listWidget->setSelectedIndex($idx);
+
+        $msg = $removed->isRunning()
+            ? \sprintf('Removed %s from /agents-live (child continues in background).', $removed->agentName)
+            : \sprintf('Removed %s from /agents-live.', $removed->agentName);
+        $screen->setWorkingMessage($msg);
+        $screen->requestRender(true);
     }
 
     private function enterLiveView(SubagentLiveChildDTO $child, TuiSessionState $state, ChatScreen $screen): void
@@ -186,6 +259,7 @@ final class SubagentLivePickerController
         }
 
         $screen->setTranscriptBlocks($state->subagentLiveView->childTranscript);
+        $screen->syncQueuedUserMessages($state->subagentLiveView->childQueuedUserMessages);
         $screen->setWorkingMessage($child->isRunning() ? 'Child agent working...' : 'Child agent idle');
         $screen->requestRender(true);
     }

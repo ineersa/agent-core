@@ -116,6 +116,32 @@ final class CompactHeaderRegistrarTest extends TestCase
         $this->assertStringContainsString('reg-skill', $harness->plainScreenText());
     }
 
+    #[Test]
+    public function testCompactHeaderHiddenWhileLiveViewActive(): void
+    {
+        $harness = new VirtualTuiHarness(sessionId: 'compact-live');
+        $state = new TuiSessionState('compact-live');
+        $provider = new CompactHeaderSnapshotProvider(
+            $this->promptCatalog(),
+            $this->skillDiscovery(),
+            $this->agentDiscovery(),
+            $this->mcpStore(),
+            $this->mcpConfigLoader(),
+        );
+        $context = $this->buildTuiContext()
+            ->withTui($harness->tui())
+            ->withState($state)
+            ->withScreen($harness->screen())
+            ->build();
+        (new CompactHeaderRegistrar($provider, new NullLogger()))->register($context);
+        $context->ticks->dispatch(new TickEvent());
+        $this->assertNotEmpty($harness->screen()->registry()->getWidgetsByPlacement(WidgetPlacementEnum::AboveEditor));
+
+        $state->subagentLiveView->active = true;
+        $context->ticks->dispatch(new TickEvent());
+        $this->assertEmpty($harness->screen()->registry()->getWidgetsByPlacement(WidgetPlacementEnum::AboveEditor));
+    }
+
     private function promptCatalog(): PromptTemplateCatalogInterface
     {
         return new class implements PromptTemplateCatalogInterface {

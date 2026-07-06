@@ -49,6 +49,15 @@ final readonly class AppHotkeyRegistrar implements TuiListenerRegistrar
 
         $this->hotkeyRegistry->add(new HotkeyBindingDTO(
             context: 'Global',
+            keys: ['ctrl+\\'],
+            action: 'Toggle subagent live view',
+            description: 'Open /agents-live from main; return to main from live view',
+            source: 'core',
+            priority: 26,
+        ));
+
+        $this->hotkeyRegistry->add(new HotkeyBindingDTO(
+            context: 'Global',
             keys: ['ctrl+o'],
             action: 'Toggle transcript previews',
             description: 'Expand or collapse previewable tool result and diff previews for this session only (not saved to settings)',
