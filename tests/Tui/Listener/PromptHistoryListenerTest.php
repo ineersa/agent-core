@@ -342,6 +342,16 @@ final class PromptHistoryListenerTest extends TestCase
 
     // ─── Helpers ────────────────────────────────────────────────
 
+    public function testLiveViewDoesNotRecallParentPromptHistory(): void
+    {
+        $this->state->transcript = [self::userBlock('parent prompt one')];
+        $this->state->subagentLiveView->active = true;
+        $this->registerListener();
+
+        $this->editor->getWidget()->handleInput("\x1b[A");
+        $this->assertSame('', $this->editor->getText());
+    }
+
     private function registerListener(): void
     {
         $tui = new Tui();

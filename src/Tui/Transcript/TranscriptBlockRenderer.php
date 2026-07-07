@@ -23,7 +23,7 @@ use Symfony\Component\Tui\Widget\ContainerWidget;
  * Internally delegates to:
  * - {@see TranscriptBlockWidgetFactory} for glyph/color/display-text logic
  * - {@see SymfonyTuiWidgetRenderer} for ANSI-safe widget wrapping via Symfony Renderer
- * - {@see SubagentResultRenderer::buildContent()} for structured subagent result blocks
+ * - {@see SubagentResultRenderer::buildWidget()} for structured subagent result blocks
  *
  * The old flat TextWrapper path has been replaced — there is no fallback.
  */

@@ -873,3 +873,8 @@ test groups and conventions.
 | WaitingHuman → event projection | `tests/CodingAgent/Runtime/RuntimeEventMapperTest.php` + `tests/CodingAgent/Runtime/Projection/TranscriptProjectorTest.php` | `human_input.requested` projected with correct fields (QH-06) |
 | Event → TUI overlay → answer dispatch | `tests/Tui/Listener/TickPollListenerTest.php` | `QuestionRequest` built correctly, answer/cancel callbacks send expected commands (QH-06) |
 | Answer → run resumes | `tests/CodingAgent/Runtime/Controller/CommandHandler/AnswerHumanHandlerTest.php` + `tests/AgentCore/Application/Pipeline/ApplyCommandHandlerTest.php` | Answer validated and applied; run state transitions correctly |
+
+
+## Child subagent HITL in live view
+
+Child `human_input.requested` / `tool_question.requested` events use the shared QuestionCoordinator with run-scoped request ids and headers like `Subagent <name> asks`. Answers and cancellations target the child run id. Orphan cleanup clears child attention when the user dismisses or navigates away.

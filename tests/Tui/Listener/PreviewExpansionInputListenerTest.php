@@ -207,4 +207,73 @@ final class PreviewExpansionInputListenerTest extends TestCase
         );
         $this->assertStringContainsString('Ctrl+O', $styled);
     }
+
+    #[Test]
+    public function ctrlOExpandsSubagentHandoffMarkdownOnRealInputPath(): void
+    {
+        $displayConfig = new TranscriptDisplayConfig(toolResultPreviewLines: 2);
+        $displayState = new TranscriptDisplayState(previewableBlocksExpanded: false);
+        $harness = new VirtualTuiHarness(
+            sessionId: 'subagent-handoff-preview',
+            displayConfig: $displayConfig,
+            displayState: $displayState,
+        );
+
+        $state = new TuiSessionState('subagent-handoff-preview');
+        $state->transcriptDisplayConfig = $displayConfig;
+        $state->transcriptDisplayState = $displayState;
+
+        $context = $this->buildTuiContext()
+            ->withTui($harness->tui())
+            ->withState($state)
+            ->withScreen($harness->screen())
+            ->build();
+
+        (new PreviewExpansionInputListener())->register($context);
+        $harness->startInputLoop();
+
+        $handoff = 'line0
+line1
+line2
+line3
+line4
+line5
+line6
+line7
+line8
+line9';
+        $state->transcript = [
+            new TranscriptBlock(
+                id: 'tr-subagent',
+                kind: TranscriptBlockKindEnum::ToolResult,
+                runId: 'subagent-handoff-preview',
+                seq: 1,
+                text: '',
+                meta: [
+                    'tool_name' => 'subagent',
+                    'subagent_progress' => [
+                        'mode' => 'single',
+                        'status' => 'completed',
+                        'agent_name' => 'scout',
+                        'artifact_id' => 'agent_done',
+                        'task_summary' => 'task',
+                    ],
+                    'result' => $handoff,
+                ],
+            ),
+        ];
+        $harness->screen()->setTranscriptBlocks($state->transcript);
+        $harness->screen()->setWorkingVisible(false);
+
+        $collapsed = $harness->plainScreenText();
+        $this->assertStringContainsString('line0', $collapsed);
+        $this->assertStringNotContainsString('line9', $collapsed);
+        $this->assertStringContainsString('Ctrl+O to expand handoff', $collapsed);
+
+        $harness->sendInput('');
+
+        $expanded = $harness->plainScreenText();
+        $this->assertStringContainsString('line9', $expanded);
+        $this->assertStringNotContainsString('Ctrl+O to expand handoff', $expanded);
+    }
 }

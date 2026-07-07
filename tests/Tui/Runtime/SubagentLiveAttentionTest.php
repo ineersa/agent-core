@@ -145,7 +145,7 @@ final class SubagentLiveAttentionTest extends TestCase
         $this->assertNotNull($child);
         $this->assertSame(SubagentLiveStatusEnum::WaitingHuman, $child->status);
         $this->assertSame(RunActivityStateEnum::WaitingHuman, $state->subagentLiveView->childActivity);
-        $this->assertStringContainsString('needs your input', (string) $this->statusText($screen, 'subagent_live'));
+        $this->assertNull($this->statusText($screen, 'subagent_live'));
         $this->assertNull($this->statusText($screen, 'agents-live'));
     }
 
@@ -188,7 +188,7 @@ final class SubagentLiveAttentionTest extends TestCase
 
         SubagentLiveAttention::refreshAttentionFooter($state, $screen);
 
-        $this->assertStringContainsString('needs your input', (string) $this->statusText($screen, 'subagent_live'));
+        $this->assertNull($this->statusText($screen, 'subagent_live'));
         $this->assertNull($this->statusText($screen, 'agents-live'));
     }
 

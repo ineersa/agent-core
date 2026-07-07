@@ -320,7 +320,8 @@ final class QuestionController
         // the editor area in the single-column layout:
         //   question overlay → editor-separator → editor → …
         $this->screen->insertOverlayBeforeEditor($this->container);
-        $this->screen->setStatus('action', "\u{26A0} Question pending");
+        // Overlay already communicates that input is required; avoid duplicating it in the status panel.
+        $this->screen->setStatus('action', null);
 
         if (null !== $this->listWidget) {
             $this->screen->setFocus($this->listWidget);

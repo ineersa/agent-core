@@ -57,7 +57,7 @@ final class TuiSubagentChildHitlCancellationE2eTest extends TestCase
             $this->tmux->waitForCaptureContains($pane, '█', TmuxHarness::TUI_STARTUP_LOGO_TIMEOUT_PARALLEL);
             usleep(300_000);
 
-            $this->tmux->waitForCaptureContains($pane, 'needs your input — /agents-live', 12.0, 'Main screen must show child attention status');
+            $this->tmux->waitForCaptureContains($pane, 'needs input', 12.0, 'Main transcript card must show child needs input');
 
             $this->tmux->sendKey($pane, 'C-u');
             usleep(50_000);

@@ -40,6 +40,10 @@ final class TranscriptBlockWidget implements TuiWidget
         TranscriptDisplayState $displayState = new TranscriptDisplayState(),
     ) {
         $this->factory = new TranscriptBlockWidgetFactory(
+            subagentRenderer: new SubagentResultRenderer(
+                displayConfig: $displayConfig,
+                displayState: $displayState,
+            ),
             displayConfig: $displayConfig,
             displayState: $displayState,
         );
@@ -158,7 +162,7 @@ final class TranscriptBlockWidget implements TuiWidget
         string $environmentFingerprint,
         ?TranscriptBlock $matchedToolResult = null,
     ): string {
-        $meta = $block->meta;
+        $meta = $this->cacheMetaForBlock($block);
         ksort($meta);
 
         $parts = [
@@ -185,6 +189,42 @@ final class TranscriptBlockWidget implements TuiWidget
         }
 
         return hash('xxh128', implode("\x1e", $parts));
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function cacheMetaForBlock(TranscriptBlock $block): array
+    {
+        $meta = $block->meta;
+        $progress = $meta['subagent_progress'] ?? null;
+        if (!\is_array($progress)) {
+            return $meta;
+        }
+
+        $meta['subagent_progress'] = $this->subagentProgressCacheFingerprint($progress);
+
+        return $meta;
+    }
+
+    /**
+     * @param array<string, mixed> $progress
+     *
+     * @return array<string, mixed>
+     */
+    private function subagentProgressCacheFingerprint(array $progress): array
+    {
+        $fingerprint = $progress;
+        unset(
+            $fingerprint['elapsed_ms'],
+            $fingerprint['input_tokens'],
+            $fingerprint['output_tokens'],
+            $fingerprint['reasoning_tokens'],
+            $fingerprint['total_tokens'],
+            $fingerprint['cost'],
+        );
+
+        return $fingerprint;
     }
 
     private function themeFingerprint(TuiTheme $theme): string

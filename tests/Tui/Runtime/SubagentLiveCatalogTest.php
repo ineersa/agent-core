@@ -140,6 +140,25 @@ final class SubagentLiveCatalogTest extends TestCase
         $this->assertTrue($all[0]->needsAttention());
     }
 
+    public function testDismissedArtifactStaysHiddenAfterStaleProgress(): void
+    {
+        $catalog = new SubagentLiveCatalog();
+        $catalog->ingestRuntimeEvent($this->progressEvent('parent-1', [
+            'mode' => 'single', 'status' => 'running', 'agent_name' => 'scout',
+            'artifact_id' => 'agent_a', 'agent_run_id' => 'child-run-1', 'task_summary' => 'Task',
+        ]));
+        $removed = $catalog->dismissArtifactId('agent_a');
+        $this->assertNotNull($removed);
+        $this->assertTrue($catalog->isDismissed('agent_a'));
+        $this->assertNull($catalog->findByArtifactId('agent_a'));
+
+        $catalog->ingestRuntimeEvent($this->progressEvent('parent-1', [
+            'mode' => 'single', 'status' => 'running', 'agent_name' => 'scout',
+            'artifact_id' => 'agent_a', 'agent_run_id' => 'child-run-1', 'task_summary' => 'Stale',
+        ]));
+        $this->assertNull($catalog->findByArtifactId('agent_a'));
+    }
+
     /** @param array<string, mixed> $progress */
     private function progressEvent(string $runId, array $progress): RuntimeEvent
     {

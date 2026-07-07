@@ -120,7 +120,7 @@ TUI                         Controller              run_control        LLM Consu
 │                              │                       │    → events.jsonl│
 │                              │                       │  → AdvanceRun ──┼──► ExecuteLlmStep
 │                              │                       │                  │
-│                              │    ◄── 50ms drain ────│                  │
+│                              │    ◄── consumer stdout poll (~10ms) ────│                  │
 │ run.started(seq:1) ◄────────│                       │                  │
 │ turn.started       ◄────────│                       │                  │
 │                              │                       │                  │
@@ -128,7 +128,7 @@ TUI                         Controller              run_control        LLM Consu
 │ thinking/text      ◄────────│   JSONL deltas ◄────────────────────────┤
 │ deltas in realtime ◄────────│                       │                  │
 │                              │                       │                  │
-│                              │    ◄── 50ms drain ────│                  │
+│                              │    ◄── consumer stdout poll (~10ms) ────│                  │
 │ assistant.completed◄────────│                       │                  │
 │ run.completed      ◄────────│                       │                  │
 ```
@@ -173,7 +173,7 @@ LLM CONSUMER PROCESS                    CONTROLLER PROCESS
 └──────────────────────┘               └──────────────────────────┘
 ```
 
-### 2c. Canonical Events (via events.jsonl)
+### 2c. Canonical Events (via consumer stdout after durable append)
 
 ```
 run_control CONSUMER         CONTROLLER PROCESS              TUI
@@ -467,27 +467,27 @@ command         command.rejected          Dispatch failure with reason
 protocol        protocol.error            Invalid JSONL decode
 lifecycle       run.started (seq:0)       Synthetic, after start dispatch
 lifecycle       run.resumed (seq:1)       After resume handler
-lifecycle       run.completed             From events.jsonl drain
-lifecycle       run.failed                From events.jsonl drain
-lifecycle       run.cancelled             From events.jsonl drain
-lifecycle       turn.started              From events.jsonl drain
+lifecycle       run.completed             From consumer stdout (committed canonical)
+lifecycle       run.failed                From consumer stdout (committed canonical)
+lifecycle       run.cancelled             From consumer stdout (committed canonical)
+lifecycle       turn.started              From consumer stdout (committed canonical)
 assistant_stream assistant.text_started    LLM stdout pipe (transient)
 assistant_stream assistant.text_delta      LLM stdout pipe (transient)
 assistant_stream assistant.text_completed  LLM stdout pipe (transient)
 assistant_stream assistant.thinking_started LLM stdout pipe (transient)
 assistant_stream assistant.thinking_delta   LLM stdout pipe (transient)
 assistant_stream assistant.thinking_completed LLM stdout pipe (transient)
-assistant_stream assistant.message_started  events.jsonl drain (canonical)
-assistant_stream assistant.message_completed events.jsonl drain (canonical)
-assistant_stream assistant.message_failed   events.jsonl drain (canonical)
+assistant_stream assistant.message_started  consumer stdout (committed canonical)
+assistant_stream assistant.message_completed consumer stdout (committed canonical)
+assistant_stream assistant.message_failed   consumer stdout (committed canonical)
 tool            tool_call.started         LLM stdout pipe (transient)
 tool            tool_call.arguments_delta LLM stdout pipe (transient)
-tool            tool_call.arguments_completed LLM stdout pipe + events.jsonl
-tool            tool_execution.started    events.jsonl drain (canonical)
-tool            tool_execution.completed  events.jsonl drain (canonical)
-tool            tool_execution.failed     events.jsonl drain (canonical)
-cancellation    cancellation.requested     events.jsonl drain (canonical)
-metadata        usage.updated             events.jsonl drain (canonical)
+tool            tool_call.arguments_completed LLM consumer stdout pipe
+tool            tool_execution.started    consumer stdout (committed canonical)
+tool            tool_execution.completed  consumer stdout (committed canonical)
+tool            tool_execution.failed     consumer stdout (committed canonical)
+cancellation    cancellation.requested     consumer stdout (committed canonical)
+metadata        usage.updated             consumer stdout (committed canonical)
 ```
 
 **Deduplication**: TUI RuntimeEventPoller tracks `lastSeq` per runId.
@@ -513,7 +513,7 @@ Seq=0 events (transient) are never deduplicated. Seq>0 events skip if seq ≤ cu
 │  │   'messenger:consume',                         │              │
 │  │   transportName,        // run_control/llm/tool│              │
 │  │   '--no-interaction',                          │              │
-│  │   '--time-limit=3600',  // 1h max lifetime     │              │
+│  │   '--memory-limit=256M', // graceful recycle │              │
 │  │ ],                                            │              │
 │  │   cwd: cwd,                                   │              │
 │  │   timeout: null,        // non-blocking        │              │
@@ -526,10 +526,13 @@ Seq=0 events (transient) are never deduplicated. Seq>0 events skip if seq ≤ cu
 │  ┌────────────────────────────────────────────────┐              │
 │  │ for each consumer in $consumers:               │              │
 │  │   if isRunning() → OK, continue               │              │
-│  │   if crashed:                                 │              │
-│  │     log exitCode + stderr                     │              │
-│  │     unset($consumers[transport])              │              │
-│  │     → attemptRestart(transport)               │              │
+│  │   if exited:                                  │              │
+│  │     log exitCode + stderr; unset consumer       │              │
+│  │     if exitCode == 0:                         │              │
+│  │       // Messenger memory-limit (graceful)    │              │
+│  │       reset restart counters; launch() now    │              │
+│  │     else:                                     │              │
+│  │       → attemptRestart(transport)  // crash   │              │
 │  └────────────────────────────────────────────────┘              │
 │                           │                                       │
 │                           ▼                                       │
