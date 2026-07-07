@@ -21,6 +21,8 @@ final class ControllerReplayHttpClientFactoryTest extends TestCase
     private string $tempDir = '';
     private string $origReplayPath = '';
     private string $origServerReplayPath = '';
+    private string $origCursorDir = '';
+    private string $origServerCursorDir = '';
 
     protected function setUp(): void
     {
@@ -34,6 +36,10 @@ final class ControllerReplayHttpClientFactoryTest extends TestCase
         // Set env for the factory.
         $_ENV['HATFIELD_LLM_REPLAY_FIXTURE_PATH'] = '';
         $_SERVER['HATFIELD_LLM_REPLAY_FIXTURE_PATH'] = '';
+
+        $this->origCursorDir = $_ENV['HATFIELD_LLM_REPLAY_CURSOR_DIR'] ?? ($_SERVER['HATFIELD_LLM_REPLAY_CURSOR_DIR'] ?? '');
+        $this->origServerCursorDir = $_SERVER['HATFIELD_LLM_REPLAY_CURSOR_DIR'] ?? '';
+        unset($_ENV['HATFIELD_LLM_REPLAY_CURSOR_DIR'], $_SERVER['HATFIELD_LLM_REPLAY_CURSOR_DIR']);
     }
 
     protected function tearDown(): void
@@ -44,6 +50,13 @@ final class ControllerReplayHttpClientFactoryTest extends TestCase
             $_SERVER['HATFIELD_LLM_REPLAY_FIXTURE_PATH'] = $this->origServerReplayPath;
         } else {
             unset($_ENV['HATFIELD_LLM_REPLAY_FIXTURE_PATH'], $_SERVER['HATFIELD_LLM_REPLAY_FIXTURE_PATH']);
+        }
+
+        if ('' !== $this->origCursorDir) {
+            $_ENV['HATFIELD_LLM_REPLAY_CURSOR_DIR'] = $this->origCursorDir;
+            $_SERVER['HATFIELD_LLM_REPLAY_CURSOR_DIR'] = $this->origServerCursorDir;
+        } else {
+            unset($_ENV['HATFIELD_LLM_REPLAY_CURSOR_DIR'], $_SERVER['HATFIELD_LLM_REPLAY_CURSOR_DIR']);
         }
 
         if ('' !== $this->tempDir) {
@@ -98,6 +111,8 @@ final class ControllerReplayHttpClientFactoryTest extends TestCase
         $fixturePathEnv = $fixturePath1.';'.$fixturePath2;
         $_ENV['HATFIELD_LLM_REPLAY_FIXTURE_PATH'] = $fixturePathEnv;
         $_SERVER['HATFIELD_LLM_REPLAY_FIXTURE_PATH'] = $fixturePathEnv;
+        $_ENV['HATFIELD_LLM_REPLAY_CURSOR_DIR'] = $this->tempDir;
+        $_SERVER['HATFIELD_LLM_REPLAY_CURSOR_DIR'] = $this->tempDir;
 
         // ── First factory invocation (simulates first consumer process) ──
         $client1 = ControllerReplayHttpClientFactory::create();
@@ -142,6 +157,47 @@ final class ControllerReplayHttpClientFactoryTest extends TestCase
 
         // ── Verify cursor file was cleaned up with temp dir ──
         // (the cursor file is inside tempDir, so tearDown removes it)
+    }
+
+    public function testProcessLocalCursorAdvancesWithoutWritingBesideFixtures(): void
+    {
+        $fixture1 = [
+            'model' => 'llama_cpp/test',
+            'deltas' => [['type' => 'text', 'content' => 'one']],
+            'usage' => ['input_tokens' => 1, 'output_tokens' => 1, 'total_tokens' => 2],
+            'stop_reason' => 'stop',
+        ];
+        $fixture2 = [
+            'model' => 'llama_cpp/test',
+            'deltas' => [['type' => 'text', 'content' => 'two']],
+            'usage' => ['input_tokens' => 2, 'output_tokens' => 2, 'total_tokens' => 4],
+            'stop_reason' => 'stop',
+        ];
+
+        $fixtureDir = $this->tempDir.'/fixtures-like-repo';
+        mkdir($fixtureDir, 0777, true);
+        $fixturePath1 = $fixtureDir.'/fixture-a.json';
+        $fixturePath2 = $fixtureDir.'/fixture-b.json';
+        file_put_contents($fixturePath1, json_encode($fixture1, \JSON_THROW_ON_ERROR));
+        file_put_contents($fixturePath2, json_encode($fixture2, \JSON_THROW_ON_ERROR));
+
+        $fixturePathEnv = $fixturePath1.';'.$fixturePath2;
+        $_ENV['HATFIELD_LLM_REPLAY_FIXTURE_PATH'] = $fixturePathEnv;
+        $_SERVER['HATFIELD_LLM_REPLAY_FIXTURE_PATH'] = $fixturePathEnv;
+        unset($_ENV['HATFIELD_LLM_REPLAY_CURSOR_DIR'], $_SERVER['HATFIELD_LLM_REPLAY_CURSOR_DIR']);
+
+        $client = ControllerReplayHttpClientFactory::create();
+        $req = static fn (HttpClientInterface $c) => $c->request('POST', 'http://replay.internal/v1/chat/completions', [
+            'json' => ['model' => 'llama_cpp/test', 'messages' => [['role' => 'user', 'content' => 'x']]],
+        ]);
+
+        $usage1 = self::extractUsageFromSSE($req($client)->getContent(false));
+        $usage2 = self::extractUsageFromSSE($req($client)->getContent(false));
+        $this->assertSame(1, $usage1['input_tokens'] ?? 0);
+        $this->assertSame(2, $usage2['input_tokens'] ?? 0);
+
+        $glob = glob($fixtureDir.'/.replay-fixture-cursor*') ?: [];
+        $this->assertSame([], $glob, 'Must not create cursor files next to fixture paths when cursor dir unset');
     }
 
     /**

@@ -171,6 +171,7 @@ abstract class ControllerReplayE2eTestCase extends ControllerE2eTestCase
             'HATFIELD_SESSION_ID' => $this->sessionId,
             // Replay activation — consumed by ControllerReplayHttpClientFactory
             'HATFIELD_LLM_REPLAY_FIXTURE_PATH' => implode(';', $fixturePaths),
+            'HATFIELD_LLM_REPLAY_CURSOR_DIR' => $this->tempDir,
             // Explicitly NOT setting LLAMA_CPP_SMOKE_TEST.
         ];
 
