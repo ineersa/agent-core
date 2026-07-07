@@ -12,38 +12,66 @@ use Symfony\Contracts\HttpClient\HttpClientInterface;
 /**
  * Creates an HttpClient for controller replay E2E tests.
  *
+ * This factory lives in tests/, NOT in production src/.  It is wired
+ * through config/services_test.yaml so that when the controller
+ * subprocess boots with APP_ENV=test, the Symfony DI container
+ * resolves Symfony\Contracts\HttpClient\HttpClientInterface via this
+ * factory.  The existing production code path
+ * (SymfonyAiProviderFactory::getHttpClient()) receives the injected
+ * HttpClient through its constructor — no production env-var branching
+ * needed.
+ *
  * Activation:
  *   HATFIELD_LLM_REPLAY_FIXTURE_PATH=/path/to/fixture1.json;/path/to/fixture2.json
  *
- * Optional cursor persistence (controller replay / consumer recycle):
- *   HATFIELD_LLM_REPLAY_CURSOR_DIR=/path/to/isolated/temp/dir
- * When set, the fixture index is stored in that directory only (never
- * next to committed fixture files).  Uses flock(LOCK_EX) for atomic
- * read/increment/write.  Filename: .replay-fixture-cursor-<sha256(fixture-path-env)>.
+ * When the env var is set, the factory loads each fixture file,
+ * converts its deltas to OpenAI-compatible SSE chunks, and returns
+ * a MockHttpClient that serves one response per LLM invocation
+ * (cycling through the fixture queue).  After the queue is exhausted,
+ * a minimal "done" text response is returned so the run can complete
+ * cleanly.
  *
- * When HATFIELD_LLM_REPLAY_CURSOR_DIR is unset (e.g. TUI replay using
- * committed fixtures under tests/Tui/E2E/fixtures/), the factory uses a
- * process-local closure cursor ($index) that advances on each HTTP request
- * within the same MockHttpClient instance — no files are written beside
- * fixture paths.
+ * When the env var is NOT set, the factory returns the normal test
+ * HttpClient with a 5s timeout — preserving existing behavior for
+ * non-replay test runs and live LLM smoke tests.
+ *
+ * MAINT-05D: This is the replay seam for controller E2E tests.
+ * MAINT-05E will reuse it for TUI E2E replay.
  */
 final class ControllerReplayHttpClientFactory
 {
+    /**
+     * Create an HttpClient for the test environment.
+     *
+     * This method is called by the Symfony DI container factory
+     * wiring in config/services_test.yaml.
+     */
     public static function create(): HttpClientInterface
     {
-        $fixturePathEnv = self::readEnv('HATFIELD_LLM_REPLAY_FIXTURE_PATH');
+        $fixturePathEnv = $_ENV['HATFIELD_LLM_REPLAY_FIXTURE_PATH']
+            ?? ($_SERVER['HATFIELD_LLM_REPLAY_FIXTURE_PATH'] ?? getenv('HATFIELD_LLM_REPLAY_FIXTURE_PATH'));
 
         if (false !== $fixturePathEnv && '' !== $fixturePathEnv) {
-            return self::createReplayClient($fixturePathEnv);
+            return self::createReplayClient((string) $fixturePathEnv);
         }
 
+        // Default: short timeout for test environment (live LLM smoke
+        // or non-replay controller tests). Nested live controller tests
+        // may raise it via HATFIELD_TEST_LLM_HTTP_TIMEOUT (subprocess env).
         return HttpClient::create(['timeout' => self::liveHttpTimeout()]);
     }
 
+    /**
+     * Live (non-replay) HTTP idle timeout for controller subprocess tests.
+     *
+     * Default 5s matches services_test.yaml; nested multi-turn live tests
+     * override via HATFIELD_TEST_LLM_HTTP_TIMEOUT in controllerSubprocessEnv().
+     */
     private static function liveHttpTimeout(): float
     {
         $timeout = 5.0;
-        $envTimeout = self::readEnv('HATFIELD_TEST_LLM_HTTP_TIMEOUT');
+        $envTimeout = $_ENV['HATFIELD_TEST_LLM_HTTP_TIMEOUT']
+            ?? ($_SERVER['HATFIELD_TEST_LLM_HTTP_TIMEOUT'] ?? getenv('HATFIELD_TEST_LLM_HTTP_TIMEOUT'));
         if (false !== $envTimeout && '' !== $envTimeout) {
             $timeout = (float) $envTimeout;
         }
@@ -51,16 +79,11 @@ final class ControllerReplayHttpClientFactory
         return $timeout;
     }
 
+    // ── Replay client construction ────────────────────────────────
+
     /**
-     * @return false|non-empty-string
+     * Build a MockHttpClient that serves fixture-driven SSE responses.
      */
-    private static function readEnv(string $name): false|string
-    {
-        $value = $_ENV[$name] ?? ($_SERVER[$name] ?? getenv($name));
-
-        return false === $value ? false : (string) $value;
-    }
-
     private static function createReplayClient(string $fixturePathEnv): HttpClientInterface
     {
         $fixturePaths = explode(';', $fixturePathEnv);
@@ -77,18 +100,11 @@ final class ControllerReplayHttpClientFactory
         }
 
         if ([] === $fixtures) {
+            // No valid fixtures found — fall back to the normal live
+            // timeout client so the process doesn't fail on a missing
+            // HttpClient.  The test will still fail because there are
+            // no fixture responses, but the error is easier to debug.
             return HttpClient::create(['timeout' => self::liveHttpTimeout()]);
-        }
-
-        $cursorPath = self::resolveCursorFilePath($fixturePathEnv);
-
-        if (null !== $cursorPath) {
-            return new MockHttpClient(
-                static function (string $method, string $url, array $options) use ($fixtures, $cursorPath): MockResponse {
-                    return self::serveFixtureResponse($fixtures, self::resolveFileBackedFixtureIndex($fixtures, $cursorPath));
-                },
-                'http://replay.internal',
-            );
         }
 
         $index = 0;
@@ -96,138 +112,73 @@ final class ControllerReplayHttpClientFactory
         return new MockHttpClient(
             static function (string $method, string $url, array $options) use (&$index, $fixtures): MockResponse {
                 if ($index >= \count($fixtures)) {
-                    return self::buildExhaustedFallbackResponse();
+                    // Queue exhausted — the next LLM call in this run
+                    // would normally be the post-tool assistant turn.
+                    // Return a minimal text-only stop response so the
+                    // run can complete cleanly.
+                    return new MockResponse(
+                        self::buildSSEFromDeltas(
+                            model: 'llama_cpp/test',
+                            deltas: [
+                                ['type' => 'text', 'content' => 'done'],
+                            ],
+                            stopReason: 'stop',
+                            usage: null,
+                        ),
+                        [
+                            'http_code' => 200,
+                            'response_headers' => [
+                                'Content-Type' => 'text/event-stream',
+                                'X-Replay-Fallback' => '1',
+                            ],
+                        ],
+                    );
                 }
 
                 $fixture = $fixtures[$index];
                 ++$index;
 
-                return self::buildFixtureMockResponse($fixture);
+                // Optional test-only delay: when the fixture has a
+                // response_delay_ms field, sleep before returning the
+                // response.  Used by TUI E2E tests to keep compaction
+                // in-flight long enough for Escape/cancel to be sent.
+                $delayMs = $fixture['response_delay_ms'] ?? 0;
+                if ($delayMs > 0) {
+                    usleep($delayMs * 1000);
+                }
+
+                // HTTP error fixtures return a non-200 MockResponse directly.
+                if (self::isHttpErrorFixture($fixture)) {
+                    return self::buildErrorResponse($fixture);
+                }
+
+                $deltas = $fixture['deltas'] ?? [];
+                $stopReason = $fixture['stop_reason'] ?? 'stop';
+                $model = $fixture['model'] ?? 'llama_cpp/test';
+
+                $usage = $fixture['usage'] ?? null;
+                $body = self::buildSSEFromDeltas($model, $deltas, $stopReason, $usage);
+
+                return new MockResponse($body, [
+                    'http_code' => 200,
+                    'response_headers' => [
+                        'Content-Type' => 'text/event-stream',
+                        'Cache-Control' => 'no-cache',
+                        'X-Replay' => '1',
+                    ],
+                ]);
             },
             'http://replay.internal',
         );
     }
 
     /**
-     * @return non-empty-string|null
-     */
-    private static function resolveCursorFilePath(string $fixturePathEnv): ?string
-    {
-        $cursorDir = self::readEnv('HATFIELD_LLM_REPLAY_CURSOR_DIR');
-        if (false === $cursorDir || '' === $cursorDir) {
-            return null;
-        }
-
-        $cursorDir = rtrim($cursorDir, \DIRECTORY_SEPARATOR);
-        if (!is_dir($cursorDir) && !@mkdir($cursorDir, 0777, true) && !is_dir($cursorDir)) {
-            throw new \RuntimeException(\sprintf('Cannot create replay fixture cursor directory: %s', $cursorDir));
-        }
-
-        $hash = hash('sha256', $fixturePathEnv);
-
-        return $cursorDir.\DIRECTORY_SEPARATOR.'.replay-fixture-cursor-'.$hash;
-    }
-
-    /**
-     * @param list<array<string, mixed>> $fixtures
-     */
-    private static function resolveFileBackedFixtureIndex(array $fixtures, string $cursorPath): ?int
-    {
-        $cursorFile = @fopen($cursorPath, 'c+b');
-        if (false === $cursorFile) {
-            throw new \RuntimeException(\sprintf('Cannot open/create replay fixture cursor file: %s', $cursorPath));
-        }
-
-        if (!flock($cursorFile, \LOCK_EX)) {
-            fclose($cursorFile);
-            throw new \RuntimeException(\sprintf('Cannot acquire exclusive lock on replay fixture cursor: %s', $cursorPath));
-        }
-
-        $content = stream_get_contents($cursorFile);
-        $currentIndex = ('' !== $content && false !== $content) ? (int) trim($content) : 0;
-
-        if ($currentIndex >= \count($fixtures)) {
-            flock($cursorFile, \LOCK_UN);
-            fclose($cursorFile);
-
-            return null;
-        }
-
-        ftruncate($cursorFile, 0);
-        rewind($cursorFile);
-        fwrite($cursorFile, (string) ($currentIndex + 1));
-        fflush($cursorFile);
-        flock($cursorFile, \LOCK_UN);
-        fclose($cursorFile);
-
-        return $currentIndex;
-    }
-
-    /**
-     * @param list<array<string, mixed>> $fixtures
-     */
-    private static function serveFixtureResponse(array $fixtures, ?int $fixtureIndex): MockResponse
-    {
-        if (null === $fixtureIndex) {
-            return self::buildExhaustedFallbackResponse();
-        }
-
-        return self::buildFixtureMockResponse($fixtures[$fixtureIndex]);
-    }
-
-    /**
-     * @param array<string, mixed> $fixture
-     */
-    private static function buildFixtureMockResponse(array $fixture): MockResponse
-    {
-        $delayMs = $fixture['response_delay_ms'] ?? 0;
-        if ($delayMs > 0) {
-            usleep($delayMs * 1000);
-        }
-
-        if (self::isHttpErrorFixture($fixture)) {
-            return self::buildErrorResponse($fixture);
-        }
-
-        $deltas = $fixture['deltas'] ?? [];
-        $stopReason = $fixture['stop_reason'] ?? 'stop';
-        $model = $fixture['model'] ?? 'llama_cpp/test';
-        $usage = $fixture['usage'] ?? null;
-        $body = self::buildSSEFromDeltas($model, $deltas, $stopReason, $usage);
-
-        return new MockResponse($body, [
-            'http_code' => 200,
-            'response_headers' => [
-                'Content-Type' => 'text/event-stream',
-                'Cache-Control' => 'no-cache',
-                'X-Replay' => '1',
-            ],
-        ]);
-    }
-
-    private static function buildExhaustedFallbackResponse(): MockResponse
-    {
-        return new MockResponse(
-            self::buildSSEFromDeltas(
-                model: 'llama_cpp/test',
-                deltas: [
-                    ['type' => 'text', 'content' => 'done'],
-                ],
-                stopReason: 'stop',
-                usage: null,
-            ),
-            [
-                'http_code' => 200,
-                'response_headers' => [
-                    'Content-Type' => 'text/event-stream',
-                    'X-Replay-Fallback' => '1',
-                ],
-            ],
-        );
-    }
-
-    /**
-     * @param array<string, mixed> $fixture
+     * Check whether a fixture represents an HTTP error response.
+     *
+     * HTTP error fixtures have an "http_status" key and are returned as
+     * non-SSE MockResponses so the Symfony AI provider's error-handling
+     * path is exercised (EventSourceHttpClient passthru → SseStream →
+     * convertStream error detection).
      */
     private static function isHttpErrorFixture(array $fixture): bool
     {
@@ -235,6 +186,8 @@ final class ControllerReplayHttpClientFactory
     }
 
     /**
+     * Build a MockResponse from an HTTP error fixture.
+     *
      * @param array<string, mixed> $fixture
      */
     private static function buildErrorResponse(array $fixture): MockResponse
@@ -243,6 +196,8 @@ final class ControllerReplayHttpClientFactory
         $headers = $fixture['response_headers'] ?? [];
         $body = $fixture['response_body'] ?? '{}';
 
+        // Ensure JSON content-type so EventSourceHttpClient does not
+        // interpret the error response as SSE (which would fail parsing).
         if (!isset($headers['Content-Type'])) {
             $headers['Content-Type'] = 'application/json';
         }
@@ -254,8 +209,10 @@ final class ControllerReplayHttpClientFactory
     }
 
     /**
+     * Convert fixture deltas to an OpenAI-compatible SSE stream.
+     *
      * @param list<array<string, mixed>> $deltas
-     * @param array<string, mixed>|null  $usage
+     * @param array<string, mixed>|null  $usage  Fixture usage payload (null if no usage)
      */
     private static function buildSSEFromDeltas(string $model, array $deltas, string $stopReason, ?array $usage): string
     {
@@ -348,6 +305,7 @@ final class ControllerReplayHttpClientFactory
             }
         }
 
+        // Terminal chunk with finish_reason.
         $mappedReason = match ($stopReason) {
             'stop' => 'stop',
             'tool_call' => 'tool_calls',
@@ -368,6 +326,10 @@ final class ControllerReplayHttpClientFactory
             ]],
         ], \JSON_UNESCAPED_UNICODE | \JSON_UNESCAPED_SLASHES);
 
+        // Usage chunk: send token usage as a separate SSE frame so the
+        // DurableResultConverter yields a TokenUsage delta.  Usage is
+        // read from the fixture, which must include a top-level "usage"
+        // key.  When absent, no usage chunk is emitted.
         if (null !== $usage && [] !== $usage) {
             $chunks[] = json_encode([
                 'id' => $chunkId,

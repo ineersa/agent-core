@@ -158,12 +158,11 @@ final readonly class FooterStateSegmentProvider implements FooterSegmentProvider
     {
         $parts = [];
         foreach ($this->getSegments() as $segment) {
-            $color = $segment->color;
             $parts[] = \sprintf(
                 '%d:%s:%s',
                 $segment->priority,
                 $segment->text,
-                null !== $color ? $color->value : '',
+                $segment->color->value,
             );
         }
 
@@ -174,6 +173,10 @@ final readonly class FooterStateSegmentProvider implements FooterSegmentProvider
 
     /**
      * Map a reasoning level to the dedicated ThemeColorEnum thinking token.
+     *
+     * Uses the semantic ThemeColorEnum::Thinking* tokens (not generic
+     * Accent/Warning/Dim) for consistent reasoning-level colouring
+     * across the diamond, model name, and any future thinking indicators.
      *
      * Public so callers that need the same mapping (e.g. editor border colour)
      * can reuse it without duplicating the logic.
