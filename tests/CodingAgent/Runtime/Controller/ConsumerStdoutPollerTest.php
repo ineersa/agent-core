@@ -4,12 +4,10 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Runtime\Controller;
 
+use Ineersa\CodingAgent\Runtime\Contract\RuntimeExceptionBoundary;
 use Ineersa\CodingAgent\Runtime\Controller\ConsumerStdoutPoller;
 use Ineersa\CodingAgent\Runtime\Controller\ConsumerStdoutSourceInterface;
 use Ineersa\CodingAgent\Runtime\Controller\RuntimeEventEmitter;
-use Ineersa\CodingAgent\Runtime\Contract\RuntimeExceptionBoundary;
-use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
-use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\EventDispatcher\EventDispatcher;
@@ -40,7 +38,7 @@ final class ConsumerStdoutPollerTest extends TestCase
 
         $poller->pollOnce();
         $source->chunks = [
-            'tool#0' => 'load":{}}' . "\n",
+            'tool#0' => 'load":{}}'."\n",
         ];
         $poller->pollOnce();
 

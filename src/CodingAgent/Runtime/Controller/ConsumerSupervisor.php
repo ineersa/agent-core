@@ -49,12 +49,17 @@ use Symfony\Component\Process\Process;
  */
 final class ConsumerSupervisor implements ConsumerStdoutSourceInterface
 {
+    /** Max partial stdout line retained by the poller when JSONL spans reads. */
+    public const int PARTIAL_STDOUT_MAX_BYTES = 65_536;
     private const int MAX_RESTARTS = 3;
     private const int RESTART_WINDOW_SECONDS = 60;
     private const int INITIAL_RESTART_DELAY_MS = 1000;
 
     /** Symfony Messenger graceful worker recycle threshold for controller consumers. */
     private const string CONSUMER_MEMORY_LIMIT = '256M';
+
+    /** Max bytes of stderr tail retained per consumer for crash diagnostics. */
+    private const int STDERR_TAIL_MAX_BYTES = 16_384;
 
     /** @var array<string, Process> compositeKey => process */
     private array $consumers = [];
@@ -64,12 +69,6 @@ final class ConsumerSupervisor implements ConsumerStdoutSourceInterface
 
     /** @var array<string, float> compositeKey => start of restart window (microtime) */
     private array $restartWindows = [];
-
-    /** Max bytes of stderr tail retained per consumer for crash diagnostics. */
-    private const int STDERR_TAIL_MAX_BYTES = 16_384;
-
-    /** Max partial stdout line retained by the poller when JSONL spans reads. */
-    public const int PARTIAL_STDOUT_MAX_BYTES = 65_536;
 
     /** @var array<string, string> consumerKey => bounded stderr tail */
     private array $stderrTails = [];
@@ -153,7 +152,6 @@ final class ConsumerSupervisor implements ConsumerStdoutSourceInterface
         }
     }
 
-
     /**
      * @return iterable<string, string>
      */
@@ -182,26 +180,6 @@ final class ConsumerSupervisor implements ConsumerStdoutSourceInterface
     public function stderrTailFor(string $consumerKey): string
     {
         return $this->stderrTails[$consumerKey] ?? '';
-    }
-
-    private function drainAndClearStderr(string $key, Process $process): void
-    {
-        $chunk = $process->getIncrementalErrorOutput();
-        if ('' !== $chunk) {
-            $this->appendStderrTail($key, $chunk);
-        }
-
-        $process->clearErrorOutput();
-    }
-
-    private function appendStderrTail(string $key, string $chunk): void
-    {
-        $tail = ($this->stderrTails[$key] ?? '').$chunk;
-        if (strlen($tail) > self::STDERR_TAIL_MAX_BYTES) {
-            $tail = substr($tail, -self::STDERR_TAIL_MAX_BYTES);
-        }
-
-        $this->stderrTails[$key] = $tail;
     }
 
     /**
@@ -355,6 +333,26 @@ final class ConsumerSupervisor implements ConsumerStdoutSourceInterface
     public function onConsumerAbandoned(callable $callback): void
     {
         $this->onConsumerAbandoned = $callback;
+    }
+
+    private function drainAndClearStderr(string $key, Process $process): void
+    {
+        $chunk = $process->getIncrementalErrorOutput();
+        if ('' !== $chunk) {
+            $this->appendStderrTail($key, $chunk);
+        }
+
+        $process->clearErrorOutput();
+    }
+
+    private function appendStderrTail(string $key, string $chunk): void
+    {
+        $tail = ($this->stderrTails[$key] ?? '').$chunk;
+        if (\strlen($tail) > self::STDERR_TAIL_MAX_BYTES) {
+            $tail = substr($tail, -self::STDERR_TAIL_MAX_BYTES);
+        }
+
+        $this->stderrTails[$key] = $tail;
     }
 
     /**

@@ -40,28 +40,6 @@ final class TickPollListener implements TuiListenerRegistrar
     ) {
     }
 
-
-    /**
-     * Hint Symfony TUI to tick at active cadence (~10ms) while runtime work is in flight.
-     *
-     * RuntimeEventPoller/SubagentLiveChildViewPoller still cap their own poll work at 50ms;
-     * this only affects how often the TUI event loop invokes tick handlers so stdout JSONL
-     * can be drained promptly during streaming. Idle/terminal states return null so the
-     * adaptive ticker falls back to the slow idle rate (CPU fix from prior work).
-     */
-    private static function shouldKeepActiveRuntimeTicks(TuiSessionState $state, bool $liveActive): bool
-    {
-        if ($liveActive) {
-            if ($state->subagentLiveView->childActivity->isActive()) {
-                return true;
-            }
-
-            return $state->activity->isActive() && null !== $state->handle;
-        }
-
-        return $state->activity->isActive() && null !== $state->handle;
-    }
-
     public function register(TuiRuntimeContext $context): void
     {
         $poller = $this->poller;
@@ -260,5 +238,26 @@ final class TickPollListener implements TuiListenerRegistrar
 
             return self::shouldKeepActiveRuntimeTicks($state, false) ? true : null;
         });
+    }
+
+    /**
+     * Hint Symfony TUI to tick at active cadence (~10ms) while runtime work is in flight.
+     *
+     * RuntimeEventPoller/SubagentLiveChildViewPoller still cap their own poll work at 50ms;
+     * this only affects how often the TUI event loop invokes tick handlers so stdout JSONL
+     * can be drained promptly during streaming. Idle/terminal states return null so the
+     * adaptive ticker falls back to the slow idle rate (CPU fix from prior work).
+     */
+    private static function shouldKeepActiveRuntimeTicks(TuiSessionState $state, bool $liveActive): bool
+    {
+        if ($liveActive) {
+            if ($state->subagentLiveView->childActivity->isActive()) {
+                return true;
+            }
+
+            return $state->activity->isActive() && null !== $state->handle;
+        }
+
+        return $state->activity->isActive() && null !== $state->handle;
     }
 }

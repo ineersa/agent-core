@@ -63,7 +63,7 @@ final class ChildRunBackfillEventProvider implements BackfillEventProviderInterf
             }
         }
 
-        \usort($runtimeEvents, static fn (RuntimeEvent $a, RuntimeEvent $b): int => $a->seq <=> $b->seq);
+        usort($runtimeEvents, static fn (RuntimeEvent $a, RuntimeEvent $b): int => $a->seq <=> $b->seq);
 
         return $runtimeEvents;
     }

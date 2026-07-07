@@ -59,7 +59,6 @@ final class SessionRunEventStoreTest extends TestCase
         }
     }
 
-
     public function testAllForReturnsEmptyForMissingRun(): void
     {
         $events = $this->store->allFor('nonexistent');

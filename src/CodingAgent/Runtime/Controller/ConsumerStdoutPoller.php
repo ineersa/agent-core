@@ -65,10 +65,10 @@ final class ConsumerStdoutPoller
         $buffer = ($this->stdoutBuffers[$consumerKey] ?? '').$output;
         $lastNewline = strrpos($buffer, "\n");
         if (false === $lastNewline) {
-            if (strlen($buffer) > self::MAX_PARTIAL_STDOUT_BYTES) {
+            if (\strlen($buffer) > self::MAX_PARTIAL_STDOUT_BYTES) {
                 $this->logger->warning('Truncating oversized partial consumer stdout buffer', [
                     'consumer_key' => $consumerKey,
-                    'bytes' => strlen($buffer),
+                    'bytes' => \strlen($buffer),
                     'max_bytes' => self::MAX_PARTIAL_STDOUT_BYTES,
                     'component' => 'ConsumerStdoutPoller',
                     'event_type' => 'consumer_stdout.partial_buffer_truncated',

@@ -225,8 +225,6 @@ final class RuntimeEventEmitterTest extends TestCase
         $this->assertStringContainsString('turn.started', $raw);
     }
 
-
-
     public function testEmitAdvancesCursorForCanonicalEvents(): void
     {
         $runId = 'stdout-run-1';
@@ -347,4 +345,3 @@ final class FlakySeqDrainAgentSessionClient implements AgentSessionClient
     {
     }
 }
-
