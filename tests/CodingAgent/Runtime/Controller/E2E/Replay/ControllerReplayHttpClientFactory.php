@@ -232,36 +232,6 @@ final class ControllerReplayHttpClientFactory
             return false;
         }
 
-        if (isset($match['any_user_contains']) && \is_string($match['any_user_contains'])) {
-            $needle = $match['any_user_contains'];
-            foreach ($messages as $message) {
-                if (($message['role'] ?? '') !== 'user') {
-                    continue;
-                }
-                $content = self::messageContentAsString($message['content'] ?? '');
-                if (str_contains($content, $needle)) {
-                    return true;
-                }
-            }
-
-            return false;
-        }
-
-        if (isset($match['system_contains']) && \is_string($match['system_contains'])) {
-            $needle = $match['system_contains'];
-            foreach ($messages as $message) {
-                if (($message['role'] ?? '') !== 'system') {
-                    continue;
-                }
-                $content = self::messageContentAsString($message['content'] ?? '');
-                if (str_contains($content, $needle)) {
-                    return true;
-                }
-            }
-
-            return false;
-        }
-
         return false;
     }
 

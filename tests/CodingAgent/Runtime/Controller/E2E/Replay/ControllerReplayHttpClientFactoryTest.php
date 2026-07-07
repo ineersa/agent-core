@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Runtime\Controller\E2E\Replay;
 
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\HttpClient\MockHttpClient;
@@ -16,8 +17,7 @@ final class ControllerReplayHttpClientFactoryTest extends TestCase
     #[Test]
     public function requestMatcherSelectsFixtureByLastUserMessageWithoutFifoOrder(): void
     {
-        $dir = sys_get_temp_dir().'/replay-factory-'.bin2hex(random_bytes(4));
-        mkdir($dir, 0o777, true);
+        $dir = TestDirectoryIsolation::createOsTempDir('replay-factory');
 
         $fixtureA = $dir.'/a.json';
         $fixtureB = $dir.'/b.json';
@@ -63,17 +63,14 @@ final class ControllerReplayHttpClientFactoryTest extends TestCase
             $this->assertStringContainsString('turn-one', $firstContent);
         } finally {
             unset($_ENV['HATFIELD_LLM_REPLAY_FIXTURE_PATH'], $_SERVER['HATFIELD_LLM_REPLAY_FIXTURE_PATH']);
-            @unlink($fixtureA);
-            @unlink($fixtureB);
-            @rmdir($dir);
+            TestDirectoryIsolation::removeDirectory($dir);
         }
     }
 
     #[Test]
     public function compactionPromptMatcherSelectsCompactionFixture(): void
     {
-        $dir = sys_get_temp_dir().'/replay-factory-'.bin2hex(random_bytes(4));
-        mkdir($dir, 0o777, true);
+        $dir = TestDirectoryIsolation::createOsTempDir('replay-factory');
 
         $assistant = $dir.'/assistant.json';
         $summary = $dir.'/summary.json';
@@ -109,9 +106,7 @@ final class ControllerReplayHttpClientFactoryTest extends TestCase
             $this->assertStringContainsString('summary-text', $content);
         } finally {
             unset($_ENV['HATFIELD_LLM_REPLAY_FIXTURE_PATH'], $_SERVER['HATFIELD_LLM_REPLAY_FIXTURE_PATH']);
-            @unlink($assistant);
-            @unlink($summary);
-            @rmdir($dir);
+            TestDirectoryIsolation::removeDirectory($dir);
         }
     }
 }
