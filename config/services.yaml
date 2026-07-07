@@ -19,8 +19,9 @@ parameters:
     # its queries and avoids O(N) cross-session filesystem scans.
     env(HATFIELD_SESSION_ID): ''
 
-    # Gate committed RuntimeEvent stdout streaming in StreamingCommittedRuntimeEventStore.
-    # Default off; ConsumerSupervisor sets '1' on env for each messenger:consume child it owns.
+    # Context-gate committed RuntimeEvent stdout streaming (not per-consumer selection).
+    # Default off for in-process TUI, tests, and non-supervised contexts; ConsumerSupervisor sets '1'
+    # on env for every messenger:consume subprocess it launches.
     env(HATFIELD_CONSUMER_STDOUT_EVENTS): '0'
 
     # Single source of truth for the file mention completion index path.
@@ -403,6 +404,14 @@ services:
     arguments:
       $executionBus: '@agent.execution.bus'
 
+
+
+  # Explicit wiring overrides Ineersa\CodingAgent\ resource autowire (bool $streamCommittedEventsToStdout).
+  Ineersa\CodingAgent\Runtime\Stream\StreamingCommittedRuntimeEventStore:
+    arguments:
+      $inner: '@Ineersa\CodingAgent\Agent\Artifact\ChildAwareEventStore'
+      $stdoutSink: '@Ineersa\CodingAgent\Runtime\Stream\CommittedRuntimeEventStdoutSink'
+      $streamCommittedEventsToStdout: '%env(bool:HATFIELD_CONSUMER_STDOUT_EVENTS)%'
 
   Ineersa\CodingAgent\Runtime\Controller\RuntimeEventEmitter:
     arguments:

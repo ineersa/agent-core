@@ -21,12 +21,6 @@ services:
   Ineersa\AgentCore\Contract\EventStoreInterface:
     alias: Ineersa\CodingAgent\Runtime\Stream\StreamingCommittedRuntimeEventStore
 
-  Ineersa\CodingAgent\Runtime\Stream\StreamingCommittedRuntimeEventStore:
-    arguments:
-      $inner: '@Ineersa\CodingAgent\Agent\Artifact\ChildAwareEventStore'
-      $stdoutSink: '@Ineersa\CodingAgent\Runtime\Stream\CommittedRuntimeEventStdoutSink'
-      $streamCommittedEventsToStdout: '%env(bool:HATFIELD_CONSUMER_STDOUT_EVENTS)%'
-
   Ineersa\AgentCore\Contract\AgentRunnerInterface:
     alias: Ineersa\AgentCore\Application\Pipeline\AgentRunner
 
