@@ -30,7 +30,6 @@ final class AgentDepthGuardTest extends TestCase
         $this->assertStringContainsString('Nested subagent launches are not supported', $result);
     }
 
-
     public function testCheckLaunchAllowedWhenParentIsForkChild(): void
     {
         $guard = new AgentDepthGuard();

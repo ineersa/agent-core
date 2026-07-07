@@ -208,7 +208,6 @@ final class HeadlessController
         // This mirrors pi's bg-process.ts finalizeBackgroundProcess behavior.
         $this->bgProcessCompletionPoller?->startPollLoop();
 
-
         // Consumer supervision: check child process health.
         EventLoop::repeat(self::SUPERVISE_INTERVAL, function (): void {
             if ($this->shuttingDown) {
