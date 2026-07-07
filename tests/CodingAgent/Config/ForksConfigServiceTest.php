@@ -9,12 +9,14 @@ use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\ForkLevelEnum;
 use Ineersa\CodingAgent\Config\ForksConfigDTO;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
+use PHPUnit\Framework\Assert;
 use PHPUnit\Framework\Attributes\CoversClass;
 
 /**
  * Test thesis: ForksConfigDTO is wired from AppConfig in the DI container so
  * forks.default_level and forks.levels.*.model from Hatfield settings affect runtime.
  */
+#[CoversClass(AppConfig::class)]
 #[CoversClass(ForksConfigDTO::class)]
 final class ForksConfigServiceTest extends IsolatedKernelTestCase
 {
@@ -33,6 +35,7 @@ forks:
       model: llama_cpp/senior-fork
 YAML);
 
+        // Reboot kernel so AppConfig/ForksConfigDTO read settings.yaml written above.
         if (self::$booted) {
             self::$kernel->shutdown();
             self::$booted = false;
@@ -46,11 +49,11 @@ YAML);
         $forksConfig = self::getContainer()->get(ForksConfigDTO::class);
         $appConfig = self::getContainer()->get(AppConfig::class);
 
-        $this->assertSame(ForkLevelEnum::Senior, $forksConfig->defaultLevel);
-        $this->assertSame('llama_cpp/senior-fork', $forksConfig->levelConfig(ForkLevelEnum::Senior)->model);
-        $this->assertSame($appConfig->forks, $forksConfig);
+        Assert::assertSame(ForkLevelEnum::Senior, $forksConfig->defaultLevel);
+        Assert::assertSame('llama_cpp/senior-fork', $forksConfig->levelConfig(ForkLevelEnum::Senior)->model);
+        Assert::assertSame($appConfig->forks, $forksConfig);
 
         $resolved = self::getContainer()->get(ForkConfigResolver::class)->resolve(ForkLevelEnum::Senior);
-        $this->assertSame('llama_cpp/senior-fork', $resolved->resolvedModel);
+        Assert::assertSame('llama_cpp/senior-fork', $resolved->resolvedModel);
     }
 }
