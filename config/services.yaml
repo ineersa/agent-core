@@ -476,6 +476,22 @@ services:
   Ineersa\CodingAgent\Runtime\Contract\TurnTreeProviderInterface:
     alias: Ineersa\CodingAgent\Session\SessionTurnTreeProvider
 
+  session.transcript.projection_state:
+    class: Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState
+
+  session.transcript.transcript_projector:
+    class: Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector
+    arguments:
+      $eventDispatcher: '@event_dispatcher'
+      $state: '@session.transcript.projection_state'
+
+  Ineersa\CodingAgent\Session\SessionTranscriptProvider:
+    arguments:
+      $transcriptProjector: '@session.transcript.transcript_projector'
+
+  Ineersa\CodingAgent\Runtime\Contract\SessionTranscriptProviderInterface:
+    alias: Ineersa\CodingAgent\Session\SessionTranscriptProvider
+
   Ineersa\AgentCore\Contract\TurnTree\TurnTreeProjectorInterface:
     alias: Ineersa\CodingAgent\Session\TurnTree\TurnTreeProjectorContractAdapter
 

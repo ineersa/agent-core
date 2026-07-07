@@ -579,11 +579,13 @@ branch's turns, which would corrupt `nodesByTurnNo`'s int-keyed map in
 `TurnTreeDTO`. For linear sessions with no abandoned branches,
 globalMaxTurnNo === state.turnNo and behavior is unchanged.
 
-**Transcript rebuild:** When a `RunLeafChanged` runtime event arrives at the TUI
-poller, the poller calls `TurnTreeProviderInterface::activePathRuntimeEvents()`
-to fetch only the active-path RuntimeEvents (root → new leaf), resets the
-projector, replays those events through it, and wholesale-replaces
-`$state->transcript`. Old abandoned-branch transcript blocks are removed.
+**Transcript rebuild:** `RuntimeEventPoller` and `SessionInitializer` call
+`SessionTranscriptProviderInterface::transcriptForLeaf(runId, leafTurnNo)` to fetch
+a snapshot with projected transcript blocks plus active-path replay runtime events.
+TUI assigns transcript blocks wholesale and replays returned events through
+`TuiRuntimeEventApplier` for non-transcript state (usage, queues, activity). The TUI
+does not filter active-path raw runtime events or replay transcript locally for leaf
+changes. Old abandoned-branch transcript blocks are removed.
 
 **No file/workspace rollback:** The rewind affects the message context only.
 It does not roll back file edits, tool side-effects, or any filesystem changes.
