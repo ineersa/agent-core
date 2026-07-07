@@ -14,7 +14,7 @@ use Ineersa\CodingAgent\Tool\ToolHandlerInterface;
 use Ineersa\CodingAgent\Tool\ToolRuntime;
 
 /**
- * Model-visible `agent_retrieve` tool for parent-scoped subagent artifacts.
+ * Model-visible `agent_retrieve` tool for parent-scoped child-agent artifacts (subagent or fork).
  */
 final class AgentRetrieveTool implements HatfieldToolProviderInterface, ToolHandlerInterface
 {
@@ -49,7 +49,7 @@ final class AgentRetrieveTool implements HatfieldToolProviderInterface, ToolHand
     {
         return new ToolDefinitionDTO(
             name: 'agent_retrieve',
-            description: 'Retrieve a completed or failed subagent artifact handoff, metadata, or bounded event/history summary from the current parent session.',
+            description: 'Retrieve a completed or failed child-agent artifact handoff (subagent or fork), metadata, or bounded event/history summary from the current parent session.',
             parametersJsonSchema: [
                 'type' => 'object',
                 'properties' => [
@@ -59,7 +59,7 @@ final class AgentRetrieveTool implements HatfieldToolProviderInterface, ToolHand
                     ],
                     'agent_run_id' => [
                         'type' => 'string',
-                        'description' => 'Child AgentCore run id (UUID) for the subagent run.',
+                        'description' => 'Child AgentCore run id (UUID) for the child run.',
                     ],
                     'mode' => [
                         'type' => 'string',
@@ -78,11 +78,11 @@ final class AgentRetrieveTool implements HatfieldToolProviderInterface, ToolHand
             ],
             handler: $this,
             executionMode: ToolExecutionMode::Sequential,
-            promptLine: 'agent_retrieve artifact_id=<id>|agent_run_id=<uuid> [mode=handoff|metadata|events|history|debug] [limit=N] — load subagent handoff or bounded artifact summary',
+            promptLine: 'agent_retrieve artifact_id=<id>|agent_run_id=<uuid> [mode=handoff|metadata|events|history|debug] [limit=N] — load child-agent handoff or bounded artifact summary',
             promptGuidelines: [
-                'Use agent_retrieve when parallel subagent summaries were truncated, a child failed/cancelled/timed out, or you need metadata/events/history/debug — not for successful single-mode subagent handoffs already returned inline.',
+                'Use agent_retrieve when parallel child summaries were truncated, a child failed/cancelled/timed out, or you need metadata/events/history/debug — not for successful single-mode subagent handoffs already returned inline.',
                 'Provide artifact_id and/or agent_run_id from the current parent session only; cross-parent retrieval is rejected.',
-                'Default mode handoff returns stored handoff.md; redundant after a successful single-mode subagent unless you need to re-fetch or inspect metadata.',
+                'Default mode handoff returns stored handoff.md; redundant after a successful single-mode subagent/fork unless you need to re-fetch or inspect metadata.',
                 'Use metadata for status, timestamps, and counts without raw message or tool output.',
                 'Use events or history for bounded debugging summaries; payloads and prompts are omitted by default.',
                 'Use debug for relative artifact paths only — not absolute filesystem paths.',

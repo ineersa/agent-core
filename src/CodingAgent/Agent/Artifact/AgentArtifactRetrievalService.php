@@ -15,13 +15,13 @@ use Ineersa\CodingAgent\Config\AgentArtifactRetrievalLimitsConfig;
 use Psr\Log\LoggerInterface;
 
 /**
- * Resolves parent-scoped subagent artifacts and renders bounded, privacy-safe
+ * Resolves parent-scoped child-agent artifacts (subagent or fork) and renders bounded, privacy-safe
  * retrieval output for the {@see \Ineersa\CodingAgent\Agent\Tool\AgentRetrieveTool}.
  */
 final class AgentArtifactRetrievalService
 {
     private const string TEMPLATE_HANDOFF_HEADER = <<<'MD'
-# Subagent handoff
+# Child-agent handoff
 
 - artifact_id: {artifact_id}
 - agent_run_id: {agent_run_id}
@@ -31,7 +31,7 @@ final class AgentArtifactRetrievalService
 MD;
 
     private const string TEMPLATE_METADATA = <<<'MD'
-# Subagent artifact metadata
+# Child-agent artifact metadata
 
 - artifact_id: {artifact_id}
 - agent_run_id: {agent_run_id}
@@ -44,7 +44,7 @@ MD;
 MD;
 
     private const string TEMPLATE_EVENTS_HEADER = <<<'MD'
-# Subagent recent events
+# Child-agent recent events
 
 - artifact_id: {artifact_id}
 - agent_run_id: {agent_run_id}
@@ -55,7 +55,7 @@ MD;
 MD;
 
     private const string TEMPLATE_HISTORY_HEADER = <<<'MD'
-# Subagent message history (bounded)
+# Child-agent message history (bounded)
 
 - artifact_id: {artifact_id}
 - agent_run_id: {agent_run_id}
@@ -66,7 +66,7 @@ MD;
 MD;
 
     private const string TEMPLATE_DEBUG = <<<'MD'
-# Subagent artifact debug paths
+# Child-agent artifact debug paths
 
 - artifact_id: {artifact_id}
 - agent_run_id: {agent_run_id}
@@ -138,7 +138,7 @@ MD;
             }
 
             if (null === $byArtifact) {
-                throw new ToolCallException(\sprintf('Unknown artifact_id "%s" in the current parent session.', $artifactId), retryable: false, hint: 'List artifacts from subagent completions or use the artifact id from the subagent handoff header.');
+                throw new ToolCallException(\sprintf('Unknown artifact_id "%s" in the current parent session.', $artifactId), retryable: false, hint: 'List artifacts from child completions or use the artifact id from the subagent handoff header.');
             }
         }
 
@@ -161,13 +161,13 @@ MD;
 
         if (null !== $byArtifact && null !== $byRun) {
             if ($byArtifact->artifactId !== $byRun->artifactId || $byArtifact->agentRunId !== $byRun->agentRunId) {
-                throw new ToolCallException('artifact_id and agent_run_id refer to different subagent artifacts in the current parent session.', retryable: false, hint: 'Provide only one identifier, or ensure both refer to the same child artifact.');
+                throw new ToolCallException('artifact_id and agent_run_id refer to different child artifacts in the current parent session.', retryable: false, hint: 'Provide only one identifier, or ensure both refer to the same child artifact.');
             }
 
             return $byArtifact;
         }
 
-        return $byArtifact ?? $byRun ?? throw new ToolCallException('Unable to resolve subagent artifact.', retryable: false);
+        return $byArtifact ?? $byRun ?? throw new ToolCallException('Unable to resolve child artifact.', retryable: false);
     }
 
     private function renderHandoff(AgentArtifactEntryDTO $entry): string

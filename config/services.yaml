@@ -627,6 +627,12 @@ services:
   Ineersa\CodingAgent\Agent\Tool\SubagentToolDefinitionProvider:
     tags: ['hatfield.tool_provider']
 
+  Ineersa\CodingAgent\Agent\Tool\ForkToolHandler:
+    arguments:
+      $executionServiceLocator: !service_locator
+        execution: '@Ineersa\CodingAgent\Agent\Execution\ForkExecutionService'
+
+
   # CodingAgent ToolSetResolver — bridges ToolRegistry to AgentCore resolver seam.
   # The inner resolver (CodingAgentToolSetResolver) is wrapped by
   # McpCatalogRegisteringToolSetResolver so MCP dynamic tools from the

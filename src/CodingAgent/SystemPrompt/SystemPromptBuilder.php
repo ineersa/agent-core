@@ -95,6 +95,26 @@ final readonly class SystemPromptBuilder
      *
      * @param list<string> $allowedToolNames runtime tool names for the child
      */
+    /**
+     * Build the main SYSTEM.md harness rendered for a restricted tool allow-list.
+     *
+     * Used by fork children (main-agent-like context) instead of SUBAGENT_SYSTEM.md.
+     *
+     * @param list<string> $allowedToolNames runtime tool names for the child
+     */
+    public function buildMainHarnessForAllowedTools(array $allowedToolNames): string
+    {
+        if ('' === $this->appConfig->cwd) {
+            throw new \RuntimeException('CWD is not configured. Ensure AppConfig::$cwd is set.');
+        }
+
+        $cwd = rtrim($this->appConfig->cwd, '/');
+        $baseContent = $this->loadBaseTemplate($cwd);
+        $variables = $this->buildChildVariables($cwd, $allowedToolNames, '');
+
+        return $this->render($baseContent, $variables);
+    }
+
     public function buildChildHarnessFragment(array $allowedToolNames): string
     {
         if ('' === $this->appConfig->cwd) {
