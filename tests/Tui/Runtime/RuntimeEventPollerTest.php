@@ -7,8 +7,9 @@ namespace Ineersa\Tests\Tui\Runtime;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeExceptionBoundary;
+use Ineersa\CodingAgent\Runtime\Contract\SessionTranscriptProviderInterface;
+use Ineersa\CodingAgent\Runtime\Contract\SessionTranscriptSnapshotDTO;
 use Ineersa\CodingAgent\Runtime\Contract\TranscriptProjectorInterface;
-use Ineersa\CodingAgent\Runtime\Contract\TurnTreeProviderInterface;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
@@ -37,8 +38,8 @@ final class RuntimeEventPollerTest extends TestCase
     private TuiSessionState $state;
     private AgentSessionClient&MockObject $client;
     private TranscriptProjectorInterface&MockObject $projector;
-    private LoggerInterface&MockObject $logger;
-    private TurnTreeProviderInterface&MockObject $turnTreeProvider;
+    private LoggerInterface $logger;
+    private SessionTranscriptProviderInterface&MockObject $sessionTranscriptProvider;
     private RuntimeEventPoller $poller;
 
     protected function setUp(): void
@@ -52,7 +53,11 @@ final class RuntimeEventPollerTest extends TestCase
 
         $this->client = $this->createMock(AgentSessionClient::class);
         $this->projector = $this->createMock(TranscriptProjectorInterface::class);
-        $this->turnTreeProvider = $this->createMock(TurnTreeProviderInterface::class);
+        $this->projector->method('accept');
+        $this->projector->method('reset');
+        $this->projector->method('blocks')->willReturn([]);
+        $this->sessionTranscriptProvider = $this->createMock(SessionTranscriptProviderInterface::class);
+        $this->sessionTranscriptProvider->method('transcriptForLeaf')->willReturn(new SessionTranscriptSnapshotDTO([], []));
         $this->logger = $this->createMock(LoggerInterface::class);
 
         $this->poller = new RuntimeEventPoller(
@@ -61,7 +66,7 @@ final class RuntimeEventPollerTest extends TestCase
             new RuntimeExceptionBoundary(
                 $this->createStub(EventDispatcherInterface::class),
             ),
-            $this->turnTreeProvider,
+            $this->sessionTranscriptProvider,
         );
     }
 
@@ -702,60 +707,29 @@ final class RuntimeEventPollerTest extends TestCase
         ];
 
         // Mock turn tree provider to return active-path RuntimeEvents
-        $turnTreeProvider = $this->createMock(TurnTreeProviderInterface::class);
-        $activeEvents = [
-            new RuntimeEvent(
-                type: RuntimeEventTypeEnum::AssistantMessageCompleted->value,
+        $sessionTranscriptProvider = $this->createMock(SessionTranscriptProviderInterface::class);
+        $rebuiltBlocks = [
+            new TranscriptBlock(
+                id: 'block-seq-35',
+                kind: TranscriptBlockKindEnum::AssistantMessage,
                 runId: 'test-run',
                 seq: 35,
-                payload: ['text' => 'New active path response'],
+                text: 'New active path response',
             ),
         ];
-        $turnTreeProvider->expects($this->once())
-            ->method('activePathRuntimeEvents')
+        $sessionTranscriptProvider->expects($this->once())
+            ->method('transcriptForLeaf')
             ->with('test-run', 3)
-            ->willReturn($activeEvents);
+            ->willReturn(new SessionTranscriptSnapshotDTO($rebuiltBlocks, []));
 
-        // Real projector: tracks accepted events, returns TranscriptBlocks
-        $projector = new class implements TranscriptProjectorInterface {
-            /** @var list<array{type: string, runId: string, seq: int, payload: array<string, mixed>, v?: int}> */
-            public array $accepted = [];
-
-            public function accept(array $event): void
-            {
-                $this->accepted[] = $event;
-            }
-
-            public function blocks(): array
-            {
-                $blocks = [];
-                foreach ($this->accepted as $e) {
-                    $blocks[] = new TranscriptBlock(
-                        id: 'block-seq-'.$e['seq'],
-                        kind: TranscriptBlockKindEnum::AssistantMessage,
-                        runId: 'test-run',
-                        seq: $e['seq'],
-                        text: (string) ($e['payload']['text'] ?? ''),
-                    );
-                }
-
-                return $blocks;
-            }
-
-            public function reset(): void
-            {
-                $this->accepted = [];
-            }
-        };
-
-        $eventApplier = new TuiRuntimeEventApplier($projector);
+        $eventApplier = new TuiRuntimeEventApplier($this->projector);
         $poller = new RuntimeEventPoller(
             $eventApplier,
             $this->logger,
             new RuntimeExceptionBoundary(
                 $this->createStub(EventDispatcherInterface::class),
             ),
-            $turnTreeProvider,
+            $sessionTranscriptProvider,
         );
 
         $this->client->expects($this->once())
@@ -793,7 +767,7 @@ final class RuntimeEventPollerTest extends TestCase
 
     public function testPollGracefullyDegradesOnLeafChangeRebuildFailure(): void
     {
-        // Thesis: when activePathRuntimeEvents throws, the poller catches the
+        // Thesis: when transcriptForLeaf throws, the poller catches the
         // exception, logs a structured warning, clears the transcript (so stale
         // abandoned-branch blocks are not shown), and does not crash.
 
@@ -809,51 +783,34 @@ final class RuntimeEventPollerTest extends TestCase
         ];
 
         // Provider throws on rebuild
-        $turnTreeProvider = $this->createMock(TurnTreeProviderInterface::class);
-        $turnTreeProvider->method('activePathRuntimeEvents')
+        $sessionTranscriptProvider = $this->createMock(SessionTranscriptProviderInterface::class);
+        $sessionTranscriptProvider->method('transcriptForLeaf')
             ->willThrowException(new \RuntimeException('Events file not found'));
 
-        // Stub projector (never reached, but required by TuiRuntimeEventApplier)
-        $projector = new class implements TranscriptProjectorInterface {
-            public function accept(array $event): void
-            {
-            }
+        $this->client->expects($this->once())
+                    ->method('events')
+                    ->with('test-run')
+                    ->willReturn([
+                        new RuntimeEvent(
+                            type: RuntimeEventTypeEnum::RunLeafChanged->value,
+                            runId: 'test-run',
+                            seq: 20,
+                            payload: ['turn_no' => 3],
+                        ),
+                    ]);
 
-            public function blocks(): array
-            {
-                return [];
-            }
-
-            public function reset(): void
-            {
-            }
-        };
-
-        $eventApplier = new TuiRuntimeEventApplier($projector);
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->expects($this->once())
+            ->method('warning')
+            ->with('runtime_event_poller.leaf_changed_rebuild_failed', $this->anything());
         $poller = new RuntimeEventPoller(
-            $eventApplier,
-            $this->logger,
+            new TuiRuntimeEventApplier($this->projector),
+            $logger,
             new RuntimeExceptionBoundary(
                 $this->createStub(EventDispatcherInterface::class),
             ),
-            $turnTreeProvider,
+            $sessionTranscriptProvider,
         );
-
-        $this->client->expects($this->once())
-            ->method('events')
-            ->with('test-run')
-            ->willReturn([
-                new RuntimeEvent(
-                    type: RuntimeEventTypeEnum::RunLeafChanged->value,
-                    runId: 'test-run',
-                    seq: 20,
-                    payload: ['turn_no' => 3],
-                ),
-            ]);
-
-        $this->logger->expects($this->once())
-            ->method('warning')
-            ->with('runtime_event_poller.leaf_changed_rebuild_failed', $this->anything());
 
         $result = $poller->poll($this->state, $this->client);
 
@@ -900,14 +857,21 @@ final class RuntimeEventPollerTest extends TestCase
                 ),
             ]);
 
-        $this->logger->expects($this->once())
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->expects($this->once())
             ->method('warning')
             ->with('runtime_event_poller.leaf_changed_malformed', $this->anything());
 
-        $this->projector->method('accept');
-        $this->projector->method('blocks')->willReturn([]);
+        $poller = new RuntimeEventPoller(
+            new TuiRuntimeEventApplier($this->projector),
+            $logger,
+            new RuntimeExceptionBoundary(
+                $this->createStub(EventDispatcherInterface::class),
+            ),
+            $this->sessionTranscriptProvider,
+        );
 
-        $result = $this->poller->poll($this->state, $this->client);
+        $result = $poller->poll($this->state, $this->client);
 
         // Stale blocks must be removed
         $this->assertSame([], $this->state->transcript, 'Transcript must be empty after malformed RunLeafChanged');
@@ -961,18 +925,19 @@ final class RuntimeEventPollerTest extends TestCase
             }
         };
 
-        $turnTreeProvider = $this->createMock(TurnTreeProviderInterface::class);
-        $turnTreeProvider->expects($this->once())
-            ->method('activePathRuntimeEvents')
+        $sessionTranscriptProvider = $this->createMock(SessionTranscriptProviderInterface::class);
+        $sessionTranscriptProvider->expects($this->once())
+            ->method('transcriptForLeaf')
             ->with('test-run', 2)
-            ->willReturn([
-                new RuntimeEvent(
-                    type: RuntimeEventTypeEnum::AssistantMessageCompleted->value,
+            ->willReturn(new SessionTranscriptSnapshotDTO([
+                new TranscriptBlock(
+                    id: 'block-seq-30',
+                    kind: TranscriptBlockKindEnum::AssistantMessage,
                     runId: 'test-run',
                     seq: 30,
-                    payload: ['text' => 'Rebuilt active path block'],
+                    text: 'Rebuilt active path block',
                 ),
-            ]);
+            ], []));
 
         $eventApplier = new TuiRuntimeEventApplier($projector);
         $poller = new RuntimeEventPoller(
@@ -981,7 +946,7 @@ final class RuntimeEventPollerTest extends TestCase
             new RuntimeExceptionBoundary(
                 $this->createStub(EventDispatcherInterface::class),
             ),
-            $turnTreeProvider,
+            $sessionTranscriptProvider,
         );
 
         $this->client->expects($this->once())

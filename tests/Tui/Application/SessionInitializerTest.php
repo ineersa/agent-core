@@ -9,6 +9,8 @@ use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
+use Ineersa\CodingAgent\Runtime\Contract\SessionTranscriptProviderInterface;
+use Ineersa\CodingAgent\Runtime\Contract\SessionTranscriptSnapshotDTO;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\Contract\TranscriptProjectorInterface;
 use Ineersa\CodingAgent\Runtime\Contract\TurnTreeProviderInterface;
@@ -17,6 +19,7 @@ use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTranslator;
+use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Ineersa\CodingAgent\Runtime\Protocol\TurnTreeView;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\SessionRunEventStore;
@@ -95,6 +98,12 @@ final class SessionInitializerTest extends TestCase
             logger: new NullLogger(),
             eventApplier: new TuiRuntimeEventApplier($this->projector),
             turnTreeProvider: $turnTreeProvider,
+            sessionTranscriptProvider: (function () {
+                $stub = $this->createStub(SessionTranscriptProviderInterface::class);
+                $stub->method('transcriptForLeaf')->willReturn(new SessionTranscriptSnapshotDTO([], []));
+
+                return $stub;
+            })(),
         );
     }
 
@@ -430,24 +439,18 @@ final class SessionInitializerTest extends TestCase
                 activePathTurnNos: [1, 3],
             ));
 
-        // activePathRuntimeEvents returns filtered events (only T1 + T3)
-        $turnTreeProvider->expects($this->once())
-            ->method('activePathRuntimeEvents')
+        // transcriptForLeaf returns projected blocks (only T1 + T3)
+        $sessionTranscriptProvider = $this->createMock(SessionTranscriptProviderInterface::class);
+        $sessionTranscriptProvider->expects($this->once())
+            ->method('transcriptForLeaf')
             ->with($runId, 1)
-            ->willReturn([
-                new RuntimeEvent(
-                    type: 'user.message_submitted',
-                    runId: $runId,
-                    seq: 5,
-                    payload: ['text' => 'Turn 1', 'message_id' => 'msg_t1'],
-                ),
-                new RuntimeEvent(
-                    type: 'user.message_submitted',
-                    runId: $runId,
-                    seq: 15,
-                    payload: ['text' => 'Turn 3 — new branch', 'message_id' => 'msg_t3'],
-                ),
-            ]);
+            ->willReturn(new SessionTranscriptSnapshotDTO(
+                transcriptBlocks: [
+                    new TranscriptBlock(id: 'b1', kind: TranscriptBlockKindEnum::UserMessage, runId: $runId, seq: 5, text: 'Turn 1'),
+                    new TranscriptBlock(id: 'b3', kind: TranscriptBlockKindEnum::UserMessage, runId: $runId, seq: 15, text: 'Turn 3 — new branch'),
+                ],
+                replayEvents: [],
+            ));
 
         // ── Build a fresh initializer with real projector + custom provider ──
         $projector = $this->buildRealTranscriptProjector();
@@ -474,6 +477,7 @@ final class SessionInitializerTest extends TestCase
             logger: new NullLogger(),
             eventApplier: new TuiRuntimeEventApplier($projector),
             turnTreeProvider: $turnTreeProvider,
+            sessionTranscriptProvider: $sessionTranscriptProvider,
         );
 
         $state = new TuiSessionState($runId, true);
@@ -525,21 +529,16 @@ final class SessionInitializerTest extends TestCase
                 currentLeafTurnNo: 1,
                 activePathTurnNos: [1],
             ));
-        $turnTreeProvider->expects($this->once())
-            ->method('activePathRuntimeEvents')
+        $sessionTranscriptProvider = $this->createMock(SessionTranscriptProviderInterface::class);
+        $sessionTranscriptProvider->expects($this->once())
+            ->method('transcriptForLeaf')
             ->with($runId, 1)
-            ->willReturn([
-                new RuntimeEvent(
-                    type: 'user.message_submitted',
-                    runId: $runId,
-                    seq: 1,
-                    payload: ['text' => 'Hello', 'message_id' => 'msg_1'],
-                ),
-            ]);
+            ->willReturn(new SessionTranscriptSnapshotDTO(
+                transcriptBlocks: [new TranscriptBlock(id: 'b1', kind: TranscriptBlockKindEnum::UserMessage, runId: $runId, seq: 1, text: 'Hello')],
+                replayEvents: [],
+            ));
 
-        $this->projector->expects($this->exactly(1))->method('reset');
-        $this->projector->expects($this->once())->method('accept');
-        $this->projector->expects($this->once())->method('blocks')->willReturn([]);
+        $this->projector->expects($this->never())->method('accept');
 
         $appConfig = new AppConfig(
             tui: new TuiConfig(theme: 'default'),
@@ -563,6 +562,7 @@ final class SessionInitializerTest extends TestCase
             logger: new NullLogger(),
             eventApplier: new TuiRuntimeEventApplier($this->projector),
             turnTreeProvider: $turnTreeProvider,
+            sessionTranscriptProvider: $sessionTranscriptProvider,
         );
 
         $state = new TuiSessionState($runId, true);
@@ -570,6 +570,127 @@ final class SessionInitializerTest extends TestCase
 
         $this->assertSame(RunActivityStateEnum::Cancelled, $state->activity);
         $this->assertSame(2, $state->lastSeq);
+    }
+
+    #[AllowMockObjectsWithoutExpectations]
+    public function testBranchAwareResumeUsesCanonicalLastSeqNotTranscriptBlockSeq(): void
+    {
+        $runId = 'run-lastseq-'.bin2hex(random_bytes(4));
+        $sessionDir = $this->projectDir.'/.hatfield/sessions/'.$runId;
+        mkdir($sessionDir, 0777, true);
+        file_put_contents($sessionDir.'/events.jsonl', '');
+
+        $this->eventStore->append(new RunEvent(runId: $runId, seq: 5, turnNo: 1, type: 'agent_command_applied', payload: [
+            'kind' => 'steer', 'idempotency_key' => 'ik_t1',
+            'message' => ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Turn 1']]],
+        ]));
+        $this->eventStore->append(new RunEvent(runId: $runId, seq: 99, turnNo: 2, type: 'agent_command_applied', payload: [
+            'kind' => 'steer', 'idempotency_key' => 'ik_abandoned',
+            'message' => ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Abandoned']]],
+        ]));
+
+        $turnTreeProvider = $this->createMock(TurnTreeProviderInterface::class);
+        $turnTreeProvider->method('forSession')->willReturn(new TurnTreeView(
+            runId: $runId,
+            nodesByTurnNo: [],
+            rootTurnNos: [1],
+            currentLeafTurnNo: 1,
+            activePathTurnNos: [1],
+        ));
+
+        $sessionTranscriptProvider = $this->createMock(SessionTranscriptProviderInterface::class);
+        $sessionTranscriptProvider->method('transcriptForLeaf')->willReturn(new SessionTranscriptSnapshotDTO(
+            transcriptBlocks: [
+                new TranscriptBlock(id: 'b1', kind: TranscriptBlockKindEnum::UserMessage, runId: $runId, seq: 1, text: 'Turn 1'),
+            ],
+            replayEvents: [],
+        ));
+
+        $sessionInit = $this->buildSessionInitializerWithProviders($turnTreeProvider, $sessionTranscriptProvider);
+        $state = new TuiSessionState($runId, true);
+        $sessionInit->buildInitialTranscript($state);
+
+        $this->assertSame(99, $state->lastSeq, 'lastSeq must use canonical stream max, not TranscriptBlock::seq');
+    }
+
+    #[AllowMockObjectsWithoutExpectations]
+    public function testBranchAwareResumeReconstructsUsageFromProviderReplayEvents(): void
+    {
+        $runId = 'run-usage-'.bin2hex(random_bytes(4));
+        $sessionDir = $this->projectDir.'/.hatfield/sessions/'.$runId;
+        mkdir($sessionDir, 0777, true);
+        file_put_contents($sessionDir.'/events.jsonl', '');
+
+        $this->eventStore->append(new RunEvent(runId: $runId, seq: 1, turnNo: 1, type: 'run_started', payload: [
+            'step_id' => 'step-1',
+            'payload' => ['messages' => [['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Hi']]]]],
+        ]));
+        $this->eventStore->append(new RunEvent(runId: $runId, seq: 2, turnNo: 1, type: 'llm_step_completed', payload: [
+            'step_id' => 'step-2', 'text' => 'Hello', 'usage' => ['input_tokens' => 120, 'output_tokens' => 30],
+        ]));
+
+        $turnTreeProvider = $this->createMock(TurnTreeProviderInterface::class);
+        $turnTreeProvider->method('forSession')->willReturn(new TurnTreeView(
+            runId: $runId,
+            nodesByTurnNo: [],
+            rootTurnNos: [1],
+            currentLeafTurnNo: 1,
+            activePathTurnNos: [1],
+        ));
+
+        $usageEvent = new RuntimeEvent(
+            type: RuntimeEventTypeEnum::AssistantMessageCompleted->value,
+            runId: $runId,
+            seq: 2,
+            payload: ['text' => 'Hello', 'usage' => ['input_tokens' => 120, 'output_tokens' => 30]],
+        );
+
+        $sessionTranscriptProvider = $this->createMock(SessionTranscriptProviderInterface::class);
+        $sessionTranscriptProvider->method('transcriptForLeaf')->willReturn(new SessionTranscriptSnapshotDTO(
+            transcriptBlocks: [
+                new TranscriptBlock(id: 'b1', kind: TranscriptBlockKindEnum::AssistantMessage, runId: $runId, seq: 1, text: 'Hello'),
+            ],
+            replayEvents: [$usageEvent],
+        ));
+
+        $projector = $this->buildRealTranscriptProjector();
+        $sessionInit = $this->buildSessionInitializerWithProviders($turnTreeProvider, $sessionTranscriptProvider, $projector);
+        $state = new TuiSessionState($runId, true);
+        $sessionInit->buildInitialTranscript($state);
+
+        $this->assertSame(120, $state->usage->latestInputTokens);
+        $this->assertSame(120, $state->usage->inputTokens);
+        $this->assertSame(30, $state->usage->outputTokens);
+    }
+
+    private function buildSessionInitializerWithProviders(
+        TurnTreeProviderInterface $turnTreeProvider,
+        SessionTranscriptProviderInterface $sessionTranscriptProvider,
+        ?TranscriptProjectorInterface $projector = null,
+    ): SessionInitializer {
+        $projector ??= $this->buildRealTranscriptProjector();
+        $appConfig = new AppConfig(
+            tui: new TuiConfig(theme: 'default'),
+            logging: new LoggingConfig(),
+            cwd: $this->projectDir,
+        );
+        $hatfieldSessionStore = new HatfieldSessionStore(
+            appConfig: $appConfig,
+            entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
+        );
+        $mapper = new RuntimeEventMapper(new RuntimeEventTranslator(new EventDispatcher()));
+
+        return new SessionInitializer(
+            sessionStore: $hatfieldSessionStore,
+            eventStore: $this->eventStore,
+            eventMapper: $mapper,
+            projector: $projector,
+            blockFactory: new TranscriptBlockFactory(),
+            logger: new NullLogger(),
+            eventApplier: new TuiRuntimeEventApplier($projector),
+            turnTreeProvider: $turnTreeProvider,
+            sessionTranscriptProvider: $sessionTranscriptProvider,
+        );
     }
 
     /**

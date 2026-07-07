@@ -344,11 +344,6 @@ final class SubagentLiveScenarioHarness
                     activePathTurnNos: [],
                 );
             }
-
-            public function activePathRuntimeEvents(string $runId, int $leafTurnNo): array
-            {
-                return [];
-            }
         };
     }
 

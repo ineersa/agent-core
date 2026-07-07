@@ -8,8 +8,8 @@ use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeExceptionBoundary;
+use Ineersa\CodingAgent\Runtime\Contract\SessionTranscriptProviderInterface;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
-use Ineersa\CodingAgent\Runtime\Contract\TurnTreeProviderInterface;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
@@ -60,7 +60,7 @@ final class TickPollListenerSubagentLiveTest extends TestCase
             new TuiRuntimeEventApplier($parentProjector),
             new TestLogger(),
             new RuntimeExceptionBoundary(new EventDispatcher()),
-            $this->createStub(TurnTreeProviderInterface::class),
+            $this->createStub(SessionTranscriptProviderInterface::class),
         );
 
         $state = new TuiSessionState($parentRun);
@@ -123,7 +123,7 @@ final class TickPollListenerSubagentLiveTest extends TestCase
             new TuiRuntimeEventApplier($parentProjector),
             new TestLogger(),
             new RuntimeExceptionBoundary(new EventDispatcher()),
-            $this->createStub(TurnTreeProviderInterface::class),
+            $this->createStub(SessionTranscriptProviderInterface::class),
         );
 
         $state = new TuiSessionState($parentRun);

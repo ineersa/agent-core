@@ -9,11 +9,12 @@ use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 
 /**
- * Single reducer for replayable TUI session state from runtime events.
+ * Reduces non-transcript TUI session state from runtime events.
  *
- * Live RuntimeEventPoller and SessionInitializer::replayFromEvents() must both
- * call this for each accepted event so resume reconstructs the same visible
- * state as live processing (activity, usage, queued messages, transcript projection).
+ * Live RuntimeEventPoller and SessionInitializer branch-aware resume call this
+ * for each active-path replay event so usage, activity, queued messages, and
+ * subagent catalog match live processing. Leaf transcript blocks are assigned
+ * wholesale from SessionTranscriptProviderInterface, not from this projector.
  */
 final readonly class TuiRuntimeEventApplier
 {
@@ -38,16 +39,15 @@ final readonly class TuiRuntimeEventApplier
         }
 
         if (RuntimeEventTypeEnum::RunLeafChanged->value === $event->type) {
-            // Reset projector so replayTranscriptOnly (called by RuntimeEventPoller
-            // after apply()) starts from a clean slate. The poller handles the actual
-            // transcript rebuild by fetching active-path events and replaying them
-            // through the projector only (no state mutation).
+            // Reset live projector for post-leaf events in the same poll batch.
+            // Leaf transcript blocks are assigned wholesale by RuntimeEventPoller
+            // from SessionTranscriptProvider (isolated projector).
             $this->projector->reset();
 
             $state->activity = RunActivityStateEnum::Idle;
             $state->queuedFollowUp = null;
-            // Abandoned-branch queued steer/follow-up commands must not keep
-            // rendering as ⏳ above the editor after rewind/resume.
+            // Abandoned-branch queued steer/follow-up commands must not keep rendering
+            // as pending after rewind/resume to an earlier leaf.
             $state->queuedUserMessages = [];
 
             return;
@@ -78,23 +78,6 @@ final readonly class TuiRuntimeEventApplier
         $state->applyQueuedUserMessageEvent($event);
         $state->subagentLiveCatalog->ingestRuntimeEvent($event);
         $this->projector->accept($event->toArray());
-    }
-
-    /**
-     * Feed events through the projector for transcript rebuilding without touching state.
-     *
-     * The projector must already be reset (typically by the RunLeafChanged handler).
-     * Used by RuntimeEventPoller to rebuild transcript blocks after a leaf change,
-     * replaying only active-path events into the projector, then wholesale-replacing
-     * $state->transcript with the result.
-     *
-     * @param list<RuntimeEvent> $runtimeEvents
-     */
-    public function replayTranscriptOnly(array $runtimeEvents): void
-    {
-        foreach ($runtimeEvents as $event) {
-            $this->projector->accept($event->toArray());
-        }
     }
 
     /** @return list<\Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock> */
