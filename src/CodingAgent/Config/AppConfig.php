@@ -27,7 +27,7 @@ use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
  *  - prompts    PromptsConfig (custom system/user prompt overrides)
  *  - compaction CompactionConfig (auto_enabled, compact_after_tokens, keep_recent_tokens, model, thinking_level, provider_overrides, model_overrides)
  *  - agents     AgentsConfig (enabled, paths)
- *  - forks      ForksConfigDTO (max_concurrent, default_level, levels)
+ *  - forks      ForksConfigDTO (max_concurrent, model)
  *
  * The raw array is kept for forward compatibility with config keys
  * that do not yet have a typed DTO. Production consumers must use
@@ -159,12 +159,7 @@ final class AppConfig
     }
 
     /**
-     * Denormalize the forks config section, handling the levels sub-map.
-     *
-     * The Symfony ObjectNormalizer does not automatically denormalize nested
-     * arrays of typed objects for array<string, SomeDTO> constructor types.
-     * We denormalize the scalar properties first, then manually denormalize
-     * each level entry.
+     * Denormalize the forks config section.
      *
      * @param array<string, mixed>  $data         The full merged config array
      * @param DenormalizerInterface $denormalizer The serializer denormalizer
@@ -173,48 +168,9 @@ final class AppConfig
     {
         $rawForks = (array) ($data['forks'] ?? []);
 
-        // Denormalize scalar properties (max_concurrent, default_level).
-        $forks = $denormalizer->denormalize(
+        return $denormalizer->denormalize(
             $rawForks,
             ForksConfigDTO::class,
         );
-
-        $defaultLevel = $forks->defaultLevel;
-        if (isset($rawForks['default_level']) && \is_string($rawForks['default_level'])) {
-            $parsedDefault = ForkLevelEnum::fromStringOrNull($rawForks['default_level']);
-            if (null !== $parsedDefault) {
-                $defaultLevel = $parsedDefault;
-            }
-        }
-
-        // Manually denormalize the levels sub-map.
-        if (isset($rawForks['levels']) && \is_array($rawForks['levels'])) {
-            $levels = [];
-            foreach ($rawForks['levels'] as $levelKey => $levelData) {
-                if (!\is_string($levelKey) || !\is_array($levelData)) {
-                    continue;
-                }
-                $levels[$levelKey] = $denormalizer->denormalize(
-                    $levelData,
-                    ForkLevelConfigDTO::class,
-                );
-            }
-
-            return new ForksConfigDTO(
-                maxConcurrent: $forks->maxConcurrent,
-                defaultLevel: $defaultLevel,
-                levels: $levels,
-            );
-        }
-
-        if ($defaultLevel !== $forks->defaultLevel) {
-            return new ForksConfigDTO(
-                maxConcurrent: $forks->maxConcurrent,
-                defaultLevel: $defaultLevel,
-                levels: $forks->levels,
-            );
-        }
-
-        return $forks;
     }
 }

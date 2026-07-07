@@ -6,15 +6,13 @@ namespace Ineersa\CodingAgent\Tests\Config;
 
 use Ineersa\CodingAgent\Agent\Fork\ForkConfigResolver;
 use Ineersa\CodingAgent\Config\AppConfig;
-use Ineersa\CodingAgent\Config\ForkLevelEnum;
 use Ineersa\CodingAgent\Config\ForksConfigDTO;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use PHPUnit\Framework\Assert;
 use PHPUnit\Framework\Attributes\CoversClass;
 
 /**
- * Test thesis: ForksConfigDTO is wired from AppConfig in the DI container so
- * forks.default_level and forks.levels.*.model from Hatfield settings affect runtime.
+ * Test thesis: ForksConfigDTO is wired from AppConfig so forks.model from Hatfield settings affects runtime.
  */
 #[CoversClass(AppConfig::class)]
 #[CoversClass(ForksConfigDTO::class)]
@@ -29,13 +27,9 @@ final class ForksConfigServiceTest extends IsolatedKernelTestCase
 ai:
     default_model: null
 forks:
-  default_level: senior
-  levels:
-    senior:
-      model: llama_cpp/senior-fork
+  model: llama_cpp/fork-model
 YAML);
 
-        // Reboot kernel so AppConfig/ForksConfigDTO read settings.yaml written above.
         if (self::$booted) {
             self::$kernel->shutdown();
             self::$booted = false;
@@ -44,16 +38,15 @@ YAML);
         self::bootKernel(['environment' => 'test', 'debug' => false]);
     }
 
-    public function testForksConfigServiceResolvesFromAppConfigWithLevelModelOverride(): void
+    public function testForksConfigServiceResolvesModelFromAppConfig(): void
     {
         $forksConfig = self::getContainer()->get(ForksConfigDTO::class);
         $appConfig = self::getContainer()->get(AppConfig::class);
 
-        Assert::assertSame(ForkLevelEnum::Senior, $forksConfig->defaultLevel);
-        Assert::assertSame('llama_cpp/senior-fork', $forksConfig->levelConfig(ForkLevelEnum::Senior)->model);
+        Assert::assertSame('llama_cpp/fork-model', $forksConfig->model);
         Assert::assertSame($appConfig->forks, $forksConfig);
 
-        $resolved = self::getContainer()->get(ForkConfigResolver::class)->resolve(ForkLevelEnum::Senior);
-        Assert::assertSame('llama_cpp/senior-fork', $resolved->resolvedModel);
+        $resolved = self::getContainer()->get(ForkConfigResolver::class)->resolve();
+        Assert::assertSame('llama_cpp/fork-model', $resolved->resolvedModel);
     }
 }

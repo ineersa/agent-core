@@ -18,7 +18,6 @@ use Ineersa\CodingAgent\Compaction\SessionCompactor;
 use Ineersa\CodingAgent\Compaction\ToolResultDigestService;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\CompactionConfig;
-use Ineersa\CodingAgent\Config\ForkLevelEnum;
 use Ineersa\CodingAgent\Config\ForksConfigDTO;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
@@ -84,7 +83,7 @@ final class ForkContextBuilderTest extends TestCase
 
         $this->sanitizer = new ForkSnapshotSanitizer();
         $forkPromptBuilder = new ForkTaskPromptBuilder();
-        $configResolver = new ForkConfigResolver(ForksConfigDTO::defaultInstance());
+        $configResolver = new ForkConfigResolver(new ForksConfigDTO());
 
         $this->builder = new ForkContextBuilder(
             sanitizer: $this->sanitizer,
@@ -169,33 +168,9 @@ final class ForkContextBuilderTest extends TestCase
         $this->assertLessThan(\count($parentMessages), \count($snapshot->messages));
     }
 
-    public function testBuildWithRequestedLevel(): void
+    public function testBuildUsesConfiguredForkModel(): void
     {
-        $parentMessages = [
-            $this->userMessage('Hello'),
-            $this->assistantMessage('Hi'),
-        ];
-
-        $snapshot = $this->builder->build(
-            $parentMessages,
-            'Task',
-            requestedLevel: ForkLevelEnum::Senior,
-        );
-
-        // The stored resolvedModel uses the level config (Senior has null model by default).
-        $this->assertNull($snapshot->resolvedModel);
-    }
-
-    public function testBuildWithConfiguredModelLevel(): void
-    {
-        $configResolver = new ForkConfigResolver(new ForksConfigDTO(
-            levels: [
-                'senior' => new \Ineersa\CodingAgent\Config\ForkLevelConfigDTO(
-                    model: 'openai/gpt-4',
-                ),
-            ],
-        ));
-
+        $configResolver = new ForkConfigResolver(new ForksConfigDTO(model: 'openai/gpt-4'));
         $builder = new ForkContextBuilder(
             sanitizer: $this->sanitizer,
             compactor: new ForkSnapshotCompactor($this->createSessionCompactor()),
@@ -207,7 +182,6 @@ final class ForkContextBuilderTest extends TestCase
         $snapshot = $builder->build(
             [$this->userMessage('Hi'), $this->assistantMessage('Hello')],
             'Task',
-            requestedLevel: ForkLevelEnum::Senior,
         );
 
         $this->assertSame('openai/gpt-4', $snapshot->resolvedModel);
@@ -221,7 +195,6 @@ final class ForkContextBuilderTest extends TestCase
         $this->assertStringContainsString('Empty test', $snapshot->forkTaskUserMessage);
         $this->assertStringContainsString('FORK MODE IS ENABLED', $snapshot->forkSystemPromptAppend);
         $this->assertNull($snapshot->resolvedModel);
-        $this->assertSame(ForkLevelEnum::Middle, $snapshot->level);
     }
 
     private function userMessage(string $content): AgentMessage

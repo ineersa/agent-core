@@ -22,11 +22,6 @@ final class ForkToolDefinitionBuilder
                         'type' => 'string',
                         'description' => 'Delegated task for the fork child (required).',
                     ],
-                    'level' => [
-                        'type' => 'string',
-                        'enum' => ['junior', 'middle', 'senior'],
-                        'description' => 'Fork level (model override from forks settings).',
-                    ],
                 ],
                 'required' => ['task'],
                 'additionalProperties' => false,
@@ -34,7 +29,7 @@ final class ForkToolDefinitionBuilder
             handler: $handler,
             executionMode: ToolExecutionMode::Sequential,
             timeoutSeconds: null,
-            promptLine: 'fork task="..." [level=junior|middle|senior] — launch fork child with inherited history',
+            promptLine: 'fork task="..." — launch fork child with inherited history',
             promptGuidelines: [
                 'Use fork to delegate implementation or investigation to a child with full main-agent tool scope except fork itself.',
                 'Fork children may use subagent; they cannot launch another fork.',

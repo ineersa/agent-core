@@ -7,7 +7,6 @@ namespace Ineersa\CodingAgent\Agent\Tool;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\CodingAgent\Agent\Execution\ForkExecutionService;
-use Ineersa\CodingAgent\Config\ForkLevelEnum;
 use Ineersa\CodingAgent\Tool\ToolHandlerInterface;
 use Ineersa\CodingAgent\Tool\ToolRuntime;
 use Psr\Container\ContainerInterface;
@@ -44,21 +43,9 @@ final class ForkToolHandler implements ToolHandlerInterface
                 throw new ToolCallException('fork requires a non-empty task string.', retryable: false);
             }
 
-            $level = null;
-            if (isset($arguments['level'])) {
-                if (!\is_string($arguments['level'])) {
-                    throw new ToolCallException('fork level must be a string (junior, middle, senior).', retryable: false);
-                }
-                $level = ForkLevelEnum::fromStringOrNull($arguments['level']);
-                if (null === $level) {
-                    throw new ToolCallException('Invalid fork level. Use junior, middle, or senior.', retryable: false);
-                }
-            }
-
             return $this->executionService()->execute(
                 parentRunId: $parentRunId,
                 task: trim($task),
-                requestedLevel: $level,
             );
         });
     }

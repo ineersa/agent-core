@@ -8,7 +8,6 @@ use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\CodingAgent\Agent\Fork\ForkChildMessageComposer;
 use Ineersa\CodingAgent\Agent\Fork\ForkSessionSnapshotDTO;
 use Ineersa\CodingAgent\Agent\Fork\ForkTaskPromptBuilder;
-use Ineersa\CodingAgent\Config\ForkLevelEnum;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use PHPUnit\Framework\Attributes\CoversClass;
 
@@ -27,7 +26,6 @@ final class ForkChildMessageComposerTest extends IsolatedKernelTestCase
             ],
             forkSystemPromptAppend: $promptBuilder->forkChildSystemPromptAppend(),
             forkTaskUserMessage: $expectedUser,
-            level: ForkLevelEnum::Middle,
             resolvedModel: null,
         );
 

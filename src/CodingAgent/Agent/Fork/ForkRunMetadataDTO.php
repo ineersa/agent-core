@@ -5,13 +5,12 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Agent\Fork;
 
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
-use Ineersa\CodingAgent\Config\ForkLevelEnum;
 use Symfony\Component\Serializer\Attribute\SerializedName;
 
 /**
  * Fork-specific metadata contract for the metadata.json payload.
  *
- * Contains run identity, level, model resolution, task, and lifecycle
+ * Contains run identity, model resolution, task, and lifecycle
  * tracking for a fork child process.
  *
  * The artifact kind discriminator (subagent/fork) lives on
@@ -24,21 +23,6 @@ final readonly class ForkRunMetadataDTO
 {
     public const int DEFAULT_VALIDATION_ATTEMPTS = 0;
 
-    /**
-     * @param string                  $runId              Fork artifact run ID
-     * @param string                  $parentRunId        Parent session run ID
-     * @param string|null             $childRunId         Child session run ID (set when child starts)
-     * @param ForkLevelEnum           $level              Resolved fork level
-     * @param string|null             $resolvedModel      Resolved model (null = session model)
-     * @param string                  $cwd                Working directory for the fork
-     * @param string                  $task               Fork task description
-     * @param AgentArtifactStatusEnum $status             Lifecycle status
-     * @param \DateTimeImmutable|null $startedAt          When the fork started
-     * @param \DateTimeImmutable|null $completedAt        When the fork completed
-     * @param int|null                $pid                OS process ID of the fork
-     * @param string|null             $error              Error message on failure
-     * @param int                     $validationAttempts Number of handoff validation attempts
-     */
     public function __construct(
         #[SerializedName('run_id')]
         public string $runId,
@@ -48,9 +32,6 @@ final readonly class ForkRunMetadataDTO
 
         #[SerializedName('child_run_id')]
         public ?string $childRunId = null,
-
-        #[SerializedName('level')]
-        public ForkLevelEnum $level = ForkLevelEnum::Middle,
 
         #[SerializedName('resolved_model')]
         public ?string $resolvedModel = null,

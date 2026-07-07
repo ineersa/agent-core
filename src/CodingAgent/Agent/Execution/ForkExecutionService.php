@@ -23,7 +23,6 @@ use Ineersa\CodingAgent\Agent\Context\AgentsContextBuilder;
 use Ineersa\CodingAgent\Agent\Fork\ForkChildMessageComposer;
 use Ineersa\CodingAgent\Agent\Fork\ForkContextBuilder;
 use Ineersa\CodingAgent\Config\AgentsConfig;
-use Ineersa\CodingAgent\Config\ForkLevelEnum;
 use Ineersa\CodingAgent\Skills\SkillsContextBuilder;
 use Ineersa\CodingAgent\Tool\ToolRegistryInterface;
 use Symfony\Component\Clock\ClockInterface;
@@ -66,7 +65,6 @@ final class ForkExecutionService
     public function execute(
         string $parentRunId,
         string $task,
-        ?ForkLevelEnum $requestedLevel = null,
     ): string {
         $task = trim($task);
         if ('' === $task) {
@@ -85,7 +83,6 @@ final class ForkExecutionService
         $snapshot = $this->forkContextBuilder->build(
             parentMessages: $parentState->messages,
             task: $task,
-            requestedLevel: $requestedLevel,
         );
 
         $policy = $this->resolveForkToolPolicy($parentRunId);
@@ -126,7 +123,6 @@ final class ForkExecutionService
                 'agent_name' => self::FORK_AGENT_NAME,
                 'artifact_id' => $artifactId,
                 'interactive' => true,
-                'fork_level' => $snapshot->level->value,
             ],
             model: $resolvedModel,
             reasoning: null,
