@@ -17,7 +17,6 @@ use Ineersa\AgentCore\Domain\Run\StartRunInput;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryRunStore;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
-use Ineersa\CodingAgent\Agent\Artifact\AgentChildArtifactLaunchContextStore;
 use Ineersa\CodingAgent\Agent\Context\AgentsContextBuilder;
 use Ineersa\CodingAgent\Agent\Execution\ForkExecutionService;
 use Ineersa\CodingAgent\Skills\SkillsContextBuilder;
@@ -32,6 +31,8 @@ final class ForkExecutionServiceTest extends IsolatedKernelTestCase
     public function testExecuteLaunchesForkChildWithToolPolicyAndForkKind(): void
     {
         $parentRunId = 'parent-fork-1';
+        $childRunId = 'child-fork-uuid';
+
         $parentRunStore = new InMemoryRunStore();
         $parentRunStore->compareAndSwap(new RunState(
             runId: $parentRunId,
@@ -43,7 +44,7 @@ final class ForkExecutionServiceTest extends IsolatedKernelTestCase
         ), 0);
 
         $completedChild = new RunState(
-            runId: 'child-fork-uuid',
+            runId: $childRunId,
             status: RunStatus::Completed,
             version: 2,
             messages: [
@@ -57,10 +58,10 @@ final class ForkExecutionServiceTest extends IsolatedKernelTestCase
         $captured = null;
         $agentRunner = $this->createMock(AgentRunnerInterface::class);
         $agentRunner->expects($this->once())->method('start')->willReturnCallback(
-            static function (StartRunInput $input) use (&$captured): string {
+            static function (StartRunInput $input) use (&$captured, $childRunId): string {
                 $captured = $input;
 
-                return $input->runId;
+                return $childRunId;
             },
         );
 
@@ -82,7 +83,6 @@ final class ForkExecutionServiceTest extends IsolatedKernelTestCase
             forkContextBuilder: $container->get(\Ineersa\CodingAgent\Agent\Fork\ForkContextBuilder::class),
             messageComposer: $container->get(\Ineersa\CodingAgent\Agent\Fork\ForkChildMessageComposer::class),
             artifactRegistry: $container->get(AgentArtifactRegistry::class),
-            launchContextStore: $container->get(AgentChildArtifactLaunchContextStore::class),
             agentRunner: $agentRunner,
             runStore: $childRunStore,
             parentRunStore: $parentRunStore,
@@ -94,6 +94,7 @@ final class ForkExecutionServiceTest extends IsolatedKernelTestCase
             mcpToolsResolver: $container->get(\Ineersa\CodingAgent\Agent\Execution\AgentMcpToolsResolver::class),
             agentsContextBuilder: $container->get(AgentsContextBuilder::class),
             skillsContextBuilder: $container->get(SkillsContextBuilder::class),
+            agentsConfig: $container->get(\Ineersa\CodingAgent\Config\AgentsConfig::class),
             progressSnapshotBuilder: $container->get(\Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder::class),
             childProgressSummaryBuilder: $container->get(\Ineersa\CodingAgent\Agent\Execution\SubagentChildProgressSummaryBuilder::class),
             clock: new MockClock(),
@@ -103,8 +104,7 @@ final class ForkExecutionServiceTest extends IsolatedKernelTestCase
 
         $this->assertNotNull($captured);
         $this->assertStringContainsString('FORK MODE IS ENABLED', $captured->systemPrompt);
-        $this->assertStringContainsString('Fork launched in the background', $result);
-        $this->assertMatchesRegularExpression('/agent_run_id: [0-9a-f-]{36}/', $result);
+        $this->assertStringContainsString('Fork handoff body', $result);
 
         $allowed = $captured->metadata->toolsScope['allowed_tools'] ?? [];
         $this->assertContains('subagent', $allowed);

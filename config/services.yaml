@@ -431,11 +431,6 @@ services:
       $dispatcher: '@event_dispatcher'
 
 
-  Ineersa\CodingAgent\Runtime\Controller\ChildArtifactCompletionPoller:
-    arguments:
-      $runStore: '@Ineersa\CodingAgent\Agent\Artifact\ChildAwareRunStore'
-      $parentRunStore: '@Ineersa\CodingAgent\Session\SessionRunStore'
-
   Ineersa\CodingAgent\Runtime\Controller\BackgroundProcessCompletionPoller:
     arguments:
       # Parent controller session from HATFIELD_SESSION_ID; poll loop scopes refresh
