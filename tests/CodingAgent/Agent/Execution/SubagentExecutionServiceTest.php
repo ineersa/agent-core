@@ -329,6 +329,13 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
         $this->assertSame(AgentArtifactStatusEnum::Completed, $entries[0]->status);
     }
 
+
+    public function testForkChildMayLaunchSubagentWhenDepthGuardAllows(): void
+    {
+        $guard = new AgentDepthGuard();
+        $this->assertNull($guard->checkLaunchAllowed(parentIsAgentChild: true, parentChildKind: 'fork'));
+    }
+
     public function testNestedSubagentLaunchBlockedWhenParentIsAgentChild(): void
     {
         $def = new AgentDefinitionDTO(
@@ -348,7 +355,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
         $agentRunner = $this->createStub(AgentRunnerInterface::class);
 
         $eventStore = $this->createMock(EventStoreInterface::class);
-        $eventStore->expects($this->once())
+        $eventStore->expects($this->exactly(2))
             ->method('allFor')
             ->with('parent-child-run')
             ->willReturn([
@@ -363,6 +370,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
                             'metadata' => [
                                 'session' => [
                                     'kind' => 'agent_child',
+                                    'child_kind' => 'subagent',
                                     'parent_run_id' => 'grandparent',
                                     'artifact_id' => 'agent_abc',
                                 ],

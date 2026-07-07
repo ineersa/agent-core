@@ -915,6 +915,10 @@ services:
     arguments:
       $parentRunStore: '@Ineersa\CodingAgent\Session\SessionRunStore'
 
+  Ineersa\CodingAgent\Agent\Execution\ForkExecutionService:
+    arguments:
+      $parentRunStore: '@Ineersa\CodingAgent\Session\SessionRunStore'
+
   # ─── AGENT-05 Subagent tool storage routing ─────────────────────────
 
   # ChildAwareRunStore — delegates RunStoreInterface between parent-scoped

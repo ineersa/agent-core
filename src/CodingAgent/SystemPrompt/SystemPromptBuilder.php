@@ -88,14 +88,6 @@ final readonly class SystemPromptBuilder
     }
 
     /**
-     * Build the child-safe harness fragment for subagent system prompts.
-     *
-     * Uses config/SUBAGENT_SYSTEM.md (no available_agents / subagent guidance).
-     * Tool lines and guidelines are limited to {@see $allowedToolNames}.
-     *
-     * @param list<string> $allowedToolNames runtime tool names for the child
-     */
-    /**
      * Build the main SYSTEM.md harness rendered for a restricted tool allow-list.
      *
      * Used by fork children (main-agent-like context) instead of SUBAGENT_SYSTEM.md.
@@ -115,6 +107,11 @@ final readonly class SystemPromptBuilder
         return $this->render($baseContent, $variables);
     }
 
+    /**
+     * Build the SUBAGENT_SYSTEM.md harness fragment for definition-backed subagent children.
+     *
+     * @param list<string> $allowedToolNames runtime tool names for the child
+     */
     public function buildChildHarnessFragment(array $allowedToolNames): string
     {
         if ('' === $this->appConfig->cwd) {

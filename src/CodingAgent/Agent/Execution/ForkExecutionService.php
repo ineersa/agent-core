@@ -218,8 +218,6 @@ final class ForkExecutionService
                     artifactId: $artifactId,
                     status: AgentArtifactStatusEnum::Cancelled,
                     summary: 'Cancelled by parent run.',
-                    agentRunId: $agentRunId,
-                    childState: $this->runStore->get($agentRunId),
                 );
                 $this->emitTerminalProgress($parentRunId, $agentRunId, $artifactId, $taskSummary, $resolvedModel, $this->runStore->get($agentRunId), 'cancelled', $progressSeq, $progressStartedMicros);
                 $this->advanceParentSequence($parentRunId, $progressSeq);
@@ -235,7 +233,6 @@ final class ForkExecutionService
                     status: AgentArtifactStatusEnum::Failed,
                     failureReason: 'Child run timed out.',
                     summary: 'Timed out after '.$timeoutSeconds.'s.',
-                    agentRunId: $agentRunId,
                 );
                 $this->emitTerminalProgress($parentRunId, $agentRunId, $artifactId, $taskSummary, $resolvedModel, $this->runStore->get($agentRunId), 'failed', $progressSeq, $progressStartedMicros);
                 $this->advanceParentSequence($parentRunId, $progressSeq);
@@ -304,8 +301,6 @@ final class ForkExecutionService
             artifactId: $artifactId,
             status: AgentArtifactStatusEnum::Completed,
             summary: $handoff,
-            agentRunId: $agentRunId,
-            childState: $state,
         );
 
         return \sprintf(
@@ -325,7 +320,6 @@ final class ForkExecutionService
             status: AgentArtifactStatusEnum::Failed,
             failureReason: $error,
             summary: $error,
-            agentRunId: $agentRunId,
         );
 
         return \sprintf("Fork failed: %s\nArtifact: %s\nagent_run_id: %s", $error, $artifactId, $agentRunId);
@@ -338,8 +332,6 @@ final class ForkExecutionService
             artifactId: $artifactId,
             status: AgentArtifactStatusEnum::Cancelled,
             summary: 'Child run cancelled.',
-            agentRunId: $agentRunId,
-            childState: $state,
         );
 
         return \sprintf("Fork cancelled.\nArtifact: %s\nagent_run_id: %s", $artifactId, $agentRunId);
@@ -351,8 +343,6 @@ final class ForkExecutionService
         AgentArtifactStatusEnum $status,
         ?string $summary = null,
         ?string $failureReason = null,
-        ?string $agentRunId = null,
-        ?RunState $childState = null,
     ): void {
         $this->artifactRegistry->update(
             parentRunId: $parentRunId,

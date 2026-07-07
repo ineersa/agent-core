@@ -71,6 +71,29 @@ final readonly class SubagentRunMetadataReader
     }
 
     /**
+     * Read session.child_kind for an agent_child run (e.g. fork, subagent), or null.
+     */
+    public function readChildKind(string $runId): ?string
+    {
+        $metadata = $this->readRunStartedMetadata($runId);
+        if (null === $metadata) {
+            return null;
+        }
+
+        $session = $metadata['session'] ?? [];
+        if (!\is_array($session) || 'agent_child' !== ($session['kind'] ?? null)) {
+            return null;
+        }
+
+        $childKind = $session['child_kind'] ?? null;
+        if (!\is_string($childKind) || '' === trim($childKind)) {
+            return null;
+        }
+
+        return $childKind;
+    }
+
+    /**
      * Read the allowed tool list from the child's RunStarted metadata.
      *
      * Returns null when the run is not a child or the metadata is

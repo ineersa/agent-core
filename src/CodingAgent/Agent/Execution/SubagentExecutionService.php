@@ -97,7 +97,8 @@ final class SubagentExecutionService
 
         // 2. Defense-in-depth: no nested subagents in v1.
         $parentIsAgentChild = $this->metadataReader->isAgentChild($parentRunId);
-        $blockReason = $this->depthGuard->checkLaunchAllowed($parentIsAgentChild);
+        $parentChildKind = $parentIsAgentChild ? $this->metadataReader->readChildKind($parentRunId) : null;
+        $blockReason = $this->depthGuard->checkLaunchAllowed($parentIsAgentChild, $parentChildKind);
         if (null !== $blockReason) {
             throw new ToolCallException($blockReason, retryable: false);
         }
@@ -377,7 +378,8 @@ final class SubagentExecutionService
         }
 
         $parentIsAgentChild = $this->metadataReader->isAgentChild($parentRunId);
-        $blockReason = $this->depthGuard->checkLaunchAllowed($parentIsAgentChild);
+        $parentChildKind = $parentIsAgentChild ? $this->metadataReader->readChildKind($parentRunId) : null;
+        $blockReason = $this->depthGuard->checkLaunchAllowed($parentIsAgentChild, $parentChildKind);
         if (null !== $blockReason) {
             throw new ToolCallException($blockReason, retryable: false);
         }
