@@ -1567,6 +1567,77 @@ DIFF;
     }
 
     /**
+     * Regression for GitHub issue #245: plain @@ hunks with heavy leading context,
+     * a blank context line, and only one trailing context line on PHP files must apply.
+     * PatchNormalizer output is correct; GNU patch needs fuzz > 3 to anchor unbalanced hunks.
+     */
+    public function testRelaxedHunkWithHeavyLeadingContextAndBlankLineApplies(): void
+    {
+        $targetPath = $this->tmpDir.'/issue245_greeter.php';
+        $original = <<<'PHP'
+<?php
+
+declare(strict_types=1);
+
+/**
+ * A simple test class to verify write/edit tools with PHP files.
+ */
+final class TestGreeter
+{
+    private string $name;
+
+    public function __construct(string $name)
+    {
+        $this->name = $name;
+    }
+
+    public function greet(): string
+    {
+        return sprintf('Hello, %s!', $this->name);
+    }
+
+    public static function shout(string $message): string
+    {
+        return strtoupper($message) . '!';
+    }
+}
+
+// Usage example
+$greeter = new TestGreeter('World');
+echo $greeter->greet() . PHP_EOL;
+echo TestGreeter::shout('this works') . PHP_EOL;
+
+PHP;
+        file_put_contents($targetPath, $original);
+
+        $patch = <<<'DIFF'
+--- a/tmp/test.php
++++ b/tmp/test.php
+@@
+     public function greet(): string
+     {
+         return sprintf('Hello, %s!', $this->name);
+     }
+ 
++    public function farewell(): string
++    {
++        return sprintf('Goodbye, %s!', $this->name);
++    }
++
+     public static function shout(string $message): string
+DIFF;
+
+        $result = ($this->editFileTool)(['path' => $targetPath, 'patch' => $patch]);
+
+        $this->assertStringContainsString('Applied patch', $result);
+        $patched = file_get_contents($targetPath);
+        $this->assertIsString($patched);
+        $this->assertStringContainsString('public function farewell(): string', $patched);
+        $this->assertStringContainsString('Goodbye', $patched);
+        $this->assertStringContainsString('public static function shout', $patched);
+    }
+
+    /**
      * Multiple plain @@ hunks in one patch must all be resolved,
      * ordered, and applied — the tool computes shifted offsets.
      */
