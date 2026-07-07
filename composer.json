@@ -76,13 +76,5 @@
         }
     },
     "minimum-stability": "dev",
-    "prefer-stable": true,
-    "scripts": {
-        "post-install-cmd": [
-            "@php scripts/apply-symfony-tui-patches.php"
-        ],
-        "post-update-cmd": [
-            "@php scripts/apply-symfony-tui-patches.php"
-        ]
-    }
+    "prefer-stable": true
 }
