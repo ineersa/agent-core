@@ -23,12 +23,16 @@ doctrine:
             default:
                 driver: pdo_sqlite
                 path: '%app.cwd%/.hatfield/state.sqlite'
+                logging: false
+                profiling: false
                 options:
                     2: 5
 
             messenger_transport:
                 driver: pdo_sqlite
                 path: '%app.cwd%/.hatfield/messenger-transport.sqlite'
+                logging: false
+                profiling: false
                 options:
                     2: 5
 

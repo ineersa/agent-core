@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Runtime;
 
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
+use Ineersa\CodingAgent\Runtime\Contract\BackfillEventProviderInterface;
 use Ineersa\CodingAgent\Runtime\Contract\TranscriptProjectorInterface;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
@@ -26,6 +27,7 @@ final class SubagentLiveChildViewPoller
     public function __construct(
         private readonly TranscriptProjectorInterface $projector,
         private readonly LoggerInterface $logger,
+        private readonly ?BackfillEventProviderInterface $backfillProvider = null,
     ) {
         $this->eventApplier = new TuiRuntimeEventApplier($this->projector);
     }
@@ -59,7 +61,11 @@ final class SubagentLiveChildViewPoller
         }
         $live->childLastPoll = $now;
 
+        $backfillEvents = $this->backfillProvider?->getStoredEvents($live->selected->agentRunId) ?? [];
         $events = $this->runtimeEvents($client, $live->selected->agentRunId);
+        if ([] !== $backfillEvents) {
+            $events = array_merge($backfillEvents, $events);
+        }
         if ([] === $events) {
             return null;
         }
@@ -67,6 +73,7 @@ final class SubagentLiveChildViewPoller
         $changed = false;
         $scratch = new TuiSessionState($live->selected->agentRunId);
         $scratch->activity = $live->childActivity;
+        $scratch->queuedUserMessages = $live->childQueuedUserMessages;
 
         foreach ($events as $event) {
             $seq = $event->seq;
@@ -99,6 +106,7 @@ final class SubagentLiveChildViewPoller
 
         if ($changed) {
             $live->childActivity = $scratch->activity;
+            $live->childQueuedUserMessages = $scratch->queuedUserMessages;
         }
 
         if (!$changed) {

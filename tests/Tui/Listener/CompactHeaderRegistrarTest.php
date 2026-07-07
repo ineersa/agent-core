@@ -85,7 +85,7 @@ final class CompactHeaderRegistrarTest extends TestCase
     }
 
     #[Test]
-    public function registersPinnedWidgetOnFirstTickRegardlessOfResume(): void
+    public function preSeedsPinnedWidgetOnRegisterRegardlessOfResume(): void
     {
         $harness = new VirtualTuiHarness(sessionId: 'compact-reg');
         $state = new TuiSessionState('compact-reg');
@@ -106,7 +106,6 @@ final class CompactHeaderRegistrarTest extends TestCase
             ->build();
 
         (new CompactHeaderRegistrar($provider))->register($context);
-        $context->ticks->dispatch(new TickEvent());
 
         $widgets = $harness->screen()->registry()->getWidgetsByPlacement(WidgetPlacementEnum::AboveEditor);
         $this->assertCount(1, $widgets);
@@ -114,6 +113,32 @@ final class CompactHeaderRegistrarTest extends TestCase
 
         $harness->render();
         $this->assertStringContainsString('reg-skill', $harness->plainScreenText());
+    }
+
+    #[Test]
+    public function testCompactHeaderHiddenWhileLiveViewActive(): void
+    {
+        $harness = new VirtualTuiHarness(sessionId: 'compact-live');
+        $state = new TuiSessionState('compact-live');
+        $provider = new CompactHeaderSnapshotProvider(
+            $this->promptCatalog(),
+            $this->skillDiscovery(),
+            $this->agentDiscovery(),
+            $this->mcpStore(),
+            $this->mcpConfigLoader(),
+        );
+        $context = $this->buildTuiContext()
+            ->withTui($harness->tui())
+            ->withState($state)
+            ->withScreen($harness->screen())
+            ->build();
+        (new CompactHeaderRegistrar($provider, new NullLogger()))->register($context);
+        $context->ticks->dispatch(new TickEvent());
+        $this->assertNotEmpty($harness->screen()->registry()->getWidgetsByPlacement(WidgetPlacementEnum::AboveEditor));
+
+        $state->subagentLiveView->active = true;
+        $context->ticks->dispatch(new TickEvent());
+        $this->assertEmpty($harness->screen()->registry()->getWidgetsByPlacement(WidgetPlacementEnum::AboveEditor));
     }
 
     private function promptCatalog(): PromptTemplateCatalogInterface

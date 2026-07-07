@@ -288,6 +288,9 @@ YAML;
                     'total_tokens' => 180,
                 ],
                 'stop_reason' => 'stop',
+                'replay_match' => [
+                    'last_user_contains' => 'automated testing in software development',
+                ],
             ],
 
             // ── Fixture 1: Follow-up turn 2 — above compact_after_tokens ──
@@ -308,6 +311,9 @@ YAML;
                     'total_tokens' => 5080,
                 ],
                 'stop_reason' => 'stop',
+                'replay_match' => [
+                    'last_user_contains' => 'comparing automated testing to manual testing',
+                ],
             ],
 
             // ── Fixture 2: Auto-compaction summary LLM call ──
@@ -328,14 +334,17 @@ YAML;
                     'total_tokens' => 615,
                 ],
                 'stop_reason' => 'stop',
+                'replay_match' => [
+                    'compaction_prompt' => true,
+                ],
             ],
 
             // ── Fixture 3: Ghost continuation (BUG — must not be invoked) ──
             //
-            // This fixture exists ONLY to prevent ambiguity if the bug
-            // causes a ghost LLM continuation after auto compaction.
-            // Without it, the fixture queue would be exhausted and the
-            // fallback "done" text response would mask the bug.
+            // Turn fixtures use replay_match; this entry has no matcher and is
+            // only consumed if an extra LLM call slips through FIFO fallback.
+            // The test thesis is enforced by event assertions (no ghost
+            // turn_advanced / llm_step_* after compaction), not by this file.
             [
                 '$schema' => 'Synthetic multi-turn controller replay — ghost turn (BUG proof)',
                 'fixture_source' => 'synthetic',

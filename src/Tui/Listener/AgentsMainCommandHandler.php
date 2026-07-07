@@ -8,6 +8,7 @@ use Ineersa\Tui\Command\CommandResult;
 use Ineersa\Tui\Command\NoOp;
 use Ineersa\Tui\Command\SlashCommand;
 use Ineersa\Tui\Command\SlashCommandHandler;
+use Ineersa\Tui\Runtime\SubagentLiveMainReturn;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Screen\ChatScreen;
 
@@ -25,13 +26,7 @@ final class AgentsMainCommandHandler implements SlashCommandHandler
             return new NoOp();
         }
 
-        $this->state->subagentLiveView->exit();
-        // Remove any stale keyed status row; live view must not persist in status panel.
-        $this->screen->setStatus('agents-live', null);
-        // Parent transcript kept updating in memory while live view was active.
-        $this->screen->setTranscriptBlocks($this->state->transcript);
-        $this->screen->setWorkingMessage(null);
-        $this->screen->requestRender(true);
+        SubagentLiveMainReturn::returnToMain($this->state, $this->screen);
 
         return new NoOp();
     }

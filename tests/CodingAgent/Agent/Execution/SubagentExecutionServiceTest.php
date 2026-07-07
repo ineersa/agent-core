@@ -775,6 +775,76 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
         }
     }
 
+    public function testExecuteParallelLongChildMessageNotTruncated(): void
+    {
+        /** @var array<string, string> $handoffByRunId */
+        $handoffByRunId = [];
+
+        // Build a handoff message well over the old 240-char truncation limit.
+        $longMessage = '# Report'."\n\n".'Step 1: Load configuration from config.yaml and validate all required keys are present.'."\n";
+        $longMessage .= 'Step 2: Connect to the remote API endpoint at https://api.example.com/v3/agents with timeout 30000ms.'."\n";
+        $longMessage .= 'Step 3: Authenticate using the service account credentials from the vault and obtain a bearer token.'."\n";
+        $longMessage .= 'Step 4: Invoke the agent\'s execute method with parameters: action=scan, depth=full, scope=recursive.'."\n";
+        $longMessage .= 'Step 5: Collect all artifacts from the response and store them in the temporary working directory.'."\n";
+        $longMessage .= 'Step 6: Parse the output using the StructuredDataParser and extract the relevant metrics table.'."\n";
+        $longMessage .= 'Step 7: Generate a summary report in Markdown format and include all critical findings.'."\n";
+        $longMessage .= 'Conclusion: All 7 steps completed successfully. No errors detected. Ready for handoff.';
+        $this->assertGreaterThan(300, \strlen($longMessage), 'Test message must exceed old 240-char truncation limit');
+
+        $expectedTail = 'Ready for handoff.';
+
+        $agentRunner = $this->createMock(AgentRunnerInterface::class);
+        $agentRunner->expects($this->once())
+            ->method('start')
+            ->willReturnCallback(static function (StartRunInput $input) use (&$handoffByRunId, $longMessage): string {
+                $handoffByRunId[(string) $input->runId] = $longMessage;
+
+                return (string) $input->runId;
+            });
+
+        $runStore = $this->createStub(RunStoreInterface::class);
+        $runStore->method('get')->willReturnCallback(static function (string $runId) use (&$handoffByRunId): ?RunState {
+            if (!isset($handoffByRunId[$runId])) {
+                return null;
+            }
+
+            return new RunState(
+                runId: $runId,
+                status: RunStatus::Completed,
+                version: 1,
+                messages: [new AgentMessage(role: 'assistant', content: [['type' => 'text', 'text' => $handoffByRunId[$runId]]])],
+            );
+        });
+
+        $def = static fn (string $name) => new AgentDefinitionDTO(
+            name: $name,
+            description: $name,
+            tools: ['read'],
+            mcp: new McpPolicyDTO(mode: McpAgentModeEnum::None),
+            instructions: 'Do task.',
+            parallelAllowed: true,
+        );
+
+        $service = $this->makeService([
+            'catalog' => new AgentDefinitionCatalog([$def('long-msg-agent')]),
+            'agentRunner' => $agentRunner,
+            'runStore' => $runStore,
+        ]);
+
+        $result = $service->executeParallel('parent-parallel-long-msg', [
+            new SubagentTaskDTO(agent: 'long-msg-agent', task: 'Long task'),
+        ]);
+
+        // Old truncation pattern must NOT appear.
+        $this->assertStringNotContainsString('...', $result, 'Old substr+... truncation must not be present');
+        // Full message tail must be present, proving no 240-char cut.
+        $this->assertStringContainsString($expectedTail, $result, 'Long message tail must survive without truncation');
+        // The message must be present in full.
+        $this->assertStringContainsString('Step 1: Load', $result);
+        $this->assertStringContainsString('Step 7: Generate', $result);
+        $this->assertStringContainsString('All 7 steps completed successfully', $result);
+    }
+
     public function testExecuteParallelFailFastWhenExceedingMaxAgents(): void
     {
         $def = new AgentDefinitionDTO(

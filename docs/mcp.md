@@ -277,7 +277,7 @@ Phase 2 (MCP-03) adds real SDK connection management and tool discovery:
   is deferred until the client is actually needed.
 - **MCP config failures during initialize are warning-only** — normal
   sessions continue unaffected, just without MCP tools.
-- **Messenger consumer restarts (time-limit or normal graceful
+- **Messenger consumer restarts (memory-limit recycle or normal graceful
   exit) trigger `WorkerStoppedEvent`**, which disconnects MCP clients.
   The next MCP tool call lazily reconnects, adding one-time startup
   latency after restart. This is intentional — dedicated keep-alive

@@ -30,11 +30,14 @@ final class SubagentLiveViewState
      * Per-child transcript/seq cache keyed by agentRunId so switching picker rows
      * does not discard completed transcripts (JSONL pipe events are consumed once).
      *
-     * @var array<string, array{transcript: list<TranscriptBlock>, lastSeq: int, lastPoll: float, activity: RunActivityStateEnum}>
+     * @var array<string, array{transcript: list<TranscriptBlock>, lastSeq: int, lastPoll: float, activity: RunActivityStateEnum, queuedUserMessages: array<string, string>}>
      */
     public array $childCaches = [];
 
     public RunActivityStateEnum $childActivity = RunActivityStateEnum::Idle;
+
+    /** @var array<string, string> idempotency_key => text */
+    public array $childQueuedUserMessages = [];
 
     /**
      * Last combined parent|child working line pushed to ChatScreen while live view is active.
@@ -72,6 +75,7 @@ final class SubagentLiveViewState
             'lastSeq' => $this->childLastSeq,
             'lastPoll' => $this->childLastPoll,
             'activity' => $this->childActivity,
+            'queuedUserMessages' => $this->childQueuedUserMessages,
         ];
     }
 
@@ -86,6 +90,7 @@ final class SubagentLiveViewState
         $this->childLastSeq = $cached['lastSeq'];
         $this->childLastPoll = $cached['lastPoll'];
         $this->childActivity = $cached['activity'];
+        $this->childQueuedUserMessages = $cached['queuedUserMessages'] ?? [];
     }
 
     public function enter(SubagentLiveChildDTO $child): void
@@ -161,9 +166,15 @@ final class SubagentLiveViewState
         ];
     }
 
+    public function removeChildCache(string $agentRunId): void
+    {
+        unset($this->childCaches[$agentRunId]);
+    }
+
     public function exit(): void
     {
         $this->active = false;
         $this->lastLiveWorkingMessage = null;
+        $this->childQueuedUserMessages = [];
     }
 }

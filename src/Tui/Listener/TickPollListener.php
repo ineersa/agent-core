@@ -13,6 +13,7 @@ use Ineersa\Tui\Runtime\SubagentLiveAttention;
 use Ineersa\Tui\Runtime\SubagentLiveChildViewPoller;
 use Ineersa\Tui\Runtime\SubagentLiveStatusEnum;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
+use Ineersa\Tui\Runtime\TuiSessionState;
 
 /**
  * Tick listener that polls for new runtime events.
@@ -125,7 +126,11 @@ final class TickPollListener implements TuiListenerRegistrar
             // The pending-queue widget (slot 4, above the editor) reflects transient
             // queued steer/follow-up messages. Sync every tick regardless of transcript
             // changes, since a user.message_queued event mutates state without a block.
-            $screen->syncQueuedUserMessages($state->queuedUserMessages);
+            if ($liveActive) {
+                $screen->syncQueuedUserMessages($state->subagentLiveView->childQueuedUserMessages);
+            } else {
+                $screen->syncQueuedUserMessages($state->queuedUserMessages);
+            }
 
             // Open the question overlay whenever the coordinator has an
             // active request and the controller is not already showing it
@@ -155,6 +160,16 @@ final class TickPollListener implements TuiListenerRegistrar
                     $questionCoordinator->reject();
                     $questionController->close();
                 }
+            }
+
+            $mainViewPendingQuestion = !$liveActive
+                && $questionCoordinator->actionRequired()
+                && !$questionController->isAwaitingFreeForm();
+
+            if ($mainViewPendingQuestion) {
+                $screen->setWorkingVisible(false);
+            } else {
+                $screen->setWorkingVisible(true);
             }
 
             // Update working status based on authoritative activity state.
@@ -198,7 +213,14 @@ final class TickPollListener implements TuiListenerRegistrar
 
                 SubagentLiveAttention::refreshAttentionFooter($state, $screen);
 
-                return null;
+                return self::shouldKeepActiveRuntimeTicks($state, true) ? true : null;
+            }
+
+            if ($mainViewPendingQuestion) {
+                $screen->setWorkingMessage(null);
+                SubagentLiveAttention::syncMainAttention($state, $screen);
+
+                return self::shouldKeepActiveRuntimeTicks($state, false) ? true : null;
             }
 
             $msg = match (true) {
@@ -214,7 +236,28 @@ final class TickPollListener implements TuiListenerRegistrar
 
             $screen->setWorkingMessage($msg);
 
-            return null;
+            return self::shouldKeepActiveRuntimeTicks($state, false) ? true : null;
         });
+    }
+
+    /**
+     * Hint Symfony TUI to tick at active cadence (~10ms) while runtime work is in flight.
+     *
+     * RuntimeEventPoller/SubagentLiveChildViewPoller still cap their own poll work at 50ms;
+     * this only affects how often the TUI event loop invokes tick handlers so stdout JSONL
+     * can be drained promptly during streaming. Idle/terminal states return null so the
+     * adaptive ticker falls back to the slow idle rate (CPU fix from prior work).
+     */
+    private static function shouldKeepActiveRuntimeTicks(TuiSessionState $state, bool $liveActive): bool
+    {
+        if ($liveActive) {
+            if ($state->subagentLiveView->childActivity->isActive()) {
+                return true;
+            }
+
+            return $state->activity->isActive() && null !== $state->handle;
+        }
+
+        return $state->activity->isActive() && null !== $state->handle;
     }
 }

@@ -225,6 +225,32 @@ final class RuntimeEventEmitterTest extends TestCase
         $this->assertStringContainsString('turn.started', $raw);
     }
 
+    public function testEmitAdvancesCursorForCanonicalEvents(): void
+    {
+        $runId = 'stdout-run-1';
+        $emitter = $this->createEmitter();
+        $emitter->openStdout();
+        $this->replaceStdoutWithMemory($emitter);
+
+        $emitter->emit(new RuntimeEvent(
+            type: RuntimeEventTypeEnum::RunStarted->value,
+            runId: $runId,
+            seq: 1,
+            payload: [],
+        ));
+        $emitter->emit(new RuntimeEvent(
+            type: RuntimeEventTypeEnum::TurnStarted->value,
+            runId: $runId,
+            seq: 42,
+            payload: [],
+        ));
+
+        $ref = new \ReflectionClass($emitter);
+        $prop = $ref->getProperty('runEventCursors');
+        $cursors = $prop->getValue($emitter);
+        $this->assertSame(42, $cursors[$runId]);
+    }
+
     private function createEmitter(): RuntimeEventEmitter
     {
         $boundary = new RuntimeExceptionBoundary(new EventDispatcher());

@@ -29,7 +29,7 @@ final class SubagentLiveHitlScenarioTest extends TestCase
         $h->enterLiveView(self::ARTIFACT, self::CHILD_RUN, RunActivityStateEnum::WaitingHuman, SubagentLiveStatusEnum::WaitingHuman);
         $h->refreshAttentionFooter();
 
-        $this->assertStringContainsString('needs your input', (string) $h->statusText('subagent_live'));
+        $this->assertNull($h->statusText('subagent_live'));
         $this->assertStringContainsString('needs input', $h->pickerLabels()[0] ?? '');
 
         $h->enqueueChildHumanInputViaTickPoll(self::CHILD_RUN);
@@ -144,7 +144,7 @@ final class SubagentLiveHitlScenarioTest extends TestCase
         $this->assertFalse($h->state->subagentLiveView->active);
         $h->refreshAttentionFooter();
 
-        $this->assertStringContainsString('needs your input', (string) $h->statusText('subagent_live'));
+        $this->assertNull($h->statusText('subagent_live'));
         $this->assertStringContainsString('needs input', $h->pickerLabels()[0] ?? '');
 
         $h->pressEsc();
@@ -191,7 +191,7 @@ final class SubagentLiveHitlScenarioTest extends TestCase
         $h->seedChildInCatalog(self::ARTIFACT, self::CHILD_RUN, 'waiting_human');
         $h->enterLiveView(self::ARTIFACT, self::CHILD_RUN, RunActivityStateEnum::WaitingHuman, SubagentLiveStatusEnum::WaitingHuman);
         $h->refreshAttentionFooter();
-        $this->assertStringContainsString('needs your input', (string) $h->statusText('subagent_live'));
+        $this->assertNull($h->statusText('subagent_live'));
 
         $h->ingestChildProgress(self::ARTIFACT, self::CHILD_RUN, 'completed');
         $h->state->subagentLiveView->childActivity = RunActivityStateEnum::Completed;
