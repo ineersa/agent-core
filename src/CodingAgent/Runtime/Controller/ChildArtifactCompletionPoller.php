@@ -62,8 +62,16 @@ final class ChildArtifactCompletionPoller
     public function startPollLoop(float $interval = self::POLL_INTERVAL): void
     {
         EventLoop::repeat($interval, function (): void {
-            $this->poll();
+            $this->pollOnce();
         });
+    }
+
+    /**
+     * Run one supervision pass for active child artifacts (controller poll loop tick).
+     */
+    public function pollOnce(): void
+    {
+        $this->poll();
     }
 
     private function poll(): void
