@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Agent\Tool;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\CodingAgent\Agent\Execution\ForkExecutionService;
+use Ineersa\CodingAgent\Config\ModelResolver;
 use Ineersa\CodingAgent\Tool\ToolHandlerInterface;
 use Ineersa\CodingAgent\Tool\ToolRuntime;
 use Psr\Container\ContainerInterface;
@@ -43,11 +44,56 @@ final class ForkToolHandler implements ToolHandlerInterface
                 throw new ToolCallException('fork requires a non-empty task string.', retryable: false);
             }
 
+            $model = $this->parseOptionalNonEmptyString($arguments['model'] ?? null, 'model');
+            $thinking = $this->parseOptionalThinking($arguments['thinking'] ?? null);
+
             return $this->executionService()->execute(
                 parentRunId: $parentRunId,
                 task: trim($task),
+                modelOverride: $model,
+                reasoningOverride: $thinking,
             );
         });
+    }
+
+    private function parseOptionalNonEmptyString(mixed $value, string $fieldName): ?string
+    {
+        if (null === $value) {
+            return null;
+        }
+
+        if (!\is_string($value)) {
+            throw new ToolCallException(\sprintf('fork %s must be a string when provided.', $fieldName), retryable: false);
+        }
+
+        $trimmed = trim($value);
+        if ('' === $trimmed) {
+            throw new ToolCallException(\sprintf('fork %s must be a non-empty string when provided.', $fieldName), retryable: false);
+        }
+
+        return $trimmed;
+    }
+
+    private function parseOptionalThinking(mixed $value): ?string
+    {
+        if (null === $value) {
+            return null;
+        }
+
+        if (!\is_string($value)) {
+            throw new ToolCallException('fork thinking must be a string when provided.', retryable: false);
+        }
+
+        $trimmed = trim($value);
+        if ('' === $trimmed) {
+            throw new ToolCallException('fork thinking must be a non-empty string when provided.', retryable: false);
+        }
+
+        if (!\in_array($trimmed, ModelResolver::LEVELS, true)) {
+            throw new ToolCallException(\sprintf('fork thinking must be one of: %s.', implode(', ', ModelResolver::LEVELS)), retryable: false);
+        }
+
+        return $trimmed;
     }
 
     private function executionService(): ForkExecutionService

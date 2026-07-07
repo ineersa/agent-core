@@ -65,6 +65,8 @@ final class ForkExecutionService
     public function execute(
         string $parentRunId,
         string $task,
+        ?string $modelOverride = null,
+        ?string $reasoningOverride = null,
     ): string {
         $task = trim($task);
         if ('' === $task) {
@@ -113,7 +115,15 @@ final class ForkExecutionService
             agentsContext: $agentsContext,
         );
 
-        $resolvedModel = $snapshot->resolvedModel ?? $this->resolveSessionModelFallback($parentRunId);
+        $resolvedModel = $this->resolveChildModel(
+            explicitModel: $modelOverride,
+            snapshotModel: $snapshot->resolvedModel,
+            parentRunId: $parentRunId,
+        );
+        $resolvedReasoning = $this->resolveChildReasoning(
+            explicitReasoning: $reasoningOverride,
+            parentRunId: $parentRunId,
+        );
 
         $childMetadata = new RunMetadata(
             session: [
@@ -125,7 +135,7 @@ final class ForkExecutionService
                 'interactive' => true,
             ],
             model: $resolvedModel,
-            reasoning: null,
+            reasoning: $resolvedReasoning,
             toolsScope: [
                 'allowed_tools' => $allowedTools,
                 'mcp' => $policy['mcp'],
@@ -189,6 +199,40 @@ final class ForkExecutionService
         $model = $metadata['model'] ?? null;
 
         return \is_string($model) && '' !== trim($model) ? $model : null;
+    }
+
+    private function resolveChildModel(?string $explicitModel, ?string $snapshotModel, string $parentRunId): ?string
+    {
+        if (null !== $explicitModel && '' !== trim($explicitModel)) {
+            return $explicitModel;
+        }
+
+        if (null !== $snapshotModel && '' !== trim($snapshotModel)) {
+            return $snapshotModel;
+        }
+
+        return $this->resolveSessionModelFallback($parentRunId);
+    }
+
+    private function resolveChildReasoning(?string $explicitReasoning, string $parentRunId): ?string
+    {
+        if (null !== $explicitReasoning && '' !== trim($explicitReasoning)) {
+            return $explicitReasoning;
+        }
+
+        return $this->resolveSessionReasoningFallback($parentRunId);
+    }
+
+    private function resolveSessionReasoningFallback(string $parentRunId): ?string
+    {
+        $metadata = $this->metadataReader->readRunStartedMetadata($parentRunId);
+        if (null === $metadata) {
+            return null;
+        }
+
+        $reasoning = $metadata['reasoning'] ?? null;
+
+        return \is_string($reasoning) && '' !== trim($reasoning) ? $reasoning : null;
     }
 
     private function pollUntilTerminal(
