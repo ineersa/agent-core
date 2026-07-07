@@ -31,14 +31,6 @@ use Symfony\Contracts\HttpClient\HttpClientInterface;
  * a minimal "done" text response is returned so the run can complete
  * cleanly.
  *
- * Fixture cursor persistence across consumer restarts:
- * The fixture cursor index is stored in a file-backed cursor
- * (<first-fixture-dir>/.replay-fixture-cursor) protected by flock(LOCK_EX)
- * for atomic read/increment/write.  This allows the LLM messenger consumer
- * to gracefully recycle (--memory-limit=256M) between LLM invocations
- * without resetting the fixture queue.  The cursor file is cleaned up
- * with the isolated test temp directory.
- *
  * When the env var is NOT set, the factory returns the normal test
  * HttpClient with a 5s timeout — preserving existing behavior for
  * non-replay test runs and live LLM smoke tests.
@@ -91,23 +83,11 @@ final class ControllerReplayHttpClientFactory
 
     /**
      * Build a MockHttpClient that serves fixture-driven SSE responses.
-     *
-     * Fixture cursor persistence: the replay cursor is stored in a
-     * file-backed cursor (<first-fixture-dir>/.replay-fixture-cursor).
-     * This allows the LLM messenger consumer to recycle (exit 0 due to
-     * --memory-limit=256M) between LLM invocations without resetting
-     * the fixture queue.  The cursor file is protected by flock(LOCK_EX)
-     * for atomic read/increment/write.
-     *
-     * When no cursor file is available (null cursorPath), the factory
-     * falls back to the previous process-local cursor behaviour.  This
-     * supports tests that do not need multi-process cursor persistence.
      */
     private static function createReplayClient(string $fixturePathEnv): HttpClientInterface
     {
         $fixturePaths = explode(';', $fixturePathEnv);
         $fixtures = [];
-        $firstFixturePath = null;
         foreach ($fixturePaths as $path) {
             $path = trim($path);
             if ('' === $path || !is_file($path)) {
@@ -116,9 +96,6 @@ final class ControllerReplayHttpClientFactory
             $fixture = json_decode((string) file_get_contents($path), true);
             if (\is_array($fixture)) {
                 $fixtures[] = $fixture;
-                if (null === $firstFixturePath) {
-                    $firstFixturePath = $path;
-                }
             }
         }
 
@@ -130,17 +107,15 @@ final class ControllerReplayHttpClientFactory
             return HttpClient::create(['timeout' => self::liveHttpTimeout()]);
         }
 
-        // Derive cursor file from the first valid fixture file's directory.
-        $cursorPath = null !== $firstFixturePath
-            ? \dirname($firstFixturePath).'/.replay-fixture-cursor'
-            : null;
+        $index = 0;
 
         return new MockHttpClient(
-            static function (string $method, string $url, array $options) use ($fixtures, $cursorPath): MockResponse {
-                $fixtureIndex = self::resolveFixtureIndex($fixtures, $cursorPath);
-
-                if (null === $fixtureIndex) {
-                    // Queue exhausted — see resolveFixtureIndex.
+            static function (string $method, string $url, array $options) use (&$index, $fixtures): MockResponse {
+                if ($index >= \count($fixtures)) {
+                    // Queue exhausted — the next LLM call in this run
+                    // would normally be the post-tool assistant turn.
+                    // Return a minimal text-only stop response so the
+                    // run can complete cleanly.
                     return new MockResponse(
                         self::buildSSEFromDeltas(
                             model: 'llama_cpp/test',
@@ -160,7 +135,8 @@ final class ControllerReplayHttpClientFactory
                     );
                 }
 
-                $fixture = $fixtures[$fixtureIndex];
+                $fixture = $fixtures[$index];
+                ++$index;
 
                 // Optional test-only delay: when the fixture has a
                 // response_delay_ms field, sleep before returning the
@@ -194,64 +170,6 @@ final class ControllerReplayHttpClientFactory
             },
             'http://replay.internal',
         );
-    }
-
-    /**
-     * Resolve the next fixture index using a file-backed cursor.
-     *
-     * Reads the current cursor value from the cursor file, increments it,
-     * and returns the pre-increment value as the fixture index.
-     * Uses flock(LOCK_EX) for atomic read/increment/write so concurrent
-     * consumer processes (e.g. after LLM messenger consumer recycle)
-     * do not race on the cursor.
-     *
-     * When cursorPath is null (no first fixture file for derivation),
-     * returns 0 as a fallback for backward-compatible single-access tests.
-     *
-     * When cursor >= count($fixtures), returns null to signal fixture
-     * exhaustion — the caller serves the fallback "done" response.
-     *
-     * @param list<array<string, mixed>> $fixtures
-     * @param non-empty-string|null      $cursorPath
-     *
-     * @return int|null Fixture index, or null when exhausted
-     */
-    private static function resolveFixtureIndex(array $fixtures, ?string $cursorPath): ?int
-    {
-        if (null === $cursorPath) {
-            // No cursor file available — single-access test, serve first fixture.
-            return 0;
-        }
-
-        $cursorFile = @fopen($cursorPath, 'c+b');
-        if (false === $cursorFile) {
-            throw new \RuntimeException(\sprintf('Cannot open/create replay fixture cursor file: %s', $cursorPath));
-        }
-
-        if (!flock($cursorFile, \LOCK_EX)) {
-            fclose($cursorFile);
-            throw new \RuntimeException(\sprintf('Cannot acquire exclusive lock on replay fixture cursor: %s', $cursorPath));
-        }
-
-        $content = stream_get_contents($cursorFile);
-        $currentIndex = ('' !== $content && false !== $content) ? (int) trim($content) : 0;
-
-        if ($currentIndex >= \count($fixtures)) {
-            flock($cursorFile, \LOCK_UN);
-            fclose($cursorFile);
-
-            return null;
-        }
-
-        // Increment cursor for next call.
-        ftruncate($cursorFile, 0);
-        rewind($cursorFile);
-        fwrite($cursorFile, (string) ($currentIndex + 1));
-        fflush($cursorFile);
-        flock($cursorFile, \LOCK_UN);
-        fclose($cursorFile);
-
-        return $currentIndex;
     }
 
     /**
@@ -294,9 +212,7 @@ final class ControllerReplayHttpClientFactory
      * Convert fixture deltas to an OpenAI-compatible SSE stream.
      *
      * @param list<array<string, mixed>> $deltas
-     */
-    /**
-     * @param array<string, mixed>|null $usage Fixture usage payload (null if no usage)
+     * @param array<string, mixed>|null  $usage  Fixture usage payload (null if no usage)
      */
     private static function buildSSEFromDeltas(string $model, array $deltas, string $stopReason, ?array $usage): string
     {

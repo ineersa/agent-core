@@ -177,9 +177,6 @@ final readonly class FooterStateSegmentProvider implements FooterSegmentProvider
      * Uses the semantic ThemeColorEnum::Thinking* tokens (not generic
      * Accent/Warning/Dim) for consistent reasoning-level colouring
      * across the diamond, model name, and any future thinking indicators.
-     */
-    /**
-     * Map a reasoning level to the dedicated ThemeColorEnum thinking token.
      *
      * Public so callers that need the same mapping (e.g. editor border colour)
      * can reuse it without duplicating the logic.
