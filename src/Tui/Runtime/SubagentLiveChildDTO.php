@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Runtime;
 
 /**
- * Known subagent child run surfaced in the parent TUI for readonly live view.
+ * Known subagent child run surfaced in the parent TUI for interactive live view and picker rows.
  */
 final readonly class SubagentLiveChildDTO
 {

@@ -39,6 +39,13 @@ function agent_phar_invocation(string $extraArgs = ''): string
     return sprintf('%s %s agent%s', \PHP_BINARY, escapeshellarg($pharPath), $tail);
 }
 
+function agent_runtime_env_command(bool $datadogEnabled): string
+{
+    $datadogEnv = datadog_env_command($datadogEnabled);
+
+    return 'env APP_ENV=prod APP_DEBUG=0 '.substr($datadogEnv, strlen('env '));
+}
+
 /**
  * Launch the agent TUI in the current terminal.
  *
@@ -55,7 +62,7 @@ function run_agent(): void
 
     launch_agent_direct_terminal(
         build_agent_console_inner_command(
-            datadog_env_command(datadog_auto_enabled()),
+            agent_runtime_env_command(datadog_auto_enabled()),
             agent_phar_invocation(),
         ),
     );
@@ -75,7 +82,7 @@ function run_agent_test(): void
         sessionName: 'hatfield-agent-test',
         windowTitle: 'hatfield-agent-test',
         innerShellCommand: build_agent_console_inner_command(
-            datadog_env_command(false),
+            agent_runtime_env_command(false),
             agent_phar_invocation('--model=llama_cpp_test/test'),
         ),
     );
@@ -117,7 +124,7 @@ function run_agent_capture(): void
         'export HATFIELD_LLM_RAW_STREAM_CAPTURE=1 && export HATFIELD_LLM_RAW_STREAM_CAPTURE_PATH=%s && %s',
         escapeshellarg($capturePath),
         build_agent_console_inner_command(
-            datadog_env_command(datadog_auto_enabled()),
+            agent_runtime_env_command(datadog_auto_enabled()),
             agent_phar_invocation(),
         ),
     );

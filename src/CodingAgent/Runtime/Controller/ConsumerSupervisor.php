@@ -29,11 +29,16 @@ use Symfony\Component\Process\Process;
  *
  * Process management:
  * - Launch: creates a non-blocking Symfony Process with timeout(null)
- * - Supervision: polls isRunning() every 5s, restarts if crashed
+ *   and Symfony Messenger --memory-limit for graceful worker recycling
+ * - Supervision: polls isRunning() every 5s; exit code 0 is treated as
+ *   normal memory-limit (or other graceful) recycle with immediate relaunch;
+ *   non-zero exits use crash restart policy with exponential backoff
  * - Shutdown: sends SIGTERM with configurable grace period, then SIGKILL
- * - stderr output is captured and logged on crash for diagnostics
- * - getProcess(): exposes the first Process for a transport name so
- *   HeadlessController can read the LLM consumer's stdout
+ * - stderr is drained incrementally during stdout reads; a bounded tail per
+ *   consumer key is retained for abnormal-exit diagnostics (Symfony Process
+ *   buffers are cleared so idle polling does not retain the full event bus
+ *   history)
+ * - getProcess(): exposes the first Process for a transport name (legacy)
  *
  * App executable and runtime CWD resolution:
  * - Uses RuntimeProcessConfig to provide both the agent binary command
@@ -42,11 +47,19 @@ use Symfony\Component\Process\Process;
  *   correct binary and Hatfield project CWD regardless of the controller's
  *   own --cwd or the parent process CWD
  */
-final class ConsumerSupervisor
+final class ConsumerSupervisor implements ConsumerStdoutSourceInterface
 {
+    /** Max partial stdout line retained by the poller when JSONL spans reads. */
+    public const int PARTIAL_STDOUT_MAX_BYTES = 65_536;
     private const int MAX_RESTARTS = 3;
     private const int RESTART_WINDOW_SECONDS = 60;
     private const int INITIAL_RESTART_DELAY_MS = 1000;
+
+    /** Symfony Messenger graceful worker recycle threshold for controller consumers. */
+    private const string CONSUMER_MEMORY_LIMIT = '256M';
+
+    /** Max bytes of stderr tail retained per consumer for crash diagnostics. */
+    private const int STDERR_TAIL_MAX_BYTES = 16_384;
 
     /** @var array<string, Process> compositeKey => process */
     private array $consumers = [];
@@ -56,6 +69,9 @@ final class ConsumerSupervisor
 
     /** @var array<string, float> compositeKey => start of restart window (microtime) */
     private array $restartWindows = [];
+
+    /** @var array<string, string> consumerKey => bounded stderr tail */
+    private array $stderrTails = [];
 
     /** Set by shutdown() to prevent pending delay callbacks from launching new consumers. */
     private bool $shuttingDown = false;
@@ -88,15 +104,19 @@ final class ConsumerSupervisor
         $appCommand = $this->runtimeConfig->executableCommand();
 
         try {
+            $env = $_ENV;
+            $env['HATFIELD_CONSUMER_STDOUT_EVENTS'] = '1';
+
             $process = new Process(
                 [
                     ...$appCommand,
                     'messenger:consume',
                     $transportName,
                     '--no-interaction',
-                    '--time-limit=3600',
+                    '--memory-limit='.self::CONSUMER_MEMORY_LIMIT,
                 ],
                 cwd: $cwd,
+                env: $env,
                 timeout: null,
             );
 
@@ -130,6 +150,36 @@ final class ConsumerSupervisor
         for ($i = 0; $i < $count; ++$i) {
             $this->launch($transportName, $i);
         }
+    }
+
+    /**
+     * @return iterable<string, string>
+     */
+    public function readIncrementalStdoutByConsumer(): iterable
+    {
+        foreach ($this->consumers as $key => $process) {
+            if (!$process->isRunning()) {
+                continue;
+            }
+
+            $this->drainAndClearStderr($key, $process);
+
+            $chunk = $process->getIncrementalOutput();
+            if ('' !== $chunk) {
+                yield $key => $chunk;
+                // ConsumerStdoutPoller owns partial-line buffering; drop Symfony's
+                // cumulative stdout so idle polling does not retain the full bus.
+                $process->clearOutput();
+            }
+        }
+    }
+
+    /**
+     * Bounded stderr tail for a consumer (crash diagnostics only).
+     */
+    public function stderrTailFor(string $consumerKey): string
+    {
+        return $this->stderrTails[$consumerKey] ?? '';
     }
 
     /**
@@ -188,17 +238,48 @@ final class ConsumerSupervisor
             }
 
             $exitCode = $process->getExitCode();
-            $stderr = $process->getErrorOutput();
+            $this->drainAndClearStderr($key, $process);
+            $stderr = $this->stderrTails[$key] ?? '';
+            if ('' === $stderr) {
+                $stderr = $process->getErrorOutput();
+            }
+
+            $transportName = $this->extractTransportName($key);
+            $instanceId = $this->extractInstanceId($key);
+
+            unset($this->stderrTails[$key]);
+            unset($this->consumers[$key]);
+
+            if (0 === $exitCode) {
+                $this->logger->info('Consumer process exited gracefully, recycling', [
+                    'component' => 'ConsumerSupervisor',
+                    'event_type' => 'consumer.graceful_recycle',
+                    'key' => $key,
+                    'transport' => $transportName,
+                    'instance' => $instanceId,
+                    'pid' => $process->getPid(),
+                    'exit_code' => $exitCode,
+                    'stderr' => '' !== $stderr ? $stderr : null,
+                ]);
+
+                unset($this->restartCounts[$key], $this->restartWindows[$key]);
+
+                if (!$this->shuttingDown) {
+                    $this->launch($transportName, $instanceId);
+                }
+
+                continue;
+            }
 
             $this->logger->warning('Consumer process exited unexpectedly', [
+                'component' => 'ConsumerSupervisor',
+                'event_type' => 'consumer.abnormal_exit',
                 'key' => $key,
-                'transport' => $this->extractTransportName($key),
+                'transport' => $transportName,
                 'pid' => $process->getPid(),
                 'exit_code' => $exitCode,
                 'stderr' => '' !== $stderr ? $stderr : null,
             ]);
-
-            unset($this->consumers[$key]);
 
             $this->attemptRestart($key);
         }
@@ -252,6 +333,26 @@ final class ConsumerSupervisor
     public function onConsumerAbandoned(callable $callback): void
     {
         $this->onConsumerAbandoned = $callback;
+    }
+
+    private function drainAndClearStderr(string $key, Process $process): void
+    {
+        $chunk = $process->getIncrementalErrorOutput();
+        if ('' !== $chunk) {
+            $this->appendStderrTail($key, $chunk);
+        }
+
+        $process->clearErrorOutput();
+    }
+
+    private function appendStderrTail(string $key, string $chunk): void
+    {
+        $tail = ($this->stderrTails[$key] ?? '').$chunk;
+        if (\strlen($tail) > self::STDERR_TAIL_MAX_BYTES) {
+            $tail = substr($tail, -self::STDERR_TAIL_MAX_BYTES);
+        }
+
+        $this->stderrTails[$key] = $tail;
     }
 
     /**

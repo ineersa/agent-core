@@ -222,4 +222,59 @@ class FooterStateSegmentProviderTest extends TestCase
             'Cache segment priority must be less than context window priority (cache renders first)',
         );
     }
+
+    #[Test]
+    public function testLiveViewSegmentsHideParentStats(): void
+    {
+        $state = $this->state;
+        $state->footerModel = 'parent-model';
+        $state->footerReasoning = 'high';
+        $state->usage->inputTokens = 999;
+        $state->subagentLiveView->active = true;
+        $state->subagentLiveView->enter(new \Ineersa\Tui\Runtime\SubagentLiveChildDTO(
+            agentRunId: 'child-1',
+            artifactId: 'agent_a',
+            agentName: 'scout',
+            status: \Ineersa\Tui\Runtime\SubagentLiveStatusEnum::Running,
+            taskSummary: 'Task',
+            lastActivityAtMs: 1,
+        ));
+
+        $segments = (new FooterStateSegmentProvider($state))->getSegments();
+        $texts = array_map(static fn ($s) => $s->text, $segments);
+        $this->assertContains('agents-live', $texts);
+        $this->assertContains('scout [running]', $texts);
+        $this->assertNotContains('parent-model', $texts);
+    }
+
+    #[Test]
+    public function testFooterFingerprintChangesWhenElapsedSecondChanges(): void
+    {
+        $state = $this->state;
+        $state->footerModel = 'm';
+        $state->sessionStartTime = microtime(true) - 65.0;
+
+        $provider = new FooterStateSegmentProvider($state);
+        $first = $provider->footerFingerprint();
+
+        $state->sessionStartTime = microtime(true) - 125.0;
+        $second = $provider->footerFingerprint();
+
+        $this->assertNotSame($first, $second);
+        $this->assertStringContainsString('⏱', $second);
+    }
+
+    #[Test]
+    public function testFooterFingerprintStableWithinSameElapsedDisplay(): void
+    {
+        $state = $this->state;
+        $state->footerModel = 'm';
+        $state->sessionStartTime = microtime(true) - 10.4;
+
+        $provider = new FooterStateSegmentProvider($state);
+        $a = $provider->footerFingerprint();
+        $b = $provider->footerFingerprint();
+
+        $this->assertSame($a, $b);
+    }
 }

@@ -10,8 +10,9 @@ use Symfony\Component\Tui\Event\InputEvent;
 use Symfony\Component\Tui\Event\TickEvent;
 
 /**
- * Defers loaded-resources summary build to the first tick (keeps pre-loop startup fast)
- * and toggles source-path expansion with ctrl+r.
+ * Pre-seeds the loaded-resources block during registrar setup so the first paint
+ * includes startup chrome in one batch (avoids a second tick pop-in). First-tick
+ * handler remains for legacy safety; ctrl+r toggles source-path expansion.
  */
 final readonly class LoadedResourcesStartupRegistrar implements TuiListenerRegistrar
 {
@@ -28,6 +29,12 @@ final readonly class LoadedResourcesStartupRegistrar implements TuiListenerRegis
         $provider = $this->loadedResourcesSummaryProvider;
 
         $loaded = false;
+
+        if (!$state->resuming) {
+            $screen->setLoadedResourcesSummary($provider->build());
+            $loaded = true;
+        }
+
         $context->ticks->add(static function (TickEvent $event) use ($screen, $tui, $state, $provider, &$loaded): ?bool {
             if ($loaded || $state->resuming) {
                 return null;

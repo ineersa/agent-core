@@ -35,6 +35,12 @@ final class PendingMessagesWidget implements TuiWidget
     }
 
     /** @return list<string> */
+    public function messages(): array
+    {
+        return $this->messages;
+    }
+
+    /** @return list<string> */
     public function render(TuiRenderContext $context): array
     {
         if ([] === $this->messages) {

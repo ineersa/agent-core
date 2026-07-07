@@ -79,6 +79,184 @@ final class ControllerReplayHttpClientFactory
         return $timeout;
     }
 
+    /**
+     * @param list<array<string, mixed>> $fixtures
+     */
+    private static function fixturesHaveRequestMatchers(array $fixtures): bool
+    {
+        foreach ($fixtures as $fixture) {
+            if (self::fixtureHasRequestMatcher($fixture)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @param array<string, mixed> $fixture
+     */
+    private static function fixtureHasRequestMatcher(array $fixture): bool
+    {
+        $match = $fixture['replay_match'] ?? null;
+        if (!\is_array($match) || [] === $match) {
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * Select a fixture for the current HTTP request.
+     *
+     * When any fixture defines replay_match, selection is stateless from the
+     * request body (survives messenger consumer process recycle). Fixtures
+     * without replay_match keep FIFO order for backward compatibility.
+     *
+     * @param list<array<string, mixed>> $fixtures
+     *
+     * @return array<string, mixed>|null
+     */
+    private static function selectFixtureForRequest(
+        array $fixtures,
+        array $options,
+        int &$fifoIndex,
+        bool $hasRequestMatchers,
+    ): ?array {
+        if ($hasRequestMatchers) {
+            $messages = self::extractRequestMessages($options);
+            foreach ($fixtures as $fixture) {
+                if (!self::fixtureHasRequestMatcher($fixture)) {
+                    continue;
+                }
+                if (self::requestMatchesFixture($messages, $fixture)) {
+                    return $fixture;
+                }
+            }
+        }
+
+        $fifoFixtures = [];
+        foreach ($fixtures as $fixture) {
+            if (!self::fixtureHasRequestMatcher($fixture)) {
+                $fifoFixtures[] = $fixture;
+            }
+        }
+
+        if ([] !== $fifoFixtures) {
+            if ($fifoIndex >= \count($fifoFixtures)) {
+                return null;
+            }
+
+            $selected = $fifoFixtures[$fifoIndex];
+            ++$fifoIndex;
+
+            return $selected;
+        }
+
+        return null;
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private static function extractRequestMessages(array $options): array
+    {
+        $payload = null;
+        if (isset($options['json']) && \is_array($options['json'])) {
+            $payload = $options['json'];
+        } elseif (isset($options['body']) && \is_string($options['body']) && '' !== $options['body']) {
+            try {
+                $decoded = json_decode($options['body'], true, 512, \JSON_THROW_ON_ERROR);
+                if (\is_array($decoded)) {
+                    $payload = $decoded;
+                }
+            } catch (\JsonException) {
+                return [];
+            }
+        }
+
+        if (!\is_array($payload)) {
+            return [];
+        }
+
+        $messages = $payload['messages'] ?? [];
+        if (!\is_array($messages)) {
+            return [];
+        }
+
+        $normalized = [];
+        foreach ($messages as $message) {
+            if (!\is_array($message)) {
+                continue;
+            }
+            $normalized[] = $message;
+        }
+
+        return $normalized;
+    }
+
+    /**
+     * @param list<array<string, mixed>> $messages
+     * @param array<string, mixed>       $fixture
+     */
+    private static function requestMatchesFixture(array $messages, array $fixture): bool
+    {
+        $match = $fixture['replay_match'] ?? null;
+        if (!\is_array($match) || [] === $match) {
+            return false;
+        }
+
+        if (!empty($match['compaction_prompt'])) {
+            foreach ($messages as $message) {
+                $content = self::messageContentAsString($message['content'] ?? '');
+                if (str_contains($content, 'CONTEXT CHECKPOINT COMPACTION')) {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        if (isset($match['last_user_contains']) && \is_string($match['last_user_contains'])) {
+            $needle = $match['last_user_contains'];
+            for ($i = \count($messages) - 1; $i >= 0; --$i) {
+                $role = $messages[$i]['role'] ?? '';
+                if ('user' !== $role) {
+                    continue;
+                }
+                $content = self::messageContentAsString($messages[$i]['content'] ?? '');
+
+                return str_contains($content, $needle);
+            }
+
+            return false;
+        }
+
+        return false;
+    }
+
+    private static function messageContentAsString(mixed $content): string
+    {
+        if (\is_string($content)) {
+            return $content;
+        }
+        if (!\is_array($content)) {
+            return '';
+        }
+
+        $parts = [];
+        foreach ($content as $part) {
+            if (!\is_array($part)) {
+                continue;
+            }
+            if (isset($part['text']) && \is_string($part['text'])) {
+                $parts[] = $part['text'];
+            }
+        }
+
+        return implode("\n", $parts);
+    }
+
     // ── Replay client construction ────────────────────────────────
 
     /**
@@ -107,11 +285,13 @@ final class ControllerReplayHttpClientFactory
             return HttpClient::create(['timeout' => self::liveHttpTimeout()]);
         }
 
-        $index = 0;
+        $fifoIndex = 0;
+        $hasRequestMatchers = self::fixturesHaveRequestMatchers($fixtures);
 
         return new MockHttpClient(
-            static function (string $method, string $url, array $options) use (&$index, $fixtures): MockResponse {
-                if ($index >= \count($fixtures)) {
+            static function (string $method, string $url, array $options) use (&$fifoIndex, $fixtures, $hasRequestMatchers): MockResponse {
+                $fixture = self::selectFixtureForRequest($fixtures, $options, $fifoIndex, $hasRequestMatchers);
+                if (null === $fixture) {
                     // Queue exhausted — the next LLM call in this run
                     // would normally be the post-tool assistant turn.
                     // Return a minimal text-only stop response so the
@@ -134,9 +314,6 @@ final class ControllerReplayHttpClientFactory
                         ],
                     );
                 }
-
-                $fixture = $fixtures[$index];
-                ++$index;
 
                 // Optional test-only delay: when the fixture has a
                 // response_delay_ms field, sleep before returning the
@@ -212,9 +389,7 @@ final class ControllerReplayHttpClientFactory
      * Convert fixture deltas to an OpenAI-compatible SSE stream.
      *
      * @param list<array<string, mixed>> $deltas
-     */
-    /**
-     * @param array<string, mixed>|null $usage Fixture usage payload (null if no usage)
+     * @param array<string, mixed>|null  $usage  Fixture usage payload (null if no usage)
      */
     private static function buildSSEFromDeltas(string $model, array $deltas, string $stopReason, ?array $usage): string
     {

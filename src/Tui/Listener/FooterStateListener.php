@@ -13,8 +13,8 @@ use Ineersa\Tui\Runtime\TuiRuntimeContext;
  * On registration:
  *  - FooterStateInitializer seeds model/reasoning/context/cwd/branch/time
  *  - A FooterStateSegmentProvider is registered on the chat screen
- *  - A tick handler refreshes the screen so elapsed time and throughput
- *    stay live
+ *  - A tick handler refreshes only the footer so elapsed time stays live
+ *    without invalidating transcript/editor on every stream tick
  */
 final readonly class FooterStateListener implements TuiListenerRegistrar
 {
@@ -27,13 +27,21 @@ final readonly class FooterStateListener implements TuiListenerRegistrar
     {
         $this->initializer->initialize($context->state);
 
-        $context->screen->addFooterProvider(
-            new FooterStateSegmentProvider($context->state),
-        );
+        $footerProvider = new FooterStateSegmentProvider($context->state);
+        $context->screen->addFooterProvider($footerProvider);
 
         $screen = $context->screen;
-        $context->ticks->add(static function () use ($screen): ?bool {
-            $screen->refresh();
+        $tui = $context->tui;
+        $lastFooterFingerprint = null;
+        $context->ticks->add(static function () use ($screen, $tui, $footerProvider, &$lastFooterFingerprint): ?bool {
+            $fingerprint = $footerProvider->footerFingerprint();
+            if ($fingerprint === $lastFooterFingerprint) {
+                return null;
+            }
+
+            $lastFooterFingerprint = $fingerprint;
+            $screen->refreshFooter();
+            $tui->requestRender();
 
             return null;
         });

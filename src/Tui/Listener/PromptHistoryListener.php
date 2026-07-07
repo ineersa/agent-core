@@ -45,6 +45,14 @@ final class PromptHistoryListener implements TuiListenerRegistrar
         $navigator = new PromptHistoryNavigator();
 
         $editor->onInput(static function (string $data) use ($state, $editor, $screen, $navigator): bool {
+            if ($state->subagentLiveView->active) {
+                if ($navigator->isNavigating()) {
+                    $navigator->exitNavigation();
+                }
+
+                return false;
+            }
+
             $kb = $editor->getKeybindings();
 
             $isUp = $kb->matches($data, 'cursor_up');

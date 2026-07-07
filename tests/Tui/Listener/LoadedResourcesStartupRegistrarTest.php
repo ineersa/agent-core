@@ -55,7 +55,7 @@ final class LoadedResourcesStartupRegistrarTest extends TestCase
     }
 
     #[Test]
-    public function defersSummaryBuildUntilFirstTickOnFreshSession(): void
+    public function preSeedsSummaryOnRegisterForFreshSession(): void
     {
         $harness = new VirtualTuiHarness(sessionId: 'defer-summary');
         $state = new TuiSessionState('defer-summary');
@@ -66,13 +66,7 @@ final class LoadedResourcesStartupRegistrarTest extends TestCase
             ->withScreen($harness->screen())
             ->build();
 
-        $this->assertFalse($harness->screen()->hasLoadedResourcesBlock());
-
         (new LoadedResourcesStartupRegistrar($this->createMinimalBuilder()))->register($context);
-
-        $this->assertFalse($harness->screen()->hasLoadedResourcesBlock());
-
-        $context->ticks->dispatch(new TickEvent());
 
         $this->assertTrue($harness->screen()->hasLoadedResourcesBlock());
     }
@@ -96,7 +90,7 @@ final class LoadedResourcesStartupRegistrarTest extends TestCase
     }
 
     #[Test]
-    public function buildIsNotInvokedBeforeFirstTick(): void
+    public function buildIsInvokedDuringRegisterOnFreshSession(): void
     {
         $calls = 0;
         $provider = new class($calls) implements LoadedResourcesSummaryProviderInterface {
@@ -123,11 +117,7 @@ final class LoadedResourcesStartupRegistrarTest extends TestCase
 
         (new LoadedResourcesStartupRegistrar($provider))->register($context);
 
-        $this->assertSame(0, $calls, 'summary build must not run during register() / pre-loop startup');
-
-        $context->ticks->dispatch(new TickEvent());
-
-        $this->assertSame(1, $calls);
+        $this->assertSame(1, $calls, 'summary build runs during register() for first paint batching');
     }
 
     private function createMinimalBuilder(): LoadedResourcesSummaryBuilder

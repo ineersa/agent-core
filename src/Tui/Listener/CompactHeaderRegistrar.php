@@ -22,6 +22,7 @@ use Symfony\Component\Tui\Event\TickEvent;
 final class CompactHeaderRegistrar implements TuiListenerRegistrar
 {
     private const REFRESH_INTERVAL_SECONDS = 2.5;
+    private const COMPACT_HEADER_KEY = 'compact-header';
 
     public function __construct(
         private readonly CompactHeaderSnapshotProvider $provider,
@@ -42,8 +43,39 @@ final class CompactHeaderRegistrar implements TuiListenerRegistrar
         $lastSnapshot = null;
         $lastBuildAt = 0.0;
 
+        if (!$state->subagentLiveView->active) {
+            try {
+                $initialSnap = $provider->build($state->sessionId);
+                $widget->setSnapshot($initialSnap);
+                $lastSnapshot = $initialSnap;
+                $lastBuildAt = microtime(true);
+                $screen->extensionContext()->setWidget(
+                    self::COMPACT_HEADER_KEY,
+                    $widget,
+                    WidgetPlacementEnum::AboveEditor,
+                    TuiSlotRegistry::ORDER_PINNED_LAST,
+                );
+                $screen->refreshAboveEditorWidgets();
+                $registered = true;
+            } catch (\Throwable $e) {
+                $logger->warning('Compact header snapshot failed', ['exception' => $e]);
+            }
+        }
+
         $context->ticks->add(static function (TickEvent $event) use ($widget, $screen, $tui, $state, $provider, $logger, &$registered, &$lastSnapshot, &$lastBuildAt): ?bool {
             $now = microtime(true);
+
+            if ($state->subagentLiveView->active) {
+                if ($registered) {
+                    $screen->extensionContext()->setWidget(self::COMPACT_HEADER_KEY, null);
+                    $screen->refreshAboveEditorWidgets();
+                    $tui->requestRender();
+                    $registered = false;
+                    $lastSnapshot = null;
+                }
+
+                return null;
+            }
 
             if (!$registered) {
                 $registered = true;
@@ -59,12 +91,12 @@ final class CompactHeaderRegistrar implements TuiListenerRegistrar
                 $lastSnapshot = $snap;
                 $lastBuildAt = $now;
                 $screen->extensionContext()->setWidget(
-                    'compact-header',
+                    self::COMPACT_HEADER_KEY,
                     $widget,
                     WidgetPlacementEnum::AboveEditor,
                     TuiSlotRegistry::ORDER_PINNED_LAST,
                 );
-                $screen->refresh();
+                $screen->refreshAboveEditorWidgets();
                 $tui->requestRender();
 
                 return null;
@@ -92,7 +124,7 @@ final class CompactHeaderRegistrar implements TuiListenerRegistrar
             $widget->setSnapshot($snap);
             $lastSnapshot = $snap;
             $lastBuildAt = $now;
-            $screen->refresh();
+            $screen->refreshAboveEditorWidgets();
             $tui->requestRender();
 
             return null;

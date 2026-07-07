@@ -35,6 +35,10 @@ final readonly class FooterStateSegmentProvider implements FooterSegmentProvider
     public function getSegments(): array
     {
         $s = $this->state;
+        if ($s->subagentLiveView->active) {
+            return $this->liveViewSegments($s);
+        }
+
         $segments = [];
 
         // ── Group 1: ◆ model (priorities 0-1) ──
@@ -144,6 +148,27 @@ final readonly class FooterStateSegmentProvider implements FooterSegmentProvider
         return $segments;
     }
 
+    /**
+     * Stable fingerprint of rendered footer segments for tick coalescing.
+     *
+     * Includes text, priority, and color so elapsed/tps/token updates trigger
+     * a repaint without re-rendering on every Revolt tick when unchanged.
+     */
+    public function footerFingerprint(): string
+    {
+        $parts = [];
+        foreach ($this->getSegments() as $segment) {
+            $parts[] = \sprintf(
+                '%d:%s:%s',
+                $segment->priority,
+                $segment->text,
+                $segment->color->value,
+            );
+        }
+
+        return implode("\n", $parts);
+    }
+
     // ── Formatting helpers ──
 
     /**
@@ -152,9 +177,6 @@ final readonly class FooterStateSegmentProvider implements FooterSegmentProvider
      * Uses the semantic ThemeColorEnum::Thinking* tokens (not generic
      * Accent/Warning/Dim) for consistent reasoning-level colouring
      * across the diamond, model name, and any future thinking indicators.
-     */
-    /**
-     * Map a reasoning level to the dedicated ThemeColorEnum thinking token.
      *
      * Public so callers that need the same mapping (e.g. editor border colour)
      * can reuse it without duplicating the logic.
@@ -162,6 +184,29 @@ final readonly class FooterStateSegmentProvider implements FooterSegmentProvider
     public static function thinkingColor(string $reasoning): ThemeColorEnum
     {
         return ThemeColorEnum::forReasoning($reasoning);
+    }
+
+    /** @return list<FooterSegment> */
+    private function liveViewSegments(TuiSessionState $s): array
+    {
+        $segments = [];
+        $segments[] = new FooterSegment(text: '◆', priority: 0, color: ThemeColorEnum::Accent);
+        $segments[] = new FooterSegment(text: 'agents-live', priority: 1, color: ThemeColorEnum::Accent);
+
+        $child = $s->subagentLiveView->selected;
+        if (null !== $child) {
+            $segments[] = new FooterSegment(
+                text: \sprintf('%s [%s]', $child->agentName, $child->statusLabel()),
+                priority: 5,
+                color: ThemeColorEnum::Working,
+            );
+        }
+
+        $segments[] = new FooterSegment(text: '/agents-main', priority: 10, color: ThemeColorEnum::Dim);
+        $segments[] = new FooterSegment(text: 'Ctrl+\\ main', priority: 11, color: ThemeColorEnum::Dim);
+        $segments[] = new FooterSegment(text: 'Esc cancel child', priority: 12, color: ThemeColorEnum::Muted);
+
+        return $segments;
     }
 
     private static function fmt(int $n): string
