@@ -124,6 +124,11 @@ services:
     arguments:
       - '@Ineersa\CodingAgent\Config\AppConfig'
 
+  Ineersa\CodingAgent\Config\ForksConfigDTO:
+    factory: ['Ineersa\CodingAgent\Config\ForksConfigDTO', 'fromAppConfig']
+    arguments:
+      - '@Ineersa\CodingAgent\Config\AppConfig'
+
   # ─── Prompt Templates ───
 
   Ineersa\CodingAgent\Config\PromptsConfig:

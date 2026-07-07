@@ -140,6 +140,7 @@ final class SubagentExecutionService
         $childMetadata = new RunMetadata(
             session: [
                 'kind' => 'agent_child',
+                'child_kind' => 'subagent',
                 'parent_run_id' => $parentRunId,
                 'agent_name' => $agentName,
                 'artifact_id' => $artifactId,
@@ -458,6 +459,7 @@ final class SubagentExecutionService
                 $childMetadata = new RunMetadata(
                     session: [
                         'kind' => 'agent_child',
+                        'child_kind' => 'subagent',
                         'parent_run_id' => $parentRunId,
                         'agent_name' => $launch['agentName'],
                         'artifact_id' => $launch['artifactId'],

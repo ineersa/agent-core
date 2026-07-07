@@ -40,4 +40,55 @@ final class SubagentRunMetadataReaderTest extends TestCase
         $reader = new SubagentRunMetadataReader($eventStore);
         $this->assertSame('fork', $reader->readChildKind('child-run'));
     }
+
+    public function testReadChildKindReturnsNullForNonChildRun(): void
+    {
+        $eventStore = $this->createStub(EventStoreInterface::class);
+        $eventStore->method('allFor')->willReturn([
+            new RunEvent(
+                runId: 'parent-run',
+                seq: 1,
+                turnNo: 0,
+                type: RunEventTypeEnum::RunStarted->value,
+                payload: [
+                    'payload' => [
+                        'metadata' => [
+                            'session' => [
+                                'kind' => 'session',
+                            ],
+                        ],
+                    ],
+                ],
+            ),
+        ]);
+
+        $reader = new SubagentRunMetadataReader($eventStore);
+        $this->assertNull($reader->readChildKind('parent-run'));
+    }
+
+    public function testReadChildKindReturnsNullWhenChildKindMissing(): void
+    {
+        $eventStore = $this->createStub(EventStoreInterface::class);
+        $eventStore->method('allFor')->willReturn([
+            new RunEvent(
+                runId: 'child-run',
+                seq: 1,
+                turnNo: 0,
+                type: RunEventTypeEnum::RunStarted->value,
+                payload: [
+                    'payload' => [
+                        'metadata' => [
+                            'session' => [
+                                'kind' => 'agent_child',
+                                'parent_run_id' => 'parent-run',
+                            ],
+                        ],
+                    ],
+                ],
+            ),
+        ]);
+
+        $reader = new SubagentRunMetadataReader($eventStore);
+        $this->assertNull($reader->readChildKind('child-run'));
+    }
 }

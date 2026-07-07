@@ -179,6 +179,14 @@ final class AppConfig
             ForksConfigDTO::class,
         );
 
+        $defaultLevel = $forks->defaultLevel;
+        if (isset($rawForks['default_level']) && \is_string($rawForks['default_level'])) {
+            $parsedDefault = ForkLevelEnum::fromStringOrNull($rawForks['default_level']);
+            if (null !== $parsedDefault) {
+                $defaultLevel = $parsedDefault;
+            }
+        }
+
         // Manually denormalize the levels sub-map.
         if (isset($rawForks['levels']) && \is_array($rawForks['levels'])) {
             $levels = [];
@@ -192,10 +200,18 @@ final class AppConfig
                 );
             }
 
-            $forks = new ForksConfigDTO(
+            return new ForksConfigDTO(
                 maxConcurrent: $forks->maxConcurrent,
-                defaultLevel: $forks->defaultLevel,
+                defaultLevel: $defaultLevel,
                 levels: $levels,
+            );
+        }
+
+        if ($defaultLevel !== $forks->defaultLevel) {
+            return new ForksConfigDTO(
+                maxConcurrent: $forks->maxConcurrent,
+                defaultLevel: $defaultLevel,
+                levels: $forks->levels,
             );
         }
 

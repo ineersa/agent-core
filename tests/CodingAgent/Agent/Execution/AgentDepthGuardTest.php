@@ -54,4 +54,14 @@ final class AgentDepthGuardTest extends TestCase
         $this->assertNotNull($result);
         $this->assertStringContainsString('globally disabled', $result);
     }
+
+    public function testCheckLaunchBlockedForForkChildWhenGloballyDisabled(): void
+    {
+        putenv('HATFIELD_AGENTS_DISABLED=1');
+
+        $guard = new AgentDepthGuard();
+        $result = $guard->checkLaunchAllowed(parentIsAgentChild: true, parentChildKind: 'fork');
+        $this->assertNotNull($result);
+        $this->assertStringContainsString('globally disabled', $result);
+    }
 }

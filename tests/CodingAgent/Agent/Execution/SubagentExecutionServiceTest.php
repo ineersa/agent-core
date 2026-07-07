@@ -108,6 +108,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
         $this->assertContains('bash', $allowed);
         $this->assertContains('write', $allowed);
         $this->assertNotContains('subagent', $allowed);
+        $this->assertSame('subagent', $capturedInput->metadata->session['child_kind'] ?? null);
     }
 
     public function testExecuteCompletesChildRunAndReturnsHandoff(): void
@@ -329,11 +330,75 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
         $this->assertSame(AgentArtifactStatusEnum::Completed, $entries[0]->status);
     }
 
-
-    public function testForkChildMayLaunchSubagentWhenDepthGuardAllows(): void
+    public function testForkChildMayLaunchSubagentThroughService(): void
     {
-        $guard = new AgentDepthGuard();
-        $this->assertNull($guard->checkLaunchAllowed(parentIsAgentChild: true, parentChildKind: 'fork'));
+        $completedState = new RunState(
+            runId: 'nested-child',
+            status: RunStatus::Completed,
+            version: 1,
+            messages: [
+                new AgentMessage(
+                    role: 'assistant',
+                    content: [['type' => 'text', 'text' => 'Nested scout done.']],
+                ),
+            ],
+        );
+
+        $runStore = $this->createStub(RunStoreInterface::class);
+        $runStore->method('get')->willReturn($completedState);
+        $parentRunStore = $this->createStub(RunStoreInterface::class);
+
+        $agentRunner = $this->createMock(AgentRunnerInterface::class);
+        $agentRunner->expects($this->once())
+            ->method('start')
+            ->willReturn('nested-child');
+
+        $def = new AgentDefinitionDTO(
+            name: 'scout',
+            description: 'Scout',
+            tools: ['read'],
+            mcp: new McpPolicyDTO(mode: McpAgentModeEnum::None),
+            instructions: 'Scout instructions.',
+        );
+
+        $eventStore = $this->createMock(EventStoreInterface::class);
+        $eventStore->expects($this->atLeastOnce())
+            ->method('allFor')
+            ->with('fork-child-run')
+            ->willReturn([
+                new RunEvent(
+                    runId: 'fork-child-run',
+                    seq: 1,
+                    turnNo: 0,
+                    type: RunEventTypeEnum::RunStarted->value,
+                    payload: [
+                        'step_id' => 's',
+                        'payload' => [
+                            'metadata' => [
+                                'session' => [
+                                    'kind' => 'agent_child',
+                                    'child_kind' => 'fork',
+                                    'parent_run_id' => 'main-run',
+                                    'artifact_id' => 'agent_fork',
+                                ],
+                            ],
+                        ],
+                    ],
+                ),
+            ]);
+
+        $service = $this->makeService([
+            'catalog' => new AgentDefinitionCatalog([$def]),
+            'agentRunner' => $agentRunner,
+            'runStore' => $runStore,
+            'parentRunStore' => $parentRunStore,
+            'eventStore' => $eventStore,
+            'metadataReader' => new SubagentRunMetadataReader($eventStore),
+        ]);
+
+        $result = $service->execute('fork-child-run', 'scout', 'Inspect area');
+
+        $this->assertStringContainsString('Nested scout done', $result);
     }
 
     public function testNestedSubagentLaunchBlockedWhenParentIsAgentChild(): void
