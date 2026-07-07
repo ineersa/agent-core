@@ -249,6 +249,15 @@ final class ForkExecutionService
             $status = $state->status;
 
             if (RunStatus::Running === $status || RunStatus::Queued === $status || RunStatus::Compacting === $status) {
+                $entry = $this->artifactRegistry->get($parentRunId, $artifactId);
+                if (null !== $entry && AgentArtifactStatusEnum::NeedsClarification === $entry->status) {
+                    $this->artifactRegistry->update(
+                        parentRunId: $parentRunId,
+                        artifactId: $artifactId,
+                        status: AgentArtifactStatusEnum::Running,
+                    );
+                }
+
                 $signature = $state->lastSeq.'|'.$state->turnNo;
                 if ($signature !== $lastSignature) {
                     $this->emitRunningProgress($parentRunId, $agentRunId, $artifactId, $taskSummary, $resolvedModel, $state, $progressSeq, $progressStartedMicros, 'running');
