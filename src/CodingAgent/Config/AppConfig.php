@@ -109,7 +109,10 @@ final class AppConfig
                 (array) ($data['compaction'] ?? []),
                 CompactionConfig::class,
             ),
-            forks: self::denormalizeForksConfig($data, $denormalizer),
+            forks: $denormalizer->denormalize(
+                (array) ($data['forks'] ?? []),
+                ForksConfigDTO::class,
+            ),
             agents: AgentsConfig::fromRaw($data['agents'] ?? []),
             raw: $data,
             catalog: $catalog,
@@ -156,21 +159,5 @@ final class AppConfig
 
             throw new \RuntimeException(\sprintf('Configured ai.default_model "%s" is not available. Available models: %s. Correct ai.default_model or remove it to use the first available model.', $defaultModel, implode(', ', $modelStrings)));
         }
-    }
-
-    /**
-     * Denormalize the forks config section.
-     *
-     * @param array<string, mixed>  $data         The full merged config array
-     * @param DenormalizerInterface $denormalizer The serializer denormalizer
-     */
-    private static function denormalizeForksConfig(array $data, DenormalizerInterface $denormalizer): ForksConfigDTO
-    {
-        $rawForks = (array) ($data['forks'] ?? []);
-
-        return $denormalizer->denormalize(
-            $rawForks,
-            ForksConfigDTO::class,
-        );
     }
 }

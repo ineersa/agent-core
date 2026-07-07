@@ -232,6 +232,17 @@ logging:
 #         - .hatfield/team-agents
 
 # ---------------------------------------------------------------------------
+# Fork tool (child runs)
+# ---------------------------------------------------------------------------
+#
+# Optional model override for fork child runs launched via the `fork` tool.
+# When omitted, null, or blank, fork children use the parent session's
+# currently selected model (same as the main agent run).
+#
+# forks:
+#     model: deepseek/deepseek-v4-pro
+
+# ---------------------------------------------------------------------------
 # Compaction
 # ---------------------------------------------------------------------------
 #

@@ -686,6 +686,23 @@ agents:
 See [Agent Definitions](agents.md) for the full definition format,
 discovery precedence, foreground execution (including timeout), and catalog API.
 
+### `forks.model`
+
+Optional `provider/model` override for **fork** child runs (the model-facing
+`fork` tool). When unset, `null`, or blank, fork children use the parent
+session's currently selected model — the same model as the main agent run for
+that session.
+
+Must reference a configured, enabled model under `ai.providers` when set.
+
+**Default:** `null` (use session model)
+
+**Example:**
+```yaml
+forks:
+    model: deepseek/deepseek-v4-pro
+```
+
 ### `extensions.enabled`
 
 List of enabled extension class names. Each class must implement
