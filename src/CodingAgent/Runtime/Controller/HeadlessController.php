@@ -83,6 +83,7 @@ final class HeadlessController
          * and sends append_message UserCommands to the agent session.
          */
         private readonly ?BackgroundProcessCompletionPoller $bgProcessCompletionPoller = null,
+        private readonly ?ChildArtifactCompletionPoller $childArtifactCompletionPoller = null,
     ) {
         $this->sessionId = $_SERVER['HATFIELD_SESSION_ID'] ?? $_ENV['HATFIELD_SESSION_ID'] ?? 'unknown';
     }
@@ -207,6 +208,9 @@ final class HeadlessController
         // processes and send follow-up notifications to the agent session.
         // This mirrors pi's bg-process.ts finalizeBackgroundProcess behavior.
         $this->bgProcessCompletionPoller?->startPollLoop();
+
+        // Supervise non-blocking child artifacts (fork) for progress + completion notifications.
+        $this->childArtifactCompletionPoller?->startPollLoop();
 
         // Consumer supervision: check child process health.
         EventLoop::repeat(self::SUPERVISE_INTERVAL, function (): void {
