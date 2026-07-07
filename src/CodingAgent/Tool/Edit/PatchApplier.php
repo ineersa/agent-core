@@ -20,6 +20,13 @@ use Symfony\Component\Process\Process;
  * 3. In-place byte write through the original target path — preserves
  *    symlink target semantics and hardlink inode identity.
  *
+ * GNU patch is invoked with fuzz factor 5 ({@see runPatchDryRun}, {@see runPatchApply}).
+ * LLM plain-@@ hunks often carry unbalanced context (many leading context lines,
+ * few trailing, including blank context lines). After PatchNormalizer resolves
+ * relaxed headers, GNU patch 2.7.6 may still fail to anchor such hunks at fuzz 3;
+ * fuzz 5 provides headroom while plain-@@ safety (stale, duplicate, ambiguous
+ * blocks) remains enforced upstream in PatchNormalizer::findExactBlockMatch().
+ *
  * On dry-run or apply failure, throws a classified ToolCallException with
  * sanitized GNU patch output and bounded file-context windows.
  */
@@ -190,7 +197,7 @@ final class PatchApplier
     private function runPatchDryRun(string $targetPath, string $patchFile): CancellableProcessResult
     {
         $process = new Process([
-            'patch', '-u', '-F3', '-l', '-N',
+            'patch', '-u', '-F5', '-l', '-N',
             '--dry-run', '--posix',
             $targetPath, $patchFile,
         ]);
@@ -201,7 +208,7 @@ final class PatchApplier
     private function runPatchApply(string $targetPath, string $patchFile, string $tempOut): CancellableProcessResult
     {
         $process = new Process([
-            'patch', '-u', '-F3', '-l', '-N',
+            'patch', '-u', '-F5', '-l', '-N',
             '-o', $tempOut,
             $targetPath, $patchFile,
         ]);
