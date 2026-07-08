@@ -7,7 +7,9 @@ namespace Ineersa\CodingAgent\Tests\Agent\Fork;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageToolCallSequenceValidator;
 use Ineersa\CodingAgent\Agent\Fork\ForkCompactionResult;
+use Ineersa\CodingAgent\Agent\Fork\ForkCompactionSummarizationException;
 use Ineersa\CodingAgent\Agent\Fork\ForkSnapshotCompactor;
+use Ineersa\CodingAgent\Agent\Fork\ForkSnapshotSummarizerInterface;
 use Ineersa\CodingAgent\Compaction\CompactionBoundarySelector;
 use Ineersa\CodingAgent\Compaction\CompactionPromptBuilder;
 use Ineersa\CodingAgent\Compaction\CompactionTokenEstimator;
@@ -90,6 +92,40 @@ final class ForkSnapshotCompactorTest extends TestCase
     protected function tearDown(): void
     {
         TestDirectoryIsolation::removeDirectory($this->projectDir);
+    }
+
+    public function testCompactWrapsSummarizationFailureWithActionableHint(): void
+    {
+        $summarizer = new class implements ForkSnapshotSummarizerInterface {
+            public function summarize(\Ineersa\CodingAgent\Compaction\CompactionPreparationDTO $preparation, ?string $activeSessionModel): string
+            {
+                throw new ForkCompactionSummarizationException('inner failure', hint: 'inner hint');
+            }
+        };
+
+        $tokenEstimator = new CompactionTokenEstimator();
+        $sequenceValidator = new AgentMessageToolCallSequenceValidator();
+        $boundarySelector = new CompactionBoundarySelector($tokenEstimator, $sequenceValidator);
+        $digestService = new ToolResultDigestService($tokenEstimator);
+        $appConfig = new AppConfig(tui: new TuiConfig(theme: 'test'), logging: new LoggingConfig(), cwd: $this->projectDir);
+        $pathResolver = new SettingsPathResolver($this->projectDir, $this->projectDir);
+        $promptBuilder = new CompactionPromptBuilder($pathResolver, new StringTemplateRenderer(), $appConfig, $this->projectDir);
+        $sessionCompactor = new SessionCompactor($tokenEstimator, $digestService, $boundarySelector, $promptBuilder);
+        $compactor = new ForkSnapshotCompactor($sessionCompactor, $summarizer);
+
+        $messages = [
+            new AgentMessage(role: 'user', content: [['type' => 'text', 'text' => 'one']]),
+            new AgentMessage(role: 'user', content: [['type' => 'text', 'text' => 'two']]),
+        ];
+
+        try {
+            $compactor->compact($messages, $this->config, 'llama_cpp/test');
+            $this->fail('Expected ForkCompactionSummarizationException');
+        } catch (ForkCompactionSummarizationException $exception) {
+            $this->assertInstanceOf(\Ineersa\AgentCore\Contract\Tool\ToolCallException::class, $exception);
+            $this->assertStringContainsString('inner failure', $exception->getMessage());
+            $this->assertSame('inner hint', $exception->hint());
+        }
     }
 
     // ── Tests ────────────────────────────────────────────────────────────

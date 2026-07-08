@@ -70,10 +70,6 @@ final class InProcessAgentSessionClient implements AgentSessionClient
 
     public function start(StartRunRequest $request): RunHandle
     {
-        $metadata = null !== $request->model || null !== $request->reasoning
-            ? new RunMetadata(model: $request->model, reasoning: $request->reasoning)
-            : null;
-
         $messages = [];
 
         // Build and prepend the system prompt as the first message.
@@ -152,6 +148,9 @@ final class InProcessAgentSessionClient implements AgentSessionClient
         // absent, the effective model/reasoning is resolved via ModelResolver so
         // the session is pinned to what the first turn actually used.  This makes
         // resume stable even if the global default later changes.
+        $metadataModel = $request->model;
+        $metadataReasoning = $request->reasoning;
+
         $sessionId = $request->runId;
         if ('' !== $sessionId) {
             $modelRef = null !== $request->model
@@ -177,7 +176,18 @@ final class InProcessAgentSessionClient implements AgentSessionClient
             if ([] !== $metaFields) {
                 $this->sessionMetaStore->writeSessionMetadata($sessionId, $metaFields);
             }
+
+            if (null === $metadataModel && null !== $modelRef) {
+                $metadataModel = $modelRef->toString();
+            }
+            if (null === $metadataReasoning && '' !== $reasoning) {
+                $metadataReasoning = $reasoning;
+            }
         }
+
+        $metadata = null !== $metadataModel || null !== $metadataReasoning
+            ? new RunMetadata(model: $metadataModel, reasoning: $metadataReasoning)
+            : null;
 
         $input = new StartRunInput(
             systemPrompt: '',

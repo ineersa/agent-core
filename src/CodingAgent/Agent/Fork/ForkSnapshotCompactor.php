@@ -51,7 +51,7 @@ final readonly class ForkSnapshotCompactor
         try {
             $summaryText = $this->summarizer->summarize($preparation, $activeSessionModel);
         } catch (ForkCompactionSummarizationException $exception) {
-            throw new ForkCompactionSummarizationException('Fork launch requires compacted parent context but summarization failed: '.$exception->getMessage(), previous: $exception);
+            throw new ForkCompactionSummarizationException('Fork launch requires compacted parent context but summarization failed: '.$exception->getMessage(), hint: $exception->hint() ?? 'Check compaction.model, parent session model, and LLM availability, then retry fork.', previous: $exception);
         }
 
         $compact = $this->sessionCompactor->buildCompactedMessages($summaryText, $preparation);

@@ -41,7 +41,7 @@ final readonly class ForkCompactionSummarizer implements ForkSnapshotSummarizerI
         $resolvedModel = $runtimeSettings->model ?? $activeSessionModel;
 
         if (null === $resolvedModel || '' === trim($resolvedModel)) {
-            throw new ForkCompactionSummarizationException('Fork compaction requires an active session model or compaction.model override.');
+            throw new ForkCompactionSummarizationException('Fork launch could not compact parent context: no summarization model is available.', hint: 'Set compaction.model in Hatfield settings, choose a parent session model with /model, or pass fork model explicitly.');
         }
 
         $prepareResult = CompactionPrepareResult::ready(

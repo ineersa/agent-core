@@ -4,10 +4,12 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Agent\Fork;
 
+use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Model\PlatformInvocationResult;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageToolCallSequenceValidator;
 use Ineersa\AgentCore\Tests\Support\Fake\FakePlatform;
+use Ineersa\CodingAgent\Agent\Fork\ForkCompactionSummarizationException;
 use Ineersa\CodingAgent\Agent\Fork\ForkCompactionSummarizer;
 use Ineersa\CodingAgent\Compaction\CompactionBoundarySelector;
 use Ineersa\CodingAgent\Compaction\CompactionPreparationDTO;
@@ -115,6 +117,42 @@ final class ForkCompactionSummarizerTest extends TestCase
         $this->assertStringContainsString('condensed context', $summary);
         $this->assertCount(1, $platform->invocations);
         $this->assertSame('openai/gpt-test', $platform->invocations[0]->model);
+    }
+
+    public function testSummarizeWithoutModelThrowsStructuredToolCallException(): void
+    {
+        $appConfig = new AppConfig(tui: new TuiConfig(theme: 'test'), logging: new LoggingConfig(), cwd: $this->projectDir);
+        $compactionService = new CompactionService($this->createSessionCompactor(), $appConfig);
+        $summarizer = new ForkCompactionSummarizer(
+            compactionService: $compactionService,
+            platform: new FakePlatform([]),
+            compactionConfig: new CompactionConfig(model: null),
+        );
+
+        $prep = new CompactionPreparationDTO(
+            messagesToSummarize: [
+                new AgentMessage(role: 'user', content: [['type' => 'text', 'text' => 'history one']]),
+                new AgentMessage(role: 'user', content: [['type' => 'text', 'text' => 'history two']]),
+            ],
+            retainedTailMessages: [
+                new AgentMessage(role: 'user', content: [['type' => 'text', 'text' => 'tail']]),
+            ],
+            tokenEstimateBefore: 100,
+            messagesCompacted: 2,
+            messagesRetained: 1,
+            firstRetainedIndex: 2,
+            priorSummaryPresent: false,
+        );
+
+        try {
+            $summarizer->summarize($prep, null);
+            $this->fail('Expected ForkCompactionSummarizationException');
+        } catch (ForkCompactionSummarizationException $exception) {
+            $this->assertInstanceOf(ToolCallException::class, $exception);
+            $this->assertStringContainsString('no summarization model', $exception->getMessage());
+            $this->assertNotNull($exception->hint());
+            $this->assertStringContainsString('compaction.model', (string) $exception->hint());
+        }
     }
 
     private function createSessionCompactor(): SessionCompactor

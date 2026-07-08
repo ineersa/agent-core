@@ -23,6 +23,7 @@ use Ineersa\CodingAgent\Agent\Context\AgentsContextBuilder;
 use Ineersa\CodingAgent\Agent\Fork\ForkChildMessageComposer;
 use Ineersa\CodingAgent\Agent\Fork\ForkContextBuilder;
 use Ineersa\CodingAgent\Config\AgentsConfig;
+use Ineersa\CodingAgent\Config\ModelResolver;
 use Ineersa\CodingAgent\Skills\SkillsContextBuilder;
 use Ineersa\CodingAgent\Tool\ToolRegistryInterface;
 use Symfony\Component\Clock\ClockInterface;
@@ -56,6 +57,7 @@ final class ForkExecutionService
         private readonly AgentsContextBuilder $agentsContextBuilder,
         private readonly SkillsContextBuilder $skillsContextBuilder,
         private readonly AgentsConfig $agentsConfig,
+        private readonly ModelResolver $modelResolver,
         private readonly SubagentProgressSnapshotBuilder $progressSnapshotBuilder,
         private readonly SubagentChildProgressSummaryBuilder $childProgressSummaryBuilder,
         private readonly ClockInterface $clock = new MonotonicClock(),
@@ -196,13 +198,14 @@ final class ForkExecutionService
     private function resolveSessionModelFallback(string $parentRunId): ?string
     {
         $metadata = $this->metadataReader->readRunStartedMetadata($parentRunId);
-        if (null === $metadata) {
-            return null;
+        if (null !== $metadata) {
+            $model = $metadata['model'] ?? null;
+            if (\is_string($model) && '' !== trim($model)) {
+                return $model;
+            }
         }
 
-        $model = $metadata['model'] ?? null;
-
-        return \is_string($model) && '' !== trim($model) ? $model : null;
+        return $this->modelResolver->getCurrentModel($parentRunId)?->toString();
     }
 
     private function resolveChildModel(?string $explicitModel, ?string $snapshotModel, string $parentRunId): ?string
