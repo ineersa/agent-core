@@ -4,10 +4,17 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\Picker;
 
+use Doctrine\ORM\EntityManagerInterface;
+use Ineersa\CodingAgent\Config\AppConfig;
+use Ineersa\CodingAgent\Config\LoggingConfig;
+use Ineersa\CodingAgent\Config\SessionsConfig;
+use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
+use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+use Ineersa\Tui\Export\SessionEventsExportService;
 use Ineersa\Tui\Picker\SubagentLivePickerController;
 use Ineersa\Tui\Runtime\SubagentLiveChildViewPoller;
 use Ineersa\Tui\Runtime\TuiSessionState;
@@ -22,6 +29,19 @@ use Symfony\Component\Tui\Widget\SelectListWidget;
 
 final class SubagentLivePickerControllerTest extends TestCase
 {
+    private string $projectDir;
+
+    protected function setUp(): void
+    {
+        $this->projectDir = sys_get_temp_dir().'/picker-export-test-'.bin2hex(random_bytes(6));
+        mkdir($this->projectDir, 0777, true);
+    }
+
+    protected function tearDown(): void
+    {
+        $this->removeDir($this->projectDir);
+    }
+
     #[Test]
     public function testOpenTwiceDoesNotStackOverlay(): void
     {
@@ -87,12 +107,36 @@ final class SubagentLivePickerControllerTest extends TestCase
         $this->assertArrayNotHasKey('agents-live', $entries, 'agents-live status should be absent/cleared');
     }
 
+    #[Test]
+    public function exportKeyWritesSelectedChildHtml(): void
+    {
+        $harness = new VirtualTuiHarness(sessionId: 'parent-session-export');
+        $state = new TuiSessionState('parent-session-export');
+        $artifactId = 'agent_export';
+        $this->seedCatalogChild($state, $artifactId, 'child-run-export', 'completed');
+        $this->writeChildEvents('parent-session-export', $artifactId, [
+            $this->makeChildEvent(1, 'run_started', ['user_messages' => [['role' => 'user', 'content' => 'fork task']]]),
+        ]);
+
+        $picker = $this->picker($harness, $state);
+        $this->invokeExportSelected($picker, $harness->screen(), $state);
+
+        $expected = getcwd().'/hatfield-child-'.$artifactId.'.html';
+        $this->assertFileExists($expected);
+        $this->assertStringContainsString('Session exported to:', $this->workingMessage($harness->screen()));
+        @unlink($expected);
+    }
+
     private function picker(VirtualTuiHarness $harness, TuiSessionState $state): SubagentLivePickerController
     {
-        $picker = new SubagentLivePickerController(new SubagentLiveChildViewPoller(
-            new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState()),
-            new NullLogger(),
-        ));
+        $picker = new SubagentLivePickerController(
+            new SubagentLiveChildViewPoller(
+                new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState()),
+                new NullLogger(),
+            ),
+            $this->sessionStore(),
+            new SessionEventsExportService(),
+        );
         $picker->setRuntimeRefs($harness->tui(), $harness->screen(), $state);
 
         return $picker;
@@ -132,6 +176,86 @@ final class SubagentLivePickerControllerTest extends TestCase
                 ],
             ],
         ));
+    }
+
+    private function invokeExportSelected(
+        SubagentLivePickerController $picker,
+        ChatScreen $screen,
+        TuiSessionState $state,
+    ): void {
+        $items = SubagentLivePickerController::buildItems($state->subagentLiveCatalog->all(), $screen->theme());
+        $listWidget = new SelectListWidget(items: $items, keybindings: new Keybindings());
+        $listWidget->setSelectedIndex(0);
+
+        $method = new \ReflectionMethod(SubagentLivePickerController::class, 'exportSelected');
+        $method->invoke($picker, $listWidget, $screen, $state);
+    }
+
+    /**
+     * @param list<array<string, mixed>> $events
+     */
+    private function writeChildEvents(string $parentSessionId, string $artifactId, array $events): void
+    {
+        $dir = $this->projectDir.'/.hatfield/sessions/'.$parentSessionId.'/artifacts/agents/'.$artifactId;
+        mkdir($dir, 0777, true);
+        $lines = array_map(static fn (array $e): string => json_encode($e, \JSON_THROW_ON_ERROR), $events);
+        file_put_contents($dir.'/events.jsonl', implode("\n", $lines)."\n");
+    }
+
+    /**
+     * @param array<string, mixed> $payload
+     *
+     * @return array<string, mixed>
+     */
+    private function makeChildEvent(int $seq, string $type, array $payload = []): array
+    {
+        return [
+            'schema_version' => '1.0',
+            'run_id' => 'child-run-export',
+            'seq' => $seq,
+            'turn_no' => 1,
+            'type' => $type,
+            'payload' => $payload,
+            'ts' => '2026-01-01T00:00:00+00:00',
+        ];
+    }
+
+    private function sessionStore(): HatfieldSessionStore
+    {
+        $appConfig = new AppConfig(
+            tui: new TuiConfig(theme: 'default'),
+            logging: new LoggingConfig(),
+            cwd: $this->projectDir,
+            sessions: new SessionsConfig(path: '.hatfield/sessions'),
+        );
+
+        return new HatfieldSessionStore(
+            appConfig: $appConfig,
+            entityManager: $this->createStub(EntityManagerInterface::class),
+        );
+    }
+
+    private function removeDir(string $dir): void
+    {
+        if (!is_dir($dir)) {
+            return;
+        }
+
+        $iterator = new \RecursiveIteratorIterator(
+            new \RecursiveDirectoryIterator($dir, \FilesystemIterator::SKIP_DOTS),
+            \RecursiveIteratorIterator::CHILD_FIRST,
+        );
+
+        foreach ($iterator as $file) {
+            if ($file->isDir()) {
+                rmdir($file->getPathname());
+            } else {
+                @chmod($file->getPathname(), 0644);
+                unlink($file->getPathname());
+            }
+        }
+
+        rmdir($dir);
     }
 
     private function workingMessage(ChatScreen $screen): string

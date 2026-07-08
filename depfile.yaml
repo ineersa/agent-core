@@ -362,6 +362,7 @@ parameters:
       - SymfonyConsole
 
     TuiListener:
+      - TuiExport
       - AppExtensionApi
       - AppRuntimeContract
       - AppRuntimeProjection
@@ -450,6 +451,7 @@ parameters:
       - TuiCommand
 
     TuiPicker:
+      - TuiExport
       - AppConfig
       - AppRuntimeContract
       - AppSession

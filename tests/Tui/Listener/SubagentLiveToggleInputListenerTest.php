@@ -6,6 +6,8 @@ namespace Ineersa\Tui\Tests\Listener;
 
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
+use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+use Ineersa\Tui\Export\SessionEventsExportService;
 use Ineersa\Tui\Listener\SubagentLiveToggleInputListener;
 use Ineersa\Tui\Picker\SubagentLivePickerController;
 use Ineersa\Tui\Runtime\SubagentLiveChildViewPoller;
@@ -31,7 +33,7 @@ final class SubagentLiveToggleInputListenerTest extends TestCase
         $picker = new SubagentLivePickerController(new SubagentLiveChildViewPoller(
             new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState()),
             new NullLogger(),
-        ));
+            $this->createStub(HatfieldSessionStore::class), new SessionEventsExportService(), ));
         $picker->setRuntimeRefs($harness->tui(), $harness->screen(), $state);
 
         $context = $this->buildTuiContext()

@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Tests\Listener;
 
 use Ineersa\CodingAgent\Runtime\Contract\TranscriptProjectorInterface;
+use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\Tui\Command\SlashCommandRegistry;
+use Ineersa\Tui\Export\SessionEventsExportService;
 use Ineersa\Tui\Listener\SubagentLiveCommandRegistrar;
 use Ineersa\Tui\Picker\SubagentLivePickerController;
 use Ineersa\Tui\Runtime\SubagentLiveChildViewPoller;
@@ -48,7 +50,7 @@ final class SubagentLiveCommandRegistrarTest extends TestCase
             new SubagentLiveChildViewPoller(
                 $this->createStub(TranscriptProjectorInterface::class),
                 new NullLogger(),
-            ),
+                $this->createStub(HatfieldSessionStore::class), new SessionEventsExportService(), ),
         );
 
         return new SubagentLiveCommandRegistrar(

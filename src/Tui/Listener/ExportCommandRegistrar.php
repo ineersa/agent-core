@@ -6,6 +6,7 @@ namespace Ineersa\Tui\Listener;
 
 use Ineersa\Tui\Command\CommandMetadata;
 use Ineersa\Tui\Command\SlashCommandRegistry;
+use Ineersa\Tui\Export\SessionEventsExportService;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
 
 /**
@@ -21,6 +22,7 @@ final class ExportCommandRegistrar implements TuiListenerRegistrar
 {
     public function __construct(
         private readonly SlashCommandRegistry $commandRegistry,
+        private readonly SessionEventsExportService $exportService,
     ) {
     }
 
@@ -29,6 +31,7 @@ final class ExportCommandRegistrar implements TuiListenerRegistrar
         $handler = new ExportCommandHandler(
             $context->state,
             $context->sessionStore,
+            $this->exportService,
         );
 
         if ($this->commandRegistry->has('export')) {
