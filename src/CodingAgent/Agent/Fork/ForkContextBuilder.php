@@ -16,7 +16,7 @@ use Ineersa\CodingAgent\Config\CompactionConfig;
  * Steps:
  *   1. Sanitize (trim launch messages).
  *   2. Virtually compact (cut-point selection + summary reuse).
- *   3. Resolve optional forks.model override.
+ *   3. Resolve optional forks.model and forks.thinking_level overrides.
  *   4. Build fork task user message and system append.
  *   5. Assemble ForkSessionSnapshotDTO.
  *
@@ -59,6 +59,7 @@ final readonly class ForkContextBuilder
             forkSystemPromptAppend: $systemAppend,
             forkTaskUserMessage: $taskUserMessage,
             resolvedModel: $resolved->resolvedModel,
+            resolvedThinkingLevel: $resolved->resolvedThinkingLevel,
         );
     }
 }

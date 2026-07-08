@@ -12,7 +12,7 @@ use PHPUnit\Framework\Assert;
 use PHPUnit\Framework\Attributes\CoversClass;
 
 /**
- * Test thesis: ForksConfigDTO is wired from AppConfig so forks.model from Hatfield settings affects runtime.
+ * Test thesis: ForksConfigDTO is wired from AppConfig so forks.model and forks.thinking_level from Hatfield settings affect runtime.
  */
 #[CoversClass(AppConfig::class)]
 #[CoversClass(ForksConfigDTO::class)]
@@ -28,6 +28,7 @@ ai:
     default_model: null
 forks:
   model: llama_cpp/fork-model
+  thinking_level: xhigh
 YAML);
 
         if (self::$booted) {
@@ -44,9 +45,11 @@ YAML);
         $appConfig = self::getContainer()->get(AppConfig::class);
 
         Assert::assertSame('llama_cpp/fork-model', $forksConfig->model);
+        Assert::assertSame('xhigh', $forksConfig->thinkingLevel);
         Assert::assertSame($appConfig->forks, $forksConfig);
 
         $resolved = self::getContainer()->get(ForkConfigResolver::class)->resolve();
         Assert::assertSame('llama_cpp/fork-model', $resolved->resolvedModel);
+        Assert::assertSame('xhigh', $resolved->resolvedThinkingLevel);
     }
 }

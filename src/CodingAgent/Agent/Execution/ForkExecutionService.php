@@ -122,6 +122,7 @@ final class ForkExecutionService
         );
         $resolvedReasoning = $this->resolveChildReasoning(
             explicitReasoning: $reasoningOverride,
+            snapshotThinkingLevel: $snapshot->resolvedThinkingLevel,
             parentRunId: $parentRunId,
         );
 
@@ -214,10 +215,14 @@ final class ForkExecutionService
         return $this->resolveSessionModelFallback($parentRunId);
     }
 
-    private function resolveChildReasoning(?string $explicitReasoning, string $parentRunId): ?string
+    private function resolveChildReasoning(?string $explicitReasoning, ?string $snapshotThinkingLevel, string $parentRunId): ?string
     {
         if (null !== $explicitReasoning && '' !== trim($explicitReasoning)) {
             return $explicitReasoning;
+        }
+
+        if (null !== $snapshotThinkingLevel && '' !== trim($snapshotThinkingLevel)) {
+            return $snapshotThinkingLevel;
         }
 
         return $this->resolveSessionReasoningFallback($parentRunId);

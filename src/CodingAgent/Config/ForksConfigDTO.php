@@ -10,7 +10,7 @@ use Symfony\Component\Serializer\Attribute\SerializedName;
  * Fork subsystem configuration resolved from Hatfield config.
  *
  * Immutable value object. Controls concurrency limits and an optional
- * fork model override (null = use the parent session's selected model).
+ * fork model and thinking-level overrides (null = use the parent session values).
  *
  * Hydrated from the `forks` section of Hatfield merged config via
  * Symfony Serializer denormalization.
@@ -30,6 +30,13 @@ final readonly class ForksConfigDTO
          * When null, the parent session model is used.
          */
         public ?string $model = null,
+
+        /**
+         * Optional reasoning/thinking level override for fork child runs.
+         * When null, the parent session reasoning is used.
+         */
+        #[SerializedName('thinking_level')]
+        public ?string $thinkingLevel = null,
     ) {
     }
 

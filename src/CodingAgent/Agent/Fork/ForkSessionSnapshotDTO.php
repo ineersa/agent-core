@@ -28,12 +28,14 @@ final readonly class ForkSessionSnapshotDTO
      * @param string             $forkSystemPromptAppend System-prompt append text for FORK_CHILD mode
      * @param string             $forkTaskUserMessage    Generated Pi-style fork task user message text
      * @param string|null        $resolvedModel          Resolved model override (null = session model)
+     * @param string|null        $resolvedThinkingLevel  Resolved thinking level override (null = session reasoning)
      */
     public function __construct(
         public array $messages,
         public string $forkSystemPromptAppend,
         public string $forkTaskUserMessage,
         public ?string $resolvedModel = null,
+        public ?string $resolvedThinkingLevel = null,
     ) {
     }
 }

@@ -302,7 +302,7 @@ final class ForkExecutionServiceTest extends IsolatedKernelTestCase
         );
 
         $container = self::getContainer();
-        $forkContextBuilder = $this->buildForkContextBuilderWithModel('llama_cpp/fork-override');
+        $forkContextBuilder = $this->buildForkContextBuilder('llama_cpp/fork-override');
         $service = new ForkExecutionService(
             forkContextBuilder: $forkContextBuilder,
             messageComposer: $container->get(\Ineersa\CodingAgent\Agent\Fork\ForkChildMessageComposer::class),
@@ -410,7 +410,7 @@ final class ForkExecutionServiceTest extends IsolatedKernelTestCase
 
         $container = self::getContainer();
         $service = new ForkExecutionService(
-            forkContextBuilder: $this->buildForkContextBuilderWithModel(null),
+            forkContextBuilder: $this->buildForkContextBuilder(null),
             messageComposer: $container->get(\Ineersa\CodingAgent\Agent\Fork\ForkChildMessageComposer::class),
             artifactRegistry: $container->get(AgentArtifactRegistry::class),
             agentRunner: $agentRunner,
@@ -488,7 +488,7 @@ final class ForkExecutionServiceTest extends IsolatedKernelTestCase
 
         $container = self::getContainer();
         $service = new ForkExecutionService(
-            forkContextBuilder: $this->buildForkContextBuilderWithModel('llama_cpp/fork-override'),
+            forkContextBuilder: $this->buildForkContextBuilder('llama_cpp/fork-override'),
             messageComposer: $container->get(\Ineersa\CodingAgent\Agent\Fork\ForkChildMessageComposer::class),
             artifactRegistry: $container->get(AgentArtifactRegistry::class),
             agentRunner: $agentRunner,
@@ -569,7 +569,7 @@ final class ForkExecutionServiceTest extends IsolatedKernelTestCase
 
         $container = self::getContainer();
         $service = new ForkExecutionService(
-            forkContextBuilder: $this->buildForkContextBuilderWithModel(null),
+            forkContextBuilder: $this->buildForkContextBuilder(null),
             messageComposer: $container->get(\Ineersa\CodingAgent\Agent\Fork\ForkChildMessageComposer::class),
             artifactRegistry: $container->get(AgentArtifactRegistry::class),
             agentRunner: $agentRunner,
@@ -678,7 +678,7 @@ final class ForkExecutionServiceTest extends IsolatedKernelTestCase
 
         $container = self::getContainer();
         $service = new ForkExecutionService(
-            forkContextBuilder: $this->buildForkContextBuilderWithModel(null),
+            forkContextBuilder: $this->buildForkContextBuilder(null),
             messageComposer: $container->get(\Ineersa\CodingAgent\Agent\Fork\ForkChildMessageComposer::class),
             artifactRegistry: $container->get(AgentArtifactRegistry::class),
             agentRunner: $agentRunner,
@@ -704,7 +704,194 @@ final class ForkExecutionServiceTest extends IsolatedKernelTestCase
         $this->assertSame('medium', $captured->metadata->reasoning);
     }
 
-    private function buildForkContextBuilderWithModel(?string $model): \Ineersa\CodingAgent\Agent\Fork\ForkContextBuilder
+    public function testExecuteUsesForkThinkingLevelSettingWhenToolThinkingOmitted(): void
+    {
+        $parentRunId = 'parent-fork-config-thinking';
+        $childRunId = 'child-fork-config-thinking';
+
+        $parentRunStore = new InMemoryRunStore();
+        $parentRunStore->compareAndSwap(new RunState(
+            runId: $parentRunId,
+            status: RunStatus::Running,
+            version: 1,
+            messages: [
+                new AgentMessage(role: 'user', content: [['type' => 'text', 'text' => 'hello']]),
+            ],
+        ), 0);
+
+        $completedChild = new RunState(
+            runId: $childRunId,
+            status: RunStatus::Completed,
+            version: 2,
+            messages: [
+                new AgentMessage(role: 'assistant', content: [['type' => 'text', 'text' => 'done']]),
+            ],
+        );
+
+        $childRunStore = $this->createStub(RunStoreInterface::class);
+        $childRunStore->method('get')->willReturn($completedChild);
+
+        $parentEventStore = $this->createStub(EventStoreInterface::class);
+        $parentEventStore->method('allFor')->willReturnCallback(
+            static function (string $runId) use ($parentRunId): array {
+                if ($parentRunId !== $runId) {
+                    return [];
+                }
+
+                return [
+                    new RunEvent(
+                        runId: $parentRunId,
+                        seq: 1,
+                        turnNo: 0,
+                        type: RunEventTypeEnum::RunStarted->value,
+                        payload: [
+                            'payload' => [
+                                'metadata' => [
+                                    'model' => 'session/selected-model',
+                                    'reasoning' => 'medium',
+                                    'session' => ['kind' => 'session'],
+                                ],
+                            ],
+                        ],
+                    ),
+                ];
+            },
+        );
+        $metadataReader = new \Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader($parentEventStore);
+
+        $captured = null;
+        $agentRunner = $this->createMock(AgentRunnerInterface::class);
+        $agentRunner->expects($this->once())->method('start')->willReturnCallback(
+            static function (StartRunInput $input) use (&$captured, $childRunId): string {
+                $captured = $input;
+
+                return $childRunId;
+            },
+        );
+
+        $registryStub = $this->createStub(ToolRegistryInterface::class);
+        $registryStub->method('activeToolNames')->willReturn(['read', 'subagent', 'fork']);
+
+        $contextAccessor = new StackToolExecutionContextAccessor();
+        $toolContext = new ToolContext(
+            runId: $parentRunId,
+            turnNo: 1,
+            toolCallId: 'call_fork_config_thinking',
+            toolName: 'fork',
+            cancellationToken: new NullCancellationToken(),
+            timeoutSeconds: 120,
+        );
+
+        $container = self::getContainer();
+        $service = new ForkExecutionService(
+            forkContextBuilder: $this->buildForkContextBuilder(null, 'xhigh'),
+            messageComposer: $container->get(\Ineersa\CodingAgent\Agent\Fork\ForkChildMessageComposer::class),
+            artifactRegistry: $container->get(AgentArtifactRegistry::class),
+            agentRunner: $agentRunner,
+            runStore: $childRunStore,
+            parentRunStore: $parentRunStore,
+            eventStore: $this->createStub(EventStoreInterface::class),
+            metadataReader: $metadataReader,
+            childRunDirectory: $container->get(\Ineersa\CodingAgent\Agent\Artifact\AgentChildRunDirectory::class),
+            contextAccessor: $contextAccessor,
+            toolRegistry: $registryStub,
+            mcpToolsResolver: $container->get(\Ineersa\CodingAgent\Agent\Execution\AgentMcpToolsResolver::class),
+            agentsContextBuilder: $container->get(AgentsContextBuilder::class),
+            skillsContextBuilder: $container->get(SkillsContextBuilder::class),
+            agentsConfig: $container->get(\Ineersa\CodingAgent\Config\AgentsConfig::class),
+            progressSnapshotBuilder: $container->get(\Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder::class),
+            childProgressSummaryBuilder: $container->get(\Ineersa\CodingAgent\Agent\Execution\SubagentChildProgressSummaryBuilder::class),
+            clock: new MockClock(),
+        );
+
+        $contextAccessor->with($toolContext, static fn (): string => $service->execute($parentRunId, 'config thinking test'));
+
+        $this->assertNotNull($captured);
+        $this->assertSame('xhigh', $captured->metadata->reasoning);
+    }
+
+    public function testExecuteExplicitToolThinkingOverridesForkThinkingLevelSetting(): void
+    {
+        $parentRunId = 'parent-fork-explicit-thinking';
+        $childRunId = 'child-fork-explicit-thinking';
+
+        $parentRunStore = new InMemoryRunStore();
+        $parentRunStore->compareAndSwap(new RunState(
+            runId: $parentRunId,
+            status: RunStatus::Running,
+            version: 1,
+            messages: [
+                new AgentMessage(role: 'user', content: [['type' => 'text', 'text' => 'hello']]),
+            ],
+        ), 0);
+
+        $completedChild = new RunState(
+            runId: $childRunId,
+            status: RunStatus::Completed,
+            version: 2,
+            messages: [
+                new AgentMessage(role: 'assistant', content: [['type' => 'text', 'text' => 'done']]),
+            ],
+        );
+
+        $childRunStore = $this->createStub(RunStoreInterface::class);
+        $childRunStore->method('get')->willReturn($completedChild);
+
+        $captured = null;
+        $agentRunner = $this->createMock(AgentRunnerInterface::class);
+        $agentRunner->expects($this->once())->method('start')->willReturnCallback(
+            static function (StartRunInput $input) use (&$captured, $childRunId): string {
+                $captured = $input;
+
+                return $childRunId;
+            },
+        );
+
+        $registryStub = $this->createStub(ToolRegistryInterface::class);
+        $registryStub->method('activeToolNames')->willReturn(['read', 'subagent', 'fork']);
+
+        $contextAccessor = new StackToolExecutionContextAccessor();
+        $toolContext = new ToolContext(
+            runId: $parentRunId,
+            turnNo: 1,
+            toolCallId: 'call_fork_explicit_thinking',
+            toolName: 'fork',
+            cancellationToken: new NullCancellationToken(),
+            timeoutSeconds: 120,
+        );
+
+        $container = self::getContainer();
+        $service = new ForkExecutionService(
+            forkContextBuilder: $this->buildForkContextBuilder(null, 'xhigh'),
+            messageComposer: $container->get(\Ineersa\CodingAgent\Agent\Fork\ForkChildMessageComposer::class),
+            artifactRegistry: $container->get(AgentArtifactRegistry::class),
+            agentRunner: $agentRunner,
+            runStore: $childRunStore,
+            parentRunStore: $parentRunStore,
+            eventStore: $this->createStub(EventStoreInterface::class),
+            metadataReader: $container->get(\Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader::class),
+            childRunDirectory: $container->get(\Ineersa\CodingAgent\Agent\Artifact\AgentChildRunDirectory::class),
+            contextAccessor: $contextAccessor,
+            toolRegistry: $registryStub,
+            mcpToolsResolver: $container->get(\Ineersa\CodingAgent\Agent\Execution\AgentMcpToolsResolver::class),
+            agentsContextBuilder: $container->get(AgentsContextBuilder::class),
+            skillsContextBuilder: $container->get(SkillsContextBuilder::class),
+            agentsConfig: $container->get(\Ineersa\CodingAgent\Config\AgentsConfig::class),
+            progressSnapshotBuilder: $container->get(\Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder::class),
+            childProgressSummaryBuilder: $container->get(\Ineersa\CodingAgent\Agent\Execution\SubagentChildProgressSummaryBuilder::class),
+            clock: new MockClock(),
+        );
+
+        $contextAccessor->with(
+            $toolContext,
+            static fn (): string => $service->execute($parentRunId, 'explicit thinking test', reasoningOverride: 'low'),
+        );
+
+        $this->assertNotNull($captured);
+        $this->assertSame('low', $captured->metadata->reasoning);
+    }
+
+    private function buildForkContextBuilder(?string $model, ?string $thinkingLevel = null): \Ineersa\CodingAgent\Agent\Fork\ForkContextBuilder
     {
         $container = self::getContainer();
 
@@ -712,7 +899,7 @@ final class ForkExecutionServiceTest extends IsolatedKernelTestCase
             sanitizer: $container->get(\Ineersa\CodingAgent\Agent\Fork\ForkSnapshotSanitizer::class),
             compactor: $container->get(\Ineersa\CodingAgent\Agent\Fork\ForkSnapshotCompactor::class),
             promptBuilder: $container->get(\Ineersa\CodingAgent\Agent\Fork\ForkTaskPromptBuilder::class),
-            configResolver: new \Ineersa\CodingAgent\Agent\Fork\ForkConfigResolver(new \Ineersa\CodingAgent\Config\ForksConfigDTO(model: $model)),
+            configResolver: new \Ineersa\CodingAgent\Agent\Fork\ForkConfigResolver(new \Ineersa\CodingAgent\Config\ForksConfigDTO(model: $model, thinkingLevel: $thinkingLevel)),
             compactionConfig: $container->get(\Ineersa\CodingAgent\Config\CompactionConfig::class),
         );
     }
