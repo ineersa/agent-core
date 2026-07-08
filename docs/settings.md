@@ -709,8 +709,7 @@ Optional reasoning/thinking level override for **fork** child runs (the
 model-facing `fork` tool). When unset, `null`, or blank, fork children use the
 parent session's currently selected reasoning level for that run.
 
-Must be one of `ModelResolver::LEVELS`: `off`, `minimal`, `low`, `medium`,
-`high`, `xhigh`. Explicit `fork(..., thinking: "...")` tool arguments still
+Allowed values: `off`, `minimal`, `low`, `medium`, `high`, `xhigh`. Explicit `fork(..., thinking: "...")` tool arguments still
 override this setting.
 
 **Default:** `null` (use session reasoning)
