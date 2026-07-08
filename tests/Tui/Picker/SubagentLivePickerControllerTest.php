@@ -173,6 +173,40 @@ final class SubagentLivePickerControllerTest extends TestCase
     }
 
     #[Test]
+    public function pickerLabelIncludesContextSuffixFromCatalog(): void
+    {
+        $harness = new VirtualTuiHarness(sessionId: 'parent-session-ctx');
+        $state = new TuiSessionState('parent-session-ctx');
+        $state->subagentLiveCatalog->ingestRuntimeEvent(new RuntimeEvent(
+            type: RuntimeEventTypeEnum::ToolExecutionOutputDelta->value,
+            runId: 'parent-run',
+            seq: 1,
+            payload: [
+                'tool_call_id' => 'tc_subagent',
+                'tool_name' => 'subagent',
+                'delta' => '',
+                'subagent_progress' => [
+                    'mode' => 'single',
+                    'status' => 'running',
+                    'agent_name' => 'scout',
+                    'artifact_id' => 'agent_ctx',
+                    'agent_run_id' => 'child-run-ctx',
+                    'task_summary' => 'task',
+                    'model' => 'deepseek/deepseek-v4-flash',
+                    'latest_input_tokens' => 97_900,
+                ],
+            ],
+        ));
+
+        $picker = $this->picker($harness, $state);
+        $items = $this->buildPickerItems($picker, $state->subagentLiveCatalog->all(), $harness->screen()->theme());
+
+        $this->assertNotEmpty($items);
+        $this->assertStringContainsString('36%', $items[0]['label']);
+        $this->assertStringContainsString('97.9k/272.0k', $items[0]['label']);
+    }
+
+    #[Test]
     public function exportKeyReportsNoSelectedChild(): void
     {
         $harness = new VirtualTuiHarness(sessionId: 'parent-session-no-select');

@@ -6,7 +6,6 @@ namespace Ineersa\Tui\Transcript;
 
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
-use Ineersa\Tui\Footer\ContextUsageFormatter;
 use Ineersa\Tui\Theme\ThemeColorEnum;
 use Ineersa\Tui\Theme\TuiTheme;
 use Symfony\Component\Tui\Style\Padding;
@@ -27,7 +26,6 @@ final readonly class SubagentResultRenderer
 {
     public function __construct(
         private SubagentTranscriptCardBuilder $cardBuilder = new SubagentTranscriptCardBuilder(),
-        private ?ContextUsageFormatter $contextUsageFormatter = null,
         private TranscriptDisplayConfig $displayConfig = new TranscriptDisplayConfig(),
         private TranscriptDisplayState $displayState = new TranscriptDisplayState(),
         private TranscriptLinePreviewService $linePreviewService = new TranscriptLinePreviewService(),
@@ -72,10 +70,6 @@ final readonly class SubagentResultRenderer
      */
     private function buildCardLines(array $progress): array
     {
-        if (null !== $this->contextUsageFormatter) {
-            return (new SubagentTranscriptCardBuilder($this->contextUsageFormatter))->buildLines($progress);
-        }
-
         return $this->cardBuilder->buildLines($progress);
     }
 

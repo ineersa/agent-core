@@ -44,7 +44,6 @@ final class TranscriptBlockWidget implements TuiWidget
         $this->factory = new TranscriptBlockWidgetFactory(
             subagentRenderer: new SubagentResultRenderer(
                 cardBuilder: new SubagentTranscriptCardBuilder($contextUsageFormatter),
-                contextUsageFormatter: $contextUsageFormatter,
                 displayConfig: $displayConfig,
                 displayState: $displayState,
             ),

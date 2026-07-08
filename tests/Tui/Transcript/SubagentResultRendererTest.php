@@ -304,7 +304,6 @@ final class SubagentResultRendererTest extends TestCase
             factory: new TranscriptBlockWidgetFactory(
                 subagentRenderer: new SubagentResultRenderer(
                     cardBuilder: new SubagentTranscriptCardBuilder(new ContextUsageFormatter(ContextUsageTestAppConfig::withContextWindow())),
-                    contextUsageFormatter: new ContextUsageFormatter(ContextUsageTestAppConfig::withContextWindow()),
                     displayConfig: $displayConfig,
                     displayState: $displayState,
                 ),

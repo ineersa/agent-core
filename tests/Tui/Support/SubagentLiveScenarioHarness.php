@@ -76,6 +76,7 @@ final class SubagentLiveScenarioHarness
     private readonly Tui $tui;
     private readonly PromptEditor $promptEditor;
     private readonly string $parentRunId;
+    private readonly HatfieldSessionStore $sessionStore;
 
     private function __construct(
         TuiSessionState $state,
@@ -86,6 +87,7 @@ final class SubagentLiveScenarioHarness
         Tui $tui,
         PromptEditor $promptEditor,
         string $parentRunId,
+        HatfieldSessionStore $sessionStore,
     ) {
         $this->state = $state;
         $this->screen = $screen;
@@ -95,6 +97,7 @@ final class SubagentLiveScenarioHarness
         $this->tui = $tui;
         $this->promptEditor = $promptEditor;
         $this->parentRunId = $parentRunId;
+        $this->sessionStore = $sessionStore;
     }
 
     public static function create(
@@ -195,7 +198,7 @@ final class SubagentLiveScenarioHarness
         );
         $cancelListener->register($context);
 
-        return new self($state, $screen, $client, $questionCoordinator, $questionController, $tui, $promptEditor, $parentRunId);
+        return new self($state, $screen, $client, $questionCoordinator, $questionController, $tui, $promptEditor, $parentRunId, $sessionStore);
     }
 
     public function seedChildInCatalog(

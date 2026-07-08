@@ -120,6 +120,7 @@ final class SubagentChildProgressSummaryBuilderTest extends IsolatedKernelTestCa
 
         $this->assertSame(2, $summary->toolCount);
         $this->assertSame(35000, $summary->inputTokens);
+        $this->assertSame(25000, $summary->latestInputTokens);
         $this->assertSame(14000, $summary->outputTokens);
         $this->assertSame(584000, $summary->reasoningTokens);
         $this->assertSame(0.0104, $summary->cost);

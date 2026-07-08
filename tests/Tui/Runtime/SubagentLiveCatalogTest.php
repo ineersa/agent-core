@@ -159,6 +159,23 @@ final class SubagentLiveCatalogTest extends TestCase
         $this->assertNull($catalog->findByArtifactId('agent_a'));
     }
 
+    public function testPreservesModelAndLatestInputTokensAcrossStatusUpdates(): void
+    {
+        $catalog = new SubagentLiveCatalog();
+        $catalog->ingestRuntimeEvent($this->progressEvent('parent-1', [
+            'mode' => 'single', 'status' => 'running', 'agent_name' => 'scout',
+            'artifact_id' => 'agent_a', 'agent_run_id' => 'child-run-1', 'task_summary' => 'Task',
+            'model' => 'deepseek/deepseek-v4-flash', 'latest_input_tokens' => 25000,
+        ]));
+        $catalog->applyChildStatus('agent_a', SubagentLiveStatusEnum::Cancelled);
+
+        $child = $catalog->findByArtifactId('agent_a');
+        $this->assertNotNull($child);
+        $this->assertSame(SubagentLiveStatusEnum::Cancelled, $child->status);
+        $this->assertSame('deepseek/deepseek-v4-flash', $child->model);
+        $this->assertSame(25000, $child->latestInputTokens);
+    }
+
     /** @param array<string, mixed> $progress */
     private function progressEvent(string $runId, array $progress): RuntimeEvent
     {
