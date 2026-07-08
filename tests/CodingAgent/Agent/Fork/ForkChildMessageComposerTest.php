@@ -39,7 +39,7 @@ final class ForkChildMessageComposerTest extends IsolatedKernelTestCase
             agentsContext: 'agents catalog block',
         );
 
-        $this->assertStringContainsString('FORK MODE IS ENABLED', $composed['systemPrompt']);
+        $this->assertStringContainsString('delegated child agent', $composed['systemPrompt']);
         $this->assertStringContainsString('AGENTS block', $composed['systemPrompt']);
         $this->assertStringContainsString('agents catalog block', $composed['systemPrompt']);
 
@@ -64,7 +64,13 @@ final class ForkChildMessageComposerTest extends IsolatedKernelTestCase
                 $contractText = (string) ($message->content[0]['text'] ?? '');
             }
         }
-        $this->assertStringContainsString('subagent', $contractText);
-        $this->assertStringContainsString('Allowed tools: read, subagent', $contractText);
+        $this->assertStringContainsString('agent_test123', $contractText);
+        $this->assertStringContainsString('delegated task', $contractText);
+        $this->assertStringNotContainsString('Allowed tools:', $contractText);
+        $this->assertStringNotContainsString('fork child agent', strtolower($contractText));
+        $this->assertStringNotContainsString('Pi-style', $contractText);
+        $this->assertStringNotContainsString('Fork child contract', $contractText);
+        $this->assertStringNotContainsString('fork tool', strtolower($contractText));
+        $this->assertStringNotContainsString('fork task=', $composed['systemPrompt']);
     }
 }

@@ -78,6 +78,9 @@ final class SubagentLivePickerController
 
     public function closePicker(bool $requestRender = true): void
     {
+        if (null !== $this->state) {
+            $this->state->subagentLiveView->pickerFeedbackMessage = null;
+        }
         $this->overlay?->close($requestRender);
         $this->overlay = null;
     }
@@ -145,7 +148,7 @@ final class SubagentLivePickerController
 
         $theme = $screen->theme();
         $header = new TextWidget(
-            text: $theme->muted('Agents live — Enter live view, e export selected, d dismiss finished, Ctrl+\\ main, Esc cancel'),
+            text: $this->buildPickerHeaderText($theme),
             truncate: true,
         );
 
@@ -224,6 +227,61 @@ final class SubagentLivePickerController
         $this->overlay->mount($tui, $screen, $listWidget, $header);
     }
 
+    private function buildPickerHeaderText(TuiTheme $theme): string
+    {
+        $base = 'Agents live — Enter live view, e export selected, d dismiss finished, Ctrl+\ main, Esc cancel';
+        $feedback = $this->state?->subagentLiveView->pickerFeedbackMessage;
+        if (null === $feedback || '' === trim($feedback)) {
+            return $theme->muted($base);
+        }
+
+        return $theme->muted($base.' | '.$feedback);
+    }
+
+    private function refreshPickerHeader(): void
+    {
+        $overlay = $this->overlay;
+        if (null === $overlay || !$overlay->isOpen()) {
+            return;
+        }
+
+        $screen = $this->screen;
+        if (null === $screen) {
+            return;
+        }
+
+        $container = new \ReflectionProperty(PickerOverlay::class, 'container');
+        $containerWidget = $container->getValue($overlay);
+        if (!$containerWidget instanceof \Symfony\Component\Tui\Widget\ContainerWidget) {
+            return;
+        }
+
+        $children = $containerWidget->all();
+        if ([] === $children) {
+            return;
+        }
+
+        $first = $children[0];
+        if ($first instanceof TextWidget) {
+            $first->setText($this->buildPickerHeaderText($screen->theme()));
+            $screen->requestRender(true);
+        }
+    }
+
+    private function showPickerFeedback(string $message): void
+    {
+        $state = $this->state;
+        $screen = $this->screen;
+        if (null === $state || null === $screen) {
+            return;
+        }
+
+        $state->subagentLiveView->pickerFeedbackMessage = $message;
+        $screen->setWorkingMessage($message);
+        $this->refreshPickerHeader();
+        $screen->requestRender(true);
+    }
+
     private function exportSelected(
         SelectListWidget $listWidget,
         ChatScreen $screen,
@@ -231,7 +289,7 @@ final class SubagentLivePickerController
     ): void {
         $selected = $listWidget->getSelectedItem();
         if (null === $selected) {
-            $screen->setWorkingMessage('No child agent selected to export.');
+            $this->showPickerFeedback('No child agent selected to export.');
             $screen->requestRender(true);
 
             return;
@@ -240,7 +298,7 @@ final class SubagentLivePickerController
         $artifactId = (string) ($selected['value'] ?? '');
         $child = $state->subagentLiveCatalog->findByArtifactId($artifactId);
         if (null === $child) {
-            $screen->setWorkingMessage('Selected child agent is no longer in the catalog.');
+            $this->showPickerFeedback('Selected child agent is no longer in the catalog.');
             $screen->requestRender(true);
 
             return;
@@ -248,7 +306,7 @@ final class SubagentLivePickerController
 
         $parentSessionId = $state->sessionId;
         if ('' === $parentSessionId) {
-            $screen->setWorkingMessage('No active parent session — cannot export child run.');
+            $this->showPickerFeedback('No active parent session — cannot export child run.');
             $screen->requestRender(true);
 
             return;
@@ -272,12 +330,10 @@ final class SubagentLivePickerController
             if (str_starts_with($message, 'Session exported to: ')) {
                 $message = 'Child agent exported to: '.substr($message, \strlen('Session exported to: '));
             }
-            $screen->setWorkingMessage($message);
+            $this->showPickerFeedback($message);
         } catch (\RuntimeException $e) {
-            $screen->setWorkingMessage($e->getMessage());
+            $this->showPickerFeedback($e->getMessage());
         }
-
-        $screen->requestRender(true);
     }
 
     /**

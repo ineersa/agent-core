@@ -12,7 +12,7 @@ use Ineersa\CodingAgent\SystemPrompt\SystemPromptBuilder;
  *
  * Fork children use the main SYSTEM.md harness (tools, guidelines, date, cwd),
  * not SUBAGENT_SYSTEM.md. Inherited history comes from the virtual snapshot;
- * the delegated task is the Pi-style handoff user message only.
+ * the delegated task is the final user handoff message only.
  */
 final readonly class ForkChildMessageComposer
 {
@@ -116,7 +116,7 @@ final readonly class ForkChildMessageComposer
             role: 'user-context',
             content: [[
                 'type' => 'text',
-                'text' => $this->buildForkChildContract($artifactId, $allowedToolNames),
+                'text' => $this->buildForkChildContract($artifactId),
             ]],
             metadata: ['source' => 'agent_child_contract'],
         );
@@ -132,26 +132,17 @@ final readonly class ForkChildMessageComposer
         return $messages;
     }
 
-    /**
-     * @param list<string> $allowedToolNames
-     */
-    private function buildForkChildContract(string $artifactId, array $allowedToolNames): string
+    private function buildForkChildContract(string $artifactId): string
     {
-        $toolList = [] !== $allowedToolNames
-            ? implode(', ', $allowedToolNames)
-            : '(none)';
-
         return <<<EOT
-You are a fork child agent launched by the parent main agent.
+You are a delegated child agent working on behalf of the parent session.
 
 Artifact ID: {$artifactId}
-Allowed tools: {$toolList}
 
-## Fork child contract
+## Child agent contract
 
-- You are an interactive fork child. You may use subagents, ask_human, and tool approval flows when needed.
-- Your delegated task is in the last user message (Pi-style handoff format).
-- Do not launch another fork (the fork tool is not available to you).
+- Your delegated task is in the last user message.
+- You may use subagents, ask_human, and tool approval flows when needed.
 - Return a dense handoff report for the parent when finished.
 EOT;
     }

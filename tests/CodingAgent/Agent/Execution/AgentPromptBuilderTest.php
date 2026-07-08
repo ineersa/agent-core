@@ -167,9 +167,31 @@ final class AgentPromptBuilderTest extends TestCase
         $this->assertStringNotContainsString('APPEND_MARKER_SHOULD_NOT_APPEAR', $result['systemPrompt']);
     }
 
-    /**
-     * @param list<string> $toolNames
-     */
+    public function testChildContractOmitsAllowedToolsLine(): void
+    {
+        $builder = $this->createPromptBuilder(['read', 'bash', 'context7_query-docs']);
+        $def = $this->definition();
+
+        $result = $builder->build(
+            definition: $def,
+            task: 'Run task',
+            artifactId: 'agent_abc',
+            allowedTools: ['read', 'bash', 'context7_query-docs'],
+            agentsMd: '',
+        );
+
+        $contractText = '';
+        foreach ($result['messages'] as $message) {
+            if ('user-context' === $message->role && 'agent_child_contract' === ($message->metadata['source'] ?? null)) {
+                $contractText = (string) ($message->content[0]['text'] ?? '');
+            }
+        }
+
+        $this->assertStringContainsString('agent_abc', $contractText);
+        $this->assertStringNotContainsString('Allowed tools:', $contractText);
+        $this->assertStringNotContainsString('context7_query-docs', $contractText);
+    }
+
     private function createPromptBuilder(array $toolNames): AgentPromptBuilder
     {
         $registry = new ToolRegistry();

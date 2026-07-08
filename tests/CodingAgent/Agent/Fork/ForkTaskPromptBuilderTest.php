@@ -70,12 +70,11 @@ final class ForkTaskPromptBuilderTest extends TestCase
     {
         $append = $this->builder->forkChildSystemPromptAppend();
 
-        $this->assertStringContainsString('FORK MODE IS ENABLED', $append);
-        $this->assertStringContainsString('forked child agent', $append);
+        $this->assertStringContainsString('delegated child agent', $append);
         $this->assertStringContainsString('delegated task', $append);
         $this->assertStringContainsString('last user message', $append);
-        $this->assertStringContainsString('Do not suggest launching a fork', $append);
-        $this->assertStringContainsString('obey the delegated task', $append);
+        $this->assertStringNotContainsString('FORK MODE IS ENABLED', $append);
+        $this->assertStringNotContainsString('fork tool', strtolower($append));
     }
 
     public function testBuildTaskUserMessageWithEmptyTask(): void

@@ -24,6 +24,8 @@ use Ineersa\CodingAgent\Agent\Context\AgentsContextBuilder;
 use Ineersa\CodingAgent\Agent\Execution\ForkExecutionService;
 use Ineersa\CodingAgent\Skills\SkillsContextBuilder;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
+use Ineersa\CodingAgent\Tool\ToolDefinitionDTO;
+use Ineersa\CodingAgent\Tool\ToolHandlerInterface;
 use Ineersa\CodingAgent\Tool\ToolRegistryInterface;
 use PHPUnit\Framework\Attributes\CoversClass;
 use Symfony\Component\Clock\MockClock;
@@ -70,6 +72,16 @@ final class ForkExecutionServiceTest extends IsolatedKernelTestCase
 
         $registryStub = $this->createStub(ToolRegistryInterface::class);
         $registryStub->method('activeToolNames')->willReturn(['read', 'bash', 'subagent', 'fork']);
+        $handler = $this->createStub(ToolHandlerInterface::class);
+        $registryStub->method('toolDefinition')->willReturnCallback(static function (string $name) use ($handler) {
+            return new ToolDefinitionDTO(
+                name: $name,
+                description: $name.' tool',
+                parametersJsonSchema: ['type' => 'object'],
+                handler: $handler,
+                promptLine: 'fork' === $name ? 'fork task="..." — launch fork child with inherited history' : $name,
+            );
+        });
 
         $contextAccessor = new StackToolExecutionContextAccessor();
         $toolContext = new ToolContext(
@@ -106,7 +118,9 @@ final class ForkExecutionServiceTest extends IsolatedKernelTestCase
         $result = $contextAccessor->with($toolContext, static fn (): string => $service->execute($parentRunId, 'Do fork task'));
 
         $this->assertNotNull($captured);
-        $this->assertStringContainsString('FORK MODE IS ENABLED', $captured->systemPrompt);
+        $this->assertStringContainsString('delegated child agent', $captured->systemPrompt);
+        $this->assertStringNotContainsString('fork task=', $captured->systemPrompt);
+        $this->assertStringNotContainsString('launch fork child', strtolower($captured->systemPrompt));
         $this->assertStringContainsString('Fork handoff body', $result);
 
         $allowed = $captured->metadata->toolsScope['allowed_tools'] ?? [];

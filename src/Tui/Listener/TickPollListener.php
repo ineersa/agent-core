@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Listener;
 
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
+use Ineersa\Tui\Picker\SubagentLivePickerController;
 use Ineersa\Tui\Question\QuestionController;
 use Ineersa\Tui\Question\QuestionCoordinator;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
@@ -37,6 +38,7 @@ final class TickPollListener implements TuiListenerRegistrar
         private readonly QuestionCoordinator $questionCoordinator,
         private readonly QuestionController $questionController,
         private readonly RuntimeQuestionEventHandler $runtimeQuestionEventHandler,
+        private readonly SubagentLivePickerController $subagentLivePicker,
     ) {
     }
 
@@ -50,11 +52,12 @@ final class TickPollListener implements TuiListenerRegistrar
         $questionController = $this->questionController;
         $subagentLiveChildPoller = $this->subagentLiveChildPoller;
         $runtimeQuestionEventHandler = $this->runtimeQuestionEventHandler;
+        $subagentLivePicker = $this->subagentLivePicker;
 
         // Wire the question controller with TUI runtime references
         $questionController->setRuntimeRefs($context, $screen);
 
-        $context->ticks->add(static function () use ($poller, $state, $client, $screen, $questionCoordinator, $questionController, $subagentLiveChildPoller, $runtimeQuestionEventHandler): ?bool {
+        $context->ticks->add(static function () use ($poller, $state, $client, $screen, $questionCoordinator, $questionController, $subagentLiveChildPoller, $runtimeQuestionEventHandler, $subagentLivePicker): ?bool {
             $onHitl = static function (RuntimeEvent $event) use ($client, $questionCoordinator, $runtimeQuestionEventHandler): void {
                 $runtimeQuestionEventHandler->handleHumanInputRequested($event, $client, $questionCoordinator);
             };
@@ -214,6 +217,17 @@ final class TickPollListener implements TuiListenerRegistrar
                 SubagentLiveAttention::refreshAttentionFooter($state, $screen);
 
                 return self::shouldKeepActiveRuntimeTicks($state, true) ? true : null;
+            }
+
+            if ($subagentLivePicker->isOpen()) {
+                $pickerFeedback = $state->subagentLiveView->pickerFeedbackMessage;
+                if (null !== $pickerFeedback && '' !== trim($pickerFeedback)) {
+                    $screen->setWorkingMessage($pickerFeedback);
+                }
+
+                SubagentLiveAttention::syncMainAttention($state, $screen);
+
+                return self::shouldKeepActiveRuntimeTicks($state, false) ? true : null;
             }
 
             if ($mainViewPendingQuestion) {

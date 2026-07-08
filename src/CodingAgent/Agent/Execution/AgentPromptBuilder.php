@@ -131,10 +131,7 @@ final readonly class AgentPromptBuilder
             role: 'user-context',
             content: [[
                 'type' => 'text',
-                'text' => $this->buildInteractiveForegroundContract(
-                    artifactId: $artifactId,
-                    allowedTools: $allowedTools,
-                ),
+                'text' => $this->buildInteractiveForegroundContract($artifactId),
             ]],
             metadata: ['source' => 'agent_child_contract'],
         );
@@ -150,22 +147,12 @@ final readonly class AgentPromptBuilder
         return $messages;
     }
 
-    /**
-     * @param list<string> $allowedTools
-     */
-    private function buildInteractiveForegroundContract(
-        string $artifactId,
-        array $allowedTools,
-    ): string {
-        $toolList = [] !== $allowedTools
-            ? implode(', ', $allowedTools)
-            : '(none)';
-
+    private function buildInteractiveForegroundContract(string $artifactId): string
+    {
         return <<<EOT
 You are a foreground child agent running inside a parent agent's tool call.
 
 Artifact ID: {$artifactId}
-Allowed tools: {$toolList}
 
 ## Interactive foreground contract
 

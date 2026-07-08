@@ -124,7 +124,7 @@ final class ForkContextBuilderTest extends TestCase
         $this->assertStringContainsString($task, $snapshot->forkTaskUserMessage);
 
         // Snapshot contains the FORK_CHILD system append.
-        $this->assertStringContainsString('FORK MODE IS ENABLED', $snapshot->forkSystemPromptAppend);
+        $this->assertStringContainsString('delegated child agent', $snapshot->forkSystemPromptAppend);
 
         // Resolved model should be null (session fallback, no configured model).
         $this->assertNull($snapshot->resolvedModel);
@@ -193,7 +193,7 @@ final class ForkContextBuilderTest extends TestCase
 
         $this->assertCount(0, $snapshot->messages);
         $this->assertStringContainsString('Empty test', $snapshot->forkTaskUserMessage);
-        $this->assertStringContainsString('FORK MODE IS ENABLED', $snapshot->forkSystemPromptAppend);
+        $this->assertStringContainsString('delegated child agent', $snapshot->forkSystemPromptAppend);
         $this->assertNull($snapshot->resolvedModel);
     }
 

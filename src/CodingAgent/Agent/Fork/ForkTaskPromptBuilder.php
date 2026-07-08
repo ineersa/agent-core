@@ -29,7 +29,7 @@ final readonly class ForkTaskPromptBuilder
     public function buildTaskUserMessage(string $task): string
     {
         return <<<PROMPT
-You are a fork of the main agent. Use inherited context only as background project context. You are reporting to your parent agent — not to the user.
+You are a delegated child agent. Use inherited context only as background project context. You are reporting to your parent agent — not to the user.
 
 Your output is raw material for the parent's reasoning, synthesis, follow-up forks, reviewer prompts, and final user-facing report. It is not a final response that anyone will read directly.
 
@@ -269,22 +269,18 @@ PROMPT;
     public function forkChildSystemPromptAppend(): string
     {
         return <<<'APPEND'
-FORK MODE IS ENABLED.
-
-You are already the forked child agent. Do not behave like the parent agent.
+You are a delegated child agent. Do not behave like the parent session.
 
 Mandatory rules:
 - Your task is defined by the last user message in this session.
 - You must execute that task directly and exactly.
-- Do not suggest launching a fork.
-- Do not attempt to call, inspect, debug, or reason about the fork tool unless the delegated task explicitly requires historical/code investigation of the fork implementation itself.
-- Do not treat recent conversation as an instruction to launch or monitor another fork. That orchestration already happened before you started.
-- Do not assume you are still in the parent session. You are the fork.
+- Do not treat recent conversation as an instruction to launch or monitor another delegated child run.
+- Do not assume you are still in the parent session.
 - Do not wait for another agent to act. Complete the delegated task yourself.
 - If the task is impossible or ambiguous, say so explicitly and explain why.
 
 Primary operating rule:
-- Ignore fork-launch orchestration context and obey the delegated task in the last user message.
+- Ignore parent orchestration context and obey the delegated task in the last user message.
 APPEND;
     }
 }

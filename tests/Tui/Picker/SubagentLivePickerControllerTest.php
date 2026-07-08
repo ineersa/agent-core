@@ -137,6 +137,58 @@ final class SubagentLivePickerControllerTest extends TestCase
     }
 
     #[Test]
+    public function exportFeedbackStoredForTickPollListener(): void
+    {
+        $harness = new VirtualTuiHarness(sessionId: 'parent-session-export-store');
+        $state = new TuiSessionState('parent-session-export-store');
+        $artifactId = 'agent_store';
+        $this->seedCatalogChild($state, $artifactId, 'child-run-store', 'completed');
+        $this->writeChildEvents('parent-session-export-store', $artifactId, [
+            $this->makeChildEvent(1, 'run_started', []),
+        ]);
+
+        $picker = $this->picker($harness, $state);
+        $this->invokeExportSelected($picker, $harness->screen(), $state);
+
+        $this->assertStringContainsString('hatfield-child-'.$artifactId.'.html', (string) $state->subagentLiveView->pickerFeedbackMessage);
+        $this->assertStringContainsString('hatfield-child-'.$artifactId.'.html', $this->workingMessage($harness->screen()));
+    }
+
+    #[Test]
+    public function exportKeyShowsPathInPickerHeader(): void
+    {
+        $previousCwd = getcwd();
+        chdir($this->projectDir);
+        try {
+            $harness = new VirtualTuiHarness(sessionId: 'parent-session-export-header');
+            $state = new TuiSessionState('parent-session-export-header');
+            $artifactId = 'agent_export_hdr';
+            $this->seedCatalogChild($state, $artifactId, 'child-run-export-hdr', 'completed');
+            $this->writeChildEvents('parent-session-export-header', $artifactId, [
+                $this->makeChildEvent(1, 'run_started', ['user_messages' => [['role' => 'user', 'content' => 'task']]]),
+            ]);
+
+            $picker = $this->picker($harness, $state);
+            $picker->open();
+            $this->invokeExportSelected($picker, $harness->screen(), $state);
+
+            $this->assertStringContainsString('hatfield-child-'.$artifactId.'.html', (string) $state->subagentLiveView->pickerFeedbackMessage);
+            $overlayProp = new \ReflectionProperty(SubagentLivePickerController::class, 'overlay');
+            $overlay = $overlayProp->getValue($picker);
+            $this->assertNotNull($overlay);
+            $containerProp = new \ReflectionProperty(\Ineersa\Tui\Picker\PickerOverlay::class, 'container');
+            $container = $containerProp->getValue($overlay);
+            $header = $container->all()[0];
+            $headerText = preg_replace('/\x1b\[[0-9;]*m/', '', (string) $header->getText()) ?? '';
+            $this->assertStringContainsString('hatfield-child-'.$artifactId.'.html', $headerText);
+        } finally {
+            if (false !== $previousCwd) {
+                chdir($previousCwd);
+            }
+        }
+    }
+
+    #[Test]
     public function exportKeyReportsMissingEventsFile(): void
     {
         $harness = new VirtualTuiHarness(sessionId: 'parent-session-no-events');

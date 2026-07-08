@@ -4,7 +4,12 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\Listener;
 
+use Doctrine\ORM\EntityManagerInterface;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
+use Ineersa\CodingAgent\Config\AppConfig;
+use Ineersa\CodingAgent\Config\LoggingConfig;
+use Ineersa\CodingAgent\Config\SessionsConfig;
+use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeExceptionBoundary;
@@ -17,9 +22,12 @@ use Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
+use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\Tui\Editor\PromptEditor;
+use Ineersa\Tui\Export\SessionEventsExportService;
 use Ineersa\Tui\Listener\RuntimeQuestionEventHandler;
 use Ineersa\Tui\Listener\TickPollListener;
+use Ineersa\Tui\Picker\SubagentLivePickerController;
 use Ineersa\Tui\Question\QuestionController;
 use Ineersa\Tui\Question\QuestionCoordinator;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
@@ -31,6 +39,7 @@ use Ineersa\Tui\Runtime\TuiRuntimeEventApplier;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Runtime\TuiTickDispatcher;
 use Ineersa\Tui\Screen\ChatScreen;
+use Ineersa\Tui\Tests\Support\ContextUsageTestAppConfig;
 use Ineersa\Tui\Tests\Support\TuiRuntimeContextBuilderTrait;
 use Ineersa\Tui\Theme\DefaultTheme;
 use Ineersa\Tui\Theme\ThemePalette;
@@ -92,6 +101,15 @@ final class TickPollListenerSubagentLiveTest extends TestCase
         $ctrlRef = new \ReflectionClass(QuestionController::class);
         $listenerRef->getProperty('questionController')->setValue($listener, $ctrlRef->newInstanceWithoutConstructor());
         $listenerRef->getProperty('runtimeQuestionEventHandler')->setValue($listener, new RuntimeQuestionEventHandler());
+        $listenerRef->getProperty('subagentLivePicker')->setValue($listener, new SubagentLivePickerController(
+            new SubagentLiveChildViewPoller(
+                new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState()),
+                new \Psr\Log\NullLogger(),
+            ),
+            $this->sessionStore(),
+            new SessionEventsExportService(),
+            ContextUsageTestAppConfig::withContextWindow(),
+        ));
 
         $context = $this->buildTuiContext()
             ->withTui($tui)
@@ -171,6 +189,15 @@ final class TickPollListenerSubagentLiveTest extends TestCase
         $ctrlRef = new \ReflectionClass(QuestionController::class);
         $listenerRef->getProperty('questionController')->setValue($listener, $ctrlRef->newInstanceWithoutConstructor());
         $listenerRef->getProperty('runtimeQuestionEventHandler')->setValue($listener, new RuntimeQuestionEventHandler());
+        $listenerRef->getProperty('subagentLivePicker')->setValue($listener, new SubagentLivePickerController(
+            new SubagentLiveChildViewPoller(
+                new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState()),
+                new \Psr\Log\NullLogger(),
+            ),
+            $this->sessionStore(),
+            new SessionEventsExportService(),
+            ContextUsageTestAppConfig::withContextWindow(),
+        ));
 
         $context = $this->buildTuiContext()
             ->withTui($tui)
@@ -184,6 +211,21 @@ final class TickPollListenerSubagentLiveTest extends TestCase
 
         $this->assertSame(RunActivityStateEnum::Completed, $state->subagentLiveView->childActivity);
         $this->assertSame('Child agent idle', $state->subagentLiveView->lastLiveWorkingMessage);
+    }
+
+    private function sessionStore(): HatfieldSessionStore
+    {
+        $projectDir = \dirname(__DIR__, 3);
+
+        return new HatfieldSessionStore(
+            appConfig: new AppConfig(
+                tui: new TuiConfig(theme: 'default'),
+                logging: new LoggingConfig(),
+                cwd: $projectDir,
+                sessions: new SessionsConfig(path: '.hatfield/sessions'),
+            ),
+            entityManager: $this->createStub(EntityManagerInterface::class),
+        );
     }
 }
 
