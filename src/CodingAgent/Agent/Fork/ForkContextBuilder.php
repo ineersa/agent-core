@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Agent\Fork;
 
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
-use Ineersa\CodingAgent\Config\CompactionConfig;
 
 /**
  * Builds a full fork session snapshot from parent messages.
@@ -29,15 +28,11 @@ final readonly class ForkContextBuilder
         private ForkSnapshotCompactor $compactor,
         private ForkTaskPromptBuilder $promptBuilder,
         private ForkConfigResolver $configResolver,
-        private CompactionConfig $compactionConfig,
     ) {
     }
 
     /**
      * Build a fork session snapshot from parent messages.
-     *
-     * Token budget for the retained tail is sourced from
-     * compaction.keep_recent_tokens (CompactionConfig).
      *
      * @param list<AgentMessage> $parentMessages The parent message list (NOT mutated)
      * @param string             $task           Fork task description
@@ -47,10 +42,10 @@ final readonly class ForkContextBuilder
     public function build(
         array $parentMessages,
         string $task,
-        ?string $activeSessionModel = null,
+        string $parentRunId,
     ): ForkSessionSnapshotDTO {
         $sanitized = $this->sanitizer->sanitize($parentMessages);
-        $compacted = $this->compactor->compact($sanitized, $this->compactionConfig, $activeSessionModel);
+        $compacted = $this->compactor->compact($sanitized, $parentRunId);
         $resolved = $this->configResolver->resolve();
         $taskUserMessage = $this->promptBuilder->buildTaskUserMessage($task);
         $systemAppend = $this->promptBuilder->forkChildSystemPromptAppend();

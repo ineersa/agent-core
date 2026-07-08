@@ -84,12 +84,10 @@ final class ForkExecutionService
             throw new ToolCallException('Fork tool requires an active parent run with persisted state.', retryable: false);
         }
 
-        $parentSessionModel = $this->resolveSessionModelFallback($parentRunId);
-
         $snapshot = $this->forkContextBuilder->build(
             parentMessages: $parentState->messages,
             task: $task,
-            activeSessionModel: $parentSessionModel,
+            parentRunId: $parentRunId,
         );
 
         $policy = $this->resolveForkToolPolicy($parentRunId);
@@ -197,15 +195,19 @@ final class ForkExecutionService
 
     private function resolveSessionModelFallback(string $parentRunId): ?string
     {
-        $metadata = $this->metadataReader->readRunStartedMetadata($parentRunId);
-        if (null !== $metadata) {
-            $model = $metadata['model'] ?? null;
-            if (\is_string($model) && '' !== trim($model)) {
-                return $model;
-            }
+        $current = $this->modelResolver->getCurrentModel($parentRunId)?->toString();
+        if (null !== $current && '' !== trim($current)) {
+            return $current;
         }
 
-        return $this->modelResolver->getCurrentModel($parentRunId)?->toString();
+        $metadata = $this->metadataReader->readRunStartedMetadata($parentRunId);
+        if (null === $metadata) {
+            return null;
+        }
+
+        $model = $metadata['model'] ?? null;
+
+        return \is_string($model) && '' !== trim($model) ? $model : null;
     }
 
     private function resolveChildModel(?string $explicitModel, ?string $snapshotModel, string $parentRunId): ?string
@@ -236,6 +238,11 @@ final class ForkExecutionService
 
     private function resolveSessionReasoningFallback(string $parentRunId): ?string
     {
+        $current = $this->modelResolver->getCurrentReasoning($parentRunId);
+        if ('' !== $current) {
+            return $current;
+        }
+
         $metadata = $this->metadataReader->readRunStartedMetadata($parentRunId);
         if (null === $metadata) {
             return null;

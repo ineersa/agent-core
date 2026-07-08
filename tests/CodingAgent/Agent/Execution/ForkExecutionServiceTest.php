@@ -22,6 +22,8 @@ use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
 use Ineersa\CodingAgent\Agent\Context\AgentsContextBuilder;
 use Ineersa\CodingAgent\Agent\Execution\ForkExecutionService;
+use Ineersa\CodingAgent\Config\SessionMetadataStore;
+use Ineersa\CodingAgent\Entity\HatfieldSession;
 use Ineersa\CodingAgent\Skills\SkillsContextBuilder;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tool\ToolDefinitionDTO;
@@ -348,9 +350,9 @@ final class ForkExecutionServiceTest extends IsolatedKernelTestCase
         $this->assertArrayNotHasKey('fork_level', $captured->metadata->session);
     }
 
-    public function testExecuteFallsBackToParentSessionModelWhenSnapshotModelUnset(): void
+    public function testExecuteFallsBackToCurrentSessionModelOverStaleRunStartedMetadata(): void
     {
-        $parentRunId = 'parent-fork-session-model';
+        $parentRunId = $this->createSessionWithCurrentModel('llama_cpp/flash');
         $childRunId = 'child-fork-session-model';
 
         $parentRunStore = new InMemoryRunStore();
@@ -391,7 +393,7 @@ final class ForkExecutionServiceTest extends IsolatedKernelTestCase
                         payload: [
                             'payload' => [
                                 'metadata' => [
-                                    'model' => 'session/selected-model',
+                                    'model' => 'deepseek/deepseek-v4-pro',
                                     'session' => ['kind' => 'session'],
                                 ],
                             ],
@@ -442,7 +444,7 @@ final class ForkExecutionServiceTest extends IsolatedKernelTestCase
             agentsContextBuilder: $container->get(AgentsContextBuilder::class),
             skillsContextBuilder: $container->get(SkillsContextBuilder::class),
             agentsConfig: $container->get(\Ineersa\CodingAgent\Config\AgentsConfig::class),
-            modelResolver: $container->get(\Ineersa\CodingAgent\Config\ModelResolver::class),
+            modelResolver: self::getContainer()->get(\Ineersa\CodingAgent\Config\ModelResolver::class),
             progressSnapshotBuilder: $container->get(\Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder::class),
             childProgressSummaryBuilder: $container->get(\Ineersa\CodingAgent\Agent\Execution\SubagentChildProgressSummaryBuilder::class),
             clock: new MockClock(),
@@ -451,7 +453,7 @@ final class ForkExecutionServiceTest extends IsolatedKernelTestCase
         $contextAccessor->with($toolContext, static fn (): string => $service->execute($parentRunId, 'session model test'));
 
         $this->assertNotNull($captured);
-        $this->assertSame('session/selected-model', $captured->metadata->model);
+        $this->assertSame('llama_cpp/flash', $captured->metadata->model);
     }
 
     public function testExecuteExplicitModelOverridesForksModelFromSnapshot(): void
@@ -618,9 +620,9 @@ final class ForkExecutionServiceTest extends IsolatedKernelTestCase
         $this->assertSame('high', $captured->metadata->reasoning);
     }
 
-    public function testExecuteFallsBackToParentSessionReasoningWhenThinkingOmitted(): void
+    public function testExecuteFallsBackToCurrentSessionReasoningOverStaleRunStartedMetadata(): void
     {
-        $parentRunId = 'parent-fork-session-reasoning';
+        $parentRunId = $this->createSessionWithCurrentModel('llama_cpp/flash', reasoning: 'medium');
         $childRunId = 'child-fork-session-reasoning';
 
         $parentRunStore = new InMemoryRunStore();
@@ -662,7 +664,7 @@ final class ForkExecutionServiceTest extends IsolatedKernelTestCase
                             'payload' => [
                                 'metadata' => [
                                     'model' => 'session/selected-model',
-                                    'reasoning' => 'medium',
+                                    'reasoning' => 'high',
                                     'session' => ['kind' => 'session'],
                                 ],
                             ],
@@ -769,7 +771,7 @@ final class ForkExecutionServiceTest extends IsolatedKernelTestCase
                             'payload' => [
                                 'metadata' => [
                                     'model' => 'session/selected-model',
-                                    'reasoning' => 'medium',
+                                    'reasoning' => 'high',
                                     'session' => ['kind' => 'session'],
                                 ],
                             ],
@@ -923,7 +925,24 @@ final class ForkExecutionServiceTest extends IsolatedKernelTestCase
             compactor: $container->get(\Ineersa\CodingAgent\Agent\Fork\ForkSnapshotCompactor::class),
             promptBuilder: $container->get(\Ineersa\CodingAgent\Agent\Fork\ForkTaskPromptBuilder::class),
             configResolver: new \Ineersa\CodingAgent\Agent\Fork\ForkConfigResolver(new \Ineersa\CodingAgent\Config\ForksConfigDTO(model: $model, thinkingLevel: $thinkingLevel)),
-            compactionConfig: $container->get(\Ineersa\CodingAgent\Config\CompactionConfig::class),
         );
+    }
+
+    private function createSessionWithCurrentModel(string $model, ?string $reasoning = null): string
+    {
+        $entity = new HatfieldSession();
+        $entity->cwd = self::getContainer()->getParameter('kernel.project_dir');
+        $em = self::getContainer()->get('doctrine.orm.default_entity_manager');
+        $em->persist($entity);
+        $em->flush();
+
+        $sessionId = (string) $entity->id;
+        $fields = ['model' => $model];
+        if (null !== $reasoning) {
+            $fields['reasoning'] = $reasoning;
+        }
+        self::getContainer()->get(SessionMetadataStore::class)->writeSessionMetadata($sessionId, $fields);
+
+        return $sessionId;
     }
 }

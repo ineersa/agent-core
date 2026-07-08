@@ -577,10 +577,10 @@ services:
     alias: Ineersa\CodingAgent\Compaction\CompactionService
 
   # Fork-time virtual compaction (child-local; does not mutate parent run state).
-  Ineersa\CodingAgent\Agent\Fork\ForkSnapshotSummarizerInterface:
-    alias: Ineersa\CodingAgent\Agent\Fork\ForkCompactionSummarizer
+  Ineersa\CodingAgent\Compaction\VirtualCompactionOrchestrator: ~
 
-  Ineersa\CodingAgent\Agent\Fork\ForkCompactionSummarizer: ~
+  Ineersa\CodingAgent\Compaction\VirtualCompactionOrchestratorInterface:
+    alias: Ineersa\CodingAgent\Compaction\VirtualCompactionOrchestrator
 
   # Compaction worker: async model invocation for summarization.
   # @see ExecuteLlmStepWorker for the parallel LLM-step pattern.
