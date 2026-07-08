@@ -6,9 +6,12 @@ namespace Ineersa\Tui\Tests\Transcript;
 
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
+use Ineersa\Tui\Footer\ContextUsageFormatter;
+use Ineersa\Tui\Tests\Support\ContextUsageTestAppConfig;
 use Ineersa\Tui\Theme\DefaultTheme;
 use Ineersa\Tui\Theme\ThemePalette;
 use Ineersa\Tui\Transcript\SubagentResultRenderer;
+use Ineersa\Tui\Transcript\SubagentTranscriptCardBuilder;
 use Ineersa\Tui\Transcript\TranscriptBlockRenderer;
 use Ineersa\Tui\Transcript\TranscriptBlockWidgetFactory;
 use Ineersa\Tui\Transcript\TranscriptDisplayConfig;
@@ -261,6 +264,23 @@ final class SubagentResultRendererTest extends TestCase
         $this->assertStringNotContainsString('Ctrl+O to expand handoff', $joined);
     }
 
+    public function testRendersContextUsageLineWithFooterThresholdColor(): void
+    {
+        $progress = [
+            'mode' => 'single', 'status' => 'running', 'agent_name' => 'fork',
+            'artifact_id' => 'agent_ctx', 'task_summary' => 'task', 'turn_no' => 2,
+            'latest_input_tokens' => 97_900, 'input_tokens' => 120_000,
+            'model' => 'deepseek/deepseek-v4-flash',
+        ];
+        $block = new TranscriptBlock(
+            id: 'tool_result_ctx', kind: TranscriptBlockKindEnum::ToolResult, runId: 'run1', seq: 1,
+            text: '', meta: ['tool_name' => 'subagent', 'subagent_progress' => $progress], streaming: true,
+        );
+        $joined = implode("\n", $this->renderer()->renderBlock($block, $this->context()));
+        $plain = preg_replace('/\x1b\[[0-9;]*m/', '', $joined) ?? $joined;
+        $this->assertStringContainsString('CTX 36% 97.9k/272.0k', $plain);
+    }
+
     public function testSubagentResultRendererSupportsMetaOnly(): void
     {
         $renderer = new SubagentResultRenderer();
@@ -283,6 +303,8 @@ final class SubagentResultRendererTest extends TestCase
         return new TranscriptBlockRenderer(
             factory: new TranscriptBlockWidgetFactory(
                 subagentRenderer: new SubagentResultRenderer(
+                    cardBuilder: new SubagentTranscriptCardBuilder(new ContextUsageFormatter(ContextUsageTestAppConfig::withContextWindow())),
+                    contextUsageFormatter: new ContextUsageFormatter(ContextUsageTestAppConfig::withContextWindow()),
                     displayConfig: $displayConfig,
                     displayState: $displayState,
                 ),

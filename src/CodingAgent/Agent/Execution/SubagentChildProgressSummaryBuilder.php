@@ -64,6 +64,7 @@ final class SubagentChildProgressSummaryBuilder
     ): SubagentChildProgressSummary {
         $toolEnds = 0;
         $inputTokens = 0;
+        $latestInputTokens = 0;
         $outputTokens = 0;
         $reasoningTokens = 0;
         $totalTokens = 0;
@@ -95,7 +96,9 @@ final class SubagentChildProgressSummaryBuilder
 
             if (RunEventTypeEnum::LlmStepCompleted->value === $event->type) {
                 $usage = \is_array($payload['usage'] ?? null) ? $payload['usage'] : [];
-                $inputTokens += $this->intVal($usage['input_tokens'] ?? 0);
+                $turnInput = $this->intVal($usage['input_tokens'] ?? 0);
+                $inputTokens += $turnInput;
+                $latestInputTokens = $turnInput;
                 $outputTokens += $this->intVal($usage['output_tokens'] ?? 0);
                 $reasoningTokens += $this->intVal($usage['thinking_tokens'] ?? $usage['reasoning_tokens'] ?? 0);
                 $totalTokens += $this->intVal($usage['total_tokens'] ?? 0);
@@ -166,6 +169,7 @@ final class SubagentChildProgressSummaryBuilder
         return new SubagentChildProgressSummary(
             toolCount: $toolEnds,
             inputTokens: $inputTokens,
+            latestInputTokens: $latestInputTokens,
             outputTokens: $outputTokens,
             reasoningTokens: $reasoningTokens,
             totalTokens: $totalTokens,

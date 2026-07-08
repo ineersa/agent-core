@@ -87,6 +87,8 @@ final class SubagentLiveCatalog
             status: $status,
             taskSummary: $existing->taskSummary,
             lastActivityAtMs: (int) (microtime(true) * 1000),
+            model: $existing->model,
+            latestInputTokens: $existing->latestInputTokens,
         );
     }
 
@@ -152,6 +154,15 @@ final class SubagentLiveCatalog
             return;
         }
 
+        $model = $this->optionalString($row, 'model') ?? ($existing->model ?? null);
+        $latestInput = $this->optionalInt($row, 'latest_input_tokens');
+        if (null === $latestInput || $latestInput <= 0) {
+            $latestInput = $this->optionalInt($row, 'input_tokens');
+        }
+        if (null === $latestInput || $latestInput <= 0) {
+            $latestInput = $existing->latestInputTokens ?? 0;
+        }
+
         $this->byArtifactId[$artifactId] = new SubagentLiveChildDTO(
             agentRunId: $agentRunId,
             artifactId: $artifactId,
@@ -159,6 +170,30 @@ final class SubagentLiveCatalog
             status: $status,
             taskSummary: $taskSummary,
             lastActivityAtMs: $now,
+            model: $model,
+            latestInputTokens: max(0, (int) $latestInput),
         );
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     */
+    private function optionalString(array $row, string $key): ?string
+    {
+        $v = $row[$key] ?? null;
+
+        return \is_string($v) && '' !== trim($v) ? trim($v) : null;
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     */
+    private function optionalInt(array $row, string $key): ?int
+    {
+        if (!isset($row[$key]) || !is_numeric($row[$key])) {
+            return null;
+        }
+
+        return (int) $row[$key];
     }
 }

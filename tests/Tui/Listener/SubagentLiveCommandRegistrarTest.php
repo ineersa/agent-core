@@ -12,6 +12,7 @@ use Ineersa\Tui\Listener\SubagentLiveCommandRegistrar;
 use Ineersa\Tui\Picker\SubagentLivePickerController;
 use Ineersa\Tui\Runtime\SubagentLiveChildViewPoller;
 use Ineersa\Tui\Runtime\TuiSessionState;
+use Ineersa\Tui\Tests\Support\ContextUsageTestAppConfig;
 use Ineersa\Tui\Tests\Support\TuiRuntimeContextBuilderTrait;
 use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -50,12 +51,28 @@ final class SubagentLiveCommandRegistrarTest extends TestCase
             new SubagentLiveChildViewPoller(
                 $this->createStub(TranscriptProjectorInterface::class),
                 new NullLogger(),
-                $this->createStub(HatfieldSessionStore::class), new SessionEventsExportService(), ),
+            ),
+            $this->sessionStore(),
+            new SessionEventsExportService(),
+            ContextUsageTestAppConfig::withContextWindow(),
         );
 
         return new SubagentLiveCommandRegistrar(
             $registry,
             $picker,
+        );
+    }
+
+    private function sessionStore(): HatfieldSessionStore
+    {
+        return new HatfieldSessionStore(
+            appConfig: new \Ineersa\CodingAgent\Config\AppConfig(
+                tui: new \Ineersa\CodingAgent\Config\TuiConfig(theme: 'default'),
+                logging: new \Ineersa\CodingAgent\Config\LoggingConfig(),
+                sessions: new \Ineersa\CodingAgent\Config\SessionsConfig(),
+                cwd: '/tmp',
+            ),
+            entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
         );
     }
 }

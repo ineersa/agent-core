@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Listener;
 
+use Ineersa\Tui\Footer\ContextUsageFormatter;
 use Ineersa\Tui\Footer\FooterSegment;
 use Ineersa\Tui\Footer\FooterSegmentProvider;
 use Ineersa\Tui\Runtime\TuiSessionState;
@@ -28,6 +29,7 @@ final readonly class FooterStateSegmentProvider implements FooterSegmentProvider
 {
     public function __construct(
         private TuiSessionState $state,
+        private readonly ?ContextUsageFormatter $contextUsageFormatter = null,
     ) {
     }
 
@@ -186,6 +188,11 @@ final readonly class FooterStateSegmentProvider implements FooterSegmentProvider
         return ThemeColorEnum::forReasoning($reasoning);
     }
 
+    public static function formatTokenCount(int $n): string
+    {
+        return self::fmt($n);
+    }
+
     /** @return list<FooterSegment> */
     private function liveViewSegments(TuiSessionState $s): array
     {
@@ -200,6 +207,17 @@ final readonly class FooterStateSegmentProvider implements FooterSegmentProvider
                 priority: 5,
                 color: ThemeColorEnum::Working,
             );
+            $ctx = ($this->contextUsageFormatter ?? new ContextUsageFormatter())->format($child->model, $child->latestInputTokens);
+            if (null !== $ctx) {
+                $segments[] = new FooterSegment(text: $ctx['text'], priority: 6, color: $ctx['color']);
+            }
+            if (null !== $child->model && '' !== $child->model) {
+                $segments[] = new FooterSegment(
+                    text: FooterStateInitializer::shortModelName($child->model),
+                    priority: 7,
+                    color: ThemeColorEnum::Accent,
+                );
+            }
         }
 
         $segments[] = new FooterSegment(text: '/agents-main', priority: 10, color: ThemeColorEnum::Dim);

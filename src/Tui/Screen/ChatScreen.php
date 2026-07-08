@@ -8,6 +8,7 @@ use Ineersa\CodingAgent\Runtime\Contract\LoadedResourcesSummaryDTO;
 use Ineersa\Tui\Editor\PromptEditor;
 use Ineersa\Tui\Extension\SlotBasedTuiExtensionContext;
 use Ineersa\Tui\Extension\TuiExtensionContext;
+use Ineersa\Tui\Footer\ContextUsageFormatter;
 use Ineersa\Tui\Footer\FooterBarWidget;
 use Ineersa\Tui\Footer\FooterDataProvider;
 use Ineersa\Tui\Footer\FooterSegment;
@@ -103,12 +104,17 @@ final class ChatScreen
         private readonly PromptEditor $promptEditor,
         TranscriptDisplayConfig $displayConfig = new TranscriptDisplayConfig(),
         TranscriptDisplayState $displayState = new TranscriptDisplayState(),
+        ?ContextUsageFormatter $contextUsageFormatter = null,
     ) {
         $this->registry = new TuiSlotRegistry();
 
         // ── Instantiate default renderables ──
         $this->headerRenderable = new HeaderWidget();
-        $this->transcriptRenderable = new TranscriptBlockWidget(displayConfig: $displayConfig, displayState: $displayState);
+        $this->transcriptRenderable = new TranscriptBlockWidget(
+            displayConfig: $displayConfig,
+            displayState: $displayState,
+            contextUsageFormatter: $contextUsageFormatter,
+        );
         $this->pendingRenderable = new PendingMessagesWidget();
         $this->workingRenderable = new WorkingStatusWidget();
         $this->statusPanelRenderable = new StatusPanelWidget();

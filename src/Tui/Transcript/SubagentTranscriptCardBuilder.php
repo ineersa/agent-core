@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Transcript;
 
+use Ineersa\Tui\Footer\ContextUsageFormatter;
+
 /**
  * Builds plain (ANSI-free) line lists for themed subagent transcript cards.
  *
@@ -12,6 +14,11 @@ namespace Ineersa\Tui\Transcript;
  */
 final class SubagentTranscriptCardBuilder
 {
+    public function __construct(
+        private readonly ?ContextUsageFormatter $contextUsageFormatter = null,
+    ) {
+    }
+
     /**
      * @param array<string, mixed> $progress
      *
@@ -86,6 +93,11 @@ final class SubagentTranscriptCardBuilder
         $footer = $this->formatFooter($progress);
         if ('' !== $footer) {
             $lines[] = $footer;
+        }
+
+        $contextLine = $this->formatContextUsageLine($progress);
+        if (null !== $contextLine) {
+            $lines[] = $contextLine;
         }
 
         if (null === $childIndex) {
@@ -328,6 +340,50 @@ final class SubagentTranscriptCardBuilder
         }
 
         return 'Use agent_retrieve (metadata/events/history) for full child details.';
+    }
+
+    /**
+     * @param array<string, mixed> $progress
+     */
+    private function formatContextUsageLine(array $progress): ?string
+    {
+        $formatter = $this->contextUsageFormatter ?? new ContextUsageFormatter();
+        $model = $this->optionalModelString($progress);
+        $latest = $this->resolveLatestInputTokens($progress);
+        $formatted = $formatter->format($model, $latest);
+        if (null === $formatted) {
+            return null;
+        }
+
+        return 'CTX '.$formatted['text'];
+    }
+
+    /**
+     * @param array<string, mixed> $progress
+     */
+    private function resolveLatestInputTokens(array $progress): int
+    {
+        $latest = $this->intOrNull($progress, 'latest_input_tokens');
+        if (null !== $latest && $latest > 0) {
+            return $latest;
+        }
+
+        $input = $this->intOrNull($progress, 'input_tokens') ?? 0;
+
+        return max(0, $input);
+    }
+
+    /**
+     * @param array<string, mixed> $progress
+     */
+    private function optionalModelString(array $progress): ?string
+    {
+        $model = $this->string($progress, 'model', '');
+        if ('' !== $model) {
+            return $model;
+        }
+
+        return null;
     }
 
     /**

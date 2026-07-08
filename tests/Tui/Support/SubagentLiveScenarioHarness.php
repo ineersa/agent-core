@@ -14,6 +14,8 @@ use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeErrorCaptureConfig;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeExceptionBoundary;
 use Ineersa\CodingAgent\Runtime\Contract\TurnTreeProviderInterface;
+use Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState;
+use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Ineersa\CodingAgent\Runtime\Protocol\TurnTreeView;
@@ -27,6 +29,7 @@ use Ineersa\Tui\Command\SubagentLiveInputPolicy;
 use Ineersa\Tui\Command\SubmissionRouter;
 use Ineersa\Tui\Command\TranscriptMessage;
 use Ineersa\Tui\Editor\PromptEditor;
+use Ineersa\Tui\Export\SessionEventsExportService;
 use Ineersa\Tui\Listener\AgentsMainCommandHandler;
 use Ineersa\Tui\Listener\CancelListener;
 use Ineersa\Tui\Listener\RuntimeQuestionEventHandler;
@@ -38,6 +41,7 @@ use Ineersa\Tui\Runtime\Contract\TuiSessionSwitchServiceInterface;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
 use Ineersa\Tui\Runtime\SubagentLiveAttention;
 use Ineersa\Tui\Runtime\SubagentLiveChildDTO;
+use Ineersa\Tui\Runtime\SubagentLiveChildViewPoller;
 use Ineersa\Tui\Runtime\SubagentLiveStatusEnum;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
 use Ineersa\Tui\Runtime\TuiSessionLifecycleDispatcher;
@@ -46,6 +50,7 @@ use Ineersa\Tui\Runtime\TuiTickDispatcher;
 use Ineersa\Tui\Screen\ChatScreen;
 use Ineersa\Tui\Theme\DefaultTheme;
 use Ineersa\Tui\Theme\ThemePalette;
+use Ineersa\Tui\Theme\TuiTheme;
 use Ineersa\Tui\Transcript\TranscriptBlockFactory;
 use Ineersa\Tui\Transcript\TranscriptDisplayConfig;
 use Ineersa\Tui\Transcript\TranscriptDisplayState;
@@ -326,7 +331,7 @@ final class SubagentLiveScenarioHarness
     public function pickerLabels(): array
     {
         $children = $this->state->subagentLiveCatalog->all();
-        $items = SubagentLivePickerController::buildItems($children, $this->screen->theme());
+        $items = $this->buildPickerItems($children, $this->screen->theme());
 
         return array_map(static fn (array $row): string => $row['label'], $items);
     }
@@ -350,6 +355,27 @@ final class SubagentLiveScenarioHarness
     private function runtimeQuestionHandler(): RuntimeQuestionEventHandler
     {
         return new RuntimeQuestionEventHandler();
+    }
+
+    /**
+     * @param list<SubagentLiveChildDTO> $children
+     *
+     * @return list<array{value: string, label: string}>
+     */
+    private function buildPickerItems(array $children, TuiTheme $theme, int $selectedIndex = -1): array
+    {
+        $picker = new SubagentLivePickerController(
+            new SubagentLiveChildViewPoller(
+                new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState()),
+                new NullLogger(),
+            ),
+            $this->sessionStore,
+            new SessionEventsExportService(),
+            ContextUsageTestAppConfig::withContextWindow(),
+        );
+        $method = new \ReflectionMethod(SubagentLivePickerController::class, 'buildItems');
+
+        return $method->invoke($picker, $children, $theme, $selectedIndex);
     }
 
     /** @param array<string, mixed> $progress */

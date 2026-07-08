@@ -4,9 +4,13 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\Listener;
 
+use Ineersa\Tui\Footer\ContextUsageFormatter;
 use Ineersa\Tui\Footer\FooterSegment;
 use Ineersa\Tui\Listener\FooterStateSegmentProvider;
+use Ineersa\Tui\Runtime\SubagentLiveChildDTO;
+use Ineersa\Tui\Runtime\SubagentLiveStatusEnum;
 use Ineersa\Tui\Runtime\TuiSessionState;
+use Ineersa\Tui\Tests\Support\ContextUsageTestAppConfig;
 use Ineersa\Tui\Theme\ThemeColorEnum;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
@@ -231,11 +235,11 @@ class FooterStateSegmentProviderTest extends TestCase
         $state->footerReasoning = 'high';
         $state->usage->inputTokens = 999;
         $state->subagentLiveView->active = true;
-        $state->subagentLiveView->enter(new \Ineersa\Tui\Runtime\SubagentLiveChildDTO(
+        $state->subagentLiveView->enter(new SubagentLiveChildDTO(
             agentRunId: 'child-1',
             artifactId: 'agent_a',
             agentName: 'scout',
-            status: \Ineersa\Tui\Runtime\SubagentLiveStatusEnum::Running,
+            status: SubagentLiveStatusEnum::Running,
             taskSummary: 'Task',
             lastActivityAtMs: 1,
         ));
@@ -276,5 +280,30 @@ class FooterStateSegmentProviderTest extends TestCase
         $b = $provider->footerFingerprint();
 
         $this->assertSame($a, $b);
+    }
+
+    #[Test]
+    public function testLiveViewIncludesChildContextSegment(): void
+    {
+        $state = $this->state;
+        $state->subagentLiveView->active = true;
+        $state->subagentLiveView->enter(new SubagentLiveChildDTO(
+            agentRunId: 'child-run',
+            artifactId: 'agent_ctx',
+            agentName: 'fork',
+            status: SubagentLiveStatusEnum::Running,
+            taskSummary: 'task',
+            lastActivityAtMs: 1,
+            model: 'deepseek/deepseek-v4-flash',
+            latestInputTokens: 97_900,
+        ));
+        $provider = new FooterStateSegmentProvider(
+            $state,
+            new ContextUsageFormatter(ContextUsageTestAppConfig::withContextWindow()),
+        );
+        $segments = $provider->getSegments();
+        $texts = array_map(static fn ($s) => $s->text, $segments);
+        $this->assertContains('36% 97.9k/272.0k', $texts);
+        $this->assertContains('deepseek-v4-flash', $texts);
     }
 }

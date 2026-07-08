@@ -20,7 +20,9 @@ use Ineersa\Tui\Picker\SubagentLivePickerController;
 use Ineersa\Tui\Runtime\SubagentLiveChildViewPoller;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Screen\ChatScreen;
+use Ineersa\Tui\Tests\Support\ContextUsageTestAppConfig;
 use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
+use Ineersa\Tui\Theme\TuiTheme;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
@@ -156,7 +158,7 @@ final class SubagentLivePickerControllerTest extends TestCase
         $this->seedCatalogChild($state, 'agent_stale', 'child-run-stale', 'completed');
 
         $picker = $this->picker($harness, $state);
-        $items = SubagentLivePickerController::buildItems($state->subagentLiveCatalog->all(), $harness->screen()->theme());
+        $items = $this->buildPickerItems($picker, $state->subagentLiveCatalog->all(), $harness->screen()->theme());
         $listWidget = new SelectListWidget(items: $items, keybindings: new Keybindings());
         $listWidget->setSelectedIndex(0);
         $state->subagentLiveCatalog->dismissArtifactId('agent_stale');
@@ -198,6 +200,7 @@ final class SubagentLivePickerControllerTest extends TestCase
             ),
             $this->sessionStore(),
             new SessionEventsExportService(),
+            ContextUsageTestAppConfig::withContextWindow(),
         );
         $picker->setRuntimeRefs($harness->tui(), $harness->screen(), $state);
 
@@ -209,13 +212,25 @@ final class SubagentLivePickerControllerTest extends TestCase
         ChatScreen $screen,
         TuiSessionState $state,
     ): void {
-        $items = SubagentLivePickerController::buildItems($state->subagentLiveCatalog->all(), $screen->theme());
+        $items = $this->buildPickerItems($picker, $state->subagentLiveCatalog->all(), $screen->theme());
         $listWidget = new SelectListWidget(items: $items, keybindings: new Keybindings());
         $listWidget->setSelectedIndex(0);
 
         $method = new \ReflectionMethod(SubagentLivePickerController::class, 'dismissSelected');
         $children = $state->subagentLiveCatalog->all();
         $method->invokeArgs($picker, [&$listWidget, &$children, $screen->theme(), $screen, $state]);
+    }
+
+    /**
+     * @param list<SubagentLiveChildDTO> $children
+     *
+     * @return list<array{value: string, label: string}>
+     */
+    private function buildPickerItems(SubagentLivePickerController $picker, array $children, TuiTheme $theme, int $selectedIndex = -1): array
+    {
+        $method = new \ReflectionMethod(SubagentLivePickerController::class, 'buildItems');
+
+        return $method->invoke($picker, $children, $theme, $selectedIndex);
     }
 
     private function seedCatalogChild(TuiSessionState $state, string $artifactId, string $runId, string $status): void
@@ -245,7 +260,7 @@ final class SubagentLivePickerControllerTest extends TestCase
         ChatScreen $screen,
         TuiSessionState $state,
     ): void {
-        $items = SubagentLivePickerController::buildItems($state->subagentLiveCatalog->all(), $screen->theme());
+        $items = $this->buildPickerItems($picker, $state->subagentLiveCatalog->all(), $screen->theme());
         $listWidget = new SelectListWidget(items: $items, keybindings: new Keybindings());
         $listWidget->setSelectedIndex(0);
 

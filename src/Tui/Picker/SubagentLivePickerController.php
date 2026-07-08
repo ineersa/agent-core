@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Picker;
 
+use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\Tui\Export\SessionEventsExportService;
+use Ineersa\Tui\Footer\ContextUsageFormatter;
 use Ineersa\Tui\Runtime\SubagentLiveChildDTO;
 use Ineersa\Tui\Runtime\SubagentLiveChildViewPoller;
 use Ineersa\Tui\Runtime\SubagentLiveMainReturn;
@@ -36,6 +38,8 @@ final class SubagentLivePickerController
         private readonly SubagentLiveChildViewPoller $childPoller,
         private readonly HatfieldSessionStore $sessionStore,
         private readonly SessionEventsExportService $exportService,
+        private readonly AppConfig $appConfig,
+        private readonly ?ContextUsageFormatter $contextUsageFormatter = null,
     ) {
     }
 
@@ -78,12 +82,23 @@ final class SubagentLivePickerController
         $this->overlay = null;
     }
 
+    private function formatPickerContextSuffix(SubagentLiveChildDTO $child): ?string
+    {
+        $formatter = $this->contextUsageFormatter ?? new ContextUsageFormatter($this->appConfig);
+        $formatted = $formatter->format($child->model, $child->latestInputTokens);
+        if (null === $formatted) {
+            return null;
+        }
+
+        return $formatted['text'];
+    }
+
     /**
      * @param list<SubagentLiveChildDTO> $children
      *
      * @return list<array{value: string, label: string}>
      */
-    public static function buildItems(array $children, TuiTheme $theme, int $selectedIndex = -1): array
+    private function buildItems(array $children, TuiTheme $theme, int $selectedIndex = -1): array
     {
         $items = [];
         foreach ($children as $i => $child) {
@@ -94,6 +109,10 @@ final class SubagentLivePickerController
             $statusLabel = $child->needsAttention() ? '⚠ needs input' : $child->statusLabel();
             $runShort = \strlen($child->agentRunId) > 12 ? substr($child->agentRunId, 0, 12).'…' : $child->agentRunId;
             $label = \sprintf('%s [%s] %s run:%s — %s', $child->agentName, $statusLabel, $child->artifactId, $runShort, $task);
+            $ctxSuffix = $this->formatPickerContextSuffix($child);
+            if (null !== $ctxSuffix) {
+                $label .= ' '.$ctxSuffix;
+            }
             if ($i === $selectedIndex) {
                 $label = $theme->color(ThemeColorEnum::Accent, $label);
             }
@@ -139,7 +158,7 @@ final class SubagentLivePickerController
             'select_cancel' => [Key::ESCAPE, Key::ctrl('c')],
         ]);
 
-        $items = self::buildItems($children, $theme, selectedIndex: 0);
+        $items = $this->buildItems($children, $theme, selectedIndex: 0);
         $listWidget = new SelectListWidget(
             items: $items,
             maxVisible: 10,
@@ -149,7 +168,7 @@ final class SubagentLivePickerController
         $picker = $this;
 
         $listWidget->onSelectionChange(
-            static function (SelectionChangeEvent $event) use ($listWidget, &$children, $theme): void {
+            static function (SelectionChangeEvent $event) use ($picker, $listWidget, &$children, $theme): void {
                 $selectedValue = $event->getItem()['value'];
                 $selectedIdx = -1;
 
@@ -161,7 +180,7 @@ final class SubagentLivePickerController
                     }
                 }
 
-                $newItems = self::buildItems($children, $theme, selectedIndex: $selectedIdx);
+                $newItems = $picker->buildItems($children, $theme, selectedIndex: $selectedIdx);
                 $listWidget->setItems($newItems);
                 $listWidget->setSelectedIndex(max(0, $selectedIdx));
             },
@@ -328,7 +347,7 @@ final class SubagentLivePickerController
             }
         }
         $idx = min($idx, \count($children) - 1);
-        $listWidget->setItems(self::buildItems($children, $theme, selectedIndex: $idx));
+        $listWidget->setItems($this->buildItems($children, $theme, selectedIndex: $idx));
         $listWidget->setSelectedIndex($idx);
 
         $msg = \sprintf('Removed %s from /agents-live.', $removed->agentName);

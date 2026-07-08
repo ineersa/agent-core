@@ -10,6 +10,7 @@ use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\Contract\TurnTreeProviderInterface;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\Tui\Editor\PromptEditor;
+use Ineersa\Tui\Footer\ContextUsageFormatter;
 use Ineersa\Tui\Listener\TuiListenerRegistrar;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
 use Ineersa\Tui\Runtime\TuiSessionLifecycleDispatcher;
@@ -177,7 +178,14 @@ final readonly class InteractiveMode
 
             // ── Build screen and mount widget tree ──
             $tui = new Tui();
-            $screen = new ChatScreen($theme, $state->sessionId, $this->promptEditor, $displayConfig, $state->transcriptDisplayState);
+            $screen = new ChatScreen(
+                $theme,
+                $state->sessionId,
+                $this->promptEditor,
+                $displayConfig,
+                $state->transcriptDisplayState,
+                new ContextUsageFormatter($this->appConfig),
+            );
             $screen->mount($tui);
 
             // Apply Ctrl+J as portable newline, overriding the default new_line

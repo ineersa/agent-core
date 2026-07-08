@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Listener;
 
+use Ineersa\CodingAgent\Config\AppConfig;
+use Ineersa\Tui\Footer\ContextUsageFormatter;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
 
 /**
@@ -20,6 +22,7 @@ final readonly class FooterStateListener implements TuiListenerRegistrar
 {
     public function __construct(
         private FooterStateInitializer $initializer,
+        private readonly AppConfig $appConfig,
     ) {
     }
 
@@ -27,7 +30,10 @@ final readonly class FooterStateListener implements TuiListenerRegistrar
     {
         $this->initializer->initialize($context->state);
 
-        $footerProvider = new FooterStateSegmentProvider($context->state);
+        $footerProvider = new FooterStateSegmentProvider(
+            $context->state,
+            new ContextUsageFormatter($this->appConfig),
+        );
         $context->screen->addFooterProvider($footerProvider);
 
         $screen = $context->screen;

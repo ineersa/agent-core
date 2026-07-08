@@ -6,6 +6,7 @@ namespace Ineersa\Tui\Transcript;
 
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
+use Ineersa\Tui\Footer\ContextUsageFormatter;
 use Ineersa\Tui\Theme\ThemeColorEnum;
 use Ineersa\Tui\Theme\TuiTheme;
 use Symfony\Component\Tui\Style\Padding;
@@ -26,6 +27,7 @@ final readonly class SubagentResultRenderer
 {
     public function __construct(
         private SubagentTranscriptCardBuilder $cardBuilder = new SubagentTranscriptCardBuilder(),
+        private ?ContextUsageFormatter $contextUsageFormatter = null,
         private TranscriptDisplayConfig $displayConfig = new TranscriptDisplayConfig(),
         private TranscriptDisplayState $displayState = new TranscriptDisplayState(),
         private TranscriptLinePreviewService $linePreviewService = new TranscriptLinePreviewService(),
@@ -65,6 +67,20 @@ final readonly class SubagentResultRenderer
 
     /**
      * @param array<string, mixed> $progress
+     *
+     * @return list<string>
+     */
+    private function buildCardLines(array $progress): array
+    {
+        if (null !== $this->contextUsageFormatter) {
+            return (new SubagentTranscriptCardBuilder($this->contextUsageFormatter))->buildLines($progress);
+        }
+
+        return $this->cardBuilder->buildLines($progress);
+    }
+
+    /**
+     * @param array<string, mixed> $progress
      */
     private function buildProgressWidget(
         TranscriptBlock $block,
@@ -74,7 +90,7 @@ final readonly class SubagentResultRenderer
     ): AbstractWidget {
         $status = $this->resolveCardStatus($progress);
         $handoffMarkdown = $this->resolveHandoffMarkdown($progress, $resultText);
-        $plainLines = $this->cardBuilder->buildLines($progress);
+        $plainLines = $this->buildCardLines($progress);
         $footerHint = $this->resolveFooterHint($plainLines, $status, $handoffMarkdown);
         $expandHandoffHint = ('' !== $handoffMarkdown && $this->handoffNeedsExpandHint($handoffMarkdown))
             ? 'Ctrl+O to expand handoff'
@@ -265,8 +281,23 @@ final readonly class SubagentResultRenderer
         if (str_contains($line, ' turns') || str_contains($line, 'in:')) {
             return $theme->muted($line);
         }
+        if (str_starts_with($line, 'CTX ')) {
+            return $this->styleContextUsageLine($theme, $line);
+        }
 
         return $theme->color(ThemeColorEnum::ToolOutput, $line);
+    }
+
+    private function styleContextUsageLine(TuiTheme $theme, string $line): string
+    {
+        $detail = substr($line, 4);
+        $color = ThemeColorEnum::Success;
+        if (preg_match('/^(\d+)%\s+(.+)$/', $detail, $m)) {
+            $pct = (float) $m[1];
+            $color = $pct > 75 ? ThemeColorEnum::Error : ($pct > 50 ? ThemeColorEnum::Warning : ThemeColorEnum::Success);
+        }
+
+        return $theme->color(ThemeColorEnum::Muted, 'CTX ').$theme->color($color, $detail);
     }
 
     private function styleHeaderText(TuiTheme $theme, string $line, string $status): string

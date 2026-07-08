@@ -442,6 +442,7 @@ parameters:
       - AppRuntimeProjection
       - TuiWidget
       - TuiTheme
+      - TuiFooter
       - SymfonyTui
       - SymfonyYaml
 
@@ -477,8 +478,10 @@ parameters:
       - SymfonyTui
 
     TuiFooter:
+      - AppConfig
       - TuiWidget
       - TuiTheme
+      - TuiListener
 
     TuiStartup:
       - AppRuntimeContract
