@@ -14,6 +14,7 @@ use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\Tui\Export\SessionEventsExportService;
 use Ineersa\Tui\Picker\SubagentLivePickerController;
 use Ineersa\Tui\Runtime\SubagentLiveChildViewPoller;
@@ -33,13 +34,12 @@ final class SubagentLivePickerControllerTest extends TestCase
 
     protected function setUp(): void
     {
-        $this->projectDir = sys_get_temp_dir().'/picker-export-test-'.bin2hex(random_bytes(6));
-        mkdir($this->projectDir, 0777, true);
+        $this->projectDir = TestDirectoryIsolation::createProjectTempDir('picker-export-test');
     }
 
     protected function tearDown(): void
     {
-        $this->removeDir($this->projectDir);
+        TestDirectoryIsolation::removeDirectory($this->projectDir);
     }
 
     #[Test]
@@ -110,21 +110,83 @@ final class SubagentLivePickerControllerTest extends TestCase
     #[Test]
     public function exportKeyWritesSelectedChildHtml(): void
     {
-        $harness = new VirtualTuiHarness(sessionId: 'parent-session-export');
-        $state = new TuiSessionState('parent-session-export');
-        $artifactId = 'agent_export';
-        $this->seedCatalogChild($state, $artifactId, 'child-run-export', 'completed');
-        $this->writeChildEvents('parent-session-export', $artifactId, [
-            $this->makeChildEvent(1, 'run_started', ['user_messages' => [['role' => 'user', 'content' => 'fork task']]]),
-        ]);
+        $previousCwd = getcwd();
+        chdir($this->projectDir);
+        try {
+            $harness = new VirtualTuiHarness(sessionId: 'parent-session-export');
+            $state = new TuiSessionState('parent-session-export');
+            $artifactId = 'agent_export';
+            $this->seedCatalogChild($state, $artifactId, 'child-run-export', 'completed');
+            $this->writeChildEvents('parent-session-export', $artifactId, [
+                $this->makeChildEvent(1, 'run_started', ['user_messages' => [['role' => 'user', 'content' => 'fork task']]]),
+            ]);
+
+            $picker = $this->picker($harness, $state);
+            $this->invokeExportSelected($picker, $harness->screen(), $state);
+
+            $expected = $this->projectDir.'/hatfield-child-'.$artifactId.'.html';
+            $this->assertFileExists($expected);
+            $this->assertStringContainsString('Child agent exported to:', $this->workingMessage($harness->screen()));
+        } finally {
+            if (false !== $previousCwd) {
+                chdir($previousCwd);
+            }
+        }
+    }
+
+    #[Test]
+    public function exportKeyReportsMissingEventsFile(): void
+    {
+        $harness = new VirtualTuiHarness(sessionId: 'parent-session-no-events');
+        $state = new TuiSessionState('parent-session-no-events');
+        $artifactId = 'agent_no_file';
+        $this->seedCatalogChild($state, $artifactId, 'child-run-no-file', 'completed');
 
         $picker = $this->picker($harness, $state);
         $this->invokeExportSelected($picker, $harness->screen(), $state);
 
-        $expected = getcwd().'/hatfield-child-'.$artifactId.'.html';
-        $this->assertFileExists($expected);
-        $this->assertStringContainsString('Session exported to:', $this->workingMessage($harness->screen()));
-        @unlink($expected);
+        $this->assertStringContainsString('has no events to export', $this->workingMessage($harness->screen()));
+    }
+
+    #[Test]
+    public function exportKeyReportsChildAbsentFromCatalog(): void
+    {
+        $harness = new VirtualTuiHarness(sessionId: 'parent-session-missing-child');
+        $state = new TuiSessionState('parent-session-missing-child');
+        $this->seedCatalogChild($state, 'agent_stale', 'child-run-stale', 'completed');
+
+        $picker = $this->picker($harness, $state);
+        $items = SubagentLivePickerController::buildItems($state->subagentLiveCatalog->all(), $harness->screen()->theme());
+        $listWidget = new SelectListWidget(items: $items, keybindings: new Keybindings());
+        $listWidget->setSelectedIndex(0);
+        $state->subagentLiveCatalog->dismissArtifactId('agent_stale');
+
+        $method = new \ReflectionMethod(SubagentLivePickerController::class, 'exportSelected');
+        $method->invoke($picker, $listWidget, $harness->screen(), $state);
+
+        $this->assertStringContainsString(
+            'no longer in the catalog',
+            $this->workingMessage($harness->screen()),
+        );
+    }
+
+    #[Test]
+    public function exportKeyReportsNoSelectedChild(): void
+    {
+        $harness = new VirtualTuiHarness(sessionId: 'parent-session-no-select');
+        $state = new TuiSessionState('parent-session-no-select');
+        $this->seedCatalogChild($state, 'agent_x', 'child-run-x', 'completed');
+
+        $picker = $this->picker($harness, $state);
+        $listWidget = new SelectListWidget(items: [], keybindings: new Keybindings());
+
+        $method = new \ReflectionMethod(SubagentLivePickerController::class, 'exportSelected');
+        $method->invoke($picker, $listWidget, $harness->screen(), $state);
+
+        $this->assertSame(
+            'No child agent selected to export.',
+            $this->workingMessage($harness->screen()),
+        );
     }
 
     private function picker(VirtualTuiHarness $harness, TuiSessionState $state): SubagentLivePickerController
@@ -233,29 +295,6 @@ final class SubagentLivePickerControllerTest extends TestCase
             appConfig: $appConfig,
             entityManager: $this->createStub(EntityManagerInterface::class),
         );
-    }
-
-    private function removeDir(string $dir): void
-    {
-        if (!is_dir($dir)) {
-            return;
-        }
-
-        $iterator = new \RecursiveIteratorIterator(
-            new \RecursiveDirectoryIterator($dir, \FilesystemIterator::SKIP_DOTS),
-            \RecursiveIteratorIterator::CHILD_FIRST,
-        );
-
-        foreach ($iterator as $file) {
-            if ($file->isDir()) {
-                rmdir($file->getPathname());
-            } else {
-                @chmod($file->getPathname(), 0644);
-                unlink($file->getPathname());
-            }
-        }
-
-        rmdir($dir);
     }
 
     private function workingMessage(ChatScreen $screen): string

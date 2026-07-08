@@ -116,6 +116,11 @@ parameters:
         - type: directory
           value: src/Tui/Utility/.*
 
+    - name: TuiExport
+      collectors:
+        - type: directory
+          value: src/Tui/Export/.*
+
     - name: AppRuntimeContract
       collectors:
         - type: directory
@@ -443,6 +448,9 @@ parameters:
     TuiStatus:
       - TuiWidget
       - TuiTheme
+
+    TuiExport:
+      - TuiCommand
 
     TuiCommand:
       - TuiExtension

@@ -235,6 +235,7 @@ final class SubagentLivePickerController
             return;
         }
 
+        // Intentionally mirrors AgentArtifactPathsDTO child events convention; TuiPicker cannot depend on CodingAgent artifact DTOs.
         $relative = "artifacts/agents/{$artifactId}/events.jsonl";
         $eventsPath = $this->sessionStore->resolveSessionsBasePath().'/'.$parentSessionId.'/'.$relative;
         $outputPath = getcwd().'/hatfield-child-'.$artifactId.'.html';
@@ -249,6 +250,9 @@ final class SubagentLivePickerController
                 '',
                 '',
             );
+            if (str_starts_with($message, 'Session exported to: ')) {
+                $message = 'Child agent exported to: '.substr($message, \strlen('Session exported to: '));
+            }
             $screen->setWorkingMessage($message);
         } catch (\RuntimeException $e) {
             $screen->setWorkingMessage($e->getMessage());
