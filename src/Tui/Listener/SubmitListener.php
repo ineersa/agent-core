@@ -54,6 +54,7 @@ final class SubmitListener implements TuiListenerRegistrar
         private readonly QuestionController $questionController,
         private readonly SubagentLiveInputPolicy $subagentLiveInputPolicy,
         private readonly LoggerInterface $logger,
+        private readonly PromptHistory $history,
     ) {
     }
 
@@ -73,13 +74,14 @@ final class SubmitListener implements TuiListenerRegistrar
         $logger = $this->logger;
         $subagentLiveInputPolicy = $this->subagentLiveInputPolicy;
         $lifecycle = $context->lifecycle;
+        $history = $this->history;
 
         // Wire the question controller with TUI runtime references
         $questionController->setRuntimeRefs($context, $screen);
 
         $context->tui->addListener(static function (SubmitEvent $event) use (
             $client, $sessionStore, $state, $screen, $tui, $router, $blockFactory,
-            $questionCoordinator, $questionController, $subagentLiveInputPolicy, $logger, $lifecycle,
+            $questionCoordinator, $questionController, $subagentLiveInputPolicy, $logger, $lifecycle, $history,
         ) {
             $text = $screen->extract();
             if ('' === $text) {
@@ -137,6 +139,7 @@ final class SubmitListener implements TuiListenerRegistrar
             if (null !== $commandResult) {
                 // ── Shell command — dispatch to runtime for execution ──
                 if ($commandResult instanceof DispatchShellCommand) {
+                    $history->append($commandResult->originalText);
                     self::handleShellCommand(
                         $commandResult, $state, $screen, $sessionStore,
                         $blockFactory, $client, $logger, $lifecycle,
@@ -147,6 +150,7 @@ final class SubmitListener implements TuiListenerRegistrar
 
                 // ── DispatchRuntime — forward payload to runtime ──
                 if ($commandResult instanceof DispatchRuntime) {
+                    $history->append($text);
                     self::dispatchToRuntime(
                         $commandResult->payload, $state, $screen,
                         $sessionStore, $blockFactory, $client, $logger, $tui, $lifecycle,
@@ -165,6 +169,7 @@ final class SubmitListener implements TuiListenerRegistrar
             // No local echo or persistence: canonical runtime events project
             // user blocks (avoiding duplicate block IDs), and events.jsonl is
             // the single source of truth for transcript replay on resume.
+            $history->append($text);
             self::dispatchToRuntime($text, $state, $screen, $sessionStore, $blockFactory, $client, $logger, $tui, $lifecycle);
         });
     }

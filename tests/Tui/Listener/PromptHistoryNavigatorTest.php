@@ -6,6 +6,7 @@ namespace Ineersa\Tui\Tests\Listener;
 
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
+use Ineersa\Tui\Listener\PromptHistory;
 use Ineersa\Tui\Listener\PromptHistoryNavigator;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\Test;
@@ -14,11 +15,14 @@ use PHPUnit\Framework\TestCase;
 #[CoversClass(PromptHistoryNavigator::class)]
 final class PromptHistoryNavigatorTest extends TestCase
 {
+    private PromptHistory $history;
+
     private PromptHistoryNavigator $navigator;
 
     protected function setUp(): void
     {
-        $this->navigator = new PromptHistoryNavigator();
+        $this->history = new PromptHistory();
+        $this->navigator = new PromptHistoryNavigator($this->history);
     }
 
     // ─── Empty state ──────────────────────────────────────────
@@ -26,7 +30,8 @@ final class PromptHistoryNavigatorTest extends TestCase
     #[Test]
     public function previousOnEmptyBlocksReturnsNull(): void
     {
-        $result = $this->navigator->previous([]);
+        $this->history->seedFrom([]);
+        $result = $this->navigator->previous();
 
         $this->assertNull($result);
         $this->assertFalse($this->navigator->isNavigating());
@@ -35,7 +40,8 @@ final class PromptHistoryNavigatorTest extends TestCase
     #[Test]
     public function nextOnEmptyBlocksReturnsNull(): void
     {
-        $result = $this->navigator->next([]);
+        $this->history->seedFrom([]);
+        $result = $this->navigator->next();
 
         $this->assertNull($result);
         $this->assertFalse($this->navigator->isNavigating());
@@ -56,7 +62,8 @@ final class PromptHistoryNavigatorTest extends TestCase
             self::userBlock('hello world', 'msg-1', 'run-1', 1),
         ];
 
-        $result = $this->navigator->previous($blocks);
+        $this->history->seedFrom($blocks);
+        $result = $this->navigator->previous();
 
         $this->assertSame('hello world', $result);
         $this->assertTrue($this->navigator->isNavigating());
@@ -69,8 +76,9 @@ final class PromptHistoryNavigatorTest extends TestCase
             self::userBlock('only one', 'msg-1', 'run-1', 1),
         ];
 
-        $this->navigator->previous($blocks); // first — returns text
-        $result = $this->navigator->previous($blocks); // second — no earlier message
+        $this->history->seedFrom($blocks);
+        $this->navigator->previous(); // first — returns text
+        $result = $this->navigator->previous(); // second — no earlier message
 
         $this->assertNull($result);
         $this->assertTrue($this->navigator->isNavigating()); // still at the first one
@@ -89,19 +97,23 @@ final class PromptHistoryNavigatorTest extends TestCase
         ];
 
         // First Up — newest prompt (index 3)
-        $text = $this->navigator->previous($blocks);
+        $this->history->seedFrom($blocks);
+        $text = $this->navigator->previous();
         $this->assertSame('third prompt', $text);
 
         // Second Up — next older (index 2)
-        $text = $this->navigator->previous($blocks);
+        $this->history->seedFrom($blocks);
+        $text = $this->navigator->previous();
         $this->assertSame('second prompt', $text);
 
         // Third Up — oldest (index 0)
-        $text = $this->navigator->previous($blocks);
+        $this->history->seedFrom($blocks);
+        $text = $this->navigator->previous();
         $this->assertSame('first prompt', $text);
 
         // Fourth Up — nothing older
-        $text = $this->navigator->previous($blocks);
+        $this->history->seedFrom($blocks);
+        $text = $this->navigator->previous();
         $this->assertNull($text);
     }
 
@@ -116,15 +128,19 @@ final class PromptHistoryNavigatorTest extends TestCase
         ];
 
         // Navigate back to the oldest first
-        $this->navigator->previous($blocks); // third (newest)
-        $this->navigator->previous($blocks); // second
-        $this->navigator->previous($blocks); // first (oldest)
+        $this->history->seedFrom($blocks);
+        $this->navigator->previous(); // third (newest)
+        $this->navigator->previous(); // second
+        $this->history->seedFrom($blocks);
+        $this->navigator->previous(); // first (oldest)
 
         // Now walk forward
-        $text = $this->navigator->next($blocks);
+        $this->history->seedFrom($blocks);
+        $text = $this->navigator->next();
         $this->assertSame('second prompt', $text);
 
-        $text = $this->navigator->next($blocks);
+        $this->history->seedFrom($blocks);
+        $text = $this->navigator->next();
         $this->assertSame('third prompt', $text);
     }
 
@@ -139,7 +155,8 @@ final class PromptHistoryNavigatorTest extends TestCase
             self::userBlock('my prompt', 'user-1', 'run-1', 3),
         ];
 
-        $result = $this->navigator->previous($blocks);
+        $this->history->seedFrom($blocks);
+        $result = $this->navigator->previous();
 
         $this->assertSame('my prompt', $result);
     }
@@ -155,11 +172,13 @@ final class PromptHistoryNavigatorTest extends TestCase
         ];
 
         // Go to oldest
-        $this->navigator->previous($blocks); // prompt 2
-        $this->navigator->previous($blocks); // prompt 1
+        $this->history->seedFrom($blocks);
+        $this->navigator->previous(); // prompt 2
+        $this->navigator->previous(); // prompt 1
 
         // Next should skip the assistant and system blocks
-        $text = $this->navigator->next($blocks);
+        $this->history->seedFrom($blocks);
+        $text = $this->navigator->next();
         $this->assertSame('prompt 2', $text);
     }
 
@@ -172,10 +191,12 @@ final class PromptHistoryNavigatorTest extends TestCase
             self::userBlock('prompt 1', 'user-1', 'run-1', 1),
         ];
 
-        $this->navigator->previous($blocks); // shows prompt 1
+        $this->history->seedFrom($blocks);
+        $this->navigator->previous(); // shows prompt 1
         $this->assertTrue($this->navigator->isNavigating());
 
-        $result = $this->navigator->next($blocks); // past newest
+        $this->history->seedFrom($blocks);
+        $result = $this->navigator->next(); // past newest
 
         $this->assertNull($result);
         $this->assertFalse($this->navigator->isNavigating());
@@ -190,14 +211,16 @@ final class PromptHistoryNavigatorTest extends TestCase
             self::userBlock('prompt 1', 'user-1', 'run-1', 1),
         ];
 
-        $this->navigator->previous($blocks);
+        $this->history->seedFrom($blocks);
+        $this->navigator->previous();
         $this->assertTrue($this->navigator->isNavigating());
 
         $this->navigator->exitNavigation();
         $this->assertFalse($this->navigator->isNavigating());
 
         // After exiting, next Up starts fresh from newest
-        $result = $this->navigator->previous($blocks);
+        $this->history->seedFrom($blocks);
+        $result = $this->navigator->previous();
         $this->assertSame('prompt 1', $result);
     }
 
@@ -213,15 +236,17 @@ final class PromptHistoryNavigatorTest extends TestCase
         ];
 
         // Navigate back to oldest
-        $this->navigator->previous($blocks); // index 2 (newer)
-        $this->navigator->previous($blocks); // index 0 (oldest)
+        $this->history->seedFrom($blocks);
+        $this->navigator->previous(); // index 2 (newer)
+        $this->navigator->previous(); // index 0 (oldest)
 
-        $this->assertSame(0, $this->navigator->currentBlockIndex());
+        $this->assertSame(0, $this->navigator->cursor());
 
         // Up again — no older message, cursor stays at 0
-        $result = $this->navigator->previous($blocks);
+        $this->history->seedFrom($blocks);
+        $result = $this->navigator->previous();
         $this->assertNull($result);
-        $this->assertSame(0, $this->navigator->currentBlockIndex());
+        $this->assertSame(0, $this->navigator->cursor());
         $this->assertTrue($this->navigator->isNavigating());
     }
 
@@ -235,31 +260,69 @@ final class PromptHistoryNavigatorTest extends TestCase
             self::assistantBlock('reply', 'asst-1', 'run-1', 2),
         ];
 
-        $result = $this->navigator->previous($blocks);
+        $this->history->seedFrom($blocks);
+        $result = $this->navigator->previous();
 
         $this->assertNull($result);
         $this->assertFalse($this->navigator->isNavigating());
     }
 
-    // ─── currentBlockIndex for diagnostics ────────────────────
+    // ─── cursor for diagnostics ────────────────────
 
     #[Test]
-    public function currentBlockIndexIsNullWhenNotNavigating(): void
+    public function cursorIsNullWhenNotNavigating(): void
     {
-        $this->assertNull($this->navigator->currentBlockIndex());
+        $this->assertNull($this->navigator->cursor());
     }
 
     #[Test]
-    public function currentBlockIndexReturnsBlockIndexWhenNavigating(): void
+    public function cursorReturnsBlockIndexWhenNavigating(): void
     {
         $blocks = [
             self::userBlock('prompt 1', 'user-1', 'run-1', 1),
             self::userBlock('prompt 2', 'user-2', 'run-1', 2),
         ];
 
-        $this->navigator->previous($blocks); // index 1 (newest)
+        $this->history->seedFrom($blocks);
+        $this->navigator->previous(); // index 1 (newest)
 
-        $this->assertSame(1, $this->navigator->currentBlockIndex());
+        $this->assertSame(1, $this->navigator->cursor());
+    }
+
+
+    #[Test]
+    public function navigationOverLargeSeededHistoryUsesPromptListOnly(): void
+    {
+        $blocks = [];
+        $expectedNewestFirst = [];
+        $userCount = 0;
+        for ($i = 0; $i < 1000; ++$i) {
+            if (0 === $i % 5) {
+                $text = 'user-prompt-'.$userCount;
+                $blocks[] = self::userBlock($text, 'msg-'.$i, 'run-1', $i);
+                $expectedNewestFirst[] = $text;
+                ++$userCount;
+            } elseif (1 === $i % 5) {
+                $blocks[] = self::assistantBlock('reply', 'asst-'.$i, 'run-1', $i);
+            } elseif (2 === $i % 5) {
+                $blocks[] = self::systemBlock('sys', 'sys-'.$i, 'run-1', $i);
+            } else {
+                $blocks[] = self::toolBlock('tool', 'tool-'.$i, 'run-1', $i);
+            }
+        }
+
+        $this->assertGreaterThanOrEqual(150, $userCount);
+
+        $this->history->seedFrom($blocks);
+
+        $walked = [];
+        for ($n = 0; $n < 150; ++$n) {
+            $text = $this->navigator->previous();
+            $this->assertNotNull($text, 'Up #'.($n + 1).' should recall a prompt');
+            $walked[] = $text;
+        }
+
+        $this->assertSame(array_reverse(array_slice($expectedNewestFirst, -150)), $walked);
     }
 
     // ─── Helpers ──────────────────────────────────────────────
@@ -303,6 +366,21 @@ final class PromptHistoryNavigatorTest extends TestCase
         return new TranscriptBlock(
             id: $id,
             kind: TranscriptBlockKindEnum::System,
+            runId: $runId,
+            seq: $seq,
+            text: $text,
+        );
+    }
+
+    private static function toolBlock(
+        string $text,
+        string $id = 'test-id',
+        string $runId = 'test-run',
+        int $seq = 1,
+    ): TranscriptBlock {
+        return new TranscriptBlock(
+            id: $id,
+            kind: TranscriptBlockKindEnum::ToolCall,
             runId: $runId,
             seq: $seq,
             text: $text,

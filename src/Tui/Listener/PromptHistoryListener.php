@@ -36,13 +36,20 @@ use Ineersa\Tui\Runtime\TuiRuntimeContext;
  */
 final class PromptHistoryListener implements TuiListenerRegistrar
 {
+    public function __construct(
+        private readonly PromptHistory $history,
+    ) {
+    }
+
     public function register(TuiRuntimeContext $context): void
     {
         $state = $context->state;
         $editor = $context->screen->editorWidget();
         $screen = $context->screen;
 
-        $navigator = new PromptHistoryNavigator();
+        $this->history->seedFrom($state->transcript);
+
+        $navigator = new PromptHistoryNavigator($this->history);
 
         $editor->onInput(static function (string $data) use ($state, $editor, $screen, $navigator): bool {
             if ($state->subagentLiveView->active) {
@@ -62,7 +69,7 @@ final class PromptHistoryListener implements TuiListenerRegistrar
             if ($isUp) {
                 // Only intercept when the editor is empty OR already navigating.
                 if ('' === $editor->getText() || $navigator->isNavigating()) {
-                    $text = $navigator->previous($state->transcript);
+                    $text = $navigator->previous();
                     if (null !== $text) {
                         $editor->setText($text);
                         $screen->requestRender();
@@ -86,7 +93,7 @@ final class PromptHistoryListener implements TuiListenerRegistrar
             // ── Down ──
             if ($isDown) {
                 if ($navigator->isNavigating()) {
-                    $text = $navigator->next($state->transcript);
+                    $text = $navigator->next();
                     if (null !== $text) {
                         $editor->setText($text);
                         $screen->requestRender();
