@@ -78,7 +78,7 @@ final class ForkContextBuilderTest extends TestCase
             $boundarySelector,
             $promptBuilder,
         );
-        $forkCompactor = new ForkSnapshotCompactor($sessionCompactor);
+        $forkCompactor = new ForkSnapshotCompactor($sessionCompactor, new FakeForkSnapshotSummarizer());
         $compactionConfig = new CompactionConfig(keepRecentTokens: 50);
 
         $this->sanitizer = new ForkSnapshotSanitizer();
@@ -173,7 +173,7 @@ final class ForkContextBuilderTest extends TestCase
         $configResolver = new ForkConfigResolver(new ForksConfigDTO(model: 'openai/gpt-4'));
         $builder = new ForkContextBuilder(
             sanitizer: $this->sanitizer,
-            compactor: new ForkSnapshotCompactor($this->createSessionCompactor()),
+            compactor: new ForkSnapshotCompactor($this->createSessionCompactor(), new FakeForkSnapshotSummarizer()),
             promptBuilder: new ForkTaskPromptBuilder(),
             configResolver: $configResolver,
             compactionConfig: new CompactionConfig(keepRecentTokens: 50000),
@@ -195,6 +195,21 @@ final class ForkContextBuilderTest extends TestCase
         $this->assertStringContainsString('Empty test', $snapshot->forkTaskUserMessage);
         $this->assertStringContainsString('delegated child agent', $snapshot->forkSystemPromptAppend);
         $this->assertNull($snapshot->resolvedModel);
+    }
+
+    public function testBuildProducesCompactedSnapshotWithoutPriorSummary(): void
+    {
+        $parent = [];
+        for ($i = 0; $i < 10; ++$i) {
+            $parent[] = new AgentMessage(role: 'user', content: [['type' => 'text', 'text' => 'Parent user '.$i.' '.str_repeat('p', 100)]]);
+            $parent[] = new AgentMessage(role: 'assistant', content: [['type' => 'text', 'text' => 'Parent assistant '.$i.' '.str_repeat('a', 100)]]);
+        }
+
+        $snapshot = $this->builder->build($parent, 'Investigate export feedback', 'openai/gpt-test');
+
+        $this->assertStringContainsString('Investigate export feedback', $snapshot->forkTaskUserMessage);
+        $this->assertTrue($snapshot->messages[0]->metadata['compact_summary'] ?? false);
+        $this->assertLessThan(\count($parent), \count($snapshot->messages));
     }
 
     private function userMessage(string $content): AgentMessage

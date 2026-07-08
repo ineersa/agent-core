@@ -82,9 +82,12 @@ final class ForkExecutionService
             throw new ToolCallException('Fork tool requires an active parent run with persisted state.', retryable: false);
         }
 
+        $parentSessionModel = $this->resolveSessionModelFallback($parentRunId);
+
         $snapshot = $this->forkContextBuilder->build(
             parentMessages: $parentState->messages,
             task: $task,
+            activeSessionModel: $parentSessionModel,
         );
 
         $policy = $this->resolveForkToolPolicy($parentRunId);

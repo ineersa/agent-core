@@ -31,8 +31,7 @@ use Symfony\AI\Platform\Message\TemplateRenderer\StringTemplateRenderer;
  *   - Compacts retained tail when over budget and carries forward a
  *     prior compact_summary summary.
  *   - Never mutates the input array.
- *   - No-summary bail: without a prior compact_summary, messages pass
- *     through unchanged (v1 behavior, no LLM available).
+ *   - Without prior compact_summary, fork summarizer produces compacted snapshot.
  *   - Respects safe boundary (no split tool-call/tool-result groups).
  *   - Summary message is placed AFTER the immutable prologue
  *     (system/user-context), never before it.
@@ -42,6 +41,7 @@ use Symfony\AI\Platform\Message\TemplateRenderer\StringTemplateRenderer;
 final class ForkSnapshotCompactorTest extends TestCase
 {
     private ForkSnapshotCompactor $compactor;
+    private FakeForkSnapshotSummarizer $summarizer;
     private CompactionConfig $config;
     private string $projectDir;
 
@@ -81,7 +81,8 @@ final class ForkSnapshotCompactorTest extends TestCase
             $promptBuilder,
         );
 
-        $this->compactor = new ForkSnapshotCompactor($sessionCompactor);
+        $this->summarizer = new FakeForkSnapshotSummarizer();
+        $this->compactor = new ForkSnapshotCompactor($sessionCompactor, $this->summarizer);
 
         // Small budget to force compaction in tests.
         $this->config = new CompactionConfig(keepRecentTokens: 50);
@@ -143,21 +144,39 @@ final class ForkSnapshotCompactorTest extends TestCase
         // Summary message has the expected <summary> wrapper structure.
         $this->assertStringContainsString('<summary>', $result->messages[0]->content[0]['text']);
         $this->assertStringContainsString('</summary>', $result->messages[0]->content[0]['text']);
+        $this->assertSame(0, $this->summarizer->calls);
     }
 
-    public function testNoSummaryBailWithoutPriorCompactSummary(): void
+    public function testSummarizesWhenNoPriorCompactSummary(): void
     {
-        // No prior compact_summary — v1 should return unchanged even if over budget.
+        $messages = [];
+        for ($i = 0; $i < 12; ++$i) {
+            $messages[] = $this->userMessage('Old user turn '.$i.' '.str_repeat('x', 120));
+            $messages[] = $this->assistantMessage('Old assistant turn '.$i.' '.str_repeat('y', 120));
+        }
+
+        $result = $this->compactor->compact($messages, $this->config, 'openai/gpt-test');
+
+        $this->assertTrue($result->compacted);
+        $this->assertSame(1, $this->summarizer->calls);
+        $this->assertSame('openai/gpt-test', $this->summarizer->lastActiveSessionModel);
+        $this->assertTrue($result->messages[0]->metadata['compact_summary'] ?? false);
+        $this->assertLessThan(\count($messages), \count($result->messages));
+        $this->assertStringContainsString('Synthetic fork compaction summary', $result->summaryText ?? '');
+    }
+
+    public function testUnderBudgetDoesNotCallSummarizer(): void
+    {
         $messages = [
-            $this->userMessage('Message one '.str_repeat('x', 200)),
-            $this->assistantMessage('Response one '.str_repeat('y', 200)),
+            $this->userMessage('Hello'),
+            $this->assistantMessage('Hi'),
         ];
 
-        $result = $this->compactor->compact($messages, $this->config);
+        $largeConfig = new CompactionConfig(keepRecentTokens: 50000);
+        $result = $this->compactor->compact($messages, $largeConfig, 'openai/gpt-test');
 
-        // Without a prior summary to carry forward, messages pass through unchanged.
-        $this->assertFalse($result->compacted, 'No-summary bail: expected no compaction without prior summary');
-        $this->assertNull($result->summaryText);
+        $this->assertFalse($result->compacted);
+        $this->assertSame(0, $this->summarizer->calls);
         $this->assertCount(2, $result->messages);
     }
 

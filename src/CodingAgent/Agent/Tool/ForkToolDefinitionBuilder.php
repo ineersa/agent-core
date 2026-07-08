@@ -39,7 +39,7 @@ final class ForkToolDefinitionBuilder
             handler: $handler,
             executionMode: ToolExecutionMode::Sequential,
             timeoutSeconds: null,
-            promptLine: 'fork task="..." — launch fork child with inherited history',
+            promptLine: 'fork task="..." — launch fork child with compacted inherited context',
             promptGuidelines: [
                 'Use fork to delegate implementation or investigation to a child with full main-agent tool scope except fork itself.',
                 'Fork children may use subagent; they cannot launch another fork.',

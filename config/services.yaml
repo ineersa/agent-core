@@ -576,6 +576,12 @@ services:
   Ineersa\AgentCore\Contract\Compaction\CompactionServiceInterface:
     alias: Ineersa\CodingAgent\Compaction\CompactionService
 
+  # Fork-time virtual compaction (child-local; does not mutate parent run state).
+  Ineersa\CodingAgent\Agent\Fork\ForkSnapshotSummarizerInterface:
+    alias: Ineersa\CodingAgent\Agent\Fork\ForkCompactionSummarizer
+
+  Ineersa\CodingAgent\Agent\Fork\ForkCompactionSummarizer: ~
+
   # Compaction worker: async model invocation for summarization.
   # @see ExecuteLlmStepWorker for the parallel LLM-step pattern.
   # $commandBus is explicitly bound to agent.command.bus so the worker

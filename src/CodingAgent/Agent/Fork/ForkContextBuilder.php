@@ -15,7 +15,7 @@ use Ineersa\CodingAgent\Config\CompactionConfig;
  *
  * Steps:
  *   1. Sanitize (trim launch messages).
- *   2. Virtually compact (cut-point selection + summary reuse).
+ *   2. Virtually compact (cut-point selection + summary reuse or fork-local LLM summarization).
  *   3. Resolve optional forks.model and forks.thinking_level overrides.
  *   4. Build fork task user message and system append.
  *   5. Assemble ForkSessionSnapshotDTO.
@@ -47,9 +47,10 @@ final readonly class ForkContextBuilder
     public function build(
         array $parentMessages,
         string $task,
+        ?string $activeSessionModel = null,
     ): ForkSessionSnapshotDTO {
         $sanitized = $this->sanitizer->sanitize($parentMessages);
-        $compacted = $this->compactor->compact($sanitized, $this->compactionConfig);
+        $compacted = $this->compactor->compact($sanitized, $this->compactionConfig, $activeSessionModel);
         $resolved = $this->configResolver->resolve();
         $taskUserMessage = $this->promptBuilder->buildTaskUserMessage($task);
         $systemAppend = $this->promptBuilder->forkChildSystemPromptAppend();
