@@ -33,6 +33,10 @@ final readonly class ForkCompactionSummarizer implements ForkSnapshotSummarizerI
 
     public function summarize(CompactionPreparationDTO $preparation, ?string $activeSessionModel): string
     {
+        if ($this->isTrivialSingleMessageCompaction($preparation)) {
+            return $this->deriveTrivialSummaryText($preparation);
+        }
+
         $runtimeSettings = $this->compactionConfig->resolveRuntimeSettings($activeSessionModel);
         $resolvedModel = $runtimeSettings->model ?? $activeSessionModel;
 
@@ -92,7 +96,8 @@ final readonly class ForkCompactionSummarizer implements ForkSnapshotSummarizerI
 
         $compactResult = $this->compactionService->buildCompactedMessages($summaryText, $prepareResult);
 
-        if ($compactResult->tokenEstimateAfter >= $compactResult->tokenEstimateBefore) {
+        if ($preparation->messagesCompacted >= 2
+            && $compactResult->tokenEstimateAfter >= $compactResult->tokenEstimateBefore) {
             throw new ForkCompactionSummarizationException('Fork compaction summarization was ineffective (context did not shrink).');
         }
 
@@ -104,5 +109,38 @@ final readonly class ForkCompactionSummarizer implements ForkSnapshotSummarizerI
         ]);
 
         return $summaryText;
+    }
+
+    private function isTrivialSingleMessageCompaction(CompactionPreparationDTO $preparation): bool
+    {
+        if (1 !== $preparation->messagesCompacted || 1 !== \count($preparation->messagesToSummarize)) {
+            return false;
+        }
+
+        foreach ($preparation->retainedTailMessages as $message) {
+            if ('system' !== $message->role && 'user-context' !== $message->role) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private function deriveTrivialSummaryText(CompactionPreparationDTO $preparation): string
+    {
+        $message = $preparation->messagesToSummarize[0];
+        $text = '';
+        foreach ($message->content as $part) {
+            if (\is_array($part) && isset($part['text']) && \is_string($part['text'])) {
+                $text .= $part['text'];
+            }
+        }
+
+        $text = trim($text);
+        if ('' === $text) {
+            throw new ForkCompactionSummarizationException('Fork compaction summarization returned empty summary text.');
+        }
+
+        return $text;
     }
 }

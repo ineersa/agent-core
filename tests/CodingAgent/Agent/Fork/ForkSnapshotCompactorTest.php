@@ -27,11 +27,10 @@ use Symfony\AI\Platform\Message\TemplateRenderer\StringTemplateRenderer;
  * Tests for ForkSnapshotCompactor.
  *
  * Test thesis:
- *   - No compaction when messages fit within the token budget.
- *   - Compacts retained tail when over budget and carries forward a
- *     prior compact_summary summary.
+ *   - Fork always produces compacted context via summarizer (no raw fallback).
+ *   - Prior compact_summary still triggers fresh fork-time summarization.
+ *   - Under-budget sessions still compact instead of returning raw messages.
  *   - Never mutates the input array.
- *   - Without prior compact_summary, fork summarizer produces compacted snapshot.
  *   - Respects safe boundary (no split tool-call/tool-result groups).
  *   - Summary message is placed AFTER the immutable prologue
  *     (system/user-context), never before it.
@@ -95,22 +94,22 @@ final class ForkSnapshotCompactorTest extends TestCase
 
     // ── Tests ────────────────────────────────────────────────────────────
 
-    public function testNoCompactionWhenUnderBudget(): void
+    public function testUnderBudgetStillCompactsViaSummarizer(): void
     {
         $messages = [
             $this->userMessage('Hello'),
             $this->assistantMessage('Hi!'),
         ];
 
-        // Large budget — messages fit without compaction.
         $largeConfig = new CompactionConfig(keepRecentTokens: 50000);
 
-        $result = $this->compactor->compact($messages, $largeConfig);
+        $result = $this->compactor->compact($messages, $largeConfig, 'openai/gpt-test');
 
-        $this->assertFalse($result->compacted);
-        $this->assertCount(2, $result->messages);
-        $this->assertNull($result->summaryText);
-        $this->assertSame(0, $result->summarizedCount);
+        $this->assertTrue($result->compacted);
+        $this->assertSame(1, $this->summarizer->calls);
+        $this->assertTrue($result->messages[0]->metadata['compact_summary'] ?? false);
+        $this->assertSame('Hi!', $result->messages[1]->content[0]['text']);
+        $this->assertStringNotContainsString('Hello', $result->messages[0]->content[0]['text']);
     }
 
     public function testCompactionWithPriorCompactSummary(): void
@@ -136,15 +135,13 @@ final class ForkSnapshotCompactorTest extends TestCase
         // Should compact because budget is tight and messages are long.
         $this->assertTrue($result->compacted, 'Expected compaction to occur with tight budget and long messages');
 
-        // The first message in the retained tail should be the newly created
-        // compact_summary carrying forward the prior summary text.
         $this->assertTrue($result->messages[0]->metadata['compact_summary'] ?? false);
-        $this->assertStringContainsString('Previous conversation summary', $result->messages[0]->content[0]['text']);
+        $this->assertStringContainsString('Synthetic fork compaction summary', $result->summaryText ?? '');
 
         // Summary message has the expected <summary> wrapper structure.
         $this->assertStringContainsString('<summary>', $result->messages[0]->content[0]['text']);
         $this->assertStringContainsString('</summary>', $result->messages[0]->content[0]['text']);
-        $this->assertSame(0, $this->summarizer->calls);
+        $this->assertSame(1, $this->summarizer->calls);
     }
 
     public function testSummarizesWhenNoPriorCompactSummary(): void
@@ -165,19 +162,27 @@ final class ForkSnapshotCompactorTest extends TestCase
         $this->assertStringContainsString('Synthetic fork compaction summary', $result->summaryText ?? '');
     }
 
-    public function testUnderBudgetDoesNotCallSummarizer(): void
+    public function testPriorCompactSummaryStillCallsSummarizer(): void
     {
+        $summaryMessage = new AgentMessage(
+            role: 'user',
+            content: [['type' => 'text', 'text' => 'Previous conversation summary that should be refreshed.']],
+            metadata: ['compact_summary' => true],
+        );
+
         $messages = [
-            $this->userMessage('Hello'),
-            $this->assistantMessage('Hi'),
+            $summaryMessage,
+            $this->userMessage('Newer user turn after summary'),
+            $this->assistantMessage('Newer assistant turn after summary'),
         ];
 
         $largeConfig = new CompactionConfig(keepRecentTokens: 50000);
         $result = $this->compactor->compact($messages, $largeConfig, 'openai/gpt-test');
 
-        $this->assertFalse($result->compacted);
-        $this->assertSame(0, $this->summarizer->calls);
-        $this->assertCount(2, $result->messages);
+        $this->assertTrue($result->compacted);
+        $this->assertSame(1, $this->summarizer->calls);
+        $this->assertTrue($result->messages[0]->metadata['compact_summary'] ?? false);
+        $this->assertStringContainsString('Synthetic fork compaction summary', $result->summaryText ?? '');
     }
 
     public function testDoesNotMutateInput(): void
@@ -204,14 +209,17 @@ final class ForkSnapshotCompactorTest extends TestCase
         $this->assertCount(0, $result->messages);
     }
 
-    public function testSingleMessageFits(): void
+    public function testSingleMessageStillProducesCompactSummaryShape(): void
     {
         $messages = [$this->userMessage('Just one message')];
 
-        $result = $this->compactor->compact($messages, new CompactionConfig(keepRecentTokens: 50000));
+        $result = $this->compactor->compact($messages, new CompactionConfig(keepRecentTokens: 50000), 'openai/gpt-test');
 
-        $this->assertFalse($result->compacted);
+        $this->assertTrue($result->compacted);
+        $this->assertSame(1, $this->summarizer->calls);
         $this->assertCount(1, $result->messages);
+        $this->assertTrue($result->messages[0]->metadata['compact_summary'] ?? false);
+        $this->assertStringContainsString('Synthetic fork compaction summary', $result->summaryText ?? '');
     }
 
     public function testSafeBoundaryRespected(): void

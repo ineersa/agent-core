@@ -46,6 +46,36 @@ final class ForkCompactionSummarizerTest extends TestCase
         TestDirectoryIsolation::removeDirectory($this->projectDir);
     }
 
+    public function testSummarizeUsesTrivialTextForSingleMessageCompaction(): void
+    {
+        $appConfig = new AppConfig(tui: new TuiConfig(theme: 'test'), logging: new LoggingConfig(), cwd: $this->projectDir);
+        $compactionService = new CompactionService($this->createSessionCompactor(), $appConfig);
+        $platform = new FakePlatform([]);
+
+        $summarizer = new ForkCompactionSummarizer(
+            compactionService: $compactionService,
+            platform: $platform,
+            compactionConfig: new CompactionConfig(model: 'openai/gpt-test'),
+        );
+
+        $prep = new CompactionPreparationDTO(
+            messagesToSummarize: [
+                new AgentMessage(role: 'user', content: [['type' => 'text', 'text' => 'Only parent turn']]),
+            ],
+            retainedTailMessages: [],
+            tokenEstimateBefore: 1,
+            messagesCompacted: 1,
+            messagesRetained: 0,
+            firstRetainedIndex: 0,
+            priorSummaryPresent: false,
+        );
+
+        $summary = $summarizer->summarize($prep, 'openai/parent-model');
+
+        $this->assertSame('Only parent turn', $summary);
+        $this->assertCount(0, $platform->invocations);
+    }
+
     public function testSummarizeBuildsEffectiveSummaryUsingCompactionService(): void
     {
         $appConfig = new AppConfig(tui: new TuiConfig(theme: 'test'), logging: new LoggingConfig(), cwd: $this->projectDir);

@@ -115,9 +115,11 @@ final class ForkContextBuilderTest extends TestCase
         $task = 'Implement feature X';
         $snapshot = $this->builder->build($parentMessages, $task);
 
-        // Sanitization should have removed the launch messages.
+        // Sanitization should have removed the launch messages, then fork compaction
+        // should produce a compact_summary message instead of raw transcript.
         $this->assertCount(2, $snapshot->messages);
-        $this->assertSame('Old conversation', $snapshot->messages[0]->content[0]['text']);
+        $this->assertTrue($snapshot->messages[0]->metadata['compact_summary'] ?? false);
+        $this->assertStringContainsString('Synthetic fork compaction summary', $snapshot->messages[0]->content[0]['text']);
         $this->assertSame('Old response', $snapshot->messages[1]->content[0]['text']);
 
         // Snapshot contains the fork task user message referencing the task.
@@ -148,8 +150,8 @@ final class ForkContextBuilderTest extends TestCase
 
     public function testBuildWithLargeMessagesTriggersCompaction(): void
     {
-        // Include a prior compact_summary so the NOOP summary provider
-        // has something to carry forward.
+        // Include a prior compact_summary plus long tail; fork still refreshes
+        // compacted context for the current snapshot.
         $priorSummary = new AgentMessage(
             role: 'user',
             content: [['type' => 'text', 'text' => 'Prior session summary for context.']],
