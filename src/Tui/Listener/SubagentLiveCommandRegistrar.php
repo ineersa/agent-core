@@ -19,7 +19,7 @@ final class SubagentLiveCommandRegistrar implements TuiListenerRegistrar
 
     public function register(TuiRuntimeContext $context): void
     {
-        $this->pickerController->setRuntimeRefs($context->tui, $context->screen, $context->state);
+        $this->pickerController->setRuntimeRefs($context->tui, $context->screen, $context->state, $context->client);
 
         $liveHandler = new AgentsLiveCommandHandler($this->pickerController);
         if ($this->commandRegistry->has('agents-live')) {

@@ -4,6 +4,13 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Picker;
 
+use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
+use Ineersa\CodingAgent\Runtime\Contract\ChildRunTranscriptSnapshotDTO;
+use Ineersa\CodingAgent\Runtime\Contract\ChildRunTranscriptSnapshotProviderInterface;
+use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
+use Ineersa\Tui\Listener\RuntimeQuestionEventHandler;
+use Ineersa\Tui\Question\QuestionController;
+use Ineersa\Tui\Question\QuestionCoordinator;
 use Ineersa\Tui\Runtime\SubagentLiveChildDTO;
 use Ineersa\Tui\Runtime\SubagentLiveChildViewPoller;
 use Ineersa\Tui\Runtime\SubagentLiveMainReturn;
@@ -29,17 +36,27 @@ final class SubagentLivePickerController
     private ?Tui $tui = null;
     private ?ChatScreen $screen = null;
     private ?TuiSessionState $state = null;
+    private ?AgentSessionClient $client = null;
 
     public function __construct(
         private readonly SubagentLiveChildViewPoller $childPoller,
+        private readonly ChildRunTranscriptSnapshotProviderInterface $childSnapshotProvider,
+        private readonly RuntimeQuestionEventHandler $runtimeQuestionEventHandler,
+        private readonly QuestionCoordinator $questionCoordinator,
+        private readonly QuestionController $questionController,
     ) {
     }
 
-    public function setRuntimeRefs(Tui $tui, ChatScreen $screen, TuiSessionState $state): void
-    {
+    public function setRuntimeRefs(
+        Tui $tui,
+        ChatScreen $screen,
+        TuiSessionState $state,
+        ?AgentSessionClient $client = null,
+    ): void {
         $this->tui = $tui;
         $this->screen = $screen;
         $this->state = $state;
+        $this->client = $client;
     }
 
     public function open(): void
@@ -275,16 +292,49 @@ final class SubagentLivePickerController
         $cached = $state->subagentLiveView->childCaches[$child->agentRunId] ?? null;
         $hasCachedTranscript = null !== $cached && [] !== $cached['transcript'];
 
-        $resetProjection = !$hasCachedTranscript && $state->subagentLiveView->shouldResetProjectionFor($child);
-        if ($resetProjection) {
-            $this->childPoller->resetProjection();
-        }
-
         $state->subagentLiveView->enter($child);
 
-        if ($resetProjection && [] === $state->subagentLiveView->childTranscript) {
-            $state->subagentLiveView->childTranscript = $state->subagentLiveView->placeholderTranscriptFor($child);
-            $state->subagentLiveView->persistCurrentChildCache();
+        if ($hasCachedTranscript) {
+            $cachedReplay = $state->subagentLiveView->childReplayEvents;
+            $this->childPoller->replaySnapshot(
+                $state->subagentLiveView,
+                new ChildRunTranscriptSnapshotDTO(
+                    $state->subagentLiveView->childTranscript,
+                    $cachedReplay,
+                    $state->subagentLiveView->childLastSeq,
+                ),
+            );
+        } else {
+            $this->childPoller->resetProjection();
+
+            $snapshot = $this->childSnapshotProvider->snapshot($child->agentRunId);
+            if ([] === $snapshot->transcriptBlocks && [] === $snapshot->replayEvents) {
+                $state->subagentLiveView->childTranscript = $state->subagentLiveView->placeholderTranscriptFor($child);
+                $state->subagentLiveView->persistCurrentChildCache();
+            } else {
+                $client = $this->client;
+                $questionCoordinator = $this->questionCoordinator;
+                $questionController = $this->questionController;
+                $runtimeQuestionEventHandler = $this->runtimeQuestionEventHandler;
+
+                $this->childPoller->replaySnapshot(
+                    $state->subagentLiveView,
+                    $snapshot,
+                    onHumanInputRequested: null !== $client
+                        ? static function (RuntimeEvent $event) use ($client, $questionCoordinator, $state, $screen, $runtimeQuestionEventHandler): void {
+                            $runtimeQuestionEventHandler->handleHumanInputRequested($event, $client, $questionCoordinator, $state, $screen);
+                        }
+                    : null,
+                    onToolQuestionRequested: null !== $client
+                        ? static function (RuntimeEvent $event) use ($client, $questionCoordinator, $state, $screen, $runtimeQuestionEventHandler): void {
+                            $runtimeQuestionEventHandler->handleToolQuestionRequested($event, $client, $questionCoordinator, $state, $screen);
+                        }
+                    : null,
+                    onToolTerminal: static function (RuntimeEvent $event) use ($questionCoordinator, $questionController, $runtimeQuestionEventHandler): void {
+                        $runtimeQuestionEventHandler->handleToolTerminal($event, $questionCoordinator, $questionController);
+                    },
+                );
+            }
         }
 
         $screen->setTranscriptBlocks($state->subagentLiveView->childTranscript);
