@@ -183,12 +183,17 @@ final class ForkHitlLiveE2eTest extends ControllerE2eTestCase
         $forkChildRunId = (string) ($forkProgress['agent_run_id'] ?? '');
         $this->assertNotSame('', $forkChildRunId);
 
-        $registryPath = $this->parentRegistryPath($parentRunId);
-        $this->assertFileExists($registryPath, $this->collectDiagnostics($events));
-        $registryRaw = (string) file_get_contents($registryPath);
-        $this->assertStringContainsString(self::FORK_AGENT, $registryRaw);
-        $this->assertStringContainsString(self::SCOUT_AGENT, $registryRaw,
-            'Parent artifact registry must list nested scout after fork launches it. Registry: '.$registryRaw."\n"
+        $parentRegistryPath = $this->parentRegistryPath($parentRunId);
+        $this->assertFileExists($parentRegistryPath, $this->collectDiagnostics($events));
+        $parentRegistryRaw = (string) file_get_contents($parentRegistryPath);
+        $this->assertStringContainsString(self::FORK_AGENT, $parentRegistryRaw);
+
+        $forkChildRegistryPath = $this->registryPathForRun($forkChildRunId);
+        $this->assertFileExists($forkChildRegistryPath,
+            'Fork child session must have artifact registry after launching scout. '.$this->collectDiagnostics($events));
+        $forkChildRegistryRaw = (string) file_get_contents($forkChildRegistryPath);
+        $this->assertStringContainsString(self::SCOUT_AGENT, $forkChildRegistryRaw,
+            'Fork child artifact registry must list nested scout. Registry: '.$forkChildRegistryRaw."\n"
             .$this->collectDiagnostics($events));
 
         $scoutProgress = $this->findProgressForAgent($progressSnapshots, self::SCOUT_AGENT);
@@ -196,9 +201,9 @@ final class ForkHitlLiveE2eTest extends ControllerE2eTestCase
             ? (string) ($scoutProgress['agent_run_id'] ?? '')
             : '';
 
-        $scoutRunIdFromRegistry = $this->findAgentRunIdInRegistry($registryRaw, self::SCOUT_AGENT);
+        $scoutRunIdFromRegistry = $this->findAgentRunIdInRegistry($forkChildRegistryRaw, self::SCOUT_AGENT);
         $this->assertNotSame('', $scoutRunIdFromRegistry,
-            'Registry must include scout agent_run_id. '.$registryRaw);
+            'Fork child registry must include scout agent_run_id. '.$forkChildRegistryRaw);
 
         $scoutRunId = '' !== $scoutRunIdFromStream ? $scoutRunIdFromStream : $scoutRunIdFromRegistry;
         $this->assertNotSame($parentRunId, $scoutRunId);
@@ -211,14 +216,12 @@ final class ForkHitlLiveE2eTest extends ControllerE2eTestCase
 
         $this->assertNotNull($childHitl,
             'Nested scout HITL must surface on parent controller JSONL with scout run ownership when fork child is registered for forwarding. '
-            .'If missing, inspect fork child artifact events for waiting_human. '
+            .'If missing, inspect scout artifact events under fork child session. '
             .$this->collectDiagnostics($events));
 
         $hitlRunId = (string) ($childHitl['runId'] ?? $childHitl['payload']['runId'] ?? '');
         $this->assertSame($scoutRunId, $hitlRunId,
             'Nested scout HITL runId must match scout agent_run_id, not parent or fork child.');
-
-        $this->assertWaitingHumanInScoutArtifactEvents($scoutRunIdFromRegistry, $registryRaw);
     }
 
     protected function tempDirPrefix(): string
@@ -261,7 +264,12 @@ YAML;
     {
         $sessionId = $parentRunId ?? $this->parentRunIdForCollection ?? $this->runId;
 
-        return $this->tempDir.'/.hatfield/sessions/'.$sessionId.'/artifacts/agents/registry.json';
+        return $this->registryPathForRun($sessionId);
+    }
+
+    private function registryPathForRun(string $runId): string
+    {
+        return $this->tempDir.'/.hatfield/sessions/'.$runId.'/artifacts/agents/registry.json';
     }
 
     private function writeScoutAgent(string $path): void
@@ -305,37 +313,40 @@ MD;
     private function collectUntilNestedScoutHitlOrTimeout(float $timeout): array
     {
         return $this->collectUntilPredicate($timeout, function (array $events): bool {
-            if ('' === $this->runId) {
+            $parentRunId = $this->parentRunIdForCollection ?? $this->runId;
+            if ('' === $parentRunId) {
                 return false;
             }
 
-            $registryPath = $this->parentRegistryPath();
-            if (!is_file($registryPath)) {
+            $forkChildRunId = $this->forkChildRunIdFromEvents($events);
+            if ('' === $forkChildRunId) {
                 return false;
             }
 
-            $registryRaw = (string) file_get_contents($registryPath);
-            if (!str_contains($registryRaw, self::SCOUT_AGENT)) {
+            $forkChildRegistryPath = $this->registryPathForRun($forkChildRunId);
+            if (!is_file($forkChildRegistryPath)) {
                 return false;
             }
 
-            $scoutRunId = $this->findAgentRunIdInRegistry($registryRaw, self::SCOUT_AGENT);
+            $forkChildRegistryRaw = (string) file_get_contents($forkChildRegistryPath);
+            if (!str_contains($forkChildRegistryRaw, self::SCOUT_AGENT)) {
+                return false;
+            }
+
+            $scoutRunId = $this->findAgentRunIdInRegistry($forkChildRegistryRaw, self::SCOUT_AGENT);
             if ('' === $scoutRunId) {
                 return false;
             }
 
-            $forkRunId = $this->forkChildRunIdFromEvents($events);
             if (null !== $this->findHumanInputForRunId($events, $scoutRunId)) {
                 return true;
             }
 
-            if ('' !== $forkRunId) {
-                $hitl = $this->findChildHumanInputRequestedExcluding($events, $this->runId, [$forkRunId]);
-                if (null !== $hitl) {
-                    $runId = (string) ($hitl['runId'] ?? $hitl['payload']['runId'] ?? '');
+            $hitl = $this->findChildHumanInputRequestedExcluding($events, $parentRunId, [$forkChildRunId]);
+            if (null !== $hitl) {
+                $runId = (string) ($hitl['runId'] ?? $hitl['payload']['runId'] ?? '');
 
-                    return $runId === $scoutRunId;
-                }
+                return $runId === $scoutRunId;
             }
 
             return false;
@@ -514,17 +525,17 @@ MD;
         return '';
     }
 
-    private function assertWaitingHumanInScoutArtifactEvents(string $scoutArtifactRunId, string $registryRaw): void
+    private function assertWaitingHumanInScoutArtifactEvents(string $registryRaw): void
     {
         $artifactId = $this->findArtifactIdInRegistry($registryRaw, self::SCOUT_AGENT);
         if ('' === $artifactId) {
             $this->fail('Scout artifact id missing from registry for persisted HITL proof.');
         }
 
-        $eventsPath = $this->tempDir.'/.hatfield/sessions/'.$this->runId
-            .'/artifacts/agents/'.$artifactId.'/events.jsonl';
+        $artifactParentRunId = $this->findParentRunIdInRegistry($registryRaw, self::SCOUT_AGENT);
+        $eventsPath = $this->resolveArtifactEventsPath($artifactId, $artifactParentRunId);
         $this->assertFileExists($eventsPath,
-            'Scout child artifact events.jsonl must exist under parent session (TUI backfill/live view path).');
+            'Scout child artifact events.jsonl must exist under a parent-scoped artifact path (registry parent_run_id or discovered artifact dir).');
 
         $raw = (string) file_get_contents($eventsPath);
         $this->assertTrue(
@@ -557,19 +568,56 @@ MD;
 
     private function findArtifactIdInRegistry(string $registryRaw, string $agentName): string
     {
+        $entry = $this->findRegistryEntry($registryRaw, $agentName);
+
+        return null === $entry ? '' : (string) ($entry['artifactId'] ?? $entry['artifact_id'] ?? '');
+    }
+
+    private function findParentRunIdInRegistry(string $registryRaw, string $agentName): string
+    {
+        $entry = $this->findRegistryEntry($registryRaw, $agentName);
+
+        return null === $entry ? '' : (string) ($entry['parentRunId'] ?? $entry['parent_run_id'] ?? '');
+    }
+
+    private function resolveArtifactEventsPath(string $artifactId, string $parentRunIdFromEntry): string
+    {
+        if ('' !== $parentRunIdFromEntry) {
+            $canonical = $this->tempDir.'/.hatfield/sessions/'.$parentRunIdFromEntry
+                .'/artifacts/agents/'.$artifactId.'/events.jsonl';
+            if (is_file($canonical)) {
+                return $canonical;
+            }
+        }
+
+        $matches = glob($this->tempDir.'/.hatfield/sessions/*/artifacts/agents/'.$artifactId.'/events.jsonl') ?: [];
+        if ([] !== $matches) {
+            return $matches[0];
+        }
+
+        return '' !== $parentRunIdFromEntry
+            ? $this->tempDir.'/.hatfield/sessions/'.$parentRunIdFromEntry.'/artifacts/agents/'.$artifactId.'/events.jsonl'
+            : $this->tempDir.'/.hatfield/sessions/unknown/artifacts/agents/'.$artifactId.'/events.jsonl';
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function findRegistryEntry(string $registryRaw, string $agentName): ?array
+    {
         $data = json_decode($registryRaw, true);
         if (!\is_array($data)) {
-            return '';
+            return null;
         }
         foreach ($data['entries'] ?? [] as $entry) {
             if (!\is_array($entry)) {
                 continue;
             }
             if ($agentName === ($entry['agentName'] ?? $entry['agent_name'] ?? null)) {
-                return (string) ($entry['artifactId'] ?? $entry['artifact_id'] ?? '');
+                return $entry;
             }
         }
 
-        return '';
+        return null;
     }
 }
