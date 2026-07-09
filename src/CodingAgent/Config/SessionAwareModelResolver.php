@@ -136,7 +136,7 @@ final class SessionAwareModelResolver implements ModelResolverInterface
      * and reasoning level.
      *
      * Uses {@see ReasoningOptionsResolver} to produce options such as
-     * {@code enable_thinking}, {@code reasoning_effort}, {@code thinking.type}.
+     * {@code thinking.type}, {@code reasoning_effort}, {@code reasoning.effort}.
      * This is done in CodingAgent where the catalog is available; AgentCore's
      * {@see ReasoningOptionsFeatureShaper}
      * only merges the result.
