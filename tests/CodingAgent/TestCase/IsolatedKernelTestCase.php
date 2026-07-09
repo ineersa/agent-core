@@ -63,6 +63,7 @@ abstract class IsolatedKernelTestCase extends KernelTestCase
         // Create ONE isolated cwd for the entire test class.
         self::$classCwd = TestDirectoryIsolation::createProjectTempDir('hatfield-test', 0o750);
         TestDirectoryIsolation::createHatfieldTree(self::$classCwd);
+        static::configureIsolatedProjectBeforeKernelBoot(self::$classCwd);
 
         // Save original cwd so we can restore it in tearDownAfterClass.
         self::$originalCwd = getcwd();
@@ -181,6 +182,16 @@ abstract class IsolatedKernelTestCase extends KernelTestCase
         // Do NOT call parent::tearDown() — KernelTestCase::tearDown() calls
         // ensureKernelShutdown() which would destroy the kernel we want to
         // reuse across test methods in this class.
+    }
+
+    /**
+     * Optional per-class hook to seed isolated project settings before the
+     * Symfony kernel boots. Subclasses can override to write
+     * <cwd>/.hatfield/settings.yaml (or other files) so tests do not depend
+     * on the developer's real ~/.hatfield configuration.
+     */
+    protected static function configureIsolatedProjectBeforeKernelBoot(string $classCwd): void
+    {
     }
 
     /**
