@@ -139,7 +139,7 @@ final class ReadFileToolTest extends TestCase
         $this->assertStringContainsString("line five\n", $result);
 
         // plain content
-                                            }
+    }
 
     public function testReadWithOffsetPreservesOriginalLineNumbers(): void
     {
@@ -157,8 +157,8 @@ final class ReadFileToolTest extends TestCase
         $this->assertStringContainsString("line 14\n", $result);
         $this->assertStringNotContainsString("line 9\n", $result);
 
-                                                // Ensure lines outside the range are NOT present
-                    }
+        // Ensure lines outside the range are NOT present
+    }
 
     public function testReadWithOffsetOnly(): void
     {
@@ -174,7 +174,7 @@ final class ReadFileToolTest extends TestCase
 
         $this->assertStringContainsString("line 8\n", $result);
         $this->assertStringContainsString("line 10\n", $result);
-                                    }
+    }
 
     public function testReadWithLimitOnly(): void
     {
@@ -185,7 +185,7 @@ final class ReadFileToolTest extends TestCase
 
         $this->assertStringContainsString("a\n", $result);
         $this->assertStringNotContainsString("d\n", $result);
-                                    }
+    }
 
     public function testReadOffsetPastEofThrows(): void
     {
@@ -219,7 +219,7 @@ final class ReadFileToolTest extends TestCase
         $result = ($this->readFileTool)(['path' => $targetPath]);
 
         $this->assertSame("just one line\n", $result);
-            }
+    }
 
     public function testReadWithRelativePath(): void
     {
@@ -233,7 +233,7 @@ final class ReadFileToolTest extends TestCase
             $result = ($this->readFileTool)(['path' => $relativePath]);
 
             $this->assertStringContainsString("relative\n", $result);
-                                            } finally {
+        } finally {
             if (is_file($cwd.'/'.$relativePath)) {
                 unlink($cwd.'/'.$relativePath);
             }
@@ -253,11 +253,11 @@ final class ReadFileToolTest extends TestCase
         $result = ($this->readFileTool)(['path' => $targetPath]);
 
         // default cap at 2000 lines
-        $expectedLine2000 = "line 2000";
+        $expectedLine2000 = 'line 2000';
         $this->assertStringContainsString($expectedLine2000, $result);
 
         // Should NOT show line 2001 (truncated by head)
-        
+
         // Should include continuation hint
         $this->assertStringContainsString('more lines', $result);
     }
@@ -610,7 +610,7 @@ final class ReadFileToolTest extends TestCase
         $result = ($this->readFileTool)(['path' => $targetPath]);
 
         $this->assertStringContainsString('small content', $result);
-            }
+    }
 
     /* ── Cancellation tests ── */
 

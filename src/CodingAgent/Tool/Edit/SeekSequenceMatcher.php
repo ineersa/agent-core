@@ -6,9 +6,15 @@ namespace Ineersa\CodingAgent\Tool\Edit;
 
 /**
  * Codex-style multi-pass line sequence matcher.
+ *
+ * Pass order: exact, trim-end, full-trim, unicode-normalize (curly quotes, dashes, ellipsis, NBSP).
+ * EOF mode restricts where {@see seekSequence} starts searching; uniqueness is always checked
+ * on the full forward scan from {@see $startIndex}.
  */
 final class SeekSequenceMatcher
 {
+    private const int MATCH_PASS_COUNT = 4;
+
     /**
      * @param list<string> $lines
      * @param list<string> $pattern
@@ -28,8 +34,20 @@ final class SeekSequenceMatcher
             return null;
         }
 
-        $second = $this->seekSequence($lines, $pattern, $match + 1, false);
+        // Uniqueness is always evaluated on the full forward scan from $startIndex.
+        // EOF mode only changes where seekSequence starts searching; it must not
+        // hide an earlier duplicate after the cursor.
+        $first = $this->seekSequence($lines, $pattern, $startIndex, false);
+        if (null === $first) {
+            return null;
+        }
+
+        $second = $this->seekSequence($lines, $pattern, $first + 1, false);
         if (null !== $second) {
+            return null;
+        }
+
+        if ($eof && $match !== $first) {
             return null;
         }
 
@@ -53,7 +71,7 @@ final class SeekSequenceMatcher
         $searchStart = $eof ? max(0, \count($lines) - \count($pattern)) : $startIndex;
         $searchEnd = \count($lines) - \count($pattern);
 
-        for ($pass = 0; $pass < 5; ++$pass) {
+        for ($pass = 0; $pass < self::MATCH_PASS_COUNT; ++$pass) {
             for ($i = $searchStart; $i <= $searchEnd; ++$i) {
                 if ($this->linesMatchAt($lines, $pattern, $i, $pass)) {
                     return $i;
