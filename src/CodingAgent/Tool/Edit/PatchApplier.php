@@ -129,10 +129,14 @@ final class PatchApplier
         $changed = [];
         usort($replacements, static fn (EditReplacementDTO $a, EditReplacementDTO $b): int => $a->startIndex <=> $b->startIndex);
 
+        $delta = 0;
         foreach ($replacements as $replacement) {
+            $patchedStart = $replacement->startIndex + $delta;
             for ($i = 0; $i < \count($replacement->newLines); ++$i) {
-                $changed[] = $replacement->startIndex + $i + 1;
+                $changed[] = $patchedStart + $i + 1;
             }
+
+            $delta += \count($replacement->newLines) - $replacement->oldLength;
         }
 
         sort($changed);

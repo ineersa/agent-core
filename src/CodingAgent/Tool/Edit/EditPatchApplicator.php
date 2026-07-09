@@ -60,13 +60,14 @@ final class EditPatchApplicator
                 continue;
             }
 
-            $matchIndex = $this->findOldBlock($lines, $chunk->oldLines, $lineIndex, $chunk->endOfFile, $chunkIndex);
-            if (null === $matchIndex) {
+            $match = $this->findOldBlock($lines, $chunk->oldLines, $lineIndex, $chunk->endOfFile, $chunkIndex);
+            if (null === $match) {
                 throw $this->stale($chunkIndex, implode("\n", \array_slice($chunk->oldLines, 0, 3)), $lines, $lineIndex);
             }
 
-            $replacements[] = new EditReplacementDTO($matchIndex, \count($chunk->oldLines), $chunk->newLines);
-            $lineIndex = $matchIndex + \count($chunk->oldLines);
+            [$matchIndex, $matchedOldLength] = $match;
+            $replacements[] = new EditReplacementDTO($matchIndex, $matchedOldLength, $chunk->newLines);
+            $lineIndex = $matchIndex + $matchedOldLength;
         }
 
         return $replacements;
@@ -99,6 +100,10 @@ final class EditPatchApplicator
     public function splitFileLines(string $content): array
     {
         $normalized = str_replace(["\r\n", "\r"], "\n", $content);
+        if ('' === $normalized) {
+            return [[], false];
+        }
+
         $hadTrailingNewline = str_ends_with($normalized, "\n");
         $lines = explode("\n", $normalized);
         if ($hadTrailingNewline && [] !== $lines && '' === end($lines)) {
@@ -111,42 +116,21 @@ final class EditPatchApplicator
     /**
      * @param list<string> $lines
      * @param list<string> $oldLines
+     *
+     * @return array{0: int, 1: int}|null start index and matched old line count
      */
-    private function findOldBlock(array $lines, array $oldLines, int $startIndex, bool $eof, int $chunkIndex): ?int
+    private function findOldBlock(array $lines, array $oldLines, int $startIndex, bool $eof, int $chunkIndex): ?array
     {
-        foreach ([$oldLines, $this->trimTrailingEmptyPattern($oldLines)] as $pattern) {
-            if ([] === $pattern) {
-                continue;
-            }
+        $unique = $this->matcher->findUniqueMatch($lines, $oldLines, $startIndex, $eof);
+        if (null !== $unique) {
+            return [$unique, \count($oldLines)];
+        }
 
-            $unique = $this->matcher->findUniqueMatch($lines, $pattern, $startIndex, $eof);
-            if (null !== $unique) {
-                return $unique;
-            }
-
-            if (null !== $this->matcher->seekSequence($lines, $pattern, $startIndex, $eof)) {
-                throw $this->ambiguous($chunkIndex, $pattern[0] ?? '');
-            }
+        if (null !== $this->matcher->seekSequence($lines, $oldLines, $startIndex, $eof)) {
+            throw $this->ambiguous($chunkIndex, $oldLines[0] ?? '');
         }
 
         return null;
-    }
-
-    /**
-     * @param list<string> $pattern
-     *
-     * @return list<string>
-     */
-    private function trimTrailingEmptyPattern(array $pattern): array
-    {
-        if ([] === $pattern || '' !== $pattern[array_key_last($pattern)]) {
-            return [];
-        }
-
-        $trimmed = $pattern;
-        array_pop($trimmed);
-
-        return $trimmed;
     }
 
     /**

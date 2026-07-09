@@ -327,4 +327,109 @@ PATCH;
             chmod($targetPath, 0644);
         }
     }
+
+    /**
+     * Regression: multi-hunk patches that grow line count must mark changed lines in patched coordinates.
+     */
+    public function testMultiHunkSuccessContextMarksSecondHunkInPatchedLineNumbers(): void
+    {
+        $targetPath = $this->tmpDir.'/multi_ctx.txt';
+        file_put_contents($targetPath, "a\nb\nc\nd\ne\n");
+
+        $patch = <<<'PATCH'
+@@
+ a
+-b
++B
+@@
+ d
+-e
++E
++F
+PATCH;
+
+        $result = ($this->editFileTool)(['path' => $targetPath, 'patch' => $patch]);
+        $this->assertStringContainsString('Updated file context', $result);
+        // Second hunk inserts an extra line; changed region is around patched line 5 (E), not original line 4.
+        $this->assertMatchesRegularExpression('/→\s+5:/', $result);
+        $this->assertDoesNotMatchRegularExpression('/→\s+4:\s+E/', $result);
+        $this->assertSame("a\nB\nc\nd\nE\nF\n", file_get_contents($targetPath));
+    }
+
+    /**
+     * Regression: trailing-empty context in a hunk must not match via shortened pattern and delete following lines.
+     */
+    public function testPhantomTrailingBlankContextDoesNotDeleteFollowingLine(): void
+    {
+        $targetPath = $this->tmpDir.'/phantom_blank.txt';
+        file_put_contents($targetPath, "foo\nbar\n");
+
+        $patch = <<<'PATCH'
+@@
+ foo
+ 
+-bar
++baz
+PATCH;
+
+        try {
+            ($this->editFileTool)(['path' => $targetPath, 'patch' => $patch]);
+            $this->fail('Expected ToolCallException');
+        } catch (ToolCallException $e) {
+            $this->assertStringContainsString('E_PATCH_STALE', $e->getMessage());
+        }
+
+        $this->assertSame("foo\nbar\n", file_get_contents($targetPath));
+    }
+
+    /**
+     * Regression: EOF append to an empty file must not insert a leading newline.
+     */
+    public function testEofAppendToEmptyFileHasNoLeadingNewline(): void
+    {
+        $targetPath = $this->tmpDir.'/empty_eof.txt';
+        file_put_contents($targetPath, '');
+
+        $patch = <<<'PATCH'
+@@
++only
+*** End of File
+PATCH;
+
+        ($this->editFileTool)(['path' => $targetPath, 'patch' => $patch]);
+        $this->assertSame('only', file_get_contents($targetPath));
+    }
+
+    public function testEditRemovesLineStartingWithDoubleDash(): void
+    {
+        $targetPath = $this->tmpDir.'/sql_comment.txt';
+        file_put_contents($targetPath, "keep\n-- drop me\ntail\n");
+
+        $patch = <<<'PATCH'
+@@
+ keep
+--- drop me
++-- kept
+ tail
+PATCH;
+
+        ($this->editFileTool)(['path' => $targetPath, 'patch' => $patch]);
+        $this->assertSame("keep\n-- kept\ntail\n", file_get_contents($targetPath));
+    }
+
+    public function testSeekHintNegativeOnePrefixApplies(): void
+    {
+        $targetPath = $this->tmpDir.'/seek_neg.txt';
+        file_put_contents($targetPath, "alpha\n-1 something\nbeta\n");
+
+        $patch = <<<'PATCH'
+@@ -1 something
+ -1 something
+-beta
++BETA
+PATCH;
+
+        ($this->editFileTool)(['path' => $targetPath, 'patch' => $patch]);
+        $this->assertSame("alpha\n-1 something\nBETA\n", file_get_contents($targetPath));
+    }
 }

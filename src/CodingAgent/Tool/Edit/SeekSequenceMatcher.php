@@ -29,14 +29,6 @@ final class SeekSequenceMatcher
             return null;
         }
 
-        $match = $this->seekSequence($lines, $pattern, $startIndex, $eof);
-        if (null === $match) {
-            return null;
-        }
-
-        // Uniqueness is always evaluated on the full forward scan from $startIndex.
-        // EOF mode only changes where seekSequence starts searching; it must not
-        // hide an earlier duplicate after the cursor.
         $first = $this->seekSequence($lines, $pattern, $startIndex, false);
         if (null === $first) {
             return null;
@@ -47,11 +39,14 @@ final class SeekSequenceMatcher
             return null;
         }
 
-        if ($eof && $match !== $first) {
-            return null;
+        if ($eof) {
+            $eofMatch = $this->seekSequence($lines, $pattern, $startIndex, true);
+            if (null === $eofMatch || $eofMatch !== $first) {
+                return null;
+            }
         }
 
-        return $match;
+        return $first;
     }
 
     /**

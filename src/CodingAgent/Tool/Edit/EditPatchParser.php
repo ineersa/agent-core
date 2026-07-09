@@ -69,12 +69,25 @@ final class EditPatchParser
         if (preg_match('/^\*\*\* (Add|Delete|Update|Move) File:/m', $patch)) {
             throw $this->formatError('Multi-file patch markers are not supported.');
         }
-        if (preg_match('/^--- /m', $patch) || preg_match('/^\+\+\+ /m', $patch)) {
-            throw $this->formatError('---/+++ file headers are not supported. Use @@ hunks only.');
+
+        $preamble = $this->preambleBeforeFirstHunk($patch);
+        if ('' !== $preamble) {
+            if (preg_match('/^---\s/m', $preamble) || preg_match('/^\+\+\+\s/m', $preamble)) {
+                throw $this->formatError('---/+++ file headers are not supported. Use @@ hunks only.');
+            }
+            if (preg_match('/^@@ -\d+(?:,\d+)? \+\d+/m', $preamble)) {
+                throw $this->formatError('Numbered unified-diff @@ headers are not supported. Use plain @@ or @@ <seek hint>.');
+            }
         }
-        if (preg_match('/^@@ -\d+/m', $patch)) {
-            throw $this->formatError('Numbered unified-diff @@ headers are not supported. Use plain @@ or @@ <seek hint>.');
+    }
+
+    private function preambleBeforeFirstHunk(string $patch): string
+    {
+        if (!preg_match('/^@@/m', $patch, $m, \PREG_OFFSET_CAPTURE)) {
+            return $patch;
         }
+
+        return substr($patch, 0, $m[0][1]);
     }
 
     /**
