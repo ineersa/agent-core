@@ -151,6 +151,77 @@ final class SessionRepairServiceTest extends TestCase
         $this->assertNull($persisted->activeStepId);
     }
 
+    public function testApplyRepairsStaleCancellationWhenToolExecutionNeverCompleted(): void
+    {
+        $this->writeStaleCancellationWithUnresolvedToolEvents();
+        $runStore = new InMemoryRunStore();
+        $staleState = new RunState(
+            runId: '2',
+            status: RunStatus::Cancelling,
+            version: 258,
+            turnNo: 33,
+            lastSeq: 6,
+            activeStepId: 'follow_up-4470626110826',
+            pendingToolCalls: ['call_00_Mb5xDNF8BYpG5f1Hw5eT5643' => false],
+        );
+        $runStore->compareAndSwap($staleState, 0);
+
+        $rebuilder = $this->createMock(RunStateRebuilderInterface::class);
+        $rebuilder->method('rebuildIfStale')->willReturnCallback(function (RunState $state, string $runId) use ($runStore): RunStateReplayResult {
+            $events = $this->readEventsFromDisk();
+            $reducer = new RunStateReducer();
+            $preparer = new ReplayEventPreparer();
+            $sorted = $preparer->sortBySequence(array_map(
+                static fn (array $payload) => (new EventPayloadNormalizer())->denormalizeRunEvent($payload),
+                $events,
+            ));
+            $seed = new RunState(runId: $runId, status: RunStatus::Queued, version: 0, turnNo: 0, lastSeq: 0);
+            $rebuilt = $reducer->replay($seed, array_filter($sorted));
+
+            $runStore->compareAndSwap($rebuilt, $state->version);
+
+            return RunStateReplayResult::rebuilt($rebuilt, $rebuilt->lastSeq, \count($sorted), true);
+        });
+
+        $service = $this->createService($runStore, $rebuilder);
+        $result = $service->repair('2', true);
+
+        $this->assertTrue($result['staleCancellationRepaired']);
+        $this->assertGreaterThanOrEqual(1, $result['appendedTerminalEvents']);
+        $this->assertStringContainsString('Stale cancellation terminalized to cancelled', $result['message']);
+        $this->assertTrue($result['replayOk']);
+
+        $lines = file($this->projectDir.'/.hatfield/sessions/2/events.jsonl', \FILE_IGNORE_NEW_LINES);
+        $last = json_decode((string) end($lines), true, 512, \JSON_THROW_ON_ERROR);
+        $this->assertSame(RunEventTypeEnum::AgentEnd->value, $last['type']);
+        $this->assertSame('cancelled', $last['payload']['reason']);
+
+        $seqs = [];
+        foreach ($lines as $line) {
+            $payload = json_decode($line, true, 512, \JSON_THROW_ON_ERROR);
+            $seqs[] = $payload['seq'];
+        }
+        $this->assertSame(range(1, \count($seqs)), $seqs);
+
+        $persisted = $runStore->get('2');
+        $this->assertNotNull($persisted);
+        $this->assertSame(RunStatus::Cancelled, $persisted->status);
+        $this->assertNull($persisted->activeStepId);
+    }
+
+    private function writeStaleCancellationWithUnresolvedToolEvents(): void
+    {
+        $this->writeEvents([
+            '{"schema_version":"1.0","run_id":"2","seq":1,"turn_no":0,"type":"agent_start","payload":{"messages":[]},"ts":"2026-07-09T01:00:00+00:00"}',
+            '{"schema_version":"1.0","run_id":"2","seq":2,"turn_no":33,"type":"agent_command_applied","payload":{"kind":"follow_up","payload":{"text":"run subagent"}},"ts":"2026-07-09T01:00:01+00:00"}',
+            '{"schema_version":"1.0","run_id":"2","seq":3,"turn_no":33,"type":"turn_advanced","payload":{"turn_no":33,"step_id":"follow_up-4470626110826"},"ts":"2026-07-09T01:00:02+00:00"}',
+            '{"schema_version":"1.0","run_id":"2","seq":4,"turn_no":33,"type":"llm_step_completed","payload":{"assistant_message":{"role":"assistant","content":null,"tool_calls":[{"id":"call_00_Mb5xDNF8BYpG5f1Hw5eT5643","type":"function","function":{"name":"subagent","arguments":"{}"}}]}},"ts":"2026-07-09T01:00:03+00:00"}',
+            '{"schema_version":"1.0","run_id":"2","seq":5,"turn_no":33,"type":"tool_execution_start","payload":{"tool_call_id":"call_00_Mb5xDNF8BYpG5f1Hw5eT5643","tool_name":"subagent"},"ts":"2026-07-09T01:00:04+00:00"}',
+            '{"schema_version":"1.0","run_id":"2","seq":6,"turn_no":33,"type":"agent_command_applied","payload":{"kind":"cancel"},"ts":"2026-07-09T01:00:05+00:00"}',
+            '{"schema_version":"1.0","run_id":"2","seq":7,"turn_no":33,"type":"command_rejected","payload":{"reason":"Command "follow_up" rejected because cancellation is in progress."},"ts":"2026-07-09T01:00:06+00:00"}',
+        ]);
+    }
+
     private function writeStaleCancellationEvents(): void
     {
         $this->writeEvents([

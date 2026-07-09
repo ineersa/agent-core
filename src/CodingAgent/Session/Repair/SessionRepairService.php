@@ -236,7 +236,7 @@ final readonly class SessionRepairService
             return ['needsRepair' => false, 'turnNo' => 0, 'activeStepId' => null];
         }
 
-        if ($replayed->isStreaming || \in_array(false, $replayed->pendingToolCalls, true)) {
+        if ($replayed->isStreaming) {
             return ['needsRepair' => false, 'turnNo' => 0, 'activeStepId' => null];
         }
 
