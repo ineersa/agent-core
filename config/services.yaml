@@ -470,13 +470,9 @@ services:
       $eventDispatcher: '@event_dispatcher'
       $state: '@tui.subagent_live.projection_state'
 
-  Ineersa\CodingAgent\Runtime\Contract\BackfillEventProviderInterface:
-    alias: Ineersa\CodingAgent\Runtime\Process\ChildRunBackfillEventProvider
-
   Ineersa\Tui\Runtime\SubagentLiveChildViewPoller:
     arguments:
       $projector: '@tui.subagent_live.transcript_projector'
-      $backfillProvider: '@Ineersa\CodingAgent\Runtime\Contract\BackfillEventProviderInterface'
 
   Ineersa\Tui\Runtime\SubagentLiveBackgroundChildPoller: ~
 
@@ -499,6 +495,22 @@ services:
 
   Ineersa\CodingAgent\Runtime\Contract\SessionTranscriptProviderInterface:
     alias: Ineersa\CodingAgent\Session\SessionTranscriptProvider
+
+  child_run.transcript.projection_state:
+    class: Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState
+
+  child_run.transcript.transcript_projector:
+    class: Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector
+    arguments:
+      $eventDispatcher: '@event_dispatcher'
+      $state: '@child_run.transcript.projection_state'
+
+  Ineersa\CodingAgent\Session\ChildRunTranscriptSnapshotProvider:
+    arguments:
+      $transcriptProjector: '@child_run.transcript.transcript_projector'
+
+  Ineersa\CodingAgent\Runtime\Contract\ChildRunTranscriptSnapshotProviderInterface:
+    alias: Ineersa\CodingAgent\Session\ChildRunTranscriptSnapshotProvider
 
   Ineersa\AgentCore\Contract\TurnTree\TurnTreeProjectorInterface:
     alias: Ineersa\CodingAgent\Session\TurnTree\TurnTreeProjectorContractAdapter

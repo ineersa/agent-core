@@ -36,6 +36,22 @@ final class StreamingCommittedRuntimeEventStoreTest extends TestCase
         $this->assertSame(5, $sink->emitted[0]->seq);
     }
 
+    public function testAppendChildRunEventEmitsRuntimeEventPreservingChildRunId(): void
+    {
+        $childRunId = 'child-subagent-run-7f3a';
+        $inner = new RecordingEventStore();
+        $sink = new RecordingCommittedStdoutSink();
+        $mapper = new RuntimeEventMapper(new RuntimeEventTranslator(new EventDispatcher()));
+
+        $store = new StreamingCommittedRuntimeEventStore($inner, $mapper, $sink, true);
+        $store->append(new RunEvent($childRunId, 3, 1, RunEventTypeEnum::TurnAdvanced->value, ['turn_no' => 1]));
+
+        $this->assertCount(1, $sink->emitted);
+        $this->assertSame($childRunId, $sink->emitted[0]->runId);
+        $this->assertSame(3, $sink->emitted[0]->seq);
+        $this->assertSame($childRunId, $inner->appended[0]->runId);
+    }
+
     public function testAppendManyEmitsInOrderAfterBatchAppend(): void
     {
         $inner = new RecordingEventStore();

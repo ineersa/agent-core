@@ -17,10 +17,10 @@ use Psr\Log\LoggerInterface;
  * is called. Nested subagents launched inside a fork emit progress on the fork run
  * stream; this poller discovers them into SubagentLiveCatalog and surfaces HITL.
  *
- * Stored child backfill ({@see BackfillEventProviderInterface}) is owned by
- * {@see SubagentLiveChildViewPoller} for selected live-view transcript/question
- * rendering. This poller uses live {@see AgentSessionClient::events()} only so
- * one-shot backfill is not consumed before the user opens child live view.
+ * Canonical child replay is owned by {@see SubagentLiveChildViewPoller} when
+ * the user opens a selected child live view. This poller uses live
+ * {@see AgentSessionClient::events()} only so durable child events are never
+ * polled from the background tick path.
  */
 final class SubagentLiveBackgroundChildPoller
 {

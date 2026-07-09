@@ -20,6 +20,7 @@ use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
+use Symfony\Component\Yaml\Yaml;
 
 /**
  * @covers \Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient::start
@@ -167,10 +168,10 @@ final class StartRunPersistsSessionModelTest extends IsolatedKernelTestCase
 
     public function testStartPersistsResolvedDefaultModelWhenNoExplicitModelGiven(): void
     {
-        // Thesis: when no explicit model is given and a catalog is available
-        // (home settings provide providers in this environment), the resolved
-        // default model is persisted to session metadata — so resume is
-        // pinned to what turn 1 actually used.
+        // Thesis: when no explicit model is given and the isolated project
+        // settings provide a model catalog, the resolved default model is
+        // persisted to session metadata — so resume is pinned to what turn 1
+        // actually used.
         $cwd = $this->isolatedCwd();
         $sessionId = $this->createSession($cwd);
 
@@ -239,7 +240,7 @@ final class StartRunPersistsSessionModelTest extends IsolatedKernelTestCase
     }
 
     /**
-     * With the default test-kernel setup (home settings provide a catalog),
+     * With this test's isolated project settings providing a catalog,
      * start() persists the resolved default model to session metadata.
      * The independent resolver (built with standardAiData, default =
      * deepseek/deepseek-v4-pro) reads the persisted model from metadata
@@ -349,6 +350,11 @@ final class StartRunPersistsSessionModelTest extends IsolatedKernelTestCase
             'Resolved reasoning must come from session metadata, not new global default');
     }
 
+    protected static function configureIsolatedProjectBeforeKernelBoot(string $classCwd): void
+    {
+        self::writeIsolatedProjectAiSettings($classCwd);
+    }
+
     // ── Helpers ───────────────────────────────────────────────────
 
     private function client(): InProcessAgentSessionClient
@@ -425,7 +431,7 @@ final class StartRunPersistsSessionModelTest extends IsolatedKernelTestCase
 
     private function makeAppConfig(string $cwd): AppConfig
     {
-        return $this->makeAppConfigFromAiData($cwd, $this->standardAiData());
+        return $this->makeAppConfigFromAiData($cwd, self::standardAiData());
     }
 
     private function makeAppConfigFromAiData(string $cwd, array $aiData): AppConfig
@@ -453,7 +459,7 @@ final class StartRunPersistsSessionModelTest extends IsolatedKernelTestCase
         string $defaultModel,
         string $defaultReasoning,
     ): ModelResolver {
-        $aiData = $this->standardAiData();
+        $aiData = self::standardAiData();
         $aiData['default_model'] = $defaultModel;
         $aiData['default_reasoning'] = $defaultReasoning;
 
@@ -464,13 +470,30 @@ final class StartRunPersistsSessionModelTest extends IsolatedKernelTestCase
     }
 
     /**
+     * Seed isolated project Hatfield settings with a minimal AI catalog so
+     * kernel boot does not depend on the developer's ~/.hatfield/providers.
+     */
+    private static function writeIsolatedProjectAiSettings(string $classCwd): void
+    {
+        $settings = [
+            'ai' => self::standardAiData(),
+        ];
+
+        file_put_contents(
+            $classCwd.'/.hatfield/settings.yaml',
+            '# hatfield settings (test isolation)
+'.Yaml::dump($settings, 4, 2),
+        );
+    }
+
+    /**
      * Same catalog as SessionAwareModelResolverTest::standardAiData().
      *
      * Global default: deepseek/deepseek-v4-pro (NOT llama_cpp/flash).
      * Both providers are available so the test proves session metadata
      * wins over the global default.
      */
-    private function standardAiData(): array
+    private static function standardAiData(): array
     {
         return [
             'default_model' => 'deepseek/deepseek-v4-pro',

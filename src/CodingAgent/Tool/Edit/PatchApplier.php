@@ -5,62 +5,35 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tool\Edit;
 
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
-use Ineersa\CodingAgent\Tool\CancellableProcessResult;
-use Ineersa\CodingAgent\Tool\ToolRuntime;
 use Symfony\Component\Lock\LockFactory;
-use Symfony\Component\Process\Process;
 
 /**
- * Applies a normalized unified-diff patch to a file using GNU patch.
- *
- * Phases:
- * 1. Dry-run validation — never touches the target.
- * 2. Apply to temp output (patch -o <temp>) — generates patched bytes
- *    without modifying the target.
- * 3. In-place byte write through the original target path — preserves
- *    symlink target semantics and hardlink inode identity.
- *
- * GNU patch is invoked with fuzz factor 5 ({@see runPatchDryRun}, {@see runPatchApply}).
- * LLM plain-@@ hunks often carry unbalanced context (many leading context lines,
- * few trailing, including blank context lines). After PatchNormalizer resolves
- * relaxed headers, GNU patch 2.7.6 may still fail to anchor such hunks at fuzz 3;
- * fuzz 5 provides headroom while plain-@@ safety (stale, duplicate, ambiguous
- * blocks) remains enforced upstream in PatchNormalizer::findExactBlockMatch().
- *
- * On dry-run or apply failure, throws a classified ToolCallException with
- * sanitized GNU patch output and bounded file-context windows.
+ * Applies Codex-style single-file hunks under a Symfony Lock critical section.
  */
 final class PatchApplier
 {
     public function __construct(
-        private readonly ToolRuntime $toolRuntime,
         private readonly LockFactory $lockFactory,
         private readonly \Psr\Log\LoggerInterface $logger,
         private readonly PatchFailureFormatter $failureFormatter,
+        private readonly EditPatchParser $parser = new EditPatchParser(),
+        private readonly EditPatchApplicator $patchApplicator = new EditPatchApplicator(),
     ) {
     }
 
     /**
-     * Apply a normalized patch inside a locked critical section.
-     *
-     * Reads the target file content under lock, normalizes the raw patch
-     * against that locked snapshot, and applies it atomically.  The same
-     * snapshot is used for normalization, GNU-patch dry-run, in-place
-     * application, no-op detection, and rollback — no TOCTOU window.
-     *
-     * @param string          $targetPath absolute path to the target file
-     * @param string          $rawPatch   raw LLM-generated patch (before normalization)
-     * @param PatchNormalizer $normalizer the normalizer service
-     *
-     * @return array{patchedContent: string, originalContent: string, normalizedPatch: string}
-     *
-     * @throws ToolCallException on validation/patch/infrastructure failures
+     * @return array{
+     *     patchedContent: string,
+     *     originalContent: string,
+     *     patchContent: string,
+     *     replacements: list<EditReplacementDTO>,
+     *     additions: int,
+     *     deletions: int,
+     *     changedLineNumbers: list<int>
+     * }
      */
-    public function applyWithNormalizer(
-        string $targetPath,
-        string $rawPatch,
-        PatchNormalizer $normalizer,
-    ): array {
+    public function apply(string $targetPath, string $rawPatch): array
+    {
         $realPath = false !== ($r = realpath($targetPath)) ? $r : $targetPath;
         $lockKey = 'edit-file-'.hash('sha256', $realPath);
         $lock = $this->lockFactory->createLock($lockKey);
@@ -68,88 +41,46 @@ final class PatchApplier
         try {
             $lock->acquire(true);
 
-            // Read target content under lock — the same snapshot used
-            // throughout: normalization, dry-run, apply, no-op, rollback.
             $originalContent = @file_get_contents($targetPath);
             if (false === $originalContent) {
                 throw $this->infraError('Failed to read target file under lock.', $targetPath);
             }
 
-            // Normalize the LLM-generated patch against locked file content
-            $normalized = $normalizer->normalize($rawPatch, $originalContent);
-            $patchContent = $normalized['content'];
-            $detectedTruncation = $normalized['detectedTruncation'];
-            $truncationDetails = $normalized['truncationDetails'] ?? '';
-
-            $patchFile = $this->writePatchFile($patchContent);
-            $tempOut = @tempnam(sys_get_temp_dir(), 'hatfield_out_');
-            if (false === $tempOut) {
-                @unlink($patchFile);
-                throw $this->infraError('Failed to create temp output file.', $targetPath);
-            }
-
             try {
-                // Phase 1: dry-run
-                $drResult = $this->runPatchDryRun($realPath, $patchFile);
-
-                if (0 !== $drResult->exitCode) {
-                    $noTrailingNewline = $this->targetLacksTrailingNewline($targetPath);
-                    $failure = $this->failureFormatter->buildFailureMessage(
-                        $targetPath,
-                        $drResult->stdout, $drResult->stderr,
-                        $originalContent, $noTrailingNewline, $detectedTruncation,
-                        $truncationDetails,
-                    );
-
-                    throw new ToolCallException(\sprintf("This edit attempt failed. No changes from this attempt were applied; the target file is untouched.\n\n%s", $failure['message']), retryable: $failure['retryable'], hint: $failure['hint']);
-                }
-
-                // Phase 2: apply to temp output
-                $applyResult = $this->runPatchApply($realPath, $patchFile, $tempOut);
-
-                if (0 !== $applyResult->exitCode) {
-                    $noTrailingNewline = $this->targetLacksTrailingNewline($targetPath);
-                    $failure = $this->failureFormatter->buildFailureMessage(
-                        $targetPath,
-                        $applyResult->stdout, $applyResult->stderr,
-                        $originalContent, $noTrailingNewline, $detectedTruncation,
-                        $truncationDetails,
-                    );
-
-                    throw new ToolCallException(\sprintf("This edit attempt failed. No changes from this attempt were applied; the target file is untouched.\n\n%s", $failure['message']), retryable: $failure['retryable'], hint: $failure['hint']);
-                }
-
-                // Phase 3: read patched bytes
-                $patchedContent = @file_get_contents($tempOut);
-                if (false === $patchedContent) {
-                    throw $this->infraError('Failed to read patched output.', $targetPath);
-                }
-
-                // No-op: patched content equals original
-                if ($patchedContent === $originalContent) {
-                    return [
-                        'patchedContent' => $originalContent,
-                        'originalContent' => $originalContent,
-                        'normalizedPatch' => $patchContent,
-                    ];
-                }
-
-                // Phase 4: in-place write through target path
-                $this->writeBytesInPlace($targetPath, $patchedContent, $originalContent);
-
-                return [
-                    'patchedContent' => $patchedContent,
-                    'originalContent' => $originalContent,
-                    'normalizedPatch' => $patchContent,
-                ];
-            } finally {
-                if (is_file($patchFile)) {
-                    @unlink($patchFile);
-                }
-                if (is_file($tempOut)) {
-                    @unlink($tempOut);
-                }
+                $chunks = $this->parser->parse($rawPatch);
+                $replacements = $this->patchApplicator->computeReplacements($chunks, $originalContent);
+            } catch (ToolCallException $e) {
+                throw $this->wrapApplyFailure($e, $targetPath, $originalContent);
             }
+
+            [$lines, $hadTrailingNewline] = $this->patchApplicator->splitFileLines($originalContent);
+            $stats = $this->countPatchLineStatsFromChunks($chunks);
+            $changedLineNumbers = $this->computeChangedLineNumbers($replacements);
+            $patchedContent = $this->patchApplicator->applyReplacements($lines, $replacements, $hadTrailingNewline);
+
+            if ($patchedContent === $originalContent) {
+                return [
+                    'patchedContent' => $originalContent,
+                    'originalContent' => $originalContent,
+                    'patchContent' => $rawPatch,
+                    'replacements' => $replacements,
+                    'additions' => 0,
+                    'deletions' => 0,
+                    'changedLineNumbers' => [],
+                ];
+            }
+
+            $this->writeBytesInPlace($targetPath, $patchedContent, $originalContent);
+
+            return [
+                'patchedContent' => $patchedContent,
+                'originalContent' => $originalContent,
+                'patchContent' => $rawPatch,
+                'replacements' => $replacements,
+                'additions' => $stats['additions'],
+                'deletions' => $stats['deletions'],
+                'changedLineNumbers' => $changedLineNumbers,
+            ];
         } finally {
             try {
                 $lock->release();
@@ -162,6 +93,96 @@ final class PatchApplier
                 ]);
             }
         }
+    }
+
+    /**
+     * @param list<EditPatchChunkDTO> $chunks
+     *
+     * @return array{additions: int, deletions: int}
+     */
+    private function countPatchLineStatsFromChunks(array $chunks): array
+    {
+        $additions = 0;
+        $deletions = 0;
+
+        foreach ($chunks as $chunk) {
+            $oldCount = \count($chunk->oldLines);
+            $newCount = \count($chunk->newLines);
+            $shared = min($oldCount, $newCount);
+            for ($i = 0; $i < $shared; ++$i) {
+                if ($chunk->oldLines[$i] !== $chunk->newLines[$i]) {
+                    ++$deletions;
+                    ++$additions;
+                }
+            }
+            if ($oldCount > $shared) {
+                $deletions += $oldCount - $shared;
+            }
+            if ($newCount > $shared) {
+                $additions += $newCount - $shared;
+            }
+        }
+
+        return ['additions' => $additions, 'deletions' => $deletions];
+    }
+
+    /**
+     * @param list<EditReplacementDTO> $replacements
+     *
+     * @return list<int>
+     */
+    private function computeChangedLineNumbers(array $replacements): array
+    {
+        $changed = [];
+        usort($replacements, static fn (EditReplacementDTO $a, EditReplacementDTO $b): int => $a->startIndex <=> $b->startIndex);
+
+        $delta = 0;
+        foreach ($replacements as $replacement) {
+            $patchedStart = $replacement->startIndex + $delta;
+            if ([] === $replacement->newLines) {
+                // Pure deletion: still surface nearby context at the patched deletion site.
+                $changed[] = max(1, $patchedStart + 1);
+            } else {
+                for ($i = 0; $i < \count($replacement->newLines); ++$i) {
+                    $changed[] = $patchedStart + $i + 1;
+                }
+            }
+
+            $delta += \count($replacement->newLines) - $replacement->oldLength;
+        }
+
+        sort($changed);
+
+        return array_values(array_unique($changed));
+    }
+
+    private function wrapApplyFailure(ToolCallException $e, string $targetPath, string $originalContent): ToolCallException
+    {
+        $message = $e->getMessage();
+        $hint = $e->hint() ?? '';
+
+        if (str_contains($message, 'E_PATCH_STALE')) {
+            $failedLine = $this->guessFailedLineFromHint($hint) ?? 1;
+            $context = $this->failureFormatter->buildCurrentFileContext($originalContent, [$failedLine]);
+            if ('' !== $context) {
+                $message .= "\n\nCurrent file context:\n".$context;
+            }
+        }
+
+        return new ToolCallException(
+            \sprintf("This edit attempt failed. No changes from this attempt were applied; the target file is untouched.\n\n%s", $message),
+            retryable: $e->retryable(),
+            hint: $hint,
+        );
+    }
+
+    private function guessFailedLineFromHint(string $hint): ?int
+    {
+        if (preg_match('/around line (\d+)/', $hint, $m)) {
+            return (int) $m[1];
+        }
+
+        return null;
     }
 
     private function writeBytesInPlace(string $targetPath, string $patchedContent, string $originalContent): void
@@ -192,69 +213,5 @@ final class PatchApplier
             retryable: true,
             hint: 'Check filesystem availability, permissions, and disk space.',
         );
-    }
-
-    private function runPatchDryRun(string $targetPath, string $patchFile): CancellableProcessResult
-    {
-        $process = new Process([
-            'patch', '-u', '-F5', '-l', '-N',
-            '--dry-run', '--posix',
-            $targetPath, $patchFile,
-        ]);
-
-        return $this->toolRuntime->runCancellableProcess($process);
-    }
-
-    private function runPatchApply(string $targetPath, string $patchFile, string $tempOut): CancellableProcessResult
-    {
-        $process = new Process([
-            'patch', '-u', '-F5', '-l', '-N',
-            '-o', $tempOut,
-            $targetPath, $patchFile,
-        ]);
-
-        return $this->toolRuntime->runCancellableProcess($process);
-    }
-
-    private function writePatchFile(string $patchContent): string
-    {
-        $patchFile = @tempnam(sys_get_temp_dir(), 'hatfield_patch_');
-
-        if (false === $patchFile) {
-            throw new ToolCallException('[E_PATCH_INFRA] Failed to create temp file for patch content.', retryable: true, hint: 'Check disk space and temp directory permissions.');
-        }
-
-        $written = @file_put_contents($patchFile, $patchContent);
-        if (false === $written) {
-            if (is_file($patchFile)) {
-                @unlink($patchFile);
-            }
-            throw new ToolCallException('[E_PATCH_INFRA] Failed to write patch content to temp file.', retryable: true, hint: 'Check disk space and temp directory permissions.');
-        }
-
-        return $patchFile;
-    }
-
-    private function targetLacksTrailingNewline(string $targetPath): bool
-    {
-        if (!is_file($targetPath) || !is_readable($targetPath)) {
-            return false;
-        }
-
-        $handle = @fopen($targetPath, 'rb');
-        if (false === $handle) {
-            return false;
-        }
-
-        if (-1 === fseek($handle, -1, \SEEK_END)) {
-            fclose($handle);
-
-            return false;
-        }
-
-        $lastByte = fread($handle, 1);
-        fclose($handle);
-
-        return "\n" !== $lastByte;
     }
 }

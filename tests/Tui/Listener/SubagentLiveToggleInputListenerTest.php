@@ -9,6 +9,7 @@ use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\SessionsConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
+use Ineersa\CodingAgent\Runtime\Contract\ChildRunTranscriptSnapshotProviderInterface;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
@@ -44,6 +45,7 @@ final class SubagentLiveToggleInputListenerTest extends TestCase
             $this->sessionStore(),
             new SessionEventsExportService(),
             ContextUsageTestAppConfig::withContextWindow(),
+            $this->createStub(ChildRunTranscriptSnapshotProviderInterface::class),
         );
         $picker->setRuntimeRefs($harness->tui(), $harness->screen(), $state);
 

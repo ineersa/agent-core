@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Picker;
 
 use Ineersa\CodingAgent\Config\AppConfig;
+use Ineersa\CodingAgent\Runtime\Contract\ChildRunTranscriptSnapshotDTO;
+use Ineersa\CodingAgent\Runtime\Contract\ChildRunTranscriptSnapshotProviderInterface;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\Tui\Export\SessionEventsExportService;
 use Ineersa\Tui\Footer\ContextUsageFormatter;
@@ -33,20 +35,39 @@ final class SubagentLivePickerController
     private ?ChatScreen $screen = null;
     private ?TuiSessionState $state = null;
 
+    /** @var ?callable(\Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent): void */
+    private $onHumanInputRequested;
+
+    /** @var ?callable(\Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent): void */
+    private $onToolQuestionRequested;
+
+    /** @var ?callable(\Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent): void */
+    private $onToolTerminal;
+
     public function __construct(
         private readonly SubagentLiveChildViewPoller $childPoller,
         private readonly HatfieldSessionStore $sessionStore,
         private readonly SessionEventsExportService $exportService,
         private readonly AppConfig $appConfig,
+        private readonly ChildRunTranscriptSnapshotProviderInterface $childSnapshotProvider,
         private readonly ?ContextUsageFormatter $contextUsageFormatter = null,
     ) {
     }
 
-    public function setRuntimeRefs(Tui $tui, ChatScreen $screen, TuiSessionState $state): void
-    {
+    public function setRuntimeRefs(
+        Tui $tui,
+        ChatScreen $screen,
+        TuiSessionState $state,
+        ?callable $onHumanInputRequested = null,
+        ?callable $onToolQuestionRequested = null,
+        ?callable $onToolTerminal = null,
+    ): void {
         $this->tui = $tui;
         $this->screen = $screen;
         $this->state = $state;
+        $this->onHumanInputRequested = $onHumanInputRequested;
+        $this->onToolQuestionRequested = $onToolQuestionRequested;
+        $this->onToolTerminal = $onToolTerminal;
     }
 
     public function open(): void
@@ -396,16 +417,34 @@ final class SubagentLivePickerController
         $cached = $state->subagentLiveView->childCaches[$child->agentRunId] ?? null;
         $hasCachedTranscript = null !== $cached && [] !== $cached['transcript'];
 
-        $resetProjection = !$hasCachedTranscript && $state->subagentLiveView->shouldResetProjectionFor($child);
-        if ($resetProjection) {
-            $this->childPoller->resetProjection();
-        }
-
         $state->subagentLiveView->enter($child);
 
-        if ($resetProjection && [] === $state->subagentLiveView->childTranscript) {
-            $state->subagentLiveView->childTranscript = $state->subagentLiveView->placeholderTranscriptFor($child);
-            $state->subagentLiveView->persistCurrentChildCache();
+        if ($hasCachedTranscript) {
+            $cachedReplay = $state->subagentLiveView->childReplayEvents;
+            $this->childPoller->replaySnapshot(
+                $state->subagentLiveView,
+                new ChildRunTranscriptSnapshotDTO(
+                    $state->subagentLiveView->childTranscript,
+                    $cachedReplay,
+                    $state->subagentLiveView->childLastSeq,
+                ),
+            );
+        } else {
+            $this->childPoller->resetProjection();
+
+            $snapshot = $this->childSnapshotProvider->snapshot($child->agentRunId);
+            if ([] === $snapshot->transcriptBlocks && [] === $snapshot->replayEvents) {
+                $state->subagentLiveView->childTranscript = $state->subagentLiveView->placeholderTranscriptFor($child);
+                $state->subagentLiveView->persistCurrentChildCache();
+            } else {
+                $this->childPoller->replaySnapshot(
+                    $state->subagentLiveView,
+                    $snapshot,
+                    onHumanInputRequested: $this->onHumanInputRequested,
+                    onToolQuestionRequested: $this->onToolQuestionRequested,
+                    onToolTerminal: $this->onToolTerminal,
+                );
+            }
         }
 
         $screen->setTranscriptBlocks($state->subagentLiveView->childTranscript);

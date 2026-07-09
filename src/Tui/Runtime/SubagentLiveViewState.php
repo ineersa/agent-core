@@ -30,7 +30,7 @@ final class SubagentLiveViewState
      * Per-child transcript/seq cache keyed by agentRunId so switching picker rows
      * does not discard completed transcripts (JSONL pipe events are consumed once).
      *
-     * @var array<string, array{transcript: list<TranscriptBlock>, lastSeq: int, lastPoll: float, activity: RunActivityStateEnum, queuedUserMessages: array<string, string>}>
+     * @var array<string, array{transcript: list<TranscriptBlock>, lastSeq: int, lastPoll: float, activity: RunActivityStateEnum, queuedUserMessages: array<string, string>, replayEvents: list<\Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent>}>
      */
     public array $childCaches = [];
 
@@ -38,6 +38,9 @@ final class SubagentLiveViewState
 
     /** @var array<string, string> idempotency_key => text */
     public array $childQueuedUserMessages = [];
+
+    /** @var list<\Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent> */
+    public array $childReplayEvents = [];
 
     /**
      * Last combined parent|child working line pushed to ChatScreen while live view is active.
@@ -82,6 +85,7 @@ final class SubagentLiveViewState
             'lastPoll' => $this->childLastPoll,
             'activity' => $this->childActivity,
             'queuedUserMessages' => $this->childQueuedUserMessages,
+            'replayEvents' => $this->childReplayEvents,
         ];
     }
 
@@ -97,6 +101,7 @@ final class SubagentLiveViewState
         $this->childLastPoll = $cached['lastPoll'];
         $this->childActivity = $cached['activity'];
         $this->childQueuedUserMessages = $cached['queuedUserMessages'] ?? [];
+        $this->childReplayEvents = $cached['replayEvents'] ?? [];
     }
 
     public function enter(SubagentLiveChildDTO $child): void
@@ -114,6 +119,8 @@ final class SubagentLiveViewState
             $this->childLastSeq = $cached['lastSeq'];
             $this->childLastPoll = $cached['lastPoll'];
             $this->childActivity = $cached['activity'];
+            $this->childQueuedUserMessages = $cached['queuedUserMessages'] ?? [];
+            $this->childReplayEvents = $cached['replayEvents'] ?? [];
 
             return;
         }

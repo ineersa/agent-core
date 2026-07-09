@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Runtime;
 
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
-use Ineersa\CodingAgent\Runtime\Contract\BackfillEventProviderInterface;
+use Ineersa\CodingAgent\Runtime\Contract\ChildRunTranscriptSnapshotDTO;
 use Ineersa\CodingAgent\Runtime\Contract\TranscriptProjectorInterface;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
@@ -15,6 +15,9 @@ use Psr\Log\LoggerInterface;
 
 /**
  * Polls a selected child run id and projects readonly live transcript blocks.
+ *
+ * Canonical child history is replayed once on live-view entry via {@see replaySnapshot()};
+ * {@see poll()} consumes only live {@see AgentSessionClient::events()} for the child run id.
  *
  * Optional HITL callbacks mirror RuntimeEventPoller so child human_input.requested
  * and tool_question.requested events can drive the shared QuestionCoordinator.
@@ -28,7 +31,6 @@ final class SubagentLiveChildViewPoller
     public function __construct(
         private readonly TranscriptProjectorInterface $projector,
         private readonly LoggerInterface $logger,
-        private readonly ?BackfillEventProviderInterface $backfillProvider = null,
     ) {
         $this->eventApplier = new TuiRuntimeEventApplier($this->projector);
     }
@@ -36,6 +38,59 @@ final class SubagentLiveChildViewPoller
     public function resetProjection(): void
     {
         $this->projector->reset();
+    }
+
+    /**
+     * One-time replay of a canonical child snapshot into live view state and the child projector.
+     *
+     * Call only while {@see SubagentLiveViewState::$active} is true (picker sets this before replay).
+     * Transient seq=0 replay events do not advance {@see SubagentLiveViewState::$childLastSeq}.
+     *
+     * @param ?callable(RuntimeEvent): void $onHumanInputRequested
+     * @param ?callable(RuntimeEvent): void $onToolQuestionRequested
+     * @param ?callable(RuntimeEvent): void $onToolTerminal
+     *
+     * @return list<TranscriptBlock>
+     */
+    public function replaySnapshot(
+        SubagentLiveViewState $live,
+        ChildRunTranscriptSnapshotDTO $snapshot,
+        ?callable $onHumanInputRequested = null,
+        ?callable $onToolQuestionRequested = null,
+        ?callable $onToolTerminal = null,
+    ): array {
+        if (!$live->active || null === $live->selected) {
+            return $live->childTranscript;
+        }
+
+        $this->projector->reset();
+
+        $scratch = new TuiSessionState($live->selected->agentRunId);
+        $scratch->activity = $live->childActivity;
+        $scratch->queuedUserMessages = $live->childQueuedUserMessages;
+
+        foreach ($snapshot->replayEvents as $event) {
+            $this->eventApplier->apply($scratch, $event, replayMode: true);
+            $this->dispatchEventCallbacks(
+                $event,
+                $live->selected->agentRunId,
+                $onHumanInputRequested,
+                $onToolQuestionRequested,
+                $onToolTerminal,
+            );
+        }
+
+        $live->childActivity = $scratch->activity;
+        $live->childQueuedUserMessages = $scratch->queuedUserMessages;
+        $live->childLastSeq = $snapshot->maxSeq;
+        $live->childReplayEvents = $snapshot->replayEvents;
+        $projected = $this->projector->blocks();
+        $live->childTranscript = [] !== $projected
+            ? $projected
+            : $snapshot->transcriptBlocks;
+        $live->persistCurrentChildCache();
+
+        return $live->childTranscript;
     }
 
     /**
@@ -62,17 +117,8 @@ final class SubagentLiveChildViewPoller
         }
         $live->childLastPoll = $now;
 
-        $backfillEvents = $this->backfillProvider?->getStoredEvents($live->selected->agentRunId) ?? [];
-        if ([] !== $backfillEvents) {
-            $backfillEvents = array_values(array_filter(
-                $backfillEvents,
-                static fn (RuntimeEvent $event): bool => 0 === $event->seq || $event->seq > $live->childLastSeq,
-            ));
-        }
+
         $events = $this->runtimeEvents($client, $live->selected->agentRunId);
-        if ([] !== $backfillEvents) {
-            $events = array_merge($backfillEvents, $events);
-        }
         if ([] === $events) {
             return null;
         }
@@ -92,23 +138,16 @@ final class SubagentLiveChildViewPoller
             }
 
             $this->eventApplier->apply($scratch, $event);
+            $live->childReplayEvents[] = $event;
             $changed = true;
 
-            if (null !== $onHumanInputRequested && RuntimeEventTypeEnum::HumanInputRequested->value === $event->type) {
-                $this->invokeEventCallback($onHumanInputRequested, $event, $live->selected->agentRunId, 'onHumanInputRequested');
-            }
-
-            if (null !== $onToolQuestionRequested && RuntimeEventTypeEnum::ToolQuestionRequested->value === $event->type) {
-                $this->invokeEventCallback($onToolQuestionRequested, $event, $live->selected->agentRunId, 'onToolQuestionRequested');
-            }
-
-            if (null !== $onToolTerminal && (
-                RuntimeEventTypeEnum::ToolExecutionCompleted->value === $event->type
-                || RuntimeEventTypeEnum::ToolExecutionFailed->value === $event->type
-                || RuntimeEventTypeEnum::ToolExecutionCancelled->value === $event->type
-            )) {
-                $this->invokeEventCallback($onToolTerminal, $event, $live->selected->agentRunId, 'onToolTerminal');
-            }
+            $this->dispatchEventCallbacks(
+                $event,
+                $live->selected->agentRunId,
+                $onHumanInputRequested,
+                $onToolQuestionRequested,
+                $onToolTerminal,
+            );
         }
 
         if ($changed) {
@@ -129,6 +168,35 @@ final class SubagentLiveChildViewPoller
         $live->persistCurrentChildCache();
 
         return $live->childTranscript;
+    }
+
+    /**
+     * @param ?callable(RuntimeEvent): void $onHumanInputRequested
+     * @param ?callable(RuntimeEvent): void $onToolQuestionRequested
+     * @param ?callable(RuntimeEvent): void $onToolTerminal
+     */
+    private function dispatchEventCallbacks(
+        RuntimeEvent $event,
+        string $childRunId,
+        ?callable $onHumanInputRequested,
+        ?callable $onToolQuestionRequested,
+        ?callable $onToolTerminal,
+    ): void {
+        if (null !== $onHumanInputRequested && RuntimeEventTypeEnum::HumanInputRequested->value === $event->type) {
+            $this->invokeEventCallback($onHumanInputRequested, $event, $childRunId, 'onHumanInputRequested');
+        }
+
+        if (null !== $onToolQuestionRequested && RuntimeEventTypeEnum::ToolQuestionRequested->value === $event->type) {
+            $this->invokeEventCallback($onToolQuestionRequested, $event, $childRunId, 'onToolQuestionRequested');
+        }
+
+        if (null !== $onToolTerminal && (
+            RuntimeEventTypeEnum::ToolExecutionCompleted->value === $event->type
+            || RuntimeEventTypeEnum::ToolExecutionFailed->value === $event->type
+            || RuntimeEventTypeEnum::ToolExecutionCancelled->value === $event->type
+        )) {
+            $this->invokeEventCallback($onToolTerminal, $event, $childRunId, 'onToolTerminal');
+        }
     }
 
     /**
