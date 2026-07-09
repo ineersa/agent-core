@@ -80,11 +80,9 @@ final class ForkHitlLiveE2eTest extends ControllerE2eTestCase
         $byType = $this->indexByType($events);
 
         $this->assertTrue($this->foundAck($events, $followCmdId), $this->collectDiagnostics($events));
+        $parentRunId = $this->parentRunIdForCollection ?? $this->runId;
+        $this->assertNotEmpty($parentRunId, $this->collectDiagnostics($events));
         $this->assertArrayHasKey('run.started', $byType, $this->collectDiagnostics($events));
-
-        $runStarted = $byType['run.started'][0];
-        $this->runId = (string) ($runStarted['runId'] ?? $runStarted['payload']['runId'] ?? '');
-        $this->assertNotEmpty($this->runId, $this->collectDiagnostics($events));
 
         $this->assertArrayHasKey('tool_execution.started', $byType,
             'Parent must start fork tool. '.$this->collectDiagnostics($events));
@@ -107,13 +105,13 @@ final class ForkHitlLiveE2eTest extends ControllerE2eTestCase
         $this->assertNotSame('', $artifactId);
         $this->assertNotSame('', $forkChildRunId);
 
-        $registryPath = $this->parentRegistryPath();
+        $registryPath = $this->parentRegistryPath($parentRunId);
         $this->assertFileExists($registryPath, $this->collectDiagnostics($events));
         $registryRaw = (string) file_get_contents($registryPath);
         $this->assertStringContainsString($artifactId, $registryRaw);
         $this->assertStringContainsString(self::FORK_AGENT, $registryRaw);
 
-        $childHitl = $this->findChildHumanInputRequested($events, $this->runId);
+        $childHitl = $this->findChildHumanInputRequested($events, $parentRunId);
         $this->assertNotNull($childHitl,
             'Fork-owned human_input.requested must appear on parent controller JSONL. '
             .$this->collectDiagnostics($events));
@@ -171,11 +169,9 @@ final class ForkHitlLiveE2eTest extends ControllerE2eTestCase
         $byType = $this->indexByType($events);
 
         $this->assertTrue($this->foundAck($events, $followCmdId), $this->collectDiagnostics($events));
+        $parentRunId = $this->parentRunIdForCollection ?? $this->runId;
+        $this->assertNotEmpty($parentRunId, $this->collectDiagnostics($events));
         $this->assertArrayHasKey('run.started', $byType, $this->collectDiagnostics($events));
-
-        $runStarted = $byType['run.started'][0];
-        $this->runId = (string) ($runStarted['runId'] ?? $runStarted['payload']['runId'] ?? '');
-        $this->assertNotEmpty($this->runId);
 
         $this->assertNotNull($this->findToolStarted($byType, 'fork'), $this->collectDiagnostics($events));
 
@@ -187,7 +183,7 @@ final class ForkHitlLiveE2eTest extends ControllerE2eTestCase
         $forkChildRunId = (string) ($forkProgress['agent_run_id'] ?? '');
         $this->assertNotSame('', $forkChildRunId);
 
-        $registryPath = $this->parentRegistryPath();
+        $registryPath = $this->parentRegistryPath($parentRunId);
         $this->assertFileExists($registryPath, $this->collectDiagnostics($events));
         $registryRaw = (string) file_get_contents($registryPath);
         $this->assertStringContainsString(self::FORK_AGENT, $registryRaw);
@@ -205,12 +201,12 @@ final class ForkHitlLiveE2eTest extends ControllerE2eTestCase
             'Registry must include scout agent_run_id. '.$registryRaw);
 
         $scoutRunId = '' !== $scoutRunIdFromStream ? $scoutRunIdFromStream : $scoutRunIdFromRegistry;
-        $this->assertNotSame($this->runId, $scoutRunId);
+        $this->assertNotSame($parentRunId, $scoutRunId);
         $this->assertNotSame($forkChildRunId, $scoutRunId);
 
         $childHitl = $this->findHumanInputForRunId($events, $scoutRunId);
         if (null === $childHitl) {
-            $childHitl = $this->findChildHumanInputRequestedExcluding($events, $this->runId, [$forkChildRunId]);
+            $childHitl = $this->findChildHumanInputRequestedExcluding($events, $parentRunId, [$forkChildRunId]);
         }
 
         $this->assertNotNull($childHitl,
@@ -261,9 +257,11 @@ YAML;
         return 120.0;
     }
 
-    private function parentRegistryPath(): string
+    private function parentRegistryPath(?string $parentRunId = null): string
     {
-        return $this->tempDir.'/.hatfield/sessions/'.$this->runId.'/artifacts/agents/registry.json';
+        $sessionId = $parentRunId ?? $this->parentRunIdForCollection ?? $this->runId;
+
+        return $this->tempDir.'/.hatfield/sessions/'.$sessionId.'/artifacts/agents/registry.json';
     }
 
     private function writeScoutAgent(string $path): void
