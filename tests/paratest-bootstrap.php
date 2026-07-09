@@ -27,6 +27,7 @@ declare(strict_types=1);
  *   HATFIELD_QA_RUN_ID      — castor check run id (optional)
  *   HATFIELD_TEST_DATABASE_PATH — per-worker SQLite path
  *   HATFIELD_CACHE_DIR      — per-worker container cache
+ *   HATFIELD_QA_TEST_HOME   — isolated HOME for bin/console migrations (from Castor parent)
  */
 $token = getenv('TEST_TOKEN') ?: '0';
 
@@ -34,6 +35,8 @@ $qaRunId = getenv('HATFIELD_QA_RUN_ID') ?: '';
 $qaRunSegment = '' !== $qaRunId
     ? preg_replace('/[^a-zA-Z0-9._-]/', '', $qaRunId) ?? 'qa-run'
     : '';
+
+$root = dirname(__DIR__);
 
 // ── Per-worker DB path ──
 if ('' !== $qaRunSegment) {
@@ -61,15 +64,35 @@ if ('' !== $qaRunSegment) {
 putenv("HATFIELD_CACHE_DIR={$cacheDir}");
 $_ENV['HATFIELD_CACHE_DIR'] = $cacheDir;
 
+// ── Isolated HOME for Symfony kernel (never use developer ~/.hatfield) ──
+$qaTestHome = getenv('HATFIELD_QA_TEST_HOME') ?: '';
+if ('' === $qaTestHome) {
+    $qaTestHome = $root.'/var/tmp/qa-home/paratest-T'.$token;
+    $hatfieldDir = $qaTestHome.'/.hatfield';
+    if (!is_dir($hatfieldDir) && !mkdir($hatfieldDir, 0777, true) && !is_dir($hatfieldDir)) {
+        fwrite(\STDERR, "ParaTest bootstrap (token={$token}): unable to create QA test HOME\n");
+        exit(1);
+    }
+    $settingsPath = $hatfieldDir.'/settings.yaml';
+    $settingsContents = "ai:\n    default_model: null\n";
+    if (!is_file($settingsPath) || file_get_contents($settingsPath) !== $settingsContents) {
+        if (false === file_put_contents($settingsPath, $settingsContents)) {
+            fwrite(\STDERR, "ParaTest bootstrap (token={$token}): unable to write QA test HOME settings\n");
+            exit(1);
+        }
+    }
+}
+$homeShell = 'HOME='.escapeshellarg($qaTestHome).' HATFIELD_QA_TEST_HOME='.escapeshellarg($qaTestHome);
+
 // ── Ensure per-worker DB schema ──
 // Run the Doctrine migration so this worker's DB is ready before
 // any test boots the Symfony kernel.  Failures here are fatal: a
 // worker with a missing schema will produce confusing errors.
 $phpBin = \PHP_BINARY;
-$root = dirname(__DIR__);
 @mkdir($root.'/var/test', 0755, true);
 $cmd = sprintf(
-    'APP_ENV=test HATFIELD_TEST_DATABASE_PATH=%s HATFIELD_CACHE_DIR=%s %s %s/bin/console doctrine:migrations:migrate --no-interaction --allow-no-migration 2>&1',
+    '%s APP_ENV=test HATFIELD_TEST_DATABASE_PATH=%s HATFIELD_CACHE_DIR=%s %s %s/bin/console doctrine:migrations:migrate --no-interaction --allow-no-migration 2>&1',
+    $homeShell,
     escapeshellarg($dbPath),
     escapeshellarg($cacheDir),
     $phpBin,

@@ -25,6 +25,7 @@ use Castor\Attribute\AsTask;
 use function CastorTasks\check_lane_paratest_processes;
 use function CastorTasks\is_llm_mode;
 use function CastorTasks\phar_ensure;
+use function CastorTasks\qa_test_home_shell_prefix;
 use function CastorTasks\report_path;
 use function CastorTasks\run_quiet_command;
 
@@ -86,7 +87,7 @@ function test(?string $filter = null, ?string $suite = null): void
     // Test DB schema readiness.
     @mkdir('var/test', 0755, true);
     $migrate = run_quiet_command(
-        'APP_ENV=test '.\PHP_BINARY.' bin/console doctrine:migrations:migrate --no-interaction --allow-no-migration'
+        qa_test_home_shell_prefix().' APP_ENV=test '.\PHP_BINARY.' bin/console doctrine:migrations:migrate --no-interaction --allow-no-migration'
     );
     if (0 !== $migrate->getExitCode()) {
         fail_quality('test database migration failed: '.$migrate->getErrorOutput());
