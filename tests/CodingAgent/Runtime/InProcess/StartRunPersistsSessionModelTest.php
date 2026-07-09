@@ -219,7 +219,7 @@ final class StartRunPersistsSessionModelTest extends IsolatedKernelTestCase
     }
 
     /**
-     * With the default test-kernel setup (home settings provide a catalog),
+     * With this test's isolated project settings providing a catalog,
      * start() persists the resolved default model to session metadata.
      * The independent resolver (built with standardAiData, default =
      * deepseek/deepseek-v4-pro) reads the persisted model from metadata
