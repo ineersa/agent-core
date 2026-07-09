@@ -4,13 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Picker;
 
-use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\ChildRunTranscriptSnapshotDTO;
 use Ineersa\CodingAgent\Runtime\Contract\ChildRunTranscriptSnapshotProviderInterface;
-use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
-use Ineersa\Tui\Listener\RuntimeQuestionEventHandler;
-use Ineersa\Tui\Question\QuestionController;
-use Ineersa\Tui\Question\QuestionCoordinator;
 use Ineersa\Tui\Runtime\SubagentLiveChildDTO;
 use Ineersa\Tui\Runtime\SubagentLiveChildViewPoller;
 use Ineersa\Tui\Runtime\SubagentLiveMainReturn;
@@ -36,14 +31,19 @@ final class SubagentLivePickerController
     private ?Tui $tui = null;
     private ?ChatScreen $screen = null;
     private ?TuiSessionState $state = null;
-    private ?AgentSessionClient $client = null;
+
+    /** @var ?callable(\Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent): void */
+    private $onHumanInputRequested = null;
+
+    /** @var ?callable(\Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent): void */
+    private $onToolQuestionRequested = null;
+
+    /** @var ?callable(\Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent): void */
+    private $onToolTerminal = null;
 
     public function __construct(
         private readonly SubagentLiveChildViewPoller $childPoller,
         private readonly ChildRunTranscriptSnapshotProviderInterface $childSnapshotProvider,
-        private readonly RuntimeQuestionEventHandler $runtimeQuestionEventHandler,
-        private readonly QuestionCoordinator $questionCoordinator,
-        private readonly QuestionController $questionController,
     ) {
     }
 
@@ -51,12 +51,16 @@ final class SubagentLivePickerController
         Tui $tui,
         ChatScreen $screen,
         TuiSessionState $state,
-        ?AgentSessionClient $client = null,
+        ?callable $onHumanInputRequested = null,
+        ?callable $onToolQuestionRequested = null,
+        ?callable $onToolTerminal = null,
     ): void {
         $this->tui = $tui;
         $this->screen = $screen;
         $this->state = $state;
-        $this->client = $client;
+        $this->onHumanInputRequested = $onHumanInputRequested;
+        $this->onToolQuestionRequested = $onToolQuestionRequested;
+        $this->onToolTerminal = $onToolTerminal;
     }
 
     public function open(): void
@@ -312,27 +316,12 @@ final class SubagentLivePickerController
                 $state->subagentLiveView->childTranscript = $state->subagentLiveView->placeholderTranscriptFor($child);
                 $state->subagentLiveView->persistCurrentChildCache();
             } else {
-                $client = $this->client;
-                $questionCoordinator = $this->questionCoordinator;
-                $questionController = $this->questionController;
-                $runtimeQuestionEventHandler = $this->runtimeQuestionEventHandler;
-
                 $this->childPoller->replaySnapshot(
                     $state->subagentLiveView,
                     $snapshot,
-                    onHumanInputRequested: null !== $client
-                        ? static function (RuntimeEvent $event) use ($client, $questionCoordinator, $state, $screen, $runtimeQuestionEventHandler): void {
-                            $runtimeQuestionEventHandler->handleHumanInputRequested($event, $client, $questionCoordinator, $state, $screen);
-                        }
-                    : null,
-                    onToolQuestionRequested: null !== $client
-                        ? static function (RuntimeEvent $event) use ($client, $questionCoordinator, $state, $screen, $runtimeQuestionEventHandler): void {
-                            $runtimeQuestionEventHandler->handleToolQuestionRequested($event, $client, $questionCoordinator, $state, $screen);
-                        }
-                    : null,
-                    onToolTerminal: static function (RuntimeEvent $event) use ($questionCoordinator, $questionController, $runtimeQuestionEventHandler): void {
-                        $runtimeQuestionEventHandler->handleToolTerminal($event, $questionCoordinator, $questionController);
-                    },
+                    onHumanInputRequested: $this->onHumanInputRequested,
+                    onToolQuestionRequested: $this->onToolQuestionRequested,
+                    onToolTerminal: $this->onToolTerminal,
                 );
             }
         }

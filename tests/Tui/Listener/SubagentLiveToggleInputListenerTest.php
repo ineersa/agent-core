@@ -7,11 +7,8 @@ namespace Ineersa\Tui\Tests\Listener;
 use Ineersa\CodingAgent\Runtime\Contract\ChildRunTranscriptSnapshotProviderInterface;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
-use Ineersa\Tui\Listener\RuntimeQuestionEventHandler;
 use Ineersa\Tui\Listener\SubagentLiveToggleInputListener;
 use Ineersa\Tui\Picker\SubagentLivePickerController;
-use Ineersa\Tui\Question\QuestionController;
-use Ineersa\Tui\Question\QuestionCoordinator;
 use Ineersa\Tui\Runtime\SubagentLiveChildViewPoller;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Tests\Support\TuiRuntimeContextBuilderTrait;
@@ -38,9 +35,6 @@ final class SubagentLiveToggleInputListenerTest extends TestCase
                 new NullLogger(),
             ),
             $this->createStub(ChildRunTranscriptSnapshotProviderInterface::class),
-            new RuntimeQuestionEventHandler(),
-            new QuestionCoordinator(),
-            (new \ReflectionClass(QuestionController::class))->newInstanceWithoutConstructor(),
         );
         $picker->setRuntimeRefs($harness->tui(), $harness->screen(), $state);
 

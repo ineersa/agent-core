@@ -54,14 +54,14 @@ final class SubagentLiveCommandRegistrarTest extends TestCase
                 new NullLogger(),
             ),
             $this->createStub(ChildRunTranscriptSnapshotProviderInterface::class),
-            new RuntimeQuestionEventHandler(),
-            new QuestionCoordinator(),
-            (new \ReflectionClass(QuestionController::class))->newInstanceWithoutConstructor(),
         );
 
         return new SubagentLiveCommandRegistrar(
             $registry,
             $picker,
+            new RuntimeQuestionEventHandler(),
+            new QuestionCoordinator(),
+            (new \ReflectionClass(QuestionController::class))->newInstanceWithoutConstructor(),
         );
     }
 }
