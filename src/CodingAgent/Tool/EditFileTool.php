@@ -58,7 +58,7 @@ final class EditFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
     {
         return new ToolDefinitionDTO(
             name: 'edit',
-            description: 'Apply Codex-style @@ hunks to an existing file. Every hunk body line must start with a diff prefix: a leading space for unchanged context, `-` for removal, or `+` for addition. The target file must exist; use the write tool for new files.',
+            description: 'Apply @@ hunks to an existing file. Every hunk body line must start with a diff prefix: a leading space for unchanged context, `-` for removal, or `+` for addition. The target file must exist; use the write tool for new files.',
             parametersJsonSchema: [
                 'type' => 'object',
                 'properties' => [

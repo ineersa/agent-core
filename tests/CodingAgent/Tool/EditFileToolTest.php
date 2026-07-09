@@ -45,10 +45,13 @@ final class EditFileToolTest extends TestCase
         TestDirectoryIsolation::removeDirectory($this->tmpDir);
     }
 
-    public function testDefinitionPromptMentionsCodexStyleHunks(): void
+    public function testDefinitionPromptMentionsHunkFormatGuidance(): void
     {
         $definition = $this->editFileTool->definition();
 
+        $this->assertStringContainsString('@@ hunks', $definition->description);
+        $this->assertStringNotContainsString('Codex-style', $definition->description);
+        $this->assertStringNotContainsString('Codex', $definition->description);
         $this->assertStringContainsString('diff prefix', $definition->description);
         $this->assertStringContainsString('leading space', $definition->description);
 
@@ -59,6 +62,8 @@ final class EditFileToolTest extends TestCase
         $this->assertStringContainsString('literal source-text anchors', $patchSchema);
 
         $guidelines = implode(' ', $definition->promptGuidelines);
+        $this->assertStringNotContainsString('Codex-style', $guidelines);
+        $this->assertStringNotContainsString('Codex', $guidelines);
         $this->assertStringContainsString('@@', $guidelines);
         $this->assertStringContainsString('diff prefix', $guidelines);
         $this->assertStringContainsString('Empty physical lines inside a hunk', $guidelines);
