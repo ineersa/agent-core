@@ -176,9 +176,9 @@ class ReasoningOptionsResolverTest extends TestCase
         $this->assertSame(['reasoning_effort' => 'max'], $resolver->resolve($this->modelRef('deepseek', 'deepseek-v4-pro'), 'xhigh'));
     }
 
-    // ── z.ai: enable_thinking ─────────────────────────────────────────────
+    // ── z.ai: thinking.type + clear_thinking ───────────────────────────────
 
-    public function testZaiEmitsEnableThinkingForAllNonOffLevels(): void
+    public function testZaiEmitsThinkingTypeForAllNonOffLevels(): void
     {
         $provider = $this->provider(
             'zai',
@@ -196,13 +196,14 @@ class ReasoningOptionsResolverTest extends TestCase
             new AiCompatibility(
                 supportsDeveloperRole: false,
                 supportsReasoningEffort: false,
+                supportsReasoningEffortExplicit: true,
                 thinkingFormat: 'zai',
             ),
         );
 
         $resolver = $this->resolverForProviders(['zai' => $provider]);
 
-        $expected = ['enable_thinking' => true];
+        $expected = ['thinking' => ['type' => 'enabled', 'clear_thinking' => false]];
 
         $this->assertSame($expected, $resolver->resolve($this->modelRef('zai', 'glm-5.1'), 'minimal'));
         $this->assertSame($expected, $resolver->resolve($this->modelRef('zai', 'glm-5.1'), 'low'));
@@ -211,7 +212,7 @@ class ReasoningOptionsResolverTest extends TestCase
         $this->assertSame($expected, $resolver->resolve($this->modelRef('zai', 'glm-5.1'), 'xhigh'));
     }
 
-    public function testZaiOffLevelReturnsEmpty(): void
+    public function testZaiOffLevelEmitsThinkingDisabled(): void
     {
         $provider = $this->provider(
             'zai',
@@ -220,13 +221,105 @@ class ReasoningOptionsResolverTest extends TestCase
                 'reasoning' => true,
                 'thinkingLevelMap' => ['medium' => 'enabled'],
             ]),
-            new AiCompatibility(supportsReasoningEffort: false, thinkingFormat: 'zai'),
+            new AiCompatibility(
+                supportsReasoningEffort: false,
+                supportsReasoningEffortExplicit: true,
+                thinkingFormat: 'zai',
+            ),
         );
 
         $resolver = $this->resolverForProviders(['zai' => $provider]);
         $result = $resolver->resolve($this->modelRef('zai', 'glm-5.1'), 'off');
 
-        $this->assertSame([], $result);
+        $this->assertSame(['thinking' => ['type' => 'disabled']], $result);
+    }
+
+    public function testGlm52EmitsThinkingAndReasoningEffortWhenModelOverridesProvider(): void
+    {
+        $model = new AiModelDefinition(
+            id: 'glm-5.2',
+            reasoning: true,
+            thinkingLevelMap: [
+                'minimal' => null,
+                'low' => 'high',
+                'medium' => 'high',
+                'high' => 'high',
+                'xhigh' => 'max',
+            ],
+            compatibility: new AiCompatibility(
+                supportsReasoningEffort: true,
+                supportsReasoningEffortExplicit: true,
+                zaiToolStream: true,
+            ),
+        );
+
+        $provider = new AiProviderConfig(
+            id: 'zai',
+            enabled: true,
+            baseUrl: 'https://api.z.ai/api/coding/paas/v4',
+            compatibility: new AiCompatibility(
+                supportsDeveloperRole: false,
+                supportsReasoningEffort: false,
+                supportsReasoningEffortExplicit: true,
+                thinkingFormat: 'zai',
+            ),
+            models: ['glm-5.2' => $model],
+        );
+
+        $resolver = $this->resolverForProviders(['zai' => $provider]);
+
+        $this->assertSame([], $resolver->resolve($this->modelRef('zai', 'glm-5.2'), 'minimal'));
+        $this->assertSame(
+            [
+                'thinking' => ['type' => 'enabled', 'clear_thinking' => false],
+                'reasoning_effort' => 'high',
+            ],
+            $resolver->resolve($this->modelRef('zai', 'glm-5.2'), 'low'),
+        );
+        $this->assertSame(
+            [
+                'thinking' => ['type' => 'enabled', 'clear_thinking' => false],
+                'reasoning_effort' => 'max',
+            ],
+            $resolver->resolve($this->modelRef('zai', 'glm-5.2'), 'xhigh'),
+        );
+    }
+
+    public function testZaiModelWithOnlyZaiToolStreamUsesProviderReasoningEffortFalse(): void
+    {
+        $model = new AiModelDefinition(
+            id: 'glm-5.1',
+            reasoning: true,
+            thinkingLevelMap: [
+                'minimal' => 'enabled',
+                'low' => 'enabled',
+                'medium' => 'enabled',
+                'high' => 'enabled',
+                'xhigh' => 'enabled',
+            ],
+            compatibility: new AiCompatibility(zaiToolStream: true),
+        );
+
+        $provider = new AiProviderConfig(
+            id: 'zai',
+            enabled: true,
+            baseUrl: 'https://api.z.ai/api/coding/paas/v4',
+            compatibility: new AiCompatibility(
+                supportsReasoningEffort: false,
+                supportsReasoningEffortExplicit: true,
+                thinkingFormat: 'zai',
+            ),
+            models: ['glm-5.1' => $model],
+        );
+
+        $resolver = $this->resolverForProviders(['zai' => $provider]);
+        $result = $resolver->resolve($this->modelRef('zai', 'glm-5.1'), 'medium');
+
+        $this->assertSame(
+            ['thinking' => ['type' => 'enabled', 'clear_thinking' => false]],
+            $result,
+        );
+        $this->assertArrayNotHasKey('reasoning_effort', $result);
     }
 
     // ── DeepSeek: thinking.type + reasoning_effort ─────────────────────
@@ -428,8 +521,8 @@ class ReasoningOptionsResolverTest extends TestCase
         $resolver = $this->resolverForProviders(['test' => $providerWithModelZai]);
         $result = $resolver->resolve($this->modelRef('test', 'special'), 'medium');
 
-        // Model says zai → enable_thinking
-        $this->assertSame(['enable_thinking' => true], $result);
+        // Model says zai → thinking.type enabled
+        $this->assertSame(['thinking' => ['type' => 'enabled', 'clear_thinking' => false]], $result);
     }
 
     // ── llama.cpp flash (reasoning: false) ────────────────────────────────
@@ -466,6 +559,23 @@ class ReasoningOptionsResolverTest extends TestCase
             $resolver->resolve($this->modelRef('deepseek', 'deepseek-v4-pro'), 'MEDIUM'),
         );
     }
+
+    public function testProviderWithoutCompatibilityDefaultsReasoningEffort(): void
+    {
+        $provider = $this->provider('openai', $this->model([
+            'id' => 'gpt-test',
+            'reasoning' => true,
+            'thinkingLevelMap' => ['medium' => 'high'],
+        ]), null);
+
+        $resolver = $this->resolverForProviders(['openai' => $provider]);
+
+        $this->assertSame(
+            ['reasoning_effort' => 'high'],
+            $resolver->resolve($this->modelRef('openai', 'gpt-test'), 'medium'),
+        );
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────
 
     private function resolverForProviders(array $providers): ReasoningOptionsResolver

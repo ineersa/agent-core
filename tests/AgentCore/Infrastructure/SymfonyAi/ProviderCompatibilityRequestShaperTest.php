@@ -25,7 +25,7 @@ final class ProviderCompatibilityRequestShaperTest extends TestCase
 
         $result = $shaper->shape('test-model', [], [
             ProviderRequestOptionKeys::REASONING => 'medium',
-            ProviderRequestOptionKeys::REASONING_OPTIONS => ['enable_thinking' => true],
+            ProviderRequestOptionKeys::REASONING_OPTIONS => ['thinking' => ['type' => 'enabled', 'clear_thinking' => false]],
             'stream' => true,
         ]);
 
@@ -159,11 +159,11 @@ final class ProviderCompatibilityRequestShaperTest extends TestCase
 
         $result = $pipeline->shape('glm-5.1', [], [
             ProviderRequestOptionKeys::COMPAT_FEATURES => [ReasoningOptionsFeatureShaper::FEATURE],
-            ProviderRequestOptionKeys::REASONING_OPTIONS => ['enable_thinking' => true],
+            ProviderRequestOptionKeys::REASONING_OPTIONS => ['thinking' => ['type' => 'enabled', 'clear_thinking' => false]],
         ]);
 
-        $this->assertArrayHasKey('enable_thinking', $result['options']);
-        $this->assertTrue($result['options']['enable_thinking']);
+        $this->assertSame('enabled', $result['options']['thinking']['type']);
+        $this->assertFalse($result['options']['thinking']['clear_thinking']);
         $this->assertArrayNotHasKey(ProviderRequestOptionKeys::REASONING_OPTIONS, $result['options']);
     }
 }
