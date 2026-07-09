@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Runtime;
 
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
-use Ineersa\CodingAgent\Runtime\Contract\BackfillEventProviderInterface;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Ineersa\Tui\Screen\ChatScreen;
@@ -17,6 +16,11 @@ use Psr\Log\LoggerInterface;
  * JsonlProcessAgentSessionClient buffers non-parent run ids until events($childRunId)
  * is called. Nested subagents launched inside a fork emit progress on the fork run
  * stream; this poller discovers them into SubagentLiveCatalog and surfaces HITL.
+ *
+ * Stored child backfill ({@see BackfillEventProviderInterface}) is owned by
+ * {@see SubagentLiveChildViewPoller} for selected live-view transcript/question
+ * rendering. This poller uses live {@see AgentSessionClient::events()} only so
+ * one-shot backfill is not consumed before the user opens child live view.
  */
 final class SubagentLiveBackgroundChildPoller
 {
@@ -24,7 +28,6 @@ final class SubagentLiveBackgroundChildPoller
 
     public function __construct(
         private readonly LoggerInterface $logger,
-        private readonly ?BackfillEventProviderInterface $backfillProvider = null,
     ) {
     }
 
@@ -100,7 +103,7 @@ final class SubagentLiveBackgroundChildPoller
             }
 
             $lastSeq = $state->subagentLiveBackgroundSeqByRunId[$runId] ?? 0;
-            $events = $this->runtimeEvents($client, $runId, includeBackfill: !$ingestOnly);
+            $events = $this->runtimeEvents($client, $runId);
             if ([] === $events) {
                 continue;
             }
@@ -175,25 +178,14 @@ final class SubagentLiveBackgroundChildPoller
     /**
      * @return list<RuntimeEvent>
      */
-    private function runtimeEvents(AgentSessionClient $client, string $runId, bool $includeBackfill = true): array
+    private function runtimeEvents(AgentSessionClient $client, string $runId): array
     {
-        $backfill = $includeBackfill
-            ? ($this->backfillProvider?->getStoredEvents($runId) ?? [])
-            : [];
         $live = $client->events($runId);
         if ($live instanceof \Traversable) {
-            $live = iterator_to_array($live, false);
+            return iterator_to_array($live, false);
         }
 
-        if ([] === $backfill) {
-            return $live;
-        }
-
-        if ([] === $live) {
-            return $backfill;
-        }
-
-        return array_merge($backfill, $live);
+        return $live;
     }
 
     /**

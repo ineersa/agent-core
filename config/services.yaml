@@ -478,9 +478,7 @@ services:
       $projector: '@tui.subagent_live.transcript_projector'
       $backfillProvider: '@Ineersa\CodingAgent\Runtime\Contract\BackfillEventProviderInterface'
 
-  Ineersa\Tui\Runtime\SubagentLiveBackgroundChildPoller:
-    arguments:
-      $backfillProvider: '@Ineersa\CodingAgent\Runtime\Contract\BackfillEventProviderInterface'
+  Ineersa\Tui\Runtime\SubagentLiveBackgroundChildPoller: ~
 
 
   Ineersa\CodingAgent\Runtime\Contract\TurnTreeProviderInterface:

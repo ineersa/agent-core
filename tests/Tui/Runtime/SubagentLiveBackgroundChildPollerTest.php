@@ -82,7 +82,7 @@ final class SubagentLiveBackgroundChildPollerTest extends TestCase
         $this->assertSame(SubagentLiveStatusEnum::Running, $scout->status);
     }
 
-    public function testNestedScoutHumanInputEnqueuesQuestionForScoutRunId(): void
+    public function testNestedScoutHumanInputDeferredUntilLiveViewActive(): void
     {
         $parentRun = 'parent-2';
         $forkRun = 'fork-run-2';
@@ -161,17 +161,138 @@ final class SubagentLiveBackgroundChildPollerTest extends TestCase
             },
         );
 
+        $this->assertFalse($coordinator->actionRequired(), 'main view must not enqueue nested scout HITL');
+        $this->assertSame(SubagentLiveStatusEnum::WaitingHuman, $state->subagentLiveCatalog->findByArtifactId('agent_scout')?->status);
+
+        $state->subagentLiveView->enter(new SubagentLiveChildDTO(
+            $scoutRun,
+            'agent_scout',
+            'scout',
+            SubagentLiveStatusEnum::WaitingHuman,
+            'pick file',
+            1,
+        ));
+
+        $handler = new \Ineersa\Tui\Listener\RuntimeQuestionEventHandler();
+        $handler->handleHumanInputRequested(
+            new RuntimeEvent(
+                RuntimeEventTypeEnum::HumanInputRequested->value,
+                $scoutRun,
+                3,
+                [
+                    'question_id' => 'q_nested',
+                    'ui_kind' => 'choice',
+                    'prompt' => 'Which file?',
+                    'schema' => ['type' => 'string'],
+                    'choices' => [['value' => 'a.md', 'label' => 'a.md']],
+                ],
+            ),
+            $client,
+            $coordinator,
+            $state,
+            $screen,
+        );
+
         $active = $coordinator->activeRequest();
         $this->assertNotNull($active);
         $this->assertSame($scoutRun, $active->runId);
         $this->assertFalse($active->transcript);
         $this->assertSame('Child agent scout asks', $active->header);
-        $this->assertSame(SubagentLiveStatusEnum::WaitingHuman, $state->subagentLiveCatalog->findByArtifactId('agent_scout')?->status);
 
         $coordinator->answer('a.md');
         $this->assertNotNull($sent);
         $this->assertSame($scoutRun, $sent[0]);
         $this->assertSame('answer_human', $sent[1]->type);
+    }
+
+
+    public function testBackgroundPollDoesNotConsumeStoredBackfillBeforeLiveViewPoll(): void
+    {
+        $parentRun = 'parent-bg-poll';
+        $scoutRun = 'scout-run-bg-poll';
+        $scoutArtifact = 'agent_scout_bg';
+
+        $state = new TuiSessionState($parentRun);
+        $state->subagentLiveBackgroundLastPoll = 0.0;
+        $state->subagentLiveCatalog->applyChildStatus($scoutArtifact, SubagentLiveStatusEnum::WaitingHuman);
+        $state->subagentLiveCatalog->ingestNestedProgressFromChildRunEvent(new RuntimeEvent(
+            'tool_execution_update',
+            $parentRun,
+            1,
+            [
+                'subagent_progress' => [
+                    'mode' => 'single',
+                    'status' => 'waiting_human',
+                    'agent_name' => 'scout',
+                    'artifact_id' => $scoutArtifact,
+                    'agent_run_id' => $scoutRun,
+                    'task_summary' => 'pick file',
+                ],
+            ],
+        ));
+
+        $storedHitl = new RuntimeEvent(
+            RuntimeEventTypeEnum::HumanInputRequested->value,
+            $scoutRun,
+            2,
+            [
+                'question_id' => 'q_bg',
+                'prompt' => 'Which file should the scout inspect next?',
+                'schema' => ['type' => 'string'],
+            ],
+        );
+
+        $backfill = new OneShotTrackingBackfillProvider([$scoutRun => [$storedHitl]]);
+        $client = new BufferedChildEventsClient([$scoutRun => []]);
+        $coordinator = new QuestionCoordinator();
+        $screen = $this->chatScreen($parentRun);
+
+        $bgPoller = new SubagentLiveBackgroundChildPoller(new NullLogger());
+        $bgPoller->poll(
+            $state,
+            $client,
+            $screen,
+            onHumanInputRequested: static function (RuntimeEvent $event) use ($coordinator, $client, $state, $screen): void {
+                (new \Ineersa\Tui\Listener\RuntimeQuestionEventHandler())->handleHumanInputRequested(
+                    $event,
+                    $client,
+                    $coordinator,
+                    $state,
+                    $screen,
+                );
+            },
+        );
+
+        $this->assertSame(0, $backfill->callCountFor($scoutRun), 'background poll must not touch durable backfill');
+        $this->assertFalse($coordinator->actionRequired(), 'main view must not enqueue child HITL from backfill-only events');
+
+        $projector = $this->createStub(\Ineersa\CodingAgent\Runtime\Contract\TranscriptProjectorInterface::class);
+        $projector->method('blocks')->willReturn([]);
+        $childPoller = new \Ineersa\Tui\Runtime\SubagentLiveChildViewPoller(
+            projector: $projector,
+            logger: new NullLogger(),
+            backfillProvider: $backfill,
+        );
+        $live = new \Ineersa\Tui\Runtime\SubagentLiveViewState();
+        $live->enter(new SubagentLiveChildDTO(
+            $scoutRun,
+            $scoutArtifact,
+            'scout',
+            SubagentLiveStatusEnum::WaitingHuman,
+            'pick file',
+            1,
+        ));
+        $live->childLastPoll = 0.0;
+        $hitlSeen = false;
+        $childPoller->poll(
+            live: $live,
+            client: $client,
+            onHumanInputRequested: static function (RuntimeEvent $event) use (&$hitlSeen): void {
+                $hitlSeen = true;
+            },
+        );
+        $this->assertSame(1, $backfill->callCountFor($scoutRun));
+        $this->assertTrue($hitlSeen);
     }
 
     public function testPollCatalogIngestDoesNotConsumeStoredBackfillBeforeLiveViewPoll(): void
@@ -213,7 +334,7 @@ final class SubagentLiveBackgroundChildPollerTest extends TestCase
         $backfill = new OneShotTrackingBackfillProvider([$scoutRun => [$storedHitl]]);
         $client = new BufferedChildEventsClient([$scoutRun => []]);
 
-        $bgPoller = new SubagentLiveBackgroundChildPoller(new NullLogger(), $backfill);
+        $bgPoller = new SubagentLiveBackgroundChildPoller(new NullLogger());
         $bgPoller->pollCatalogIngest($state, $client);
 
         $this->assertSame(0, $backfill->callCountFor($scoutRun), 'catalog ingest must not consume durable backfill');
