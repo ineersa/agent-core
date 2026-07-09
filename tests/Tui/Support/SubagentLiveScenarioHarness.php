@@ -32,6 +32,7 @@ use Ineersa\Tui\Editor\PromptEditor;
 use Ineersa\Tui\Export\SessionEventsExportService;
 use Ineersa\Tui\Listener\AgentsMainCommandHandler;
 use Ineersa\Tui\Listener\CancelListener;
+use Ineersa\Tui\Listener\PromptHistory;
 use Ineersa\Tui\Listener\RuntimeQuestionEventHandler;
 use Ineersa\Tui\Listener\SubmitListener;
 use Ineersa\Tui\Picker\SubagentLivePickerController;
@@ -180,6 +181,7 @@ final class SubagentLiveScenarioHarness
             questionController: $questionController,
             subagentLiveInputPolicy: new SubagentLiveInputPolicy(),
             logger: new NullLogger(),
+            history: new PromptHistory(),
         );
         $submitListener->register($context);
 

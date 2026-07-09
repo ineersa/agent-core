@@ -76,13 +76,13 @@ final class SessionAwareModelResolver implements ModelResolverInterface
         if (null !== $modelRef) {
             // Clamp the reasoning level to the model's supported levels.
             // A persisted xhigh for a model that only supports up to high
-            // must be resolved to high so enable_thinking is honoured.
+            // must be resolved to high so z.ai thinking options are honoured.
             $reasoning = $this->selectionService->clampReasoningLevel($reasoning, $modelRef);
 
             $compatFeatures = $this->resolveCompatFeatures($modelRef);
             $reasoningOptions = $this->resolveReasoningOptions($modelRef, $reasoning);
 
-            // Always pass 'reasoning' in compat features when reasoning is active.
+            // Pass 'reasoning' compat when options are present (z.ai off sends disabled thinking).
             if ([] !== $reasoningOptions && !\in_array(ReasoningOptionsFeatureShaper::FEATURE, $compatFeatures, true)) {
                 $compatFeatures[] = ReasoningOptionsFeatureShaper::FEATURE;
             }
@@ -136,7 +136,7 @@ final class SessionAwareModelResolver implements ModelResolverInterface
      * and reasoning level.
      *
      * Uses {@see ReasoningOptionsResolver} to produce options such as
-     * {@code enable_thinking}, {@code reasoning_effort}, {@code thinking.type}.
+     * {@code thinking.type}, {@code reasoning_effort}, {@code reasoning.effort}.
      * This is done in CodingAgent where the catalog is available; AgentCore's
      * {@see ReasoningOptionsFeatureShaper}
      * only merges the result.
@@ -145,7 +145,7 @@ final class SessionAwareModelResolver implements ModelResolverInterface
      */
     private function resolveReasoningOptions(AiModelReference $ref, string $reasoningLevel): array
     {
-        if ('' === $reasoningLevel || 'off' === $reasoningLevel) {
+        if ('' === $reasoningLevel) {
             return [];
         }
 

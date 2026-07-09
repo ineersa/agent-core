@@ -902,7 +902,7 @@ with `Ctrl+P`. Each entry is a `provider_id/model_name` string.
 **Example:**
 ```yaml
 ai:
-    favorite_models: [deepseek/deepseek-v4-pro, zai/glm-5.1]
+    favorite_models: [deepseek/deepseek-v4-pro, zai/glm-5.2]
 ```
 
 Favorites can be toggled via `/model fav <provider/modelname>` in the
@@ -997,13 +997,14 @@ OpenAI chat-completions-style but may need request-shaping adjustments.
 |-----|------|-------------|
 | `supports_developer_role` | bool | Whether the provider accepts the OpenAI `developer` role. When `false`, map to `system` role. |
 | `supports_reasoning_effort` | bool | Whether the provider accepts `reasoning_effort`. When `false`, do not send this parameter. |
-| `thinking_format` | string | How reasoning is signalled. `zai` means `enable_thinking: boolean`; `deepseek` means `thinking.type` + `reasoning_effort`; `codex` means Codex Responses API `reasoning.effort`. Null = standard OpenAI `reasoning_effort`. |
+| `thinking_format` | string | How reasoning is signalled. `zai` means `thinking.type` (`enabled`/`disabled`) and `clear_thinking` on active levels; `deepseek` means `thinking.type` + `reasoning_effort`; `codex` means Codex Responses API `reasoning.effort`. Null = standard OpenAI `reasoning_effort`. |
 | `requires_reasoning_content_on_assistant_messages` | bool | Whether assistant messages without thinking must include an empty `reasoning_content` field (DeepSeek). Default: `false`. |
 
 Model-level `compatibility`:
 
 | Key | Type | Description |
 |-----|------|-------------|
+| `supports_reasoning_effort` | bool | Per-model override for provider-level `supports_reasoning_effort` (e.g. `glm-5.2` enables `reasoning_effort` while provider default is `false`). Only applies when this key is present on the model block. |
 | `zai_tool_stream` | bool | Whether the model supports streaming tool-call deltas (z.ai provider only). When `true`, `tool_stream: true` is sent in the request. |
 | `requires_reasoning_content_on_assistant_messages` | bool | Per-model override for the provider-level flag. |
 
@@ -1040,10 +1041,12 @@ provider-specific value.
 
 - If the model has `reasoning: false` or the selected level maps to
   `null`, reasoning options are omitted.
-- For z.ai (binary reasoning), map any non-off level through
-  `thinking_level_map` to `enabled` and send `enable_thinking: true`.
-- For providers with `compatibility.supports_reasoning_effort: false`, never
-  send the `reasoning_effort` parameter.
+- For z.ai, active reasoning sends `thinking: { type: enabled, clear_thinking: false }`;
+  `off` sends `thinking: { type: disabled }`. Map non-off levels through
+  `thinking_level_map` (e.g. `enabled` for glm-5.1, or `high`/`max` for glm-5.2).
+- When a model sets `compatibility.supports_reasoning_effort: true`, also send
+  `reasoning_effort` from the map (glm-5.2). Provider-level `supports_reasoning_effort: false`
+  still applies to models without that per-model override.
 
 ### Configured providers
 
@@ -1074,11 +1077,12 @@ z.ai GLM models via OpenAI chat-completions-style API. Requires `ZAI_API_KEY` en
 **Compat quirks:**
 
 - No developer role — role mapping sends `system` instead of `developer`.
-- No reasoning effort — use `enable_thinking` (binary) rather than `reasoning_effort`.
-- `thinking_format: zai` — signals the request mapper to use z.ai reasoning conventions.
-- `zai_tool_stream` — per-model flag for streaming tool-call deltas; enabled on `glm-5.1` and `glm-5v-turbo`.
+- Provider default: no `reasoning_effort` (`supports_reasoning_effort: false`).
+- `glm-5.2` per-model override: `supports_reasoning_effort: true` plus `zai_tool_stream`.
+- `thinking_format: zai` — active/off thinking via `thinking.type` and `clear_thinking`.
+- `zai_tool_stream` — streaming tool-call deltas on `glm-5.1`, `glm-5v-turbo`, and `glm-5.2`.
 
-Seed models: `glm-5.1`, `glm-5v-turbo`.
+Seed models: `glm-5.1`, `glm-5.2`, `glm-5v-turbo`.
 
 All z.ai models have zero cost (plan-based billing).
 
@@ -1145,7 +1149,7 @@ paid OpenAI accounts separately — not for usage-limit circumvention.
 
 **Compat quirks:**
 
-- Uses `reasoning.effort` (not `enable_thinking` or `reasoning_effort`)
+- Uses `reasoning.effort` (not standard `reasoning_effort` or `thinking.type`)
   for thinking signalled via `thinking_format: codex`.
 - `supports_developer_role: false` — maps `developer` to `system` role.
 - `supports_reasoning_effort: false` — uses `reasoning.effort` instead
@@ -1166,6 +1170,7 @@ Model references use the format `provider_id/model_name`:
 deepseek/deepseek-v4-pro
 llama_cpp/flash
 zai/glm-5.1
+zai/glm-5.2
 ```
 
 Models can only be selected if their provider is `enabled: true` and the
@@ -1283,6 +1288,18 @@ ai:
                         output: 0
                         cache_read: 0
                         cache_write: 0
+                glm-5.2:
+                    name: GLM 5.2
+                    context_window: 1000000
+                    max_tokens: 131072
+                    input: [text]
+                    tool_calling: true
+                    reasoning: true
+                    thinking_level_map: { minimal: null, low: high, medium: high, high: high, xhigh: max }
+                    compatibility:
+                        supports_reasoning_effort: true
+                        zai_tool_stream: true
+                    cost: { input: 0, output: 0, cache_read: 0, cache_write: 0 }
                 glm-5v-turbo:
                     name: GLM 5V Turbo
                     context_window: 200000
