@@ -68,7 +68,7 @@ final class EditFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
                     ],
                     'patch' => [
                         'type' => 'string',
-                        'description' => 'Hunk body only: starts with @@ [optional seek hint], then body lines each prefixed with one leading space (unchanged context), `-` (removal), or `+` (addition). Unchanged source or documentation lines are context and still need the leading space. Optional stacked @@ hints and *** End of File.',
+                        'description' => 'Hunk body only: starts with @@ [optional seek hint], then body lines each prefixed with one leading space (unchanged context), `-` (removal), or `+` (addition). Unchanged source or documentation lines are context and still need the leading space. Blank unchanged lines inside hunks are still context lines; represent them as a line containing one leading space. Optional stacked @@ hints and *** End of File.',
                     ],
                 ],
                 'required' => ['path', 'patch'],
@@ -82,7 +82,7 @@ final class EditFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
                 'Patches are hunk bodies only — no ---/+++ headers, no numbered @@ -N,M +N,M @@ headers, and no *** Begin Patch envelope.',
                 'Each hunk starts with `@@` or `@@ <actual file line>` as a seek hint. Stacked `@@` lines narrow ambiguous locations.',
                 'Use 3 lines above and 3 lines below unchanged context by default. Share context between adjacent edits in one patch.',
-                'Every hunk body line after `@@` must start with one diff prefix: leading space for unchanged context, `-` to remove, `+` to add. Unchanged source or documentation lines are still context and need the leading space.',
+                'Every hunk body line after `@@` must start with one diff prefix: leading space for unchanged context, `-` to remove, `+` to add. Unchanged source or documentation lines are still context and need the leading space. Blank unchanged lines inside hunks are still context lines; represent them as a line containing one leading space.',
                 'Compact example: `@@\n unchanged context\n-old line\n+new line` — the first character of each body line must be space, `-`, or `+`.',
                 'Use `*** End of File` inside a hunk when anchoring an append-to-end edit.',
                 'The target file must already exist — use the write tool to create new files.',

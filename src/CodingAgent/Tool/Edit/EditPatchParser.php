@@ -124,7 +124,7 @@ final class EditPatchParser
             }
 
             if ('' === $line) {
-                throw $this->formatError('Blank unprefixed lines are not allowed inside a hunk. Prefix context lines with a leading space.');
+                throw $this->formatError('Blank unprefixed lines are not allowed inside a hunk. Blank unchanged lines inside hunks are still context lines; represent them as a line containing one leading space.');
             }
 
             $prefix = $line[0];
@@ -205,7 +205,7 @@ final class EditPatchParser
         return new ToolCallException(
             \sprintf('[E_PATCH_FORMAT] %s', $detail),
             retryable: true,
-            hint: 'Use @@ hunks; each body line must begin with a diff prefix (leading space for unchanged context, `-` for removals, `+` for additions). Optional @@ <seek hint>, stacked @@ hints, and *** End of File for EOF anchoring. No ---/+++, numbered headers, or *** Begin Patch envelope.',
+            hint: 'Use @@ hunks; each body line must begin with a diff prefix (leading space for unchanged context, `-` for removals, `+` for additions). Blank unchanged lines inside hunks are still context lines; represent them as a line containing one leading space. Optional @@ <seek hint>, stacked @@ hints, and *** End of File for EOF anchoring. No ---/+++, numbered headers, or *** Begin Patch envelope.',
         );
     }
 }
