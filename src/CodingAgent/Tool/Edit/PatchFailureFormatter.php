@@ -320,21 +320,88 @@ final class PatchFailureFormatter
     }
 
     /**
-     * Build bounded post-apply changed chunks for success output.
-     *
-     * Parses the normalized patch to find which line ranges were changed
-     * on the new side, then emits the patched file content ±contextLines
-     * around each changed range.  Changed lines are marked with "→".
-     * Overlapping windows are merged and total output is capped.
-     *
-     * @param string $originalContent        original file content before edit
-     * @param string $patchedContent         file content after successful edit
-     * @param string $normalizedPatchContent normalized patch with standard @@ headers
-     * @param int    $contextLines           lines of context above/below each changed range
-     * @param int    $maxContextLines        hard cap on total output lines
-     *
-     * @return string formatted changed contexts, or empty string
+     * @param int[] $changedLineNumbers 1-based line numbers in patched content
      */
+    public function buildChangedContextsFromLineNumbers(
+        string $patchedContent,
+        array $changedLineNumbers,
+        int $contextLines = 3,
+        int $maxContextLines = 60,
+    ): string {
+        if ([] === $changedLineNumbers) {
+            return '';
+        }
+
+        $normalized = str_replace(["\r\n", "\r"], "\n", $patchedContent);
+        $fileLines = explode("\n", $normalized);
+        if ([] !== $fileLines && '' === end($fileLines)) {
+            array_pop($fileLines);
+        }
+
+        $totalLines = \count($fileLines);
+        if (0 === $totalLines) {
+            return '';
+        }
+
+        $changedSet = [];
+        foreach ($changedLineNumbers as $line) {
+            if ($line >= 1 && $line <= $totalLines) {
+                $changedSet[$line] = true;
+            }
+        }
+
+        if ([] === $changedSet) {
+            return '';
+        }
+
+        $ranges = [];
+        foreach (array_keys($changedSet) as $line) {
+            $ranges[] = [max(1, $line - $contextLines), min($totalLines, $line + $contextLines)];
+        }
+
+        usort($ranges, static fn (array $a, array $b) => $a[0] <=> $b[0]);
+        $merged = [];
+        foreach ($ranges as [$start, $end]) {
+            if (0 === \count($merged)) {
+                $merged[] = [$start, $end];
+                continue;
+            }
+            $last = array_key_last($merged);
+            if ($start <= $merged[$last][1] + 1) {
+                $merged[$last][1] = max($merged[$last][1], $end);
+            } else {
+                $merged[] = [$start, $end];
+            }
+        }
+
+        $capped = $this->capRanges($merged, $maxContextLines);
+        $truncated = \count($capped) < \count($merged);
+        $padWidth = max(4, (int) floor(log10($totalLines)) + 1);
+
+        $output = '';
+        $prevEnd = 0;
+        foreach ($capped as [$start, $end]) {
+            if ($start > $prevEnd + 1 && '' !== $output) {
+                $output .= "  ...\n";
+            }
+
+            for ($i = $start; $i <= $end; ++$i) {
+                $lineNum = str_pad((string) $i, $padWidth, ' ', \STR_PAD_LEFT);
+                $marker = isset($changedSet[$i]) ? '→' : ' ';
+                $lineContent = $fileLines[$i - 1] ?? '';
+                $output .= \sprintf("%s %s: %s\n", $marker, $lineNum, $lineContent);
+            }
+
+            $prevEnd = $end;
+        }
+
+        if ($truncated) {
+            $output .= \sprintf("  ... (context truncated to %d lines)\n", $maxContextLines);
+        }
+
+        return $output;
+    }
+
     public function buildChangedContexts(
         string $originalContent,
         string $patchedContent,

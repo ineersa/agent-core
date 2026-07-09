@@ -280,6 +280,7 @@ ai:
     # default_model and default_reasoning belong in ~/.hatfield/settings.yaml
     # (home settings), not here. Uncomment these only if you want to force
     # a specific model for everyone working in this project.
+    default_model: deepseek/deepseek-v4-pro
     # default_model: deepseek/deepseek-v4-pro
     # default_reasoning: medium
 
