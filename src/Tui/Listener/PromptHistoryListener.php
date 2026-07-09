@@ -27,8 +27,8 @@ use Ineersa\Tui\Runtime\TuiRuntimeContext;
  *  - History is served from a session-scoped {@see PromptHistory} prompt
  *    list, seeded from {@see TuiSessionState::$transcript} once on
  *    {@see register()} (UserMessage blocks) and grown via {@see SubmitListener}
- *    on each real submit. The navigator holds only a single integer cursor
- *    into that list — no per-keypress transcript scan.
+ *    on each real submit. PromptHistory holds a single integer navigation
+ *    cursor into its prompt list — no per-keypress transcript scan.
  *  - Down past the newest prompt clears the editor and exits navigation
  *    (shell-like behaviour).
  *  - Any non-Up/Down input exits history navigation mode immediately
@@ -49,14 +49,15 @@ final class PromptHistoryListener implements TuiListenerRegistrar
         $editor = $context->screen->editorWidget();
         $screen = $context->screen;
 
+        // Runs once per session iteration (start/resume/switch) via register(), before $tui->run() — not per render tick or per submit.
         $this->history->seedFrom($state->transcript);
 
-        $navigator = new PromptHistoryNavigator($this->history);
+        $history = $this->history;
 
-        $editor->onInput(static function (string $data) use ($state, $editor, $screen, $navigator): bool {
+        $editor->onInput(static function (string $data) use ($state, $editor, $screen, $history): bool {
             if ($state->subagentLiveView->active) {
-                if ($navigator->isNavigating()) {
-                    $navigator->exitNavigation();
+                if ($history->isNavigating()) {
+                    $history->exitNavigation();
                 }
 
                 return false;
@@ -70,8 +71,8 @@ final class PromptHistoryListener implements TuiListenerRegistrar
             // ── Up ──
             if ($isUp) {
                 // Only intercept when the editor is empty OR already navigating.
-                if ('' === $editor->getText() || $navigator->isNavigating()) {
-                    $text = $navigator->previous();
+                if ('' === $editor->getText() || $history->isNavigating()) {
+                    $text = $history->previous();
                     if (null !== $text) {
                         $editor->setText($text);
                         $screen->requestRender();
@@ -83,7 +84,7 @@ final class PromptHistoryListener implements TuiListenerRegistrar
                     // event as a no-op instead of letting the editor handle
                     // cursor_up.  This prevents cursor movement within any
                     // recalled multiline text when there is no older history.
-                    if ($navigator->isNavigating()) {
+                    if ($history->isNavigating()) {
                         return true;
                     }
                 }
@@ -94,8 +95,8 @@ final class PromptHistoryListener implements TuiListenerRegistrar
 
             // ── Down ──
             if ($isDown) {
-                if ($navigator->isNavigating()) {
-                    $text = $navigator->next();
+                if ($history->isNavigating()) {
+                    $text = $history->next();
                     if (null !== $text) {
                         $editor->setText($text);
                         $screen->requestRender();
@@ -115,8 +116,8 @@ final class PromptHistoryListener implements TuiListenerRegistrar
             }
 
             // ── Any other input exits history navigation ──
-            if ($navigator->isNavigating()) {
-                $navigator->exitNavigation();
+            if ($history->isNavigating()) {
+                $history->exitNavigation();
             }
 
             // Let the editor handle the key normally.
