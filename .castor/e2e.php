@@ -23,6 +23,7 @@ use function CastorTasks\check_lane_paratest_processes;
 use function CastorTasks\check_llm_generation_ready;
 use function CastorTasks\is_llm_mode;
 use function CastorTasks\phar_ensure;
+use function CastorTasks\qa_test_home_shell_prefix;
 use function CastorTasks\report_path;
 use function CastorTasks\run_quiet_command;
 
@@ -177,7 +178,7 @@ function test_tui(?string $filter = null): void
     if (null !== $filter || !class_exists(ParaTest\ParaTestCommand::class)) {
         @mkdir('var/test', 0755, true);
         $migrate = run_quiet_command(
-            'APP_ENV=test '.\PHP_BINARY.' bin/console doctrine:migrations:migrate --no-interaction --allow-no-migration'
+            qa_test_home_shell_prefix().' APP_ENV=test '.\PHP_BINARY.' bin/console doctrine:migrations:migrate --no-interaction --allow-no-migration'
         );
         if (0 !== $migrate->getExitCode()) {
             fail_quality('test database migration failed: '.$migrate->getErrorOutput());
@@ -238,7 +239,7 @@ function test_controller(): void
 
     @mkdir('var/test', 0755, true);
     $migrate = run_quiet_command(
-        'APP_ENV=test '.\PHP_BINARY.' bin/console doctrine:migrations:migrate --no-interaction --allow-no-migration'
+        qa_test_home_shell_prefix().' APP_ENV=test '.\PHP_BINARY.' bin/console doctrine:migrations:migrate --no-interaction --allow-no-migration'
     );
     if (0 !== $migrate->getExitCode()) {
         fail_quality('test database migration failed: '.$migrate->getErrorOutput());
@@ -295,7 +296,7 @@ function test_controller_replay(): void
 {
     @mkdir('var/test', 0755, true);
     $migrate = run_quiet_command(
-        'APP_ENV=test '.\PHP_BINARY.' bin/console doctrine:migrations:migrate --no-interaction --allow-no-migration'
+        qa_test_home_shell_prefix().' APP_ENV=test '.\PHP_BINARY.' bin/console doctrine:migrations:migrate --no-interaction --allow-no-migration'
     );
     if (0 !== $migrate->getExitCode()) {
         fail_quality('test database migration failed: '.$migrate->getErrorOutput());

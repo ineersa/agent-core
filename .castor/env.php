@@ -13,6 +13,7 @@ declare(strict_types=1);
 use Castor\Attribute\AsTask;
 
 use function CastorTasks\build_idea_run_config_xml;
+use function CastorTasks\qa_test_home_shell_prefix;
 
 require_once __DIR__.'/../vendor/autoload.php';
 require_once __DIR__.'/helpers.php';
@@ -91,8 +92,9 @@ function datadog_trace_endpoint_available(): bool
 function qa_observability_env_command(): string
 {
     $base = datadog_env_command(false);
+    $home = qa_test_home_shell_prefix();
 
-    return $base.' DD_LOGS_INJECTION=0 DD_TRACE_APPEND_TRACE_IDS_TO_LOGS=false';
+    return $home.' '.$base.' DD_LOGS_INJECTION=0 DD_TRACE_APPEND_TRACE_IDS_TO_LOGS=false';
 }
 
 /**

@@ -56,7 +56,7 @@ final class WriteFileTool implements HatfieldToolProviderInterface, ToolHandlerI
 
             // Normalize non-empty content to POSIX text convention:
             // ensure non-empty files end with a single trailing newline so
-            // subsequent edit (GNU patch) operations work reliably.
+            // subsequent edit tool operations work reliably.
             if ('' !== $content && !str_ends_with($content, "\n")) {
                 $content .= "\n";
             }

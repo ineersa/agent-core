@@ -21,6 +21,7 @@ use function CastorTasks\check_llm_generation_ready;
 require_once __DIR__.'/../vendor/autoload.php';
 require_once __DIR__.'/helpers.php';
 require_once __DIR__.'/shared.php';
+require_once __DIR__.'/env.php';
 
 // ─── Fixture recording ───────────────────────────────────────────
 
@@ -53,7 +54,7 @@ function llm_fixtures_record(): void
         mkdir($tuiFixtureDir, 0755, true);
     }
 
-    $env = 'APP_ENV=test LLAMA_CPP_SMOKE_TEST=1';
+    $env = qa_observability_env_command().' APP_ENV=test LLAMA_CPP_SMOKE_TEST=1';
     $env .= ' HATFIELD_RECORD_TUI_SIMPLE_FIXTURE_PATH='.escapeshellarg($tuiSimpleFixture);
     $env .= ' HATFIELD_RECORD_TUI_STARTUP_FIXTURE_PATH='.escapeshellarg($tuiStartupFixture);
 

@@ -119,7 +119,7 @@ final class SystemPromptBuilderTest extends TestCase
             parametersJsonSchema: [],
             handler: $this->dummyHandler(),
             promptLine: '- read: Read file contents',
-            promptGuidelines: ['Read files with cat -n'],
+            promptGuidelines: ['Read files as plain text'],
         );
         $registry->registerTool(
             name: 'read2',
@@ -127,7 +127,7 @@ final class SystemPromptBuilderTest extends TestCase
             parametersJsonSchema: [],
             handler: $this->dummyHandler(),
             promptLine: '- read: Read file contents',
-            promptGuidelines: ['Read files with cat -n', 'Use read for text files'],
+            promptGuidelines: ['Read files as plain text', 'Use read for text files'],
         );
 
         $builder = $this->createBuilder($registry);
@@ -136,8 +136,8 @@ final class SystemPromptBuilderTest extends TestCase
         // Deduped lines: '- read: Read file contents' appears only once
         $this->assertSame(1, substr_count($result, '- read: Read file contents'));
 
-        // Deduped guidelines: 'Read files with cat -n' appears only once
-        $this->assertSame(1, substr_count($result, 'Read files with cat -n'));
+        // Deduped guidelines: 'Read files as plain text' appears only once
+        $this->assertSame(1, substr_count($result, 'Read files as plain text'));
         // 'Use read for text files' appears once
         $this->assertSame(1, substr_count($result, 'Use read for text files'));
     }
@@ -490,16 +490,16 @@ final class SystemPromptBuilderTest extends TestCase
             description: 'Read text files',
             parametersJsonSchema: ['type' => 'object', 'properties' => ['path' => ['type' => 'string']]],
             handler: $this->dummyHandler(),
-            promptLine: '- read: examines text files with cat -n line numbers',
-            promptGuidelines: ['Use read line numbers for edit @@ hunk headers.'],
+            promptLine: '- read: examines text files',
+            promptGuidelines: ['Use read with offset/limit for targeted context.'],
         );
         $registry->registerTool(
             name: 'edit',
-            description: 'Edit files via unified diff',
+            description: 'Edit files via @@ hunks',
             parametersJsonSchema: [],
             handler: $this->dummyHandler(),
-            promptLine: '- edit: applies unified diff patches',
-            promptGuidelines: ['Provide standard unified diffs. Use read line numbers for @@ headers.'],
+            promptLine: '- edit: applies @@ hunks',
+            promptGuidelines: ['Provide @@ hunks with seek hints and context lines.'],
         );
         $registry->registerTool(
             name: 'bash',
@@ -515,13 +515,13 @@ final class SystemPromptBuilderTest extends TestCase
         $result = $builder->build();
 
         // Registry promptLines must appear in the rendered prompt (via {available_tools_list})
-        $this->assertStringContainsString('cat -n line numbers', $result);
-        $this->assertStringContainsString('unified diff patches', $result);
+        $this->assertStringContainsString('examines text files', $result);
+        $this->assertStringContainsString('applies @@ hunks', $result);
         $this->assertStringContainsString('runs shell commands', $result);
 
         // Registry guidelines must appear in the rendered prompt (via {registered_guidelines})
-        $this->assertStringContainsString('edit @@ hunk headers', $result);
-        $this->assertStringContainsString('standard unified diffs', $result);
+        $this->assertStringContainsString('targeted context', $result);
+        $this->assertStringContainsString('seek hints', $result);
         $this->assertStringContainsString('move to background', $result);
 
         // The built-in template must NOT have a hardcoded <tool_usage> block

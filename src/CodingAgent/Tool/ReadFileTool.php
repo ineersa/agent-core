@@ -8,22 +8,21 @@ use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\CodingAgent\Path\PathResolver;
 use League\MimeTypeDetection\FinfoMimeTypeDetector;
-use Symfony\Component\Process\Process;
 
 /**
- * Read a text file with `cat -n` styled line numbers.
+ * Read a text file as plain UTF-8 content.
  *
  * Implements both HatfieldToolProviderInterface for automatic registration
  * as a permanent tool and ToolHandlerInterface for execution.
  *
  * Features:
- * - Output uses `cat -n` style with original file line numbers.
+ * - Output is plain file text (no line-number prefix).
  * - Offset and limit are 1-indexed and validated.
  * - Binary, non-UTF-8, image, and device files are rejected.
  * - Output passes through OutputCap for character-based capping.
  * - Large output is truncated at 2000 lines by default (via head).
  * - Continuation hint appended when truncation occurs.
- * - Cancellation checks before and after process execution.
+ * - Cancellation checkpoints wrap the read path.
  */
 final class ReadFileTool implements HatfieldToolProviderInterface, ToolHandlerInterface
 {
@@ -71,7 +70,7 @@ final class ReadFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
      *                                        Optional 'offset' (int|null) and
      *                                        'limit' (int|null).
      *
-     * @return string File content with cat -n line numbering,
+     * @return string Plain file content,
      *                optionally capped or with continuation hints
      *
      * @throws ToolCallException on validation failures or tool-level errors
@@ -91,19 +90,17 @@ final class ReadFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
             // Pre-flight validation
             $this->validateTarget($resolvedPath);
 
-            // Read the file content via Unix pipeline
-            $content = $this->readContent($resolvedPath, $offset, $limit);
+            $fileLines = $this->loadFileLines($resolvedPath);
+            $totalLines = \count($fileLines);
+            $content = $this->readContentFromLines($fileLines, $offset, $limit);
 
             // Detect offset past EOF for non-empty files
-            if ('' === $content && null !== $offset) {
-                $totalLines = $this->countTotalLines($resolvedPath);
-                if (null !== $totalLines && $offset > $totalLines) {
-                    throw new ToolCallException(\sprintf('Cannot read "%s": offset %d exceeds file length (%d lines).', $resolvedPath, $offset, $totalLines), retryable: false, hint: \sprintf('The file has %d lines. Use an offset between 1 and %d, or omit offset to read from the beginning.', $totalLines, $totalLines));
-                }
+            if ('' === $content && null !== $offset && $offset > $totalLines) {
+                throw new ToolCallException(\sprintf('Cannot read "%s": offset %d exceeds file length (%d lines).', $resolvedPath, $offset, $totalLines), retryable: false, hint: \sprintf('The file has %d lines. Use an offset between 1 and %d, or omit offset to read from the beginning.', $totalLines, $totalLines));
             }
 
             // Check if the output was truncated and append continuation hint
-            $content = $this->appendContinuationHint($content, $resolvedPath, $offset, $limit);
+            $content = $this->appendContinuationHint($content, $offset, $limit, $totalLines);
 
             // Output capping is now handled centrally by OutputCapToolResultProcessor
             // after ToolExecutor converts the Symfony result to a domain ToolResult.
@@ -119,7 +116,7 @@ final class ReadFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
     {
         return new ToolDefinitionDTO(
             name: 'read',
-            description: 'Read a text file and display its content with original line numbers. Supports offset (starting line) and limit (max lines) for reading specific sections. Binary files, image files, PDFs, and device paths are rejected.',
+            description: 'Read a text file and return plain content. Supports offset (starting line) and limit (max lines) for reading specific sections. Binary files, image files, PDFs, and device paths are rejected.',
             parametersJsonSchema: [
                 'type' => 'object',
                 'properties' => [
@@ -143,9 +140,9 @@ final class ReadFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
             ],
             handler: $this,
             executionMode: ToolExecutionMode::Parallel,
-            promptLine: 'read path [offset=N] [limit=N] — read a text file with cat -n line numbers; supports offset and limit for partial reads; use view_image for images',
+            promptLine: 'read path [offset=N] [limit=N] — read a text file as plain content; supports offset and limit for partial reads; use view_image for images',
             promptGuidelines: [
-                'Output uses cat -n line numbering with original file line numbers.',
+                'Output is plain file text without line-number prefixes.',
                 'Use offset and limit together for follow-up reads after large or capped output — avoid reading huge files wholesale.',
                 'Reading without offset/limit returns up to 2000 lines from the beginning.',
                 'Binary files, image files, and PDFs are rejected — use view_image for images.',
@@ -269,7 +266,7 @@ final class ReadFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
             throw new ToolCallException(\sprintf('File "%s" is not readable.', $resolvedPath), retryable: true, hint: 'Check file permissions and try again.');
         }
 
-        // Check file is non-empty (empty files are fine for cat -n, skip expensive checks)
+        // Check file is non-empty (empty files are fine, skip expensive checks)
         $fileSize = @filesize($resolvedPath);
         if (false !== $fileSize && 0 === $fileSize) {
             return; // Empty file is valid text content
@@ -465,44 +462,31 @@ final class ReadFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
     }
 
     /**
-     * Read file content using a Unix pipeline with cat -n line numbering.
-     *
-     * @return string File content with cat -n line numbers
-     *
-     * @throws ToolCallException when the process fails
-     * @throws \RuntimeException on cancellation or timeout
+     * @return list<string>
      */
-    private function readContent(string $resolvedPath, ?int $offset, ?int $limit): string
+    private function loadFileLines(string $resolvedPath): array
     {
-        $pathArg = escapeshellarg($resolvedPath);
+        $lines = file($resolvedPath, \FILE_IGNORE_NEW_LINES);
+        if (false === $lines) {
+            throw new ToolCallException(\sprintf('Failed to read file "%s".', $resolvedPath), retryable: true, hint: 'Check file permissions and disk health.');
+        }
+
+        return $lines;
+    }
+
+    /**
+     * @param list<string> $fileLines
+     */
+    private function readContentFromLines(array $fileLines, ?int $offset, ?int $limit): string
+    {
+        $start = null !== $offset ? max(0, $offset - 1) : 0;
         $effectiveLimit = $limit ?? self::DEFAULT_LINE_LIMIT;
-
-        if (null !== $offset && null !== $limit) {
-            $end = $offset + $limit - 1;
-            $cmd = \sprintf('cat -n %s | sed -n \'%d,%dp\'', $pathArg, $offset, $end);
-        } elseif (null !== $offset) {
-            $cmd = \sprintf('cat -n %s | sed -n \'%d,$p\'', $pathArg, $offset);
-        } else {
-            $cmd = \sprintf('cat -n %s | head -n %d', $pathArg, $effectiveLimit);
+        $slice = \array_slice($fileLines, $start, $effectiveLimit);
+        if ([] === $slice) {
+            return '';
         }
 
-        $process = new Process(['bash', '-c', $cmd]);
-        $result = $this->toolRuntime->runCancellableProcess($process);
-
-        if ($result->cancelled) {
-            throw new \RuntimeException('Tool execution was cancelled during file read.');
-        }
-
-        if ($result->timedOut) {
-            throw new \RuntimeException('File read timed out.');
-        }
-
-        if (0 !== $result->exitCode) {
-            $errorOutput = '' !== $result->stderr ? $result->stderr : $result->stdout;
-            throw new ToolCallException(\sprintf('Failed to read file "%s": %s', $resolvedPath, trim($errorOutput)), retryable: true, hint: 'The file may be too large or unreadable. Try reading a specific section with offset and limit.');
-        }
-
-        return $result->stdout;
+        return implode("\n", $slice)."\n";
     }
 
     /**
@@ -513,14 +497,14 @@ final class ReadFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
      *
      * @return string The original content, optionally with a continuation hint appended
      */
-    private function appendContinuationHint(string $content, string $resolvedPath, ?int $offset, ?int $limit): string
+    private function appendContinuationHint(string $content, ?int $offset, ?int $limit, int $totalLines): string
     {
         // If the content is already empty, no hint needed
         if ('' === $content) {
             return $content;
         }
 
-        // Count lines in the cat -n output
+        // Count lines in the returned output
         $outputLines = substr_count($content, "\n");
 
         // Account for trailing newline
@@ -540,12 +524,6 @@ final class ReadFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
             return $content;
         }
 
-        // Check total file lines (gracefully handles cancellation/timeout/failure)
-        $totalLines = $this->countTotalLines($resolvedPath);
-        if (null === $totalLines) {
-            return $content; // Cannot determine total, skip hint
-        }
-
         // Calculate the last line we returned
         $lastReturnedLine = null !== $offset ? $offset + $outputLines - 1 : $outputLines;
 
@@ -557,28 +535,5 @@ final class ReadFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
         }
 
         return $content;
-    }
-
-    /**
-     * Count total lines in a file matching cat -n numbering.
-     *
-     * Uses awk which correctly counts the last line even without a
-     * trailing newline (unlike wc -l).
-     *
-     * Returns null when the count cannot be determined (cancelled, timed out,
-     * process failure, or empty output).
-     *
-     * @return int|null Total line count, or null on failure
-     */
-    private function countTotalLines(string $resolvedPath): ?int
-    {
-        $wcProcess = new Process(['bash', '-c', \sprintf("awk 'END {print NR}' %s", escapeshellarg($resolvedPath))]);
-        $wcResult = $this->toolRuntime->runCancellableProcess($wcProcess);
-
-        if ($wcResult->cancelled || $wcResult->timedOut || 0 !== $wcResult->exitCode || '' === trim($wcResult->stdout)) {
-            return null; // Cannot determine total, graceful degradation
-        }
-
-        return (int) trim($wcResult->stdout);
     }
 }

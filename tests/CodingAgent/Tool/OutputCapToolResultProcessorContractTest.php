@@ -129,8 +129,7 @@ final class OutputCapToolResultProcessorContractTest extends TestCase
         // notice from OutputCap::buildCappedNotice(), which now suggests
         // read(savedPath, offset: 1, limit: 200) for chunked inspection
         // and grep for targeted search.  This is safe because the saved
-        // cap artefact is rendered tool output text (NOT a read/cat -n
-        // artefact that would add double line numbers).
+        // cap artefact is rendered tool output text (plain content; read the original path for follow-up inspection).
         $cfg = new OutputCapConfig(storageDir: $this->tmpDir, defaultCap: 50, docCap: 50);
         $outputCap = new OutputCap($cfg);
         $processor = new OutputCapToolResultProcessor($outputCap);

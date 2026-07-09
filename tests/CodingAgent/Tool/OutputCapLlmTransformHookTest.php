@@ -385,8 +385,7 @@ final class OutputCapLlmTransformHookTest extends TestCase
      * Test thesis: when the late defense-in-depth hook caps a read-tool
      * AgentMessage, the notice must guide follow-up reads to the ORIGINAL
      * file path (not the saved output-cap artifact).  Reading the saved
-     * artifact with the read tool adds presentation noise (double cat -n
-     * line numbers).
+     * artifact with the read tool adds presentation noise; guide follow-up reads to the original path.
      */
     public function testLateHookReadNoticeUsesOriginalPathNotSavedArtifact(): void
     {
