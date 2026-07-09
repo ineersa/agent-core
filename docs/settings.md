@@ -1115,7 +1115,7 @@ paid OpenAI accounts separately — not for usage-limit circumvention.
 
 **Compat quirks:**
 
-- Uses `reasoning.effort` (not `enable_thinking` or `reasoning_effort`)
+- Uses `reasoning.effort` (not standard `reasoning_effort` or `thinking.type`)
   for thinking signalled via `thinking_format: codex`.
 - `supports_developer_role: false` — maps `developer` to `system` role.
 - `supports_reasoning_effort: false` — uses `reasoning.effort` instead
