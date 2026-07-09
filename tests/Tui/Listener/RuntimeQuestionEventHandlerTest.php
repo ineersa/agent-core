@@ -121,4 +121,117 @@ final class RuntimeQuestionEventHandlerTest extends TestCase
         $this->assertSame('Child agent scout asks', $active->header);
         $this->assertSame(SubagentLiveStatusEnum::Running, $state->subagentLiveCatalog->findByArtifactId('agent_scout')?->status);
     }
+
+    public function testLiveViewSelectedChildHumanInputMatchesDirectSubagentOwnership(): void
+    {
+        $parentRun = 'parent-main';
+        $scoutRun = 'scout-child-live';
+
+        $state = new TuiSessionState($parentRun);
+        $state->subagentLiveCatalog->ingestRuntimeEvent(new RuntimeEvent(
+            'tool_execution_update',
+            $parentRun,
+            1,
+            [
+                'subagent_progress' => [
+                    'mode' => 'single',
+                    'status' => 'waiting_human',
+                    'agent_name' => 'scout',
+                    'artifact_id' => 'agent_scout',
+                    'agent_run_id' => $scoutRun,
+                    'task_summary' => 'pick file',
+                ],
+            ],
+        ));
+        $state->subagentLiveView->enter(new \Ineersa\Tui\Runtime\SubagentLiveChildDTO(
+            $scoutRun,
+            'agent_scout',
+            'scout',
+            SubagentLiveStatusEnum::WaitingHuman,
+            'pick file',
+            1,
+        ));
+
+        $coordinator = new QuestionCoordinator();
+        $client = $this->noopClient();
+        $screen = $this->chatScreen($parentRun);
+
+        $handler = new RuntimeQuestionEventHandler();
+        $handler->handleChildAgentHumanInputRequested(
+            new RuntimeEvent(
+                RuntimeEventTypeEnum::HumanInputRequested->value,
+                $scoutRun,
+                2,
+                [
+                    'question_id' => 'q_live',
+                    'ui_kind' => 'choice',
+                    'prompt' => 'Which file?',
+                    'schema' => ['type' => 'string'],
+                    'choices' => [['value' => 'a.md', 'label' => 'a.md']],
+                ],
+            ),
+            $client,
+            $coordinator,
+            $state,
+            $screen,
+        );
+
+        $active = $coordinator->activeRequest();
+        $this->assertNotNull($active);
+        $this->assertSame($scoutRun, $active->runId);
+        $this->assertFalse($active->transcript);
+        $this->assertSame('Child agent scout asks', $active->header);
+    }
+
+    private function noopClient(): AgentSessionClient
+    {
+        return new class implements AgentSessionClient {
+            public function start(StartRunRequest $request): RunHandle
+            {
+                throw new \BadMethodCallException();
+            }
+
+            public function send(string $runId, UserCommand $command): void
+            {
+            }
+
+            public function attach(string $runId): RunHandle
+            {
+                throw new \BadMethodCallException();
+            }
+
+            public function cancel(string $runId): void
+            {
+            }
+
+            public function shellExecute(string $command, string $sessionId, string $cwd): RunHandle
+            {
+                throw new \BadMethodCallException();
+            }
+
+            public function completeRun(string $runId): void
+            {
+            }
+
+            public function compact(string $runId, ?string $customInstructions = null): void
+            {
+            }
+
+            public function events(string $runId): iterable
+            {
+                return [];
+            }
+        };
+    }
+
+    private function chatScreen(string $sessionId): ChatScreen
+    {
+        return new ChatScreen(
+            new DefaultTheme(new ThemePalette('test')),
+            $sessionId,
+            new PromptEditor(),
+            new TranscriptDisplayConfig(),
+            new TranscriptDisplayState(),
+        );
+    }
 }

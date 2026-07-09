@@ -29,10 +29,25 @@ final class SubagentLiveBackgroundChildPoller
     }
 
     /**
-     * @param ?callable(RuntimeEvent): void $onHumanInputRequested
-     * @param ?callable(RuntimeEvent): void $onToolQuestionRequested
-     * @param ?callable(RuntimeEvent): void $onToolTerminal
+     * Drain child run streams for catalog/nested discovery only (no HITL callbacks).
+     *
+     * Must run while live view is active so nested scouts launched inside a fork
+     * are registered before the user switches to their live view.
      */
+    public function pollCatalogIngest(TuiSessionState $state, AgentSessionClient $client): void
+    {
+        $this->pollInternal(
+            $state,
+            $client,
+            screen: null,
+            onHumanInputRequested: null,
+            onToolQuestionRequested: null,
+            onToolTerminal: null,
+            skipHitlForSelectedLiveChild: false,
+            ingestOnly: true,
+        );
+    }
+
     public function poll(
         TuiSessionState $state,
         AgentSessionClient $client,
@@ -40,6 +55,28 @@ final class SubagentLiveBackgroundChildPoller
         ?callable $onHumanInputRequested = null,
         ?callable $onToolQuestionRequested = null,
         ?callable $onToolTerminal = null,
+    ): void {
+        $this->pollInternal(
+            $state,
+            $client,
+            $screen,
+            $onHumanInputRequested,
+            $onToolQuestionRequested,
+            $onToolTerminal,
+            skipHitlForSelectedLiveChild: true,
+            ingestOnly: false,
+        );
+    }
+
+    private function pollInternal(
+        TuiSessionState $state,
+        AgentSessionClient $client,
+        ?ChatScreen $screen,
+        ?callable $onHumanInputRequested,
+        ?callable $onToolQuestionRequested,
+        ?callable $onToolTerminal,
+        bool $skipHitlForSelectedLiveChild,
+        bool $ingestOnly,
     ): void {
         $liveActive = $state->subagentLiveView->active;
         $selectedRunId = $liveActive && null !== $state->subagentLiveView->selected
@@ -80,19 +117,33 @@ final class SubagentLiveBackgroundChildPoller
 
                 $this->ingestCatalogRelevantEvent($state, $event);
 
-                $isSelectedLiveChild = null !== $selectedRunId && $runId === $selectedRunId;
+                if ($ingestOnly) {
+                    continue;
+                }
 
-                if (null !== $onHumanInputRequested && RuntimeEventTypeEnum::HumanInputRequested->value === $event->type && !$isSelectedLiveChild) {
+                $isSelectedLiveChild = $skipHitlForSelectedLiveChild
+                    && null !== $selectedRunId
+                    && $runId === $selectedRunId;
+
+                if ($isSelectedLiveChild) {
+                    continue;
+                }
+
+                if (null !== $onHumanInputRequested && RuntimeEventTypeEnum::HumanInputRequested->value === $event->type) {
                     $this->invokeCallback($onHumanInputRequested, $event, $runId, 'onHumanInputRequested');
-                    SubagentLiveAttention::markChildNeedsInputForRun($state, $screen, $runId);
+                    if (null !== $screen) {
+                        SubagentLiveAttention::markChildNeedsInputForRun($state, $screen, $runId);
+                    }
                 }
 
-                if (null !== $onToolQuestionRequested && RuntimeEventTypeEnum::ToolQuestionRequested->value === $event->type && !$isSelectedLiveChild) {
+                if (null !== $onToolQuestionRequested && RuntimeEventTypeEnum::ToolQuestionRequested->value === $event->type) {
                     $this->invokeCallback($onToolQuestionRequested, $event, $runId, 'onToolQuestionRequested');
-                    SubagentLiveAttention::markChildNeedsInputForRun($state, $screen, $runId);
+                    if (null !== $screen) {
+                        SubagentLiveAttention::markChildNeedsInputForRun($state, $screen, $runId);
+                    }
                 }
 
-                if (!$isSelectedLiveChild && null !== $onToolTerminal && \in_array($event->type, [
+                if (null !== $onToolTerminal && \in_array($event->type, [
                     RuntimeEventTypeEnum::ToolExecutionCompleted->value,
                     RuntimeEventTypeEnum::ToolExecutionFailed->value,
                     RuntimeEventTypeEnum::ToolExecutionCancelled->value,

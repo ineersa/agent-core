@@ -13,6 +13,7 @@ use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Ineersa\Tui\Editor\PromptEditor;
 use Ineersa\Tui\Question\QuestionCoordinator;
 use Ineersa\Tui\Runtime\SubagentLiveBackgroundChildPoller;
+use Ineersa\Tui\Runtime\SubagentLiveChildDTO;
 use Ineersa\Tui\Runtime\SubagentLiveStatusEnum;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Screen\ChatScreen;
@@ -171,6 +172,67 @@ final class SubagentLiveBackgroundChildPollerTest extends TestCase
         $this->assertNotNull($sent);
         $this->assertSame($scoutRun, $sent[0]);
         $this->assertSame('answer_human', $sent[1]->type);
+    }
+
+    public function testPollCatalogIngestDiscoversNestedScoutWhileLiveViewOnFork(): void
+    {
+        $parentRun = 'parent-1';
+        $forkRun = 'fork-run';
+        $scoutRun = 'scout-run';
+
+        $state = new TuiSessionState($parentRun);
+        $state->subagentLiveCatalog->ingestRuntimeEvent(new RuntimeEvent(
+            'tool_execution_update',
+            $parentRun,
+            1,
+            [
+                'subagent_progress' => [
+                    'mode' => 'single',
+                    'status' => 'running',
+                    'agent_name' => 'fork',
+                    'artifact_id' => 'agent_fork',
+                    'agent_run_id' => $forkRun,
+                    'task_summary' => 'delegate',
+                ],
+            ],
+        ));
+        $state->subagentLiveView->enter(new SubagentLiveChildDTO(
+            $forkRun,
+            'agent_fork',
+            'fork',
+            SubagentLiveStatusEnum::Running,
+            'delegate',
+            1,
+        ));
+
+        $client = new BufferedChildEventsClient([
+            $forkRun => [
+                new RuntimeEvent(
+                    'tool_execution_update',
+                    $forkRun,
+                    2,
+                    [
+                        'subagent_progress' => [
+                            'mode' => 'single',
+                            'status' => 'running',
+                            'agent_name' => 'scout',
+                            'artifact_id' => 'agent_scout',
+                            'agent_run_id' => $scoutRun,
+                            'task_summary' => 'pick file',
+                        ],
+                    ],
+                ),
+            ],
+            $scoutRun => [],
+        ]);
+
+        $poller = new SubagentLiveBackgroundChildPoller(new NullLogger());
+        $poller->pollCatalogIngest($state, $client);
+
+        $scout = $state->subagentLiveCatalog->findByArtifactId('agent_scout');
+        $this->assertNotNull($scout);
+        $this->assertSame($scoutRun, $scout->agentRunId);
+        $this->assertSame('scout', $scout->agentName);
     }
 
     private function chatScreen(string $sessionId): ChatScreen

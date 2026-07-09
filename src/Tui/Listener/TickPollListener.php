@@ -95,6 +95,8 @@ final class TickPollListener implements TuiListenerRegistrar
             // Child-first on the shared JSONL pipe: events() re-buffers non-matching
             // run ids; polling the child run before the parent reduces child latency.
             if ($liveActive) {
+                $subagentLiveBackgroundChildPoller->pollCatalogIngest($state, $client);
+
                 $childBlocks = $subagentLiveChildPoller->poll(
                     $state->subagentLiveView,
                     $client,

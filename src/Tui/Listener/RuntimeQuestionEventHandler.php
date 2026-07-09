@@ -52,6 +52,19 @@ final class RuntimeQuestionEventHandler
      * cursor reset). RuntimeEventPoller seq-based deduplication should
      * prevent replays under normal operation, but this is a safety net.
      */
+    /**
+     * Child-agent HITL entry (direct subagent or nested scout/fork child) keyed by event runId.
+     */
+    public function handleChildAgentHumanInputRequested(
+        RuntimeEvent $event,
+        AgentSessionClient $client,
+        QuestionCoordinator $questionCoordinator,
+        TuiSessionState $sessionState,
+        ChatScreen $screen,
+    ): void {
+        $this->handleHumanInputRequested($event, $client, $questionCoordinator, $sessionState, $screen);
+    }
+
     public function handleHumanInputRequested(
         RuntimeEvent $event,
         AgentSessionClient $client,
