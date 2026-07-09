@@ -243,6 +243,9 @@ forks:
     model: deepseek/deepseek-v4-flash
     thinking_level: xhigh
 
+compaction:
+    model: deepseek/deepseek-v4-flash
+
 # ---------------------------------------------------------------------------
 # Compaction
 # ---------------------------------------------------------------------------
