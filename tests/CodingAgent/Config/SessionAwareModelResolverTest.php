@@ -221,7 +221,6 @@ final class SessionAwareModelResolverTest extends IsolatedKernelTestCase
         $this->assertSame('high', $result->reasoning);
     }
 
-
     public function testZaiOffReasoningProducesDisabledThinkingOptions(): void
     {
         $aiData = $this->standardAiData();

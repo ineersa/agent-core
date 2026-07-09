@@ -234,7 +234,6 @@ class ReasoningOptionsResolverTest extends TestCase
         $this->assertSame(['thinking' => ['type' => 'disabled']], $result);
     }
 
-
     public function testGlm52EmitsThinkingAndReasoningEffortWhenModelOverridesProvider(): void
     {
         $model = new AiModelDefinition(
