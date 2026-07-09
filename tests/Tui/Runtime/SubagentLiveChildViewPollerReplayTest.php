@@ -81,6 +81,40 @@ final class SubagentLiveChildViewPollerReplayTest extends TestCase
     }
 
     #[Test]
+    public function pollUsesOnlyLiveClientEventsAndPersistsCache(): void
+    {
+        $projector = new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState());
+        $poller = new SubagentLiveChildViewPoller($projector, new NullLogger());
+
+        $live = $this->liveState();
+        $poller->replaySnapshot(
+            $live,
+            new ChildRunTranscriptSnapshotDTO(
+                [
+                    new TranscriptBlock('b0', TranscriptBlockKindEnum::AssistantMessage, self::CHILD_RUN_ID, 1, 'seed'),
+                ],
+                [],
+                1,
+            ),
+        );
+
+        $client = $this->createMock(AgentSessionClient::class);
+        $client->expects($this->once())
+            ->method('events')
+            ->with(self::CHILD_RUN_ID)
+            ->willReturn([
+                new RuntimeEvent(RuntimeEventTypeEnum::ProgressUpdated->value, self::CHILD_RUN_ID, 2, ['text' => 'live only']),
+            ]);
+
+        $live->childLastPoll = 0.0;
+        $result = $poller->poll($live, $client);
+
+        $this->assertNotNull($result);
+        $this->assertSame(2, $live->childLastSeq);
+        $this->assertSame(2, $live->childCaches[self::CHILD_RUN_ID]['lastSeq']);
+    }
+
+    #[Test]
     public function pollSkipsEventsAtOrBelowChildLastSeqAfterReplay(): void
     {
         $projector = new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState());

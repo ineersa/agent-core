@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Runtime;
 
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
-use Ineersa\CodingAgent\Runtime\Contract\BackfillEventProviderInterface;
 use Ineersa\CodingAgent\Runtime\Contract\ChildRunTranscriptSnapshotDTO;
 use Ineersa\CodingAgent\Runtime\Contract\TranscriptProjectorInterface;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
@@ -15,6 +14,9 @@ use Psr\Log\LoggerInterface;
 
 /**
  * Polls a selected child run id and projects readonly live transcript blocks.
+ *
+ * Canonical child history is replayed once on live-view entry via {@see replaySnapshot()};
+ * {@see poll()} consumes only live {@see AgentSessionClient::events()} for the child run id.
  *
  * Optional HITL callbacks mirror RuntimeEventPoller so child human_input.requested
  * and tool_question.requested events can drive the shared QuestionCoordinator.
@@ -28,7 +30,6 @@ final class SubagentLiveChildViewPoller
     public function __construct(
         private readonly TranscriptProjectorInterface $projector,
         private readonly LoggerInterface $logger,
-        private readonly ?BackfillEventProviderInterface $backfillProvider = null,
     ) {
         $this->eventApplier = new TuiRuntimeEventApplier($this->projector);
     }
@@ -115,11 +116,7 @@ final class SubagentLiveChildViewPoller
         }
         $live->childLastPoll = $now;
 
-        $backfillEvents = $this->backfillProvider?->getStoredEvents($live->selected->agentRunId) ?? [];
         $events = $this->runtimeEvents($client, $live->selected->agentRunId);
-        if ([] !== $backfillEvents) {
-            $events = array_merge($backfillEvents, $events);
-        }
         if ([] === $events) {
             return null;
         }
