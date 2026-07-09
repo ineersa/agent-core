@@ -930,6 +930,14 @@ services:
     arguments:
       $parentRunStore: '@Ineersa\CodingAgent\Session\SessionRunStore'
 
+
+  Ineersa\CodingAgent\Session\SequencedRunEventAppender:
+    arguments:
+      $eventStore: '@Ineersa\CodingAgent\Agent\Artifact\ChildAwareEventStore'
+      $runStore: '@Ineersa\CodingAgent\Session\SessionRunStore'
+
+  Ineersa\CodingAgent\Session\Repair\SessionRepairService: ~
+
   Ineersa\CodingAgent\Agent\Execution\ForkExecutionService:
     arguments:
       $parentRunStore: '@Ineersa\CodingAgent\Session\SessionRunStore'

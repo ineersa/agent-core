@@ -6,7 +6,6 @@ namespace Ineersa\CodingAgent\Agent\Execution;
 
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Contract\AgentRunnerInterface;
-use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\RunStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
@@ -24,6 +23,7 @@ use Ineersa\CodingAgent\Agent\Fork\ForkChildMessageComposer;
 use Ineersa\CodingAgent\Agent\Fork\ForkContextBuilder;
 use Ineersa\CodingAgent\Config\AgentsConfig;
 use Ineersa\CodingAgent\Config\ModelResolver;
+use Ineersa\CodingAgent\Session\SequencedRunEventAppender;
 use Ineersa\CodingAgent\Skills\SkillsContextBuilder;
 use Ineersa\CodingAgent\Tool\ToolRegistryInterface;
 use Symfony\Component\Clock\ClockInterface;
@@ -48,7 +48,7 @@ final class ForkExecutionService
         private readonly AgentRunnerInterface $agentRunner,
         private readonly RunStoreInterface $runStore,
         private readonly RunStoreInterface $parentRunStore,
-        private readonly EventStoreInterface $eventStore,
+        private readonly SequencedRunEventAppender $sequencedEventAppender,
         private readonly SubagentRunMetadataReader $metadataReader,
         private readonly AgentChildRunDirectory $childRunDirectory,
         private readonly StackToolExecutionContextAccessor $contextAccessor,
@@ -264,7 +264,6 @@ final class ForkExecutionService
         $deadline = $this->nowMicros() + $timeoutSeconds * 1_000_000;
         $context = $this->contextAccessor->current();
         $cancelToken = $context?->cancellationToken();
-        $progressSeq = $this->resolveNextProgressSeq($parentRunId);
         $progressStartedMicros = $this->nowMicros();
         $lastSignature = null;
 
@@ -277,8 +276,7 @@ final class ForkExecutionService
                     status: AgentArtifactStatusEnum::Cancelled,
                     summary: 'Cancelled by parent run.',
                 );
-                $this->emitTerminalProgress($parentRunId, $agentRunId, $artifactId, $taskSummary, $resolvedModel, $this->runStore->get($agentRunId), 'cancelled', $progressSeq, $progressStartedMicros);
-                $this->advanceParentSequence($parentRunId, $progressSeq);
+                $this->emitTerminalProgress($parentRunId, $agentRunId, $artifactId, $taskSummary, $resolvedModel, $this->runStore->get($agentRunId), 'cancelled', $progressStartedMicros);
 
                 throw new ToolCallException('Fork cancelled by parent run. Artifact: '.$artifactId, retryable: false);
             }
@@ -292,8 +290,7 @@ final class ForkExecutionService
                     failureReason: 'Child run timed out.',
                     summary: 'Timed out after '.$timeoutSeconds.'s.',
                 );
-                $this->emitTerminalProgress($parentRunId, $agentRunId, $artifactId, $taskSummary, $resolvedModel, $this->runStore->get($agentRunId), 'failed', $progressSeq, $progressStartedMicros);
-                $this->advanceParentSequence($parentRunId, $progressSeq);
+                $this->emitTerminalProgress($parentRunId, $agentRunId, $artifactId, $taskSummary, $resolvedModel, $this->runStore->get($agentRunId), 'failed', $progressStartedMicros);
 
                 return \sprintf("Fork timed out after %d seconds.\nArtifact: %s\nagent_run_id: %s\nUse agent_retrieve for partial handoff.", $timeoutSeconds, $artifactId, $agentRunId);
             }
@@ -318,9 +315,7 @@ final class ForkExecutionService
 
                 $signature = $state->lastSeq.'|'.$state->turnNo;
                 if ($signature !== $lastSignature) {
-                    $this->emitRunningProgress($parentRunId, $agentRunId, $artifactId, $taskSummary, $resolvedModel, $state, $progressSeq, $progressStartedMicros, 'running');
-                    $this->advanceParentSequence($parentRunId, $progressSeq);
-                    ++$progressSeq;
+                    $this->emitRunningProgress($parentRunId, $agentRunId, $artifactId, $taskSummary, $resolvedModel, $state, $progressStartedMicros, 'running');
                     $lastSignature = $signature;
                 }
                 $this->sleepPollInterval();
@@ -335,9 +330,7 @@ final class ForkExecutionService
                 );
                 $signature = $state->lastSeq.'|waiting';
                 if ($signature !== $lastSignature) {
-                    $this->emitRunningProgress($parentRunId, $agentRunId, $artifactId, $taskSummary, $resolvedModel, $state, $progressSeq, $progressStartedMicros, 'waiting_human');
-                    $this->advanceParentSequence($parentRunId, $progressSeq);
-                    ++$progressSeq;
+                    $this->emitRunningProgress($parentRunId, $agentRunId, $artifactId, $taskSummary, $resolvedModel, $state, $progressStartedMicros, 'waiting_human');
                     $lastSignature = $signature;
                 }
                 $this->sleepPollInterval();
@@ -349,8 +342,7 @@ final class ForkExecutionService
                 RunStatus::Failed => 'failed',
                 RunStatus::Cancelled, RunStatus::Cancelling => 'cancelled',
             };
-            $this->emitTerminalProgress($parentRunId, $agentRunId, $artifactId, $taskSummary, $resolvedModel, $state, $terminal, $progressSeq, $progressStartedMicros);
-            $this->advanceParentSequence($parentRunId, $progressSeq);
+            $this->emitTerminalProgress($parentRunId, $agentRunId, $artifactId, $taskSummary, $resolvedModel, $state, $terminal, $progressStartedMicros);
 
             return match ($status) {
                 RunStatus::Completed => $this->handleCompleted($parentRunId, $artifactId, $agentRunId, $state),
@@ -454,7 +446,6 @@ final class ForkExecutionService
         string $taskSummary,
         ?string $model,
         RunState $state,
-        int $seq,
         int $progressStartedMicros,
         string $progressStatus,
     ): void {
@@ -482,7 +473,7 @@ final class ForkExecutionService
             $progressStatus,
         );
 
-        $this->appendProgressEvent($parentRunId, $context, $seq, $progress);
+        $this->appendProgressEvent($parentRunId, $context, $progress);
     }
 
     private function emitTerminalProgress(
@@ -493,7 +484,6 @@ final class ForkExecutionService
         ?string $model,
         ?RunState $state,
         string $terminalStatus,
-        int $seq,
         int $progressStartedMicros,
     ): void {
         $context = $this->contextAccessor->current();
@@ -520,17 +510,17 @@ final class ForkExecutionService
             $enrichment,
         );
 
-        $this->appendProgressEvent($parentRunId, $context, $seq, $progress);
+        $this->appendProgressEvent($parentRunId, $context, $progress);
     }
 
     /**
      * @param array<string, mixed> $progress
      */
-    private function appendProgressEvent(string $parentRunId, \Ineersa\AgentCore\Application\Tool\ToolContext $context, int $seq, array $progress): void
+    private function appendProgressEvent(string $parentRunId, \Ineersa\AgentCore\Application\Tool\ToolContext $context, array $progress): void
     {
         $event = new RunEvent(
             runId: $parentRunId,
-            seq: $seq,
+            seq: 0,
             turnNo: $context->turnNo(),
             type: RunEventTypeEnum::ToolExecutionUpdate->value,
             payload: [
@@ -542,46 +532,7 @@ final class ForkExecutionService
             ],
         );
 
-        $this->eventStore->append($event);
-    }
-
-    private function resolveNextProgressSeq(string $parentRunId): int
-    {
-        $parentState = $this->parentRunStore->get($parentRunId);
-        $stateLastSeq = null !== $parentState ? $parentState->lastSeq : 0;
-        $maxEventSeq = 0;
-        foreach ($this->eventStore->allFor($parentRunId) as $event) {
-            if ($event->seq > $maxEventSeq) {
-                $maxEventSeq = $event->seq;
-            }
-        }
-
-        return max($stateLastSeq, $maxEventSeq) + 1;
-    }
-
-    private function advanceParentSequence(string $parentRunId, int $seq): void
-    {
-        $parentState = $this->parentRunStore->get($parentRunId);
-        if (null === $parentState || $parentState->lastSeq >= $seq) {
-            return;
-        }
-
-        $nextState = new RunState(
-            runId: $parentState->runId,
-            status: $parentState->status,
-            version: $parentState->version + 1,
-            turnNo: $parentState->turnNo,
-            lastSeq: $seq,
-            isStreaming: $parentState->isStreaming,
-            streamingMessage: $parentState->streamingMessage,
-            pendingToolCalls: $parentState->pendingToolCalls,
-            errorMessage: $parentState->errorMessage,
-            messages: $parentState->messages,
-            activeStepId: $parentState->activeStepId,
-            retryableFailure: $parentState->retryableFailure,
-        );
-
-        $this->parentRunStore->compareAndSwap($nextState, $parentState->version);
+        $this->sequencedEventAppender->append($event);
     }
 
     private function extractUserContextBySource(string $parentRunId, string $source): string

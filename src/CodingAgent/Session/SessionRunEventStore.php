@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Session;
 
 use Ineersa\AgentCore\Contract\EventStoreInterface;
+use Ineersa\AgentCore\Contract\SequencedEventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
 use Ineersa\AgentCore\Schema\SchemaVersion;
@@ -26,7 +27,7 @@ use Symfony\Component\Lock\LockFactory;
  * Uses HatfieldSessionStore::resolveSessionsBasePath() as the single
  * source of truth for the sessions directory.
  */
-final class SessionRunEventStore implements EventStoreInterface
+final class SessionRunEventStore implements SequencedEventStoreInterface
 {
     private readonly string $sessionsBasePath;
 
@@ -46,15 +47,73 @@ final class SessionRunEventStore implements EventStoreInterface
         $lock->acquire(true);
 
         try {
-            $dir = \dirname($path);
-            if (!is_dir($dir)) {
-                mkdir($dir, 0777, true);
+            $this->writeEventLocked($path, $event);
+        } finally {
+            $lock->release();
+        }
+    }
+
+    public function appendWithNextSeq(RunEvent $event): RunEvent
+    {
+        $path = $this->eventsPath($event->runId);
+        $lock = $this->lockFactory->createLock('hatfield-run-'.$event->runId);
+        $lock->acquire(true);
+
+        try {
+            $nextSeq = $this->readMaxSeqLocked($path) + 1;
+            $persisted = new RunEvent(
+                runId: $event->runId,
+                seq: $nextSeq,
+                turnNo: $event->turnNo,
+                type: $event->type,
+                payload: $event->payload,
+                createdAt: $event->createdAt,
+            );
+
+            $this->writeEventLocked($path, $persisted);
+
+            return $persisted;
+        } finally {
+            $lock->release();
+        }
+    }
+
+    public function appendManyWithNextSeq(array $events): array
+    {
+        if ([] === $events) {
+            return [];
+        }
+
+        $runId = $events[0]->runId;
+        foreach ($events as $event) {
+            if ($event->runId !== $runId) {
+                throw new \InvalidArgumentException('appendManyWithNextSeq requires all events to share the same runId.');
+            }
+        }
+
+        $path = $this->eventsPath($runId);
+        $lock = $this->lockFactory->createLock('hatfield-run-'.$runId);
+        $lock->acquire(true);
+
+        try {
+            $nextSeq = $this->readMaxSeqLocked($path) + 1;
+            $persisted = [];
+
+            foreach ($events as $event) {
+                $persistedEvent = new RunEvent(
+                    runId: $event->runId,
+                    seq: $nextSeq,
+                    turnNo: $event->turnNo,
+                    type: $event->type,
+                    payload: $event->payload,
+                    createdAt: $event->createdAt,
+                );
+                $this->writeEventLocked($path, $persistedEvent);
+                $persisted[] = $persistedEvent;
+                ++$nextSeq;
             }
 
-            $entry = $this->eventPayloadNormalizer->normalizeRunEvent($event);
-            $json = json_encode($entry, \JSON_THROW_ON_ERROR);
-
-            file_put_contents($path, $json."\n", \FILE_APPEND | \LOCK_EX);
+            return $persisted;
         } finally {
             $lock->release();
         }
@@ -136,6 +195,57 @@ final class SessionRunEventStore implements EventStoreInterface
         usort($events, static fn (RunEvent $left, RunEvent $right): int => $left->seq <=> $right->seq);
 
         return $events;
+    }
+
+    private function writeEventLocked(string $path, RunEvent $event): void
+    {
+        $dir = \dirname($path);
+        if (!is_dir($dir)) {
+            mkdir($dir, 0777, true);
+        }
+
+        $entry = $this->eventPayloadNormalizer->normalizeRunEvent($event);
+        $json = json_encode($entry, \JSON_THROW_ON_ERROR);
+
+        file_put_contents($path, $json."\n", \FILE_APPEND | \LOCK_EX);
+    }
+
+    private function readMaxSeqLocked(string $path): int
+    {
+        if (!is_readable($path)) {
+            return 0;
+        }
+
+        $handle = fopen($path, 'rb');
+        if (false === $handle) {
+            return 0;
+        }
+
+        $maxSeq = 0;
+        try {
+            while (($line = fgets($handle)) !== false) {
+                $trimmed = trim($line);
+                if ('' === $trimmed) {
+                    continue;
+                }
+
+                try {
+                    /** @var array<string, mixed> $payload */
+                    $payload = json_decode($trimmed, true, 512, \JSON_THROW_ON_ERROR);
+                } catch (\JsonException) {
+                    continue;
+                }
+
+                $seq = $payload['seq'] ?? null;
+                if (\is_int($seq) && $seq > $maxSeq) {
+                    $maxSeq = $seq;
+                }
+            }
+        } finally {
+            fclose($handle);
+        }
+
+        return $maxSeq;
     }
 
     /**

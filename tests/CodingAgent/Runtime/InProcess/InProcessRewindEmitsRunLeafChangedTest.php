@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Tests\Runtime\InProcess;
 
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\RunStoreInterface;
+use Ineersa\AgentCore\Contract\SequencedEventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Run\RunState;
@@ -47,8 +48,8 @@ final class InProcessRewindEmitsRunLeafChangedTest extends IsolatedKernelTestCas
 
         $events = self::minimalSessionEvents();
 
-        // ── Anonymous stub for EventStoreInterface ───────────────
-        $eventStore = new class($events) implements EventStoreInterface {
+        // ── In-memory sequenced event store for rewind LeafSet append ──
+        $eventStore = new class($events) implements SequencedEventStoreInterface {
             /** @param list<RunEvent> $events */
             public function __construct(private array $events)
             {
@@ -61,11 +62,55 @@ final class InProcessRewindEmitsRunLeafChangedTest extends IsolatedKernelTestCas
 
             public function append(RunEvent $event): void
             {
-                // Accept without persisting.
+                $this->events[] = $event;
             }
 
             public function appendMany(array $events): void
             {
+                foreach ($events as $event) {
+                    $this->append($event);
+                }
+            }
+
+            public function appendWithNextSeq(RunEvent $event): RunEvent
+            {
+                $nextSeq = $this->maxSeq() + 1;
+                $persisted = new RunEvent(
+                    runId: $event->runId,
+                    seq: $nextSeq,
+                    turnNo: $event->turnNo,
+                    type: $event->type,
+                    payload: $event->payload,
+                    createdAt: $event->createdAt,
+                );
+                $this->events[] = $persisted;
+
+                return $persisted;
+            }
+
+            /**
+             * @param list<RunEvent> $events
+             *
+             * @return list<RunEvent>
+             */
+            public function appendManyWithNextSeq(array $events): array
+            {
+                $persisted = [];
+                foreach ($events as $event) {
+                    $persisted[] = $this->appendWithNextSeq($event);
+                }
+
+                return $persisted;
+            }
+
+            private function maxSeq(): int
+            {
+                $max = 0;
+                foreach ($this->events as $event) {
+                    $max = max($max, $event->seq);
+                }
+
+                return $max;
             }
         };
         self::getContainer()->set(EventStoreInterface::class, $eventStore);

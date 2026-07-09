@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Infrastructure\Messenger;
 
+use Ineersa\AgentCore\Application\Handler\RunStateReplayException;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\RunStoreInterface;
+use Ineersa\AgentCore\Contract\SequencedEventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Message\AbstractAgentBusMessage;
 use Ineersa\AgentCore\Domain\Run\RunState;
@@ -107,32 +109,36 @@ final readonly class WorkerFailedEventSubscriber implements EventSubscriberInter
                 return;
             }
 
+            if ($exception instanceof RunStateReplayException
+                || str_contains($exception->getMessage(), 'duplicate sequence number')) {
+                $this->logger->warning('agent_loop.worker_failed_skipped_replay_corruption', [
+                    'run_id' => $runId,
+                    'component' => 'messenger.worker',
+                    'event_type' => 'worker_failed.skipped_replay_corruption',
+                ]);
+
+                return;
+            }
+
             $errorMessage = \sprintf(
                 'Permanent worker failure: %s: %s',
                 $exception::class,
                 $exception->getMessage(),
             );
 
-            $nextSeq = $current->lastSeq + 1;
+            if (!$this->eventStore instanceof SequencedEventStoreInterface) {
+                $this->logger->error('agent_loop.worker_failed_missing_sequenced_store', [
+                    'run_id' => $runId,
+                    'component' => 'messenger.worker',
+                    'event_type' => 'worker_failed.missing_sequenced_store',
+                ]);
 
-            $failedState = new RunState(
-                runId: $runId,
-                status: RunStatus::Failed,
-                version: $current->version + 1,
-                turnNo: $current->turnNo,
-                lastSeq: $nextSeq,
-                isStreaming: false,
-                streamingMessage: null,
-                pendingToolCalls: [],
-                errorMessage: $errorMessage,
-                messages: $current->messages,
-                activeStepId: $current->activeStepId,
-                retryableFailure: false,
-            );
+                return;
+            }
 
             $agentEndEvent = new RunEvent(
                 runId: $runId,
-                seq: $nextSeq,
+                seq: 0,
                 turnNo: $current->turnNo,
                 type: 'agent_end',
                 payload: [
@@ -142,26 +148,39 @@ final readonly class WorkerFailedEventSubscriber implements EventSubscriberInter
                 ],
             );
 
+            $persisted = $this->eventStore->appendWithNextSeq($agentEndEvent);
+
+            $failedState = new RunState(
+                runId: $runId,
+                status: RunStatus::Failed,
+                version: $current->version + 1,
+                turnNo: $current->turnNo,
+                lastSeq: $persisted->seq,
+                isStreaming: false,
+                streamingMessage: null,
+                pendingToolCalls: [],
+                errorMessage: $errorMessage,
+                messages: $current->messages,
+                activeStepId: $current->activeStepId,
+                retryableFailure: false,
+            );
+
             $committed = $this->runStore->compareAndSwap($failedState, $current->version);
 
             if (!$committed) {
-                // CAS conflict — another process already updated the state.
-                // The terminal state was likely already written.
                 $this->logger->warning('agent_loop.worker_failed_cas_conflict', [
                     'run_id' => $runId,
                     'expected_version' => $current->version,
+                    'persisted_seq' => $persisted->seq,
                 ]);
 
                 return;
             }
 
-            // State committed successfully — append the terminal event.
-            $this->eventStore->append($agentEndEvent);
-
             $this->logger->info('agent_loop.worker_failed_written', [
                 'run_id' => $runId,
                 'message_type' => $message::class,
-                'seq' => $nextSeq,
+                'seq' => $persisted->seq,
             ]);
         } catch (\Throwable $e) {
             // Never let this subscriber throw — we're inside Messenger's

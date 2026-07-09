@@ -5,10 +5,12 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Session\Rewind;
 
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
+use Ineersa\AgentCore\Application\Replay\ReplayEventPreparer;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
 use Ineersa\AgentCore\Contract\Rewind\RunRewindServiceInterface;
 use Ineersa\AgentCore\Contract\RunStoreInterface;
+use Ineersa\AgentCore\Contract\SequencedEventStoreInterface;
 use Ineersa\AgentCore\Contract\TurnTree\TurnTreeProjectorInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
@@ -38,6 +40,7 @@ final readonly class SessionRewindService implements RunRewindServiceInterface
         private RunLockManager $lockManager,
         private LoggerInterface $logger,
         private TurnTreeProjectorInterface $turnTreeProjector,
+        private ReplayEventPreparer $replayEventPreparer,
     ) {
     }
 
@@ -72,16 +75,12 @@ final readonly class SessionRewindService implements RunRewindServiceInterface
                 throw new \RuntimeException(\sprintf('Cannot rewind run %s: no run state found.', $runId));
             }
 
-            // Compute max seq from the full canonical stream.
-            $maxSeq = 0;
-            foreach ($events as $event) {
-                if ($event->seq > $maxSeq) {
-                    $maxSeq = $event->seq;
-                }
+            $duplicateSeqs = $this->replayEventPreparer->duplicateSequences($events);
+            if ([] !== $duplicateSeqs) {
+                throw new \RuntimeException(\sprintf('Cannot rewind run %s: event history contains duplicate sequence number(s): %s. Run /repair apply first.', $runId, implode(', ', array_map('strval', \array_slice($duplicateSeqs, 0, 10)))));
             }
 
             $currentLeafTurnNo = $tree->currentLeafTurnNo;
-            $newSeq = $maxSeq + 1;
 
             // Determine parent_turn_no of the target (its parent in the tree).
             $targetParentTurnNo = $tree->nodesByTurnNo[$targetTurnNo]->parentTurnNo;
@@ -93,26 +92,22 @@ final readonly class SessionRewindService implements RunRewindServiceInterface
                 'reason' => 'rewind',
             ];
 
-            // Append LeafSet event.
+            if (!$this->eventStore instanceof SequencedEventStoreInterface) {
+                throw new \RuntimeException(\sprintf('Cannot rewind run %s: sequenced event store is required.', $runId));
+            }
+
             $leafSetEvent = new RunEvent(
                 runId: $runId,
-                seq: $newSeq,
+                seq: 0,
                 turnNo: $targetTurnNo,
                 type: RunEventTypeEnum::LeafSet->value,
                 payload: $leafSetPayload,
                 createdAt: new \DateTimeImmutable(),
             );
 
-            $this->eventStore->append($leafSetEvent);
+            $persistedLeafSet = $this->eventStore->appendWithNextSeq($leafSetEvent);
+            $newSeq = $persistedLeafSet->seq;
 
-            $this->logger->info('run_rewind.leaf_set_appended', [
-                'run_id' => $runId,
-                'target_turn_no' => $targetTurnNo,
-                'previous_turn_no' => $currentLeafTurnNo,
-                'leaf_set_seq' => $newSeq,
-            ]);
-
-            // Rebuild state for the target leaf.
             $replayResult = $this->runStateRebuilder->rebuildForLeaf($state, $runId, $targetTurnNo);
 
             if (null === $replayResult->rebuiltState) {
@@ -120,6 +115,13 @@ final readonly class SessionRewindService implements RunRewindServiceInterface
             }
 
             $rebuiltState = $replayResult->rebuiltState;
+
+            $this->logger->info('run_rewind.leaf_set_appended', [
+                'run_id' => $runId,
+                'target_turn_no' => $targetTurnNo,
+                'previous_turn_no' => $currentLeafTurnNo,
+                'leaf_set_seq' => $newSeq,
+            ]);
 
             // Persist the rebuilt state via compareAndSwap.
             if (!$this->runStore->compareAndSwap($rebuiltState, $state->version)) {

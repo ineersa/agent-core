@@ -10,6 +10,7 @@ use Ineersa\AgentCore\Contract\AgentRunnerInterface;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
 use Ineersa\AgentCore\Contract\RunStoreInterface;
+use Ineersa\AgentCore\Contract\SequencedEventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
@@ -24,14 +25,17 @@ use Ineersa\CodingAgent\Agent\Context\AgentsContextBuilder;
 use Ineersa\CodingAgent\Agent\Execution\ForkExecutionService;
 use Ineersa\CodingAgent\Config\SessionMetadataStore;
 use Ineersa\CodingAgent\Entity\HatfieldSession;
+use Ineersa\CodingAgent\Session\SequencedRunEventAppender;
 use Ineersa\CodingAgent\Skills\SkillsContextBuilder;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tool\ToolDefinitionDTO;
 use Ineersa\CodingAgent\Tool\ToolHandlerInterface;
 use Ineersa\CodingAgent\Tool\ToolRegistryInterface;
+use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use PHPUnit\Framework\Attributes\CoversClass;
 use Symfony\Component\Clock\MockClock;
 
+#[AllowMockObjectsWithoutExpectations]
 #[CoversClass(ForkExecutionService::class)]
 final class ForkExecutionServiceTest extends IsolatedKernelTestCase
 {
@@ -103,7 +107,7 @@ final class ForkExecutionServiceTest extends IsolatedKernelTestCase
             agentRunner: $agentRunner,
             runStore: $childRunStore,
             parentRunStore: $parentRunStore,
-            eventStore: $this->createStub(EventStoreInterface::class),
+            sequencedEventAppender: $this->createSequencedEventAppenderStub($parentRunStore),
             metadataReader: $container->get(\Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader::class),
             childRunDirectory: $container->get(\Ineersa\CodingAgent\Agent\Artifact\AgentChildRunDirectory::class),
             contextAccessor: $contextAccessor,
@@ -246,7 +250,7 @@ final class ForkExecutionServiceTest extends IsolatedKernelTestCase
             agentRunner: $agentRunner,
             runStore: $childRunStore,
             parentRunStore: $parentRunStore,
-            eventStore: $this->createStub(EventStoreInterface::class),
+            sequencedEventAppender: $this->createSequencedEventAppenderStub($parentRunStore),
             metadataReader: $container->get(\Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader::class),
             childRunDirectory: $container->get(\Ineersa\CodingAgent\Agent\Artifact\AgentChildRunDirectory::class),
             contextAccessor: $contextAccessor,
@@ -328,7 +332,7 @@ final class ForkExecutionServiceTest extends IsolatedKernelTestCase
             agentRunner: $agentRunner,
             runStore: $childRunStore,
             parentRunStore: $parentRunStore,
-            eventStore: $this->createStub(EventStoreInterface::class),
+            sequencedEventAppender: $this->createSequencedEventAppenderStub($parentRunStore),
             metadataReader: $container->get(\Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader::class),
             childRunDirectory: $container->get(\Ineersa\CodingAgent\Agent\Artifact\AgentChildRunDirectory::class),
             contextAccessor: $contextAccessor,
@@ -435,7 +439,7 @@ final class ForkExecutionServiceTest extends IsolatedKernelTestCase
             agentRunner: $agentRunner,
             runStore: $childRunStore,
             parentRunStore: $parentRunStore,
-            eventStore: $this->createStub(EventStoreInterface::class),
+            sequencedEventAppender: $this->createSequencedEventAppenderStub($parentRunStore),
             metadataReader: $metadataReader,
             childRunDirectory: $container->get(\Ineersa\CodingAgent\Agent\Artifact\AgentChildRunDirectory::class),
             contextAccessor: $contextAccessor,
@@ -514,7 +518,7 @@ final class ForkExecutionServiceTest extends IsolatedKernelTestCase
             agentRunner: $agentRunner,
             runStore: $childRunStore,
             parentRunStore: $parentRunStore,
-            eventStore: $this->createStub(EventStoreInterface::class),
+            sequencedEventAppender: $this->createSequencedEventAppenderStub($parentRunStore),
             metadataReader: $container->get(\Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader::class),
             childRunDirectory: $container->get(\Ineersa\CodingAgent\Agent\Artifact\AgentChildRunDirectory::class),
             contextAccessor: $contextAccessor,
@@ -596,7 +600,7 @@ final class ForkExecutionServiceTest extends IsolatedKernelTestCase
             agentRunner: $agentRunner,
             runStore: $childRunStore,
             parentRunStore: $parentRunStore,
-            eventStore: $this->createStub(EventStoreInterface::class),
+            sequencedEventAppender: $this->createSequencedEventAppenderStub($parentRunStore),
             metadataReader: $container->get(\Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader::class),
             childRunDirectory: $container->get(\Ineersa\CodingAgent\Agent\Artifact\AgentChildRunDirectory::class),
             contextAccessor: $contextAccessor,
@@ -706,7 +710,7 @@ final class ForkExecutionServiceTest extends IsolatedKernelTestCase
             agentRunner: $agentRunner,
             runStore: $childRunStore,
             parentRunStore: $parentRunStore,
-            eventStore: $this->createStub(EventStoreInterface::class),
+            sequencedEventAppender: $this->createSequencedEventAppenderStub($parentRunStore),
             metadataReader: $metadataReader,
             childRunDirectory: $container->get(\Ineersa\CodingAgent\Agent\Artifact\AgentChildRunDirectory::class),
             contextAccessor: $contextAccessor,
@@ -813,7 +817,7 @@ final class ForkExecutionServiceTest extends IsolatedKernelTestCase
             agentRunner: $agentRunner,
             runStore: $childRunStore,
             parentRunStore: $parentRunStore,
-            eventStore: $this->createStub(EventStoreInterface::class),
+            sequencedEventAppender: $this->createSequencedEventAppenderStub($parentRunStore),
             metadataReader: $metadataReader,
             childRunDirectory: $container->get(\Ineersa\CodingAgent\Agent\Artifact\AgentChildRunDirectory::class),
             contextAccessor: $contextAccessor,
@@ -892,7 +896,7 @@ final class ForkExecutionServiceTest extends IsolatedKernelTestCase
             agentRunner: $agentRunner,
             runStore: $childRunStore,
             parentRunStore: $parentRunStore,
-            eventStore: $this->createStub(EventStoreInterface::class),
+            sequencedEventAppender: $this->createSequencedEventAppenderStub($parentRunStore),
             metadataReader: $container->get(\Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader::class),
             childRunDirectory: $container->get(\Ineersa\CodingAgent\Agent\Artifact\AgentChildRunDirectory::class),
             contextAccessor: $contextAccessor,
@@ -944,5 +948,27 @@ final class ForkExecutionServiceTest extends IsolatedKernelTestCase
         self::getContainer()->get(SessionMetadataStore::class)->writeSessionMetadata($sessionId, $fields);
 
         return $sessionId;
+    }
+
+    private function createSequencedEventAppenderStub(RunStoreInterface $parentRunStore): SequencedRunEventAppender
+    {
+        $eventStore = $this->createMock(SequencedEventStoreInterface::class);
+        $eventStore->method('appendWithNextSeq')->willReturnCallback(
+            static function (RunEvent $event) use ($parentRunStore): RunEvent {
+                $state = $parentRunStore->get($event->runId);
+                $nextSeq = (null !== $state ? $state->lastSeq : 0) + 1;
+
+                return new RunEvent(
+                    runId: $event->runId,
+                    seq: $nextSeq,
+                    turnNo: $event->turnNo,
+                    type: $event->type,
+                    payload: $event->payload,
+                    createdAt: $event->createdAt,
+                );
+            }
+        );
+
+        return new SequencedRunEventAppender($eventStore, $parentRunStore, new \Psr\Log\NullLogger());
     }
 }

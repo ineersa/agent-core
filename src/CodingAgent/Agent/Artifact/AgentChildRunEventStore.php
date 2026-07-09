@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Agent\Artifact;
 
 use Ineersa\AgentCore\Contract\EventStoreInterface;
+use Ineersa\AgentCore\Contract\SequencedEventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
 use Ineersa\AgentCore\Schema\SchemaVersion;
@@ -32,7 +33,7 @@ use Symfony\Component\Lock\LockFactory;
  * Path resolution and validation are delegated to
  * {@see AgentArtifactPathResolver}.
  */
-final class AgentChildRunEventStore implements EventStoreInterface
+final class AgentChildRunEventStore implements SequencedEventStoreInterface
 {
     public function __construct(
         private readonly AgentArtifactPathResolver $pathResolver,
@@ -62,21 +63,48 @@ final class AgentChildRunEventStore implements EventStoreInterface
         $lock->acquire(true);
 
         try {
-            $dir = \dirname($path);
-            if (!is_dir($dir)) {
-                mkdir($dir, AgentArtifactPathResolver::DIR_PERMISSIONS, true);
-            }
-
-            $entry = $this->eventPayloadNormalizer->normalizeRunEvent($event);
-            $json = json_encode($entry, \JSON_THROW_ON_ERROR);
-
-            $written = file_put_contents($path, $json."\n", \FILE_APPEND | \LOCK_EX);
-            if (false === $written) {
-                throw new \RuntimeException(\sprintf('Failed to append to events.jsonl for child run "%s".', $this->agentRunId));
-            }
+            $this->writeEventLocked($path, $event);
         } finally {
             $lock->release();
         }
+    }
+
+    public function appendWithNextSeq(RunEvent $event): RunEvent
+    {
+        if ($event->runId !== $this->agentRunId) {
+            throw new \RuntimeException(\sprintf('RunEvent integrity error: embedded runId "%s" does not match bound agentRunId "%s".', $event->runId, $this->agentRunId));
+        }
+
+        $path = $this->eventsPath();
+        $lock = $this->lockFactory->createLock("hatfield-run-{$this->agentRunId}");
+        $lock->acquire(true);
+
+        try {
+            $nextSeq = $this->readMaxSeqLocked($path) + 1;
+            $persisted = new RunEvent(
+                runId: $event->runId,
+                seq: $nextSeq,
+                turnNo: $event->turnNo,
+                type: $event->type,
+                payload: $event->payload,
+                createdAt: $event->createdAt,
+            );
+            $this->writeEventLocked($path, $persisted);
+
+            return $persisted;
+        } finally {
+            $lock->release();
+        }
+    }
+
+    public function appendManyWithNextSeq(array $events): array
+    {
+        $persisted = [];
+        foreach ($events as $event) {
+            $persisted[] = $this->appendWithNextSeq($event);
+        }
+
+        return $persisted;
     }
 
     public function appendMany(array $events): void
@@ -164,6 +192,60 @@ final class AgentChildRunEventStore implements EventStoreInterface
     /**
      * Resolve the events.jsonl path for this child artifact.
      */
+    private function writeEventLocked(string $path, RunEvent $event): void
+    {
+        $dir = \dirname($path);
+        if (!is_dir($dir)) {
+            mkdir($dir, AgentArtifactPathResolver::DIR_PERMISSIONS, true);
+        }
+
+        $entry = $this->eventPayloadNormalizer->normalizeRunEvent($event);
+        $json = json_encode($entry, \JSON_THROW_ON_ERROR);
+
+        $written = file_put_contents($path, $json."\n", \FILE_APPEND | \LOCK_EX);
+        if (false === $written) {
+            throw new \RuntimeException(\sprintf('Failed to append to events.jsonl for child run "%s".', $this->agentRunId));
+        }
+    }
+
+    private function readMaxSeqLocked(string $path): int
+    {
+        if (!is_readable($path)) {
+            return 0;
+        }
+
+        $handle = fopen($path, 'rb');
+        if (false === $handle) {
+            return 0;
+        }
+
+        $maxSeq = 0;
+        try {
+            while (($line = fgets($handle)) !== false) {
+                $trimmed = trim($line);
+                if ('' === $trimmed) {
+                    continue;
+                }
+
+                try {
+                    /** @var array<string, mixed> $payload */
+                    $payload = json_decode($trimmed, true, 512, \JSON_THROW_ON_ERROR);
+                } catch (\JsonException) {
+                    continue;
+                }
+
+                $seq = $payload['seq'] ?? null;
+                if (\is_int($seq) && $seq > $maxSeq) {
+                    $maxSeq = $seq;
+                }
+            }
+        } finally {
+            fclose($handle);
+        }
+
+        return $maxSeq;
+    }
+
     private function eventsPath(): string
     {
         return $this->pathResolver->eventsPath($this->parentRunId, $this->artifactId);
