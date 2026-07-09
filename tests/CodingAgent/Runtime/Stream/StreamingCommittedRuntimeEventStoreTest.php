@@ -36,7 +36,6 @@ final class StreamingCommittedRuntimeEventStoreTest extends TestCase
         $this->assertSame(5, $sink->emitted[0]->seq);
     }
 
-
     public function testAppendChildRunEventEmitsRuntimeEventPreservingChildRunId(): void
     {
         $childRunId = 'child-subagent-run-7f3a';

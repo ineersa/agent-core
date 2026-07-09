@@ -197,12 +197,12 @@ final class JsonlProcessAgentSessionClientEventBufferTest extends TestCase
     }
 
     /**
-     * @param list<string> $lines Complete JSONL lines (with trailing newline in buffer).
+     * @param list<string> $lines complete JSONL lines (with trailing newline in buffer)
      */
     private function injectStdoutJsonlLines(JsonlProcessAgentSessionClient $client, array $lines): void
     {
         $payload = implode("\n", $lines)."\n";
-        $stream = fopen('php://memory', 'r+');
+        $stream = fopen('php://memory', 'r+b');
         fwrite($stream, $payload);
         rewind($stream);
 
