@@ -21,6 +21,7 @@ use Ineersa\Tui\Command\SlashCommandRegistry;
 use Ineersa\Tui\Command\SubagentLiveInputPolicy;
 use Ineersa\Tui\Command\SubmissionRouter;
 use Ineersa\Tui\Editor\PromptEditor;
+use Ineersa\Tui\Listener\PromptHistory;
 use Ineersa\Tui\Listener\SubmitListener;
 use Ineersa\Tui\Question\QuestionController;
 use Ineersa\Tui\Question\QuestionCoordinator;
@@ -484,6 +485,67 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
         $this->assertFalse($this->questionCoordinator->actionRequired());
     }
 
+    #[Test]
+    public function normalPromptSubmitAppendsToPromptHistory(): void
+    {
+        $history = new PromptHistory();
+        $this->state->handle = null;
+        $this->state->sessionId = 'test-session';
+        $this->state->activity = RunActivityStateEnum::Idle;
+
+        $this->client->expects($this->once())
+            ->method('start')
+            ->willReturn(new RunHandle('run-1'));
+
+        $this->dispatchSubmit('plain user prompt', history: $history);
+
+        $this->assertSame(['plain user prompt'], $history->prompts());
+    }
+
+    #[Test]
+    public function dispatchRuntimeSlashSubmitAppendsUserTypedTextNotPayloadOnly(): void
+    {
+        $history = new PromptHistory();
+        $this->state->handle = null;
+        $this->state->sessionId = 'test-session';
+        $this->state->activity = RunActivityStateEnum::Idle;
+
+        $this->client->expects($this->once())
+            ->method('start')
+            ->willReturn(new RunHandle('run-1'));
+
+        $this->dispatchSubmit('/review foo bar', history: $history);
+
+        $this->assertSame(['/review foo bar'], $history->prompts());
+    }
+
+    #[Test]
+    #[AllowMockObjectsWithoutExpectations]
+    public function localSlashHelpDoesNotAppendToPromptHistory(): void
+    {
+        $history = new PromptHistory();
+        $registry = new SlashCommandRegistry();
+        $registry->register(
+            new CommandMetadata(
+                name: 'localonly',
+                description: 'Local only',
+                usage: '/localonly',
+                acceptsArguments: false,
+            ),
+            new class implements SlashCommandHandler {
+                public function handle(SlashCommand $command): \Ineersa\Tui\Command\TranscriptMessage
+                {
+                    return new \Ineersa\Tui\Command\TranscriptMessage('local', 'system');
+                }
+            },
+        );
+        $router = new SubmissionRouter(new CommandParser(), $registry);
+
+        $this->dispatchSubmit('/localonly', history: $history, router: $router);
+
+        $this->assertSame([], $history->prompts());
+    }
+
     // ── Helpers ─────────────────────────────────────────────────────
 
     /**
@@ -495,7 +557,7 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
      *
      * @return ChatScreen the screen after dispatch (for state inspection)
      */
-    private function dispatchSubmit(string $text, ?HatfieldSessionStore $sessionStore = null): ChatScreen
+    private function dispatchSubmit(string $text, ?HatfieldSessionStore $sessionStore = null, ?PromptHistory $history = null, ?SubmissionRouter $router = null): ChatScreen
     {
         $tui = new Tui();
         $theme = new DefaultTheme(new ThemePalette('test'));
@@ -519,12 +581,13 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
 
         $listener = new SubmitListener(
             sessionStore: $context->sessionStore,
-            submissionRouter: $this->router,
+            submissionRouter: $router ?? $this->router,
             blockFactory: new \Ineersa\Tui\Transcript\TranscriptBlockFactory(),
             coordinator: $this->questionCoordinator,
             questionController: $this->questionController,
             subagentLiveInputPolicy: new SubagentLiveInputPolicy(),
             logger: $this->logger,
+            history: $history ?? new PromptHistory(),
         );
         $listener->register($context);
 

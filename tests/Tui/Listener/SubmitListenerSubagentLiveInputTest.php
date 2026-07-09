@@ -17,6 +17,7 @@ use Ineersa\Tui\Command\SubagentLiveInputPolicy;
 use Ineersa\Tui\Command\SubmissionRouter;
 use Ineersa\Tui\Command\TranscriptMessage;
 use Ineersa\Tui\Editor\PromptEditor;
+use Ineersa\Tui\Listener\PromptHistory;
 use Ineersa\Tui\Listener\SubmitListener;
 use Ineersa\Tui\Question\QuestionController;
 use Ineersa\Tui\Question\QuestionCoordinator;
@@ -252,6 +253,7 @@ final class SubmitListenerSubagentLiveInputTest extends TestCase
             questionController: $this->questionController,
             subagentLiveInputPolicy: new SubagentLiveInputPolicy(),
             logger: new NullLogger(),
+            history: new PromptHistory(),
         );
         $listener->register($context);
 

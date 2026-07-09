@@ -21,7 +21,7 @@ final readonly class ResolvedModel
      *                                               'zai_tool_stream', 'requires_reasoning_content_on_assistant',
      *                                               'reasoning'
      * @param array<string, mixed> $reasoningOptions pre-computed reasoning options (e.g.
-     *                                               ['thinking' => ['type' => 'enabled']]) already provider-specific
+     *                                               ['thinking' => ['type' => 'enabled', 'clear_thinking' => false]]) already provider-specific
      */
     public function __construct(
         public string $model,
