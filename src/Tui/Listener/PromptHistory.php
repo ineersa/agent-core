@@ -55,9 +55,4 @@ final class PromptHistory
     {
         $this->prompts[] = $text;
     }
-
-    public function reset(): void
-    {
-        $this->prompts = [];
-    }
 }

@@ -24,9 +24,11 @@ use Ineersa\Tui\Runtime\TuiRuntimeContext;
  *  - Uses the editor widget's own {@see Keybindings::matches()} so the
  *    same terminal escape sequences that the editor itself recognizes
  *    for cursor_up / cursor_down are used, avoiding raw-escape fragility.
- *  - The navigator scans {@see TuiSessionState::$transcript} on every
- *    call instead of holding a separate prompt-string list.  Memory
- *    overhead is one integer cursor, not duplicated text.
+ *  - History is served from a session-scoped {@see PromptHistory} prompt
+ *    list, seeded from {@see TuiSessionState::$transcript} once on
+ *    {@see register()} (UserMessage blocks) and grown via {@see SubmitListener}
+ *    on each real submit. The navigator holds only a single integer cursor
+ *    into that list — no per-keypress transcript scan.
  *  - Down past the newest prompt clears the editor and exits navigation
  *    (shell-like behaviour).
  *  - Any non-Up/Down input exits history navigation mode immediately

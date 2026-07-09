@@ -43,16 +43,6 @@ final class PromptHistoryTest extends TestCase
     }
 
     #[Test]
-    public function resetClearsPrompts(): void
-    {
-        $history = new PromptHistory();
-        $history->append('x');
-        $history->reset();
-
-        $this->assertSame([], $history->prompts());
-    }
-
-    #[Test]
     public function seedFromAfterAppendReplacesPriorSessionAppends(): void
     {
         $history = new PromptHistory();

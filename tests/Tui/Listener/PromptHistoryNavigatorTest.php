@@ -96,23 +96,21 @@ final class PromptHistoryNavigatorTest extends TestCase
             self::userBlock('third prompt', 'msg-4', 'run-1', 4),
         ];
 
-        // First Up — newest prompt (index 3)
         $this->history->seedFrom($blocks);
+
+        // First Up — newest prompt
         $text = $this->navigator->previous();
         $this->assertSame('third prompt', $text);
 
-        // Second Up — next older (index 2)
-        $this->history->seedFrom($blocks);
+        // Second Up — next older
         $text = $this->navigator->previous();
         $this->assertSame('second prompt', $text);
 
-        // Third Up — oldest (index 0)
-        $this->history->seedFrom($blocks);
+        // Third Up — oldest
         $text = $this->navigator->previous();
         $this->assertSame('first prompt', $text);
 
         // Fourth Up — nothing older
-        $this->history->seedFrom($blocks);
         $text = $this->navigator->previous();
         $this->assertNull($text);
     }
@@ -127,21 +125,49 @@ final class PromptHistoryNavigatorTest extends TestCase
             self::userBlock('third prompt', 'msg-4', 'run-1', 4),
         ];
 
-        // Navigate back to the oldest first
         $this->history->seedFrom($blocks);
+
+        // Navigate back to the oldest first
         $this->navigator->previous(); // third (newest)
         $this->navigator->previous(); // second
-        $this->history->seedFrom($blocks);
         $this->navigator->previous(); // first (oldest)
 
         // Now walk forward
-        $this->history->seedFrom($blocks);
         $text = $this->navigator->next();
         $this->assertSame('second prompt', $text);
 
-        $this->history->seedFrom($blocks);
         $text = $this->navigator->next();
         $this->assertSame('third prompt', $text);
+    }
+
+    #[Test]
+    public function cursorStaysStableWhenPromptAppendedDuringNavigation(): void
+    {
+        $blocks = [
+            self::userBlock('a', 'msg-1', 'run-1', 1),
+            self::userBlock('b', 'msg-2', 'run-1', 2),
+            self::userBlock('c', 'msg-3', 'run-1', 3),
+        ];
+
+        $this->history->seedFrom($blocks);
+
+        $this->assertSame('c', $this->navigator->previous());
+        $this->assertTrue($this->navigator->isNavigating());
+        $this->assertSame(2, $this->navigator->cursor());
+
+        $this->history->append('d');
+
+        $this->assertTrue($this->navigator->isNavigating());
+        $this->assertSame(2, $this->navigator->cursor());
+
+        $this->assertSame('b', $this->navigator->previous());
+        $this->assertSame(1, $this->navigator->cursor());
+
+        $this->assertSame('c', $this->navigator->next());
+        $this->assertSame(2, $this->navigator->cursor());
+
+        $this->assertSame('d', $this->navigator->next());
+        $this->assertSame(3, $this->navigator->cursor());
     }
 
     // ─── Non-user blocks are skipped ──────────────────────────
