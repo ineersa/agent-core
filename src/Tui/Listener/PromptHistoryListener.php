@@ -11,8 +11,7 @@ use Ineersa\Tui\Runtime\TuiRuntimeContext;
  *
  * Uses Symfony EditorWidget::onInput() to intercept Up/Down cursor keys
  * before the editor's own cursor-movement handling.  History navigation
- * is active when the editor is empty OR the navigator is already in
- * history mode.
+ * is active when the editor is empty OR already navigating.
  *
  * Design decisions:
  *  - EditorWidget::onInput() is single-slot (only one callback can be

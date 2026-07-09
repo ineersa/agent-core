@@ -426,7 +426,7 @@ final class SubmitListener implements TuiListenerRegistrar
      * through tool_execution events in the transcript.
      *
      * Adds a user-message transcript block with the original submitted
-     * text (including the `!` prefix) so the prompt history navigator
+     * text (including the `!` prefix) so the prompt history
      * can recall shell commands via Up/Down.
      */
     private static function handleShellCommand(
