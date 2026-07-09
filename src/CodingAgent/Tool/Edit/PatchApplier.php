@@ -54,7 +54,7 @@ final class PatchApplier
             }
 
             [$lines, $hadTrailingNewline] = $this->patchApplicator->splitFileLines($originalContent);
-            $stats = $this->countPatchLineStats($rawPatch);
+            $stats = $this->countPatchLineStatsFromChunks($chunks);
             $changedLineNumbers = $this->computeChangedLineNumbers($replacements);
             $patchedContent = $this->patchApplicator->applyReplacements($lines, $replacements, $hadTrailingNewline);
 
@@ -96,23 +96,30 @@ final class PatchApplier
     }
 
     /**
+     * @param list<EditPatchChunkDTO> $chunks
+     *
      * @return array{additions: int, deletions: int}
      */
-    private function countPatchLineStats(string $rawPatch): array
+    private function countPatchLineStatsFromChunks(array $chunks): array
     {
         $additions = 0;
         $deletions = 0;
 
-        foreach (explode("\n", $rawPatch) as $line) {
-            if ('' === $line) {
-                continue;
+        foreach ($chunks as $chunk) {
+            $oldCount = \count($chunk->oldLines);
+            $newCount = \count($chunk->newLines);
+            $shared = min($oldCount, $newCount);
+            for ($i = 0; $i < $shared; ++$i) {
+                if ($chunk->oldLines[$i] !== $chunk->newLines[$i]) {
+                    ++$deletions;
+                    ++$additions;
+                }
             }
-
-            $first = $line[0];
-            if ('+' === $first) {
-                ++$additions;
-            } elseif ('-' === $first) {
-                ++$deletions;
+            if ($oldCount > $shared) {
+                $deletions += $oldCount - $shared;
+            }
+            if ($newCount > $shared) {
+                $additions += $newCount - $shared;
             }
         }
 
@@ -132,8 +139,13 @@ final class PatchApplier
         $delta = 0;
         foreach ($replacements as $replacement) {
             $patchedStart = $replacement->startIndex + $delta;
-            for ($i = 0; $i < \count($replacement->newLines); ++$i) {
-                $changed[] = $patchedStart + $i + 1;
+            if ([] === $replacement->newLines) {
+                // Pure deletion: still surface nearby context at the patched deletion site.
+                $changed[] = max(1, $patchedStart + 1);
+            } else {
+                for ($i = 0; $i < \count($replacement->newLines); ++$i) {
+                    $changed[] = $patchedStart + $i + 1;
+                }
             }
 
             $delta += \count($replacement->newLines) - $replacement->oldLength;

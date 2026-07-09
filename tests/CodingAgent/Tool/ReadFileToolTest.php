@@ -256,7 +256,8 @@ final class ReadFileToolTest extends TestCase
         $expectedLine2000 = 'line 2000';
         $this->assertStringContainsString($expectedLine2000, $result);
 
-        // Should NOT show line 2001 (truncated by head)
+        // Default limit stops before line 2001.
+        $this->assertStringNotContainsString("line 2001\n", $result);
 
         // Should include continuation hint
         $this->assertStringContainsString('more lines', $result);

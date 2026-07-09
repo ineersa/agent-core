@@ -171,7 +171,12 @@ final class EditPatchParser
         }
 
         if (preg_match('/^@@\s+(.*)$/', $line, $m)) {
-            return $m[1];
+            $hint = $m[1];
+            if (preg_match('/^-\d+(?:,\d+)? \+\d+(?:,\d+)?(?: @@)?$/', $hint)) {
+                throw $this->formatError('Numbered unified-diff @@ headers are not supported. Use plain @@ or @@ <seek hint>.');
+            }
+
+            return $hint;
         }
 
         throw $this->formatError(\sprintf('Malformed @@ header: "%s".', $this->preview($line)));

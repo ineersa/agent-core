@@ -24,11 +24,11 @@ final class EditPatchParserTest extends TestCase
      */
     public function testRemovalLineStartingWithDoubleDashIsNotLegacyHeader(): void
     {
-        $patch = "@@@
+        $patch = <<<'PATCH'
+@@
 --- some comment
 +-- replaced
-";
-        $patch = str_replace('@@@', '@@', $patch);
+PATCH;
 
         $chunks = $this->parser->parse($patch);
         $this->assertCount(1, $chunks);
@@ -41,11 +41,11 @@ final class EditPatchParserTest extends TestCase
      */
     public function testAdditionLineStartingWithDoublePlusIsNotLegacyHeader(): void
     {
-        $patch = "@@@
+        $patch = <<<'PATCH'
+@@
  line
 +++ increment
-";
-        $patch = str_replace('@@@', '@@', $patch);
+PATCH;
 
         $chunks = $this->parser->parse($patch);
         $this->assertSame(['line', '++ increment'], $chunks[0]->newLines);
@@ -78,6 +78,20 @@ PATCH;
 
         $this->expectException(ToolCallException::class);
         $this->expectExceptionMessage('E_PATCH_FORMAT');
+        $this->parser->parse($patch);
+    }
+
+    public function testNumberedUnifiedDiffHeaderAsFirstHunkLineIsRejected(): void
+    {
+        $patch = <<<'PATCH'
+@@ -1,3 +1,3 @@
+ line
+-line
++LINE
+PATCH;
+
+        $this->expectException(ToolCallException::class);
+        $this->expectExceptionMessage('Numbered unified-diff @@ headers are not supported');
         $this->parser->parse($patch);
     }
 }

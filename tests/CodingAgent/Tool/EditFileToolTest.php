@@ -357,6 +357,30 @@ PATCH;
     }
 
     /**
+     * Regression: pure deletion hunks must still return updated-file context near the deletion site.
+     */
+    public function testPureDeletionWithoutContextShowsUpdatedFileContext(): void
+    {
+        $targetPath = $this->tmpDir.'/pure_delete.txt';
+        file_put_contents($targetPath, 'alpha
+beta
+gamma
+');
+
+        $patch = <<<'PATCH'
+@@
+-beta
+PATCH;
+
+        $result = ($this->editFileTool)(['path' => $targetPath, 'patch' => $patch]);
+        $this->assertStringContainsString('Updated file context', $result);
+        $this->assertMatchesRegularExpression('/→\s+2:/', $result);
+        $this->assertSame('alpha
+gamma
+', file_get_contents($targetPath));
+    }
+
+    /**
      * Regression: trailing-empty context in a hunk must not match via shortened pattern and delete following lines.
      */
     public function testPhantomTrailingBlankContextDoesNotDeleteFollowingLine(): void

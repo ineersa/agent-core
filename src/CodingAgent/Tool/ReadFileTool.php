@@ -90,19 +90,17 @@ final class ReadFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
             // Pre-flight validation
             $this->validateTarget($resolvedPath);
 
-            // Read the file content via Unix pipeline
-            $content = $this->readContent($resolvedPath, $offset, $limit);
+            $fileLines = $this->loadFileLines($resolvedPath);
+            $totalLines = \count($fileLines);
+            $content = $this->readContentFromLines($fileLines, $offset, $limit);
 
             // Detect offset past EOF for non-empty files
-            if ('' === $content && null !== $offset) {
-                $totalLines = $this->countTotalLines($resolvedPath);
-                if (null !== $totalLines && $offset > $totalLines) {
-                    throw new ToolCallException(\sprintf('Cannot read "%s": offset %d exceeds file length (%d lines).', $resolvedPath, $offset, $totalLines), retryable: false, hint: \sprintf('The file has %d lines. Use an offset between 1 and %d, or omit offset to read from the beginning.', $totalLines, $totalLines));
-                }
+            if ('' === $content && null !== $offset && $offset > $totalLines) {
+                throw new ToolCallException(\sprintf('Cannot read "%s": offset %d exceeds file length (%d lines).', $resolvedPath, $offset, $totalLines), retryable: false, hint: \sprintf('The file has %d lines. Use an offset between 1 and %d, or omit offset to read from the beginning.', $totalLines, $totalLines));
             }
 
             // Check if the output was truncated and append continuation hint
-            $content = $this->appendContinuationHint($content, $resolvedPath, $offset, $limit);
+            $content = $this->appendContinuationHint($content, $offset, $limit, $totalLines);
 
             // Output capping is now handled centrally by OutputCapToolResultProcessor
             // after ToolExecutor converts the Symfony result to a domain ToolResult.
@@ -464,18 +462,26 @@ final class ReadFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
     }
 
     /**
-     * Read file content as plain text with optional offset/limit.
+     * @return list<string>
      */
-    private function readContent(string $resolvedPath, ?int $offset, ?int $limit): string
+    private function loadFileLines(string $resolvedPath): array
     {
         $lines = file($resolvedPath, \FILE_IGNORE_NEW_LINES);
         if (false === $lines) {
             throw new ToolCallException(\sprintf('Failed to read file "%s".', $resolvedPath), retryable: true, hint: 'Check file permissions and disk health.');
         }
 
+        return $lines;
+    }
+
+    /**
+     * @param list<string> $fileLines
+     */
+    private function readContentFromLines(array $fileLines, ?int $offset, ?int $limit): string
+    {
         $start = null !== $offset ? max(0, $offset - 1) : 0;
         $effectiveLimit = $limit ?? self::DEFAULT_LINE_LIMIT;
-        $slice = \array_slice($lines, $start, $effectiveLimit);
+        $slice = \array_slice($fileLines, $start, $effectiveLimit);
         if ([] === $slice) {
             return '';
         }
@@ -491,7 +497,7 @@ final class ReadFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
      *
      * @return string The original content, optionally with a continuation hint appended
      */
-    private function appendContinuationHint(string $content, string $resolvedPath, ?int $offset, ?int $limit): string
+    private function appendContinuationHint(string $content, ?int $offset, ?int $limit, int $totalLines): string
     {
         // If the content is already empty, no hint needed
         if ('' === $content) {
@@ -518,12 +524,6 @@ final class ReadFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
             return $content;
         }
 
-        // Check total file lines (gracefully handles cancellation/timeout/failure)
-        $totalLines = $this->countTotalLines($resolvedPath);
-        if (null === $totalLines) {
-            return $content; // Cannot determine total, skip hint
-        }
-
         // Calculate the last line we returned
         $lastReturnedLine = null !== $offset ? $offset + $outputLines - 1 : $outputLines;
 
@@ -535,15 +535,5 @@ final class ReadFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
         }
 
         return $content;
-    }
-
-    private function countTotalLines(string $resolvedPath): ?int
-    {
-        $lines = file($resolvedPath, \FILE_IGNORE_NEW_LINES);
-        if (false === $lines) {
-            return null;
-        }
-
-        return \count($lines);
     }
 }
