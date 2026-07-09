@@ -174,6 +174,92 @@ final class SubagentLiveBackgroundChildPollerTest extends TestCase
         $this->assertSame('answer_human', $sent[1]->type);
     }
 
+    public function testPollCatalogIngestDoesNotConsumeStoredBackfillBeforeLiveViewPoll(): void
+    {
+        $parentRun = 'parent-backfill';
+        $scoutRun = 'scout-run-backfill';
+        $scoutArtifact = 'agent_scout_bf';
+
+        $state = new TuiSessionState($parentRun);
+        $state->subagentLiveBackgroundLastPoll = 0.0;
+        $state->subagentLiveCatalog->ingestNestedProgressFromChildRunEvent(new RuntimeEvent(
+            'tool_execution_update',
+            $parentRun,
+            1,
+            [
+                'subagent_progress' => [
+                    'mode' => 'single',
+                    'status' => 'waiting_human',
+                    'agent_name' => 'scout',
+                    'artifact_id' => $scoutArtifact,
+                    'agent_run_id' => $scoutRun,
+                    'task_summary' => 'pick file',
+                ],
+            ],
+        ));
+        $state->subagentLiveCatalog->applyChildStatus($scoutArtifact, SubagentLiveStatusEnum::WaitingHuman);
+
+        $storedHitl = new RuntimeEvent(
+            RuntimeEventTypeEnum::HumanInputRequested->value,
+            $scoutRun,
+            2,
+            [
+                'question_id' => 'q_scout_bf',
+                'prompt' => 'Which file should the scout inspect next?',
+                'schema' => ['type' => 'string'],
+            ],
+        );
+
+        $backfill = new OneShotTrackingBackfillProvider([$scoutRun => [$storedHitl]]);
+        $client = new BufferedChildEventsClient([$scoutRun => []]);
+
+        $bgPoller = new SubagentLiveBackgroundChildPoller(new NullLogger(), $backfill);
+        $bgPoller->pollCatalogIngest($state, $client);
+
+        $this->assertSame(0, $backfill->callCountFor($scoutRun), 'catalog ingest must not consume durable backfill');
+
+        $projector = $this->createStub(\Ineersa\CodingAgent\Runtime\Contract\TranscriptProjectorInterface::class);
+        $projector->method('blocks')->willReturn([
+            new \Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock(
+                id: 'block-scout',
+                kind: \Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum::Progress,
+                runId: $scoutRun,
+                seq: 2,
+                text: 'Which file should the scout inspect next?',
+            ),
+        ]);
+
+        $childPoller = new \Ineersa\Tui\Runtime\SubagentLiveChildViewPoller(
+            projector: $projector,
+            logger: new NullLogger(),
+            backfillProvider: $backfill,
+        );
+
+        $live = new \Ineersa\Tui\Runtime\SubagentLiveViewState();
+        $live->enter(new SubagentLiveChildDTO(
+            $scoutRun,
+            $scoutArtifact,
+            'scout',
+            SubagentLiveStatusEnum::WaitingHuman,
+            'pick file',
+            1,
+        ));
+        $live->childLastPoll = 0.0;
+
+        $hitlSeen = false;
+        $blocks = $childPoller->poll(
+            live: $live,
+            client: $client,
+            onHumanInputRequested: static function (RuntimeEvent $event) use (&$hitlSeen): void {
+                $hitlSeen = true;
+            },
+        );
+
+        $this->assertSame(1, $backfill->callCountFor($scoutRun), 'selected live poller owns one-shot backfill');
+        $this->assertNotNull($blocks, 'live view must project stored events instead of staying on loading placeholder');
+        $this->assertTrue($hitlSeen, 'stored waiting_human must fire HITL on selected child live poller');
+    }
+
     public function testPollCatalogIngestDiscoversNestedScoutWhileLiveViewOnFork(): void
     {
         $parentRun = 'parent-1';
@@ -244,6 +330,31 @@ final class SubagentLiveBackgroundChildPollerTest extends TestCase
             new TranscriptDisplayConfig(),
             new TranscriptDisplayState(),
         );
+    }
+}
+
+final class OneShotTrackingBackfillProvider implements \Ineersa\CodingAgent\Runtime\Contract\BackfillEventProviderInterface
+{
+    /** @var array<string, int> */
+    private array $calls = [];
+
+    /**
+     * @param array<string, list<RuntimeEvent>> $eventsByRun
+     */
+    public function __construct(private readonly array $eventsByRun)
+    {
+    }
+
+    public function getStoredEvents(string $runId): array
+    {
+        $this->calls[$runId] = ($this->calls[$runId] ?? 0) + 1;
+
+        return $this->eventsByRun[$runId] ?? [];
+    }
+
+    public function callCountFor(string $runId): int
+    {
+        return $this->calls[$runId] ?? 0;
     }
 }
 

@@ -100,7 +100,7 @@ final class SubagentLiveBackgroundChildPoller
             }
 
             $lastSeq = $state->subagentLiveBackgroundSeqByRunId[$runId] ?? 0;
-            $events = $this->runtimeEvents($client, $runId);
+            $events = $this->runtimeEvents($client, $runId, includeBackfill: !$ingestOnly);
             if ([] === $events) {
                 continue;
             }
@@ -175,9 +175,11 @@ final class SubagentLiveBackgroundChildPoller
     /**
      * @return list<RuntimeEvent>
      */
-    private function runtimeEvents(AgentSessionClient $client, string $runId): array
+    private function runtimeEvents(AgentSessionClient $client, string $runId, bool $includeBackfill = true): array
     {
-        $backfill = $this->backfillProvider?->getStoredEvents($runId) ?? [];
+        $backfill = $includeBackfill
+            ? ($this->backfillProvider?->getStoredEvents($runId) ?? [])
+            : [];
         $live = $client->events($runId);
         if ($live instanceof \Traversable) {
             $live = iterator_to_array($live, false);
