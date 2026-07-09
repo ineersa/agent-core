@@ -92,6 +92,12 @@ final class RuntimeQuestionEventHandler
         $header = $this->resolveQuestionHeader($sessionState, $runId, $p, 'asks');
         $childOwned = $this->isChildOwnedQuestion($sessionState, $runId);
 
+        // Child HITL is owned by the selected child live view. Background discovery may
+        // still mark catalog attention, but must not open the global main-screen overlay.
+        if ($childOwned && null !== $sessionState && !$sessionState->subagentLiveView->active) {
+            return;
+        }
+
         $request = new QuestionRequest(
             requestId: $requestId,
             source: QuestionSource::AgentCore,
@@ -269,6 +275,12 @@ final class RuntimeQuestionEventHandler
 
         if (null !== $sessionState && null !== $screen) {
             SubagentLiveAttention::markChildNeedsInputForRun($sessionState, $screen, $runId);
+        }
+
+        if ($this->isChildOwnedQuestion($sessionState, $runId)
+            && null !== $sessionState
+            && !$sessionState->subagentLiveView->active) {
+            return;
         }
 
         // Parse schema to determine the overlay type.

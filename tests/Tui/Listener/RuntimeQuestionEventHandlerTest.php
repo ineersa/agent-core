@@ -114,12 +114,62 @@ final class RuntimeQuestionEventHandlerTest extends TestCase
             $screen,
         );
 
-        $active = $coordinator->activeRequest();
-        $this->assertNotNull($active);
-        $this->assertSame($scoutRun, $active->runId);
-        $this->assertFalse($active->transcript);
-        $this->assertSame('Child agent scout asks', $active->header);
+        $this->assertFalse($coordinator->actionRequired());
+        $this->assertNull($coordinator->activeRequest());
         $this->assertSame(SubagentLiveStatusEnum::Running, $state->subagentLiveCatalog->findByArtifactId('agent_scout')?->status);
+    }
+
+
+    public function testChildToolQuestionOnMainViewDoesNotEnqueueCoordinator(): void
+    {
+        $parentRun = 'parent-main';
+        $scoutRun = 'scout-child-tool';
+
+        $state = new TuiSessionState($parentRun);
+        $state->subagentLiveCatalog->ingestRuntimeEvent(new RuntimeEvent(
+            'tool_execution_update',
+            $parentRun,
+            1,
+            [
+                'subagent_progress' => [
+                    'mode' => 'single',
+                    'status' => 'running',
+                    'agent_name' => 'scout',
+                    'artifact_id' => 'agent_scout',
+                    'agent_run_id' => $scoutRun,
+                    'task_summary' => 'pick file',
+                ],
+            ],
+        ));
+
+        $coordinator = new QuestionCoordinator();
+        $client = $this->noopClient();
+        $screen = $this->chatScreen($parentRun);
+
+        $handler = new RuntimeQuestionEventHandler();
+        $handler->handleToolQuestionRequested(
+            new RuntimeEvent(
+                RuntimeEventTypeEnum::ToolQuestionRequested->value,
+                $scoutRun,
+                2,
+                [
+                    'request_id' => 'rq1',
+                    'prompt' => 'Allow bash?',
+                    'kind' => 'confirm',
+                    'schema' => ['type' => 'boolean'],
+                    'tool_call_id' => 'tc1',
+                    'tool_name' => 'bash',
+                ],
+            ),
+            $client,
+            $coordinator,
+            $state,
+            $screen,
+        );
+
+        $this->assertFalse($coordinator->actionRequired());
+        $this->assertNull($coordinator->activeRequest());
+        $this->assertSame(SubagentLiveStatusEnum::WaitingHuman, $state->subagentLiveCatalog->findByArtifactId('agent_scout')?->status);
     }
 
     public function testLiveViewSelectedChildHumanInputMatchesDirectSubagentOwnership(): void
