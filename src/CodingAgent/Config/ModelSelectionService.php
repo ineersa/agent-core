@@ -107,7 +107,7 @@ final class ModelSelectionService
         // Clamp reasoning to the new model's supported levels.
         // Without this, a previously-persisted xhigh survives for a model
         // that only supports up to high, causing the footer/API to show
-        // xhigh with no enable_thinking effect.
+        // xhigh with no reasoning/thinking request effect.
         $currentReasoning = $this->getCurrentReasoning($sessionId);
         $clamped = $this->clampReasoningLevel($currentReasoning, $model);
         if ($clamped !== $currentReasoning) {

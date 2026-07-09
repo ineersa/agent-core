@@ -31,7 +31,7 @@ final class ProviderRequestOptionKeys
 
     /**
      * Internal option key carrying pre-computed reasoning options
-     * (e.g. ['enable_thinking' => true]) that the ReasoningOptionsFeatureShaper
+     * (e.g. ['thinking' => ['type' => 'enabled', 'clear_thinking' => false]]) that the ReasoningOptionsFeatureShaper
      * merges into the provider options. Stripped before the provider sees options.
      */
     public const string REASONING_OPTIONS = '_hatfield_reasoning_options';
