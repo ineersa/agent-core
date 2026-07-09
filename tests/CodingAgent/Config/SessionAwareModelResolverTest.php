@@ -221,6 +221,50 @@ final class SessionAwareModelResolverTest extends IsolatedKernelTestCase
         $this->assertSame('high', $result->reasoning);
     }
 
+
+    public function testZaiOffReasoningProducesDisabledThinkingOptions(): void
+    {
+        $aiData = $this->standardAiData();
+        $aiData['providers']['zai'] = [
+            'type' => 'generic',
+            'enabled' => true,
+            'base_url' => 'https://api.z.ai/api/coding/paas/v4',
+            'compatibility' => [
+                'supports_developer_role' => false,
+                'supports_reasoning_effort' => false,
+                'thinking_format' => 'zai',
+            ],
+            'models' => [
+                'glm-5.1' => [
+                    'id' => 'glm-5.1',
+                    'name' => 'GLM 5.1',
+                    'context_window' => 200000,
+                    'max_tokens' => 131072,
+                    'input' => ['text'],
+                    'tool_calling' => true,
+                    'reasoning' => true,
+                    'thinking_level_map' => ['medium' => 'enabled'],
+                    'compatibility' => ['zai_tool_stream' => true],
+                ],
+            ],
+        ];
+        $aiData['default_model'] = 'zai/glm-5.1';
+        $aiData['default_reasoning'] = 'off';
+
+        $resolver = $this->createResolver($aiData);
+
+        $result = $resolver->resolve(
+            '',
+            new MessageBag(),
+            new ModelInvocationInput(),
+            new ModelResolutionOptions(),
+        );
+
+        $this->assertSame('off', $result->reasoning);
+        $this->assertSame(['thinking' => ['type' => 'disabled']], $result->reasoningOptions);
+        $this->assertContains('reasoning', $result->compatFeatures);
+    }
+
     // ──────────────────────────────────────────────
     //  Helpers
     // ──────────────────────────────────────────────

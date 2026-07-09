@@ -393,7 +393,8 @@ ai:
             supports_embeddings: false
             # z.ai differs from standard OpenAI in several ways:
             # - No developer role; use system/user/assistant/tool only.
-            # - Binary reasoning via enable_thinking (no reasoning_effort).
+            # - Reasoning via thinking.type (enabled/disabled) and clear_thinking on active.
+            # - Provider default: no reasoning_effort; per-model override on glm-5.2.
             # - thinking_format: zai signals this quirk to the request mapper.
             # - zai_tool_stream is a per-model flag for streaming tool calls.
             compatibility:
@@ -420,6 +421,16 @@ ai:
                     reasoning: true
                     thinking_level_map: { minimal: enabled, low: enabled, medium: enabled, high: enabled }
                     compatibility: { zai_tool_stream: true }
+                    cost: { input: 0, output: 0, cache_read: 0, cache_write: 0 }
+                glm-5.2:
+                    name: GLM 5.2
+                    context_window: 1000000
+                    max_tokens: 131072
+                    input: [text]
+                    tool_calling: true
+                    reasoning: true
+                    thinking_level_map: { minimal: null, low: high, medium: high, high: high, xhigh: max }
+                    compatibility: { supports_reasoning_effort: true, zai_tool_stream: true }
                     cost: { input: 0, output: 0, cache_read: 0, cache_write: 0 }
         openai-codex:
              type: codex

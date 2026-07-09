@@ -76,7 +76,7 @@ final class SessionAwareModelResolver implements ModelResolverInterface
         if (null !== $modelRef) {
             // Clamp the reasoning level to the model's supported levels.
             // A persisted xhigh for a model that only supports up to high
-            // must be resolved to high so enable_thinking is honoured.
+            // must be resolved to high so z.ai thinking options are honoured.
             $reasoning = $this->selectionService->clampReasoningLevel($reasoning, $modelRef);
 
             $compatFeatures = $this->resolveCompatFeatures($modelRef);
@@ -145,7 +145,7 @@ final class SessionAwareModelResolver implements ModelResolverInterface
      */
     private function resolveReasoningOptions(AiModelReference $ref, string $reasoningLevel): array
     {
-        if ('' === $reasoningLevel || 'off' === $reasoningLevel) {
+        if ('' === $reasoningLevel) {
             return [];
         }
 
