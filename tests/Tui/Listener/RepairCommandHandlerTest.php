@@ -7,7 +7,9 @@ namespace Ineersa\Tui\Tests\Listener;
 use Ineersa\AgentCore\Application\Dto\RunStateReplayResult;
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Application\Replay\ReplayEventPreparer;
+use Ineersa\AgentCore\Application\Replay\RunStateReducer;
 use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
+use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryRunStore;
@@ -81,6 +83,8 @@ final class RepairCommandHandlerTest extends TestCase
             replayEventPreparer: new ReplayEventPreparer(),
             eventPayloadNormalizer: new EventPayloadNormalizer(),
             lockManager: new RunLockManager(new LockFactory(new FlockStore())),
+            runStateReducer: new RunStateReducer(),
+            eventFactory: new EventFactory(),
             logger: new NullLogger(),
         );
     }
