@@ -96,13 +96,89 @@ final class SubagentLiveChildViewPollerBackfillTest extends TestCase
     }
 
     #[Test]
-    public function secondPollReturnsNullWhenBackfillProviderHasNoEvents(): void
+    public function secondPollRendersPostAnswerStoredEventsAfterHitlBackfill(): void
+    {
+        $projector = $this->createStub(TranscriptProjectorInterface::class);
+        $projector->method('blocks')->willReturnOnConsecutiveCalls(
+            [
+                new TranscriptBlock(
+                    id: 'block-hitl',
+                    kind: TranscriptBlockKindEnum::Progress,
+                    runId: self::CHILD_RUN_ID,
+                    seq: 2,
+                    text: 'Which file should the scout inspect next?',
+                ),
+            ],
+            [
+                new TranscriptBlock(
+                    id: 'block-done',
+                    kind: TranscriptBlockKindEnum::Progress,
+                    runId: self::CHILD_RUN_ID,
+                    seq: 5,
+                    text: 'Scout completed after answer',
+                ),
+            ],
+        );
+
+        $hitlEvent = new RuntimeEvent(
+            type: RuntimeEventTypeEnum::HumanInputRequested->value,
+            runId: self::CHILD_RUN_ID,
+            seq: 2,
+            payload: [
+                'question_id' => 'q_child_test',
+                'prompt' => 'Which file should the scout inspect next?',
+                'schema' => ['type' => 'string'],
+            ],
+        );
+        $completionEvent = new RuntimeEvent(
+            type: RuntimeEventTypeEnum::RunCompleted->value,
+            runId: self::CHILD_RUN_ID,
+            seq: 5,
+            payload: ['status' => 'completed'],
+        );
+
+        $backfillProvider = $this->createMock(BackfillEventProviderInterface::class);
+        $backfillProvider->expects($this->exactly(2))
+            ->method('getStoredEvents')
+            ->with(self::CHILD_RUN_ID)
+            ->willReturnOnConsecutiveCalls(
+                [$hitlEvent],
+                [$hitlEvent, $completionEvent],
+            );
+
+        $client = $this->createMock(AgentSessionClient::class);
+        $client->expects($this->exactly(2))
+            ->method('events')
+            ->with(self::CHILD_RUN_ID)
+            ->willReturn([]);
+
+        $poller = new SubagentLiveChildViewPoller(
+            projector: $projector,
+            logger: new NullLogger(),
+            backfillProvider: $backfillProvider,
+        );
+
+        $state = $this->createLiveViewState(RunActivityStateEnum::WaitingHuman);
+
+        $first = $poller->poll($state, $client);
+        $this->assertNotNull($first);
+        $this->assertSame(2, $state->childLastSeq);
+
+        $state->childLastPoll = 0.0;
+        $state->childActivity = RunActivityStateEnum::Completed;
+
+        $second = $poller->poll($state, $client);
+        $this->assertNotNull($second, 'Second poll must render newly stored post-answer events');
+        $this->assertSame(5, $state->childLastSeq);
+        $this->assertSame('Scout completed after answer', $second[0]->text);
+    }
+
+    #[Test]
+    public function secondPollReturnsNullWhenNoNewStoredOrLiveEvents(): void
     {
         $projector = $this->createStub(TranscriptProjectorInterface::class);
         $projector->method('blocks')->willReturn([]);
 
-        // Provider is called each poll but returns empty idempotently (internal
-        // once-per-run guard).  Second poll with no source events → null.
         $backfillProvider = $this->createMock(BackfillEventProviderInterface::class);
         $backfillProvider->expects($this->exactly(2))
             ->method('getStoredEvents')
@@ -123,12 +199,9 @@ final class SubagentLiveChildViewPollerBackfillTest extends TestCase
 
         $state = $this->createLiveViewState(RunActivityStateEnum::Running);
 
-        // First poll: backfill called, no events → null
         $poller->poll($state, $client);
-        // Advance poll timestamp so second poll is not throttled
         $state->childLastPoll = 0.0;
 
-        // Second poll: backfill called again but returns [] (idempotent provider contract)
         $result = $poller->poll($state, $client);
         $this->assertNull($result, 'Second poll with no new events should return null');
     }

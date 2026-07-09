@@ -63,6 +63,12 @@ final class SubagentLiveChildViewPoller
         $live->childLastPoll = $now;
 
         $backfillEvents = $this->backfillProvider?->getStoredEvents($live->selected->agentRunId) ?? [];
+        if ([] !== $backfillEvents) {
+            $backfillEvents = array_values(array_filter(
+                $backfillEvents,
+                static fn (RuntimeEvent $event): bool => 0 === $event->seq || $event->seq > $live->childLastSeq,
+            ));
+        }
         $events = $this->runtimeEvents($client, $live->selected->agentRunId);
         if ([] !== $backfillEvents) {
             $events = array_merge($backfillEvents, $events);

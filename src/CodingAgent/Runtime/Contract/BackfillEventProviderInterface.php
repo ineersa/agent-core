@@ -17,17 +17,17 @@ use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
  * child events exist on disk (artifacts/agents/.../events.jsonl) but never
  * flowed through stdout — this provider backfills them.
  *
- * Implementations should track whether a run ID has already been backfilled
- * so repeated calls are idempotent and do not re-read the same events.
+ * Callers dedupe by event seq.  Only the selected child live-view poller
+ * should read stored child events; background catalog polling must not use this.
  */
 interface BackfillEventProviderInterface
 {
     /**
-     * Retrieve stored RuntimeEvents for a given run ID, backfilling from
-     * durable storage if the run has not been backfilled in this process.
+     * Retrieve stored RuntimeEvents for a given run ID from durable storage.
      *
-     * Returns an empty array when the run is unknown or has already been
-     * backfilled.  The returned events have seq > 0 and are ordered by seq.
+     * Returns an empty array when the run is unknown.  The returned events have
+     * seq > 0 and are ordered by seq.  Repeated calls may return newly appended
+     * stored events; consumers must skip seq <= their cursor.
      *
      * @return list<RuntimeEvent>
      */
