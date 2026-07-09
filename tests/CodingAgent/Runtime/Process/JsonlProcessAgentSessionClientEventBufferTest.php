@@ -29,6 +29,54 @@ final class JsonlProcessAgentSessionClientEventBufferTest extends TestCase
         TestDirectoryIsolation::removeDirectory($this->tmpDir);
     }
 
+    public function testParentPollBuffersChildEventFromControllerStreamForLaterChildDrain(): void
+    {
+        $parentRunId = 'parent-run';
+        $childRunId = 'child-agent-run-a';
+        $client = $this->createIdleClient();
+        $this->injectStdoutJsonlLines($client, [
+            $this->jsonlEvent(RuntimeEventTypeEnum::TurnStarted->value, $parentRunId, 1),
+            $this->jsonlEvent(RuntimeEventTypeEnum::TurnStarted->value, $childRunId, 2),
+        ]);
+
+        $parentFirst = iterator_to_array($client->events($parentRunId));
+        $this->assertCount(1, $parentFirst);
+        $this->assertSame($parentRunId, $parentFirst[0]->runId);
+        $this->assertSame(1, $parentFirst[0]->seq);
+
+        $childDrain = iterator_to_array($client->events($childRunId));
+        $this->assertCount(1, $childDrain);
+        $this->assertSame($childRunId, $childDrain[0]->runId);
+        $this->assertSame(2, $childDrain[0]->seq);
+    }
+
+    public function testMultipleChildRunIdsStayIsolatedWhenParentPollsSharedStreamFirst(): void
+    {
+        $parentRunId = 'parent-run';
+        $childA = 'child-agent-a';
+        $childB = 'child-agent-b';
+        $client = $this->createIdleClient();
+        $this->injectStdoutJsonlLines($client, [
+            $this->jsonlEvent(RuntimeEventTypeEnum::TurnStarted->value, $childA, 10),
+            $this->jsonlEvent(RuntimeEventTypeEnum::TurnStarted->value, $parentRunId, 11),
+            $this->jsonlEvent(RuntimeEventTypeEnum::TurnStarted->value, $childB, 12),
+        ]);
+
+        $parent = iterator_to_array($client->events($parentRunId));
+        $this->assertCount(1, $parent);
+        $this->assertSame($parentRunId, $parent[0]->runId);
+
+        $drainA = iterator_to_array($client->events($childA));
+        $this->assertCount(1, $drainA);
+        $this->assertSame($childA, $drainA[0]->runId);
+        $this->assertSame(10, $drainA[0]->seq);
+
+        $drainB = iterator_to_array($client->events($childB));
+        $this->assertCount(1, $drainB);
+        $this->assertSame($childB, $drainB[0]->runId);
+        $this->assertNotContains($childB, array_map(static fn (RuntimeEvent $e): string => $e->runId, $drainA));
+    }
+
     public function testEventsReBuffersNonMatchingRunIdsFromInternalBuffer(): void
     {
         $client = $this->createIdleClient();
@@ -146,5 +194,33 @@ final class JsonlProcessAgentSessionClientEventBufferTest extends TestCase
         $client->attach('parent-run');
 
         return $client;
+    }
+
+    /**
+     * @param list<string> $lines complete JSONL lines (with trailing newline in buffer)
+     */
+    private function injectStdoutJsonlLines(JsonlProcessAgentSessionClient $client, array $lines): void
+    {
+        $payload = implode("\n", $lines)."\n";
+        $stream = fopen('php://memory', 'r+b');
+        fwrite($stream, $payload);
+        rewind($stream);
+
+        $ref = new \ReflectionClass($client);
+        $pipesProp = $ref->getProperty('pipes');
+        $pipes = $pipesProp->getValue($client);
+        $pipes[1] = $stream;
+        $pipesProp->setValue($client, $pipes);
+        $ref->getProperty('stdoutBuffer')->setValue($client, '');
+    }
+
+    private function jsonlEvent(string $type, string $runId, int $seq): string
+    {
+        return json_encode([
+            'type' => $type,
+            'runId' => $runId,
+            'seq' => $seq,
+            'payload' => [],
+        ], \JSON_THROW_ON_ERROR);
     }
 }

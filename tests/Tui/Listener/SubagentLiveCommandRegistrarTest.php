@@ -4,10 +4,14 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\Listener;
 
+use Ineersa\CodingAgent\Runtime\Contract\ChildRunTranscriptSnapshotProviderInterface;
 use Ineersa\CodingAgent\Runtime\Contract\TranscriptProjectorInterface;
 use Ineersa\Tui\Command\SlashCommandRegistry;
+use Ineersa\Tui\Listener\RuntimeQuestionEventHandler;
 use Ineersa\Tui\Listener\SubagentLiveCommandRegistrar;
 use Ineersa\Tui\Picker\SubagentLivePickerController;
+use Ineersa\Tui\Question\QuestionController;
+use Ineersa\Tui\Question\QuestionCoordinator;
 use Ineersa\Tui\Runtime\SubagentLiveChildViewPoller;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Tests\Support\TuiRuntimeContextBuilderTrait;
@@ -49,11 +53,15 @@ final class SubagentLiveCommandRegistrarTest extends TestCase
                 $this->createStub(TranscriptProjectorInterface::class),
                 new NullLogger(),
             ),
+            $this->createStub(ChildRunTranscriptSnapshotProviderInterface::class),
         );
 
         return new SubagentLiveCommandRegistrar(
             $registry,
             $picker,
+            new RuntimeQuestionEventHandler(),
+            new QuestionCoordinator(),
+            (new \ReflectionClass(QuestionController::class))->newInstanceWithoutConstructor(),
         );
     }
 }
