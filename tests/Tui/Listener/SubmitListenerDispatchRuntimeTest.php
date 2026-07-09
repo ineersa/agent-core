@@ -485,7 +485,6 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
         $this->assertFalse($this->questionCoordinator->actionRequired());
     }
 
-
     #[Test]
     public function normalPromptSubmitAppendsToPromptHistory(): void
     {

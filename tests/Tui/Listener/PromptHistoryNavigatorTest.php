@@ -289,7 +289,6 @@ final class PromptHistoryNavigatorTest extends TestCase
         $this->assertSame(1, $this->navigator->cursor());
     }
 
-
     #[Test]
     public function navigationOverLargeSeededHistoryUsesPromptListOnly(): void
     {
@@ -322,7 +321,7 @@ final class PromptHistoryNavigatorTest extends TestCase
             $walked[] = $text;
         }
 
-        $this->assertSame(array_reverse(array_slice($expectedNewestFirst, -150)), $walked);
+        $this->assertSame(array_reverse(\array_slice($expectedNewestFirst, -150)), $walked);
     }
 
     // ─── Helpers ──────────────────────────────────────────────
