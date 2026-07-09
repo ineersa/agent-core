@@ -8,6 +8,7 @@ use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\BackfillEventProviderInterface;
 use Ineersa\CodingAgent\Runtime\Contract\TranscriptProjectorInterface;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
+use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Psr\Log\LoggerInterface;
@@ -113,7 +114,12 @@ final class SubagentLiveChildViewPoller
             return null;
         }
 
-        $live->childTranscript = $this->projector->blocks();
+        $blocks = $this->projector->blocks();
+        if ('fork' === $live->selected->agentName) {
+            $blocks = $this->filterForkLiveTranscriptBlocks($blocks);
+        }
+
+        $live->childTranscript = $blocks;
         $live->persistCurrentChildCache();
 
         return $live->childTranscript;
@@ -149,5 +155,29 @@ final class SubagentLiveChildViewPoller
         }
 
         return $events;
+    }
+
+    /**
+     * Fork live view hides run.started bootstrap user messages (inherited compacted
+     * history and handoff scaffolding). Child LLM input and export artifacts stay
+     * unchanged; only the readonly live transcript is trimmed.
+     *
+     * @param list<TranscriptBlock> $blocks
+     *
+     * @return list<TranscriptBlock>
+     */
+    private function filterForkLiveTranscriptBlocks(array $blocks): array
+    {
+        $filtered = [];
+        foreach ($blocks as $block) {
+            if (TranscriptBlockKindEnum::UserMessage === $block->kind
+                && true === ($block->meta['bootstrap'] ?? null)) {
+                continue;
+            }
+
+            $filtered[] = $block;
+        }
+
+        return $filtered;
     }
 }

@@ -92,6 +92,43 @@ final class SubagentLiveCatalog
         );
     }
 
+    /**
+     * Ingest nested subagent_progress from a child run stream (e.g. fork run events).
+     *
+     * Parent tool_execution_update on the parent run id still uses ingestRuntimeEvent().
+     */
+    public function ingestNestedProgressFromChildRunEvent(RuntimeEvent $event): void
+    {
+        if (!str_contains($event->type, 'tool_execution')) {
+            return;
+        }
+
+        $progress = $event->payload['subagent_progress'] ?? null;
+        if (!\is_array($progress)) {
+            return;
+        }
+
+        $now = (int) (microtime(true) * 1000);
+        $mode = (string) ($progress['mode'] ?? 'single');
+
+        if ('parallel' === $mode) {
+            $children = $progress['children'] ?? [];
+            if (!\is_array($children)) {
+                return;
+            }
+            foreach ($children as $child) {
+                if (!\is_array($child)) {
+                    continue;
+                }
+                $this->upsertFromProgressRow($child, $now);
+            }
+
+            return;
+        }
+
+        $this->upsertFromProgressRow($progress, $now);
+    }
+
     public function ingestRuntimeEvent(RuntimeEvent $event): void
     {
         if (!str_contains($event->type, 'tool_execution')) {

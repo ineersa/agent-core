@@ -542,6 +542,43 @@ final class SystemPromptBuilderTest extends TestCase
         $this->assertStringContainsString('Current working directory:', $fragment);
     }
 
+    public function testBuildChildAppendsFragmentFiltersDisallowedToolDocs(): void
+    {
+        $registry = new ToolRegistry();
+        $registry->registerTool(
+            name: 'read',
+            description: 'Read file contents',
+            parametersJsonSchema: ['type' => 'object'],
+            handler: $this->dummyHandler(),
+            promptLine: '- read: Read file contents',
+            promptGuidelines: ['Use read for files'],
+        );
+        $registry->registerTool(
+            name: 'fork',
+            description: 'Fork child',
+            parametersJsonSchema: ['type' => 'object'],
+            handler: $this->dummyHandler(),
+            promptLine: 'fork task="..." — launch fork child with compacted inherited context',
+            promptGuidelines: ['Use fork to delegate implementation or investigation to a child'],
+        );
+
+        $appendPath = $this->tmpDir.'/.hatfield/APPEND_SYSTEM.md';
+        file_put_contents($appendPath, implode("\n", [
+            'fork task="x" — launch fork child',
+            'Use fork to delegate',
+            '- read: Read file contents',
+            '- write: Write file contents',
+        ]));
+
+        $builder = $this->createBuilder($registry);
+        $fragment = $builder->buildChildAppendsFragment(['read']);
+
+        $this->assertStringContainsString('Read file contents', $fragment);
+        $this->assertStringNotContainsString('fork task=', strtolower($fragment));
+        $this->assertStringNotContainsString('use fork', strtolower($fragment));
+        $this->assertStringNotContainsString('Write file contents', $fragment);
+    }
+
     /* ───────── Private helpers ───────── */
 
     private function createBuilder(

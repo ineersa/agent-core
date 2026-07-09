@@ -72,5 +72,7 @@ final class ForkChildMessageComposerTest extends IsolatedKernelTestCase
         $this->assertStringNotContainsString('Fork child contract', $contractText);
         $this->assertStringNotContainsString('fork tool', strtolower($contractText));
         $this->assertStringNotContainsString('fork task=', $composed['systemPrompt']);
+        $this->assertStringNotContainsString('Use fork', $composed['systemPrompt']);
+        $this->assertStringNotContainsString('launch fork child', strtolower($composed['systemPrompt']));
     }
 }

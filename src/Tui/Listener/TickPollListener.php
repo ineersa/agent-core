@@ -11,6 +11,7 @@ use Ineersa\Tui\Question\QuestionCoordinator;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
 use Ineersa\Tui\Runtime\RuntimeEventPoller;
 use Ineersa\Tui\Runtime\SubagentLiveAttention;
+use Ineersa\Tui\Runtime\SubagentLiveBackgroundChildPoller;
 use Ineersa\Tui\Runtime\SubagentLiveChildViewPoller;
 use Ineersa\Tui\Runtime\SubagentLiveStatusEnum;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
@@ -35,6 +36,7 @@ final class TickPollListener implements TuiListenerRegistrar
     public function __construct(
         private readonly RuntimeEventPoller $poller,
         private readonly SubagentLiveChildViewPoller $subagentLiveChildPoller,
+        private readonly SubagentLiveBackgroundChildPoller $subagentLiveBackgroundChildPoller,
         private readonly QuestionCoordinator $questionCoordinator,
         private readonly QuestionController $questionController,
         private readonly RuntimeQuestionEventHandler $runtimeQuestionEventHandler,
@@ -51,13 +53,14 @@ final class TickPollListener implements TuiListenerRegistrar
         $questionCoordinator = $this->questionCoordinator;
         $questionController = $this->questionController;
         $subagentLiveChildPoller = $this->subagentLiveChildPoller;
+        $subagentLiveBackgroundChildPoller = $this->subagentLiveBackgroundChildPoller;
         $runtimeQuestionEventHandler = $this->runtimeQuestionEventHandler;
         $subagentLivePicker = $this->subagentLivePicker;
 
         // Wire the question controller with TUI runtime references
         $questionController->setRuntimeRefs($context, $screen);
 
-        $context->ticks->add(static function () use ($poller, $state, $client, $screen, $questionCoordinator, $questionController, $subagentLiveChildPoller, $runtimeQuestionEventHandler, $subagentLivePicker): ?bool {
+        $context->ticks->add(static function () use ($poller, $state, $client, $screen, $questionCoordinator, $questionController, $subagentLiveChildPoller, $subagentLiveBackgroundChildPoller, $runtimeQuestionEventHandler, $subagentLivePicker): ?bool {
             $onHitl = static function (RuntimeEvent $event) use ($client, $questionCoordinator, $runtimeQuestionEventHandler): void {
                 $runtimeQuestionEventHandler->handleHumanInputRequested($event, $client, $questionCoordinator);
             };
@@ -71,6 +74,23 @@ final class TickPollListener implements TuiListenerRegistrar
             };
 
             $liveActive = $state->subagentLiveView->active;
+
+            if (!$liveActive) {
+                $subagentLiveBackgroundChildPoller->poll(
+                    $state,
+                    $client,
+                    $screen,
+                    onHumanInputRequested: static function (RuntimeEvent $event) use ($client, $questionCoordinator, $state, $screen, $runtimeQuestionEventHandler): void {
+                        $runtimeQuestionEventHandler->handleHumanInputRequested($event, $client, $questionCoordinator, $state, $screen);
+                    },
+                    onToolQuestionRequested: static function (RuntimeEvent $event) use ($client, $questionCoordinator, $state, $screen, $runtimeQuestionEventHandler): void {
+                        $runtimeQuestionEventHandler->handleToolQuestionRequested($event, $client, $questionCoordinator, $state, $screen);
+                    },
+                    onToolTerminal: static function (RuntimeEvent $event) use ($questionCoordinator, $questionController, $runtimeQuestionEventHandler): void {
+                        $runtimeQuestionEventHandler->handleToolTerminal($event, $questionCoordinator, $questionController);
+                    },
+                );
+            }
 
             // Child-first on the shared JSONL pipe: events() re-buffers non-matching
             // run ids; polling the child run before the parent reduces child latency.

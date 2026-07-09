@@ -59,6 +59,30 @@ final class SubagentLiveCatalogTest extends TestCase
         $this->assertSame([], $catalog->all());
     }
 
+    public function testIngestsNestedProgressFromChildRunEvent(): void
+    {
+        $catalog = new SubagentLiveCatalog();
+        $catalog->ingestNestedProgressFromChildRunEvent(new RuntimeEvent(
+            'tool_execution_update',
+            'fork-run-1',
+            2,
+            [
+                'subagent_progress' => [
+                    'mode' => 'single',
+                    'status' => 'running',
+                    'agent_name' => 'scout',
+                    'artifact_id' => 'agent_scout',
+                    'agent_run_id' => 'scout-run-1',
+                    'task_summary' => 'nested',
+                ],
+            ],
+        ));
+
+        $scout = $catalog->findByArtifactId('agent_scout');
+        $this->assertNotNull($scout);
+        $this->assertSame('scout-run-1', $scout->agentRunId);
+    }
+
     public function testIngestsParallelChildrenRows(): void
     {
         $catalog = new SubagentLiveCatalog();

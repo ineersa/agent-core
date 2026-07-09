@@ -264,7 +264,6 @@ final class SubagentLivePickerController
         $first = $children[0];
         if ($first instanceof TextWidget) {
             $first->setText($this->buildPickerHeaderText($screen->theme()));
-            $screen->requestRender(true);
         }
     }
 
@@ -279,7 +278,7 @@ final class SubagentLivePickerController
         $state->subagentLiveView->pickerFeedbackMessage = $message;
         $screen->setWorkingMessage($message);
         $this->refreshPickerHeader();
-        $screen->requestRender(true);
+        $screen->requestRender();
     }
 
     private function exportSelected(
@@ -290,7 +289,6 @@ final class SubagentLivePickerController
         $selected = $listWidget->getSelectedItem();
         if (null === $selected) {
             $this->showPickerFeedback('No child agent selected to export.');
-            $screen->requestRender(true);
 
             return;
         }
@@ -299,7 +297,6 @@ final class SubagentLivePickerController
         $child = $state->subagentLiveCatalog->findByArtifactId($artifactId);
         if (null === $child) {
             $this->showPickerFeedback('Selected child agent is no longer in the catalog.');
-            $screen->requestRender(true);
 
             return;
         }
@@ -307,7 +304,6 @@ final class SubagentLivePickerController
         $parentSessionId = $state->sessionId;
         if ('' === $parentSessionId) {
             $this->showPickerFeedback('No active parent session — cannot export child run.');
-            $screen->requestRender(true);
 
             return;
         }

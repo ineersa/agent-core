@@ -363,7 +363,9 @@ final readonly class SystemPromptBuilder
         $concatenated = implode("\n\n", $parts);
         $appendVariables = $this->buildChildVariables($cwd, $allowedToolNames, '');
 
-        return $this->render($concatenated, $appendVariables);
+        $rendered = $this->render($concatenated, $appendVariables);
+
+        return $this->sanitizeChildAppendContent($rendered, $allowedToolNames);
     }
 
     /**
@@ -430,6 +432,83 @@ final readonly class SystemPromptBuilder
         }
 
         return implode("\n", $guidelines);
+    }
+
+    /**
+     * Strip disallowed-tool prompt/guideline lines and fork-parent tool docs from
+     * child append content so fork/subagent children never see stale tool catalogs.
+     *
+     * @param list<string> $allowedToolNames
+     */
+    private function sanitizeChildAppendContent(string $content, array $allowedToolNames): string
+    {
+        if ('' === trim($content)) {
+            return '';
+        }
+
+        $allowed = [];
+        foreach ($allowedToolNames as $name) {
+            $name = trim($name);
+            if ('' !== $name) {
+                $allowed[$name] = true;
+            }
+        }
+
+        $disallowedLines = [];
+        $disallowedGuidelines = [];
+        foreach ($this->toolRegistry->activeToolNames() as $name) {
+            if (isset($allowed[$name])) {
+                continue;
+            }
+
+            $definition = $this->toolRegistry->toolDefinition($name);
+            if (null === $definition) {
+                continue;
+            }
+
+            if ('' !== $definition->promptLine) {
+                $disallowedLines[$definition->promptLine] = true;
+            }
+
+            foreach ($definition->promptGuidelines as $guideline) {
+                if ('' !== trim($guideline)) {
+                    $disallowedGuidelines[trim($guideline)] = true;
+                }
+            }
+        }
+
+        $split = preg_split("/\r\n|\n|\r/", $content);
+        $lines = false === $split ? [] : $split;
+        $kept = [];
+        foreach ($lines as $line) {
+            $trimmed = trim($line);
+            if ('' === $trimmed) {
+                $kept[] = $line;
+                continue;
+            }
+
+            if (isset($disallowedLines[$trimmed]) || isset($disallowedGuidelines[$trimmed])) {
+                continue;
+            }
+
+            if (preg_match('/^-\s*([A-Za-z0-9_]+):/u', $trimmed, $matches)) {
+                $toolName = strtolower($matches[1]);
+                if (!isset($allowed[$toolName])) {
+                    continue;
+                }
+            }
+
+            $lower = strtolower($trimmed);
+            if (str_contains($lower, 'fork task=')
+                || str_contains($lower, 'use fork')
+                || str_contains($lower, 'launch fork child')) {
+                continue;
+            }
+
+            $kept[] = $line;
+        }
+
+        return rtrim(implode("\n", $kept));
     }
 
     /**

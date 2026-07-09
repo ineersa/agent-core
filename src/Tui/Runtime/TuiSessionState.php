@@ -142,6 +142,12 @@ final class TuiSessionState
 
     public SubagentLiveViewState $subagentLiveView;
 
+    /** Last background child-stream poll timestamp (main view only). */
+    public float $subagentLiveBackgroundLastPoll = 0.0;
+
+    /** @var array<string, int> agentRunId => last drained seq for background child polling */
+    public array $subagentLiveBackgroundSeqByRunId = [];
+
     public function __construct(
         string $sessionId,
         bool $resuming = false,

@@ -69,6 +69,7 @@ final readonly class UserMessageProjectionSubscriber implements EventSubscriberI
                 runId: $event->runId(),
                 seq: $state->nextSeq(),
                 text: (string) ($userMsg['text'] ?? ''),
+                meta: ['bootstrap' => true, 'source' => 'run_started'],
             ));
         }
     }
