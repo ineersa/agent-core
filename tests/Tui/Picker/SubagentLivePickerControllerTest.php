@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\Picker;
 
+use Ineersa\CodingAgent\Runtime\Contract\ChildRunTranscriptSnapshotDTO;
+use Ineersa\CodingAgent\Runtime\Contract\ChildRunTranscriptSnapshotProviderInterface;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
@@ -87,12 +89,60 @@ final class SubagentLivePickerControllerTest extends TestCase
         $this->assertArrayNotHasKey('agents-live', $entries, 'agents-live status should be absent/cleared');
     }
 
+    #[Test]
+    public function enterLiveViewCallsSnapshotProviderOnceAndCachesTranscript(): void
+    {
+        $harness = new VirtualTuiHarness(sessionId: 'picker-enter-snapshot');
+        $state = new TuiSessionState('picker-enter-snapshot');
+        $this->seedCatalogChild($state, 'agent_snap', 'child-run-snap', 'running');
+
+        $child = $state->subagentLiveCatalog->findByArtifactId('agent_snap');
+        $this->assertNotNull($child);
+
+        $block = new \Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock(
+            'snap-b',
+            \Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum::Progress,
+            'child-run-snap',
+            4,
+            'snapshot line',
+        );
+
+        $snapshotProvider = $this->createMock(ChildRunTranscriptSnapshotProviderInterface::class);
+        $snapshotProvider->expects($this->once())
+            ->method('snapshot')
+            ->with('child-run-snap')
+            ->willReturn(new ChildRunTranscriptSnapshotDTO([$block], [], 4));
+
+        $picker = new SubagentLivePickerController(
+            new SubagentLiveChildViewPoller(
+                new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState()),
+                new NullLogger(),
+            ),
+            $snapshotProvider,
+        );
+        $picker->setRuntimeRefs($harness->tui(), $harness->screen(), $state);
+
+        $method = new \ReflectionMethod(SubagentLivePickerController::class, 'enterLiveView');
+        $method->invoke($picker, $child, $state, $harness->screen());
+
+        $this->assertSame(4, $state->subagentLiveView->childLastSeq);
+        $this->assertSame('snapshot line', $state->subagentLiveView->childTranscript[0]->text);
+        $this->assertArrayHasKey('child-run-snap', $state->subagentLiveView->childCaches);
+
+        $snapshotProvider->expects($this->never())->method('snapshot');
+        $method->invoke($picker, $child, $state, $harness->screen());
+        $this->assertSame(4, $state->subagentLiveView->childLastSeq);
+    }
+
     private function picker(VirtualTuiHarness $harness, TuiSessionState $state): SubagentLivePickerController
     {
-        $picker = new SubagentLivePickerController(new SubagentLiveChildViewPoller(
-            new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState()),
-            new NullLogger(),
-        ));
+        $picker = new SubagentLivePickerController(
+            new SubagentLiveChildViewPoller(
+                new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState()),
+                new NullLogger(),
+            ),
+            $this->createStub(ChildRunTranscriptSnapshotProviderInterface::class),
+        );
         $picker->setRuntimeRefs($harness->tui(), $harness->screen(), $state);
 
         return $picker;
