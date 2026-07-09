@@ -49,6 +49,8 @@ final readonly class ReasoningOptionsResolver
             }
 
             if ('zai' === $this->thinkingFormat($ref, $model)) {
+                // z.ai keeps reasoning enabled unless we send thinking.type=disabled;
+                // omitting options would leave prior thinking state on the provider side.
                 return ['thinking' => ['type' => 'disabled']];
             }
 
@@ -143,10 +145,15 @@ final readonly class ReasoningOptionsResolver
         }
 
         $provider = $this->catalog->getProvider($ref->providerId);
-        if (null !== $provider?->compatibility && $provider->compatibility->hasExplicitSupportsReasoningEffort()) {
-            return $provider->compatibility->supportsReasoningEffort;
+        $providerCompat = $provider?->compatibility;
+        if (null !== $providerCompat && $providerCompat->hasExplicitSupportsReasoningEffort()) {
+            return $providerCompat->supportsReasoningEffort;
         }
 
-        return $provider?->compatibility->supportsReasoningEffort ?? true;
+        if (null === $providerCompat) {
+            return true;
+        }
+
+        return $providerCompat->supportsReasoningEffort;
     }
 }

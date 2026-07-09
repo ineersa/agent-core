@@ -82,7 +82,7 @@ final class SessionAwareModelResolver implements ModelResolverInterface
             $compatFeatures = $this->resolveCompatFeatures($modelRef);
             $reasoningOptions = $this->resolveReasoningOptions($modelRef, $reasoning);
 
-            // Always pass 'reasoning' in compat features when reasoning is active.
+            // Pass 'reasoning' compat when options are present (z.ai off sends disabled thinking).
             if ([] !== $reasoningOptions && !\in_array(ReasoningOptionsFeatureShaper::FEATURE, $compatFeatures, true)) {
                 $compatFeatures[] = ReasoningOptionsFeatureShaper::FEATURE;
             }

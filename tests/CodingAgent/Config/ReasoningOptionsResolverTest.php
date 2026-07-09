@@ -559,6 +559,23 @@ class ReasoningOptionsResolverTest extends TestCase
             $resolver->resolve($this->modelRef('deepseek', 'deepseek-v4-pro'), 'MEDIUM'),
         );
     }
+
+    public function testProviderWithoutCompatibilityDefaultsReasoningEffort(): void
+    {
+        $provider = $this->provider('openai', $this->model([
+            'id' => 'gpt-test',
+            'reasoning' => true,
+            'thinkingLevelMap' => ['medium' => 'high'],
+        ]), null);
+
+        $resolver = $this->resolverForProviders(['openai' => $provider]);
+
+        $this->assertSame(
+            ['reasoning_effort' => 'high'],
+            $resolver->resolve($this->modelRef('openai', 'gpt-test'), 'medium'),
+        );
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────
 
     private function resolverForProviders(array $providers): ReasoningOptionsResolver

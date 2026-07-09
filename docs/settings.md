@@ -1237,18 +1237,6 @@ ai:
             models:
                 glm-5.1:
                     name: GLM 5.1
-                glm-5.2:
-                    name: GLM 5.2
-                    context_window: 1000000
-                    max_tokens: 131072
-                    input: [text]
-                    tool_calling: true
-                    reasoning: true
-                    thinking_level_map: { minimal: null, low: high, medium: high, high: high, xhigh: max }
-                    compatibility:
-                        supports_reasoning_effort: true
-                        zai_tool_stream: true
-                    cost: { input: 0, output: 0, cache_read: 0, cache_write: 0 }
                     context_window: 200000
                     max_tokens: 131072
                     input: [text]
@@ -1266,6 +1254,18 @@ ai:
                         output: 0
                         cache_read: 0
                         cache_write: 0
+                glm-5.2:
+                    name: GLM 5.2
+                    context_window: 1000000
+                    max_tokens: 131072
+                    input: [text]
+                    tool_calling: true
+                    reasoning: true
+                    thinking_level_map: { minimal: null, low: high, medium: high, high: high, xhigh: max }
+                    compatibility:
+                        supports_reasoning_effort: true
+                        zai_tool_stream: true
+                    cost: { input: 0, output: 0, cache_read: 0, cache_write: 0 }
                 glm-5v-turbo:
                     name: GLM 5V Turbo
                     context_window: 200000
