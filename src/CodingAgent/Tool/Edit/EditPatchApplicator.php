@@ -143,7 +143,7 @@ final class EditPatchApplicator
         return new ToolCallException(
             \sprintf('[E_PATCH_STALE] Hunk #%d context not found in file.', $chunkIndex + 1),
             retryable: true,
-            hint: \sprintf('Could not locate: "%s". Use read with offset/limit around line %d and regenerate the patch with exact current context.', $this->preview($needle), $contextLine),
+            hint: \sprintf('Could not locate: "%s". Seek hints are literal source-text anchors, not line numbers. Use read with offset/limit around line %d, then regenerate the patch with exact current context lines (or omit the seek hint).', $this->preview($needle), $contextLine),
         );
     }
 

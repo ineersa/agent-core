@@ -95,7 +95,7 @@ PATCH;
         $this->parser->parse($patch);
     }
 
-    public function testBlankUnprefixedBodyLineReturnsBlankContextLineGuidance(): void
+    public function testBlankPhysicalLineInsideHunkParsesAsUnchangedBlankContext(): void
     {
         $patch = <<<'PATCH'
 @@
@@ -106,18 +106,10 @@ PATCH;
 +LINE2
 PATCH;
 
-        try {
-            $this->parser->parse($patch);
-            $this->fail('Expected ToolCallException');
-        } catch (ToolCallException $e) {
-            $this->assertStringContainsString('E_PATCH_FORMAT', $e->getMessage());
-            $this->assertStringContainsString('Blank unprefixed lines are not allowed inside a hunk', $e->getMessage());
-            $this->assertStringContainsString('Blank unchanged lines inside hunks are still context lines', $e->getMessage());
-            $this->assertStringContainsString('one leading space', $e->getMessage());
-            $hint = $e->hint() ?? '';
-            $this->assertStringContainsString('Blank unchanged lines inside hunks are still context lines', $hint);
-            $this->assertStringContainsString('one leading space', $hint);
-        }
+        $chunks = $this->parser->parse($patch);
+        $this->assertCount(1, $chunks);
+        $this->assertSame(['line1', '', 'line2', 'line2'], $chunks[0]->oldLines);
+        $this->assertSame(['line1', '', 'line2', 'LINE2'], $chunks[0]->newLines);
     }
 
     public function testUnprefixedBodyLineAfterHunkHeaderReturnsActionableFormatGuidance(): void

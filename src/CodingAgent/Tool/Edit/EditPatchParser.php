@@ -124,7 +124,10 @@ final class EditPatchParser
             }
 
             if ('' === $line) {
-                throw $this->formatError('Blank unprefixed lines are not allowed inside a hunk. Blank unchanged lines inside hunks are still context lines; represent them as a line containing one leading space.');
+                $oldLines[] = '';
+                $newLines[] = '';
+                ++$i;
+                continue;
             }
 
             $prefix = $line[0];

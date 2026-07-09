@@ -55,14 +55,14 @@ final class EditFileToolTest extends TestCase
         $patchSchema = $definition->parametersJsonSchema['properties']['patch']['description'] ?? '';
         $this->assertStringContainsString('leading space', $patchSchema);
         $this->assertStringContainsString('unchanged', strtolower($patchSchema));
-        $this->assertStringContainsString('Blank unchanged lines inside hunks', $patchSchema);
-        $this->assertStringContainsString('one leading space', $patchSchema);
+        $this->assertStringContainsString('Empty physical lines inside a hunk', $patchSchema);
+        $this->assertStringContainsString('literal source-text anchors', $patchSchema);
 
         $guidelines = implode(' ', $definition->promptGuidelines);
         $this->assertStringContainsString('@@', $guidelines);
         $this->assertStringContainsString('diff prefix', $guidelines);
-        $this->assertStringContainsString('Blank unchanged lines inside hunks', $guidelines);
-        $this->assertStringContainsString('one leading space', $guidelines);
+        $this->assertStringContainsString('Empty physical lines inside a hunk', $guidelines);
+        $this->assertStringContainsString('literal source-text anchors', $guidelines);
         $this->assertStringContainsString('Compact example', $guidelines);
         $this->assertStringContainsString('no ---/+++', strtolower($guidelines));
         $this->assertStringNotContainsString('cat -n', $guidelines);
