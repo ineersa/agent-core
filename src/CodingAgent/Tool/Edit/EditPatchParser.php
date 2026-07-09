@@ -149,7 +149,7 @@ final class EditPatchParser
                 continue;
             }
 
-            throw $this->formatError(\sprintf('Invalid hunk body line: "%s".', $this->preview($line)));
+            throw $this->formatError(\sprintf('Invalid hunk body line: "%s". Hunk body lines must begin with a diff prefix: a leading space for unchanged context, `-` for removals, or `+` for additions. If this line is unchanged content, prefix it with one space.', $this->preview($line)));
         }
 
         if ([] === $oldLines && [] === $newLines && !$endOfFile) {
@@ -205,7 +205,7 @@ final class EditPatchParser
         return new ToolCallException(
             \sprintf('[E_PATCH_FORMAT] %s', $detail),
             retryable: true,
-            hint: 'Use @@ hunks with space/-/+ body lines only. Optional @@ <seek hint>, stacked @@ hints, and *** End of File for EOF anchoring. No ---/+++, numbered headers, or *** Begin Patch envelope.',
+            hint: 'Use @@ hunks; each body line must begin with a diff prefix (leading space for unchanged context, `-` for removals, `+` for additions). Optional @@ <seek hint>, stacked @@ hints, and *** End of File for EOF anchoring. No ---/+++, numbered headers, or *** Begin Patch envelope.',
         );
     }
 }

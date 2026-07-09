@@ -48,9 +48,18 @@ final class EditFileToolTest extends TestCase
     public function testDefinitionPromptMentionsCodexStyleHunks(): void
     {
         $definition = $this->editFileTool->definition();
-        $guidelines = implode(' ', $definition->promptGuidelines);
 
+        $this->assertStringContainsString('diff prefix', $definition->description);
+        $this->assertStringContainsString('leading space', $definition->description);
+
+        $patchSchema = $definition->parametersJsonSchema['properties']['patch']['description'] ?? '';
+        $this->assertStringContainsString('leading space', $patchSchema);
+        $this->assertStringContainsString('unchanged', strtolower($patchSchema));
+
+        $guidelines = implode(' ', $definition->promptGuidelines);
         $this->assertStringContainsString('@@', $guidelines);
+        $this->assertStringContainsString('diff prefix', $guidelines);
+        $this->assertStringContainsString('Compact example', $guidelines);
         $this->assertStringContainsString('no ---/+++', strtolower($guidelines));
         $this->assertStringNotContainsString('cat -n', $guidelines);
         $this->assertStringContainsString('numbered @@', strtolower($guidelines));

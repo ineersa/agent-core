@@ -58,7 +58,7 @@ final class EditFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
     {
         return new ToolDefinitionDTO(
             name: 'edit',
-            description: 'Apply Codex-style @@ hunks to an existing file. The target file must exist; use the write tool for new files.',
+            description: 'Apply Codex-style @@ hunks to an existing file. Every hunk body line must start with a diff prefix: a leading space for unchanged context, `-` for removal, or `+` for addition. The target file must exist; use the write tool for new files.',
             parametersJsonSchema: [
                 'type' => 'object',
                 'properties' => [
@@ -68,7 +68,7 @@ final class EditFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
                     ],
                     'patch' => [
                         'type' => 'string',
-                        'description' => 'Hunk body only: @@ [seek hint], then space/-/+ lines. Optional stacked @@ hints and *** End of File.',
+                        'description' => 'Hunk body only: starts with @@ [optional seek hint], then body lines each prefixed with one leading space (unchanged context), `-` (removal), or `+` (addition). Unchanged source or documentation lines are context and still need the leading space. Optional stacked @@ hints and *** End of File.',
                     ],
                 ],
                 'required' => ['path', 'patch'],
@@ -82,7 +82,8 @@ final class EditFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
                 'Patches are hunk bodies only — no ---/+++ headers, no numbered @@ -N,M +N,M @@ headers, and no *** Begin Patch envelope.',
                 'Each hunk starts with `@@` or `@@ <actual file line>` as a seek hint. Stacked `@@` lines narrow ambiguous locations.',
                 'Use 3 lines above and 3 lines below unchanged context by default. Share context between adjacent edits in one patch.',
-                'Body lines use diff prefixes: leading space for context, `-` to remove, `+` to add. Context lines must start with a space.',
+                'Every hunk body line after `@@` must start with one diff prefix: leading space for unchanged context, `-` to remove, `+` to add. Unchanged source or documentation lines are still context and need the leading space.',
+                'Compact example: `@@\n unchanged context\n-old line\n+new line` — the first character of each body line must be space, `-`, or `+`.',
                 'Use `*** End of File` inside a hunk when anchoring an append-to-end edit.',
                 'The target file must already exist — use the write tool to create new files.',
                 'Make ONE edit call at a time per file and wait for the result before another edit on the same file.',
@@ -105,7 +106,7 @@ final class EditFileTool implements HatfieldToolProviderInterface, ToolHandlerIn
         }
 
         if (!\is_string($patch) || '' === $patch) {
-            throw new ToolCallException('The "patch" argument is required and must be a non-empty string.', retryable: false, hint: 'Provide a patch with @@ hunks and space/-/+ body lines.');
+            throw new ToolCallException('The "patch" argument is required and must be a non-empty string.', retryable: false, hint: 'Provide a patch with @@ hunks; each body line must begin with a diff prefix (space, `-`, or `+`).');
         }
     }
 

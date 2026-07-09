@@ -94,4 +94,29 @@ PATCH;
         $this->expectExceptionMessage('Numbered unified-diff @@ headers are not supported');
         $this->parser->parse($patch);
     }
+
+    public function testUnprefixedBodyLineAfterHunkHeaderReturnsActionableFormatGuidance(): void
+    {
+        $patch = <<<'PATCH'
+@@
+unchanged line
+-old line
++new line
+PATCH;
+
+        try {
+            $this->parser->parse($patch);
+            $this->fail('Expected ToolCallException');
+        } catch (ToolCallException $e) {
+            $this->assertStringContainsString('E_PATCH_FORMAT', $e->getMessage());
+            $this->assertStringContainsString('unchanged line', $e->getMessage());
+            $this->assertStringContainsString('diff prefix', $e->getMessage());
+            $this->assertStringContainsString('unchanged content', $e->getMessage());
+            $this->assertStringContainsString('one space', $e->getMessage());
+            $hint = $e->hint() ?? '';
+            $this->assertStringContainsString('diff prefix', $hint);
+            $this->assertStringNotContainsString('/**', $hint);
+            $this->assertStringNotContainsString('/**', $e->getMessage());
+        }
+    }
 }
