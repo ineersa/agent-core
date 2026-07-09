@@ -119,7 +119,6 @@ final class RuntimeQuestionEventHandlerTest extends TestCase
         $this->assertSame(SubagentLiveStatusEnum::Running, $state->subagentLiveCatalog->findByArtifactId('agent_scout')?->status);
     }
 
-
     public function testChildToolQuestionOnMainViewDoesNotEnqueueCoordinator(): void
     {
         $parentRun = 'parent-main';

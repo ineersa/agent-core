@@ -10,6 +10,8 @@ use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\SessionsConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\EventListener\RuntimeExceptionPolicySubscriber;
+use Ineersa\CodingAgent\Runtime\Contract\ChildRunTranscriptSnapshotDTO;
+use Ineersa\CodingAgent\Runtime\Contract\ChildRunTranscriptSnapshotProviderInterface;
 use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeErrorCaptureConfig;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeExceptionBoundary;
@@ -362,6 +364,16 @@ final class SubagentLiveScenarioHarness
         return new RuntimeQuestionEventHandler();
     }
 
+    private function emptyChildSnapshotProvider(): ChildRunTranscriptSnapshotProviderInterface
+    {
+        return new class implements ChildRunTranscriptSnapshotProviderInterface {
+            public function snapshot(string $runId): ChildRunTranscriptSnapshotDTO
+            {
+                return new ChildRunTranscriptSnapshotDTO([], [], 0);
+            }
+        };
+    }
+
     /**
      * @param list<SubagentLiveChildDTO> $children
      *
@@ -377,6 +389,7 @@ final class SubagentLiveScenarioHarness
             $this->sessionStore,
             new SessionEventsExportService(),
             ContextUsageTestAppConfig::withContextWindow(),
+            $this->emptyChildSnapshotProvider(),
         );
         $method = new \ReflectionMethod(SubagentLivePickerController::class, 'buildItems');
 

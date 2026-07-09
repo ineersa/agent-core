@@ -205,7 +205,6 @@ final class SubagentLiveBackgroundChildPollerTest extends TestCase
         $this->assertSame('answer_human', $sent[1]->type);
     }
 
-
     public function testPollCatalogIngestDiscoversNestedScoutWhileLiveViewOnFork(): void
     {
         $parentRun = 'parent-1';

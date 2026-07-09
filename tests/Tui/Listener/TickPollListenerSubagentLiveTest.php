@@ -11,6 +11,7 @@ use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\SessionsConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
+use Ineersa\CodingAgent\Runtime\Contract\ChildRunTranscriptSnapshotProviderInterface;
 use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeExceptionBoundary;
 use Ineersa\CodingAgent\Runtime\Contract\SessionTranscriptProviderInterface;
@@ -111,6 +112,7 @@ final class TickPollListenerSubagentLiveTest extends TestCase
             $this->sessionStore(),
             new SessionEventsExportService(),
             ContextUsageTestAppConfig::withContextWindow(),
+            $this->createStub(ChildRunTranscriptSnapshotProviderInterface::class),
         ));
 
         $context = $this->buildTuiContext()
@@ -200,6 +202,7 @@ final class TickPollListenerSubagentLiveTest extends TestCase
             $this->sessionStore(),
             new SessionEventsExportService(),
             ContextUsageTestAppConfig::withContextWindow(),
+            $this->createStub(ChildRunTranscriptSnapshotProviderInterface::class),
         ));
 
         $context = $this->buildTuiContext()

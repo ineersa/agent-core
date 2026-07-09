@@ -997,6 +997,7 @@ final class TickPollListenerTest extends TestCase
             ),
             new \Ineersa\Tui\Export\SessionEventsExportService(),
             $appConfig,
+            $this->createStub(ChildRunTranscriptSnapshotProviderInterface::class),
         );
     }
 

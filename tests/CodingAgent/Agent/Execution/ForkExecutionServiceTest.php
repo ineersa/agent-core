@@ -34,6 +34,7 @@ use Ineersa\CodingAgent\Tool\ToolRegistryInterface;
 use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use PHPUnit\Framework\Attributes\CoversClass;
 use Symfony\Component\Clock\MockClock;
+use Symfony\Component\Yaml\Yaml;
 
 #[AllowMockObjectsWithoutExpectations]
 #[CoversClass(ForkExecutionService::class)]
@@ -101,7 +102,7 @@ final class ForkExecutionServiceTest extends IsolatedKernelTestCase
 
         $container = self::getContainer();
         $service = new ForkExecutionService(
-            forkContextBuilder: $container->get(\Ineersa\CodingAgent\Agent\Fork\ForkContextBuilder::class),
+            forkContextBuilder: $this->buildForkContextBuilder(null),
             messageComposer: $container->get(\Ineersa\CodingAgent\Agent\Fork\ForkChildMessageComposer::class),
             artifactRegistry: $container->get(AgentArtifactRegistry::class),
             agentRunner: $agentRunner,
@@ -244,7 +245,7 @@ final class ForkExecutionServiceTest extends IsolatedKernelTestCase
         );
 
         $service = new ForkExecutionService(
-            forkContextBuilder: $container->get(\Ineersa\CodingAgent\Agent\Fork\ForkContextBuilder::class),
+            forkContextBuilder: $this->buildForkContextBuilder(null),
             messageComposer: $container->get(\Ineersa\CodingAgent\Agent\Fork\ForkChildMessageComposer::class),
             artifactRegistry: $artifactRegistry,
             agentRunner: $agentRunner,
@@ -920,13 +921,83 @@ final class ForkExecutionServiceTest extends IsolatedKernelTestCase
         $this->assertSame('low', $captured->metadata->reasoning);
     }
 
+    protected static function configureIsolatedProjectBeforeKernelBoot(string $classCwd): void
+    {
+        $settings = [
+            'ai' => [
+                'default_model' => 'deepseek/deepseek-v4-pro',
+                'default_reasoning' => 'medium',
+                'providers' => [
+                    'deepseek' => [
+                        'type' => 'generic',
+                        'enabled' => true,
+                        'base_url' => 'https://api.deepseek.com',
+                        'completions_path' => '/chat/completions',
+                        'models' => [
+                            'deepseek-v4-pro' => [
+                                'id' => 'deepseek-v4-pro',
+                                'name' => 'DeepSeek V4 Pro',
+                                'context_window' => 131072,
+                                'max_tokens' => 131072,
+                                'input' => ['text'],
+                                'reasoning' => true,
+                            ],
+                        ],
+                    ],
+                    'llama_cpp' => [
+                        'type' => 'generic',
+                        'enabled' => true,
+                        'base_url' => 'http://127.0.0.1:8052/v1',
+                        'models' => [
+                            'flash' => [
+                                'id' => 'flash',
+                                'name' => 'Flash',
+                                'context_window' => 200000,
+                                'max_tokens' => 65536,
+                                'input' => ['text'],
+                                'reasoning' => false,
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+        ];
+
+        file_put_contents(
+            $classCwd.'/.hatfield/settings.yaml',
+            '# hatfield settings (test isolation)
+'.Yaml::dump($settings, 4, 2),
+        );
+    }
+
     private function buildForkContextBuilder(?string $model, ?string $thinkingLevel = null): \Ineersa\CodingAgent\Agent\Fork\ForkContextBuilder
     {
         $container = self::getContainer();
+        $orchestrator = $this->createStub(\Ineersa\CodingAgent\Compaction\VirtualCompactionOrchestratorInterface::class);
+        $orchestrator->method('compactForRun')->willReturnCallback(
+            static function (string $runId, array $messages): \Ineersa\CodingAgent\Compaction\VirtualCompactionResult {
+                if ([] === $messages) {
+                    return new \Ineersa\CodingAgent\Compaction\VirtualCompactionResult(compactedMessages: [], compacted: false);
+                }
+
+                $summary = new AgentMessage(
+                    role: 'user',
+                    content: [['type' => 'text', 'text' => 'Fork compaction summary for '.$runId]],
+                    metadata: ['compact_summary' => true],
+                );
+
+                return new \Ineersa\CodingAgent\Compaction\VirtualCompactionResult(
+                    compactedMessages: [$summary, ...$messages],
+                    compacted: true,
+                    summaryText: 'Fork compaction summary',
+                    summarizedCount: 0,
+                );
+            },
+        );
 
         return new \Ineersa\CodingAgent\Agent\Fork\ForkContextBuilder(
             sanitizer: $container->get(\Ineersa\CodingAgent\Agent\Fork\ForkSnapshotSanitizer::class),
-            compactor: $container->get(\Ineersa\CodingAgent\Agent\Fork\ForkSnapshotCompactor::class),
+            compactor: new \Ineersa\CodingAgent\Agent\Fork\ForkSnapshotCompactor($orchestrator),
             promptBuilder: $container->get(\Ineersa\CodingAgent\Agent\Fork\ForkTaskPromptBuilder::class),
             configResolver: new \Ineersa\CodingAgent\Agent\Fork\ForkConfigResolver(new \Ineersa\CodingAgent\Config\ForksConfigDTO(model: $model, thinkingLevel: $thinkingLevel)),
         );
