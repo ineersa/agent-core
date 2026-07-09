@@ -77,6 +77,7 @@ final class RuntimeQuestionEventHandler
         $kind = $this->resolveQuestionKind($p);
         $choices = $this->buildChoices($p, $schema);
         $header = $this->resolveQuestionHeader($sessionState, $runId, $p, 'asks');
+        $childOwned = $this->isChildOwnedQuestion($sessionState, $runId);
 
         $request = new QuestionRequest(
             requestId: $requestId,
@@ -92,7 +93,7 @@ final class RuntimeQuestionEventHandler
             questionId: $questionId,
             toolCallId: (string) ($p['tool_call_id'] ?? ''),
             toolName: (string) ($p['tool_name'] ?? ''),
-            transcript: true,
+            transcript: !$childOwned,
         );
 
         // Enqueue the question with answer and cancel callbacks.
@@ -552,31 +553,50 @@ final class RuntimeQuestionEventHandler
             return (string) $payload['header'];
         }
 
-        $agentName = $this->resolveSubagentLabel($sessionState, $runId);
-        if (null === $agentName) {
+        $label = $this->resolveChildQuestionLabel($sessionState, $runId);
+        if (null === $label) {
             return null;
         }
 
-        return \sprintf('Subagent %s %s', $agentName, $suffix);
+        return \sprintf('Child agent %s %s', $label['agentName'], $suffix);
     }
 
-    private function resolveSubagentLabel(?TuiSessionState $sessionState, string $runId): ?string
+    /**
+     * @return array{agentName: string, artifactId: string}|null
+     */
+    private function resolveChildQuestionLabel(?TuiSessionState $sessionState, string $runId): ?array
     {
         if (null === $sessionState) {
             return null;
         }
 
+        $parentRunId = null !== $sessionState->handle ? $sessionState->handle->runId : $sessionState->sessionId;
+        if ($runId === $parentRunId) {
+            return null;
+        }
+
         $live = $sessionState->subagentLiveView;
         if ($live->active && null !== $live->selected && $live->selected->agentRunId === $runId) {
-            return $live->selected->agentName;
+            return [
+                'agentName' => $live->selected->agentName,
+                'artifactId' => $live->selected->artifactId,
+            ];
         }
 
         foreach ($sessionState->subagentLiveCatalog->all() as $catalogChild) {
             if ($catalogChild->agentRunId === $runId) {
-                return $catalogChild->agentName;
+                return [
+                    'agentName' => $catalogChild->agentName,
+                    'artifactId' => $catalogChild->artifactId,
+                ];
             }
         }
 
         return null;
+    }
+
+    private function isChildOwnedQuestion(?TuiSessionState $sessionState, string $runId): bool
+    {
+        return null !== $this->resolveChildQuestionLabel($sessionState, $runId);
     }
 }

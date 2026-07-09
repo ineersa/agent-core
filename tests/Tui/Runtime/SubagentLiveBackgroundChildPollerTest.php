@@ -163,6 +163,8 @@ final class SubagentLiveBackgroundChildPollerTest extends TestCase
         $active = $coordinator->activeRequest();
         $this->assertNotNull($active);
         $this->assertSame($scoutRun, $active->runId);
+        $this->assertFalse($active->transcript);
+        $this->assertSame('Child agent scout asks', $active->header);
         $this->assertSame(SubagentLiveStatusEnum::WaitingHuman, $state->subagentLiveCatalog->findByArtifactId('agent_scout')?->status);
 
         $coordinator->answer('a.md');

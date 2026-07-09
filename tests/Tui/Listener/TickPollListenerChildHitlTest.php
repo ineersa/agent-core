@@ -64,7 +64,7 @@ final class TickPollListenerChildHitlTest extends TestCase
         $this->assertNotNull($active);
         $this->assertSame($childRunId, $active->runId);
         $this->assertSame(QuestionSource::AgentCore, $active->source);
-        $this->assertSame('Subagent scout asks', $active->header);
+        $this->assertSame('Child agent scout asks', $active->header);
 
         $coordinator->answer('yes');
         $this->assertNotNull($sent);

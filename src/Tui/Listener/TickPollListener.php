@@ -61,12 +61,12 @@ final class TickPollListener implements TuiListenerRegistrar
         $questionController->setRuntimeRefs($context, $screen);
 
         $context->ticks->add(static function () use ($poller, $state, $client, $screen, $questionCoordinator, $questionController, $subagentLiveChildPoller, $subagentLiveBackgroundChildPoller, $runtimeQuestionEventHandler, $subagentLivePicker): ?bool {
-            $onHitl = static function (RuntimeEvent $event) use ($client, $questionCoordinator, $runtimeQuestionEventHandler): void {
-                $runtimeQuestionEventHandler->handleHumanInputRequested($event, $client, $questionCoordinator);
+            $onHitl = static function (RuntimeEvent $event) use ($client, $questionCoordinator, $state, $screen, $runtimeQuestionEventHandler): void {
+                $runtimeQuestionEventHandler->handleHumanInputRequested($event, $client, $questionCoordinator, $state, $screen);
             };
 
-            $onToolQuestion = static function (RuntimeEvent $event) use ($client, $questionCoordinator, $runtimeQuestionEventHandler): void {
-                $runtimeQuestionEventHandler->handleToolQuestionRequested($event, $client, $questionCoordinator);
+            $onToolQuestion = static function (RuntimeEvent $event) use ($client, $questionCoordinator, $state, $screen, $runtimeQuestionEventHandler): void {
+                $runtimeQuestionEventHandler->handleToolQuestionRequested($event, $client, $questionCoordinator, $state, $screen);
             };
 
             $onToolTerminal = static function (RuntimeEvent $event) use ($questionCoordinator, $questionController, $runtimeQuestionEventHandler): void {

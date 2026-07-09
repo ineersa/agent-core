@@ -353,7 +353,10 @@ final readonly class SystemPromptBuilder
 
         $contributorOutput = $this->drainContributors();
         if ('' !== $contributorOutput) {
-            $parts[] = $contributorOutput;
+            $contributorOutput = $this->filterContributorOutputForChildAllowedTools($contributorOutput, $allowedToolNames);
+            if ('' !== trim($contributorOutput)) {
+                $parts[] = $contributorOutput;
+            }
         }
 
         if ([] === $parts) {
@@ -432,6 +435,19 @@ final readonly class SystemPromptBuilder
         }
 
         return implode("\n", $guidelines);
+    }
+
+    /**
+     * Filter extension prompt contributor output to the child allowed toolset.
+     *
+     * Contributors may dump parent-scope tool catalogs; child appends must only
+     * document tools the child can actually invoke.
+     *
+     * @param list<string> $allowedToolNames
+     */
+    private function filterContributorOutputForChildAllowedTools(string $content, array $allowedToolNames): string
+    {
+        return $this->sanitizeChildAppendContent($content, $allowedToolNames);
     }
 
     /**

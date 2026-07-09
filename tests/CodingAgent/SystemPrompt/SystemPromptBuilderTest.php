@@ -542,6 +542,94 @@ final class SystemPromptBuilderTest extends TestCase
         $this->assertStringContainsString('Current working directory:', $fragment);
     }
 
+    public function testBuildMainHarnessForAllowedToolsOmitsForkToolDocs(): void
+    {
+        $registry = new ToolRegistry();
+        $registry->registerTool(
+            name: 'read',
+            description: 'Read file contents',
+            parametersJsonSchema: ['type' => 'object'],
+            handler: $this->dummyHandler(),
+            promptLine: '- read: Read file contents',
+            promptGuidelines: ['Use read for files'],
+        );
+        $registry->registerTool(
+            name: 'fork',
+            description: 'Fork child',
+            parametersJsonSchema: ['type' => 'object'],
+            handler: $this->dummyHandler(),
+            promptLine: 'fork task="..." — launch fork child with compacted inherited context',
+            promptGuidelines: ['Use fork to delegate implementation or investigation to a child'],
+        );
+        $registry->registerTool(
+            name: 'subagent',
+            description: 'Launch subagent',
+            parametersJsonSchema: ['type' => 'object'],
+            handler: $this->dummyHandler(),
+            promptLine: '- subagent: Launch a subagent',
+            promptGuidelines: ['Use subagent for delegated work'],
+        );
+
+        $builder = $this->createBuilder($registry);
+        $harness = $builder->buildMainHarnessForAllowedTools(['read', 'subagent']);
+
+        $this->assertStringContainsString('Read file contents', $harness);
+        $this->assertStringContainsString('Launch a subagent', $harness);
+        $this->assertStringNotContainsString('fork task=', strtolower($harness));
+        $this->assertStringNotContainsString('launch fork child', strtolower($harness));
+        $this->assertStringNotContainsString('use fork', strtolower($harness));
+    }
+
+    public function testBuildChildAppendsFragmentFiltersContributorForkToolDocs(): void
+    {
+        $registry = new ToolRegistry();
+        $registry->registerTool(
+            name: 'read',
+            description: 'Read file contents',
+            parametersJsonSchema: ['type' => 'object'],
+            handler: $this->dummyHandler(),
+            promptLine: '- read: Read file contents',
+            promptGuidelines: ['Use read for files'],
+        );
+        $registry->registerTool(
+            name: 'fork',
+            description: 'Fork child',
+            parametersJsonSchema: ['type' => 'object'],
+            handler: $this->dummyHandler(),
+            promptLine: 'fork task="..." — launch fork child with compacted inherited context',
+            promptGuidelines: ['Use fork to delegate implementation or investigation to a child'],
+        );
+
+        $contributor = new class implements PromptContributorInterface {
+            public function contribute(): string
+            {
+                return implode("\n", [
+                    'fork task="x" — launch fork child with inherited history',
+                    'Use fork to delegate',
+                    '- read: Read file contents',
+                ]);
+            }
+        };
+        $provider = new class($contributor) implements PromptContributorProviderInterface {
+            public function __construct(private readonly PromptContributorInterface $contributor)
+            {
+            }
+
+            public function promptContributors(): array
+            {
+                return [$this->contributor];
+            }
+        };
+
+        $builder = $this->createBuilder($registry, promptContributorProvider: $provider);
+        $fragment = $builder->buildChildAppendsFragment(['read']);
+
+        $this->assertStringContainsString('Read file contents', $fragment);
+        $this->assertStringNotContainsString('fork task=', strtolower($fragment));
+        $this->assertStringNotContainsString('launch fork child', strtolower($fragment));
+        $this->assertStringNotContainsString('use fork', strtolower($fragment));
+    }
+
     public function testBuildChildAppendsFragmentFiltersDisallowedToolDocs(): void
     {
         $registry = new ToolRegistry();
