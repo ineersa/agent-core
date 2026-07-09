@@ -245,6 +245,7 @@ forks:
 
 compaction:
     model: deepseek/deepseek-v4-flash
+    thinking_level: high
 
 # ---------------------------------------------------------------------------
 # Compaction
