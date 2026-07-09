@@ -6,11 +6,10 @@ namespace Ineersa\Tui\Listener;
 
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\Tui\Command\CommandMetadata;
+use Ineersa\Tui\Command\SlashCommandRegistry;
+use Ineersa\Tui\Picker\SubagentLivePickerController;
 use Ineersa\Tui\Question\QuestionController;
 use Ineersa\Tui\Question\QuestionCoordinator;
-use Ineersa\Tui\Command\SlashCommandRegistry;
-use Ineersa\Tui\Listener\RuntimeQuestionEventHandler;
-use Ineersa\Tui\Picker\SubagentLivePickerController;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
 
 final class SubagentLiveCommandRegistrar implements TuiListenerRegistrar

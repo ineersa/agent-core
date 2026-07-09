@@ -33,13 +33,13 @@ final class SubagentLivePickerController
     private ?TuiSessionState $state = null;
 
     /** @var ?callable(\Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent): void */
-    private $onHumanInputRequested = null;
+    private $onHumanInputRequested;
 
     /** @var ?callable(\Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent): void */
-    private $onToolQuestionRequested = null;
+    private $onToolQuestionRequested;
 
     /** @var ?callable(\Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent): void */
-    private $onToolTerminal = null;
+    private $onToolTerminal;
 
     public function __construct(
         private readonly SubagentLiveChildViewPoller $childPoller,
