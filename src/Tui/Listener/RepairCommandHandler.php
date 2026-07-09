@@ -26,26 +26,12 @@ final class RepairCommandHandler implements SlashCommandHandler
             return new TranscriptMessage('No active session — start or resume a session first.', 'system', 'muted');
         }
 
-        $apply = $this->parseApplyFlag($command->args);
-
         try {
-            $result = $this->repairService->repair($sessionId, $apply);
+            $result = $this->repairService->repair($sessionId, true);
         } catch (\Throwable $e) {
             return new TranscriptMessage('Session repair failed: '.$e->getMessage(), 'error');
         }
 
-        if (!$apply) {
-            return new TranscriptMessage($result['message'].'
-Use /repair apply to repair the current session.', 'system');
-        }
-
         return new TranscriptMessage($result['message']);
-    }
-
-    private function parseApplyFlag(string $args): bool
-    {
-        $trimmed = strtolower(trim($args));
-
-        return 'apply' === $trimmed || str_starts_with($trimmed, 'apply ');
     }
 }

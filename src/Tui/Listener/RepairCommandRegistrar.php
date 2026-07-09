@@ -31,8 +31,8 @@ final class RepairCommandRegistrar implements TuiListenerRegistrar
             new CommandMetadata(
                 name: 'repair',
                 aliases: [],
-                description: 'Inspect or repair corrupted session event history',
-                usage: '/repair [apply]',
+                description: 'Repair corrupted session event history for the current session',
+                usage: '/repair',
                 acceptsArguments: true,
             ),
             $handler,

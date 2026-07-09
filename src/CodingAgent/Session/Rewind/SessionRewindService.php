@@ -77,7 +77,7 @@ final readonly class SessionRewindService implements RunRewindServiceInterface
 
             $duplicateSeqs = $this->replayEventPreparer->duplicateSequences($events);
             if ([] !== $duplicateSeqs) {
-                throw new \RuntimeException(\sprintf('Cannot rewind run %s: event history contains duplicate sequence number(s): %s. Run /repair apply first.', $runId, implode(', ', array_map('strval', \array_slice($duplicateSeqs, 0, 10)))));
+                throw new \RuntimeException(\sprintf('Cannot rewind run %s: event history contains duplicate sequence number(s): %s. Run /repair first.', $runId, implode(', ', array_map('strval', \array_slice($duplicateSeqs, 0, 10)))));
             }
 
             $currentLeafTurnNo = $tree->currentLeafTurnNo;

@@ -4,8 +4,12 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\Listener;
 
+use Ineersa\AgentCore\Application\Dto\RunStateReplayResult;
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Application\Replay\ReplayEventPreparer;
+use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
+use Ineersa\AgentCore\Domain\Run\RunState;
+use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryRunStore;
 use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
 use Ineersa\CodingAgent\Config\AppConfig;
@@ -17,11 +21,13 @@ use Ineersa\Tui\Command\SlashCommand;
 use Ineersa\Tui\Command\TranscriptMessage;
 use Ineersa\Tui\Listener\RepairCommandHandler;
 use Ineersa\Tui\Runtime\TuiSessionState;
+use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\FlockStore;
 
+#[AllowMockObjectsWithoutExpectations]
 final class RepairCommandHandlerTest extends TestCase
 {
     private string $projectDir;
@@ -44,24 +50,34 @@ final class RepairCommandHandlerTest extends TestCase
         }
     }
 
-    public function testPreviewModeReportsMessage(): void
+    public function testRepairCommandAppliesRepair(): void
     {
         $state = new TuiSessionState('2');
-        $repair = $this->createRepairService();
+        $runStore = new InMemoryRunStore();
+        $runStore->compareAndSwap(new RunState(runId: '2', status: RunStatus::Failed, version: 1, lastSeq: 345), 0);
+        $rebuilder = $this->createMock(RunStateRebuilderInterface::class);
+        $rebuilder->method('rebuildIfStale')->willReturn(RunStateReplayResult::rebuilt(
+            new RunState(runId: '2', status: RunStatus::Cancelled, version: 2, lastSeq: 2),
+            2,
+            2,
+            true,
+        ));
+        $repair = $this->createRepairService($runStore, $rebuilder);
         $result = (new RepairCommandHandler($state, $repair))->handle(new SlashCommand('repair', '', '/repair'));
         $this->assertInstanceOf(TranscriptMessage::class, $result);
-        $this->assertStringContainsString('Repair preview', $result->text);
-        $this->assertStringContainsString('/repair apply', $result->text);
+        $this->assertStringContainsString('Session repaired', $result->text);
+        $this->assertStringNotContainsString('/repair apply', $result->text);
+        $this->assertStringNotContainsString('Repair preview', $result->text);
     }
 
-    private function createRepairService(): SessionRepairService
+    private function createRepairService(?InMemoryRunStore $runStore = null, ?RunStateRebuilderInterface $rebuilder = null): SessionRepairService
     {
         $appConfig = new AppConfig(tui: new TuiConfig(theme: 'default'), logging: new LoggingConfig(), cwd: $this->projectDir);
 
         return new SessionRepairService(
             sessionStore: new HatfieldSessionStore($appConfig, $this->createStub(\Doctrine\ORM\EntityManagerInterface::class)),
-            runStore: new InMemoryRunStore(),
-            runStateRebuilder: $this->createStub(\Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface::class),
+            runStore: $runStore ?? new InMemoryRunStore(),
+            runStateRebuilder: $rebuilder ?? $this->createStub(RunStateRebuilderInterface::class),
             replayEventPreparer: new ReplayEventPreparer(),
             eventPayloadNormalizer: new EventPayloadNormalizer(),
             lockManager: new RunLockManager(new LockFactory(new FlockStore())),
