@@ -136,6 +136,7 @@ final class SubagentLiveChildViewPoller
             }
 
             $this->eventApplier->apply($scratch, $event);
+            $live->childReplayEvents[] = $event;
             $changed = true;
 
             $this->dispatchEventCallbacks(

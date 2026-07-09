@@ -9,6 +9,7 @@ use Ineersa\CodingAgent\Runtime\Contract\ChildRunTranscriptSnapshotDTO;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState;
+use Ineersa\CodingAgent\Runtime\ProjectionPipeline\HitlProjectionSubscriber;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
@@ -151,6 +152,78 @@ final class SubagentLiveChildViewPollerReplayTest extends TestCase
         $live->childLastPoll = 0.0;
         $this->assertNotNull($poller->poll($live, $client));
         $this->assertSame(6, $live->childLastSeq);
+    }
+
+    #[Test]
+    public function cachedReentryReprojectsReplayAndLiveEvents(): void
+    {
+        $projector = $this->childLiveProjector();
+        $poller = new SubagentLiveChildViewPoller($projector, new NullLogger());
+
+        $live = $this->liveState();
+        $poller->replaySnapshot(
+            $live,
+            new ChildRunTranscriptSnapshotDTO(
+                [
+                    new TranscriptBlock('b-seed', TranscriptBlockKindEnum::Question, self::CHILD_RUN_ID, 1, 'seed'),
+                ],
+                [
+                    new RuntimeEvent(
+                        RuntimeEventTypeEnum::HumanInputRequested->value,
+                        self::CHILD_RUN_ID,
+                        1,
+                        [
+                            'question_id' => 'q_seed',
+                            'prompt' => 'seed',
+                        ],
+                    ),
+                ],
+                1,
+            ),
+        );
+
+        $client = $this->createMock(AgentSessionClient::class);
+        $client->expects($this->once())
+            ->method('events')
+            ->with(self::CHILD_RUN_ID)
+            ->willReturn([
+                new RuntimeEvent(
+                    RuntimeEventTypeEnum::HumanInputRequested->value,
+                    self::CHILD_RUN_ID,
+                    2,
+                    [
+                        'question_id' => 'q_live',
+                        'prompt' => 'live tail',
+                    ],
+                ),
+            ]);
+
+        $live->childLastPoll = 0.0;
+        $poller->poll($live, $client);
+
+        $this->assertCount(2, $live->childReplayEvents);
+
+        $reentrySnapshot = new ChildRunTranscriptSnapshotDTO(
+            $live->childTranscript,
+            $live->childReplayEvents,
+            $live->childLastSeq,
+        );
+
+        $blocks = $poller->replaySnapshot($live, $reentrySnapshot);
+
+        $texts = array_map(static fn (TranscriptBlock $block): string => $block->text, $blocks);
+        $this->assertContains('seed', $texts);
+        $this->assertContains('live tail', $texts);
+        $this->assertCount(2, $live->childReplayEvents);
+        $this->assertCount(2, $live->childCaches[self::CHILD_RUN_ID]['replayEvents']);
+    }
+
+    private function childLiveProjector(): TranscriptProjector
+    {
+        $dispatcher = new EventDispatcher();
+        $dispatcher->addSubscriber(new HitlProjectionSubscriber());
+
+        return new TranscriptProjector($dispatcher, new TranscriptProjectionState());
     }
 
     private function liveState(): SubagentLiveViewState
