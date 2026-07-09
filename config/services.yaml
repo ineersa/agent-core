@@ -933,7 +933,7 @@ services:
 
   Ineersa\CodingAgent\Session\SequencedRunEventAppender:
     arguments:
-      $eventStore: '@Ineersa\CodingAgent\Agent\Artifact\ChildAwareEventStore'
+      $eventStore: '@Ineersa\AgentCore\Contract\EventStoreInterface'
       $runStore: '@Ineersa\CodingAgent\Session\SessionRunStore'
 
   Ineersa\CodingAgent\Session\Repair\SessionRepairService: ~
