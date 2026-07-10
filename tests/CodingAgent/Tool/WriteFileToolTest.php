@@ -188,7 +188,8 @@ final class WriteFileToolTest extends TestCase
 
             $cwd = getcwd();
             $this->assertFileExists($cwd.'/'.$relativePath);
-            $this->assertStringContainsString($cwd.'/'.$relativePath, $result);
+            $this->assertStringContainsString($relativePath, $result);
+            $this->assertStringNotContainsString($cwd, $result);
             // Non-empty content without trailing newline is normalized
             $this->assertSame("Relative path test.\n", file_get_contents($cwd.'/'.$relativePath));
         } finally {
@@ -196,6 +197,38 @@ final class WriteFileToolTest extends TestCase
             $fullPath = $cwd.'/'.$relativePath;
             if (is_file($fullPath)) {
                 unlink($fullPath);
+            }
+        }
+    }
+
+    /**
+     * Regression: llm-real write-file post-tool cache keys must not embed resolved absolute temp cwd.
+     */
+    public function testWriteSuccessReturnsCallerSuppliedRelativePath(): void
+    {
+        $workDir = $this->tmpDir.'/write_cwd_'.bin2hex(random_bytes(4));
+        mkdir($workDir, 0750, recursive: true);
+        $callerPath = './test-write.txt';
+        $previousCwd = getcwd();
+
+        try {
+            $this->assertTrue(chdir($workDir));
+
+            $result = ($this->writeFileTool)(['path' => $callerPath, 'content' => 'hello world']);
+
+            $this->assertFileExists($workDir.'/test-write.txt');
+            $this->assertSame("hello world\n", file_get_contents($workDir.'/test-write.txt'));
+            $this->assertSame('Successfully wrote 12 bytes to ./test-write.txt', $result);
+            $this->assertStringNotContainsString($workDir, $result);
+        } finally {
+            if (false !== $previousCwd) {
+                chdir($previousCwd);
+            }
+            if (is_file($workDir.'/test-write.txt')) {
+                unlink($workDir.'/test-write.txt');
+            }
+            if (is_dir($workDir)) {
+                rmdir($workDir);
             }
         }
     }
