@@ -113,7 +113,7 @@ final class TuiTreeCommandE2eTest extends TestCase
                 static fn (string $cap): bool => str_contains($cap, '● idle')
                     && !str_contains($cap, 'Session turn tree')
                     && str_contains($cap, '◆'),
-                timeout: TmuxHarness::TUI_GATE_CALLBACK_TIMEOUT_PARALLEL,
+                timeout: 5.0,
                 message: 'Tree picker did not close with idle footer',
                 history: 500,
             );
@@ -279,7 +279,6 @@ final class TuiTreeCommandE2eTest extends TestCase
             history: 2000,
         );
     }
-
 
     private function agentCommandForFixtureChain(string ...$fixtureFiles): string
     {

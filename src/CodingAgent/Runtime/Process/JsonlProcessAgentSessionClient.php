@@ -577,14 +577,18 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
         $start = microtime(true);
 
         while (microtime(true) - $start < $timeout) {
-            foreach ($this->readEvents() as $event) {
+            foreach ($this->readEventBatch() as $event) {
                 if ('runtime.ready' === $event->type) {
                     $this->runtimeReadyReceived = true;
 
-                    return;
+                    continue;
                 }
 
                 $this->bufferEvent($event, 'read_events');
+            }
+
+            if ($this->runtimeReadyReceived) {
+                return;
             }
 
             $this->assertProcessStillRunning('waiting for runtime.ready');
@@ -753,12 +757,13 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
     }
 
     /**
-     * Decode every complete JSONL line from one non-blocking stdout read.
+     * Materialize every event yielded by one {@see readEvents()} call.
      *
-     * Unlike iterating {@see readEvents()} lazily, this method always consumes the
-     * full decoded batch for that read. Callers must not return from inside a lazy
-     * foreach over {@see readEvents()} — decoded lines are already removed from
-     * {@see $stdoutBuffer} and would be lost if the generator is abandoned early.
+     * {@see readEvents()} performs a single non-blocking stdout read, moves complete
+     * lines out of {@see $stdoutBuffer}, then lazily decodes each line. Callers that
+     * return or break mid-foreach over {@see readEvents()} abandon the generator and
+     * lose any not-yet-yielded lines from that read. Always drain via this helper when
+     * processing a read may stop before the generator exhausts.
      *
      * @return list<RuntimeEvent>
      */

@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Tests\Runtime\Process;
 
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\PromptTemplate\PromptTemplatesRuntimeConfig;
+use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\Process\AppExecutableLocator;
 use Ineersa\CodingAgent\Runtime\Process\JsonlProcessAgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Process\RuntimeProcessConfig;
@@ -14,7 +15,10 @@ use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
 
-/** @covers \Ineersa\CodingAgent\Runtime\Process\JsonlProcessAgentSessionClient::events */
+/**
+ * @covers \Ineersa\CodingAgent\Runtime\Process\JsonlProcessAgentSessionClient::events
+ * @covers \Ineersa\CodingAgent\Runtime\Process\JsonlProcessAgentSessionClient::start
+ */
 final class JsonlProcessAgentSessionClientEventBufferTest extends TestCase
 {
     private string $tmpDir;
@@ -27,6 +31,48 @@ final class JsonlProcessAgentSessionClientEventBufferTest extends TestCase
     protected function tearDown(): void
     {
         TestDirectoryIsolation::removeDirectory($this->tmpDir);
+    }
+
+    public function testStartBuffersLaterEventsFromSameStdoutReadChunk(): void
+    {
+        $runId = 'batch-run-'.bin2hex(random_bytes(4));
+        $client = $this->createStartBatchFakeControllerClient();
+
+        $handle = $client->start(new StartRunRequest(prompt: 'hello', runId: $runId));
+
+        $this->assertSame($runId, $handle->runId);
+        $this->assertSame('running', $handle->status);
+
+        $drained = iterator_to_array($client->events($runId));
+        $types = array_map(static fn ($e) => $e->type, $drained);
+
+        $this->assertSame(
+            [
+                RuntimeEventTypeEnum::TurnStarted->value,
+                RuntimeEventTypeEnum::RunCompleted->value,
+            ],
+            $types,
+            'Events after run.started in the same stdout chunk must be buffered for events()',
+        );
+
+        $secondDrain = iterator_to_array($client->events($runId));
+        $this->assertSame([], $secondDrain, 'Buffered post-start events must be delivered exactly once');
+    }
+
+    public function testRuntimeReadyBuffersLaterEventsFromSameStdoutReadChunk(): void
+    {
+        $runId = 'ready-batch-'.bin2hex(random_bytes(4));
+        $client = $this->createRuntimeReadyBatchFakeControllerClient($runId);
+
+        $handle = $client->start(new StartRunRequest(prompt: 'hello', runId: $runId));
+
+        $this->assertSame($runId, $handle->runId);
+
+        $drained = iterator_to_array($client->events($runId));
+        $types = array_map(static fn ($e) => $e->type, $drained);
+
+        $this->assertContains(RuntimeEventTypeEnum::TurnStarted->value, $types);
+        $this->assertContains(RuntimeEventTypeEnum::RunCompleted->value, $types);
     }
 
     public function testParentPollBuffersChildEventFromControllerStreamForLaterChildDrain(): void
@@ -166,11 +212,72 @@ final class JsonlProcessAgentSessionClientEventBufferTest extends TestCase
         $this->assertLessThanOrEqual(60, \count($drops));
     }
 
-    private function createIdleClient(?TestLogger $logger = null): JsonlProcessAgentSessionClient
+    private function createStartBatchFakeControllerClient(): JsonlProcessAgentSessionClient
     {
-        $fakeScript = $this->tmpDir.'/idle.php';
-        file_put_contents($fakeScript, '<?php fwrite(STDOUT, json_encode(["type"=>"runtime.ready","runId"=>"","seq"=>0,"payload"=>[]])."\n"); fflush(STDOUT); while(fgets(STDIN)!==false){} exit(0);');
+        $fakeScript = $this->tmpDir.'/start-batch-controller.php';
+        file_put_contents($fakeScript, <<<'PHP'
+<?php
+fwrite(STDOUT, json_encode(['type' => 'runtime.ready', 'runId' => '', 'seq' => 0, 'payload' => []]) . "\n");
+fflush(STDOUT);
+$line = fgets(STDIN);
+if (false === $line) {
+    exit(0);
+}
+$cmd = json_decode(trim($line), true);
+$runId = is_array($cmd) ? (string) ($cmd['runId'] ?? 'batch-run') : 'batch-run';
+$events = [
+    ['type' => 'run.started', 'runId' => $runId, 'seq' => 1, 'payload' => []],
+    ['type' => 'turn.started', 'runId' => $runId, 'seq' => 2, 'payload' => []],
+    ['type' => 'run.completed', 'runId' => $runId, 'seq' => 3, 'payload' => []],
+];
+fwrite(STDOUT, implode("\n", array_map(static fn (array $e): string => json_encode($e), $events)) . "\n");
+fflush(STDOUT);
+while (fgets(STDIN) !== false) {
+}
+exit(0);
+PHP);
         chmod($fakeScript, 0o755);
+
+        return $this->createClientWithFakeScript($fakeScript);
+    }
+
+    private function createRuntimeReadyBatchFakeControllerClient(string $runId): JsonlProcessAgentSessionClient
+    {
+        $fakeScript = $this->tmpDir.'/runtime-ready-batch-controller.php';
+        $runIdLiteral = json_encode($runId, \JSON_THROW_ON_ERROR);
+        file_put_contents($fakeScript, <<<PHP
+<?php
+\$runId = {$runIdLiteral};
+\$boot = [
+    ['type' => 'runtime.ready', 'runId' => '', 'seq' => 0, 'payload' => []],
+    ['type' => 'command.ack', 'runId' => \$runId, 'seq' => 1, 'payload' => ['command_id' => 'boot']],
+];
+fwrite(STDOUT, implode("\n", array_map(static fn (array \$e): string => json_encode(\$e), \$boot)) . "\n");
+fflush(STDOUT);
+\$line = fgets(STDIN);
+if (false === \$line) {
+    exit(0);
+}
+\$cmd = json_decode(trim(\$line), true);
+\$runId = is_array(\$cmd) ? (string) (\$cmd['runId'] ?? \$runId) : \$runId;
+\$events = [
+    ['type' => 'run.started', 'runId' => \$runId, 'seq' => 2, 'payload' => []],
+    ['type' => 'turn.started', 'runId' => \$runId, 'seq' => 3, 'payload' => []],
+    ['type' => 'run.completed', 'runId' => \$runId, 'seq' => 4, 'payload' => []],
+];
+fwrite(STDOUT, implode("\n", array_map(static fn (array \$e): string => json_encode(\$e), \$events)) . "\n");
+fflush(STDOUT);
+while (fgets(STDIN) !== false) {
+}
+exit(0);
+PHP);
+        chmod($fakeScript, 0o755);
+
+        return $this->createClientWithFakeScript($fakeScript);
+    }
+
+    private function createClientWithFakeScript(string $fakeScript, ?TestLogger $logger = null): JsonlProcessAgentSessionClient
+    {
         $locator = new class($fakeScript) implements AppExecutableLocator {
             public function __construct(private string $script)
             {
@@ -186,11 +293,20 @@ final class JsonlProcessAgentSessionClientEventBufferTest extends TestCase
                 return $this->script;
             }
         };
-        $client = new JsonlProcessAgentSessionClient(
+
+        return new JsonlProcessAgentSessionClient(
             runtimeConfig: new RuntimeProcessConfig($locator, $this->tmpDir),
             promptTemplatesConfig: new PromptTemplatesRuntimeConfig(),
             logger: $logger ?? new TestLogger(),
         );
+    }
+
+    private function createIdleClient(?TestLogger $logger = null): JsonlProcessAgentSessionClient
+    {
+        $fakeScript = $this->tmpDir.'/idle.php';
+        file_put_contents($fakeScript, '<?php fwrite(STDOUT, json_encode(["type"=>"runtime.ready","runId"=>"","seq"=>0,"payload"=>[]])."\n"); fflush(STDOUT); while(fgets(STDIN)!==false){} exit(0);');
+        chmod($fakeScript, 0o755);
+        $client = $this->createClientWithFakeScript($fakeScript, $logger);
         $client->attach('parent-run');
 
         return $client;
