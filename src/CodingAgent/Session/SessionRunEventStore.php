@@ -36,6 +36,7 @@ final class SessionRunEventStore implements SequencedEventStoreInterface
         private readonly EventPayloadNormalizer $eventPayloadNormalizer,
         private readonly LockFactory $lockFactory,
         private readonly LoggerInterface $logger,
+        private readonly EventLogLastSeqReader $lastSeqReader = new EventLogLastSeqReader(),
     ) {
         $this->sessionsBasePath = $hatfieldSessionStore->resolveSessionsBasePath();
     }
@@ -212,40 +213,7 @@ final class SessionRunEventStore implements SequencedEventStoreInterface
 
     private function readMaxSeqLocked(string $path): int
     {
-        if (!is_readable($path)) {
-            return 0;
-        }
-
-        $handle = fopen($path, 'rb');
-        if (false === $handle) {
-            return 0;
-        }
-
-        $maxSeq = 0;
-        try {
-            while (($line = fgets($handle)) !== false) {
-                $trimmed = trim($line);
-                if ('' === $trimmed) {
-                    continue;
-                }
-
-                try {
-                    /** @var array<string, mixed> $payload */
-                    $payload = json_decode($trimmed, true, 512, \JSON_THROW_ON_ERROR);
-                } catch (\JsonException) {
-                    continue;
-                }
-
-                $seq = $payload['seq'] ?? null;
-                if (\is_int($seq) && $seq > $maxSeq) {
-                    $maxSeq = $seq;
-                }
-            }
-        } finally {
-            fclose($handle);
-        }
-
-        return $maxSeq;
+        return $this->lastSeqReader->readLastSeqLocked($path);
     }
 
     /**

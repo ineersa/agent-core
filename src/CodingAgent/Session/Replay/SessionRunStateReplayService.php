@@ -59,7 +59,7 @@ final readonly class SessionRunStateReplayService implements RunStateRebuilderIn
                     'duplicate_count' => \count($duplicateSeqs),
                 ]);
 
-                throw new RunStateReplayException(\sprintf('Cannot replay run %s: event history contains %d duplicate sequence number(s): %s.', $runId, \count($duplicateSeqs), implode(', ', array_map('strval', \array_slice($duplicateSeqs, 0, 10)))));
+                throw RunStateReplayException::duplicateSequences(\sprintf('Cannot replay run %s: event history contains %d duplicate sequence number(s): %s.', $runId, \count($duplicateSeqs), implode(', ', array_map('strval', \array_slice($duplicateSeqs, 0, 10)))));
             }
 
             $missingSequences = $this->replayEventPreparer->missingSequences($sortedEvents);
@@ -83,7 +83,7 @@ final readonly class SessionRunStateReplayService implements RunStateRebuilderIn
                     'missing_sequences' => $missingSequences,
                 ]);
 
-                throw new RunStateReplayException(\sprintf('Cannot replay run %s: event history has %d missing sequences. Expected contiguous range 1..%d, found gaps at: %s.', $runId, \count($missingSequences), $maxEventSeq, implode(', ', array_map('strval', \array_slice($missingSequences, 0, 10)))));
+                throw RunStateReplayException::missingSequences(\sprintf('Cannot replay run %s: event history has %d missing sequences. Expected contiguous range 1..%d, found gaps at: %s.', $runId, \count($missingSequences), $maxEventSeq, implode(', ', array_map('strval', \array_slice($missingSequences, 0, 10)))));
             }
 
             // Filter to active branch events when tree metadata is available.
@@ -170,7 +170,7 @@ final readonly class SessionRunStateReplayService implements RunStateRebuilderIn
                     'duplicate_count' => \count($duplicateSeqs),
                 ]);
 
-                throw new RunStateReplayException(\sprintf('Cannot replay run %s for leaf %d: event history contains %d duplicate sequence number(s): %s.', $runId, $targetLeafTurnNo, \count($duplicateSeqs), implode(', ', array_map('strval', \array_slice($duplicateSeqs, 0, 10)))));
+                throw RunStateReplayException::duplicateSequences(\sprintf('Cannot replay run %s for leaf %d: event history contains %d duplicate sequence number(s): %s.', $runId, $targetLeafTurnNo, \count($duplicateSeqs), implode(', ', array_map('strval', \array_slice($duplicateSeqs, 0, 10)))));
             }
 
             $missingSequences = $this->replayEventPreparer->missingSequences($sortedEvents);
@@ -184,7 +184,7 @@ final readonly class SessionRunStateReplayService implements RunStateRebuilderIn
                     'missing_sequences' => $missingSequences,
                 ]);
 
-                throw new RunStateReplayException(\sprintf('Cannot replay run %s for leaf %d: event history has %d missing sequences. Expected contiguous range 1..%d, found gaps at: %s.', $runId, $targetLeafTurnNo, \count($missingSequences), $maxEventSeq, implode(', ', array_map('strval', \array_slice($missingSequences, 0, 10)))));
+                throw RunStateReplayException::missingSequences(\sprintf('Cannot replay run %s for leaf %d: event history has %d missing sequences. Expected contiguous range 1..%d, found gaps at: %s.', $runId, $targetLeafTurnNo, \count($missingSequences), $maxEventSeq, implode(', ', array_map('strval', \array_slice($missingSequences, 0, 10)))));
             }
 
             // Filter to the target leaf's branch path.

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Infrastructure\Messenger;
 
 use Ineersa\AgentCore\Application\Handler\RunStateReplayException;
+use Ineersa\AgentCore\Application\Handler\RunStateReplayFailureReason;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\RunStoreInterface;
 use Ineersa\AgentCore\Contract\SequencedEventStoreInterface;
@@ -109,8 +110,7 @@ final readonly class WorkerFailedEventSubscriber implements EventSubscriberInter
                 return;
             }
 
-            if ($exception instanceof RunStateReplayException
-                || str_contains($exception->getMessage(), 'duplicate sequence number')) {
+            if ($this->isReplayCorruptionFailure($exception)) {
                 $this->logger->warning('agent_loop.worker_failed_skipped_replay_corruption', [
                     'run_id' => $runId,
                     'component' => 'messenger.worker',
@@ -191,6 +191,27 @@ final readonly class WorkerFailedEventSubscriber implements EventSubscriberInter
                 'message_type' => $message::class,
                 'exception' => $e,
             ]);
+        }
+    }
+
+    private function isReplayCorruptionFailure(\Throwable $exception): bool
+    {
+        while (true) {
+            if ($exception instanceof RunStateReplayException
+                && RunStateReplayFailureReason::DuplicateSequences === $exception->reason()) {
+                return true;
+            }
+
+            if ($exception instanceof RunStateReplayException) {
+                return false;
+            }
+
+            $previous = $exception->getPrevious();
+            if (null === $previous) {
+                return false;
+            }
+
+            $exception = $previous;
         }
     }
 }

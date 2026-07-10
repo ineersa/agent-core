@@ -58,20 +58,15 @@ final class StreamingCommittedRuntimeEventStore implements SequencedEventStoreIn
         return $persisted;
     }
 
-
     public function allFor(string $runId): array
     {
         return $this->inner->allFor($runId);
     }
 
-
     private function sequencedInner(): SequencedEventStoreInterface
     {
         if (!$this->inner instanceof SequencedEventStoreInterface) {
-            throw new \LogicException(sprintf(
-                'StreamingCommittedRuntimeEventStore requires a SequencedEventStoreInterface inner store, got %s.',
-                $this->inner::class,
-            ));
+            throw new \LogicException(\sprintf('StreamingCommittedRuntimeEventStore requires a SequencedEventStoreInterface inner store, got %s.', $this->inner::class));
         }
 
         return $this->inner;

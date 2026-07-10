@@ -13,4 +13,26 @@ use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
  */
 final class RunStateReplayException extends \RuntimeException
 {
+    public function __construct(
+        string $message,
+        private readonly RunStateReplayFailureReason $reason,
+        ?\Throwable $previous = null,
+    ) {
+        parent::__construct($message, 0, $previous);
+    }
+
+    public static function duplicateSequences(string $message): self
+    {
+        return new self($message, RunStateReplayFailureReason::DuplicateSequences);
+    }
+
+    public static function missingSequences(string $message): self
+    {
+        return new self($message, RunStateReplayFailureReason::MissingSequences);
+    }
+
+    public function reason(): RunStateReplayFailureReason
+    {
+        return $this->reason;
+    }
 }

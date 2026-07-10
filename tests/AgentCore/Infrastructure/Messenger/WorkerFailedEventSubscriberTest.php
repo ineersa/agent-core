@@ -34,7 +34,61 @@ class WorkerFailedEventSubscriberTest extends TestCase
 
         $subscriber = new WorkerFailedEventSubscriber($runStore, $eventStore, new NullLogger());
         $envelope = new Envelope($this->createStartRun());
-        $subscriber->onWorkerMessageFailed($this->createFinalFailedEvent($envelope, new RunStateReplayException('duplicate sequence number(s): 345')));
+        $subscriber->onWorkerMessageFailed($this->createFinalFailedEvent($envelope, RunStateReplayException::duplicateSequences('duplicate sequence number(s): 345')));
+
+        $this->assertTrue(true);
+    }
+
+    #[Test]
+    public function skipsDuplicateSequenceReplayFailures(): void
+    {
+        $runStore = $this->createMock(RunStoreInterface::class);
+        $runStore->expects($this->never())->method('compareAndSwap');
+        $eventStore = $this->createMock(SequencedEventStoreInterface::class);
+        $eventStore->expects($this->never())->method('appendWithNextSeq');
+
+        $subscriber = new WorkerFailedEventSubscriber($runStore, $eventStore, new NullLogger());
+        $envelope = new Envelope($this->createStartRun());
+        $subscriber->onWorkerMessageFailed($this->createFinalFailedEvent(
+            $envelope,
+            RunStateReplayException::duplicateSequences('Cannot replay run x: event history contains 2 duplicate sequence number(s): 345, 366.'),
+        ));
+
+        $this->assertTrue(true);
+    }
+
+    #[Test]
+    public function skipsWrappedDuplicateSequenceReplayFailures(): void
+    {
+        $runStore = $this->createMock(RunStoreInterface::class);
+        $runStore->expects($this->never())->method('compareAndSwap');
+        $eventStore = $this->createMock(SequencedEventStoreInterface::class);
+        $eventStore->expects($this->never())->method('appendWithNextSeq');
+
+        $subscriber = new WorkerFailedEventSubscriber($runStore, $eventStore, new NullLogger());
+        $envelope = new Envelope($this->createStartRun());
+        $wrapped = new \RuntimeException('outer', previous: RunStateReplayException::duplicateSequences('dup'));
+        $subscriber->onWorkerMessageFailed($this->createFinalFailedEvent($envelope, $wrapped));
+
+        $this->assertTrue(true);
+    }
+
+    #[Test]
+    public function doesNotSkipNonDuplicateRunStateReplayFailures(): void
+    {
+        $existingState = new RunState(runId: self::RUN_ID, status: RunStatus::Running, version: 3, turnNo: 2, lastSeq: 5);
+        $runStore = $this->createMock(RunStoreInterface::class);
+        $runStore->method('get')->willReturn($existingState);
+        $runStore->expects($this->once())->method('compareAndSwap')->willReturn(true);
+
+        $eventStore = $this->createMock(SequencedEventStoreInterface::class);
+        $eventStore->expects($this->once())->method('appendWithNextSeq')->willReturn(new RunEvent(self::RUN_ID, 6, 2, 'agent_end', ['reason' => 'failed']));
+
+        $subscriber = new WorkerFailedEventSubscriber($runStore, $eventStore, new NullLogger());
+        $subscriber->onWorkerMessageFailed($this->createFinalFailedEvent(
+            new Envelope($this->createStartRun()),
+            RunStateReplayException::missingSequences('Cannot replay run x: event history has 3 missing sequences.'),
+        ));
 
         $this->assertTrue(true);
     }

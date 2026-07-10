@@ -47,12 +47,6 @@ final class RuntimeQuestionEventHandler
      * Confirm kind answers are normalized to boolean true/false to
      * match the downstream boolean schema expectation.
      *
-     * A guard against duplicate request IDs prevents enqueueing the
-     * same question twice if the event stream replays (e.g. after a
-     * cursor reset). RuntimeEventPoller seq-based deduplication should
-     * prevent replays under normal operation, but this is a safety net.
-     */
-    /**
      * Child-agent HITL entry (direct subagent or nested scout/fork child) keyed by event runId.
      */
     public function handleChildAgentHumanInputRequested(
@@ -65,6 +59,12 @@ final class RuntimeQuestionEventHandler
         $this->handleHumanInputRequested($event, $client, $questionCoordinator, $sessionState, $screen);
     }
 
+    /**
+     * A guard against duplicate request IDs prevents enqueueing the
+     * same question twice if the event stream replays (e.g. after a
+     * cursor reset). RuntimeEventPoller seq-based deduplication should
+     * prevent replays under normal operation, but this is a safety net.
+     */
     public function handleHumanInputRequested(
         RuntimeEvent $event,
         AgentSessionClient $client,

@@ -273,6 +273,21 @@ final class SessionRunEventStoreTest extends TestCase
         $this->assertSame([1, 2], array_map(static fn (RunEvent $e): int => $e->seq, $events));
     }
 
+    public function testAppendWithNextSeqUsesTailAfterManyLines(): void
+    {
+        $runId = 'run-'.bin2hex(random_bytes(4));
+        $eventsPath = $this->projectDir.'/.hatfield/sessions/'.$runId.'/events.jsonl';
+        mkdir(\dirname($eventsPath), 0777, true);
+        $lines = [];
+        for ($i = 1; $i <= 200; ++$i) {
+            $lines[] = json_encode(['schema_version' => '1.0', 'run_id' => $runId, 'seq' => $i, 'turn_no' => 1, 'type' => 'tick', 'payload' => []], \JSON_THROW_ON_ERROR);
+        }
+        file_put_contents($eventsPath, implode("\n", $lines)."\n");
+
+        $next = $this->store->appendWithNextSeq(new RunEvent(runId: $runId, seq: 0, turnNo: 1, type: 'tool_execution_update', payload: ['tool_name' => 'fork']));
+        $this->assertSame(201, $next->seq);
+    }
+
     private function rmDir(string $dir): void
     {
         if (!is_dir($dir)) {

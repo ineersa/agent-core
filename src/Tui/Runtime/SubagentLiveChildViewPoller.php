@@ -117,7 +117,6 @@ final class SubagentLiveChildViewPoller
         }
         $live->childLastPoll = $now;
 
-
         $events = $this->runtimeEvents($client, $live->selected->agentRunId);
         if ([] === $events) {
             return null;
