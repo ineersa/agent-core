@@ -25,29 +25,25 @@ if ('' === $base) {
 }
 
 $gatePath = getenv('HATFIELD_TOOL_BATCH_MUTATE_GATE') ?: '';
+$gateHandle = null;
 if ('' !== $gatePath) {
-    $gate = fopen($gatePath, 'c+b');
-    if (false === $gate) {
+    $readyMarkerPath = $gatePath.'.'.$callId.'.ready';
+    if (false === file_put_contents($readyMarkerPath, 'ready', \LOCK_EX)) {
+        fwrite(\STDERR, "Failed to write ready marker\n");
+        exit(2);
+    }
+
+    $gateHandle = fopen($gatePath, 'c+b');
+    if (false === $gateHandle) {
         fwrite(\STDERR, "Failed to open mutate gate\n");
         exit(2);
     }
 
-    file_put_contents($gatePath, "ready\n", \FILE_APPEND | \LOCK_EX);
-    if (!flock($gate, \LOCK_SH)) {
-        fclose($gate);
+    if (!flock($gateHandle, \LOCK_SH)) {
+        fclose($gateHandle);
         fwrite(\STDERR, "Failed to acquire shared gate lock\n");
         exit(2);
     }
-
-    if (!flock($gate, \LOCK_EX)) {
-        flock($gate, \LOCK_UN);
-        fclose($gate);
-        fwrite(\STDERR, "Failed to wait for gate release\n");
-        exit(2);
-    }
-
-    flock($gate, \LOCK_UN);
-    fclose($gate);
 }
 
 $paths = new class($base) implements ToolBatchRunStoragePathsInterface {
@@ -63,19 +59,26 @@ $paths = new class($base) implements ToolBatchRunStoragePathsInterface {
 
 $store = new SessionToolBatchStore($paths, new LockFactory(new FlockStore()), new NullLogger());
 
-$store->mutate('run-par', 1, 'step-1', static function (?array $current) use ($callId): ToolBatchStoreMutation {
-    if (!is_array($current)) {
-        throw new RuntimeException('missing batch');
-    }
-    $next = $current;
-    $next['result_data'][$callId] = ['ok' => true];
-    $next['pending_queue'] = array_values(array_filter(
-        $next['pending_queue'],
-        static fn (string $id): bool => $id !== $callId,
-    ));
-    if (2 === count($next['result_data'])) {
-        $next['finalized'] = true;
-    }
+try {
+    $store->mutate('run-par', 1, 'step-1', static function (?array $current) use ($callId): ToolBatchStoreMutation {
+        if (!is_array($current)) {
+            throw new RuntimeException('missing batch');
+        }
+        $next = $current;
+        $next['result_data'][$callId] = ['ok' => true];
+        $next['pending_queue'] = array_values(array_filter(
+            $next['pending_queue'],
+            static fn (string $id): bool => $id !== $callId,
+        ));
+        if (2 === count($next['result_data'])) {
+            $next['finalized'] = true;
+        }
 
-    return new ToolBatchStoreMutation(null, $next);
-});
+        return new ToolBatchStoreMutation(null, $next);
+    });
+} finally {
+    if (is_resource($gateHandle)) {
+        flock($gateHandle, \LOCK_UN);
+        fclose($gateHandle);
+    }
+}

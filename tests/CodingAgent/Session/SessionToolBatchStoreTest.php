@@ -168,6 +168,10 @@ final class SessionToolBatchStoreTest extends TestCase
         $parallelProjectDir = TestDirectoryIsolation::createOsTempDir('session-tool-batch-parallel');
         TestDirectoryIsolation::createHatfieldTree($parallelProjectDir, withSessions: true);
 
+        $p1 = null;
+        $p2 = null;
+        $gateHandle = null;
+
         try {
             $parallelStore = $this->createStoreForProjectDir($parallelProjectDir);
             $parallelStore->save('run-par', 1, 'step-1', [
@@ -185,7 +189,11 @@ final class SessionToolBatchStoreTest extends TestCase
             $this->assertFileExists($script);
 
             $gatePath = $parallelProjectDir.'/.mutate-gate';
-            touch($gatePath);
+            $gateHandle = fopen($gatePath, 'c+b');
+            $this->assertNotFalse($gateHandle);
+            if (!flock($gateHandle, \LOCK_EX)) {
+                $this->fail('Failed to acquire exclusive mutate gate before starting workers.');
+            }
 
             $env = [
                 'HATFIELD_SESSIONS_BASE' => $parallelProjectDir.'/.hatfield/sessions',
@@ -200,26 +208,12 @@ final class SessionToolBatchStoreTest extends TestCase
             $p1->start();
             $p2->start();
 
-            $this->waitUntilWorkersReady($gatePath, 2, 10.0);
+            $this->waitUntilWorkersReady($gatePath, ['c1', 'c2'], $p1, $p2, 10.0);
 
-            $gate = fopen($gatePath, 'c+b');
-            $this->assertNotFalse($gate);
-            try {
-                if (!flock($gate, \LOCK_EX)) {
-                    $this->fail('Failed to release mutate gate for parallel workers.');
-                }
-            } finally {
-                flock($gate, \LOCK_UN);
-                fclose($gate);
-            }
+            flock($gateHandle, \LOCK_UN);
 
-            try {
-                $p1->wait();
-                $p2->wait();
-            } finally {
-                $this->stopProcessIfRunning($p1);
-                $this->stopProcessIfRunning($p2);
-            }
+            $p1->wait();
+            $p2->wait();
 
             $this->assertTrue($p1->isSuccessful(), $p1->getErrorOutput().$p1->getOutput());
             $this->assertTrue($p2->isSuccessful(), $p2->getErrorOutput().$p2->getOutput());
@@ -230,30 +224,48 @@ final class SessionToolBatchStoreTest extends TestCase
             $this->assertArrayHasKey('c1', $final['result_data']);
             $this->assertArrayHasKey('c2', $final['result_data']);
         } finally {
+            if (\is_resource($gateHandle)) {
+                flock($gateHandle, \LOCK_UN);
+                fclose($gateHandle);
+            }
+            if ($p1 instanceof Process) {
+                $this->stopProcessIfRunning($p1);
+            }
+            if ($p2 instanceof Process) {
+                $this->stopProcessIfRunning($p2);
+            }
             TestDirectoryIsolation::removeDirectory($parallelProjectDir);
         }
     }
 
-    private function waitUntilWorkersReady(string $gatePath, int $expectedReady, float $timeoutSeconds): void
+    /**
+     * @param list<string> $callIds
+     */
+    private function waitUntilWorkersReady(string $gatePath, array $callIds, Process $p1, Process $p2, float $timeoutSeconds): void
     {
         $deadline = microtime(true) + $timeoutSeconds;
         while (microtime(true) < $deadline) {
-            $ready = 0;
-            $lines = @file($gatePath, \FILE_IGNORE_NEW_LINES);
-            if (\is_array($lines)) {
-                foreach ($lines as $line) {
-                    if ('ready' === $line) {
-                        ++$ready;
-                    }
+            if (!$p1->isRunning() && !$p1->isSuccessful()) {
+                $this->fail('Worker c1 failed before reaching mutate gate: '.$p1->getErrorOutput().$p1->getOutput());
+            }
+            if (!$p2->isRunning() && !$p2->isSuccessful()) {
+                $this->fail('Worker c2 failed before reaching mutate gate: '.$p2->getErrorOutput().$p2->getOutput());
+            }
+
+            $readyCount = 0;
+            foreach ($callIds as $callId) {
+                $markerPath = $gatePath.'.'.$callId.'.ready';
+                if (is_file($markerPath) && 'ready' === file_get_contents($markerPath)) {
+                    ++$readyCount;
                 }
             }
 
-            if ($ready >= $expectedReady) {
+            if ($readyCount >= \count($callIds)) {
                 return;
             }
         }
 
-        $this->fail(\sprintf('Timed out waiting for %d parallel workers to reach mutate gate.', $expectedReady));
+        $this->fail(\sprintf('Timed out waiting for %d parallel workers to reach mutate gate.', \count($callIds)));
     }
 
     private function stopProcessIfRunning(Process $process): void
