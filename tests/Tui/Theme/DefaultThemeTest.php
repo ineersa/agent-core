@@ -98,6 +98,16 @@ final class DefaultThemeTest extends TestCase
         $this->assertSame($palette, $theme->getPalette());
     }
 
+    public function testMissingPaletteKeyFallsBackToUnstyled(): void
+    {
+        $palette = new ThemePalette('sparse', [ThemeColorEnum::Accent->value => 'cyan']);
+        $theme = new DefaultTheme($palette);
+
+        $plain = $theme->color(ThemeColorEnum::ThinkingMax, 'max-level');
+
+        $this->assertSame('max-level', $plain);
+    }
+
     private function createTheme(): DefaultTheme
     {
         return new DefaultTheme(new ThemePalette('test', [

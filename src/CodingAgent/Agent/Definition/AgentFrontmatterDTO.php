@@ -59,8 +59,8 @@ final class AgentFrontmatterDTO
         public readonly ?string $model = null,
 
         #[Assert\Choice(
-            choices: ['off', 'minimal', 'low', 'medium', 'high', 'xhigh'],
-            message: '"thinking" must be one of off|minimal|low|medium|high|xhigh.',
+            choices: ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'],
+            message: '"thinking" must be one of off|minimal|low|medium|high|xhigh|max.',
         )]
         public readonly ?string $thinking = null,
 

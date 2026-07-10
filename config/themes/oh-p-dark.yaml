@@ -69,6 +69,7 @@ colors:
     thinking_medium: "cyan"
     thinking_high: "purple"
     thinking_xhigh: "red"
+    thinking_max: "#9214fa"
 
     bash_mode: "orange"
     header: "cyan"

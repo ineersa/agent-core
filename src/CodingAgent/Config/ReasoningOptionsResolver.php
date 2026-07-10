@@ -12,13 +12,13 @@ use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
  * Converts a global user-facing reasoning level + Hatfield model metadata
  * into provider invocation options such as reasoning_effort or z.ai thinking.type.
  *
- * Reasoning level: off | minimal | low | medium | high | xhigh.
+ * Reasoning level: off | minimal | low | medium | high | xhigh | max.
  * Returns an empty array when reasoning is not applicable.
  */
 final readonly class ReasoningOptionsResolver
 {
     /** Reasoning levels that are not "off". */
-    private const array ACTIVE_LEVELS = ['minimal', 'low', 'medium', 'high', 'xhigh'];
+    private const array ACTIVE_LEVELS = ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
 
     public function __construct(
         private HatfieldModelCatalog $catalog,
