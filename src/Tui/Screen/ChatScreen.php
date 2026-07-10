@@ -440,7 +440,7 @@ final class ChatScreen
     /**
      * Apply the editor border colour matching the current reasoning level.
      *
-     * Maps reasoning levels (off, minimal, low, medium, high, xhigh) to the
+     * Maps reasoning levels (off, minimal, low, medium, high, xhigh, max) to the
      * corresponding theme thinking-colour tokens and updates the Symfony TUI
      * stylesheet so the EditorWidget frame is rendered in that colour.
      *
