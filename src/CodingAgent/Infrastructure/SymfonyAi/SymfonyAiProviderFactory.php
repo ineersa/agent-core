@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Infrastructure\SymfonyAi;
 
+use Ineersa\CodingAgent\Auth\CodexAccessTokenRefresher;
 use Ineersa\CodingAgent\Auth\CodexAuthStorage;
 use Ineersa\CodingAgent\Auth\CodexOAuthConfig;
+use Ineersa\CodingAgent\Auth\CodexOAuthService;
 use Ineersa\CodingAgent\Config\Ai\AiProviderConfig;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Infrastructure\SymfonyAi\Http\LlmHttpRetryPolicy;
@@ -46,6 +48,7 @@ class SymfonyAiProviderFactory
         private readonly ?CodexAuthStorage $codexAuth = null,
         private readonly ?LoggerInterface $logger = null,
         private readonly ?HttpClientInterface $httpClient = null,
+        private readonly ?CodexOAuthService $codexOAuth = null,
     ) {
     }
 
@@ -145,6 +148,11 @@ class SymfonyAiProviderFactory
         // so a YAML provider with an empty base_url does not silently break the bridge.
         $baseUrl = '' !== $provider->baseUrl ? $provider->baseUrl : 'https://chatgpt.com/backend-api';
 
+        $accessTokenRefresher = null;
+        if (null !== $this->codexOAuth) {
+            $accessTokenRefresher = new CodexAccessTokenRefresher($this->codexOAuth, $authKey);
+        }
+
         return OpenAICodexFactory::createProvider(
             baseUrl: $baseUrl,
             accessToken: $record->access,
@@ -156,6 +164,7 @@ class SymfonyAiProviderFactory
             responsesPath: $provider->completionsPath ?? '/codex/responses',
             name: $provider->id,
             logger: $this->logger,
+            accessTokenRefresher: $accessTokenRefresher,
         );
     }
 

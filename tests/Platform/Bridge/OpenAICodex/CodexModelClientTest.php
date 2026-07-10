@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Symfony\AI\Platform\Bridge\OpenAICodex\Tests;
 
+use Ineersa\AgentCore\Tests\Support\TestLogger;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 use Symfony\AI\Platform\Bridge\OpenAICodex\CodexModel;
@@ -451,5 +452,233 @@ final class CodexModelClientTest extends TestCase
             ['input' => [['role' => 'user', 'content' => 'Hello']], 'prompt_cache_key' => 'explicit-key'],
             ['run_id' => 'session-abc-123'],
         );
+    }
+
+    /**
+     * Test thesis: a long-lived worker recovers from an expired/revoked token via
+     * one force-refresh + retry, without manual auth:codex --refresh.
+     */
+    public function testRefreshesAndRetriesOnceOn401(): void
+    {
+        $refreshCalls = 0;
+        $requestCount = 0;
+        $refresher = new class($refreshCalls) implements \Symfony\AI\Platform\Bridge\OpenAICodex\AccessTokenRefresherInterface {
+            public function __construct(private int &$refreshCalls)
+            {
+            }
+
+            public function refreshAccessToken(): ?string
+            {
+                ++$this->refreshCalls;
+
+                return 'new-token';
+            }
+        };
+
+        $httpClient = new MockHttpClient([
+            static function () use (&$requestCount): HttpResponse {
+                ++$requestCount;
+
+                return new MockResponse('', ['http_code' => 401]);
+            },
+            static function (string $method, string $url, array $options) use (&$requestCount): HttpResponse {
+                ++$requestCount;
+                self::assertSame('Authorization: Bearer new-token', $options['normalized_headers']['authorization'][0]);
+
+                return new MockResponse('', ['http_code' => 200]);
+            },
+        ]);
+
+        $modelClient = new CodexModelClient(
+            $httpClient,
+            'https://chatgpt.com/backend-api',
+            'stale-token',
+            'acct-123',
+            '/codex/responses',
+            'hatfield',
+            null,
+            $refresher,
+        );
+
+        $result = $modelClient->request(
+            new CodexModel('gpt-5.6-luna'),
+            ['input' => [['role' => 'user', 'content' => 'Hello']]],
+        );
+
+        $this->assertSame(200, $result->getObject()->getStatusCode());
+        $this->assertSame(2, $requestCount);
+        $this->assertSame(1, $refreshCalls);
+    }
+
+    public function test401WhenRefreshReturnsNullDoesNotRetry(): void
+    {
+        $requestCount = 0;
+        $refresher = new class implements \Symfony\AI\Platform\Bridge\OpenAICodex\AccessTokenRefresherInterface {
+            public function refreshAccessToken(): ?string
+            {
+                return null;
+            }
+        };
+
+        $httpClient = new MockHttpClient([
+            static function () use (&$requestCount): HttpResponse {
+                ++$requestCount;
+
+                return new MockResponse('', ['http_code' => 401]);
+            },
+        ]);
+
+        $modelClient = new CodexModelClient(
+            $httpClient,
+            'https://chatgpt.com/backend-api',
+            'stale-token',
+            'acct-123',
+            '/codex/responses',
+            'hatfield',
+            null,
+            $refresher,
+        );
+
+        $result = $modelClient->request(
+            new CodexModel('gpt-5.6-luna'),
+            ['input' => [['role' => 'user', 'content' => 'Hello']]],
+        );
+
+        $this->assertSame(401, $result->getObject()->getStatusCode());
+        $this->assertSame(1, $requestCount);
+    }
+
+    public function testPersistent401AfterRetryDoesNotLoop(): void
+    {
+        $refreshCalls = 0;
+        $requestCount = 0;
+        $refresher = new class($refreshCalls) implements \Symfony\AI\Platform\Bridge\OpenAICodex\AccessTokenRefresherInterface {
+            public function __construct(private int &$refreshCalls)
+            {
+            }
+
+            public function refreshAccessToken(): ?string
+            {
+                ++$this->refreshCalls;
+
+                return 'new-token';
+            }
+        };
+
+        $httpClient = new MockHttpClient([
+            static function () use (&$requestCount): HttpResponse {
+                ++$requestCount;
+
+                return new MockResponse('', ['http_code' => 401]);
+            },
+            static function () use (&$requestCount): HttpResponse {
+                ++$requestCount;
+
+                return new MockResponse('', ['http_code' => 401]);
+            },
+        ]);
+
+        $modelClient = new CodexModelClient(
+            $httpClient,
+            'https://chatgpt.com/backend-api',
+            'stale-token',
+            'acct-123',
+            '/codex/responses',
+            'hatfield',
+            null,
+            $refresher,
+        );
+
+        $result = $modelClient->request(
+            new CodexModel('gpt-5.6-luna'),
+            ['input' => [['role' => 'user', 'content' => 'Hello']]],
+        );
+
+        $this->assertSame(401, $result->getObject()->getStatusCode());
+        $this->assertSame(2, $requestCount);
+        $this->assertSame(1, $refreshCalls);
+    }
+
+    /**
+     * Test thesis: a failed refresh (revoked token) is logged and degrades gracefully
+     * to the original 401 — no retry, no silent swallow.
+     */
+    public function test401WhenRefresherThrowsDoesNotRetryAndLogsRefreshFailed(): void
+    {
+        $requestCount = 0;
+        $refresher = new class implements \Symfony\AI\Platform\Bridge\OpenAICodex\AccessTokenRefresherInterface {
+            public function refreshAccessToken(): ?string
+            {
+                throw new \RuntimeException('refresh token revoked');
+            }
+        };
+
+        $httpClient = new MockHttpClient([
+            static function () use (&$requestCount): HttpResponse {
+                ++$requestCount;
+
+                return new MockResponse('', ['http_code' => 401]);
+            },
+        ]);
+
+        $logger = new TestLogger();
+        $modelClient = new CodexModelClient(
+            $httpClient,
+            'https://chatgpt.com/backend-api',
+            'stale-token',
+            'acct-123',
+            '/codex/responses',
+            'hatfield',
+            $logger,
+            $refresher,
+        );
+
+        $result = $modelClient->request(
+            new CodexModel('gpt-5.6-luna'),
+            ['input' => [['role' => 'user', 'content' => 'Hello']]],
+        );
+
+        $this->assertSame(401, $result->getObject()->getStatusCode());
+        $this->assertSame(1, $requestCount);
+
+        $refreshFailed = null;
+        foreach ($logger->records as $record) {
+            if ('codex.token.refresh_failed' === $record['message']) {
+                $refreshFailed = $record;
+                break;
+            }
+        }
+        $this->assertNotNull($refreshFailed, 'Expected codex.token.refresh_failed warning log');
+        $this->assertSame('warning', $refreshFailed['level']);
+        $this->assertSame('codex.token.refresh_failed', $refreshFailed['context']['event_type']);
+        $this->assertSame('codex_model_client', $refreshFailed['context']['component']);
+        $this->assertSame(\RuntimeException::class, $refreshFailed['context']['exception_class']);
+    }
+
+    public function test401WithoutRefresherPassesThrough(): void
+    {
+        $requestCount = 0;
+        $httpClient = new MockHttpClient([
+            static function () use (&$requestCount): HttpResponse {
+                ++$requestCount;
+
+                return new MockResponse('', ['http_code' => 401]);
+            },
+        ]);
+
+        $modelClient = new CodexModelClient(
+            $httpClient,
+            'https://chatgpt.com/backend-api',
+            'test-token',
+            'acct-123',
+        );
+
+        $result = $modelClient->request(
+            new CodexModel('gpt-5.6-luna'),
+            ['input' => [['role' => 'user', 'content' => 'Hello']]],
+        );
+
+        $this->assertSame(401, $result->getObject()->getStatusCode());
+        $this->assertSame(1, $requestCount);
     }
 }
