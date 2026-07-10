@@ -225,7 +225,7 @@ return ['output' => $output];
 
 Tool execution across multiple tool calls from one LLM step is coordinated
 by `ToolBatchCollector`, which persists batch state to a shared SQLite
-database (`tool_batch_state` table in the messenger database).
+session-scoped JSON snapshot files under `.hatfield/sessions/<runId>/runtime/tool-batches/` (child runs under parent artifact dirs).
 
 ### How it works
 
@@ -260,10 +260,10 @@ database (`tool_batch_state` table in the messenger database).
 ToolBatchStoreInterface          ← AgentCore contract (no infrastructure deps)
   ├── InMemoryToolBatchStore     ← Default/fallback, used in tests
   └── DbalToolBatchStore         ← Doctrine DBAL/SQLite production impl
-        └── tool_batch_state table in messenger DB
+        └── session filesystem snapshots (no SQLite tool_batch_state)
 ```
 
-- `DbalToolBatchStore` creates its table lazily (`CREATE TABLE IF NOT EXISTS`)
+- `SessionToolBatchStore` creates its table lazily (`CREATE TABLE IF NOT EXISTS`)
 - Batch state is stored as a single JSON blob per run/turn/step (primary key:
   `run_id + turn_no + step_id`)
 - On cache miss (different consumer process), batch is loaded from store and

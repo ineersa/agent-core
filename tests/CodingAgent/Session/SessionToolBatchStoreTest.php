@@ -6,21 +6,38 @@ namespace Ineersa\CodingAgent\Tests\Session;
 
 use Doctrine\ORM\EntityManagerInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreMutation;
+use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactEntryDTO;
+use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
+use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactPathResolver;
+use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactPathsDTO;
+use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
+use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
+use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunDirectory;
+use Ineersa\CodingAgent\Agent\Artifact\ChildAwareToolBatchRunStoragePaths;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\SessionToolBatchStore;
+use Ineersa\CodingAgent\Tests\Session\Support\ParentSessionToolBatchRunStoragePaths;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\FlockStore;
+use Symfony\Component\Serializer\Encoder\JsonEncoder;
+use Symfony\Component\Serializer\NameConverter\CamelCaseToSnakeCaseNameConverter;
+use Symfony\Component\Serializer\Normalizer\BackedEnumNormalizer;
+use Symfony\Component\Serializer\Normalizer\DateTimeNormalizer;
+use Symfony\Component\Serializer\Normalizer\ObjectNormalizer;
+use Symfony\Component\Serializer\Serializer;
+use Symfony\Component\Validator\ValidatorBuilder;
 
 final class SessionToolBatchStoreTest extends TestCase
 {
     private string $projectDir = '';
     private SessionToolBatchStore $store;
+    private HatfieldSessionStore $hatfieldSessionStore;
 
     protected function setUp(): void
     {
@@ -35,13 +52,9 @@ final class SessionToolBatchStoreTest extends TestCase
             logging: new LoggingConfig(),
             cwd: $this->projectDir,
         );
-        $hatfieldSessionStore = new HatfieldSessionStore($appConfig, $entityManager);
+        $this->hatfieldSessionStore = new HatfieldSessionStore($appConfig, $entityManager);
 
-        $this->store = new SessionToolBatchStore(
-            $hatfieldSessionStore,
-            new LockFactory(new FlockStore()),
-            new NullLogger(),
-        );
+        $this->store = $this->createStore($this->hatfieldSessionStore);
     }
 
     protected function tearDown(): void
@@ -52,8 +65,8 @@ final class SessionToolBatchStoreTest extends TestCase
 
     public function testSaveLoadMutateDeleteIsolatesCompositeKeys(): void
     {
-        $batchA = ['expected_order' => ['c1' => 0], 'call_data' => [], 'pending_queue' => ['c1'], 'in_flight' => [], 'result_data' => [], 'finalized' => false, 'max_parallelism' => 2];
-        $batchB = ['expected_order' => ['c2' => 0], 'call_data' => [], 'pending_queue' => ['c2'], 'in_flight' => [], 'result_data' => [], 'finalized' => false, 'max_parallelism' => 4];
+        $batchA = $this->emptyBatch(['c1']);
+        $batchB = $this->emptyBatch(['c2']);
 
         $this->store->save('run-1', 1, 'step-a', $batchA);
         $this->store->save('run-1', 1, 'step-b', $batchB);
@@ -78,7 +91,7 @@ final class SessionToolBatchStoreTest extends TestCase
 
     public function testDeleteAllForRunRemovesOnlyThatRun(): void
     {
-        $state = ['expected_order' => [], 'call_data' => [], 'pending_queue' => [], 'in_flight' => [], 'result_data' => [], 'finalized' => false, 'max_parallelism' => 1];
+        $state = $this->emptyBatch([]);
         $this->store->save('run-1', 1, 's1', $state);
         $this->store->save('run-2', 1, 's1', $state);
 
@@ -86,5 +99,88 @@ final class SessionToolBatchStoreTest extends TestCase
 
         $this->assertNull($this->store->load('run-1', 1, 's1'));
         $this->assertNotNull($this->store->load('run-2', 1, 's1'));
+    }
+
+    public function testChildRunSnapshotsLiveUnderParentArtifactDirNotPseudoSession(): void
+    {
+        $parentRunId = '6';
+        $childRunId = 'child-run-uuid';
+        $artifactId = 'agent_test123';
+
+        $parentDir = $this->hatfieldSessionStore->resolveSessionsBasePath().'/'.$parentRunId;
+        mkdir($parentDir.'/artifacts/agents/'.$artifactId, 0777, true);
+
+        $pathResolver = new AgentArtifactPathResolver($this->hatfieldSessionStore);
+        $serializer = new Serializer(
+            [new DateTimeNormalizer(), new BackedEnumNormalizer(), new ObjectNormalizer(nameConverter: new CamelCaseToSnakeCaseNameConverter())],
+            [new JsonEncoder()],
+        );
+        $validator = (new ValidatorBuilder())->enableAttributeMapping()->getValidator();
+        $registry = new AgentArtifactRegistry($pathResolver, $serializer, $validator, new LockFactory(new FlockStore()));
+
+        $entry = new AgentArtifactEntryDTO(
+            artifactId: $artifactId,
+            parentRunId: $parentRunId,
+            agentRunId: $childRunId,
+            agentName: 'scout',
+            kind: AgentArtifactKindEnum::Subagent,
+            status: AgentArtifactStatusEnum::Running,
+            paths: AgentArtifactPathsDTO::forArtifactId($artifactId),
+            createdAt: new \DateTimeImmutable(),
+        );
+
+        $directory = new AgentChildRunDirectory($this->hatfieldSessionStore, $registry, new NullLogger());
+        $directory->register($entry);
+
+        $childStore = new SessionToolBatchStore(new ChildAwareToolBatchRunStoragePaths($this->hatfieldSessionStore, $directory, $pathResolver), new LockFactory(new FlockStore()), new NullLogger());
+        $childStore->save($childRunId, 2, 'step-child', $this->emptyBatch(['c1']));
+
+        $expectedDir = $parentDir.'/artifacts/agents/'.$artifactId.'/runtime/tool-batches';
+        $this->assertDirectoryExists($expectedDir);
+        $this->assertDirectoryDoesNotExist($this->hatfieldSessionStore->resolveSessionsBasePath().'/'.$childRunId);
+    }
+
+    private function createStore(HatfieldSessionStore $hatfield, ?AgentChildRunDirectory $directory = null): SessionToolBatchStore
+    {
+        $pathResolver = new AgentArtifactPathResolver($hatfield);
+        $serializer = new Serializer(
+            [new DateTimeNormalizer(), new BackedEnumNormalizer(), new ObjectNormalizer(nameConverter: new CamelCaseToSnakeCaseNameConverter())],
+            [new JsonEncoder()],
+        );
+        $validator = (new ValidatorBuilder())->enableAttributeMapping()->getValidator();
+        $directory ??= new AgentChildRunDirectory(
+            $hatfield,
+            new AgentArtifactRegistry($pathResolver, $serializer, $validator, new LockFactory(new FlockStore())),
+            new NullLogger(),
+        );
+
+        return new SessionToolBatchStore(
+            new ParentSessionToolBatchRunStoragePaths($hatfield),
+            new LockFactory(new FlockStore()),
+            new NullLogger(),
+        );
+    }
+
+    /**
+     * @param list<string> $pending
+     *
+     * @return array<string, mixed>
+     */
+    private function emptyBatch(array $pending): array
+    {
+        $expected = [];
+        foreach ($pending as $i => $id) {
+            $expected[$id] = $i;
+        }
+
+        return [
+            'expected_order' => $expected,
+            'call_data' => [],
+            'pending_queue' => $pending,
+            'in_flight' => [],
+            'result_data' => [],
+            'finalized' => false,
+            'max_parallelism' => 2,
+        ];
     }
 }

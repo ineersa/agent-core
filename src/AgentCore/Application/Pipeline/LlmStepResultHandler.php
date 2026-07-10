@@ -25,7 +25,6 @@ use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmProviderErrorClassifier;
-use Ineersa\CodingAgent\Session\ToolBatchSnapshotCleanup;
 use Symfony\AI\Agent\Toolbox\ToolboxInterface;
 use Symfony\AI\Platform\Message\AssistantMessage;
 use Symfony\AI\Platform\Tool\Tool;
@@ -63,7 +62,6 @@ final class LlmStepResultHandler implements RunMessageHandler
         private int $agentRetryBaseDelayMs = 1000,
         private int $agentRetryMaxDelayMs = 60000,
         private int $maxParallelism = 1,
-        private ?ToolBatchSnapshotCleanup $toolBatchSnapshotCleanup = null,
     ) {
     }
 
@@ -176,7 +174,7 @@ final class LlmStepResultHandler implements RunMessageHandler
             return new HandlerResult(
                 nextState: $nextState,
                 events: $events,
-                postCommit: $this->appendTerminalToolBatchCleanup($runId, $this->turnCompletedCallbacks($runId, $state->turnNo)),
+                postCommit: $this->turnCompletedCallbacks($runId, $state->turnNo),
             );
         }
 
@@ -279,7 +277,7 @@ final class LlmStepResultHandler implements RunMessageHandler
             return new HandlerResult(
                 nextState: $nextState,
                 events: $events,
-                postCommit: $this->appendTerminalToolBatchCleanup($runId, $postCommit),
+                postCommit: $postCommit,
             );
         }
 
@@ -420,7 +418,7 @@ final class LlmStepResultHandler implements RunMessageHandler
                 nextState: $nextState,
                 events: $events,
                 effects: $mailboxEffects,
-                postCommit: $this->appendTerminalToolBatchCleanup($runId, $postCommit),
+                postCommit: $postCommit,
             );
         }
 
@@ -472,20 +470,6 @@ final class LlmStepResultHandler implements RunMessageHandler
             events: $events,
             postCommit: $postCommit,
         );
-    }
-
-    /**
-     * @param list<callable(): void> $postCommit
-     *
-     * @return list<callable(): void>
-     */
-    private function appendTerminalToolBatchCleanup(string $runId, array $postCommit): array
-    {
-        if (null !== $this->toolBatchSnapshotCleanup) {
-            $postCommit[] = $this->toolBatchSnapshotCleanup->deleteAllForRun($runId);
-        }
-
-        return $postCommit;
     }
 
     /**

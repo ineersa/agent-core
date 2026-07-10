@@ -73,7 +73,7 @@ Focus on topology, message flow, event delivery, and process supervision.
 │  ┌──────────────────────────────┐ ┌────────────────────────────┐ │
 │  │ App/runtime SQLite           │ │ Messenger transport SQLite   │ │
 │  │ (.hatfield/state.sqlite)          │ │ (.hatfield/messenger-       │ │
-│  │ ORM: tool_batch_state, …     │ │  transport.sqlite)         │ │
+│  │ ORM: session metadata, background_process, …     │ │  transport.sqlite)         │ │
 │  │                              │ │ Per-session queue_name:      │ │
 │  │                              │ │ run_control/llm/tool/agent   │ │
 │  │                              │ │ _{sessionId}                 │ │
@@ -341,7 +341,7 @@ Per-session scoping:
     targeted orphan process cleanup.
 
 Storage:
-  .hatfield/state.sqlite — app/runtime ORM state (sessions metadata, tool_batch_state, …)
+  .hatfield/state.sqlite — app/runtime ORM state (sessions metadata, session metadata, …)
   .hatfield/messenger-transport.sqlite — Messenger doctrine transport only
   Transport table is ensured by MessengerTransportSchemaEnsurer at startup;
   messenger transport auto_setup remains a fallback safety net.
