@@ -101,12 +101,7 @@ final class ToolBatchCollector
             },
         );
 
-        $refreshed = $this->loadBatch($runId, $turnNo, $stepId);
-        if (null !== $refreshed) {
-            $this->batches[$this->batchKey($runId, $turnNo, $stepId)] = $refreshed;
-        } else {
-            unset($this->batches[$this->batchKey($runId, $turnNo, $stepId)]);
-        }
+        unset($this->batches[$this->batchKey($runId, $turnNo, $stepId)]);
 
         return $outcome;
     }

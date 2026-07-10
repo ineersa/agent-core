@@ -231,6 +231,41 @@ final class SessionToolBatchStoreTest extends TestCase
         }
     }
 
+    public function testLoadRejectsMalformedInnerBatchStateWithPreviousCause(): void
+    {
+        $runId = 'run-1';
+        $turnNo = 1;
+        $stepId = 'step-a';
+        $dir = $this->hatfieldSessionStore->resolveSessionsBasePath().'/'.$runId.'/runtime/tool-batches';
+        mkdir($dir, recursive: true);
+        $filename = \sprintf('%d_%s.json', $turnNo, hash('sha256', $stepId));
+        $envelope = [
+            'run_id' => $runId,
+            'turn_no' => $turnNo,
+            'step_id' => $stepId,
+            'batch_state' => [
+                'expected_order' => ['c1' => 'not-an-int'],
+                'call_data' => [],
+                'pending_queue' => [],
+                'in_flight' => [],
+                'result_data' => [],
+                'finalized' => false,
+                'max_parallelism' => 2,
+            ],
+        ];
+        file_put_contents($dir.'/'.$filename, json_encode($envelope, \JSON_THROW_ON_ERROR));
+
+        try {
+            $this->store->load($runId, $turnNo, $stepId);
+            $this->fail('Expected SessionToolBatchStoreException for malformed batch_state.');
+        } catch (SessionToolBatchStoreException $exception) {
+            $this->assertStringContainsString('batch_state is invalid', $exception->getMessage());
+            $previous = $exception->getPrevious();
+            $this->assertInstanceOf(\UnexpectedValueException::class, $previous);
+            $this->assertStringContainsString('expected_order', $previous->getMessage());
+        }
+    }
+
     /**
      * @param list<string> $callIds
      */
@@ -304,9 +339,6 @@ final class SessionToolBatchStoreTest extends TestCase
         );
     }
 
-    /**
-     * @param list<string> $pending
-     */
     private function emptyBatch(array $pending): ToolBatchStateDTO
     {
         $expected = [];

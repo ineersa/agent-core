@@ -66,10 +66,9 @@ final class ToolBatchSnapshotCleanupHookSubscriberTest extends TestCase
     public function testDeletesExactBatchAfterToolBatchCommitted(): void
     {
         $store = $this->createStore();
-        $finalized = ToolBatchStateDTO::empty();
-        $finalized->finalized = true;
+        $finalized = new ToolBatchStateDTO([], [], [], [], [], true, 2);
         $store->save('run-1', 3, 'step-x', $finalized);
-        $store->save('run-1', 3, 'step-other', ToolBatchStateDTO::empty());
+        $store->save('run-1', 3, 'step-other', new ToolBatchStateDTO([], [], [], [], [], false, 2));
 
         $subscriber = new ToolBatchSnapshotCleanupHookSubscriber($store, new TestLogger());
         $subscriber->handleAfterTurnCommit(new AfterTurnCommitHookContext(
@@ -93,8 +92,8 @@ final class ToolBatchSnapshotCleanupHookSubscriberTest extends TestCase
     public function testTerminalAgentEndDeletesAllRemainingSnapshots(): void
     {
         $store = $this->createStore();
-        $store->save('run-1', 1, 's1', ToolBatchStateDTO::empty());
-        $store->save('run-1', 2, 's2', ToolBatchStateDTO::empty());
+        $store->save('run-1', 1, 's1', new ToolBatchStateDTO([], [], [], [], [], false, 2));
+        $store->save('run-1', 2, 's2', new ToolBatchStateDTO([], [], [], [], [], false, 2));
 
         $subscriber = new ToolBatchSnapshotCleanupHookSubscriber($store, new TestLogger());
         $subscriber->handleAfterTurnCommit(new AfterTurnCommitHookContext(
@@ -112,8 +111,7 @@ final class ToolBatchSnapshotCleanupHookSubscriberTest extends TestCase
     public function testCleanupNotInvokedWhenRunCommitFails(): void
     {
         $store = $this->createStore();
-        $finalized = ToolBatchStateDTO::empty();
-        $finalized->finalized = true;
+        $finalized = new ToolBatchStateDTO([], [], [], [], [], true, 2);
         $store->save('run-1', 1, 'step-1', $finalized);
 
         $stalePrev = RunState::queued('run-1');
@@ -146,8 +144,7 @@ final class ToolBatchSnapshotCleanupHookSubscriberTest extends TestCase
     public function testCleanupInvokedAfterSuccessfulRunCommit(): void
     {
         $store = $this->createStore();
-        $finalized = ToolBatchStateDTO::empty();
-        $finalized->finalized = true;
+        $finalized = new ToolBatchStateDTO([], [], [], [], [], true, 2);
         $store->save('run-1', 1, 'step-1', $finalized);
 
         $runStore = new InMemoryRunStore();

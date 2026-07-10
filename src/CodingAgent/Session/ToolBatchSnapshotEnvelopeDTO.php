@@ -67,11 +67,17 @@ final readonly class ToolBatchSnapshotEnvelopeDTO
             throw new SessionToolBatchStoreException('Tool batch snapshot identity mismatch.', ['path' => $path, 'component' => 'session_tool_batch_store', 'run_id' => $expectedRunId, 'turn_no' => $expectedTurnNo, 'step_id' => $expectedStepId, 'embedded_run_id' => $embeddedRunId, 'embedded_turn_no' => $turnNo, 'embedded_step_id' => $stepId]);
         }
 
+        try {
+            $batchState = ToolBatchStateDTO::fromPersistedArray($batchStateRaw, $embeddedRunId, $turnNo, $stepId);
+        } catch (\UnexpectedValueException $exception) {
+            throw new SessionToolBatchStoreException('Tool batch snapshot batch_state is invalid.', ['path' => $path, 'component' => 'session_tool_batch_store', 'run_id' => $expectedRunId, 'turn_no' => $expectedTurnNo, 'step_id' => $expectedStepId], $exception);
+        }
+
         return new self(
             $embeddedRunId,
             $turnNo,
             $stepId,
-            ToolBatchStateDTO::fromPersistedArray($batchStateRaw, $embeddedRunId, $turnNo, $stepId),
+            $batchState,
         );
     }
 }

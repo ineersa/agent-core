@@ -223,6 +223,28 @@ final class ToolBatchCollectorDurableTest extends TestCase
         $this->assertTrue($retryOutcome->complete);
     }
 
+    public function testDurableCollectInvalidatesInProcessBatchCache(): void
+    {
+        $store = $this->createStore();
+        $collector = new ToolBatchCollector(defaultMaxParallelism: 4, store: $store);
+
+        $collector->registerExpectedBatch('run-cache', 1, 'step-1', [
+            $this->executeToolCall('run-cache', 'step-1', 'call-1', 0, 'sequential'),
+        ]);
+
+        $outcome = $collector->collect($this->toolResult('run-cache', 'step-1', 'call-1', 0));
+        $this->assertTrue($outcome->complete);
+
+        $onDisk = $store->load('run-cache', 1, 'step-1');
+        $this->assertNotNull($onDisk);
+        $this->assertTrue($onDisk->finalized);
+
+        $collector->registerExpectedBatch('run-cache', 2, 'step-2', [
+            $this->executeToolCall('run-cache', 'step-2', 'call-2', 0, 'sequential'),
+        ]);
+        $this->assertNotNull($store->load('run-cache', 2, 'step-2'));
+    }
+
     private function createStore(): SessionToolBatchStore
     {
         $entityManager = $this->createStub(EntityManagerInterface::class);
