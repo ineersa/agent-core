@@ -72,7 +72,7 @@ colors:
     thinking_medium: "blue"
     thinking_high: "magenta"
     thinking_xhigh: "red"
-    thinking_max: "bright_red"
+    thinking_max: "#9214fa"
 
     bash_mode: "orange"
     header: "blue"
