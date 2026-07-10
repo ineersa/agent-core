@@ -576,7 +576,6 @@ class ReasoningOptionsResolverTest extends TestCase
         );
     }
 
-
     public function testCodexMaxLevelMapsToReasoningEffort(): void
     {
         $provider = $this->provider(

@@ -461,7 +461,6 @@ class ModelResolverTest extends TestCase
         $this->assertSame('off', $resolver->cycleReasoning('unknown'));
     }
 
-
     public function testGetSupportedReasoningLevelsIncludesMaxWhenModelMapHasMax(): void
     {
         $aiData = [
