@@ -505,7 +505,7 @@ final class SessionRunStateReplayServiceTest extends TestCase
 
     // ── Non-contiguous history ──────────────────────────────────────────────
 
-    public function testNonContiguousHistoryThrowsException(): void
+    public function testGapSequencesReplaySuccessfully(): void
     {
         // Missing seq 2
         $this->appendEvent('run_started', 1, ['step_id' => 's1', 'payload' => ['messages' => []]]);
@@ -519,10 +519,11 @@ final class SessionRunStateReplayServiceTest extends TestCase
             lastSeq: 0, // stale
         );
 
-        $this->expectException(RunStateReplayException::class);
-        $this->expectExceptionMessage('missing sequences');
+        $result = $this->service->rebuildIfStale($state, $this->runId);
 
-        $this->service->rebuildIfStale($state, $this->runId);
+        $this->assertTrue($result->rebuilt);
+        $this->assertFalse($result->isContiguous);
+        $this->assertSame([2], $result->missingSequences);
     }
 
     // ── Replay preserves stored version ────────────────────────────────────

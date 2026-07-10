@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Runtime\Controller\CommandHandler;
 
-use Ineersa\AgentCore\Contract\EventStoreInterface;
+use Ineersa\AgentCore\Contract\SequencedEventStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolExecutorInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
@@ -35,7 +35,7 @@ final readonly class ExecuteShellToolCallWorker
 {
     public function __construct(
         private ToolExecutorInterface $toolExecutor,
-        private EventStoreInterface $eventStore,
+        private SequencedEventStoreInterface $eventStore,
         private ?LoggerInterface $logger = null,
     ) {
     }
@@ -70,16 +70,9 @@ final readonly class ExecuteShellToolCallWorker
             return;
         }
 
-        // Compute next sequence number from existing events.
-        $existingEvents = $this->eventStore->allFor($runId);
-        $nextSeq = [] !== $existingEvents
-            ? max(array_map(static fn (RunEvent $e): int => $e->seq, $existingEvents)) + 1
-            : 1;
-
-        // Emit tool_execution_start event.
-        $this->eventStore->append(new RunEvent(
+        $this->eventStore->appendWithNextSeq(new RunEvent(
             runId: $runId,
-            seq: $nextSeq,
+            seq: 0,
             turnNo: 0,
             type: RunEventTypeEnum::ToolExecutionStart->value,
             payload: [
@@ -119,9 +112,9 @@ final readonly class ExecuteShellToolCallWorker
         }
 
         // Emit tool_execution_end event with result text.
-        $this->eventStore->append(new RunEvent(
+        $this->eventStore->appendWithNextSeq(new RunEvent(
             runId: $runId,
-            seq: $nextSeq + 1,
+            seq: 0,
             turnNo: 0,
             type: RunEventTypeEnum::ToolExecutionEnd->value,
             payload: [
@@ -148,9 +141,9 @@ final readonly class ExecuteShellToolCallWorker
         // controller calls completeRun() synchronously before the async
         // worker has written tool_exec events (issue #183).
         if ($message->standalone) {
-            $this->eventStore->append(new RunEvent(
+            $this->eventStore->appendWithNextSeq(new RunEvent(
                 runId: $runId,
-                seq: $nextSeq + 2,
+                seq: 0,
                 turnNo: 0,
                 type: RunEventTypeEnum::AgentEnd->value,
                 payload: ['reason' => 'completed'],

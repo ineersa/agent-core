@@ -75,15 +75,13 @@ final readonly class SessionRunStateReplayService implements RunStateRebuilderIn
             ]);
 
             if (!$isContiguous) {
-                $this->logger->error('run_state_replay.non_contiguous', [
+                $this->logger->info('run_state_replay.gap_sequences_allowed', [
                     'run_id' => $runId,
                     'state_last_seq' => $state->lastSeq,
                     'event_last_seq' => $maxEventSeq,
                     'event_count' => \count($sortedEvents),
                     'missing_sequences' => $missingSequences,
                 ]);
-
-                throw RunStateReplayException::missingSequences(\sprintf('Cannot replay run %s: event history has %d missing sequences. Expected contiguous range 1..%d, found gaps at: %s.', $runId, \count($missingSequences), $maxEventSeq, implode(', ', array_map('strval', \array_slice($missingSequences, 0, 10)))));
             }
 
             // Filter to active branch events when tree metadata is available.
@@ -177,14 +175,12 @@ final readonly class SessionRunStateReplayService implements RunStateRebuilderIn
             $isContiguous = [] === $missingSequences;
 
             if (!$isContiguous) {
-                $this->logger->error('run_state_replay.non_contiguous_for_leaf', [
+                $this->logger->info('run_state_replay.gap_sequences_allowed_for_leaf', [
                     'run_id' => $runId,
                     'target_leaf_turn_no' => $targetLeafTurnNo,
                     'event_count' => \count($sortedEvents),
                     'missing_sequences' => $missingSequences,
                 ]);
-
-                throw RunStateReplayException::missingSequences(\sprintf('Cannot replay run %s for leaf %d: event history has %d missing sequences. Expected contiguous range 1..%d, found gaps at: %s.', $runId, $targetLeafTurnNo, \count($missingSequences), $maxEventSeq, implode(', ', array_map('strval', \array_slice($missingSequences, 0, 10)))));
             }
 
             // Filter to the target leaf's branch path.

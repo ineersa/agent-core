@@ -887,6 +887,7 @@ services:
   Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient:
     arguments:
       $mcpDispatcher: '@Ineersa\CodingAgent\Mcp\McpSessionLifecycleDispatcher'
+      $sequencedEventStore: '@Ineersa\AgentCore\Contract\SequencedEventStoreInterface'
 
   # ─── MCP-04 / MCP-05 Dynamic MCP tool registration + invocation ────
 
@@ -940,6 +941,23 @@ services:
     arguments:
       $parentRunStore: '@Ineersa\CodingAgent\Session\SessionRunStore'
 
+
+
+  Ineersa\AgentCore\Contract\RunSequenceAllocatorInterface:
+    alias: Ineersa\CodingAgent\Session\DbalRunSequenceAllocator
+
+  Ineersa\AgentCore\Contract\SequencedEventStoreInterface:
+    alias: Ineersa\AgentCore\Contract\EventStoreInterface
+
+  Ineersa\CodingAgent\Session\DbalRunSequenceAllocator:
+    arguments:
+      $connection: '@doctrine.dbal.default_connection'
+
+  Ineersa\CodingAgent\Session\EventLogMaxSeqBootstrapReader: ~
+
+  Ineersa\CodingAgent\Runtime\Controller\CommandHandler\ExecuteShellToolCallWorker:
+    arguments:
+      $eventStore: '@Ineersa\AgentCore\Contract\EventStoreInterface'
 
   Ineersa\CodingAgent\Session\SequencedRunEventAppender:
     arguments:

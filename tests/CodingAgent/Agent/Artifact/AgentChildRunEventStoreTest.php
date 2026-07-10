@@ -12,6 +12,7 @@ use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+use Ineersa\CodingAgent\Tests\Session\Support\InMemoryRunSequenceAllocator;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
@@ -250,6 +251,7 @@ final class AgentChildRunEventStoreTest extends TestCase
             eventPayloadNormalizer: new EventPayloadNormalizer(),
             lockFactory: new LockFactory(new FlockStore()),
             logger: new NullLogger(),
+            sequenceAllocator: new InMemoryRunSequenceAllocator(),
             parentRunId: $parentRunId,
             agentRunId: $agentRunId,
             artifactId: $artifactId,

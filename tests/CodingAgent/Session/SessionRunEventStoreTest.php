@@ -12,6 +12,7 @@ use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\SessionRunEventStore;
+use Ineersa\CodingAgent\Tests\Session\Support\InMemoryRunSequenceAllocator;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\FlockStore;
@@ -47,6 +48,7 @@ final class SessionRunEventStoreTest extends TestCase
             eventPayloadNormalizer: new EventPayloadNormalizer(),
             lockFactory: new LockFactory(new FlockStore()),
             logger: new \Psr\Log\NullLogger(),
+            sequenceAllocator: new InMemoryRunSequenceAllocator(),
         );
     }
 
@@ -139,6 +141,7 @@ final class SessionRunEventStoreTest extends TestCase
             eventPayloadNormalizer: new EventPayloadNormalizer(),
             lockFactory: new LockFactory(new FlockStore()),
             logger: new \Psr\Log\NullLogger(),
+            sequenceAllocator: new InMemoryRunSequenceAllocator(),
         );
 
         $events = $newStore->allFor($runId);
@@ -273,7 +276,7 @@ final class SessionRunEventStoreTest extends TestCase
         $this->assertSame([1, 2], array_map(static fn (RunEvent $e): int => $e->seq, $events));
     }
 
-    public function testAppendWithNextSeqAllocatesAfterOutOfOrderDiskLines(): void
+    public function testAppendWithNextSeqBootstrapsFromExistingLogMaxSeq(): void
     {
         $runId = 'run-'.bin2hex(random_bytes(4));
         $eventsPath = $this->projectDir.'/.hatfield/sessions/'.$runId.'/events.jsonl';
