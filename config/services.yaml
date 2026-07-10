@@ -944,14 +944,12 @@ services:
 
 
   Ineersa\AgentCore\Contract\RunSequenceAllocatorInterface:
-    alias: Ineersa\CodingAgent\Session\DbalRunSequenceAllocator
+    alias: Ineersa\CodingAgent\Session\FileRunSequenceAllocator
 
   Ineersa\AgentCore\Contract\SequencedEventStoreInterface:
     alias: Ineersa\AgentCore\Contract\EventStoreInterface
 
-  Ineersa\CodingAgent\Session\DbalRunSequenceAllocator:
-    arguments:
-      $connection: '@doctrine.dbal.default_connection'
+  Ineersa\CodingAgent\Session\FileRunSequenceAllocator: ~
 
   Ineersa\CodingAgent\Session\EventLogMaxSeqBootstrapReader: ~
 

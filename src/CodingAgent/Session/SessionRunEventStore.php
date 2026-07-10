@@ -19,7 +19,7 @@ use Symfony\Component\Lock\LockFactory;
  * Stores RunEvent entries as append-only JSONL at
  * .hatfield/sessions/<runId>/events.jsonl.
  *
- * Sequence allocation is DB-backed via {@see RunSequenceAllocatorInterface}.
+ * Sequence allocation uses a per-run {@see FileRunSequenceAllocator::COUNTER_BASENAME} file.
  * events.jsonl is never scanned during normal appendWithNextSeq.
  */
 final class SessionRunEventStore implements SequencedEventStoreInterface
@@ -57,8 +57,9 @@ final class SessionRunEventStore implements SequencedEventStoreInterface
         $lock->acquire(true);
 
         try {
+            $counterPath = FileRunSequenceAllocator::counterPathForEventsLog($path);
             $nextSeq = $this->sequenceAllocator->allocateNext(
-                $event->runId,
+                $counterPath,
                 fn (): int => $this->bootstrapReader->readMaxSeq($path),
             );
             $persisted = new RunEvent(
@@ -96,8 +97,9 @@ final class SessionRunEventStore implements SequencedEventStoreInterface
         $lock->acquire(true);
 
         try {
+            $counterPath = FileRunSequenceAllocator::counterPathForEventsLog($path);
             $seqBlock = $this->sequenceAllocator->allocateBlock(
-                $runId,
+                $counterPath,
                 \count($events),
                 fn (): int => $this->bootstrapReader->readMaxSeq($path),
             );

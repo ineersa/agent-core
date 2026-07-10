@@ -7,7 +7,7 @@ namespace Ineersa\CodingAgent\Session;
 /**
  * One-time bootstrap helper: derive max committed seq from an on-disk JSONL log.
  *
- * Used only when {@see DbalRunSequenceAllocator} creates the first DB row for a
+ * Used only when {@see FileRunSequenceAllocator} creates the first counter file for a
  * run. Normal allocation never reads events.jsonl.
  */
 final class EventLogMaxSeqBootstrapReader

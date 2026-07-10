@@ -11,6 +11,7 @@ use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
 use Ineersa\AgentCore\Schema\SchemaVersion;
 use Ineersa\CodingAgent\Session\EventLogMaxSeqBootstrapReader;
+use Ineersa\CodingAgent\Session\FileRunSequenceAllocator;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Lock\LockFactory;
 
@@ -62,8 +63,9 @@ final class AgentChildRunEventStore implements SequencedEventStoreInterface
         $lock->acquire(true);
 
         try {
+            $counterPath = FileRunSequenceAllocator::counterPathForEventsLog($path);
             $nextSeq = $this->sequenceAllocator->allocateNext(
-                $this->agentRunId,
+                $counterPath,
                 fn (): int => $this->bootstrapReader->readMaxSeq($path),
             );
             $persisted = new RunEvent(
@@ -93,8 +95,9 @@ final class AgentChildRunEventStore implements SequencedEventStoreInterface
         $lock->acquire(true);
 
         try {
+            $counterPath = FileRunSequenceAllocator::counterPathForEventsLog($path);
             $seqBlock = $this->sequenceAllocator->allocateBlock(
-                $this->agentRunId,
+                $counterPath,
                 \count($events),
                 fn (): int => $this->bootstrapReader->readMaxSeq($path),
             );
