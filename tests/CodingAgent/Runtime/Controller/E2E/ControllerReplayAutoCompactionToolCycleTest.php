@@ -456,10 +456,6 @@ YAML;
                 break;
             }
 
-            if ($sawRunTerminal && microtime(true) - $lastEventAt > 0.8) {
-                break;
-            }
-
             usleep(50_000);
         }
 
