@@ -347,15 +347,19 @@ Storage:
   messenger transport auto_setup remains a fallback safety net.
   PDO SQLite auto-creates DB file if parent dir is writable
 
-Result routing (within consumer process):
-  ExecuteLlmStepWorker  →  LlmStepResult  →  agent.command.bus  →  RunOrchestrator
-  ExecuteToolCallWorker →  ToolCallResult →  agent.command.bus  →  RunOrchestrator
+Result routing (execution worker → run_control writer):
+  ExecuteLlmStepWorker  →  LlmStepResult  →  agent.command.bus (routed run_control) → run_control consumer → RunOrchestrator → RunMessageProcessor/RunCommit
+  ExecuteToolCallWorker →  ToolCallResult →  agent.command.bus (routed run_control) → run_control consumer → RunOrchestrator → RunMessageProcessor/RunCommit
 
-Why results stay sync:
-  - AssistantMessage has polymorphic ContentInterface[] arrays
-  - Default Symfony Serializer cannot round-trip them
-  - RunOrchestrator is registered on agent.command.bus in same process
-  - Self-advance callbacks (postCommit) dispatch AdvanceRun synchronously
+Why results are not mutated inside llm/tool workers:
+  - Canonical RunStore/EventStore/tool-batch mutations must serialize through the single run_control consumer
+  - Execution workers only enqueue immutable result envelopes; the run_control process owns CAS + event append
+  - AdvanceRun/CompactRun remain synchronous/unrouted on agent.command.bus (and AdvanceRun on agent.execution.bus for effect paths) by design
+
+WorkerFailedEventSubscriber (run_control only):
+  - Intentional last-resort exception when RunMessageProcessor permanently fails after retries
+  - Directly writes terminal Failed + agent_end in the same run_control process (bypasses RunCommit/post-commit hooks)
+  - Does not replace normal mutation; only prevents silent hangs when the primary writer path is exhausted
 ```
 
 ---

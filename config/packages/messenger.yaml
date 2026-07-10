@@ -19,7 +19,7 @@
 # After ASYNC-05:
 # - StartRun → run_control transport (messenger:consume run_control)
 # - ApplyCommand → run_control transport
-# - AdvanceRun → run_control transport
+# # AdvanceRun is intentionally NOT routed (sync on agent.command.bus / agent.execution.bus).
 # - ExecuteLlmStep → llm transport (messenger:consume llm)
 # - ExecuteToolCall → tool transport (messenger:consume tool)
 # - ExecuteToolCall (toolName=subagent) → agent transport via

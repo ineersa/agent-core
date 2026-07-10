@@ -953,6 +953,137 @@ final class ToolCallResultHandlerTest extends TestCase
         $this->assertSame('user', $result->events[1]->payload['cancellation_reason'] ?? null);
     }
 
+    public function testFinalizedRedeliveryAfterCanonicalCommitIsIdempotentNoOp(): void
+    {
+        $store = new \Ineersa\AgentCore\Application\Handler\InMemoryToolBatchStore();
+        $collector = new ToolBatchCollector(defaultMaxParallelism: 4, store: $store);
+
+        $collector->registerExpectedBatch('run-redeliver-post', 1, 'step-1', [
+            new ExecuteToolCall(
+                runId: 'run-redeliver-post',
+                turnNo: 1,
+                stepId: 'step-1',
+                attempt: 1,
+                idempotencyKey: 'exec-call-1',
+                toolCallId: 'call-1',
+                toolName: 'read',
+                args: [],
+                orderIndex: 0,
+                maxParallelism: 1,
+            ),
+        ]);
+
+        $handler = new ToolCallResultHandler(
+            toolBatchCollector: $collector,
+            eventFactory: new EventFactory(),
+            toolCallExtractor: new ToolCallExtractor(),
+            messageNormalizer: new AgentMessageNormalizer(),
+        );
+
+        $message = ToolCallResultBuilder::success('run-redeliver-post')
+            ->withTurnNo(1)
+            ->withStepId('step-1')
+            ->withIdempotencyKey('result-call-1')
+            ->withToolCallId('call-1')
+            ->withOrderIndex(0)
+            ->withResult([
+                'tool_name' => 'read',
+                'content' => [['type' => 'text', 'text' => 'committed-body']],
+            ])
+            ->build();
+
+        $pendingState = RunStateBuilder::running('run-redeliver-post')
+            ->withVersion(3)
+            ->withTurnNo(1)
+            ->withLastSeq(6)
+            ->withPendingToolCalls(['call-1' => false])
+            ->withActiveStepId('step-1')
+            ->build();
+
+        $first = $handler->handle($message, $pendingState);
+        $this->assertNotNull($first->nextState);
+        $this->assertSame([], $first->nextState->pendingToolCalls);
+        $this->assertCount(1, $first->nextState->messages);
+        $this->assertSame('tool', $first->nextState->messages[0]->role);
+        $this->assertSame('call-1', $first->nextState->messages[0]->toolCallId);
+
+        $committedState = $first->nextState;
+        $redelivery = $handler->handle($message, $committedState);
+
+        $this->assertNull($redelivery->nextState);
+        $this->assertSame([], $redelivery->events);
+        $this->assertSame([], $redelivery->postCommit);
+        $this->assertSame([], $redelivery->postCommitEffects);
+        $this->assertTrue($redelivery->markHandled);
+    }
+
+    public function testFinalizedRedeliveryBeforeCanonicalCommitRecoversOnce(): void
+    {
+        $store = new \Ineersa\AgentCore\Application\Handler\InMemoryToolBatchStore();
+        $collector = new ToolBatchCollector(defaultMaxParallelism: 4, store: $store);
+
+        $collector->registerExpectedBatch('run-redeliver-pre', 1, 'step-1', [
+            new ExecuteToolCall(
+                runId: 'run-redeliver-pre',
+                turnNo: 1,
+                stepId: 'step-1',
+                attempt: 1,
+                idempotencyKey: 'exec-call-pre',
+                toolCallId: 'call-pre',
+                toolName: 'read',
+                args: [],
+                orderIndex: 0,
+                maxParallelism: 1,
+            ),
+        ]);
+
+        $handler = new ToolCallResultHandler(
+            toolBatchCollector: $collector,
+            eventFactory: new EventFactory(),
+            toolCallExtractor: new ToolCallExtractor(),
+            messageNormalizer: new AgentMessageNormalizer(),
+        );
+
+        $message = ToolCallResultBuilder::success('run-redeliver-pre')
+            ->withTurnNo(1)
+            ->withStepId('step-1')
+            ->withIdempotencyKey('result-call-pre')
+            ->withToolCallId('call-pre')
+            ->withOrderIndex(0)
+            ->withResult([
+                'tool_name' => 'read',
+                'content' => [['type' => 'text', 'text' => 'recover-body']],
+            ])
+            ->build();
+
+        $pendingState = RunStateBuilder::running('run-redeliver-pre')
+            ->withVersion(2)
+            ->withTurnNo(1)
+            ->withLastSeq(4)
+            ->withPendingToolCalls(['call-pre' => false])
+            ->withActiveStepId('step-1')
+            ->build();
+
+        $first = $handler->handle($message, $pendingState);
+        $this->assertNotNull($first->nextState);
+        $this->assertSame([], $first->nextState->pendingToolCalls);
+
+        $recoveryState = RunStateBuilder::running('run-redeliver-pre')
+            ->withVersion(2)
+            ->withTurnNo(1)
+            ->withLastSeq(4)
+            ->withPendingToolCalls(['call-pre' => false])
+            ->withActiveStepId('step-1')
+            ->build();
+
+        $recovery = $handler->handle($message, $recoveryState);
+        $this->assertNotNull($recovery->nextState);
+        $this->assertSame([], $recovery->nextState->pendingToolCalls);
+        $this->assertCount(1, $recovery->nextState->messages);
+        $eventTypes = array_map(static fn ($e) => $e->type, $recovery->events);
+        $this->assertContains('tool_batch_committed', $eventTypes);
+    }
+
     public function testCancellingSyntheticUnresolvedToolExecutionEndHasResultAndCancellationMetadata(): void
     {
         $handler = new ToolCallResultHandler(
