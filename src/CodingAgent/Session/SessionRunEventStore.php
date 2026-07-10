@@ -36,7 +36,7 @@ final class SessionRunEventStore implements SequencedEventStoreInterface
         private readonly EventPayloadNormalizer $eventPayloadNormalizer,
         private readonly LockFactory $lockFactory,
         private readonly LoggerInterface $logger,
-        private readonly EventLogLastSeqReader $lastSeqReader = new EventLogLastSeqReader(),
+        private readonly EventLogMaxSeqReader $maxSeqReader = new EventLogMaxSeqReader(),
     ) {
         $this->sessionsBasePath = $hatfieldSessionStore->resolveSessionsBasePath();
     }
@@ -213,7 +213,7 @@ final class SessionRunEventStore implements SequencedEventStoreInterface
 
     private function readMaxSeqLocked(string $path): int
     {
-        return $this->lastSeqReader->readLastSeqLocked($path);
+        return $this->maxSeqReader->readMaxSeqLocked($path);
     }
 
     /**

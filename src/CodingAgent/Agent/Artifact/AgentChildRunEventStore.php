@@ -9,7 +9,7 @@ use Ineersa\AgentCore\Contract\SequencedEventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
 use Ineersa\AgentCore\Schema\SchemaVersion;
-use Ineersa\CodingAgent\Session\EventLogLastSeqReader;
+use Ineersa\CodingAgent\Session\EventLogMaxSeqReader;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Lock\LockFactory;
 
@@ -47,7 +47,7 @@ final class AgentChildRunEventStore implements SequencedEventStoreInterface
         private readonly string $agentRunId,
         /** Artifact directory name within artifacts/agents/. */
         private readonly string $artifactId,
-        private readonly EventLogLastSeqReader $lastSeqReader = new EventLogLastSeqReader(),
+        private readonly EventLogMaxSeqReader $maxSeqReader = new EventLogMaxSeqReader(),
     ) {
         // Defense-in-depth path validation: reject traversal/spurious components.
         $this->pathResolver->validatePathComponent($parentRunId, 'parentRunId');
@@ -212,7 +212,7 @@ final class AgentChildRunEventStore implements SequencedEventStoreInterface
 
     private function readMaxSeqLocked(string $path): int
     {
-        return $this->lastSeqReader->readLastSeqLocked($path);
+        return $this->maxSeqReader->readMaxSeqLocked($path);
     }
 
     private function eventsPath(): string

@@ -110,21 +110,20 @@ final readonly class WorkerFailedEventSubscriber implements EventSubscriberInter
                 return;
             }
 
-            if ($this->isReplayCorruptionFailure($exception)) {
-                $this->logger->warning('agent_loop.worker_failed_skipped_replay_corruption', [
-                    'run_id' => $runId,
-                    'component' => 'messenger.worker',
-                    'event_type' => 'worker_failed.skipped_replay_corruption',
-                ]);
-
-                return;
+            $replayCorruption = $this->findDuplicateSequenceReplayFailure($exception);
+            if (null !== $replayCorruption) {
+                $errorMessage = \sprintf(
+                    'Permanent worker failure: %s: %s',
+                    $replayCorruption::class,
+                    $replayCorruption->getMessage(),
+                );
+            } else {
+                $errorMessage = \sprintf(
+                    'Permanent worker failure: %s: %s',
+                    $exception::class,
+                    $exception->getMessage(),
+                );
             }
-
-            $errorMessage = \sprintf(
-                'Permanent worker failure: %s: %s',
-                $exception::class,
-                $exception->getMessage(),
-            );
 
             if (!$this->eventStore instanceof SequencedEventStoreInterface) {
                 $this->logger->error('agent_loop.worker_failed_missing_sequenced_store', [
@@ -194,21 +193,21 @@ final readonly class WorkerFailedEventSubscriber implements EventSubscriberInter
         }
     }
 
-    private function isReplayCorruptionFailure(\Throwable $exception): bool
+    private function findDuplicateSequenceReplayFailure(\Throwable $exception): ?RunStateReplayException
     {
         while (true) {
             if ($exception instanceof RunStateReplayException
                 && RunStateReplayFailureReason::DuplicateSequences === $exception->reason()) {
-                return true;
+                return $exception;
             }
 
             if ($exception instanceof RunStateReplayException) {
-                return false;
+                return null;
             }
 
             $previous = $exception->getPrevious();
             if (null === $previous) {
-                return false;
+                return null;
             }
 
             $exception = $previous;
