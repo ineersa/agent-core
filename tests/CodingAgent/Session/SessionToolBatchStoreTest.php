@@ -266,6 +266,47 @@ final class SessionToolBatchStoreTest extends TestCase
         }
     }
 
+    public function testLoadRejectsMalformedOptionalCallFieldTypes(): void
+    {
+        $runId = 'run-1';
+        $turnNo = 1;
+        $stepId = 'step-b';
+        $dir = $this->hatfieldSessionStore->resolveSessionsBasePath().'/'.$runId.'/runtime/tool-batches';
+        mkdir($dir, recursive: true);
+        $filename = \sprintf('%d_%s.json', $turnNo, hash('sha256', $stepId));
+        $envelope = [
+            'run_id' => $runId,
+            'turn_no' => $turnNo,
+            'step_id' => $stepId,
+            'batch_state' => [
+                'expected_order' => ['c1' => 0],
+                'call_data' => [
+                    'c1' => [
+                        'toolCallId' => 'c1',
+                        'toolName' => 'read',
+                        'orderIndex' => 0,
+                        'mode' => 99,
+                    ],
+                ],
+                'pending_queue' => [],
+                'in_flight' => [],
+                'result_data' => [],
+                'finalized' => false,
+                'max_parallelism' => 2,
+            ],
+        ];
+        file_put_contents($dir.'/'.$filename, json_encode($envelope, \JSON_THROW_ON_ERROR));
+
+        try {
+            $this->store->load($runId, $turnNo, $stepId);
+            $this->fail('Expected SessionToolBatchStoreException for malformed optional call field.');
+        } catch (SessionToolBatchStoreException $exception) {
+            $previous = $exception->getPrevious();
+            $this->assertInstanceOf(\UnexpectedValueException::class, $previous);
+            $this->assertStringContainsString('mode', $previous->getMessage());
+        }
+    }
+
     /**
      * @param list<string> $callIds
      */

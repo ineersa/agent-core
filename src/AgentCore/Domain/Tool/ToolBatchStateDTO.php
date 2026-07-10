@@ -194,6 +194,34 @@ final class ToolBatchStateDTO
         if (\array_key_exists('args', $data) && !\is_array($data['args'])) {
             throw new \UnexpectedValueException(\sprintf('Tool batch call_data[%s].args must be an array when present.', $mapKey));
         }
+
+        if (\array_key_exists('toolIdempotencyKey', $data) && null !== $data['toolIdempotencyKey'] && !\is_string($data['toolIdempotencyKey'])) {
+            throw new \UnexpectedValueException(\sprintf('Tool batch call_data[%s].toolIdempotencyKey must be a string or null when present.', $mapKey));
+        }
+
+        if (\array_key_exists('mode', $data) && null !== $data['mode'] && !\is_string($data['mode'])) {
+            throw new \UnexpectedValueException(\sprintf('Tool batch call_data[%s].mode must be a string or null when present.', $mapKey));
+        }
+
+        if (\array_key_exists('toolsRef', $data) && null !== $data['toolsRef'] && !\is_string($data['toolsRef'])) {
+            throw new \UnexpectedValueException(\sprintf('Tool batch call_data[%s].toolsRef must be a string or null when present.', $mapKey));
+        }
+
+        if (\array_key_exists('timeoutSeconds', $data) && null !== $data['timeoutSeconds'] && !\is_int($data['timeoutSeconds'])) {
+            throw new \UnexpectedValueException(\sprintf('Tool batch call_data[%s].timeoutSeconds must be an integer or null when present.', $mapKey));
+        }
+
+        if (\array_key_exists('maxParallelism', $data) && null !== $data['maxParallelism'] && !\is_int($data['maxParallelism'])) {
+            throw new \UnexpectedValueException(\sprintf('Tool batch call_data[%s].maxParallelism must be an integer or null when present.', $mapKey));
+        }
+
+        if (\array_key_exists('assistantMessage', $data) && null !== $data['assistantMessage'] && !\is_array($data['assistantMessage'])) {
+            throw new \UnexpectedValueException(\sprintf('Tool batch call_data[%s].assistantMessage must be an array or null when present.', $mapKey));
+        }
+
+        if (\array_key_exists('argSchema', $data) && null !== $data['argSchema'] && !\is_array($data['argSchema'])) {
+            throw new \UnexpectedValueException(\sprintf('Tool batch call_data[%s].argSchema must be an array or null when present.', $mapKey));
+        }
     }
 
     /**
@@ -235,13 +263,13 @@ final class ToolBatchStateDTO
             toolName: $data['toolName'],
             args: \is_array($data['args'] ?? null) ? $data['args'] : [],
             orderIndex: $data['orderIndex'],
-            toolIdempotencyKey: isset($data['toolIdempotencyKey']) ? (string) $data['toolIdempotencyKey'] : null,
-            mode: isset($data['mode']) ? (string) $data['mode'] : null,
-            timeoutSeconds: isset($data['timeoutSeconds']) ? (int) $data['timeoutSeconds'] : null,
-            maxParallelism: isset($data['maxParallelism']) ? (int) $data['maxParallelism'] : null,
-            assistantMessage: \is_array($data['assistantMessage'] ?? null) ? $data['assistantMessage'] : null,
-            argSchema: \is_array($data['argSchema'] ?? null) ? $data['argSchema'] : null,
-            toolsRef: isset($data['toolsRef']) ? (string) $data['toolsRef'] : null,
+            toolIdempotencyKey: \array_key_exists('toolIdempotencyKey', $data) ? $data['toolIdempotencyKey'] : null,
+            mode: \array_key_exists('mode', $data) ? $data['mode'] : null,
+            timeoutSeconds: \array_key_exists('timeoutSeconds', $data) ? $data['timeoutSeconds'] : null,
+            maxParallelism: \array_key_exists('maxParallelism', $data) ? $data['maxParallelism'] : null,
+            assistantMessage: \array_key_exists('assistantMessage', $data) ? $data['assistantMessage'] : null,
+            argSchema: \array_key_exists('argSchema', $data) ? $data['argSchema'] : null,
+            toolsRef: \array_key_exists('toolsRef', $data) ? $data['toolsRef'] : null,
         );
     }
 

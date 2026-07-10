@@ -13,6 +13,21 @@ use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 
 /**
  * Per-run/per-turn/per-step tool batch execution coordinator.
+ *
+ * Registers expected tool calls from an LLM step, dispatches the initial batch,
+ * and collects results as they arrive. With a durable {@see ToolBatchStoreInterface},
+ * batch state survives consumer restarts and coordinates across Messenger workers.
+ *
+ * Cross-process coordination pipeline (LLM register/persist → parallel tool workers
+ * → {@see ToolCallResult} on run_control → collector/store mutation):
+ *   1. {@see LlmStepResultHandler} calls {@see registerExpectedBatch()}, which persists
+ *      the batch and returns initial dispatchable {@see ExecuteToolCall} messages.
+ *   2. Tool workers execute calls and dispatch {@see ToolCallResult} envelopes.
+ *   3. {@see ToolCallResultHandler} calls {@see collect()}, which atomically mutates
+ *      durable {@see ToolBatchStateDTO} state and may dispatch subsequent calls.
+ *
+ * In-process {@see ToolBatchStateDTO} shape is owned by that DTO; the optional
+ * {@see ToolBatchStoreInterface} mirrors it for durability.
  */
 final class ToolBatchCollector
 {
@@ -100,8 +115,6 @@ final class ToolBatchCollector
                 return new ToolBatchStoreMutation($collectOutcome, $stored);
             },
         );
-
-        unset($this->batches[$this->batchKey($runId, $turnNo, $stepId)]);
 
         return $outcome;
     }
@@ -264,9 +277,15 @@ final class ToolBatchCollector
 
     private function saveBatch(string $runId, int $turnNo, string $stepId, ToolBatchStateDTO $batch): void
     {
-        $batchKey = $this->batchKey($runId, $turnNo, $stepId);
-        $this->store?->save($runId, $turnNo, $stepId, $batch);
-        $this->batches[$batchKey] = $batch;
+        if (null !== $this->store) {
+            // Store-first: durable write must succeed before any in-process view changes
+            // so Messenger retry reloads the last persisted snapshot, not a dirty cache.
+            $this->store->save($runId, $turnNo, $stepId, $batch);
+
+            return;
+        }
+
+        $this->batches[$this->batchKey($runId, $turnNo, $stepId)] = $batch;
     }
 
     private function batchKey(string $runId, int $turnNo, string $stepId): string
