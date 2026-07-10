@@ -224,8 +224,10 @@ return ['output' => $output];
 ## Durable batch state and parallel dispatch (TOOLS-R05)
 
 Tool execution across multiple tool calls from one LLM step is coordinated
-by `ToolBatchCollector`, which persists batch state to a shared SQLite
-session-scoped JSON snapshot files under `.hatfield/sessions/<runId>/runtime/tool-batches/` (child runs under parent artifact dirs).
+by `ToolBatchCollector`, which persists batch state through
+`SessionToolBatchStore` as session-scoped JSON snapshot files under
+`.hatfield/sessions/<runId>/runtime/tool-batches/` (child agent runs use the
+parent artifact tree, not a pseudo-session directory).
 
 ### How it works
 
@@ -250,27 +252,32 @@ session-scoped JSON snapshot files under `.hatfield/sessions/<runId>/runtime/too
    - Unblocks subsequent calls (sequential barriers, parallelism slots)
    - Returns new `ExecuteToolCall` effects to dispatch
 
-5. **Out-of-order completion:** Results are stored in the `tool_batch_state`
-   table. When the batch is complete, results are sorted by `orderIndex`
-   before being committed to the run state, preserving model-visible order.
+5. **Out-of-order completion:** Results are stored in the durable batch
+   snapshot for the active `(run_id, turn_no, step_id)`. When the batch is
+   complete, results are sorted by `orderIndex` before being committed to the
+   run state, preserving model-visible order.
 
 ### Durable store architecture
 
 ```
 ToolBatchStoreInterface          ← AgentCore contract (no infrastructure deps)
-  ├── InMemoryToolBatchStore     ← Default/fallback, used in tests
-  └── DbalToolBatchStore         ← Doctrine DBAL/SQLite production impl
-        └── session filesystem snapshots (no SQLite tool_batch_state)
+  ├── InMemoryToolBatchStore     ← In-memory fallback for unit tests
+  └── SessionToolBatchStore      ← Production: atomic JSON snapshots on disk
+        └── .hatfield/sessions/<runId>/runtime/tool-batches/<turn>_<stepHash>.json
+            (child runs: parent artifact dir …/runtime/tool-batches/)
 ```
 
-- `SessionToolBatchStore` creates its table lazily (`CREATE TABLE IF NOT EXISTS`)
-- Batch state is stored as a single JSON blob per run/turn/step (primary key:
-  `run_id + turn_no + step_id`)
-- On cache miss (different consumer process), batch is loaded from store and
-  `ExecuteToolCall`/`ToolCallResult` objects are reconstructed from stored
-  serialized call data
+- One JSON envelope per `(run_id, turn_no, step_id)` with embedded identity
+  fields and a `batch_state` blob
+- Atomic same-filesystem temp write + rename; run-scoped and per-snapshot
+  Symfony locks coordinate cross-process read/modify/write
+- On cache miss (different consumer process), batch is loaded from the snapshot
+  file and `ExecuteToolCall`/`ToolCallResult` objects are reconstructed from
+  stored serialized call data
 - Run-level locking through `RunLockManager` wraps result handling, so the
   collector/store read-modify-write sequence is serialized per run ID
+- Transient snapshots are deleted after successful `ToolBatchCommitted` or
+  terminal `AgentEnd` via `ToolBatchSnapshotCleanupHookSubscriber` (post-commit)
 
 If a tool worker permanently dies after claiming an `ExecuteToolCall` but
 before producing a `ToolCallResult`, that call remains `in_flight` until the

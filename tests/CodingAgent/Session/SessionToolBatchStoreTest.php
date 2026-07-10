@@ -19,6 +19,7 @@ use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\SessionToolBatchStore;
+use Ineersa\CodingAgent\Session\SessionToolBatchStoreException;
 use Ineersa\CodingAgent\Tests\Session\Support\ParentSessionToolBatchRunStoragePaths;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
@@ -87,6 +88,27 @@ final class SessionToolBatchStoreTest extends TestCase
         $this->store->delete('run-1', 1, 'step-a');
         $this->assertNull($this->store->load('run-1', 1, 'step-a'));
         $this->assertNotNull($this->store->load('run-1', 1, 'step-b'));
+    }
+
+    public function testLoadRejectsMismatchedEmbeddedIdentity(): void
+    {
+        $runId = 'run-1';
+        $turnNo = 1;
+        $stepId = 'step-a';
+        $dir = $this->hatfieldSessionStore->resolveSessionsBasePath().'/'.$runId.'/runtime/tool-batches';
+        mkdir($dir, 0777, true);
+        $filename = \sprintf('%d_%s.json', $turnNo, hash('sha256', $stepId));
+        $envelope = [
+            'run_id' => 'other-run',
+            'turn_no' => $turnNo,
+            'step_id' => $stepId,
+            'batch_state' => $this->emptyBatch([]),
+        ];
+        file_put_contents($dir.'/'.$filename, json_encode($envelope, \JSON_THROW_ON_ERROR));
+
+        $this->expectException(SessionToolBatchStoreException::class);
+        $this->expectExceptionMessage('identity mismatch');
+        $this->store->load($runId, $turnNo, $stepId);
     }
 
     public function testDeleteAllForRunRemovesOnlyThatRun(): void

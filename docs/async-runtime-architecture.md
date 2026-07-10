@@ -341,7 +341,7 @@ Per-session scoping:
     targeted orphan process cleanup.
 
 Storage:
-  .hatfield/state.sqlite — app/runtime ORM state (sessions metadata, session metadata, …)
+  .hatfield/state.sqlite — app/runtime ORM state (e.g. hatfield_session metadata; tool batch snapshots are session filesystem JSON, not this DB)
   .hatfield/messenger-transport.sqlite — Messenger doctrine transport only
   Transport table is ensured by MessengerTransportSchemaEnsurer at startup;
   messenger transport auto_setup remains a fallback safety net.

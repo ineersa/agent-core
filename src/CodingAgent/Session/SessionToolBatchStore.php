@@ -39,14 +39,18 @@ final class SessionToolBatchStore implements ToolBatchStoreInterface
      */
     public function load(string $runId, int $turnNo, string $stepId): ?array
     {
-        $path = $this->snapshotPath($runId, $turnNo, $stepId);
-        if (!is_readable($path)) {
-            $this->reconcileOrphanTempFiles($runId, $turnNo, $stepId);
+        return $this->withRunLock($runId, function () use ($runId, $turnNo, $stepId): ?array {
+            return $this->withSnapshotLock($runId, $turnNo, $stepId, function () use ($runId, $turnNo, $stepId): ?array {
+                $path = $this->snapshotPath($runId, $turnNo, $stepId);
+                if (!is_readable($path)) {
+                    $this->reconcileOrphanTempFiles($runId, $turnNo, $stepId);
 
-            return null;
-        }
+                    return null;
+                }
 
-        return $this->readSnapshotEnvelope($path)['batch_state'];
+                return $this->readSnapshotEnvelope($path, $runId, $turnNo, $stepId)['batch_state'];
+            });
+        });
     }
 
     /**
@@ -111,7 +115,7 @@ final class SessionToolBatchStore implements ToolBatchStoreInterface
         return $this->withRunLock($runId, function () use ($runId, $turnNo, $stepId, $callback): mixed {
             return $this->withSnapshotLock($runId, $turnNo, $stepId, function () use ($runId, $turnNo, $stepId, $callback): mixed {
                 $path = $this->snapshotPath($runId, $turnNo, $stepId);
-                $envelope = is_readable($path) ? $this->readSnapshotEnvelope($path) : null;
+                $envelope = is_readable($path) ? $this->readSnapshotEnvelope($path, $runId, $turnNo, $stepId) : null;
                 $current = null !== $envelope ? $envelope['batch_state'] : null;
 
                 $outcome = $callback($current);
@@ -181,7 +185,7 @@ final class SessionToolBatchStore implements ToolBatchStoreInterface
     /**
      * @return array{run_id: string, turn_no: int, step_id: string, batch_state: array<string, mixed>}
      */
-    private function readSnapshotEnvelope(string $path): array
+    private function readSnapshotEnvelope(string $path, string $expectedRunId, int $expectedTurnNo, string $expectedStepId): array
     {
         $json = file_get_contents($path);
         if (false === $json || '' === trim($json)) {
@@ -219,6 +223,10 @@ final class SessionToolBatchStore implements ToolBatchStoreInterface
             throw new SessionToolBatchStoreException('Tool batch snapshot missing batch_state.', ['path' => $path, 'component' => 'session_tool_batch_store', 'run_id' => $embeddedRunId]);
         }
 
+        if ($embeddedRunId !== $expectedRunId || $turnNo !== $expectedTurnNo || $stepId !== $expectedStepId) {
+            throw new SessionToolBatchStoreException('Tool batch snapshot identity mismatch.', ['path' => $path, 'component' => 'session_tool_batch_store', 'run_id' => $expectedRunId, 'turn_no' => $expectedTurnNo, 'step_id' => $expectedStepId, 'embedded_run_id' => $embeddedRunId, 'embedded_turn_no' => $turnNo, 'embedded_step_id' => $stepId]);
+        }
+
         /* @var array<string, mixed> $batchState */
 
         return [
@@ -244,7 +252,7 @@ final class SessionToolBatchStore implements ToolBatchStoreInterface
         try {
             $json = json_encode($envelope, \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE);
             $written = file_put_contents($tempPath, $json, \LOCK_EX);
-            if (false === $written) {
+            if (false === $written || $written !== \strlen($json)) {
                 throw new SessionToolBatchStoreException('Failed to write tool batch snapshot temp file.', ['run_id' => $runId, 'turn_no' => $turnNo, 'step_id' => $stepId, 'path' => $tempPath, 'component' => 'session_tool_batch_store']);
             }
 
@@ -258,8 +266,15 @@ final class SessionToolBatchStore implements ToolBatchStoreInterface
             if (is_file($tempPath)) {
                 try {
                     $this->unlinkOrThrow($tempPath, $runId, $turnNo, $stepId);
-                } catch (SessionToolBatchStoreException) {
-                    // Best-effort temp cleanup; original error is more important.
+                } catch (SessionToolBatchStoreException $cleanupException) {
+                    $this->logger->warning('tool_batch.snapshot_write_temp_cleanup_failed', [
+                        'run_id' => $runId,
+                        'turn_no' => $turnNo,
+                        'step_id' => $stepId,
+                        'component' => 'session_tool_batch_store',
+                        'event_type' => 'write_temp_cleanup',
+                        'error' => $cleanupException->getMessage(),
+                    ]);
                 }
             }
 
