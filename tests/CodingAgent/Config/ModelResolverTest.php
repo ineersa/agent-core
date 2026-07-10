@@ -449,7 +449,8 @@ class ModelResolverTest extends TestCase
         $resolver = $this->createResolver($this->standardAiData());
 
         $this->assertSame('high', $resolver->cycleReasoning('medium'));
-        $this->assertSame('off', $resolver->cycleReasoning('xhigh'));
+        $this->assertSame('max', $resolver->cycleReasoning('xhigh'));
+        $this->assertSame('off', $resolver->cycleReasoning('max'));
         $this->assertSame('minimal', $resolver->cycleReasoning('off'));
     }
 
@@ -458,6 +459,75 @@ class ModelResolverTest extends TestCase
         $resolver = $this->createResolver($this->standardAiData());
 
         $this->assertSame('off', $resolver->cycleReasoning('unknown'));
+    }
+
+
+    public function testGetSupportedReasoningLevelsIncludesMaxWhenModelMapHasMax(): void
+    {
+        $aiData = [
+            'default_model' => 'openai-codex/gpt-5.6-luna',
+            'providers' => [
+                'openai-codex' => [
+                    'type' => 'codex',
+                    'enabled' => true,
+                    'base_url' => 'https://chatgpt.com/backend-api',
+                    'models' => [
+                        'gpt-5.6-luna' => [
+                            'id' => 'gpt-5.6-luna',
+                            'name' => 'GPT-5.6 Luna',
+                            'context_window' => 372000,
+                            'max_tokens' => 128000,
+                            'input' => ['text', 'image'],
+                            'reasoning' => true,
+                            'thinking_level_map' => [
+                                'minimal' => 'low',
+                                'low' => 'low',
+                                'medium' => 'medium',
+                                'high' => 'high',
+                                'xhigh' => 'xhigh',
+                                'max' => 'max',
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+        ];
+        $resolver = $this->createResolver($aiData);
+
+        $levels = $resolver->getSupportedReasoningLevels('');
+
+        $this->assertContains('max', $levels);
+        $this->assertContains('xhigh', $levels);
+    }
+
+    public function testClampReasoningLevelReturnsMaxWhenInMap(): void
+    {
+        $aiData = [
+            'providers' => [
+                'openai-codex' => [
+                    'type' => 'codex',
+                    'enabled' => true,
+                    'base_url' => 'https://chatgpt.com/backend-api',
+                    'models' => [
+                        'gpt-5.6-luna' => [
+                            'id' => 'gpt-5.6-luna',
+                            'reasoning' => true,
+                            'thinking_level_map' => [
+                                'high' => 'high',
+                                'xhigh' => 'xhigh',
+                                'max' => 'max',
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+        ];
+        $resolver = $this->createResolver($aiData);
+        $model = new AiModelReference('openai-codex', 'gpt-5.6-luna');
+
+        $this->assertSame('max', $resolver->clampReasoningLevel('max', $model));
+        // unsupported level clamps to highest map key (max)
+        $this->assertSame('max', $resolver->clampReasoningLevel('bogus', $model));
     }
 
     // ──────────────────────────────────────────────

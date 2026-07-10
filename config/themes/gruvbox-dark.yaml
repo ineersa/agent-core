@@ -72,6 +72,7 @@ colors:
     thinking_medium: "aqua"
     thinking_high: "purple"
     thinking_xhigh: "red"
+    thinking_max: "bright_red"
 
     bash_mode: "orange"
     header: "aqua"

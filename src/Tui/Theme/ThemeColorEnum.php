@@ -95,6 +95,7 @@ enum ThemeColorEnum: string
     case ThinkingMedium = 'thinking_medium';
     case ThinkingHigh = 'thinking_high';
     case ThinkingXhigh = 'thinking_xhigh';
+    case ThinkingMax = 'thinking_max';
     case BashMode = 'bash_mode';
 
     /**
@@ -107,6 +108,7 @@ enum ThemeColorEnum: string
     {
         return match ($reasoning) {
             'xhigh' => self::ThinkingXhigh,
+            'max' => self::ThinkingMax,
             'high' => self::ThinkingHigh,
             'medium' => self::ThinkingMedium,
             'low' => self::ThinkingLow,

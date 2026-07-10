@@ -73,6 +73,7 @@ colors:
     thinking_medium: "nord8"
     thinking_high: "nord15"
     thinking_xhigh: "nord11"
+    thinking_max: "#ff3366"
 
     bash_mode: "nord12"
     header: "nord8"
