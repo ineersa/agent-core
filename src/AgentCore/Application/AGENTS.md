@@ -7,12 +7,12 @@ This README is an architecture map (not an index).
 - `StartRun` -> `RunOrchestrator::onStartRun()` on `agent.command.bus`
 - `ApplyCommand` -> `RunOrchestrator::onApplyCommand()` on `agent.command.bus`
 - `AdvanceRun` -> `RunOrchestrator::onAdvanceRun()` on `agent.command.bus`
-- `LlmStepResult` -> `RunOrchestrator::onLlmStepResult()` on `agent.command.bus`
-- `ToolCallResult` -> `RunOrchestrator::onToolCallResult()` on `agent.command.bus`
+- `LlmStepResult` -> routed `run_control`; `RunOrchestrator::onLlmStepResult()` on `agent.command.bus`
+- `ToolCallResult` -> routed `run_control`; `RunOrchestrator::onToolCallResult()` on `agent.command.bus`
 - `ExecuteLlmStep` -> `ExecuteLlmStepWorker::__invoke()` on `agent.execution.bus`
 - `ExecuteToolCall` -> `ExecuteToolCallWorker::__invoke()` on `agent.execution.bus`
 - `CompactRun` -> `RunOrchestrator::onCompactRun()` on `agent.command.bus`
-- `CompactionStepResult` -> `RunOrchestrator::onCompactionStepResult()` on `agent.command.bus`
+- `CompactionStepResult` -> routed `run_control`; `RunOrchestrator::onCompactionStepResult()` on `agent.command.bus`
 - `ExecuteCompactionStep` -> `ExecuteCompactionStepWorker::__invoke()` on `agent.execution.bus`
 
 Note: `CollectToolBatch` is routed to `agent.execution.bus` in `config/messenger.php`, but there is currently no `AsMessageHandler` consumer for this message in `src/`.
@@ -35,11 +35,11 @@ Note: `CollectToolBatch` is routed to `agent.execution.bus` in `config/messenger
   - dispatched by: `LlmStepResultHandler` through `RunMessageProcessor`/`RunCommit` effect dispatch
   - handled by: `ExecuteToolCallWorker::__invoke()`
 - `LlmStepResult`
-  - dispatched by: `ExecuteLlmStepWorker::__invoke()`
-  - handled by: `RunOrchestrator::onLlmStepResult()` -> `RunMessageProcessor` -> `LlmStepResultHandler`
+  - dispatched by: `ExecuteLlmStepWorker::__invoke()` on `agent.command.bus` (routed to `run_control`)
+  - handled by: `RunOrchestrator::onLlmStepResult()` in the `run_control` consumer -> `RunMessageProcessor` -> `LlmStepResultHandler`
 - `ToolCallResult`
-  - dispatched by: `ExecuteToolCallWorker::__invoke()`
-  - handled by: `RunOrchestrator::onToolCallResult()` -> `RunMessageProcessor` -> `ToolCallResultHandler`
+  - dispatched by: `ExecuteToolCallWorker::__invoke()` on `agent.command.bus` (routed to `run_control`)
+  - handled by: `RunOrchestrator::onToolCallResult()` in the `run_control` consumer -> `RunMessageProcessor` -> `ToolCallResultHandler`
 - `CompactRun`
   - dispatched by: runtime/TUI compaction trigger (COMP-03)
   - handled by: `RunOrchestrator::onCompactRun()` -> `RunMessageProcessor` -> `CompactRunHandler`
@@ -47,8 +47,8 @@ Note: `CollectToolBatch` is routed to `agent.execution.bus` in `config/messenger
   - dispatched by: `CompactRunHandler` through `RunMessageProcessor`/`RunCommit` effect dispatch
   - handled by: `ExecuteCompactionStepWorker::__invoke()`
 - `CompactionStepResult`
-  - dispatched by: `ExecuteCompactionStepWorker::__invoke()`
-  - handled by: `RunOrchestrator::onCompactionStepResult()` -> `RunMessageProcessor` -> `CompactionStepResultHandler`
+  - dispatched by: `ExecuteCompactionStepWorker::__invoke()` on `agent.command.bus` (routed to `run_control`)
+  - handled by: `RunOrchestrator::onCompactionStepResult()` in the `run_control` consumer -> `RunMessageProcessor` -> `CompactionStepResultHandler`
 
 ## Event -> listener (application side)
 
