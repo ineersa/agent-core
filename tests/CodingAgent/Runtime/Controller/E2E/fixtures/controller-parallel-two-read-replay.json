@@ -1,0 +1,69 @@
+{
+    "$schema": "LLM Replay Fixture v1 \u2014 controller E2E parallel two read tools",
+    "model": "llama_cpp/test",
+    "provider_id": "llama_cpp",
+    "reasoning": "off",
+    "recorded_at": "2026-07-10T00:00:00Z",
+    "recording_source": "manual",
+    "replay_match": {
+        "last_user_contains": "[replay:parallel-two-read]"
+    },
+    "input": {
+        "messages": [
+            {
+                "role": "user",
+                "content": "[replay:parallel-two-read] Call read twice in parallel on ./alpha.txt and ./beta.txt. Do not call any other tool."
+            }
+        ]
+    },
+    "deltas": [
+        {
+            "type": "tool_call_start",
+            "id": "call_parallel_read_a",
+            "name": "read"
+        },
+        {
+            "type": "tool_input_delta",
+            "id": "call_parallel_read_a",
+            "name": "read",
+            "partial_json": "{\"path\":\"./alpha.txt\"}"
+        },
+        {
+            "type": "tool_call_start",
+            "id": "call_parallel_read_b",
+            "name": "read"
+        },
+        {
+            "type": "tool_input_delta",
+            "id": "call_parallel_read_b",
+            "name": "read",
+            "partial_json": "{\"path\":\"./beta.txt\"}"
+        },
+        {
+            "type": "tool_call_complete",
+            "tool_calls": [
+                {
+                    "id": "call_parallel_read_a",
+                    "name": "read",
+                    "arguments": {
+                        "path": "./alpha.txt"
+                    }
+                },
+                {
+                    "id": "call_parallel_read_b",
+                    "name": "read",
+                    "arguments": {
+                        "path": "./beta.txt"
+                    }
+                }
+            ]
+        }
+    ],
+    "usage": {
+        "input_tokens": 40,
+        "output_tokens": 60,
+        "total_tokens": 100
+    },
+    "stop_reason": "tool_call",
+    "expected_text": ""
+}
