@@ -576,6 +576,81 @@ class ReasoningOptionsResolverTest extends TestCase
         );
     }
 
+    public function testCodexMaxLevelMapsToReasoningEffort(): void
+    {
+        $provider = $this->provider(
+            'openai-codex',
+            $this->model([
+                'id' => 'gpt-5.6-luna',
+                'reasoning' => true,
+                'thinkingLevelMap' => [
+                    'minimal' => 'low',
+                    'low' => 'low',
+                    'medium' => 'medium',
+                    'high' => 'high',
+                    'xhigh' => 'xhigh',
+                    'max' => 'max',
+                ],
+            ]),
+            new AiCompatibility(
+                supportsDeveloperRole: false,
+                supportsReasoningEffort: false,
+                thinkingFormat: 'codex',
+            ),
+        );
+
+        $resolver = $this->resolverForProviders(['openai-codex' => $provider]);
+
+        $this->assertSame(
+            ['reasoning' => ['effort' => 'max', 'summary' => 'auto']],
+            $resolver->resolve($this->modelRef('openai-codex', 'gpt-5.6-luna'), 'max'),
+        );
+    }
+
+    public function testZaiMaxLevelEmitsThinkingAndReasoningEffort(): void
+    {
+        $model = new AiModelDefinition(
+            id: 'glm-5.2',
+            reasoning: true,
+            thinkingLevelMap: [
+                'minimal' => null,
+                'low' => 'high',
+                'medium' => 'high',
+                'high' => 'high',
+                'xhigh' => 'max',
+                'max' => 'max',
+            ],
+            compatibility: new AiCompatibility(
+                supportsReasoningEffort: true,
+                supportsReasoningEffortExplicit: true,
+                zaiToolStream: true,
+            ),
+        );
+
+        $provider = new AiProviderConfig(
+            id: 'zai',
+            enabled: true,
+            baseUrl: 'https://api.z.ai/api/coding/paas/v4',
+            compatibility: new AiCompatibility(
+                supportsDeveloperRole: false,
+                supportsReasoningEffort: false,
+                supportsReasoningEffortExplicit: true,
+                thinkingFormat: 'zai',
+            ),
+            models: ['glm-5.2' => $model],
+        );
+
+        $resolver = $this->resolverForProviders(['zai' => $provider]);
+
+        $this->assertSame(
+            [
+                'thinking' => ['type' => 'enabled', 'clear_thinking' => false],
+                'reasoning_effort' => 'max',
+            ],
+            $resolver->resolve($this->modelRef('zai', 'glm-5.2'), 'max'),
+        );
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────
 
     private function resolverForProviders(array $providers): ReasoningOptionsResolver

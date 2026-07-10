@@ -26,7 +26,7 @@ use Ineersa\CodingAgent\Config\Ai\AiModelReference;
 final class ModelResolver
 {
     /** Valid reasoning levels. */
-    public const LEVELS = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh'];
+    public const LEVELS = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
 
     public function __construct(
         private readonly AppConfig $appConfig,

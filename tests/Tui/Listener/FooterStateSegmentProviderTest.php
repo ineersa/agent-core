@@ -69,6 +69,12 @@ class FooterStateSegmentProviderTest extends TestCase
         $this->assertSame(ThemeColorEnum::ThinkingXhigh, $segments[0]->color);
         $this->assertSame(ThemeColorEnum::ThinkingXhigh, $segments[1]->color, 'Model name should use same thinking colour as diamond');
 
+        // max → ThinkingMax
+        $state->footerReasoning = 'max';
+        $segments = $provider->getSegments();
+        $this->assertSame(ThemeColorEnum::ThinkingMax, $segments[0]->color);
+        $this->assertSame(ThemeColorEnum::ThinkingMax, $segments[1]->color);
+
         // Unknown / empty → ThinkingText
         $state->footerReasoning = '';
         $segments = $provider->getSegments();
@@ -119,7 +125,7 @@ class FooterStateSegmentProviderTest extends TestCase
         $state = $this->state;
         $state->footerModel = 'deepseek-v4-pro';
 
-        foreach (['off', 'minimal', 'low', 'medium', 'high', 'xhigh'] as $level) {
+        foreach (['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as $level) {
             $state->footerReasoning = $level;
             $provider = new FooterStateSegmentProvider($state);
             $segments = $provider->getSegments();
