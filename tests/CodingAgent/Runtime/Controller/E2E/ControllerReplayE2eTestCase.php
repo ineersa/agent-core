@@ -314,17 +314,25 @@ abstract class ControllerReplayE2eTestCase extends ControllerE2eTestCase
         }
 
         if ([] !== $survivors) {
-            // Log survivorship — this is a soft diagnostic, not a hard
-            // test failure, because some platforms (e.g. macOS) may
-            // have timing differences in process reaping.
             $names = [];
+            $ownedSurvivors = [];
+            $tempDir = isset($this->tempDir) ? $this->tempDir : '';
+
             foreach ($survivors as $pid) {
                 $cmdline = (string) @file_get_contents("/proc/{$pid}/cmdline");
-                $names[] = "  PID {$pid}: ".($cmdline ?: '(unknown)');
+                $display = $cmdline ?: '(unknown)';
+                $names[] = "  PID {$pid}: {$display}";
+
+                if ('' !== $tempDir && str_contains($display, $tempDir)) {
+                    $ownedSurvivors[] = $pid;
+                }
             }
-            fwrite(\STDERR, '[WARNING] Process ownership: '.\count($survivors)
-                ." tracked PIDs still alive after teardown:\n"
-                .implode("\n", $names)."\n");
+
+            if ([] !== $ownedSurvivors) {
+                fwrite(\STDERR, '[WARNING] Process ownership: '.\count($ownedSurvivors)
+                    ." tracked PIDs still alive after teardown (scoped to test temp dir):\n"
+                    .implode("\n", $names)."\n");
+            }
         }
     }
 

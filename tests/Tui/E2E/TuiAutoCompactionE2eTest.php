@@ -103,7 +103,7 @@ final class TuiAutoCompactionE2eTest extends TestCase
                 $pane,
                 static fn (string $cap): bool => str_contains($cap, 'Conversation compacted')
                     || str_contains($cap, 'Compaction failed'),
-                timeout: 25.0,
+                timeout: 12.0,
                 message: 'Auto-compaction terminal outcome not shown in TUI (expected Conversation compacted or Compaction failed)',
                 history: 2000,
             );

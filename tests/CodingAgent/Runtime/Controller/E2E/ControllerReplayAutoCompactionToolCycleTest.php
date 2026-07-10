@@ -89,7 +89,7 @@ final class ControllerReplayAutoCompactionToolCycleTest extends ControllerReplay
 
         // Collect events past run.completed so we catch the after-turn
         // auto-compaction events (compaction.started/completed/failed).
-        $events = $this->collectEventsPastRunCompleted(30.0);
+        $events = $this->collectEventsPastRunCompleted(12.0);
         $byType = $this->indexByType($events);
 
         $this->assertStartRunAcked($events, $startCmdId);
@@ -419,21 +419,28 @@ YAML;
      *
      * @return list<array<string, mixed>>
      */
+    private const COMPACTION_TERMINAL_PHASE_SECONDS = 8.0;
+
+    private const POST_RUN_NO_COMPACTION_START_SECONDS = 2.0;
+
     private function collectEventsPastRunCompleted(float $timeoutSeconds): array
     {
         $events = [];
         $deadline = microtime(true) + $timeoutSeconds;
-        $lastEventAt = microtime(true);
-        $sawRunTerminal = false;
+        $runTerminalAt = null;
+        $compactionPhaseDeadline = null;
 
         while (microtime(true) < $deadline) {
             foreach ($this->readEvents() as $event) {
                 $events[] = $event;
-                $lastEventAt = microtime(true);
                 $type = $event['type'] ?? '';
 
-                if (\in_array($type, ['run.completed', 'run.failed'], true)) {
-                    $sawRunTerminal = true;
+                if (\in_array($type, ['run.completed', 'run.failed'], true) && null === $runTerminalAt) {
+                    $runTerminalAt = microtime(true);
+                }
+
+                if ('compaction.started' === $type && null === $compactionPhaseDeadline) {
+                    $compactionPhaseDeadline = microtime(true) + self::COMPACTION_TERMINAL_PHASE_SECONDS;
                 }
 
                 if (\in_array($type, ['compaction.completed', 'compaction.failed'], true)) {
@@ -444,15 +451,22 @@ YAML;
             if (!$this->isRunning()) {
                 foreach ($this->readEvents() as $event) {
                     $events[] = $event;
-                    $lastEventAt = microtime(true);
                     $type = $event['type'] ?? '';
-                    if (\in_array($type, ['run.completed', 'run.failed'], true)) {
-                        $sawRunTerminal = true;
-                    }
                     if (\in_array($type, ['compaction.completed', 'compaction.failed'], true)) {
                         return $events;
                     }
                 }
+                break;
+            }
+
+            if (null !== $compactionPhaseDeadline && microtime(true) > $compactionPhaseDeadline) {
+                break;
+            }
+
+            if (null !== $runTerminalAt
+                && null === $compactionPhaseDeadline
+                && microtime(true) - $runTerminalAt > self::POST_RUN_NO_COMPACTION_START_SECONDS
+            ) {
                 break;
             }
 
