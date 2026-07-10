@@ -68,6 +68,9 @@ services:
     Ineersa\CodingAgent\Tool\HatfieldToolProviderInterface:
       tags: ['hatfield.tool_provider']
 
+    Ineersa\CodingAgent\Infrastructure\SymfonyAi\SymfonyAiProviderBuilderInterface:
+      tags: ['hatfield.symfony_ai.provider_builder']
+
   Ineersa\CodingAgent\:
     resource: '%kernel.project_dir%/src/CodingAgent/**/*.php'
     exclude: '%kernel.project_dir%/src/CodingAgent/ExtensionApi/**/*.php'
@@ -105,6 +108,10 @@ services:
   Ineersa\CodingAgent\Auth\CodexAuthStorage:
     arguments:
       $homeDir: '@=service("Ineersa\\CodingAgent\\Config\\SettingsPathResolver").getHomeDir()'
+
+  Ineersa\CodingAgent\Infrastructure\SymfonyAi\SymfonyAiProviderFactory:
+    arguments:
+      $builders: !tagged_iterator hatfield.symfony_ai.provider_builder
 
   # AppConfig is a value object, not an autowireable service.
   # The container uses the fromContainer() factory to construct it.

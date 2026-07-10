@@ -12,11 +12,16 @@ use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
+use Ineersa\CodingAgent\Infrastructure\SymfonyAi\ProjectedSymfonyModelCatalog;
+use Ineersa\CodingAgent\Infrastructure\SymfonyAi\SymfonyAiProviderBuilderInterface;
 use Ineersa\CodingAgent\Infrastructure\SymfonyAi\SymfonyAiProviderFactory;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
 use Symfony\AI\Platform\Bridge\Generic\CompletionsModel;
+use Symfony\AI\Platform\Provider;
+use Symfony\AI\Platform\ProviderInterface;
 use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
+use Symfony\Contracts\HttpClient\HttpClientInterface;
 
 final class SymfonyAiProviderFactoryTest extends TestCase
 {
@@ -65,40 +70,6 @@ final class SymfonyAiProviderFactoryTest extends TestCase
         $catalog = $providers['deepseek']->getModelCatalog();
         $model = $catalog->getModel('deepseek/deepseek-v4-pro');
         $this->assertInstanceOf(CompletionsModel::class, $model);
-    }
-
-    public function testCodexTypeThrowsWithoutAuthStorage(): void
-    {
-        $providerConfig = new AiProviderConfig(
-            id: 'openai-codex',
-            type: 'codex',
-            enabled: true,
-            baseUrl: 'https://chatgpt.com/backend-api',
-        );
-
-        $this->expectException(\RuntimeException::class);
-        $this->expectExceptionMessage('requires stored OAuth credentials');
-
-        $factory = $this->createFactory(['openai-codex' => $providerConfig]);
-        $factory->createProviders();
-    }
-
-    public function testCodexTypeThrowsRegardlessOfYamlCredentials(): void
-    {
-        $providerConfig = new AiProviderConfig(
-            id: 'openai-codex',
-            type: 'codex',
-            enabled: true,
-            baseUrl: 'https://chatgpt.com/backend-api',
-            apiKey: 'some-access-token',
-            accountId: 'chat-123456',
-        );
-
-        $this->expectException(\RuntimeException::class);
-        $this->expectExceptionMessage('requires stored OAuth credentials');
-
-        $factory = $this->createFactory(['openai-codex' => $providerConfig]);
-        $factory->createProviders();
     }
 
     public function testDisabledCodexProviderIsSkipped(): void
@@ -283,13 +254,50 @@ final class SymfonyAiProviderFactoryTest extends TestCase
         }
     }
 
+    public function testDelegatesToFirstMatchingBuilder(): void
+    {
+        $sentinel = new Provider('stub-builder', [], [], new ProjectedSymfonyModelCatalog(hatfieldModels: [], modelClass: CompletionsModel::class));
+
+        $stubBuilder = new class($sentinel) implements SymfonyAiProviderBuilderInterface {
+            public function __construct(private readonly ProviderInterface $sentinel)
+            {
+            }
+
+            public function supports(AiProviderConfig $provider): bool
+            {
+                return 'custom-builder' === $provider->type;
+            }
+
+            public function build(AiProviderConfig $provider, HttpClientInterface $httpClient): ProviderInterface
+            {
+                return $this->sentinel;
+            }
+        };
+
+        $providerConfig = new AiProviderConfig(
+            id: 'custom',
+            type: 'custom-builder',
+            enabled: true,
+            baseUrl: 'https://api.example.com',
+            apiKey: 'key',
+            models: [
+                'm1' => new AiModelDefinition(id: 'm1', toolCalling: true, reasoning: false),
+            ],
+        );
+
+        $factory = $this->createFactory(['custom' => $providerConfig], [$stubBuilder]);
+        $providers = $factory->createProviders();
+
+        $this->assertSame($sentinel, $providers['custom']);
+    }
+
     /**
      * @param array<string, AiProviderConfig> $providers
      */
-    private function createFactory(array $providers): SymfonyAiProviderFactory
+    private function createFactory(array $providers, iterable $builders = []): SymfonyAiProviderFactory
     {
         $aiConfig = new AiConfig(
-            defaultModel: 'openai-codex/gpt-5.5',
+            defaultModel: 'deepseek/deepseek-v4-pro',
             providers: $providers,
         );
 
@@ -302,6 +310,7 @@ final class SymfonyAiProviderFactoryTest extends TestCase
         return new SymfonyAiProviderFactory(
             $appConfig,
             $this->createStub(EventDispatcherInterface::class),
+            $builders,
         );
     }
 

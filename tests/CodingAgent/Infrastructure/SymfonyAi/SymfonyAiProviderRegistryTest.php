@@ -86,7 +86,7 @@ final class EmptyStubFactory extends SymfonyAiProviderFactory
 {
     public function __construct(AppConfig $appConfig, EventDispatcherInterface $eventDispatcher)
     {
-        parent::__construct($appConfig, $eventDispatcher);
+        parent::__construct($appConfig, $eventDispatcher, []);
     }
 
     public function createProviders(): array
@@ -106,7 +106,7 @@ final class FixedProviderFactory extends SymfonyAiProviderFactory
         EventDispatcherInterface $eventDispatcher,
         private readonly array $providers,
     ) {
-        parent::__construct($appConfig, $eventDispatcher);
+        parent::__construct($appConfig, $eventDispatcher, []);
     }
 
     public function createProviders(): array
@@ -124,7 +124,7 @@ final class CountingCallsFactory extends SymfonyAiProviderFactory
 
     public function __construct(AppConfig $appConfig, EventDispatcherInterface $eventDispatcher)
     {
-        parent::__construct($appConfig, $eventDispatcher);
+        parent::__construct($appConfig, $eventDispatcher, []);
     }
 
     public function createProviders(): array
