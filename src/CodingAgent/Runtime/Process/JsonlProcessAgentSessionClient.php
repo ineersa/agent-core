@@ -180,20 +180,26 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
 
         try {
             while (microtime(true) - $start < $timeout) {
-                /** @var RuntimeEvent $event */
-                foreach ($this->readEvents() as $event) {
+                $foundStarted = false;
+
+                foreach ($this->readEventBatch() as $event) {
                     if ('run.started' === $event->type || 'run_started' === $event->type) {
                         $this->activeRunId = $event->runId;
+                        $foundStarted = true;
 
-                        return new RunHandle(runId: $event->runId, status: 'running');
+                        continue;
                     }
 
                     if ('runtime.ready' === $event->type || 'command.ack' === $event->type) {
                         continue;
                     }
 
-                    // Buffer non-matching events.
+                    // Buffer non-matching events so the poller can consume them later.
                     $this->bufferEvent($event, 'read_events');
+                }
+
+                if ($foundStarted) {
+                    return new RunHandle(runId: $this->activeRunId, status: 'running');
                 }
 
                 $this->assertProcessStillRunning('waiting for run_started');
@@ -744,6 +750,26 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
             $this->ensureProcessRunning();
             $this->writeCommand($command);
         }
+    }
+
+    /**
+     * Decode every complete JSONL line from one non-blocking stdout read.
+     *
+     * Unlike iterating {@see readEvents()} lazily, this method always consumes the
+     * full decoded batch for that read. Callers must not return from inside a lazy
+     * foreach over {@see readEvents()} — decoded lines are already removed from
+     * {@see $stdoutBuffer} and would be lost if the generator is abandoned early.
+     *
+     * @return list<RuntimeEvent>
+     */
+    private function readEventBatch(): array
+    {
+        $events = [];
+        foreach ($this->readEvents() as $event) {
+            $events[] = $event;
+        }
+
+        return $events;
     }
 
     /**

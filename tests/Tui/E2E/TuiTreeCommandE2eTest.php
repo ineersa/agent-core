@@ -80,15 +80,6 @@ final class TuiTreeCommandE2eTest extends TestCase
                 'Replay fixture response text missing from transcript output',
             );
 
-            // Streamed transcript can precede canonical idle; wait for terminal idle before /tree.
-            $this->tmux->waitForCallback(
-                $pane,
-                static fn (string $cap): bool => str_contains($cap, '● idle'),
-                timeout: 12.0,
-                message: 'Session did not return to idle after assistant turn completed',
-                history: 2000,
-            );
-
             // ── 3. Send /tree command ──
             $this->tmux->sendKey($pane, 'C-u');
             $this->tmux->sendLiteral($pane, '/tree');
@@ -117,14 +108,14 @@ final class TuiTreeCommandE2eTest extends TestCase
             // ── 4. Send Escape to close the picker ──
             $this->tmux->sendKey($pane, 'Escape');
 
-            // Current visible pane only — avoid history false positives from the open overlay.
-            $postCloseCapture = $this->waitForVisiblePaneCallback(
+            $postCloseCapture = $this->tmux->waitForCallback(
                 $pane,
-                static fn (string $plain): bool => str_contains($plain, '● idle')
-                    && !str_contains($plain, 'Session turn tree')
-                    && str_contains($plain, '◆'),
-                timeout: 12.0,
-                message: 'Tree picker did not close on visible pane with idle footer',
+                static fn (string $cap): bool => str_contains($cap, '● idle')
+                    && !str_contains($cap, 'Session turn tree')
+                    && str_contains($cap, '◆'),
+                timeout: TmuxHarness::TUI_GATE_CALLBACK_TIMEOUT_PARALLEL,
+                message: 'Tree picker did not close with idle footer',
+                history: 500,
             );
 
             $this->assertStringContainsString('● idle', $postCloseCapture,
@@ -289,30 +280,6 @@ final class TuiTreeCommandE2eTest extends TestCase
         );
     }
 
-    /**
-     * Poll only the visible pane (no scrollback) until predicate passes.
-     */
-    private function waitForVisiblePaneCallback(
-        TmuxPane $pane,
-        callable $callback,
-        float $timeout,
-        string $message,
-    ): string {
-        $deadline = microtime(true) + $timeout;
-        $lastCapture = '';
-
-        while (microtime(true) < $deadline) {
-            $lastCapture = $this->tmux->capturePlain($pane);
-
-            if ($callback($lastCapture)) {
-                return $lastCapture;
-            }
-
-            usleep(100_000);
-        }
-
-        throw new \RuntimeException(\sprintf('%s Timed out after %.1fs. Last visible capture:'."\n%s", $message, $timeout, $lastCapture));
-    }
 
     private function agentCommandForFixtureChain(string ...$fixtureFiles): string
     {
