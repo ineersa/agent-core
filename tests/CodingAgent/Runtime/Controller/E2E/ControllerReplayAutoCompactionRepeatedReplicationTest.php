@@ -101,7 +101,7 @@ final class ControllerReplayAutoCompactionRepeatedReplicationTest extends Contro
             ],
         ]);
 
-        $turn2Events = $this->collectTurnEventsWithAsyncCompaction('run.completed', 12.0);
+        $turn2Events = $this->collectTurnEventsUntilRunTerminal('run.completed', 8.0, expectAfterTurnCompaction: true, compactionTimeoutSeconds: 6.0);
         $turn2ByType = $this->indexByType($turn2Events);
 
         $this->assertTrue(
@@ -135,7 +135,7 @@ final class ControllerReplayAutoCompactionRepeatedReplicationTest extends Contro
             ],
         ]);
 
-        $turn3Events = $this->collectTurnEventsWithAsyncCompaction('run.completed', 12.0);
+        $turn3Events = $this->collectTurnEventsUntilRunTerminal('run.completed', 8.0, expectAfterTurnCompaction: true, compactionTimeoutSeconds: 6.0);
         $turn3ByType = $this->indexByType($turn3Events);
 
         $this->assertTrue(

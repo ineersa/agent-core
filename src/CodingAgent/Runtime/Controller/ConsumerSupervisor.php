@@ -58,6 +58,17 @@ final class ConsumerSupervisor implements ConsumerStdoutSourceInterface
     /** Symfony Messenger graceful worker recycle threshold for controller consumers. */
     private const string CONSUMER_MEMORY_LIMIT = '256M';
 
+    /**
+     * messenger:consume --sleep seconds for the run_control transport.
+     *
+     * Symfony defaults to 1s between empty polls. That adds up to one second
+     * of scheduling latency per routed result (CompactionStepResult, tool/LLM
+     * results) when the worker just finished a message and the queue was empty.
+     * run_control is a single low-volume writer queue, so --sleep=0 is acceptable:
+     * the worker polls the Doctrine transport immediately instead of napping.
+     */
+    private const int RUN_CONTROL_CONSUMER_SLEEP_SECONDS = 0;
+
     /** Max bytes of stderr tail retained per consumer for crash diagnostics. */
     private const int STDERR_TAIL_MAX_BYTES = 16_384;
 
@@ -107,14 +118,20 @@ final class ConsumerSupervisor implements ConsumerStdoutSourceInterface
             $env = $_ENV;
             $env['HATFIELD_CONSUMER_STDOUT_EVENTS'] = '1';
 
+            $consumeArgs = [
+                ...$appCommand,
+                'messenger:consume',
+                $transportName,
+                '--no-interaction',
+                '--memory-limit='.self::CONSUMER_MEMORY_LIMIT,
+            ];
+
+            if ('run_control' === $transportName) {
+                $consumeArgs[] = '--sleep='.self::RUN_CONTROL_CONSUMER_SLEEP_SECONDS;
+            }
+
             $process = new Process(
-                [
-                    ...$appCommand,
-                    'messenger:consume',
-                    $transportName,
-                    '--no-interaction',
-                    '--memory-limit='.self::CONSUMER_MEMORY_LIMIT,
-                ],
+                $consumeArgs,
                 cwd: $cwd,
                 env: $env,
                 timeout: null,

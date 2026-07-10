@@ -41,6 +41,27 @@ final class ConsumerSupervisorTest extends TestCase
         }
     }
 
+    public function testRunControlLaunchUsesZeroSleepForLowLatencyPolling(): void
+    {
+        $argvFile = tempnam(sys_get_temp_dir(), 'hatfield-consumer-argv-');
+        $this->assertNotFalse($argvFile);
+
+        try {
+            $supervisor = $this->createSupervisor($argvFile);
+            $supervisor->launch('run_control', 0);
+
+            $process = $this->getConsumerProcess($supervisor, 'run_control#0');
+            $process->wait();
+
+            $argv = json_decode((string) file_get_contents($argvFile), true, 512, \JSON_THROW_ON_ERROR);
+            $this->assertIsArray($argv);
+            $this->assertContains('--sleep=0', $argv);
+            $this->assertNotContains('--sleep=1', $argv);
+        } finally {
+            @unlink($argvFile);
+        }
+    }
+
     public function testGracefulExitCodeZeroRecyclesImmediatelyWithoutAbandonment(): void
     {
         $argvFile = tempnam(sys_get_temp_dir(), 'hatfield-consumer-argv-');

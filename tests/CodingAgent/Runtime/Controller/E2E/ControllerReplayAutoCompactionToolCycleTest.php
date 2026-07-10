@@ -89,7 +89,7 @@ final class ControllerReplayAutoCompactionToolCycleTest extends ControllerReplay
 
         // Collect events past run.completed so we catch the after-turn
         // auto-compaction events (compaction.started/completed/failed).
-        $events = $this->collectTurnEventsWithAsyncCompaction('run.completed', 12.0);
+        $events = $this->collectTurnEventsUntilRunTerminal('run.completed', 8.0, expectAfterTurnCompaction: true, compactionTimeoutSeconds: 6.0);
         $byType = $this->indexByType($events);
 
         $this->assertStartRunAcked($events, $startCmdId);

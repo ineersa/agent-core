@@ -99,7 +99,7 @@ final class ControllerReplayAutoCompactionMultiTurnTest extends ControllerReplay
         // Collect runtime events beyond the terminal run state so we
         // catch the after-turn auto-compaction events (compaction.started,
         // compaction.completed / compaction.failed).
-        $allTurn2Events = $this->collectTurnEventsWithAsyncCompaction('run.completed', 12.0);
+        $allTurn2Events = $this->collectTurnEventsUntilRunTerminal('run.completed', 8.0, expectAfterTurnCompaction: true, compactionTimeoutSeconds: 6.0);
         $turn2ByType = $this->indexByType($allTurn2Events);
 
         $this->assertTrue(

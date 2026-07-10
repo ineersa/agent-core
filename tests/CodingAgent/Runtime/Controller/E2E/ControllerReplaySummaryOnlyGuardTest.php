@@ -73,7 +73,7 @@ final class ControllerReplaySummaryOnlyGuardTest extends ControllerReplayE2eTest
             ],
         ]);
 
-        $turn1Events = $this->collectTurnEventsWithAsyncCompaction('run.completed', 12.0);
+        $turn1Events = $this->collectTurnEventsUntilRunTerminal('run.completed', 8.0, expectAfterTurnCompaction: true, compactionTimeoutSeconds: 6.0);
         $t1ByType = $this->indexByType($turn1Events);
 
         $this->assertStartRunAcked($turn1Events, $startCmdId);
@@ -108,7 +108,11 @@ final class ControllerReplaySummaryOnlyGuardTest extends ControllerReplayE2eTest
             'payload' => ['text' => 'ok'],
         ]);
 
-        $turn2Events = $this->collectTurnEventsWithAsyncCompaction('run.completed', 12.0);
+        $turn2Events = $this->collectTurnEventsUntilRunTerminal('run.completed', 8.0, expectAfterTurnCompaction: false);
+        $turn2Events = array_merge(
+            $turn2Events,
+            $this->drainUntilCompactionQuiet(2.0),
+        );
         $t2ByType = $this->indexByType($turn2Events);
 
         $this->assertTrue(
