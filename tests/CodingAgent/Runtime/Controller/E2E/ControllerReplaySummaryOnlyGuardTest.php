@@ -111,7 +111,7 @@ final class ControllerReplaySummaryOnlyGuardTest extends ControllerReplayE2eTest
         $turn2Events = $this->collectTurnEventsUntilRunTerminal('run.completed', 8.0, expectAfterTurnCompaction: false);
         $turn2Events = array_merge(
             $turn2Events,
-            $this->drainUntilCompactionQuiet(2.0),
+            $this->drainUntilCompactionQuiet(1.5),
         );
         $t2ByType = $this->indexByType($turn2Events);
 

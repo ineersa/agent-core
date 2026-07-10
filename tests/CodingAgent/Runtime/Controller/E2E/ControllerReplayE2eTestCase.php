@@ -44,8 +44,12 @@ abstract class ControllerReplayE2eTestCase extends ControllerE2eTestCase
     /** Max wait for compaction.completed/failed after compaction.started (replay fixtures). */
     protected const COMPACTION_TERMINAL_AFTER_STARTED_SECONDS = 4.0;
 
-    /** Idle drain when no compaction.started appears after run terminal (guard / no-op turns). */
-    protected const COMPACTION_NO_START_IDLE_DRAIN_SECONDS = 0.8;
+    /**
+     * Quiet period after the last runtime event when compaction must not fire.
+     * Symfony messenger:consume defaults to 1s between empty polls; use a bound
+     * above that so a message queued just after an empty poll is still observable.
+     */
+    protected const COMPACTION_NO_COMPACTION_QUIET_SECONDS = 1.35;
     /** @var list<array<string, mixed>> One fixture per expected LLM call */
     protected array $replayFixtures = [];
     /** @var list<int> PIDs of tracked child processes */
@@ -272,8 +276,8 @@ abstract class ControllerReplayE2eTestCase extends ControllerE2eTestCase
     }
 
     /**
-     * After run.completed: wait for compaction.completed/failed, or exit early
-     * when compaction.started never appears (idle drain).
+     * After run.completed when compaction is expected: wait event-driven for
+     * compaction.completed/failed once compaction.started appears (bounded phase).
      *
      * @return list<array<string, mixed>>
      */
@@ -281,7 +285,6 @@ abstract class ControllerReplayE2eTestCase extends ControllerE2eTestCase
     {
         $events = [];
         $deadline = microtime(true) + $timeoutSeconds;
-        $lastEventAt = microtime(true);
         $compactionStartedAt = null;
         $compactionTerminalDeadline = null;
 
@@ -290,7 +293,6 @@ abstract class ControllerReplayE2eTestCase extends ControllerE2eTestCase
             foreach ($this->readEvents() as $event) {
                 $events[] = $event;
                 $sawNew = true;
-                $lastEventAt = microtime(true);
                 $type = $event['type'] ?? '';
 
                 if ('compaction.started' === $type && null === $compactionStartedAt) {
@@ -308,7 +310,6 @@ abstract class ControllerReplayE2eTestCase extends ControllerE2eTestCase
                 foreach ($this->readEvents() as $event) {
                     $events[] = $event;
                     $sawNew = true;
-                    $lastEventAt = microtime(true);
                     $type = $event['type'] ?? '';
                     if (\in_array($type, ['compaction.completed', 'compaction.failed'], true)) {
                         return $events;
@@ -318,12 +319,6 @@ abstract class ControllerReplayE2eTestCase extends ControllerE2eTestCase
             }
 
             if (null !== $compactionTerminalDeadline && microtime(true) > $compactionTerminalDeadline) {
-                break;
-            }
-
-            if (null === $compactionStartedAt
-                && microtime(true) - $lastEventAt > self::COMPACTION_NO_START_IDLE_DRAIN_SECONDS
-            ) {
                 break;
             }
 
@@ -372,7 +367,7 @@ abstract class ControllerReplayE2eTestCase extends ControllerE2eTestCase
                 break;
             }
 
-            if (microtime(true) - $lastEventAt > self::COMPACTION_NO_START_IDLE_DRAIN_SECONDS) {
+            if (microtime(true) - $lastEventAt > self::COMPACTION_NO_COMPACTION_QUIET_SECONDS) {
                 break;
             }
 
