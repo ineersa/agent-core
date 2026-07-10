@@ -24,6 +24,32 @@ if ('' === $base) {
     exit(2);
 }
 
+$gatePath = getenv('HATFIELD_TOOL_BATCH_MUTATE_GATE') ?: '';
+if ('' !== $gatePath) {
+    $gate = fopen($gatePath, 'c+b');
+    if (false === $gate) {
+        fwrite(\STDERR, "Failed to open mutate gate\n");
+        exit(2);
+    }
+
+    file_put_contents($gatePath, "ready\n", \FILE_APPEND | \LOCK_EX);
+    if (!flock($gate, \LOCK_SH)) {
+        fclose($gate);
+        fwrite(\STDERR, "Failed to acquire shared gate lock\n");
+        exit(2);
+    }
+
+    if (!flock($gate, \LOCK_EX)) {
+        flock($gate, \LOCK_UN);
+        fclose($gate);
+        fwrite(\STDERR, "Failed to wait for gate release\n");
+        exit(2);
+    }
+
+    flock($gate, \LOCK_UN);
+    fclose($gate);
+}
+
 $paths = new class($base) implements ToolBatchRunStoragePathsInterface {
     public function __construct(private readonly string $base)
     {

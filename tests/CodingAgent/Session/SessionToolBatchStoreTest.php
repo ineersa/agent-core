@@ -26,6 +26,7 @@ use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\FlockStore;
+use Symfony\Component\Process\Process;
 use Symfony\Component\Serializer\Encoder\JsonEncoder;
 use Symfony\Component\Serializer\NameConverter\CamelCaseToSnakeCaseNameConverter;
 use Symfony\Component\Serializer\Normalizer\BackedEnumNormalizer;
@@ -162,8 +163,123 @@ final class SessionToolBatchStoreTest extends TestCase
         $this->assertDirectoryDoesNotExist($this->hatfieldSessionStore->resolveSessionsBasePath().'/'.$childRunId);
     }
 
+    public function testParallelWorkerProcessesMutateWithoutLosingResults(): void
+    {
+        $parallelProjectDir = TestDirectoryIsolation::createOsTempDir('session-tool-batch-parallel');
+        TestDirectoryIsolation::createHatfieldTree($parallelProjectDir, withSessions: true);
+
+        try {
+            $parallelStore = $this->createStoreForProjectDir($parallelProjectDir);
+            $parallelStore->save('run-par', 1, 'step-1', [
+                'expected_order' => ['c1' => 0, 'c2' => 1],
+                'call_data' => [],
+                'pending_queue' => ['c1', 'c2'],
+                'in_flight' => [],
+                'result_data' => [],
+                'finalized' => false,
+                'max_parallelism' => 2,
+            ]);
+
+            $autoload = \dirname(__DIR__, 3).'/vendor/autoload.php';
+            $script = \dirname(__DIR__, 3).'/tests/CodingAgent/Session/Support/session_tool_batch_mutate_worker.php';
+            $this->assertFileExists($script);
+
+            $gatePath = $parallelProjectDir.'/.mutate-gate';
+            touch($gatePath);
+
+            $env = [
+                'HATFIELD_SESSIONS_BASE' => $parallelProjectDir.'/.hatfield/sessions',
+                'HATFIELD_TOOL_BATCH_MUTATE_GATE' => $gatePath,
+            ];
+
+            $p1 = new Process(['php', $script, $autoload, 'c1'], env: $env);
+            $p2 = new Process(['php', $script, $autoload, 'c2'], env: $env);
+            $p1->setTimeout(10);
+            $p2->setTimeout(10);
+
+            $p1->start();
+            $p2->start();
+
+            $this->waitUntilWorkersReady($gatePath, 2, 10.0);
+
+            $gate = fopen($gatePath, 'c+b');
+            $this->assertNotFalse($gate);
+            try {
+                if (!flock($gate, \LOCK_EX)) {
+                    $this->fail('Failed to release mutate gate for parallel workers.');
+                }
+            } finally {
+                flock($gate, \LOCK_UN);
+                fclose($gate);
+            }
+
+            try {
+                $p1->wait();
+                $p2->wait();
+            } finally {
+                $this->stopProcessIfRunning($p1);
+                $this->stopProcessIfRunning($p2);
+            }
+
+            $this->assertTrue($p1->isSuccessful(), $p1->getErrorOutput().$p1->getOutput());
+            $this->assertTrue($p2->isSuccessful(), $p2->getErrorOutput().$p2->getOutput());
+
+            $final = $parallelStore->load('run-par', 1, 'step-1');
+            $this->assertNotNull($final);
+            $this->assertTrue($final['finalized']);
+            $this->assertArrayHasKey('c1', $final['result_data']);
+            $this->assertArrayHasKey('c2', $final['result_data']);
+        } finally {
+            TestDirectoryIsolation::removeDirectory($parallelProjectDir);
+        }
+    }
+
+    private function waitUntilWorkersReady(string $gatePath, int $expectedReady, float $timeoutSeconds): void
+    {
+        $deadline = microtime(true) + $timeoutSeconds;
+        while (microtime(true) < $deadline) {
+            $ready = 0;
+            $lines = @file($gatePath, \FILE_IGNORE_NEW_LINES);
+            if (\is_array($lines)) {
+                foreach ($lines as $line) {
+                    if ('ready' === $line) {
+                        ++$ready;
+                    }
+                }
+            }
+
+            if ($ready >= $expectedReady) {
+                return;
+            }
+        }
+
+        $this->fail(\sprintf('Timed out waiting for %d parallel workers to reach mutate gate.', $expectedReady));
+    }
+
+    private function stopProcessIfRunning(Process $process): void
+    {
+        if ($process->isRunning()) {
+            $process->stop(0);
+        }
+    }
+
     private function createStore(HatfieldSessionStore $hatfield, ?AgentChildRunDirectory $directory = null): SessionToolBatchStore
     {
+        return $this->createStoreForProjectDir($this->projectDir, $hatfield, $directory);
+    }
+
+    private function createStoreForProjectDir(string $projectDir, ?HatfieldSessionStore $hatfield = null, ?AgentChildRunDirectory $directory = null): SessionToolBatchStore
+    {
+        if (null === $hatfield) {
+            $entityManager = $this->createStub(EntityManagerInterface::class);
+            $appConfig = new AppConfig(
+                tui: new TuiConfig(theme: 'default'),
+                logging: new LoggingConfig(),
+                cwd: $projectDir,
+            );
+            $hatfield = new HatfieldSessionStore($appConfig, $entityManager);
+        }
+
         $pathResolver = new AgentArtifactPathResolver($hatfield);
         $serializer = new Serializer(
             [new DateTimeNormalizer(), new BackedEnumNormalizer(), new ObjectNormalizer(nameConverter: new CamelCaseToSnakeCaseNameConverter())],
