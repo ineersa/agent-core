@@ -41,6 +41,9 @@ use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
  */
 abstract class ControllerReplayE2eTestCase extends ControllerE2eTestCase
 {
+    protected const COMPACTION_TERMINAL_PHASE_SECONDS = 8.0;
+
+    protected const POST_RUN_NO_COMPACTION_START_SECONDS = 2.0;
     /** @var list<array<string, mixed>> One fixture per expected LLM call */
     protected array $replayFixtures = [];
     /** @var list<int> PIDs of tracked child processes */
@@ -243,6 +246,78 @@ abstract class ControllerReplayE2eTestCase extends ControllerE2eTestCase
     }
 
     /**
+     * Collect until parent run terminal, then wait for async after-turn compaction
+     * lifecycle on run_control (compaction.started → compaction.completed/failed).
+     *
+     * @return list<array<string, mixed>>
+     */
+    protected function collectTurnEventsWithAsyncCompaction(
+        ?string $runTerminalType,
+        float $overallTimeoutSeconds,
+    ): array {
+        $events = [];
+        $deadline = microtime(true) + $overallTimeoutSeconds;
+        $runTerminalAt = null;
+        $compactionPhaseDeadline = null;
+        $sawTargetRunTerminal = false;
+
+        while (microtime(true) < $deadline) {
+            foreach ($this->readEvents() as $event) {
+                $events[] = $event;
+                $type = $event['type'] ?? '';
+
+                if (null !== $runTerminalType && $runTerminalType === $type
+                    && $this->isParentRunTerminalEvent($event)
+                ) {
+                    $sawTargetRunTerminal = true;
+                }
+
+                if ($this->isParentRunTerminalEvent($event) && null === $runTerminalAt) {
+                    $runTerminalAt = microtime(true);
+                }
+
+                if ('compaction.started' === $type && null === $compactionPhaseDeadline) {
+                    $compactionPhaseDeadline = microtime(true) + self::COMPACTION_TERMINAL_PHASE_SECONDS;
+                }
+
+                if (\in_array($type, ['compaction.completed', 'compaction.failed'], true)) {
+                    return $events;
+                }
+            }
+
+            if (!$this->isRunning()) {
+                foreach ($this->readEvents() as $event) {
+                    $events[] = $event;
+                    $type = $event['type'] ?? '';
+                    if (\in_array($type, ['compaction.completed', 'compaction.failed'], true)) {
+                        return $events;
+                    }
+                }
+                break;
+            }
+
+            if (null !== $compactionPhaseDeadline && microtime(true) > $compactionPhaseDeadline) {
+                break;
+            }
+
+            if (null !== $runTerminalAt
+                && null === $compactionPhaseDeadline
+                && microtime(true) - $runTerminalAt > self::POST_RUN_NO_COMPACTION_START_SECONDS
+            ) {
+                break;
+            }
+
+            usleep(50_000);
+        }
+
+        if (null !== $runTerminalType && !$sawTargetRunTerminal) {
+            return $events;
+        }
+
+        return $events;
+    }
+
+    /**
      * Terminate the controller process group and assert no survivors.
      *
      * Uses SIGTERM → short grace → SIGKILL for the entire tracked
@@ -314,25 +389,17 @@ abstract class ControllerReplayE2eTestCase extends ControllerE2eTestCase
         }
 
         if ([] !== $survivors) {
+            // Log survivorship — this is a soft diagnostic, not a hard
+            // test failure, because some platforms (e.g. macOS) may
+            // have timing differences in process reaping.
             $names = [];
-            $ownedSurvivors = [];
-            $tempDir = isset($this->tempDir) ? $this->tempDir : '';
-
             foreach ($survivors as $pid) {
                 $cmdline = (string) @file_get_contents("/proc/{$pid}/cmdline");
-                $display = $cmdline ?: '(unknown)';
-                $names[] = "  PID {$pid}: {$display}";
-
-                if ('' !== $tempDir && str_contains($display, $tempDir)) {
-                    $ownedSurvivors[] = $pid;
-                }
+                $names[] = "  PID {$pid}: ".($cmdline ?: '(unknown)');
             }
-
-            if ([] !== $ownedSurvivors) {
-                fwrite(\STDERR, '[WARNING] Process ownership: '.\count($ownedSurvivors)
-                    ." tracked PIDs still alive after teardown (scoped to test temp dir):\n"
-                    .implode("\n", $names)."\n");
-            }
+            fwrite(\STDERR, '[WARNING] Process ownership: '.\count($survivors)
+                ." tracked PIDs still alive after teardown:\n"
+                .implode("\n", $names)."\n");
         }
     }
 

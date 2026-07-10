@@ -73,14 +73,7 @@ final class ControllerReplaySummaryOnlyGuardTest extends ControllerReplayE2eTest
             ],
         ]);
 
-        // Collect until run.completed, then drain for after-turn
-        // auto-compaction lifecycle events (compaction.started/
-        // completed/failed appear after the turn finishes).
-        $turn1Events = $this->collectEventsUntil('run.completed', 10.0);
-        $turn1Events = array_merge(
-            $turn1Events,
-            $this->drainUntilCompactionResolved(5.0, $turn1Events),
-        );
+        $turn1Events = $this->collectTurnEventsWithAsyncCompaction('run.completed', 12.0);
         $t1ByType = $this->indexByType($turn1Events);
 
         $this->assertStartRunAcked($turn1Events, $startCmdId);
@@ -115,16 +108,7 @@ final class ControllerReplaySummaryOnlyGuardTest extends ControllerReplayE2eTest
             'payload' => ['text' => 'ok'],
         ]);
 
-        // Collect until run.completed (turn 2 finishes), then do a
-        // short drain.  If the summary-only guard works, no after-turn
-        // compaction fires → idle exit returns in ~500ms.  If the guard
-        // is broken, the ghost fixture is consumed and the drain catches
-        // compaction.completed within the 5s window.
-        $turn2Events = $this->collectEventsUntil('run.completed', 10.0);
-        $turn2Events = array_merge(
-            $turn2Events,
-            $this->drainUntilCompactionResolved(5.0, $turn2Events),
-        );
+        $turn2Events = $this->collectTurnEventsWithAsyncCompaction('run.completed', 12.0);
         $t2ByType = $this->indexByType($turn2Events);
 
         $this->assertTrue(
@@ -402,70 +386,6 @@ YAML;
     // ─────────────────────────────────────────────────────────────────
     //  Local helpers
     // ─────────────────────────────────────────────────────────────────
-
-    /**
-     * Collect events until a compaction.completed or compaction.failed
-     * event appears, or the timeout expires.  Used after
-     * collectEventsUntil('run.completed') to catch async after-turn
-     * compaction lifecycle events that arrive after the terminal
-     * run state.
-     *
-     * Exits early (without waiting the full timeout) when:
-     *  - The controller process stops.
-     *  - No new events arrive for 500ms (idle drain).
-     *
-     * @param list<array<string, mixed>> $alreadyCollected events already
-     *                                                     collected from the turn (used only for early-exit drain —
-     *                                                     the result is a fresh list)
-     *
-     * @return list<array<string, mixed>> events collected during the
-     *                                    drain (NOT merged with $alreadyCollected)
-     */
-    private function drainUntilCompactionResolved(
-        float $timeoutSeconds,
-        array $alreadyCollected,
-    ): array {
-        $events = [];
-        $deadline = microtime(true) + $timeoutSeconds;
-        $lastEventAt = microtime(true);
-
-        while (microtime(true) < $deadline) {
-            foreach ($this->readEvents() as $event) {
-                $events[] = $event;
-                $lastEventAt = microtime(true);
-                $type = $event['type'] ?? '';
-
-                if (\in_array($type, ['compaction.completed', 'compaction.failed'], true)) {
-                    return $events;
-                }
-            }
-
-            if (!$this->isRunning()) {
-                foreach ($this->readEvents() as $event) {
-                    $events[] = $event;
-                    $lastEventAt = microtime(true);
-                    $type = $event['type'] ?? '';
-                    if (\in_array($type, ['compaction.completed', 'compaction.failed'], true)) {
-                        return $events;
-                    }
-                }
-                break;
-            }
-
-            // Idle drain: if no new events for 800ms after the
-            // initial post-completion flush, the async pipeline
-            // is clean and nothing is coming.  This prevents the
-            // test from burning the full timeout when the guard
-            // works and no after-turn compaction fires.
-            if (microtime(true) - $lastEventAt > 0.8) {
-                break;
-            }
-
-            usleep(50_000);
-        }
-
-        return $events;
-    }
 
     /**
      * @return list<array<string, mixed>>
