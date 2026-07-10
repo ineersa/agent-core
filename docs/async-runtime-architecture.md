@@ -301,28 +301,31 @@ TUI                        Controller(crashed!)       New Controller
 │                              │ ApplyCommand (steer/        │ (native PHP)     │
 │                              │   follow_up/cancel/        │                  │
 │                              │   continue/human_response) │ Reason: StartRun  │
-│                              │ AdvanceRun                  │ contains complex  │
-│                              │ LlmStepResult  (sync)      │ objects (AgentMsg │
-│                              │ ToolCallResult (sync)      │ [], RunMetadata)  │
+│                              │ LlmStepResult               │ contains complex  │
+│                              │ ToolCallResult              │ objects (AgentMsg │
+│                              │ CompactionStepResult        │ [], RunMetadata)  │
 ├──────────────────────────────┼─────────────────────────────┼──────────────────┤
 │ llm_{sessionId}              │ ExecuteLlmStep              │ Symfony          │
 │                              │                             │ Serializer       │
 │                              │ Processed by:               │ (scalar/array    │
 │                              │ ExecuteLlmStepWorker        │ only)            │
-│                              │ Result → command.bus (sync) │                  │
+│                              │ LlmStepResult → command.bus │                  │
+│                              │   (routed run_control)      │                  │
 ├──────────────────────────────┼─────────────────────────────┼──────────────────┤
 │ tool_{sessionId}             │ ExecuteToolCall             │ Symfony          │
 │                              │ (generic tools; not         │ Serializer       │
 │                              │  toolName=subagent)         │ (scalar/array    │
 │                              │ Processed by:               │ only)            │
 │                              │ ExecuteToolCallWorker       │                  │
-│                              │ Result → command.bus (sync) │                  │
+│                              │ ToolCallResult → command.bus│                  │
+│                              │   (routed run_control)      │                  │
 ├──────────────────────────────┼─────────────────────────────┼──────────────────┤
 │ agent_{sessionId}            │ ExecuteToolCall             │ Symfony          │
 │                              │ (toolName=subagent only)    │ Serializer       │
 │                              │ Processed by:               │ (scalar/array    │
 │                              │ ExecuteToolCallWorker       │ only)            │
-│                              │ Result → command.bus (sync) │                  │
+│                              │ ToolCallResult → command.bus│                  │
+│                              │   (routed run_control)      │                  │
 │                              │ Rationale: isolates blocking│                  │
 │                              │ parent subagent orchestration│                  │
 │                              │ from generic child tool work│                  │
