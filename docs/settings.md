@@ -1126,7 +1126,7 @@ endpoint, which is not an officially documented OpenAI API surface.
 Use at your own risk. Only the OAuth PKCE authentication path is
 supported (run `bin/console auth:codex`).
 
-Seed models: `gpt-5.5`, `gpt-5.4`, `gpt-5.4-mini`.
+Seed models: `gpt-5.6-luna`, `gpt-5.6-sol`, `gpt-5.6-terra`.
 
 ### Model reference format
 
