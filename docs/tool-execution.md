@@ -261,7 +261,6 @@ parent artifact tree, not a pseudo-session directory).
 
 ```
 ToolBatchStoreInterface          ← AgentCore contract (no infrastructure deps)
-  ├── InMemoryToolBatchStore     ← In-memory fallback for unit tests
   └── SessionToolBatchStore      ← Production: atomic JSON snapshots on disk
         └── .hatfield/sessions/<runId>/runtime/tool-batches/<turn>_<stepHash>.json
             (child runs: parent artifact dir …/runtime/tool-batches/)
@@ -273,7 +272,7 @@ ToolBatchStoreInterface          ← AgentCore contract (no infrastructure deps)
   Symfony locks coordinate cross-process read/modify/write
 - On cache miss (different consumer process), batch is loaded from the snapshot
   file and `ExecuteToolCall`/`ToolCallResult` objects are reconstructed from
-  stored serialized call data
+  stored typed ToolBatchStateDTO persistence
 - Run-level locking through `RunLockManager` wraps result handling, so the
   collector/store read-modify-write sequence is serialized per run ID
 - Transient snapshots are deleted after successful `ToolBatchCommitted` or

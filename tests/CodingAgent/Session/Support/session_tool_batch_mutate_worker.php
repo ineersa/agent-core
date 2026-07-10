@@ -3,6 +3,8 @@
 declare(strict_types=1);
 
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreMutation;
+use Ineersa\AgentCore\Domain\Message\ToolCallResult;
+use Ineersa\AgentCore\Domain\Tool\ToolBatchStateDTO;
 use Ineersa\CodingAgent\Session\SessionToolBatchStore;
 use Ineersa\CodingAgent\Session\ToolBatchRunStoragePathsInterface;
 use Psr\Log\NullLogger;
@@ -60,21 +62,32 @@ $paths = new class($base) implements ToolBatchRunStoragePathsInterface {
 $store = new SessionToolBatchStore($paths, new LockFactory(new FlockStore()), new NullLogger());
 
 try {
-    $store->mutate('run-par', 1, 'step-1', static function (?array $current) use ($callId): ToolBatchStoreMutation {
-        if (!is_array($current)) {
+    $store->mutate('run-par', 1, 'step-1', static function (?ToolBatchStateDTO $current) use ($callId): ToolBatchStoreMutation {
+        if (!$current instanceof ToolBatchStateDTO) {
             throw new RuntimeException('missing batch');
         }
-        $next = $current;
-        $next['result_data'][$callId] = ['ok' => true];
-        $next['pending_queue'] = array_values(array_filter(
-            $next['pending_queue'],
+
+        $current->results[$callId] = new ToolCallResult(
+            runId: 'run-par',
+            turnNo: 1,
+            stepId: 'step-1',
+            attempt: 1,
+            idempotencyKey: hash('sha256', 'result-'.$callId),
+            toolCallId: $callId,
+            orderIndex: 'c1' === $callId ? 0 : 1,
+            result: ['ok' => true],
+            isError: false,
+            error: null,
+        );
+        $current->pendingQueue = array_values(array_filter(
+            $current->pendingQueue,
             static fn (string $id): bool => $id !== $callId,
         ));
-        if (2 === count($next['result_data'])) {
-            $next['finalized'] = true;
+        if (2 === count($current->results)) {
+            $current->finalized = true;
         }
 
-        return new ToolBatchStoreMutation(null, $next);
+        return new ToolBatchStoreMutation(null, $current);
     });
 } finally {
     if (is_resource($gateHandle)) {

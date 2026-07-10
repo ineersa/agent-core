@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Tests\Application\Orchestrator;
 
+use Doctrine\ORM\EntityManagerInterface;
 use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
 use Ineersa\AgentCore\Application\Pipeline\ToolCallExtractor;
 use Ineersa\AgentCore\Application\Pipeline\ToolCallResultHandler;
@@ -15,10 +16,35 @@ use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageToolCallSequenceValidator;
 use Ineersa\AgentCore\Tests\Support\Builder\RunStateBuilder;
 use Ineersa\AgentCore\Tests\Support\Builder\ToolCallResultBuilder;
+use Ineersa\CodingAgent\Config\AppConfig;
+use Ineersa\CodingAgent\Config\LoggingConfig;
+use Ineersa\CodingAgent\Config\TuiConfig;
+use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+use Ineersa\CodingAgent\Session\SessionToolBatchStore;
+use Ineersa\CodingAgent\Tests\Session\Support\ParentSessionToolBatchRunStoragePaths;
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\NullLogger;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\Store\FlockStore;
 
 final class ToolCallResultHandlerTest extends TestCase
 {
+    private string $toolBatchProjectDir = '';
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $this->toolBatchProjectDir = TestDirectoryIsolation::createOsTempDir('tool-call-result-handler-batch');
+        TestDirectoryIsolation::createHatfieldTree($this->toolBatchProjectDir, withSessions: true);
+    }
+
+    protected function tearDown(): void
+    {
+        TestDirectoryIsolation::removeDirectory($this->toolBatchProjectDir);
+        parent::tearDown();
+    }
+
     public function testHandleAcceptedPendingResultReturnsPostCommitEffectsForNextToolCall(): void
     {
         $collector = new ToolBatchCollector();
@@ -955,7 +981,7 @@ final class ToolCallResultHandlerTest extends TestCase
 
     public function testFinalizedRedeliveryAfterCanonicalCommitIsIdempotentNoOp(): void
     {
-        $store = new \Ineersa\AgentCore\Application\Handler\InMemoryToolBatchStore();
+        $store = $this->createSessionToolBatchStore();
         $collector = new ToolBatchCollector(defaultMaxParallelism: 4, store: $store);
 
         $collector->registerExpectedBatch('run-redeliver-post', 1, 'step-1', [
@@ -1019,7 +1045,7 @@ final class ToolCallResultHandlerTest extends TestCase
 
     public function testFinalizedRedeliveryBeforeCanonicalCommitRecoversOnce(): void
     {
-        $store = new \Ineersa\AgentCore\Application\Handler\InMemoryToolBatchStore();
+        $store = $this->createSessionToolBatchStore();
         $collector = new ToolBatchCollector(defaultMaxParallelism: 4, store: $store);
 
         $collector->registerExpectedBatch('run-redeliver-pre', 1, 'step-1', [
@@ -1138,5 +1164,22 @@ final class ToolCallResultHandlerTest extends TestCase
         $this->assertTrue($toolEnd->payload['cancelled'] ?? false);
         $this->assertSame('user', $toolEnd->payload['cancellation_reason'] ?? null);
         $this->assertSame('Tool execution cancelled by user.', $result->nextState->messages[1]->content[0]['text'] ?? null);
+    }
+
+    private function createSessionToolBatchStore(): SessionToolBatchStore
+    {
+        $entityManager = $this->createStub(EntityManagerInterface::class);
+        $appConfig = new AppConfig(
+            tui: new TuiConfig(theme: 'default'),
+            logging: new LoggingConfig(),
+            cwd: $this->toolBatchProjectDir,
+        );
+        $hatfield = new HatfieldSessionStore($appConfig, $entityManager);
+
+        return new SessionToolBatchStore(
+            new ParentSessionToolBatchRunStoragePaths($hatfield),
+            new LockFactory(new FlockStore()),
+            new NullLogger(),
+        );
     }
 }

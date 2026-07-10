@@ -475,6 +475,10 @@ final class LlmStepResultHandler implements RunMessageHandler
     /**
      * Resolve the execution policy for a tool from its registered definition.
      *
+     * The execution mode comes from the tool's ToolDefinitionDTO via ActiveToolSet.
+     * Per-tool timeout overrides come from ActiveToolSet.timeoutSeconds when set.
+     * Absent overrides mean no ToolExecutor post-hoc timeout (null).
+     *
      * @return array{mode: ToolExecutionMode, timeout_seconds: ?int, max_parallelism: int}
      */
     private function resolveToolPolicy(string $toolName, ?ActiveToolSet $activeSet = null): array

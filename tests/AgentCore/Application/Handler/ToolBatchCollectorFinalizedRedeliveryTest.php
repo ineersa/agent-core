@@ -4,11 +4,21 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Tests\Application\Handler;
 
-use Ineersa\AgentCore\Application\Handler\InMemoryToolBatchStore;
+use Doctrine\ORM\EntityManagerInterface;
 use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
+use Ineersa\CodingAgent\Config\AppConfig;
+use Ineersa\CodingAgent\Config\LoggingConfig;
+use Ineersa\CodingAgent\Config\TuiConfig;
+use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+use Ineersa\CodingAgent\Session\SessionToolBatchStore;
+use Ineersa\CodingAgent\Tests\Session\Support\ParentSessionToolBatchRunStoragePaths;
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\NullLogger;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\Store\FlockStore;
 
 /**
  * Regression: finalized durable snapshot must replay acceptedComplete on redelivery
@@ -16,9 +26,24 @@ use PHPUnit\Framework\TestCase;
  */
 final class ToolBatchCollectorFinalizedRedeliveryTest extends TestCase
 {
+    private string $projectDir = '';
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $this->projectDir = TestDirectoryIsolation::createOsTempDir('tool-batch-finalized-redelivery');
+        TestDirectoryIsolation::createHatfieldTree($this->projectDir, withSessions: true);
+    }
+
+    protected function tearDown(): void
+    {
+        TestDirectoryIsolation::removeDirectory($this->projectDir);
+        parent::tearDown();
+    }
+
     public function testFinalizedSnapshotRedeliveryReplaysAcceptedComplete(): void
     {
-        $store = new InMemoryToolBatchStore();
+        $store = $this->createStore();
         $collector = new ToolBatchCollector(defaultMaxParallelism: 4, store: $store);
 
         $collector->registerExpectedBatch('run-1', 1, 'step-1', [
@@ -49,6 +74,23 @@ final class ToolBatchCollectorFinalizedRedeliveryTest extends TestCase
             toolName: 'read',
             args: [],
             orderIndex: $orderIndex,
+        );
+    }
+
+    private function createStore(): SessionToolBatchStore
+    {
+        $entityManager = $this->createStub(EntityManagerInterface::class);
+        $appConfig = new AppConfig(
+            tui: new TuiConfig(theme: 'default'),
+            logging: new LoggingConfig(),
+            cwd: $this->projectDir,
+        );
+        $hatfield = new HatfieldSessionStore($appConfig, $entityManager);
+
+        return new SessionToolBatchStore(
+            new ParentSessionToolBatchRunStoragePaths($hatfield),
+            new LockFactory(new FlockStore()),
+            new NullLogger(),
         );
     }
 

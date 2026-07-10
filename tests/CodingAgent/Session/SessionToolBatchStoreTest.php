@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Tests\Session;
 
 use Doctrine\ORM\EntityManagerInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreMutation;
+use Ineersa\AgentCore\Domain\Tool\ToolBatchStateDTO;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactEntryDTO;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactPathResolver;
@@ -73,18 +74,18 @@ final class SessionToolBatchStoreTest extends TestCase
         $this->store->save('run-1', 1, 'step-a', $batchA);
         $this->store->save('run-1', 1, 'step-b', $batchB);
 
-        $this->assertSame($batchA, $this->store->load('run-1', 1, 'step-a'));
-        $this->assertSame($batchB, $this->store->load('run-1', 1, 'step-b'));
+        $this->assertPersistedEquivalent($batchA, $this->store->load('run-1', 1, 'step-a'));
+        $this->assertPersistedEquivalent($batchB, $this->store->load('run-1', 1, 'step-b'));
 
-        $mutated = $this->store->mutate('run-1', 1, 'step-a', static function (?array $current): ToolBatchStoreMutation {
-            $next = $current;
-            $next['finalized'] = true;
+        $mutated = $this->store->mutate('run-1', 1, 'step-a', static function (?ToolBatchStateDTO $current): ToolBatchStoreMutation {
+            $current->finalized = true;
 
-            return new ToolBatchStoreMutation('ok', $next);
+            return new ToolBatchStoreMutation('ok', $current);
         });
         $this->assertSame('ok', $mutated);
         $loaded = $this->store->load('run-1', 1, 'step-a');
-        $this->assertTrue($loaded['finalized']);
+        $this->assertNotNull($loaded);
+        $this->assertTrue($loaded->finalized);
 
         $this->store->delete('run-1', 1, 'step-a');
         $this->assertNull($this->store->load('run-1', 1, 'step-a'));
@@ -97,13 +98,13 @@ final class SessionToolBatchStoreTest extends TestCase
         $turnNo = 1;
         $stepId = 'step-a';
         $dir = $this->hatfieldSessionStore->resolveSessionsBasePath().'/'.$runId.'/runtime/tool-batches';
-        mkdir($dir, 0777, true);
+        mkdir($dir, recursive: true);
         $filename = \sprintf('%d_%s.json', $turnNo, hash('sha256', $stepId));
         $envelope = [
             'run_id' => 'other-run',
             'turn_no' => $turnNo,
             'step_id' => $stepId,
-            'batch_state' => $this->emptyBatch([]),
+            'batch_state' => $this->emptyBatch([])->toPersistedArray(),
         ];
         file_put_contents($dir.'/'.$filename, json_encode($envelope, \JSON_THROW_ON_ERROR));
 
@@ -131,7 +132,7 @@ final class SessionToolBatchStoreTest extends TestCase
         $artifactId = 'agent_test123';
 
         $parentDir = $this->hatfieldSessionStore->resolveSessionsBasePath().'/'.$parentRunId;
-        mkdir($parentDir.'/artifacts/agents/'.$artifactId, 0777, true);
+        mkdir($parentDir.'/artifacts/agents/'.$artifactId, recursive: true);
 
         $pathResolver = new AgentArtifactPathResolver($this->hatfieldSessionStore);
         $serializer = new Serializer(
@@ -174,15 +175,7 @@ final class SessionToolBatchStoreTest extends TestCase
 
         try {
             $parallelStore = $this->createStoreForProjectDir($parallelProjectDir);
-            $parallelStore->save('run-par', 1, 'step-1', [
-                'expected_order' => ['c1' => 0, 'c2' => 1],
-                'call_data' => [],
-                'pending_queue' => ['c1', 'c2'],
-                'in_flight' => [],
-                'result_data' => [],
-                'finalized' => false,
-                'max_parallelism' => 2,
-            ]);
+            $parallelStore->save('run-par', 1, 'step-1', $this->emptyBatch(['c1', 'c2']));
 
             $autoload = \dirname(__DIR__, 3).'/vendor/autoload.php';
             $script = \dirname(__DIR__, 3).'/tests/CodingAgent/Session/Support/session_tool_batch_mutate_worker.php';
@@ -220,9 +213,9 @@ final class SessionToolBatchStoreTest extends TestCase
 
             $final = $parallelStore->load('run-par', 1, 'step-1');
             $this->assertNotNull($final);
-            $this->assertTrue($final['finalized']);
-            $this->assertArrayHasKey('c1', $final['result_data']);
-            $this->assertArrayHasKey('c2', $final['result_data']);
+            $this->assertTrue($final->finalized);
+            $this->assertArrayHasKey('c1', $final->results);
+            $this->assertArrayHasKey('c2', $final->results);
         } finally {
             if (\is_resource($gateHandle)) {
                 flock($gateHandle, \LOCK_UN);
@@ -313,24 +306,28 @@ final class SessionToolBatchStoreTest extends TestCase
 
     /**
      * @param list<string> $pending
-     *
-     * @return array<string, mixed>
      */
-    private function emptyBatch(array $pending): array
+    private function emptyBatch(array $pending): ToolBatchStateDTO
     {
         $expected = [];
         foreach ($pending as $i => $id) {
             $expected[$id] = $i;
         }
 
-        return [
-            'expected_order' => $expected,
-            'call_data' => [],
-            'pending_queue' => $pending,
-            'in_flight' => [],
-            'result_data' => [],
-            'finalized' => false,
-            'max_parallelism' => 2,
-        ];
+        return new ToolBatchStateDTO(
+            expectedOrder: $expected,
+            calls: [],
+            pendingQueue: $pending,
+            inFlight: [],
+            results: [],
+            finalized: false,
+            maxParallelism: 2,
+        );
+    }
+
+    private function assertPersistedEquivalent(ToolBatchStateDTO $expected, ?ToolBatchStateDTO $actual): void
+    {
+        $this->assertNotNull($actual);
+        $this->assertSame($expected->toPersistedArray(), $actual->toPersistedArray());
     }
 }

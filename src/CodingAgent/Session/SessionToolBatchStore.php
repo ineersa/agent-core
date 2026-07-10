@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Session;
 
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreMutation;
+use Ineersa\AgentCore\Domain\Tool\ToolBatchStateDTO;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Lock\LockFactory;
 
@@ -34,13 +35,10 @@ final class SessionToolBatchStore implements ToolBatchStoreInterface
     ) {
     }
 
-    /**
-     * @return array<string, mixed>|null
-     */
-    public function load(string $runId, int $turnNo, string $stepId): ?array
+    public function load(string $runId, int $turnNo, string $stepId): ?ToolBatchStateDTO
     {
-        return $this->withRunLock($runId, function () use ($runId, $turnNo, $stepId): ?array {
-            return $this->withSnapshotLock($runId, $turnNo, $stepId, function () use ($runId, $turnNo, $stepId): ?array {
+        return $this->withRunLock($runId, function () use ($runId, $turnNo, $stepId): ?ToolBatchStateDTO {
+            return $this->withSnapshotLock($runId, $turnNo, $stepId, function () use ($runId, $turnNo, $stepId): ?ToolBatchStateDTO {
                 $path = $this->snapshotPath($runId, $turnNo, $stepId);
                 if (!is_readable($path)) {
                     $this->reconcileOrphanTempFiles($runId, $turnNo, $stepId);
@@ -48,19 +46,16 @@ final class SessionToolBatchStore implements ToolBatchStoreInterface
                     return null;
                 }
 
-                return $this->readSnapshotEnvelope($path, $runId, $turnNo, $stepId)['batch_state'];
+                return $this->readSnapshotEnvelope($path, $runId, $turnNo, $stepId)->batchState;
             });
         });
     }
 
-    /**
-     * @param array<string, mixed> $batchState
-     */
-    public function save(string $runId, int $turnNo, string $stepId, array $batchState): void
+    public function save(string $runId, int $turnNo, string $stepId, ToolBatchStateDTO $batchState): void
     {
         $this->withRunLock($runId, function () use ($runId, $turnNo, $stepId, $batchState): void {
             $this->withSnapshotLock($runId, $turnNo, $stepId, function () use ($runId, $turnNo, $stepId, $batchState): void {
-                $this->writeSnapshot($runId, $turnNo, $stepId, $this->envelope($runId, $turnNo, $stepId, $batchState));
+                $this->writeSnapshot($runId, $turnNo, $stepId, ToolBatchSnapshotEnvelopeDTO::create($runId, $turnNo, $stepId, $batchState));
             });
         });
     }
@@ -116,19 +111,19 @@ final class SessionToolBatchStore implements ToolBatchStoreInterface
             return $this->withSnapshotLock($runId, $turnNo, $stepId, function () use ($runId, $turnNo, $stepId, $callback): mixed {
                 $path = $this->snapshotPath($runId, $turnNo, $stepId);
                 $envelope = is_readable($path) ? $this->readSnapshotEnvelope($path, $runId, $turnNo, $stepId) : null;
-                $current = null !== $envelope ? $envelope['batch_state'] : null;
+                $current = null !== $envelope ? $envelope->batchState : null;
 
                 $outcome = $callback($current);
                 if (!$outcome instanceof ToolBatchStoreMutation) {
                     throw new \LogicException('Tool batch store mutate callback must return ToolBatchStoreMutation.');
                 }
 
-                if (null !== $outcome->nextSerializedState) {
+                if (null !== $outcome->nextState) {
                     $this->writeSnapshot(
                         $runId,
                         $turnNo,
                         $stepId,
-                        $this->envelope($runId, $turnNo, $stepId, $outcome->nextSerializedState),
+                        ToolBatchSnapshotEnvelopeDTO::create($runId, $turnNo, $stepId, $outcome->nextState),
                     );
                 }
 
@@ -167,25 +162,7 @@ final class SessionToolBatchStore implements ToolBatchStoreInterface
         }
     }
 
-    /**
-     * @param array<string, mixed> $batchState
-     *
-     * @return array{run_id: string, turn_no: int, step_id: string, batch_state: array<string, mixed>}
-     */
-    private function envelope(string $runId, int $turnNo, string $stepId, array $batchState): array
-    {
-        return [
-            'run_id' => $runId,
-            'turn_no' => $turnNo,
-            'step_id' => $stepId,
-            'batch_state' => $batchState,
-        ];
-    }
-
-    /**
-     * @return array{run_id: string, turn_no: int, step_id: string, batch_state: array<string, mixed>}
-     */
-    private function readSnapshotEnvelope(string $path, string $expectedRunId, int $expectedTurnNo, string $expectedStepId): array
+    private function readSnapshotEnvelope(string $path, string $expectedRunId, int $expectedTurnNo, string $expectedStepId): ToolBatchSnapshotEnvelopeDTO
     {
         $json = file_get_contents($path);
         if (false === $json || '' === trim($json)) {
@@ -202,45 +179,10 @@ final class SessionToolBatchStore implements ToolBatchStoreInterface
             throw new SessionToolBatchStoreException('Tool batch snapshot root must be an object.', ['path' => $path, 'component' => 'session_tool_batch_store']);
         }
 
-        $embeddedRunId = $decoded['run_id'] ?? null;
-        $turnNo = $decoded['turn_no'] ?? null;
-        $stepId = $decoded['step_id'] ?? null;
-        $batchState = $decoded['batch_state'] ?? null;
-
-        if (!\is_string($embeddedRunId) || '' === $embeddedRunId) {
-            throw new SessionToolBatchStoreException('Tool batch snapshot missing run_id.', ['path' => $path, 'component' => 'session_tool_batch_store']);
-        }
-
-        if (!\is_int($turnNo)) {
-            throw new SessionToolBatchStoreException('Tool batch snapshot missing turn_no.', ['path' => $path, 'component' => 'session_tool_batch_store', 'run_id' => $embeddedRunId]);
-        }
-
-        if (!\is_string($stepId) || '' === $stepId) {
-            throw new SessionToolBatchStoreException('Tool batch snapshot missing step_id.', ['path' => $path, 'component' => 'session_tool_batch_store', 'run_id' => $embeddedRunId]);
-        }
-
-        if (!\is_array($batchState)) {
-            throw new SessionToolBatchStoreException('Tool batch snapshot missing batch_state.', ['path' => $path, 'component' => 'session_tool_batch_store', 'run_id' => $embeddedRunId]);
-        }
-
-        if ($embeddedRunId !== $expectedRunId || $turnNo !== $expectedTurnNo || $stepId !== $expectedStepId) {
-            throw new SessionToolBatchStoreException('Tool batch snapshot identity mismatch.', ['path' => $path, 'component' => 'session_tool_batch_store', 'run_id' => $expectedRunId, 'turn_no' => $expectedTurnNo, 'step_id' => $expectedStepId, 'embedded_run_id' => $embeddedRunId, 'embedded_turn_no' => $turnNo, 'embedded_step_id' => $stepId]);
-        }
-
-        /* @var array<string, mixed> $batchState */
-
-        return [
-            'run_id' => $embeddedRunId,
-            'turn_no' => $turnNo,
-            'step_id' => $stepId,
-            'batch_state' => $batchState,
-        ];
+        return ToolBatchSnapshotEnvelopeDTO::fromArray($decoded, $expectedRunId, $expectedTurnNo, $expectedStepId, $path);
     }
 
-    /**
-     * @param array{run_id: string, turn_no: int, step_id: string, batch_state: array<string, mixed>} $envelope
-     */
-    private function writeSnapshot(string $runId, int $turnNo, string $stepId, array $envelope): void
+    private function writeSnapshot(string $runId, int $turnNo, string $stepId, ToolBatchSnapshotEnvelopeDTO $envelope): void
     {
         $this->sanitizeRunId($runId);
         $dir = $this->batchesDir($runId);
@@ -250,7 +192,7 @@ final class SessionToolBatchStore implements ToolBatchStoreInterface
         $tempPath = $path.'.tmp.'.bin2hex(random_bytes(8));
 
         try {
-            $json = json_encode($envelope, \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE);
+            $json = json_encode($envelope->toArray(), \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE);
             $written = file_put_contents($tempPath, $json, \LOCK_EX);
             if (false === $written || $written !== \strlen($json)) {
                 throw new SessionToolBatchStoreException('Failed to write tool batch snapshot temp file.', ['run_id' => $runId, 'turn_no' => $turnNo, 'step_id' => $stepId, 'path' => $tempPath, 'component' => 'session_tool_batch_store']);
@@ -375,7 +317,7 @@ final class SessionToolBatchStore implements ToolBatchStoreInterface
             throw new SessionToolBatchStoreException(\sprintf('Cannot create tool batch directory: non-directory at "%s".', $dir), ['path' => $dir, 'component' => 'session_tool_batch_store']);
         }
 
-        if (!mkdir($dir, 0o777, true) && !is_dir($dir)) {
+        if (!mkdir($dir, recursive: true) && !is_dir($dir)) {
             throw new SessionToolBatchStoreException(\sprintf('Failed to create tool batch directory "%s".', $dir), ['path' => $dir, 'component' => 'session_tool_batch_store']);
         }
     }
