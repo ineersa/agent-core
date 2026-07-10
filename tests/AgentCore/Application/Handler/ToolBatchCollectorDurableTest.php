@@ -148,9 +148,11 @@ final class ToolBatchCollectorDurableTest extends TestCase
         $firstOutcome = $collector->collect($this->toolResult('run-4', 'step-1', 'call-1', 0));
         $this->assertTrue($firstOutcome->accepted);
 
-        // Duplicate collect
+        // Redelivery after durable finalize replays completion for canonical commit retry
         $dupOutcome = $collector->collect($this->toolResult('run-4', 'step-1', 'call-1', 0));
-        $this->assertTrue($dupOutcome->duplicate);
+        $this->assertTrue($dupOutcome->accepted);
+        $this->assertFalse($dupOutcome->duplicate);
+        $this->assertTrue($dupOutcome->complete);
     }
 
     public function testCrossProcessParallelDispatchRecovery(): void
@@ -200,6 +202,15 @@ final class ToolBatchCollectorDurableTest extends TestCase
             public function delete(string $runId, int $turnNo, string $stepId): void
             {
                 unset($this->states[$this->key($runId, $turnNo, $stepId)]);
+            }
+
+            public function deleteAllForRun(string $runId): void
+            {
+                foreach (array_keys($this->states) as $key) {
+                    if (str_starts_with($key, $runId.'|')) {
+                        unset($this->states[$key]);
+                    }
+                }
             }
 
             public function mutate(string $runId, int $turnNo, string $stepId, callable $callback): mixed

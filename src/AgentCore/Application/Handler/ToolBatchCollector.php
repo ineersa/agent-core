@@ -130,7 +130,11 @@ final class ToolBatchCollector
                 $batch = $this->reconstructBatch($runId, $turnNo, $stepId, $stored);
                 $collectOutcome = $this->applyCollectToBatch($batch, $result);
 
-                if (!$collectOutcome->accepted || $collectOutcome->duplicate) {
+                if (!$collectOutcome->accepted) {
+                    return new ToolBatchStoreMutation($collectOutcome);
+                }
+
+                if ($collectOutcome->duplicate) {
                     return new ToolBatchStoreMutation($collectOutcome);
                 }
 
@@ -181,16 +185,16 @@ final class ToolBatchCollector
      */
     private function applyCollectToBatch(array &$batch, ToolCallResult $result): ToolBatchCollectOutcome
     {
-        if (true === ($batch['finalized'] ?? false)) {
-            return ToolBatchCollectOutcome::duplicate();
-        }
-
         if (!\array_key_exists($result->toolCallId, $batch['expected_order'])) {
             return ToolBatchCollectOutcome::rejected();
         }
 
         if (isset($batch['results'][$result->toolCallId])) {
-            return ToolBatchCollectOutcome::duplicate();
+            return $this->outcomeForStoredResult($batch, $result);
+        }
+
+        if (true === ($batch['finalized'] ?? false)) {
+            return $this->outcomeForStoredResult($batch, $result);
         }
 
         unset($batch['in_flight'][$result->toolCallId]);
@@ -211,6 +215,54 @@ final class ToolBatchCollector
         $batch['finalized'] = true;
 
         return ToolBatchCollectOutcome::acceptedComplete($orderedResults, $effectsToDispatch);
+    }
+
+    /**
+     * @param array{
+     *   expected_order: array<string, int>,
+     *   calls: array<string, ExecuteToolCall>,
+     *   pending_queue: list<string>,
+     *   in_flight: array<string, true>,
+     *   results: array<string, ToolCallResult>,
+     *   finalized: bool,
+     *   max_parallelism: int
+     * } $batch
+     */
+    private function outcomeForStoredResult(array $batch, ToolCallResult $result): ToolBatchCollectOutcome
+    {
+        $stored = $batch['results'][$result->toolCallId] ?? null;
+        if (!$stored instanceof ToolCallResult) {
+            return ToolBatchCollectOutcome::rejected();
+        }
+
+        if (!$this->toolResultsEquivalent($stored, $result)) {
+            throw new \LogicException(\sprintf('Conflicting duplicate tool result for call "%s" on run "%s".', $result->toolCallId, $result->runId()));
+        }
+
+        if (true !== ($batch['finalized'] ?? false)) {
+            return ToolBatchCollectOutcome::duplicate();
+        }
+
+        if (\count($batch['results']) !== \count($batch['expected_order'])) {
+            return ToolBatchCollectOutcome::duplicate();
+        }
+
+        $orderedResults = array_values($batch['results']);
+        usort(
+            $orderedResults,
+            static fn (ToolCallResult $left, ToolCallResult $right): int => $left->orderIndex <=> $right->orderIndex,
+        );
+
+        return ToolBatchCollectOutcome::acceptedComplete($orderedResults, []);
+    }
+
+    private function toolResultsEquivalent(ToolCallResult $left, ToolCallResult $right): bool
+    {
+        return $left->toolCallId === $right->toolCallId
+            && $left->orderIndex === $right->orderIndex
+            && $left->isError === $right->isError
+            && $left->result === $right->result
+            && $left->error === $right->error;
     }
 
     /**

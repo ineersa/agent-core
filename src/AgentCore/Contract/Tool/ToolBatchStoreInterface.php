@@ -42,6 +42,11 @@ interface ToolBatchStoreInterface
     public function delete(string $runId, int $turnNo, string $stepId): void;
 
     /**
+     * Remove all batch snapshots for a run (post-terminal cleanup).
+     */
+    public function deleteAllForRun(string $runId): void;
+
+    /**
      * Atomically load batch state, apply a callback, and persist when requested.
      *
      * Implementations MUST serialize concurrent updates for the same

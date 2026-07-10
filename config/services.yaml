@@ -719,10 +719,9 @@ services:
       $contextAccessor: '@Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor'
       $toolSetResolver: '@Ineersa\AgentCore\Contract\Tool\ToolSetResolverInterface'
       $toolResultProcessors: !tagged_iterator agent_core.tool_result_processor
-  # Durable tool batch store — persists batch state across consumer restarts.
-  # Uses Doctrine ORM entities/repositories against the shared messenger SQLite.
+  # Durable tool batch store — session-scoped atomic JSON snapshots (transient recovery).
   Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface:
-    alias: Ineersa\CodingAgent\Tool\Store\DbalToolBatchStore
+    alias: Ineersa\CodingAgent\Session\SessionToolBatchStore
 
   # ─── AI-10 Per-turn model/reasoning routing ───
 

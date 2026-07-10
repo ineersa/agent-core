@@ -25,6 +25,7 @@ use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmProviderErrorClassifier;
+use Ineersa\CodingAgent\Session\ToolBatchSnapshotCleanup;
 use Symfony\AI\Agent\Toolbox\ToolboxInterface;
 use Symfony\AI\Platform\Message\AssistantMessage;
 use Symfony\AI\Platform\Tool\Tool;
@@ -62,6 +63,7 @@ final class LlmStepResultHandler implements RunMessageHandler
         private int $agentRetryBaseDelayMs = 1000,
         private int $agentRetryMaxDelayMs = 60000,
         private int $maxParallelism = 1,
+        private ?ToolBatchSnapshotCleanup $toolBatchSnapshotCleanup = null,
     ) {
     }
 
@@ -174,7 +176,7 @@ final class LlmStepResultHandler implements RunMessageHandler
             return new HandlerResult(
                 nextState: $nextState,
                 events: $events,
-                postCommit: $this->turnCompletedCallbacks($runId, $state->turnNo),
+                postCommit: $this->appendTerminalToolBatchCleanup($runId, $this->turnCompletedCallbacks($runId, $state->turnNo)),
             );
         }
 
@@ -277,7 +279,7 @@ final class LlmStepResultHandler implements RunMessageHandler
             return new HandlerResult(
                 nextState: $nextState,
                 events: $events,
-                postCommit: $postCommit,
+                postCommit: $this->appendTerminalToolBatchCleanup($runId, $postCommit),
             );
         }
 
@@ -418,7 +420,7 @@ final class LlmStepResultHandler implements RunMessageHandler
                 nextState: $nextState,
                 events: $events,
                 effects: $mailboxEffects,
-                postCommit: $postCommit,
+                postCommit: $this->appendTerminalToolBatchCleanup($runId, $postCommit),
             );
         }
 
@@ -473,11 +475,21 @@ final class LlmStepResultHandler implements RunMessageHandler
     }
 
     /**
-     * Resolve the execution policy for a tool from its registered definition.
+     * @param list<callable(): void> $postCommit
      *
-     * The execution mode comes from the tool's ToolDefinitionDTO via ActiveToolSet.
-     * Per-tool timeout overrides come from ActiveToolSet.timeoutSeconds when set.
-     * Absent overrides mean no ToolExecutor post-hoc timeout (null).
+     * @return list<callable(): void>
+     */
+    private function appendTerminalToolBatchCleanup(string $runId, array $postCommit): array
+    {
+        if (null !== $this->toolBatchSnapshotCleanup) {
+            $postCommit[] = $this->toolBatchSnapshotCleanup->deleteAllForRun($runId);
+        }
+
+        return $postCommit;
+    }
+
+    /**
+     * Resolve the execution policy for a tool from its registered definition.
      *
      * @return array{mode: ToolExecutionMode, timeout_seconds: ?int, max_parallelism: int}
      */

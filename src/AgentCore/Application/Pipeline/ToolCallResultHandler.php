@@ -14,6 +14,7 @@ use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
+use Ineersa\CodingAgent\Session\ToolBatchSnapshotCleanup;
 use Symfony\Component\Messenger\Exception\ExceptionInterface;
 use Symfony\Component\Messenger\MessageBusInterface;
 
@@ -28,6 +29,7 @@ final readonly class ToolCallResultHandler implements RunMessageHandler
         private AgentMessageNormalizer $messageNormalizer,
         private ?RunMetrics $metrics = null,
         private ?MessageBusInterface $commandBus = null,
+        private ?ToolBatchSnapshotCleanup $toolBatchSnapshotCleanup = null,
     ) {
     }
 
@@ -186,6 +188,9 @@ final readonly class ToolCallResultHandler implements RunMessageHandler
             if (null !== $postCancelAdvance) {
                 $postCommit[] = $postCancelAdvance;
             }
+            if (null !== $this->toolBatchSnapshotCleanup) {
+                $postCommit[] = $this->toolBatchSnapshotCleanup->deleteAllForRun($runId);
+            }
 
             return new HandlerResult(
                 nextState: $nextState,
@@ -196,7 +201,7 @@ final readonly class ToolCallResultHandler implements RunMessageHandler
 
         $outcome = $this->toolBatchCollector->collect($message);
         if ($outcome->duplicate) {
-            return new HandlerResult();
+            return new HandlerResult(markHandled: true);
         }
 
         if (!$outcome->accepted) {
@@ -327,6 +332,14 @@ final readonly class ToolCallResultHandler implements RunMessageHandler
             activeStepId: $state->activeStepId,
             retryableFailure: false,
         );
+
+        if ($outcome->complete && null !== $this->toolBatchSnapshotCleanup) {
+            $postCommit[] = $this->toolBatchSnapshotCleanup->deleteBatch(
+                $runId,
+                $message->turnNo(),
+                $message->stepId(),
+            );
+        }
 
         return new HandlerResult(
             nextState: $nextState,

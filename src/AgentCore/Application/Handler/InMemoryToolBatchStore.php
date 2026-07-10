@@ -39,6 +39,15 @@ final class InMemoryToolBatchStore implements ToolBatchStoreInterface
         unset($this->batches[$this->key($runId, $turnNo, $stepId)]);
     }
 
+    public function deleteAllForRun(string $runId): void
+    {
+        foreach (array_keys($this->batches) as $key) {
+            if (str_starts_with($key, $runId.'|')) {
+                unset($this->batches[$key]);
+            }
+        }
+    }
+
     public function mutate(string $runId, int $turnNo, string $stepId, callable $callback): mixed
     {
         $key = $this->key($runId, $turnNo, $stepId);
