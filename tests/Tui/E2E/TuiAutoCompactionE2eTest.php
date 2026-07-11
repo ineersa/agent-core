@@ -94,44 +94,28 @@ final class TuiAutoCompactionE2eTest extends TestCase
                 history: 2000,
             );
 
-            // After the turn commits, the AutoCompactionHookSubscriber
-            // fires and dispatches CompactRun(trigger: 'auto').  The
-            // CompactionProjectionSubscriber renders a visible block —
-            // either "Compacting conversation..." (transient progress),
-            // "Conversation compacted" (success; projection text is glyph-free,
-            // the TUI renderer adds ⧉), or "Compaction failed"
-            // (structural failure).  ANY of these proves the auto trigger
-            // path is functional end-to-end (hook → dispatch → handler →
-            // runtime events → projection → visible TUI) without typing
-            // /compact.
-            //
-            // With the provider-usage-based trigger, the replay fixture's
-            // input_tokens (17) exceed compact_after_tokens (10), so auto-
-            // compaction triggers and typically succeeds on the tiny
-            // fixture session.
+            // After the turn commits, auto-compaction runs asynchronously:
+            // CompactionStepResult is handled on run_control, so the TUI may
+            // show transient "Compacting conversation..." before the terminal
+            // projection. Wait for the terminal visible outcome so canonical
+            // events.jsonl assertions run only after commit completes.
             $autoCompactCapture = $this->tmux->waitForCallback(
                 $pane,
-                static fn (string $cap): bool => str_contains($cap, 'Compacting conversation')
-                    || str_contains($cap, 'Conversation compacted')
+                static fn (string $cap): bool => str_contains($cap, 'Conversation compacted')
                     || str_contains($cap, 'Compaction failed'),
-                timeout: 20.0,
-                message: 'Auto-compaction progress/failure not shown in TUI',
+                timeout: 12.0,
+                message: 'Auto-compaction terminal outcome not shown in TUI (expected Conversation compacted or Compaction failed)',
                 history: 2000,
             );
 
             $this->assertThat(
                 $autoCompactCapture,
                 $this->logicalOr(
-                    $this->stringContains('Compacting conversation'),
                     $this->stringContains('Conversation compacted'),
                     $this->stringContains('Compaction failed'),
                 ),
-                'Auto-compaction must produce visible compaction-related text in TUI without manual /compact',
+                'Auto-compaction must reach a terminal visible outcome in TUI without manual /compact',
             );
-
-            // Post-compaction: wait for any retry mechanics to settle
-            // so the log is complete before inspection.
-            usleep(500_000);
 
             // ── Structural proof: no concurrent auto compaction starts ──
             // The live-duplicate bug caused two context_compaction_started

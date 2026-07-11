@@ -57,7 +57,7 @@ final class ControllerReplayAutoCompactionMultiTurnTest extends ControllerReplay
             ],
         ]);
 
-        $turn1Events = $this->collectEvents(25.0);
+        $turn1Events = $this->collectEvents(12.0);
         $byType = $this->indexByType($turn1Events);
 
         $this->assertStartRunAcked($turn1Events, $startCmdId);
@@ -99,7 +99,7 @@ final class ControllerReplayAutoCompactionMultiTurnTest extends ControllerReplay
         // Collect runtime events beyond the terminal run state so we
         // catch the after-turn auto-compaction events (compaction.started,
         // compaction.completed / compaction.failed).
-        $allTurn2Events = $this->collectEventsPastRunCompleted(25.0);
+        $allTurn2Events = $this->collectTurnEventsUntilRunTerminal('run.completed', 8.0, expectAfterTurnCompaction: true, compactionTimeoutSeconds: 6.0);
         $turn2ByType = $this->indexByType($allTurn2Events);
 
         $this->assertTrue(
@@ -382,52 +382,6 @@ YAML;
      *
      * @return list<array<string, mixed>>
      */
-    private function collectEventsPastRunCompleted(float $timeoutSeconds): array
-    {
-        $events = [];
-        $deadline = microtime(true) + $timeoutSeconds;
-        $lastEventAt = microtime(true);
-        $sawRunTerminal = false;
-
-        while (microtime(true) < $deadline) {
-            foreach ($this->readEvents() as $event) {
-                $events[] = $event;
-                $lastEventAt = microtime(true);
-                $type = $event['type'] ?? '';
-
-                if (\in_array($type, ['run.completed', 'run.failed'], true)) {
-                    $sawRunTerminal = true;
-                }
-
-                if (\in_array($type, ['compaction.completed', 'compaction.failed'], true)) {
-                    return $events;
-                }
-            }
-
-            if (!$this->isRunning()) {
-                foreach ($this->readEvents() as $event) {
-                    $events[] = $event;
-                    $lastEventAt = microtime(true);
-                    $type = $event['type'] ?? '';
-                    if (\in_array($type, ['run.completed', 'run.failed'], true)) {
-                        $sawRunTerminal = true;
-                    }
-                    if (\in_array($type, ['compaction.completed', 'compaction.failed'], true)) {
-                        return $events;
-                    }
-                }
-                break;
-            }
-
-            if ($sawRunTerminal && microtime(true) - $lastEventAt > 0.8) {
-                break;
-            }
-
-            usleep(50_000);
-        }
-
-        return $events;
-    }
 
     /**
      * Load core events from the canonical events.jsonl.

@@ -65,18 +65,23 @@ final class TuiTreeCommandE2eTest extends TestCase
             $this->tmux->sendLiteral($pane, 'hello');
             $this->tmux->sendKey($pane, 'Enter');
 
-            // Wait for the assistant response block (◇ appears)
-            $this->tmux->waitForCallback(
+            // Wait for the assistant response block (◇) and exact replay fixture text.
+            $assistantCapture = $this->tmux->waitForCallback(
                 $pane,
-                static fn (string $cap): bool => str_contains($cap, '◇'),
+                static fn (string $cap): bool => str_contains($cap, '◇')
+                    && str_contains($cap, 'Follow-up acknowledged.'),
                 timeout: TmuxHarness::TUI_ASSISTANT_BLOCK_TIMEOUT_PARALLEL,
-                message: 'Assistant response block did not appear',
+                message: 'Assistant response block with fixture text did not appear',
                 history: 2000,
+            );
+            $this->assertStringContainsString(
+                'Follow-up acknowledged.',
+                $assistantCapture,
+                'Replay fixture response text missing from transcript output',
             );
 
             // ── 3. Send /tree command ──
             $this->tmux->sendKey($pane, 'C-u');
-            usleep(50_000);
             $this->tmux->sendLiteral($pane, '/tree');
             $this->tmux->sendKey($pane, 'Enter');
 
@@ -102,13 +107,17 @@ final class TuiTreeCommandE2eTest extends TestCase
 
             // ── 4. Send Escape to close the picker ──
             $this->tmux->sendKey($pane, 'Escape');
-            usleep(200_000);
 
-            // Verify the tree picker text is gone (the ○ marker should no longer be in the picker area)
-            // The session should remain in idle state
-            $postCloseCapture = $this->tmux->capturePlainWithHistory($pane, 500);
+            $postCloseCapture = $this->tmux->waitForCallback(
+                $pane,
+                static fn (string $cap): bool => str_contains($cap, '● idle')
+                    && !str_contains($cap, 'Session turn tree')
+                    && str_contains($cap, '◆'),
+                timeout: 5.0,
+                message: 'Tree picker did not close with idle footer',
+                history: 500,
+            );
 
-            // Verify the session is still running (idle indicator present)
             $this->assertStringContainsString('● idle', $postCloseCapture,
                 'Session should remain in idle state after closing tree picker');
             $this->assertStringContainsString('◆', $postCloseCapture,

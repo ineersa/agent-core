@@ -89,7 +89,7 @@ final class ControllerReplayAutoCompactionToolCycleTest extends ControllerReplay
 
         // Collect events past run.completed so we catch the after-turn
         // auto-compaction events (compaction.started/completed/failed).
-        $events = $this->collectEventsPastRunCompleted(30.0);
+        $events = $this->collectTurnEventsUntilRunTerminal('run.completed', 8.0, expectAfterTurnCompaction: true, compactionTimeoutSeconds: 6.0);
         $byType = $this->indexByType($events);
 
         $this->assertStartRunAcked($events, $startCmdId);
@@ -419,52 +419,6 @@ YAML;
      *
      * @return list<array<string, mixed>>
      */
-    private function collectEventsPastRunCompleted(float $timeoutSeconds): array
-    {
-        $events = [];
-        $deadline = microtime(true) + $timeoutSeconds;
-        $lastEventAt = microtime(true);
-        $sawRunTerminal = false;
-
-        while (microtime(true) < $deadline) {
-            foreach ($this->readEvents() as $event) {
-                $events[] = $event;
-                $lastEventAt = microtime(true);
-                $type = $event['type'] ?? '';
-
-                if (\in_array($type, ['run.completed', 'run.failed'], true)) {
-                    $sawRunTerminal = true;
-                }
-
-                if (\in_array($type, ['compaction.completed', 'compaction.failed'], true)) {
-                    return $events;
-                }
-            }
-
-            if (!$this->isRunning()) {
-                foreach ($this->readEvents() as $event) {
-                    $events[] = $event;
-                    $lastEventAt = microtime(true);
-                    $type = $event['type'] ?? '';
-                    if (\in_array($type, ['run.completed', 'run.failed'], true)) {
-                        $sawRunTerminal = true;
-                    }
-                    if (\in_array($type, ['compaction.completed', 'compaction.failed'], true)) {
-                        return $events;
-                    }
-                }
-                break;
-            }
-
-            if ($sawRunTerminal && microtime(true) - $lastEventAt > 0.8) {
-                break;
-            }
-
-            usleep(50_000);
-        }
-
-        return $events;
-    }
 
     /**
      * @return list<array<string, mixed>>
