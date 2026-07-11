@@ -283,4 +283,84 @@ class FooterStateSegmentProviderTest extends TestCase
 
         $this->assertSame($a, $b);
     }
+
+    #[Test]
+    public function testLiveViewFooterShowsChildContextUsageAndModel(): void
+    {
+        $state = $this->state;
+        $state->subagentLiveCatalog->ingestRuntimeEvent(new \Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent(
+            type: \Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum::ToolExecutionOutputDelta->value,
+            runId: 'parent-run',
+            seq: 1,
+            payload: [
+                'tool_call_id' => 'tc_subagent',
+                'tool_name' => 'subagent',
+                'delta' => '',
+                'subagent_progress' => array_merge([
+                    'mode' => 'single',
+                    'status' => 'completed',
+                    'agent_name' => 'scout',
+                    'artifact_id' => 'agent_ctx',
+                    'agent_run_id' => 'child-run-ctx',
+                    'task_summary' => 'Context stats',
+                ], \Ineersa\Tui\Tests\Support\ChildContextStatisticsFixture::progressPayloadOverrides()),
+            ],
+        ));
+
+        $child = $state->subagentLiveCatalog->findByArtifactId('agent_ctx');
+        $this->assertNotNull($child);
+        $state->subagentLiveView->enter($child);
+
+        $segments = (new FooterStateSegmentProvider($state))->getSegments();
+        $texts = array_map(static fn (FooterSegment $s): string => $s->text, $segments);
+        $joined = implode(' ', $texts);
+
+        $this->assertStringContainsString(\Ineersa\Tui\Tests\Support\ChildContextStatisticsFixture::CONTEXT_DETAIL, $joined);
+        $this->assertStringContainsString(\Ineersa\Tui\Tests\Support\ChildContextStatisticsFixture::MODEL_SHORT, $joined);
+    }
+
+    #[Test]
+    public function testChildLiveFooterContextThresholdColorsMatchMainFooterSemantics(): void
+    {
+        $window = \Ineersa\Tui\Tests\Support\ChildContextStatisticsFixture::CONTEXT_WINDOW;
+        $cases = [
+            [(int) round($window * 0.50), ThemeColorEnum::Success],
+            [(int) round($window * 0.51), ThemeColorEnum::Warning],
+            [(int) round($window * 0.75), ThemeColorEnum::Warning],
+            [(int) round($window * 0.76), ThemeColorEnum::Error],
+        ];
+
+        foreach ($cases as [$latestInput, $expectedColor]) {
+            $state = new TuiSessionState('child-ctx-threshold-'.$latestInput);
+            $state->subagentLiveCatalog->ingestRuntimeEvent(new \Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent(
+                type: \Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum::ToolExecutionOutputDelta->value,
+                runId: 'parent-run',
+                seq: 1,
+                payload: [
+                    'tool_call_id' => 'tc_subagent',
+                    'tool_name' => 'subagent',
+                    'delta' => '',
+                    'subagent_progress' => array_merge([
+                        'mode' => 'single',
+                        'status' => 'completed',
+                        'agent_name' => 'scout',
+                        'artifact_id' => 'agent_ctx_thr',
+                        'agent_run_id' => 'child-run-ctx-thr',
+                        'task_summary' => 'Threshold',
+                    ], \Ineersa\Tui\Tests\Support\ChildContextStatisticsFixture::progressPayloadOverridesWithLatestInput($latestInput)),
+                ],
+            ));
+            $child = $state->subagentLiveCatalog->findByArtifactId('agent_ctx_thr');
+            $this->assertNotNull($child);
+            $state->subagentLiveView->enter($child);
+
+            $segments = (new FooterStateSegmentProvider($state))->getSegments();
+            $ctxSegments = array_values(array_filter(
+                $segments,
+                static fn (FooterSegment $s): bool => str_contains($s->text, '%') && str_contains($s->text, '/'),
+            ));
+            $this->assertCount(1, $ctxSegments, 'Child live footer must expose one context segment for latestInput='.$latestInput);
+            $this->assertSame($expectedColor, $ctxSegments[0]->color, 'Child context threshold color for latestInput='.$latestInput);
+        }
+    }
 }
