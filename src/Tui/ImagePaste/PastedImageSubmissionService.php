@@ -92,7 +92,7 @@ final class PastedImageSubmissionService
                 $filename = \sprintf('pasted-image-%d.%s', $index, $validated->extension);
                 $destination = $attachmentsDir.'/'.$filename;
 
-                if (is_file($destination)) {
+                if (file_exists($destination)) {
                     $this->surfaceError($state, $screen, \sprintf('Session attachment already exists for %s.', $placeholder));
 
                     return null;
@@ -110,7 +110,10 @@ final class PastedImageSubmissionService
         }
 
         $resolved = $text;
+        /** @var list<string> $tempDestinations */
         $tempDestinations = [];
+        /** @var list<string> $finalizedDestinations Paths created by successful rename() in this invocation */
+        $finalizedDestinations = [];
 
         try {
             foreach ($plans as $plan) {
@@ -127,7 +130,10 @@ final class PastedImageSubmissionService
                     throw new \RuntimeException('Failed to finalize pasted image attachment.');
                 }
                 @chmod($plan['destination'], 0o600);
+                $finalizedDestinations[] = $plan['destination'];
+            }
 
+            foreach ($plans as $plan) {
                 $relativePath = $sessionRelativeBase.'/'.$plan['filename'];
                 $reference = PastedImagePlaceholderFormatter::llmReference($plan['index'], $relativePath);
                 $resolved = str_replace($plan['placeholder'], $reference, $resolved);
@@ -139,6 +145,11 @@ final class PastedImageSubmissionService
             foreach ($tempDestinations as $temp) {
                 if (is_file($temp)) {
                     @unlink($temp);
+                }
+            }
+            foreach ($finalizedDestinations as $destination) {
+                if (is_file($destination)) {
+                    @unlink($destination);
                 }
             }
             $this->surfaceError($state, $screen, $e->getMessage());
@@ -182,9 +193,10 @@ final class PastedImageSubmissionService
      *
      * Cross-filesystem promotion invariant: never write directly to the final attachment path
      * until all placeholders pass preflight. Each image is copied to a unique ".<name>.<rand>.tmp"
-     * file in the attachments directory, then atomically renamed into place only after every
-     * staged copy succeeds. On failure, temp files are unlinked and existing attachments are
-     * left untouched.
+     * file in the attachments directory. All renames run only after every staged copy succeeds;
+     * staged files and pending state are cleared only after every rename succeeds. On failure,
+     * temp files and any destinations created in this invocation are unlinked; original staged
+     * files and pending entries stay intact for retry. Pre-existing attachment files are never touched.
      */
     private function stageToTempDestination(string $source, string $destination): ?string
     {

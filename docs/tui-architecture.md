@@ -212,7 +212,7 @@ Each event has a dedicated listener class in `src/Tui/Listener/`: each implement
 
 | Event | Listener | File | Action |
 |-------|----------|------|--------|
-| `InputEvent` (priority 96) | `ImagePasteInputListener` | `src/Tui/Listener/ImagePasteInputListener.php` | Standalone Ctrl+V (`\x16`) reads OS clipboard image (wl-paste → xclip → pngpaste), validates bytes, inserts `[Image #N]`; bracketed text paste unchanged (issue #119) |
+| `InputEvent` (priority 96) | `ImagePasteInputListener` | `src/Tui/Listener/ImagePasteInputListener.php` | Standalone Ctrl+V (`\x16`) reads OS clipboard image (wl-paste → pngpaste (macOS) → xclip), validates bytes, inserts `[Image #N]`; bracketed text paste unchanged (issue #119) |
 | `InputEvent` (priority 98) | `PreviewExpansionInputListener` | `src/Tui/Listener/PreviewExpansionInputListener.php` | Ctrl+O → toggle previewable transcript previews (session state only) |
 | `InputEvent` (priority 100) | `CtrlCInputInterceptor` | `src/Tui/Listener/CtrlCInputInterceptor.php` | Ctrl+D → stop TUI; Ctrl+C → cancel/double-press quit |
 | `SubmitEvent` | `SubmitListener` | `src/Tui/Listener/SubmitListener.php` | Append user message, start run or send follow-up, show processing indicator |

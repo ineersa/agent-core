@@ -88,6 +88,50 @@ final class PastedImageSubmissionServiceTest extends IsolatedKernelTestCase
     }
 
     #[Test]
+    public function existingDestinationPathBlocksPromotionBeforeStaging(): void
+    {
+        /** @var HatfieldSessionStore $store */
+        $store = self::getContainer()->get(HatfieldSessionStore::class);
+
+        $sessionId = $store->createSession('seed-existing-dest');
+        $png = file_get_contents(__DIR__.'/../E2E/fixtures/paste-test-1x1.png');
+        $this->assertNotFalse($png);
+
+        $staged1 = $this->projectDir.'/staged-existing-1.png';
+        file_put_contents($staged1, $png);
+
+        $state = new TuiSessionState($sessionId);
+        $state->pastedImagePendingByIndex[1] = new PastedImagePendingDTO(1, '[Image #1]', $staged1);
+
+        /** @var AppConfig $appConfig */
+        $appConfig = self::getContainer()->get(AppConfig::class);
+
+        $service = new PastedImageSubmissionService(
+            new PastedImageValidationService(new ImageToolConfig(), new TestLogger()),
+            $store,
+            $appConfig,
+            new TranscriptBlockFactory(),
+            new TestLogger(),
+        );
+
+        $screen = new ChatScreen(
+            new DefaultTheme(new ThemePalette('test')),
+            $sessionId,
+            new PromptEditor(),
+            new TranscriptDisplayConfig(),
+            new TranscriptDisplayState(),
+        );
+
+        $attachmentsDir = $store->resolveSessionsBasePath().'/'.$sessionId.'/attachments';
+        touch($attachmentsDir.'/pasted-image-1.png');
+
+        $resolved = $service->resolveSubmittedText('see [Image #1]', $state, $screen);
+        $this->assertNull($resolved);
+        $this->assertArrayHasKey(1, $state->pastedImagePendingByIndex);
+        $this->assertFileExists($staged1);
+    }
+
+    #[Test]
     public function secondPlaceholderFailureLeavesFirstRetryableWithoutOrphanAttachment(): void
     {
         /** @var HatfieldSessionStore $store */

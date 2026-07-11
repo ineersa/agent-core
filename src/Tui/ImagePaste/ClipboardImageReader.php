@@ -12,17 +12,20 @@ use Symfony\Component\Process\Process;
 /**
  * Reads image/png (or convertible) clipboard data via wl-paste, xclip, or pngpaste.
  *
- * Order: Wayland wl-paste, X11 xclip, macOS pngpaste. OSC 52 and inline terminal
+ * Order: Wayland wl-paste, macOS pngpaste, then X11 xclip. OSC 52 and inline terminal
  * image protocols are intentionally unsupported (GitHub issue #119 MVP).
  */
 final class ClipboardImageReader implements ClipboardImageReaderInterface
 {
     private const float PROCESS_TIMEOUT = 5.0;
 
+    private readonly ExecutableFinder $executableFinder;
+
     public function __construct(
         private readonly ImageToolConfig $imageConfig,
         private readonly LoggerInterface $logger,
     ) {
+        $this->executableFinder = new ExecutableFinder();
     }
 
     public function readImageToTempFile(): ClipboardImageReadResultDTO
@@ -63,17 +66,17 @@ final class ClipboardImageReader implements ClipboardImageReaderInterface
             ];
         }
 
-        if (null !== $this->findExecutable('xclip')) {
-            return [
-                'name' => 'xclip',
-                'argv' => ['xclip', '-selection', 'clipboard', '-t', 'image/png', '-o'],
-            ];
-        }
-
         if ('Darwin' === \PHP_OS_FAMILY && null !== $this->findExecutable('pngpaste')) {
             return [
                 'name' => 'pngpaste',
                 'argv' => ['pngpaste', '-'],
+            ];
+        }
+
+        if (null !== $this->findExecutable('xclip')) {
+            return [
+                'name' => 'xclip',
+                'argv' => ['xclip', '-selection', 'clipboard', '-t', 'image/png', '-o'],
             ];
         }
 
@@ -201,12 +204,6 @@ final class ClipboardImageReader implements ClipboardImageReaderInterface
         }
 
         @chmod($temp, 0o600);
-        @unlink($temp);
-        $fh = @fopen($temp, 'wb');
-        if (false === $fh) {
-            return null;
-        }
-        @fclose($fh);
 
         return $temp;
     }
@@ -224,6 +221,29 @@ final class ClipboardImageReader implements ClipboardImageReaderInterface
         if ('wl-paste' === $backend && null !== $exit && 1 === $exit
             && str_contains(strtolower($stderr), 'no data')) {
             return true;
+        }
+
+        $stderrLower = strtolower($stderr);
+
+        if ('xclip' === $backend && null !== $exit && 1 === $exit) {
+            if ('' === $stderr) {
+                return true;
+            }
+
+            if (str_contains($stderrLower, 'no image/png')
+                || str_contains($stderrLower, 'no image types')
+                || str_contains($stderrLower, 'no selection')
+                || str_contains($stderrLower, 'not available')) {
+                return true;
+            }
+        }
+
+        if ('pngpaste' === $backend && null !== $exit && 1 === $exit) {
+            if (str_contains($stderrLower, 'no image')
+                || str_contains($stderrLower, 'clipboard doesn\'t contain')
+                || str_contains($stderrLower, 'clipboard does not contain')) {
+                return true;
+            }
         }
 
         return false;
@@ -252,8 +272,7 @@ final class ClipboardImageReader implements ClipboardImageReaderInterface
 
     private function findExecutable(string $command): ?string
     {
-        $finder = new ExecutableFinder();
-        $path = $finder->find($command);
+        $path = $this->executableFinder->find($command);
         if (null === $path || !is_executable($path)) {
             return null;
         }

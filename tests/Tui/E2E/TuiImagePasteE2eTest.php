@@ -12,8 +12,6 @@ use PHPUnit\Framework\TestCase;
 /**
  * Replay-backed tmux proof: real Ctrl+V inserts [Image #1], submit promotes attachment
  * and canonical prompt contains view_image path (GitHub issue #119).
- *
- * @group tui-e2e-replay
  */
 #[Group('tui-e2e-replay')]
 final class TuiImagePasteE2eTest extends TestCase
@@ -111,8 +109,6 @@ final class TuiImagePasteE2eTest extends TestCase
         $script = '#!/bin/sh'."\n".'cat '.escapeshellarg($png)."\n";
         file_put_contents($this->fakeBinDir.'/wl-paste', $script);
         chmod($this->fakeBinDir.'/wl-paste', 0o755);
-        file_put_contents($this->fakeBinDir.'/xclip', $script);
-        chmod($this->fakeBinDir.'/xclip', 0o755);
     }
 
     private function agentCommand(): string
@@ -225,15 +221,6 @@ final class TuiImagePasteE2eTest extends TestCase
         }
 
         return $dirs[0];
-    }
-
-    private function extractSessionIdFromFooter(string $capture): ?string
-    {
-        if (preg_match('/session\s+(\d+)/', $capture, $m)) {
-            return $m[1];
-        }
-
-        return null;
     }
 
     private function saveAnsiSnapshot(TmuxPane $pane, string $label): void

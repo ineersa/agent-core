@@ -103,6 +103,58 @@ final class ClipboardImageReaderTest extends TestCase
         $this->assertStringContainsString('permission denied', strtolower($result->diagnostic ?? ''));
     }
 
+    #[Test]
+    public function xclipNoImageStderrYieldsNoImageOutcome(): void
+    {
+        $this->installScript('xclip', '#!/bin/sh'.'
+echo "No image/png in clipboard" 1>&2; exit 1');
+
+        putenv('XDG_SESSION_TYPE=');
+        putenv('WAYLAND_DISPLAY=');
+
+        $reader = new ClipboardImageReader(new ImageToolConfig(), new TestLogger());
+        $result = $reader->readImageToTempFile();
+
+        $this->assertSame(ClipboardImageReadOutcomeEnum::NoImage, $result->outcome);
+    }
+
+    #[Test]
+    public function xclipRealErrorStderrYieldsFailedOutcome(): void
+    {
+        $this->installScript('xclip', '#!/bin/sh'.'
+echo "xclip: Error: Can\'t open display" 1>&2; exit 1');
+
+        putenv('XDG_SESSION_TYPE=');
+        putenv('WAYLAND_DISPLAY=');
+
+        $reader = new ClipboardImageReader(new ImageToolConfig(), new TestLogger());
+        $result = $reader->readImageToTempFile();
+
+        $this->assertSame(ClipboardImageReadOutcomeEnum::Failed, $result->outcome);
+        $this->assertStringContainsString('display', strtolower($result->diagnostic ?? ''));
+    }
+
+    #[Test]
+    public function pngpasteNoImageStderrYieldsNoImageOutcome(): void
+    {
+        $this->installScript('pngpaste', '#!/bin/sh'.'
+echo "pngpaste: No image in clipboard" 1>&2; exit 1');
+        $this->installScript('xclip', '#!/bin/sh'.'
+echo "should not run" 1>&2; exit 2');
+
+        putenv('XDG_SESSION_TYPE=');
+        putenv('WAYLAND_DISPLAY=');
+
+        if ('Darwin' !== \PHP_OS_FAMILY) {
+            $this->markTestSkipped('pngpaste backend order is Darwin-specific.');
+        }
+
+        $reader = new ClipboardImageReader(new ImageToolConfig(), new TestLogger());
+        $result = $reader->readImageToTempFile();
+
+        $this->assertSame(ClipboardImageReadOutcomeEnum::NoImage, $result->outcome);
+    }
+
     private function installScript(string $name, string $contents): void
     {
         file_put_contents($this->fakeBinDir.'/'.$name, $contents."\n");

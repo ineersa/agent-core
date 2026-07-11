@@ -96,7 +96,7 @@ final class PastedImageValidationService
             'image/png' => 'png',
             'image/gif' => 'gif',
             'image/webp' => 'webp',
-            default => 'bin',
+            default => throw new \LogicException(\sprintf('Unsupported MIME type "%s" after validation.', $mediaType)),
         };
     }
 }
