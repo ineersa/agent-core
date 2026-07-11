@@ -205,11 +205,11 @@ final class SubagentLiveBackgroundChildPollerTest extends TestCase
         $this->assertSame('answer_human', $sent[1]->type);
     }
 
-    public function testPollCatalogIngestDiscoversNestedScoutWhileLiveViewOnFork(): void
+    public function testPollCatalogIngestSkipsSelectedActiveChildStream(): void
     {
         $parentRun = 'parent-1';
-        $forkRun = 'fork-run';
-        $scoutRun = 'scout-run';
+        $forkRun = 'fork-run-selected';
+        $scoutRun = 'scout-run-bg';
 
         $state = new TuiSessionState($parentRun);
         $state->subagentLiveCatalog->ingestRuntimeEvent(new RuntimeEvent(
@@ -227,6 +227,21 @@ final class SubagentLiveBackgroundChildPollerTest extends TestCase
                 ],
             ],
         ));
+        $state->subagentLiveCatalog->ingestNestedProgressFromChildRunEvent(new RuntimeEvent(
+            'tool_execution_update',
+            $forkRun,
+            2,
+            [
+                'subagent_progress' => [
+                    'mode' => 'single',
+                    'status' => 'running',
+                    'agent_name' => 'scout',
+                    'artifact_id' => 'agent_scout',
+                    'agent_run_id' => $scoutRun,
+                    'task_summary' => 'pick file',
+                ],
+            ],
+        ));
         $state->subagentLiveView->enter(new SubagentLiveChildDTO(
             $forkRun,
             'agent_fork',
@@ -238,10 +253,13 @@ final class SubagentLiveBackgroundChildPollerTest extends TestCase
 
         $client = new BufferedChildEventsClient([
             $forkRun => [
+                new RuntimeEvent('assistant_message', $forkRun, 10, ['text' => 'fork live only']),
+            ],
+            $scoutRun => [
                 new RuntimeEvent(
                     'tool_execution_update',
-                    $forkRun,
-                    2,
+                    $scoutRun,
+                    3,
                     [
                         'subagent_progress' => [
                             'mode' => 'single',
@@ -254,16 +272,13 @@ final class SubagentLiveBackgroundChildPollerTest extends TestCase
                     ],
                 ),
             ],
-            $scoutRun => [],
         ]);
 
         $poller = new SubagentLiveBackgroundChildPoller(new NullLogger());
         $poller->pollCatalogIngest($state, $client);
 
-        $scout = $state->subagentLiveCatalog->findByArtifactId('agent_scout');
-        $this->assertNotNull($scout);
-        $this->assertSame($scoutRun, $scout->agentRunId);
-        $this->assertSame('scout', $scout->agentName);
+        $this->assertSame(0, $client->eventsCallCount[$forkRun] ?? 0);
+        $this->assertSame(1, $client->eventsCallCount[$scoutRun] ?? 0);
     }
 
     private function chatScreen(string $sessionId): ChatScreen
@@ -285,6 +300,9 @@ final class BufferedChildEventsClient implements AgentSessionClient
 {
     /** @var callable(string, UserCommand): void|null */
     public $onSend;
+
+    /** @var array<string, int> */
+    public array $eventsCallCount = [];
 
     /**
      * @param array<string, list<RuntimeEvent>> $eventsByRun
@@ -329,6 +347,8 @@ final class BufferedChildEventsClient implements AgentSessionClient
 
     public function events(string $runId): iterable
     {
+        $this->eventsCallCount[$runId] = ($this->eventsCallCount[$runId] ?? 0) + 1;
+
         return $this->eventsByRun[$runId] ?? [];
     }
 }

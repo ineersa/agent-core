@@ -102,6 +102,11 @@ final class SubagentLiveBackgroundChildPoller
                 continue;
             }
 
+            // Selected live child stream is owned exclusively by SubagentLiveChildViewPoller.
+            if (null !== $selectedRunId && $runId === $selectedRunId) {
+                continue;
+            }
+
             $lastSeq = $state->subagentLiveBackgroundSeqByRunId[$runId] ?? 0;
             $events = $this->runtimeEvents($client, $runId);
             if ([] === $events) {

@@ -7,6 +7,7 @@ namespace Ineersa\Tui\Picker;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Runtime\Contract\ChildRunTranscriptSnapshotDTO;
 use Ineersa\CodingAgent\Runtime\Contract\ChildRunTranscriptSnapshotProviderInterface;
+use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\Tui\Export\SessionEventsExportService;
 use Ineersa\Tui\Footer\ContextUsageFormatter;
@@ -35,13 +36,13 @@ final class SubagentLivePickerController
     private ?ChatScreen $screen = null;
     private ?TuiSessionState $state = null;
 
-    /** @var ?callable(\Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent): void */
+    /** @var ?callable(RuntimeEvent): void */
     private $onHumanInputRequested;
 
-    /** @var ?callable(\Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent): void */
+    /** @var ?callable(RuntimeEvent): void */
     private $onToolQuestionRequested;
 
-    /** @var ?callable(\Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent): void */
+    /** @var ?callable(RuntimeEvent): void */
     private $onToolTerminal;
 
     public function __construct(
@@ -419,6 +420,10 @@ final class SubagentLivePickerController
 
         $state->subagentLiveView->enter($child);
 
+        $ingestNestedCatalog = static function (RuntimeEvent $event) use ($state): void {
+            $state->subagentLiveCatalog->ingestNestedProgressFromChildRunEvent($event);
+        };
+
         if ($hasCachedTranscript) {
             $cachedReplay = $state->subagentLiveView->childReplayEvents;
             $this->childPoller->replaySnapshot(
@@ -428,6 +433,7 @@ final class SubagentLivePickerController
                     $cachedReplay,
                     $state->subagentLiveView->childLastSeq,
                 ),
+                onCatalogIngest: $ingestNestedCatalog,
             );
         } else {
             $this->childPoller->resetProjection();
@@ -443,13 +449,14 @@ final class SubagentLivePickerController
                     onHumanInputRequested: $this->onHumanInputRequested,
                     onToolQuestionRequested: $this->onToolQuestionRequested,
                     onToolTerminal: $this->onToolTerminal,
+                    onCatalogIngest: $ingestNestedCatalog,
                 );
             }
         }
 
         $screen->setTranscriptBlocks($state->subagentLiveView->childTranscript);
         $screen->syncQueuedUserMessages($state->subagentLiveView->childQueuedUserMessages);
-        $screen->setWorkingMessage($child->isRunning() ? 'Child agent working...' : 'Child agent idle');
+        $screen->setWorkingMessage($child->isRunning() ? 'Child agent working...' : null);
         $screen->requestRender(true);
     }
 }

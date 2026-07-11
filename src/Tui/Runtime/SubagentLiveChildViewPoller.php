@@ -58,6 +58,7 @@ final class SubagentLiveChildViewPoller
         ?callable $onHumanInputRequested = null,
         ?callable $onToolQuestionRequested = null,
         ?callable $onToolTerminal = null,
+        ?callable $onCatalogIngest = null,
     ): array {
         if (!$live->active || null === $live->selected) {
             return $live->childTranscript;
@@ -71,6 +72,7 @@ final class SubagentLiveChildViewPoller
 
         foreach ($snapshot->replayEvents as $event) {
             $this->eventApplier->apply($scratch, $event, replayMode: true);
+            $this->dispatchCatalogIngestion($event, $onCatalogIngest);
             $this->dispatchEventCallbacks(
                 $event,
                 $live->selected->agentRunId,
@@ -106,6 +108,7 @@ final class SubagentLiveChildViewPoller
         ?callable $onHumanInputRequested = null,
         ?callable $onToolQuestionRequested = null,
         ?callable $onToolTerminal = null,
+        ?callable $onCatalogIngest = null,
     ): ?array {
         if (!$live->active || null === $live->selected) {
             return null;
@@ -140,6 +143,8 @@ final class SubagentLiveChildViewPoller
             $live->childReplayEvents[] = $event;
             $changed = true;
 
+            $this->dispatchCatalogIngestion($event, $onCatalogIngest);
+
             $this->dispatchEventCallbacks(
                 $event,
                 $live->selected->agentRunId,
@@ -167,6 +172,29 @@ final class SubagentLiveChildViewPoller
         $live->persistCurrentChildCache();
 
         return $live->childTranscript;
+    }
+
+    /**
+     * @param ?callable(RuntimeEvent): void $onCatalogIngest
+     */
+    private function dispatchCatalogIngestion(RuntimeEvent $event, ?callable $onCatalogIngest): void
+    {
+        if (null === $onCatalogIngest) {
+            return;
+        }
+
+        try {
+            $onCatalogIngest($event);
+        } catch (\Throwable $e) {
+            $this->logger->warning('SubagentLiveChildViewPoller catalog ingest callback failed', [
+                'component' => 'tui.subagent_live_child_poller',
+                'event_type' => 'subagent_live_child_poller.catalog_ingest_failed',
+                'runtime_event_type' => $event->type,
+                'seq' => $event->seq,
+                'exception_class' => $e::class,
+                'exception_message' => $e->getMessage(),
+            ]);
+        }
     }
 
     /**

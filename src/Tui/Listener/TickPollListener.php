@@ -97,6 +97,10 @@ final class TickPollListener implements TuiListenerRegistrar
             if ($liveActive) {
                 $subagentLiveBackgroundChildPoller->pollCatalogIngest($state, $client);
 
+                $ingestNestedCatalog = static function (RuntimeEvent $event) use ($state): void {
+                    $state->subagentLiveCatalog->ingestNestedProgressFromChildRunEvent($event);
+                };
+
                 $childBlocks = $subagentLiveChildPoller->poll(
                     $state->subagentLiveView,
                     $client,
@@ -109,6 +113,7 @@ final class TickPollListener implements TuiListenerRegistrar
                     onToolTerminal: static function (RuntimeEvent $event) use ($questionCoordinator, $questionController, $runtimeQuestionEventHandler): void {
                         $runtimeQuestionEventHandler->handleToolTerminal($event, $questionCoordinator, $questionController);
                     },
+                    onCatalogIngest: $ingestNestedCatalog,
                 );
                 // Only repaint transcript when new child blocks arrive; cached blocks stay on screen.
                 if (null !== $childBlocks) {
@@ -214,27 +219,22 @@ final class TickPollListener implements TuiListenerRegistrar
             // stale static cache would skip the authoritative tick update,
             // permanently leaving a stuck working message.
             if ($liveActive) {
-                $parentMsg = match (true) {
-                    RunActivityStateEnum::Cancelling === $state->activity => 'Cancelling...',
-                    RunActivityStateEnum::Idle === $state->activity || $state->activity->isTerminal() => null,
-                    null === $state->handle && $state->activity->isActive() => null,
-                    default => 'Working...',
-                };
-                $childMsg = match ($state->subagentLiveView->childActivity) {
+                $liveWorking = match ($state->subagentLiveView->childActivity) {
                     RunActivityStateEnum::WaitingHuman => 'Child waiting for your input...',
                     RunActivityStateEnum::Cancelling => 'Child cancelling...',
+                    RunActivityStateEnum::Idle,
+                    RunActivityStateEnum::Completed,
+                    RunActivityStateEnum::Failed,
+                    RunActivityStateEnum::Cancelled => null,
                     default => $state->subagentLiveView->childActivity->isActive()
                         ? 'Child agent working...'
-                        : 'Child agent idle',
+                        : null,
                 };
-                $liveWorking = null !== $parentMsg
-                    ? $parentMsg.' | '.$childMsg
-                    : $childMsg;
-                // Live-view-only cache: generic tick path avoids static last-value (see comment above).
                 if ($liveWorking !== $state->subagentLiveView->lastLiveWorkingMessage) {
                     $state->subagentLiveView->lastLiveWorkingMessage = $liveWorking;
                     $screen->setWorkingMessage($liveWorking);
                 }
+                $screen->setWorkingVisible(null !== $liveWorking);
 
                 SubagentLiveAttention::refreshAttentionFooter($state, $screen);
 
