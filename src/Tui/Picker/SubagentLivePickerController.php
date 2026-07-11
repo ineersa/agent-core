@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Picker;
 
+use Ineersa\CodingAgent\Runtime\Contract\ChildAgentEventsPathResolverInterface;
 use Ineersa\CodingAgent\Runtime\Contract\ChildRunTranscriptSnapshotDTO;
 use Ineersa\CodingAgent\Runtime\Contract\ChildRunTranscriptSnapshotProviderInterface;
+use Ineersa\Tui\Export\SessionEventsExportService;
 use Ineersa\Tui\Runtime\SubagentLiveChildDTO;
 use Ineersa\Tui\Runtime\SubagentLiveChildViewPoller;
 use Ineersa\Tui\Runtime\SubagentLiveMainReturn;
@@ -44,6 +46,8 @@ final class SubagentLivePickerController
     public function __construct(
         private readonly SubagentLiveChildViewPoller $childPoller,
         private readonly ChildRunTranscriptSnapshotProviderInterface $childSnapshotProvider,
+        private readonly ChildAgentEventsPathResolverInterface $childEventsPathResolver,
+        private readonly SessionEventsExportService $exportService,
     ) {
     }
 
@@ -143,7 +147,7 @@ final class SubagentLivePickerController
 
         $theme = $screen->theme();
         $header = new TextWidget(
-            text: $theme->muted('Agents live — Enter live view, d dismisses finished, Ctrl+\\ main, Esc cancel'),
+            text: $theme->muted('Agents live — Enter live view, e export, d dismisses finished, Ctrl+\\ main, Esc cancel'),
             truncate: true,
         );
 
@@ -203,6 +207,12 @@ final class SubagentLivePickerController
         });
 
         $listWidget->onInput(static function (string $data) use ($picker, $listWidget, &$children, $theme, $screen, $state): bool {
+            if ('e' === $data || 'E' === $data) {
+                $picker->exportSelected($listWidget, $screen, $state);
+
+                return true;
+            }
+
             if ('d' !== $data && 'D' !== $data) {
                 return false;
             }
@@ -214,6 +224,68 @@ final class SubagentLivePickerController
 
         $this->overlay = new PickerOverlay();
         $this->overlay->mount($tui, $screen, $listWidget, $header);
+    }
+
+    private function exportSelected(
+        SelectListWidget $listWidget,
+        ChatScreen $screen,
+        TuiSessionState $state,
+    ): void {
+        $selected = $listWidget->getSelectedItem();
+        if (null === $selected) {
+            $screen->setWorkingMessage('No child agent selected to export.');
+            $screen->requestRender(true);
+
+            return;
+        }
+
+        $artifactId = (string) ($selected['value'] ?? '');
+        $child = $state->subagentLiveCatalog->findByArtifactId($artifactId);
+        if (null === $child) {
+            $screen->setWorkingMessage('Selected child agent is no longer in the catalog.');
+            $screen->requestRender(true);
+
+            return;
+        }
+
+        $parentSessionId = $state->sessionId;
+        if ('' === $parentSessionId) {
+            $screen->setWorkingMessage('No active parent session — cannot export child run.');
+            $screen->requestRender(true);
+
+            return;
+        }
+
+        try {
+            $eventsPath = $this->childEventsPathResolver->eventsPath($parentSessionId, $artifactId);
+        } catch (\InvalidArgumentException $e) {
+            $screen->setWorkingMessage($e->getMessage());
+            $screen->requestRender(true);
+
+            return;
+        }
+
+        $outputPath = getcwd().'/hatfield-child-'.$artifactId.'.html';
+        $title = \sprintf('Child %s (%s)', $child->agentName, $artifactId);
+
+        try {
+            $message = $this->exportService->exportEventsFile(
+                $eventsPath,
+                $outputPath,
+                $child->agentRunId,
+                $title,
+                '',
+                '',
+            );
+            if (str_starts_with($message, 'Session exported to: ')) {
+                $message = 'Child agent exported to: '.substr($message, \strlen('Session exported to: '));
+            }
+            $screen->setWorkingMessage($message);
+        } catch (\RuntimeException $e) {
+            $screen->setWorkingMessage($e->getMessage());
+        }
+
+        $screen->requestRender(true);
     }
 
     /**

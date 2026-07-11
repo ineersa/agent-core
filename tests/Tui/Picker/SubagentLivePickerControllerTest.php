@@ -4,26 +4,26 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\Picker;
 
-use Ineersa\CodingAgent\Runtime\Contract\ChildRunTranscriptSnapshotDTO;
-use Ineersa\CodingAgent\Runtime\Contract\ChildRunTranscriptSnapshotProviderInterface;
+use Doctrine\ORM\EntityManagerInterface;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\SessionsConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Runtime\Contract\ChildAgentEventsPathResolverInterface;
-use Ineersa\CodingAgent\Session\HatfieldSessionStore;
-use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
-use Ineersa\Tui\Export\SessionEventsExportService;
-use Ineersa\Tui\Tests\Support\ChildAgentExportEventsFixture;
-use Doctrine\ORM\EntityManagerInterface;
+use Ineersa\CodingAgent\Runtime\Contract\ChildRunTranscriptSnapshotDTO;
+use Ineersa\CodingAgent\Runtime\Contract\ChildRunTranscriptSnapshotProviderInterface;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
+use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
+use Ineersa\Tui\Export\SessionEventsExportService;
 use Ineersa\Tui\Picker\SubagentLivePickerController;
 use Ineersa\Tui\Runtime\SubagentLiveChildViewPoller;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Screen\ChatScreen;
+use Ineersa\Tui\Tests\Support\ChildAgentExportEventsFixture;
 use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
@@ -118,7 +118,6 @@ final class SubagentLivePickerControllerTest extends TestCase
         $this->assertArrayNotHasKey('agents-live', $entries, 'agents-live status should be absent/cleared');
     }
 
-
     #[Test]
     public function exportKeyWritesSelectedChildHtmlWithChildOnlyContent(): void
     {
@@ -178,8 +177,8 @@ final class SubagentLivePickerControllerTest extends TestCase
         $this->seedCatalogChild($state, $artifactId, 'child-run-bad', 'completed');
         $dir = $this->projectDir.'/.hatfield/sessions/parent-session-bad-json/artifacts/agents/'.$artifactId;
         mkdir($dir, 0777, true);
-        file_put_contents($dir.'/events.jsonl', "{not valid jsonl
-");
+        file_put_contents($dir.'/events.jsonl', '{not valid jsonl
+');
         $this->writeParentOnlyEvents('parent-session-bad-json', 'parent fallback must not export');
 
         $picker = $this->exportPicker($harness, $state);
@@ -262,6 +261,8 @@ final class SubagentLivePickerControllerTest extends TestCase
                 new NullLogger(),
             ),
             $snapshotProvider,
+            $this->createStub(ChildAgentEventsPathResolverInterface::class),
+            new SessionEventsExportService(),
         );
         $picker->setRuntimeRefs($harness->tui(), $harness->screen(), $state);
 
@@ -285,6 +286,8 @@ final class SubagentLivePickerControllerTest extends TestCase
                 new NullLogger(),
             ),
             $this->createStub(ChildRunTranscriptSnapshotProviderInterface::class),
+            $this->createStub(ChildAgentEventsPathResolverInterface::class),
+            new SessionEventsExportService(),
         );
         $picker->setRuntimeRefs($harness->tui(), $harness->screen(), $state);
 
@@ -326,7 +329,6 @@ final class SubagentLivePickerControllerTest extends TestCase
             ],
         ));
     }
-
 
     private function exportPicker(VirtualTuiHarness $harness, TuiSessionState $state): SubagentLivePickerController
     {
