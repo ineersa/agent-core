@@ -436,6 +436,7 @@ parameters:
       - AppRuntimeProjection
       - TuiWidget
       - TuiTheme
+      - TuiFooter
       - SymfonyTui
       - SymfonyYaml
 

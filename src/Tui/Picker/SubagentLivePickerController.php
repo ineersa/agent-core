@@ -6,6 +6,8 @@ namespace Ineersa\Tui\Picker;
 
 use Ineersa\CodingAgent\Runtime\Contract\ChildRunTranscriptSnapshotDTO;
 use Ineersa\CodingAgent\Runtime\Contract\ChildRunTranscriptSnapshotProviderInterface;
+use Ineersa\Tui\Footer\ContextUsageFormatter;
+use Ineersa\Tui\Listener\FooterStateInitializer;
 use Ineersa\Tui\Runtime\SubagentLiveChildDTO;
 use Ineersa\Tui\Runtime\SubagentLiveChildViewPoller;
 use Ineersa\Tui\Runtime\SubagentLiveMainReturn;
@@ -111,6 +113,14 @@ final class SubagentLivePickerController
             $statusLabel = $child->needsAttention() ? '⚠ needs input' : $child->statusLabel();
             $runShort = \strlen($child->agentRunId) > 12 ? substr($child->agentRunId, 0, 12).'…' : $child->agentRunId;
             $label = \sprintf('%s [%s] %s run:%s — %s', $child->agentName, $statusLabel, $child->artifactId, $runShort, $task);
+            $ctxFormatted = ContextUsageFormatter::format($child->model, $child->latestInputTokens, $child->contextWindow);
+            if (null !== $ctxFormatted) {
+                $suffix = $ctxFormatted->text;
+                if (null !== $child->model && '' !== $child->model) {
+                    $suffix .= ' '.FooterStateInitializer::shortModelName($child->model);
+                }
+                $label .= ' · '.$suffix;
+            }
             if ($i === $selectedIndex) {
                 $label = $theme->color(ThemeColorEnum::Accent, $label);
             }
