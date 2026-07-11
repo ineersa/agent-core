@@ -15,10 +15,13 @@ use Psr\Log\LoggerInterface;
  *   1. Global directories (checked in order):
  *        ~/.hatfield/AGENTS.md or AGENTS.MD
  *        ~/.agents/AGENTS.md or AGENTS.MD
- *   2. Ancestor walk from {cwd} upward to filesystem root,
- *      checking each directory for AGENTS.md or AGENTS.MD
- *      in .hatfield/ then .agents/ subdirectories.
- *      Nearest ancestor found first.
+ *   2. Ancestor walk from {cwd} upward to filesystem root.
+ *      For each directory (nearest first), check in order:
+ *        {dir}/.hatfield/AGENTS.md or AGENTS.MD
+ *        {dir}/.agents/AGENTS.md or AGENTS.MD
+ *        {dir}/AGENTS.md or AGENTS.MD (bare project root)
+ *      First match per directory wins; bare root is only checked when
+ *      neither .hatfield/ nor .agents/ entry exists in that directory.
  *
  * Deduplication by resolved realpath() ensures the same file
  * is not returned twice even if reachable through multiple paths.
@@ -98,7 +101,7 @@ final readonly class AgentsContextDiscovery
         $seenPaths = [];
 
         // Step 1: Check global directories (~/.hatfield/, ~/.agents/)
-        $globalFile = $this->findInDirectory($this->pathResolver->getHomeDir());
+        $globalFile = $this->findInDirectory($this->pathResolver->getHomeDir(), includeBareRoot: false);
         if (null !== $globalFile) {
             $realPath = $this->realpath($globalFile);
             if (!isset($seenPaths[$realPath])) {
@@ -111,7 +114,7 @@ final readonly class AgentsContextDiscovery
         $current = $cwd;
 
         while (true) {
-            $found = $this->findInDirectory($current);
+            $found = $this->findInDirectory($current, includeBareRoot: true);
             if (null !== $found) {
                 $realPath = $this->realpath($found);
                 if (!isset($seenPaths[$realPath])) {
@@ -133,15 +136,26 @@ final readonly class AgentsContextDiscovery
     /**
      * Find the first matching AGENTS.md or AGENTS.MD in the given base directory.
      *
-     * Searches .hatfield/ then .agents/ subdirectories. Within each subdirectory,
-     * checks AGENTS.md first, then AGENTS.MD. Returns the resolved file path if
-     * found, null otherwise.
+     * Searches .hatfield/ then .agents/ subdirectories, then bare {baseDir}/AGENTS.md.
+     * Within each location, checks AGENTS.md before AGENTS.MD.
+     * Global home discovery omits bare ~/AGENTS.md (only ~/.hatfield and ~/.agents).
      */
-    private function findInDirectory(string $baseDir): ?string
+    private function findInDirectory(string $baseDir, bool $includeBareRoot = true): ?string
     {
+        $base = rtrim($baseDir, '/');
+
         foreach (self::SUBDIRECTORIES as $subdir) {
             foreach (self::FILENAMES as $filename) {
-                $path = rtrim($baseDir, '/').'/'.$subdir.'/'.$filename;
+                $path = $base.'/'.$subdir.'/'.$filename;
+                if (is_file($path)) {
+                    return $path;
+                }
+            }
+        }
+
+        if ($includeBareRoot) {
+            foreach (self::FILENAMES as $filename) {
+                $path = $base.'/'.$filename;
                 if (is_file($path)) {
                     return $path;
                 }

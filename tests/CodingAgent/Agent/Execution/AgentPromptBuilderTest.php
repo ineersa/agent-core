@@ -103,7 +103,7 @@ final class AgentPromptBuilderTest extends TestCase
         $this->assertSame('agent_child_contract', $result['messages'][2]->metadata['source'] ?? null);
     }
 
-    public function testBuildIncludesAgentsMdInSystemPrompt(): void
+    public function testBuildIncludesAgentsMdAsUserContextMessage(): void
     {
         $builder = $this->createPromptBuilder(['read']);
         $def = $this->definition(instructions: 'Child instructions.');
@@ -116,8 +116,10 @@ final class AgentPromptBuilderTest extends TestCase
             agentsMd: '<project_context>AGENTS_MD_UNIQUE</project_context>',
         );
 
-        $this->assertStringContainsString('AGENTS_MD_UNIQUE', $result['systemPrompt']);
+        $this->assertStringNotContainsString('AGENTS_MD_UNIQUE', $result['systemPrompt']);
         $this->assertStringContainsString('Child instructions.', $result['systemPrompt']);
+        $this->assertSame('agents_context', $result['messages'][1]->metadata['source'] ?? null);
+        $this->assertStringContainsString('AGENTS_MD_UNIQUE', (string) $result['messages'][1]->content[0]['text']);
     }
 
     public function testAppendModeIncludesAppendSystemWithChildPlaceholders(): void

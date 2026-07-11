@@ -19,6 +19,7 @@ use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
 use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunDirectory;
+use Ineersa\CodingAgent\Agent\Context\AgentsContextBuilder;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionCatalog;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionDTO;
 use Ineersa\CodingAgent\Config\AgentsConfig;
@@ -67,6 +68,7 @@ final class SubagentExecutionService
         private readonly SubagentProgressSnapshotBuilder $progressSnapshotBuilder,
         private readonly SubagentChildProgressSummaryBuilder $childProgressSummaryBuilder,
         private readonly AppConfig $appConfig,
+        private readonly ?AgentsContextBuilder $agentsContextBuilder = null,
         private readonly ClockInterface $clock = new MonotonicClock(),
     ) {
     }
@@ -106,7 +108,8 @@ final class SubagentExecutionService
         }
 
         // 3. Resolve tool/MCP policy.
-        $policy = $this->policyResolver->resolve($definition, $parentRunId);
+        $allowSubagentLaunch = $this->childMayLaunchSubagents($definition);
+        $policy = $this->policyResolver->resolve($definition, $parentRunId, $allowSubagentLaunch);
         $allowedTools = $policy['tools'];
 
         // 4. Create artifact ID and child run ID (RFC 4122).
@@ -126,7 +129,7 @@ final class SubagentExecutionService
         $this->childRunDirectory->register($entry);
 
         // 6. Resolve inherited project/AGENTS/skills context for the child.
-        $launchContext = $this->resolveChildLaunchContext($parentRunId, $definition);
+        $launchContext = $this->resolveChildLaunchContext($parentRunId, $definition, $allowSubagentLaunch);
 
         // 7. Build prompt and messages.
         $prompt = $this->promptBuilder->build(
@@ -136,6 +139,7 @@ final class SubagentExecutionService
             allowedTools: $allowedTools,
             agentsMd: $launchContext['agentsMd'],
             skillsContext: $launchContext['skillsContext'],
+            agentsDefinitionsContext: $launchContext['agentsDefinitionsContext'],
         );
 
         // 8. Build child metadata with policy and artifact paths.
@@ -436,10 +440,11 @@ final class SubagentExecutionService
                 );
                 $this->childRunDirectory->register($entry);
 
-                $policy = $this->policyResolver->resolve($launch['definition'], $parentRunId);
+                $allowSubagentLaunch = $this->childMayLaunchSubagents($launch['definition']);
+                $policy = $this->policyResolver->resolve($launch['definition'], $parentRunId, $allowSubagentLaunch);
                 $allowedTools = $policy['tools'];
 
-                $launchContext = $this->resolveChildLaunchContext($parentRunId, $launch['definition']);
+                $launchContext = $this->resolveChildLaunchContext($parentRunId, $launch['definition'], $allowSubagentLaunch);
 
                 $prompt = $this->promptBuilder->build(
                     definition: $launch['definition'],
@@ -448,6 +453,7 @@ final class SubagentExecutionService
                     allowedTools: $allowedTools,
                     agentsMd: $launchContext['agentsMd'],
                     skillsContext: $launchContext['skillsContext'],
+                    agentsDefinitionsContext: $launchContext['agentsDefinitionsContext'],
                 );
 
                 $childMetadata = $this->buildChildRunMetadata(
@@ -1615,9 +1621,9 @@ TXT;
     }
 
     /**
-     * @return array{agentsMd: string, skillsContext: string}
+     * @return array{agentsMd: string, skillsContext: string, agentsDefinitionsContext: string}
      */
-    private function resolveChildLaunchContext(string $parentRunId, AgentDefinitionDTO $definition): array
+    private function resolveChildLaunchContext(string $parentRunId, AgentDefinitionDTO $definition, bool $allowSubagentLaunch): array
     {
         $inheritProject = $definition->inheritProjectContext;
         $inheritAgents = $definition->inheritAgentsMd;
@@ -1627,10 +1633,29 @@ TXT;
 
         $skillsContext = $this->resolveSkillsContextForChild($definition);
 
+        $agentsDefinitionsContext = '';
+        if ($allowSubagentLaunch) {
+            $agentsDefinitionsContext = $this->extractUserContextBySource($parentRunId, 'agents_definitions_context');
+            if ('' === trim($agentsDefinitionsContext) && null !== $this->agentsContextBuilder) {
+                $agentsDefinitionsContext = $this->agentsContextBuilder->build();
+            }
+        }
+
         return [
             'agentsMd' => $agentsMd,
             'skillsContext' => $skillsContext,
+            'agentsDefinitionsContext' => $agentsDefinitionsContext,
         ];
+    }
+
+    private function childMayLaunchSubagents(AgentDefinitionDTO $definition): bool
+    {
+        $tools = $definition->tools;
+        if (null === $tools) {
+            return false;
+        }
+
+        return \in_array('subagent', $tools, true);
     }
 
     private function resolveSkillsContextForChild(AgentDefinitionDTO $definition): string

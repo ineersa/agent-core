@@ -336,7 +336,10 @@ final readonly class SystemPromptBuilder
 
         $contributorOutput = $this->drainContributors();
         if ('' !== $contributorOutput) {
-            $parts[] = $contributorOutput;
+            $contributorOutput = $this->filterContributorOutputForChildAllowedTools($contributorOutput, $allowedToolNames);
+            if ('' !== trim($contributorOutput)) {
+                $parts[] = $contributorOutput;
+            }
         }
 
         if ([] === $parts) {
@@ -346,7 +349,9 @@ final readonly class SystemPromptBuilder
         $concatenated = implode("\n\n", $parts);
         $appendVariables = $this->buildChildVariables($cwd, $allowedToolNames, '');
 
-        return $this->render($concatenated, $appendVariables);
+        $rendered = $this->render($concatenated, $appendVariables);
+
+        return $this->sanitizeChildAppendContent($rendered, $allowedToolNames);
     }
 
     /**
@@ -368,9 +373,9 @@ final readonly class SystemPromptBuilder
                 continue;
             }
 
-            $line = $definition->promptLine;
+            $line = trim($definition->promptLine);
             if ('' === $line) {
-                $line = '- '.$name.': '.$definition->description;
+                continue;
             }
 
             if (!isset($seen[$line])) {
@@ -425,5 +430,108 @@ final readonly class SystemPromptBuilder
     private function render(string $template, array $variables): string
     {
         return $this->templateRenderer->render(Template::string($template), $variables);
+    }
+
+    /**
+     * Filter extension prompt contributor output to the child allowed toolset.
+     *
+     * Contributors may dump parent-scope tool catalogs; child appends must only
+     * document tools the child can actually invoke.
+     *
+     * @param list<string> $allowedToolNames
+     */
+    private function filterContributorOutputForChildAllowedTools(string $content, array $allowedToolNames): string
+    {
+        return $this->sanitizeChildAppendContent($content, $allowedToolNames);
+    }
+
+    /**
+     * Strip disallowed-tool prompt/guideline lines and parent-only fork instructions from
+     * child append content so children never see stale tool catalogs.
+     *
+     * Benign contributor prose is preserved; only registered disallowed prompt lines,
+     * guidelines, catalog-style tool bullets, and explicit fork-launch instructions are removed.
+     *
+     * @param list<string> $allowedToolNames
+     */
+    private function sanitizeChildAppendContent(string $content, array $allowedToolNames): string
+    {
+        if ('' === trim($content)) {
+            return '';
+        }
+
+        $allowed = [];
+        foreach ($allowedToolNames as $name) {
+            $name = trim($name);
+            if ('' !== $name) {
+                $allowed[$name] = true;
+            }
+        }
+
+        $disallowedLines = [];
+        $disallowedGuidelines = [];
+        foreach ($this->toolRegistry->activeToolNames() as $name) {
+            if (isset($allowed[$name])) {
+                continue;
+            }
+
+            $definition = $this->toolRegistry->toolDefinition($name);
+            if (null === $definition) {
+                continue;
+            }
+
+            if ('' !== $definition->promptLine) {
+                $disallowedLines[$definition->promptLine] = true;
+            }
+
+            foreach ($definition->promptGuidelines as $guideline) {
+                $trimmed = trim($guideline);
+                if ('' !== $trimmed) {
+                    $disallowedGuidelines[$trimmed] = true;
+                }
+            }
+        }
+
+        $split = preg_split("/\r\n|\n|\r/", $content);
+        $lines = false === $split ? [] : $split;
+        $kept = [];
+        foreach ($lines as $line) {
+            $trimmed = trim($line);
+            if ('' === $trimmed) {
+                $kept[] = $line;
+                continue;
+            }
+
+            if (isset($disallowedLines[$trimmed]) || isset($disallowedGuidelines[$trimmed])) {
+                continue;
+            }
+
+            if (preg_match('/^-\s*([A-Za-z0-9_]+):/u', $trimmed, $matches)) {
+                $toolName = $matches[1];
+                if (!isset($allowed[$toolName])) {
+                    continue;
+                }
+            }
+
+            foreach ($this->toolRegistry->activeToolNames() as $activeName) {
+                if (isset($allowed[$activeName])) {
+                    continue;
+                }
+                if (preg_match('/\b'.preg_quote($activeName, '/').'\s*:/iu', $trimmed)) {
+                    continue 2;
+                }
+            }
+
+            $lower = strtolower($trimmed);
+            if (str_contains($lower, 'fork task=')
+                || str_contains($lower, 'use fork')
+                || str_contains($lower, 'launch fork child')) {
+                continue;
+            }
+
+            $kept[] = $line;
+        }
+
+        return rtrim(implode("\n", $kept));
     }
 }
