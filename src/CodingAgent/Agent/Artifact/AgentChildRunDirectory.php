@@ -10,15 +10,16 @@ use Psr\Log\LoggerInterface;
 /**
  * In-memory lookup index for child agent runs backed by AgentArtifactRegistry by their agentRunId.
  *
- * Scans known parent sessions (via HatfieldSessionStore::listSessions())
- * and checks each parent's AgentArtifactRegistry for an entry matching
- * the given agentRunId.  Results are cached per process for subsequent
- * lookups.
+ * Scans known parent scopes starting from DB-backed top-level sessions
+ * (via HatfieldSessionStore::listSessions()) and recursively walks each
+ * discovered child {@see AgentArtifactEntryDTO::$agentRunId} as a
+ * further parent scope (nested fork → scout registries live under
+ * `.hatfield/sessions/<childRunId>/artifacts/agents/`).  Results are
+ * cached per process for subsequent lookups.
  *
  * This is intentionally a lazy scan — there is no global child-run
- * index.  A lookup for an unknown agentRunId is O(P) where P is the
- * number of live parent sessions, but subsequent lookups of the same
- * runId are O(1) via the in-memory cache.
+ * index.  A cache miss walks all reachable parent scopes once; subsequent
+ * lookups of the same runId are O(1) via the in-memory cache.
  *
  * Cache-hit fast path: already-located (or pre-registered) entries
  * return from the in-memory map without a session-list query or
@@ -97,27 +98,36 @@ final class AgentChildRunDirectory
      */
     private function scanAllSessions(): void
     {
-        $sessions = $this->hatfieldSessionStore->listSessions();
+        /** @var array<string, true> parent scopes whose registry.json was already scanned */
+        $visitedParentScopes = [];
 
-        $this->logger->debug('AgentChildRunDirectory scanning for child artifacts', [
-            'component' => 'agent.locator',
-            'session_count' => \count($sessions),
-        ]);
+        /** @var list<string> BFS queue of parentRunId scopes (top-level sessions + nested child runs) */
+        $parentScopeQueue = [];
 
-        foreach ($sessions as $session) {
+        foreach ($this->hatfieldSessionStore->listSessions() as $session) {
             $parentRunId = $session['sessionId'] ?? null;
             if (!\is_string($parentRunId) || '' === $parentRunId) {
                 continue;
             }
 
+            $parentScopeQueue[] = $parentRunId;
+        }
+
+        $this->logger->debug('AgentChildRunDirectory scanning for child artifacts', [
+            'component' => 'agent.locator',
+            'top_level_session_count' => \count($parentScopeQueue),
+        ]);
+
+        while ([] !== $parentScopeQueue) {
+            $parentRunId = array_shift($parentScopeQueue);
+            if (isset($visitedParentScopes[$parentRunId])) {
+                continue;
+            }
+
+            $visitedParentScopes[$parentRunId] = true;
+
             try {
                 $entries = $this->artifactRegistry->list($parentRunId);
-                foreach ($entries as $entry) {
-                    // Only cache the entry if not already known.
-                    if (!isset($this->cache[$entry->agentRunId])) {
-                        $this->cache[$entry->agentRunId] = $entry;
-                    }
-                }
             } catch (\Throwable $e) {
                 // Registry listing for one parent failing should not
                 // prevent location of child runs in other parents.
@@ -126,6 +136,20 @@ final class AgentChildRunDirectory
                     'parent_run_id' => $parentRunId,
                     'error' => $e->getMessage(),
                 ]);
+
+                continue;
+            }
+
+            foreach ($entries as $entry) {
+                if (!isset($this->cache[$entry->agentRunId])) {
+                    $this->cache[$entry->agentRunId] = $entry;
+                }
+
+                // Nested children (e.g. fork → scout) register under the
+                // child run's own session directory; enqueue for BFS.
+                if (!isset($visitedParentScopes[$entry->agentRunId])) {
+                    $parentScopeQueue[] = $entry->agentRunId;
+                }
             }
         }
     }
