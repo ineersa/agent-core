@@ -15,21 +15,28 @@ use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 use Symfony\Component\Messenger\Event\WorkerMessageFailedEvent;
 
 /**
- * Last-resort safety net for async Messenger worker failures.
+ * Last-resort safety net for async Messenger worker failures on run_control.
  *
- * When a message on the run_control transport permanently fails (all
- * Messenger retries exhausted), this subscriber writes a failed RunState
- * and an agent_end event to the EventStore so the controller's event
- * drain picks it up and the TUI shows a visible error instead of hanging.
+ * Normal run mutations (StartRun, ApplyCommand, LlmStepResult, ToolCallResult,
+ * CompactionStepResult) are serialized through RunMessageProcessor and
+ * RunCommit in the single run_control consumer process. This subscriber is an
+ * intentional exception to that path: it runs only after the processor/handler
+ * for a run_control message has permanently failed (willRetry() is false) and
+ * must directly CAS a terminal Failed RunState plus append agent_end so the
+ * controller/TUI does not hang with no durable terminal event.
  *
- * Without this subscriber, a failed StartRun/AdvanceRun/ApplyCommand
- * eventually exhausts Messenger retries and is discarded with no
- * trace written to the EventStore — the TUI sees run.started (emitted
- * synchronously by StartRunHandler) and then nothing, hanging forever.
+ * Receiver filtering (HANDLED_RECEIVERS = run_control) keeps the write inside
+ * the same authorized run_control consumer process; execution-bus failures on
+ * llm/tool/agent are out of scope here because workers enqueue results back to
+ * run_control instead of mutating canonical state directly.
  *
- * This subscriber only acts when willRetry() returns false (final
- * rejection), preventing partial/intermediate retries from writing
- * spurious terminal states.
+ * Limitation: this bypass does not invoke RunCommit post-commit hooks (for
+ * example tool-batch snapshot cleanup). That is acceptable only because it
+ * fires after the normal mutation path has already failed; orphaned snapshots
+ * or follow-up cleanup remain a separate operational concern.
+ *
+ * This subscriber only acts when willRetry() returns false (final rejection),
+ * preventing partial/intermediate retries from writing spurious terminal states.
  */
 final readonly class WorkerFailedEventSubscriber implements EventSubscriberInterface
 {

@@ -73,7 +73,7 @@ Focus on topology, message flow, event delivery, and process supervision.
 │  ┌──────────────────────────────┐ ┌────────────────────────────┐ │
 │  │ App/runtime SQLite           │ │ Messenger transport SQLite   │ │
 │  │ (.hatfield/state.sqlite)          │ │ (.hatfield/messenger-       │ │
-│  │ ORM: tool_batch_state, …     │ │  transport.sqlite)         │ │
+│  │ ORM: session metadata, background_process, …     │ │  transport.sqlite)         │ │
 │  │                              │ │ Per-session queue_name:      │ │
 │  │                              │ │ run_control/llm/tool/agent   │ │
 │  │                              │ │ _{sessionId}                 │ │
@@ -301,28 +301,31 @@ TUI                        Controller(crashed!)       New Controller
 │                              │ ApplyCommand (steer/        │ (native PHP)     │
 │                              │   follow_up/cancel/        │                  │
 │                              │   continue/human_response) │ Reason: StartRun  │
-│                              │ AdvanceRun                  │ contains complex  │
-│                              │ LlmStepResult  (sync)      │ objects (AgentMsg │
-│                              │ ToolCallResult (sync)      │ [], RunMetadata)  │
+│                              │ LlmStepResult               │ contains complex  │
+│                              │ ToolCallResult              │ objects (AgentMsg │
+│                              │ CompactionStepResult        │ [], RunMetadata)  │
 ├──────────────────────────────┼─────────────────────────────┼──────────────────┤
 │ llm_{sessionId}              │ ExecuteLlmStep              │ Symfony          │
 │                              │                             │ Serializer       │
 │                              │ Processed by:               │ (scalar/array    │
 │                              │ ExecuteLlmStepWorker        │ only)            │
-│                              │ Result → command.bus (sync) │                  │
+│                              │ LlmStepResult → command.bus │                  │
+│                              │   (routed run_control)      │                  │
 ├──────────────────────────────┼─────────────────────────────┼──────────────────┤
 │ tool_{sessionId}             │ ExecuteToolCall             │ Symfony          │
 │                              │ (generic tools; not         │ Serializer       │
 │                              │  toolName=subagent)         │ (scalar/array    │
 │                              │ Processed by:               │ only)            │
 │                              │ ExecuteToolCallWorker       │                  │
-│                              │ Result → command.bus (sync) │                  │
+│                              │ ToolCallResult → command.bus│                  │
+│                              │   (routed run_control)      │                  │
 ├──────────────────────────────┼─────────────────────────────┼──────────────────┤
 │ agent_{sessionId}            │ ExecuteToolCall             │ Symfony          │
 │                              │ (toolName=subagent only)    │ Serializer       │
 │                              │ Processed by:               │ (scalar/array    │
 │                              │ ExecuteToolCallWorker       │ only)            │
-│                              │ Result → command.bus (sync) │                  │
+│                              │ ToolCallResult → command.bus│                  │
+│                              │   (routed run_control)      │                  │
 │                              │ Rationale: isolates blocking│                  │
 │                              │ parent subagent orchestration│                  │
 │                              │ from generic child tool work│                  │
@@ -341,21 +344,25 @@ Per-session scoping:
     targeted orphan process cleanup.
 
 Storage:
-  .hatfield/state.sqlite — app/runtime ORM state (sessions metadata, tool_batch_state, …)
+  .hatfield/state.sqlite — app/runtime ORM state (e.g. hatfield_session metadata; tool batch snapshots are session filesystem JSON, not this DB)
   .hatfield/messenger-transport.sqlite — Messenger doctrine transport only
   Transport table is ensured by MessengerTransportSchemaEnsurer at startup;
   messenger transport auto_setup remains a fallback safety net.
   PDO SQLite auto-creates DB file if parent dir is writable
 
-Result routing (within consumer process):
-  ExecuteLlmStepWorker  →  LlmStepResult  →  agent.command.bus  →  RunOrchestrator
-  ExecuteToolCallWorker →  ToolCallResult →  agent.command.bus  →  RunOrchestrator
+Result routing (execution worker → run_control writer):
+  ExecuteLlmStepWorker  →  LlmStepResult  →  agent.command.bus (routed run_control) → run_control consumer → RunOrchestrator → RunMessageProcessor/RunCommit
+  ExecuteToolCallWorker →  ToolCallResult →  agent.command.bus (routed run_control) → run_control consumer → RunOrchestrator → RunMessageProcessor/RunCommit
 
-Why results stay sync:
-  - AssistantMessage has polymorphic ContentInterface[] arrays
-  - Default Symfony Serializer cannot round-trip them
-  - RunOrchestrator is registered on agent.command.bus in same process
-  - Self-advance callbacks (postCommit) dispatch AdvanceRun synchronously
+Why results are not mutated inside llm/tool workers:
+  - Canonical RunStore/EventStore/tool-batch mutations must serialize through the single run_control consumer
+  - Execution workers only enqueue immutable result envelopes; the run_control process owns CAS + event append
+  - AdvanceRun/CompactRun remain synchronous/unrouted on agent.command.bus (and AdvanceRun on agent.execution.bus for effect paths) by design
+
+WorkerFailedEventSubscriber (run_control only):
+  - Intentional last-resort exception when RunMessageProcessor permanently fails after retries
+  - Directly writes terminal Failed + agent_end in the same run_control process (bypasses RunCommit/post-commit hooks)
+  - Does not replace normal mutation; only prevents silent hangs when the primary writer path is exhausted
 ```
 
 ---

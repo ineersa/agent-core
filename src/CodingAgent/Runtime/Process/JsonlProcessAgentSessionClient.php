@@ -180,20 +180,26 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
 
         try {
             while (microtime(true) - $start < $timeout) {
-                /** @var RuntimeEvent $event */
-                foreach ($this->readEvents() as $event) {
+                $foundStarted = false;
+
+                foreach ($this->readEventBatch() as $event) {
                     if ('run.started' === $event->type || 'run_started' === $event->type) {
                         $this->activeRunId = $event->runId;
+                        $foundStarted = true;
 
-                        return new RunHandle(runId: $event->runId, status: 'running');
+                        continue;
                     }
 
                     if ('runtime.ready' === $event->type || 'command.ack' === $event->type) {
                         continue;
                     }
 
-                    // Buffer non-matching events.
+                    // Buffer non-matching events so the poller can consume them later.
                     $this->bufferEvent($event, 'read_events');
+                }
+
+                if ($foundStarted) {
+                    return new RunHandle(runId: $this->activeRunId, status: 'running');
                 }
 
                 $this->assertProcessStillRunning('waiting for run_started');
@@ -571,14 +577,18 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
         $start = microtime(true);
 
         while (microtime(true) - $start < $timeout) {
-            foreach ($this->readEvents() as $event) {
+            foreach ($this->readEventBatch() as $event) {
                 if ('runtime.ready' === $event->type) {
                     $this->runtimeReadyReceived = true;
 
-                    return;
+                    continue;
                 }
 
                 $this->bufferEvent($event, 'read_events');
+            }
+
+            if ($this->runtimeReadyReceived) {
+                return;
             }
 
             $this->assertProcessStillRunning('waiting for runtime.ready');
@@ -744,6 +754,27 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
             $this->ensureProcessRunning();
             $this->writeCommand($command);
         }
+    }
+
+    /**
+     * Materialize every event yielded by one {@see readEvents()} call.
+     *
+     * {@see readEvents()} performs a single non-blocking stdout read, moves complete
+     * lines out of {@see $stdoutBuffer}, then lazily decodes each line. Callers that
+     * return or break mid-foreach over {@see readEvents()} abandon the generator and
+     * lose any not-yet-yielded lines from that read. Always drain via this helper when
+     * processing a read may stop before the generator exhausts.
+     *
+     * @return list<RuntimeEvent>
+     */
+    private function readEventBatch(): array
+    {
+        $events = [];
+        foreach ($this->readEvents() as $event) {
+            $events[] = $event;
+        }
+
+        return $events;
     }
 
     /**

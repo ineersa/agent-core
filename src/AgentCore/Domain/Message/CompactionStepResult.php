@@ -7,8 +7,8 @@ namespace Ineersa\AgentCore\Domain\Message;
 /**
  * Result of an async compaction model invocation.
  *
- * Dispatched back to agent.command.bus (sync, in-process — no transport
- * serialization).  The result handler validates staleness, processes the
+ * Dispatched back to agent.command.bus and routed to run_control so the
+ * single run_control consumer applies state mutations.  The result handler validates staleness, processes the
  * summary text, and emits either context_compacted or
  * context_compaction_failed.
  */
