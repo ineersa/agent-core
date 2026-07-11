@@ -18,6 +18,7 @@ use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+use Ineersa\CodingAgent\Session\SessionAgentArtifactPathResolver;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -105,10 +106,10 @@ final class SubagentChildProgressSummaryBuilderTest extends IsolatedKernelTestCa
             ],
         );
 
-        $pathResolver = new AgentArtifactPathResolver(new HatfieldSessionStore(
+        $pathResolver = new AgentArtifactPathResolver(new SessionAgentArtifactPathResolver(new HatfieldSessionStore(
             appConfig: new AppConfig(tui: new TuiConfig(theme: 'default'), logging: new LoggingConfig(), cwd: $this->projectDir),
             entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
-        ));
+        )));
         $factory = new AgentChildRunEventStoreFactory(
             $pathResolver,
             new EventPayloadNormalizer(),
@@ -145,7 +146,7 @@ final class SubagentChildProgressSummaryBuilderTest extends IsolatedKernelTestCa
         );
 
         return new AgentChildRunEventStore(
-            pathResolver: new AgentArtifactPathResolver($hatfieldSessionStore),
+            pathResolver: new AgentArtifactPathResolver(new SessionAgentArtifactPathResolver($hatfieldSessionStore)),
             eventPayloadNormalizer: new EventPayloadNormalizer(),
             lockFactory: new LockFactory(new FlockStore()),
             logger: new NullLogger(),

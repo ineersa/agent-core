@@ -9,6 +9,7 @@ use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactPathResolver;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
 use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunDirectory;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+use Ineersa\CodingAgent\Session\SessionAgentArtifactPathResolver;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Lock\LockFactory;
@@ -59,7 +60,7 @@ final class AgentChildRunDirectoryTest extends IsolatedKernelTestCase
 
         $validator = (new ValidatorBuilder())->enableAttributeMapping()->getValidator();
 
-        $pathResolver = new AgentArtifactPathResolver($this->hatfieldSessionStore);
+        $pathResolver = new AgentArtifactPathResolver(new SessionAgentArtifactPathResolver($this->hatfieldSessionStore));
 
         $this->registry = new AgentArtifactRegistry(
             pathResolver: $pathResolver,
@@ -186,7 +187,7 @@ final class AgentChildRunDirectoryTest extends IsolatedKernelTestCase
         // This makes AgentArtifactRegistry::list() throw, which the
         // directory's scanAllSessions() catches and skips.  No chmod/permission
         // tricks needed — portable across filesystems and CI environments.
-        $pathResolver = new AgentArtifactPathResolver($this->hatfieldSessionStore);
+        $pathResolver = new AgentArtifactPathResolver(new SessionAgentArtifactPathResolver($this->hatfieldSessionStore));
         $badRegistryPath = $pathResolver->registryPath($badParentId);
         $badRegistryDir = \dirname($badRegistryPath);
 
