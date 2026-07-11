@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Listener;
 
-use Ineersa\CodingAgent\Session\Repair\SessionRepairServiceInterface;
+use Ineersa\CodingAgent\Session\Repair\SessionRepairService;
 use Ineersa\Tui\Command\CommandMetadata;
 use Ineersa\Tui\Command\SlashCommandRegistry;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
@@ -18,7 +18,7 @@ final class RepairCommandRegistrar implements TuiListenerRegistrar
 {
     public function __construct(
         private readonly SlashCommandRegistry $commandRegistry,
-        private readonly SessionRepairServiceInterface $repairService,
+        private readonly SessionRepairService $repairService,
     ) {
     }
 

@@ -6,7 +6,7 @@ namespace Ineersa\Tui\Listener;
 
 use Ineersa\CodingAgent\Session\Repair\RepairResult;
 use Ineersa\CodingAgent\Session\Repair\SessionRepairRefusalReasonEnum;
-use Ineersa\CodingAgent\Session\Repair\SessionRepairServiceInterface;
+use Ineersa\CodingAgent\Session\Repair\SessionRepairService;
 use Ineersa\Tui\Command\CommandResult;
 use Ineersa\Tui\Command\SlashCommand;
 use Ineersa\Tui\Command\SlashCommandHandler;
@@ -21,7 +21,7 @@ use Ineersa\Tui\Runtime\TuiSessionState;
 final class RepairCommandHandler implements SlashCommandHandler
 {
     public function __construct(
-        private readonly SessionRepairServiceInterface $repairService,
+        private readonly SessionRepairService $repairService,
         private readonly TuiSessionState $state,
     ) {
     }

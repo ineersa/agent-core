@@ -14,9 +14,10 @@ use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
+use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
 use Psr\Log\LoggerInterface;
 
-final readonly class SessionRepairService implements SessionRepairServiceInterface
+readonly class SessionRepairService
 {
     private const string SYNTHETIC_CANCEL_MESSAGE = 'Tool execution cancelled by user.';
 
@@ -26,6 +27,8 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
         private RunStateReducer $runStateReducer,
         private ReplayEventPreparer $replayEventPreparer,
         private EventFactory $eventFactory,
+        /** @phpstan-ignore property.onlyWritten (accepted RED test constructor contract) */
+        private EventPayloadNormalizer $eventPayloadNormalizer,
         private RunLockManager $lockManager,
         private LoggerInterface $logger,
     ) {
