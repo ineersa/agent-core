@@ -33,7 +33,7 @@ final class Gf05ChildAppendContributorLeakContractTest extends \PHPUnit\Framewor
         TestDirectoryIsolation::ensureDirectory($this->tmpDir.'/.hatfield');
         file_put_contents(
             $this->tmpDir.'/.hatfield/APPEND_SYSTEM.md',
-            'Static append {available_tools_list}',
+            "Static append prologue.\n{available_tools_list}\n{registered_guidelines}",
         );
     }
 
@@ -42,11 +42,21 @@ final class Gf05ChildAppendContributorLeakContractTest extends \PHPUnit\Framewor
         TestDirectoryIsolation::removeDirectory($this->tmpDir);
     }
 
-    public function testChildAppendModeOmitsDisallowedForkFromSystemText(): void
+    public function testChildAppendModeSelectivelyFiltersDisallowedToolDocumentation(): void
     {
         $registry = new ToolRegistry();
         $registry->registerTool('read', 'Read', ['type' => 'object'], $this->handler(), promptLine: 'ALLOWED_READ_PROMPT_LINE');
-        $registry->registerTool('fork', 'Fork parent tool', ['type' => 'object'], $this->handler(), promptLine: 'DISALLOWED_FORK_PROMPT_LINE');
+        $registry->registerTool(
+            'fork',
+            'Fork parent tool',
+            ['type' => 'object'],
+            $this->handler(),
+            promptLine: 'DISALLOWED_FORK_PROMPT_LINE',
+            promptGuidelines: ['DISALLOWED_FORK_GUIDELINE_BLOCK'],
+        );
+
+        $benignContributor = 'GF05_BENIGN_CONTRIBUTOR_PROSE_KEEP_ME';
+        $disallowedContributorCatalog = 'GF05_DISALLOWED_FORK_CATALOG_DOC fork: parent-only launch';
 
         $systemPromptBuilder = new SystemPromptBuilder(
             toolRegistry: $registry,
@@ -54,14 +64,34 @@ final class Gf05ChildAppendContributorLeakContractTest extends \PHPUnit\Framewor
             templateRenderer: new StringTemplateRenderer(),
             appConfig: new AppConfig(tui: new TuiConfig(theme: 'test'), logging: new LoggingConfig(), cwd: $this->tmpDir),
             projectDir: \dirname(__DIR__, 4),
-            promptContributorProvider: new class implements PromptContributorProviderInterface {
+            promptContributorProvider: new class($benignContributor, $disallowedContributorCatalog) implements PromptContributorProviderInterface {
+                public function __construct(
+                    private readonly string $benign,
+                    private readonly string $disallowedCatalog,
+                ) {
+                }
+
                 public function promptContributors(): array
                 {
                     return [
-                        new class implements PromptContributorInterface {
+                        new class($this->benign) implements PromptContributorInterface {
+                            public function __construct(private readonly string $benign)
+                            {
+                            }
+
                             public function contribute(): string
                             {
-                                return 'GF05_CONTRIBUTOR_FORK_LEAK_MARKER';
+                                return $this->benign;
+                            }
+                        },
+                        new class($this->disallowedCatalog) implements PromptContributorInterface {
+                            public function __construct(private readonly string $disallowedCatalog)
+                            {
+                            }
+
+                            public function contribute(): string
+                            {
+                                return $this->disallowedCatalog;
                             }
                         },
                     ];
@@ -81,9 +111,12 @@ final class Gf05ChildAppendContributorLeakContractTest extends \PHPUnit\Framewor
 
         $result = $builder->build($def, 'task', 'agent_x', ['read'], agentsMd: '');
 
-        $this->assertStringContainsString('ALLOWED_READ_PROMPT_LINE', $result['systemPrompt']);
-        $this->assertStringNotContainsString('DISALLOWED_FORK_PROMPT_LINE', $result['systemPrompt']);
-        $this->assertStringNotContainsString('GF05_CONTRIBUTOR_FORK_LEAK_MARKER', $result['systemPrompt']);
+        $systemText = $result['systemPrompt'];
+        $this->assertStringContainsString('ALLOWED_READ_PROMPT_LINE', $systemText);
+        $this->assertStringContainsString($benignContributor, $systemText, 'Benign contributor prose must remain in child append system text.');
+        $this->assertStringNotContainsString('DISALLOWED_FORK_PROMPT_LINE', $systemText);
+        $this->assertStringNotContainsString('DISALLOWED_FORK_GUIDELINE_BLOCK', $systemText);
+        $this->assertStringNotContainsString($disallowedContributorCatalog, $systemText, 'Disallowed fork catalog documentation must not leak into child system text.');
     }
 
     private function handler(): ToolHandlerInterface

@@ -22,37 +22,81 @@ use Ineersa\AgentCore\Infrastructure\Storage\RunEventStore;
 use Ineersa\AgentCore\Tests\Application\Handler\InMemoryIdempotencyStore;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use Ineersa\AgentCore\Tests\Support\TestSerializerFactory;
+use Ineersa\CodingAgent\Kernel;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient;
 use Ineersa\CodingAgent\Session\Replay\SessionHotPromptReplayService;
 use Ineersa\CodingAgent\Tests\Agent\Execution\Support\PromptContractTestSupport;
+use Ineersa\CodingAgent\Tests\Agent\Execution\Support\ProviderBoundaryCaptureSupport;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
-use Ineersa\CodingAgent\Tests\TestCase\PerMethodIsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tool\ToolRegistryInterface;
 use Ineersa\AgentCore\Application\Replay\PromptStateReplayService;
 use Ineersa\AgentCore\Application\Replay\ReplayEventPreparer;
 use Ineersa\AgentCore\Infrastructure\Storage\HotPromptStateStore;
 use PHPUnit\Framework\Attributes\Group;
 use Psr\Log\NullLogger;
+use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\InMemoryStore;
 use Symfony\Component\Uid\Uuid;
 
 /**
- * GF-05 parent-run regression: freeze current parent message order and tool surface.
+ * GF-05 parent-run regression: freeze parent message order and tool surface.
  *
  * @group gf-05-prompt-contract
  */
 #[Group('gf-05-prompt-contract')]
-final class ParentPromptUserContextRegressionTest extends PerMethodIsolatedKernelTestCase
+final class ParentPromptUserContextRegressionTest extends KernelTestCase
 {
+    private string $isolatedCwd;
+    private string|false $originalCwd;
     private ParentRegressionCapturingRunner $pipelineRunner;
 
     protected function setUp(): void
     {
-        parent::setUp();
+        $this->isolatedCwd = TestDirectoryIsolation::createProjectTempDir('hatfield-test', 0o750);
+        TestDirectoryIsolation::createHatfieldTree($this->isolatedCwd);
+        $this->provisionDeterministicParentContextResources($this->isolatedCwd);
+
+        $this->originalCwd = getcwd();
+        chdir($this->isolatedCwd);
+
+        $_ENV['APP_ENV'] = 'test';
+        $_ENV['APP_DEBUG'] = '0';
+        $_ENV['APP_SECRET'] = 'test-secret';
+        $_ENV['HATFIELD_CWD'] = $this->isolatedCwd;
+        putenv('HATFIELD_CWD='.$this->isolatedCwd);
+
+        self::bootKernel(['environment' => 'test', 'debug' => false]);
+
         $this->pipelineRunner = ParentRegressionCapturingRunner::create();
         self::getContainer()->set(AgentRunnerInterface::class, $this->pipelineRunner);
+    }
+
+    protected function tearDown(): void
+    {
+        if (false !== $this->originalCwd) {
+            @chdir($this->originalCwd);
+        }
+
+        if (self::$booted) {
+            self::$kernel->shutdown();
+            self::$booted = false;
+        }
+
+        if (isset($this->isolatedCwd) && is_dir($this->isolatedCwd)) {
+            TestDirectoryIsolation::removeDirectory($this->isolatedCwd);
+        }
+
+        restore_exception_handler();
+    }
+
+    protected static function createKernel(array $options = []): Kernel
+    {
+        $env = $options['environment'] ?? $_ENV['APP_ENV'] ?? $_SERVER['APP_ENV'] ?? 'test';
+        $debug = (bool) ($options['debug'] ?? $_ENV['APP_DEBUG'] ?? $_SERVER['APP_DEBUG'] ?? false);
+
+        return new Kernel($env, $debug);
     }
 
     public function testParentStartRunPreservesMessageOrderAndProviderRepresentation(): void
@@ -77,38 +121,37 @@ final class ParentPromptUserContextRegressionTest extends PerMethodIsolatedKerne
         );
 
         $keys = PromptContractTestSupport::roleSourceKeys(PromptContractTestSupport::summarizeMessages($canonical));
-        $this->assertGreaterThanOrEqual(2, $keys);
-        $this->assertSame('system:', $keys[0]);
-        $this->assertContains('user-context:skills_context', $keys);
-        $this->assertContains('user-context:agents_definitions_context', $keys);
-        $skillsIndex = array_search('user-context:skills_context', $keys, true);
-        $agentsDefIndex = array_search('user-context:agents_definitions_context', $keys, true);
-        $this->assertNotFalse($skillsIndex);
-        $this->assertNotFalse($agentsDefIndex);
-        $this->assertLessThan($agentsDefIndex, $skillsIndex, 'Frozen parent order: skills_context before agents_definitions_context.');
-        $this->assertSame('user:', $keys[array_key_last($keys)]);
+        $this->assertSame(
+            ['system:', 'user-context:skills_context', 'user-context:agents_definitions_context', 'user:'],
+            $keys,
+            'Frozen parent order without bare AGENTS.md: system → skills_context → agents_definitions_context → user.',
+        );
 
-        $provider = PromptContractTestSupport::providerVisibleSummaries($canonical);
-        $this->assertSame('system', $provider[0]['role']);
-        $this->assertSame('user', end($provider)['role']);
+        $skillsText = PromptContractTestSupport::messageText($canonical[1]);
+        $this->assertStringContainsString('gf05-test-skill', $skillsText);
+        $agentsDefText = PromptContractTestSupport::messageText($canonical[2]);
+        $this->assertStringContainsString('gf05-test-agent', $agentsDefText);
+
+        $capture = ProviderBoundaryCaptureSupport::create(self::getContainer()->get(\Symfony\AI\Agent\Toolbox\ToolboxInterface::class));
+        $capture->captureForRun($sessionId, $canonical);
+        $providerMessages = $capture->capturedProviderMessages();
+        $this->assertNotEmpty($providerMessages);
+        $this->assertSame('system', $providerMessages[0]['role']);
+        $this->assertSame('user', $providerMessages[array_key_last($providerMessages)]['role']);
+        $this->assertStringContainsString('gf05-test-skill', $providerMessages[1]['text']);
+        $this->assertStringContainsString('gf05-test-agent', $providerMessages[2]['text']);
 
         $registry = self::getContainer()->get(ToolRegistryInterface::class);
         $active = $registry->activeToolNames();
         $this->assertNotEmpty($active);
-        $toolbox = self::getContainer()->get(\Symfony\AI\Agent\Toolbox\ToolboxInterface::class);
-        $allowedSet = array_fill_keys($active, true);
-        $providerTools = array_values(array_filter(
-            $toolbox->getTools(),
-            static fn ($tool): bool => isset($allowedSet[$tool->getName()]),
-        ));
+        $providerTools = $capture->capturedProviderToolSchemas();
         $this->assertNotEmpty($providerTools);
     }
 
     public function testParentStartInjectsBareRootAgentsMdIntoEffectiveContext(): void
     {
         $sentinel = 'GF05_BARE_ROOT_AGENTS_SENTINEL_'.bin2hex(random_bytes(4));
-        file_put_contents($this->isolatedCwd().'/AGENTS.md', $sentinel."
-");
+        file_put_contents($this->isolatedCwd.'/AGENTS.md', $sentinel."\n");
 
         $sessionId = Uuid::v4()->toRfc4122();
         self::getContainer()->get(InProcessAgentSessionClient::class)->start(new StartRunRequest(
@@ -128,19 +171,30 @@ final class ParentPromptUserContextRegressionTest extends PerMethodIsolatedKerne
         PromptContractTestSupport::assertSentinelCountInAgentsContext($runStartedMessages, $sentinel, 1);
 
         $keys = PromptContractTestSupport::roleSourceKeys(PromptContractTestSupport::summarizeMessages($canonical));
-        $this->assertContains('user-context:agents_context', $keys);
-        $agentsIndex = array_search('user-context:agents_context', $keys, true);
-        $skillsIndex = array_search('user-context:skills_context', $keys, true);
-        $agentsDefIndex = array_search('user-context:agents_definitions_context', $keys, true);
-        $this->assertNotFalse($agentsIndex);
-        $this->assertNotFalse($skillsIndex);
-        $this->assertNotFalse($agentsDefIndex);
-        $this->assertLessThan($skillsIndex, $agentsIndex);
-        $this->assertLessThan($agentsDefIndex, $skillsIndex);
+        $this->assertSame(
+            ['system:', 'user-context:agents_context', 'user-context:skills_context', 'user-context:agents_definitions_context', 'user:'],
+            $keys,
+            'Parent with bare AGENTS.md: system → agents_context → skills_context → agents_definitions_context → user.',
+        );
 
         $capture = ProviderBoundaryCaptureSupport::create(self::getContainer()->get(\Symfony\AI\Agent\Toolbox\ToolboxInterface::class));
         $capture->captureForRun($sessionId, $canonical);
         PromptContractTestSupport::assertProviderUserMessagesContainSentinelOnce($capture->capturedProviderMessages(), $sentinel);
+    }
+
+    private function provisionDeterministicParentContextResources(string $cwd): void
+    {
+        $skillDir = $cwd.'/.agents/skills/gf05-test-skill';
+        mkdir($skillDir, 0777, true);
+        file_put_contents(
+            $skillDir.'/SKILL.md',
+            "---\nname: gf05-test-skill\ndescription: GF05 deterministic parent skills_context\n---\n\nGF05 skill body for parent freeze.\n",
+        );
+
+        file_put_contents(
+            $cwd.'/.agents/gf05-test-agent.md',
+            "---\nname: gf05-test-agent\ndescription: GF05 deterministic agents_definitions_context\ntools: read\nforegroundAllowed: true\n---\n\nGF05 agent body.\n",
+        );
     }
 }
 
