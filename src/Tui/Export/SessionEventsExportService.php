@@ -1205,8 +1205,4 @@ CSS;
 
         return $events;
     }
-
-    /*
-     * Compute the session directory path from the resolved sessions base path.
-     */
 }
