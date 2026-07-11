@@ -58,7 +58,7 @@ final readonly class CompactionConfig
          * Thinking/reasoning level for the summarization call.
          *
          * When null, the session's active thinking level is used.
-         * Typical values: off, minimal, low, medium, high, xhigh.
+         * Typical values: off, minimal, low, medium, high, xhigh, max.
          */
         #[SerializedName('thinking_level')]
         public ?string $thinkingLevel = null,

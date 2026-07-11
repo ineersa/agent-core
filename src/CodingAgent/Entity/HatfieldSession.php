@@ -66,7 +66,7 @@ class HatfieldSession
     #[ORM\Column(name: 'model_name', type: 'string', nullable: true)]
     public ?string $modelName = null;
 
-    /** Reasoning level for the current session (off/minimal/low/medium/high/xhigh). */
+    /** Reasoning level for the current session (off/minimal/low/medium/high/xhigh/max). */
     #[ORM\Column(type: 'string', nullable: true)]
     public ?string $reasoning = null;
 

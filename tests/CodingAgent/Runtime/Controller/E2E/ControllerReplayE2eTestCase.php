@@ -41,6 +41,15 @@ use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
  */
 abstract class ControllerReplayE2eTestCase extends ControllerE2eTestCase
 {
+    /** Max wait for compaction.completed/failed after compaction.started (replay fixtures). */
+    protected const COMPACTION_TERMINAL_AFTER_STARTED_SECONDS = 4.0;
+
+    /**
+     * Quiet period after the last runtime event when compaction must not fire.
+     * Symfony messenger:consume defaults to 1s between empty polls; use a bound
+     * above that so a message queued just after an empty poll is still observable.
+     */
+    protected const COMPACTION_NO_COMPACTION_QUIET_SECONDS = 1.35;
     /** @var list<array<string, mixed>> One fixture per expected LLM call */
     protected array $replayFixtures = [];
     /** @var list<int> PIDs of tracked child processes */
@@ -240,6 +249,134 @@ abstract class ControllerReplayE2eTestCase extends ControllerE2eTestCase
         ];
 
         return $parentDiag."\n".implode("\n", $ownershipLines)."\n";
+    }
+
+    /**
+     * Collect until the parent run reaches a terminal event, then optionally
+     * wait for async after-turn compaction on run_control.
+     *
+     * @return list<array<string, mixed>>
+     */
+    protected function collectTurnEventsUntilRunTerminal(
+        ?string $runTerminalType,
+        float $runTerminalTimeoutSeconds,
+        bool $expectAfterTurnCompaction = false,
+        float $compactionTimeoutSeconds = 6.0,
+    ): array {
+        $events = $this->collectEventsUntil($runTerminalType, $runTerminalTimeoutSeconds);
+
+        if (!$expectAfterTurnCompaction) {
+            return $events;
+        }
+
+        return array_merge(
+            $events,
+            $this->drainUntilCompactionTerminal($compactionTimeoutSeconds),
+        );
+    }
+
+    /**
+     * After run.completed when compaction is expected: wait event-driven for
+     * compaction.completed/failed once compaction.started appears (bounded phase).
+     *
+     * @return list<array<string, mixed>>
+     */
+    protected function drainUntilCompactionTerminal(float $timeoutSeconds): array
+    {
+        $events = [];
+        $deadline = microtime(true) + $timeoutSeconds;
+        $compactionStartedAt = null;
+        $compactionTerminalDeadline = null;
+
+        while (microtime(true) < $deadline) {
+            $sawNew = false;
+            foreach ($this->readEvents() as $event) {
+                $events[] = $event;
+                $sawNew = true;
+                $type = $event['type'] ?? '';
+
+                if ('compaction.started' === $type && null === $compactionStartedAt) {
+                    $compactionStartedAt = microtime(true);
+                    $compactionTerminalDeadline = $compactionStartedAt
+                        + self::COMPACTION_TERMINAL_AFTER_STARTED_SECONDS;
+                }
+
+                if (\in_array($type, ['compaction.completed', 'compaction.failed'], true)) {
+                    return $events;
+                }
+            }
+
+            if (!$this->isRunning()) {
+                foreach ($this->readEvents() as $event) {
+                    $events[] = $event;
+                    $sawNew = true;
+                    $type = $event['type'] ?? '';
+                    if (\in_array($type, ['compaction.completed', 'compaction.failed'], true)) {
+                        return $events;
+                    }
+                }
+                break;
+            }
+
+            if (null !== $compactionTerminalDeadline && microtime(true) > $compactionTerminalDeadline) {
+                break;
+            }
+
+            if (!$sawNew) {
+                usleep(50_000);
+            }
+        }
+
+        return $events;
+    }
+
+    /**
+     * After run.completed when compaction must NOT fire: bounded idle drain only.
+     *
+     * @return list<array<string, mixed>>
+     */
+    protected function drainUntilCompactionQuiet(float $timeoutSeconds): array
+    {
+        $events = [];
+        $deadline = microtime(true) + $timeoutSeconds;
+        $lastEventAt = microtime(true);
+
+        while (microtime(true) < $deadline) {
+            $sawNew = false;
+            foreach ($this->readEvents() as $event) {
+                $events[] = $event;
+                $sawNew = true;
+                $lastEventAt = microtime(true);
+                $type = $event['type'] ?? '';
+
+                if (\in_array($type, ['compaction.completed', 'compaction.failed'], true)) {
+                    return $events;
+                }
+            }
+
+            if (!$this->isRunning()) {
+                foreach ($this->readEvents() as $event) {
+                    $events[] = $event;
+                    $sawNew = true;
+                    $lastEventAt = microtime(true);
+                    $type = $event['type'] ?? '';
+                    if (\in_array($type, ['compaction.completed', 'compaction.failed'], true)) {
+                        return $events;
+                    }
+                }
+                break;
+            }
+
+            if (microtime(true) - $lastEventAt > self::COMPACTION_NO_COMPACTION_QUIET_SECONDS) {
+                break;
+            }
+
+            if (!$sawNew) {
+                usleep(50_000);
+            }
+        }
+
+        return $events;
     }
 
     /**

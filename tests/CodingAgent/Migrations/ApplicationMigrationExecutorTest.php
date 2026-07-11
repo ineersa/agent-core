@@ -88,6 +88,21 @@ final class ApplicationMigrationExecutorTest extends TestCase
         // busy_timeout came from driverOptions (PDO::ATTR_TIMEOUT=5), so
         // it should be exactly 5000.  We assert >=5000 as the runtime
         // guard's minimum; the strict config proof is in SqliteConnectionConfigTest.
+
+        $this->assertFalse(
+            $connection->createSchemaManager()->tablesExist(['tool_batch_state']),
+            'tool_batch_state must be dropped after Version20260710120000',
+        );
+
+        $recordedDrop = $connection->fetchOne(
+            'SELECT 1 FROM doctrine_migration_versions WHERE version = ?',
+            ['Version20260710120000'],
+        );
+        $this->assertNotFalse(
+            $recordedDrop,
+            'Version20260710120000 (drop tool_batch_state) must be recorded in doctrine_migration_versions',
+        );
+
         $busyTimeout = (int) $connection->executeQuery('PRAGMA busy_timeout')->fetchOne();
         $this->assertGreaterThanOrEqual(
             5000,
