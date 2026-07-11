@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\Listener;
 
+use Ineersa\CodingAgent\Runtime\Contract\ChildAgentEventsPathResolverInterface;
 use Ineersa\CodingAgent\Runtime\Contract\ChildRunTranscriptSnapshotProviderInterface;
 use Ineersa\CodingAgent\Runtime\Contract\TranscriptProjectorInterface;
 use Ineersa\Tui\Command\SlashCommandRegistry;
+use Ineersa\Tui\Export\SessionEventsExportService;
 use Ineersa\Tui\Listener\RuntimeQuestionEventHandler;
 use Ineersa\Tui\Listener\SubagentLiveCommandRegistrar;
 use Ineersa\Tui\Picker\SubagentLivePickerController;
@@ -54,6 +56,8 @@ final class SubagentLiveCommandRegistrarTest extends TestCase
                 new NullLogger(),
             ),
             $this->createStub(ChildRunTranscriptSnapshotProviderInterface::class),
+            $this->createStub(ChildAgentEventsPathResolverInterface::class),
+            new SessionEventsExportService(),
         );
 
         return new SubagentLiveCommandRegistrar(

@@ -116,6 +116,11 @@ parameters:
         - type: directory
           value: src/Tui/Utility/.*
 
+    - name: TuiExport
+      collectors:
+        - type: directory
+          value: src/Tui/Export/.*
+
     - name: AppRuntimeContract
       collectors:
         - type: directory
@@ -362,6 +367,7 @@ parameters:
       - SymfonyConsole
 
     TuiListener:
+      - TuiExport
       - AppExtensionApi
       - AppRuntimeContract
       - AppRuntimeProjection
@@ -444,6 +450,9 @@ parameters:
       - TuiWidget
       - TuiTheme
 
+    TuiExport:
+      - TuiCommand
+
     TuiCommand:
       - TuiExtension
 
@@ -451,6 +460,7 @@ parameters:
       - TuiCommand
 
     TuiPicker:
+      - TuiExport
       - AppConfig
       - AppRuntimeContract
       - AppSession

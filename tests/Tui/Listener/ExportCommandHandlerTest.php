@@ -12,6 +12,7 @@ use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\Tui\Command\SlashCommand;
 use Ineersa\Tui\Command\TranscriptMessage;
+use Ineersa\Tui\Export\SessionEventsExportService;
 use Ineersa\Tui\Listener\ExportCommandHandler;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -258,6 +259,41 @@ final class ExportCommandHandlerTest extends TestCase
         $sourcePath = $this->getEventsPath('test-session');
         $sourceLines = file($sourcePath, \FILE_IGNORE_NEW_LINES | \FILE_SKIP_EMPTY_LINES);
         $this->assertCount(2, $sourceLines);
+    }
+
+    #[Test]
+    public function jsonlExportDoesNotLoadSessionMetadataFromDatabase(): void
+    {
+        $sessionId = '4242';
+        $this->setupEventsFile($sessionId, [
+            $this->makeEvent(1, 1, 'run_started', [
+                'step_id' => 's1',
+                'user_messages' => [['role' => 'user', 'content' => 'Hello']],
+            ]),
+        ]);
+
+        $appConfig = new AppConfig(
+            tui: new TuiConfig(theme: 'default'),
+            logging: new LoggingConfig(),
+            cwd: $this->projectDir,
+            sessions: new SessionsConfig(path: '.hatfield/sessions'),
+        );
+        $entityManager = $this->createMock(EntityManagerInterface::class);
+        $entityManager->expects($this->never())->method('find');
+        $sessionStore = new HatfieldSessionStore($appConfig, $entityManager);
+
+        $handler = new ExportCommandHandler(
+            new TuiSessionState($sessionId),
+            $sessionStore,
+            new SessionEventsExportService(),
+        );
+
+        $path = $this->projectDir.'/no-db-metadata.jsonl';
+        $result = $handler->handle(new SlashCommand('export', $path, '/export '.$path));
+
+        $this->assertInstanceOf(TranscriptMessage::class, $result);
+        $this->assertStringContainsString('no-db-metadata.jsonl', $result->text);
+        $this->assertFileExists($path);
     }
 
     // ── HTML content escaping ──────────────────────────────────────────────
@@ -915,7 +951,7 @@ You are a helpful assistant.
             entityManager: $this->createStub(EntityManagerInterface::class),
         );
 
-        return new ExportCommandHandler($state, $sessionStore);
+        return new ExportCommandHandler($state, $sessionStore, new SessionEventsExportService());
     }
 
     private function removeDir(string $dir): void

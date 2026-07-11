@@ -1531,7 +1531,7 @@ CHILD_SKILL_BODY_UNIQUE',
                 appConfig: new AppConfig(tui: new TuiConfig(theme: 'default'), logging: new LoggingConfig(), cwd: $projectDir),
                 entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
             );
-            $pathResolver = new \Ineersa\CodingAgent\Agent\Artifact\AgentArtifactPathResolver($hatfieldSessionStore);
+            $pathResolver = new \Ineersa\CodingAgent\Agent\Artifact\AgentArtifactPathResolver(new \Ineersa\CodingAgent\Session\SessionAgentArtifactPathResolver($hatfieldSessionStore));
             $childEventStore = new \Ineersa\CodingAgent\Agent\Artifact\AgentChildRunEventStore(
                 pathResolver: $pathResolver,
                 eventPayloadNormalizer: new \Ineersa\AgentCore\Schema\EventPayloadNormalizer(),

@@ -21,6 +21,7 @@ use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunDirectory;
 use Ineersa\CodingAgent\Agent\Artifact\AgentRetrieveArgumentsFactory;
 use Ineersa\CodingAgent\Config\AgentArtifactRetrievalLimitsConfig;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+use Ineersa\CodingAgent\Session\SessionAgentArtifactPathResolver;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use PHPUnit\Framework\Attributes\CoversClass;
 use Symfony\Component\Lock\LockFactory;
@@ -57,7 +58,7 @@ final class AgentArtifactRetrievalServiceTest extends IsolatedKernelTestCase
         );
 
         $validator = (new ValidatorBuilder())->enableAttributeMapping()->getValidator();
-        $pathResolver = new AgentArtifactPathResolver($this->hatfieldSessionStore);
+        $pathResolver = new AgentArtifactPathResolver(new SessionAgentArtifactPathResolver($this->hatfieldSessionStore));
 
         $this->registry = new AgentArtifactRegistry(
             pathResolver: $pathResolver,

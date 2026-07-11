@@ -86,6 +86,7 @@ final class TickPollListenerSubagentLiveTest extends TestCase
 
         $listenerRef = new \ReflectionClass(TickPollListener::class);
         $listener = $listenerRef->newInstanceWithoutConstructor();
+        $listenerRef->getProperty('subagentLivePickerController')->setValue($listener, $this->closedSubagentLivePicker());
         $listenerRef->getProperty('poller')->setValue($listener, $poller);
         $listenerRef->getProperty('subagentLiveChildPoller')->setValue($listener, $childPoller);
         $listenerRef->getProperty('questionCoordinator')->setValue($listener, new QuestionCoordinator());
@@ -165,6 +166,7 @@ final class TickPollListenerSubagentLiveTest extends TestCase
 
         $listenerRef = new \ReflectionClass(TickPollListener::class);
         $listener = $listenerRef->newInstanceWithoutConstructor();
+        $listenerRef->getProperty('subagentLivePickerController')->setValue($listener, $this->closedSubagentLivePicker());
         $listenerRef->getProperty('poller')->setValue($listener, $poller);
         $listenerRef->getProperty('subagentLiveChildPoller')->setValue($listener, $childPoller);
         $listenerRef->getProperty('questionCoordinator')->setValue($listener, new QuestionCoordinator());
@@ -185,8 +187,19 @@ final class TickPollListenerSubagentLiveTest extends TestCase
         $this->assertSame(RunActivityStateEnum::Completed, $state->subagentLiveView->childActivity);
         $this->assertSame('Child agent idle', $state->subagentLiveView->lastLiveWorkingMessage);
     }
-}
 
+    private function closedSubagentLivePicker(): \Ineersa\Tui\Picker\SubagentLivePickerController
+    {
+        $picker = (new \ReflectionClass(\Ineersa\Tui\Picker\SubagentLivePickerController::class))->newInstanceWithoutConstructor();
+        $overlay = new \Ineersa\Tui\Picker\PickerOverlay();
+        $overlayRef = new \ReflectionProperty(\Ineersa\Tui\Picker\SubagentLivePickerController::class, 'overlay');
+        $overlayRef->setValue($picker, $overlay);
+        $openRef = new \ReflectionProperty(\Ineersa\Tui\Picker\PickerOverlay::class, 'isOpen');
+        $openRef->setValue($overlay, false);
+
+        return $picker;
+    }
+}
 final class ParentEventClient implements AgentSessionClient
 {
     private bool $yielded = false;

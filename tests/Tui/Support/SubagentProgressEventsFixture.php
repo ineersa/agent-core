@@ -123,6 +123,20 @@ final class SubagentProgressEventsFixture
         }
 
         file_put_contents($sessionDir.'/events.jsonl', $jsonl);
+
+        ChildAgentExportEventsFixture::write(
+            $projectDir,
+            $sessionId,
+            $artifactId,
+            [
+                ChildAgentExportEventsFixture::childEvent(
+                    $childRunId,
+                    1,
+                    'run_started',
+                    ['user_messages' => [['role' => 'user', 'content' => 'Child-only export marker scout-e2e']]],
+                ),
+            ],
+        );
     }
 
     /**
