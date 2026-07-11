@@ -77,17 +77,31 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
         // silent filtering.
         $this->toolCallSequenceValidator->validate($messages);
 
-        $messageBag = $this->applyConvertHooks($messages, $cancelToken, $request->model);
+        // Capability-aware convert hooks (e.g. ImageGatingConvertHook) need the
+        // effective session model, not the empty app.default_model sentinel.
+        // SessionAwareModelResolver ignores MessageBag content, so we can resolve
+        // before conversion using base invocation options only.
+        $baseOptions = $this->buildInputOptions($request);
+        $modelForConvertHooks = $request->model;
+        if (null !== $this->modelResolver) {
+            $modelForConvertHooks = $this->modelResolver->resolve(
+                defaultModel: $request->model,
+                messages: new MessageBag(),
+                input: $request->input,
+                options: new ModelResolutionOptions($baseOptions),
+            )->model;
+        }
 
-        $options = $this->buildInputOptions($request);
-        $input = new Input($request->model, $messageBag, $options);
+        $messageBag = $this->applyConvertHooks($messages, $cancelToken, $modelForConvertHooks);
+
+        $input = new Input($request->model, $messageBag, $baseOptions);
         $this->toolDescriptionProcessor->processInput($input);
 
         // Build a privacy-safe request summary for error diagnostics.
         // This is included in the error array when the request fails.
         $inputOptions = $input->getOptions();
         $requestSummary = [
-            'model' => $request->model,
+            'model' => $modelForConvertHooks,
             'input_count' => \count($messageBag->withoutSystemMessage()->getMessages()),
             'has_instructions' => null !== $messageBag->getSystemMessage(),
             'has_tools' => isset($inputOptions['tools']),

@@ -409,6 +409,213 @@ final class PlatformIntegrationTest extends TestCase
         $this->assertSame(1500, $response->usage['total_tokens']);
     }
 
+    /**
+     * Regression: empty request model must not reach capability-aware convert hooks.
+     *
+     * Production passes app.default_model ('') as a sentinel; SessionAwareModelResolver
+     * resolves the session model later on routing. ImageGatingConvertHook used to see ''
+     * and strip image_ref before resolution.
+     */
+    public function testConvertHooksReceiveResolvedModelWhenRequestModelIsEmpty(): void
+    {
+        $runStore = new InMemoryRunStore();
+        $runStore->compareAndSwap(new RunState(
+            runId: 'run-convert-model-01',
+            status: RunStatus::Running,
+            version: 1,
+            turnNo: 1,
+            lastSeq: 0,
+            isStreaming: false,
+            streamingMessage: null,
+            pendingToolCalls: [],
+            errorMessage: null,
+            messages: [new AgentMessage('user', [['type' => 'text', 'text' => 'ping']])],
+            activeStepId: 'turn-1-llm-1',
+        ), 0);
+
+        $capturedConvertModel = null;
+
+        $convertHook = new class($capturedConvertModel) implements ConvertToLlmHookInterface {
+            public function __construct(private ?string &$capturedConvertModel)
+            {
+            }
+
+            public function convertToLlm(array $messages, ?CancellationTokenInterface $cancelToken = null, string $modelName = ''): \Symfony\AI\Platform\Message\MessageBag
+            {
+                $this->capturedConvertModel = $modelName;
+
+                return new \Symfony\AI\Platform\Message\MessageBag(\Symfony\AI\Platform\Message\Message::ofUser('converted'));
+            }
+        };
+
+        $modelResolver = new class implements ModelResolverInterface {
+            public function resolve(
+                string $defaultModel,
+                \Symfony\AI\Platform\Message\MessageBag $messages,
+                ModelInvocationInput $input,
+                ModelResolutionOptions $options,
+            ): ResolvedModel {
+                unset($defaultModel, $messages, $input, $options);
+
+                return new ResolvedModel(model: 'runpod/Qwen3.6-27B');
+            }
+        };
+
+        $modelClient = new FakeSymfonyModelClient(new FakeTokenUsage(
+            promptTokens: 10,
+            completionTokens: 5,
+            totalTokens: 15,
+        ));
+
+        $platform = $this->createSymfonyPlatform(
+            modelClient: $modelClient,
+            streamFactory: static fn (): iterable => [new TextDelta('ok')],
+            modelResolver: $modelResolver,
+        );
+
+        $adapter = new LlmPlatformAdapter(
+            runStore: $runStore,
+            messageConverter: new AgentMessageConverter(),
+            toolDescriptionProcessor: new DynamicToolDescriptionProcessor(),
+            platform: $platform,
+            transformContextHooks: [],
+            convertToLlmHooks: [$convertHook],
+            streamObserver: null,
+            costCalculator: null,
+            modelResolver: $modelResolver,
+            logger: new NullLogger(),
+        );
+
+        $adapter->invoke(new ModelInvocationRequest(
+            model: '',
+            input: new ModelInvocationInput(
+                runId: 'run-convert-model-01',
+                turnNo: 1,
+                stepId: 'turn-1-llm-1',
+            ),
+        ));
+
+        $this->assertSame('runpod/Qwen3.6-27B', $capturedConvertModel, 'Convert hook must receive resolved model, not empty sentinel.');
+    }
+
+    public function testImageRefSurvivesAdapterConvertWhenRequestModelEmptyAndResolverReturnsVisionModel(): void
+    {
+        $tmpDir = \Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation::createOsTempDir('platform-image-gate');
+        try {
+            $imagePath = $tmpDir.'/vision-gate.png';
+            $png = base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==');
+            file_put_contents($imagePath, $png);
+
+            $runStore = new InMemoryRunStore();
+            $runStore->compareAndSwap(new RunState(
+                runId: 'run-image-gate-01',
+                status: RunStatus::Running,
+                version: 1,
+                turnNo: 1,
+                lastSeq: 0,
+                isStreaming: false,
+                streamingMessage: null,
+                pendingToolCalls: [],
+                errorMessage: null,
+                messages: [
+                    new AgentMessage('user', [['type' => 'text', 'text' => 'describe image']]),
+                    new AgentMessage(
+                        role: 'assistant',
+                        content: [['type' => 'text', 'text' => 'Calling view_image']],
+                        metadata: [
+                            'tool_calls' => [[
+                                'id' => 'call_view',
+                                'name' => 'view_image',
+                                'args' => ['path' => $imagePath],
+                                'order_index' => 0,
+                            ]],
+                        ],
+                    ),
+                    new AgentMessage(
+                        role: 'tool',
+                        content: [
+                            ['type' => 'text', 'text' => '{"type":"view_image"}'],
+                            [
+                                'type' => 'image_ref',
+                                'path' => $imagePath,
+                                'media_type' => 'image/png',
+                                'bytes' => \strlen($png),
+                                'width' => 1,
+                                'height' => 1,
+                            ],
+                        ],
+                        toolCallId: 'call_view',
+                        toolName: 'view_image',
+                    ),
+                ],
+                activeStepId: 'turn-1-llm-1',
+            ), 0);
+
+            $checker = $this->createStub(\Ineersa\AgentCore\Contract\Model\ImageCapabilityCheckerInterface::class);
+            $checker->method('supportsImages')->willReturn(true);
+
+            $imageGatingHook = new \Ineersa\CodingAgent\Tool\ImageProcessing\ImageGatingConvertHook(
+                $checker,
+                new AgentMessageConverter(),
+            );
+
+            $modelResolver = new class implements ModelResolverInterface {
+                public function resolve(
+                    string $defaultModel,
+                    \Symfony\AI\Platform\Message\MessageBag $messages,
+                    ModelInvocationInput $input,
+                    ModelResolutionOptions $options,
+                ): ResolvedModel {
+                    unset($defaultModel, $messages, $input, $options);
+
+                    return new ResolvedModel(model: 'llama_cpp/flash');
+                }
+            };
+
+            $modelClient = new FakeSymfonyModelClient(new FakeTokenUsage(
+                promptTokens: 10,
+                completionTokens: 5,
+                totalTokens: 15,
+            ));
+
+            $platform = $this->createSymfonyPlatform(
+                modelClient: $modelClient,
+                streamFactory: static fn (): iterable => [new TextDelta('ok')],
+                modelResolver: $modelResolver,
+            );
+
+            $adapter = new LlmPlatformAdapter(
+                runStore: $runStore,
+                messageConverter: new AgentMessageConverter(),
+                toolDescriptionProcessor: new DynamicToolDescriptionProcessor(),
+                platform: $platform,
+                transformContextHooks: [],
+                convertToLlmHooks: [$imageGatingHook],
+                streamObserver: null,
+                costCalculator: null,
+                modelResolver: $modelResolver,
+                logger: new NullLogger(),
+            );
+
+            $adapter->invoke(new ModelInvocationRequest(
+                model: '',
+                input: new ModelInvocationInput(
+                    runId: 'run-image-gate-01',
+                    turnNo: 1,
+                    stepId: 'turn-1-llm-1',
+                ),
+            ));
+
+            $payload = $modelClient->capturedPayload;
+            $this->assertIsArray($payload);
+            $serialized = json_encode($payload);
+            $this->assertIsString($serialized);
+            $this->assertStringNotContainsString('does not support images', $serialized, 'image_ref must not be stripped when resolver returns a vision model.');
+        } finally {
+            \Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation::removeDirectory($tmpDir);
+        }
+    }
+
     public function testStreamingCancellationReturnsAbortedWithPartialOutput(): void
     {
         $platform = $this->createSymfonyPlatform(
