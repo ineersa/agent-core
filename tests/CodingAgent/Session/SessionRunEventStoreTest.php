@@ -12,7 +12,6 @@ use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\SessionRunEventStore;
-use Ineersa\CodingAgent\Tests\Session\Support\InMemoryRunSequenceAllocator;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\FlockStore;
@@ -48,7 +47,6 @@ final class SessionRunEventStoreTest extends TestCase
             eventPayloadNormalizer: new EventPayloadNormalizer(),
             lockFactory: new LockFactory(new FlockStore()),
             logger: new \Psr\Log\NullLogger(),
-            sequenceAllocator: new InMemoryRunSequenceAllocator(),
         );
     }
 
@@ -141,7 +139,6 @@ final class SessionRunEventStoreTest extends TestCase
             eventPayloadNormalizer: new EventPayloadNormalizer(),
             lockFactory: new LockFactory(new FlockStore()),
             logger: new \Psr\Log\NullLogger(),
-            sequenceAllocator: new InMemoryRunSequenceAllocator(),
         );
 
         $events = $newStore->allFor($runId);
@@ -248,49 +245,6 @@ final class SessionRunEventStoreTest extends TestCase
         $this->assertCount(1, $events);
         $this->assertSame(1, $events[0]->seq);
         $this->assertSame('run_started', $events[0]->type);
-    }
-
-    public function testAppendWithNextSeqAllocatesUniqueSequences(): void
-    {
-        $runId = 'run-'.bin2hex(random_bytes(4));
-        $first = new RunEvent(runId: $runId, seq: 99, turnNo: 1, type: 'agent_command_applied', payload: ['kind' => 'cancel']);
-        $second = new RunEvent(runId: $runId, seq: 99, turnNo: 1, type: 'tool_execution_update', payload: ['tool_name' => 'fork']);
-
-        $persistedFirst = $this->store->appendWithNextSeq($first);
-        $persistedSecond = $this->store->appendWithNextSeq($second);
-
-        $this->assertSame(1, $persistedFirst->seq);
-        $this->assertSame(2, $persistedSecond->seq);
-    }
-
-    public function testAppendWithNextSeqAllocatesIncreasingSequences(): void
-    {
-        $runId = 'run-'.bin2hex(random_bytes(4));
-        $first = $this->store->appendWithNextSeq(new RunEvent(runId: $runId, seq: 0, turnNo: 1, type: 'agent_command_applied', payload: ['kind' => 'cancel']));
-        $second = $this->store->appendWithNextSeq(new RunEvent(runId: $runId, seq: 0, turnNo: 1, type: 'tool_execution_update', payload: ['tool_name' => 'fork']));
-
-        $this->assertSame(1, $first->seq);
-        $this->assertSame(2, $second->seq);
-
-        $events = $this->store->allFor($runId);
-        $this->assertSame([1, 2], array_map(static fn (RunEvent $e): int => $e->seq, $events));
-    }
-
-    public function testAppendWithNextSeqBootstrapsFromExistingLogMaxSeq(): void
-    {
-        $runId = 'run-'.bin2hex(random_bytes(4));
-        $eventsPath = $this->projectDir.'/.hatfield/sessions/'.$runId.'/events.jsonl';
-        mkdir(\dirname($eventsPath), 0777, true);
-        file_put_contents(
-            $eventsPath,
-            json_encode(['schema_version' => '1.0', 'run_id' => $runId, 'seq' => 1, 'turn_no' => 1, 'type' => 'tick', 'payload' => []], \JSON_THROW_ON_ERROR)."\n".
-            json_encode(['schema_version' => '1.0', 'run_id' => $runId, 'seq' => 2, 'turn_no' => 1, 'type' => 'tick', 'payload' => []], \JSON_THROW_ON_ERROR)."\n".
-            json_encode(['schema_version' => '1.0', 'run_id' => $runId, 'seq' => 5, 'turn_no' => 1, 'type' => 'tick', 'payload' => []], \JSON_THROW_ON_ERROR)."\n".
-            json_encode(['schema_version' => '1.0', 'run_id' => $runId, 'seq' => 3, 'turn_no' => 1, 'type' => 'tick', 'payload' => []], \JSON_THROW_ON_ERROR)."\n",
-        );
-
-        $next = $this->store->appendWithNextSeq(new RunEvent(runId: $runId, seq: 0, turnNo: 1, type: 'tool_execution_update', payload: ['tool_name' => 'fork']));
-        $this->assertSame(6, $next->seq);
     }
 
     private function rmDir(string $dir): void

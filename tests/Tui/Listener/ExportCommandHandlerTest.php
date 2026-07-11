@@ -12,7 +12,6 @@ use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\Tui\Command\SlashCommand;
 use Ineersa\Tui\Command\TranscriptMessage;
-use Ineersa\Tui\Export\SessionEventsExportService;
 use Ineersa\Tui\Listener\ExportCommandHandler;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -916,7 +915,7 @@ You are a helpful assistant.
             entityManager: $this->createStub(EntityManagerInterface::class),
         );
 
-        return new ExportCommandHandler($state, $sessionStore, new SessionEventsExportService());
+        return new ExportCommandHandler($state, $sessionStore);
     }
 
     private function removeDir(string $dir): void

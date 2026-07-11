@@ -12,7 +12,6 @@ use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
-use Ineersa\CodingAgent\Tests\Session\Support\InMemoryRunSequenceAllocator;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
@@ -231,19 +230,6 @@ final class AgentChildRunEventStoreTest extends TestCase
 
     // ── Helpers ───────────────────────────────────────────────────────────
 
-    public function testAppendWithNextSeqAllocatesFromTail(): void
-    {
-        $parentRunId = 'parent-'.bin2hex(random_bytes(4));
-        $agentRunId = 'child-'.bin2hex(random_bytes(4));
-        $artifactId = 'scout-001';
-        $store = $this->createStore($parentRunId, $agentRunId, $artifactId);
-
-        $first = $store->appendWithNextSeq(new RunEvent(runId: $agentRunId, seq: 0, turnNo: 0, type: 'run_started', payload: []));
-        $second = $store->appendWithNextSeq(new RunEvent(runId: $agentRunId, seq: 0, turnNo: 0, type: 'human_input', payload: []));
-        $this->assertSame(1, $first->seq);
-        $this->assertSame(2, $second->seq);
-    }
-
     private function createStore(string $parentRunId, string $agentRunId, string $artifactId): AgentChildRunEventStore
     {
         return new AgentChildRunEventStore(
@@ -251,7 +237,6 @@ final class AgentChildRunEventStoreTest extends TestCase
             eventPayloadNormalizer: new EventPayloadNormalizer(),
             lockFactory: new LockFactory(new FlockStore()),
             logger: new NullLogger(),
-            sequenceAllocator: new InMemoryRunSequenceAllocator(),
             parentRunId: $parentRunId,
             agentRunId: $agentRunId,
             artifactId: $artifactId,

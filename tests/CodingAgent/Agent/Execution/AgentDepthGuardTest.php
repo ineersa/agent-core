@@ -30,36 +30,12 @@ final class AgentDepthGuardTest extends TestCase
         $this->assertStringContainsString('Nested subagent launches are not supported', $result);
     }
 
-    public function testCheckLaunchAllowedWhenParentIsForkChild(): void
-    {
-        $guard = new AgentDepthGuard();
-        $this->assertNull($guard->checkLaunchAllowed(parentIsAgentChild: true, parentChildKind: 'fork'));
-    }
-
-    public function testCheckLaunchBlockedWhenParentIsSubagentChild(): void
-    {
-        $guard = new AgentDepthGuard();
-        $result = $guard->checkLaunchAllowed(parentIsAgentChild: true, parentChildKind: 'subagent');
-        $this->assertNotNull($result);
-        $this->assertStringContainsString('Nested subagent launches are not supported', $result);
-    }
-
     public function testCheckLaunchBlockedWhenGloballyDisabled(): void
     {
         putenv('HATFIELD_AGENTS_DISABLED=1');
 
         $guard = new AgentDepthGuard();
         $result = $guard->checkLaunchAllowed(parentIsAgentChild: false);
-        $this->assertNotNull($result);
-        $this->assertStringContainsString('globally disabled', $result);
-    }
-
-    public function testCheckLaunchBlockedForForkChildWhenGloballyDisabled(): void
-    {
-        putenv('HATFIELD_AGENTS_DISABLED=1');
-
-        $guard = new AgentDepthGuard();
-        $result = $guard->checkLaunchAllowed(parentIsAgentChild: true, parentChildKind: 'fork');
         $this->assertNotNull($result);
         $this->assertStringContainsString('globally disabled', $result);
     }

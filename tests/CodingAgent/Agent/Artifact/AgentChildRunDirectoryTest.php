@@ -173,50 +173,6 @@ final class AgentChildRunDirectoryTest extends IsolatedKernelTestCase
      * whose registry directory permissions prevent reading. The directory
      * must still find the good parent's artifacts.
      */
-    /**
-     * Prove main → fork → scout nesting: scout registry lives under the fork
-     * child run id, not a top-level Hatfield session, and must still be found.
-     */
-    public function testLocateFindsNestedChildUnderForkParentScope(): void
-    {
-        $mainParentId = $this->hatfieldSessionStore->createSession('Locator nested main');
-
-        $forkRunId = 'directory-fork-'.bin2hex(random_bytes(4));
-        $forkArtifactId = 'agent_fork_'.bin2hex(random_bytes(4));
-        $this->registry->create(
-            $mainParentId,
-            $forkArtifactId,
-            $forkRunId,
-            'fork',
-            AgentArtifactKindEnum::Fork,
-        );
-
-        $scoutRunId = 'directory-scout-'.bin2hex(random_bytes(4));
-        $scoutArtifactId = 'agent_scout_'.bin2hex(random_bytes(4));
-        $nestedEntry = $this->registry->create(
-            $forkRunId,
-            $scoutArtifactId,
-            $scoutRunId,
-            'scout',
-            AgentArtifactKindEnum::Subagent,
-        );
-
-        // Simulate a fresh messenger consumer: new directory, no register().
-        $freshDirectory = new AgentChildRunDirectory(
-            $this->hatfieldSessionStore,
-            $this->registry,
-            self::getContainer()->get('logger'),
-        );
-
-        $found = $freshDirectory->locate($scoutRunId);
-
-        $this->assertNotNull($found, 'Nested scout must be locatable via recursive registry scan');
-        $this->assertSame($scoutRunId, $found->agentRunId);
-        $this->assertSame($forkRunId, $found->parentRunId);
-        $this->assertSame($scoutArtifactId, $found->artifactId);
-        $this->assertSame($nestedEntry->artifactId, $found->artifactId);
-    }
-
     public function testCorruptRegistryDoesNotBlockOtherParents(): void
     {
         $goodParentId = $this->hatfieldSessionStore->createSession('Locator good parent');

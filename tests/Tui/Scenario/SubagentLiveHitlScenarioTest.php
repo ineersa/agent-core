@@ -22,23 +22,6 @@ final class SubagentLiveHitlScenarioTest extends TestCase
     private const ARTIFACT = 'agent_scenario';
 
     #[Test]
-    public function childHitlOnMainViewDoesNotOpenQuestionOverlayButKeepsAttention(): void
-    {
-        $h = $this->newHarness();
-        $h->seedChildInCatalog(self::ARTIFACT, self::CHILD_RUN, 'waiting_human');
-        $this->assertFalse($h->state->subagentLiveView->active);
-        $h->refreshAttentionFooter();
-
-        $this->assertStringContainsString('needs input', $h->pickerLabels()[0] ?? '');
-
-        $h->enqueueChildHumanInputViaTickPoll(self::CHILD_RUN);
-
-        $this->assertFalse($h->questionCoordinator->actionRequired());
-        $this->assertNull($h->questionCoordinator->activeRequest());
-        $this->assertSame(0, \count(array_filter($h->client->ops, static fn (array $o): bool => 'send' === $o['op'] && 'answer_human' === ($o['command']->type ?? null))));
-    }
-
-    #[Test]
     public function childHitlAnswerClearsAttentionAndStaleProgressCannotDowngradeTerminal(): void
     {
         $h = $this->newHarness();

@@ -12,7 +12,6 @@ use Ineersa\Tui\Listener\FooterStateInitializer;
 use Ineersa\Tui\Listener\FooterStateListener;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Screen\ChatScreen;
-use Ineersa\Tui\Tests\Support\ContextUsageTestAppConfig;
 use Ineersa\Tui\Tests\Support\TuiRuntimeContextBuilderTrait;
 use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
 use Ineersa\Tui\Widget\LiveTextWidget;
@@ -38,8 +37,7 @@ final class FooterStateListenerTest extends TestCase
             ->withScreen($harness->screen())
             ->build();
 
-        $appConfig = ContextUsageTestAppConfig::withContextWindow();
-        (new FooterStateListener($this->footerInitializer($context), $appConfig))->register($context);
+        (new FooterStateListener($this->footerInitializer($context)))->register($context);
 
         $footerWidget = $this->footerWidget($harness->screen());
         $handler = $this->firstTickHandler($context);
@@ -69,8 +67,7 @@ final class FooterStateListenerTest extends TestCase
             ->withScreen($harness->screen())
             ->build();
 
-        $appConfig = ContextUsageTestAppConfig::withContextWindow();
-        (new FooterStateListener($this->footerInitializer($context), $appConfig))->register($context);
+        (new FooterStateListener($this->footerInitializer($context)))->register($context);
 
         $footerWidget = $this->footerWidget($harness->screen());
         $handler = $this->firstTickHandler($context);

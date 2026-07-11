@@ -6,9 +6,7 @@ namespace Ineersa\Tui\Tests\Listener;
 
 use Ineersa\CodingAgent\Runtime\Contract\ChildRunTranscriptSnapshotProviderInterface;
 use Ineersa\CodingAgent\Runtime\Contract\TranscriptProjectorInterface;
-use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\Tui\Command\SlashCommandRegistry;
-use Ineersa\Tui\Export\SessionEventsExportService;
 use Ineersa\Tui\Listener\RuntimeQuestionEventHandler;
 use Ineersa\Tui\Listener\SubagentLiveCommandRegistrar;
 use Ineersa\Tui\Picker\SubagentLivePickerController;
@@ -16,7 +14,6 @@ use Ineersa\Tui\Question\QuestionController;
 use Ineersa\Tui\Question\QuestionCoordinator;
 use Ineersa\Tui\Runtime\SubagentLiveChildViewPoller;
 use Ineersa\Tui\Runtime\TuiSessionState;
-use Ineersa\Tui\Tests\Support\ContextUsageTestAppConfig;
 use Ineersa\Tui\Tests\Support\TuiRuntimeContextBuilderTrait;
 use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -56,9 +53,6 @@ final class SubagentLiveCommandRegistrarTest extends TestCase
                 $this->createStub(TranscriptProjectorInterface::class),
                 new NullLogger(),
             ),
-            $this->sessionStore(),
-            new SessionEventsExportService(),
-            ContextUsageTestAppConfig::withContextWindow(),
             $this->createStub(ChildRunTranscriptSnapshotProviderInterface::class),
         );
 
@@ -68,19 +62,6 @@ final class SubagentLiveCommandRegistrarTest extends TestCase
             new RuntimeQuestionEventHandler(),
             new QuestionCoordinator(),
             (new \ReflectionClass(QuestionController::class))->newInstanceWithoutConstructor(),
-        );
-    }
-
-    private function sessionStore(): HatfieldSessionStore
-    {
-        return new HatfieldSessionStore(
-            appConfig: new \Ineersa\CodingAgent\Config\AppConfig(
-                tui: new \Ineersa\CodingAgent\Config\TuiConfig(theme: 'default'),
-                logging: new \Ineersa\CodingAgent\Config\LoggingConfig(),
-                sessions: new \Ineersa\CodingAgent\Config\SessionsConfig(),
-                cwd: '/tmp',
-            ),
-            entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
         );
     }
 }

@@ -24,7 +24,6 @@ use Ineersa\Tui\Question\QuestionRequest;
 use Ineersa\Tui\Question\QuestionSource;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
 use Ineersa\Tui\Runtime\RuntimeEventPoller;
-use Ineersa\Tui\Runtime\SubagentLiveBackgroundChildPoller;
 use Ineersa\Tui\Runtime\SubagentLiveChildViewPoller;
 use Ineersa\Tui\Runtime\TuiRuntimeEventApplier;
 use Ineersa\Tui\Runtime\TuiSessionState;
@@ -613,11 +612,9 @@ final class TickPollListenerTest extends TestCase
         $listener = $listenerRef->newInstanceWithoutConstructor();
         $listenerRef->getProperty('poller')->setValue($listener, $poller);
         $listenerRef->getProperty('subagentLiveChildPoller')->setValue($listener, $this->createIsolatedSubagentLiveChildPoller());
-        $listenerRef->getProperty('subagentLiveBackgroundChildPoller')->setValue($listener, new SubagentLiveBackgroundChildPoller(new NullLogger()));
         $listenerRef->getProperty('questionCoordinator')->setValue($listener, $coordinator);
         $listenerRef->getProperty('questionController')->setValue($listener, $controller);
         $listenerRef->getProperty('runtimeQuestionEventHandler')->setValue($listener, new RuntimeQuestionEventHandler());
-        $listenerRef->getProperty('subagentLivePicker')->setValue($listener, $this->createClosedSubagentLivePicker());
 
         // Build TuiRuntimeContext with a real ChatScreen and Running activity
         $state = new TuiSessionState('run-guard');
@@ -692,11 +689,9 @@ final class TickPollListenerTest extends TestCase
         $listener = $listenerRef->newInstanceWithoutConstructor();
         $listenerRef->getProperty('poller')->setValue($listener, $poller);
         $listenerRef->getProperty('subagentLiveChildPoller')->setValue($listener, $this->createIsolatedSubagentLiveChildPoller());
-        $listenerRef->getProperty('subagentLiveBackgroundChildPoller')->setValue($listener, new SubagentLiveBackgroundChildPoller(new NullLogger()));
         $listenerRef->getProperty('questionCoordinator')->setValue($listener, $coordinator);
         $listenerRef->getProperty('questionController')->setValue($listener, $controller);
         $listenerRef->getProperty('runtimeQuestionEventHandler')->setValue($listener, new RuntimeQuestionEventHandler());
-        $listenerRef->getProperty('subagentLivePicker')->setValue($listener, $this->createClosedSubagentLivePicker());
 
         // Use default Idle activity (isActive()=false) — the self-heal condition
         // !isActive() will be true.
@@ -782,11 +777,9 @@ final class TickPollListenerTest extends TestCase
         $listener = $listenerRef->newInstanceWithoutConstructor();
         $listenerRef->getProperty('poller')->setValue($listener, $poller);
         $listenerRef->getProperty('subagentLiveChildPoller')->setValue($listener, $this->createIsolatedSubagentLiveChildPoller());
-        $listenerRef->getProperty('subagentLiveBackgroundChildPoller')->setValue($listener, new SubagentLiveBackgroundChildPoller(new NullLogger()));
         $listenerRef->getProperty('questionCoordinator')->setValue($listener, $coordinator);
         $listenerRef->getProperty('questionController')->setValue($listener, $questionController);
         $listenerRef->getProperty('runtimeQuestionEventHandler')->setValue($listener, new RuntimeQuestionEventHandler());
-        $listenerRef->getProperty('subagentLivePicker')->setValue($listener, $this->createClosedSubagentLivePicker());
 
         $state = new TuiSessionState($parentRunId);
         $state->handle = new RunHandle($parentRunId);
@@ -893,39 +886,6 @@ final class TickPollListenerTest extends TestCase
         $this->assertNull($handler($tickEvent));
     }
 
-    public function testPickerOpenPreservesExportFeedbackOnTick(): void
-    {
-        $state = new TuiSessionState('picker-feedback-session');
-        $state->activity = RunActivityStateEnum::Idle;
-        $state->subagentLiveView->pickerFeedbackMessage = 'Child agent exported to: /tmp/hatfield-child-agent_x.html';
-
-        $tui = new Tui();
-        $theme = new DefaultTheme(new ThemePalette('test'));
-        $screen = new ChatScreen($theme, $state->sessionId, new PromptEditor());
-
-        $picker = $this->createClosedSubagentLivePicker();
-        $picker->setRuntimeRefs($tui, $screen, $state);
-        $overlayProp = new \ReflectionProperty(\Ineersa\Tui\Picker\SubagentLivePickerController::class, 'overlay');
-        $overlay = new \Ineersa\Tui\Picker\PickerOverlay();
-        $overlayProp->setValue($picker, $overlay);
-        $isOpenState = new \ReflectionProperty(\Ineersa\Tui\Picker\PickerOverlay::class, 'isOpen');
-        $isOpenState->setValue($overlay, true);
-
-        $listener = $this->createTickPollListener($this->createNoOpPoller(), $picker);
-
-        $context = $this->buildTuiContext()
-            ->withTui($tui)
-            ->withState($state)
-            ->withScreen($screen)
-            ->build();
-        $listener->register($context);
-        $handlerRef = new \ReflectionProperty(TuiTickDispatcher::class, 'handlers');
-        $handlers = $handlerRef->getValue($context->ticks);
-        ($handlers[0])(new \Symfony\Component\Tui\Event\TickEvent());
-
-        $this->assertStringContainsString('hatfield-child-agent_x.html', $this->workingMessage($screen));
-    }
-
     private function createNoOpPoller(): RuntimeEventPoller
     {
         $eventApplier = (new \ReflectionClass(TuiRuntimeEventApplier::class))->newInstanceWithoutConstructor();
@@ -939,19 +899,17 @@ final class TickPollListenerTest extends TestCase
         );
     }
 
-    private function createTickPollListener(
-        RuntimeEventPoller $poller,
-        ?\Ineersa\Tui\Picker\SubagentLivePickerController $subagentLivePicker = null,
-    ): TickPollListener {
-        return new TickPollListener(
-            $poller,
-            $this->createIsolatedSubagentLiveChildPoller(),
-            new SubagentLiveBackgroundChildPoller(new NullLogger()),
-            new QuestionCoordinator(),
-            new QuestionController(new QuestionCoordinator()),
-            new RuntimeQuestionEventHandler(),
-            $subagentLivePicker ?? $this->createClosedSubagentLivePicker(),
-        );
+    private function createTickPollListener(RuntimeEventPoller $poller): TickPollListener
+    {
+        $listenerRef = new \ReflectionClass(TickPollListener::class);
+        $listener = $listenerRef->newInstanceWithoutConstructor();
+        $listenerRef->getProperty('poller')->setValue($listener, $poller);
+        $listenerRef->getProperty('subagentLiveChildPoller')->setValue($listener, $this->createIsolatedSubagentLiveChildPoller());
+        $listenerRef->getProperty('questionCoordinator')->setValue($listener, new QuestionCoordinator());
+        $listenerRef->getProperty('questionController')->setValue($listener, new QuestionController(new QuestionCoordinator()));
+        $listenerRef->getProperty('runtimeQuestionEventHandler')->setValue($listener, new RuntimeQuestionEventHandler());
+
+        return $listener;
     }
 
     /**
@@ -983,22 +941,6 @@ final class TickPollListenerTest extends TestCase
     private function runtimeQuestionHandler(): RuntimeQuestionEventHandler
     {
         return new RuntimeQuestionEventHandler();
-    }
-
-    private function createClosedSubagentLivePicker(): \Ineersa\Tui\Picker\SubagentLivePickerController
-    {
-        $appConfig = \Ineersa\Tui\Tests\Support\ContextUsageTestAppConfig::withContextWindow();
-
-        return new \Ineersa\Tui\Picker\SubagentLivePickerController(
-            $this->createIsolatedSubagentLiveChildPoller(),
-            new \Ineersa\CodingAgent\Session\HatfieldSessionStore(
-                $appConfig,
-                $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
-            ),
-            new \Ineersa\Tui\Export\SessionEventsExportService(),
-            $appConfig,
-            $this->createStub(ChildRunTranscriptSnapshotProviderInterface::class),
-        );
     }
 
     private function createIsolatedSubagentLiveChildPoller(): SubagentLiveChildViewPoller

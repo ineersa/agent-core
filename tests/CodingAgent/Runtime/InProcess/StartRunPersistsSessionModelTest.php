@@ -145,27 +145,6 @@ final class StartRunPersistsSessionModelTest extends IsolatedKernelTestCase
             'No session metadata must be written for an empty session ID');
     }
 
-    public function testStartPinsResolvedModelInRunStartedMetadata(): void
-    {
-        $cwd = $this->isolatedCwd();
-        $sessionId = $this->createSession($cwd);
-
-        $this->client()->start(new StartRunRequest(
-            prompt: 'hi',
-            runId: $sessionId,
-        ));
-
-        $this->assertNotNull($this->spyRunner->lastStartInput);
-        $metadata = $this->spyRunner->lastStartInput->metadata;
-        $this->assertNotNull($metadata, 'StartRunInput metadata must carry resolved model when request omits model');
-        $this->assertNotNull($metadata->model);
-        $this->assertNotSame('', trim((string) $metadata->model));
-
-        $sessionMeta = $this->sessionMetaStore()->readSessionMetadata($sessionId);
-        $this->assertSame($metadata->model, $sessionMeta['model'] ?? null);
-        $this->assertSame($metadata->reasoning, $sessionMeta['reasoning'] ?? null);
-    }
-
     public function testStartPersistsResolvedDefaultModelWhenNoExplicitModelGiven(): void
     {
         // Thesis: when no explicit model is given and the isolated project

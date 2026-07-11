@@ -4,14 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\Listener;
 
-use Doctrine\ORM\EntityManagerInterface;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
-use Ineersa\CodingAgent\Config\AppConfig;
-use Ineersa\CodingAgent\Config\LoggingConfig;
-use Ineersa\CodingAgent\Config\SessionsConfig;
-use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
-use Ineersa\CodingAgent\Runtime\Contract\ChildRunTranscriptSnapshotProviderInterface;
 use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeExceptionBoundary;
 use Ineersa\CodingAgent\Runtime\Contract\SessionTranscriptProviderInterface;
@@ -23,17 +17,13 @@ use Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
-use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\Tui\Editor\PromptEditor;
-use Ineersa\Tui\Export\SessionEventsExportService;
 use Ineersa\Tui\Listener\RuntimeQuestionEventHandler;
 use Ineersa\Tui\Listener\TickPollListener;
-use Ineersa\Tui\Picker\SubagentLivePickerController;
 use Ineersa\Tui\Question\QuestionController;
 use Ineersa\Tui\Question\QuestionCoordinator;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
 use Ineersa\Tui\Runtime\RuntimeEventPoller;
-use Ineersa\Tui\Runtime\SubagentLiveBackgroundChildPoller;
 use Ineersa\Tui\Runtime\SubagentLiveChildDTO;
 use Ineersa\Tui\Runtime\SubagentLiveChildViewPoller;
 use Ineersa\Tui\Runtime\SubagentLiveStatusEnum;
@@ -41,7 +31,6 @@ use Ineersa\Tui\Runtime\TuiRuntimeEventApplier;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Runtime\TuiTickDispatcher;
 use Ineersa\Tui\Screen\ChatScreen;
-use Ineersa\Tui\Tests\Support\ContextUsageTestAppConfig;
 use Ineersa\Tui\Tests\Support\TuiRuntimeContextBuilderTrait;
 use Ineersa\Tui\Theme\DefaultTheme;
 use Ineersa\Tui\Theme\ThemePalette;
@@ -99,21 +88,10 @@ final class TickPollListenerSubagentLiveTest extends TestCase
         $listener = $listenerRef->newInstanceWithoutConstructor();
         $listenerRef->getProperty('poller')->setValue($listener, $poller);
         $listenerRef->getProperty('subagentLiveChildPoller')->setValue($listener, $childPoller);
-        $listenerRef->getProperty('subagentLiveBackgroundChildPoller')->setValue($listener, new SubagentLiveBackgroundChildPoller(new \Psr\Log\NullLogger()));
         $listenerRef->getProperty('questionCoordinator')->setValue($listener, new QuestionCoordinator());
         $ctrlRef = new \ReflectionClass(QuestionController::class);
         $listenerRef->getProperty('questionController')->setValue($listener, $ctrlRef->newInstanceWithoutConstructor());
         $listenerRef->getProperty('runtimeQuestionEventHandler')->setValue($listener, new RuntimeQuestionEventHandler());
-        $listenerRef->getProperty('subagentLivePicker')->setValue($listener, new SubagentLivePickerController(
-            new SubagentLiveChildViewPoller(
-                new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState()),
-                new \Psr\Log\NullLogger(),
-            ),
-            $this->sessionStore(),
-            new SessionEventsExportService(),
-            ContextUsageTestAppConfig::withContextWindow(),
-            $this->createStub(ChildRunTranscriptSnapshotProviderInterface::class),
-        ));
 
         $context = $this->buildTuiContext()
             ->withTui($tui)
@@ -189,21 +167,10 @@ final class TickPollListenerSubagentLiveTest extends TestCase
         $listener = $listenerRef->newInstanceWithoutConstructor();
         $listenerRef->getProperty('poller')->setValue($listener, $poller);
         $listenerRef->getProperty('subagentLiveChildPoller')->setValue($listener, $childPoller);
-        $listenerRef->getProperty('subagentLiveBackgroundChildPoller')->setValue($listener, new SubagentLiveBackgroundChildPoller(new \Psr\Log\NullLogger()));
         $listenerRef->getProperty('questionCoordinator')->setValue($listener, new QuestionCoordinator());
         $ctrlRef = new \ReflectionClass(QuestionController::class);
         $listenerRef->getProperty('questionController')->setValue($listener, $ctrlRef->newInstanceWithoutConstructor());
         $listenerRef->getProperty('runtimeQuestionEventHandler')->setValue($listener, new RuntimeQuestionEventHandler());
-        $listenerRef->getProperty('subagentLivePicker')->setValue($listener, new SubagentLivePickerController(
-            new SubagentLiveChildViewPoller(
-                new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState()),
-                new \Psr\Log\NullLogger(),
-            ),
-            $this->sessionStore(),
-            new SessionEventsExportService(),
-            ContextUsageTestAppConfig::withContextWindow(),
-            $this->createStub(ChildRunTranscriptSnapshotProviderInterface::class),
-        ));
 
         $context = $this->buildTuiContext()
             ->withTui($tui)
@@ -216,94 +183,7 @@ final class TickPollListenerSubagentLiveTest extends TestCase
         ($handlerRef->getValue($context->ticks)[0])();
 
         $this->assertSame(RunActivityStateEnum::Completed, $state->subagentLiveView->childActivity);
-        $this->assertNull($state->subagentLiveView->lastLiveWorkingMessage);
-
-        $registryProp = new \ReflectionProperty($screen, 'registry');
-        $this->assertFalse($registryProp->getValue($screen)->isWorkingVisible());
-    }
-
-    public function testLiveViewShowsChildOnlyWorkingMessageWhileParentRuns(): void
-    {
-        $parentRun = 'session-201';
-        $client = $this->createStub(AgentSessionClient::class);
-
-        $parentProjector = new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState());
-        $poller = new RuntimeEventPoller(
-            new TuiRuntimeEventApplier($parentProjector),
-            new TestLogger(),
-            new RuntimeExceptionBoundary(new EventDispatcher()),
-            $this->createStub(SessionTranscriptProviderInterface::class),
-        );
-
-        $state = new TuiSessionState($parentRun);
-        $state->handle = new RunHandle('h1', $parentRun);
-        $state->lastSeq = 0;
-        $state->activity = RunActivityStateEnum::Running;
-
-        $child = new SubagentLiveChildDTO('child-301', 'art1', 'scout', SubagentLiveStatusEnum::Running, 'task', 1);
-        $state->subagentLiveView->enter($child);
-        $state->subagentLiveView->childActivity = RunActivityStateEnum::Running;
-        $state->subagentLiveView->childTranscript = [
-            new TranscriptBlock('c1', TranscriptBlockKindEnum::Progress, 'child-301', 1, 'child live'),
-        ];
-
-        $childPoller = new SubagentLiveChildViewPoller(
-            new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState()),
-            new \Psr\Log\NullLogger(),
-        );
-
-        $tui = new Tui();
-        $screen = new ChatScreen(new DefaultTheme(new ThemePalette('test')), $parentRun, new PromptEditor(), new TranscriptDisplayConfig(), new TranscriptDisplayState());
-        $screen->setTranscriptBlocks($state->subagentLiveView->childTranscript);
-
-        $listenerRef = new \ReflectionClass(TickPollListener::class);
-        $listener = $listenerRef->newInstanceWithoutConstructor();
-        $listenerRef->getProperty('poller')->setValue($listener, $poller);
-        $listenerRef->getProperty('subagentLiveChildPoller')->setValue($listener, $childPoller);
-        $listenerRef->getProperty('subagentLiveBackgroundChildPoller')->setValue($listener, new SubagentLiveBackgroundChildPoller(new \Psr\Log\NullLogger()));
-        $listenerRef->getProperty('questionCoordinator')->setValue($listener, new QuestionCoordinator());
-        $ctrlRef = new \ReflectionClass(QuestionController::class);
-        $listenerRef->getProperty('questionController')->setValue($listener, $ctrlRef->newInstanceWithoutConstructor());
-        $listenerRef->getProperty('runtimeQuestionEventHandler')->setValue($listener, new RuntimeQuestionEventHandler());
-        $listenerRef->getProperty('subagentLivePicker')->setValue($listener, new SubagentLivePickerController(
-            new SubagentLiveChildViewPoller(
-                new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState()),
-                new \Psr\Log\NullLogger(),
-            ),
-            $this->sessionStore(),
-            new SessionEventsExportService(),
-            ContextUsageTestAppConfig::withContextWindow(),
-            $this->createStub(ChildRunTranscriptSnapshotProviderInterface::class),
-        ));
-
-        $context = $this->buildTuiContext()
-            ->withTui($tui)
-            ->withClient($client)
-            ->withState($state)
-            ->withScreen($screen)
-            ->build();
-        $listener->register($context);
-        $handlerRef = new \ReflectionProperty(TuiTickDispatcher::class, 'handlers');
-        ($handlerRef->getValue($context->ticks)[0])();
-
-        $this->assertSame('Child agent working...', $state->subagentLiveView->lastLiveWorkingMessage);
-        $this->assertStringNotContainsString('Working... |', (string) $state->subagentLiveView->lastLiveWorkingMessage);
-        $this->assertStringNotContainsString('| Child', (string) $state->subagentLiveView->lastLiveWorkingMessage);
-    }
-
-    private function sessionStore(): HatfieldSessionStore
-    {
-        $projectDir = \dirname(__DIR__, 3);
-
-        return new HatfieldSessionStore(
-            appConfig: new AppConfig(
-                tui: new TuiConfig(theme: 'default'),
-                logging: new LoggingConfig(),
-                cwd: $projectDir,
-                sessions: new SessionsConfig(path: '.hatfield/sessions'),
-            ),
-            entityManager: $this->createStub(EntityManagerInterface::class),
-        );
+        $this->assertSame('Child agent idle', $state->subagentLiveView->lastLiveWorkingMessage);
     }
 }
 

@@ -211,7 +211,7 @@ final class AgentArtifactRetrievalServiceTest extends IsolatedKernelTestCase
             $service->retrieve($parent, ['artifact_id' => 'artifact-one', 'agent_run_id' => 'run-two']);
             $this->fail('expected ToolCallException');
         } catch (ToolCallException $e) {
-            $this->assertStringContainsString('different child artifacts', $e->getMessage());
+            $this->assertStringContainsString('different subagent artifacts', $e->getMessage());
         }
     }
 
@@ -294,7 +294,7 @@ final class AgentArtifactRetrievalServiceTest extends IsolatedKernelTestCase
         $service = $this->makeService();
         $out = $service->retrieve($parent, ['artifact_id' => $artifactId, 'mode' => 'debug']);
 
-        $this->assertStringContainsString('# Child-agent artifact debug paths', $out);
+        $this->assertStringContainsString('# Subagent artifact debug paths', $out);
         $this->assertStringContainsString('artifacts/agents/'.$artifactId.'/', $out);
         $this->assertStringContainsString('- artifact_dir: artifacts/agents/'.$artifactId, $out);
         $this->assertStringContainsString('- metadata_path: artifacts/agents/'.$artifactId.'/metadata.json', $out);

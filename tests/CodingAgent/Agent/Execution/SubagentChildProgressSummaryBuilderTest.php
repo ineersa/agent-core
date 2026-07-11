@@ -18,7 +18,6 @@ use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
-use Ineersa\CodingAgent\Tests\Session\Support\InMemoryRunSequenceAllocator;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -121,7 +120,6 @@ final class SubagentChildProgressSummaryBuilderTest extends IsolatedKernelTestCa
 
         $this->assertSame(2, $summary->toolCount);
         $this->assertSame(35000, $summary->inputTokens);
-        $this->assertSame(25000, $summary->latestInputTokens);
         $this->assertSame(14000, $summary->outputTokens);
         $this->assertSame(584000, $summary->reasoningTokens);
         $this->assertSame(0.0104, $summary->cost);
@@ -151,7 +149,6 @@ final class SubagentChildProgressSummaryBuilderTest extends IsolatedKernelTestCa
             eventPayloadNormalizer: new EventPayloadNormalizer(),
             lockFactory: new LockFactory(new FlockStore()),
             logger: new NullLogger(),
-            sequenceAllocator: new InMemoryRunSequenceAllocator(),
             parentRunId: $parentRunId,
             agentRunId: $childRunId,
             artifactId: $artifactId,

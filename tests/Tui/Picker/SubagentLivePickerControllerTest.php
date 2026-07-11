@@ -4,27 +4,17 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\Picker;
 
-use Doctrine\ORM\EntityManagerInterface;
-use Ineersa\CodingAgent\Config\AppConfig;
-use Ineersa\CodingAgent\Config\LoggingConfig;
-use Ineersa\CodingAgent\Config\SessionsConfig;
-use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Runtime\Contract\ChildRunTranscriptSnapshotDTO;
 use Ineersa\CodingAgent\Runtime\Contract\ChildRunTranscriptSnapshotProviderInterface;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
-use Ineersa\CodingAgent\Session\HatfieldSessionStore;
-use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
-use Ineersa\Tui\Export\SessionEventsExportService;
 use Ineersa\Tui\Picker\SubagentLivePickerController;
 use Ineersa\Tui\Runtime\SubagentLiveChildViewPoller;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Screen\ChatScreen;
-use Ineersa\Tui\Tests\Support\ContextUsageTestAppConfig;
 use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
-use Ineersa\Tui\Theme\TuiTheme;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
@@ -34,18 +24,6 @@ use Symfony\Component\Tui\Widget\SelectListWidget;
 
 final class SubagentLivePickerControllerTest extends TestCase
 {
-    private string $projectDir;
-
-    protected function setUp(): void
-    {
-        $this->projectDir = TestDirectoryIsolation::createProjectTempDir('picker-export-test');
-    }
-
-    protected function tearDown(): void
-    {
-        TestDirectoryIsolation::removeDirectory($this->projectDir);
-    }
-
     #[Test]
     public function testOpenTwiceDoesNotStackOverlay(): void
     {
@@ -112,241 +90,6 @@ final class SubagentLivePickerControllerTest extends TestCase
     }
 
     #[Test]
-    public function exportKeyWritesSelectedChildHtml(): void
-    {
-        $previousCwd = getcwd();
-        chdir($this->projectDir);
-        try {
-            $harness = new VirtualTuiHarness(sessionId: 'parent-session-export');
-            $state = new TuiSessionState('parent-session-export');
-            $artifactId = 'agent_export';
-            $this->seedCatalogChild($state, $artifactId, 'child-run-export', 'completed');
-            $this->writeChildEvents('parent-session-export', $artifactId, [
-                $this->makeChildEvent(1, 'run_started', ['user_messages' => [['role' => 'user', 'content' => 'fork task']]]),
-            ]);
-
-            $picker = $this->picker($harness, $state);
-            $this->invokeExportSelected($picker, $harness->screen(), $state);
-
-            $expected = $this->projectDir.'/hatfield-child-'.$artifactId.'.html';
-            $this->assertFileExists($expected);
-            $this->assertStringContainsString('Child agent exported to:', $this->workingMessage($harness->screen()));
-        } finally {
-            if (false !== $previousCwd) {
-                chdir($previousCwd);
-            }
-        }
-    }
-
-    #[Test]
-    public function exportFeedbackStoredForTickPollListener(): void
-    {
-        $harness = new VirtualTuiHarness(sessionId: 'parent-session-export-store');
-        $state = new TuiSessionState('parent-session-export-store');
-        $artifactId = 'agent_store';
-        $this->seedCatalogChild($state, $artifactId, 'child-run-store', 'completed');
-        $this->writeChildEvents('parent-session-export-store', $artifactId, [
-            $this->makeChildEvent(1, 'run_started', []),
-        ]);
-
-        $picker = $this->picker($harness, $state);
-        $this->invokeExportSelected($picker, $harness->screen(), $state);
-
-        $this->assertStringContainsString('hatfield-child-'.$artifactId.'.html', (string) $state->subagentLiveView->pickerFeedbackMessage);
-        $this->assertStringContainsString('hatfield-child-'.$artifactId.'.html', $this->workingMessage($harness->screen()));
-    }
-
-    #[Test]
-    public function exportKeyShowsPathInPickerHeader(): void
-    {
-        $previousCwd = getcwd();
-        chdir($this->projectDir);
-        try {
-            $harness = new VirtualTuiHarness(sessionId: 'parent-session-export-header');
-            $state = new TuiSessionState('parent-session-export-header');
-            $artifactId = 'agent_export_hdr';
-            $this->seedCatalogChild($state, $artifactId, 'child-run-export-hdr', 'completed');
-            $this->writeChildEvents('parent-session-export-header', $artifactId, [
-                $this->makeChildEvent(1, 'run_started', ['user_messages' => [['role' => 'user', 'content' => 'task']]]),
-            ]);
-
-            $picker = $this->picker($harness, $state);
-            $picker->open();
-            $this->invokeExportSelected($picker, $harness->screen(), $state);
-
-            $this->assertStringContainsString('hatfield-child-'.$artifactId.'.html', (string) $state->subagentLiveView->pickerFeedbackMessage);
-            $overlayProp = new \ReflectionProperty(SubagentLivePickerController::class, 'overlay');
-            $overlay = $overlayProp->getValue($picker);
-            $this->assertNotNull($overlay);
-            $containerProp = new \ReflectionProperty(\Ineersa\Tui\Picker\PickerOverlay::class, 'container');
-            $container = $containerProp->getValue($overlay);
-            $header = $container->all()[0];
-            $headerText = preg_replace('/\x1b\[[0-9;]*m/', '', (string) $header->getText()) ?? '';
-            $this->assertStringContainsString('hatfield-child-'.$artifactId.'.html', $headerText);
-        } finally {
-            if (false !== $previousCwd) {
-                chdir($previousCwd);
-            }
-        }
-    }
-
-    #[Test]
-    public function exportKeyReportsMissingEventsFile(): void
-    {
-        $harness = new VirtualTuiHarness(sessionId: 'parent-session-no-events');
-        $state = new TuiSessionState('parent-session-no-events');
-        $artifactId = 'agent_no_file';
-        $this->seedCatalogChild($state, $artifactId, 'child-run-no-file', 'completed');
-
-        $picker = $this->picker($harness, $state);
-        $this->invokeExportSelected($picker, $harness->screen(), $state);
-
-        $this->assertStringContainsString('has no events to export', $this->workingMessage($harness->screen()));
-    }
-
-    #[Test]
-    public function exportKeyReportsChildAbsentFromCatalog(): void
-    {
-        $harness = new VirtualTuiHarness(sessionId: 'parent-session-missing-child');
-        $state = new TuiSessionState('parent-session-missing-child');
-        $this->seedCatalogChild($state, 'agent_stale', 'child-run-stale', 'completed');
-
-        $picker = $this->picker($harness, $state);
-        $items = $this->buildPickerItems($picker, $state->subagentLiveCatalog->all(), $harness->screen()->theme());
-        $listWidget = new SelectListWidget(items: $items, keybindings: new Keybindings());
-        $listWidget->setSelectedIndex(0);
-        $state->subagentLiveCatalog->dismissArtifactId('agent_stale');
-
-        $method = new \ReflectionMethod(SubagentLivePickerController::class, 'exportSelected');
-        $method->invoke($picker, $listWidget, $harness->screen(), $state);
-
-        $this->assertStringContainsString(
-            'no longer in the catalog',
-            $this->workingMessage($harness->screen()),
-        );
-    }
-
-    #[Test]
-    public function pickerLabelIncludesContextSuffixFromCatalog(): void
-    {
-        $harness = new VirtualTuiHarness(sessionId: 'parent-session-ctx');
-        $state = new TuiSessionState('parent-session-ctx');
-        $state->subagentLiveCatalog->ingestRuntimeEvent(new RuntimeEvent(
-            type: RuntimeEventTypeEnum::ToolExecutionOutputDelta->value,
-            runId: 'parent-run',
-            seq: 1,
-            payload: [
-                'tool_call_id' => 'tc_subagent',
-                'tool_name' => 'subagent',
-                'delta' => '',
-                'subagent_progress' => [
-                    'mode' => 'single',
-                    'status' => 'running',
-                    'agent_name' => 'scout',
-                    'artifact_id' => 'agent_ctx',
-                    'agent_run_id' => 'child-run-ctx',
-                    'task_summary' => 'task',
-                    'model' => 'deepseek/deepseek-v4-flash',
-                    'latest_input_tokens' => 97_900,
-                ],
-            ],
-        ));
-
-        $picker = $this->picker($harness, $state);
-        $items = $this->buildPickerItems($picker, $state->subagentLiveCatalog->all(), $harness->screen()->theme());
-
-        $this->assertNotEmpty($items);
-        $this->assertStringContainsString('36%', $items[0]['label']);
-        $this->assertStringContainsString('97.9k/272.0k', $items[0]['label']);
-    }
-
-    #[Test]
-    public function exportKeyReportsNoSelectedChild(): void
-    {
-        $harness = new VirtualTuiHarness(sessionId: 'parent-session-no-select');
-        $state = new TuiSessionState('parent-session-no-select');
-        $this->seedCatalogChild($state, 'agent_x', 'child-run-x', 'completed');
-
-        $picker = $this->picker($harness, $state);
-        $listWidget = new SelectListWidget(items: [], keybindings: new Keybindings());
-
-        $method = new \ReflectionMethod(SubagentLivePickerController::class, 'exportSelected');
-        $method->invoke($picker, $listWidget, $harness->screen(), $state);
-
-        $this->assertSame(
-            'No child agent selected to export.',
-            $this->workingMessage($harness->screen()),
-        );
-    }
-
-    #[Test]
-    public function testArrowNavigationDoesNotGrowItemCount(): void
-    {
-        $items = [
-            ['value' => 'agent_fork', 'label' => 'fork [running] agent_fork run:fork-run-1 — delegate'],
-            ['value' => 'agent_scout', 'label' => 'scout [running] agent_scout run:scout-run-1 — list docs'],
-        ];
-        $listWidget = new SelectListWidget(items: $items, keybindings: new Keybindings());
-        $listWidget->setSelectedIndex(0);
-
-        $listWidget->handleInput(\Symfony\Component\Tui\Input\Key::DOWN);
-        $listWidget->handleInput(\Symfony\Component\Tui\Input\Key::DOWN);
-        $listWidget->handleInput(\Symfony\Component\Tui\Input\Key::UP);
-
-        $ref = new \ReflectionClass($listWidget);
-        $itemsProp = $ref->getProperty('items');
-        $filteredProp = $ref->getProperty('filteredItems');
-
-        $this->assertCount(2, $itemsProp->getValue($listWidget));
-        $this->assertCount(2, $filteredProp->getValue($listWidget));
-    }
-
-    #[Test]
-    public function testCatalogRepeatedNestedProgressDoesNotDuplicatePickerRows(): void
-    {
-        $state = new TuiSessionState('parent-picker-dedupe');
-        $event = new RuntimeEvent(
-            type: RuntimeEventTypeEnum::ToolExecutionOutputDelta->value,
-            runId: 'fork-run',
-            seq: 2,
-            payload: [
-                'subagent_progress' => [
-                    'mode' => 'single',
-                    'status' => 'running',
-                    'agent_name' => 'scout',
-                    'artifact_id' => 'agent_scout',
-                    'agent_run_id' => 'scout-run',
-                    'task_summary' => 'list docs',
-                ],
-            ],
-        );
-
-        for ($i = 0; $i < 5; ++$i) {
-            $state->subagentLiveCatalog->ingestNestedProgressFromChildRunEvent($event);
-        }
-
-        $this->assertCount(1, $state->subagentLiveCatalog->all());
-
-        $harness = new VirtualTuiHarness(sessionId: 'parent-picker-dedupe');
-        $this->seedCatalogChild($state, 'agent_fork', 'fork-run', 'running');
-        $state->subagentLiveCatalog->ingestNestedProgressFromChildRunEvent($event);
-
-        $picker = $this->picker($harness, $state);
-        $picker->open();
-        $this->assertTrue($picker->isOpen());
-
-        $overlayRef = new \ReflectionProperty(SubagentLivePickerController::class, 'overlay');
-        $overlay = $overlayRef->getValue($picker);
-        $this->assertNotNull($overlay);
-        $list = $overlay->listWidget();
-        $this->assertNotNull($list);
-        $this->assertCount(2, $state->subagentLiveCatalog->all());
-
-        $itemsProp = new \ReflectionProperty(SelectListWidget::class, 'items');
-        $this->assertCount(2, $itemsProp->getValue($list));
-    }
-
-    #[Test]
     public function enterLiveViewCallsSnapshotProviderOnceAndCachesTranscript(): void
     {
         $harness = new VirtualTuiHarness(sessionId: 'picker-enter-snapshot');
@@ -375,9 +118,6 @@ final class SubagentLivePickerControllerTest extends TestCase
                 new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState()),
                 new NullLogger(),
             ),
-            $this->sessionStore(),
-            new SessionEventsExportService(),
-            ContextUsageTestAppConfig::withContextWindow(),
             $snapshotProvider,
         );
         $picker->setRuntimeRefs($harness->tui(), $harness->screen(), $state);
@@ -401,9 +141,6 @@ final class SubagentLivePickerControllerTest extends TestCase
                 new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState()),
                 new NullLogger(),
             ),
-            $this->sessionStore(),
-            new SessionEventsExportService(),
-            ContextUsageTestAppConfig::withContextWindow(),
             $this->createStub(ChildRunTranscriptSnapshotProviderInterface::class),
         );
         $picker->setRuntimeRefs($harness->tui(), $harness->screen(), $state);
@@ -416,25 +153,13 @@ final class SubagentLivePickerControllerTest extends TestCase
         ChatScreen $screen,
         TuiSessionState $state,
     ): void {
-        $items = $this->buildPickerItems($picker, $state->subagentLiveCatalog->all(), $screen->theme());
+        $items = SubagentLivePickerController::buildItems($state->subagentLiveCatalog->all(), $screen->theme());
         $listWidget = new SelectListWidget(items: $items, keybindings: new Keybindings());
         $listWidget->setSelectedIndex(0);
 
         $method = new \ReflectionMethod(SubagentLivePickerController::class, 'dismissSelected');
         $children = $state->subagentLiveCatalog->all();
         $method->invokeArgs($picker, [&$listWidget, &$children, $screen->theme(), $screen, $state]);
-    }
-
-    /**
-     * @param list<SubagentLiveChildDTO> $children
-     *
-     * @return list<array{value: string, label: string}>
-     */
-    private function buildPickerItems(SubagentLivePickerController $picker, array $children, TuiTheme $theme, int $selectedIndex = -1): array
-    {
-        $method = new \ReflectionMethod(SubagentLivePickerController::class, 'buildItems');
-
-        return $method->invoke($picker, $children, $theme, $selectedIndex);
     }
 
     private function seedCatalogChild(TuiSessionState $state, string $artifactId, string $runId, string $status): void
@@ -457,63 +182,6 @@ final class SubagentLivePickerControllerTest extends TestCase
                 ],
             ],
         ));
-    }
-
-    private function invokeExportSelected(
-        SubagentLivePickerController $picker,
-        ChatScreen $screen,
-        TuiSessionState $state,
-    ): void {
-        $items = $this->buildPickerItems($picker, $state->subagentLiveCatalog->all(), $screen->theme());
-        $listWidget = new SelectListWidget(items: $items, keybindings: new Keybindings());
-        $listWidget->setSelectedIndex(0);
-
-        $method = new \ReflectionMethod(SubagentLivePickerController::class, 'exportSelected');
-        $method->invoke($picker, $listWidget, $screen, $state);
-    }
-
-    /**
-     * @param list<array<string, mixed>> $events
-     */
-    private function writeChildEvents(string $parentSessionId, string $artifactId, array $events): void
-    {
-        $dir = $this->projectDir.'/.hatfield/sessions/'.$parentSessionId.'/artifacts/agents/'.$artifactId;
-        mkdir($dir, 0777, true);
-        $lines = array_map(static fn (array $e): string => json_encode($e, \JSON_THROW_ON_ERROR), $events);
-        file_put_contents($dir.'/events.jsonl', implode("\n", $lines)."\n");
-    }
-
-    /**
-     * @param array<string, mixed> $payload
-     *
-     * @return array<string, mixed>
-     */
-    private function makeChildEvent(int $seq, string $type, array $payload = []): array
-    {
-        return [
-            'schema_version' => '1.0',
-            'run_id' => 'child-run-export',
-            'seq' => $seq,
-            'turn_no' => 1,
-            'type' => $type,
-            'payload' => $payload,
-            'ts' => '2026-01-01T00:00:00+00:00',
-        ];
-    }
-
-    private function sessionStore(): HatfieldSessionStore
-    {
-        $appConfig = new AppConfig(
-            tui: new TuiConfig(theme: 'default'),
-            logging: new LoggingConfig(),
-            cwd: $this->projectDir,
-            sessions: new SessionsConfig(path: '.hatfield/sessions'),
-        );
-
-        return new HatfieldSessionStore(
-            appConfig: $appConfig,
-            entityManager: $this->createStub(EntityManagerInterface::class),
-        );
     }
 
     private function workingMessage(ChatScreen $screen): string

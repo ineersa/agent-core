@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Tests\Agent\Fork;
 
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
 use Ineersa\CodingAgent\Agent\Fork\ForkRunMetadataDTO;
+use Ineersa\CodingAgent\Config\ForkLevelEnum;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Serializer\Encoder\JsonEncoder;
@@ -52,6 +53,7 @@ final class ForkRunMetadataDTOTest extends TestCase
             runId: 'fork_abc123',
             parentRunId: 'parent_run_001',
             childRunId: 'child_run_xyz',
+            level: ForkLevelEnum::Senior,
             resolvedModel: 'openai/gpt-4',
             cwd: '/home/project',
             task: 'Implement feature X',
@@ -69,6 +71,7 @@ final class ForkRunMetadataDTOTest extends TestCase
         $this->assertSame($original->runId, $restored->runId);
         $this->assertSame($original->parentRunId, $restored->parentRunId);
         $this->assertSame($original->childRunId, $restored->childRunId);
+        $this->assertSame($original->level, $restored->level);
         $this->assertSame($original->resolvedModel, $restored->resolvedModel);
         $this->assertSame($original->cwd, $restored->cwd);
         $this->assertSame($original->task, $restored->task);
@@ -88,6 +91,7 @@ final class ForkRunMetadataDTOTest extends TestCase
         );
 
         $this->assertNull($dto->childRunId);
+        $this->assertSame(ForkLevelEnum::Middle, $dto->level);
         $this->assertNull($dto->resolvedModel);
         $this->assertSame('', $dto->cwd);
         $this->assertSame('', $dto->task);

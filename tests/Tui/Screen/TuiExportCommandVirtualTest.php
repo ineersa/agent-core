@@ -16,7 +16,6 @@ use Ineersa\Tui\Command\DispatchRuntime;
 use Ineersa\Tui\Command\SlashCommandRegistry;
 use Ineersa\Tui\Command\SubmissionRouter;
 use Ineersa\Tui\Command\TranscriptMessage;
-use Ineersa\Tui\Export\SessionEventsExportService;
 use Ineersa\Tui\Listener\ExportCommandRegistrar;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Tests\Support\TuiRuntimeContextBuilderTrait;
@@ -73,7 +72,7 @@ final class TuiExportCommandVirtualTest extends TestCase
             ->build();
 
         $registry = new SlashCommandRegistry();
-        (new ExportCommandRegistrar($registry, new SessionEventsExportService()))->register($context);
+        (new ExportCommandRegistrar($registry))->register($context);
 
         $router = new SubmissionRouter(new CommandParser(), $registry);
         $result = $router->route('/export');

@@ -10,14 +10,10 @@ use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\SessionsConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\EventListener\RuntimeExceptionPolicySubscriber;
-use Ineersa\CodingAgent\Runtime\Contract\ChildRunTranscriptSnapshotDTO;
-use Ineersa\CodingAgent\Runtime\Contract\ChildRunTranscriptSnapshotProviderInterface;
 use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeErrorCaptureConfig;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeExceptionBoundary;
 use Ineersa\CodingAgent\Runtime\Contract\TurnTreeProviderInterface;
-use Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState;
-use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Ineersa\CodingAgent\Runtime\Protocol\TurnTreeView;
@@ -31,7 +27,6 @@ use Ineersa\Tui\Command\SubagentLiveInputPolicy;
 use Ineersa\Tui\Command\SubmissionRouter;
 use Ineersa\Tui\Command\TranscriptMessage;
 use Ineersa\Tui\Editor\PromptEditor;
-use Ineersa\Tui\Export\SessionEventsExportService;
 use Ineersa\Tui\Listener\AgentsMainCommandHandler;
 use Ineersa\Tui\Listener\CancelListener;
 use Ineersa\Tui\Listener\PromptHistory;
@@ -44,7 +39,6 @@ use Ineersa\Tui\Runtime\Contract\TuiSessionSwitchServiceInterface;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
 use Ineersa\Tui\Runtime\SubagentLiveAttention;
 use Ineersa\Tui\Runtime\SubagentLiveChildDTO;
-use Ineersa\Tui\Runtime\SubagentLiveChildViewPoller;
 use Ineersa\Tui\Runtime\SubagentLiveStatusEnum;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
 use Ineersa\Tui\Runtime\TuiSessionLifecycleDispatcher;
@@ -53,7 +47,6 @@ use Ineersa\Tui\Runtime\TuiTickDispatcher;
 use Ineersa\Tui\Screen\ChatScreen;
 use Ineersa\Tui\Theme\DefaultTheme;
 use Ineersa\Tui\Theme\ThemePalette;
-use Ineersa\Tui\Theme\TuiTheme;
 use Ineersa\Tui\Transcript\TranscriptBlockFactory;
 use Ineersa\Tui\Transcript\TranscriptDisplayConfig;
 use Ineersa\Tui\Transcript\TranscriptDisplayState;
@@ -79,7 +72,6 @@ final class SubagentLiveScenarioHarness
     private readonly Tui $tui;
     private readonly PromptEditor $promptEditor;
     private readonly string $parentRunId;
-    private readonly HatfieldSessionStore $sessionStore;
 
     private function __construct(
         TuiSessionState $state,
@@ -90,7 +82,6 @@ final class SubagentLiveScenarioHarness
         Tui $tui,
         PromptEditor $promptEditor,
         string $parentRunId,
-        HatfieldSessionStore $sessionStore,
     ) {
         $this->state = $state;
         $this->screen = $screen;
@@ -100,7 +91,6 @@ final class SubagentLiveScenarioHarness
         $this->tui = $tui;
         $this->promptEditor = $promptEditor;
         $this->parentRunId = $parentRunId;
-        $this->sessionStore = $sessionStore;
     }
 
     public static function create(
@@ -202,7 +192,7 @@ final class SubagentLiveScenarioHarness
         );
         $cancelListener->register($context);
 
-        return new self($state, $screen, $client, $questionCoordinator, $questionController, $tui, $promptEditor, $parentRunId, $sessionStore);
+        return new self($state, $screen, $client, $questionCoordinator, $questionController, $tui, $promptEditor, $parentRunId);
     }
 
     public function seedChildInCatalog(
@@ -338,7 +328,7 @@ final class SubagentLiveScenarioHarness
     public function pickerLabels(): array
     {
         $children = $this->state->subagentLiveCatalog->all();
-        $items = $this->buildPickerItems($children, $this->screen->theme());
+        $items = SubagentLivePickerController::buildItems($children, $this->screen->theme());
 
         return array_map(static fn (array $row): string => $row['label'], $items);
     }
@@ -362,38 +352,6 @@ final class SubagentLiveScenarioHarness
     private function runtimeQuestionHandler(): RuntimeQuestionEventHandler
     {
         return new RuntimeQuestionEventHandler();
-    }
-
-    private function emptyChildSnapshotProvider(): ChildRunTranscriptSnapshotProviderInterface
-    {
-        return new class implements ChildRunTranscriptSnapshotProviderInterface {
-            public function snapshot(string $runId): ChildRunTranscriptSnapshotDTO
-            {
-                return new ChildRunTranscriptSnapshotDTO([], [], 0);
-            }
-        };
-    }
-
-    /**
-     * @param list<SubagentLiveChildDTO> $children
-     *
-     * @return list<array{value: string, label: string}>
-     */
-    private function buildPickerItems(array $children, TuiTheme $theme, int $selectedIndex = -1): array
-    {
-        $picker = new SubagentLivePickerController(
-            new SubagentLiveChildViewPoller(
-                new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState()),
-                new NullLogger(),
-            ),
-            $this->sessionStore,
-            new SessionEventsExportService(),
-            ContextUsageTestAppConfig::withContextWindow(),
-            $this->emptyChildSnapshotProvider(),
-        );
-        $method = new \ReflectionMethod(SubagentLivePickerController::class, 'buildItems');
-
-        return $method->invoke($picker, $children, $theme, $selectedIndex);
     }
 
     /** @param array<string, mixed> $progress */

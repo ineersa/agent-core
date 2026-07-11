@@ -67,22 +67,6 @@ final class StreamingCommittedRuntimeEventStoreTest extends TestCase
         $this->assertSame([1, 2], array_map(static fn (RuntimeEvent $e): int => $e->seq, $sink->emitted));
     }
 
-    public function testAppendWithNextSeqEmitsMappedRuntimeEventAfterInnerAppend(): void
-    {
-        $inner = new RecordingSequencedEventStore();
-        $sink = new RecordingCommittedStdoutSink();
-        $mapper = new RuntimeEventMapper(new RuntimeEventTranslator(new EventDispatcher()));
-
-        $store = new StreamingCommittedRuntimeEventStore($inner, $mapper, $sink, true);
-        $persisted = $store->appendWithNextSeq(new RunEvent('run-a', 0, 0, RunEventTypeEnum::ToolExecutionUpdate->value, ['tool_name' => 'subagent']));
-
-        $this->assertSame(7, $persisted->seq);
-        $this->assertCount(1, $inner->sequencedAppended);
-        $this->assertCount(1, $sink->emitted);
-        $this->assertSame(RuntimeEventTypeEnum::ToolExecutionOutputDelta->value, $sink->emitted[0]->type);
-        $this->assertSame(7, $sink->emitted[0]->seq);
-    }
-
     public function testStreamingDisabledSkipsStdoutEmit(): void
     {
         $inner = new RecordingEventStore();
@@ -94,50 +78,6 @@ final class StreamingCommittedRuntimeEventStoreTest extends TestCase
 
         $this->assertCount(1, $inner->appended);
         $this->assertCount(0, $sink->emitted);
-    }
-}
-
-/**
- * @internal
- */
-final class RecordingSequencedEventStore implements \Ineersa\AgentCore\Contract\SequencedEventStoreInterface
-{
-    /** @var list<RunEvent> */
-    public array $sequencedAppended = [];
-
-    public function append(RunEvent $event): void
-    {
-        $this->sequencedAppended[] = $event;
-    }
-
-    public function appendMany(array $events): void
-    {
-        foreach ($events as $event) {
-            $this->append($event);
-        }
-    }
-
-    public function appendWithNextSeq(RunEvent $event): RunEvent
-    {
-        $persisted = new RunEvent($event->runId, 7, $event->turnNo, $event->type, $event->payload);
-        $this->sequencedAppended[] = $persisted;
-
-        return $persisted;
-    }
-
-    public function appendManyWithNextSeq(array $events): array
-    {
-        $out = [];
-        foreach ($events as $event) {
-            $out[] = $this->appendWithNextSeq($event);
-        }
-
-        return $out;
-    }
-
-    public function allFor(string $runId): array
-    {
-        return [];
     }
 }
 
