@@ -200,6 +200,56 @@ final class PromptContractTestSupport
         return (string) ($nested['system_prompt'] ?? $nested['systemPrompt'] ?? '');
     }
 
+
+    /**
+     * @param list<AgentMessage> $messages
+     */
+    public static function assertSentinelCountInAgentsContext(array $messages, string $sentinel, int $expected): void
+    {
+        $count = 0;
+        foreach ($messages as $message) {
+            if ('user-context' !== $message->role) {
+                continue;
+            }
+            if ('agents_context' !== ($message->metadata['source'] ?? null)) {
+                continue;
+            }
+            if (str_contains(self::messageText($message), $sentinel)) {
+                ++$count;
+            }
+        }
+        if ($count !== $expected) {
+            throw new \PHPUnit\Framework\AssertionFailedError(\sprintf(
+                'Expected sentinel %s in agents_context exactly %d times, found %d',
+                $sentinel,
+                $expected,
+                $count,
+            ));
+        }
+    }
+
+    /**
+     * @param list<array{role: string, text: string}> $providerMessages
+     */
+    public static function assertProviderUserMessagesContainSentinelOnce(array $providerMessages, string $sentinel): void
+    {
+        $hits = 0;
+        foreach ($providerMessages as $row) {
+            if ('user' !== $row['role']) {
+                continue;
+            }
+            if (str_contains($row['text'], $sentinel)) {
+                ++$hits;
+            }
+        }
+        if (1 !== $hits) {
+            throw new \PHPUnit\Framework\AssertionFailedError(\sprintf(
+                'Expected sentinel in exactly one provider user message, hits=%d',
+                $hits,
+            ));
+        }
+    }
+
     public static function providerBag(array $messages): MessageBag
     {
         return (new AgentMessageConverter())->toMessageBag($messages);

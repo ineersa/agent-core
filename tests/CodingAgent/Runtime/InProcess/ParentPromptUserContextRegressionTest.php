@@ -104,10 +104,11 @@ final class ParentPromptUserContextRegressionTest extends PerMethodIsolatedKerne
         $this->assertNotEmpty($providerTools);
     }
 
-    public function testParentStartInjectsAgentsContextFromDiscoveredAgentsMd(): void
+    public function testParentStartInjectsBareRootAgentsMdIntoEffectiveContext(): void
     {
-        mkdir($this->isolatedCwd().'/.hatfield', 0777, true);
-        file_put_contents($this->isolatedCwd().'/.hatfield/AGENTS.md', 'GF05_PARENT_AGENTS_BODY');
+        $sentinel = 'GF05_BARE_ROOT_AGENTS_SENTINEL_'.bin2hex(random_bytes(4));
+        file_put_contents($this->isolatedCwd().'/AGENTS.md', $sentinel."
+");
 
         $sessionId = Uuid::v4()->toRfc4122();
         self::getContainer()->get(InProcessAgentSessionClient::class)->start(new StartRunRequest(
@@ -116,14 +117,30 @@ final class ParentPromptUserContextRegressionTest extends PerMethodIsolatedKerne
         ));
 
         $canonical = $this->pipelineRunner->lastStartInput?->messages ?? [];
+        $this->assertNotEmpty($canonical);
+
+        $runStarted = PromptContractTestSupport::findRunStartedEvent($this->pipelineRunner->eventStore, $sessionId);
+        $this->assertNotNull($runStarted);
+        $runStartedMessages = PromptContractTestSupport::messagesFromRunStartedPayload($runStarted->payload);
+        PromptContractTestSupport::assertCanonicalMatchesRunStartedMessages($canonical, $runStartedMessages);
+
+        PromptContractTestSupport::assertSentinelCountInAgentsContext($canonical, $sentinel, 1);
+        PromptContractTestSupport::assertSentinelCountInAgentsContext($runStartedMessages, $sentinel, 1);
+
         $keys = PromptContractTestSupport::roleSourceKeys(PromptContractTestSupport::summarizeMessages($canonical));
-        $this->assertContains('user-context:agents_context', $keys, 'Parent must inject discovered AGENTS.md as agents_context user-context before skills_context.');
+        $this->assertContains('user-context:agents_context', $keys);
         $agentsIndex = array_search('user-context:agents_context', $keys, true);
         $skillsIndex = array_search('user-context:skills_context', $keys, true);
+        $agentsDefIndex = array_search('user-context:agents_definitions_context', $keys, true);
         $this->assertNotFalse($agentsIndex);
         $this->assertNotFalse($skillsIndex);
+        $this->assertNotFalse($agentsDefIndex);
         $this->assertLessThan($skillsIndex, $agentsIndex);
-        $this->assertStringContainsString('GF05_PARENT_AGENTS_BODY', PromptContractTestSupport::messageText($canonical[$agentsIndex]));
+        $this->assertLessThan($agentsDefIndex, $skillsIndex);
+
+        $capture = ProviderBoundaryCaptureSupport::create(self::getContainer()->get(\Symfony\AI\Agent\Toolbox\ToolboxInterface::class));
+        $capture->captureForRun($sessionId, $canonical);
+        PromptContractTestSupport::assertProviderUserMessagesContainSentinelOnce($capture->capturedProviderMessages(), $sentinel);
     }
 }
 

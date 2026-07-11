@@ -32,6 +32,7 @@ use Ineersa\CodingAgent\Skills\SkillsContextBuilder;
 use Ineersa\CodingAgent\SystemPrompt\SystemPromptBuilder;
 use Ineersa\CodingAgent\Tests\Agent\Execution\Support\PipelineCapturingAgentRunner;
 use Ineersa\CodingAgent\Tests\Agent\Execution\Support\PromptContractTestSupport;
+use Ineersa\CodingAgent\Tests\Agent\Execution\Support\ProviderBoundaryCaptureSupport;
 use Ineersa\CodingAgent\Tests\Support\Mcp\TestMcpConfigLoaderFactory;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tool\ToolHandlerInterface;
@@ -176,6 +177,13 @@ final class SubagentPromptUserContextContractTest extends IsolatedKernelTestCase
             parametersJsonSchema: ['type' => 'object', 'properties' => ['query' => ['type' => 'string']]],
             handler: $this->dummyHandler(),
         );
+        $registry->registerTool(
+            name: 'fork',
+            description: 'PARENT_ONLY_FORK_DESCRIPTION',
+            parametersJsonSchema: ['type' => 'object'],
+            handler: $this->dummyHandler(),
+            promptLine: 'fork — parent only',
+        );
 
         $childRunStore = new InMemoryRunStore();
         $eventStore = new RunEventStore();
@@ -204,29 +212,30 @@ final class SubagentPromptUserContextContractTest extends IsolatedKernelTestCase
         $this->assertStringContainsString('read path', $systemText);
         $this->assertStringNotContainsString($mcpDescription, $systemText);
         $this->assertStringNotContainsString('browser__search: '.$mcpDescription, $systemText);
+        $this->assertStringNotContainsString('PARENT_ONLY_FORK_DESCRIPTION', $systemText);
 
         $childRunId = $pipelineRunner->lastStartInput->runId;
         $this->assertNotNull($childRunId);
+
         $resolver = new SubagentToolSetResolver(
-            $this->innerToolboxResolver($registry, ['read', 'browser__search']),
+            $this->innerToolboxResolver($registry, ['read', 'browser__search', 'fork']),
             new SubagentRunMetadataReader($eventStore),
         );
-        $active = $resolver->resolve('ref', runId: $childRunId);
-        $this->assertContains('browser__search', $active->toolNames);
+        $capture = ProviderBoundaryCaptureSupport::create(
+            $this->toolboxFromRegistry($registry),
+            $resolver,
+        );
+        $capture->captureForRun($childRunId, $pipelineRunner->lastStartInput->messages);
 
-        $toolbox = $this->toolboxFromRegistry($registry);
-        $allowedSet = array_fill_keys($active->toolNames, true);
-        $providerTools = array_values(array_filter(
-            $toolbox->getTools(),
-            static fn (Tool $tool): bool => isset($allowedSet[$tool->getName()]),
-        ));
-        $names = array_map(static fn (Tool $tool): string => $tool->getName(), $providerTools);
+        $schemas = $capture->capturedProviderToolSchemas();
+        $names = array_column($schemas, 'name');
         $this->assertContains('browser__search', $names);
+        $this->assertNotContains('fork', $names);
         $byName = [];
-        foreach ($providerTools as $tool) {
-            $byName[$tool->getName()] = $tool->getDescription();
+        foreach ($schemas as $schema) {
+            $byName[$schema['name']] = $schema['description'];
         }
-        $this->assertSame($mcpDescription, $byName['browser__search']);
+        $this->assertSame($mcpDescription, $byName['browser__search'] ?? null);
     }
 
     public function testOrdinaryChildOmitsAgentsDefinitionsContext(): void
