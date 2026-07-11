@@ -142,6 +142,17 @@ final class TuiSessionState
 
     public SubagentLiveViewState $subagentLiveView;
 
+    /**
+     * Staged pasted images keyed by placeholder index ([Image #N]).
+     * Promoted into .hatfield/sessions/<id>/attachments/ on submit (issue #119).
+     *
+     * @var array<int, \Ineersa\Tui\ImagePaste\PastedImagePendingDTO>
+     */
+    public array $pastedImagePendingByIndex = [];
+
+    /** Next sequential pasted image index for this TUI session. */
+    public int $nextPastedImageIndex = 1;
+
     public function __construct(
         string $sessionId,
         bool $resuming = false,

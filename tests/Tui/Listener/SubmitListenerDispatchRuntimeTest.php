@@ -588,6 +588,13 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
             subagentLiveInputPolicy: new SubagentLiveInputPolicy(),
             logger: $this->logger,
             history: $history ?? new PromptHistory(),
+            pastedImageSubmissionService: new \Ineersa\Tui\ImagePaste\PastedImageSubmissionService(
+                new \Ineersa\Tui\ImagePaste\PastedImageValidationService(new \Ineersa\CodingAgent\Config\ImageToolConfig(), new \Ineersa\AgentCore\Tests\Support\TestLogger()),
+                $context->sessionStore,
+                new \Ineersa\CodingAgent\Config\AppConfig(),
+                new \Ineersa\Tui\Transcript\TranscriptBlockFactory(),
+                new \Ineersa\AgentCore\Tests\Support\TestLogger(),
+            ),
         );
         $listener->register($context);
 

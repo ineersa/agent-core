@@ -19,6 +19,7 @@ use Ineersa\Tui\Command\StatusUpdate;
 use Ineersa\Tui\Command\SubagentLiveInputPolicy;
 use Ineersa\Tui\Command\SubmissionRouter;
 use Ineersa\Tui\Command\TranscriptMessage;
+use Ineersa\Tui\ImagePaste\PastedImageSubmissionService;
 use Ineersa\Tui\Question\QuestionController;
 use Ineersa\Tui\Question\QuestionCoordinator;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
@@ -55,6 +56,7 @@ final class SubmitListener implements TuiListenerRegistrar
         private readonly SubagentLiveInputPolicy $subagentLiveInputPolicy,
         private readonly LoggerInterface $logger,
         private readonly PromptHistory $history,
+        private readonly PastedImageSubmissionService $pastedImageSubmissionService,
     ) {
     }
 
@@ -75,13 +77,14 @@ final class SubmitListener implements TuiListenerRegistrar
         $subagentLiveInputPolicy = $this->subagentLiveInputPolicy;
         $lifecycle = $context->lifecycle;
         $history = $this->history;
+        $pastedImageSubmissionService = $this->pastedImageSubmissionService;
 
         // Wire the question controller with TUI runtime references
         $questionController->setRuntimeRefs($context, $screen);
 
         $context->tui->addListener(static function (SubmitEvent $event) use (
             $client, $sessionStore, $state, $screen, $tui, $router, $blockFactory,
-            $questionCoordinator, $questionController, $subagentLiveInputPolicy, $logger, $lifecycle, $history,
+            $questionCoordinator, $questionController, $subagentLiveInputPolicy, $logger, $lifecycle, $history, $pastedImageSubmissionService,
         ) {
             $text = $screen->extract();
             if ('' === $text) {
@@ -142,7 +145,7 @@ final class SubmitListener implements TuiListenerRegistrar
                     $history->append($commandResult->originalText);
                     self::handleShellCommand(
                         $commandResult, $state, $screen, $sessionStore,
-                        $blockFactory, $client, $logger, $lifecycle,
+                        $blockFactory, $client, $logger, $lifecycle, $pastedImageSubmissionService,
                     );
 
                     return;
@@ -153,7 +156,7 @@ final class SubmitListener implements TuiListenerRegistrar
                     $history->append($text);
                     self::dispatchToRuntime(
                         $commandResult->payload, $state, $screen,
-                        $sessionStore, $blockFactory, $client, $logger, $tui, $lifecycle,
+                        $sessionStore, $blockFactory, $client, $logger, $tui, $lifecycle, $pastedImageSubmissionService,
                     );
 
                     return;
@@ -170,7 +173,7 @@ final class SubmitListener implements TuiListenerRegistrar
             // user blocks (avoiding duplicate block IDs), and events.jsonl is
             // the single source of truth for transcript replay on resume.
             $history->append($text);
-            self::dispatchToRuntime($text, $state, $screen, $sessionStore, $blockFactory, $client, $logger, $tui, $lifecycle);
+            self::dispatchToRuntime($text, $state, $screen, $sessionStore, $blockFactory, $client, $logger, $tui, $lifecycle, $pastedImageSubmissionService);
         });
     }
 
@@ -258,6 +261,7 @@ final class SubmitListener implements TuiListenerRegistrar
         LoggerInterface $logger,
         Tui $tui,
         TuiSessionLifecycleDispatcher $lifecycle,
+        PastedImageSubmissionService $pastedImageSubmissionService,
     ): void {
         // Show immediate visual feedback (◐ Working...) before heavy
         // synchronous work (session creation, system prompt discovery,
@@ -279,6 +283,19 @@ final class SubmitListener implements TuiListenerRegistrar
         }
 
         try {
+            $text = self::promotePastedImagesInPrompt(
+                $text,
+                $state,
+                $screen,
+                $sessionStore,
+                $pastedImageSubmissionService,
+                $logger,
+                $lifecycle,
+            );
+            if (null === $text) {
+                return;
+            }
+
             // Start a run if this is the first message
             if (null === $state->handle && (null === $state->request || '' === $state->sessionId)) {
                 // ── Draft session promotion ──
@@ -429,6 +446,43 @@ final class SubmitListener implements TuiListenerRegistrar
      * text (including the `!` prefix) so the prompt history
      * can recall shell commands via Up/Down.
      */
+
+    /**
+     * Promote pasted image placeholders once a session id exists (draft promotion when needed).
+     */
+    private static function promotePastedImagesInPrompt(
+        string $text,
+        TuiSessionState $state,
+        ChatScreen $screen,
+        HatfieldSessionStore $sessionStore,
+        PastedImageSubmissionService $pastedImageSubmissionService,
+        LoggerInterface $logger,
+        TuiSessionLifecycleDispatcher $lifecycle,
+    ): ?string {
+        if (!$pastedImageSubmissionService->textContainsPlaceholder($text)
+            && [] === $state->pastedImagePendingByIndex) {
+            return $text;
+        }
+
+        if ('' === $state->sessionId) {
+            $state->sessionId = $sessionStore->createSession($text);
+            $screen->updateSessionId($state->sessionId);
+            $lifecycle->dispatch(new \Ineersa\Tui\Runtime\TuiSessionLifecycleEventDTO(
+                type: \Ineersa\Tui\Runtime\TuiSessionLifecycleEventTypeEnum::SessionStarted,
+                sessionId: $state->sessionId,
+                isDraft: false,
+                resuming: false,
+            ));
+            $logger->info('Draft session promoted for pasted image submit', [
+                'component' => 'SubmitListener',
+                'event_type' => 'draft_promoted_paste',
+                'session_id' => $state->sessionId,
+            ]);
+        }
+
+        return $pastedImageSubmissionService->resolveSubmittedText($text, $state, $screen);
+    }
+
     private static function handleShellCommand(
         DispatchShellCommand $shellCommand,
         TuiSessionState $state,
@@ -438,6 +492,7 @@ final class SubmitListener implements TuiListenerRegistrar
         \Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient $client,
         LoggerInterface $logger,
         TuiSessionLifecycleDispatcher $lifecycle,
+        PastedImageSubmissionService $pastedImageSubmissionService,
     ): void {
         try {
             // Create a session if this is the first input.

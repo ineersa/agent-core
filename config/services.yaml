@@ -35,6 +35,8 @@ services:
     autowire: true
     autoconfigure: true
 
+  Ineersa\Tui\ImagePaste\ClipboardImageReaderInterface: '@Ineersa\Tui\ImagePaste\ClipboardImageReader'
+
   _instanceof:
     Ineersa\Tui\Listener\TuiListenerRegistrar:
       tags: ['app.tui_listener']

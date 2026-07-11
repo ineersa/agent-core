@@ -313,6 +313,22 @@ final class HatfieldSessionStore
     }
 
     /**
+     * Ensure the session attachments directory exists and return its absolute path.
+     *
+     * Pasted images from the TUI are stored here for replay/resume (issue #119).
+     */
+    public function ensureSessionAttachmentsDirectory(string $sessionId): string
+    {
+        $sessionDir = $this->getSessionDir($sessionId);
+        $attachments = $sessionDir.'/attachments';
+        if (!is_dir($attachments) && !@mkdir($attachments, 0o777, true) && !is_dir($attachments)) {
+            throw new \RuntimeException(\sprintf('Failed to create session attachments directory for session "%s".', $sessionId));
+        }
+
+        return $attachments;
+    }
+
+    /**
      * Compute the user-visible display title without mutating the DB.
      *
      * Accepts an already-computed prompt preview so the caller avoids
