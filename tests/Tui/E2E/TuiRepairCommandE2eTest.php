@@ -32,6 +32,9 @@ final class TuiRepairCommandE2eTest extends TestCase
     private string $snapshotDir;
     private string $dbPath;
     private string $transportDbPath;
+    private string $appDbAbsolutePath;
+    private string $appDbEnvPath;
+    private string $transportDbEnvPath;
 
     protected function setUp(): void
     {
@@ -45,9 +48,16 @@ final class TuiRepairCommandE2eTest extends TestCase
         $this->snapshotDir = $this->testProjectDir.'/.hatfield/tmp/tui/smoke';
         @mkdir($this->snapshotDir, 0o777, true);
 
-        $paths = TuiE2eDatabaseEnv::allocatePaths('tui-repair-');
+        $paths = TuiE2eDatabaseEnv::allocateIsolatedPaths(
+            $this->projectRoot,
+            $this->testProjectDir,
+            'tui-repair-',
+        );
         $this->dbPath = $paths['app'];
         $this->transportDbPath = $paths['transport'];
+        $this->appDbAbsolutePath = $paths['appAbsolute'];
+        $this->appDbEnvPath = $paths['appEnv'];
+        $this->transportDbEnvPath = $paths['transportEnv'];
 
         $this->migrateTestDatabase();
         $this->seedStaleCancellationSession();
@@ -115,12 +125,13 @@ final class TuiRepairCommandE2eTest extends TestCase
         $script = $this->projectRoot.'/bin/console';
 
         return \sprintf(
-            'APP_ENV=test %sHOME=%s %s %s %s agent --resume=%s --model=llama_cpp_test/test --tools-excluded=bash 2>&1',
-            TuiE2eDatabaseEnv::shellPrefix($this->dbPath, $this->transportDbPath),
+            'APP_ENV=test %sHOME=%s %s %s agent --resume=%s --cwd=%s --model=llama_cpp_test/test --tools-excluded=bash 2>&1',
+            TuiE2eDatabaseEnv::shellPrefixForIsolatedEnv($this->appDbEnvPath, $this->transportDbEnvPath),
             escapeshellarg($this->testProjectDir.'/home'),
             escapeshellarg($php),
             escapeshellarg($script),
             self::SESSION_ID,
+            escapeshellarg($this->testProjectDir),
         );
     }
 
@@ -129,8 +140,8 @@ final class TuiRepairCommandE2eTest extends TestCase
         $cmd = \sprintf(
             'cd %s && APP_ENV=test HATFIELD_TEST_DATABASE_PATH=%s HATFIELD_TEST_MESSENGER_TRANSPORT_DATABASE_PATH=%s %s %s doctrine:migrations:migrate --no-interaction 2>&1',
             escapeshellarg($this->testProjectDir),
-            escapeshellarg($this->dbPath),
-            escapeshellarg($this->transportDbPath),
+            escapeshellarg($this->appDbEnvPath),
+            escapeshellarg($this->transportDbEnvPath),
             escapeshellarg(\PHP_BINARY),
             escapeshellarg($this->projectRoot.'/bin/console'),
         );
@@ -139,6 +150,11 @@ final class TuiRepairCommandE2eTest extends TestCase
         if (0 !== $exitCode) {
             $this->fail('Failed to migrate test database for /repair E2E: '.implode("\n", $output));
         }
+
+        TuiE2eDatabaseEnv::normalizeConsoleMigrationVersionIds($this->appDbAbsolutePath);
+        TuiE2eDatabaseEnv::ensureIsolatedMessengerTransportSchema(
+            TuiE2eDatabaseEnv::isolatedSqliteAbsolutePath($this->testProjectDir, $this->transportDbPath),
+        );
     }
 
     private function seedStaleCancellationSession(): void
@@ -173,8 +189,8 @@ final class TuiRepairCommandE2eTest extends TestCase
         $json = json_encode($serializer->normalize($state), \JSON_PRETTY_PRINT | \JSON_THROW_ON_ERROR);
         file_put_contents($sessionDir.'/state.json', $json);
 
-        $dbFile = $this->testProjectDir.'/'.$this->dbPath;
-        $pdo = new \PDO('sqlite:'.$dbFile);
+        // Doctrine opens kernel.project_dir/var/test/{env}; env is relative to var/test (see TuiE2eDatabaseEnv).
+        $pdo = new \PDO('sqlite:'.$this->appDbAbsolutePath);
         $now = (new \DateTimeImmutable())->format('Y-m-d H:i:s');
         $stmt = $pdo->prepare('INSERT INTO hatfield_session (id, cwd, prompt, name, created_at, updated_at) VALUES (:id, :cwd, :prompt, :name, :created_at, :updated_at)');
         $stmt->execute([
