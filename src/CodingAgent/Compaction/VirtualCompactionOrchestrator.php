@@ -13,6 +13,8 @@ use Ineersa\AgentCore\Domain\Model\ModelInvocationOptions;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationRequest;
 use Ineersa\CodingAgent\Agent\Fork\ForkCompactionSummarizationException;
 use Ineersa\CodingAgent\Config\CompactionConfig;
+use Ineersa\CodingAgent\Compaction\CompactionBoundarySelector;
+use Ineersa\CodingAgent\Compaction\CompactionTokenEstimator;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 
@@ -32,6 +34,8 @@ final readonly class VirtualCompactionOrchestrator implements VirtualCompactionO
         private CompactionConfig $compactionConfig,
         private ActiveModelResolverInterface $activeModelResolver,
         private PlatformInterface $platform,
+        private CompactionBoundarySelector $boundarySelector,
+        private CompactionTokenEstimator $tokenEstimator,
         private LoggerInterface $logger = new NullLogger(),
     ) {
     }
@@ -124,7 +128,7 @@ final readonly class VirtualCompactionOrchestrator implements VirtualCompactionO
             return new CompactionPreparationDTO(
                 messagesToSummarize: $body,
                 retainedTailMessages: $prologue,
-                tokenEstimateBefore: 1,
+                tokenEstimateBefore: $this->tokenEstimator->estimateTokens($messages),
                 messagesCompacted: 1,
                 messagesRetained: \count($prologue),
                 firstRetainedIndex: $prologueCount,
@@ -136,7 +140,7 @@ final readonly class VirtualCompactionOrchestrator implements VirtualCompactionO
             return new CompactionPreparationDTO(
                 messagesToSummarize: $body,
                 retainedTailMessages: $prologue,
-                tokenEstimateBefore: max(2, $bodyCount),
+                tokenEstimateBefore: $this->tokenEstimator->estimateTokens($messages),
                 messagesCompacted: $bodyCount,
                 messagesRetained: \count($prologue),
                 firstRetainedIndex: $prologueCount,
@@ -144,21 +148,29 @@ final readonly class VirtualCompactionOrchestrator implements VirtualCompactionO
             );
         }
 
-        $retainedTail = [...$prologue, $body[\count($body) - 1]];
-        $messagesToSummarize = \array_slice($body, 0, -1);
+        $boundary = $this->boundarySelector->findForcedSafeBoundary($body);
+        if (null === $boundary) {
+            throw new ForkCompactionSummarizationException('Fork launch requires compacted parent context but no safe compaction boundary exists for the parent message sequence.');
+        }
 
-        if ([] === $messagesToSummarize) {
+        if (0 === $boundary) {
             $messagesToSummarize = $body;
             $retainedTail = $prologue;
+            $firstRetainedIndex = $prologueCount;
+        } else {
+            $messagesToSummarize = \array_slice($body, 0, $boundary);
+            $retainedBodyTail = \array_slice($body, $boundary);
+            $retainedTail = [...$prologue, ...$retainedBodyTail];
+            $firstRetainedIndex = $prologueCount + $boundary;
         }
 
         return new CompactionPreparationDTO(
             messagesToSummarize: $messagesToSummarize,
             retainedTailMessages: $retainedTail,
-            tokenEstimateBefore: max(2, \count($messages)),
+            tokenEstimateBefore: $this->tokenEstimator->estimateTokens($messages),
             messagesCompacted: \count($messagesToSummarize),
             messagesRetained: \count($retainedTail),
-            firstRetainedIndex: $prologueCount + \count($body) - 1,
+            firstRetainedIndex: $firstRetainedIndex,
             priorSummaryPresent: $this->bodyContainsPriorCompactSummary($messagesToSummarize),
         );
     }
@@ -180,6 +192,11 @@ final readonly class VirtualCompactionOrchestrator implements VirtualCompactionO
     /**
      * @param array<string, mixed> $modelOptions
      */
+    private const INEFFECTIVE_RETRY_INSTRUCTION = 'Your previous summary was too long and did not reduce context size. Produce a materially shorter, denser summary. Omit repetition and keep only decisions, constraints, file paths, and unresolved work.';
+
+    /**
+     * @param array<string, mixed> $modelOptions
+     */
     private function summarizePreparation(
         CompactionPreparationDTO $preparation,
         string $resolvedModel,
@@ -189,12 +206,51 @@ final readonly class VirtualCompactionOrchestrator implements VirtualCompactionO
             return $this->deriveTrivialSummaryText($preparation);
         }
 
+        try {
+            return $this->invokeSummarizationAttempt(
+                $preparation,
+                $resolvedModel,
+                $modelOptions,
+                null,
+                1,
+            );
+        } catch (ForkCompactionSummarizationException $exception) {
+            if (!$this->isIneffectiveSummarizationFailure($exception)) {
+                throw $exception;
+            }
+        }
+
+        return $this->invokeSummarizationAttempt(
+            $preparation,
+            $resolvedModel,
+            $modelOptions,
+            self::INEFFECTIVE_RETRY_INSTRUCTION,
+            2,
+        );
+    }
+
+    private function isIneffectiveSummarizationFailure(ForkCompactionSummarizationException $exception): bool
+    {
+        return str_contains($exception->getMessage(), 'ineffective (context did not shrink)');
+    }
+
+    /**
+     * @param array<string, mixed> $modelOptions
+     */
+    private function invokeSummarizationAttempt(
+        CompactionPreparationDTO $preparation,
+        string $resolvedModel,
+        array $modelOptions,
+        ?string $customInstructions,
+        int $attempt,
+    ): string {
         $prepareResult = $this->toPrepareResult($preparation);
-        $summarizationMessages = $this->compactionService->buildSummarizationMessages($prepareResult, null);
+        $summarizationMessages = $this->compactionService->buildSummarizationMessages($prepareResult, $customInstructions);
 
         $this->logger->info('Fork virtual compaction summarization started.', [
             'event_type' => 'fork.compaction.summarize.started',
             'model' => $resolvedModel,
+            'attempt' => $attempt,
             'messages_to_summarize' => $preparation->messagesCompacted,
             'messages_retained' => $preparation->messagesRetained,
         ]);
@@ -235,6 +291,7 @@ final readonly class VirtualCompactionOrchestrator implements VirtualCompactionO
         $this->logger->info('Fork virtual compaction summarization completed.', [
             'event_type' => 'fork.compaction.summarize.completed',
             'model' => $resolvedModel,
+            'attempt' => $attempt,
             'estimated_tokens_before' => $compactResult->tokenEstimateBefore,
             'estimated_tokens_after' => $compactResult->tokenEstimateAfter,
         ]);

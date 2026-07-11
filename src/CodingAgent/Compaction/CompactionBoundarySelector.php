@@ -133,6 +133,44 @@ final class CompactionBoundarySelector
     }
 
     /**
+     * Find the smallest safe retained body tail for forced virtual compaction.
+     *
+     * Walks from the newest body message backward, preferring the largest
+     * boundary index (smallest retained tail) that keeps assistant/tool-call
+     * groups intact on both sides of the partition.
+     *
+     * Returns 0 when the entire compactable body must be summarized together
+     * and only the prologue is retained.
+     *
+     * @param list<AgentMessage> $body Messages after prologue extraction
+     *
+     * @return int|null Safe boundary index, or null when no partition is valid
+     */
+    public function findForcedSafeBoundary(array $body): ?int
+    {
+        $count = \count($body);
+        if ($count < 2) {
+            return null;
+        }
+
+        for ($boundary = $count - 1; $boundary >= 1; --$boundary) {
+            if (!$this->isSafeCutPoint($body, $boundary)) {
+                continue;
+            }
+
+            if ([] !== \array_slice($body, 0, $boundary)) {
+                return $boundary;
+            }
+        }
+
+        if ($this->isSafeCutPoint($body, 0)) {
+            return 0;
+        }
+
+        return null;
+    }
+
+        /**
      * Check whether cutting at the given boundary is safe.
      *
      * Two-layer safety: cross-boundary invariants + partition validity.

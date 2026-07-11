@@ -136,7 +136,14 @@ final class VirtualCompactionOrchestratorTest extends TestCase
         $result = $orchestrator->compactForRun('parent-run-1', $messages, force: true);
 
         $this->assertTrue($result->compacted);
-        $this->assertTrue($result->compactedMessages[0]->metadata['compact_summary'] ?? false);
+        $summaryFound = false;
+        foreach ($result->compactedMessages as $message) {
+            if (true === ($message->metadata['compact_summary'] ?? null)) {
+                $summaryFound = true;
+                break;
+            }
+        }
+        $this->assertTrue($summaryFound);
     }
 
     public function testWithoutModelThrowsStructuredToolCallException(): void
@@ -164,6 +171,147 @@ final class VirtualCompactionOrchestratorTest extends TestCase
         }
     }
 
+    public function testForcedCompactionKeepsAssistantToolCallWithMatchingToolResult(): void
+    {
+        $callId = 'call_00_nKk_scout';
+        $messages = [
+            new AgentMessage(role: 'user', content: [['type' => 'text', 'text' => str_repeat('session history ', 400)]]),
+            new AgentMessage(role: 'user', content: [['type' => 'text', 'text' => str_repeat('more history ', 400)]]),
+            $this->makeAssistantWithToolCalls([$callId]),
+            $this->makeToolResult($callId, 'scout completed successfully'),
+        ];
+
+        $platform = new FakePlatform([
+            new PlatformInvocationResult(
+                assistantMessage: new AssistantMessage(new Text('fork handoff summary')),
+                usage: [],
+                stopReason: 'stop',
+                error: null,
+            ),
+        ]);
+
+        $orchestrator = $this->createOrchestrator(
+            activeModelResolver: new FakeActiveModelResolver('openai/gpt-test'),
+            platform: $platform,
+            compactionConfig: new CompactionConfig(model: 'openai/gpt-test', keepRecentTokens: 50000),
+        );
+
+        $result = $orchestrator->compactForRun('parent-run-session-8', $messages, force: true);
+
+        $this->assertTrue($result->compacted);
+        $this->assertCount(1, $platform->invocations);
+        $this->assertTrue($result->compactedMessages[0]->metadata['compact_summary'] ?? false);
+    }
+
+    public function testIneffectiveFirstSummarizationRetriesWithTighterInstruction(): void
+    {
+        $messages = [
+            new AgentMessage(role: 'user', content: [['type' => 'text', 'text' => str_repeat('alpha ', 30)]]),
+            new AgentMessage(role: 'user', content: [['type' => 'text', 'text' => str_repeat('beta ', 30)]]),
+            new AgentMessage(role: 'user', content: [['type' => 'text', 'text' => str_repeat('gamma ', 30)]]),
+            new AgentMessage(role: 'user', content: [['type' => 'text', 'text' => str_repeat('delta tail ', 30)]]),
+        ];
+
+        $platform = new FakePlatform([
+            new PlatformInvocationResult(
+                assistantMessage: new AssistantMessage(new Text(str_repeat('verbose-summary-token ', 800))),
+                usage: [],
+                stopReason: 'stop',
+                error: null,
+            ),
+            new PlatformInvocationResult(
+                assistantMessage: new AssistantMessage(new Text('dense summary')),
+                usage: [],
+                stopReason: 'stop',
+                error: null,
+            ),
+        ]);
+
+        $orchestrator = $this->createOrchestrator(
+            activeModelResolver: new FakeActiveModelResolver('openai/gpt-test'),
+            platform: $platform,
+            compactionConfig: new CompactionConfig(model: 'openai/gpt-test', keepRecentTokens: 50000),
+        );
+
+        $result = $orchestrator->compactForRun('parent-run-retry', $messages, force: true);
+
+        $this->assertTrue($result->compacted);
+        $this->assertCount(2, $platform->invocations);
+        $retryMessages = $platform->invocations[1]->input->messages;
+        $retryPrompt = $retryMessages[\count($retryMessages) - 1]->content[0]['text'] ?? '';
+        $this->assertStringContainsString('materially shorter', $retryPrompt);
+    }
+
+    public function testTwoIneffectiveSummarizationAttemptsThrowTypedException(): void
+    {
+        $messages = [
+            new AgentMessage(role: 'user', content: [['type' => 'text', 'text' => str_repeat('alpha ', 30)]]),
+            new AgentMessage(role: 'user', content: [['type' => 'text', 'text' => str_repeat('beta ', 30)]]),
+            new AgentMessage(role: 'user', content: [['type' => 'text', 'text' => str_repeat('gamma ', 30)]]),
+            new AgentMessage(role: 'user', content: [['type' => 'text', 'text' => str_repeat('delta tail ', 30)]]),
+        ];
+
+        $platform = new FakePlatform([
+            new PlatformInvocationResult(
+                assistantMessage: new AssistantMessage(new Text(str_repeat('verbose-summary-token ', 800))),
+                usage: [],
+                stopReason: 'stop',
+                error: null,
+            ),
+            new PlatformInvocationResult(
+                assistantMessage: new AssistantMessage(new Text(str_repeat('still verbose summary ', 400))),
+                usage: [],
+                stopReason: 'stop',
+                error: null,
+            ),
+        ]);
+
+        $orchestrator = $this->createOrchestrator(
+            activeModelResolver: new FakeActiveModelResolver('openai/gpt-test'),
+            platform: $platform,
+            compactionConfig: new CompactionConfig(model: 'openai/gpt-test', keepRecentTokens: 50000),
+        );
+
+        try {
+            $orchestrator->compactForRun('parent-run-fail', $messages, force: true);
+            $this->fail('Expected ForkCompactionSummarizationException');
+        } catch (ForkCompactionSummarizationException $exception) {
+            $this->assertStringContainsString('ineffective (context did not shrink)', $exception->getMessage());
+        }
+
+        $this->assertCount(2, $platform->invocations);
+    }
+
+    /**
+     * @param list<string> $toolCallIds
+     */
+    private function makeAssistantWithToolCalls(array $toolCallIds): AgentMessage
+    {
+        $toolCalls = [];
+        foreach ($toolCallIds as $id) {
+            $toolCalls[] = [
+                'id' => $id,
+                'type' => 'function',
+                'function' => ['name' => 'subagent', 'arguments' => '{}'],
+            ];
+        }
+
+        return new AgentMessage(
+            role: 'assistant',
+            content: [['type' => 'text', 'text' => 'Launching scout']],
+            metadata: ['tool_calls' => $toolCalls],
+        );
+    }
+
+    private function makeToolResult(string $toolCallId, string $text): AgentMessage
+    {
+        return new AgentMessage(
+            role: 'tool',
+            content: [['type' => 'text', 'text' => $text]],
+            toolCallId: $toolCallId,
+        );
+    }
+
     private function createOrchestrator(
         ActiveModelResolverInterface $activeModelResolver,
         FakePlatform $platform,
@@ -171,6 +319,7 @@ final class VirtualCompactionOrchestratorTest extends TestCase
     ): VirtualCompactionOrchestrator {
         $appConfig = new AppConfig(tui: new TuiConfig(theme: 'test'), logging: new LoggingConfig(), cwd: $this->projectDir);
         $sessionCompactor = $this->createSessionCompactor($appConfig);
+        $boundarySelector = $this->createBoundarySelector();
         $compactionService = new CompactionService($sessionCompactor, $appConfig);
 
         return new VirtualCompactionOrchestrator(
@@ -179,7 +328,17 @@ final class VirtualCompactionOrchestratorTest extends TestCase
             compactionConfig: $compactionConfig,
             activeModelResolver: $activeModelResolver,
             platform: $platform,
+            boundarySelector: $boundarySelector,
+            tokenEstimator: new CompactionTokenEstimator(),
         );
+    }
+
+    private function createBoundarySelector(): CompactionBoundarySelector
+    {
+        $tokenEstimator = new CompactionTokenEstimator();
+        $sequenceValidator = new AgentMessageToolCallSequenceValidator();
+
+        return new CompactionBoundarySelector($tokenEstimator, $sequenceValidator);
     }
 
     private function createSessionCompactor(AppConfig $appConfig): SessionCompactor
