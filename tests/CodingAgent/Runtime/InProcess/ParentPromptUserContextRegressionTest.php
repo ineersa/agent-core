@@ -6,16 +6,19 @@ namespace Ineersa\CodingAgent\Tests\Runtime\InProcess;
 
 use Ineersa\AgentCore\Application\Handler\MessageIdempotencyService;
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
+use Ineersa\AgentCore\Application\Handler\StepDispatcher;
 use Ineersa\AgentCore\Application\Pipeline\RunCommit;
 use Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor;
 use Ineersa\AgentCore\Application\Pipeline\RunOrchestrator;
 use Ineersa\AgentCore\Application\Pipeline\StartRunHandler;
-use Ineersa\AgentCore\Application\Handler\StepDispatcher;
+use Ineersa\AgentCore\Application\Replay\PromptStateReplayService;
+use Ineersa\AgentCore\Application\Replay\ReplayEventPreparer;
 use Ineersa\AgentCore\Contract\AgentRunnerInterface;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Message\StartRun;
 use Ineersa\AgentCore\Domain\Message\StartRunPayload;
 use Ineersa\AgentCore\Domain\Run\StartRunInput;
+use Ineersa\AgentCore\Infrastructure\Storage\HotPromptStateStore;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryRunStore;
 use Ineersa\AgentCore\Infrastructure\Storage\RunEventStore;
@@ -30,9 +33,6 @@ use Ineersa\CodingAgent\Tests\Agent\Execution\Support\PromptContractTestSupport;
 use Ineersa\CodingAgent\Tests\Agent\Execution\Support\ProviderBoundaryCaptureSupport;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tool\ToolRegistryInterface;
-use Ineersa\AgentCore\Application\Replay\PromptStateReplayService;
-use Ineersa\AgentCore\Application\Replay\ReplayEventPreparer;
-use Ineersa\AgentCore\Infrastructure\Storage\HotPromptStateStore;
 use PHPUnit\Framework\Attributes\Group;
 use Psr\Log\NullLogger;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
@@ -54,7 +54,7 @@ final class ParentPromptUserContextRegressionTest extends KernelTestCase
 
     protected function setUp(): void
     {
-        $this->isolatedCwd = TestDirectoryIsolation::createProjectTempDir('hatfield-test', 0o750);
+        $this->isolatedCwd = TestDirectoryIsolation::createOsTempDir('hatfield-test', 0o750);
         TestDirectoryIsolation::createHatfieldTree($this->isolatedCwd);
         $this->provisionDeterministicParentContextResources($this->isolatedCwd);
 
@@ -89,14 +89,6 @@ final class ParentPromptUserContextRegressionTest extends KernelTestCase
         }
 
         restore_exception_handler();
-    }
-
-    protected static function createKernel(array $options = []): Kernel
-    {
-        $env = $options['environment'] ?? $_ENV['APP_ENV'] ?? $_SERVER['APP_ENV'] ?? 'test';
-        $debug = (bool) ($options['debug'] ?? $_ENV['APP_DEBUG'] ?? $_SERVER['APP_DEBUG'] ?? false);
-
-        return new Kernel($env, $debug);
     }
 
     public function testParentStartRunPreservesMessageOrderAndProviderRepresentation(): void
@@ -180,6 +172,14 @@ final class ParentPromptUserContextRegressionTest extends KernelTestCase
         $capture = ProviderBoundaryCaptureSupport::create(self::getContainer()->get(\Symfony\AI\Agent\Toolbox\ToolboxInterface::class));
         $capture->captureForRun($sessionId, $canonical);
         PromptContractTestSupport::assertProviderUserMessagesContainSentinelOnce($capture->capturedProviderMessages(), $sentinel);
+    }
+
+    protected static function createKernel(array $options = []): Kernel
+    {
+        $env = $options['environment'] ?? $_ENV['APP_ENV'] ?? $_SERVER['APP_ENV'] ?? 'test';
+        $debug = (bool) ($options['debug'] ?? $_ENV['APP_DEBUG'] ?? $_SERVER['APP_DEBUG'] ?? false);
+
+        return new Kernel($env, $debug);
     }
 
     private function provisionDeterministicParentContextResources(string $cwd): void

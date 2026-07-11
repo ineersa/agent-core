@@ -9,11 +9,11 @@ use Ineersa\AgentCore\Contract\RunStoreInterface;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
-use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryRunStore;
 use Ineersa\AgentCore\Infrastructure\Storage\RunEventStore;
 use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunDirectory;
 use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunEventStoreFactory;
+use Ineersa\CodingAgent\Agent\Context\AgentsContextBuilder;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionCatalog;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionDTO;
 use Ineersa\CodingAgent\Agent\Definition\McpAgentModeEnum;
@@ -26,8 +26,8 @@ use Ineersa\CodingAgent\Agent\Execution\SubagentChildProgressSummaryBuilder;
 use Ineersa\CodingAgent\Agent\Execution\SubagentExecutionService;
 use Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader;
 use Ineersa\CodingAgent\Agent\Execution\SubagentToolSetResolver;
-use Ineersa\CodingAgent\Mcp\Catalog\McpToolCatalogStoreInterface;
 use Ineersa\CodingAgent\Config\AgentsConfig;
+use Ineersa\CodingAgent\Mcp\Catalog\McpToolCatalogStoreInterface;
 use Ineersa\CodingAgent\Skills\SkillsContextBuilder;
 use Ineersa\CodingAgent\SystemPrompt\SystemPromptBuilder;
 use Ineersa\CodingAgent\Tests\Agent\Execution\Support\PipelineCapturingAgentRunner;
@@ -60,26 +60,26 @@ final class SubagentPromptUserContextContractTest extends IsolatedKernelTestCase
 
         $parentRunStore = new InMemoryRunStore();
         $parentRunStore->compareAndSwap(new RunState(
-                runId: $parentRunId,
-                status: RunStatus::Running,
-                version: 1,
-                turnNo: 0,
-                lastSeq: 0,
-                isStreaming: false,
-                streamingMessage: null,
-                pendingToolCalls: [],
-                errorMessage: null,
-                messages: [
-                    new AgentMessage(role: 'system', content: [['type' => 'text', 'text' => 'parent-system']]),
-                    new AgentMessage(
-                        role: 'user-context',
-                        content: [['type' => 'text', 'text' => $agentsContext]],
-                        metadata: ['source' => 'agents_context'],
-                    ),
-                ],
-                activeStepId: 'parent-step',
-                retryableFailure: false,
-            ),
+            runId: $parentRunId,
+            status: RunStatus::Running,
+            version: 1,
+            turnNo: 0,
+            lastSeq: 0,
+            isStreaming: false,
+            streamingMessage: null,
+            pendingToolCalls: [],
+            errorMessage: null,
+            messages: [
+                new AgentMessage(role: 'system', content: [['type' => 'text', 'text' => 'parent-system']]),
+                new AgentMessage(
+                    role: 'user-context',
+                    content: [['type' => 'text', 'text' => $agentsContext]],
+                    metadata: ['source' => 'agents_context'],
+                ),
+            ],
+            activeStepId: 'parent-step',
+            retryableFailure: false,
+        ),
             0,
         );
 
@@ -146,19 +146,19 @@ final class SubagentPromptUserContextContractTest extends IsolatedKernelTestCase
     {
         $parentRunStore = new InMemoryRunStore();
         $parentRunStore->compareAndSwap(new RunState(
-                runId: 'parent-mcp',
-                status: RunStatus::Running,
-                version: 1,
-                turnNo: 0,
-                lastSeq: 0,
-                isStreaming: false,
-                streamingMessage: null,
-                pendingToolCalls: [],
-                errorMessage: null,
-                messages: [],
-                activeStepId: 'p',
-                retryableFailure: false,
-            ),
+            runId: 'parent-mcp',
+            status: RunStatus::Running,
+            version: 1,
+            turnNo: 0,
+            lastSeq: 0,
+            isStreaming: false,
+            streamingMessage: null,
+            pendingToolCalls: [],
+            errorMessage: null,
+            messages: [],
+            activeStepId: 'p',
+            retryableFailure: false,
+        ),
             0,
         );
 
@@ -242,25 +242,25 @@ final class SubagentPromptUserContextContractTest extends IsolatedKernelTestCase
     {
         $parentRunStore = new InMemoryRunStore();
         $parentRunStore->compareAndSwap(new RunState(
-                runId: 'parent-no-agents-def',
-                status: RunStatus::Running,
-                version: 1,
-                turnNo: 0,
-                lastSeq: 0,
-                isStreaming: false,
-                streamingMessage: null,
-                pendingToolCalls: [],
-                errorMessage: null,
-                messages: [
-                    new AgentMessage(
-                        role: 'user-context',
-                        content: [['type' => 'text', 'text' => '<agents_instructions><available_agents></available_agents></agents_instructions>']],
-                        metadata: ['source' => 'agents_definitions_context'],
-                    ),
-                ],
-                activeStepId: 'p',
-                retryableFailure: false,
-            ),
+            runId: 'parent-no-agents-def',
+            status: RunStatus::Running,
+            version: 1,
+            turnNo: 0,
+            lastSeq: 0,
+            isStreaming: false,
+            streamingMessage: null,
+            pendingToolCalls: [],
+            errorMessage: null,
+            messages: [
+                new AgentMessage(
+                    role: 'user-context',
+                    content: [['type' => 'text', 'text' => '<agents_instructions><available_agents></available_agents></agents_instructions>']],
+                    metadata: ['source' => 'agents_definitions_context'],
+                ),
+            ],
+            activeStepId: 'p',
+            retryableFailure: false,
+        ),
             0,
         );
 
@@ -323,6 +323,7 @@ final class SubagentPromptUserContextContractTest extends IsolatedKernelTestCase
             agentsConfig: new AgentsConfig(subagentToolTimeoutSeconds: 2),
             progressSnapshotBuilder: new \Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder(),
             childProgressSummaryBuilder: new SubagentChildProgressSummaryBuilder(self::getContainer()->get(AgentChildRunEventStoreFactory::class)),
+            agentsContextBuilder: self::getContainer()->get(AgentsContextBuilder::class),
             appConfig: self::getContainer()->get(\Ineersa\CodingAgent\Config\AppConfig::class),
         );
     }

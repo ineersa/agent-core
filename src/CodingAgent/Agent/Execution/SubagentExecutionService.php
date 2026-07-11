@@ -68,7 +68,7 @@ final class SubagentExecutionService
         private readonly SubagentProgressSnapshotBuilder $progressSnapshotBuilder,
         private readonly SubagentChildProgressSummaryBuilder $childProgressSummaryBuilder,
         private readonly AppConfig $appConfig,
-        private readonly ?AgentsContextBuilder $agentsContextBuilder = null,
+        private readonly AgentsContextBuilder $agentsContextBuilder,
         private readonly ClockInterface $clock = new MonotonicClock(),
     ) {
     }
@@ -129,7 +129,7 @@ final class SubagentExecutionService
         $this->childRunDirectory->register($entry);
 
         // 6. Resolve inherited project/AGENTS/skills context for the child.
-        $launchContext = $this->resolveChildLaunchContext($parentRunId, $definition, $allowSubagentLaunch);
+        $launchContext = $this->resolveChildLaunchContext($parentRunId, $definition, $allowedTools);
 
         // 7. Build prompt and messages.
         $prompt = $this->promptBuilder->build(
@@ -444,7 +444,7 @@ final class SubagentExecutionService
                 $policy = $this->policyResolver->resolve($launch['definition'], $parentRunId, $allowSubagentLaunch);
                 $allowedTools = $policy['tools'];
 
-                $launchContext = $this->resolveChildLaunchContext($parentRunId, $launch['definition'], $allowSubagentLaunch);
+                $launchContext = $this->resolveChildLaunchContext($parentRunId, $launch['definition'], $allowedTools);
 
                 $prompt = $this->promptBuilder->build(
                     definition: $launch['definition'],
@@ -1621,9 +1621,11 @@ TXT;
     }
 
     /**
+     * @param list<string> $allowedTools final resolved child tool allowlist
+     *
      * @return array{agentsMd: string, skillsContext: string, agentsDefinitionsContext: string}
      */
-    private function resolveChildLaunchContext(string $parentRunId, AgentDefinitionDTO $definition, bool $allowSubagentLaunch): array
+    private function resolveChildLaunchContext(string $parentRunId, AgentDefinitionDTO $definition, array $allowedTools): array
     {
         $inheritProject = $definition->inheritProjectContext;
         $inheritAgents = $definition->inheritAgentsMd;
@@ -1634,9 +1636,9 @@ TXT;
         $skillsContext = $this->resolveSkillsContextForChild($definition);
 
         $agentsDefinitionsContext = '';
-        if ($allowSubagentLaunch) {
+        if (\in_array('subagent', $allowedTools, true)) {
             $agentsDefinitionsContext = $this->extractUserContextBySource($parentRunId, 'agents_definitions_context');
-            if ('' === trim($agentsDefinitionsContext) && null !== $this->agentsContextBuilder) {
+            if ('' === trim($agentsDefinitionsContext)) {
                 $agentsDefinitionsContext = $this->agentsContextBuilder->build();
             }
         }

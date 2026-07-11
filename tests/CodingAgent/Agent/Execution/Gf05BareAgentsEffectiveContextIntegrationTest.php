@@ -7,10 +7,11 @@ namespace Ineersa\CodingAgent\Tests\Agent\Execution;
 use Ineersa\AgentCore\Contract\AgentRunnerInterface;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\RunStoreInterface;
-use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Domain\Run\RunState;
+use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryRunStore;
 use Ineersa\AgentCore\Infrastructure\Storage\RunEventStore;
+use Ineersa\CodingAgent\Agent\Context\AgentsContextBuilder;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionCatalog;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionDTO;
 use Ineersa\CodingAgent\Agent\Definition\McpAgentModeEnum;
@@ -146,6 +147,7 @@ final class Gf05BareAgentsEffectiveContextIntegrationTest extends PerMethodIsola
             agentsConfig: new AgentsConfig(subagentToolTimeoutSeconds: 2),
             progressSnapshotBuilder: new \Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder(),
             childProgressSummaryBuilder: new SubagentChildProgressSummaryBuilder(self::getContainer()->get(\Ineersa\CodingAgent\Agent\Artifact\AgentChildRunEventStoreFactory::class)),
+            agentsContextBuilder: self::getContainer()->get(AgentsContextBuilder::class),
             appConfig: self::getContainer()->get(\Ineersa\CodingAgent\Config\AppConfig::class),
         );
     }

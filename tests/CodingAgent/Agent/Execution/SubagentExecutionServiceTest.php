@@ -174,6 +174,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             agentsConfig: new AgentsConfig(),
             progressSnapshotBuilder: new \Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder(),
             childProgressSummaryBuilder: new SubagentChildProgressSummaryBuilder(self::getContainer()->get(AgentChildRunEventStoreFactory::class)),
+            agentsContextBuilder: self::getContainer()->get(AgentsContextBuilder::class),
             appConfig: self::getContainer()->get(AppConfig::class),
         );
 
@@ -250,6 +251,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             agentsConfig: new AgentsConfig(),
             progressSnapshotBuilder: new \Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder(),
             childProgressSummaryBuilder: new SubagentChildProgressSummaryBuilder(self::getContainer()->get(AgentChildRunEventStoreFactory::class)),
+            agentsContextBuilder: self::getContainer()->get(AgentsContextBuilder::class),
             appConfig: self::getContainer()->get(AppConfig::class),
         );
 
@@ -322,6 +324,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             agentsConfig: new AgentsConfig(),
             progressSnapshotBuilder: new \Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder(),
             childProgressSummaryBuilder: new SubagentChildProgressSummaryBuilder(self::getContainer()->get(AgentChildRunEventStoreFactory::class)),
+            agentsContextBuilder: self::getContainer()->get(AgentsContextBuilder::class),
             appConfig: self::getContainer()->get(AppConfig::class),
         );
 
@@ -396,6 +399,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             agentsConfig: new AgentsConfig(),
             progressSnapshotBuilder: new \Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder(),
             childProgressSummaryBuilder: new SubagentChildProgressSummaryBuilder(self::getContainer()->get(AgentChildRunEventStoreFactory::class)),
+            agentsContextBuilder: self::getContainer()->get(AgentsContextBuilder::class),
             appConfig: self::getContainer()->get(AppConfig::class),
         );
 
@@ -430,6 +434,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             agentsConfig: new AgentsConfig(),
             progressSnapshotBuilder: new \Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder(),
             childProgressSummaryBuilder: new SubagentChildProgressSummaryBuilder(self::getContainer()->get(AgentChildRunEventStoreFactory::class)),
+            agentsContextBuilder: self::getContainer()->get(AgentsContextBuilder::class),
             appConfig: self::getContainer()->get(AppConfig::class),
         );
 
@@ -473,6 +478,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             agentsConfig: new AgentsConfig(),
             progressSnapshotBuilder: new \Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder(),
             childProgressSummaryBuilder: new SubagentChildProgressSummaryBuilder(self::getContainer()->get(AgentChildRunEventStoreFactory::class)),
+            agentsContextBuilder: self::getContainer()->get(AgentsContextBuilder::class),
             appConfig: self::getContainer()->get(AppConfig::class),
         );
 
@@ -596,6 +602,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             agentsConfig: new AgentsConfig(),
             progressSnapshotBuilder: new \Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder(),
             childProgressSummaryBuilder: new SubagentChildProgressSummaryBuilder(self::getContainer()->get(AgentChildRunEventStoreFactory::class)),
+            agentsContextBuilder: self::getContainer()->get(AgentsContextBuilder::class),
             appConfig: self::getContainer()->get(AppConfig::class),
         );
 
@@ -709,6 +716,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             agentsConfig: new AgentsConfig(),
             progressSnapshotBuilder: new \Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder(),
             childProgressSummaryBuilder: new SubagentChildProgressSummaryBuilder(self::getContainer()->get(AgentChildRunEventStoreFactory::class)),
+            agentsContextBuilder: self::getContainer()->get(AgentsContextBuilder::class),
             appConfig: self::getContainer()->get(AppConfig::class),
         );
 

@@ -15,18 +15,18 @@ use Ineersa\AgentCore\Infrastructure\SymfonyAi\DynamicToolDescriptionProcessor;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmPlatformAdapter;
 use Psr\Log\NullLogger;
 use Symfony\AI\Agent\Toolbox\ToolboxInterface;
-use Symfony\AI\Platform\Result\RawResultInterface;
-use Symfony\AI\Platform\ResultConverterInterface;
-use Symfony\AI\Platform\TokenUsage\TokenUsageExtractorInterface;
 use Symfony\AI\Platform\Model;
 use Symfony\AI\Platform\ModelCatalog\FallbackModelCatalog;
 use Symfony\AI\Platform\ModelClientInterface;
 use Symfony\AI\Platform\Platform;
 use Symfony\AI\Platform\Provider;
 use Symfony\AI\Platform\Result\InMemoryRawResult;
+use Symfony\AI\Platform\Result\RawResultInterface;
 use Symfony\AI\Platform\Result\ResultInterface;
 use Symfony\AI\Platform\Result\Stream\Delta\TextDelta;
 use Symfony\AI\Platform\Result\StreamResult;
+use Symfony\AI\Platform\ResultConverterInterface;
+use Symfony\AI\Platform\TokenUsage\TokenUsageExtractorInterface;
 use Symfony\AI\Platform\TokenUsage\TokenUsageInterface;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 
@@ -232,15 +232,58 @@ final readonly class FakeStreamResultConverterForCapture implements ResultConver
 
 final class FakeTokenUsageForCapture implements TokenUsageInterface
 {
-    public function getPromptTokens(): ?int { return 1; }
-    public function getCompletionTokens(): ?int { return 1; }
-    public function getThinkingTokens(): ?int { return null; }
-    public function getToolTokens(): ?int { return null; }
-    public function getCachedTokens(): ?int { return null; }
-    public function getCacheCreationTokens(): ?int { return null; }
-    public function getCacheReadTokens(): ?int { return null; }
-    public function getRemainingTokens(): ?int { return null; }
-    public function getRemainingTokensMinute(): ?int { return null; }
-    public function getRemainingTokensMonth(): ?int { return null; }
-    public function getTotalTokens(): ?int { return 2; }
+    public function getPromptTokens(): ?int
+    {
+        return 1;
+    }
+
+    public function getCompletionTokens(): ?int
+    {
+        return 1;
+    }
+
+    public function getThinkingTokens(): ?int
+    {
+        return null;
+    }
+
+    public function getToolTokens(): ?int
+    {
+        return null;
+    }
+
+    public function getCachedTokens(): ?int
+    {
+        return null;
+    }
+
+    public function getCacheCreationTokens(): ?int
+    {
+        return null;
+    }
+
+    public function getCacheReadTokens(): ?int
+    {
+        return null;
+    }
+
+    public function getRemainingTokens(): ?int
+    {
+        return null;
+    }
+
+    public function getRemainingTokensMinute(): ?int
+    {
+        return null;
+    }
+
+    public function getRemainingTokensMonth(): ?int
+    {
+        return null;
+    }
+
+    public function getTotalTokens(): ?int
+    {
+        return 2;
+    }
 }
