@@ -7,8 +7,12 @@ namespace Ineersa\AgentCore\Application\Handler;
 use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
 
 /**
- * Thrown when a {@see RunStateRebuilderInterface} implementation cannot rebuild a valid RunState
- * from the canonical event stream because of duplicate sequence numbers in persisted history.
+ * Typed corruption signal when duplicate sequence numbers are detected in persisted run event history.
+ *
+ * Raised by replay rebuilders ({@see RunStateRebuilderInterface} implementations such as session replay)
+ * and by rewind preflight ({@see \Ineersa\CodingAgent\Session\Rewind\SessionRewindService::rewind()})
+ * before appending a LeafSet event. Use {@see self::REASON_DUPLICATE_SEQUENCES} and {@see self::isDuplicateSequences()}
+ * to distinguish this case from other failures.
  *
  * Sequence gaps (for example after cursor allocation without JSONL append) are tolerated and do not throw.
  * Incompatible or corrupt JSONL payload shapes are handled separately (skipped lines, denormalization failures, or other exceptions).

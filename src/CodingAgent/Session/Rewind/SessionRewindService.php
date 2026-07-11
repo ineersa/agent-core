@@ -50,8 +50,10 @@ final readonly class SessionRewindService implements RunRewindServiceInterface
      *
      * @return array{rebuiltState: RunState, leafSetSeq: int}
      *
-     * @throws \RuntimeException when the target turn does not exist,
-     *                           no events are found, or persistence fails (CAS conflict)
+     * @throws RunStateReplayException when persisted event history contains duplicate sequence numbers
+     *                                 ({@see RunStateReplayException::REASON_DUPLICATE_SEQUENCES})
+     * @throws \RuntimeException       when the target turn does not exist, no events are found,
+     *                                 sequenced store is unavailable, rebuild fails, or persistence fails (CAS conflict)
      */
     public function rewind(string $runId, int $targetTurnNo): array
     {
