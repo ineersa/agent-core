@@ -73,7 +73,7 @@ final class WriteFileTool implements HatfieldToolProviderInterface, ToolHandlerI
                 throw new ToolCallException(\sprintf('Failed to write file "%s".', $resolvedPath), retryable: true, hint: 'Check file permissions and available disk space.');
             }
 
-            return \sprintf('Successfully wrote %d bytes to %s', $bytesWritten, $path);
+            return \sprintf('Successfully wrote %d bytes to %s', $bytesWritten, $resolvedPath);
         });
     }
 
