@@ -72,6 +72,7 @@ final class ImagePasteInputListener implements TuiListenerRegistrar
                         $logger->info('Clipboard image paste skipped', [
                             'component' => 'ImagePasteInputListener',
                             'event_type' => 'clipboard_paste_skipped',
+                            'session_id' => $state->sessionId,
                             'outcome' => $read->outcome->value,
                             'diagnostic' => $read->diagnostic,
                         ]);

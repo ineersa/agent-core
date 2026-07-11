@@ -100,10 +100,7 @@ final class TuiImagePasteE2eTest extends TestCase
             $this->tmux->sendKey($pane, 'C-d');
         } catch (\Throwable $e) {
             $this->saveAnsiSnapshot($pane, 'image-paste-FAILURE');
-            try {
-                $this->tmux->sendKey($pane, 'C-d');
-            } catch (\Throwable) {
-            }
+            $this->tmux->sendKey($pane, 'C-d');
             throw $e;
         }
     }
@@ -147,7 +144,7 @@ final class TuiImagePasteE2eTest extends TestCase
     private function createIsolatedProjectDir(): string
     {
         $dir = TestDirectoryIsolation::createProjectTempDir('tui-e2e-paste');
-        @mkdir($dir.'/.hatfield', 0o777, true);
+        TestDirectoryIsolation::createHatfieldTree($dir, withSessions: true, permissions: 0o777);
 
         $settings = [
             'ai' => [
@@ -210,7 +207,7 @@ final class TuiImagePasteE2eTest extends TestCase
         $yaml = \Symfony\Component\Yaml\Yaml::dump($settings, 6, 4);
         file_put_contents($dir.'/.hatfield/settings.yaml', $yaml);
 
-        @mkdir($dir.'/home/.hatfield', 0o777, true);
+        TestDirectoryIsolation::createHatfieldTree($dir.'/home', withSessions: true, permissions: 0o777);
         file_put_contents($dir.'/home/.hatfield/settings.yaml', $yaml);
 
         return $dir;

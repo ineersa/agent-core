@@ -159,7 +159,14 @@ final class ClipboardImageReader implements ClipboardImageReaderInterface
             $which->run();
 
             return $which->isSuccessful();
-        } catch (\Throwable) {
+        } catch (\Throwable $e) {
+            $this->logger->debug('Clipboard helper lookup failed', [
+                'component' => 'ClipboardImageReader',
+                'event_type' => 'clipboard_command_probe_failed',
+                'command' => $cmd,
+                'exception' => $e,
+            ]);
+
             return false;
         }
     }

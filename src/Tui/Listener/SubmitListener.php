@@ -283,6 +283,11 @@ final class SubmitListener implements TuiListenerRegistrar
         }
 
         try {
+            // Capture first-run intent before pasted-image promotion may create a session id
+            // (e.g. lazy /new --model draft still has handle=null and a preconfigured request).
+            $shouldStartFirstRun = null === $state->handle
+                && (null === $state->request || '' === $state->sessionId);
+
             $text = self::promotePastedImagesInPrompt(
                 $text,
                 $state,
@@ -297,7 +302,7 @@ final class SubmitListener implements TuiListenerRegistrar
             }
 
             // Start a run if this is the first message
-            if (null === $state->handle && (null === $state->request || '' === $state->sessionId)) {
+            if ($shouldStartFirstRun) {
                 // ── Draft session promotion ──
                 // If this is a lazy draft (sessionId === ''), create the
                 // real session row now so no orphan records are left when
