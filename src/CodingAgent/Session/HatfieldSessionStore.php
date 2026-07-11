@@ -321,9 +321,12 @@ final class HatfieldSessionStore
     {
         $sessionDir = $this->getSessionDir($sessionId);
         $attachments = $sessionDir.'/attachments';
-        if (!is_dir($attachments) && !@mkdir($attachments, 0o777, true) && !is_dir($attachments)) {
-            throw new \RuntimeException(\sprintf('Failed to create session attachments directory for session "%s".', $sessionId));
+        if (!is_dir($attachments)) {
+            if (!@mkdir($attachments, 0o700, true) && !is_dir($attachments)) {
+                throw new \RuntimeException(\sprintf('Failed to create session attachments directory for session "%s".', $sessionId));
+            }
         }
+        @chmod($attachments, 0o700);
 
         return $attachments;
     }

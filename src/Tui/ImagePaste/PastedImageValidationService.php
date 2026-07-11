@@ -10,6 +10,9 @@ use Psr\Log\LoggerInterface;
 
 /**
  * Validates pasted image bytes using the same MIME/dimension limits as view_image.
+ *
+ * Validation runs at paste (Ctrl+V) and again at submission so tampering or truncation
+ * of staged files under /tmp is detected before promotion into session attachments.
  */
 final class PastedImageValidationService
 {

@@ -6,6 +6,7 @@ namespace Ineersa\Tui\Tests\Listener;
 
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Config\ImageToolConfig;
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\Tui\ImagePaste\ClipboardImageReadResultDTO;
 use Ineersa\Tui\ImagePaste\PastedImageValidationService;
 use Ineersa\Tui\Listener\ImagePasteInputListener;
@@ -23,13 +24,25 @@ final class ImagePasteInputVirtualTest extends TestCase
 {
     use TuiRuntimeContextBuilderTrait;
 
+    private string $tempDir;
+
+    protected function setUp(): void
+    {
+        $this->tempDir = TestDirectoryIsolation::createOsTempDir('image-paste-virtual');
+    }
+
+    protected function tearDown(): void
+    {
+        TestDirectoryIsolation::removeDirectory($this->tempDir);
+        parent::tearDown();
+    }
+
     #[Test]
     public function ctrlVInsertsImagePlaceholderOnRealInputPath(): void
     {
         $png = file_get_contents(__DIR__.'/../E2E/fixtures/paste-test-1x1.png');
         $this->assertNotFalse($png);
-        $temp = tempnam(sys_get_temp_dir(), 'hatfield-paste-test-');
-        $this->assertNotFalse($temp);
+        $temp = $this->tempDir.'/paste-virtual.png';
         file_put_contents($temp, $png);
 
         $harness = new VirtualTuiHarness(sessionId: 'paste-virtual');

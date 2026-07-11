@@ -74,7 +74,7 @@ final class TuiImagePasteE2eTest extends TestCase
 
             $this->tmux->waitForCallback(
                 $pane,
-                static fn (string $cap): bool => str_contains($cap, 'Image paste acknowledged') || str_contains($cap, '◇'),
+                static fn (string $cap): bool => str_contains($cap, 'Image paste acknowledged'),
                 timeout: 20.0,
                 message: 'Expected replay assistant response after image paste submit',
                 history: 3000,
@@ -83,7 +83,7 @@ final class TuiImagePasteE2eTest extends TestCase
             $fullCapture = $this->tmux->capturePlainWithHistory($pane, 3000);
             $this->assertStringContainsString('view_image', $fullCapture);
 
-            $sessionId = $this->extractSessionIdFromFooter($fullCapture);
+            $sessionId = $this->resolveSingleCreatedSessionId();
             $this->assertNotNull($sessionId);
 
             $eventsPath = $this->testProjectDir.'/.hatfield/sessions/'.$sessionId.'/events.jsonl';
@@ -210,6 +210,21 @@ final class TuiImagePasteE2eTest extends TestCase
         file_put_contents($dir.'/home/.hatfield/settings.yaml', $yaml);
 
         return $dir;
+    }
+
+    private function resolveSingleCreatedSessionId(): ?string
+    {
+        $sessionsRoot = $this->testProjectDir.'/.hatfield/sessions';
+        if (!is_dir($sessionsRoot)) {
+            return null;
+        }
+
+        $dirs = array_values(array_filter(scandir($sessionsRoot) ?: [], static fn (string $entry): bool => !\in_array($entry, ['.', '..'], true) && is_dir($sessionsRoot.'/'.$entry)));
+        if (1 !== \count($dirs)) {
+            return null;
+        }
+
+        return $dirs[0];
     }
 
     private function extractSessionIdFromFooter(string $capture): ?string

@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\ImagePaste;
 
+use Ineersa\CodingAgent\Config\ImageToolConfig;
 use Psr\Log\LoggerInterface;
+use Symfony\Component\Process\ExecutableFinder;
 use Symfony\Component\Process\Process;
 
 /**
@@ -15,10 +17,10 @@ use Symfony\Component\Process\Process;
  */
 final class ClipboardImageReader implements ClipboardImageReaderInterface
 {
-    private const int MAX_CLIPBOARD_BYTES = 12_582_912;
     private const float PROCESS_TIMEOUT = 5.0;
 
     public function __construct(
+        private readonly ImageToolConfig $imageConfig,
         private readonly LoggerInterface $logger,
     ) {
     }
@@ -33,7 +35,7 @@ final class ClipboardImageReader implements ClipboardImageReaderInterface
         }
 
         try {
-            $bytes = $this->captureFromBackend($backend);
+            return $this->captureFromBackend($backend);
         } catch (\Throwable $e) {
             $this->logger->info('Clipboard image read failed', [
                 'component' => 'ClipboardImageReader',
@@ -47,23 +49,6 @@ final class ClipboardImageReader implements ClipboardImageReaderInterface
                 $e->getMessage(),
             );
         }
-
-        if (null === $bytes || '' === $bytes) {
-            return ClipboardImageReadResultDTO::noImage(
-                'Clipboard does not contain a supported image (JPEG, PNG, GIF, or WebP).',
-            );
-        }
-
-        if (\strlen($bytes) > self::MAX_CLIPBOARD_BYTES) {
-            return ClipboardImageReadResultDTO::failed('Clipboard image is too large.');
-        }
-
-        $tempPath = $this->writeTempFile($bytes);
-        if (null === $tempPath) {
-            return ClipboardImageReadResultDTO::failed('Failed to stage clipboard image.');
-        }
-
-        return ClipboardImageReadResultDTO::image($tempPath);
     }
 
     /**
@@ -71,21 +56,21 @@ final class ClipboardImageReader implements ClipboardImageReaderInterface
      */
     private function resolveBackend(): ?array
     {
-        if ($this->isWayland() && $this->commandExists('wl-paste')) {
+        if ($this->isWayland() && null !== $this->findExecutable('wl-paste')) {
             return [
                 'name' => 'wl-paste',
                 'argv' => ['wl-paste', '--type', 'image/png', '--no-newline'],
             ];
         }
 
-        if ($this->commandExists('xclip')) {
+        if (null !== $this->findExecutable('xclip')) {
             return [
                 'name' => 'xclip',
                 'argv' => ['xclip', '-selection', 'clipboard', '-t', 'image/png', '-o'],
             ];
         }
 
-        if ('Darwin' === \PHP_OS_FAMILY && $this->commandExists('pngpaste')) {
+        if ('Darwin' === \PHP_OS_FAMILY && null !== $this->findExecutable('pngpaste')) {
             return [
                 'name' => 'pngpaste',
                 'argv' => ['pngpaste', '-'],
@@ -98,30 +83,117 @@ final class ClipboardImageReader implements ClipboardImageReaderInterface
     /**
      * @param array{name: string, argv: list<string>} $backend
      */
-    private function captureFromBackend(array $backend): ?string
+    private function captureFromBackend(array $backend): ClipboardImageReadResultDTO
     {
+        $maxBytes = $this->imageConfig->maxBytes;
+        $tempPath = $this->createEmptyTempFile();
+        if (null === $tempPath) {
+            return ClipboardImageReadResultDTO::failed('Failed to stage clipboard image.');
+        }
+
         $process = new Process($backend['argv']);
         $process->setTimeout(self::PROCESS_TIMEOUT);
-        $process->run();
+        $process->start();
 
-        if (!$process->isSuccessful()) {
-            $exit = $process->getExitCode();
-            if (null !== $exit && 1 === $exit) {
-                return null;
+        $written = 0;
+        $tooLarge = false;
+
+        while ($process->isRunning()) {
+            $buffer = $process->getIncrementalOutput();
+            if ('' !== $buffer) {
+                $length = \strlen($buffer);
+                if ($written + $length > $maxBytes) {
+                    $tooLarge = true;
+                    $process->stop(0, 15 /* SIGTERM */);
+                    break;
+                }
+
+                $fh = @fopen($tempPath, 'ab');
+                if (false === $fh) {
+                    $process->stop(0, 15 /* SIGTERM */);
+                    @unlink($tempPath);
+
+                    return ClipboardImageReadResultDTO::failed('Failed to stage clipboard image.');
+                }
+
+                $bytesWritten = @fwrite($fh, $buffer);
+                @fclose($fh);
+
+                if (false === $bytesWritten) {
+                    $process->stop(0, 15 /* SIGTERM */);
+                    @unlink($tempPath);
+
+                    return ClipboardImageReadResultDTO::failed('Failed to stage clipboard image.');
+                }
+
+                $written += $bytesWritten;
             }
 
-            throw new \RuntimeException('' !== $process->getErrorOutput() ? $process->getErrorOutput() : 'clipboard command failed');
+            usleep(10_000);
         }
 
-        $output = $process->getOutput();
-        if ('' === $output) {
-            return null;
+        $buffer = $process->getIncrementalOutput();
+        if (!$tooLarge && '' !== $buffer) {
+            $length = \strlen($buffer);
+            if ($written + $length > $maxBytes) {
+                $tooLarge = true;
+            } else {
+                $fh = @fopen($tempPath, 'ab');
+                if (false !== $fh) {
+                    $bytesWritten = @fwrite($fh, $buffer);
+                    @fclose($fh);
+                    if (false !== $bytesWritten) {
+                        $written += $bytesWritten;
+                    }
+                }
+            }
         }
 
-        return $output;
+        if ($tooLarge) {
+            @unlink($tempPath);
+
+            return ClipboardImageReadResultDTO::failed('Clipboard image is too large.');
+        }
+
+        $process->wait();
+        $stderr = trim($process->getErrorOutput());
+
+        if (!$process->isSuccessful()) {
+            @unlink($tempPath);
+            $exit = $process->getExitCode();
+
+            if ($this->isNoImageExit($backend['name'], $exit, $stderr, $written)) {
+                return ClipboardImageReadResultDTO::noImage(
+                    'Clipboard does not contain a supported image (JPEG, PNG, GIF, or WebP).',
+                );
+            }
+
+            $this->logger->info('Clipboard backend returned error', [
+                'component' => 'ClipboardImageReader',
+                'event_type' => 'clipboard_backend_error',
+                'backend' => $backend['name'],
+                'exit_code' => $exit,
+                'stderr' => $this->sanitizeDiagnostic($stderr),
+            ]);
+
+            return ClipboardImageReadResultDTO::failed(
+                'Failed to read image from clipboard.',
+                $this->sanitizeDiagnostic('' !== $stderr ? $stderr : 'clipboard command failed'),
+            );
+        }
+
+        if (0 === $written) {
+            @unlink($tempPath);
+
+            return ClipboardImageReadResultDTO::noImage(
+                'Clipboard does not contain a supported image (JPEG, PNG, GIF, or WebP).',
+            );
+        }
+
+        return ClipboardImageReadResultDTO::image($tempPath);
     }
 
-    private function writeTempFile(string $bytes): ?string
+    private function createEmptyTempFile(): ?string
     {
         $temp = tempnam(sys_get_temp_dir(), 'hatfield-paste-');
         if (false === $temp) {
@@ -129,14 +201,41 @@ final class ClipboardImageReader implements ClipboardImageReaderInterface
         }
 
         @chmod($temp, 0o600);
-
-        if (false === file_put_contents($temp, $bytes, \LOCK_EX)) {
-            @unlink($temp);
-
+        @unlink($temp);
+        $fh = @fopen($temp, 'wb');
+        if (false === $fh) {
             return null;
         }
+        @fclose($fh);
 
         return $temp;
+    }
+
+    private function isNoImageExit(string $backend, ?int $exit, string $stderr, int $written): bool
+    {
+        if ($written > 0) {
+            return false;
+        }
+
+        if (null !== $exit && 1 === $exit && '' === $stderr) {
+            return true;
+        }
+
+        if ('wl-paste' === $backend && null !== $exit && 1 === $exit
+            && str_contains(strtolower($stderr), 'no data')) {
+            return true;
+        }
+
+        return false;
+    }
+
+    private function sanitizeDiagnostic(string $diagnostic): string
+    {
+        if (\strlen($diagnostic) > 500) {
+            return substr($diagnostic, 0, 500).'…';
+        }
+
+        return $diagnostic;
     }
 
     private function isWayland(): bool
@@ -151,23 +250,14 @@ final class ClipboardImageReader implements ClipboardImageReaderInterface
         return false !== $wayland && '' !== $wayland;
     }
 
-    private function commandExists(string $cmd): bool
+    private function findExecutable(string $command): ?string
     {
-        try {
-            $which = new Process(['which', $cmd]);
-            $which->setTimeout(2.0);
-            $which->run();
-
-            return $which->isSuccessful();
-        } catch (\Throwable $e) {
-            $this->logger->debug('Clipboard helper lookup failed', [
-                'component' => 'ClipboardImageReader',
-                'event_type' => 'clipboard_command_probe_failed',
-                'command' => $cmd,
-                'exception' => $e,
-            ]);
-
-            return false;
+        $finder = new ExecutableFinder();
+        $path = $finder->find($command);
+        if (null === $path || !is_executable($path)) {
+            return null;
         }
+
+        return $path;
     }
 }

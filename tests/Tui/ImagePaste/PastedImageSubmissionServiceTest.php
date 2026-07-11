@@ -49,8 +49,7 @@ final class PastedImageSubmissionServiceTest extends IsolatedKernelTestCase
         $sessionId = $store->createSession('seed');
         $png = file_get_contents(__DIR__.'/../E2E/fixtures/paste-test-1x1.png');
         $this->assertNotFalse($png);
-        $staged = tempnam(sys_get_temp_dir(), 'hatfield-staged-');
-        $this->assertNotFalse($staged);
+        $staged = $this->projectDir.'/staged-paste-1.png';
         file_put_contents($staged, $png);
 
         $state = new TuiSessionState($sessionId);
@@ -83,5 +82,59 @@ final class PastedImageSubmissionServiceTest extends IsolatedKernelTestCase
 
         $attachment = $store->resolveSessionsBasePath().'/'.$sessionId.'/attachments/pasted-image-1.png';
         $this->assertFileExists($attachment);
+        $this->assertSame('0600', substr(\sprintf('%o', fileperms($attachment)), -4));
+        $attachmentsDir = \dirname($attachment);
+        $this->assertSame('0700', substr(\sprintf('%o', fileperms($attachmentsDir)), -4));
+    }
+
+    #[Test]
+    public function secondPlaceholderFailureLeavesFirstRetryableWithoutOrphanAttachment(): void
+    {
+        /** @var HatfieldSessionStore $store */
+        $store = self::getContainer()->get(HatfieldSessionStore::class);
+
+        $sessionId = $store->createSession('seed-multi-fail');
+        $png = file_get_contents(__DIR__.'/../E2E/fixtures/paste-test-1x1.png');
+        $this->assertNotFalse($png);
+
+        $staged1 = $this->projectDir.'/staged-paste-multi-1.png';
+        file_put_contents($staged1, $png);
+
+        $state = new TuiSessionState($sessionId);
+        $state->pastedImagePendingByIndex[1] = new PastedImagePendingDTO(1, '[Image #1]', $staged1);
+        // No pending entry for [Image #2] — preflight must fail before promoting #1.
+
+        /** @var AppConfig $appConfig */
+        $appConfig = self::getContainer()->get(AppConfig::class);
+
+        $service = new PastedImageSubmissionService(
+            new PastedImageValidationService(new ImageToolConfig(), new TestLogger()),
+            $store,
+            $appConfig,
+            new TranscriptBlockFactory(),
+            new TestLogger(),
+        );
+
+        $screen = new ChatScreen(
+            new DefaultTheme(new ThemePalette('test')),
+            $sessionId,
+            new PromptEditor(),
+            new TranscriptDisplayConfig(),
+            new TranscriptDisplayState(),
+        );
+
+        $attachmentsDir = $store->resolveSessionsBasePath().'/'.$sessionId.'/attachments';
+        @unlink($attachmentsDir.'/pasted-image-1.png');
+
+        $resolved = $service->resolveSubmittedText('one [Image #1] two [Image #2]', $state, $screen);
+        $this->assertNull($resolved);
+        $this->assertArrayHasKey(1, $state->pastedImagePendingByIndex);
+        $this->assertFileExists($staged1);
+
+        $this->assertFileDoesNotExist($attachmentsDir.'/pasted-image-1.png');
+
+        $resolvedRetry = $service->resolveSubmittedText('retry [Image #1]', $state, $screen);
+        $this->assertNotNull($resolvedRetry);
+        $this->assertStringContainsString('attachments/pasted-image-1.png', $resolvedRetry);
     }
 }

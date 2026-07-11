@@ -47,15 +47,25 @@ final class PastedImageSubmissionService
             return $text;
         }
 
+        // SubmitListener promotes a draft session before calling this service; an empty id here
+        // is a defensive safety net — do not promote placeholders without a session directory.
         if ('' === $state->sessionId) {
+            $this->logger->warning('Pasted image promotion skipped without session id', [
+                'component' => 'PastedImageSubmissionService',
+                'event_type' => 'paste_promotion_skipped_no_session',
+                'run_id' => 'draft',
+                'session_id' => '',
+            ]);
+
             return $text;
         }
 
         $attachmentsDir = $this->sessionStore->ensureSessionAttachmentsDirectory($state->sessionId);
         $sessionRelativeBase = $this->projectRelativeAttachmentsBase($state->sessionId);
 
-        $resolved = $text;
         $referenced = [];
+        /** @var list<array{index: int, placeholder: string, pending: PastedImagePendingDTO, validated: PastedImageValidatedDTO, destination: string, filename: string}> $plans */
+        $plans = [];
 
         if (preg_match_all(PastedImagePlaceholderFormatter::PLACEHOLDER_PATTERN, $text, $matches, \PREG_SET_ORDER)) {
             foreach ($matches as $match) {
@@ -82,21 +92,58 @@ final class PastedImageSubmissionService
                 $filename = \sprintf('pasted-image-%d.%s', $index, $validated->extension);
                 $destination = $attachmentsDir.'/'.$filename;
 
-                if (!$this->copyFileAtomically($pending->stagedPath, $destination)) {
-                    $this->surfaceError($state, $screen, 'Failed to save pasted image into session attachments.');
+                if (is_file($destination)) {
+                    $this->surfaceError($state, $screen, \sprintf('Session attachment already exists for %s.', $placeholder));
 
                     return null;
                 }
 
-                @chmod($destination, 0o644);
-
-                $relativePath = $sessionRelativeBase.'/'.$filename;
-                $reference = PastedImagePlaceholderFormatter::llmReference($index, $relativePath);
-                $resolved = str_replace($placeholder, $reference, $resolved);
-
-                $this->deleteStagedFile($pending->stagedPath);
-                unset($state->pastedImagePendingByIndex[$index]);
+                $plans[] = [
+                    'index' => $index,
+                    'placeholder' => $placeholder,
+                    'pending' => $pending,
+                    'validated' => $validated,
+                    'destination' => $destination,
+                    'filename' => $filename,
+                ];
             }
+        }
+
+        $resolved = $text;
+        $tempDestinations = [];
+
+        try {
+            foreach ($plans as $plan) {
+                $temp = $this->stageToTempDestination($plan['pending']->stagedPath, $plan['destination']);
+                if (null === $temp) {
+                    throw new \RuntimeException('Failed to stage pasted image into session attachments.');
+                }
+                $tempDestinations[] = $temp;
+            }
+
+            foreach ($plans as $i => $plan) {
+                $temp = $tempDestinations[$i];
+                if (!@rename($temp, $plan['destination'])) {
+                    throw new \RuntimeException('Failed to finalize pasted image attachment.');
+                }
+                @chmod($plan['destination'], 0o600);
+
+                $relativePath = $sessionRelativeBase.'/'.$plan['filename'];
+                $reference = PastedImagePlaceholderFormatter::llmReference($plan['index'], $relativePath);
+                $resolved = str_replace($plan['placeholder'], $reference, $resolved);
+
+                $this->deleteStagedFile($plan['pending']->stagedPath);
+                unset($state->pastedImagePendingByIndex[$plan['index']]);
+            }
+        } catch (\Throwable $e) {
+            foreach ($tempDestinations as $temp) {
+                if (is_file($temp)) {
+                    @unlink($temp);
+                }
+            }
+            $this->surfaceError($state, $screen, $e->getMessage());
+
+            return null;
         }
 
         foreach ($state->pastedImagePendingByIndex as $index => $pending) {
@@ -130,38 +177,31 @@ final class PastedImageSubmissionService
         return rtrim($sessionsPath, '/').'/'.$sessionId.'/attachments';
     }
 
-    private function copyFileAtomically(string $source, string $destination): bool
+    /**
+     * Copy source bytes into a hidden temp file beside the final attachment name.
+     *
+     * Cross-filesystem promotion invariant: never write directly to the final attachment path
+     * until all placeholders pass preflight. Each image is copied to a unique ".<name>.<rand>.tmp"
+     * file in the attachments directory, then atomically renamed into place only after every
+     * staged copy succeeds. On failure, temp files are unlinked and existing attachments are
+     * left untouched.
+     */
+    private function stageToTempDestination(string $source, string $destination): ?string
     {
         $dir = \dirname($destination);
-        if (!is_dir($dir) && !@mkdir($dir, 0o777, true) && !is_dir($dir)) {
-            return false;
+        if (!is_dir($dir) && !@mkdir($dir, 0o700, true) && !is_dir($dir)) {
+            return null;
         }
 
         $temp = $dir.'/.'.basename($destination).'.'.bin2hex(random_bytes(4)).'.tmp';
         if (!@copy($source, $temp)) {
-            $bytes = @file_get_contents($source);
-            if (false === $bytes) {
-                @unlink($temp);
-
-                return false;
-            }
-            if (false === @file_put_contents($temp, $bytes, \LOCK_EX)) {
-                @unlink($temp);
-
-                return false;
-            }
-        }
-
-        if (!@rename($temp, $destination)) {
-            if (!@copy($temp, $destination)) {
-                @unlink($temp);
-
-                return false;
-            }
             @unlink($temp);
-        }
 
-        return is_file($destination);
+            return null;
+        }
+        @chmod($temp, 0o600);
+
+        return $temp;
     }
 
     private function deleteStagedFile(string $path): void

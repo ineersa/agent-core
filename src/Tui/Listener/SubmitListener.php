@@ -145,7 +145,7 @@ final class SubmitListener implements TuiListenerRegistrar
                     $history->append($commandResult->originalText);
                     self::handleShellCommand(
                         $commandResult, $state, $screen, $sessionStore,
-                        $blockFactory, $client, $logger, $lifecycle, $pastedImageSubmissionService,
+                        $blockFactory, $client, $logger, $lifecycle,
                     );
 
                     return;
@@ -497,9 +497,9 @@ final class SubmitListener implements TuiListenerRegistrar
         \Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient $client,
         LoggerInterface $logger,
         TuiSessionLifecycleDispatcher $lifecycle,
-        PastedImageSubmissionService $pastedImageSubmissionService,
     ): void {
         try {
+            // Shell commands do not promote [Image #N] placeholders — image paste is chat-submit only.
             // Create a session if this is the first input.
             if ('' === $state->sessionId) {
                 $state->sessionId = $sessionStore->createSession('!'.$shellCommand->command);
