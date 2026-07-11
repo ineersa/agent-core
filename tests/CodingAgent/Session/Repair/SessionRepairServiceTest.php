@@ -17,6 +17,7 @@ use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+use Ineersa\CodingAgent\Session\Repair\SessionRepairRefusalReasonEnum;
 use Ineersa\CodingAgent\Session\Repair\SessionRepairService;
 use Ineersa\CodingAgent\Session\SessionRunEventStore;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
@@ -219,6 +220,7 @@ final class SessionRepairServiceTest extends TestCase
 
         $this->assertTrue($result->needsRepair);
         $this->assertNotEmpty($result->duplicateSeqs);
+        $this->assertSame(SessionRepairRefusalReasonEnum::DuplicateSequences, $result->refusalReason);
         $this->assertStringContainsStringIgnoringCase('duplicate', $result->message);
         $this->assertSame($before, $this->readRawLines($runId));
     }
@@ -249,8 +251,92 @@ final class SessionRepairServiceTest extends TestCase
         $before = $this->readRawLines($runId);
         $result = $service->repair($runId, true);
 
+        $this->assertSame(SessionRepairRefusalReasonEnum::ActiveStreaming, $result->refusalReason);
         $this->assertStringContainsStringIgnoringCase('active streaming', $result->message);
         $this->assertSame($before, $this->readRawLines($runId));
+    }
+
+    public function testMissingSequencesProducesTypedRefusal(): void
+    {
+        $runId = 'missing';
+        $this->writeEvents($runId, [
+            '{"schema_version":"1.0","run_id":"missing","seq":1,"turn_no":0,"type":"agent_start","payload":{},"ts":"2026-07-09T01:00:00+00:00"}',
+            '{"schema_version":"1.0","run_id":"missing","seq":2,"turn_no":1,"type":"turn_advanced","payload":{"turn_no":1},"ts":"2026-07-09T01:00:01+00:00"}',
+            '{"schema_version":"1.0","run_id":"missing","seq":4,"turn_no":1,"type":"agent_end","payload":{"reason":"completed"},"ts":"2026-07-09T01:00:02+00:00"}',
+        ]);
+
+        $runStore = new InMemoryRunStore();
+        $runStore->compareAndSwap(RunState::queued($runId), 0);
+
+        $service = $this->createService($runStore);
+        $before = $this->readRawLines($runId);
+        $result = $service->repair($runId, true);
+
+        $this->assertSame(SessionRepairRefusalReasonEnum::MissingSequences, $result->refusalReason);
+        $this->assertNotEmpty($result->missingSeqs);
+        $this->assertSame($before, $this->readRawLines($runId));
+    }
+
+    public function testAmbiguousPendingWorkProducesTypedRefusal(): void
+    {
+        $runId = 'ambiguous';
+        $this->writeEvents($runId, [
+            '{"schema_version":"1.0","run_id":"ambiguous","seq":1,"turn_no":0,"type":"agent_start","payload":{},"ts":"2026-07-09T01:00:00+00:00"}',
+            '{"schema_version":"1.0","run_id":"ambiguous","seq":2,"turn_no":1,"type":"turn_advanced","payload":{"turn_no":1,"step_id":"llm-1"},"ts":"2026-07-09T01:00:01+00:00"}',
+            '{"schema_version":"1.0","run_id":"ambiguous","seq":3,"turn_no":1,"type":"llm_step_completed","payload":{"assistant_message":{"role":"assistant","content":null,"tool_calls":[{"id":"call_amb","type":"function","function":{"name":"read","arguments":"{}"}}]}},"ts":"2026-07-09T01:00:02+00:00"}',
+            '{"schema_version":"1.0","run_id":"ambiguous","seq":4,"turn_no":1,"type":"tool_execution_start","payload":{"tool_call_id":"call_amb","tool_name":"read"},"ts":"2026-07-09T01:00:03+00:00"}',
+        ]);
+
+        $runStore = new InMemoryRunStore();
+        $runStore->compareAndSwap(new RunState(
+            runId: $runId,
+            status: RunStatus::Running,
+            version: 1,
+            turnNo: 1,
+            lastSeq: 4,
+            pendingToolCalls: ['call_amb' => false],
+            activeStepId: 'llm-1',
+        ), 0);
+
+        $service = $this->createService($runStore);
+        $before = $this->readRawLines($runId);
+        $result = $service->repair($runId, true);
+
+        $this->assertSame(SessionRepairRefusalReasonEnum::AmbiguousPendingWork, $result->refusalReason);
+        $this->assertSame($before, $this->readRawLines($runId));
+    }
+
+    public function testDurableTrackedToolResultAcceptedExactlyOnce(): void
+    {
+        $runId = '2';
+        $this->writeStaleCancellationEvents($runId);
+        $runStore = $this->createStaleCancellationRunStore($runId);
+
+        $service = $this->createService($runStore);
+        $first = $service->repair($runId, true);
+        $this->assertTrue($first->staleCancellationRepaired);
+
+        $toolEndCountAfterFirst = 0;
+        foreach ($this->readEvents($runId) as $row) {
+            if (RunEventTypeEnum::ToolExecutionEnd->value === $row['type']
+                && ($row['payload']['tool_call_id'] ?? null) === 'call_00_abc') {
+                ++$toolEndCountAfterFirst;
+            }
+        }
+        $this->assertSame(1, $toolEndCountAfterFirst, 'Canonical stream must contain exactly one durable tool_execution_end');
+
+        $second = $service->repair($runId, true);
+        $this->assertFalse($second->needsRepair);
+        $this->assertSame(0, $second->terminalEventsAppended);
+
+        $toolEndCountAfterSecond = 0;
+        foreach ($this->readEvents($runId) as $row) {
+            if (RunEventTypeEnum::ToolExecutionEnd->value === $row['type']
+                && ($row['payload']['tool_call_id'] ?? null) === 'call_00_abc') {
+                ++$toolEndCountAfterSecond;
+            }
+        }
+        $this->assertSame(1, $toolEndCountAfterSecond);
     }
 
     /**

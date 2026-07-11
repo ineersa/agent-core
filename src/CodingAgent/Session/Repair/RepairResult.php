@@ -8,6 +8,7 @@ final readonly class RepairResult
 {
     /**
      * @param list<int> $duplicateSeqs
+     * @param list<int> $missingSeqs
      */
     public function __construct(
         public bool $needsRepair,
@@ -17,6 +18,8 @@ final readonly class RepairResult
         public string $message,
         public array $duplicateSeqs,
         public ?string $backupEventsPath,
+        public ?SessionRepairRefusalReasonEnum $refusalReason = null,
+        public array $missingSeqs = [],
     ) {
     }
 }
