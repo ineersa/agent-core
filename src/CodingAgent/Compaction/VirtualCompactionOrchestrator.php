@@ -11,6 +11,7 @@ use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationInput;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationOptions;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationRequest;
+use Ineersa\CodingAgent\Agent\Fork\ForkCompactionFailureReasonEnum;
 use Ineersa\CodingAgent\Agent\Fork\ForkCompactionSummarizationException;
 use Ineersa\CodingAgent\Config\CompactionConfig;
 use Ineersa\CodingAgent\Compaction\CompactionBoundarySelector;
@@ -54,7 +55,7 @@ final readonly class VirtualCompactionOrchestrator implements VirtualCompactionO
         $resolvedModel = $runtimeSettings->model ?? $activeModelStr;
 
         if (null === $resolvedModel || '' === trim($resolvedModel)) {
-            throw new ForkCompactionSummarizationException('Fork launch could not compact parent context: no summarization model is available.', hint: 'Set compaction.model in Hatfield settings, choose a parent session model with /model, or pass fork model explicitly.');
+            throw new ForkCompactionSummarizationException('Fork launch could not compact parent context: no summarization model is available.', ForkCompactionFailureReasonEnum::NoSummarizationModel, hint: 'Set compaction.model in Hatfield settings, choose a parent session model with /model, or pass fork model explicitly.');
         }
 
         $thinkingLevel = $runtimeSettings->thinkingLevel;
@@ -67,7 +68,7 @@ final readonly class VirtualCompactionOrchestrator implements VirtualCompactionO
         try {
             $summaryText = $this->summarizePreparation($preparation, $resolvedModel, $modelOptions);
         } catch (ForkCompactionSummarizationException $exception) {
-            throw new ForkCompactionSummarizationException('Fork launch requires compacted parent context but summarization failed: '.$exception->getMessage(), hint: $exception->hint() ?? 'Check compaction.model, parent session model, and LLM availability, then retry fork.', previous: $exception);
+            throw new ForkCompactionSummarizationException('Fork launch requires compacted parent context but summarization failed: '.$exception->getMessage(), $exception->reason(), hint: $exception->hint() ?? 'Check compaction.model, parent session model, and LLM availability, then retry fork.', previous: $exception);
         }
 
         $prepareResult = $this->toPrepareResult($preparation);
@@ -93,7 +94,7 @@ final readonly class VirtualCompactionOrchestrator implements VirtualCompactionO
         }
 
         if (!$force) {
-            throw new ForkCompactionSummarizationException('Compaction preparation failed: '.($result->skipReason->value ?? 'unknown'));
+            throw new ForkCompactionSummarizationException('Compaction preparation failed: '.($result->skipReason->value ?? 'unknown'), ForkCompactionFailureReasonEnum::PreparationFailed);
         }
 
         return $this->buildForcedPreparation($messages, $result->skipReason);
@@ -121,7 +122,7 @@ final readonly class VirtualCompactionOrchestrator implements VirtualCompactionO
         $bodyCount = \count($body);
 
         if (0 === $bodyCount) {
-            throw new ForkCompactionSummarizationException('Fork launch requires compacted parent context but no compactable messages remain after prologue extraction.');
+            throw new ForkCompactionSummarizationException('Fork launch requires compacted parent context but no compactable messages remain after prologue extraction.', ForkCompactionFailureReasonEnum::NoCompactableMessages);
         }
 
         if (1 === $bodyCount) {
@@ -150,7 +151,7 @@ final readonly class VirtualCompactionOrchestrator implements VirtualCompactionO
 
         $boundary = $this->boundarySelector->findForcedSafeBoundary($body);
         if (null === $boundary) {
-            throw new ForkCompactionSummarizationException('Fork launch requires compacted parent context but no safe compaction boundary exists for the parent message sequence.');
+            throw new ForkCompactionSummarizationException('Fork launch requires compacted parent context but no safe compaction boundary exists for the parent message sequence.', ForkCompactionFailureReasonEnum::NoSafeBoundary);
         }
 
         if (0 === $boundary) {
@@ -215,7 +216,7 @@ final readonly class VirtualCompactionOrchestrator implements VirtualCompactionO
                 1,
             );
         } catch (ForkCompactionSummarizationException $exception) {
-            if (!$this->isIneffectiveSummarizationFailure($exception)) {
+            if (ForkCompactionFailureReasonEnum::IneffectiveSummary !== $exception->reason()) {
                 throw $exception;
             }
         }
@@ -227,11 +228,6 @@ final readonly class VirtualCompactionOrchestrator implements VirtualCompactionO
             self::INEFFECTIVE_RETRY_INSTRUCTION,
             2,
         );
-    }
-
-    private function isIneffectiveSummarizationFailure(ForkCompactionSummarizationException $exception): bool
-    {
-        return str_contains($exception->getMessage(), 'ineffective (context did not shrink)');
     }
 
     /**
@@ -273,19 +269,19 @@ final readonly class VirtualCompactionOrchestrator implements VirtualCompactionO
         if (null !== $response->error) {
             $message = $response->error['message'] ?? $response->error['user_message'] ?? 'unknown error';
 
-            throw new ForkCompactionSummarizationException('Fork compaction summarization failed: '.(\is_string($message) ? $message : 'unknown error'));
+            throw new ForkCompactionSummarizationException('Fork compaction summarization failed: '.(\is_string($message) ? $message : 'unknown error'), ForkCompactionFailureReasonEnum::SummarizationPlatformFailed);
         }
 
         $summaryText = $response->assistantMessage?->asText();
         if (null === $summaryText || '' === trim($summaryText)) {
-            throw new ForkCompactionSummarizationException('Fork compaction summarization returned empty summary text.');
+            throw new ForkCompactionSummarizationException('Fork compaction summarization returned empty summary text.', ForkCompactionFailureReasonEnum::EmptySummaryText);
         }
 
         $compactResult = $this->compactionService->buildCompactedMessages($summaryText, $prepareResult);
 
         if ($preparation->messagesCompacted >= 2
             && $compactResult->tokenEstimateAfter >= $compactResult->tokenEstimateBefore) {
-            throw new ForkCompactionSummarizationException('Fork compaction summarization was ineffective (context did not shrink).');
+            throw new ForkCompactionSummarizationException('Fork compaction summarization was ineffective (context did not shrink).', ForkCompactionFailureReasonEnum::IneffectiveSummary);
         }
 
         $this->logger->info('Fork virtual compaction summarization completed.', [
@@ -339,7 +335,7 @@ final readonly class VirtualCompactionOrchestrator implements VirtualCompactionO
 
         $text = trim($text);
         if ('' === $text) {
-            throw new ForkCompactionSummarizationException('Fork compaction summarization returned empty summary text.');
+            throw new ForkCompactionSummarizationException('Fork compaction summarization returned empty summary text.', ForkCompactionFailureReasonEnum::EmptySummaryText);
         }
 
         return $text;

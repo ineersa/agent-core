@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Agent\Fork;
 
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
+use Ineersa\CodingAgent\Agent\Fork\ForkCompactionFailureReasonEnum;
 use Ineersa\CodingAgent\Agent\Fork\ForkCompactionResult;
 use Ineersa\CodingAgent\Agent\Fork\ForkCompactionSummarizationException;
 use Ineersa\CodingAgent\Agent\Fork\ForkSnapshotCompactor;
@@ -41,7 +42,7 @@ final class ForkSnapshotCompactorTest extends TestCase
     public function testCompactPropagatesOrchestratorFailures(): void
     {
         $orchestrator = new ThrowingVirtualCompactionOrchestrator(
-            new ForkCompactionSummarizationException('inner failure', hint: 'inner hint'),
+            new ForkCompactionSummarizationException('inner failure', ForkCompactionFailureReasonEnum::PreparationFailed, hint: 'inner hint'),
         );
 
         $compactor = new ForkSnapshotCompactor($orchestrator);

@@ -9,6 +9,7 @@ use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Model\PlatformInvocationResult;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageToolCallSequenceValidator;
 use Ineersa\AgentCore\Tests\Support\Fake\FakePlatform;
+use Ineersa\CodingAgent\Agent\Fork\ForkCompactionFailureReasonEnum;
 use Ineersa\CodingAgent\Agent\Fork\ForkCompactionSummarizationException;
 use Ineersa\CodingAgent\Compaction\ActiveModelResolverInterface;
 use Ineersa\CodingAgent\Compaction\CompactionBoundarySelector;
@@ -276,10 +277,45 @@ final class VirtualCompactionOrchestratorTest extends TestCase
             $orchestrator->compactForRun('parent-run-fail', $messages, force: true);
             $this->fail('Expected ForkCompactionSummarizationException');
         } catch (ForkCompactionSummarizationException $exception) {
+            $this->assertSame(ForkCompactionFailureReasonEnum::IneffectiveSummary, $exception->reason());
             $this->assertStringContainsString('ineffective (context did not shrink)', $exception->getMessage());
         }
 
         $this->assertCount(2, $platform->invocations);
+    }
+
+    public function testSummarizationPlatformFailureInvokesPlatformOnceWithoutIneffectiveRetry(): void
+    {
+        $messages = [
+            new AgentMessage(role: 'user', content: [['type' => 'text', 'text' => str_repeat('alpha ', 30)]]),
+            new AgentMessage(role: 'user', content: [['type' => 'text', 'text' => str_repeat('beta ', 30)]]),
+            new AgentMessage(role: 'user', content: [['type' => 'text', 'text' => str_repeat('gamma ', 30)]]),
+            new AgentMessage(role: 'user', content: [['type' => 'text', 'text' => str_repeat('delta tail ', 30)]]),
+        ];
+
+        $platform = new FakePlatform([
+            new PlatformInvocationResult(
+                assistantMessage: null,
+                usage: [],
+                stopReason: 'stop',
+                error: ['message' => 'upstream unavailable'],
+            ),
+        ]);
+
+        $orchestrator = $this->createOrchestrator(
+            activeModelResolver: new FakeActiveModelResolver('openai/gpt-test'),
+            platform: $platform,
+            compactionConfig: new CompactionConfig(model: 'openai/gpt-test', keepRecentTokens: 50000),
+        );
+
+        try {
+            $orchestrator->compactForRun('parent-run-platform-fail', $messages, force: true);
+            $this->fail('Expected ForkCompactionSummarizationException');
+        } catch (ForkCompactionSummarizationException $exception) {
+            $this->assertSame(ForkCompactionFailureReasonEnum::SummarizationPlatformFailed, $exception->reason());
+        }
+
+        $this->assertCount(1, $platform->invocations);
     }
 
     /**
