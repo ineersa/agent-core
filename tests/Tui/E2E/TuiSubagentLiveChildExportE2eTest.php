@@ -64,14 +64,24 @@ final class TuiSubagentLiveChildExportE2eTest extends TestCase
             $this->tmux->waitForCaptureContains($pane, 'agent_e2e_progress_fixture', 10.0, 'Picker must list subagent artifact');
 
             $this->tmux->sendKey($pane, 'e');
+            $expectedHtml = $this->testProjectDir.'/hatfield-child-agent_e2e_progress_fixture.html';
+
             $this->tmux->waitForCaptureContains(
                 $pane,
                 'Child agent exported to:',
                 10.0,
-                'Export key must report child HTML path in working message',
+                'Export key must report child HTML path in picker feedback',
             );
 
-            $expectedHtml = $this->testProjectDir.'/hatfield-child-agent_e2e_progress_fixture.html';
+            // Reject one-frame flash: feedback must still appear after subsequent runtime ticks.
+            usleep(600_000);
+            $this->tmux->waitForCaptureContains(
+                $pane,
+                'Child agent exported to:',
+                15.0,
+                'Export feedback must remain visible after subsequent render/tick activity',
+            );
+
             $this->assertFileExists($expectedHtml, 'Child export must write HTML in isolated project cwd');
 
             $html = file_get_contents($expectedHtml);

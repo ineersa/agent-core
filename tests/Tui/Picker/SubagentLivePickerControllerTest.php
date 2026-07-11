@@ -278,6 +278,69 @@ final class SubagentLivePickerControllerTest extends TestCase
         $this->assertSame(4, $state->subagentLiveView->childLastSeq);
     }
 
+    #[Test]
+    public function exportFeedbackStoredInPickerHeaderAndState(): void
+    {
+        $harness = new VirtualTuiHarness(sessionId: 'parent-session-export-persist');
+        $state = new TuiSessionState('parent-session-export-persist');
+        $artifactId = 'agent_export_persist';
+        $this->seedCatalogChild($state, $artifactId, 'child-run-export-persist', 'completed');
+        ChildAgentExportEventsFixture::write(
+            $this->projectDir,
+            'parent-session-export-persist',
+            $artifactId,
+            [
+                ChildAgentExportEventsFixture::childEvent(
+                    'child-run-export-persist',
+                    1,
+                    'run_started',
+                    ['user_messages' => [['role' => 'user', 'content' => 'persist marker']]],
+                ),
+            ],
+        );
+
+        $picker = $this->exportPicker($harness, $state);
+        $picker->open();
+        $this->invokeExportSelected($picker, $harness->screen(), $state);
+
+        $expected = $this->projectDir.'/hatfield-child-'.$artifactId.'.html';
+        $feedback = (string) $state->subagentLiveView->pickerFeedbackMessage;
+        $this->assertStringContainsString('Child agent exported to:', $feedback);
+        $this->assertStringContainsString($expected, $feedback);
+        $header = $this->pickerHeaderPlain($picker);
+        $this->assertStringContainsString('Child agent exported to:', $header);
+        $this->assertStringContainsString($expected, $header);
+    }
+
+    #[Test]
+    public function exportFailureFeedbackStoredInPickerHeader(): void
+    {
+        $harness = new VirtualTuiHarness(sessionId: 'parent-session-export-fail-header');
+        $state = new TuiSessionState('parent-session-export-fail-header');
+        $artifactId = 'agent_no_file_hdr';
+        $this->seedCatalogChild($state, $artifactId, 'child-run-no-file', 'completed');
+        $picker = $this->exportPicker($harness, $state);
+        $picker->open();
+        $this->invokeExportSelected($picker, $harness->screen(), $state);
+
+        $feedback = (string) $state->subagentLiveView->pickerFeedbackMessage;
+        $this->assertStringContainsString('has no events to export', $feedback);
+        $this->assertStringContainsString('has no events to export', $this->pickerHeaderPlain($picker));
+    }
+
+    #[Test]
+    public function closePickerClearsExportFeedbackState(): void
+    {
+        $harness = new VirtualTuiHarness(sessionId: 'picker-close-feedback');
+        $state = new TuiSessionState('picker-close-feedback');
+        $this->seedCatalogChild($state, 'agent_close', 'child-close', 'completed');
+        $picker = $this->picker($harness, $state);
+        $picker->open();
+        $state->subagentLiveView->pickerFeedbackMessage = 'Child agent exported to: /tmp/x.html';
+        $picker->closePicker();
+        $this->assertNull($state->subagentLiveView->pickerFeedbackMessage);
+    }
+
     private function picker(VirtualTuiHarness $harness, TuiSessionState $state): SubagentLivePickerController
     {
         $picker = new SubagentLivePickerController(
@@ -404,6 +467,22 @@ final class SubagentLivePickerControllerTest extends TestCase
             'ts' => '2026-01-01T00:00:00+00:00',
         ];
         file_put_contents($sessionDir.'/events.jsonl', json_encode($event, \JSON_THROW_ON_ERROR)."\n");
+    }
+
+    private function pickerHeaderPlain(SubagentLivePickerController $picker): string
+    {
+        $overlayRef = new \ReflectionProperty(SubagentLivePickerController::class, 'overlay');
+        $overlay = $overlayRef->getValue($picker);
+        $this->assertNotNull($overlay);
+        $containerRef = new \ReflectionProperty(\Ineersa\Tui\Picker\PickerOverlay::class, 'container');
+        $container = $containerRef->getValue($overlay);
+        $this->assertInstanceOf(\Symfony\Component\Tui\Widget\ContainerWidget::class, $container);
+        $header = $container->all()[0];
+        $this->assertInstanceOf(\Symfony\Component\Tui\Widget\TextWidget::class, $header);
+        $textRef = new \ReflectionProperty(\Symfony\Component\Tui\Widget\TextWidget::class, 'text');
+        $text = $textRef->getValue($header);
+
+        return strip_tags((string) $text);
     }
 
     private function workingMessage(ChatScreen $screen): string

@@ -48,6 +48,12 @@ final class SubagentLiveViewState
      */
     public ?string $lastLiveWorkingMessage = null;
 
+    /**
+     * Transient picker overlay feedback (e.g. child export path). Shown in the picker header
+     * and preserved across tick working-message updates while the picker is open.
+     */
+    public ?string $pickerFeedbackMessage = null;
+
     public function isSameChild(SubagentLiveChildDTO $child): bool
     {
         return null !== $this->selected
