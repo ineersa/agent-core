@@ -96,9 +96,8 @@ final class SubagentLiveChildViewPoller
      * @param ?callable(RuntimeEvent): void $onHumanInputRequested
      * @param ?callable(RuntimeEvent): void $onToolQuestionRequested
      * @param ?callable(RuntimeEvent): void $onToolTerminal
-     * @param ?callable(RuntimeEvent): void $onCatalogIngest
      *
-     * @return list<TranscriptBlock>|null Changed child blocks only, or null if nothing new
+     * @return list<TranscriptBlock>|null
      */
     public function poll(
         SubagentLiveViewState $live,
@@ -106,7 +105,6 @@ final class SubagentLiveChildViewPoller
         ?callable $onHumanInputRequested = null,
         ?callable $onToolQuestionRequested = null,
         ?callable $onToolTerminal = null,
-        ?callable $onCatalogIngest = null,
     ): ?array {
         if (!$live->active || null === $live->selected) {
             return null;
@@ -141,10 +139,6 @@ final class SubagentLiveChildViewPoller
             $live->childReplayEvents[] = $event;
             $changed = true;
 
-            if (null !== $onCatalogIngest) {
-                $onCatalogIngest($event);
-            }
-
             $this->dispatchEventCallbacks(
                 $event,
                 $live->selected->agentRunId,
@@ -163,13 +157,10 @@ final class SubagentLiveChildViewPoller
             return null;
         }
 
-        $scratchState = new TuiSessionState($live->selected->agentRunId);
-        $scratchState->transcript = $live->childTranscript;
-        $changedBlocks = RuntimeEventPoller::synchronizeProjectedBlocks($scratchState, $this->projector->blocks());
-        $live->childTranscript = $scratchState->transcript;
+        $live->childTranscript = $this->projector->blocks();
         $live->persistCurrentChildCache();
 
-        return [] !== $changedBlocks ? $changedBlocks : null;
+        return $live->childTranscript;
     }
 
     /**

@@ -372,11 +372,10 @@ final class ChatScreen
     }
 
     /** @param array<int, object> $blocks */
-    public function setTranscriptBlocks(array $blocks, bool $forceInvalidate = false): void
+    public function setTranscriptBlocks(array $blocks): void
     {
-        if ($this->transcriptRenderable->mergeOrReplaceBlocks($blocks, $forceInvalidate)) {
-            $this->transcriptWidget->invalidate();
-        }
+        $this->transcriptRenderable->setBlocks($blocks);
+        $this->transcriptWidget->invalidate();
     }
 
     /**

@@ -39,7 +39,7 @@ final class PreviewExpansionInputListener implements TuiListenerRegistrar
 
                 // Re-push blocks so LiveTextWidget invalidates and the transcript
                 // re-renders with the updated preview budget (cache keys include expansion).
-                $screen->setTranscriptBlocks($state->transcript, forceInvalidate: true);
+                $screen->setTranscriptBlocks($state->transcript);
 
                 $tui->requestRender();
             },

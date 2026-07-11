@@ -142,11 +142,6 @@ final class TuiSessionState
 
     public SubagentLiveViewState $subagentLiveView;
 
-    public float $subagentLiveBackgroundLastPoll = 0.0;
-
-    /** @var array<string, int> */
-    public array $subagentLiveBackgroundSeqByRunId = [];
-
     public function __construct(
         string $sessionId,
         bool $resuming = false,

@@ -67,55 +67,6 @@ final class TranscriptBlockWidget implements TuiWidget
         $this->blocks[] = $block;
     }
 
-    /**
-     * @param list<TranscriptBlock> $incoming
-     */
-    public function mergeOrReplaceBlocks(array $incoming, bool $forceApply = false): bool
-    {
-        if ([] === $incoming) {
-            return false;
-        }
-
-        $current = $this->blocks;
-        if ([] === $current) {
-            $this->setBlocks($incoming);
-
-            return true;
-        }
-
-        if ($this->isFullTranscriptReplacement($current, $incoming)) {
-            if (!$forceApply && $this->transcriptListsEqual($current, $incoming)) {
-                return false;
-            }
-            $this->setBlocks($incoming);
-
-            return true;
-        }
-
-        $merged = $current;
-        $changed = false;
-        foreach ($incoming as $block) {
-            $idx = $this->findBlockIndexById($merged, $block->id);
-            if (null === $idx) {
-                $merged[] = $block;
-                $changed = true;
-                continue;
-            }
-            if (!$this->blocksEqual($merged[$idx], $block)) {
-                $merged[$idx] = $block;
-                $changed = true;
-            }
-        }
-
-        if (!$changed) {
-            return false;
-        }
-
-        $this->setBlocks($merged);
-
-        return true;
-    }
-
     /** @return list<string> */
     public function render(TuiRenderContext $context): array
     {
@@ -189,79 +140,6 @@ final class TranscriptBlockWidget implements TuiWidget
         }
 
         return $allLines;
-    }
-
-    /**
-     * @param list<TranscriptBlock> $current
-     * @param list<TranscriptBlock> $incoming
-     */
-    private function isFullTranscriptReplacement(array $current, array $incoming): bool
-    {
-        if ([] === $current) {
-            return true;
-        }
-
-        $currentIds = [];
-        foreach ($current as $block) {
-            $currentIds[$block->id] = true;
-        }
-
-        $allIncomingKnown = true;
-        foreach ($incoming as $block) {
-            if (!isset($currentIds[$block->id])) {
-                $allIncomingKnown = false;
-                break;
-            }
-        }
-
-        if ($allIncomingKnown && \count($incoming) < \count($current)) {
-            return false;
-        }
-
-        return \count($incoming) >= \count($current);
-    }
-
-    /**
-     * @param list<TranscriptBlock> $left
-     * @param list<TranscriptBlock> $right
-     */
-    private function transcriptListsEqual(array $left, array $right): bool
-    {
-        if (\count($left) !== \count($right)) {
-            return false;
-        }
-
-        foreach ($left as $i => $block) {
-            if (!isset($right[$i]) || !$this->blocksEqual($block, $right[$i])) {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
-    private function blocksEqual(TranscriptBlock $left, TranscriptBlock $right): bool
-    {
-        return $left->id === $right->id
-            && $left->kind === $right->kind
-            && $left->runId === $right->runId
-            && $left->seq === $right->seq
-            && $left->text === $right->text
-            && $left->meta === $right->meta
-            && $left->streaming === $right->streaming
-            && $left->collapsed === $right->collapsed;
-    }
-
-    /** @param list<TranscriptBlock> $blocks */
-    private function findBlockIndexById(array $blocks, string $id): ?int
-    {
-        foreach ($blocks as $idx => $block) {
-            if ($block->id === $id) {
-                return $idx;
-            }
-        }
-
-        return null;
     }
 
     /** @return list<string> */

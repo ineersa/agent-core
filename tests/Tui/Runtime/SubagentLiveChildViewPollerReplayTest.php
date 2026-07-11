@@ -84,7 +84,7 @@ final class SubagentLiveChildViewPollerReplayTest extends TestCase
     #[Test]
     public function pollUsesOnlyLiveClientEventsAndPersistsCache(): void
     {
-        $projector = $this->childLiveProjector();
+        $projector = new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState());
         $poller = new SubagentLiveChildViewPoller($projector, new NullLogger());
 
         $live = $this->liveState();
@@ -92,7 +92,7 @@ final class SubagentLiveChildViewPollerReplayTest extends TestCase
             $live,
             new ChildRunTranscriptSnapshotDTO(
                 [
-                    new TranscriptBlock('b0', TranscriptBlockKindEnum::Question, self::CHILD_RUN_ID, 1, 'seed'),
+                    new TranscriptBlock('b0', TranscriptBlockKindEnum::AssistantMessage, self::CHILD_RUN_ID, 1, 'seed'),
                 ],
                 [],
                 1,
@@ -104,15 +104,7 @@ final class SubagentLiveChildViewPollerReplayTest extends TestCase
             ->method('events')
             ->with(self::CHILD_RUN_ID)
             ->willReturn([
-                new RuntimeEvent(
-                    RuntimeEventTypeEnum::HumanInputRequested->value,
-                    self::CHILD_RUN_ID,
-                    2,
-                    [
-                        'question_id' => 'q_live',
-                        'prompt' => 'live only',
-                    ],
-                ),
+                new RuntimeEvent(RuntimeEventTypeEnum::ProgressUpdated->value, self::CHILD_RUN_ID, 2, ['text' => 'live only']),
             ]);
 
         $live->childLastPoll = 0.0;
@@ -158,7 +150,7 @@ final class SubagentLiveChildViewPollerReplayTest extends TestCase
         $this->assertNull($poller->poll($live, $client), 'seq 3 must be skipped when childLastSeq is 5');
 
         $live->childLastPoll = 0.0;
-        $poller->poll($live, $client);
+        $this->assertNotNull($poller->poll($live, $client));
         $this->assertSame(6, $live->childLastSeq);
     }
 
