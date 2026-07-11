@@ -208,10 +208,15 @@ final class SessionRunEventStore implements SequencedEventStoreInterface
         $entry = $this->eventPayloadNormalizer->normalizeRunEvent($event);
         $json = json_encode($entry, \JSON_THROW_ON_ERROR);
 
-        file_put_contents($path, $json."\n", \FILE_APPEND | \LOCK_EX);
+        $written = file_put_contents($path, $json."\n", \FILE_APPEND | \LOCK_EX);
+        if (false === $written) {
+            throw new \RuntimeException(\sprintf('Failed to append to events.jsonl for run "%s" at seq %d.', $event->runId, $event->seq));
+        }
     }
 
     /**
+     * Major schema version mismatch: skip line with error log (forward-compat read policy).
+     *
      * @param array<string, mixed> $payload
      */
     private function isIncompatibleSchemaVersion(array $payload): bool

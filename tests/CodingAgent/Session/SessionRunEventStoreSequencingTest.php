@@ -61,7 +61,6 @@ final class SessionRunEventStoreSequencingTest extends TestCase
         $counterPath = FileRunSequenceAllocator::counterPathForEventsLog($eventsPath);
         file_put_contents($counterPath, "5\n");
 
-        $bootstrapCalls = 0;
         $persisted = $this->store->appendWithNextSeq(new RunEvent(
             runId: $runId,
             seq: 0,

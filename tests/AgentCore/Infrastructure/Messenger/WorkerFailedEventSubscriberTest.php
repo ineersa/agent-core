@@ -209,17 +209,20 @@ class WorkerFailedEventSubscriberTest extends TestCase
     }
 
     #[Test]
-    public function handlesCasConflictGracefully(): void
+    public function handlesCasConflictAfterSequencedAppendWithoutThrowing(): void
     {
-        $currentState = new RunState(runId: self::RUN_ID, status: RunStatus::Running, version: 3);
+        $currentState = new RunState(runId: self::RUN_ID, status: RunStatus::Running, version: 3, turnNo: 1, lastSeq: 4);
 
-        $runStore = $this->createStub(RunStoreInterface::class);
-        $runStore->method('get')->willReturn($currentState);
-        // CAS fails — another process already updated state
-        $runStore->method('compareAndSwap')->willReturn(false);
+        $runStore = $this->createMock(RunStoreInterface::class);
+        $runStore->method('get')->willReturnOnConsecutiveCalls($currentState, $currentState);
+        $runStore->expects($this->once())
+            ->method('compareAndSwap')
+            ->willReturn(false);
 
-        $eventStore = $this->createMock(EventStoreInterface::class);
-        $eventStore->expects($this->never())->method('append');
+        $eventStore = $this->createMock(SequencedEventStoreInterface::class);
+        $eventStore->expects($this->once())
+            ->method('appendWithNextSeq')
+            ->willReturn(new RunEvent(self::RUN_ID, 5, 1, 'agent_end', ['reason' => 'failed']));
 
         $logger = new NullLogger();
 
@@ -229,7 +232,6 @@ class WorkerFailedEventSubscriberTest extends TestCase
         $envelope = new Envelope($message);
         $event = $this->createFinalFailedEvent($envelope, new \RuntimeException('test'));
 
-        // Should not throw
         $subscriber->onWorkerMessageFailed($event);
         $this->assertTrue(true);
     }

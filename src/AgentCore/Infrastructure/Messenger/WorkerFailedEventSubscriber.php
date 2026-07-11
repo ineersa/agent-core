@@ -17,21 +17,29 @@ use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 use Symfony\Component\Messenger\Event\WorkerMessageFailedEvent;
 
 /**
- * Last-resort safety net for async Messenger worker failures.
+ * Last-resort safety net for async Messenger worker failures on run_control.
  *
- * When a message on the run_control transport permanently fails (all
- * Messenger retries exhausted), this subscriber writes a failed RunState
- * and an agent_end event to the EventStore so the controller's event
- * drain picks it up and the TUI shows a visible error instead of hanging.
+ * Normal run mutations (StartRun, ApplyCommand, LlmStepResult, ToolCallResult,
+ * CompactionStepResult) are serialized through RunMessageProcessor and
+ * RunCommit in the single run_control consumer process. This subscriber is an
+ * intentional exception to that path: it runs only after the processor/handler
+ * for a run_control message has permanently failed (willRetry() is false) and
+ * must append a sequenced agent_end then CAS a terminal Failed RunState so the
+ * controller/TUI does not hang with no durable terminal event.
  *
- * Without this subscriber, a failed StartRun/AdvanceRun/ApplyCommand
- * eventually exhausts Messenger retries and is discarded with no
- * trace written to the EventStore — the TUI sees run.started (emitted
- * synchronously by StartRunHandler) and then nothing, hanging forever.
+ * Receiver filtering (HANDLED_RECEIVERS = run_control) keeps the write inside
+ * the same authorized run_control consumer process; execution-bus failures on
+ * llm/tool/agent are out of scope here because workers enqueue results back to
+ * run_control instead of mutating canonical state directly.
  *
- * This subscriber only acts when willRetry() returns false (final
- * rejection), preventing partial/intermediate retries from writing
- * spurious terminal states.
+ * Limitation: this bypass does not invoke RunCommit post-commit hooks (for
+ * example tool-batch snapshot cleanup). With sequenced append-before-CAS, a CAS
+ * conflict after agent_end is persisted can leave state.json stale while the
+ * event log contains the terminal agent_end; we never overwrite an already
+ * terminal RunState when CAS fails.
+ *
+ * This subscriber only acts when willRetry() returns false (final rejection),
+ * preventing partial/intermediate retries from writing spurious terminal states.
  */
 final readonly class WorkerFailedEventSubscriber implements EventSubscriberInterface
 {
@@ -109,8 +117,7 @@ final readonly class WorkerFailedEventSubscriber implements EventSubscriberInter
                 return;
             }
 
-            if ($exception instanceof RunStateReplayException
-                || str_contains($exception->getMessage(), 'duplicate sequence number')) {
+            if ($exception instanceof RunStateReplayException && $exception->isDuplicateSequences()) {
                 $this->logger->warning('agent_loop.worker_failed_skipped_replay_corruption', [
                     'run_id' => $runId,
                     'component' => 'messenger.worker',
@@ -168,10 +175,15 @@ final readonly class WorkerFailedEventSubscriber implements EventSubscriberInter
             $committed = $this->runStore->compareAndSwap($failedState, $current->version);
 
             if (!$committed) {
+                $after = $this->runStore->get($runId);
                 $this->logger->warning('agent_loop.worker_failed_cas_conflict', [
                     'run_id' => $runId,
+                    'session_id' => $runId,
+                    'component' => 'messenger.worker',
+                    'event_type' => 'worker_failed.cas_conflict',
                     'expected_version' => $current->version,
                     'persisted_seq' => $persisted->seq,
+                    'store_status_after' => $after?->status->value,
                 ]);
 
                 return;

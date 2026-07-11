@@ -72,8 +72,23 @@ final readonly class RunCommit
                             activeStepId: $nextState->activeStepId,
                             retryableFailure: $nextState->retryableFailure,
                         );
-                        $this->runStore->compareAndSwap($bumpedState, $nextState->version);
-                        $nextState = $bumpedState;
+                        if (!$this->runStore->compareAndSwap($bumpedState, $nextState->version)) {
+                            $this->logger->warning('persistence.last_seq_cas_conflict', [
+                                'run_id' => $nextState->runId,
+                                'session_id' => $nextState->runId,
+                                'component' => 'persistence.run_commit',
+                                'event_type' => 'persistence.last_seq_cas_conflict',
+                                'expected_version' => $nextState->version,
+                                'intended_last_seq' => $lastPersisted->seq,
+                                'events_persisted' => true,
+                            ]);
+                            $actual = $this->runStore->get($nextState->runId);
+                            if (null !== $actual) {
+                                $nextState = $actual;
+                            }
+                        } else {
+                            $nextState = $bumpedState;
+                        }
                     }
 
                     $eventsPersisted = true;

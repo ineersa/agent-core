@@ -75,7 +75,7 @@ final readonly class ExecuteShellToolCallWorker
             throw new \LogicException('ExecuteShellToolCallWorker requires SequencedEventStoreInterface.');
         }
 
-        $startPersisted = $this->eventStore->appendWithNextSeq(new RunEvent(
+        $this->eventStore->appendWithNextSeq(new RunEvent(
             runId: $runId,
             seq: 0,
             turnNo: 0,

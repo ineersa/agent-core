@@ -86,6 +86,11 @@ final class FileRunSequenceAllocatorTest extends TestCase
         $allocator->allocateNext($counter);
     }
 
+    /**
+     * Real OS processes contend on one sequence.cursor. Workers signal ready via per-worker marker files;
+     * the parent releases them with a shared done file using flock(SH) spin-yield (no sleep/usleep).
+     * Results are merged under an exclusive flock on results.txt.
+     */
     public function testConcurrentProcessesReceiveUniqueSequences(): void
     {
         $dir = $this->tmpDir.'/concurrent';

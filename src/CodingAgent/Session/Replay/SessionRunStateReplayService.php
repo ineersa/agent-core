@@ -59,7 +59,7 @@ final readonly class SessionRunStateReplayService implements RunStateRebuilderIn
                     'duplicate_count' => \count($duplicateSeqs),
                 ]);
 
-                throw new RunStateReplayException(\sprintf('Cannot replay run %s: event history contains %d duplicate sequence number(s): %s.', $runId, \count($duplicateSeqs), implode(', ', array_map('strval', \array_slice($duplicateSeqs, 0, 10)))));
+                throw new RunStateReplayException(\sprintf('Cannot replay run %s: event history contains %d duplicate sequence number(s): %s.', $runId, \count($duplicateSeqs), implode(', ', array_map('strval', \array_slice($duplicateSeqs, 0, 10)))), RunStateReplayException::REASON_DUPLICATE_SEQUENCES);
             }
 
             $this->logger->info('run_state_replay.rebuilding', [
@@ -116,6 +116,8 @@ final readonly class SessionRunStateReplayService implements RunStateRebuilderIn
                 'rebuilt_turn_no' => $rebuiltState->turnNo,
             ]);
 
+            // Contiguity fields on RunStateReplayResult are legacy defaults; gaps in seq are valid
+            // (cursor may advance before JSONL append). rebuilt=true means state was refreshed from events.
             return RunStateReplayResult::rebuilt(
                 $rebuiltState,
                 $maxEventSeq,
@@ -152,7 +154,7 @@ final readonly class SessionRunStateReplayService implements RunStateRebuilderIn
                     'duplicate_count' => \count($duplicateSeqs),
                 ]);
 
-                throw new RunStateReplayException(\sprintf('Cannot replay run %s for leaf %d: event history contains %d duplicate sequence number(s): %s.', $runId, $targetLeafTurnNo, \count($duplicateSeqs), implode(', ', array_map('strval', \array_slice($duplicateSeqs, 0, 10)))));
+                throw new RunStateReplayException(\sprintf('Cannot replay run %s for leaf %d: event history contains %d duplicate sequence number(s): %s.', $runId, $targetLeafTurnNo, \count($duplicateSeqs), implode(', ', array_map('strval', \array_slice($duplicateSeqs, 0, 10)))), RunStateReplayException::REASON_DUPLICATE_SEQUENCES);
             }
 
             // Filter to the target leaf's branch path.

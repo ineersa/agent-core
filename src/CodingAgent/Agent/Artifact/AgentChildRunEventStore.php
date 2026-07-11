@@ -17,6 +17,25 @@ use Symfony\Component\Lock\LockFactory;
 
 /**
  * Parent-scoped EventStoreInterface implementation for child agent runs.
+ *
+ * Writes and reads RunEvent entries at the parent-scoped artifact path:
+ *
+ *   .hatfield/sessions/<parentRunId>/artifacts/agents/<artifactId>/events.jsonl
+ *
+ * Sequence allocation uses {@see FileRunSequenceAllocator::COUNTER_BASENAME} next to that log.
+ * Uses Symfony Lock (FlockStore) keyed by the child agentRunId to
+ * protect concurrent appends.  Reuses EventPayloadNormalizer for
+ * canonical event serialization.
+ *
+ * Does NOT create top-level .hatfield/sessions/<agentRunId>/
+ * directories — child events are entirely parent-scoped.
+ *
+ * Validates that embedded runId in each event matches the bound
+ * agentRunId. Mismatches throw on append.  allFor() only returns
+ * events for the bound agentRunId; other run IDs return an empty list.
+ *
+ * Path resolution and validation are delegated to
+ * {@see AgentArtifactPathResolver}.
  */
 final class AgentChildRunEventStore implements SequencedEventStoreInterface
 {
