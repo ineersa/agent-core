@@ -413,7 +413,6 @@ final class SessionRepairServiceTest extends TestCase
             runStateReducer: new RunStateReducer(),
             replayEventPreparer: new ReplayEventPreparer(),
             eventFactory: new EventFactory(),
-            eventPayloadNormalizer: new EventPayloadNormalizer(),
             lockManager: new RunLockManager(new LockFactory(new FlockStore($lockDir))),
             logger: new NullLogger(),
         );
