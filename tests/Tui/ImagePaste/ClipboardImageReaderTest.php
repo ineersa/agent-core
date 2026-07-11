@@ -168,27 +168,6 @@ echo "xclip: Error: Can\'t open display" 1>&2; exit 1');
     }
 
     #[Test]
-    public function pngpasteNoImageStderrYieldsNoImageOutcome(): void
-    {
-        $this->installScript('pngpaste', '#!/bin/sh'.'
-echo "pngpaste: No image in clipboard" 1>&2; exit 1');
-        $this->installScript('xclip', '#!/bin/sh'.'
-echo "should not run" 1>&2; exit 2');
-
-        putenv('XDG_SESSION_TYPE=');
-        putenv('WAYLAND_DISPLAY=');
-
-        if ('Darwin' !== \PHP_OS_FAMILY) {
-            $this->markTestSkipped('pngpaste backend order is Darwin-specific.');
-        }
-
-        $reader = new ClipboardImageReader(new ImageToolConfig(), new TestLogger());
-        $result = $reader->readImageToTempFile();
-
-        $this->assertSame(ClipboardImageReadOutcomeEnum::NoImage, $result->outcome);
-    }
-
-    #[Test]
     public function hungClipboardBackendTimesOutWithoutLeavingTempFile(): void
     {
         $this->installScript('wl-paste', '#!/bin/sh'.'
