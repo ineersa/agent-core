@@ -505,24 +505,25 @@ final class SessionRunStateReplayServiceTest extends TestCase
 
     // ── Non-contiguous history ──────────────────────────────────────────────
 
-    public function testNonContiguousHistoryThrowsException(): void
+    public function testSequenceGapIsToleratedForReplay(): void
     {
-        // Missing seq 2
+        // Missing seq 2 (cursor-advanced-but-not-appended crash model)
         $this->appendEvent('run_started', 1, ['step_id' => 's1', 'payload' => ['messages' => []]]);
-        $this->appendEvent('run_started', 3, ['step_id' => 's3', 'payload' => ['messages' => []]]);
+        $this->appendEvent('turn_advanced', 3, ['turn_no' => 1]);
 
         $state = new RunState(
             runId: $this->runId,
             status: RunStatus::Running,
             version: 1,
             turnNo: 0,
-            lastSeq: 0, // stale
+            lastSeq: 0,
         );
 
-        $this->expectException(RunStateReplayException::class);
-        $this->expectExceptionMessage('missing sequences');
+        $result = $this->service->rebuildIfStale($state, $this->runId);
 
-        $this->service->rebuildIfStale($state, $this->runId);
+        $this->assertTrue($result->rebuilt);
+        $this->assertNotNull($result->rebuiltState);
+        $this->assertSame(3, $result->rebuiltState->lastSeq);
     }
 
     // ── Replay preserves stored version ────────────────────────────────────
