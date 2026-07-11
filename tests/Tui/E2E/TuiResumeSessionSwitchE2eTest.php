@@ -139,19 +139,27 @@ final class TuiResumeSessionSwitchE2eTest extends TestCase
         $this->tmux->sendLiteral($pane, 'hi');
         $this->tmux->sendKey($pane, 'Enter');
 
+        $sessionId = null;
         $this->tmux->waitForCallback(
             $pane,
-            static fn (string $cap): bool => str_contains($cap, '◇') || str_contains($cap, '✕'),
+            static function (string $cap) use (&$sessionId): bool {
+                if (!str_contains($cap, '◇') && !str_contains($cap, '✕')) {
+                    return false;
+                }
+                if (!preg_match('/session\s+(\d+)/', $cap, $matches)) {
+                    return false;
+                }
+                $sessionId = $matches[1];
+
+                return true;
+            },
             timeout: TmuxHarness::TUI_ASSISTANT_BLOCK_TIMEOUT_PARALLEL,
-            message: 'Neither ◇ assistant block nor ✕ error appeared after first submit',
+            message: 'Assistant block and session id must both appear in capture',
             history: 2000,
         );
+        $this->assertNotEmpty($sessionId, 'Session id must appear in the same capture as assistant/error glyph');
 
-        $firstCapture = $this->tmux->capturePlainWithHistory($pane, 2000);
-        $matched = preg_match('/session\s+(\d+)/', $firstCapture, $matches);
-        $this->assertSame(1, $matched, 'Footer must show numeric session ID after first submit');
-
-        return $matches[1];
+        return $sessionId;
     }
 
     private function agentCommand(): string

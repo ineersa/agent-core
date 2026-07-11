@@ -13,7 +13,7 @@
 #
 # ORM entities on the default connection:
 #   - background_process  — BackgroundProcessManager durable tracking
-#   - tool_batch_state    — DbalToolBatchStore parallel tool execution state
+#   - (tool_batch_state removed — session filesystem snapshots via SessionToolBatchStore)
 #   - tool_question       — ToolQuestionStore cross-process tool-local questions
 #
 doctrine:

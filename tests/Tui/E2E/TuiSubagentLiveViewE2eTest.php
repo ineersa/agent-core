@@ -110,18 +110,27 @@ final class TuiSubagentLiveViewE2eTest extends TestCase
         usleep(150_000);
         $this->tmux->sendLiteral($pane, 'hi');
         $this->tmux->sendKey($pane, 'Enter');
+        $sessionId = null;
         $this->tmux->waitForCallback(
             $pane,
-            static fn (string $cap): bool => str_contains($cap, '◇') || str_contains($cap, '✕'),
+            static function (string $cap) use (&$sessionId): bool {
+                if (!str_contains($cap, '◇') && !str_contains($cap, '✕')) {
+                    return false;
+                }
+                if (!preg_match('/session\s+(\d+)/', $cap, $matches)) {
+                    return false;
+                }
+                $sessionId = $matches[1];
+
+                return true;
+            },
             timeout: TmuxHarness::TUI_ASSISTANT_BLOCK_TIMEOUT_PARALLEL,
-            message: 'Assistant block did not appear',
+            message: 'Assistant block and session id must both appear in capture',
             history: 2000,
         );
-        $cap = $this->tmux->capturePlainWithHistory($pane, 2000);
-        preg_match('/session\s+(\d+)/', $cap, $matches);
-        $this->assertNotEmpty($matches[1] ?? null);
+        $this->assertNotEmpty($sessionId, 'Session id must appear in the same capture as assistant/error glyph');
 
-        return $matches[1];
+        return $sessionId;
     }
 
     private function agentCommand(): string
