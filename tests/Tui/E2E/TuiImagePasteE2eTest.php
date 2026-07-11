@@ -98,6 +98,11 @@ final class TuiImagePasteE2eTest extends TestCase
             $this->tmux->sendKey($pane, 'C-d');
         } catch (\Throwable $e) {
             $this->saveAnsiSnapshot($pane, 'image-paste-FAILURE');
+            try {
+                $this->tmux->sendKey($pane, 'C-d');
+            } catch (\Throwable $shutdownFailure) {
+                // Best-effort graceful shutdown before rethrowing the original assertion failure.
+            }
             throw $e;
         }
     }

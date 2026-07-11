@@ -307,21 +307,15 @@ final class SubmitListener implements TuiListenerRegistrar
                 // If this is a lazy draft (sessionId === ''), create the
                 // real session row now so no orphan records are left when
                 // /new is typed but never followed by a message.
-                if ('' === $state->sessionId) {
-                    $state->sessionId = $sessionStore->createSession($text);
-                    $screen->updateSessionId($state->sessionId);
-                    $lifecycle->dispatch(new \Ineersa\Tui\Runtime\TuiSessionLifecycleEventDTO(
-                        type: \Ineersa\Tui\Runtime\TuiSessionLifecycleEventTypeEnum::SessionStarted,
-                        sessionId: $state->sessionId,
-                        isDraft: false,
-                        resuming: false,
-                    ));
-                    $logger->info('Draft session promoted to real session', [
-                        'component' => 'SubmitListener',
-                        'event_type' => 'draft_promoted',
-                        'session_id' => $state->sessionId,
-                    ]);
-                }
+                self::ensureRealSessionForSubmit(
+                    $text,
+                    $state,
+                    $screen,
+                    $sessionStore,
+                    $lifecycle,
+                    $logger,
+                    'draft_promoted',
+                );
 
                 // Merge any pre-configured draft request (e.g. from /new --model)
                 // with the submitted text so model/reasoning metadata carries
@@ -453,6 +447,37 @@ final class SubmitListener implements TuiListenerRegistrar
      */
 
     /**
+     * Create a real session row when the TUI is still on a lazy draft (empty session id).
+     */
+    private static function ensureRealSessionForSubmit(
+        string $seedPrompt,
+        TuiSessionState $state,
+        ChatScreen $screen,
+        HatfieldSessionStore $sessionStore,
+        TuiSessionLifecycleDispatcher $lifecycle,
+        LoggerInterface $logger,
+        string $eventType,
+    ): void {
+        if ('' !== $state->sessionId) {
+            return;
+        }
+
+        $state->sessionId = $sessionStore->createSession($seedPrompt);
+        $screen->updateSessionId($state->sessionId);
+        $lifecycle->dispatch(new \Ineersa\Tui\Runtime\TuiSessionLifecycleEventDTO(
+            type: \Ineersa\Tui\Runtime\TuiSessionLifecycleEventTypeEnum::SessionStarted,
+            sessionId: $state->sessionId,
+            isDraft: false,
+            resuming: false,
+        ));
+        $logger->info('Draft session promoted to real session', [
+            'component' => 'SubmitListener',
+            'event_type' => $eventType,
+            'session_id' => $state->sessionId,
+        ]);
+    }
+
+    /**
      * Promote pasted image placeholders once a session id exists (draft promotion when needed).
      */
     private static function promotePastedImagesInPrompt(
@@ -469,21 +494,15 @@ final class SubmitListener implements TuiListenerRegistrar
             return $text;
         }
 
-        if ('' === $state->sessionId) {
-            $state->sessionId = $sessionStore->createSession($text);
-            $screen->updateSessionId($state->sessionId);
-            $lifecycle->dispatch(new \Ineersa\Tui\Runtime\TuiSessionLifecycleEventDTO(
-                type: \Ineersa\Tui\Runtime\TuiSessionLifecycleEventTypeEnum::SessionStarted,
-                sessionId: $state->sessionId,
-                isDraft: false,
-                resuming: false,
-            ));
-            $logger->info('Draft session promoted for pasted image submit', [
-                'component' => 'SubmitListener',
-                'event_type' => 'draft_promoted_paste',
-                'session_id' => $state->sessionId,
-            ]);
-        }
+        self::ensureRealSessionForSubmit(
+            $text,
+            $state,
+            $screen,
+            $sessionStore,
+            $lifecycle,
+            $logger,
+            'draft_promoted_paste',
+        );
 
         return $pastedImageSubmissionService->resolveSubmittedText($text, $state, $screen);
     }

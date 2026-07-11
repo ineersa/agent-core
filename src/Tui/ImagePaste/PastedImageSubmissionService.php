@@ -57,7 +57,7 @@ final class PastedImageSubmissionService
                 'session_id' => '',
             ]);
 
-            return $text;
+            return null;
         }
 
         $attachmentsDir = $this->sessionStore->ensureSessionAttachmentsDirectory($state->sessionId);

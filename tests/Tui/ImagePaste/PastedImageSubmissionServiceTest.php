@@ -132,6 +132,45 @@ final class PastedImageSubmissionServiceTest extends IsolatedKernelTestCase
     }
 
     #[Test]
+    public function emptySessionIdReturnsNullWithoutPromotingPlaceholder(): void
+    {
+        /** @var HatfieldSessionStore $store */
+        $store = self::getContainer()->get(HatfieldSessionStore::class);
+
+        $png = file_get_contents(__DIR__.'/../E2E/fixtures/paste-test-1x1.png');
+        $this->assertNotFalse($png);
+        $staged = $this->projectDir.'/staged-no-session.png';
+        file_put_contents($staged, $png);
+
+        $state = new TuiSessionState('');
+        $state->pastedImagePendingByIndex[1] = new PastedImagePendingDTO(1, '[Image #1]', $staged);
+
+        /** @var AppConfig $appConfig */
+        $appConfig = self::getContainer()->get(AppConfig::class);
+
+        $service = new PastedImageSubmissionService(
+            new PastedImageValidationService(new ImageToolConfig(), new TestLogger()),
+            $store,
+            $appConfig,
+            new TranscriptBlockFactory(),
+            new TestLogger(),
+        );
+
+        $screen = new ChatScreen(
+            new DefaultTheme(new ThemePalette('test')),
+            '',
+            new PromptEditor(),
+            new TranscriptDisplayConfig(),
+            new TranscriptDisplayState(),
+        );
+
+        $resolved = $service->resolveSubmittedText('see [Image #1]', $state, $screen);
+        $this->assertNull($resolved);
+        $this->assertArrayHasKey(1, $state->pastedImagePendingByIndex);
+        $this->assertStringContainsString('[Image #1]', 'see [Image #1]');
+    }
+
+    #[Test]
     public function secondPlaceholderFailureLeavesFirstRetryableWithoutOrphanAttachment(): void
     {
         /** @var HatfieldSessionStore $store */

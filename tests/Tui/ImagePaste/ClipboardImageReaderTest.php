@@ -17,6 +17,10 @@ final class ClipboardImageReaderTest extends TestCase
     private string $tempDir;
     private string $fakeBinDir;
     private string $originalPath;
+    private ?string $originalXdgSessionType;
+    private ?string $originalWaylandDisplay;
+    /** @var list<string> */
+    private array $createdTempPaths = [];
 
     protected function setUp(): void
     {
@@ -24,6 +28,8 @@ final class ClipboardImageReaderTest extends TestCase
         $this->fakeBinDir = $this->tempDir.'/bin';
         mkdir($this->fakeBinDir, 0o755, true);
         $this->originalPath = (string) getenv('PATH');
+        $this->originalXdgSessionType = false !== getenv('XDG_SESSION_TYPE') ? (string) getenv('XDG_SESSION_TYPE') : null;
+        $this->originalWaylandDisplay = false !== getenv('WAYLAND_DISPLAY') ? (string) getenv('WAYLAND_DISPLAY') : null;
         putenv('PATH='.$this->fakeBinDir.':'.$this->originalPath);
         $_ENV['PATH'] = $this->fakeBinDir.':'.$this->originalPath;
         $_SERVER['PATH'] = $_ENV['PATH'];
@@ -31,9 +37,35 @@ final class ClipboardImageReaderTest extends TestCase
 
     protected function tearDown(): void
     {
+        foreach ($this->createdTempPaths as $tempPath) {
+            if (is_file($tempPath)) {
+                @unlink($tempPath);
+            }
+        }
+        $this->createdTempPaths = [];
+
         putenv('PATH='.$this->originalPath);
         $_ENV['PATH'] = $this->originalPath;
         $_SERVER['PATH'] = $this->originalPath;
+
+        if (null === $this->originalXdgSessionType) {
+            putenv('XDG_SESSION_TYPE');
+            unset($_ENV['XDG_SESSION_TYPE'], $_SERVER['XDG_SESSION_TYPE']);
+        } else {
+            putenv('XDG_SESSION_TYPE='.$this->originalXdgSessionType);
+            $_ENV['XDG_SESSION_TYPE'] = $this->originalXdgSessionType;
+            $_SERVER['XDG_SESSION_TYPE'] = $this->originalXdgSessionType;
+        }
+
+        if (null === $this->originalWaylandDisplay) {
+            putenv('WAYLAND_DISPLAY');
+            unset($_ENV['WAYLAND_DISPLAY'], $_SERVER['WAYLAND_DISPLAY']);
+        } else {
+            putenv('WAYLAND_DISPLAY='.$this->originalWaylandDisplay);
+            $_ENV['WAYLAND_DISPLAY'] = $this->originalWaylandDisplay;
+            $_SERVER['WAYLAND_DISPLAY'] = $this->originalWaylandDisplay;
+        }
+
         TestDirectoryIsolation::removeDirectory($this->tempDir);
         parent::tearDown();
     }
@@ -57,6 +89,7 @@ final class ClipboardImageReaderTest extends TestCase
         $this->assertNotNull($result->tempPath);
         $this->assertFileExists($result->tempPath);
         $this->assertSame($png, file_get_contents($result->tempPath));
+        $this->createdTempPaths[] = $result->tempPath;
     }
 
     #[Test]
@@ -153,6 +186,23 @@ echo "should not run" 1>&2; exit 2');
         $result = $reader->readImageToTempFile();
 
         $this->assertSame(ClipboardImageReadOutcomeEnum::NoImage, $result->outcome);
+    }
+
+    #[Test]
+    public function hungClipboardBackendTimesOutWithoutLeavingTempFile(): void
+    {
+        $this->installScript('wl-paste', '#!/bin/sh'.'
+sleep 30');
+
+        putenv('XDG_SESSION_TYPE=wayland');
+        putenv('WAYLAND_DISPLAY=wayland-test');
+
+        $reader = new ClipboardImageReader(new ImageToolConfig(), new TestLogger());
+        $result = $reader->readImageToTempFile();
+
+        $this->assertSame(ClipboardImageReadOutcomeEnum::Failed, $result->outcome);
+        $this->assertStringContainsString('timed out', strtolower($result->userMessage ?? ''));
+        $this->assertNull($result->tempPath);
     }
 
     private function installScript(string $name, string $contents): void

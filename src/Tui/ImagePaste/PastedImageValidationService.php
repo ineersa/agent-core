@@ -80,6 +80,12 @@ final class PastedImageValidationService
         return new PastedImageValidatedDTO($mediaType, $extension, $fileSize, $width, $height);
     }
 
+    /**
+     * Centralizes structured, privacy-safe validation diagnostics for paste-time and submit-time checks.
+     *
+     * Callers surface user-visible errors locally; this method records the exception for observability
+     * without logging raw image bytes, paths beyond the event type, or clipboard content.
+     */
     public function logValidationFailure(string $eventType, \Throwable $e): void
     {
         $this->logger->info('Pasted image validation failed', [
