@@ -9,8 +9,8 @@ use Ineersa\AgentCore\Application\Handler\HookDispatcher;
 use Ineersa\AgentCore\Application\Handler\HookSubscriberRegistry;
 use Ineersa\AgentCore\Application\Handler\StepDispatcher;
 use Ineersa\AgentCore\Application\Pipeline\RunCommit;
-use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\Replay\HotPromptStateRebuilderInterface;
+use Ineersa\AgentCore\Contract\SequencedEventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitEventSummary;
@@ -216,7 +216,7 @@ final class ToolBatchSnapshotCleanupHookSubscriberTest extends TestCase
     }
 }
 
-final class CleanupHookSubscriberNoOpEventStore implements EventStoreInterface
+final class CleanupHookSubscriberNoOpEventStore implements SequencedEventStoreInterface
 {
     public function append(RunEvent $event): void
     {
@@ -224,6 +224,16 @@ final class CleanupHookSubscriberNoOpEventStore implements EventStoreInterface
 
     public function appendMany(array $events): void
     {
+    }
+
+    public function appendWithNextSeq(RunEvent $event): RunEvent
+    {
+        return $event;
+    }
+
+    public function appendManyWithNextSeq(array $events): array
+    {
+        return $events;
     }
 
     public function allFor(string $runId): array

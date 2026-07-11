@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Runtime\Controller\CommandHandler;
 
 use Ineersa\AgentCore\Contract\EventStoreInterface;
+use Ineersa\AgentCore\Contract\SequencedEventStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolExecutorInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
@@ -123,7 +124,7 @@ final class ExecuteShellToolCallWorkerTest extends TestCase
      */
     private function createEventStore(): EventStoreInterface
     {
-        return new class($this->appendedEvents) implements EventStoreInterface {
+        return new class($this->appendedEvents) implements SequencedEventStoreInterface {
             /** @var list<RunEvent> */
             private array $collector;
 
@@ -136,6 +137,25 @@ final class ExecuteShellToolCallWorkerTest extends TestCase
             public function append(RunEvent $event): void
             {
                 $this->collector[] = $event;
+            }
+
+            public function appendWithNextSeq(RunEvent $event): RunEvent
+            {
+                $seq = \count(array_filter($this->collector, static fn (RunEvent $e): bool => $e->runId === $event->runId)) + 1;
+                $persisted = new RunEvent($event->runId, $seq, $event->turnNo, $event->type, $event->payload, $event->createdAt);
+                $this->collector[] = $persisted;
+
+                return $persisted;
+            }
+
+            public function appendManyWithNextSeq(array $events): array
+            {
+                $out = [];
+                foreach ($events as $event) {
+                    $out[] = $this->appendWithNextSeq($event);
+                }
+
+                return $out;
             }
 
             public function appendMany(array $events): void

@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Infrastructure\Messenger;
 
+use Ineersa\AgentCore\Application\Handler\RunStateReplayException;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\RunStoreInterface;
+use Ineersa\AgentCore\Contract\SequencedEventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Message\AbstractAgentBusMessage;
 use Ineersa\AgentCore\Domain\Run\RunState;
@@ -15,28 +17,21 @@ use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 use Symfony\Component\Messenger\Event\WorkerMessageFailedEvent;
 
 /**
- * Last-resort safety net for async Messenger worker failures on run_control.
+ * Last-resort safety net for async Messenger worker failures.
  *
- * Normal run mutations (StartRun, ApplyCommand, LlmStepResult, ToolCallResult,
- * CompactionStepResult) are serialized through RunMessageProcessor and
- * RunCommit in the single run_control consumer process. This subscriber is an
- * intentional exception to that path: it runs only after the processor/handler
- * for a run_control message has permanently failed (willRetry() is false) and
- * must directly CAS a terminal Failed RunState plus append agent_end so the
- * controller/TUI does not hang with no durable terminal event.
+ * When a message on the run_control transport permanently fails (all
+ * Messenger retries exhausted), this subscriber writes a failed RunState
+ * and an agent_end event to the EventStore so the controller's event
+ * drain picks it up and the TUI shows a visible error instead of hanging.
  *
- * Receiver filtering (HANDLED_RECEIVERS = run_control) keeps the write inside
- * the same authorized run_control consumer process; execution-bus failures on
- * llm/tool/agent are out of scope here because workers enqueue results back to
- * run_control instead of mutating canonical state directly.
+ * Without this subscriber, a failed StartRun/AdvanceRun/ApplyCommand
+ * eventually exhausts Messenger retries and is discarded with no
+ * trace written to the EventStore — the TUI sees run.started (emitted
+ * synchronously by StartRunHandler) and then nothing, hanging forever.
  *
- * Limitation: this bypass does not invoke RunCommit post-commit hooks (for
- * example tool-batch snapshot cleanup). That is acceptable only because it
- * fires after the normal mutation path has already failed; orphaned snapshots
- * or follow-up cleanup remain a separate operational concern.
- *
- * This subscriber only acts when willRetry() returns false (final rejection),
- * preventing partial/intermediate retries from writing spurious terminal states.
+ * This subscriber only acts when willRetry() returns false (final
+ * rejection), preventing partial/intermediate retries from writing
+ * spurious terminal states.
  */
 final readonly class WorkerFailedEventSubscriber implements EventSubscriberInterface
 {
@@ -114,32 +109,36 @@ final readonly class WorkerFailedEventSubscriber implements EventSubscriberInter
                 return;
             }
 
+            if ($exception instanceof RunStateReplayException
+                || str_contains($exception->getMessage(), 'duplicate sequence number')) {
+                $this->logger->warning('agent_loop.worker_failed_skipped_replay_corruption', [
+                    'run_id' => $runId,
+                    'component' => 'messenger.worker',
+                    'event_type' => 'worker_failed.skipped_replay_corruption',
+                ]);
+
+                return;
+            }
+
             $errorMessage = \sprintf(
                 'Permanent worker failure: %s: %s',
                 $exception::class,
                 $exception->getMessage(),
             );
 
-            $nextSeq = $current->lastSeq + 1;
+            if (!$this->eventStore instanceof SequencedEventStoreInterface) {
+                $this->logger->error('agent_loop.worker_failed_missing_sequenced_store', [
+                    'run_id' => $runId,
+                    'component' => 'messenger.worker',
+                    'event_type' => 'worker_failed.missing_sequenced_store',
+                ]);
 
-            $failedState = new RunState(
-                runId: $runId,
-                status: RunStatus::Failed,
-                version: $current->version + 1,
-                turnNo: $current->turnNo,
-                lastSeq: $nextSeq,
-                isStreaming: false,
-                streamingMessage: null,
-                pendingToolCalls: [],
-                errorMessage: $errorMessage,
-                messages: $current->messages,
-                activeStepId: $current->activeStepId,
-                retryableFailure: false,
-            );
+                return;
+            }
 
             $agentEndEvent = new RunEvent(
                 runId: $runId,
-                seq: $nextSeq,
+                seq: 0,
                 turnNo: $current->turnNo,
                 type: 'agent_end',
                 payload: [
@@ -149,26 +148,39 @@ final readonly class WorkerFailedEventSubscriber implements EventSubscriberInter
                 ],
             );
 
+            $persisted = $this->eventStore->appendWithNextSeq($agentEndEvent);
+
+            $failedState = new RunState(
+                runId: $runId,
+                status: RunStatus::Failed,
+                version: $current->version + 1,
+                turnNo: $current->turnNo,
+                lastSeq: $persisted->seq,
+                isStreaming: false,
+                streamingMessage: null,
+                pendingToolCalls: [],
+                errorMessage: $errorMessage,
+                messages: $current->messages,
+                activeStepId: $current->activeStepId,
+                retryableFailure: false,
+            );
+
             $committed = $this->runStore->compareAndSwap($failedState, $current->version);
 
             if (!$committed) {
-                // CAS conflict — another process already updated the state.
-                // The terminal state was likely already written.
                 $this->logger->warning('agent_loop.worker_failed_cas_conflict', [
                     'run_id' => $runId,
                     'expected_version' => $current->version,
+                    'persisted_seq' => $persisted->seq,
                 ]);
 
                 return;
             }
 
-            // State committed successfully — append the terminal event.
-            $this->eventStore->append($agentEndEvent);
-
             $this->logger->info('agent_loop.worker_failed_written', [
                 'run_id' => $runId,
                 'message_type' => $message::class,
-                'seq' => $nextSeq,
+                'seq' => $persisted->seq,
             ]);
         } catch (\Throwable $e) {
             // Never let this subscriber throw — we're inside Messenger's

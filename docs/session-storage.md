@@ -193,6 +193,35 @@ lines, validates embedded `run_id` against the directory name, and sorts by
 `seq` before returning.
 
 
+
+### Event sequence allocation (`sequence.cursor`)
+
+Each run (parent session directory or child artifact directory) owns a monotonic
+event sequence allocator beside its canonical log:
+
+- **Location:** `.hatfield/sessions/<runId>/sequence.cursor` next to
+  `events.jsonl`, or
+  `.hatfield/sessions/<parentRunId>/artifacts/agents/<artifactId>/sequence.cursor`
+  for child runs.
+- **Locking:** `FileRunSequenceAllocator` performs read/bootstrap/advance/write
+  under a single exclusive `flock(LOCK_EX)` on the cursor file handle (one
+  atomic read-modify-write transaction). Separate unlocked reads followed by
+  `LOCK_EX` writes are not used.
+- **Bootstrap:** When the cursor file is missing or empty, allocation bootstraps
+  once from the maximum `seq` value in the existing `events.jsonl` (physical
+  line order may be out of seq; max wins). After the cursor exists, normal
+  allocation does not scan `events.jsonl`.
+- **Crash gaps:** The cursor high-water mark is advanced before JSONL append.
+  A crash between those steps may leave a **sequence gap** in the log. Replay
+  tolerates gaps.
+- **Corruption:** Duplicate `seq` values in the canonical stream remain a typed
+  `RunStateReplayException` corruption failure.
+- **Writers:** Canonical production writers allocate through
+  `SequencedEventStoreInterface` (`appendWithNextSeq` / `appendManyWithNextSeq`).
+  Parent session, child artifact, and `ChildAwareEventStore` routing share the
+  same contract.
+
+
 ### Runtime event → transcript projection
 
 The TUI layer reads runtime events and projects them into the user-visible transcript via `RuntimeEventMapper` + `TranscriptProjector`:

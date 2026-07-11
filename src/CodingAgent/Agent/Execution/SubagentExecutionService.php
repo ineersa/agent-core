@@ -22,6 +22,7 @@ use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunDirectory;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionCatalog;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionDTO;
 use Ineersa\CodingAgent\Config\AgentsConfig;
+use Ineersa\CodingAgent\Session\SequencedRunEventAppender;
 use Ineersa\CodingAgent\Skills\SkillsContextBuilder;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Clock\ClockInterface;
@@ -57,6 +58,7 @@ final class SubagentExecutionService
         private readonly RunStoreInterface $runStore,
         private readonly RunStoreInterface $parentRunStore,
         private readonly EventStoreInterface $eventStore,
+        private readonly SequencedRunEventAppender $sequencedEventAppender,
         private readonly SubagentRunMetadataReader $metadataReader,
         private readonly AgentChildRunDirectory $childRunDirectory,
         private readonly StackToolExecutionContextAccessor $contextAccessor,
@@ -877,7 +879,7 @@ final class SubagentExecutionService
             ],
         );
 
-        $this->eventStore->append($event);
+        $this->sequencedEventAppender->append($event);
     }
 
     /**
@@ -1415,7 +1417,7 @@ TXT;
             ],
         );
 
-        $this->eventStore->append($event);
+        $this->sequencedEventAppender->append($event);
     }
 
     /**

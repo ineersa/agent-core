@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Runtime\InProcess;
 use Ineersa\AgentCore\Contract\AgentRunnerInterface;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\Rewind\RunRewindServiceInterface;
+use Ineersa\AgentCore\Contract\SequencedEventStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolExecutorInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
@@ -308,14 +309,9 @@ final class InProcessAgentSessionClient implements AgentSessionClient
 
     public function completeRun(string $runId): void
     {
-        $existingEvents = $this->eventStore->allFor($runId);
-        $nextSeq = [] !== $existingEvents
-            ? max(array_map(static fn (RunEvent $e): int => $e->seq, $existingEvents)) + 1
-            : 1;
-
-        $this->eventStore->append(new RunEvent(
+        $this->requireSequencedStore()->appendWithNextSeq(new RunEvent(
             runId: $runId,
-            seq: $nextSeq,
+            seq: 0,
             turnNo: 0,
             type: RunEventTypeEnum::AgentEnd->value,
             payload: ['reason' => 'completed'],
@@ -325,6 +321,15 @@ final class InProcessAgentSessionClient implements AgentSessionClient
     public function compact(string $runId, ?string $customInstructions = null): void
     {
         $this->runner->compact($runId, $customInstructions);
+    }
+
+    private function requireSequencedStore(): SequencedEventStoreInterface
+    {
+        if (!$this->eventStore instanceof SequencedEventStoreInterface) {
+            throw new \LogicException('InProcessAgentSessionClient requires SequencedEventStoreInterface for canonical writes.');
+        }
+
+        return $this->eventStore;
     }
 
     /**
@@ -393,17 +398,11 @@ final class InProcessAgentSessionClient implements AgentSessionClient
 
         $toolCallId = uniqid('sh_', true);
 
-        // Compute next sequence numbers for this run by inspecting existing
-        // events in the store.
-        $existingEvents = $this->eventStore->allFor($runId);
-        $nextSeq = [] !== $existingEvents
-            ? max(array_map(static fn (RunEvent $e): int => $e->seq, $existingEvents)) + 1
-            : 1;
+        $sequenced = $this->requireSequencedStore();
 
-        // Emit tool_execution_start event.
-        $this->eventStore->append(new RunEvent(
+        $sequenced->appendWithNextSeq(new RunEvent(
             runId: $runId,
-            seq: $nextSeq,
+            seq: 0,
             turnNo: 0,
             type: RunEventTypeEnum::ToolExecutionStart->value,
             payload: [
@@ -415,9 +414,9 @@ final class InProcessAgentSessionClient implements AgentSessionClient
 
         if (null === $this->toolExecutor) {
             // No ToolExecutor configured — emit a diagnostic error event.
-            $this->eventStore->append(new RunEvent(
+            $this->requireSequencedStore()->appendWithNextSeq(new RunEvent(
                 runId: $runId,
-                seq: $nextSeq + 1,
+                seq: 0,
                 turnNo: 0,
                 type: RunEventTypeEnum::ToolExecutionEnd->value,
                 payload: [
@@ -452,9 +451,9 @@ final class InProcessAgentSessionClient implements AgentSessionClient
         }
 
         // Emit tool_execution_end event with result text.
-        $this->eventStore->append(new RunEvent(
+        $this->requireSequencedStore()->appendWithNextSeq(new RunEvent(
             runId: $runId,
-            seq: $nextSeq + 1,
+            seq: 0,
             turnNo: 0,
             type: RunEventTypeEnum::ToolExecutionEnd->value,
             payload: [

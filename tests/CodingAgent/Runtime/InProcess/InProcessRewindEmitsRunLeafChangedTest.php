@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Tests\Runtime\InProcess;
 
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\RunStoreInterface;
+use Ineersa\AgentCore\Contract\SequencedEventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Run\RunState;
@@ -48,7 +49,7 @@ final class InProcessRewindEmitsRunLeafChangedTest extends IsolatedKernelTestCas
         $events = self::minimalSessionEvents();
 
         // ── Anonymous stub for EventStoreInterface ───────────────
-        $eventStore = new class($events) implements EventStoreInterface {
+        $eventStore = new class($events) implements SequencedEventStoreInterface {
             /** @param list<RunEvent> $events */
             public function __construct(private array $events)
             {
@@ -61,11 +62,38 @@ final class InProcessRewindEmitsRunLeafChangedTest extends IsolatedKernelTestCas
 
             public function append(RunEvent $event): void
             {
-                // Accept without persisting.
+                $this->events[] = $event;
+            }
+
+            public function appendWithNextSeq(RunEvent $event): RunEvent
+            {
+                $max = 0;
+                foreach ($this->events as $existing) {
+                    if ($existing->runId === $event->runId && $existing->seq > $max) {
+                        $max = $existing->seq;
+                    }
+                }
+                $persisted = new RunEvent($event->runId, $max + 1, $event->turnNo, $event->type, $event->payload, $event->createdAt);
+                $this->events[] = $persisted;
+
+                return $persisted;
+            }
+
+            public function appendManyWithNextSeq(array $events): array
+            {
+                $out = [];
+                foreach ($events as $event) {
+                    $out[] = $this->appendWithNextSeq($event);
+                }
+
+                return $out;
             }
 
             public function appendMany(array $events): void
             {
+                foreach ($events as $event) {
+                    $this->append($event);
+                }
             }
         };
         self::getContainer()->set(EventStoreInterface::class, $eventStore);

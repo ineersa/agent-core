@@ -12,6 +12,7 @@ use Ineersa\AgentCore\Contract\CommandStoreInterface;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\Replay\HotPromptStateRebuilderInterface;
 use Ineersa\AgentCore\Contract\RunStoreInterface;
+use Ineersa\AgentCore\Contract\SequencedEventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitHookContext;
 use Ineersa\AgentCore\Domain\Run\RunState;
@@ -48,10 +49,31 @@ final readonly class RunCommit
 
             try {
                 if ([] !== $events) {
-                    if (1 === \count($events)) {
-                        $this->eventStore->append($events[0]);
-                    } else {
-                        $this->eventStore->appendMany($events);
+                    if (!$this->eventStore instanceof SequencedEventStoreInterface) {
+                        throw new \LogicException('RunCommit requires SequencedEventStoreInterface for canonical event persistence.');
+                    }
+
+                    $persisted = 1 === \count($events)
+                        ? [$this->eventStore->appendWithNextSeq($events[0])]
+                        : $this->eventStore->appendManyWithNextSeq($events);
+                    $lastPersisted = $persisted[array_key_last($persisted)];
+                    if ($nextState->lastSeq !== $lastPersisted->seq) {
+                        $bumpedState = new RunState(
+                            runId: $nextState->runId,
+                            status: $nextState->status,
+                            version: $nextState->version + 1,
+                            turnNo: $nextState->turnNo,
+                            lastSeq: $lastPersisted->seq,
+                            isStreaming: $nextState->isStreaming,
+                            streamingMessage: $nextState->streamingMessage,
+                            pendingToolCalls: $nextState->pendingToolCalls,
+                            errorMessage: $nextState->errorMessage,
+                            messages: $nextState->messages,
+                            activeStepId: $nextState->activeStepId,
+                            retryableFailure: $nextState->retryableFailure,
+                        );
+                        $this->runStore->compareAndSwap($bumpedState, $nextState->version);
+                        $nextState = $bumpedState;
                     }
 
                     $eventsPersisted = true;

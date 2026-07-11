@@ -10,6 +10,7 @@ use Ineersa\AgentCore\Schema\SchemaVersion;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
+use Ineersa\CodingAgent\Session\FileRunSequenceAllocator;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\SessionRunEventStore;
 use PHPUnit\Framework\TestCase;
@@ -47,6 +48,7 @@ final class SessionRunEventStoreTest extends TestCase
             eventPayloadNormalizer: new EventPayloadNormalizer(),
             lockFactory: new LockFactory(new FlockStore()),
             logger: new \Psr\Log\NullLogger(),
+            sequenceAllocator: new FileRunSequenceAllocator(),
         );
     }
 
@@ -139,6 +141,7 @@ final class SessionRunEventStoreTest extends TestCase
             eventPayloadNormalizer: new EventPayloadNormalizer(),
             lockFactory: new LockFactory(new FlockStore()),
             logger: new \Psr\Log\NullLogger(),
+            sequenceAllocator: new FileRunSequenceAllocator(),
         );
 
         $events = $newStore->allFor($runId);

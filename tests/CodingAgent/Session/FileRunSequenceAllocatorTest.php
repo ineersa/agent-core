@@ -139,14 +139,14 @@ PHP;
         file_put_contents($workerFile, $workerScript);
         TestDirectoryIsolation::ensureDirectory($readyPath);
 
-        $projectRoot = dirname(__DIR__, 3);
+        $projectRoot = \dirname(__DIR__, 3);
         $workerCount = 4;
         $perWorker = 8;
         $processes = [];
 
         for ($w = 0; $w < $workerCount; ++$w) {
             $cmd = [
-                PHP_BINARY,
+                \PHP_BINARY,
                 $workerFile,
             ];
             $env = $_ENV;
@@ -179,10 +179,10 @@ PHP;
             if ($readyCount === $workerCount) {
                 break;
             }
-            $barrier = fopen($donePath, 'c');
+            $barrier = fopen($donePath, 'cb');
             if (false !== $barrier) {
-                flock($barrier, LOCK_SH);
-                flock($barrier, LOCK_UN);
+                flock($barrier, \LOCK_SH);
+                flock($barrier, \LOCK_UN);
                 fclose($barrier);
             }
         }
@@ -192,13 +192,11 @@ PHP;
         touch($donePath);
 
         foreach ($processes as $w => $meta) {
+            $stderr = stream_get_contents($meta['stderr']);
             $exit = proc_close($meta['proc']);
             if (0 !== $exit) {
-                $stderr = stream_get_contents($meta['stderr']);
                 $this->fail('Worker '.$w.' exited '.$exit.': '.$stderr);
             }
-            fclose($meta['stdout']);
-            fclose($meta['stderr']);
         }
 
         $this->assertFileExists($resultsPath);

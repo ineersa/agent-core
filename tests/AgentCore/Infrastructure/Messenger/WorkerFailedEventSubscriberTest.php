@@ -6,6 +6,7 @@ namespace Ineersa\AgentCore\Tests\Infrastructure\Messenger;
 
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\RunStoreInterface;
+use Ineersa\AgentCore\Contract\SequencedEventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Message\StartRun;
 use Ineersa\AgentCore\Domain\Message\StartRunPayload;
@@ -125,17 +126,20 @@ class WorkerFailedEventSubscriberTest extends TestCase
             ->willReturn(true);
 
         $capturedEvent = null;
-        $eventStore = $this->createMock(EventStoreInterface::class);
+        $eventStore = $this->createMock(SequencedEventStoreInterface::class);
         $eventStore->expects($this->once())
-            ->method('append')
-            ->with($this->callback(static function (RunEvent $event) use (&$capturedEvent): bool {
-                $capturedEvent = $event;
-
+            ->method('appendWithNextSeq')
+            ->with($this->callback(static function (RunEvent $event): bool {
                 return self::RUN_ID === $event->runId
                     && 'agent_end' === $event->type
                     && 'failed' === ($event->payload['reason'] ?? '')
-                    && 1 === $event->seq;
-            }));
+                    && 0 === $event->seq;
+            }))
+            ->willReturnCallback(static function (RunEvent $event) use (&$capturedEvent): RunEvent {
+                $capturedEvent = new RunEvent($event->runId, 1, $event->turnNo, $event->type, $event->payload);
+
+                return $capturedEvent;
+            });
 
         $logger = new NullLogger();
 
@@ -180,17 +184,14 @@ class WorkerFailedEventSubscriberTest extends TestCase
             ->willReturn(true);
 
         $capturedEvent = null;
-        $eventStore = $this->createMock(EventStoreInterface::class);
+        $eventStore = $this->createMock(SequencedEventStoreInterface::class);
         $eventStore->expects($this->once())
-            ->method('append')
-            ->with($this->callback(static function (RunEvent $event) use (&$capturedEvent): bool {
-                $capturedEvent = $event;
+            ->method('appendWithNextSeq')
+            ->willReturnCallback(static function (RunEvent $event) use (&$capturedEvent): RunEvent {
+                $capturedEvent = new RunEvent($event->runId, 6, $event->turnNo, $event->type, $event->payload);
 
-                return self::RUN_ID === $event->runId
-                    && 'agent_end' === $event->type
-                    && 'failed' === ($event->payload['reason'] ?? '')
-                    && 6 === $event->seq;  // lastSeq 5 + 1
-            }));
+                return $capturedEvent;
+            });
 
         $logger = new NullLogger();
 

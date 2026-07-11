@@ -921,6 +921,7 @@ services:
   Ineersa\CodingAgent\Agent\Execution\SubagentExecutionService:
     arguments:
       $parentRunStore: '@Ineersa\CodingAgent\Session\SessionRunStore'
+      $sequencedEventAppender: '@Ineersa\CodingAgent\Session\SequencedRunEventAppender'
 
   # ─── AGENT-05 Subagent tool storage routing ─────────────────────────
 
@@ -934,6 +935,18 @@ services:
 
   # ChildAwareEventStore — delegates EventStoreInterface between parent-scoped
   # SessionRunEventStore (parent runs) and AgentChildRunEventStore (child runs).
+
+  Ineersa\AgentCore\Contract\RunSequenceAllocatorInterface:
+    alias: Ineersa\CodingAgent\Session\FileRunSequenceAllocator
+
+  Ineersa\CodingAgent\Session\FileRunSequenceAllocator: ~
+
+  Ineersa\CodingAgent\Session\EventLogMaxSeqBootstrapReader: ~
+
+  Ineersa\CodingAgent\Session\SequencedRunEventAppender:
+    arguments:
+      $eventStore: '@Ineersa\CodingAgent\Agent\Artifact\ChildAwareEventStore'
+
   Ineersa\CodingAgent\Agent\Artifact\ChildAwareEventStore:
     arguments:
       $parentStore: '@Ineersa\CodingAgent\Session\SessionRunEventStore'

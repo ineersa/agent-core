@@ -8,7 +8,7 @@ use Ineersa\AgentCore\Application\Handler\StepDispatcher;
 use Ineersa\AgentCore\Application\Pipeline\RunCommit;
 use Ineersa\AgentCore\Application\Replay\PromptStateReplayService;
 use Ineersa\AgentCore\Application\Replay\ReplayEventPreparer;
-use Ineersa\AgentCore\Contract\EventStoreInterface;
+use Ineersa\AgentCore\Contract\SequencedEventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
@@ -77,7 +77,7 @@ final class RunCommitLoggingTest extends TestCase
     }
 }
 
-final class RecordingEventStore implements EventStoreInterface
+final class RecordingEventStore implements SequencedEventStoreInterface
 {
     public int $appendManyCalls = 0;
 
@@ -87,6 +87,26 @@ final class RecordingEventStore implements EventStoreInterface
     public function append(RunEvent $event): void
     {
         $this->appended[] = $event;
+    }
+
+    public function appendWithNextSeq(RunEvent $event): RunEvent
+    {
+        $seq = \count($this->appended) + 1;
+        $persisted = new RunEvent($event->runId, $seq, $event->turnNo, $event->type, $event->payload, $event->createdAt);
+        $this->appended[] = $persisted;
+
+        return $persisted;
+    }
+
+    public function appendManyWithNextSeq(array $events): array
+    {
+        ++$this->appendManyCalls;
+        $out = [];
+        foreach ($events as $event) {
+            $out[] = $this->appendWithNextSeq($event);
+        }
+
+        return $out;
     }
 
     public function appendMany(array $events): void
