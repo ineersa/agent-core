@@ -8,7 +8,6 @@ use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Application\Handler\RunStateReplayException;
 use Ineersa\AgentCore\Application\Replay\ReplayEventPreparer;
 use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
-use Ineersa\AgentCore\Contract\SequencedEventStoreInterface;
 use Ineersa\AgentCore\Contract\TurnTree\TurnTreeNodeSnapshotDTO;
 use Ineersa\AgentCore\Contract\TurnTree\TurnTreeProjectorInterface;
 use Ineersa\AgentCore\Contract\TurnTree\TurnTreeSnapshotDTO;
@@ -17,6 +16,7 @@ use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryRunStore;
+use Ineersa\CodingAgent\Session\Contract\CommittedEventStoreInterface;
 use Ineersa\CodingAgent\Session\Rewind\SessionRewindService;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
@@ -33,27 +33,19 @@ final class SessionRewindServiceDuplicateSequenceTest extends TestCase
             new RunEvent($runId, 1, 1, 'user.message', ['text' => 'hi']),
         ];
 
-        $eventStore = new class($events) implements SequencedEventStoreInterface {
+        $eventStore = new class($events) implements CommittedEventStoreInterface {
             public function __construct(private readonly array $events)
             {
             }
 
-            public function append(RunEvent $event): void
-            {
-            }
-
-            public function appendWithNextSeq(RunEvent $event): RunEvent
+            public function append(RunEvent $event): RunEvent
             {
                 throw new \LogicException('not expected');
             }
 
-            public function appendManyWithNextSeq(array $events): array
+            public function appendMany(array $events): array
             {
                 throw new \LogicException('not expected');
-            }
-
-            public function appendMany(array $events): void
-            {
             }
 
             public function allFor(string $runId): array

@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Runtime\Stream;
 
-use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeEventSinkInterface;
@@ -13,6 +12,7 @@ use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTranslator;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Ineersa\CodingAgent\Runtime\Stream\StreamingCommittedRuntimeEventStore;
+use Ineersa\CodingAgent\Session\Contract\CommittedEventStoreInterface;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 
@@ -23,7 +23,7 @@ final class StreamingCommittedRuntimeEventStoreTest extends TestCase
 {
     public function testAppendEmitsMappedRuntimeEventAfterInnerAppend(): void
     {
-        $inner = new RecordingEventStore();
+        $inner = new RecordingCommittedEventStore();
         $sink = new RecordingCommittedStdoutSink();
         $mapper = new RuntimeEventMapper(new RuntimeEventTranslator(new EventDispatcher()));
 
@@ -39,7 +39,7 @@ final class StreamingCommittedRuntimeEventStoreTest extends TestCase
     public function testAppendChildRunEventEmitsRuntimeEventPreservingChildRunId(): void
     {
         $childRunId = 'child-subagent-run-7f3a';
-        $inner = new RecordingEventStore();
+        $inner = new RecordingCommittedEventStore();
         $sink = new RecordingCommittedStdoutSink();
         $mapper = new RuntimeEventMapper(new RuntimeEventTranslator(new EventDispatcher()));
 
@@ -54,7 +54,7 @@ final class StreamingCommittedRuntimeEventStoreTest extends TestCase
 
     public function testAppendManyEmitsInOrderAfterBatchAppend(): void
     {
-        $inner = new RecordingEventStore();
+        $inner = new RecordingCommittedEventStore();
         $sink = new RecordingCommittedStdoutSink();
         $mapper = new RuntimeEventMapper(new RuntimeEventTranslator(new EventDispatcher()));
 
@@ -69,7 +69,7 @@ final class StreamingCommittedRuntimeEventStoreTest extends TestCase
 
     public function testStreamingDisabledSkipsStdoutEmit(): void
     {
-        $inner = new RecordingEventStore();
+        $inner = new RecordingCommittedEventStore();
         $sink = new RecordingCommittedStdoutSink();
         $mapper = new RuntimeEventMapper(new RuntimeEventTranslator(new EventDispatcher()));
 
@@ -84,21 +84,27 @@ final class StreamingCommittedRuntimeEventStoreTest extends TestCase
 /**
  * @internal
  */
-final class RecordingEventStore implements EventStoreInterface
+final class RecordingCommittedEventStore implements CommittedEventStoreInterface
 {
     /** @var list<RunEvent> */
     public array $appended = [];
 
-    public function append(RunEvent $event): void
+    public function append(RunEvent $event): RunEvent
     {
-        $this->appended[] = $event;
+        $persisted = new RunEvent($event->runId, $event->seq > 0 ? $event->seq : 1, $event->turnNo, $event->type, $event->payload, $event->createdAt);
+        $this->appended[] = $persisted;
+
+        return $persisted;
     }
 
-    public function appendMany(array $events): void
+    public function appendMany(array $events): array
     {
+        $out = [];
         foreach ($events as $event) {
-            $this->append($event);
+            $out[] = $this->append($event);
         }
+
+        return $out;
     }
 
     public function allFor(string $runId): array

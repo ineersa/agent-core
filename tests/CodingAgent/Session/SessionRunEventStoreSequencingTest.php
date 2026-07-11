@@ -61,7 +61,7 @@ final class SessionRunEventStoreSequencingTest extends TestCase
         $counterPath = FileRunSequenceAllocator::counterPathForEventsLog($eventsPath);
         file_put_contents($counterPath, "5\n");
 
-        $persisted = $this->store->appendWithNextSeq(new RunEvent(
+        $persisted = $this->store->append(new RunEvent(
             runId: $runId,
             seq: 0,
             turnNo: 1,
@@ -85,12 +85,12 @@ final class SessionRunEventStoreSequencingTest extends TestCase
         $counterPath = FileRunSequenceAllocator::counterPathForEventsLog($eventsPath);
         $this->assertFileDoesNotExist($counterPath);
 
-        $first = $this->store->appendWithNextSeq(new RunEvent($runId, 0, 2, 'tool_execution_start', []));
+        $first = $this->store->append(new RunEvent($runId, 0, 2, 'tool_execution_start', []));
         $this->assertSame(9, $first->seq);
         $this->assertFileExists($counterPath);
         $this->assertSame("9\n", file_get_contents($counterPath));
 
-        $second = $this->store->appendWithNextSeq(new RunEvent($runId, 0, 2, 'tool_execution_end', []));
+        $second = $this->store->append(new RunEvent($runId, 0, 2, 'tool_execution_end', []));
         $this->assertSame(10, $second->seq);
     }
 
@@ -101,7 +101,7 @@ final class SessionRunEventStoreSequencingTest extends TestCase
         TestDirectoryIsolation::ensureDirectory(\dirname($eventsPath));
         file_put_contents(FileRunSequenceAllocator::counterPathForEventsLog($eventsPath), "2\n");
 
-        $persisted = $this->store->appendManyWithNextSeq([
+        $persisted = $this->store->appendMany([
             new RunEvent($runId, 0, 1, 'a', []),
             new RunEvent($runId, 0, 1, 'b', []),
             new RunEvent($runId, 0, 1, 'c', []),

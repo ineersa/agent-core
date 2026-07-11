@@ -32,8 +32,8 @@ use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Infrastructure\Storage\HotPromptStateStore;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryRunStore;
-use Ineersa\AgentCore\Infrastructure\Storage\RunEventStore;
 use Ineersa\AgentCore\Tests\Application\Handler\InMemoryIdempotencyStore;
+use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use Ineersa\AgentCore\Tests\Support\TestSerializerFactory;
 use Ineersa\CodingAgent\Session\Replay\SessionHotPromptReplayService;
@@ -441,7 +441,7 @@ final class CommandMailboxPolicyTest extends TestCase
     private function createFixture(int $maxPendingCommands = 100, string $steerDrainMode = 'one_at_a_time'): CommandMailboxFixture
     {
         $runStore = new InMemoryRunStore();
-        $eventStore = new RunEventStore();
+        $eventStore = new InMemoryEventStore();
         $commandStore = new InMemoryCommandStore();
 
         $replayService = new SessionHotPromptReplayService($eventStore, new HotPromptStateStore(), new PromptStateReplayService(), new ReplayEventPreparer());
@@ -587,7 +587,7 @@ final readonly class CommandMailboxFixture
     public function __construct(
         public RunOrchestrator $orchestrator,
         public InMemoryRunStore $runStore,
-        public RunEventStore $eventStore,
+        public InMemoryEventStore $eventStore,
         public InMemoryCommandStore $commandStore,
         public TestMessageBus $commandBus,
     ) {

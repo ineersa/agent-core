@@ -10,7 +10,6 @@ use Ineersa\AgentCore\Application\Handler\HookSubscriberRegistry;
 use Ineersa\AgentCore\Application\Handler\StepDispatcher;
 use Ineersa\AgentCore\Application\Pipeline\RunCommit;
 use Ineersa\AgentCore\Contract\Replay\HotPromptStateRebuilderInterface;
-use Ineersa\AgentCore\Contract\SequencedEventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitEventSummary;
@@ -26,6 +25,7 @@ use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
+use Ineersa\CodingAgent\Session\Contract\CommittedEventStoreInterface;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\SessionToolBatchStore;
 use Ineersa\CodingAgent\Session\ToolBatchSnapshotCleanupHookSubscriber;
@@ -216,22 +216,14 @@ final class ToolBatchSnapshotCleanupHookSubscriberTest extends TestCase
     }
 }
 
-final class CleanupHookSubscriberNoOpEventStore implements SequencedEventStoreInterface
+final class CleanupHookSubscriberNoOpEventStore implements CommittedEventStoreInterface
 {
-    public function append(RunEvent $event): void
-    {
-    }
-
-    public function appendMany(array $events): void
-    {
-    }
-
-    public function appendWithNextSeq(RunEvent $event): RunEvent
+    public function append(RunEvent $event): RunEvent
     {
         return $event;
     }
 
-    public function appendManyWithNextSeq(array $events): array
+    public function appendMany(array $events): array
     {
         return $events;
     }

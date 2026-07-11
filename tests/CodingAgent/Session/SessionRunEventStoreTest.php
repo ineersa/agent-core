@@ -108,9 +108,10 @@ final class SessionRunEventStoreTest extends TestCase
         $this->assertSame(1, $events[0]->seq);
         $this->assertSame(2, $events[1]->seq);
         $this->assertSame(3, $events[2]->seq);
-        $this->assertSame('run_started', $events[0]->type);
-        $this->assertSame('tool_execution_start', $events[1]->type);
-        $this->assertSame('tool_execution_end', $events[2]->type);
+        // Committed appendMany assigns monotonic seq in submission order, then allFor sorts by seq.
+        $this->assertSame('tool_execution_end', $events[0]->type);
+        $this->assertSame('run_started', $events[1]->type);
+        $this->assertSame('tool_execution_start', $events[2]->type);
     }
 
     public function testEventsSurviveStoreRecreation(): void

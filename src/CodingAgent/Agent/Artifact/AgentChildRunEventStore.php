@@ -4,12 +4,11 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Agent\Artifact;
 
-use Ineersa\AgentCore\Contract\EventStoreInterface;
-use Ineersa\AgentCore\Contract\RunSequenceAllocatorInterface;
-use Ineersa\AgentCore\Contract\SequencedEventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
 use Ineersa\AgentCore\Schema\SchemaVersion;
+use Ineersa\CodingAgent\Session\Contract\CommittedEventStoreInterface;
+use Ineersa\CodingAgent\Session\Contract\RunSequenceAllocatorInterface;
 use Ineersa\CodingAgent\Session\EventLogMaxSeqBootstrapReader;
 use Ineersa\CodingAgent\Session\FileRunSequenceAllocator;
 use Psr\Log\LoggerInterface;
@@ -37,7 +36,7 @@ use Symfony\Component\Lock\LockFactory;
  * Path resolution and validation are delegated to
  * {@see AgentArtifactPathResolver}.
  */
-final class AgentChildRunEventStore implements SequencedEventStoreInterface
+final class AgentChildRunEventStore implements CommittedEventStoreInterface
 {
     public function __construct(
         private readonly AgentArtifactPathResolver $pathResolver,
@@ -54,24 +53,7 @@ final class AgentChildRunEventStore implements SequencedEventStoreInterface
         $this->pathResolver->validatePathComponent($artifactId, 'artifactId');
     }
 
-    public function append(RunEvent $event): void
-    {
-        if ($event->runId !== $this->agentRunId) {
-            throw new \RuntimeException(\sprintf('RunEvent integrity error: embedded runId "%s" does not match bound agentRunId "%s".', $event->runId, $this->agentRunId));
-        }
-
-        $path = $this->eventsPath();
-        $lock = $this->lockFactory->createLock("hatfield-run-{$this->agentRunId}");
-        $lock->acquire(true);
-
-        try {
-            $this->writeEventLocked($path, $event);
-        } finally {
-            $lock->release();
-        }
-    }
-
-    public function appendWithNextSeq(RunEvent $event): RunEvent
+    public function append(RunEvent $event): RunEvent
     {
         if ($event->runId !== $this->agentRunId) {
             throw new \RuntimeException(\sprintf('RunEvent integrity error: embedded runId "%s" does not match bound agentRunId "%s".', $event->runId, $this->agentRunId));
@@ -83,10 +65,14 @@ final class AgentChildRunEventStore implements SequencedEventStoreInterface
 
         try {
             $counterPath = FileRunSequenceAllocator::counterPathForEventsLog($path);
-            $nextSeq = $this->sequenceAllocator->allocateNext(
-                $counterPath,
-                fn (): int => $this->bootstrapReader->readMaxSeq($path),
-            );
+            if ($event->seq > RunEvent::APPEND_DRAFT_SEQ) {
+                $nextSeq = $event->seq;
+            } else {
+                $nextSeq = $this->sequenceAllocator->allocateNext(
+                    $counterPath,
+                    fn (): int => $this->bootstrapReader->readMaxSeq($path),
+                );
+            }
             $persisted = new RunEvent(
                 runId: $event->runId,
                 seq: $nextSeq,
@@ -103,7 +89,7 @@ final class AgentChildRunEventStore implements SequencedEventStoreInterface
         }
     }
 
-    public function appendManyWithNextSeq(array $events): array
+    public function appendMany(array $events): array
     {
         if ([] === $events) {
             return [];
@@ -142,13 +128,6 @@ final class AgentChildRunEventStore implements SequencedEventStoreInterface
             return $persisted;
         } finally {
             $lock->release();
-        }
-    }
-
-    public function appendMany(array $events): void
-    {
-        foreach ($events as $event) {
-            $this->append($event);
         }
     }
 

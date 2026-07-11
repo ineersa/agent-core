@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Runtime\Controller\CommandHandler;
 
 use Ineersa\AgentCore\Contract\EventStoreInterface;
-use Ineersa\AgentCore\Contract\SequencedEventStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolExecutorInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
@@ -13,6 +12,7 @@ use Ineersa\AgentCore\Domain\Message\ExecuteShellToolCall;
 use Ineersa\AgentCore\Domain\Tool\ToolCall;
 use Ineersa\AgentCore\Domain\Tool\ToolResult;
 use Ineersa\CodingAgent\Runtime\Controller\CommandHandler\ExecuteShellToolCallWorker;
+use Ineersa\CodingAgent\Session\Contract\CommittedEventStoreInterface;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 
@@ -124,7 +124,7 @@ final class ExecuteShellToolCallWorkerTest extends TestCase
      */
     private function createEventStore(): EventStoreInterface
     {
-        return new class($this->appendedEvents) implements SequencedEventStoreInterface {
+        return new class($this->appendedEvents) implements CommittedEventStoreInterface {
             /** @var list<RunEvent> */
             private array $collector;
 
@@ -134,12 +134,7 @@ final class ExecuteShellToolCallWorkerTest extends TestCase
                 $this->collector = &$collector;
             }
 
-            public function append(RunEvent $event): void
-            {
-                $this->collector[] = $event;
-            }
-
-            public function appendWithNextSeq(RunEvent $event): RunEvent
+            public function append(RunEvent $event): RunEvent
             {
                 $seq = \count(array_filter($this->collector, static fn (RunEvent $e): bool => $e->runId === $event->runId)) + 1;
                 $persisted = new RunEvent($event->runId, $seq, $event->turnNo, $event->type, $event->payload, $event->createdAt);
@@ -148,21 +143,14 @@ final class ExecuteShellToolCallWorkerTest extends TestCase
                 return $persisted;
             }
 
-            public function appendManyWithNextSeq(array $events): array
+            public function appendMany(array $events): array
             {
                 $out = [];
                 foreach ($events as $event) {
-                    $out[] = $this->appendWithNextSeq($event);
+                    $out[] = $this->append($event);
                 }
 
                 return $out;
-            }
-
-            public function appendMany(array $events): void
-            {
-                foreach ($events as $event) {
-                    $this->collector[] = $event;
-                }
             }
 
             /**

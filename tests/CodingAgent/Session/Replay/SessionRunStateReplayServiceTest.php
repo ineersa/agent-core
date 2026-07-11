@@ -11,7 +11,7 @@ use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
-use Ineersa\AgentCore\Infrastructure\Storage\RunEventStore;
+use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
 use Ineersa\CodingAgent\Session\Replay\BranchReplayFilterContractAdapter;
 use Ineersa\CodingAgent\Session\Replay\SessionRunStateReplayService;
 use Ineersa\CodingAgent\Session\Replay\TurnTreeReplayFilter;
@@ -21,7 +21,7 @@ use Psr\Log\NullLogger;
 
 final class SessionRunStateReplayServiceTest extends TestCase
 {
-    private RunEventStore $eventStore;
+    private InMemoryEventStore $eventStore;
     private SessionRunStateReplayService $service;
     private RunStateReducer $reducer;
     private BranchReplayFilterContractAdapter $treeFilter;
@@ -29,7 +29,7 @@ final class SessionRunStateReplayServiceTest extends TestCase
 
     protected function setUp(): void
     {
-        $this->eventStore = new RunEventStore();
+        $this->eventStore = new InMemoryEventStore();
         $this->treeFilter = new BranchReplayFilterContractAdapter(new TurnTreeReplayFilter(new TurnTreeProjector()));
         $this->reducer = new RunStateReducer();
         $this->service = new SessionRunStateReplayService(

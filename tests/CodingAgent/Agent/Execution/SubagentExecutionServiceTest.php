@@ -18,7 +18,7 @@ use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Domain\Run\StartRunInput;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryRunStore;
-use Ineersa\AgentCore\Infrastructure\Storage\RunEventStore;
+use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
 use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunDirectory;
@@ -557,7 +557,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
         $catalog = new AgentDefinitionCatalog([$def]);
         $directory = self::getContainer()->get(AgentChildRunDirectory::class);
 
-        $eventStore = new RunEventStore();
+        $eventStore = new InMemoryEventStore();
         $sequencedAppender = new SequencedRunEventAppender($eventStore, $parentRunStore, new \Psr\Log\NullLogger());
 
         $metadataReader = new SubagentRunMetadataReader($eventStore);
@@ -1258,7 +1258,7 @@ CHILD_SKILL_BODY_UNIQUE',
         );
         $parentRunStore = new InMemoryRunStore();
         $parentRunStore->compareAndSwap(new RunState(runId: 'parent-timeout-single', status: RunStatus::Running, version: 1, lastSeq: 0), 0);
-        $eventStore = new RunEventStore();
+        $eventStore = new InMemoryEventStore();
         $sequencedAppender = new SequencedRunEventAppender($eventStore, $parentRunStore, new \Psr\Log\NullLogger());
 
         $service = $this->makeService([
@@ -1347,7 +1347,7 @@ CHILD_SKILL_BODY_UNIQUE',
 
         $parentRunStore = new InMemoryRunStore();
         $parentRunStore->compareAndSwap(new RunState(runId: 'parent-cancel-single', status: RunStatus::Running, version: 1, lastSeq: 0), 0);
-        $eventStore = new RunEventStore();
+        $eventStore = new InMemoryEventStore();
         $sequencedAppender = new SequencedRunEventAppender($eventStore, $parentRunStore, new \Psr\Log\NullLogger());
 
         $service = $this->makeService([

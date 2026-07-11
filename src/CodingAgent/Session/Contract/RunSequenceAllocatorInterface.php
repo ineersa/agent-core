@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\AgentCore\Contract;
+namespace Ineersa\CodingAgent\Session\Contract;
 
 /**
  * Per-run monotonic event position allocator (counter file path scoped).

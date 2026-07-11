@@ -4,12 +4,11 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Session;
 
-use Ineersa\AgentCore\Contract\EventStoreInterface;
-use Ineersa\AgentCore\Contract\RunSequenceAllocatorInterface;
-use Ineersa\AgentCore\Contract\SequencedEventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
 use Ineersa\AgentCore\Schema\SchemaVersion;
+use Ineersa\CodingAgent\Session\Contract\CommittedEventStoreInterface;
+use Ineersa\CodingAgent\Session\Contract\RunSequenceAllocatorInterface;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Lock\LockFactory;
 
@@ -20,9 +19,9 @@ use Symfony\Component\Lock\LockFactory;
  * .hatfield/sessions/<runId>/events.jsonl.
  *
  * Sequence allocation uses a per-run {@see FileRunSequenceAllocator::COUNTER_BASENAME} file.
- * events.jsonl is never scanned during normal appendWithNextSeq.
+ * events.jsonl is never scanned during normal append (only bootstrap when cursor is missing).
  */
-final class SessionRunEventStore implements SequencedEventStoreInterface
+final class SessionRunEventStore implements CommittedEventStoreInterface
 {
     private readonly string $sessionsBasePath;
 
@@ -37,20 +36,7 @@ final class SessionRunEventStore implements SequencedEventStoreInterface
         $this->sessionsBasePath = $hatfieldSessionStore->resolveSessionsBasePath();
     }
 
-    public function append(RunEvent $event): void
-    {
-        $path = $this->eventsPath($event->runId);
-        $lock = $this->lockFactory->createLock('hatfield-run-'.$event->runId);
-        $lock->acquire(true);
-
-        try {
-            $this->writeEventLocked($path, $event);
-        } finally {
-            $lock->release();
-        }
-    }
-
-    public function appendWithNextSeq(RunEvent $event): RunEvent
+    public function append(RunEvent $event): RunEvent
     {
         $path = $this->eventsPath($event->runId);
         $lock = $this->lockFactory->createLock('hatfield-run-'.$event->runId);
@@ -58,10 +44,14 @@ final class SessionRunEventStore implements SequencedEventStoreInterface
 
         try {
             $counterPath = FileRunSequenceAllocator::counterPathForEventsLog($path);
-            $nextSeq = $this->sequenceAllocator->allocateNext(
-                $counterPath,
-                fn (): int => $this->bootstrapReader->readMaxSeq($path),
-            );
+            if ($event->seq > RunEvent::APPEND_DRAFT_SEQ) {
+                $nextSeq = $event->seq;
+            } else {
+                $nextSeq = $this->sequenceAllocator->allocateNext(
+                    $counterPath,
+                    fn (): int => $this->bootstrapReader->readMaxSeq($path),
+                );
+            }
             $persisted = new RunEvent(
                 runId: $event->runId,
                 seq: $nextSeq,
@@ -79,7 +69,7 @@ final class SessionRunEventStore implements SequencedEventStoreInterface
         }
     }
 
-    public function appendManyWithNextSeq(array $events): array
+    public function appendMany(array $events): array
     {
         if ([] === $events) {
             return [];
@@ -88,7 +78,7 @@ final class SessionRunEventStore implements SequencedEventStoreInterface
         $runId = $events[0]->runId;
         foreach ($events as $event) {
             if ($event->runId !== $runId) {
-                throw new \InvalidArgumentException('appendManyWithNextSeq requires all events to share the same runId.');
+                throw new \InvalidArgumentException('appendMany requires all events to share the same runId.');
             }
         }
 
@@ -121,13 +111,6 @@ final class SessionRunEventStore implements SequencedEventStoreInterface
             return $persisted;
         } finally {
             $lock->release();
-        }
-    }
-
-    public function appendMany(array $events): void
-    {
-        foreach ($events as $event) {
-            $this->append($event);
         }
     }
 

@@ -945,7 +945,7 @@ services:
   # ChildAwareEventStore — delegates EventStoreInterface between parent-scoped
   # SessionRunEventStore (parent runs) and AgentChildRunEventStore (child runs).
 
-  Ineersa\AgentCore\Contract\RunSequenceAllocatorInterface:
+  Ineersa\CodingAgent\Session\Contract\RunSequenceAllocatorInterface:
     alias: Ineersa\CodingAgent\Session\FileRunSequenceAllocator
 
   Ineersa\CodingAgent\Session\FileRunSequenceAllocator: ~

@@ -7,11 +7,14 @@ namespace Ineersa\CodingAgent\Session;
 /**
  * One-time bootstrap helper: derive max committed seq from an on-disk JSONL log.
  *
- * Used only when {@see FileRunSequenceAllocator} creates the first counter file for a
- * run. Normal allocation never reads events.jsonl.
+ * Used only when {@see FileRunSequenceAllocator} creates the first counter file for a run.
+ * Normal allocation never reads events.jsonl. Malformed lines are skipped (bootstrap-only).
  */
 final class EventLogMaxSeqBootstrapReader
 {
+    /** Match top-level JSON "seq": <int> without full json_decode per line. */
+    private const SEQ_FIELD_PATTERN = '/"seq"\s*:\s*(-?\d+)/';
+
     public function readMaxSeq(string $path): int
     {
         if (!is_readable($path) || !is_file($path)) {
@@ -32,18 +35,12 @@ final class EventLogMaxSeqBootstrapReader
                     continue;
                 }
 
-                try {
-                    $payload = json_decode($trimmed, true, 512, \JSON_THROW_ON_ERROR);
-                } catch (\JsonException) {
+                if (!preg_match(self::SEQ_FIELD_PATTERN, $trimmed, $matches)) {
                     continue;
                 }
 
-                if (!\is_array($payload)) {
-                    continue;
-                }
-
-                $seq = $payload['seq'] ?? null;
-                if (\is_int($seq) && $seq > $maxSeq) {
+                $seq = (int) $matches[1];
+                if ($seq > $maxSeq) {
                     $maxSeq = $seq;
                 }
             }

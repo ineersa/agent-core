@@ -2,12 +2,12 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\AgentCore\Infrastructure\Messenger;
+namespace Ineersa\CodingAgent\Messenger\Runtime;
 
+use Ineersa\AgentCore\Application\Handler\RunStateDuplicateSequenceReplayException;
 use Ineersa\AgentCore\Application\Handler\RunStateReplayException;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\RunStoreInterface;
-use Ineersa\AgentCore\Contract\SequencedEventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Message\AbstractAgentBusMessage;
 use Ineersa\AgentCore\Domain\Run\RunState;
@@ -117,7 +117,7 @@ final readonly class WorkerFailedEventSubscriber implements EventSubscriberInter
                 return;
             }
 
-            if ($exception instanceof RunStateReplayException && $exception->isDuplicateSequences()) {
+            if ($exception instanceof RunStateDuplicateSequenceReplayException || ($exception instanceof RunStateReplayException && $exception->isDuplicateSequences())) {
                 $this->logger->warning('agent_loop.worker_failed_skipped_replay_corruption', [
                     'run_id' => $runId,
                     'component' => 'messenger.worker',
@@ -132,20 +132,8 @@ final readonly class WorkerFailedEventSubscriber implements EventSubscriberInter
                 $exception::class,
                 $exception->getMessage(),
             );
-
-            if (!$this->eventStore instanceof SequencedEventStoreInterface) {
-                $this->logger->error('agent_loop.worker_failed_missing_sequenced_store', [
-                    'run_id' => $runId,
-                    'component' => 'messenger.worker',
-                    'event_type' => 'worker_failed.missing_sequenced_store',
-                ]);
-
-                return;
-            }
-
-            $agentEndEvent = new RunEvent(
+            $agentEndEvent = RunEvent::forAppend(
                 runId: $runId,
-                seq: 0,
                 turnNo: $current->turnNo,
                 type: 'agent_end',
                 payload: [
@@ -155,7 +143,7 @@ final readonly class WorkerFailedEventSubscriber implements EventSubscriberInter
                 ],
             );
 
-            $persisted = $this->eventStore->appendWithNextSeq($agentEndEvent);
+            $persisted = $this->eventStore->append($agentEndEvent);
 
             $failedState = new RunState(
                 runId: $runId,

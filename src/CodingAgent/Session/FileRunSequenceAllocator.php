@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Session;
 
-use Ineersa\AgentCore\Contract\RunSequenceAllocatorInterface;
+use Ineersa\CodingAgent\Session\Contract\RunSequenceAllocatorInterface;
 
 /**
  * Per-run monotonic sequence allocator backed by a single integer file.
@@ -14,6 +14,10 @@ use Ineersa\AgentCore\Contract\RunSequenceAllocatorInterface;
  * before append leaves a gap in seq — replay allows gaps.
  *
  * Read/bootstrap/advance/write run under one exclusive flock on the cursor handle.
+ * Invariant (one critical section per allocation):
+ * open sequence.cursor (c+b) → flock LOCK_EX → read high-water (bootstrap from events.jsonl only when file empty)
+ * → reserve seq block → durable fwrite high-water → flock LOCK_UN → fclose.
+ * JSONL append is a separate step under the run lock; cursor may advance before append completes, so seq gaps are allowed.
  */
 final class FileRunSequenceAllocator implements RunSequenceAllocatorInterface
 {

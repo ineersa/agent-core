@@ -8,14 +8,19 @@ use Ineersa\AgentCore\Domain\Event\RunEvent;
 
 interface EventStoreInterface
 {
-    public function append(RunEvent $event): void;
+    public function append(RunEvent $event): RunEvent;
 
     /**
      * Persists an array of RunEvents to the store.
      *
      * @param list<RunEvent> $events
      */
-    public function appendMany(array $events): void;
+    /**
+     * @param list<RunEvent> $events
+     *
+     * @return list<RunEvent>
+     */
+    public function appendMany(array $events): array;
 
     /**
      * Retrieves all events associated with a specific run ID.

@@ -7,7 +7,6 @@ namespace Ineersa\CodingAgent\Runtime\InProcess;
 use Ineersa\AgentCore\Contract\AgentRunnerInterface;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\Rewind\RunRewindServiceInterface;
-use Ineersa\AgentCore\Contract\SequencedEventStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolExecutorInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
@@ -309,7 +308,7 @@ final class InProcessAgentSessionClient implements AgentSessionClient
 
     public function completeRun(string $runId): void
     {
-        $this->requireSequencedStore()->appendWithNextSeq(new RunEvent(
+        $this->requireCommittedStore()->append(new RunEvent(
             runId: $runId,
             seq: 0,
             turnNo: 0,
@@ -323,12 +322,8 @@ final class InProcessAgentSessionClient implements AgentSessionClient
         $this->runner->compact($runId, $customInstructions);
     }
 
-    private function requireSequencedStore(): SequencedEventStoreInterface
+    private function requireCommittedStore(): EventStoreInterface
     {
-        if (!$this->eventStore instanceof SequencedEventStoreInterface) {
-            throw new \LogicException('InProcessAgentSessionClient requires SequencedEventStoreInterface for canonical writes.');
-        }
-
         return $this->eventStore;
     }
 
@@ -398,9 +393,9 @@ final class InProcessAgentSessionClient implements AgentSessionClient
 
         $toolCallId = uniqid('sh_', true);
 
-        $sequenced = $this->requireSequencedStore();
+        $sequenced = $this->requireCommittedStore();
 
-        $sequenced->appendWithNextSeq(new RunEvent(
+        $sequenced->append(new RunEvent(
             runId: $runId,
             seq: 0,
             turnNo: 0,
@@ -414,7 +409,7 @@ final class InProcessAgentSessionClient implements AgentSessionClient
 
         if (null === $this->toolExecutor) {
             // No ToolExecutor configured — emit a diagnostic error event.
-            $this->requireSequencedStore()->appendWithNextSeq(new RunEvent(
+            $this->requireCommittedStore()->append(new RunEvent(
                 runId: $runId,
                 seq: 0,
                 turnNo: 0,
@@ -451,7 +446,7 @@ final class InProcessAgentSessionClient implements AgentSessionClient
         }
 
         // Emit tool_execution_end event with result text.
-        $this->requireSequencedStore()->appendWithNextSeq(new RunEvent(
+        $this->requireCommittedStore()->append(new RunEvent(
             runId: $runId,
             seq: 0,
             turnNo: 0,

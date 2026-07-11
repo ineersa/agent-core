@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Runtime\Controller\CommandHandler;
 
 use Ineersa\AgentCore\Contract\EventStoreInterface;
-use Ineersa\AgentCore\Contract\SequencedEventStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolExecutorInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
@@ -71,11 +70,7 @@ final readonly class ExecuteShellToolCallWorker
             return;
         }
 
-        if (!$this->eventStore instanceof SequencedEventStoreInterface) {
-            throw new \LogicException('ExecuteShellToolCallWorker requires SequencedEventStoreInterface.');
-        }
-
-        $this->eventStore->appendWithNextSeq(new RunEvent(
+        $this->eventStore->append(new RunEvent(
             runId: $runId,
             seq: 0,
             turnNo: 0,
@@ -117,7 +112,7 @@ final readonly class ExecuteShellToolCallWorker
         }
 
         // Emit tool_execution_end event with result text.
-        $this->eventStore->appendWithNextSeq(new RunEvent(
+        $this->eventStore->append(new RunEvent(
             runId: $runId,
             seq: 0,
             turnNo: 0,
@@ -146,7 +141,7 @@ final readonly class ExecuteShellToolCallWorker
         // controller calls completeRun() synchronously before the async
         // worker has written tool_exec events (issue #183).
         if ($message->standalone) {
-            $this->eventStore->appendWithNextSeq(new RunEvent(
+            $this->eventStore->append(new RunEvent(
                 runId: $runId,
                 seq: 0,
                 turnNo: 0,

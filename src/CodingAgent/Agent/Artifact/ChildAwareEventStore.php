@@ -4,9 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Agent\Artifact;
 
-use Ineersa\AgentCore\Contract\EventStoreInterface;
-use Ineersa\AgentCore\Contract\SequencedEventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
+use Ineersa\CodingAgent\Session\Contract\CommittedEventStoreInterface;
 
 /**
  * Child-aware decorator for EventStoreInterface that delegates between parent-scoped and
@@ -19,72 +18,29 @@ use Ineersa\AgentCore\Domain\Event\RunEvent;
  * Child run location uses the same AgentChildRunDirectory cache as
  * {@see ChildAwareRunStore}.
  */
-final class ChildAwareEventStore implements SequencedEventStoreInterface
+final class ChildAwareEventStore implements CommittedEventStoreInterface
 {
     /** @var array<string, AgentChildRunEventStore> agentRunId → store */
     private array $childStores = [];
 
     public function __construct(
-        private readonly SequencedEventStoreInterface $parentStore,
+        private readonly CommittedEventStoreInterface $parentStore,
         private readonly AgentChildRunEventStoreFactory $childStoreFactory,
         private readonly AgentChildRunDirectory $childRunDirectory,
     ) {
     }
 
-    public function append(RunEvent $event): void
-    {
-        $runId = $event->runId;
-
-        $childStore = $this->resolveChildStore($runId);
-        if (null !== $childStore) {
-            $childStore->append($event);
-
-            return;
-        }
-
-        // Not a known child run — delegate to parent store.
-        $this->parentStore->append($event);
-    }
-
-    public function appendMany(array $events): void
-    {
-        // Group events by whether they belong to child runs.
-        $parentEvents = [];
-        $childEventsByRunId = [];
-
-        foreach ($events as $event) {
-            $runId = $event->runId;
-            $childStore = $this->resolveChildStore($runId);
-            if (null !== $childStore) {
-                $childEventsByRunId[$runId][] = $event;
-            } else {
-                $parentEvents[] = $event;
-            }
-        }
-
-        if ([] !== $parentEvents) {
-            $this->parentStore->appendMany($parentEvents);
-        }
-
-        foreach ($childEventsByRunId as $runId => $childEvents) {
-            $childStore = $this->resolveChildStore($runId);
-            if (null !== $childStore) {
-                $childStore->appendMany($childEvents);
-            }
-        }
-    }
-
-    public function appendWithNextSeq(RunEvent $event): RunEvent
+    public function append(RunEvent $event): RunEvent
     {
         $childStore = $this->resolveChildStore($event->runId);
         if (null !== $childStore) {
-            return $childStore->appendWithNextSeq($event);
+            return $childStore->append($event);
         }
 
-        return $this->parentStore->appendWithNextSeq($event);
+        return $this->parentStore->append($event);
     }
 
-    public function appendManyWithNextSeq(array $events): array
+    public function appendMany(array $events): array
     {
         if ([] === $events) {
             return [];
@@ -93,16 +49,16 @@ final class ChildAwareEventStore implements SequencedEventStoreInterface
         $runId = $events[0]->runId;
         foreach ($events as $event) {
             if ($event->runId !== $runId) {
-                throw new \InvalidArgumentException('appendManyWithNextSeq requires all events to share the same runId.');
+                throw new \InvalidArgumentException('appendMany requires all events to share the same runId.');
             }
         }
 
         $childStore = $this->resolveChildStore($runId);
         if (null !== $childStore) {
-            return $childStore->appendManyWithNextSeq($events);
+            return $childStore->appendMany($events);
         }
 
-        return $this->parentStore->appendManyWithNextSeq($events);
+        return $this->parentStore->appendMany($events);
     }
 
     public function allFor(string $runId): array

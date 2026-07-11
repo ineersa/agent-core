@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Session\Replay;
 
 use Ineersa\AgentCore\Application\Dto\RunStateReplayResult;
-use Ineersa\AgentCore\Application\Handler\RunStateReplayException;
+use Ineersa\AgentCore\Application\Handler\RunStateDuplicateSequenceReplayException;
 use Ineersa\AgentCore\Application\Replay\ReplayEventPreparer;
 use Ineersa\AgentCore\Application\Replay\RunStateReducer;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
@@ -59,7 +59,7 @@ final readonly class SessionRunStateReplayService implements RunStateRebuilderIn
                     'duplicate_count' => \count($duplicateSeqs),
                 ]);
 
-                throw new RunStateReplayException(\sprintf('Cannot replay run %s: event history contains %d duplicate sequence number(s): %s.', $runId, \count($duplicateSeqs), implode(', ', array_map('strval', \array_slice($duplicateSeqs, 0, 10)))), RunStateReplayException::REASON_DUPLICATE_SEQUENCES);
+                throw new RunStateDuplicateSequenceReplayException(\sprintf('Cannot replay run %s: event history contains %d duplicate sequence number(s): %s.', $runId, \count($duplicateSeqs), implode(', ', array_map('strval', \array_slice($duplicateSeqs, 0, 10)))));
             }
 
             $this->logger->info('run_state_replay.rebuilding', [
@@ -154,7 +154,7 @@ final readonly class SessionRunStateReplayService implements RunStateRebuilderIn
                     'duplicate_count' => \count($duplicateSeqs),
                 ]);
 
-                throw new RunStateReplayException(\sprintf('Cannot replay run %s for leaf %d: event history contains %d duplicate sequence number(s): %s.', $runId, $targetLeafTurnNo, \count($duplicateSeqs), implode(', ', array_map('strval', \array_slice($duplicateSeqs, 0, 10)))), RunStateReplayException::REASON_DUPLICATE_SEQUENCES);
+                throw new RunStateDuplicateSequenceReplayException(\sprintf('Cannot replay run %s for leaf %d: event history contains %d duplicate sequence number(s): %s.', $runId, $targetLeafTurnNo, \count($duplicateSeqs), implode(', ', array_map('strval', \array_slice($duplicateSeqs, 0, 10)))));
             }
 
             // Filter to the target leaf's branch path.

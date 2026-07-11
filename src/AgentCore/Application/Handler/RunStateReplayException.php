@@ -11,13 +11,13 @@ use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
  *
  * Raised by replay rebuilders ({@see RunStateRebuilderInterface} implementations such as session replay)
  * and by rewind preflight ({@see \Ineersa\CodingAgent\Session\Rewind\SessionRewindService::rewind()})
- * before appending a LeafSet event. Use {@see self::REASON_DUPLICATE_SEQUENCES} and {@see self::isDuplicateSequences()}
+ * before appending a LeafSet event. Use {@see RunStateDuplicateSequenceReplayException} or {@see self::isDuplicateSequences()}
  * to distinguish this case from other failures.
  *
  * Sequence gaps (for example after cursor allocation without JSONL append) are tolerated and do not throw.
  * Incompatible or corrupt JSONL payload shapes are handled separately (skipped lines, denormalization failures, or other exceptions).
  */
-final class RunStateReplayException extends \RuntimeException
+class RunStateReplayException extends \RuntimeException
 {
     public const REASON_DUPLICATE_SEQUENCES = 'duplicate_sequences';
 

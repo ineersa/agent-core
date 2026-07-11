@@ -1,0 +1,58 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Ineersa\AgentCore\Tests\Support;
+
+use Ineersa\AgentCore\Contract\EventStoreInterface;
+use Ineersa\AgentCore\Domain\Event\RunEvent;
+
+final class InMemoryEventStore implements EventStoreInterface
+{
+    /** @var array<string, list<RunEvent>> */
+    private array $eventsByRun = [];
+
+    /** @var array<string, int> */
+    private array $highWaterByRun = [];
+
+    public function append(RunEvent $event): RunEvent
+    {
+        if ($event->seq > RunEvent::APPEND_DRAFT_SEQ) {
+            $persisted = $event;
+            $this->highWaterByRun[$event->runId] = max($this->highWaterByRun[$event->runId] ?? 0, $persisted->seq);
+        } else {
+            $next = ($this->highWaterByRun[$event->runId] ?? 0) + 1;
+            $this->highWaterByRun[$event->runId] = $next;
+            $persisted = new RunEvent(
+                runId: $event->runId,
+                seq: $next,
+                turnNo: $event->turnNo,
+                type: $event->type,
+                payload: $event->payload,
+                createdAt: $event->createdAt,
+            );
+        }
+        $this->eventsByRun[$event->runId] ??= [];
+        $this->eventsByRun[$event->runId][] = $persisted;
+
+        return $persisted;
+    }
+
+    public function appendMany(array $events): array
+    {
+        $out = [];
+        foreach ($events as $event) {
+            $out[] = $this->append($event);
+        }
+
+        return $out;
+    }
+
+    public function allFor(string $runId): array
+    {
+        $events = $this->eventsByRun[$runId] ?? [];
+        usort($events, static fn (RunEvent $l, RunEvent $r): int => $l->seq <=> $r->seq);
+
+        return $events;
+    }
+}

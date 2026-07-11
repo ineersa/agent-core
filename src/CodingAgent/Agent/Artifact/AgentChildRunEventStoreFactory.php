@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Agent\Artifact;
 
-use Ineersa\AgentCore\Contract\RunSequenceAllocatorInterface;
 use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
+use Ineersa\CodingAgent\Session\Contract\RunSequenceAllocatorInterface;
 use Ineersa\CodingAgent\Session\EventLogMaxSeqBootstrapReader;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Lock\LockFactory;

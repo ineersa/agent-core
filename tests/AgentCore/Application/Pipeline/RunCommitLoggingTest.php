@@ -10,7 +10,6 @@ use Ineersa\AgentCore\Application\Pipeline\RunCommit;
 use Ineersa\AgentCore\Application\Replay\PromptStateReplayService;
 use Ineersa\AgentCore\Application\Replay\ReplayEventPreparer;
 use Ineersa\AgentCore\Contract\RunStoreInterface;
-use Ineersa\AgentCore\Contract\SequencedEventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
@@ -19,6 +18,7 @@ use Ineersa\AgentCore\Infrastructure\Storage\InMemoryPromptStateStore;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryRunStore;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
+use Ineersa\CodingAgent\Session\Contract\CommittedEventStoreInterface;
 use Ineersa\CodingAgent\Session\Replay\SessionHotPromptReplayService;
 use PHPUnit\Framework\TestCase;
 
@@ -263,19 +263,14 @@ final class FailsSecondCompareAndSwapRunStore implements RunStoreInterface
     }
 }
 
-final class RecordingEventStore implements SequencedEventStoreInterface
+final class RecordingEventStore implements CommittedEventStoreInterface
 {
     public int $appendManyCalls = 0;
 
     /** @var list<RunEvent> */
     public array $appended = [];
 
-    public function append(RunEvent $event): void
-    {
-        $this->appended[] = $event;
-    }
-
-    public function appendWithNextSeq(RunEvent $event): RunEvent
+    public function append(RunEvent $event): RunEvent
     {
         $seq = \count($this->appended) + 1;
         $persisted = new RunEvent($event->runId, $seq, $event->turnNo, $event->type, $event->payload, $event->createdAt);
@@ -284,23 +279,15 @@ final class RecordingEventStore implements SequencedEventStoreInterface
         return $persisted;
     }
 
-    public function appendManyWithNextSeq(array $events): array
+    public function appendMany(array $events): array
     {
         ++$this->appendManyCalls;
         $out = [];
         foreach ($events as $event) {
-            $out[] = $this->appendWithNextSeq($event);
+            $out[] = $this->append($event);
         }
 
         return $out;
-    }
-
-    public function appendMany(array $events): void
-    {
-        ++$this->appendManyCalls;
-        foreach ($events as $event) {
-            $this->appended[] = $event;
-        }
     }
 
     public function allFor(string $runId): array
