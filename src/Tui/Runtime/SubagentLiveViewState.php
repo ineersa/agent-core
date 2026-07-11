@@ -176,7 +176,7 @@ final class SubagentLiveViewState
                 runId: $child->agentRunId,
                 seq: 0,
                 text: \sprintf(
-                    'Loading live view for %s [%s] %s — waiting for child events…',
+                    'Loading live view for %s · [%s] %s — waiting for child events…',
                     $child->agentName,
                     $child->statusLabel(),
                     $child->artifactId,

@@ -39,7 +39,7 @@ final class SubagentProgressEventsFixture
             'artifact_path' => 'artifacts/agents/'.$artifactId,
             'recent_tools' => ['read: path="src/Tui/Transcript/SubagentResultRenderer.php"'],
             'assistant_excerpt' => 'Structured subagent block renders inline.',
-        ];
+        ] + ChildContextStatisticsFixture::progressPayloadOverrides();
 
         $events = [];
         $events[] = self::event($sessionId, 1, 0, 'run_started', [

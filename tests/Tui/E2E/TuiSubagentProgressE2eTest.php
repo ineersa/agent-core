@@ -6,6 +6,7 @@ namespace Ineersa\Tui\Tests\E2E;
 
 use Ineersa\CodingAgent\Tests\Support\ProjectDir;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
+use Ineersa\Tui\Tests\Support\ChildContextStatisticsFixture;
 use Ineersa\Tui\Tests\Support\SubagentProgressEventsFixture;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
@@ -78,6 +79,7 @@ final class TuiSubagentProgressE2eTest extends TestCase
             $this->assertStringContainsString('agent_e2e_progress_fixture', $capture);
             $this->assertStringContainsString('3 turns', $capture);
             $this->assertStringContainsString('deepseek/deepseek-v4-flash', $capture);
+            $this->assertStringContainsString(ChildContextStatisticsFixture::TRANSCRIPT_CTX_LINE, $capture, 'Resumed parent transcript card must show child context usage');
             $this->assertStringContainsString('Use agent_retrieve', $capture);
             $this->assertStringNotContainsString('running scout |', $capture);
             $this->assertStringNotContainsString('parallel subagents running', $capture);
@@ -163,6 +165,7 @@ final class TuiSubagentProgressE2eTest extends TestCase
                 'default_model' => 'llama_cpp_test/test',
                 'default_reasoning' => 'off',
                 'providers' => [
+                    'deepseek' => ChildContextStatisticsFixture::deepseekProviderSettings(),
                     'llama_cpp_test' => [
                         'type' => 'generic',
                         'enabled' => true,
