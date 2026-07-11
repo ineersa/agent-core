@@ -12,6 +12,7 @@ use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+use Ineersa\CodingAgent\Session\SessionAgentArtifactPathResolver;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Lock\LockFactory;
@@ -66,7 +67,7 @@ final class AgentArtifactRegistryTest extends TestCase
 
         $validator = (new ValidatorBuilder())->enableAttributeMapping()->getValidator();
 
-        $this->pathResolver = new AgentArtifactPathResolver($hatfieldSessionStore);
+        $this->pathResolver = new AgentArtifactPathResolver(new SessionAgentArtifactPathResolver($hatfieldSessionStore));
 
         $this->registry = new AgentArtifactRegistry(
             pathResolver: $this->pathResolver,
