@@ -73,6 +73,7 @@ final class ImagePasteInputListener implements TuiListenerRegistrar
                             'component' => 'ImagePasteInputListener',
                             'event_type' => 'clipboard_paste_skipped',
                             'session_id' => $state->sessionId,
+                            'run_id' => '' !== $state->sessionId ? $state->sessionId : 'draft',
                             'outcome' => $read->outcome->value,
                             'diagnostic' => $read->diagnostic,
                         ]);
@@ -127,6 +128,7 @@ final class ImagePasteInputListener implements TuiListenerRegistrar
                     'component' => 'ImagePasteInputListener',
                     'event_type' => 'clipboard_paste_staged',
                     'session_id' => $state->sessionId,
+                    'run_id' => '' !== $state->sessionId ? $state->sessionId : 'draft',
                     'image_index' => $index,
                 ]);
             },

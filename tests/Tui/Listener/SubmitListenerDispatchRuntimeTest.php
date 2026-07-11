@@ -588,8 +588,7 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
 
         $png = file_get_contents(__DIR__.'/../E2E/fixtures/paste-test-1x1.png');
         $this->assertNotFalse($png);
-        $staged = tempnam(sys_get_temp_dir(), 'hatfield-staged-');
-        $this->assertNotFalse($staged);
+        $staged = $this->tempCwd.'/staged-paste-1.png';
         file_put_contents($staged, $png);
         $this->state->pastedImagePendingByIndex[1] = new \Ineersa\Tui\ImagePaste\PastedImagePendingDTO(1, '[Image #1]', $staged);
 

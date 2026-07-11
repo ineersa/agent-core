@@ -185,6 +185,7 @@ final class PastedImageSubmissionService
             'component' => 'PastedImageSubmissionService',
             'event_type' => 'paste_promotion_failed',
             'session_id' => $state->sessionId,
+            'run_id' => '' !== $state->sessionId ? $state->sessionId : 'draft',
             'message' => $message,
         ]);
     }

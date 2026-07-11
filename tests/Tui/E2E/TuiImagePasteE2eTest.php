@@ -100,7 +100,6 @@ final class TuiImagePasteE2eTest extends TestCase
             $this->tmux->sendKey($pane, 'C-d');
         } catch (\Throwable $e) {
             $this->saveAnsiSnapshot($pane, 'image-paste-FAILURE');
-            $this->tmux->sendKey($pane, 'C-d');
             throw $e;
         }
     }
