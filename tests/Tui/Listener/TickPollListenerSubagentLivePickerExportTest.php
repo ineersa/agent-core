@@ -45,8 +45,8 @@ final class TickPollListenerSubagentLivePickerExportTest extends TestCase
         $state->activity = RunActivityStateEnum::Running;
         $state->subagentLiveView->pickerFeedbackMessage = 'Child agent exported to: /tmp/hatfield-child-agent_x.html';
 
-        $picker = $this->pickerReportingOpen();
         $screen = $this->screenFor('session-picker-export');
+        $picker = $this->pickerReportingOpen($state, $screen);
         $screen->setWorkingMessage('Working...');
 
         $this->runOneTick($state, $screen, $picker);
@@ -56,14 +56,32 @@ final class TickPollListenerSubagentLivePickerExportTest extends TestCase
         $this->assertStringNotContainsString('Working...', $msg);
     }
 
+    public function testTickDoesNotRewriteUnchangedPickerFeedback(): void
+    {
+        $state = new TuiSessionState('session-picker-unchanged');
+        $state->activity = RunActivityStateEnum::Running;
+        $state->handle = new RunHandle('session-picker-unchanged', 'running');
+        $feedback = 'Child agent exported to: /tmp/hatfield-child-agent_unchanged.html';
+        $state->subagentLiveView->pickerFeedbackMessage = $feedback;
+        $state->subagentLiveView->lastPickerFeedbackWorkingMessage = $feedback;
+
+        $screen = $this->screenFor('session-picker-unchanged');
+        $picker = $this->pickerReportingOpen($state, $screen);
+        $screen->setWorkingMessage($feedback);
+
+        $this->runOneTick($state, $screen, $picker);
+
+        $this->assertSame($feedback, $this->workingMessage($screen));
+    }
+
     public function testTickRestoresPickerExportFailureFeedback(): void
     {
         $state = new TuiSessionState('session-picker-fail');
         $state->activity = RunActivityStateEnum::Idle;
         $state->subagentLiveView->pickerFeedbackMessage = 'Session child-run has no events to export.';
 
-        $picker = $this->pickerReportingOpen();
         $screen = $this->screenFor('session-picker-fail');
+        $picker = $this->pickerReportingOpen($state, $screen);
         $screen->setWorkingMessage('Working...');
 
         $this->runOneTick($state, $screen, $picker);
@@ -90,7 +108,7 @@ final class TickPollListenerSubagentLivePickerExportTest extends TestCase
         return $registry->getValue($screen)->getWorkingMessage();
     }
 
-    private function pickerReportingOpen(): SubagentLivePickerController
+    private function pickerReportingOpen(TuiSessionState $state, ChatScreen $screen): SubagentLivePickerController
     {
         $picker = (new \ReflectionClass(SubagentLivePickerController::class))->newInstanceWithoutConstructor();
         $overlay = new \Ineersa\Tui\Picker\PickerOverlay();
@@ -98,6 +116,7 @@ final class TickPollListenerSubagentLivePickerExportTest extends TestCase
         $overlayRef->setValue($picker, $overlay);
         $openRef = new \ReflectionProperty(\Ineersa\Tui\Picker\PickerOverlay::class, 'isOpen');
         $openRef->setValue($overlay, true);
+        $picker->setRuntimeRefs(new Tui(), $screen, $state);
 
         return $picker;
     }

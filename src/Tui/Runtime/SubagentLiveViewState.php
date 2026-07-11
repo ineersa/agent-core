@@ -54,6 +54,12 @@ final class SubagentLiveViewState
      */
     public ?string $pickerFeedbackMessage = null;
 
+    /**
+     * Last picker feedback line applied to ChatScreen while the picker is open.
+     * Avoids per-tick widget invalidation when the message is unchanged.
+     */
+    public ?string $lastPickerFeedbackWorkingMessage = null;
+
     public function isSameChild(SubagentLiveChildDTO $child): bool
     {
         return null !== $this->selected

@@ -75,9 +75,14 @@ final class SubagentLivePickerControllerTest extends TestCase
         $this->seedCatalogChild($state, 'agent_running', 'child-run-running', 'running');
 
         $picker = $this->picker($harness, $state);
+        $picker->open();
         $this->invokeDismissSelected($picker, $harness->screen(), $state);
 
         $this->assertCount(1, $state->subagentLiveCatalog->all());
+        $this->assertStringContainsString(
+            'Cannot remove active subagent scout',
+            (string) $state->subagentLiveView->pickerFeedbackMessage,
+        );
         $this->assertStringContainsString(
             'Cannot remove active subagent scout',
             $this->workingMessage($harness->screen()),
@@ -141,6 +146,7 @@ final class SubagentLivePickerControllerTest extends TestCase
         );
 
         $picker = $this->exportPicker($harness, $state);
+        $picker->open();
         $this->invokeExportSelected($picker, $harness->screen(), $state);
 
         $expected = $this->projectDir.'/hatfield-child-'.$artifactId.'.html';
@@ -162,6 +168,7 @@ final class SubagentLivePickerControllerTest extends TestCase
         $this->writeParentOnlyEvents('parent-session-no-events', 'parent-only marker must not appear in export');
 
         $picker = $this->exportPicker($harness, $state);
+        $picker->open();
         $this->invokeExportSelected($picker, $harness->screen(), $state);
 
         $this->assertStringContainsString('has no events to export', $this->workingMessage($harness->screen()));
@@ -182,6 +189,7 @@ final class SubagentLivePickerControllerTest extends TestCase
         $this->writeParentOnlyEvents('parent-session-bad-json', 'parent fallback must not export');
 
         $picker = $this->exportPicker($harness, $state);
+        $picker->open();
         $this->invokeExportSelected($picker, $harness->screen(), $state);
 
         $msg = $this->workingMessage($harness->screen());
@@ -198,6 +206,7 @@ final class SubagentLivePickerControllerTest extends TestCase
         $this->seedCatalogChild($state, 'agent_stale', 'child-run-stale', 'completed');
 
         $picker = $this->exportPicker($harness, $state);
+        $picker->open();
         $items = SubagentLivePickerController::buildItems($state->subagentLiveCatalog->all(), $harness->screen()->theme());
         $listWidget = new SelectListWidget(items: $items, keybindings: new Keybindings());
         $listWidget->setSelectedIndex(0);
@@ -220,6 +229,7 @@ final class SubagentLivePickerControllerTest extends TestCase
         $this->seedCatalogChild($state, 'agent_x', 'child-run-x', 'completed');
 
         $picker = $this->exportPicker($harness, $state);
+        $picker->open();
         $listWidget = new SelectListWidget(items: [], keybindings: new Keybindings());
 
         $method = new \ReflectionMethod(SubagentLivePickerController::class, 'exportSelected');
@@ -339,6 +349,41 @@ final class SubagentLivePickerControllerTest extends TestCase
         $state->subagentLiveView->pickerFeedbackMessage = 'Child agent exported to: /tmp/x.html';
         $picker->closePicker();
         $this->assertNull($state->subagentLiveView->pickerFeedbackMessage);
+        $this->assertNull($state->subagentLiveView->lastPickerFeedbackWorkingMessage);
+    }
+
+    #[Test]
+    public function dismissFeedbackReplacesStaleExportFeedbackInPickerHeader(): void
+    {
+        $harness = new VirtualTuiHarness(sessionId: 'picker-dismiss-feedback');
+        $state = new TuiSessionState('picker-dismiss-feedback');
+        $artifactId = 'agent_dismiss_done';
+        $this->seedCatalogChild($state, $artifactId, 'child-dismiss-done', 'completed');
+        $this->seedCatalogChild($state, 'agent_keep', 'child-keep', 'completed');
+        ChildAgentExportEventsFixture::write(
+            $this->projectDir,
+            'picker-dismiss-feedback',
+            $artifactId,
+            [
+                ChildAgentExportEventsFixture::childEvent(
+                    'child-dismiss-done',
+                    1,
+                    'run_started',
+                    ['user_messages' => [['role' => 'user', 'content' => 'dismiss feedback marker']]],
+                ),
+            ],
+        );
+        $picker = $this->exportPicker($harness, $state);
+        $picker->open();
+        $this->invokeExportSelected($picker, $harness->screen(), $state);
+        $this->assertStringContainsString('Child agent exported to:', (string) $state->subagentLiveView->pickerFeedbackMessage);
+
+        $this->invokeDismissSelected($picker, $harness->screen(), $state);
+
+        $feedback = (string) $state->subagentLiveView->pickerFeedbackMessage;
+        $this->assertStringContainsString('Removed scout from /agents-live.', $feedback);
+        $this->assertStringNotContainsString('Child agent exported to:', $feedback);
+        $this->assertStringContainsString('Removed scout from /agents-live.', $this->pickerHeaderPlain($picker));
     }
 
     private function picker(VirtualTuiHarness $harness, TuiSessionState $state): SubagentLivePickerController
@@ -362,6 +407,9 @@ final class SubagentLivePickerControllerTest extends TestCase
         ChatScreen $screen,
         TuiSessionState $state,
     ): void {
+        if (!$picker->isOpen()) {
+            $picker->open();
+        }
         $items = SubagentLivePickerController::buildItems($state->subagentLiveCatalog->all(), $screen->theme());
         $listWidget = new SelectListWidget(items: $items, keybindings: new Keybindings());
         $listWidget->setSelectedIndex(0);
@@ -443,6 +491,9 @@ final class SubagentLivePickerControllerTest extends TestCase
         ChatScreen $screen,
         TuiSessionState $state,
     ): void {
+        if (!$picker->isOpen()) {
+            $picker->open();
+        }
         $items = SubagentLivePickerController::buildItems($state->subagentLiveCatalog->all(), $screen->theme());
         $listWidget = new SelectListWidget(items: $items, keybindings: new Keybindings());
         $listWidget->setSelectedIndex(0);
@@ -471,18 +522,11 @@ final class SubagentLivePickerControllerTest extends TestCase
 
     private function pickerHeaderPlain(SubagentLivePickerController $picker): string
     {
-        $overlayRef = new \ReflectionProperty(SubagentLivePickerController::class, 'overlay');
-        $overlay = $overlayRef->getValue($picker);
-        $this->assertNotNull($overlay);
-        $containerRef = new \ReflectionProperty(\Ineersa\Tui\Picker\PickerOverlay::class, 'container');
-        $container = $containerRef->getValue($overlay);
-        $this->assertInstanceOf(\Symfony\Component\Tui\Widget\ContainerWidget::class, $container);
-        $header = $container->all()[0];
+        $headerRef = new \ReflectionProperty(SubagentLivePickerController::class, 'headerWidget');
+        $header = $headerRef->getValue($picker);
         $this->assertInstanceOf(\Symfony\Component\Tui\Widget\TextWidget::class, $header);
-        $textRef = new \ReflectionProperty(\Symfony\Component\Tui\Widget\TextWidget::class, 'text');
-        $text = $textRef->getValue($header);
 
-        return strip_tags((string) $text);
+        return strip_tags($header->getText());
     }
 
     private function workingMessage(ChatScreen $screen): string

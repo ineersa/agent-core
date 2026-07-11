@@ -73,7 +73,7 @@ final class TuiSubagentLiveChildExportE2eTest extends TestCase
                 'Export key must report child HTML path in picker feedback',
             );
 
-            // Reject one-frame flash: feedback must still appear after subsequent runtime ticks.
+            // 600ms guarantees at least one runtime tick cycle before re-checking (anti one-frame flash).
             usleep(600_000);
             $this->tmux->waitForCaptureContains(
                 $pane,
