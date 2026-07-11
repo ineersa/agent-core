@@ -15,7 +15,6 @@ use Ineersa\Tui\Theme\ThemeColorEnum;
 use Ineersa\Tui\Theme\TuiTheme;
 use Symfony\Component\Tui\Event\CancelEvent;
 use Symfony\Component\Tui\Event\SelectEvent;
-use Symfony\Component\Tui\Event\SelectionChangeEvent;
 use Symfony\Component\Tui\Input\Key;
 use Symfony\Component\Tui\Input\Keybindings;
 use Symfony\Component\Tui\Tui;
@@ -165,24 +164,9 @@ final class SubagentLivePickerController
 
         $picker = $this;
 
-        $listWidget->onSelectionChange(
-            static function (SelectionChangeEvent $event) use ($listWidget, &$children, $theme): void {
-                $selectedValue = $event->getItem()['value'];
-                $selectedIdx = -1;
-
-                foreach ($children as $i => $child) {
-                    if ($child->artifactId === $selectedValue) {
-                        $selectedIdx = $i;
-
-                        break;
-                    }
-                }
-
-                $newItems = self::buildItems($children, $theme, selectedIndex: $selectedIdx);
-                $listWidget->setItems($newItems);
-                $listWidget->setSelectedIndex(max(0, $selectedIdx));
-            },
-        );
+        // Arrow navigation uses SelectListWidget native highlight only.
+        // Rebuilding items via setItems() on every SelectionChangeEvent leaves stale
+        // overlay rows (incremental render) and was reported as growing duplicate rows.
 
         $listWidget->onSelect(static function (SelectEvent $event) use ($picker, $screen, $state): void {
             $item = $event->getItem();

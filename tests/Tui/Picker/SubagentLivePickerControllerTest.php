@@ -19,6 +19,7 @@ use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 use Symfony\Component\EventDispatcher\EventDispatcher;
+use Symfony\Component\Tui\Input\Key;
 use Symfony\Component\Tui\Input\Keybindings;
 use Symfony\Component\Tui\Widget\SelectListWidget;
 
@@ -132,6 +133,73 @@ final class SubagentLivePickerControllerTest extends TestCase
         $snapshotProvider->expects($this->never())->method('snapshot');
         $method->invoke($picker, $child, $state, $harness->screen());
         $this->assertSame(4, $state->subagentLiveView->childLastSeq);
+    }
+
+    #[Test]
+    public function testArrowNavigationDoesNotGrowItemCount(): void
+    {
+        $items = [
+            ['value' => 'agent_fork', 'label' => 'fork [running] agent_fork run:fork-run-1 — delegate'],
+            ['value' => 'agent_scout', 'label' => 'scout [running] agent_scout run:scout-run-1 — list docs'],
+        ];
+        $listWidget = new SelectListWidget(items: $items, keybindings: new Keybindings());
+        $listWidget->setSelectedIndex(0);
+
+        $listWidget->handleInput(Key::DOWN);
+        $listWidget->handleInput(Key::DOWN);
+        $listWidget->handleInput(Key::UP);
+
+        $ref = new \ReflectionClass($listWidget);
+        $itemsProp = $ref->getProperty('items');
+        $filteredProp = $ref->getProperty('filteredItems');
+
+        $this->assertCount(2, $itemsProp->getValue($listWidget));
+        $this->assertCount(2, $filteredProp->getValue($listWidget));
+    }
+
+    #[Test]
+    public function testCatalogRepeatedNestedProgressDoesNotDuplicatePickerRows(): void
+    {
+        $state = new TuiSessionState('parent-picker-dedupe');
+        $event = new RuntimeEvent(
+            type: RuntimeEventTypeEnum::ToolExecutionOutputDelta->value,
+            runId: 'fork-run',
+            seq: 2,
+            payload: [
+                'subagent_progress' => [
+                    'mode' => 'single',
+                    'status' => 'running',
+                    'agent_name' => 'scout',
+                    'artifact_id' => 'agent_scout',
+                    'agent_run_id' => 'scout-run',
+                    'task_summary' => 'list docs',
+                ],
+            ],
+        );
+
+        for ($i = 0; $i < 5; ++$i) {
+            $state->subagentLiveCatalog->ingestRuntimeEvent($event);
+        }
+
+        $this->assertCount(1, $state->subagentLiveCatalog->all());
+
+        $harness = new VirtualTuiHarness(sessionId: 'parent-picker-dedupe');
+        $this->seedCatalogChild($state, 'agent_fork', 'fork-run', 'running');
+        $state->subagentLiveCatalog->ingestRuntimeEvent($event);
+
+        $picker = $this->picker($harness, $state);
+        $picker->open();
+        $this->assertTrue($picker->isOpen());
+
+        $overlayRef = new \ReflectionProperty(SubagentLivePickerController::class, 'overlay');
+        $overlay = $overlayRef->getValue($picker);
+        $this->assertNotNull($overlay);
+        $list = $overlay->listWidget();
+        $this->assertNotNull($list);
+        $this->assertCount(2, $state->subagentLiveCatalog->all());
+
+        $itemsProp = new \ReflectionProperty(SelectListWidget::class, 'items');
+        $this->assertCount(2, $itemsProp->getValue($list));
     }
 
     private function picker(VirtualTuiHarness $harness, TuiSessionState $state): SubagentLivePickerController
