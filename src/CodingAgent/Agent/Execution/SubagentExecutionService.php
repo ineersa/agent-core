@@ -22,6 +22,8 @@ use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunDirectory;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionCatalog;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionDTO;
 use Ineersa\CodingAgent\Config\AgentsConfig;
+use Ineersa\CodingAgent\Config\Ai\AiModelReference;
+use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Session\SequencedRunEventAppender;
 use Ineersa\CodingAgent\Skills\SkillsContextBuilder;
 use Psr\Log\LoggerInterface;
@@ -66,6 +68,7 @@ final class SubagentExecutionService
         private readonly AgentsConfig $agentsConfig,
         private readonly SubagentProgressSnapshotBuilder $progressSnapshotBuilder,
         private readonly SubagentChildProgressSummaryBuilder $childProgressSummaryBuilder,
+        private readonly AppConfig $appConfig,
         private readonly ClockInterface $clock = new MonotonicClock(),
     ) {
     }
@@ -138,20 +141,14 @@ final class SubagentExecutionService
         );
 
         // 8. Build child metadata with policy and artifact paths.
-        $childMetadata = new RunMetadata(
-            session: [
-                'kind' => 'agent_child',
-                'parent_run_id' => $parentRunId,
-                'agent_name' => $agentName,
-                'artifact_id' => $artifactId,
-                'interactive' => true,
-            ],
+        $childMetadata = $this->buildChildRunMetadata(
+            parentRunId: $parentRunId,
+            agentName: $agentName,
+            artifactId: $artifactId,
             model: $definition->model,
             reasoning: $definition->thinking,
-            toolsScope: [
-                'allowed_tools' => $allowedTools,
-                'mcp' => $policy['mcp'],
-            ],
+            allowedTools: $allowedTools,
+            mcp: $policy['mcp'],
         );
 
         // 9. Start child run (AgentRunner generates the runId if null).
@@ -455,20 +452,14 @@ final class SubagentExecutionService
                     skillsContext: $launchContext['skillsContext'],
                 );
 
-                $childMetadata = new RunMetadata(
-                    session: [
-                        'kind' => 'agent_child',
-                        'parent_run_id' => $parentRunId,
-                        'agent_name' => $launch['agentName'],
-                        'artifact_id' => $launch['artifactId'],
-                        'interactive' => true,
-                    ],
+                $childMetadata = $this->buildChildRunMetadata(
+                    parentRunId: $parentRunId,
+                    agentName: $launch['agentName'],
+                    artifactId: $launch['artifactId'],
                     model: $launch['definition']->model,
                     reasoning: $launch['definition']->thinking,
-                    toolsScope: [
-                        'allowed_tools' => $allowedTools,
-                        'mcp' => $policy['mcp'],
-                    ],
+                    allowedTools: $allowedTools,
+                    mcp: $policy['mcp'],
                 );
 
                 $this->agentRunner->start(new StartRunInput(
@@ -1566,6 +1557,66 @@ TXT;
      * Resolve project/AGENTS/skills context for a child launch from parent state
      * and agent definition frontmatter flags.
      *
+     * @return array{agentsMd: string, skillsContext: string}
+     */
+
+    /**
+     * Build canonical child run metadata including model context window from catalog.
+     *
+     * @param list<string>         $allowedTools
+     * @param array<string, mixed> $mcp
+     */
+    private function buildChildRunMetadata(
+        string $parentRunId,
+        string $agentName,
+        string $artifactId,
+        ?string $model,
+        ?string $reasoning,
+        array $allowedTools,
+        array $mcp,
+    ): RunMetadata {
+        $contextWindow = $this->resolveContextWindowForModel($model);
+
+        return new RunMetadata(
+            session: [
+                'kind' => 'agent_child',
+                'parent_run_id' => $parentRunId,
+                'agent_name' => $agentName,
+                'artifact_id' => $artifactId,
+                'interactive' => true,
+            ],
+            model: $model,
+            reasoning: $reasoning,
+            toolsScope: [
+                'allowed_tools' => $allowedTools,
+                'mcp' => $mcp,
+            ],
+            contextWindow: $contextWindow > 0 ? $contextWindow : null,
+        );
+    }
+
+    private function resolveContextWindowForModel(?string $model): int
+    {
+        if (null === $model || '' === trim($model)) {
+            return 0;
+        }
+
+        $catalog = $this->appConfig->catalog;
+        if (null === $catalog) {
+            return 0;
+        }
+
+        $ref = AiModelReference::tryParse($model);
+        if (null === $ref) {
+            return 0;
+        }
+
+        $definition = $catalog->getModel($ref);
+
+        return null !== $definition ? ($definition->contextWindow ?? 0) : 0;
+    }
+
+    /**
      * @return array{agentsMd: string, skillsContext: string}
      */
     private function resolveChildLaunchContext(string $parentRunId, AgentDefinitionDTO $definition): array

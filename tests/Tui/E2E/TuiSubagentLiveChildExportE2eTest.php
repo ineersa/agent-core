@@ -6,14 +6,13 @@ namespace Ineersa\Tui\Tests\E2E;
 
 use Ineersa\CodingAgent\Tests\Support\ProjectDir;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
-use Ineersa\Tui\Tests\Support\ChildContextStatisticsFixture;
 use Ineersa\Tui\Tests\Support\SubagentProgressEventsFixture;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 
 /** @group tui-e2e-replay */
 #[Group('tui-e2e-replay')]
-final class TuiSubagentLiveViewE2eTest extends TestCase
+final class TuiSubagentLiveChildExportE2eTest extends TestCase
 {
     private TmuxHarness $tmux;
     private string $testProjectDir;
@@ -37,11 +36,11 @@ final class TuiSubagentLiveViewE2eTest extends TestCase
         }
     }
 
-    public function testAgentsLivePickerOpenReadonlyAndAgentsMainReturnsToParent(): void
+    public function testAgentsLivePickerExportKeyWritesChildHtml(): void
     {
         $pane = $this->tmux->startDetached(
             command: $this->agentCommand(),
-            prefix: 'tui-subagent-live-view',
+            prefix: 'tui-subagent-export',
             width: 120,
             height: 60,
             cwd: $this->testProjectDir,
@@ -63,45 +62,32 @@ final class TuiSubagentLiveViewE2eTest extends TestCase
             $this->tmux->sendLiteral($pane, '/agents-live');
             $this->tmux->sendKey($pane, 'Enter');
             $this->tmux->waitForCaptureContains($pane, 'agent_e2e_progress_fixture', 10.0, 'Picker must list subagent artifact');
-            $pickerCap = $this->tmux->capturePlainWithHistory($pane, 2500);
-            $this->assertStringContainsString(ChildContextStatisticsFixture::CONTEXT_DETAIL, $pickerCap, 'Picker row must show child context usage');
-            $this->assertStringContainsString(ChildContextStatisticsFixture::MODEL_SHORT, $pickerCap, 'Picker row must show child model');
 
-            $this->tmux->sendKey($pane, 'Enter');
-            $this->tmux->waitForCaptureContains($pane, 'Child agent', 10.0, 'Live view working line must appear');
-            $this->tmux->waitForCaptureContains($pane, '[completed]', 10.0, 'Fixture child must show completed status in live view');
-            $liveCap = $this->tmux->capturePlainWithHistory($pane, 2500);
-            $this->assertStringContainsString(ChildContextStatisticsFixture::CONTEXT_DETAIL, $liveCap, 'Child live footer must show context usage');
-            $this->assertStringContainsString(ChildContextStatisticsFixture::MODEL_SHORT, $liveCap, 'Child live footer must show child model');
+            $this->tmux->sendKey($pane, 'e');
+            $expectedHtml = $this->testProjectDir.'/hatfield-child-agent_e2e_progress_fixture.html';
 
-            $this->tmux->sendKey($pane, 'C-u');
-            usleep(50_000);
-            $this->tmux->sendLiteral($pane, 'continue after completion');
-            $this->tmux->sendKey($pane, 'Enter');
-            $this->tmux->waitForCaptureContains($pane, 'has finished', 10.0, 'Terminal child input must show finished-subagent warning');
-            $capAfterTerminal = $this->tmux->capturePlainWithHistory($pane, 2500);
-            $this->assertStringContainsString('has finished', strtolower($capAfterTerminal), 'Terminal child warning must mention finished subagent');
+            $this->tmux->waitForCaptureContains(
+                $pane,
+                'Child agent exported to:',
+                10.0,
+                'Export key must report child HTML path in picker feedback',
+            );
 
-            $this->tmux->sendKey($pane, 'C-u');
-            usleep(50_000);
-            $this->tmux->sendLiteral($pane, '/new');
-            $this->tmux->sendKey($pane, 'Enter');
-            $this->tmux->waitForCaptureContains($pane, 'Leave subagent live view', 10.0, 'Blocked slash must show leave-live-view warning');
-            $capAfterBlock = $this->tmux->capturePlainWithHistory($pane, 2500);
-            $this->assertStringContainsString('agent_e2e_progress_fixture', $capAfterBlock, 'Must remain in live view after blocked /new');
-            $this->assertStringNotContainsString('subagent scout running', $capAfterBlock, 'Must not switch back to parent transcript after blocked /new');
+            // 600ms guarantees at least one runtime tick cycle before re-checking (anti one-frame flash).
+            usleep(600_000);
+            $this->tmux->waitForCaptureContains(
+                $pane,
+                'Child agent exported to:',
+                15.0,
+                'Export feedback must remain visible after subsequent render/tick activity',
+            );
 
-            $capLive = $this->tmux->capturePlainWithHistory($pane, 2500);
-            $this->assertStringNotContainsString('skills', strtolower($capLive), 'Compact header must be hidden in live view');
+            $this->assertFileExists($expectedHtml, 'Child export must write HTML in isolated project cwd');
 
-            $this->tmux->sendKey($pane, 'C-u');
-            usleep(50_000);
-            $this->tmux->sendLiteral($pane, '/agents-main');
-            $this->tmux->sendKey($pane, 'Enter');
-            $this->tmux->waitForCaptureContains($pane, 'scout [completed]', 10.0, 'Parent transcript must restore after /agents-main');
-            $parentCap = $this->tmux->capturePlainWithHistory($pane, 2500);
-            $this->assertStringContainsString(ChildContextStatisticsFixture::TRANSCRIPT_CTX_LINE, $parentCap, 'Parent child card must show context usage line after resume');
-            $this->assertStringNotContainsString('Subagent live:', $this->tmux->capturePlainWithHistory($pane, 2500));
+            $html = file_get_contents($expectedHtml);
+            $this->assertIsString($html);
+            $this->assertStringContainsString('Child-only export marker scout-e2e', $html, 'HTML must contain child canonical events content');
+            $this->assertStringNotContainsString('Run a scout subagent.', $html, 'Must not export parent session events');
 
             $this->tmux->sendKey($pane, 'C-d');
         } catch (\Throwable $e) {
@@ -146,10 +132,9 @@ final class TuiSubagentLiveViewE2eTest extends TestCase
     {
         $fixturePath = __DIR__.'/fixtures/tui-resume-minimal.json';
         $projectDir = ProjectDir::get();
-        $paths = TuiE2eDatabaseEnv::allocatePaths('tui-subagent-live-');
+        $paths = TuiE2eDatabaseEnv::allocatePaths('tui-subagent-export-');
 
         $dbPath = $paths['app'];
-
         $transportDbPath = $paths['transport'];
 
         return \sprintf(
@@ -164,10 +149,10 @@ final class TuiSubagentLiveViewE2eTest extends TestCase
 
     private function createIsolatedProjectDir(): string
     {
-        $dir = TestDirectoryIsolation::createProjectTempDir('tui-e2e-subagent-live');
+        $dir = TestDirectoryIsolation::createProjectTempDir('tui-e2e-subagent-export');
         @mkdir($dir.'/.hatfield', 0o777, true);
         @mkdir($dir.'/home/.hatfield', 0o777, true);
-        $settings = ['ai' => ['providers' => ['deepseek' => ChildContextStatisticsFixture::deepseekProviderSettings(), 'llama_cpp_test' => ['api' => 'openai-completions', 'api_key' => 'dummy', 'completions_path' => '/chat/completions', 'supports_completions' => true, 'supports_embeddings' => false, 'supports_thinking_levels' => true, 'models' => ['test' => ['name' => 'test', 'context_window' => 32768, 'max_tokens' => 32768, 'input' => ['text'], 'tool_calling' => true, 'reasoning' => true, 'thinking_level_map' => ['off' => '0'], 'cost' => ['input' => 0, 'output' => 0]]]]]]];
+        $settings = ['ai' => ['providers' => ['llama_cpp_test' => ['api' => 'openai-completions', 'api_key' => 'dummy', 'completions_path' => '/chat/completions', 'supports_completions' => true, 'supports_embeddings' => false, 'supports_thinking_levels' => true, 'models' => ['test' => ['name' => 'test', 'context_window' => 32768, 'max_tokens' => 32768, 'input' => ['text'], 'tool_calling' => true, 'reasoning' => true, 'thinking_level_map' => ['off' => '0'], 'cost' => ['input' => 0, 'output' => 0]]]]]]];
         $yaml = \Symfony\Component\Yaml\Yaml::dump($settings, 6, 4);
         file_put_contents($dir.'/.hatfield/settings.yaml', $yaml);
         file_put_contents($dir.'/home/.hatfield/settings.yaml', $yaml);

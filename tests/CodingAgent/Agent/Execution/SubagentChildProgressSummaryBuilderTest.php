@@ -19,6 +19,7 @@ use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Session\FileRunSequenceAllocator;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+use Ineersa\CodingAgent\Session\SessionAgentArtifactPathResolver;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -54,7 +55,10 @@ final class SubagentChildProgressSummaryBuilderTest extends IsolatedKernelTestCa
         $events = [
             new RunEvent($childRunId, 1, 0, RunEventTypeEnum::RunStarted->value, [
                 'step_id' => 's0',
-                'payload' => ['metadata' => ['model' => 'deepseek/deepseek-v4-flash']],
+                'payload' => ['metadata' => [
+                    'model' => 'deepseek/deepseek-v4-flash',
+                    'context_window' => \Ineersa\Tui\Tests\Support\ChildContextStatisticsFixture::CONTEXT_WINDOW,
+                ]],
             ]),
             new RunEvent($childRunId, 2, 1, RunEventTypeEnum::LlmStepCompleted->value, [
                 'step_id' => 's1',
@@ -106,10 +110,10 @@ final class SubagentChildProgressSummaryBuilderTest extends IsolatedKernelTestCa
             ],
         );
 
-        $pathResolver = new AgentArtifactPathResolver(new HatfieldSessionStore(
+        $pathResolver = new AgentArtifactPathResolver(new SessionAgentArtifactPathResolver(new HatfieldSessionStore(
             appConfig: new AppConfig(tui: new TuiConfig(theme: 'default'), logging: new LoggingConfig(), cwd: $this->projectDir),
             entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
-        ));
+        )));
         $factory = new AgentChildRunEventStoreFactory(
             $pathResolver,
             new EventPayloadNormalizer(),
@@ -122,6 +126,15 @@ final class SubagentChildProgressSummaryBuilderTest extends IsolatedKernelTestCa
 
         $this->assertSame(2, $summary->toolCount);
         $this->assertSame(35000, $summary->inputTokens);
+        $fields = $summary->toProgressFields();
+        $this->assertSame(35000, $fields['input_tokens']);
+        $this->assertSame(25000, $fields['latest_input_tokens'] ?? null, 'Latest LLM step input_tokens must be exposed separately from cumulative input_tokens');
+        $this->assertSame('deepseek/deepseek-v4-flash', $fields['model'] ?? null);
+        $this->assertSame(
+            \Ineersa\Tui\Tests\Support\ChildContextStatisticsFixture::CONTEXT_WINDOW,
+            $fields['context_window'] ?? null,
+            'Canonical context_window from child run metadata must propagate into progress fields',
+        );
         $this->assertSame(14000, $summary->outputTokens);
         $this->assertSame(584000, $summary->reasoningTokens);
         $this->assertSame(0.0104, $summary->cost);
@@ -147,7 +160,7 @@ final class SubagentChildProgressSummaryBuilderTest extends IsolatedKernelTestCa
         );
 
         return new AgentChildRunEventStore(
-            pathResolver: new AgentArtifactPathResolver($hatfieldSessionStore),
+            pathResolver: new AgentArtifactPathResolver(new SessionAgentArtifactPathResolver($hatfieldSessionStore)),
             eventPayloadNormalizer: new EventPayloadNormalizer(),
             lockFactory: new LockFactory(new FlockStore()),
             logger: new NullLogger(),

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Transcript;
 
+use Ineersa\Tui\Footer\ContextUsageFormatter;
+
 /**
  * Builds plain (ANSI-free) line lists for themed subagent transcript cards.
  *
@@ -86,6 +88,11 @@ final class SubagentTranscriptCardBuilder
         $footer = $this->formatFooter($progress);
         if ('' !== $footer) {
             $lines[] = $footer;
+        }
+
+        $contextLine = $this->formatContextUsageLine($progress);
+        if (null !== $contextLine) {
+            $lines[] = $contextLine;
         }
 
         if (null === $childIndex) {
@@ -319,6 +326,48 @@ final class SubagentTranscriptCardBuilder
         $rem = $seconds % 60;
 
         return \sprintf('%dm%02ds', $minutes, $rem);
+    }
+
+    /**
+     * @param array<string, mixed> $progress
+     */
+    private function formatContextUsageLine(array $progress): ?string
+    {
+        $model = $this->optionalModelString($progress);
+        $latest = $this->resolveLatestInputTokens($progress);
+        $window = $this->intOrNull($progress, 'context_window') ?? 0;
+        $formatted = ContextUsageFormatter::format($model, $latest, $window);
+        if (null === $formatted) {
+            return null;
+        }
+
+        return 'CTX '.$formatted->text;
+    }
+
+    /**
+     * @param array<string, mixed> $progress
+     */
+    private function resolveLatestInputTokens(array $progress): int
+    {
+        $latest = $this->intOrNull($progress, 'latest_input_tokens');
+        if (null !== $latest && $latest > 0) {
+            return $latest;
+        }
+
+        return 0;
+    }
+
+    /**
+     * @param array<string, mixed> $progress
+     */
+    private function optionalModelString(array $progress): ?string
+    {
+        $model = $this->string($progress, 'model', '');
+        if ('' === $model) {
+            return null;
+        }
+
+        return $model;
     }
 
     private function retrieveGuidance(string $status): string

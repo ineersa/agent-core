@@ -177,6 +177,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             agentsConfig: new AgentsConfig(),
             progressSnapshotBuilder: new \Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder(),
             childProgressSummaryBuilder: new SubagentChildProgressSummaryBuilder(self::getContainer()->get(AgentChildRunEventStoreFactory::class)),
+            appConfig: self::getContainer()->get(AppConfig::class),
         );
 
         $result = $service->execute('parent-1', 'test-agent', 'Inspect Foo.php');
@@ -253,6 +254,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             agentsConfig: new AgentsConfig(),
             progressSnapshotBuilder: new \Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder(),
             childProgressSummaryBuilder: new SubagentChildProgressSummaryBuilder(self::getContainer()->get(AgentChildRunEventStoreFactory::class)),
+            appConfig: self::getContainer()->get(AppConfig::class),
         );
 
         $result = $service->execute('parent-2', 'fail-agent', 'Try to read nothing');
@@ -325,6 +327,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             agentsConfig: new AgentsConfig(),
             progressSnapshotBuilder: new \Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder(),
             childProgressSummaryBuilder: new SubagentChildProgressSummaryBuilder(self::getContainer()->get(AgentChildRunEventStoreFactory::class)),
+            appConfig: self::getContainer()->get(AppConfig::class),
         );
 
         $result = $service->execute('parent-waiting', 'asker', 'Need clarification');
@@ -399,6 +402,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             agentsConfig: new AgentsConfig(),
             progressSnapshotBuilder: new \Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder(),
             childProgressSummaryBuilder: new SubagentChildProgressSummaryBuilder(self::getContainer()->get(AgentChildRunEventStoreFactory::class)),
+            appConfig: self::getContainer()->get(AppConfig::class),
         );
 
         $this->expectException(ToolCallException::class);
@@ -433,6 +437,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             agentsConfig: new AgentsConfig(),
             progressSnapshotBuilder: new \Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder(),
             childProgressSummaryBuilder: new SubagentChildProgressSummaryBuilder(self::getContainer()->get(AgentChildRunEventStoreFactory::class)),
+            appConfig: self::getContainer()->get(AppConfig::class),
         );
 
         $this->expectException(ToolCallException::class);
@@ -476,6 +481,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             agentsConfig: new AgentsConfig(),
             progressSnapshotBuilder: new \Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder(),
             childProgressSummaryBuilder: new SubagentChildProgressSummaryBuilder(self::getContainer()->get(AgentChildRunEventStoreFactory::class)),
+            appConfig: self::getContainer()->get(AppConfig::class),
         );
 
         $this->expectException(ToolCallException::class);
@@ -587,6 +593,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             agentsConfig: new AgentsConfig(),
             progressSnapshotBuilder: new \Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder(),
             childProgressSummaryBuilder: new SubagentChildProgressSummaryBuilder(self::getContainer()->get(AgentChildRunEventStoreFactory::class)),
+            appConfig: self::getContainer()->get(AppConfig::class),
         );
 
         $result = $contextAccessor->with($toolContext, static function () use ($service): string {
@@ -700,6 +707,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             agentsConfig: new AgentsConfig(),
             progressSnapshotBuilder: new \Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder(),
             childProgressSummaryBuilder: new SubagentChildProgressSummaryBuilder(self::getContainer()->get(AgentChildRunEventStoreFactory::class)),
+            appConfig: self::getContainer()->get(AppConfig::class),
         );
 
         $result = $service->execute('parent-compact', 'compact-agent', 'Compact then finish');
@@ -1508,7 +1516,7 @@ CHILD_SKILL_BODY_UNIQUE',
                 appConfig: new AppConfig(tui: new TuiConfig(theme: 'default'), logging: new LoggingConfig(), cwd: $projectDir),
                 entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
             );
-            $pathResolver = new \Ineersa\CodingAgent\Agent\Artifact\AgentArtifactPathResolver($hatfieldSessionStore);
+            $pathResolver = new \Ineersa\CodingAgent\Agent\Artifact\AgentArtifactPathResolver(new \Ineersa\CodingAgent\Session\SessionAgentArtifactPathResolver($hatfieldSessionStore));
             $childEventStore = new \Ineersa\CodingAgent\Agent\Artifact\AgentChildRunEventStore(
                 pathResolver: $pathResolver,
                 eventPayloadNormalizer: new \Ineersa\AgentCore\Schema\EventPayloadNormalizer(),
@@ -1712,6 +1720,7 @@ CHILD_SKILL_BODY_UNIQUE',
             'agentsConfig' => new AgentsConfig(maxAgents: 8),
             'progressSnapshotBuilder' => new \Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder(),
             'childProgressSummaryBuilder' => new SubagentChildProgressSummaryBuilder(self::getContainer()->get(AgentChildRunEventStoreFactory::class)),
+            'appConfig' => self::getContainer()->get(AppConfig::class),
             'clock' => new NativeClock(),
         ];
 
@@ -1736,6 +1745,7 @@ CHILD_SKILL_BODY_UNIQUE',
             agentsConfig: $args['agentsConfig'],
             progressSnapshotBuilder: $args['progressSnapshotBuilder'],
             childProgressSummaryBuilder: $args['childProgressSummaryBuilder'],
+            appConfig: $args['appConfig'],
             clock: $args['clock'],
         );
     }

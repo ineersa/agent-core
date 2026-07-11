@@ -265,8 +265,23 @@ final readonly class SubagentResultRenderer
         if (str_contains($line, ' turns') || str_contains($line, 'in:')) {
             return $theme->muted($line);
         }
+        if (str_starts_with($line, 'CTX ')) {
+            return $this->styleContextUsageLine($theme, $line);
+        }
 
         return $theme->color(ThemeColorEnum::ToolOutput, $line);
+    }
+
+    private function styleContextUsageLine(TuiTheme $theme, string $line): string
+    {
+        $detail = substr($line, 4);
+        $color = ThemeColorEnum::Success;
+        if (preg_match('/^(\d+)%\s+(.+)$/', $detail, $m)) {
+            $pct = (float) $m[1];
+            $color = $pct > 75 ? ThemeColorEnum::Error : ($pct > 50 ? ThemeColorEnum::Warning : ThemeColorEnum::Success);
+        }
+
+        return $theme->color(ThemeColorEnum::Muted, 'CTX ').$theme->color($color, $detail);
     }
 
     private function styleHeaderText(TuiTheme $theme, string $line, string $status): string
