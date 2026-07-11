@@ -77,7 +77,7 @@ final class TuiSubagentLiveChildExportE2eTest extends TestCase
             $html = file_get_contents($expectedHtml);
             $this->assertIsString($html);
             $this->assertStringContainsString('Child-only export marker scout-e2e', $html, 'HTML must contain child canonical events content');
-            $this->assertStringNotContainsString('Export me', $html, 'Must not export parent session events');
+            $this->assertStringNotContainsString('Run a scout subagent.', $html, 'Must not export parent session events');
 
             $this->tmux->sendKey($pane, 'C-d');
         } catch (\Throwable $e) {

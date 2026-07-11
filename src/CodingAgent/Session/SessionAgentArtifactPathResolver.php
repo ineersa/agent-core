@@ -81,6 +81,14 @@ final class SessionAgentArtifactPathResolver
         return $this->sessionsBasePath.'/'.$parentRunId.'/'.$relative;
     }
 
+    /**
+     * Reject path components that could escape the session directory.
+     *
+     * Embedded patterns like "foo..bar" are harmless because path separators
+     * are already blocked.
+     *
+     * @throws \InvalidArgumentException
+     */
     public function validatePathComponent(string $value, string $field): void
     {
         if ('' === $value) {

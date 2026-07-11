@@ -511,7 +511,6 @@ services:
 
   Ineersa\Tui\Export\SessionEventsExportService: ~
 
-
   Ineersa\AgentCore\Contract\TurnTree\TurnTreeProjectorInterface:
     alias: Ineersa\CodingAgent\Session\TurnTree\TurnTreeProjectorContractAdapter
 

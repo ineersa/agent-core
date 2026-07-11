@@ -261,6 +261,41 @@ final class ExportCommandHandlerTest extends TestCase
         $this->assertCount(2, $sourceLines);
     }
 
+    #[Test]
+    public function jsonlExportDoesNotLoadSessionMetadataFromDatabase(): void
+    {
+        $sessionId = '4242';
+        $this->setupEventsFile($sessionId, [
+            $this->makeEvent(1, 1, 'run_started', [
+                'step_id' => 's1',
+                'user_messages' => [['role' => 'user', 'content' => 'Hello']],
+            ]),
+        ]);
+
+        $appConfig = new AppConfig(
+            tui: new TuiConfig(theme: 'default'),
+            logging: new LoggingConfig(),
+            cwd: $this->projectDir,
+            sessions: new SessionsConfig(path: '.hatfield/sessions'),
+        );
+        $entityManager = $this->createMock(EntityManagerInterface::class);
+        $entityManager->expects($this->never())->method('find');
+        $sessionStore = new HatfieldSessionStore($appConfig, $entityManager);
+
+        $handler = new ExportCommandHandler(
+            new TuiSessionState($sessionId),
+            $sessionStore,
+            new SessionEventsExportService(),
+        );
+
+        $path = $this->projectDir.'/no-db-metadata.jsonl';
+        $result = $handler->handle(new SlashCommand('export', $path, '/export '.$path));
+
+        $this->assertInstanceOf(TranscriptMessage::class, $result);
+        $this->assertStringContainsString('no-db-metadata.jsonl', $result->text);
+        $this->assertFileExists($path);
+    }
+
     // ── HTML content escaping ──────────────────────────────────────────────
 
     #[Test]
