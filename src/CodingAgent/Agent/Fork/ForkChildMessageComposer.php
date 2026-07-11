@@ -38,7 +38,7 @@ final readonly class ForkChildMessageComposer
         $messages = $this->buildMessages(
             snapshot: $snapshot,
             artifactId: $artifactId,
-            allowedToolNames: $allowedToolNames,
+            systemPrompt: $systemPrompt,
             skillsContext: $skillsContext,
         );
 
@@ -85,19 +85,27 @@ final readonly class ForkChildMessageComposer
     }
 
     /**
-     * @param list<string> $allowedToolNames
-     *
      * @return list<AgentMessage>
      */
     private function buildMessages(
         ForkSessionSnapshotDTO $snapshot,
         string $artifactId,
-        array $allowedToolNames,
+        string $systemPrompt,
         string $skillsContext,
     ): array {
         $messages = [];
 
-        foreach ($snapshot->messages as $message) {
+        if ('' !== trim($systemPrompt)) {
+            $messages[] = new AgentMessage(
+                role: 'system',
+                content: [[
+                    'type' => 'text',
+                    'text' => $systemPrompt,
+                ]],
+            );
+        }
+
+        foreach ($this->inheritedSnapshotMessages($snapshot->messages) as $message) {
             $messages[] = $message;
         }
 
@@ -130,6 +138,47 @@ final readonly class ForkChildMessageComposer
         );
 
         return $messages;
+    }
+
+    /**
+     * Inherited compacted history without the parent's immutable prologue.
+     *
+     * Virtual compaction embeds leading parent `system` and `user-context`
+     * messages at the front of the snapshot. The fork child receives a fresh
+     * child-safe system prompt and fresh skills/contract user-context below;
+     * stale parent prologue must not reach the LLM.
+     *
+     * @param list<AgentMessage> $snapshotMessages
+     *
+     * @return list<AgentMessage>
+     */
+    private function inheritedSnapshotMessages(array $snapshotMessages): array
+    {
+        $skip = 0;
+        $total = \count($snapshotMessages);
+        for ($i = 0; $i < $total; ++$i) {
+            $role = $snapshotMessages[$i]->role;
+            if ('system' === $role || 'user-context' === $role) {
+                ++$skip;
+                continue;
+            }
+
+            break;
+        }
+
+        if (0 === $skip) {
+            $filtered = [];
+            foreach ($snapshotMessages as $message) {
+                if ('system' === $message->role) {
+                    continue;
+                }
+                $filtered[] = $message;
+            }
+
+            return $filtered;
+        }
+
+        return \array_slice($snapshotMessages, $skip);
     }
 
     private function buildForkChildContract(string $artifactId): string

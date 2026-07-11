@@ -75,4 +75,56 @@ final class ForkChildMessageComposerTest extends IsolatedKernelTestCase
         $this->assertStringNotContainsString('Use fork', $composed['systemPrompt']);
         $this->assertStringNotContainsString('launch fork child', strtolower($composed['systemPrompt']));
     }
+
+    public function testComposeReplacesStaleParentSystemWithChildSafeSystemInMessages(): void
+    {
+        $staleParentSystem = <<<'EOT'
+fork task="leak" — launch fork child with inherited history
+Use fork when you need a delegated child run.
+EOT;
+        $promptBuilder = new ForkTaskPromptBuilder();
+        $snapshot = new ForkSessionSnapshotDTO(
+            messages: [
+                new AgentMessage(role: 'system', content: [['type' => 'text', 'text' => $staleParentSystem]]),
+                new AgentMessage(role: 'user-context', content: [['type' => 'text', 'text' => 'stale parent skills']], metadata: ['source' => 'skills_context']),
+                new AgentMessage(role: 'user', content: [['type' => 'text', 'text' => 'prior user']]),
+            ],
+            forkSystemPromptAppend: $promptBuilder->forkChildSystemPromptAppend(),
+            forkTaskUserMessage: $promptBuilder->buildTaskUserMessage('Implement FORK-MVP slice'),
+            resolvedModel: null,
+        );
+
+        $composer = self::getContainer()->get(ForkChildMessageComposer::class);
+        $composed = $composer->compose(
+            snapshot: $snapshot,
+            artifactId: 'agent_test123',
+            allowedToolNames: ['read', 'subagent'],
+            agentsMd: '',
+            skillsContext: 'fresh skills block',
+            agentsContext: '',
+        );
+
+        $this->assertNotEmpty($composed['messages']);
+        $this->assertSame('system', $composed['messages'][0]->role);
+        $firstSystemText = (string) ($composed['messages'][0]->content[0]['text'] ?? '');
+        $this->assertStringContainsString('delegated child agent', $firstSystemText);
+        $this->assertStringNotContainsString('fork task=', $firstSystemText);
+        $this->assertStringNotContainsString('launch fork child', strtolower($firstSystemText));
+
+        $allMessageText = '';
+        foreach ($composed['messages'] as $message) {
+            foreach ($message->content as $block) {
+                if ('text' === ($block['type'] ?? '')) {
+                    $allMessageText .= (string) $block['text']."\n";
+                }
+            }
+        }
+        $this->assertStringNotContainsString('fork task=', $allMessageText);
+        $this->assertStringNotContainsString('stale parent skills', $allMessageText);
+        $this->assertStringContainsString('fresh skills block', $allMessageText);
+        $this->assertStringContainsString('prior user', $allMessageText);
+        $this->assertStringContainsString('read', $firstSystemText);
+        $this->assertStringNotContainsString('fork task=', $firstSystemText);
+        $this->assertStringNotContainsString('use fork', strtolower($firstSystemText));
+    }
 }
