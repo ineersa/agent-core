@@ -24,6 +24,7 @@ use Ineersa\Tui\Question\QuestionRequest;
 use Ineersa\Tui\Question\QuestionSource;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
 use Ineersa\Tui\Runtime\RuntimeEventPoller;
+use Ineersa\Tui\Runtime\SubagentLiveBackgroundChildPoller;
 use Ineersa\Tui\Runtime\SubagentLiveChildViewPoller;
 use Ineersa\Tui\Runtime\TuiRuntimeEventApplier;
 use Ineersa\Tui\Runtime\TuiSessionState;
@@ -610,8 +611,10 @@ final class TickPollListenerTest extends TestCase
         // Inject dependencies into TickPollListener via reflection
         $listenerRef = new \ReflectionClass(TickPollListener::class);
         $listener = $listenerRef->newInstanceWithoutConstructor();
+        $listenerRef->getProperty('subagentLivePickerController')->setValue($listener, $this->closedSubagentLivePicker());
         $listenerRef->getProperty('poller')->setValue($listener, $poller);
         $listenerRef->getProperty('subagentLiveChildPoller')->setValue($listener, $this->createIsolatedSubagentLiveChildPoller());
+        $listenerRef->getProperty('subagentLiveBackgroundChildPoller')->setValue($listener, new SubagentLiveBackgroundChildPoller(new NullLogger()));
         $listenerRef->getProperty('questionCoordinator')->setValue($listener, $coordinator);
         $listenerRef->getProperty('questionController')->setValue($listener, $controller);
         $listenerRef->getProperty('runtimeQuestionEventHandler')->setValue($listener, new RuntimeQuestionEventHandler());
@@ -687,8 +690,10 @@ final class TickPollListenerTest extends TestCase
         // Inject dependencies into TickPollListener via reflection
         $listenerRef = new \ReflectionClass(TickPollListener::class);
         $listener = $listenerRef->newInstanceWithoutConstructor();
+        $listenerRef->getProperty('subagentLivePickerController')->setValue($listener, $this->closedSubagentLivePicker());
         $listenerRef->getProperty('poller')->setValue($listener, $poller);
         $listenerRef->getProperty('subagentLiveChildPoller')->setValue($listener, $this->createIsolatedSubagentLiveChildPoller());
+        $listenerRef->getProperty('subagentLiveBackgroundChildPoller')->setValue($listener, new SubagentLiveBackgroundChildPoller(new NullLogger()));
         $listenerRef->getProperty('questionCoordinator')->setValue($listener, $coordinator);
         $listenerRef->getProperty('questionController')->setValue($listener, $controller);
         $listenerRef->getProperty('runtimeQuestionEventHandler')->setValue($listener, new RuntimeQuestionEventHandler());
@@ -775,8 +780,10 @@ final class TickPollListenerTest extends TestCase
 
         $listenerRef = new \ReflectionClass(TickPollListener::class);
         $listener = $listenerRef->newInstanceWithoutConstructor();
+        $listenerRef->getProperty('subagentLivePickerController')->setValue($listener, $this->closedSubagentLivePicker());
         $listenerRef->getProperty('poller')->setValue($listener, $poller);
         $listenerRef->getProperty('subagentLiveChildPoller')->setValue($listener, $this->createIsolatedSubagentLiveChildPoller());
+        $listenerRef->getProperty('subagentLiveBackgroundChildPoller')->setValue($listener, new SubagentLiveBackgroundChildPoller(new NullLogger()));
         $listenerRef->getProperty('questionCoordinator')->setValue($listener, $coordinator);
         $listenerRef->getProperty('questionController')->setValue($listener, $questionController);
         $listenerRef->getProperty('runtimeQuestionEventHandler')->setValue($listener, new RuntimeQuestionEventHandler());
@@ -903,8 +910,10 @@ final class TickPollListenerTest extends TestCase
     {
         $listenerRef = new \ReflectionClass(TickPollListener::class);
         $listener = $listenerRef->newInstanceWithoutConstructor();
+        $listenerRef->getProperty('subagentLivePickerController')->setValue($listener, $this->closedSubagentLivePicker());
         $listenerRef->getProperty('poller')->setValue($listener, $poller);
         $listenerRef->getProperty('subagentLiveChildPoller')->setValue($listener, $this->createIsolatedSubagentLiveChildPoller());
+        $listenerRef->getProperty('subagentLiveBackgroundChildPoller')->setValue($listener, new SubagentLiveBackgroundChildPoller(new NullLogger()));
         $listenerRef->getProperty('questionCoordinator')->setValue($listener, new QuestionCoordinator());
         $listenerRef->getProperty('questionController')->setValue($listener, new QuestionController(new QuestionCoordinator()));
         $listenerRef->getProperty('runtimeQuestionEventHandler')->setValue($listener, new RuntimeQuestionEventHandler());
@@ -974,5 +983,17 @@ final class TickPollListenerTest extends TestCase
         $registry = $ref->getProperty('registry');
 
         return $registry->getValue($screen)->isWorkingVisible();
+    }
+
+    private function closedSubagentLivePicker(): \Ineersa\Tui\Picker\SubagentLivePickerController
+    {
+        $picker = (new \ReflectionClass(\Ineersa\Tui\Picker\SubagentLivePickerController::class))->newInstanceWithoutConstructor();
+        $overlay = new \Ineersa\Tui\Picker\PickerOverlay();
+        $overlayRef = new \ReflectionProperty(\Ineersa\Tui\Picker\SubagentLivePickerController::class, 'overlay');
+        $overlayRef->setValue($picker, $overlay);
+        $openRef = new \ReflectionProperty(\Ineersa\Tui\Picker\PickerOverlay::class, 'isOpen');
+        $openRef->setValue($overlay, false);
+
+        return $picker;
     }
 }

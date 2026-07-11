@@ -52,6 +52,61 @@ final class RuntimeEventPoller
      */
     public function poll(TuiSessionState $state, AgentSessionClient $client, ?callable $onHumanInputRequested = null, ?callable $onToolQuestionRequested = null, ?callable $onToolTerminal = null): ?array
     {
+        return $this->pollInternal($state, $client, $onHumanInputRequested, $onToolQuestionRequested, $onToolTerminal, projectTranscript: true);
+    }
+
+    public function pollStateOnly(TuiSessionState $state, AgentSessionClient $client, ?callable $onHumanInputRequested = null, ?callable $onToolQuestionRequested = null, ?callable $onToolTerminal = null): void
+    {
+        $this->pollInternal($state, $client, $onHumanInputRequested, $onToolQuestionRequested, $onToolTerminal, projectTranscript: false);
+    }
+
+    /**
+     * @param list<TranscriptBlock> $projectedBlocks
+     *
+     * @return list<TranscriptBlock>
+     */
+    public static function synchronizeProjectedBlocks(TuiSessionState $state, array $projectedBlocks): array
+    {
+        $changed = [];
+
+        foreach ($projectedBlocks as $block) {
+            $idx = self::findBlockIndex($state->transcript, $block->id);
+
+            if (null === $idx) {
+                $state->transcript[] = $block;
+                $changed[] = $block;
+
+                continue;
+            }
+
+            if (self::blocksEqual($state->transcript[$idx], $block)) {
+                continue;
+            }
+
+            $state->transcript[$idx] = $block;
+            $changed[] = $block;
+        }
+
+        return $changed;
+    }
+
+    public static function blocksEqual(TranscriptBlock $left, TranscriptBlock $right): bool
+    {
+        return $left->id === $right->id
+            && $left->kind === $right->kind
+            && $left->runId === $right->runId
+            && $left->seq === $right->seq
+            && $left->text === $right->text
+            && $left->meta === $right->meta
+            && $left->streaming === $right->streaming
+            && $left->collapsed === $right->collapsed;
+    }
+
+    /**
+     * @return list<TranscriptBlock>|null
+     */
+    private function pollInternal(TuiSessionState $state, AgentSessionClient $client, ?callable $onHumanInputRequested, ?callable $onToolQuestionRequested, ?callable $onToolTerminal, bool $projectTranscript): ?array
+    {
         if (null === $state->handle) {
             return null;
         }
@@ -222,16 +277,20 @@ final class RuntimeEventPoller
             }
 
             if ($hasRunLeafChanged) {
-                // Wholesale transcript replace: return all blocks (not just changed)
-                // so the renderer rebuilds the entire transcript display.
-                // Sync any events that arrived after RunLeafChanged in the same
-                // batch (fed to projector via apply()) into the transcript.
-                self::synchronizeProjectedBlocks($state, $this->eventApplier->projectedBlocks());
+                if ($projectTranscript) {
+                    self::synchronizeProjectedBlocks($state, $this->eventApplier->projectedBlocks());
 
-                return $state->transcript;
+                    return $state->transcript;
+                }
+
+                return null;
             }
 
             if (!$hasNew) {
+                return null;
+            }
+
+            if (!$projectTranscript) {
                 return null;
             }
 
@@ -330,48 +389,6 @@ final class RuntimeEventPoller
         }
 
         return $events;
-    }
-
-    /**
-     * @param list<TranscriptBlock> $projectedBlocks
-     *
-     * @return list<TranscriptBlock>
-     */
-    private static function synchronizeProjectedBlocks(TuiSessionState $state, array $projectedBlocks): array
-    {
-        $changed = [];
-
-        foreach ($projectedBlocks as $block) {
-            $idx = self::findBlockIndex($state->transcript, $block->id);
-
-            if (null === $idx) {
-                $state->transcript[] = $block;
-                $changed[] = $block;
-
-                continue;
-            }
-
-            if (self::blocksEqual($state->transcript[$idx], $block)) {
-                continue;
-            }
-
-            $state->transcript[$idx] = $block;
-            $changed[] = $block;
-        }
-
-        return $changed;
-    }
-
-    private static function blocksEqual(TranscriptBlock $left, TranscriptBlock $right): bool
-    {
-        return $left->id === $right->id
-            && $left->kind === $right->kind
-            && $left->runId === $right->runId
-            && $left->seq === $right->seq
-            && $left->text === $right->text
-            && $left->meta === $right->meta
-            && $left->streaming === $right->streaming
-            && $left->collapsed === $right->collapsed;
     }
 
     /** @param list<TranscriptBlock> $blocks */
