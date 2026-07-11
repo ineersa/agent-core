@@ -4,7 +4,7 @@
     "observational-memory": {
         "observeAfterTokens": 10000,
         "reflectAfterTokens": 40000,
-        "compactAfterTokens": 120000,
+        "compactAfterTokens": 100000,
         "passive": false,
         "debugLog": false,
         "model": {
