@@ -694,10 +694,13 @@ final class SessionRunStateReplayServiceTest extends TestCase
             lastSeq: 0,
         );
 
-        $this->expectException(RunStateReplayException::class);
-        $this->expectExceptionMessage('duplicate sequence');
-
-        $this->service->rebuildIfStale($state, $this->runId);
+        try {
+            $this->service->rebuildIfStale($state, $this->runId);
+            $this->fail('Expected RunStateReplayException');
+        } catch (RunStateReplayException $exception) {
+            $this->assertStringContainsString('duplicate sequence', $exception->getMessage());
+            $this->assertTrue($exception->isDuplicateSequences());
+        }
     }
 
     // ── Command rejected replay ─────────────────────────────────────────────

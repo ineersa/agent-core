@@ -8,9 +8,10 @@ use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
 
 /**
  * Thrown when a {@see RunStateRebuilderInterface} implementation cannot rebuild a valid RunState
- * from the canonical event stream — for example duplicate sequence numbers or incompatible payload shapes.
+ * from the canonical event stream because of duplicate sequence numbers in persisted history.
  *
  * Sequence gaps (for example after cursor allocation without JSONL append) are tolerated and do not throw.
+ * Incompatible or corrupt JSONL payload shapes are handled separately (skipped lines, denormalization failures, or other exceptions).
  */
 final class RunStateReplayException extends \RuntimeException
 {

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Session\Rewind;
 
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
+use Ineersa\AgentCore\Application\Handler\RunStateReplayException;
 use Ineersa\AgentCore\Application\Replay\ReplayEventPreparer;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
@@ -77,7 +78,7 @@ final readonly class SessionRewindService implements RunRewindServiceInterface
 
             $duplicateSeqs = $this->replayEventPreparer->duplicateSequences($events);
             if ([] !== $duplicateSeqs) {
-                throw new \RuntimeException(\sprintf('Cannot rewind run %s: event history contains duplicate sequence number(s): %s. Run /repair apply first.', $runId, implode(', ', array_map('strval', \array_slice($duplicateSeqs, 0, 10)))));
+                throw new RunStateReplayException(\sprintf('Cannot rewind run %s: event history contains %d duplicate sequence number(s): %s.', $runId, \count($duplicateSeqs), implode(', ', array_map('strval', \array_slice($duplicateSeqs, 0, 10)))), RunStateReplayException::REASON_DUPLICATE_SEQUENCES);
             }
 
             $currentLeafTurnNo = $tree->currentLeafTurnNo;

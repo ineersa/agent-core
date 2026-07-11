@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Tests\Infrastructure\Messenger;
 
+use Ineersa\AgentCore\Application\Handler\RunStateReplayException;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\RunStoreInterface;
 use Ineersa\AgentCore\Contract\SequencedEventStoreInterface;
@@ -278,6 +279,39 @@ class WorkerFailedEventSubscriberTest extends TestCase
      * only when SendFailedMessageForRetryListener calls setForRetry().
      * A final failure is one where setForRetry() was never called.
      */
+    #[Test]
+    public function skipsOnlyTypedDuplicateReplayCorruption(): void
+    {
+        $currentState = new RunState(runId: self::RUN_ID, status: RunStatus::Running, version: 3, turnNo: 1, lastSeq: 4);
+
+        $runStore = $this->createMock(RunStoreInterface::class);
+        $runStore->method('get')->willReturn($currentState);
+
+        $eventStore = $this->createMock(SequencedEventStoreInterface::class);
+        $eventStore->expects($this->never())->method('appendWithNextSeq');
+
+        $subscriber = new WorkerFailedEventSubscriber($runStore, $eventStore, new NullLogger());
+        $message = $this->createStartRun();
+
+        $duplicate = new RunStateReplayException('duplicate', RunStateReplayException::REASON_DUPLICATE_SEQUENCES);
+        $other = new RunStateReplayException('other replay failure', null);
+        $this->assertTrue($duplicate->isDuplicateSequences());
+        $this->assertFalse($other->isDuplicateSequences());
+
+        $runStore->expects($this->never())->method('compareAndSwap');
+        $subscriber->onWorkerMessageFailed($this->createFinalFailedEvent(new Envelope($message), $duplicate));
+
+        $runStore = $this->createMock(RunStoreInterface::class);
+        $runStore->method('get')->willReturn($currentState);
+        $runStore->expects($this->once())->method('compareAndSwap')->willReturn(true);
+        $eventStore = $this->createMock(SequencedEventStoreInterface::class);
+        $eventStore->expects($this->once())
+            ->method('appendWithNextSeq')
+            ->willReturn(new RunEvent(self::RUN_ID, 5, 1, 'agent_end', ['reason' => 'failed']));
+        $subscriber = new WorkerFailedEventSubscriber($runStore, $eventStore, new NullLogger());
+        $subscriber->onWorkerMessageFailed($this->createFinalFailedEvent(new Envelope($message), $other));
+    }
+
     private function createFinalFailedEvent(Envelope $envelope, \Throwable $exception): WorkerMessageFailedEvent
     {
         return new WorkerMessageFailedEvent($envelope, self::RECEIVER_NAME, $exception);

@@ -23,7 +23,7 @@ use Symfony\Component\Lock\LockFactory;
  *   .hatfield/sessions/<parentRunId>/artifacts/agents/<artifactId>/events.jsonl
  *
  * Sequence allocation uses {@see FileRunSequenceAllocator::COUNTER_BASENAME} next to that log.
- * Uses Symfony Lock (FlockStore) keyed by the child agentRunId to
+ * Uses Symfony Lock via the injected {@see LockFactory} (typically flock-backed) keyed by the child agentRunId to
  * protect concurrent appends.  Reuses EventPayloadNormalizer for
  * canonical event serialization.
  *
@@ -233,7 +233,7 @@ final class AgentChildRunEventStore implements SequencedEventStoreInterface
 
         $written = file_put_contents($path, $json."\n", \FILE_APPEND | \LOCK_EX);
         if (false === $written) {
-            throw new \RuntimeException(\sprintf('Failed to append to events.jsonl for child run "%s".', $this->agentRunId));
+            throw new \RuntimeException(\sprintf('Failed to append to events.jsonl for child run "%s" at seq %d.', $this->agentRunId, $event->seq));
         }
     }
 

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Tests\Application\Pipeline;
 
+use Ineersa\AgentCore\Application\Handler\RunMetrics;
 use Ineersa\AgentCore\Application\Handler\StepDispatcher;
 use Ineersa\AgentCore\Application\Pipeline\RunCommit;
 use Ineersa\AgentCore\Application\Replay\PromptStateReplayService;
@@ -136,6 +137,100 @@ final class RunCommitLoggingTest extends TestCase
         // First CAS (running v2) succeeded; lastSeq bump CAS failed so lastSeq may remain 0.
         $this->assertSame(2, $stored->version);
         $this->assertSame(0, $stored->lastSeq);
+    }
+
+    public function testCommitMetricsUseStoreTruthWhenPostPersistLastSeqCasFails(): void
+    {
+        $metrics = new RunMetrics();
+        $logger = new TestLogger();
+        $inner = new InMemoryRunStore();
+        $inner->compareAndSwap(RunState::queued('run-1'), 0);
+        $inner->compareAndSwap(new RunState(
+            runId: 'run-1',
+            status: RunStatus::Running,
+            version: 1,
+            turnNo: 0,
+            lastSeq: 0,
+        ), 0);
+
+        $runStore = new ReloadsCompletedAfterSecondCasFailRunStore($inner);
+        $eventStore = new RecordingEventStore();
+
+        $commit = new RunCommit(
+            runStore: $runStore,
+            eventStore: $eventStore,
+            commandStore: new InMemoryCommandStore(),
+            hotPromptStateRebuilder: new SessionHotPromptReplayService(
+                eventStore: $eventStore,
+                promptStateStore: new InMemoryPromptStateStore(),
+                promptStateReplayService: new PromptStateReplayService(),
+                replayEventPreparer: new ReplayEventPreparer(),
+            ),
+            stepDispatcher: new StepDispatcher(new TestMessageBus()),
+            logger: $logger,
+            metrics: $metrics,
+        );
+
+        $previous = $inner->get('run-1');
+        $this->assertNotNull($previous);
+
+        $next = new RunState(
+            runId: 'run-1',
+            status: RunStatus::Running,
+            version: $previous->version + 1,
+            turnNo: 1,
+            lastSeq: 0,
+        );
+
+        $events = [
+            new RunEvent('run-1', 99, 1, 'user.message', ['text' => 'hi']),
+        ];
+
+        $this->assertTrue($commit->commit($previous, $next, $events, []));
+
+        $snapshot = $metrics->snapshot();
+        $this->assertSame(0, $snapshot['active_runs_by_status'][RunStatus::Running->value] ?? 0);
+        $this->assertSame(1, $snapshot['active_runs_by_status'][RunStatus::Completed->value] ?? 0,
+            'Metrics must use reloaded store truth (Completed), not the intended post-persist Running bump state.');
+    }
+}
+
+final class ReloadsCompletedAfterSecondCasFailRunStore implements RunStoreInterface
+{
+    private int $casCalls = 0;
+
+    public function __construct(private readonly InMemoryRunStore $inner)
+    {
+    }
+
+    public function get(string $runId): ?RunState
+    {
+        if ($this->casCalls >= 2) {
+            return new RunState(
+                runId: $runId,
+                status: RunStatus::Completed,
+                version: 3,
+                turnNo: 0,
+                lastSeq: 0,
+            );
+        }
+
+        return $this->inner->get($runId);
+    }
+
+    public function compareAndSwap(RunState $state, int $expectedVersion): bool
+    {
+        ++$this->casCalls;
+        if (2 === $this->casCalls) {
+            return false;
+        }
+
+        return $this->inner->compareAndSwap($state, $expectedVersion);
+    }
+
+    public function findRunningStaleBefore(\DateTimeImmutable $threshold): array
+    {
+        return $this->inner->findRunningStaleBefore($threshold);
     }
 }
 
