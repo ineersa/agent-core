@@ -289,6 +289,37 @@ final class SubagentLivePickerControllerTest extends TestCase
     }
 
     #[Test]
+    public function pickerRowShowsChildContextUsageSuffix(): void
+    {
+        $harness = new VirtualTuiHarness(sessionId: 'picker-child-ctx');
+        $state = new TuiSessionState('picker-child-ctx');
+        $state->subagentLiveCatalog->ingestRuntimeEvent(new RuntimeEvent(
+            type: RuntimeEventTypeEnum::ToolExecutionOutputDelta->value,
+            runId: 'parent-run',
+            seq: 1,
+            payload: [
+                'tool_call_id' => 'tc_subagent',
+                'tool_name' => 'subagent',
+                'delta' => '',
+                'subagent_progress' => array_merge([
+                    'mode' => 'single',
+                    'status' => 'completed',
+                    'agent_name' => 'scout',
+                    'artifact_id' => 'agent_ctx',
+                    'agent_run_id' => 'child-run-ctx',
+                    'task_summary' => 'Context stats',
+                ], \Ineersa\Tui\Tests\Support\ChildContextStatisticsFixture::progressPayloadOverrides()),
+            ],
+        ));
+
+        $items = SubagentLivePickerController::buildItems($state->subagentLiveCatalog->all(), $harness->screen()->theme());
+        $this->assertNotEmpty($items);
+        $label = preg_replace('/\x1b\[[0-9;]*m/', '', $items[0]['label']) ?? $items[0]['label'];
+        $this->assertStringContainsString(\Ineersa\Tui\Tests\Support\ChildContextStatisticsFixture::CONTEXT_DETAIL, $label);
+        $this->assertStringContainsString(\Ineersa\Tui\Tests\Support\ChildContextStatisticsFixture::MODEL_SHORT, $label);
+    }
+
+    #[Test]
     public function exportFeedbackStoredInPickerHeaderAndState(): void
     {
         $harness = new VirtualTuiHarness(sessionId: 'parent-session-export-persist');
