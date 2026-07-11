@@ -391,8 +391,8 @@ final readonly class SystemPromptBuilder
             }
 
             $line = $definition->promptLine;
-            if ('' === $line) {
-                $line = '- '.$name.': '.$definition->description;
+            if ('' === trim($line)) {
+                continue;
             }
 
             if (!isset($seen[$line])) {

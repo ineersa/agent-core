@@ -126,9 +126,13 @@ final class ForkExecutionServiceTest extends IsolatedKernelTestCase
         $result = $contextAccessor->with($toolContext, static fn (): string => $service->execute($parentRunId, 'Do fork task'));
 
         $this->assertNotNull($captured);
-        $this->assertStringContainsString('delegated child agent', $captured->systemPrompt);
-        $this->assertStringNotContainsString('fork task=', $captured->systemPrompt);
-        $this->assertStringNotContainsString('launch fork child', strtolower($captured->systemPrompt));
+        $this->assertSame('', $captured->systemPrompt);
+        $this->assertNotEmpty($captured->messages);
+        $this->assertSame('system', $captured->messages[0]->role);
+        $firstSystem = (string) ($captured->messages[0]->content[0]['text'] ?? '');
+        $this->assertStringContainsString('delegated child agent', $firstSystem);
+        $this->assertStringNotContainsString('fork task=', $firstSystem);
+        $this->assertStringNotContainsString('launch fork child', strtolower($firstSystem));
         $this->assertStringContainsString('Fork handoff body', $result);
 
         $allowed = $captured->metadata->toolsScope['allowed_tools'] ?? [];

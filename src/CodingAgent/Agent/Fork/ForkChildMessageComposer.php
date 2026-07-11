@@ -16,6 +16,12 @@ use Ineersa\CodingAgent\SystemPrompt\SystemPromptBuilder;
  */
 final readonly class ForkChildMessageComposer
 {
+    private const array FRESH_CONTEXT_SOURCES = [
+        'agents_context',
+        'skills_context',
+        'agents_definitions_context',
+    ];
+
     public function __construct(
         private SystemPromptBuilder $systemPromptBuilder,
     ) {
@@ -34,16 +40,18 @@ final readonly class ForkChildMessageComposer
         string $skillsContext,
         string $agentsContext,
     ): array {
-        $systemPrompt = $this->buildSystemPrompt($snapshot, $allowedToolNames, $agentsMd, $agentsContext);
+        $systemMessageText = $this->buildSystemMessageText($snapshot, $allowedToolNames);
         $messages = $this->buildMessages(
             snapshot: $snapshot,
             artifactId: $artifactId,
-            systemPrompt: $systemPrompt,
+            systemMessageText: $systemMessageText,
+            agentsMd: $agentsMd,
             skillsContext: $skillsContext,
+            agentsContext: $agentsContext,
         );
 
         return [
-            'systemPrompt' => $systemPrompt,
+            'systemPrompt' => '',
             'messages' => $messages,
         ];
     }
@@ -51,11 +59,9 @@ final readonly class ForkChildMessageComposer
     /**
      * @param list<string> $allowedToolNames
      */
-    private function buildSystemPrompt(
+    private function buildSystemMessageText(
         ForkSessionSnapshotDTO $snapshot,
         array $allowedToolNames,
-        string $agentsMd,
-        string $agentsContext,
     ): string {
         $parts = [];
 
@@ -66,14 +72,6 @@ final readonly class ForkChildMessageComposer
 
         if ('' !== trim($snapshot->forkSystemPromptAppend)) {
             $parts[] = trim($snapshot->forkSystemPromptAppend);
-        }
-
-        if ('' !== trim($agentsMd)) {
-            $parts[] = trim($agentsMd);
-        }
-
-        if ('' !== trim($agentsContext)) {
-            $parts[] = trim($agentsContext);
         }
 
         $appends = $this->systemPromptBuilder->buildChildAppendsFragment($allowedToolNames);
@@ -90,23 +88,32 @@ final readonly class ForkChildMessageComposer
     private function buildMessages(
         ForkSessionSnapshotDTO $snapshot,
         string $artifactId,
-        string $systemPrompt,
+        string $systemMessageText,
+        string $agentsMd,
         string $skillsContext,
+        string $agentsContext,
     ): array {
         $messages = [];
 
-        if ('' !== trim($systemPrompt)) {
+        if ('' !== trim($systemMessageText)) {
             $messages[] = new AgentMessage(
                 role: 'system',
                 content: [[
                     'type' => 'text',
-                    'text' => $systemPrompt,
+                    'text' => $systemMessageText,
                 ]],
             );
         }
 
-        foreach ($this->inheritedSnapshotMessages($snapshot->messages) as $message) {
-            $messages[] = $message;
+        if ('' !== trim($agentsMd)) {
+            $messages[] = new AgentMessage(
+                role: 'user-context',
+                content: [[
+                    'type' => 'text',
+                    'text' => trim($agentsMd),
+                ]],
+                metadata: ['source' => 'agents_context'],
+            );
         }
 
         if ('' !== trim($skillsContext)) {
@@ -114,10 +121,25 @@ final readonly class ForkChildMessageComposer
                 role: 'user-context',
                 content: [[
                     'type' => 'text',
-                    'text' => $skillsContext,
+                    'text' => trim($skillsContext),
                 ]],
                 metadata: ['source' => 'skills_context'],
             );
+        }
+
+        if ('' !== trim($agentsContext)) {
+            $messages[] = new AgentMessage(
+                role: 'user-context',
+                content: [[
+                    'type' => 'text',
+                    'text' => trim($agentsContext),
+                ]],
+                metadata: ['source' => 'agents_definitions_context'],
+            );
+        }
+
+        foreach ($this->inheritedSnapshotMessages($snapshot->messages) as $message) {
+            $messages[] = $message;
         }
 
         $messages[] = new AgentMessage(
@@ -141,12 +163,7 @@ final readonly class ForkChildMessageComposer
     }
 
     /**
-     * Inherited compacted history without the parent's immutable prologue.
-     *
-     * Virtual compaction embeds leading parent `system` and `user-context`
-     * messages at the front of the snapshot. The fork child receives a fresh
-     * child-safe system prompt and fresh skills/contract user-context below;
-     * stale parent prologue must not reach the LLM.
+     * Inherited compacted history without parent prologue or stale context channels.
      *
      * @param list<AgentMessage> $snapshotMessages
      *
@@ -166,19 +183,26 @@ final readonly class ForkChildMessageComposer
             break;
         }
 
-        if (0 === $skip) {
-            $filtered = [];
-            foreach ($snapshotMessages as $message) {
-                if ('system' === $message->role) {
+        $body = 0 === $skip
+            ? array_values(array_filter(
+                $snapshotMessages,
+                static fn (AgentMessage $message): bool => 'system' !== $message->role,
+            ))
+            : \array_slice($snapshotMessages, $skip);
+
+        $filtered = [];
+        foreach ($body as $message) {
+            if ('user-context' === $message->role) {
+                $source = $message->metadata['source'] ?? null;
+                if (\is_string($source) && \in_array($source, self::FRESH_CONTEXT_SOURCES, true)) {
                     continue;
                 }
-                $filtered[] = $message;
             }
 
-            return $filtered;
+            $filtered[] = $message;
         }
 
-        return \array_slice($snapshotMessages, $skip);
+        return $filtered;
     }
 
     private function buildForkChildContract(string $artifactId): string

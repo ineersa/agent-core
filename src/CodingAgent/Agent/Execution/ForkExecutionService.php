@@ -147,7 +147,7 @@ final class ForkExecutionService
         );
 
         $this->agentRunner->start(new StartRunInput(
-            systemPrompt: $composed['systemPrompt'],
+            systemPrompt: '',
             messages: $composed['messages'],
             runId: $agentRunId,
             metadata: $childMetadata,

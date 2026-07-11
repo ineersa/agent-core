@@ -667,6 +667,32 @@ final class SystemPromptBuilderTest extends TestCase
         $this->assertStringNotContainsString('Write file contents', $fragment);
     }
 
+    public function testBuildMainHarnessForAllowedToolsOmitsDynamicToolsWithoutPromptLine(): void
+    {
+        $handler = $this->dummyHandler();
+        $registry = new ToolRegistry();
+        $registry->registerTool(
+            name: 'read',
+            description: 'Read file contents',
+            parametersJsonSchema: [],
+            handler: $handler,
+            promptLine: '- read: Read file contents',
+        );
+        $registry->addDynamicTool(
+            name: 'mcp_dynamic',
+            description: 'MCP_TOOL_LONG_DESCRIPTION_SHOULD_NOT_APPEAR',
+            parametersJsonSchema: ['type' => 'object'],
+            handler: $handler,
+        );
+
+        $builder = $this->createBuilder($registry);
+        $result = $builder->buildMainHarnessForAllowedTools(['read', 'mcp_dynamic']);
+
+        $this->assertStringContainsString('- read: Read file contents', $result);
+        $this->assertStringNotContainsString('MCP_TOOL_LONG_DESCRIPTION_SHOULD_NOT_APPEAR', $result);
+        $this->assertStringNotContainsString('mcp_dynamic:', $result);
+    }
+
     /* ───────── Private helpers ───────── */
 
     private function createBuilder(
@@ -727,6 +753,9 @@ final class SystemPromptBuilderTest extends TestCase
         };
     }
 
+    /**
+     * Recursively remove a directory.
+     */
     /**
      * Recursively remove a directory.
      */

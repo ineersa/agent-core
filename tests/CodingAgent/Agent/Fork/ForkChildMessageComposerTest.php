@@ -14,14 +14,18 @@ use PHPUnit\Framework\Attributes\CoversClass;
 #[CoversClass(ForkChildMessageComposer::class)]
 final class ForkChildMessageComposerTest extends IsolatedKernelTestCase
 {
-    public function testComposeIncludesForkAppendHistoryAndExactHandoffUserMessage(): void
+    public function testComposeOrdersCanonicalContextBeforeInheritedHistoryAndTaskLast(): void
     {
         $task = 'Implement FORK-MVP slice';
         $promptBuilder = new ForkTaskPromptBuilder();
         $expectedUser = $promptBuilder->buildTaskUserMessage($task);
+        $compactSummary = 'COMPACT_SUMMARY_BLOCK';
 
         $snapshot = new ForkSessionSnapshotDTO(
             messages: [
+                new AgentMessage(role: 'system', content: [['type' => 'text', 'text' => 'stale parent system']]),
+                new AgentMessage(role: 'user-context', content: [['type' => 'text', 'text' => 'stale agents']], metadata: ['source' => 'agents_context']),
+                new AgentMessage(role: 'user', content: [['type' => 'text', 'text' => $compactSummary]], metadata: ['source' => 'compact_summary']),
                 new AgentMessage(role: 'user', content: [['type' => 'text', 'text' => 'prior user']]),
             ],
             forkSystemPromptAppend: $promptBuilder->forkChildSystemPromptAppend(),
@@ -34,14 +38,40 @@ final class ForkChildMessageComposerTest extends IsolatedKernelTestCase
             snapshot: $snapshot,
             artifactId: 'agent_test123',
             allowedToolNames: ['read', 'subagent'],
-            agentsMd: 'AGENTS block',
-            skillsContext: 'skills block',
-            agentsContext: 'agents catalog block',
+            agentsMd: '<project_context>AGENTS block</project_context>',
+            skillsContext: '<available_skills>skills block</available_skills>',
+            agentsContext: '<available_agents>agents catalog block</available_agents>',
         );
 
-        $this->assertStringContainsString('delegated child agent', $composed['systemPrompt']);
-        $this->assertStringContainsString('AGENTS block', $composed['systemPrompt']);
-        $this->assertStringContainsString('agents catalog block', $composed['systemPrompt']);
+        $this->assertSame('', $composed['systemPrompt']);
+
+        $rolesAndSources = [];
+        foreach ($composed['messages'] as $message) {
+            $rolesAndSources[] = [
+                'role' => $message->role,
+                'source' => $message->metadata['source'] ?? null,
+            ];
+        }
+
+        $this->assertSame([
+            ['role' => 'system', 'source' => null],
+            ['role' => 'user-context', 'source' => 'agents_context'],
+            ['role' => 'user-context', 'source' => 'skills_context'],
+            ['role' => 'user-context', 'source' => 'agents_definitions_context'],
+            ['role' => 'user', 'source' => 'compact_summary'],
+            ['role' => 'user', 'source' => null],
+            ['role' => 'user-context', 'source' => 'agent_child_contract'],
+            ['role' => 'user', 'source' => null],
+        ], $rolesAndSources);
+
+        $systemText = (string) ($composed['messages'][0]->content[0]['text'] ?? '');
+        $this->assertStringContainsString('delegated child agent', $systemText);
+        $this->assertStringContainsString('read', strtolower($systemText));
+        $this->assertStringNotContainsString('AGENTS block', $systemText);
+        $this->assertStringNotContainsString('agents catalog block', $systemText);
+        $this->assertStringNotContainsString('skills block', $systemText);
+        $this->assertStringNotContainsString('fork task=', $systemText);
+        $this->assertStringNotContainsString('MCP_TOOL_LONG_DESCRIPTION_SHOULD_NOT_APPEAR', $systemText);
 
         $lastUserText = '';
         foreach (array_reverse($composed['messages']) as $message) {
@@ -57,23 +87,8 @@ final class ForkChildMessageComposerTest extends IsolatedKernelTestCase
         }
 
         $this->assertSame($expectedUser, $lastUserText);
-
-        $contractText = '';
-        foreach ($composed['messages'] as $message) {
-            if ('user-context' === $message->role && 'agent_child_contract' === ($message->metadata['source'] ?? null)) {
-                $contractText = (string) ($message->content[0]['text'] ?? '');
-            }
-        }
-        $this->assertStringContainsString('agent_test123', $contractText);
-        $this->assertStringContainsString('delegated task', $contractText);
-        $this->assertStringNotContainsString('Allowed tools:', $contractText);
-        $this->assertStringNotContainsString('fork child agent', strtolower($contractText));
-        $this->assertStringNotContainsString('Pi-style', $contractText);
-        $this->assertStringNotContainsString('Fork child contract', $contractText);
-        $this->assertStringNotContainsString('fork tool', strtolower($contractText));
-        $this->assertStringNotContainsString('fork task=', $composed['systemPrompt']);
-        $this->assertStringNotContainsString('Use fork', $composed['systemPrompt']);
-        $this->assertStringNotContainsString('launch fork child', strtolower($composed['systemPrompt']));
+        $this->assertStringContainsString($compactSummary, $this->flattenMessageText($composed['messages']));
+        $this->assertStringNotContainsString('stale agents', $this->flattenMessageText($composed['messages']));
     }
 
     public function testComposeReplacesStaleParentSystemWithChildSafeSystemInMessages(): void
@@ -104,27 +119,36 @@ EOT;
             agentsContext: '',
         );
 
-        $this->assertNotEmpty($composed['messages']);
+        $this->assertSame('', $composed['systemPrompt']);
         $this->assertSame('system', $composed['messages'][0]->role);
         $firstSystemText = (string) ($composed['messages'][0]->content[0]['text'] ?? '');
         $this->assertStringContainsString('delegated child agent', $firstSystemText);
         $this->assertStringNotContainsString('fork task=', $firstSystemText);
-        $this->assertStringNotContainsString('launch fork child', strtolower($firstSystemText));
 
-        $allMessageText = '';
-        foreach ($composed['messages'] as $message) {
-            foreach ($message->content as $block) {
-                if ('text' === ($block['type'] ?? '')) {
-                    $allMessageText .= (string) $block['text']."\n";
-                }
-            }
-        }
+        $allMessageText = $this->flattenMessageText($composed['messages']);
         $this->assertStringNotContainsString('fork task=', $allMessageText);
         $this->assertStringNotContainsString('stale parent skills', $allMessageText);
         $this->assertStringContainsString('fresh skills block', $allMessageText);
         $this->assertStringContainsString('prior user', $allMessageText);
         $this->assertStringContainsString('read', $firstSystemText);
-        $this->assertStringNotContainsString('fork task=', $firstSystemText);
         $this->assertStringNotContainsString('use fork', strtolower($firstSystemText));
+    }
+
+    /**
+     * @param list<AgentMessage> $messages
+     */
+    private function flattenMessageText(array $messages): string
+    {
+        $text = '';
+        foreach ($messages as $message) {
+            foreach ($message->content as $block) {
+                if ('text' === ($block['type'] ?? '')) {
+                    $text .= (string) $block['text']."
+";
+                }
+            }
+        }
+
+        return $text;
     }
 }
