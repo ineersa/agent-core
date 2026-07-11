@@ -66,6 +66,31 @@ final class RuntimeEventMapperTest extends TestCase
         $this->assertNotContains('System prompt', $texts, 'System messages must not appear in user_messages');
     }
 
+    public function testNormalizesRunStartedForwardsCompactSummaryFlagOnUserMessage(): void
+    {
+        $event = $this->runEvent('run_started', [
+            'step_id' => 'start-compact',
+            'payload' => [
+                'messages' => [
+                    ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Delegated fork task']]],
+                    [
+                        'role' => 'user',
+                        'content' => [['type' => 'text', 'text' => 'Fresh compact summary body']],
+                        'metadata' => ['compact_summary' => true],
+                    ],
+                ],
+            ],
+        ]);
+
+        $result = $this->mapper->toRuntimeEvent($event);
+
+        $this->assertNotNull($result);
+        $this->assertCount(2, $result->payload['user_messages']);
+        $this->assertArrayNotHasKey('compact_summary', $result->payload['user_messages'][0]);
+        $this->assertTrue($result->payload['user_messages'][1]['compact_summary'] ?? false);
+        $this->assertSame('Fresh compact summary body', $result->payload['user_messages'][1]['text']);
+    }
+
     public function testNormalizesRunStartedWithoutUserMessages(): void
     {
         // When the normalized payload has no user-role messages.

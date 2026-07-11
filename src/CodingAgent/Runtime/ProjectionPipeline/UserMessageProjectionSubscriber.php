@@ -63,13 +63,18 @@ final readonly class UserMessageProjectionSubscriber implements EventSubscriberI
         }
 
         foreach ($userMessages as $userMsg) {
+            $meta = ['bootstrap' => true, 'source' => 'run_started'];
+            if (true === ($userMsg['compact_summary'] ?? null)) {
+                $meta['compact_summary'] = true;
+            }
+
             $state->addBlock(new TranscriptBlock(
                 id: (string) ($userMsg['message_id'] ?? ''),
                 kind: TranscriptBlockKindEnum::UserMessage,
                 runId: $event->runId(),
                 seq: $state->nextSeq(),
                 text: (string) ($userMsg['text'] ?? ''),
-                meta: ['bootstrap' => true, 'source' => 'run_started'],
+                meta: $meta,
             ));
         }
     }

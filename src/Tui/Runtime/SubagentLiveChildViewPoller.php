@@ -87,9 +87,14 @@ final class SubagentLiveChildViewPoller
         $live->childLastSeq = $snapshot->maxSeq;
         $live->childReplayEvents = $snapshot->replayEvents;
         $projected = $this->projector->blocks();
+        if ('fork' === $live->selected->agentName) {
+            $projected = $this->filterForkLiveTranscriptBlocks($projected);
+        }
         $live->childTranscript = [] !== $projected
             ? $projected
-            : $snapshot->transcriptBlocks;
+            : ('fork' === $live->selected->agentName
+                ? $this->filterForkLiveTranscriptBlocks($snapshot->transcriptBlocks)
+                : $snapshot->transcriptBlocks);
         $live->persistCurrentChildCache();
 
         return $live->childTranscript;
@@ -259,8 +264,8 @@ final class SubagentLiveChildViewPoller
     }
 
     /**
-     * Fork live view hides run.started bootstrap user messages (inherited compacted
-     * history and handoff scaffolding). Child LLM input and export artifacts stay
+     * Fork live view hides run.started bootstrap user messages except compact-summary
+     * blocks (fresh virtual compaction context). Handoff and inherited prompt scaffolding Child LLM input and export artifacts stay
      * unchanged; only the readonly live transcript is trimmed.
      *
      * @param list<TranscriptBlock> $blocks
@@ -272,7 +277,8 @@ final class SubagentLiveChildViewPoller
         $filtered = [];
         foreach ($blocks as $block) {
             if (TranscriptBlockKindEnum::UserMessage === $block->kind
-                && true === ($block->meta['bootstrap'] ?? null)) {
+                && true === ($block->meta['bootstrap'] ?? null)
+                && true !== ($block->meta['compact_summary'] ?? null)) {
                 continue;
             }
 

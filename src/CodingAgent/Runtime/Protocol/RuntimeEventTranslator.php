@@ -622,12 +622,21 @@ final class RuntimeEventTranslator
                 continue;
             }
             $text = $this->extractTextFromContent($msg['content'] ?? []);
-            if ('' !== $text) {
-                $userMessages[] = [
-                    'message_id' => \sprintf('initial_%s_%d', $runEvent->runId, \count($userMessages)),
-                    'text' => $text,
-                ];
+            if ('' === $text) {
+                continue;
             }
+
+            $entry = [
+                'message_id' => \sprintf('initial_%s_%d', $runEvent->runId, \count($userMessages)),
+                'text' => $text,
+            ];
+
+            $metadata = $msg['metadata'] ?? [];
+            if (\is_array($metadata) && true === ($metadata['compact_summary'] ?? null)) {
+                $entry['compact_summary'] = true;
+            }
+
+            $userMessages[] = $entry;
         }
 
         return $userMessages;

@@ -144,6 +144,30 @@ final class TranscriptProjectorTest extends TestCase
         $this->assertSame('initial_run_1_0', $blocks[0]->id);
         $this->assertSame('Write a README', $blocks[0]->text);
         $this->assertFalse($blocks[0]->streaming);
+        $this->assertTrue($blocks[0]->meta['bootstrap'] ?? false);
+        $this->assertSame('run_started', $blocks[0]->meta['source'] ?? null);
+    }
+
+    public function testRunStartedWithCompactSummaryUserMessageCarriesMetadata(): void
+    {
+        $this->accept('run.started', [
+            'step_id' => 'start-compact',
+            'user_messages' => [
+                ['message_id' => 'init_task', 'text' => 'Fork delegated task'],
+                ['message_id' => 'init_summary', 'text' => 'Compact summary for fork', 'compact_summary' => true],
+            ],
+        ]);
+
+        $blocks = $this->projector->blocks();
+        $userBlocks = array_values(array_filter(
+            $blocks,
+            static fn (TranscriptBlock $b): bool => TranscriptBlockKindEnum::UserMessage === $b->kind,
+        ));
+        $this->assertCount(2, $userBlocks);
+        $this->assertTrue($userBlocks[0]->meta['bootstrap'] ?? false);
+        $this->assertArrayNotHasKey('compact_summary', $userBlocks[0]->meta);
+        $this->assertTrue($userBlocks[1]->meta['compact_summary'] ?? false);
+        $this->assertTrue($userBlocks[1]->meta['bootstrap'] ?? false);
     }
 
     public function testRunStartedWithMultipleUserMessages(): void
