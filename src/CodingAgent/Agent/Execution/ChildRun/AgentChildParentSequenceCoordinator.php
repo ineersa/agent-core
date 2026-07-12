@@ -21,11 +21,21 @@ final class AgentChildParentSequenceCoordinator
     ) {
     }
 
+    /**
+     * Resolve the next sequence number for parent progress events.
+     *
+     * Uses the greater of parent state lastSeq and the maximum existing
+     * parent event seq, so progress events never collide with events
+     * appended by other writers or pending commits.
+     */
     public function resolveNextProgressSeq(string $parentRunId): int
     {
         $parentState = $this->parentRunStore->get($parentRunId);
         $stateLastSeq = null !== $parentState ? $parentState->lastSeq : 0;
 
+        // Fallback to max event seq in case state is temporarily stale
+        // (e.g. mid-commit, or another writer advanced the log without
+        // yet persisting the state checkpoint).
         $parentEvents = $this->eventStore->allFor($parentRunId);
         $maxEventSeq = 0;
         foreach ($parentEvents as $event) {
@@ -37,10 +47,21 @@ final class AgentChildParentSequenceCoordinator
         return max($stateLastSeq, $maxEventSeq) + 1;
     }
 
+    /**
+     * Advance the parent RunState.lastSeq to include the progress event.
+     *
+     * Uses compareAndSwap in a short retry loop to handle races with
+     * other parent state writers.  If CAS fails and the current state
+     * already covers our seq, treats it as a non-issue.  Exhausted
+     * retries are logged but do not block or re-append — the progress
+     * event already exists in the event log and replay will catch up.
+     */
     public function advanceParentSequence(string $parentRunId, int $seq): void
     {
         $parentState = $this->parentRunStore->get($parentRunId);
         if (null === $parentState) {
+            // Parent state not yet persisted — the first progress event
+            // lands while the run is still initialising.  Non-fatal.
             $this->logger->warning('subagent_execution.parent_state_missing_for_seq_advance', [
                 'component' => 'agent.execution',
                 'event_type' => 'subagent_execution.parent_state_missing_for_seq_advance',
@@ -75,16 +96,19 @@ final class AgentChildParentSequenceCoordinator
                 return;
             }
 
+            // CAS failed — re-read in case another writer moved past us.
             $parentState = $this->parentRunStore->get($parentRunId);
             if (null === $parentState) {
                 return;
             }
 
             if ($parentState->lastSeq >= $seq) {
+                // Another writer already advanced past our seq.
                 return;
             }
         }
 
+        // Exhausted retries; event is already in the log.
         $this->logger->warning('subagent_execution.progress_seq_cas_failed', [
             'component' => 'agent.execution',
             'event_type' => 'subagent_execution.progress_seq_cas_failed',

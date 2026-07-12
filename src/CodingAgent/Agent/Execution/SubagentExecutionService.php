@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Agent\Execution;
 
+use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\ForegroundAgentChildRunSupervisor;
 use Ineersa\CodingAgent\Config\AgentsConfig;
 
@@ -29,6 +30,8 @@ final class SubagentExecutionService
 
     /**
      * Execute a single foreground subagent run.
+     *
+     * @throws ToolCallException
      */
     public function execute(
         string $parentRunId,

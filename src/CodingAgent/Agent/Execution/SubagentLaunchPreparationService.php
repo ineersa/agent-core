@@ -75,8 +75,8 @@ final class SubagentLaunchPreparationService
         string $agentName,
         string $task,
     ): PreparedAgentChildRunDTO {
-        $this->assertDepthAllowed($parentRunId);
         $definition = $this->requireForegroundDefinition($agentName);
+        $this->assertDepthAllowed($parentRunId);
 
         return $this->prepareFromDefinition($parentRunId, $definition, $agentName, $task);
     }

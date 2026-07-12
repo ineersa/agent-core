@@ -96,15 +96,6 @@ final class ParallelSubagentExecutionService
 
         try {
             foreach ($launches as $launch) {
-                $prepared = $this->launchPreparation->prepareFromDefinition(
-                    $parentRunId,
-                    $launch['definition'],
-                    $launch['agentName'],
-                    $launch['task'],
-                    $launch['artifactId'],
-                    $launch['agentRunId'],
-                );
-
                 $entry = $this->artifactRegistry->create(
                     parentRunId: $parentRunId,
                     artifactId: $launch['artifactId'],
@@ -113,6 +104,15 @@ final class ParallelSubagentExecutionService
                     kind: AgentArtifactKindEnum::Subagent,
                 );
                 $this->childRunDirectory->register($entry);
+
+                $prepared = $this->launchPreparation->prepareFromDefinition(
+                    $parentRunId,
+                    $launch['definition'],
+                    $launch['agentName'],
+                    $launch['task'],
+                    $launch['artifactId'],
+                    $launch['agentRunId'],
+                );
 
                 $this->agentRunner->start($prepared->startRunInput);
 
@@ -450,10 +450,6 @@ final class ParallelSubagentExecutionService
             $reports[$agentRunId]['message'] = 'Child run failed to start.';
         }
     }
-
-    /**
-     * @param array<string, array{index:int,agentName:string,task:string,artifactId:string,agentRunId:string,terminal:bool,status:?AgentArtifactStatusEnum,message:string}> $reports
-     */
 
     /**
      * @param array<string, array{index:int,agentName:string,task:string,artifactId:string,agentRunId:string,terminal:bool,status:?AgentArtifactStatusEnum,message:string,model?:string}> $reports
