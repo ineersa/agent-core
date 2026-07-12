@@ -23,13 +23,13 @@ use PHPUnit\Framework\Attributes\Group;
 use Symfony\AI\Platform\Message\TemplateRenderer\StringTemplateRenderer;
 
 #[Group('gf-05-prompt-contract')]
-final class Gf05ChildAppendContributorLeakContractTest extends \PHPUnit\Framework\TestCase
+final class Gf05ChildAppendStructuralPermanentSubsetContractTest extends \PHPUnit\Framework\TestCase
 {
     private string $tmpDir;
 
     protected function setUp(): void
     {
-        $this->tmpDir = TestDirectoryIsolation::createOsTempDir('gf05-append-leak');
+        $this->tmpDir = TestDirectoryIsolation::createOsTempDir('gf05-append-structural');
         TestDirectoryIsolation::ensureDirectory($this->tmpDir.'/.hatfield');
         file_put_contents(
             $this->tmpDir.'/.hatfield/APPEND_SYSTEM.md',
@@ -42,7 +42,7 @@ final class Gf05ChildAppendContributorLeakContractTest extends \PHPUnit\Framewor
         TestDirectoryIsolation::removeDirectory($this->tmpDir);
     }
 
-    public function testChildAppendModeSelectivelyFiltersDisallowedToolDocumentation(): void
+    public function testChildAppendRendersPermanentSubsetPlaceholdersWithoutTextScrubbing(): void
     {
         $registry = new ToolRegistry();
         $registry->registerTool('read', 'Read', ['type' => 'object'], $this->handler(), promptLine: 'ALLOWED_READ_PROMPT_LINE');
@@ -54,9 +54,15 @@ final class Gf05ChildAppendContributorLeakContractTest extends \PHPUnit\Framewor
             promptLine: 'DISALLOWED_FORK_PROMPT_LINE',
             promptGuidelines: ['DISALLOWED_FORK_GUIDELINE_BLOCK'],
         );
+        $registry->addDynamicTool(
+            'mcp_dynamic',
+            'GF05_DYNAMIC_PROVIDER_DESCRIPTION_MUST_NOT_LEAK',
+            ['type' => 'object'],
+            $this->handler(),
+        );
 
         $benignContributor = 'GF05_BENIGN_CONTRIBUTOR_PROSE_KEEP_ME';
-        $disallowedContributorCatalog = 'GF05_DISALLOWED_FORK_CATALOG_DOC fork: parent-only launch';
+        $opaqueContributorCatalog = 'GF05_OPAQUE_FORK_CATALOG_DOC fork: parent-only launch';
 
         $systemPromptBuilder = new SystemPromptBuilder(
             toolRegistry: $registry,
@@ -64,10 +70,10 @@ final class Gf05ChildAppendContributorLeakContractTest extends \PHPUnit\Framewor
             templateRenderer: new StringTemplateRenderer(),
             appConfig: new AppConfig(tui: new TuiConfig(theme: 'test'), logging: new LoggingConfig(), cwd: $this->tmpDir),
             projectDir: \dirname(__DIR__, 4),
-            promptContributorProvider: new class($benignContributor, $disallowedContributorCatalog) implements PromptContributorProviderInterface {
+            promptContributorProvider: new class($benignContributor, $opaqueContributorCatalog) implements PromptContributorProviderInterface {
                 public function __construct(
                     private readonly string $benign,
-                    private readonly string $disallowedCatalog,
+                    private readonly string $opaqueCatalog,
                 ) {
                 }
 
@@ -84,14 +90,14 @@ final class Gf05ChildAppendContributorLeakContractTest extends \PHPUnit\Framewor
                                 return $this->benign;
                             }
                         },
-                        new class($this->disallowedCatalog) implements PromptContributorInterface {
-                            public function __construct(private readonly string $disallowedCatalog)
+                        new class($this->opaqueCatalog) implements PromptContributorInterface {
+                            public function __construct(private readonly string $opaqueCatalog)
                             {
                             }
 
                             public function contribute(): string
                             {
-                                return $this->disallowedCatalog;
+                                return $this->opaqueCatalog;
                             }
                         },
                     ];
@@ -113,10 +119,11 @@ final class Gf05ChildAppendContributorLeakContractTest extends \PHPUnit\Framewor
 
         $systemText = $result['systemPrompt'];
         $this->assertStringContainsString('ALLOWED_READ_PROMPT_LINE', $systemText);
-        $this->assertStringContainsString($benignContributor, $systemText, 'Benign contributor prose must remain in child append system text.');
+        $this->assertStringContainsString($benignContributor, $systemText);
+        $this->assertStringContainsString($opaqueContributorCatalog, $systemText, 'Opaque contributor markdown must pass through unchanged.');
         $this->assertStringNotContainsString('DISALLOWED_FORK_PROMPT_LINE', $systemText);
         $this->assertStringNotContainsString('DISALLOWED_FORK_GUIDELINE_BLOCK', $systemText);
-        $this->assertStringNotContainsString($disallowedContributorCatalog, $systemText, 'Disallowed fork catalog documentation must not leak into child system text.');
+        $this->assertStringNotContainsString('GF05_DYNAMIC_PROVIDER_DESCRIPTION_MUST_NOT_LEAK', $systemText);
     }
 
     private function handler(): ToolHandlerInterface

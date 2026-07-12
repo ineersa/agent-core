@@ -122,6 +122,31 @@ interface ToolRegistryInterface
     public function permanentGuidelines(): array;
 
     /**
+     * Return deduped permanent tool prompt lines for the requested tool names only.
+     *
+     * Iterates permanent registration order. Only names that are registered permanent
+     * tools and pass the current allowlist/denylist visibility filter contribute lines.
+     * Dynamic/MCP tools and unknown names are ignored (no synthesized text from
+     * provider descriptions). Empty promptLine values are skipped.
+     *
+     * @param list<string> $names Requested tool names (e.g. child runtime allowlist)
+     *
+     * @return list<string>
+     */
+    public function permanentToolLinesForNames(array $names): array;
+
+    /**
+     * Return deduped permanent tool prompt guidelines for the requested tool names only.
+     *
+     * Same structural rules as {@see permanentToolLinesForNames()}.
+     *
+     * @param list<string> $names
+     *
+     * @return list<string>
+     */
+    public function permanentGuidelinesForNames(array $names): array;
+
+    /**
      * Set the allowed tool names (allowlist).
      *
      * When non-empty, only tools whose name is in this set are visible
