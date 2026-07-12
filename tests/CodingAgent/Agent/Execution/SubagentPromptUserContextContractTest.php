@@ -18,7 +18,6 @@ use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionCatalog;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionDTO;
 use Ineersa\CodingAgent\Agent\Definition\McpAgentModeEnum;
 use Ineersa\CodingAgent\Agent\Definition\McpPolicyDTO;
-use Ineersa\CodingAgent\Agent\Execution\AgentDepthGuard;
 use Ineersa\CodingAgent\Agent\Execution\AgentMcpToolsResolver;
 use Ineersa\CodingAgent\Agent\Execution\AgentPromptBuilder;
 use Ineersa\CodingAgent\Agent\Execution\AgentToolPolicyResolver;
@@ -306,7 +305,7 @@ final class SubagentPromptUserContextContractTest extends IsolatedKernelTestCase
         $registry ??= self::getContainer()->get(ToolRegistryInterface::class);
         $policy = new AgentToolPolicyResolver($registry, $this->emptyMcpToolsResolver());
 
-        return \Ineersa\CodingAgent\Tests\Agent\Execution\Support\SubagentExecutionServiceFactory::build([
+        return Support\SubagentExecutionServiceFactory::build([
             'catalog' => $catalog,
             'policyResolver' => $policy,
             'promptBuilder' => new AgentPromptBuilder(self::getContainer()->get(SystemPromptBuilder::class)),
