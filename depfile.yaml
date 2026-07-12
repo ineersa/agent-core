@@ -479,10 +479,8 @@ parameters:
       - SymfonyTui
 
     TuiFooter:
-      - AppConfig
       - TuiWidget
       - TuiTheme
-      - TuiListener
 
     TuiStartup:
       - AppRuntimeContract

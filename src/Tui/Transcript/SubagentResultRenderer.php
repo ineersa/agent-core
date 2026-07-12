@@ -65,16 +65,6 @@ final readonly class SubagentResultRenderer
 
     /**
      * @param array<string, mixed> $progress
-     *
-     * @return list<string>
-     */
-    private function buildCardLines(array $progress): array
-    {
-        return $this->cardBuilder->buildLines($progress);
-    }
-
-    /**
-     * @param array<string, mixed> $progress
      */
     private function buildProgressWidget(
         TranscriptBlock $block,
@@ -84,7 +74,7 @@ final readonly class SubagentResultRenderer
     ): AbstractWidget {
         $status = $this->resolveCardStatus($progress);
         $handoffMarkdown = $this->resolveHandoffMarkdown($progress, $resultText);
-        $plainLines = $this->buildCardLines($progress);
+        $plainLines = $this->cardBuilder->buildLines($progress);
         $footerHint = $this->resolveFooterHint($plainLines, $status, $handoffMarkdown);
         $expandHandoffHint = ('' !== $handoffMarkdown && $this->handoffNeedsExpandHint($handoffMarkdown))
             ? 'Ctrl+O to expand handoff'

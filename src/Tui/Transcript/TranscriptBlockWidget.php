@@ -6,7 +6,6 @@ namespace Ineersa\Tui\Transcript;
 
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
-use Ineersa\Tui\Footer\ContextUsageFormatter;
 use Ineersa\Tui\Theme\TuiTheme;
 use Ineersa\Tui\Widget\TuiRenderContext;
 use Ineersa\Tui\Widget\TuiWidget;
@@ -39,11 +38,9 @@ final class TranscriptBlockWidget implements TuiWidget
         private readonly SymfonyTuiWidgetRenderer $widgetRenderer = new SymfonyTuiWidgetRenderer(),
         TranscriptDisplayConfig $displayConfig = new TranscriptDisplayConfig(),
         TranscriptDisplayState $displayState = new TranscriptDisplayState(),
-        ?ContextUsageFormatter $contextUsageFormatter = null,
     ) {
         $this->factory = new TranscriptBlockWidgetFactory(
             subagentRenderer: new SubagentResultRenderer(
-                cardBuilder: new SubagentTranscriptCardBuilder($contextUsageFormatter),
                 displayConfig: $displayConfig,
                 displayState: $displayState,
             ),
