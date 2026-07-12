@@ -17,6 +17,7 @@ use Ineersa\CodingAgent\Agent\Execution\SubagentChildProgressSummaryBuilder;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
+use Ineersa\CodingAgent\Session\FileRunSequenceAllocator;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\SessionAgentArtifactPathResolver;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
@@ -118,6 +119,7 @@ final class SubagentChildProgressSummaryBuilderTest extends IsolatedKernelTestCa
             new EventPayloadNormalizer(),
             new LockFactory(new FlockStore()),
             new NullLogger(),
+            new FileRunSequenceAllocator(),
         );
         $builder = new SubagentChildProgressSummaryBuilder($factory);
         $summary = $builder->summarize($parentRunId, $childRunId, $artifactId, $childState, 'deepseek/deepseek-v4-flash');
@@ -162,6 +164,7 @@ final class SubagentChildProgressSummaryBuilderTest extends IsolatedKernelTestCa
             eventPayloadNormalizer: new EventPayloadNormalizer(),
             lockFactory: new LockFactory(new FlockStore()),
             logger: new NullLogger(),
+            sequenceAllocator: new FileRunSequenceAllocator(),
             parentRunId: $parentRunId,
             agentRunId: $childRunId,
             artifactId: $artifactId,

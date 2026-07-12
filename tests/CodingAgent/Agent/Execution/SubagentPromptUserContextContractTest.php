@@ -10,7 +10,7 @@ use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryRunStore;
-use Ineersa\AgentCore\Infrastructure\Storage\RunEventStore;
+use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
 use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunDirectory;
 use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunEventStoreFactory;
 use Ineersa\CodingAgent\Agent\Context\AgentsContextBuilder;
@@ -28,6 +28,7 @@ use Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader;
 use Ineersa\CodingAgent\Agent\Execution\SubagentToolSetResolver;
 use Ineersa\CodingAgent\Config\AgentsConfig;
 use Ineersa\CodingAgent\Mcp\Catalog\McpToolCatalogStoreInterface;
+use Ineersa\CodingAgent\Session\CommittedRunEventAppender;
 use Ineersa\CodingAgent\Skills\SkillsContextBuilder;
 use Ineersa\CodingAgent\SystemPrompt\SystemPromptBuilder;
 use Ineersa\CodingAgent\Tests\Agent\Execution\Support\PipelineCapturingAgentRunner;
@@ -84,7 +85,7 @@ final class SubagentPromptUserContextContractTest extends IsolatedKernelTestCase
         );
 
         $childRunStore = new InMemoryRunStore();
-        $eventStore = new RunEventStore();
+        $eventStore = new InMemoryEventStore();
         $pipelineRunner = PipelineCapturingAgentRunner::create($childRunStore, $eventStore);
 
         $service = $this->buildSubagentService(
@@ -186,7 +187,7 @@ final class SubagentPromptUserContextContractTest extends IsolatedKernelTestCase
         );
 
         $childRunStore = new InMemoryRunStore();
-        $eventStore = new RunEventStore();
+        $eventStore = new InMemoryEventStore();
         $pipelineRunner = PipelineCapturingAgentRunner::create($childRunStore, $eventStore);
 
         $service = $this->buildSubagentService(
@@ -265,7 +266,7 @@ final class SubagentPromptUserContextContractTest extends IsolatedKernelTestCase
         );
 
         $childRunStore = new InMemoryRunStore();
-        $eventStore = new RunEventStore();
+        $eventStore = new InMemoryEventStore();
         $pipelineRunner = PipelineCapturingAgentRunner::create($childRunStore, $eventStore);
         $service = $this->buildSubagentService(
             parentRunStore: $parentRunStore,
@@ -316,6 +317,7 @@ final class SubagentPromptUserContextContractTest extends IsolatedKernelTestCase
             runStore: $this->pollingChildRunStore($childRunStore),
             parentRunStore: $parentRunStore,
             eventStore: $eventStore,
+            committedRunEventAppender: self::getContainer()->get(CommittedRunEventAppender::class),
             metadataReader: new SubagentRunMetadataReader($eventStore),
             childRunDirectory: self::getContainer()->get(AgentChildRunDirectory::class),
             contextAccessor: self::getContainer()->get(\Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor::class),

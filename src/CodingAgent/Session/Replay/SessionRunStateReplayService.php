@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Session\Replay;
 
 use Ineersa\AgentCore\Application\Dto\RunStateReplayResult;
-use Ineersa\AgentCore\Application\Handler\RunStateReplayException;
+use Ineersa\AgentCore\Application\Handler\RunStateDuplicateSequenceReplayException;
 use Ineersa\AgentCore\Application\Replay\ReplayEventPreparer;
 use Ineersa\AgentCore\Application\Replay\RunStateReducer;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
@@ -59,32 +59,15 @@ final readonly class SessionRunStateReplayService implements RunStateRebuilderIn
                     'duplicate_count' => \count($duplicateSeqs),
                 ]);
 
-                throw new RunStateReplayException(\sprintf('Cannot replay run %s: event history contains %d duplicate sequence number(s): %s.', $runId, \count($duplicateSeqs), implode(', ', array_map('strval', \array_slice($duplicateSeqs, 0, 10)))));
+                throw new RunStateDuplicateSequenceReplayException(\sprintf('Cannot replay run %s: event history contains %d duplicate sequence number(s): %s.', $runId, \count($duplicateSeqs), implode(', ', array_map('strval', \array_slice($duplicateSeqs, 0, 10)))));
             }
-
-            $missingSequences = $this->replayEventPreparer->missingSequences($sortedEvents);
-            $isContiguous = [] === $missingSequences;
 
             $this->logger->info('run_state_replay.rebuilding', [
                 'run_id' => $runId,
                 'state_last_seq' => $state->lastSeq,
                 'event_last_seq' => $maxEventSeq,
                 'event_count' => \count($sortedEvents),
-                'is_contiguous' => $isContiguous,
-                'missing_sequences_count' => \count($missingSequences),
             ]);
-
-            if (!$isContiguous) {
-                $this->logger->error('run_state_replay.non_contiguous', [
-                    'run_id' => $runId,
-                    'state_last_seq' => $state->lastSeq,
-                    'event_last_seq' => $maxEventSeq,
-                    'event_count' => \count($sortedEvents),
-                    'missing_sequences' => $missingSequences,
-                ]);
-
-                throw new RunStateReplayException(\sprintf('Cannot replay run %s: event history has %d missing sequences. Expected contiguous range 1..%d, found gaps at: %s.', $runId, \count($missingSequences), $maxEventSeq, implode(', ', array_map('strval', \array_slice($missingSequences, 0, 10)))));
-            }
 
             // Filter to active branch events when tree metadata is available.
             // Abandoned sibling branch events (message/tool/assistant content for
@@ -133,12 +116,13 @@ final readonly class SessionRunStateReplayService implements RunStateRebuilderIn
                 'rebuilt_turn_no' => $rebuiltState->turnNo,
             ]);
 
+            // Contiguity fields on RunStateReplayResult are legacy defaults; gaps in seq are valid
+            // (cursor may advance before JSONL append). rebuilt=true means state was refreshed from events.
             return RunStateReplayResult::rebuilt(
                 $rebuiltState,
                 $maxEventSeq,
                 \count($sortedEvents),
-                $isContiguous,
-                $missingSequences,
+                true,
             );
         } finally {
             RunLogContext::leave();
@@ -170,21 +154,7 @@ final readonly class SessionRunStateReplayService implements RunStateRebuilderIn
                     'duplicate_count' => \count($duplicateSeqs),
                 ]);
 
-                throw new RunStateReplayException(\sprintf('Cannot replay run %s for leaf %d: event history contains %d duplicate sequence number(s): %s.', $runId, $targetLeafTurnNo, \count($duplicateSeqs), implode(', ', array_map('strval', \array_slice($duplicateSeqs, 0, 10)))));
-            }
-
-            $missingSequences = $this->replayEventPreparer->missingSequences($sortedEvents);
-            $isContiguous = [] === $missingSequences;
-
-            if (!$isContiguous) {
-                $this->logger->error('run_state_replay.non_contiguous_for_leaf', [
-                    'run_id' => $runId,
-                    'target_leaf_turn_no' => $targetLeafTurnNo,
-                    'event_count' => \count($sortedEvents),
-                    'missing_sequences' => $missingSequences,
-                ]);
-
-                throw new RunStateReplayException(\sprintf('Cannot replay run %s for leaf %d: event history has %d missing sequences. Expected contiguous range 1..%d, found gaps at: %s.', $runId, $targetLeafTurnNo, \count($missingSequences), $maxEventSeq, implode(', ', array_map('strval', \array_slice($missingSequences, 0, 10)))));
+                throw new RunStateDuplicateSequenceReplayException(\sprintf('Cannot replay run %s for leaf %d: event history contains %d duplicate sequence number(s): %s.', $runId, $targetLeafTurnNo, \count($duplicateSeqs), implode(', ', array_map('strval', \array_slice($duplicateSeqs, 0, 10)))));
             }
 
             // Filter to the target leaf's branch path.
@@ -245,8 +215,7 @@ final readonly class SessionRunStateReplayService implements RunStateRebuilderIn
                 $rebuiltState,
                 $maxEventSeq,
                 \count($sortedEvents),
-                $isContiguous,
-                $missingSequences,
+                true,
             );
         } finally {
             RunLogContext::leave();

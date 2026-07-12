@@ -21,8 +21,8 @@ use Ineersa\AgentCore\Domain\Run\StartRunInput;
 use Ineersa\AgentCore\Infrastructure\Storage\HotPromptStateStore;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryRunStore;
-use Ineersa\AgentCore\Infrastructure\Storage\RunEventStore;
 use Ineersa\AgentCore\Tests\Application\Handler\InMemoryIdempotencyStore;
+use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use Ineersa\AgentCore\Tests\Support\TestSerializerFactory;
 use Ineersa\CodingAgent\Kernel;
@@ -207,14 +207,14 @@ final class ParentRegressionCapturingRunner implements AgentRunnerInterface
 
     public function __construct(
         private readonly RunOrchestrator $orchestrator,
-        public readonly RunEventStore $eventStore,
+        public readonly InMemoryEventStore $eventStore,
     ) {
     }
 
     public static function create(): self
     {
         $runStore = new InMemoryRunStore();
-        $eventStore = new RunEventStore();
+        $eventStore = new InMemoryEventStore();
         $commandStore = new InMemoryCommandStore();
         $runCommit = new RunCommit(
             runStore: $runStore,

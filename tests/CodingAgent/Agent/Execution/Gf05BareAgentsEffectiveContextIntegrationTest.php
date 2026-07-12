@@ -10,7 +10,7 @@ use Ineersa\AgentCore\Contract\RunStoreInterface;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryRunStore;
-use Ineersa\AgentCore\Infrastructure\Storage\RunEventStore;
+use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
 use Ineersa\CodingAgent\Agent\Context\AgentsContextBuilder;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionCatalog;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionDTO;
@@ -26,6 +26,7 @@ use Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader;
 use Ineersa\CodingAgent\Config\AgentsConfig;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient;
+use Ineersa\CodingAgent\Session\CommittedRunEventAppender;
 use Ineersa\CodingAgent\SystemPrompt\SystemPromptBuilder;
 use Ineersa\CodingAgent\Tests\Agent\Execution\Support\PipelineCapturingAgentRunner;
 use Ineersa\CodingAgent\Tests\Agent\Execution\Support\PromptContractTestSupport;
@@ -73,7 +74,7 @@ final class Gf05BareAgentsEffectiveContextIntegrationTest extends PerMethodIsola
         PromptContractTestSupport::assertProviderUserMessagesContainSentinelOnce($parentCapture->capturedProviderMessages(), $sentinel);
 
         $childRunStore = new InMemoryRunStore();
-        $childEventStore = new RunEventStore();
+        $childEventStore = new InMemoryEventStore();
         $childRunner = PipelineCapturingAgentRunner::create($childRunStore, $childEventStore);
 
         $service = $this->buildSubagentService(
@@ -140,6 +141,7 @@ final class Gf05BareAgentsEffectiveContextIntegrationTest extends PerMethodIsola
             runStore: $this->pollingChildRunStore($childRunStore),
             parentRunStore: $parentRunStore,
             eventStore: $childEventStore,
+            committedRunEventAppender: self::getContainer()->get(CommittedRunEventAppender::class),
             metadataReader: new SubagentRunMetadataReader($childEventStore),
             childRunDirectory: self::getContainer()->get(\Ineersa\CodingAgent\Agent\Artifact\AgentChildRunDirectory::class),
             contextAccessor: self::getContainer()->get(\Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor::class),

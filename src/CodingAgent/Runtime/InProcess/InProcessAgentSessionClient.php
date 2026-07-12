@@ -308,14 +308,9 @@ final class InProcessAgentSessionClient implements AgentSessionClient
 
     public function completeRun(string $runId): void
     {
-        $existingEvents = $this->eventStore->allFor($runId);
-        $nextSeq = [] !== $existingEvents
-            ? max(array_map(static fn (RunEvent $e): int => $e->seq, $existingEvents)) + 1
-            : 1;
-
         $this->eventStore->append(new RunEvent(
             runId: $runId,
-            seq: $nextSeq,
+            seq: 0,
             turnNo: 0,
             type: RunEventTypeEnum::AgentEnd->value,
             payload: ['reason' => 'completed'],
@@ -393,17 +388,9 @@ final class InProcessAgentSessionClient implements AgentSessionClient
 
         $toolCallId = uniqid('sh_', true);
 
-        // Compute next sequence numbers for this run by inspecting existing
-        // events in the store.
-        $existingEvents = $this->eventStore->allFor($runId);
-        $nextSeq = [] !== $existingEvents
-            ? max(array_map(static fn (RunEvent $e): int => $e->seq, $existingEvents)) + 1
-            : 1;
-
-        // Emit tool_execution_start event.
         $this->eventStore->append(new RunEvent(
             runId: $runId,
-            seq: $nextSeq,
+            seq: 0,
             turnNo: 0,
             type: RunEventTypeEnum::ToolExecutionStart->value,
             payload: [
@@ -417,7 +404,7 @@ final class InProcessAgentSessionClient implements AgentSessionClient
             // No ToolExecutor configured — emit a diagnostic error event.
             $this->eventStore->append(new RunEvent(
                 runId: $runId,
-                seq: $nextSeq + 1,
+                seq: 0,
                 turnNo: 0,
                 type: RunEventTypeEnum::ToolExecutionEnd->value,
                 payload: [
@@ -454,7 +441,7 @@ final class InProcessAgentSessionClient implements AgentSessionClient
         // Emit tool_execution_end event with result text.
         $this->eventStore->append(new RunEvent(
             runId: $runId,
-            seq: $nextSeq + 1,
+            seq: 0,
             turnNo: 0,
             type: RunEventTypeEnum::ToolExecutionEnd->value,
             payload: [

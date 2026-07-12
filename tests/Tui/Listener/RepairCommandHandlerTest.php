@@ -10,7 +10,7 @@ use Ineersa\AgentCore\Application\Replay\RunStateReducer;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryRunStore;
-use Ineersa\AgentCore\Infrastructure\Storage\RunEventStore;
+use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
 use Ineersa\CodingAgent\Session\Repair\RepairResult;
@@ -103,7 +103,7 @@ final class RepairCommandHandlerTest extends TestCase
     private function createRepairService(): SessionRepairService
     {
         return new SessionRepairService(
-            eventStore: new RunEventStore(),
+            eventStore: new InMemoryEventStore(),
             runStore: new InMemoryRunStore(),
             runStateReducer: new RunStateReducer(),
             replayEventPreparer: new ReplayEventPreparer(),

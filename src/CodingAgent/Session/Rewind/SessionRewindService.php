@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Session\Rewind;
 
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
+use Ineersa\AgentCore\Application\Handler\RunStateDuplicateSequenceReplayException;
+use Ineersa\AgentCore\Application\Replay\ReplayEventPreparer;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
 use Ineersa\AgentCore\Contract\Rewind\RunRewindServiceInterface;
@@ -38,6 +40,7 @@ final readonly class SessionRewindService implements RunRewindServiceInterface
         private RunLockManager $lockManager,
         private LoggerInterface $logger,
         private TurnTreeProjectorInterface $turnTreeProjector,
+        private ReplayEventPreparer $replayEventPreparer,
     ) {
     }
 
@@ -46,8 +49,9 @@ final readonly class SessionRewindService implements RunRewindServiceInterface
      *
      * @return array{rebuiltState: RunState, leafSetSeq: int}
      *
-     * @throws \RuntimeException when the target turn does not exist,
-     *                           no events are found, or persistence fails (CAS conflict)
+     * @throws RunStateDuplicateSequenceReplayException when persisted event history contains duplicate sequence numbers
+     * @throws \RuntimeException                        when the target turn does not exist, no events are found,
+     *                                                  rebuild fails, or persistence fails (CAS conflict)
      */
     public function rewind(string $runId, int $targetTurnNo): array
     {
@@ -72,16 +76,12 @@ final readonly class SessionRewindService implements RunRewindServiceInterface
                 throw new \RuntimeException(\sprintf('Cannot rewind run %s: no run state found.', $runId));
             }
 
-            // Compute max seq from the full canonical stream.
-            $maxSeq = 0;
-            foreach ($events as $event) {
-                if ($event->seq > $maxSeq) {
-                    $maxSeq = $event->seq;
-                }
+            $duplicateSeqs = $this->replayEventPreparer->duplicateSequences($events);
+            if ([] !== $duplicateSeqs) {
+                throw new RunStateDuplicateSequenceReplayException(\sprintf('Cannot rewind run %s: event history contains %d duplicate sequence number(s): %s.', $runId, \count($duplicateSeqs), implode(', ', array_map('strval', \array_slice($duplicateSeqs, 0, 10)))));
             }
 
             $currentLeafTurnNo = $tree->currentLeafTurnNo;
-            $newSeq = $maxSeq + 1;
 
             // Determine parent_turn_no of the target (its parent in the tree).
             $targetParentTurnNo = $tree->nodesByTurnNo[$targetTurnNo]->parentTurnNo;
@@ -93,26 +93,18 @@ final readonly class SessionRewindService implements RunRewindServiceInterface
                 'reason' => 'rewind',
             ];
 
-            // Append LeafSet event.
             $leafSetEvent = new RunEvent(
                 runId: $runId,
-                seq: $newSeq,
+                seq: 0,
                 turnNo: $targetTurnNo,
                 type: RunEventTypeEnum::LeafSet->value,
                 payload: $leafSetPayload,
                 createdAt: new \DateTimeImmutable(),
             );
 
-            $this->eventStore->append($leafSetEvent);
+            $persistedLeafSet = $this->eventStore->append($leafSetEvent);
+            $newSeq = $persistedLeafSet->seq;
 
-            $this->logger->info('run_rewind.leaf_set_appended', [
-                'run_id' => $runId,
-                'target_turn_no' => $targetTurnNo,
-                'previous_turn_no' => $currentLeafTurnNo,
-                'leaf_set_seq' => $newSeq,
-            ]);
-
-            // Rebuild state for the target leaf.
             $replayResult = $this->runStateRebuilder->rebuildForLeaf($state, $runId, $targetTurnNo);
 
             if (null === $replayResult->rebuiltState) {
@@ -120,6 +112,13 @@ final readonly class SessionRewindService implements RunRewindServiceInterface
             }
 
             $rebuiltState = $replayResult->rebuiltState;
+
+            $this->logger->info('run_rewind.leaf_set_appended', [
+                'run_id' => $runId,
+                'target_turn_no' => $targetTurnNo,
+                'previous_turn_no' => $currentLeafTurnNo,
+                'leaf_set_seq' => $newSeq,
+            ]);
 
             // Persist the rebuilt state via compareAndSwap.
             if (!$this->runStore->compareAndSwap($rebuiltState, $state->version)) {
