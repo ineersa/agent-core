@@ -272,14 +272,6 @@ class WorkerFailedEventSubscriberTest extends TestCase
         $this->assertSame('onWorkerMessageFailed', $events[WorkerMessageFailedEvent::class]);
     }
 
-    /**
-     * Create a WorkerMessageFailedEvent that represents a final (no-more-retries) failure.
-     *
-     * WorkerMessageFailedEvent starts with willRetry() = false by default
-     * (the constructor initializes $willRetry to false). It becomes true
-     * only when SendFailedMessageForRetryListener calls setForRetry().
-     * A final failure is one where setForRetry() was never called.
-     */
     #[Test]
     public function skipsOnlyTypedDuplicateReplayCorruption(): void
     {
@@ -300,6 +292,14 @@ class WorkerFailedEventSubscriberTest extends TestCase
         $subscriber->onWorkerMessageFailed($this->createFinalFailedEvent(new Envelope($message), $duplicate));
     }
 
+    /**
+     * Create a WorkerMessageFailedEvent that represents a final (no-more-retries) failure.
+     *
+     * WorkerMessageFailedEvent starts with willRetry() = false by default
+     * (the constructor initializes $willRetry to false). It becomes true
+     * only when SendFailedMessageForRetryListener calls setForRetry().
+     * A final failure is one where setForRetry() was never called.
+     */
     private function createFinalFailedEvent(Envelope $envelope, \Throwable $exception): WorkerMessageFailedEvent
     {
         return new WorkerMessageFailedEvent($envelope, self::RECEIVER_NAME, $exception);

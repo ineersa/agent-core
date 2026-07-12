@@ -53,10 +53,12 @@ final class EventLogMaxSeqBootstrapReaderTest extends TestCase
     public function testIgnoresNestedPayloadSeqHigherThanTopLevel(): void
     {
         $path = $this->tmpDir.'/events.jsonl';
+        // Misleading "seq":99 appears in the payload string before the real top-level field.
+        // A line-wide /"seq"\s*:\s*(\d+)/ scan would treat 99 as the max; bootstrap uses the
+        // first canonical top-level "seq" key match only (comma/brace boundary before the key).
         file_put_contents(
             $path,
-            '{"seq":4,"payload":{"note":"seq":99}}'.'
-',
+            '{"payload":{"note":"seq":99},"seq":4}'."\n",
         );
         $reader = new EventLogMaxSeqBootstrapReader();
         $this->assertSame(4, $reader->readMaxSeq($path));
