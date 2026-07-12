@@ -5,32 +5,28 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Agent\Execution;
 
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
+use Ineersa\CodingAgent\Agent\Execution\ChildRun\ChildRunBatchDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\ForegroundAgentChildRunSupervisor;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\SubagentSupervisionResultMapper;
 use Ineersa\CodingAgent\Config\AgentsConfig;
 
 /**
  * Stable public façade for foreground subagent tool execution.
  *
- * Single-child runs delegate to {@see ForegroundAgentChildRunSupervisor} after
- * {@see SubagentLaunchPreparationService} builds a typed {@see ChildRun\PreparedAgentChildRunDTO}.
- * Parallel runs delegate to {@see ParallelSubagentExecutionService}.
- *
- * The typed child lifecycle in ChildRun/ is the reusable backend for future child kinds
- * (same supervision, progress, and finalization boundaries; subagent-specific preparation stays separate).
+ * Single and parallel runs share {@see ForegroundAgentChildRunSupervisor::supervise()} (batch of one vs many).
  */
 final class SubagentExecutionService
 {
     public function __construct(
         private readonly SubagentLaunchPreparationService $launchPreparation,
-        private readonly ForegroundAgentChildRunSupervisor $childRunSupervisor,
+        private readonly ForegroundAgentChildRunSupervisor $batchSupervisor,
         private readonly ParallelSubagentExecutionService $parallelExecution,
+        private readonly SubagentSupervisionResultMapper $resultMapper,
         private readonly AgentsConfig $agentsConfig,
     ) {
     }
 
     /**
-     * Execute a single foreground subagent run.
-     *
      * @throws ToolCallException
      */
     public function execute(
@@ -39,16 +35,17 @@ final class SubagentExecutionService
         string $task,
     ): string {
         $prepared = $this->launchPreparation->prepareSingle($parentRunId, $agentName, $task);
-
-        return $this->childRunSupervisor->superviseUntilTerminal(
-            $prepared,
+        $batch = new ChildRunBatchDTO(
+            $parentRunId,
+            [$prepared],
             $this->agentsConfig->subagentToolTimeoutSeconds,
         );
+        $result = $this->batchSupervisor->supervise($batch);
+
+        return $this->resultMapper->mapSingle($result);
     }
 
     /**
-     * Execute multiple foreground subagents in parallel (one tool call).
-     *
      * @param list<SubagentTaskDTO> $tasks
      */
     public function executeParallel(string $parentRunId, array $tasks): string

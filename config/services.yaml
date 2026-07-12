@@ -929,7 +929,7 @@ services:
 
   # Subagent child-run stack: child RunStore auto-wires to ChildAwareRunStore; parent RunStore
   # binds to SessionRunStore for prompt/metadata and parent sequence coordination.
-  Ineersa\CodingAgent\Agent\Execution\SubagentLaunchPreparationService:
+  Ineersa\CodingAgent\Agent\Execution\Subagent\SubagentChildLaunchInputFactory:
     arguments:
       $parentRunStore: '@Ineersa\CodingAgent\Session\SessionRunStore'
 
@@ -937,16 +937,11 @@ services:
     arguments:
       $parentRunStore: '@Ineersa\CodingAgent\Session\SessionRunStore'
 
+  Ineersa\CodingAgent\Agent\Execution\ChildRun\AgentChildRunProcessAdapter:
+    arguments:
+      $childRunStore: '@Ineersa\AgentCore\Contract\RunStoreInterface'
+
   Ineersa\CodingAgent\Agent\Execution\ChildRun\AgentChildProgressEmitter:
-    arguments:
-      $committedRunEventAppender: '@Ineersa\CodingAgent\Session\CommittedRunEventAppender'
-      $childRunStore: '@Ineersa\AgentCore\Contract\RunStoreInterface'
-
-  Ineersa\CodingAgent\Agent\Execution\ChildRun\ForegroundAgentChildRunSupervisor:
-    arguments:
-      $childRunStore: '@Ineersa\AgentCore\Contract\RunStoreInterface'
-
-  Ineersa\CodingAgent\Agent\Execution\ParallelSubagentExecutionService:
     arguments:
       $childRunStore: '@Ineersa\AgentCore\Contract\RunStoreInterface'
 

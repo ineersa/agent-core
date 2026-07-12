@@ -16,11 +16,21 @@ use Ineersa\CodingAgent\Agent\Execution\AgentDepthGuard;
 use Ineersa\CodingAgent\Agent\Execution\AgentPromptBuilder;
 use Ineersa\CodingAgent\Agent\Execution\AgentToolPolicyResolver;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\AgentChildArtifactFinalizer;
+use Ineersa\CodingAgent\Agent\Execution\ChildRun\AgentChildArtifactLifecycleAdapter;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\AgentChildHandoffRenderer;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\AgentChildParentSequenceCoordinator;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\AgentChildProgressEmitter;
+use Ineersa\CodingAgent\Agent\Execution\ChildRun\AgentChildRunProcessAdapter;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\ForegroundAgentChildRunSupervisor;
 use Ineersa\CodingAgent\Agent\Execution\ParallelSubagentExecutionService;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\SubagentArtifactReservationService;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\SubagentChildLaunchInputFactory;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\SubagentChildRunProgressSinkAdapter;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\SubagentChildRunTerminalizerAdapter;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\SubagentLaunchDefinitionPolicyService;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\SubagentParallelAggregateResultFormatter;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\SubagentParallelLaunchFailureFinalizer;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\SubagentSupervisionResultMapper;
 use Ineersa\CodingAgent\Agent\Execution\SubagentChildProgressSummaryBuilder;
 use Ineersa\CodingAgent\Agent\Execution\SubagentExecutionService;
 use Ineersa\CodingAgent\Agent\Execution\SubagentLaunchPreparationService;
@@ -34,9 +44,6 @@ use Psr\Log\LoggerInterface;
 use Symfony\Component\Clock\ClockInterface;
 use Symfony\Component\Clock\NativeClock;
 
-/**
- * Test-only wiring for the refactored subagent execution façade graph.
- */
 final class SubagentExecutionServiceFactory
 {
     /**
@@ -76,104 +83,45 @@ final class SubagentExecutionServiceFactory
             }
         }
 
-        /** @var AgentToolPolicyResolver $policyResolver */
         $policyResolver = $args['policyResolver'];
-        /** @var AgentPromptBuilder $promptBuilder */
         $promptBuilder = $args['promptBuilder'];
-        /** @var SkillsContextBuilder $skillsContextBuilder */
         $skillsContextBuilder = $args['skillsContextBuilder'];
-        /** @var AgentsContextBuilder $agentsContextBuilder */
         $agentsContextBuilder = $args['agentsContextBuilder'];
-        /** @var AgentArtifactRegistry $artifactRegistry */
         $artifactRegistry = $args['artifactRegistry'];
-        /** @var AgentRunnerInterface $agentRunner */
         $agentRunner = $args['agentRunner'];
-        /** @var RunStoreInterface $runStore */
         $runStore = $args['runStore'];
-        /** @var RunStoreInterface $parentRunStore */
         $parentRunStore = $args['parentRunStore'];
-        /** @var EventStoreInterface $eventStore */
         $eventStore = $args['eventStore'];
-        /** @var CommittedRunEventAppender $committedRunEventAppender */
         $committedRunEventAppender = $args['committedRunEventAppender'];
-        /** @var SubagentRunMetadataReader $metadataReader */
         $metadataReader = $args['metadataReader'];
-        /** @var AgentChildRunDirectory $childRunDirectory */
         $childRunDirectory = $args['childRunDirectory'];
-        /** @var StackToolExecutionContextAccessor $contextAccessor */
         $contextAccessor = $args['contextAccessor'];
-        /** @var LoggerInterface $logger */
         $logger = $args['logger'];
-        /** @var SubagentChildProgressSummaryBuilder $childProgressSummaryBuilder */
         $childProgressSummaryBuilder = $args['childProgressSummaryBuilder'];
-        /** @var AppConfig $appConfig */
         $appConfig = $args['appConfig'];
-        /** @var ClockInterface $clock */
         $clock = $args['clock'];
 
-        $sequenceCoordinator = new AgentChildParentSequenceCoordinator(
-            $parentRunStore,
-            $eventStore,
-            $logger,
-        );
+        $sequenceCoordinator = new AgentChildParentSequenceCoordinator($parentRunStore, $eventStore, $logger);
         $handoffRenderer = new AgentChildHandoffRenderer();
-        $artifactFinalizer = new AgentChildArtifactFinalizer(
-            $artifactRegistry,
-            $handoffRenderer,
-            $logger,
-        );
-        $progressEmitter = new AgentChildProgressEmitter(
-            $contextAccessor,
-            $committedRunEventAppender,
-            $args['progressSnapshotBuilder'],
-            $childProgressSummaryBuilder,
-            $runStore,
-            $clock,
-        );
-        $launchPreparation = new SubagentLaunchPreparationService(
-            $args['catalog'],
-            $args['depthGuard'],
-            $policyResolver,
-            $promptBuilder,
-            $skillsContextBuilder,
-            $agentsContextBuilder,
-            $metadataReader,
-            $parentRunStore,
-            $appConfig,
-        );
-        $childRunSupervisor = new ForegroundAgentChildRunSupervisor(
-            $artifactRegistry,
-            $childRunDirectory,
-            $agentRunner,
-            $runStore,
-            $contextAccessor,
-            $progressEmitter,
-            $artifactFinalizer,
-            $handoffRenderer,
-            $sequenceCoordinator,
-            $clock,
-        );
-        $parallelExecution = new ParallelSubagentExecutionService(
-            $launchPreparation,
-            $artifactRegistry,
-            $childRunDirectory,
-            $agentRunner,
-            $runStore,
-            $contextAccessor,
-            $progressEmitter,
-            $artifactFinalizer,
-            $handoffRenderer,
-            $sequenceCoordinator,
-            $args['agentsConfig'],
-            $logger,
-            $clock,
-        );
+        $artifactFinalizer = new AgentChildArtifactFinalizer($artifactRegistry, $handoffRenderer, $logger);
+        $terminalizer = new SubagentChildRunTerminalizerAdapter($artifactFinalizer, $handoffRenderer);
+        $progressEmitter = new AgentChildProgressEmitter($contextAccessor, $committedRunEventAppender, $args['progressSnapshotBuilder'], $childProgressSummaryBuilder, $runStore, $clock);
+        $progressSink = new SubagentChildRunProgressSinkAdapter($progressEmitter);
+        $processPort = new AgentChildRunProcessAdapter($agentRunner, $runStore);
+        $artifactLifecycle = new AgentChildArtifactLifecycleAdapter($artifactRegistry, $childRunDirectory);
 
-        return new SubagentExecutionService(
-            $launchPreparation,
-            $childRunSupervisor,
-            $parallelExecution,
-            $args['agentsConfig'],
-        );
+        $definitionPolicy = new SubagentLaunchDefinitionPolicyService($args['catalog'], $args['depthGuard'], $policyResolver, $metadataReader);
+        $artifactReservation = new SubagentArtifactReservationService($artifactLifecycle);
+        $launchInputFactory = new SubagentChildLaunchInputFactory($promptBuilder, $skillsContextBuilder, $agentsContextBuilder, $parentRunStore, $appConfig);
+        $launchPreparation = new SubagentLaunchPreparationService($definitionPolicy, $artifactReservation, $launchInputFactory);
+
+        $batchSupervisor = new ForegroundAgentChildRunSupervisor($processPort, $artifactLifecycle, $progressSink, $terminalizer, $sequenceCoordinator, $contextAccessor, $logger, $clock);
+        $parallelFormatter = new SubagentParallelAggregateResultFormatter();
+        $resultMapper = new SubagentSupervisionResultMapper($parallelFormatter, $handoffRenderer, $args['agentsConfig']);
+        $launchFailureFinalizer = new SubagentParallelLaunchFailureFinalizer($artifactLifecycle, $processPort, $terminalizer, $logger);
+
+        $parallelExecution = new ParallelSubagentExecutionService($launchPreparation, $batchSupervisor, $launchFailureFinalizer, $resultMapper, $args['agentsConfig']);
+
+        return new SubagentExecutionService($launchPreparation, $batchSupervisor, $parallelExecution, $resultMapper, $args['agentsConfig']);
     }
 }

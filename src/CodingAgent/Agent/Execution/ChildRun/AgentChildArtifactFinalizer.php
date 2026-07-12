@@ -4,14 +4,10 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Agent\Execution\ChildRun;
 
-use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
 use Psr\Log\LoggerInterface;
 
-/**
- * Canonical artifact registry updates and handoff persistence for terminal child paths.
- */
 final class AgentChildArtifactFinalizer
 {
     public function __construct(
@@ -21,101 +17,42 @@ final class AgentChildArtifactFinalizer
     ) {
     }
 
-    public function finalize(
-        string $parentRunId,
-        string $artifactId,
-        AgentArtifactStatusEnum $status,
-        ?string $summary = null,
-        ?string $failureReason = null,
-        ?string $needsClarification = null,
-        ?string $displayName = null,
-        ?string $childRunId = null,
-        ?RunState $childState = null,
-    ): void {
+    public function apply(ChildRunTerminalOutcomeDTO $outcome): void
+    {
+        $identity = $outcome->identity;
         $completedAt = new \DateTimeImmutable();
 
         $this->artifactRegistry->update(
-            parentRunId: $parentRunId,
-            artifactId: $artifactId,
-            status: $status,
+            parentRunId: $identity->parentRunId,
+            artifactId: $identity->artifactId,
+            status: $outcome->status,
             completedAt: $completedAt,
-            summary: $summary,
-            failureReason: $failureReason,
-            needsClarification: $needsClarification,
+            summary: $outcome->summary,
+            failureReason: $outcome->failureReason,
+            needsClarification: $outcome->needsClarification,
         );
 
         $handoff = $this->handoffRenderer->buildHandoffMarkdown(
-            status: $status,
-            summary: $summary,
-            failureReason: $failureReason,
-            needsClarification: $needsClarification,
-            artifactId: $artifactId,
-            agentName: $displayName,
-            agentRunId: $childRunId,
-            childState: $childState,
+            status: $outcome->status,
+            summary: $outcome->summary,
+            failureReason: $outcome->failureReason,
+            needsClarification: $outcome->needsClarification,
+            artifactId: $identity->artifactId,
+            agentName: $identity->displayName,
+            agentRunId: $identity->childRunId,
+            childState: $outcome->childState,
         );
 
-        $this->artifactRegistry->writeHandoff($parentRunId, $artifactId, $handoff);
+        $this->artifactRegistry->writeHandoff($identity->parentRunId, $identity->artifactId, $handoff);
     }
 
-    public function handleCompleted(
-        string $parentRunId,
-        string $artifactId,
-        string $displayName,
-        RunState $state,
-    ): string {
-        $finalMessages = $this->handoffRenderer->extractLastMessage($state);
-        $this->finalize(
-            parentRunId: $parentRunId,
-            artifactId: $artifactId,
-            status: AgentArtifactStatusEnum::Completed,
-            summary: $finalMessages,
-        );
-
-        return $this->handoffRenderer->formatCompletedResult($displayName, $artifactId, $finalMessages);
-    }
-
-    public function handleFailed(
-        string $parentRunId,
-        string $artifactId,
-        string $displayName,
-        RunState $state,
-    ): string {
-        $errorMsg = $state->errorMessage ?? 'Run failed without error message.';
-        $this->finalize(
-            parentRunId: $parentRunId,
-            artifactId: $artifactId,
-            status: AgentArtifactStatusEnum::Failed,
-            failureReason: $errorMsg,
-            summary: $errorMsg,
-        );
-
-        return $this->handoffRenderer->formatFailedResult($displayName, $artifactId, $errorMsg);
-    }
-
-    public function handleCancelled(
-        string $parentRunId,
-        string $artifactId,
-        string $displayName,
-        RunState $state,
-    ): string {
+    public function logChildCancelled(ChildRunIdentityDTO $identity): void
+    {
         $this->logger->info('subagent_execution.cancelled', [
             'component' => 'agent.execution',
             'event_type' => 'subagent_execution.cancelled',
-            'agent_name' => $displayName,
-            'artifact_id' => $artifactId,
+            'agent_name' => $identity->displayName,
+            'artifact_id' => $identity->artifactId,
         ]);
-
-        $this->finalize(
-            parentRunId: $parentRunId,
-            artifactId: $artifactId,
-            status: AgentArtifactStatusEnum::Cancelled,
-            summary: 'Child run was cancelled.',
-            displayName: $displayName,
-            childRunId: $state->runId,
-            childState: $state,
-        );
-
-        return $this->handoffRenderer->formatChildCancelledMessage($displayName, $artifactId);
     }
 }
