@@ -16,6 +16,7 @@ use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryRunStore;
 use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
+use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
@@ -23,13 +24,14 @@ use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\Repair\SessionRepairRefusalReasonEnum;
 use Ineersa\CodingAgent\Session\Repair\SessionRepairService;
 use Ineersa\CodingAgent\Session\SessionRunEventStore;
-use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
+use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\FlockStore;
 
+#[Group('session-repair')]
 final class SessionRepairServiceTest extends TestCase
 {
     private const string TOOL_CALL_ID = 'call_00_abc';
@@ -95,6 +97,7 @@ final class SessionRepairServiceTest extends TestCase
         $result = $service->repair($runId, false);
 
         $this->assertTrue($result->repairableStaleCancellationDetected);
+        $this->assertNull($result->replayOk);
         $this->assertStringContainsStringIgnoringCase('stale non-terminal cancellation', $result->message);
     }
 
@@ -398,8 +401,6 @@ final class SessionRepairServiceTest extends TestCase
         $this->assertSame(0, $this->countInSlice($appended, RunEventTypeEnum::LlmStepAborted->value));
         $this->assertGreaterThanOrEqual(1, $this->countInSlice($appended, RunEventTypeEnum::ToolExecutionEnd->value, self::TOOL_CALL_ID));
     }
-
-
 
     public function testNoEventsRefusalLogsStructuredRefusal(): void
     {
@@ -831,7 +832,7 @@ final class SessionRepairServiceTest extends TestCase
             hatfieldSessionStore: $hatfieldSessionStore,
             eventPayloadNormalizer: new EventPayloadNormalizer(),
             lockFactory: new LockFactory(new FlockStore($lockDir)),
-            logger: $logger ?? new NullLogger(),
+            logger: new NullLogger(),
         );
 
         return new SessionRepairService(
@@ -913,7 +914,7 @@ final class SessionRepairServiceTest extends TestCase
             hatfieldSessionStore: $hatfieldSessionStore,
             eventPayloadNormalizer: new EventPayloadNormalizer(),
             lockFactory: new LockFactory(new FlockStore($lockDir)),
-            logger: $logger ?? new NullLogger(),
+            logger: new NullLogger(),
         );
 
         $events = $eventStore->allFor($runId);
@@ -939,7 +940,7 @@ final class SessionRepairServiceTest extends TestCase
             hatfieldSessionStore: $hatfieldSessionStore,
             eventPayloadNormalizer: new EventPayloadNormalizer(),
             lockFactory: new LockFactory(new FlockStore($lockDir)),
-            logger: $logger ?? new NullLogger(),
+            logger: new NullLogger(),
         );
 
         $events = $eventStore->allFor($runId);

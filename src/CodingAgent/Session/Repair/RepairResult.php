@@ -14,7 +14,8 @@ final readonly class RepairResult
         public bool $repairableStaleCancellationDetected,
         public bool $staleCancellationRepaired,
         public int $terminalEventsAppended,
-        public bool $replayOk,
+        /** null = replay validation not evaluated (e.g. dry-run); true/false = post-repair or refusal validation outcome */
+        public ?bool $replayOk,
         public string $message,
         public array $duplicateSeqs = [],
         public array $missingSeqs = [],

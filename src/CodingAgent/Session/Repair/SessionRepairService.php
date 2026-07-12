@@ -61,7 +61,7 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
                 repairableStaleCancellationDetected: false,
                 staleCancellationRepaired: false,
                 terminalEventsAppended: 0,
-                replayOk: false,
+                replayOk: null,
                 message: 'Session repair refused: duplicate event sequences detected.',
                 duplicateSeqs: $duplicateSeqs,
                 refusalReason: SessionRepairRefusalReasonEnum::DuplicateSequences,
@@ -76,7 +76,7 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
                 repairableStaleCancellationDetected: false,
                 staleCancellationRepaired: false,
                 terminalEventsAppended: 0,
-                replayOk: false,
+                replayOk: null,
                 message: 'Session repair refused: missing event sequences detected.',
                 duplicateSeqs: [],
                 refusalReason: SessionRepairRefusalReasonEnum::MissingSequences,
@@ -100,7 +100,7 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
                 repairableStaleCancellationDetected: false,
                 staleCancellationRepaired: false,
                 terminalEventsAppended: 0,
-                replayOk: false,
+                replayOk: null,
                 message: 'Session repair refused: active streaming detected.',
                 refusalReason: SessionRepairRefusalReasonEnum::ActiveStreaming,
             );
@@ -129,7 +129,7 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
                 repairableStaleCancellationDetected: true,
                 staleCancellationRepaired: false,
                 terminalEventsAppended: 0,
-                replayOk: false,
+                replayOk: null,
                 message: 'Stale non-terminal cancellation detected; repair available.',
             );
         }
@@ -386,6 +386,11 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
     }
 
     /**
+     * Tracks the latest open assistant phase across canonical events (message_start/end,
+     * llm_step_completed/aborted, turn_advanced). Returns true when an assistant message_start
+     * was never closed by a matching message_end or terminal LLM step event — i.e. cancellation
+     * abandoned an in-flight assistant turn that still needs an llm_step_aborted append.
+     *
      * @param list<RunEvent> $events
      */
     private function llmStepRemainedIncomplete(array $events): bool
@@ -540,7 +545,7 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
             repairableStaleCancellationDetected: false,
             staleCancellationRepaired: false,
             terminalEventsAppended: 0,
-            replayOk: false,
+            replayOk: null,
             message: 'Session repair refused: ambiguous pending work.',
             refusalReason: SessionRepairRefusalReasonEnum::AmbiguousPendingWork,
         );
@@ -552,7 +557,7 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
             repairableStaleCancellationDetected: false,
             staleCancellationRepaired: false,
             terminalEventsAppended: 0,
-            replayOk: true,
+            replayOk: null,
             message: $message,
         );
     }
@@ -565,7 +570,7 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
             repairableStaleCancellationDetected: false,
             staleCancellationRepaired: false,
             terminalEventsAppended: 0,
-            replayOk: false,
+            replayOk: SessionRepairRefusalReasonEnum::ReplayValidationFailed === $reason ? false : null,
             message: $message,
             refusalReason: $reason,
         );
