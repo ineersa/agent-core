@@ -65,6 +65,7 @@ final class SubagentChildProgressSummaryBuilder
         $toolEnds = 0;
         $inputTokens = 0;
         $latestInputTokens = 0;
+        $contextWindow = 0;
         $outputTokens = 0;
         $reasoningTokens = 0;
         $totalTokens = 0;
@@ -90,6 +91,12 @@ final class SubagentChildProgressSummaryBuilder
                 }
                 if (\is_string($metadata['provider'] ?? null) && '' !== $metadata['provider']) {
                     $provider = $metadata['provider'];
+                }
+                if (isset($metadata['context_window']) && is_numeric($metadata['context_window'])) {
+                    $resolved = (int) $metadata['context_window'];
+                    if ($resolved > 0) {
+                        $contextWindow = $resolved;
+                    }
                 }
                 continue;
             }
@@ -170,6 +177,7 @@ final class SubagentChildProgressSummaryBuilder
             toolCount: $toolEnds,
             inputTokens: $inputTokens,
             latestInputTokens: $latestInputTokens,
+            contextWindow: $contextWindow,
             outputTokens: $outputTokens,
             reasoningTokens: $reasoningTokens,
             totalTokens: $totalTokens,

@@ -18,6 +18,8 @@ final readonly class RunMetadata
         public ?string $reasoning = null,
         #[SerializedName('tools_scope')]
         public ?array $toolsScope = null,
+        #[SerializedName('context_window')]
+        public ?int $contextWindow = null,
     ) {
     }
 }

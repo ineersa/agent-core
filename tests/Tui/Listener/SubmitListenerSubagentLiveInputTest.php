@@ -254,6 +254,18 @@ final class SubmitListenerSubagentLiveInputTest extends TestCase
             subagentLiveInputPolicy: new SubagentLiveInputPolicy(),
             logger: new NullLogger(),
             history: new PromptHistory(),
+            pastedImageSubmissionService: new \Ineersa\Tui\ImagePaste\PastedImageSubmissionService(
+                new \Ineersa\Tui\ImagePaste\PastedImageValidationService(new \Ineersa\CodingAgent\Config\ImageToolConfig(), new \Ineersa\AgentCore\Tests\Support\TestLogger()),
+                $context->sessionStore,
+                new \Ineersa\CodingAgent\Config\AppConfig(
+                    tui: new \Ineersa\CodingAgent\Config\TuiConfig(theme: 'default'),
+                    logging: new \Ineersa\CodingAgent\Config\LoggingConfig(),
+                    sessions: new \Ineersa\CodingAgent\Config\SessionsConfig(),
+                    cwd: getcwd() ?: '/tmp',
+                ),
+                new TranscriptBlockFactory(),
+                new \Ineersa\AgentCore\Tests\Support\TestLogger(),
+            ),
         );
         $listener->register($context);
 

@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Agent\Execution;
 
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Contract\AgentRunnerInterface;
+use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\RunStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
@@ -18,10 +19,13 @@ use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
 use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunDirectory;
+use Ineersa\CodingAgent\Agent\Context\AgentsContextBuilder;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionCatalog;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionDTO;
 use Ineersa\CodingAgent\Config\AgentsConfig;
-use Ineersa\CodingAgent\Session\SequencedRunEventAppender;
+use Ineersa\CodingAgent\Config\Ai\AiModelReference;
+use Ineersa\CodingAgent\Config\AppConfig;
+use Ineersa\CodingAgent\Session\CommittedRunEventAppender;
 use Ineersa\CodingAgent\Skills\SkillsContextBuilder;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Clock\ClockInterface;
@@ -56,7 +60,8 @@ final class SubagentExecutionService
         private readonly AgentRunnerInterface $agentRunner,
         private readonly RunStoreInterface $runStore,
         private readonly RunStoreInterface $parentRunStore,
-        private readonly SequencedRunEventAppender $sequencedEventAppender,
+        private readonly EventStoreInterface $eventStore,
+        private readonly CommittedRunEventAppender $committedRunEventAppender,
         private readonly SubagentRunMetadataReader $metadataReader,
         private readonly AgentChildRunDirectory $childRunDirectory,
         private readonly StackToolExecutionContextAccessor $contextAccessor,
@@ -64,6 +69,8 @@ final class SubagentExecutionService
         private readonly AgentsConfig $agentsConfig,
         private readonly SubagentProgressSnapshotBuilder $progressSnapshotBuilder,
         private readonly SubagentChildProgressSummaryBuilder $childProgressSummaryBuilder,
+        private readonly AppConfig $appConfig,
+        private readonly AgentsContextBuilder $agentsContextBuilder,
         private readonly ClockInterface $clock = new MonotonicClock(),
     ) {
     }
@@ -97,14 +104,14 @@ final class SubagentExecutionService
 
         // 2. Defense-in-depth: no nested subagents in v1.
         $parentIsAgentChild = $this->metadataReader->isAgentChild($parentRunId);
-        $parentChildKind = $parentIsAgentChild ? $this->metadataReader->readChildKind($parentRunId) : null;
-        $blockReason = $this->depthGuard->checkLaunchAllowed($parentIsAgentChild, $parentChildKind);
+        $blockReason = $this->depthGuard->checkLaunchAllowed($parentIsAgentChild);
         if (null !== $blockReason) {
             throw new ToolCallException($blockReason, retryable: false);
         }
 
         // 3. Resolve tool/MCP policy.
-        $policy = $this->policyResolver->resolve($definition, $parentRunId);
+        $allowSubagentLaunch = $this->childMayLaunchSubagents($definition);
+        $policy = $this->policyResolver->resolve($definition, $parentRunId, $allowSubagentLaunch);
         $allowedTools = $policy['tools'];
 
         // 4. Create artifact ID and child run ID (RFC 4122).
@@ -124,7 +131,7 @@ final class SubagentExecutionService
         $this->childRunDirectory->register($entry);
 
         // 6. Resolve inherited project/AGENTS/skills context for the child.
-        $launchContext = $this->resolveChildLaunchContext($parentRunId, $definition);
+        $launchContext = $this->resolveChildLaunchContext($parentRunId, $definition, $allowedTools);
 
         // 7. Build prompt and messages.
         $prompt = $this->promptBuilder->build(
@@ -134,24 +141,18 @@ final class SubagentExecutionService
             allowedTools: $allowedTools,
             agentsMd: $launchContext['agentsMd'],
             skillsContext: $launchContext['skillsContext'],
+            agentsDefinitionsContext: $launchContext['agentsDefinitionsContext'],
         );
 
         // 8. Build child metadata with policy and artifact paths.
-        $childMetadata = new RunMetadata(
-            session: [
-                'kind' => 'agent_child',
-                'child_kind' => 'subagent',
-                'parent_run_id' => $parentRunId,
-                'agent_name' => $agentName,
-                'artifact_id' => $artifactId,
-                'interactive' => true,
-            ],
+        $childMetadata = $this->buildChildRunMetadata(
+            parentRunId: $parentRunId,
+            agentName: $agentName,
+            artifactId: $artifactId,
             model: $definition->model,
             reasoning: $definition->thinking,
-            toolsScope: [
-                'allowed_tools' => $allowedTools,
-                'mcp' => $policy['mcp'],
-            ],
+            allowedTools: $allowedTools,
+            mcp: $policy['mcp'],
         );
 
         // 9. Start child run (AgentRunner generates the runId if null).
@@ -179,6 +180,9 @@ final class SubagentExecutionService
         $context = $this->contextAccessor->current();
         $cancelToken = $context?->cancellationToken();
 
+        // Monotonically increasing event seq for progress updates,
+        // initialised from max(parent state lastSeq, max parent event seq) + 1.
+        $progressSeq = $this->resolveNextProgressSeq($parentRunId);
         $lastSingleProgressSignature = null;
 
         while (true) {
@@ -206,8 +210,10 @@ final class SubagentExecutionService
                         definitionModel: $definition->model,
                         state: $cancelState,
                         terminalStatus: 'cancelled',
+                        seq: $progressSeq,
                         progressStartedMicros: $progressStartedMicros,
                     );
+                    $this->advanceParentSequence($parentRunId, $progressSeq);
                 }
 
                 throw new ToolCallException($this->formatParentCancelledSingleMessage($agentName, $artifactId), retryable: false);
@@ -227,8 +233,11 @@ final class SubagentExecutionService
                         definitionModel: $definition->model,
                         state: $timeoutState,
                         terminalStatus: 'failed',
+                        seq: $progressSeq,
                         progressStartedMicros: $progressStartedMicros,
                     );
+                    $this->advanceParentSequence($parentRunId, $progressSeq);
+                    ++$progressSeq;
                 }
                 $this->finalize(
                     parentRunId: $parentRunId,
@@ -276,8 +285,11 @@ final class SubagentExecutionService
                         taskSummary: $task,
                         definitionModel: $definition->model,
                         state: $state,
+                        seq: $progressSeq,
                         progressStartedMicros: $progressStartedMicros,
                     );
+                    $this->advanceParentSequence($parentRunId, $progressSeq);
+                    ++$progressSeq;
                     $lastSingleProgressSignature = $signature;
                 }
 
@@ -307,9 +319,12 @@ final class SubagentExecutionService
                         taskSummary: $task,
                         definitionModel: $definition->model,
                         state: $state,
+                        seq: $progressSeq,
                         progressStartedMicros: $progressStartedMicros,
                         progressStatus: 'waiting_human',
                     );
+                    $this->advanceParentSequence($parentRunId, $progressSeq);
+                    ++$progressSeq;
                     $lastSingleProgressSignature = $signature;
                 }
 
@@ -328,8 +343,11 @@ final class SubagentExecutionService
                 definitionModel: $definition->model,
                 state: $state,
                 terminalStatus: $terminalStatus,
+                seq: $progressSeq,
                 progressStartedMicros: $progressStartedMicros,
             );
+            $this->advanceParentSequence($parentRunId, $progressSeq);
+            ++$progressSeq;
 
             return match ($status) {
                 RunStatus::Completed => $this->handleCompleted(
@@ -362,8 +380,7 @@ final class SubagentExecutionService
         }
 
         $parentIsAgentChild = $this->metadataReader->isAgentChild($parentRunId);
-        $parentChildKind = $parentIsAgentChild ? $this->metadataReader->readChildKind($parentRunId) : null;
-        $blockReason = $this->depthGuard->checkLaunchAllowed($parentIsAgentChild, $parentChildKind);
+        $blockReason = $this->depthGuard->checkLaunchAllowed($parentIsAgentChild);
         if (null !== $blockReason) {
             throw new ToolCallException($blockReason, retryable: false);
         }
@@ -425,10 +442,11 @@ final class SubagentExecutionService
                 );
                 $this->childRunDirectory->register($entry);
 
-                $policy = $this->policyResolver->resolve($launch['definition'], $parentRunId);
+                $allowSubagentLaunch = $this->childMayLaunchSubagents($launch['definition']);
+                $policy = $this->policyResolver->resolve($launch['definition'], $parentRunId, $allowSubagentLaunch);
                 $allowedTools = $policy['tools'];
 
-                $launchContext = $this->resolveChildLaunchContext($parentRunId, $launch['definition']);
+                $launchContext = $this->resolveChildLaunchContext($parentRunId, $launch['definition'], $allowedTools);
 
                 $prompt = $this->promptBuilder->build(
                     definition: $launch['definition'],
@@ -437,23 +455,17 @@ final class SubagentExecutionService
                     allowedTools: $allowedTools,
                     agentsMd: $launchContext['agentsMd'],
                     skillsContext: $launchContext['skillsContext'],
+                    agentsDefinitionsContext: $launchContext['agentsDefinitionsContext'],
                 );
 
-                $childMetadata = new RunMetadata(
-                    session: [
-                        'kind' => 'agent_child',
-                        'child_kind' => 'subagent',
-                        'parent_run_id' => $parentRunId,
-                        'agent_name' => $launch['agentName'],
-                        'artifact_id' => $launch['artifactId'],
-                        'interactive' => true,
-                    ],
+                $childMetadata = $this->buildChildRunMetadata(
+                    parentRunId: $parentRunId,
+                    agentName: $launch['agentName'],
+                    artifactId: $launch['artifactId'],
                     model: $launch['definition']->model,
                     reasoning: $launch['definition']->thinking,
-                    toolsScope: [
-                        'allowed_tools' => $allowedTools,
-                        'mcp' => $policy['mcp'],
-                    ],
+                    allowedTools: $allowedTools,
+                    mcp: $policy['mcp'],
                 );
 
                 $this->agentRunner->start(new StartRunInput(
@@ -480,6 +492,7 @@ final class SubagentExecutionService
         $deadline = $this->nowMicros() + $timeoutSeconds * 1_000_000;
         $context = $this->contextAccessor->current();
         $cancelToken = $context?->cancellationToken();
+        $progressSeq = $this->resolveNextProgressSeq($parentRunId);
         $lastProgressSignature = null;
         $parallelProgressStartedMicros = $this->nowMicros();
 
@@ -509,9 +522,11 @@ final class SubagentExecutionService
                     $parentRunId,
                     $reports,
                     $this->parallelActiveTurns($reports),
+                    $progressSeq,
                     $parallelProgressStartedMicros,
                     aggregateStatus: 'cancelled',
                 );
+                $this->advanceParentSequence($parentRunId, $progressSeq);
 
                 throw new ToolCallException("Parallel subagent tool cancelled by parent run.\n\n".$this->formatParallelReport($reports), retryable: false);
             }
@@ -618,7 +633,9 @@ final class SubagentExecutionService
 
             $signature = $this->parallelProgressSignature($parentRunId, $reports, $activeTurns);
             if (null === $lastProgressSignature || $signature !== $lastProgressSignature) {
-                $this->emitParallelProgressUpdate($parentRunId, $reports, $activeTurns, $parallelProgressStartedMicros);
+                $this->emitParallelProgressUpdate($parentRunId, $reports, $activeTurns, $progressSeq, $parallelProgressStartedMicros);
+                $this->advanceParentSequence($parentRunId, $progressSeq);
+                ++$progressSeq;
                 $lastProgressSignature = $signature;
             }
 
@@ -629,9 +646,12 @@ final class SubagentExecutionService
             $parentRunId,
             $reports,
             $this->parallelActiveTurns($reports),
+            $progressSeq,
             $parallelProgressStartedMicros,
             aggregateStatus: $this->resolveParallelAggregateStatus($reports),
         );
+        $this->advanceParentSequence($parentRunId, $progressSeq);
+        ++$progressSeq;
 
         $failed = array_filter($reports, static fn (array $r): bool => AgentArtifactStatusEnum::Completed !== $r['status']);
 
@@ -823,6 +843,7 @@ final class SubagentExecutionService
         string $parentRunId,
         array $reports,
         array $activeTurns,
+        int $seq,
         int $progressStartedMicros,
         string $aggregateStatus = 'running',
     ): void {
@@ -843,7 +864,7 @@ final class SubagentExecutionService
         );
         $event = new RunEvent(
             runId: $parentRunId,
-            seq: 0,
+            seq: $seq,
             turnNo: $context->turnNo(),
             type: RunEventTypeEnum::ToolExecutionUpdate->value,
             payload: [
@@ -855,7 +876,7 @@ final class SubagentExecutionService
             ],
         );
 
-        $this->sequencedEventAppender->append($event);
+        $this->committedRunEventAppender->append($event);
     }
 
     /**
@@ -1252,6 +1273,7 @@ TXT;
         ?string $definitionModel,
         RunState $state,
         string $terminalStatus,
+        int $seq,
         int $progressStartedMicros,
     ): void {
         $context = $this->contextAccessor->current();
@@ -1277,7 +1299,7 @@ TXT;
             $elapsedMs,
             $enrichment,
         );
-        $this->appendSubagentProgressEvent($parentRunId, $context, $progress);
+        $this->appendSubagentProgressEvent($parentRunId, $context, $seq, $progress);
     }
 
     /**
@@ -1375,11 +1397,12 @@ TXT;
     private function appendSubagentProgressEvent(
         string $parentRunId,
         \Ineersa\AgentCore\Application\Tool\ToolContext $context,
+        int $seq,
         array $progress,
     ): void {
         $event = new RunEvent(
             runId: $parentRunId,
-            seq: 0,
+            seq: $seq,
             turnNo: $context->turnNo(),
             type: RunEventTypeEnum::ToolExecutionUpdate->value,
             payload: [
@@ -1391,7 +1414,7 @@ TXT;
             ],
         );
 
-        $this->sequencedEventAppender->append($event);
+        $this->committedRunEventAppender->append($event);
     }
 
     /**
@@ -1408,6 +1431,7 @@ TXT;
         string $taskSummary,
         ?string $definitionModel,
         RunState $state,
+        int $seq,
         int $progressStartedMicros,
         string $progressStatus = 'running',
     ): void {
@@ -1434,16 +1458,172 @@ TXT;
             $enrichment,
             $progressStatus,
         );
-        $this->appendSubagentProgressEvent($parentRunId, $context, $progress);
+        $this->appendSubagentProgressEvent($parentRunId, $context, $seq, $progress);
     }
 
     /**
-     * Resolve project/AGENTS/skills context for a child launch from parent state
-     * and agent definition frontmatter flags.
+     * Resolve the next sequence number for parent progress events.
      *
-     * @return array{agentsMd: string, skillsContext: string}
+     * Uses the greater of parent state lastSeq and the maximum existing
+     * parent event seq, so progress events never collide with events
+     * appended by other writers or pending commits.
      */
-    private function resolveChildLaunchContext(string $parentRunId, AgentDefinitionDTO $definition): array
+    private function resolveNextProgressSeq(string $parentRunId): int
+    {
+        $parentState = $this->parentRunStore->get($parentRunId);
+        $stateLastSeq = null !== $parentState ? $parentState->lastSeq : 0;
+
+        // Fallback to max event seq in case state is temporarily stale
+        // (e.g. mid-commit, or another writer advanced the log without
+        // yet persisting the state checkpoint).
+        $parentEvents = $this->eventStore->allFor($parentRunId);
+        $maxEventSeq = 0;
+        foreach ($parentEvents as $event) {
+            if ($event->seq > $maxEventSeq) {
+                $maxEventSeq = $event->seq;
+            }
+        }
+
+        return max($stateLastSeq, $maxEventSeq) + 1;
+    }
+
+    /**
+     * Advance the parent RunState.lastSeq to include the progress event.
+     *
+     * Uses compareAndSwap in a short retry loop to handle races with
+     * other parent state writers.  If CAS fails and the current state
+     * already covers our seq, treats it as a non-issue.  Exhausted
+     * retries are logged but do not block or re-append — the progress
+     * event already exists in the event log and replay will catch up.
+     */
+    private function advanceParentSequence(string $parentRunId, int $seq): void
+    {
+        $parentState = $this->parentRunStore->get($parentRunId);
+        if (null === $parentState) {
+            // Parent state not yet persisted — the first progress event
+            // lands while the run is still initialising.  Non-fatal.
+            $this->logger->warning('subagent_execution.parent_state_missing_for_seq_advance', [
+                'component' => 'agent.execution',
+                'event_type' => 'subagent_execution.parent_state_missing_for_seq_advance',
+                'parent_run_id' => $parentRunId,
+                'target_seq' => $seq,
+            ]);
+
+            return;
+        }
+
+        $maxAttempts = 3;
+
+        for ($attempt = 0; $attempt < $maxAttempts; ++$attempt) {
+            $nextState = new RunState(
+                runId: $parentState->runId,
+                status: $parentState->status,
+                version: $parentState->version + 1,
+                turnNo: $parentState->turnNo,
+                lastSeq: $seq,
+                isStreaming: $parentState->isStreaming,
+                streamingMessage: $parentState->streamingMessage,
+                pendingToolCalls: $parentState->pendingToolCalls,
+                errorMessage: $parentState->errorMessage,
+                messages: $parentState->messages,
+                activeStepId: $parentState->activeStepId,
+                retryableFailure: $parentState->retryableFailure,
+            );
+
+            $oldVersion = $parentState->version;
+
+            if ($this->parentRunStore->compareAndSwap($nextState, $oldVersion)) {
+                return;
+            }
+
+            // CAS failed — re-read in case another writer moved past us.
+            $parentState = $this->parentRunStore->get($parentRunId);
+            if (null === $parentState) {
+                return;
+            }
+
+            if ($parentState->lastSeq >= $seq) {
+                // Another writer already advanced past our seq.
+                return;
+            }
+        }
+
+        // Exhausted retries; event is already in the log.
+        $this->logger->warning('subagent_execution.progress_seq_cas_failed', [
+            'component' => 'agent.execution',
+            'event_type' => 'subagent_execution.progress_seq_cas_failed',
+            'parent_run_id' => $parentRunId,
+            'target_seq' => $seq,
+            'attempts' => $maxAttempts,
+            'parent_state_last_seq' => $parentState->lastSeq,
+        ]);
+    }
+
+    /**
+     * Build canonical child run metadata including model context window from catalog.
+     *
+     * @param list<string>         $allowedTools
+     * @param array<string, mixed> $mcp
+     */
+    private function buildChildRunMetadata(
+        string $parentRunId,
+        string $agentName,
+        string $artifactId,
+        ?string $model,
+        ?string $reasoning,
+        array $allowedTools,
+        array $mcp,
+    ): RunMetadata {
+        $contextWindow = $this->resolveContextWindowForModel($model);
+
+        return new RunMetadata(
+            session: [
+                'kind' => 'agent_child',
+                'parent_run_id' => $parentRunId,
+                'agent_name' => $agentName,
+                'artifact_id' => $artifactId,
+                'interactive' => true,
+            ],
+            model: $model,
+            reasoning: $reasoning,
+            toolsScope: [
+                'allowed_tools' => $allowedTools,
+                'mcp' => $mcp,
+            ],
+            contextWindow: $contextWindow > 0 ? $contextWindow : null,
+        );
+    }
+
+    private function resolveContextWindowForModel(?string $model): int
+    {
+        if (null === $model || '' === trim($model)) {
+            return 0;
+        }
+
+        $catalog = $this->appConfig->catalog;
+        if (null === $catalog) {
+            return 0;
+        }
+
+        $ref = AiModelReference::tryParse($model);
+        if (null === $ref) {
+            return 0;
+        }
+
+        $definition = $catalog->getModel($ref);
+
+        return null !== $definition ? ($definition->contextWindow ?? 0) : 0;
+    }
+
+    /**
+     * Resolve project/AGENTS/skills and agent-definitions context for a child launch
+     * from parent state and agent definition frontmatter flags.
+     *
+     * @param list<string> $allowedTools final resolved child tool allowlist
+     *
+     * @return array{agentsMd: string, skillsContext: string, agentsDefinitionsContext: string}
+     */
+    private function resolveChildLaunchContext(string $parentRunId, AgentDefinitionDTO $definition, array $allowedTools): array
     {
         $inheritProject = $definition->inheritProjectContext;
         $inheritAgents = $definition->inheritAgentsMd;
@@ -1453,10 +1633,29 @@ TXT;
 
         $skillsContext = $this->resolveSkillsContextForChild($definition);
 
+        $agentsDefinitionsContext = '';
+        if (\in_array('subagent', $allowedTools, true)) {
+            $agentsDefinitionsContext = $this->extractUserContextBySource($parentRunId, 'agents_definitions_context');
+            if ('' === trim($agentsDefinitionsContext)) {
+                $agentsDefinitionsContext = $this->agentsContextBuilder->build();
+            }
+        }
+
         return [
             'agentsMd' => $agentsMd,
             'skillsContext' => $skillsContext,
+            'agentsDefinitionsContext' => $agentsDefinitionsContext,
         ];
+    }
+
+    private function childMayLaunchSubagents(AgentDefinitionDTO $definition): bool
+    {
+        $tools = $definition->tools;
+        if (null === $tools) {
+            return false;
+        }
+
+        return \in_array('subagent', $tools, true);
     }
 
     private function resolveSkillsContextForChild(AgentDefinitionDTO $definition): string

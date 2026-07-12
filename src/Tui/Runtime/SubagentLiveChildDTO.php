@@ -18,6 +18,7 @@ final readonly class SubagentLiveChildDTO
         public int $lastActivityAtMs,
         public ?string $model = null,
         public int $latestInputTokens = 0,
+        public int $contextWindow = 0,
     ) {
     }
 

@@ -11,7 +11,7 @@ use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
-use Ineersa\AgentCore\Infrastructure\Storage\RunEventStore;
+use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
 use Ineersa\CodingAgent\Session\Replay\BranchReplayFilterContractAdapter;
 use Ineersa\CodingAgent\Session\Replay\SessionRunStateReplayService;
 use Ineersa\CodingAgent\Session\Replay\TurnTreeReplayFilter;
@@ -21,7 +21,7 @@ use Psr\Log\NullLogger;
 
 final class SessionRunStateReplayServiceTest extends TestCase
 {
-    private RunEventStore $eventStore;
+    private InMemoryEventStore $eventStore;
     private SessionRunStateReplayService $service;
     private RunStateReducer $reducer;
     private BranchReplayFilterContractAdapter $treeFilter;
@@ -29,7 +29,7 @@ final class SessionRunStateReplayServiceTest extends TestCase
 
     protected function setUp(): void
     {
-        $this->eventStore = new RunEventStore();
+        $this->eventStore = new InMemoryEventStore();
         $this->treeFilter = new BranchReplayFilterContractAdapter(new TurnTreeReplayFilter(new TurnTreeProjector()));
         $this->reducer = new RunStateReducer();
         $this->service = new SessionRunStateReplayService(
@@ -505,24 +505,25 @@ final class SessionRunStateReplayServiceTest extends TestCase
 
     // ── Non-contiguous history ──────────────────────────────────────────────
 
-    public function testNonContiguousHistoryThrowsException(): void
+    public function testSequenceGapIsToleratedForReplay(): void
     {
-        // Missing seq 2
+        // Missing seq 2 (cursor-advanced-but-not-appended crash model)
         $this->appendEvent('run_started', 1, ['step_id' => 's1', 'payload' => ['messages' => []]]);
-        $this->appendEvent('run_started', 3, ['step_id' => 's3', 'payload' => ['messages' => []]]);
+        $this->appendEvent('turn_advanced', 3, ['turn_no' => 1]);
 
         $state = new RunState(
             runId: $this->runId,
             status: RunStatus::Running,
             version: 1,
             turnNo: 0,
-            lastSeq: 0, // stale
+            lastSeq: 0,
         );
 
-        $this->expectException(RunStateReplayException::class);
-        $this->expectExceptionMessage('missing sequences');
+        $result = $this->service->rebuildIfStale($state, $this->runId);
 
-        $this->service->rebuildIfStale($state, $this->runId);
+        $this->assertTrue($result->rebuilt);
+        $this->assertNotNull($result->rebuiltState);
+        $this->assertSame(3, $result->rebuiltState->lastSeq);
     }
 
     // ── Replay preserves stored version ────────────────────────────────────
@@ -693,10 +694,13 @@ final class SessionRunStateReplayServiceTest extends TestCase
             lastSeq: 0,
         );
 
-        $this->expectException(RunStateReplayException::class);
-        $this->expectExceptionMessage('duplicate sequence');
-
-        $this->service->rebuildIfStale($state, $this->runId);
+        try {
+            $this->service->rebuildIfStale($state, $this->runId);
+            $this->fail('Expected RunStateReplayException');
+        } catch (RunStateReplayException $exception) {
+            $this->assertStringContainsString('duplicate sequence', $exception->getMessage());
+            $this->assertTrue($exception->isDuplicateSequences());
+        }
     }
 
     // ── Command rejected replay ─────────────────────────────────────────────
@@ -1972,7 +1976,7 @@ final class SessionRunStateReplayServiceTest extends TestCase
      */
     private function appendEvent(string $type, int $seq, array $payload): void
     {
-        $this->eventStore->append(new RunEvent(
+        $this->eventStore->seed(new RunEvent(
             runId: $this->runId,
             seq: $seq,
             turnNo: 0,
@@ -1989,7 +1993,7 @@ final class SessionRunStateReplayServiceTest extends TestCase
      */
     private function appendEventWithTurn(string $type, int $seq, int $turnNo, array $payload): void
     {
-        $this->eventStore->append(new RunEvent(
+        $this->eventStore->seed(new RunEvent(
             runId: $this->runId,
             seq: $seq,
             turnNo: $turnNo,

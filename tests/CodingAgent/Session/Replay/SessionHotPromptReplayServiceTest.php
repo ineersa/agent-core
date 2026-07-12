@@ -9,7 +9,7 @@ use Ineersa\AgentCore\Application\Replay\ReplayEventPreparer;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Infrastructure\Storage\HotPromptStateStore;
-use Ineersa\AgentCore\Infrastructure\Storage\RunEventStore;
+use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
 use Ineersa\CodingAgent\Session\Replay\BranchReplayFilterContractAdapter;
 use Ineersa\CodingAgent\Session\Replay\SessionHotPromptReplayService;
 use Ineersa\CodingAgent\Session\Replay\TurnTreeReplayFilter;
@@ -33,7 +33,7 @@ final class SessionHotPromptReplayServiceTest extends TestCase
      */
     public function testCanonicalLlmStepCompletedAppendsAssistantMessage(): void
     {
-        $eventStore = new RunEventStore();
+        $eventStore = new InMemoryEventStore();
         $hotPromptStore = new HotPromptStateStore();
         $replayService = new SessionHotPromptReplayService($eventStore, $hotPromptStore, new PromptStateReplayService(), new ReplayEventPreparer());
 
@@ -93,7 +93,7 @@ final class SessionHotPromptReplayServiceTest extends TestCase
 
     public function testCanonicalLlmStepCompletedWithToolCallsOnly(): void
     {
-        $eventStore = new RunEventStore();
+        $eventStore = new InMemoryEventStore();
         $hotPromptStore = new HotPromptStateStore();
         $replayService = new SessionHotPromptReplayService($eventStore, $hotPromptStore, new PromptStateReplayService(), new ReplayEventPreparer());
 
@@ -152,7 +152,7 @@ final class SessionHotPromptReplayServiceTest extends TestCase
 
     public function testCanonicalLlmStepCompletedWithThinkingDetails(): void
     {
-        $eventStore = new RunEventStore();
+        $eventStore = new InMemoryEventStore();
         $hotPromptStore = new HotPromptStateStore();
         $replayService = new SessionHotPromptReplayService($eventStore, $hotPromptStore, new PromptStateReplayService(), new ReplayEventPreparer());
 
@@ -219,7 +219,7 @@ final class SessionHotPromptReplayServiceTest extends TestCase
      */
     public function testMessagesPayloadReplacesPreviousMessages(): void
     {
-        $eventStore = new RunEventStore();
+        $eventStore = new InMemoryEventStore();
         $hotPromptStore = new HotPromptStateStore();
         $replayService = new SessionHotPromptReplayService($eventStore, $hotPromptStore, new PromptStateReplayService(), new ReplayEventPreparer());
 
@@ -309,7 +309,7 @@ final class SessionHotPromptReplayServiceTest extends TestCase
      */
     public function testCanonicalEventsAppendAfterReplacementCheckpoint(): void
     {
-        $eventStore = new RunEventStore();
+        $eventStore = new InMemoryEventStore();
         $hotPromptStore = new HotPromptStateStore();
         $replayService = new SessionHotPromptReplayService($eventStore, $hotPromptStore, new PromptStateReplayService(), new ReplayEventPreparer());
 
@@ -391,7 +391,7 @@ final class SessionHotPromptReplayServiceTest extends TestCase
 
     public function testRebuildUsesCanonicalEventsAndRestoresDeletedHotPromptState(): void
     {
-        $eventStore = new RunEventStore();
+        $eventStore = new InMemoryEventStore();
         $hotPromptStore = new HotPromptStateStore();
         $replayService = new SessionHotPromptReplayService($eventStore, $hotPromptStore, new PromptStateReplayService(), new ReplayEventPreparer());
 
@@ -458,7 +458,7 @@ final class SessionHotPromptReplayServiceTest extends TestCase
 
     public function testRebuildReturnsEmptyResultWhenNoEventsExist(): void
     {
-        $eventStore = new RunEventStore();
+        $eventStore = new InMemoryEventStore();
         $hotPromptStore = new HotPromptStateStore();
         $replayService = new SessionHotPromptReplayService($eventStore, $hotPromptStore, new PromptStateReplayService(), new ReplayEventPreparer());
 
@@ -476,7 +476,7 @@ final class SessionHotPromptReplayServiceTest extends TestCase
 
     public function testBranchReplayExcludesAbandonedBranchMessages(): void
     {
-        $eventStore = new RunEventStore();
+        $eventStore = new InMemoryEventStore();
         $hotPromptStore = new HotPromptStateStore();
         $treeFilter = new BranchReplayFilterContractAdapter(new TurnTreeReplayFilter(new TurnTreeProjector()));
         $replayService = new SessionHotPromptReplayService($eventStore, $hotPromptStore, new PromptStateReplayService(), new ReplayEventPreparer(), null, null, $treeFilter);
@@ -573,7 +573,7 @@ final class SessionHotPromptReplayServiceTest extends TestCase
      */
     public function testContextCompactedReplacesHotPromptMessages(): void
     {
-        $eventStore = new RunEventStore();
+        $eventStore = new InMemoryEventStore();
         $hotPromptStore = new HotPromptStateStore();
         $replayService = new SessionHotPromptReplayService($eventStore, $hotPromptStore, new PromptStateReplayService(), new ReplayEventPreparer());
         $runId = 'run-hot-prompt-compacted';
@@ -628,7 +628,7 @@ final class SessionHotPromptReplayServiceTest extends TestCase
     /**
      * @param array<string, mixed> $payload
      */
-    private function appendTo(RunEventStore $store, string $runId, string $type, int $seq, int $turnNo, array $payload): void
+    private function appendTo(InMemoryEventStore $store, string $runId, string $type, int $seq, int $turnNo, array $payload): void
     {
         $store->append(new RunEvent(
             runId: $runId,

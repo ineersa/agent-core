@@ -5,12 +5,12 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Session\Rewind;
 
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
+use Ineersa\AgentCore\Application\Handler\RunStateDuplicateSequenceReplayException;
 use Ineersa\AgentCore\Application\Replay\ReplayEventPreparer;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
 use Ineersa\AgentCore\Contract\Rewind\RunRewindServiceInterface;
 use Ineersa\AgentCore\Contract\RunStoreInterface;
-use Ineersa\AgentCore\Contract\SequencedEventStoreInterface;
 use Ineersa\AgentCore\Contract\TurnTree\TurnTreeProjectorInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
@@ -49,8 +49,9 @@ final readonly class SessionRewindService implements RunRewindServiceInterface
      *
      * @return array{rebuiltState: RunState, leafSetSeq: int}
      *
-     * @throws \RuntimeException when the target turn does not exist,
-     *                           no events are found, or persistence fails (CAS conflict)
+     * @throws RunStateDuplicateSequenceReplayException when persisted event history contains duplicate sequence numbers
+     * @throws \RuntimeException                        when the target turn does not exist, no events are found,
+     *                                                  rebuild fails, or persistence fails (CAS conflict)
      */
     public function rewind(string $runId, int $targetTurnNo): array
     {
@@ -77,7 +78,7 @@ final readonly class SessionRewindService implements RunRewindServiceInterface
 
             $duplicateSeqs = $this->replayEventPreparer->duplicateSequences($events);
             if ([] !== $duplicateSeqs) {
-                throw new \RuntimeException(\sprintf('Cannot rewind run %s: event history contains duplicate sequence number(s): %s. Run /repair first.', $runId, implode(', ', array_map('strval', \array_slice($duplicateSeqs, 0, 10)))));
+                throw new RunStateDuplicateSequenceReplayException(\sprintf('Cannot rewind run %s: event history contains %d duplicate sequence number(s): %s.', $runId, \count($duplicateSeqs), implode(', ', array_map('strval', \array_slice($duplicateSeqs, 0, 10)))));
             }
 
             $currentLeafTurnNo = $tree->currentLeafTurnNo;
@@ -92,10 +93,6 @@ final readonly class SessionRewindService implements RunRewindServiceInterface
                 'reason' => 'rewind',
             ];
 
-            if (!$this->eventStore instanceof SequencedEventStoreInterface) {
-                throw new \RuntimeException(\sprintf('Cannot rewind run %s: sequenced event store is required.', $runId));
-            }
-
             $leafSetEvent = new RunEvent(
                 runId: $runId,
                 seq: 0,
@@ -105,7 +102,7 @@ final readonly class SessionRewindService implements RunRewindServiceInterface
                 createdAt: new \DateTimeImmutable(),
             );
 
-            $persistedLeafSet = $this->eventStore->appendWithNextSeq($leafSetEvent);
+            $persistedLeafSet = $this->eventStore->append($leafSetEvent);
             $newSeq = $persistedLeafSet->seq;
 
             $replayResult = $this->runStateRebuilder->rebuildForLeaf($state, $runId, $targetTurnNo);

@@ -5,11 +5,10 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Agent\Artifact;
 
 use Ineersa\AgentCore\Contract\EventStoreInterface;
-use Ineersa\AgentCore\Contract\RunSequenceAllocatorInterface;
-use Ineersa\AgentCore\Contract\SequencedEventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
 use Ineersa\AgentCore\Schema\SchemaVersion;
+use Ineersa\CodingAgent\Session\Contract\RunSequenceAllocatorInterface;
 use Ineersa\CodingAgent\Session\EventLogMaxSeqBootstrapReader;
 use Ineersa\CodingAgent\Session\FileRunSequenceAllocator;
 use Psr\Log\LoggerInterface;
@@ -17,8 +16,27 @@ use Symfony\Component\Lock\LockFactory;
 
 /**
  * Parent-scoped EventStoreInterface implementation for child agent runs.
+ *
+ * Writes and reads RunEvent entries at the parent-scoped artifact path:
+ *
+ *   .hatfield/sessions/<parentRunId>/artifacts/agents/<artifactId>/events.jsonl
+ *
+ * Sequence allocation uses {@see FileRunSequenceAllocator::COUNTER_BASENAME} next to that log.
+ * Uses Symfony Lock via the injected {@see LockFactory} (typically flock-backed) keyed by the child agentRunId to
+ * protect concurrent appends.  Reuses EventPayloadNormalizer for
+ * canonical event serialization.
+ *
+ * Does NOT create top-level .hatfield/sessions/<agentRunId>/
+ * directories — child events are entirely parent-scoped.
+ *
+ * Validates that embedded runId in each event matches the bound
+ * agentRunId. Mismatches throw on append.  allFor() only returns
+ * events for the bound agentRunId; other run IDs return an empty list.
+ *
+ * Path resolution and validation are delegated to
+ * {@see AgentArtifactPathResolver}.
  */
-final class AgentChildRunEventStore implements SequencedEventStoreInterface
+final class AgentChildRunEventStore implements EventStoreInterface
 {
     public function __construct(
         private readonly AgentArtifactPathResolver $pathResolver,
@@ -35,24 +53,7 @@ final class AgentChildRunEventStore implements SequencedEventStoreInterface
         $this->pathResolver->validatePathComponent($artifactId, 'artifactId');
     }
 
-    public function append(RunEvent $event): void
-    {
-        if ($event->runId !== $this->agentRunId) {
-            throw new \RuntimeException(\sprintf('RunEvent integrity error: embedded runId "%s" does not match bound agentRunId "%s".', $event->runId, $this->agentRunId));
-        }
-
-        $path = $this->eventsPath();
-        $lock = $this->lockFactory->createLock("hatfield-run-{$this->agentRunId}");
-        $lock->acquire(true);
-
-        try {
-            $this->writeEventLocked($path, $event);
-        } finally {
-            $lock->release();
-        }
-    }
-
-    public function appendWithNextSeq(RunEvent $event): RunEvent
+    public function append(RunEvent $event): RunEvent
     {
         if ($event->runId !== $this->agentRunId) {
             throw new \RuntimeException(\sprintf('RunEvent integrity error: embedded runId "%s" does not match bound agentRunId "%s".', $event->runId, $this->agentRunId));
@@ -84,10 +85,16 @@ final class AgentChildRunEventStore implements SequencedEventStoreInterface
         }
     }
 
-    public function appendManyWithNextSeq(array $events): array
+    public function appendMany(array $events): array
     {
         if ([] === $events) {
             return [];
+        }
+
+        foreach ($events as $event) {
+            if ($event->runId !== $this->agentRunId) {
+                throw new \RuntimeException(\sprintf('RunEvent integrity error: embedded runId "%s" does not match bound agentRunId "%s".', $event->runId, $this->agentRunId));
+            }
         }
 
         $path = $this->eventsPath();
@@ -104,10 +111,6 @@ final class AgentChildRunEventStore implements SequencedEventStoreInterface
             $persisted = [];
 
             foreach ($events as $index => $event) {
-                if ($event->runId !== $this->agentRunId) {
-                    throw new \RuntimeException(\sprintf('RunEvent integrity error: embedded runId "%s" does not match bound agentRunId "%s".', $event->runId, $this->agentRunId));
-                }
-
                 $persistedEvent = new RunEvent(
                     runId: $event->runId,
                     seq: $seqBlock[$index],
@@ -123,13 +126,6 @@ final class AgentChildRunEventStore implements SequencedEventStoreInterface
             return $persisted;
         } finally {
             $lock->release();
-        }
-    }
-
-    public function appendMany(array $events): void
-    {
-        foreach ($events as $event) {
-            $this->append($event);
         }
     }
 
@@ -214,7 +210,7 @@ final class AgentChildRunEventStore implements SequencedEventStoreInterface
 
         $written = file_put_contents($path, $json."\n", \FILE_APPEND | \LOCK_EX);
         if (false === $written) {
-            throw new \RuntimeException(\sprintf('Failed to append to events.jsonl for child run "%s".', $this->agentRunId));
+            throw new \RuntimeException(\sprintf('Failed to append to events.jsonl for child run "%s" at seq %d.', $this->agentRunId, $event->seq));
         }
     }
 

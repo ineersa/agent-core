@@ -4,13 +4,12 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Picker;
 
-use Ineersa\CodingAgent\Config\AppConfig;
+use Ineersa\CodingAgent\Runtime\Contract\ChildAgentEventsPathResolverInterface;
 use Ineersa\CodingAgent\Runtime\Contract\ChildRunTranscriptSnapshotDTO;
 use Ineersa\CodingAgent\Runtime\Contract\ChildRunTranscriptSnapshotProviderInterface;
-use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
-use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\Tui\Export\SessionEventsExportService;
 use Ineersa\Tui\Footer\ContextUsageFormatter;
+use Ineersa\Tui\Listener\FooterStateInitializer;
 use Ineersa\Tui\Runtime\SubagentLiveChildDTO;
 use Ineersa\Tui\Runtime\SubagentLiveChildViewPoller;
 use Ineersa\Tui\Runtime\SubagentLiveMainReturn;
@@ -32,26 +31,25 @@ use Symfony\Component\Tui\Widget\TextWidget;
 final class SubagentLivePickerController
 {
     private ?PickerOverlay $overlay = null;
+    private ?TextWidget $headerWidget = null;
     private ?Tui $tui = null;
     private ?ChatScreen $screen = null;
     private ?TuiSessionState $state = null;
 
-    /** @var ?callable(RuntimeEvent): void */
+    /** @var ?callable(\Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent): void */
     private $onHumanInputRequested;
 
-    /** @var ?callable(RuntimeEvent): void */
+    /** @var ?callable(\Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent): void */
     private $onToolQuestionRequested;
 
-    /** @var ?callable(RuntimeEvent): void */
+    /** @var ?callable(\Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent): void */
     private $onToolTerminal;
 
     public function __construct(
         private readonly SubagentLiveChildViewPoller $childPoller,
-        private readonly HatfieldSessionStore $sessionStore,
-        private readonly SessionEventsExportService $exportService,
-        private readonly AppConfig $appConfig,
         private readonly ChildRunTranscriptSnapshotProviderInterface $childSnapshotProvider,
-        private readonly ?ContextUsageFormatter $contextUsageFormatter = null,
+        private readonly ChildAgentEventsPathResolverInterface $childEventsPathResolver,
+        private readonly SessionEventsExportService $exportService,
     ) {
     }
 
@@ -97,24 +95,35 @@ final class SubagentLivePickerController
         return $this->overlay?->isOpen() ?? false;
     }
 
+    public function refreshPickerFeedbackIfOpen(): void
+    {
+        $state = $this->state;
+        $screen = $this->screen;
+        if (null === $state || null === $screen || !$this->isOpen()) {
+            return;
+        }
+
+        $feedback = $state->subagentLiveView->pickerFeedbackMessage;
+        if (null === $feedback || '' === trim($feedback)) {
+            return;
+        }
+
+        if ($feedback === $state->subagentLiveView->lastPickerFeedbackWorkingMessage) {
+            return;
+        }
+
+        $this->applyPickerFeedbackToUi($feedback, requestRender: true);
+    }
+
     public function closePicker(bool $requestRender = true): void
     {
         if (null !== $this->state) {
             $this->state->subagentLiveView->pickerFeedbackMessage = null;
+            $this->state->subagentLiveView->lastPickerFeedbackWorkingMessage = null;
         }
         $this->overlay?->close($requestRender);
         $this->overlay = null;
-    }
-
-    private function formatPickerContextSuffix(SubagentLiveChildDTO $child): ?string
-    {
-        $formatter = $this->contextUsageFormatter ?? new ContextUsageFormatter($this->appConfig);
-        $formatted = $formatter->format($child->model, $child->latestInputTokens);
-        if (null === $formatted) {
-            return null;
-        }
-
-        return $formatted['text'];
+        $this->headerWidget = null;
     }
 
     /**
@@ -122,7 +131,7 @@ final class SubagentLivePickerController
      *
      * @return list<array{value: string, label: string}>
      */
-    private function buildItems(array $children, TuiTheme $theme, int $selectedIndex = -1): array
+    public static function buildItems(array $children, TuiTheme $theme, int $selectedIndex = -1): array
     {
         $items = [];
         foreach ($children as $i => $child) {
@@ -133,9 +142,13 @@ final class SubagentLivePickerController
             $statusLabel = $child->needsAttention() ? '⚠ needs input' : $child->statusLabel();
             $runShort = \strlen($child->agentRunId) > 12 ? substr($child->agentRunId, 0, 12).'…' : $child->agentRunId;
             $label = \sprintf('%s [%s] %s run:%s — %s', $child->agentName, $statusLabel, $child->artifactId, $runShort, $task);
-            $ctxSuffix = $this->formatPickerContextSuffix($child);
-            if (null !== $ctxSuffix) {
-                $label .= ' '.$ctxSuffix;
+            $ctxFormatted = ContextUsageFormatter::format($child->model, $child->latestInputTokens, $child->contextWindow);
+            if (null !== $ctxFormatted) {
+                $suffix = $ctxFormatted->text;
+                if (null !== $child->model && '' !== $child->model) {
+                    $suffix .= ' '.FooterStateInitializer::shortModelName($child->model);
+                }
+                $label .= ' · '.$suffix;
             }
             if ($i === $selectedIndex) {
                 $label = $theme->color(ThemeColorEnum::Accent, $label);
@@ -170,8 +183,10 @@ final class SubagentLivePickerController
         $theme = $screen->theme();
         $header = new TextWidget(
             text: $this->buildPickerHeaderText($theme),
-            truncate: true,
+            // Full export paths must stay inspectable in the picker header (may wrap on narrow terminals).
+            truncate: false,
         );
+        $this->headerWidget = $header;
 
         $kb = new Keybindings([
             'select_up' => [Key::UP],
@@ -182,7 +197,7 @@ final class SubagentLivePickerController
             'select_cancel' => [Key::ESCAPE, Key::ctrl('c')],
         ]);
 
-        $items = $this->buildItems($children, $theme, selectedIndex: 0);
+        $items = self::buildItems($children, $theme, selectedIndex: 0);
         $listWidget = new SelectListWidget(
             items: $items,
             maxVisible: 10,
@@ -235,7 +250,7 @@ final class SubagentLivePickerController
 
     private function buildPickerHeaderText(TuiTheme $theme): string
     {
-        $base = 'Agents live — Enter live view, e export selected, d dismiss finished, Ctrl+\ main, Esc cancel';
+        $base = 'Agents live — Enter live view, e export, d dismisses finished, Ctrl+\ main, Esc cancel';
         $feedback = $this->state?->subagentLiveView->pickerFeedbackMessage;
         if (null === $feedback || '' === trim($feedback)) {
             return $theme->muted($base);
@@ -244,47 +259,37 @@ final class SubagentLivePickerController
         return $theme->muted($base.' | '.$feedback);
     }
 
-    private function refreshPickerHeader(): void
-    {
-        $overlay = $this->overlay;
-        if (null === $overlay || !$overlay->isOpen()) {
-            return;
-        }
-
-        $screen = $this->screen;
-        if (null === $screen) {
-            return;
-        }
-
-        $container = new \ReflectionProperty(PickerOverlay::class, 'container');
-        $containerWidget = $container->getValue($overlay);
-        if (!$containerWidget instanceof \Symfony\Component\Tui\Widget\ContainerWidget) {
-            return;
-        }
-
-        $children = $containerWidget->all();
-        if ([] === $children) {
-            return;
-        }
-
-        $first = $children[0];
-        if ($first instanceof TextWidget) {
-            $first->setText($this->buildPickerHeaderText($screen->theme()));
-        }
-    }
-
     private function showPickerFeedback(string $message): void
     {
         $state = $this->state;
-        $screen = $this->screen;
-        if (null === $state || null === $screen) {
+        if (null === $state) {
             return;
         }
 
         $state->subagentLiveView->pickerFeedbackMessage = $message;
+        $state->subagentLiveView->lastPickerFeedbackWorkingMessage = null;
+        $this->applyPickerFeedbackToUi($message, requestRender: true);
+    }
+
+    private function applyPickerFeedbackToUi(string $message, bool $requestRender): void
+    {
+        $state = $this->state;
+        $screen = $this->screen;
+        if (null === $state || null === $screen || !$this->isOpen()) {
+            return;
+        }
+
+        $state->subagentLiveView->lastPickerFeedbackWorkingMessage = $message;
         $screen->setWorkingMessage($message);
-        $this->refreshPickerHeader();
-        $screen->requestRender();
+
+        $header = $this->headerWidget;
+        if (null !== $header) {
+            $header->setText($this->buildPickerHeaderText($screen->theme()));
+        }
+
+        if ($requestRender) {
+            $screen->requestRender(true);
+        }
     }
 
     private function exportSelected(
@@ -314,9 +319,14 @@ final class SubagentLivePickerController
             return;
         }
 
-        // Intentionally mirrors AgentArtifactPathsDTO child events convention; TuiPicker cannot depend on CodingAgent artifact DTOs.
-        $relative = "artifacts/agents/{$artifactId}/events.jsonl";
-        $eventsPath = $this->sessionStore->resolveSessionsBasePath().'/'.$parentSessionId.'/'.$relative;
+        try {
+            $eventsPath = $this->childEventsPathResolver->eventsPath($parentSessionId, $artifactId);
+        } catch (\InvalidArgumentException $e) {
+            $this->showPickerFeedback($e->getMessage());
+
+            return;
+        }
+
         $outputPath = getcwd().'/hatfield-child-'.$artifactId.'.html';
         $title = \sprintf('Child %s (%s)', $child->agentName, $artifactId);
 
@@ -360,11 +370,10 @@ final class SubagentLivePickerController
         }
 
         if ($child->isRunning()) {
-            $screen->setWorkingMessage(\sprintf(
+            $this->showPickerFeedback(\sprintf(
                 'Cannot remove active subagent %s; wait for completion or cancel it first.',
                 $child->agentName,
             ));
-            $screen->requestRender(true);
 
             return;
         }
@@ -405,12 +414,10 @@ final class SubagentLivePickerController
             }
         }
         $idx = min($idx, \count($children) - 1);
-        $listWidget->setItems($this->buildItems($children, $theme, selectedIndex: $idx));
+        $listWidget->setItems(self::buildItems($children, $theme, selectedIndex: $idx));
         $listWidget->setSelectedIndex($idx);
 
-        $msg = \sprintf('Removed %s from /agents-live.', $removed->agentName);
-        $screen->setWorkingMessage($msg);
-        $screen->requestRender(true);
+        $this->showPickerFeedback(\sprintf('Removed %s from /agents-live.', $removed->agentName));
     }
 
     private function enterLiveView(SubagentLiveChildDTO $child, TuiSessionState $state, ChatScreen $screen): void
@@ -419,10 +426,6 @@ final class SubagentLivePickerController
         $hasCachedTranscript = null !== $cached && [] !== $cached['transcript'];
 
         $state->subagentLiveView->enter($child);
-
-        $ingestNestedCatalog = static function (RuntimeEvent $event) use ($state): void {
-            $state->subagentLiveCatalog->ingestNestedProgressFromChildRunEvent($event);
-        };
 
         if ($hasCachedTranscript) {
             $cachedReplay = $state->subagentLiveView->childReplayEvents;
@@ -433,7 +436,6 @@ final class SubagentLivePickerController
                     $cachedReplay,
                     $state->subagentLiveView->childLastSeq,
                 ),
-                onCatalogIngest: $ingestNestedCatalog,
             );
         } else {
             $this->childPoller->resetProjection();
@@ -449,14 +451,13 @@ final class SubagentLivePickerController
                     onHumanInputRequested: $this->onHumanInputRequested,
                     onToolQuestionRequested: $this->onToolQuestionRequested,
                     onToolTerminal: $this->onToolTerminal,
-                    onCatalogIngest: $ingestNestedCatalog,
                 );
             }
         }
 
         $screen->setTranscriptBlocks($state->subagentLiveView->childTranscript);
         $screen->syncQueuedUserMessages($state->subagentLiveView->childQueuedUserMessages);
-        $screen->setWorkingMessage($child->isRunning() ? 'Child agent working...' : null);
+        $screen->setWorkingMessage($child->isRunning() ? 'Child agent working...' : 'Child agent idle');
         $screen->requestRender(true);
     }
 }

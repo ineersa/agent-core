@@ -333,6 +333,48 @@ final class SubagentTranscriptCardBuilder
         return \sprintf('%dm%02ds', $minutes, $rem);
     }
 
+    /**
+     * @param array<string, mixed> $progress
+     */
+    private function formatContextUsageLine(array $progress): ?string
+    {
+        $model = $this->optionalModelString($progress);
+        $latest = $this->resolveLatestInputTokens($progress);
+        $window = $this->intOrNull($progress, 'context_window') ?? 0;
+        $formatted = ContextUsageFormatter::format($model, $latest, $window);
+        if (null === $formatted) {
+            return null;
+        }
+
+        return 'CTX '.$formatted->text;
+    }
+
+    /**
+     * @param array<string, mixed> $progress
+     */
+    private function resolveLatestInputTokens(array $progress): int
+    {
+        $latest = $this->intOrNull($progress, 'latest_input_tokens');
+        if (null !== $latest && $latest > 0) {
+            return $latest;
+        }
+
+        return 0;
+    }
+
+    /**
+     * @param array<string, mixed> $progress
+     */
+    private function optionalModelString(array $progress): ?string
+    {
+        $model = $this->string($progress, 'model', '');
+        if ('' === $model) {
+            return null;
+        }
+
+        return $model;
+    }
+
     private function retrieveGuidance(string $status): string
     {
         if ('completed' === $status) {

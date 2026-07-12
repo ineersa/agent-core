@@ -19,6 +19,7 @@ final readonly class SubagentChildProgressSummary
         public int $toolCount = 0,
         public int $inputTokens = 0,
         public int $latestInputTokens = 0,
+        public int $contextWindow = 0,
         public int $outputTokens = 0,
         public int $reasoningTokens = 0,
         public int $totalTokens = 0,
@@ -52,6 +53,9 @@ final readonly class SubagentChildProgressSummary
         }
         if (null !== $this->model && '' !== $this->model) {
             $fields['model'] = $this->model;
+        }
+        if ($this->contextWindow > 0) {
+            $fields['context_window'] = $this->contextWindow;
         }
         if (null !== $this->provider && '' !== $this->provider) {
             $fields['provider'] = $this->provider;

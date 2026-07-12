@@ -11,7 +11,6 @@ use Ineersa\Tui\Question\QuestionCoordinator;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
 use Ineersa\Tui\Runtime\RuntimeEventPoller;
 use Ineersa\Tui\Runtime\SubagentLiveAttention;
-use Ineersa\Tui\Runtime\SubagentLiveBackgroundChildPoller;
 use Ineersa\Tui\Runtime\SubagentLiveChildViewPoller;
 use Ineersa\Tui\Runtime\SubagentLiveStatusEnum;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
@@ -34,13 +33,12 @@ use Ineersa\Tui\Runtime\TuiSessionState;
 final class TickPollListener implements TuiListenerRegistrar
 {
     public function __construct(
+        private readonly SubagentLivePickerController $subagentLivePickerController,
         private readonly RuntimeEventPoller $poller,
         private readonly SubagentLiveChildViewPoller $subagentLiveChildPoller,
-        private readonly SubagentLiveBackgroundChildPoller $subagentLiveBackgroundChildPoller,
         private readonly QuestionCoordinator $questionCoordinator,
         private readonly QuestionController $questionController,
         private readonly RuntimeQuestionEventHandler $runtimeQuestionEventHandler,
-        private readonly SubagentLivePickerController $subagentLivePicker,
     ) {
     }
 
@@ -53,20 +51,19 @@ final class TickPollListener implements TuiListenerRegistrar
         $questionCoordinator = $this->questionCoordinator;
         $questionController = $this->questionController;
         $subagentLiveChildPoller = $this->subagentLiveChildPoller;
-        $subagentLiveBackgroundChildPoller = $this->subagentLiveBackgroundChildPoller;
         $runtimeQuestionEventHandler = $this->runtimeQuestionEventHandler;
-        $subagentLivePicker = $this->subagentLivePicker;
+        $subagentLivePickerController = $this->subagentLivePickerController;
 
         // Wire the question controller with TUI runtime references
         $questionController->setRuntimeRefs($context, $screen);
 
-        $context->ticks->add(static function () use ($poller, $state, $client, $screen, $questionCoordinator, $questionController, $subagentLiveChildPoller, $subagentLiveBackgroundChildPoller, $runtimeQuestionEventHandler, $subagentLivePicker): ?bool {
-            $onHitl = static function (RuntimeEvent $event) use ($client, $questionCoordinator, $state, $screen, $runtimeQuestionEventHandler): void {
-                $runtimeQuestionEventHandler->handleHumanInputRequested($event, $client, $questionCoordinator, $state, $screen);
+        $context->ticks->add(static function () use ($poller, $state, $client, $screen, $questionCoordinator, $questionController, $subagentLiveChildPoller, $runtimeQuestionEventHandler, $subagentLivePickerController): ?bool {
+            $onHitl = static function (RuntimeEvent $event) use ($client, $questionCoordinator, $runtimeQuestionEventHandler): void {
+                $runtimeQuestionEventHandler->handleHumanInputRequested($event, $client, $questionCoordinator);
             };
 
-            $onToolQuestion = static function (RuntimeEvent $event) use ($client, $questionCoordinator, $state, $screen, $runtimeQuestionEventHandler): void {
-                $runtimeQuestionEventHandler->handleToolQuestionRequested($event, $client, $questionCoordinator, $state, $screen);
+            $onToolQuestion = static function (RuntimeEvent $event) use ($client, $questionCoordinator, $runtimeQuestionEventHandler): void {
+                $runtimeQuestionEventHandler->handleToolQuestionRequested($event, $client, $questionCoordinator);
             };
 
             $onToolTerminal = static function (RuntimeEvent $event) use ($questionCoordinator, $questionController, $runtimeQuestionEventHandler): void {
@@ -75,32 +72,9 @@ final class TickPollListener implements TuiListenerRegistrar
 
             $liveActive = $state->subagentLiveView->active;
 
-            if (!$liveActive) {
-                $subagentLiveBackgroundChildPoller->poll(
-                    $state,
-                    $client,
-                    $screen,
-                    onHumanInputRequested: static function (RuntimeEvent $event) use ($client, $questionCoordinator, $state, $screen, $runtimeQuestionEventHandler): void {
-                        $runtimeQuestionEventHandler->handleHumanInputRequested($event, $client, $questionCoordinator, $state, $screen);
-                    },
-                    onToolQuestionRequested: static function (RuntimeEvent $event) use ($client, $questionCoordinator, $state, $screen, $runtimeQuestionEventHandler): void {
-                        $runtimeQuestionEventHandler->handleToolQuestionRequested($event, $client, $questionCoordinator, $state, $screen);
-                    },
-                    onToolTerminal: static function (RuntimeEvent $event) use ($questionCoordinator, $questionController, $runtimeQuestionEventHandler): void {
-                        $runtimeQuestionEventHandler->handleToolTerminal($event, $questionCoordinator, $questionController);
-                    },
-                );
-            }
-
             // Child-first on the shared JSONL pipe: events() re-buffers non-matching
             // run ids; polling the child run before the parent reduces child latency.
             if ($liveActive) {
-                $subagentLiveBackgroundChildPoller->pollCatalogIngest($state, $client);
-
-                $ingestNestedCatalog = static function (RuntimeEvent $event) use ($state): void {
-                    $state->subagentLiveCatalog->ingestNestedProgressFromChildRunEvent($event);
-                };
-
                 $childBlocks = $subagentLiveChildPoller->poll(
                     $state->subagentLiveView,
                     $client,
@@ -113,7 +87,6 @@ final class TickPollListener implements TuiListenerRegistrar
                     onToolTerminal: static function (RuntimeEvent $event) use ($questionCoordinator, $questionController, $runtimeQuestionEventHandler): void {
                         $runtimeQuestionEventHandler->handleToolTerminal($event, $questionCoordinator, $questionController);
                     },
-                    onCatalogIngest: $ingestNestedCatalog,
                 );
                 // Only repaint transcript when new child blocks arrive; cached blocks stay on screen.
                 if (null !== $childBlocks) {
@@ -219,33 +192,35 @@ final class TickPollListener implements TuiListenerRegistrar
             // stale static cache would skip the authoritative tick update,
             // permanently leaving a stuck working message.
             if ($liveActive) {
-                $liveWorking = match ($state->subagentLiveView->childActivity) {
+                $parentMsg = match (true) {
+                    RunActivityStateEnum::Cancelling === $state->activity => 'Cancelling...',
+                    RunActivityStateEnum::Idle === $state->activity || $state->activity->isTerminal() => null,
+                    null === $state->handle && $state->activity->isActive() => null,
+                    default => 'Working...',
+                };
+                $childMsg = match ($state->subagentLiveView->childActivity) {
                     RunActivityStateEnum::WaitingHuman => 'Child waiting for your input...',
                     RunActivityStateEnum::Cancelling => 'Child cancelling...',
-                    RunActivityStateEnum::Idle,
-                    RunActivityStateEnum::Completed,
-                    RunActivityStateEnum::Failed,
-                    RunActivityStateEnum::Cancelled => null,
                     default => $state->subagentLiveView->childActivity->isActive()
                         ? 'Child agent working...'
-                        : null,
+                        : 'Child agent idle',
                 };
+                $liveWorking = null !== $parentMsg
+                    ? $parentMsg.' | '.$childMsg
+                    : $childMsg;
+                // Live-view-only cache: generic tick path avoids static last-value (see comment above).
                 if ($liveWorking !== $state->subagentLiveView->lastLiveWorkingMessage) {
                     $state->subagentLiveView->lastLiveWorkingMessage = $liveWorking;
                     $screen->setWorkingMessage($liveWorking);
                 }
-                $screen->setWorkingVisible(null !== $liveWorking);
 
                 SubagentLiveAttention::refreshAttentionFooter($state, $screen);
 
                 return self::shouldKeepActiveRuntimeTicks($state, true) ? true : null;
             }
 
-            if ($subagentLivePicker->isOpen()) {
-                $pickerFeedback = $state->subagentLiveView->pickerFeedbackMessage;
-                if (null !== $pickerFeedback && '' !== trim($pickerFeedback)) {
-                    $screen->setWorkingMessage($pickerFeedback);
-                }
+            if ($subagentLivePickerController->isOpen()) {
+                $subagentLivePickerController->refreshPickerFeedbackIfOpen();
 
                 SubagentLiveAttention::syncMainAttention($state, $screen);
 

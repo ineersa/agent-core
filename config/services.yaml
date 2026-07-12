@@ -35,6 +35,8 @@ services:
     autowire: true
     autoconfigure: true
 
+  Ineersa\Tui\ImagePaste\ClipboardImageReaderInterface: '@Ineersa\Tui\ImagePaste\ClipboardImageReader'
+
   _instanceof:
     Ineersa\Tui\Listener\TuiListenerRegistrar:
       tags: ['app.tui_listener']
@@ -512,6 +514,13 @@ services:
   Ineersa\CodingAgent\Runtime\Contract\ChildRunTranscriptSnapshotProviderInterface:
     alias: Ineersa\CodingAgent\Session\ChildRunTranscriptSnapshotProvider
 
+  Ineersa\CodingAgent\Session\ChildAgentEventsPathResolver: ~
+
+  Ineersa\CodingAgent\Runtime\Contract\ChildAgentEventsPathResolverInterface:
+    alias: Ineersa\CodingAgent\Session\ChildAgentEventsPathResolver
+
+  Ineersa\Tui\Export\SessionEventsExportService: ~
+
   Ineersa\AgentCore\Contract\TurnTree\TurnTreeProjectorInterface:
     alias: Ineersa\CodingAgent\Session\TurnTree\TurnTreeProjectorContractAdapter
 
@@ -549,6 +558,10 @@ services:
   Ineersa\AgentCore\Application\Handler\ExecuteLlmStepWorker:
     arguments:
       $defaultModel: '%app.default_model%'
+      $runModelResolver: '@Ineersa\AgentCore\Contract\Model\RunModelResolverInterface'
+
+  Ineersa\AgentCore\Contract\Model\RunModelResolverInterface:
+    alias: Ineersa\CodingAgent\Compaction\ModelSelectionActiveModelResolver
 
 
   Ineersa\AgentCore\Application\Pipeline\AdvanceRunHandler:
@@ -889,7 +902,6 @@ services:
   Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient:
     arguments:
       $mcpDispatcher: '@Ineersa\CodingAgent\Mcp\McpSessionLifecycleDispatcher'
-      $sequencedEventStore: '@Ineersa\AgentCore\Contract\SequencedEventStoreInterface'
 
   # ─── MCP-04 / MCP-05 Dynamic MCP tool registration + invocation ────
 
@@ -938,33 +950,15 @@ services:
   # SubagentExecutionService needs two RunStoreInterface bindings:
   # $runStore auto-wires to the child-aware decorator (child runs), $parentRunStore to
   # SessionRunStore (parent run state for prompt/metadata extraction).
-  # $eventStore auto-wires to the ChildAwareEventStore for progress events.
+  # Parent-session progress events use CommittedRunEventAppender → EventStoreInterface
+  # (StreamingCommittedRuntimeEventStore → ChildAwareEventStore) for streaming after commit.
+  # so sequenced commits emit mapped RuntimeEvents on consumer stdout for the controller/TUI.
   Ineersa\CodingAgent\Agent\Execution\SubagentExecutionService:
     arguments:
       $parentRunStore: '@Ineersa\CodingAgent\Session\SessionRunStore'
+      $committedRunEventAppender: '@Ineersa\CodingAgent\Session\CommittedRunEventAppender'
 
 
-
-  Ineersa\AgentCore\Contract\RunSequenceAllocatorInterface:
-    alias: Ineersa\CodingAgent\Session\FileRunSequenceAllocator
-
-  Ineersa\AgentCore\Contract\SequencedEventStoreInterface:
-    alias: Ineersa\AgentCore\Contract\EventStoreInterface
-
-  Ineersa\CodingAgent\Session\FileRunSequenceAllocator: ~
-
-  Ineersa\CodingAgent\Session\EventLogMaxSeqBootstrapReader: ~
-
-  Ineersa\CodingAgent\Runtime\Controller\CommandHandler\ExecuteShellToolCallWorker:
-    arguments:
-      $eventStore: '@Ineersa\AgentCore\Contract\EventStoreInterface'
-
-  Ineersa\CodingAgent\Session\SequencedRunEventAppender:
-    arguments:
-      $eventStore: '@Ineersa\AgentCore\Contract\EventStoreInterface'
-      $runStore: '@Ineersa\CodingAgent\Session\SessionRunStore'
-
-  Ineersa\CodingAgent\Session\Repair\SessionRepairService: ~
 
   Ineersa\CodingAgent\Agent\Execution\ForkExecutionService:
     arguments:
@@ -982,6 +976,19 @@ services:
 
   # ChildAwareEventStore — delegates EventStoreInterface between parent-scoped
   # SessionRunEventStore (parent runs) and AgentChildRunEventStore (child runs).
+
+  Ineersa\CodingAgent\Session\Contract\RunSequenceAllocatorInterface:
+    alias: Ineersa\CodingAgent\Session\FileRunSequenceAllocator
+
+  Ineersa\CodingAgent\Session\FileRunSequenceAllocator: ~
+
+  Ineersa\CodingAgent\Session\EventLogMaxSeqBootstrapReader: ~
+
+  Ineersa\CodingAgent\Session\CommittedRunEventAppender:
+    arguments:
+      $eventStore: '@Ineersa\AgentCore\Contract\EventStoreInterface'
+      $runStore: '@Ineersa\CodingAgent\Session\SessionRunStore'
+
   Ineersa\CodingAgent\Agent\Artifact\ChildAwareEventStore:
     arguments:
       $parentStore: '@Ineersa\CodingAgent\Session\SessionRunEventStore'

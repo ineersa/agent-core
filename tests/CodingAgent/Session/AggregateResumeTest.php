@@ -11,6 +11,7 @@ use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
+use Ineersa\CodingAgent\Session\FileRunSequenceAllocator;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\SessionRunEventStore;
 use Ineersa\CodingAgent\Session\SessionRunStore;
@@ -87,7 +88,7 @@ final class AggregateResumeTest extends TestCase
         $nullLogger = new \Psr\Log\NullLogger();
 
         $runStore1 = new SessionRunStore($this->hatfieldSessionStore, $serializer1, $lockFactory1);
-        $eventStore1 = new SessionRunEventStore($this->hatfieldSessionStore, $normalizer1, $lockFactory1, $nullLogger);
+        $eventStore1 = new SessionRunEventStore($this->hatfieldSessionStore, $normalizer1, $lockFactory1, $nullLogger, new FileRunSequenceAllocator());
 
         // Create run state
         $initialState = new RunState(runId: $runId, status: RunStatus::Queued, version: 1);
@@ -110,7 +111,7 @@ final class AggregateResumeTest extends TestCase
         $normalizer2 = new EventPayloadNormalizer();
 
         $runStore2 = new SessionRunStore($this->hatfieldSessionStore, $serializer2, $lockFactory2);
-        $eventStore2 = new SessionRunEventStore($this->hatfieldSessionStore, $normalizer2, $lockFactory2, $nullLogger);
+        $eventStore2 = new SessionRunEventStore($this->hatfieldSessionStore, $normalizer2, $lockFactory2, $nullLogger, new FileRunSequenceAllocator());
 
         // Phase 4: Verify state survives
         $loadedState = $runStore2->get($runId);

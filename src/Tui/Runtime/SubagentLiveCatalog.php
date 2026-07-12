@@ -89,44 +89,8 @@ final class SubagentLiveCatalog
             lastActivityAtMs: (int) (microtime(true) * 1000),
             model: $existing->model,
             latestInputTokens: $existing->latestInputTokens,
+            contextWindow: $existing->contextWindow,
         );
-    }
-
-    /**
-     * Ingest nested subagent_progress from a child run stream (e.g. fork run events).
-     *
-     * Parent tool_execution_update on the parent run id still uses ingestRuntimeEvent().
-     */
-    public function ingestNestedProgressFromChildRunEvent(RuntimeEvent $event): void
-    {
-        if (!str_contains($event->type, 'tool_execution')) {
-            return;
-        }
-
-        $progress = $event->payload['subagent_progress'] ?? null;
-        if (!\is_array($progress)) {
-            return;
-        }
-
-        $now = (int) (microtime(true) * 1000);
-        $mode = (string) ($progress['mode'] ?? 'single');
-
-        if ('parallel' === $mode) {
-            $children = $progress['children'] ?? [];
-            if (!\is_array($children)) {
-                return;
-            }
-            foreach ($children as $child) {
-                if (!\is_array($child)) {
-                    continue;
-                }
-                $this->upsertFromProgressRow($child, $now);
-            }
-
-            return;
-        }
-
-        $this->upsertFromProgressRow($progress, $now);
     }
 
     public function ingestRuntimeEvent(RuntimeEvent $event): void
@@ -176,6 +140,10 @@ final class SubagentLiveCatalog
         $status = SubagentLiveStatusEnum::fromProgressString((string) ($row['status'] ?? 'running'));
         $taskSummary = trim((string) ($row['task_summary'] ?? ''));
 
+        $model = $this->optionalString($row['model'] ?? null);
+        $latestInputTokens = $this->optionalPositiveInt($row['latest_input_tokens'] ?? null);
+        $contextWindow = $this->optionalPositiveInt($row['context_window'] ?? null);
+
         if ('' === $agentRunId) {
             $existing = $this->byArtifactId[$artifactId] ?? null;
             $agentRunId = null !== $existing ? $existing->agentRunId : '';
@@ -191,13 +159,14 @@ final class SubagentLiveCatalog
             return;
         }
 
-        $model = $this->optionalString($row, 'model') ?? ($existing->model ?? null);
-        $latestInput = $this->optionalInt($row, 'latest_input_tokens');
-        if (null === $latestInput || $latestInput <= 0) {
-            $latestInput = $this->optionalInt($row, 'input_tokens');
+        if (null === $model && null !== $existing) {
+            $model = $existing->model;
         }
-        if (null === $latestInput || $latestInput <= 0) {
-            $latestInput = $existing->latestInputTokens ?? 0;
+        if (0 === $latestInputTokens && null !== $existing) {
+            $latestInputTokens = $existing->latestInputTokens;
+        }
+        if (0 === $contextWindow && null !== $existing) {
+            $contextWindow = $existing->contextWindow;
         }
 
         $this->byArtifactId[$artifactId] = new SubagentLiveChildDTO(
@@ -208,29 +177,28 @@ final class SubagentLiveCatalog
             taskSummary: $taskSummary,
             lastActivityAtMs: $now,
             model: $model,
-            latestInputTokens: max(0, (int) $latestInput),
+            latestInputTokens: $latestInputTokens,
+            contextWindow: $contextWindow,
         );
     }
 
-    /**
-     * @param array<string, mixed> $row
-     */
-    private function optionalString(array $row, string $key): ?string
+    private function optionalString(mixed $value): ?string
     {
-        $v = $row[$key] ?? null;
-
-        return \is_string($v) && '' !== trim($v) ? trim($v) : null;
-    }
-
-    /**
-     * @param array<string, mixed> $row
-     */
-    private function optionalInt(array $row, string $key): ?int
-    {
-        if (!isset($row[$key]) || !is_numeric($row[$key])) {
+        if (!\is_string($value)) {
             return null;
         }
+        $trimmed = trim($value);
 
-        return (int) $row[$key];
+        return '' !== $trimmed ? $trimmed : null;
+    }
+
+    private function optionalPositiveInt(mixed $value): int
+    {
+        if (!is_numeric($value)) {
+            return 0;
+        }
+        $int = (int) $value;
+
+        return $int > 0 ? $int : 0;
     }
 }

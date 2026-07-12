@@ -142,11 +142,22 @@ final class TuiSessionState
 
     public SubagentLiveViewState $subagentLiveView;
 
-    /** Last background child-stream poll timestamp (main view only). */
-    public float $subagentLiveBackgroundLastPoll = 0.0;
+    /**
+     * Staged pasted images keyed by placeholder index ([Image #N]).
+     * Promoted into .hatfield/sessions/<id>/attachments/ on submit (issue #119).
+     *
+     * @var array<int, \Ineersa\Tui\ImagePaste\PastedImagePendingDTO>
+     */
+    public array $pastedImagePendingByIndex = [];
 
-    /** @var array<string, int> agentRunId => last drained seq for background child polling */
-    public array $subagentLiveBackgroundSeqByRunId = [];
+    /** Next sequential pasted image index for this TUI session. */
+    public int $nextPastedImageIndex = 1;
+
+    /**
+     * Placeholder index with an in-flight clipboard read ([Image #N] inserted, bytes not ready).
+     * Scalar only — the reader service owns the Process handle (issue #119).
+     */
+    public ?int $pastedImagePasteInProgressIndex = null;
 
     public function __construct(
         string $sessionId,

@@ -23,7 +23,7 @@ use Ineersa\CodingAgent\Agent\Fork\ForkChildMessageComposer;
 use Ineersa\CodingAgent\Agent\Fork\ForkContextBuilder;
 use Ineersa\CodingAgent\Config\AgentsConfig;
 use Ineersa\CodingAgent\Config\ModelResolver;
-use Ineersa\CodingAgent\Session\SequencedRunEventAppender;
+use Ineersa\CodingAgent\Session\CommittedRunEventAppender;
 use Ineersa\CodingAgent\Skills\SkillsContextBuilder;
 use Ineersa\CodingAgent\Tool\ToolRegistryInterface;
 use Symfony\Component\Clock\ClockInterface;
@@ -48,7 +48,7 @@ final class ForkExecutionService
         private readonly AgentRunnerInterface $agentRunner,
         private readonly RunStoreInterface $runStore,
         private readonly RunStoreInterface $parentRunStore,
-        private readonly SequencedRunEventAppender $sequencedEventAppender,
+        private readonly CommittedRunEventAppender $committedRunEventAppender,
         private readonly SubagentRunMetadataReader $metadataReader,
         private readonly AgentChildRunDirectory $childRunDirectory,
         private readonly StackToolExecutionContextAccessor $contextAccessor,
@@ -532,7 +532,7 @@ final class ForkExecutionService
             ],
         );
 
-        $this->sequencedEventAppender->append($event);
+        $this->committedRunEventAppender->append($event);
     }
 
     private function extractUserContextBySource(string $parentRunId, string $source): string

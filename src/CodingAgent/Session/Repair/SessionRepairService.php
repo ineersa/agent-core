@@ -7,516 +7,585 @@ namespace Ineersa\CodingAgent\Session\Repair;
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Application\Replay\ReplayEventPreparer;
 use Ineersa\AgentCore\Application\Replay\RunStateReducer;
-use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
+use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\RunStoreInterface;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
+use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
+use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
-use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
-use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Psr\Log\LoggerInterface;
 
-/**
- * Centralized session event-log repair for known corruption patterns.
- */
-final readonly class SessionRepairService
+final readonly class SessionRepairService implements SessionRepairServiceInterface
 {
+    private const string SYNTHETIC_CANCEL_MESSAGE = 'Tool execution cancelled by user.';
+
     public function __construct(
-        private HatfieldSessionStore $sessionStore,
+        private EventStoreInterface $eventStore,
         private RunStoreInterface $runStore,
-        private RunStateRebuilderInterface $runStateRebuilder,
-        private ReplayEventPreparer $replayEventPreparer,
-        private EventPayloadNormalizer $eventPayloadNormalizer,
-        private RunLockManager $lockManager,
         private RunStateReducer $runStateReducer,
+        private ReplayEventPreparer $replayEventPreparer,
         private EventFactory $eventFactory,
+        private AgentMessageNormalizer $messageNormalizer,
+        private RunLockManager $lockManager,
         private LoggerInterface $logger,
     ) {
     }
 
-    /**
-     * @return array{
-     *     runId: string,
-     *     apply: bool,
-     *     duplicateSeqs: list<int>,
-     *     droppedReplayFailureEnds: int,
-     *     renumberedEvents: int,
-     *     staleCancellationRepaired: bool,
-     *     appendedTerminalEvents: int,
-     *     replayOk: bool,
-     *     message: string,
-     *     backupEventsPath: string|null,
-     *     backupStatePath: string|null
-     * }
-     */
-    public function repair(string $runId, bool $apply = false): array
+    public function repair(string $runId, bool $apply): RepairResult
     {
-        $eventsPath = $this->eventsPath($runId);
-        if (!is_readable($eventsPath)) {
-            throw new \RuntimeException(\sprintf('Cannot repair run %s: events.jsonl not found.', $runId));
-        }
-
-        return $this->lockManager->synchronized($runId, function () use ($runId, $eventsPath, $apply): array {
-            $rawLines = $this->readPhysicalLines($eventsPath);
-            $parsed = $this->parseLines($runId, $rawLines);
-            $duplicateSeqs = $this->findDuplicateSeqs($parsed);
-            $dropped = $this->countDroppableReplayFailureEnds($parsed);
-
-            $report = [
-                'runId' => $runId,
-                'apply' => $apply,
-                'duplicateSeqs' => $duplicateSeqs,
-                'droppedReplayFailureEnds' => $dropped,
-                'renumberedEvents' => 0,
-                'staleCancellationRepaired' => false,
-                'appendedTerminalEvents' => 0,
-                'replayOk' => false,
-                'message' => '',
-                'backupEventsPath' => null,
-                'backupStatePath' => null,
-            ];
-
-            $needsSeqRepair = [] !== $duplicateSeqs || $dropped > 0;
-            $staleCancellation = $this->detectStaleCancellation($runId, $parsed);
-            $needsStaleCancellationRepair = $staleCancellation['needsRepair'];
-
-            if (!$needsSeqRepair && !$needsStaleCancellationRepair) {
-                $report['replayOk'] = $this->canReplay($runId);
-                $report['message'] = $report['replayOk']
-                    ? 'No known repairable corruption detected.'
-                    : 'No duplicate sequences detected, but replay still fails.';
-
-                return $report;
-            }
-
-            if (!$apply) {
-                $parts = [];
-                if ($needsSeqRepair) {
-                    $parts[] = \sprintf(
-                        'duplicate seq(s): %s; droppable replay-failure agent_end: %d',
-                        implode(', ', array_map('strval', $duplicateSeqs)),
-                        $dropped,
-                    );
-                }
-                if ($needsStaleCancellationRepair) {
-                    $parts[] = 'stale non-terminal cancellation (missing terminal agent_end)';
-                }
-                $report['message'] = 'Repair preview: '.implode('; ', $parts).'. Run /repair to apply.';
-
-                return $report;
-            }
-
-            $backupStamp = (new \DateTimeImmutable())->format('Ymd-His');
-            $backupEvents = $eventsPath.'.bak-'.$backupStamp;
-            $backupState = $this->statePath($runId);
-            $backupStateTarget = is_readable($backupState) ? $backupState.'.bak-'.$backupStamp : null;
-
-            if (!copy($eventsPath, $backupEvents)) {
-                throw new \RuntimeException(\sprintf('Failed to backup events for run %s.', $runId));
-            }
-            if (null !== $backupStateTarget && !copy($backupState, $backupStateTarget)) {
-                throw new \RuntimeException(\sprintf('Failed to backup state for run %s.', $runId));
-            }
-
-            try {
-                $lines = $needsSeqRepair
-                    ? $this->buildRepairedLines($parsed)
-                    : $this->buildLinesFromParsed($parsed);
-
-                if ($needsStaleCancellationRepair) {
-                    $lines = $this->appendStaleCancellationTerminalEvents(
-                        $runId,
-                        $lines,
-                        $staleCancellation['turnNo'],
-                        $staleCancellation['activeStepId'],
-                    );
-                    $report['staleCancellationRepaired'] = true;
-                    $report['appendedTerminalEvents'] = null !== $staleCancellation['activeStepId'] ? 2 : 1;
-                }
-
-                $report['renumberedEvents'] = \count($lines);
-                $this->writeLinesAtomic($eventsPath, $lines);
-
-                $state = $this->runStore->get($runId);
-                if (null === $state) {
-                    throw new \RuntimeException(\sprintf('Cannot repair run %s: state.json missing.', $runId));
-                }
-
-                $replay = $this->runStateRebuilder->rebuildIfStale($state, $runId);
-                if (!$replay->rebuilt || null === $replay->rebuiltState) {
-                    throw new \RuntimeException(\sprintf('Repair validation failed for run %s: replay did not rebuild state.', $runId));
-                }
-
-                if (RunStatus::Cancelled !== $replay->rebuiltState->status && $needsStaleCancellationRepair) {
-                    throw new \RuntimeException(\sprintf('Repair validation failed for run %s: expected cancelled status after stale cancellation repair, got %s.', $runId, $replay->rebuiltState->status->value));
-                }
-
-                if (!$this->runStore->compareAndSwap($replay->rebuiltState, $state->version)) {
-                    $latest = $this->runStore->get($runId) ?? $state;
-                    if (!$this->runStore->compareAndSwap($replay->rebuiltState, $latest->version)) {
-                        throw new \RuntimeException(\sprintf('Repair validation failed for run %s: could not persist rebuilt state.', $runId));
-                    }
-                }
-
-                $report['replayOk'] = true;
-                $report['backupEventsPath'] = $backupEvents;
-                $report['backupStatePath'] = $backupStateTarget;
-                $messageParts = ['Session repaired.'];
-                if ($report['staleCancellationRepaired']) {
-                    $messageParts[] = 'Stale cancellation terminalized to cancelled.';
-                }
-                $messageParts[] = 'Backup: '.$backupEvents.(null !== $backupStateTarget ? ' and '.$backupStateTarget : '');
-                $report['message'] = implode(' ', $messageParts);
-
-                $this->logger->info('session.repair.applied', [
-                    'run_id' => $runId,
-                    'duplicate_seqs' => $duplicateSeqs,
-                    'dropped_replay_failure_ends' => $dropped,
-                    'stale_cancellation_repaired' => $report['staleCancellationRepaired'],
-                    'appended_terminal_events' => $report['appendedTerminalEvents'],
-                    'component' => 'session.repair',
-                    'event_type' => 'session.repair.applied',
-                ]);
-
-                return $report;
-            } catch (\Throwable $e) {
-                copy($backupEvents, $eventsPath);
-                if (null !== $backupStateTarget && is_readable($backupStateTarget)) {
-                    copy($backupStateTarget, $backupState);
-                }
-
-                throw new \RuntimeException(\sprintf('Repair failed for run %s and backups were restored: %s', $runId, $e->getMessage()), previous: $e);
-            }
+        return $this->lockManager->synchronized($runId, function () use ($runId, $apply): RepairResult {
+            return $this->doRepair($runId, $apply);
         });
     }
 
-    private function canReplay(string $runId): bool
+    private function doRepair(string $runId, bool $apply): RepairResult
     {
-        $state = $this->runStore->get($runId);
-        if (null === $state) {
-            return false;
-        }
-
-        try {
-            $replay = $this->runStateRebuilder->rebuildIfStale($state, $runId);
-
-            return $replay->rebuilt || null !== $replay->rebuiltState;
-        } catch (\Throwable) {
-            return false;
-        }
-    }
-
-    /**
-     * @param list<array{lineNo:int, payload:array<string,mixed>|null, raw:string, drop:bool}> $parsed
-     *
-     * @return array{needsRepair: bool, turnNo: int, activeStepId: string|null}
-     */
-    private function detectStaleCancellation(string $runId, array $parsed): array
-    {
-        $events = $this->denormalizedEventsFromParsed($parsed);
+        $events = $this->eventStore->allFor($runId);
         if ([] === $events) {
-            return ['needsRepair' => false, 'turnNo' => 0, 'activeStepId' => null];
+            return $this->refusalResult(
+                runId: $runId,
+                message: 'No canonical events found for session repair.',
+                reason: SessionRepairRefusalReasonEnum::NoEvents,
+            );
         }
 
         $sorted = $this->replayEventPreparer->sortBySequence($events);
-        if ([] !== $this->replayEventPreparer->duplicateSequences($sorted)) {
-            return ['needsRepair' => false, 'turnNo' => 0, 'activeStepId' => null];
+        $duplicateSeqs = $this->replayEventPreparer->duplicateSequences($sorted);
+        if ([] !== $duplicateSeqs) {
+            $this->logRefusal($runId, SessionRepairRefusalReasonEnum::DuplicateSequences, ['duplicate_count' => \count($duplicateSeqs)]);
+
+            return new RepairResult(
+                repairableStaleCancellationDetected: false,
+                staleCancellationRepaired: false,
+                terminalEventsAppended: 0,
+                replayOk: null,
+                message: 'Session repair refused: duplicate event sequences detected.',
+                duplicateSeqs: $duplicateSeqs,
+                refusalReason: SessionRepairRefusalReasonEnum::DuplicateSequences,
+            );
         }
 
-        $seed = new RunState(runId: $runId, status: RunStatus::Queued, version: 0, turnNo: 0, lastSeq: 0);
-        $replayed = $this->runStateReducer->replay($seed, $sorted);
+        $missingSeqs = $this->replayEventPreparer->missingSequences($sorted);
+        if ([] !== $missingSeqs) {
+            $this->logRefusal($runId, SessionRepairRefusalReasonEnum::MissingSequences, ['missing_count' => \count($missingSeqs)]);
+
+            return new RepairResult(
+                repairableStaleCancellationDetected: false,
+                staleCancellationRepaired: false,
+                terminalEventsAppended: 0,
+                replayOk: null,
+                message: 'Session repair refused: missing event sequences detected.',
+                duplicateSeqs: [],
+                refusalReason: SessionRepairRefusalReasonEnum::MissingSequences,
+                missingSeqs: $missingSeqs,
+            );
+        }
+
+        $storedState = $this->runStore->get($runId);
+        if (null === $storedState) {
+            return $this->refusalResult(
+                runId: $runId,
+                message: 'Session repair refused: run state is unavailable.',
+                reason: SessionRepairRefusalReasonEnum::RunStateUnavailable,
+            );
+        }
+
+        if ($storedState->isStreaming) {
+            $this->logRefusal($runId, SessionRepairRefusalReasonEnum::ActiveStreaming);
+
+            return new RepairResult(
+                repairableStaleCancellationDetected: false,
+                staleCancellationRepaired: false,
+                terminalEventsAppended: 0,
+                replayOk: null,
+                message: 'Session repair refused: active streaming detected.',
+                refusalReason: SessionRepairRefusalReasonEnum::ActiveStreaming,
+            );
+        }
+
+        $replayed = $this->runStateReducer->replay(RunState::queued($runId), $sorted);
+
+        if ($this->hasTerminalAgentEnd($sorted)) {
+            return $this->noRepairResult('No repairable corruption detected.');
+        }
 
         if (RunStatus::Cancelling !== $replayed->status) {
-            return ['needsRepair' => false, 'turnNo' => 0, 'activeStepId' => null];
-        }
-
-        if ($this->hasTerminalAgentEndAfterLastCancel($sorted)) {
-            return ['needsRepair' => false, 'turnNo' => 0, 'activeStepId' => null];
-        }
-
-        if ($replayed->isStreaming) {
-            return ['needsRepair' => false, 'turnNo' => 0, 'activeStepId' => null];
-        }
-
-        return [
-            'needsRepair' => true,
-            'turnNo' => $replayed->turnNo,
-            'activeStepId' => $replayed->activeStepId,
-        ];
-    }
-
-    /**
-     * @param list<RunEvent> $sortedEvents
-     */
-    private function hasTerminalAgentEndAfterLastCancel(array $sortedEvents): bool
-    {
-        $lastCancelSeq = null;
-        foreach ($sortedEvents as $event) {
-            if (RunEventTypeEnum::AgentCommandApplied->value === $event->type
-                && 'cancel' === ($event->payload['kind'] ?? null)) {
-                $lastCancelSeq = $event->seq;
-            }
-        }
-
-        if (null === $lastCancelSeq) {
-            return false;
-        }
-
-        foreach ($sortedEvents as $event) {
-            if ($event->seq <= $lastCancelSeq) {
-                continue;
-            }
-            if (RunEventTypeEnum::AgentEnd->value !== $event->type) {
-                continue;
+            if ($this->hasUnresolvedPendingWork($replayed)) {
+                return $this->ambiguousRefusal($runId);
             }
 
-            $reason = $event->payload['reason'] ?? null;
-
-            return \in_array($reason, ['cancelled', 'completed', 'failed'], true);
+            return $this->noRepairResult('No repairable corruption detected.');
         }
 
-        return false;
-    }
-
-    /**
-     * @param list<string> $lines
-     *
-     * @return list<string>
-     */
-    private function appendStaleCancellationTerminalEvents(
-        string $runId,
-        array $lines,
-        int $turnNo,
-        ?string $activeStepId,
-    ): array {
-        $maxSeq = 0;
-        foreach ($lines as $line) {
-            $trimmed = trim($line);
-            if ('' === $trimmed) {
-                continue;
-            }
-            /** @var array<string, mixed> $payload */
-            $payload = json_decode($trimmed, true, 512, \JSON_THROW_ON_ERROR);
-            $seq = $payload['seq'] ?? 0;
-            if (\is_int($seq) && $seq > $maxSeq) {
-                $maxSeq = $seq;
-            }
+        if (!$this->hasCancellationContext($sorted)) {
+            return $this->ambiguousRefusal($runId);
         }
 
-        $specs = [];
-        if (null !== $activeStepId && '' !== $activeStepId) {
-            $specs[] = [
+        if (!$apply) {
+            return new RepairResult(
+                repairableStaleCancellationDetected: true,
+                staleCancellationRepaired: false,
+                terminalEventsAppended: 0,
+                replayOk: null,
+                message: 'Stale non-terminal cancellation detected; repair available.',
+            );
+        }
+
+        $maxSeq = $this->replayEventPreparer->maxSequence($sorted);
+        $turnNo = $replayed->turnNo;
+        $stepId = $replayed->activeStepId ?? \sprintf('repair-cancel-%d', hrtime(true));
+        $eventSpecs = [];
+
+        if ($this->llmStepRemainedIncomplete($sorted)) {
+            $eventSpecs[] = [
                 'type' => RunEventTypeEnum::LlmStepAborted->value,
                 'payload' => [
-                    'step_id' => $activeStepId,
-                    'stop_reason' => 'aborted',
-                    'usage' => [],
+                    'step_id' => $stepId,
+                    'stop_reason' => 'cancelled',
+                    'usage' => null,
                     'aborted_assistant' => null,
                 ],
             ];
         }
 
-        $specs[] = [
+        $unresolvedIds = $this->unresolvedPendingToolCallIds($replayed);
+        $resolvedCount = 0;
+        $toolInfo = $this->toolCallInfoFromEvents($sorted);
+        foreach ($unresolvedIds as $toolCallId) {
+            if ($this->hasDurableToolEnd($sorted, $toolCallId)) {
+                continue;
+            }
+
+            $info = $toolInfo[$toolCallId] ?? [];
+            $toolName = \is_string($info['name'] ?? null) ? $info['name'] : 'unknown';
+            $orderIndex = \is_int($info['order_index'] ?? null) ? $info['order_index'] : 0;
+
+            $this->appendSyntheticCancelledToolResultEvents(
+                eventSpecs: $eventSpecs,
+                runId: $runId,
+                turnNo: $turnNo,
+                stepId: $stepId,
+                toolCallId: $toolCallId,
+                toolName: $toolName,
+                orderIndex: $orderIndex,
+            );
+            ++$resolvedCount;
+        }
+
+        if ($resolvedCount > 0) {
+            $eventSpecs[] = [
+                'type' => RunEventTypeEnum::ToolBatchCommitted->value,
+                'payload' => [
+                    'count' => $resolvedCount,
+                    'turn_no' => $turnNo,
+                    'step_id' => $stepId,
+                ],
+            ];
+        }
+
+        $eventSpecs[] = [
             'type' => RunEventTypeEnum::AgentEnd->value,
             'payload' => [
                 'reason' => 'cancelled',
             ],
         ];
 
-        $events = $this->eventFactory->eventsFromSpecs($runId, $turnNo, $maxSeq + 1, $specs);
+        $proposedEvents = $this->eventFactory->eventsFromSpecs($runId, $turnNo, $maxSeq + 1, $eventSpecs);
+        $hypothetical = array_merge($sorted, $proposedEvents);
+        $hypotheticalReplay = $this->runStateReducer->replay(RunState::queued($runId), $hypothetical);
+
+        if (RunStatus::Cancelled !== $hypotheticalReplay->status) {
+            $this->logger->warning('session_repair.refused', [
+                'run_id' => $runId,
+                'component' => 'session.repair',
+                'event_type' => 'session.repair.refused',
+                'refusal_reason' => SessionRepairRefusalReasonEnum::ReplayValidationFailed->value,
+                'final_status' => $hypotheticalReplay->status->value,
+            ]);
+
+            return new RepairResult(
+                repairableStaleCancellationDetected: false,
+                staleCancellationRepaired: false,
+                terminalEventsAppended: 0,
+                replayOk: false,
+                message: 'Session repair refused: hypothetical replay did not reach Cancelled.',
+                refusalReason: SessionRepairRefusalReasonEnum::ReplayValidationFailed,
+            );
+        }
+
+        try {
+            $this->eventStore->appendMany($proposedEvents);
+        } catch (\Throwable $exception) {
+            $this->logger->error('session_repair.append_failed', [
+                'run_id' => $runId,
+                'component' => 'session.repair',
+                'event_type' => 'session.repair.append_failed',
+                'exception_class' => $exception::class,
+                'exception_code' => $exception->getCode(),
+            ]);
+
+            throw $exception;
+        }
+
+        $finalReplay = $hypotheticalReplay;
+
+        $persisted = new RunState(
+            runId: $finalReplay->runId,
+            status: $finalReplay->status,
+            version: $storedState->version + 1,
+            turnNo: $finalReplay->turnNo,
+            lastSeq: $finalReplay->lastSeq,
+            isStreaming: false,
+            streamingMessage: null,
+            pendingToolCalls: $finalReplay->pendingToolCalls,
+            errorMessage: $finalReplay->errorMessage,
+            messages: $finalReplay->messages,
+            activeStepId: $finalReplay->activeStepId,
+            retryableFailure: $finalReplay->retryableFailure,
+            retryAttempts: $finalReplay->retryAttempts,
+        );
+
+        if (!$this->runStore->compareAndSwap($persisted, $storedState->version)) {
+            $this->logger->warning('session_repair.cas_degraded', [
+                'run_id' => $runId,
+                'component' => 'session.repair',
+                'event_type' => 'session.repair.cas_degraded',
+                'terminal_events_appended' => \count($proposedEvents),
+            ]);
+
+            return new RepairResult(
+                repairableStaleCancellationDetected: true,
+                staleCancellationRepaired: true,
+                terminalEventsAppended: \count($proposedEvents),
+                replayOk: true,
+                message: 'Session repaired: canonical events appended; hot run state will self-heal on replay.',
+            );
+        }
+
+        $this->logger->info('session_repair.completed', [
+            'run_id' => $runId,
+            'component' => 'session.repair',
+            'event_type' => 'session.repair.completed',
+            'terminal_events_appended' => \count($proposedEvents),
+        ]);
+
+        return new RepairResult(
+            repairableStaleCancellationDetected: true,
+            staleCancellationRepaired: true,
+            terminalEventsAppended: \count($proposedEvents),
+            replayOk: true,
+            message: 'Stale non-terminal cancellation repaired.',
+        );
+    }
+
+    /**
+     * @param list<array{type: string, payload: array<string, mixed>}> $eventSpecs
+     */
+    private function appendSyntheticCancelledToolResultEvents(
+        array &$eventSpecs,
+        string $runId,
+        int $turnNo,
+        string $stepId,
+        string $toolCallId,
+        string $toolName,
+        int $orderIndex,
+    ): void {
+        $syntheticResult = new ToolCallResult(
+            runId: $runId,
+            turnNo: $turnNo,
+            stepId: $stepId,
+            attempt: 1,
+            idempotencyKey: hash('sha256', \sprintf('repair-cancel-%s-%s', $runId, $toolCallId)),
+            toolCallId: $toolCallId,
+            orderIndex: $orderIndex,
+            result: [
+                'tool_name' => $toolName,
+                'content' => [['type' => 'text', 'text' => self::SYNTHETIC_CANCEL_MESSAGE]],
+            ],
+            isError: true,
+            error: [
+                'type' => 'cancelled',
+                'message' => self::SYNTHETIC_CANCEL_MESSAGE,
+            ],
+        );
+
+        $eventSpecs[] = [
+            'type' => RunEventTypeEnum::ToolCallResultReceived->value,
+            'payload' => [
+                'tool_call_id' => $toolCallId,
+                'order_index' => $orderIndex,
+                'is_error' => true,
+            ],
+        ];
+        $eventSpecs[] = [
+            'type' => RunEventTypeEnum::ToolExecutionEnd->value,
+            'payload' => [
+                'tool_call_id' => $toolCallId,
+                'order_index' => $orderIndex,
+                'is_error' => true,
+                'result' => self::SYNTHETIC_CANCEL_MESSAGE,
+                'cancelled' => true,
+                'cancellation_reason' => 'user',
+            ],
+        ];
+
+        $toolMsg = $this->messageNormalizer->toolMessage($syntheticResult);
+        $toolMsgArray = $toolMsg->toArray();
+
+        $eventSpecs[] = [
+            'type' => RunEventTypeEnum::MessageStart->value,
+            'payload' => [
+                'message_role' => 'tool',
+                'tool_call_id' => $toolCallId,
+            ],
+        ];
+        $eventSpecs[] = [
+            'type' => RunEventTypeEnum::MessageEnd->value,
+            'payload' => [
+                'message_role' => 'tool',
+                'tool_call_id' => $toolCallId,
+                'message' => $toolMsgArray,
+            ],
+        ];
+    }
+
+    /**
+     * @param list<RunEvent> $events
+     */
+    private function hasTerminalAgentEnd(array $events): bool
+    {
         foreach ($events as $event) {
-            $lines[] = json_encode($this->eventPayloadNormalizer->normalizeRunEvent($event), \JSON_THROW_ON_ERROR);
+            if (RunEventTypeEnum::AgentEnd->value === $event->type) {
+                return true;
+            }
         }
 
-        return $lines;
+        return false;
     }
 
     /**
-     * @param list<array{lineNo:int, payload:array<string,mixed>|null, raw:string, drop:bool}> $parsed
+     * @param list<RunEvent> $events
+     */
+    private function hasCancellationContext(array $events): bool
+    {
+        foreach ($events as $event) {
+            if (RunEventTypeEnum::AgentCommandApplied->value !== $event->type) {
+                continue;
+            }
+
+            $kind = \is_string($event->payload['kind'] ?? null) ? $event->payload['kind'] : null;
+            if ('cancel' === $kind) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Tracks the latest open assistant phase across canonical events (message_start/end,
+     * llm_step_completed/aborted, turn_advanced). Returns true when an assistant message_start
+     * was never closed by a matching message_end or terminal LLM step event — i.e. cancellation
+     * abandoned an in-flight assistant turn that still needs an llm_step_aborted append.
      *
+     * @param list<RunEvent> $events
+     */
+    private function llmStepRemainedIncomplete(array $events): bool
+    {
+        $openAssistantMessageId = null;
+        $openStepId = null;
+
+        foreach ($events as $event) {
+            if (RunEventTypeEnum::MessageStart->value === $event->type) {
+                $role = \is_string($event->payload['message_role'] ?? null) ? $event->payload['message_role'] : null;
+                if ('assistant' === $role) {
+                    $openAssistantMessageId = \is_string($event->payload['message_id'] ?? null) ? $event->payload['message_id'] : 'assistant';
+                    $openStepId = null;
+                }
+
+                continue;
+            }
+
+            if (RunEventTypeEnum::MessageEnd->value === $event->type) {
+                $role = \is_string($event->payload['message_role'] ?? null) ? $event->payload['message_role'] : null;
+                if ('assistant' === $role) {
+                    $messageId = \is_string($event->payload['message_id'] ?? null) ? $event->payload['message_id'] : null;
+                    if (null === $openAssistantMessageId || null === $messageId || $messageId === $openAssistantMessageId) {
+                        $openAssistantMessageId = null;
+                    }
+                }
+
+                continue;
+            }
+
+            if (RunEventTypeEnum::LlmStepCompleted->value === $event->type) {
+                $stepId = \is_string($event->payload['step_id'] ?? null) ? $event->payload['step_id'] : null;
+                if (null === $openStepId || (null !== $stepId && $stepId === $openStepId)) {
+                    $openAssistantMessageId = null;
+                    $openStepId = null;
+                }
+
+                continue;
+            }
+
+            if (RunEventTypeEnum::LlmStepAborted->value === $event->type) {
+                $stepId = \is_string($event->payload['step_id'] ?? null) ? $event->payload['step_id'] : null;
+                if (null === $openStepId || (null !== $stepId && $stepId === $openStepId)) {
+                    $openAssistantMessageId = null;
+                    $openStepId = null;
+                }
+
+                continue;
+            }
+
+            if (RunEventTypeEnum::TurnAdvanced->value === $event->type) {
+                $openStepId = \is_string($event->payload['step_id'] ?? null) ? $event->payload['step_id'] : $openStepId;
+            }
+        }
+
+        return null !== $openAssistantMessageId;
+    }
+
+    /**
+     * @param list<RunEvent> $events
+     */
+    private function hasDurableToolEnd(array $events, string $toolCallId): bool
+    {
+        foreach ($events as $event) {
+            if (RunEventTypeEnum::ToolExecutionEnd->value !== $event->type) {
+                continue;
+            }
+            if (($event->payload['tool_call_id'] ?? null) === $toolCallId) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function hasUnresolvedPendingWork(RunState $state): bool
+    {
+        foreach ($state->pendingToolCalls as $completed) {
+            if (false === $completed) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
      * @return list<string>
      */
-    private function buildLinesFromParsed(array $parsed): array
+    private function unresolvedPendingToolCallIds(RunState $state): array
     {
-        $out = [];
-        foreach ($parsed as $row) {
-            if ($row['drop'] || !\is_array($row['payload'])) {
-                continue;
+        $ids = [];
+        foreach ($state->pendingToolCalls as $toolCallId => $completed) {
+            if (false === $completed) {
+                $ids[] = $toolCallId;
             }
-            $out[] = json_encode($row['payload'], \JSON_THROW_ON_ERROR);
         }
 
-        return $out;
+        return $ids;
     }
 
     /**
-     * @param list<array{lineNo:int, payload:array<string,mixed>|null, raw:string, drop:bool}> $parsed
+     * @param list<RunEvent> $events
      *
-     * @return list<RunEvent>
+     * @return array<string, array{name: string, order_index: int}>
      */
-    private function denormalizedEventsFromParsed(array $parsed): array
+    private function toolCallInfoFromEvents(array $events): array
     {
-        $events = [];
-        foreach ($parsed as $row) {
-            if ($row['drop'] || !\is_array($row['payload'])) {
+        $map = [];
+
+        foreach ($events as $event) {
+            if (RunEventTypeEnum::ToolExecutionStart->value === $event->type) {
+                $id = \is_string($event->payload['tool_call_id'] ?? null) ? $event->payload['tool_call_id'] : null;
+                if (null === $id) {
+                    continue;
+                }
+                $name = \is_string($event->payload['tool_name'] ?? null) ? $event->payload['tool_name'] : ($map[$id]['name'] ?? 'unknown');
+                $orderIndex = \is_int($event->payload['order_index'] ?? null) ? $event->payload['order_index'] : ($map[$id]['order_index'] ?? 0);
+                $map[$id] = ['name' => $name, 'order_index' => $orderIndex];
+
                 continue;
             }
-            $event = $this->eventPayloadNormalizer->denormalizeRunEvent($row['payload']);
-            if (null !== $event) {
-                $events[] = $event;
+
+            if (RunEventTypeEnum::LlmStepCompleted->value !== $event->type) {
+                continue;
+            }
+
+            $assistant = \is_array($event->payload['assistant_message'] ?? null) ? $event->payload['assistant_message'] : [];
+            $toolCalls = \is_array($assistant['tool_calls'] ?? null) ? $assistant['tool_calls'] : [];
+            foreach ($toolCalls as $localIndex => $toolCall) {
+                if (!\is_array($toolCall)) {
+                    continue;
+                }
+                $id = \is_string($toolCall['id'] ?? null) ? $toolCall['id'] : null;
+                if (null === $id || isset($map[$id])) {
+                    continue;
+                }
+                $function = \is_array($toolCall['function'] ?? null) ? $toolCall['function'] : [];
+                $name = \is_string($function['name'] ?? null) ? $function['name'] : 'unknown';
+                $map[$id] = ['name' => $name, 'order_index' => $localIndex];
             }
         }
 
-        return $events;
+        return $map;
+    }
+
+    private function ambiguousRefusal(string $runId): RepairResult
+    {
+        $this->logRefusal($runId, SessionRepairRefusalReasonEnum::AmbiguousPendingWork);
+
+        return new RepairResult(
+            repairableStaleCancellationDetected: false,
+            staleCancellationRepaired: false,
+            terminalEventsAppended: 0,
+            replayOk: null,
+            message: 'Session repair refused: ambiguous pending work.',
+            refusalReason: SessionRepairRefusalReasonEnum::AmbiguousPendingWork,
+        );
+    }
+
+    private function noRepairResult(string $message): RepairResult
+    {
+        return new RepairResult(
+            repairableStaleCancellationDetected: false,
+            staleCancellationRepaired: false,
+            terminalEventsAppended: 0,
+            replayOk: null,
+            message: $message,
+        );
+    }
+
+    private function refusalResult(string $runId, string $message, SessionRepairRefusalReasonEnum $reason): RepairResult
+    {
+        $this->logRefusal($runId, $reason);
+
+        return new RepairResult(
+            repairableStaleCancellationDetected: false,
+            staleCancellationRepaired: false,
+            terminalEventsAppended: 0,
+            replayOk: SessionRepairRefusalReasonEnum::ReplayValidationFailed === $reason ? false : null,
+            message: $message,
+            refusalReason: $reason,
+        );
     }
 
     /**
-     * @param list<array{lineNo:int, payload:array<string,mixed>|null, raw:string, drop:bool}> $parsed
-     *
-     * @return list<string>
+     * @param array<string, int|string> $extra
      */
-    private function buildRepairedLines(array $parsed): array
+    private function logRefusal(string $runId, SessionRepairRefusalReasonEnum $reason, array $extra = []): void
     {
-        $kept = [];
-        foreach ($parsed as $row) {
-            if ($row['drop']) {
-                continue;
-            }
-            if (!\is_array($row['payload'])) {
-                continue;
-            }
-            $kept[] = $row;
-        }
-
-        $nextSeq = 1;
-        $out = [];
-        foreach ($kept as $row) {
-            $payload = $row['payload'];
-            $payload['seq'] = $nextSeq;
-            $out[] = json_encode($payload, \JSON_THROW_ON_ERROR);
-            ++$nextSeq;
-        }
-
-        return $out;
-    }
-
-    /**
-     * @param list<string> $rawLines
-     *
-     * @return list<array{lineNo: int, payload: array<string, mixed>|null, raw: string, drop: bool}>
-     */
-    private function parseLines(string $runId, array $rawLines): array
-    {
-        $parsed = [];
-        foreach ($rawLines as $lineNo => $raw) {
-            $trimmed = trim($raw);
-            if ('' === $trimmed) {
-                continue;
-            }
-
-            try {
-                /** @var array<string, mixed> $payload */
-                $payload = json_decode($trimmed, true, 512, \JSON_THROW_ON_ERROR);
-            } catch (\JsonException) {
-                $parsed[] = ['lineNo' => $lineNo, 'payload' => null, 'raw' => $raw, 'drop' => false];
-                continue;
-            }
-
-            $drop = $this->shouldDropReplayFailureAgentEnd($payload);
-            $parsed[] = ['lineNo' => $lineNo, 'payload' => $payload, 'raw' => $raw, 'drop' => $drop];
-        }
-
-        return $parsed;
-    }
-
-    /**
-     * @param list<array{lineNo:int, payload:array<string,mixed>|null, raw:string, drop:bool}> $parsed
-     *
-     * @return list<int>
-     */
-    private function findDuplicateSeqs(array $parsed): array
-    {
-        $events = [];
-        foreach ($parsed as $row) {
-            if ($row['drop'] || !\is_array($row['payload'])) {
-                continue;
-            }
-            $event = $this->eventPayloadNormalizer->denormalizeRunEvent($row['payload']);
-            if (null !== $event) {
-                $events[] = $event;
-            }
-        }
-
-        return $this->replayEventPreparer->duplicateSequences($events);
-    }
-
-    /**
-     * @param list<array{lineNo:int, payload:array<string,mixed>|null, raw:string, drop:bool}> $parsed
-     */
-    private function countDroppableReplayFailureEnds(array $parsed): int
-    {
-        $count = 0;
-        foreach ($parsed as $row) {
-            if ($row['drop']) {
-                ++$count;
-            }
-        }
-
-        return $count;
-    }
-
-    /**
-     * @param array<string, mixed> $payload
-     */
-    private function shouldDropReplayFailureAgentEnd(array $payload): bool
-    {
-        if (($payload['type'] ?? null) !== 'agent_end') {
-            return false;
-        }
-
-        $error = $payload['payload']['error'] ?? '';
-        if (!\is_string($error)) {
-            return false;
-        }
-
-        return str_contains($error, 'duplicate sequence number')
-            || str_contains($error, 'duplicate sequence number(s)');
-    }
-
-    /** @return list<string> */
-    private function readPhysicalLines(string $path): array
-    {
-        $contents = file_get_contents($path);
-        if (false === $contents) {
-            throw new \RuntimeException('Failed to read events.jsonl.');
-        }
-
-        return explode("\n", rtrim($contents, "\n"));
-    }
-
-    /** @param list<string> $lines */
-    private function writeLinesAtomic(string $path, array $lines): void
-    {
-        $tmp = $path.'.repair-tmp-'.bin2hex(random_bytes(4));
-        $payload = [] === $lines ? '' : implode("\n", $lines)."\n";
-        if (false === file_put_contents($tmp, $payload, \LOCK_EX)) {
-            throw new \RuntimeException('Failed to write repaired events.jsonl.');
-        }
-        if (!rename($tmp, $path)) {
-            @unlink($tmp);
-            throw new \RuntimeException('Failed to replace events.jsonl with repaired file.');
-        }
-    }
-
-    private function eventsPath(string $runId): string
-    {
-        return $this->sessionStore->resolveSessionsBasePath().'/'.$runId.'/events.jsonl';
-    }
-
-    private function statePath(string $runId): string
-    {
-        return $this->sessionStore->resolveSessionsBasePath().'/'.$runId.'/state.json';
+        $this->logger->warning('session_repair.refused', array_merge([
+            'run_id' => $runId,
+            'component' => 'session.repair',
+            'event_type' => 'session.repair.refused',
+            'refusal_reason' => $reason->value,
+        ], $extra));
     }
 }

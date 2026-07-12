@@ -133,16 +133,23 @@ final class ExecuteShellToolCallWorkerTest extends TestCase
                 $this->collector = &$collector;
             }
 
-            public function append(RunEvent $event): void
+            public function append(RunEvent $event): RunEvent
             {
-                $this->collector[] = $event;
+                $seq = \count(array_filter($this->collector, static fn (RunEvent $e): bool => $e->runId === $event->runId)) + 1;
+                $persisted = new RunEvent($event->runId, $seq, $event->turnNo, $event->type, $event->payload, $event->createdAt);
+                $this->collector[] = $persisted;
+
+                return $persisted;
             }
 
-            public function appendMany(array $events): void
+            public function appendMany(array $events): array
             {
+                $out = [];
                 foreach ($events as $event) {
-                    $this->collector[] = $event;
+                    $out[] = $this->append($event);
                 }
+
+                return $out;
             }
 
             /**

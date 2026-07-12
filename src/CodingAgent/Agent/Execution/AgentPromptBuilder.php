@@ -16,10 +16,11 @@ use Ineersa\CodingAgent\SystemPrompt\SystemPromptBuilder;
  *  1. Agent definition instructions.
  *  2. Child-safe harness ({available_tools}, {guidelines}, date, cwd) from
  *     SystemPromptBuilder — not the parent SYSTEM.md (no available_agents).
- *  3. Inherited AGENTS.md / project context when provided.
- *  4. APPEND_SYSTEM.md (+ contributors) when systemPromptMode is append.
+ *  3. APPEND_SYSTEM.md (+ contributors) when systemPromptMode is append.
  *
- * Messages: system, optional skills_context, agent_child_contract, user task.
+ * Inherited AGENTS.md is injected as user-context (agents_context), not system text.
+ * Messages: system, optional agents_context, optional skills_context,
+ * optional agents_definitions_context, agent_child_contract, user task.
  */
 final readonly class AgentPromptBuilder
 {
@@ -40,19 +41,20 @@ final readonly class AgentPromptBuilder
         array $allowedTools,
         string $agentsMd,
         string $skillsContext = '',
+        string $agentsDefinitionsContext = '',
     ): array {
         $systemPrompt = $this->buildSystemPrompt(
             definition: $definition,
             allowedTools: $allowedTools,
-            agentsMd: $agentsMd,
         );
 
         $messages = $this->buildMessages(
             task: $task,
             artifactId: $artifactId,
-            allowedTools: $allowedTools,
             systemPrompt: $systemPrompt,
+            agentsMd: $agentsMd,
             skillsContext: $skillsContext,
+            agentsDefinitionsContext: $agentsDefinitionsContext,
         );
 
         return [
@@ -67,7 +69,6 @@ final readonly class AgentPromptBuilder
     private function buildSystemPrompt(
         AgentDefinitionDTO $definition,
         array $allowedTools,
-        string $agentsMd,
     ): string {
         $parts = [];
 
@@ -77,10 +78,6 @@ final readonly class AgentPromptBuilder
         }
 
         $parts[] = $this->systemPromptBuilder->buildChildHarnessFragment($allowedTools);
-
-        if ('' !== $agentsMd) {
-            $parts[] = $agentsMd;
-        }
 
         if (SystemPromptModeEnum::Append === $definition->systemPromptMode) {
             $appends = $this->systemPromptBuilder->buildChildAppendsFragment($allowedTools);
@@ -93,16 +90,15 @@ final readonly class AgentPromptBuilder
     }
 
     /**
-     * @param list<string> $allowedTools
-     *
      * @return list<AgentMessage>
      */
     private function buildMessages(
         string $task,
         string $artifactId,
-        array $allowedTools,
         string $systemPrompt,
+        string $agentsMd,
         string $skillsContext,
+        string $agentsDefinitionsContext,
     ): array {
         $messages = [];
 
@@ -113,6 +109,17 @@ final readonly class AgentPromptBuilder
                     'type' => 'text',
                     'text' => $systemPrompt,
                 ]],
+            );
+        }
+
+        if ('' !== trim($agentsMd)) {
+            $messages[] = new AgentMessage(
+                role: 'user-context',
+                content: [[
+                    'type' => 'text',
+                    'text' => $agentsMd,
+                ]],
+                metadata: ['source' => 'agents_context'],
             );
         }
 
@@ -127,11 +134,24 @@ final readonly class AgentPromptBuilder
             );
         }
 
+        if ('' !== trim($agentsDefinitionsContext)) {
+            $messages[] = new AgentMessage(
+                role: 'user-context',
+                content: [[
+                    'type' => 'text',
+                    'text' => $agentsDefinitionsContext,
+                ]],
+                metadata: ['source' => 'agents_definitions_context'],
+            );
+        }
+
         $messages[] = new AgentMessage(
             role: 'user-context',
             content: [[
                 'type' => 'text',
-                'text' => $this->buildInteractiveForegroundContract($artifactId),
+                'text' => $this->buildInteractiveForegroundContract(
+                    artifactId: $artifactId,
+                ),
             ]],
             metadata: ['source' => 'agent_child_contract'],
         );
@@ -147,8 +167,9 @@ final readonly class AgentPromptBuilder
         return $messages;
     }
 
-    private function buildInteractiveForegroundContract(string $artifactId): string
-    {
+    private function buildInteractiveForegroundContract(
+        string $artifactId,
+    ): string {
         return <<<EOT
 You are a foreground child agent running inside a parent agent's tool call.
 

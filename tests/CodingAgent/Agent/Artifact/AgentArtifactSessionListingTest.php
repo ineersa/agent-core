@@ -8,6 +8,7 @@ use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactPathResolver;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+use Ineersa\CodingAgent\Session\SessionAgentArtifactPathResolver;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\FlockStore;
@@ -54,7 +55,7 @@ final class AgentArtifactSessionListingTest extends IsolatedKernelTestCase
         $validator = (new ValidatorBuilder())->enableAttributeMapping()->getValidator();
 
         $this->registry = new AgentArtifactRegistry(
-            pathResolver: new AgentArtifactPathResolver($this->hatfieldSessionStore),
+            pathResolver: new AgentArtifactPathResolver(new SessionAgentArtifactPathResolver($this->hatfieldSessionStore)),
             serializer: $serializer,
             validator: $validator,
             lockFactory: new LockFactory(new FlockStore()),

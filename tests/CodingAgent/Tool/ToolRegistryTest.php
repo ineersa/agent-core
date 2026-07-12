@@ -557,6 +557,67 @@ final class ToolRegistryTest extends TestCase
         $this->assertSame(ToolExecutionMode::Parallel, $def->executionMode);
     }
 
+    /* ───────── Permanent subset prompt snapshots (TOOLS-R00) ───────── */
+
+    public function testPermanentToolLinesForNamesRespectsRegistrationOrderAndDedupes(): void
+    {
+        $this->registry->registerTool(name: 'read', description: 'Read', parametersJsonSchema: [], handler: $this->dummyHandler(), promptLine: 'read: Read', promptGuidelines: ['G-read']);
+        $this->registry->registerTool(name: 'write', description: 'Write', parametersJsonSchema: [], handler: $this->dummyHandler(), promptLine: 'write: Write', promptGuidelines: ['G-write']);
+        $this->registry->registerTool(name: 'bash', description: 'Bash', parametersJsonSchema: [], handler: $this->dummyHandler(), promptLine: 'read: Read', promptGuidelines: ['G-bash']);
+
+        $this->assertSame(
+            ['read: Read', 'write: Write'],
+            $this->registry->permanentToolLinesForNames(['write', 'read', 'bash']),
+        );
+        $this->assertSame(
+            ['G-read', 'G-write', 'G-bash'],
+            $this->registry->permanentGuidelinesForNames(['bash', 'read', 'write']),
+        );
+    }
+
+    public function testPermanentSubsetOmitsExcludedPermanentTools(): void
+    {
+        $this->registry->registerTool(name: 'read', description: 'Read', parametersJsonSchema: [], handler: $this->dummyHandler(), promptLine: 'read: Read', promptGuidelines: ['G1']);
+        $this->registry->registerTool(name: 'fork', description: 'Fork', parametersJsonSchema: [], handler: $this->dummyHandler(), promptLine: 'fork: Fork', promptGuidelines: ['G-fork']);
+        $this->registry->setExcludedToolNames(['fork']);
+
+        $this->assertSame(['read: Read'], $this->registry->permanentToolLinesForNames(['read', 'fork']));
+        $this->assertSame(['G1'], $this->registry->permanentGuidelinesForNames(['read', 'fork']));
+    }
+
+    public function testPermanentSubsetIgnoresDynamicAndUnknownNames(): void
+    {
+        $this->registry->registerTool(name: 'read', description: 'Read', parametersJsonSchema: [], handler: $this->dummyHandler(), promptLine: 'read: Read', promptGuidelines: ['G1']);
+        $this->registry->addDynamicTool(
+            name: 'mcp_tool',
+            description: 'CHANGED_PROVIDER_DESCRIPTION_MUST_NOT_LEAK',
+            parametersJsonSchema: [],
+            handler: $this->dummyHandler(),
+        );
+
+        $this->assertSame(['read: Read'], $this->registry->permanentToolLinesForNames(['read', 'mcp_tool', 'unknown']));
+        $this->assertSame(['G1'], $this->registry->permanentGuidelinesForNames(['read', 'mcp_tool']));
+        $this->assertStringNotContainsString('CHANGED_PROVIDER_DESCRIPTION_MUST_NOT_LEAK', implode('
+', $this->registry->permanentToolLinesForNames(['mcp_tool'])));
+    }
+
+    public function testPermanentSubsetUsesExplicitPromptLineNotProviderDescription(): void
+    {
+        $this->registry->registerTool(
+            name: 'read',
+            description: 'Provider description is not prompt metadata',
+            parametersJsonSchema: [],
+            handler: $this->dummyHandler(),
+            promptLine: 'AUTHORITATIVE_PROMPT_LINE',
+            promptGuidelines: [],
+        );
+
+        $lines = $this->registry->permanentToolLinesForNames(['read']);
+        $this->assertSame(['AUTHORITATIVE_PROMPT_LINE'], $lines);
+        $this->assertStringNotContainsString('Provider description', implode('
+', $lines));
+    }
+
     /* ───────── Private helpers ───────── */
 
     private function createProvider(

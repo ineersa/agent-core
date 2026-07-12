@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Session;
 
-use Ineersa\AgentCore\Contract\RunSequenceAllocatorInterface;
+use Ineersa\CodingAgent\Session\Contract\RunSequenceAllocatorInterface;
 
 /**
  * Per-run monotonic sequence allocator backed by a single integer file.
@@ -12,6 +12,12 @@ use Ineersa\AgentCore\Contract\RunSequenceAllocatorInterface;
  * The counter file (typically sequence.cursor next to events.jsonl) is
  * updated before callers append JSONL. A crash after the counter write but
  * before append leaves a gap in seq — replay allows gaps.
+ *
+ * Read/bootstrap/advance/write run under one exclusive flock on the cursor handle.
+ * Invariant (one critical section per allocation):
+ * open sequence.cursor (c+b) → flock LOCK_EX → read high-water (bootstrap from events.jsonl only when file empty)
+ * → reserve seq block → durable fwrite high-water → flock LOCK_UN → fclose.
+ * JSONL append is a separate step under the run lock; cursor may advance before append completes, so seq gaps are allowed.
  */
 final class FileRunSequenceAllocator implements RunSequenceAllocatorInterface
 {
@@ -30,12 +36,25 @@ final class FileRunSequenceAllocator implements RunSequenceAllocatorInterface
             throw new \InvalidArgumentException('allocateBlock count must be >= 1.');
         }
 
-        $currentHigh = $this->readHighWater($counterPath, $bootstrapMaxSeq);
-        $start = $currentHigh + 1;
-        $end = $currentHigh + $count;
-        $this->writeHighWater($counterPath, $end);
+        $handle = $this->openCounterHandle($counterPath);
+        try {
+            if (!flock($handle, \LOCK_EX)) {
+                throw new \RuntimeException(\sprintf('Cannot acquire exclusive lock on sequence counter "%s".', $counterPath));
+            }
 
-        return range($start, $end);
+            try {
+                $currentHigh = $this->readHighWaterLocked($handle, $bootstrapMaxSeq);
+                $start = $currentHigh + 1;
+                $end = $currentHigh + $count;
+                $this->writeHighWaterLocked($handle, $end);
+
+                return range($start, $end);
+            } finally {
+                flock($handle, \LOCK_UN);
+            }
+        } finally {
+            fclose($handle);
+        }
     }
 
     public static function counterPathForEventsLog(string $eventsJsonlPath): string
@@ -43,26 +62,26 @@ final class FileRunSequenceAllocator implements RunSequenceAllocatorInterface
         return \dirname($eventsJsonlPath).'/'.self::COUNTER_BASENAME;
     }
 
-    private function readHighWater(string $counterPath, ?callable $bootstrapMaxSeq): int
+    /**
+     * @param resource $handle
+     */
+    private function readHighWaterLocked($handle, ?callable $bootstrapMaxSeq): int
     {
-        if (is_file($counterPath) && is_readable($counterPath)) {
-            $raw = file_get_contents($counterPath);
-            if (false === $raw) {
-                throw new \RuntimeException(\sprintf('Cannot read sequence counter at "%s".', $counterPath));
-            }
+        rewind($handle);
+        $raw = stream_get_contents($handle);
+        if (false === $raw) {
+            throw new \RuntimeException('Cannot read sequence counter from locked handle.');
+        }
 
-            $trimmed = trim($raw);
-            if ('' === $trimmed) {
-                throw new \RuntimeException(\sprintf('Sequence counter at "%s" is empty.', $counterPath));
-            }
-
+        $trimmed = trim($raw);
+        if ('' !== $trimmed) {
             if (!preg_match('/^-?\d+$/', $trimmed)) {
-                throw new \RuntimeException(\sprintf('Sequence counter at "%s" is corrupt (expected integer, got %s).', $counterPath, mb_substr($trimmed, 0, 32)));
+                throw new \RuntimeException(\sprintf('Sequence counter is corrupt (expected integer, got %s).', mb_substr($trimmed, 0, 32)));
             }
 
             $value = (int) $trimmed;
             if ($value < 0) {
-                throw new \RuntimeException(\sprintf('Sequence counter at "%s" is negative (%d).', $counterPath, $value));
+                throw new \RuntimeException(\sprintf('Sequence counter is negative (%d).', $value));
             }
 
             return $value;
@@ -76,17 +95,38 @@ final class FileRunSequenceAllocator implements RunSequenceAllocatorInterface
         return $bootstrapMax;
     }
 
-    private function writeHighWater(string $counterPath, int $highWater): void
+    /**
+     * @param resource $handle
+     */
+    private function writeHighWaterLocked($handle, int $highWater): void
     {
-        $dir = \dirname($counterPath);
-        if (!is_dir($dir) && !mkdir($dir, 0777, true) && !is_dir($dir)) {
-            throw new \RuntimeException(\sprintf('Cannot create directory for sequence counter "%s".', $counterPath));
+        rewind($handle);
+        if (!ftruncate($handle, 0)) {
+            throw new \RuntimeException('Cannot truncate sequence counter for write.');
         }
 
         $payload = (string) $highWater."\n";
-        $written = file_put_contents($counterPath, $payload, \LOCK_EX);
-        if (false === $written) {
-            throw new \RuntimeException(\sprintf('Cannot write sequence counter at "%s".', $counterPath));
+        $written = fwrite($handle, $payload);
+        if (false === $written || $written !== \strlen($payload)) {
+            throw new \RuntimeException('Cannot write sequence counter high-water mark.');
         }
+
+        fflush($handle);
+    }
+
+    /** @return resource */
+    private function openCounterHandle(string $counterPath): mixed
+    {
+        $dir = \dirname($counterPath);
+        if (!is_dir($dir) && !mkdir(directory: $dir, recursive: true) && !is_dir($dir)) {
+            throw new \RuntimeException(\sprintf('Cannot create directory for sequence counter "%s".', $counterPath));
+        }
+
+        $handle = fopen($counterPath, 'c+b');
+        if (false === $handle) {
+            throw new \RuntimeException(\sprintf('Cannot open sequence counter at "%s".', $counterPath));
+        }
+
+        return $handle;
     }
 }

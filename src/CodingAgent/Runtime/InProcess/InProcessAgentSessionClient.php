@@ -7,7 +7,6 @@ namespace Ineersa\CodingAgent\Runtime\InProcess;
 use Ineersa\AgentCore\Contract\AgentRunnerInterface;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\Rewind\RunRewindServiceInterface;
-use Ineersa\AgentCore\Contract\SequencedEventStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolExecutorInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
@@ -51,7 +50,6 @@ final class InProcessAgentSessionClient implements AgentSessionClient
     public function __construct(
         private readonly AgentRunnerInterface $runner,
         private readonly EventStoreInterface $eventStore,
-        private readonly SequencedEventStoreInterface $sequencedEventStore,
         private readonly RuntimeEventMapper $mapper,
         private readonly RunRewindServiceInterface $runRewindService,
         private readonly SystemPromptBuilder $systemPromptBuilder,
@@ -72,6 +70,10 @@ final class InProcessAgentSessionClient implements AgentSessionClient
 
     public function start(StartRunRequest $request): RunHandle
     {
+        $metadata = null !== $request->model || null !== $request->reasoning
+            ? new RunMetadata(model: $request->model, reasoning: $request->reasoning)
+            : null;
+
         $messages = [];
 
         // Build and prepend the system prompt as the first message.
@@ -150,9 +152,6 @@ final class InProcessAgentSessionClient implements AgentSessionClient
         // absent, the effective model/reasoning is resolved via ModelResolver so
         // the session is pinned to what the first turn actually used.  This makes
         // resume stable even if the global default later changes.
-        $metadataModel = $request->model;
-        $metadataReasoning = $request->reasoning;
-
         $sessionId = $request->runId;
         if ('' !== $sessionId) {
             $modelRef = null !== $request->model
@@ -178,18 +177,7 @@ final class InProcessAgentSessionClient implements AgentSessionClient
             if ([] !== $metaFields) {
                 $this->sessionMetaStore->writeSessionMetadata($sessionId, $metaFields);
             }
-
-            if (null === $metadataModel && null !== $modelRef) {
-                $metadataModel = $modelRef->toString();
-            }
-            if (null === $metadataReasoning && '' !== $reasoning) {
-                $metadataReasoning = $reasoning;
-            }
         }
-
-        $metadata = null !== $metadataModel || null !== $metadataReasoning
-            ? new RunMetadata(model: $metadataModel, reasoning: $metadataReasoning)
-            : null;
 
         $input = new StartRunInput(
             systemPrompt: '',
@@ -320,7 +308,7 @@ final class InProcessAgentSessionClient implements AgentSessionClient
 
     public function completeRun(string $runId): void
     {
-        $this->sequencedEventStore->appendWithNextSeq(new RunEvent(
+        $this->eventStore->append(new RunEvent(
             runId: $runId,
             seq: 0,
             turnNo: 0,
@@ -400,7 +388,7 @@ final class InProcessAgentSessionClient implements AgentSessionClient
 
         $toolCallId = uniqid('sh_', true);
 
-        $this->sequencedEventStore->appendWithNextSeq(new RunEvent(
+        $this->eventStore->append(new RunEvent(
             runId: $runId,
             seq: 0,
             turnNo: 0,
@@ -414,7 +402,7 @@ final class InProcessAgentSessionClient implements AgentSessionClient
 
         if (null === $this->toolExecutor) {
             // No ToolExecutor configured — emit a diagnostic error event.
-            $this->sequencedEventStore->appendWithNextSeq(new RunEvent(
+            $this->eventStore->append(new RunEvent(
                 runId: $runId,
                 seq: 0,
                 turnNo: 0,
@@ -451,7 +439,7 @@ final class InProcessAgentSessionClient implements AgentSessionClient
         }
 
         // Emit tool_execution_end event with result text.
-        $this->sequencedEventStore->appendWithNextSeq(new RunEvent(
+        $this->eventStore->append(new RunEvent(
             runId: $runId,
             seq: 0,
             turnNo: 0,

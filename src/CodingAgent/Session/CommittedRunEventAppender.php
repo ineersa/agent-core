@@ -4,19 +4,19 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Session;
 
+use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\RunStoreInterface;
-use Ineersa\AgentCore\Contract\SequencedEventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Psr\Log\LoggerInterface;
 
 /**
- * Central helper for appending parent-session events with atomic sequence allocation.
+ * Appends parent-session events through a committed store and syncs parent RunState.lastSeq.
  */
-final readonly class SequencedRunEventAppender
+final readonly class CommittedRunEventAppender
 {
     public function __construct(
-        private SequencedEventStoreInterface $eventStore,
+        private EventStoreInterface $eventStore,
         private RunStoreInterface $runStore,
         private LoggerInterface $logger,
     ) {
@@ -24,7 +24,7 @@ final readonly class SequencedRunEventAppender
 
     public function append(RunEvent $event): RunEvent
     {
-        $persisted = $this->eventStore->appendWithNextSeq($event);
+        $persisted = $this->eventStore->append($event);
         $this->syncParentLastSeq($persisted->runId, $persisted->seq);
 
         return $persisted;
@@ -41,7 +41,7 @@ final readonly class SequencedRunEventAppender
             return [];
         }
 
-        $persisted = $this->eventStore->appendManyWithNextSeq($events);
+        $persisted = $this->eventStore->appendMany($events);
         $last = $persisted[array_key_last($persisted)];
         $this->syncParentLastSeq($last->runId, $last->seq);
 

@@ -29,7 +29,6 @@ final readonly class FooterStateSegmentProvider implements FooterSegmentProvider
 {
     public function __construct(
         private TuiSessionState $state,
-        private readonly ?ContextUsageFormatter $contextUsageFormatter = null,
     ) {
     }
 
@@ -85,14 +84,14 @@ final readonly class FooterStateSegmentProvider implements FooterSegmentProvider
             );
         }
 
-        if ($s->contextWindow > 0) {
-            // Context window usage uses the latest input_tokens value
-            // (not accumulated) — this represents the actual context size
-            // sent to the API for the latest turn.
-            $used = $s->usage->latestInputTokens;
-            $pct = $used > 0 ? min(100, ($used / $s->contextWindow) * 100) : 0.0;
-            $pctColor = $pct > 75 ? ThemeColorEnum::Error : ($pct > 50 ? ThemeColorEnum::Warning : ThemeColorEnum::Success);
-            $ctxDetail = \sprintf('%.0f%% %s/%s', $pct, self::fmt($used), self::fmt($s->contextWindow));
+        $ctxFormatted = ContextUsageFormatter::format(
+            '' !== $s->footerModel ? $s->footerModel : null,
+            $s->usage->latestInputTokens,
+            $s->contextWindow,
+        );
+        if (null !== $ctxFormatted) {
+            $ctxDetail = $ctxFormatted->text;
+            $pctColor = $ctxFormatted->color;
         } else {
             $ctxDetail = '0%';
             $pctColor = ThemeColorEnum::Success;
@@ -190,7 +189,7 @@ final readonly class FooterStateSegmentProvider implements FooterSegmentProvider
 
     public static function formatTokenCount(int $n): string
     {
-        return self::fmt($n);
+        return ContextUsageFormatter::formatTokenCount($n);
     }
 
     /** @return list<FooterSegment> */
@@ -202,14 +201,18 @@ final readonly class FooterStateSegmentProvider implements FooterSegmentProvider
 
         $child = $s->subagentLiveView->selected;
         if (null !== $child) {
+            $statusLabel = $child->statusLabel();
+            $agentStatusText = \in_array($child->status->value, ['running', 'waiting_human'], true)
+                ? \sprintf('%s [%s]', $child->agentName, $statusLabel)
+                : \sprintf('%s · %s', $child->agentName, $statusLabel);
             $segments[] = new FooterSegment(
-                text: \sprintf('%s [%s]', $child->agentName, $child->statusLabel()),
+                text: $agentStatusText,
                 priority: 5,
                 color: ThemeColorEnum::Working,
             );
-            $ctx = ($this->contextUsageFormatter ?? new ContextUsageFormatter())->format($child->model, $child->latestInputTokens);
-            if (null !== $ctx) {
-                $segments[] = new FooterSegment(text: $ctx['text'], priority: 6, color: $ctx['color']);
+            $ctxFormatted = ContextUsageFormatter::format($child->model, $child->latestInputTokens, $child->contextWindow);
+            if (null !== $ctxFormatted) {
+                $segments[] = new FooterSegment(text: $ctxFormatted->text, priority: 6, color: $ctxFormatted->color);
             }
             if (null !== $child->model && '' !== $child->model) {
                 $segments[] = new FooterSegment(
@@ -229,11 +232,7 @@ final readonly class FooterStateSegmentProvider implements FooterSegmentProvider
 
     private static function fmt(int $n): string
     {
-        if ($n >= 1_000) {
-            return \sprintf('%.1fk', $n / 1_000);
-        }
-
-        return (string) $n;
+        return self::formatTokenCount($n);
     }
 
     private static function formatElapsed(float $elapsedSeconds): string

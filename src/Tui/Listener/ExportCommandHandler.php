@@ -67,11 +67,16 @@ final class ExportCommandHandler implements SlashCommandHandler
             $outputPath = getcwd().'/'.$outputPath;
         }
 
-        /** @var array<string, mixed> $metadata */
-        $metadata = $this->sessionStore->loadMetadata($sessionId) ?? [];
-        $sessionName = SessionEventsExportService::strFromArray($metadata, 'name', 'Session '.$sessionId);
-        $sessionCwd = SessionEventsExportService::strFromArray($metadata, 'cwd');
-        $createdAt = SessionEventsExportService::strFromArray($metadata, 'created_at');
+        $sessionName = '';
+        $sessionCwd = '';
+        $createdAt = '';
+        if (!str_ends_with($outputPath, '.jsonl')) {
+            /** @var array<string, mixed> $metadata */
+            $metadata = $this->sessionStore->loadMetadata($sessionId) ?? [];
+            $sessionName = SessionEventsExportService::strFromArray($metadata, 'name', 'Session '.$sessionId);
+            $sessionCwd = SessionEventsExportService::strFromArray($metadata, 'cwd');
+            $createdAt = SessionEventsExportService::strFromArray($metadata, 'created_at');
+        }
 
         try {
             $message = $this->exportService->exportEventsFile(
