@@ -924,13 +924,13 @@ services:
   # SubagentExecutionService needs two RunStoreInterface bindings:
   # $runStore auto-wires to the child-aware decorator (child runs), $parentRunStore to
   # SessionRunStore (parent run state for prompt/metadata extraction).
-  # Parent-session progress events are appended via SequencedRunEventAppender, which must
-  # use EventStoreInterface (StreamingCommittedRuntimeEventStore → ChildAwareEventStore)
+  # Parent-session progress events use CommittedRunEventAppender → CommittedEventStoreInterface
+  # (StreamingCommittedRuntimeEventStore → ChildAwareEventStore) for streaming after commit.
   # so sequenced commits emit mapped RuntimeEvents on consumer stdout for the controller/TUI.
   Ineersa\CodingAgent\Agent\Execution\SubagentExecutionService:
     arguments:
       $parentRunStore: '@Ineersa\CodingAgent\Session\SessionRunStore'
-      $sequencedEventAppender: '@Ineersa\CodingAgent\Session\SequencedRunEventAppender'
+      $committedRunEventAppender: '@Ineersa\CodingAgent\Session\CommittedRunEventAppender'
 
   # ─── AGENT-05 Subagent tool storage routing ─────────────────────────
 
@@ -952,9 +952,9 @@ services:
 
   Ineersa\CodingAgent\Session\EventLogMaxSeqBootstrapReader: ~
 
-  Ineersa\CodingAgent\Session\SequencedRunEventAppender:
+  Ineersa\CodingAgent\Session\CommittedRunEventAppender:
     arguments:
-      $eventStore: '@Ineersa\AgentCore\Contract\EventStoreInterface'
+      $eventStore: '@Ineersa\CodingAgent\Runtime\Contract\CommittedEventStoreInterface'
       $runStore: '@Ineersa\CodingAgent\Session\SessionRunStore'
 
   Ineersa\CodingAgent\Agent\Artifact\ChildAwareEventStore:

@@ -4,13 +4,12 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Runtime\Stream;
 
-use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
+use Ineersa\CodingAgent\Runtime\Contract\CommittedEventStoreInterface;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeEventSinkInterface;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
-use Ineersa\CodingAgent\Session\Contract\CommittedEventStoreInterface;
 
-final class StreamingCommittedRuntimeEventStore implements EventStoreInterface
+final class StreamingCommittedRuntimeEventStore implements CommittedEventStoreInterface
 {
     public function __construct(
         private readonly CommittedEventStoreInterface $inner,

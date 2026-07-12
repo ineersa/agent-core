@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Agent\Artifact;
 
 use Ineersa\AgentCore\Domain\Event\RunEvent;
-use Ineersa\CodingAgent\Session\Contract\CommittedEventStoreInterface;
+use Ineersa\CodingAgent\Runtime\Contract\CommittedEventStoreInterface;
 
 /**
  * Child-aware decorator for EventStoreInterface that delegates between parent-scoped and

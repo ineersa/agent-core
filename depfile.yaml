@@ -635,6 +635,7 @@ parameters:
       - AppMcpConfig
       - TuiTheme
       - AppSession
+      - AppRuntimeContract
       - AppSkills
       - AppTool
       - AgentCore

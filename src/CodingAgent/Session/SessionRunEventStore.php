@@ -7,7 +7,7 @@ namespace Ineersa\CodingAgent\Session;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
 use Ineersa\AgentCore\Schema\SchemaVersion;
-use Ineersa\CodingAgent\Session\Contract\CommittedEventStoreInterface;
+use Ineersa\CodingAgent\Runtime\Contract\CommittedEventStoreInterface;
 use Ineersa\CodingAgent\Session\Contract\RunSequenceAllocatorInterface;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Lock\LockFactory;
@@ -44,14 +44,10 @@ final class SessionRunEventStore implements CommittedEventStoreInterface
 
         try {
             $counterPath = FileRunSequenceAllocator::counterPathForEventsLog($path);
-            if ($event->seq > RunEvent::APPEND_DRAFT_SEQ) {
-                $nextSeq = $event->seq;
-            } else {
-                $nextSeq = $this->sequenceAllocator->allocateNext(
-                    $counterPath,
-                    fn (): int => $this->bootstrapReader->readMaxSeq($path),
-                );
-            }
+            $nextSeq = $this->sequenceAllocator->allocateNext(
+                $counterPath,
+                fn (): int => $this->bootstrapReader->readMaxSeq($path),
+            );
             $persisted = new RunEvent(
                 runId: $event->runId,
                 seq: $nextSeq,

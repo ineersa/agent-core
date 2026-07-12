@@ -1976,7 +1976,7 @@ final class SessionRunStateReplayServiceTest extends TestCase
      */
     private function appendEvent(string $type, int $seq, array $payload): void
     {
-        $this->eventStore->append(new RunEvent(
+        $this->eventStore->seed(new RunEvent(
             runId: $this->runId,
             seq: $seq,
             turnNo: 0,
@@ -1993,7 +1993,7 @@ final class SessionRunStateReplayServiceTest extends TestCase
      */
     private function appendEventWithTurn(string $type, int $seq, int $turnNo, array $payload): void
     {
-        $this->eventStore->append(new RunEvent(
+        $this->eventStore->seed(new RunEvent(
             runId: $this->runId,
             seq: $seq,
             turnNo: $turnNo,

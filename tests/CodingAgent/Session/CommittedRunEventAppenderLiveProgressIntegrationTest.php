@@ -15,18 +15,18 @@ use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Ineersa\CodingAgent\Runtime\Stream\StreamingCommittedRuntimeEventStore;
-use Ineersa\CodingAgent\Session\SequencedRunEventAppender;
+use Ineersa\CodingAgent\Session\CommittedRunEventAppender;
 use Ineersa\CodingAgent\Session\SessionRunStore;
 use Ineersa\CodingAgent\Tests\TestCase\PerMethodIsolatedKernelTestCase;
 
 /**
- * Regression: SequencedRunEventAppender must append through EventStoreInterface
+ * Regression: CommittedRunEventAppender must append through EventStoreInterface
  * (StreamingCommittedRuntimeEventStore), not ChildAwareEventStore directly.
  *
  * Direct ChildAware wiring persists tool_execution_update but never emits mapped
  * RuntimeEvents for the controller/TUI live path.
  */
-final class SequencedRunEventAppenderLiveProgressIntegrationTest extends PerMethodIsolatedKernelTestCase
+final class CommittedRunEventAppenderLiveProgressIntegrationTest extends PerMethodIsolatedKernelTestCase
 {
     private RecordingRuntimeEventSink $recordingSink;
 
@@ -52,8 +52,8 @@ final class SequencedRunEventAppenderLiveProgressIntegrationTest extends PerMeth
             'EventStoreInterface must resolve to the streaming decorator in the live progress path',
         );
 
-        /** @var SequencedRunEventAppender $appender */
-        $appender = self::getContainer()->get(SequencedRunEventAppender::class);
+        /** @var CommittedRunEventAppender $appender */
+        $appender = self::getContainer()->get(CommittedRunEventAppender::class);
 
         $progress = [
             'mode' => 'parallel',

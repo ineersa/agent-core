@@ -12,8 +12,8 @@ namespace Ineersa\CodingAgent\Session;
  */
 final class EventLogMaxSeqBootstrapReader
 {
-    /** Match top-level JSON "seq": <int> without full json_decode per line. */
-    private const SEQ_FIELD_PATTERN = '/"seq"\s*:\s*(-?\d+)/';
+    /** Match top-level JSON "seq": <positive int> without full json_decode per line. */
+    private const SEQ_FIELD_PATTERN = '/"seq"\s*:\s*(\d+)/';
 
     public function readMaxSeq(string $path): int
     {
@@ -40,6 +40,10 @@ final class EventLogMaxSeqBootstrapReader
                 }
 
                 $seq = (int) $matches[1];
+                if ($seq < 1) {
+                    continue;
+                }
+
                 if ($seq > $maxSeq) {
                     $maxSeq = $seq;
                 }

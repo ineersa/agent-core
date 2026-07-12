@@ -35,4 +35,18 @@ final class EventLogMaxSeqBootstrapReaderTest extends TestCase
         $reader = new EventLogMaxSeqBootstrapReader();
         $this->assertSame(7, $reader->readMaxSeq($path));
     }
+
+    public function testIgnoresMalformedWhitespaceAndNonPositiveSeq(): void
+    {
+        $path = $this->tmpDir.'/events.jsonl';
+        file_put_contents(
+            $path,
+            '  {"seq": 3}  '."\n"
+            .'not json at all'."\n"
+            .'{"seq":0}'."\n"
+            .'{"seq":5}'."\n",
+        );
+        $reader = new EventLogMaxSeqBootstrapReader();
+        $this->assertSame(5, $reader->readMaxSeq($path));
+    }
 }

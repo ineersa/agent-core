@@ -24,7 +24,7 @@ use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionDTO;
 use Ineersa\CodingAgent\Config\AgentsConfig;
 use Ineersa\CodingAgent\Config\Ai\AiModelReference;
 use Ineersa\CodingAgent\Config\AppConfig;
-use Ineersa\CodingAgent\Session\SequencedRunEventAppender;
+use Ineersa\CodingAgent\Session\CommittedRunEventAppender;
 use Ineersa\CodingAgent\Skills\SkillsContextBuilder;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Clock\ClockInterface;
@@ -60,7 +60,7 @@ final class SubagentExecutionService
         private readonly RunStoreInterface $runStore,
         private readonly RunStoreInterface $parentRunStore,
         private readonly EventStoreInterface $eventStore,
-        private readonly SequencedRunEventAppender $sequencedEventAppender,
+        private readonly CommittedRunEventAppender $committedRunEventAppender,
         private readonly SubagentRunMetadataReader $metadataReader,
         private readonly AgentChildRunDirectory $childRunDirectory,
         private readonly StackToolExecutionContextAccessor $contextAccessor,
@@ -870,7 +870,7 @@ final class SubagentExecutionService
             ],
         );
 
-        $this->sequencedEventAppender->append($event);
+        $this->committedRunEventAppender->append($event);
     }
 
     /**
@@ -1408,7 +1408,7 @@ TXT;
             ],
         );
 
-        $this->sequencedEventAppender->append($event);
+        $this->committedRunEventAppender->append($event);
     }
 
     /**
@@ -1554,13 +1554,6 @@ TXT;
     }
 
     /**
-     * Resolve project/AGENTS/skills context for a child launch from parent state
-     * and agent definition frontmatter flags.
-     *
-     * @return array{agentsMd: string, skillsContext: string}
-     */
-
-    /**
      * Build canonical child run metadata including model context window from catalog.
      *
      * @param list<string>         $allowedTools
@@ -1617,6 +1610,9 @@ TXT;
     }
 
     /**
+     * Resolve project/AGENTS/skills context for a child launch from parent state
+     * and agent definition frontmatter flags.
+     *
      * @return array{agentsMd: string, skillsContext: string}
      */
     private function resolveChildLaunchContext(string $parentRunId, AgentDefinitionDTO $definition): array

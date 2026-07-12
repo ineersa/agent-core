@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\CodingAgent\Session\Contract;
+namespace Ineersa\CodingAgent\Runtime\Contract;
 
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 

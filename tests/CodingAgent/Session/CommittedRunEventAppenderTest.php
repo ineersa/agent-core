@@ -8,14 +8,14 @@ use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryRunStore;
-use Ineersa\CodingAgent\Session\Contract\CommittedEventStoreInterface;
-use Ineersa\CodingAgent\Session\SequencedRunEventAppender;
+use Ineersa\CodingAgent\Runtime\Contract\CommittedEventStoreInterface;
+use Ineersa\CodingAgent\Session\CommittedRunEventAppender;
 use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 
 #[AllowMockObjectsWithoutExpectations]
-final class SequencedRunEventAppenderTest extends TestCase
+final class CommittedRunEventAppenderTest extends TestCase
 {
     public function testAppendSyncsParentLastSeqFromPersistedEvent(): void
     {
@@ -26,7 +26,7 @@ final class SequencedRunEventAppenderTest extends TestCase
         $eventStore = $this->createMock(CommittedEventStoreInterface::class);
         $eventStore->method('append')->willReturn(new RunEvent($runId, 4, 1, 'tool_execution_update', []));
 
-        $appender = new SequencedRunEventAppender($eventStore, $runStore, new NullLogger());
+        $appender = new CommittedRunEventAppender($eventStore, $runStore, new NullLogger());
         $appender->append(new RunEvent($runId, 0, 1, 'tool_execution_update', []));
 
         $state = $runStore->get($runId);

@@ -21,6 +21,10 @@ services:
   Ineersa\AgentCore\Contract\EventStoreInterface:
     alias: Ineersa\CodingAgent\Runtime\Stream\StreamingCommittedRuntimeEventStore
 
+  Ineersa\CodingAgent\Runtime\Contract\CommittedEventStoreInterface:
+    alias: Ineersa\CodingAgent\Runtime\Stream\StreamingCommittedRuntimeEventStore
+
+
   Ineersa\AgentCore\Contract\AgentRunnerInterface:
     alias: Ineersa\AgentCore\Application\Pipeline\AgentRunner
 

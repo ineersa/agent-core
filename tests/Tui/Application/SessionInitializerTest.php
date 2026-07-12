@@ -172,7 +172,7 @@ final class SessionInitializerTest extends TestCase
                 ],
             ],
         );
-        $this->eventStore->append($steerEvent);
+        $this->seedCanonicalEvent($steerEvent);
 
         // Append a dropped event (e.g. tool_batch_committed) that maps to null
         $droppedEvent = new RunEvent(
@@ -181,7 +181,7 @@ final class SessionInitializerTest extends TestCase
             turnNo: 0,
             type: 'tool_batch_committed',
         );
-        $this->eventStore->append($droppedEvent);
+        $this->seedCanonicalEvent($droppedEvent);
 
         // Projector mock: track accepted events and return one block
         $acceptedEvents = [];
@@ -234,7 +234,7 @@ final class SessionInitializerTest extends TestCase
             turnNo: 0,
             type: 'agent_command_queued',
         );
-        $this->eventStore->append($droppedEvent);
+        $this->seedCanonicalEvent($droppedEvent);
 
         $this->projector->expects($this->exactly(2))->method('reset');
         $this->projector->expects($this->never())->method('accept');
@@ -382,7 +382,7 @@ final class SessionInitializerTest extends TestCase
 
         // ── Events: linear (T1, T2) → LeafSet(rewind to T1) → T3 (new branch) ──
         // Turn 1 (active, seq 5)
-        $this->eventStore->append(new RunEvent(
+        $this->seedCanonicalEvent(new RunEvent(
             runId: $runId,
             seq: 5,
             turnNo: 1,
@@ -394,7 +394,7 @@ final class SessionInitializerTest extends TestCase
             ],
         ));
         // Turn 2 (abandoned branch, seq 8)
-        $this->eventStore->append(new RunEvent(
+        $this->seedCanonicalEvent(new RunEvent(
             runId: $runId,
             seq: 8,
             turnNo: 2,
@@ -406,7 +406,7 @@ final class SessionInitializerTest extends TestCase
             ],
         ));
         // LeafSet (rewind to T1, seq 12)
-        $this->eventStore->append(new RunEvent(
+        $this->seedCanonicalEvent(new RunEvent(
             runId: $runId,
             seq: 12,
             turnNo: 1,
@@ -414,7 +414,7 @@ final class SessionInitializerTest extends TestCase
             payload: ['turn_no' => 1, 'previous_turn_no' => 2],
         ));
         // Turn 3 (active new branch, seq 15)
-        $this->eventStore->append(new RunEvent(
+        $this->seedCanonicalEvent(new RunEvent(
             runId: $runId,
             seq: 15,
             turnNo: 3,
@@ -501,7 +501,7 @@ final class SessionInitializerTest extends TestCase
         mkdir($sessionDir, 0777, true);
         file_put_contents($sessionDir.'/events.jsonl', '');
 
-        $this->eventStore->append(new RunEvent(
+        $this->seedCanonicalEvent(new RunEvent(
             runId: $runId,
             seq: 1,
             turnNo: 1,
@@ -512,7 +512,7 @@ final class SessionInitializerTest extends TestCase
                 'message' => ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Hello']]],
             ],
         ));
-        $this->eventStore->append(new RunEvent(
+        $this->seedCanonicalEvent(new RunEvent(
             runId: $runId,
             seq: 2,
             turnNo: 1,
@@ -582,11 +582,11 @@ final class SessionInitializerTest extends TestCase
         mkdir($sessionDir, 0777, true);
         file_put_contents($sessionDir.'/events.jsonl', '');
 
-        $this->eventStore->append(new RunEvent(runId: $runId, seq: 5, turnNo: 1, type: 'agent_command_applied', payload: [
+        $this->seedCanonicalEvent(new RunEvent(runId: $runId, seq: 5, turnNo: 1, type: 'agent_command_applied', payload: [
             'kind' => 'steer', 'idempotency_key' => 'ik_t1',
             'message' => ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Turn 1']]],
         ]));
-        $this->eventStore->append(new RunEvent(runId: $runId, seq: 99, turnNo: 2, type: 'agent_command_applied', payload: [
+        $this->seedCanonicalEvent(new RunEvent(runId: $runId, seq: 99, turnNo: 2, type: 'agent_command_applied', payload: [
             'kind' => 'steer', 'idempotency_key' => 'ik_abandoned',
             'message' => ['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Abandoned']]],
         ]));
@@ -623,11 +623,11 @@ final class SessionInitializerTest extends TestCase
         mkdir($sessionDir, 0777, true);
         file_put_contents($sessionDir.'/events.jsonl', '');
 
-        $this->eventStore->append(new RunEvent(runId: $runId, seq: 1, turnNo: 1, type: 'run_started', payload: [
+        $this->seedCanonicalEvent(new RunEvent(runId: $runId, seq: 1, turnNo: 1, type: 'run_started', payload: [
             'step_id' => 'step-1',
             'payload' => ['messages' => [['role' => 'user', 'content' => [['type' => 'text', 'text' => 'Hi']]]]],
         ]));
-        $this->eventStore->append(new RunEvent(runId: $runId, seq: 2, turnNo: 1, type: 'llm_step_completed', payload: [
+        $this->seedCanonicalEvent(new RunEvent(runId: $runId, seq: 2, turnNo: 1, type: 'llm_step_completed', payload: [
             'step_id' => 'step-2', 'text' => 'Hello', 'usage' => ['input_tokens' => 120, 'output_tokens' => 30],
         ]));
 
@@ -663,6 +663,22 @@ final class SessionInitializerTest extends TestCase
         $this->assertSame(120, $state->usage->latestInputTokens);
         $this->assertSame(120, $state->usage->inputTokens);
         $this->assertSame(30, $state->usage->outputTokens);
+    }
+
+    /**
+     * Seed events.jsonl with an explicit seq (historical/gap scenarios). Production append always allocates.
+     */
+    private function seedCanonicalEvent(RunEvent $event): void
+    {
+        $path = $this->projectDir.'/.hatfield/sessions/'.$event->runId.'/events.jsonl';
+        $normalizer = new EventPayloadNormalizer();
+        $json = json_encode($normalizer->normalizeRunEvent($event), \JSON_THROW_ON_ERROR);
+        file_put_contents($path, $json."\n", \FILE_APPEND);
+        $counterPath = FileRunSequenceAllocator::counterPathForEventsLog($path);
+        $current = is_readable($counterPath) ? (int) trim((string) file_get_contents($counterPath)) : 0;
+        if ($event->seq > $current) {
+            file_put_contents($counterPath, (string) $event->seq."\n");
+        }
     }
 
     private function buildSessionInitializerWithProviders(

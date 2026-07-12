@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Tests\Support;
 
-use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
+use Ineersa\CodingAgent\Runtime\Contract\CommittedEventStoreInterface;
 
-final class InMemoryEventStore implements EventStoreInterface
+final class InMemoryEventStore implements CommittedEventStoreInterface
 {
     /** @var array<string, list<RunEvent>> */
     private array $eventsByRun = [];
@@ -15,23 +15,29 @@ final class InMemoryEventStore implements EventStoreInterface
     /** @var array<string, int> */
     private array $highWaterByRun = [];
 
+
+    /**
+     * Test-only: insert a persisted row with explicit seq (gaps/historical logs).
+     */
+    public function seed(RunEvent $event): void
+    {
+        $this->eventsByRun[$event->runId] ??= [];
+        $this->eventsByRun[$event->runId][] = $event;
+        $this->highWaterByRun[$event->runId] = max($this->highWaterByRun[$event->runId] ?? 0, $event->seq);
+    }
+
     public function append(RunEvent $event): RunEvent
     {
-        if ($event->seq > RunEvent::APPEND_DRAFT_SEQ) {
-            $persisted = $event;
-            $this->highWaterByRun[$event->runId] = max($this->highWaterByRun[$event->runId] ?? 0, $persisted->seq);
-        } else {
-            $next = ($this->highWaterByRun[$event->runId] ?? 0) + 1;
-            $this->highWaterByRun[$event->runId] = $next;
-            $persisted = new RunEvent(
-                runId: $event->runId,
-                seq: $next,
-                turnNo: $event->turnNo,
-                type: $event->type,
-                payload: $event->payload,
-                createdAt: $event->createdAt,
-            );
-        }
+        $next = ($this->highWaterByRun[$event->runId] ?? 0) + 1;
+        $this->highWaterByRun[$event->runId] = $next;
+        $persisted = new RunEvent(
+            runId: $event->runId,
+            seq: $next,
+            turnNo: $event->turnNo,
+            type: $event->type,
+            payload: $event->payload,
+            createdAt: $event->createdAt,
+        );
         $this->eventsByRun[$event->runId] ??= [];
         $this->eventsByRun[$event->runId][] = $persisted;
 
