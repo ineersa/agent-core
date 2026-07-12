@@ -65,7 +65,7 @@ final readonly class ForkChildMessageComposer
     ): string {
         $parts = [];
 
-        $base = $this->systemPromptBuilder->buildMainHarnessForAllowedTools($allowedToolNames);
+        $base = $this->systemPromptBuilder->buildChildHarnessFragment($allowedToolNames);
         if ('' !== trim($base)) {
             $parts[] = $base;
         }

@@ -177,7 +177,7 @@ final class SubagentLiveBackgroundChildPoller
             return;
         }
 
-        $state->subagentLiveCatalog->ingestNestedProgressFromChildRunEvent($event);
+        $state->subagentLiveCatalog->ingestRuntimeEvent($event);
     }
 
     /**

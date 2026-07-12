@@ -231,6 +231,7 @@ logging:
 #         - ~/shared/agents/custom-reviewer.md
 #         - .hatfield/team-agents
 
+
 # ---------------------------------------------------------------------------
 # Fork tool (child runs)
 # ---------------------------------------------------------------------------
@@ -242,10 +243,6 @@ logging:
 forks:
     model: deepseek/deepseek-v4-flash
     thinking_level: xhigh
-
-compaction:
-    model: deepseek/deepseek-v4-flash
-    thinking_level: high
 
 # ---------------------------------------------------------------------------
 # Compaction

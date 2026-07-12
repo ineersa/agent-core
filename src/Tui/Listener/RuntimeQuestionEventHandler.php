@@ -47,19 +47,6 @@ final class RuntimeQuestionEventHandler
      * Confirm kind answers are normalized to boolean true/false to
      * match the downstream boolean schema expectation.
      *
-     * Child-agent HITL entry (direct subagent or nested scout/fork child) keyed by event runId.
-     */
-    public function handleChildAgentHumanInputRequested(
-        RuntimeEvent $event,
-        AgentSessionClient $client,
-        QuestionCoordinator $questionCoordinator,
-        TuiSessionState $sessionState,
-        ChatScreen $screen,
-    ): void {
-        $this->handleHumanInputRequested($event, $client, $questionCoordinator, $sessionState, $screen);
-    }
-
-    /**
      * A guard against duplicate request IDs prevents enqueueing the
      * same question twice if the event stream replays (e.g. after a
      * cursor reset). RuntimeEventPoller seq-based deduplication should
@@ -90,13 +77,6 @@ final class RuntimeQuestionEventHandler
         $kind = $this->resolveQuestionKind($p);
         $choices = $this->buildChoices($p, $schema);
         $header = $this->resolveQuestionHeader($sessionState, $runId, $p, 'asks');
-        $childOwned = $this->isChildOwnedQuestion($sessionState, $runId);
-
-        // Child HITL is owned by the selected child live view. Background discovery may
-        // still mark catalog attention, but must not open the global main-screen overlay.
-        if ($childOwned && null !== $sessionState && !$sessionState->subagentLiveView->active) {
-            return;
-        }
 
         $request = new QuestionRequest(
             requestId: $requestId,
@@ -112,7 +92,7 @@ final class RuntimeQuestionEventHandler
             questionId: $questionId,
             toolCallId: (string) ($p['tool_call_id'] ?? ''),
             toolName: (string) ($p['tool_name'] ?? ''),
-            transcript: !$childOwned,
+            transcript: true,
         );
 
         // Enqueue the question with answer and cancel callbacks.
@@ -275,12 +255,6 @@ final class RuntimeQuestionEventHandler
 
         if (null !== $sessionState && null !== $screen) {
             SubagentLiveAttention::markChildNeedsInputForRun($sessionState, $screen, $runId);
-        }
-
-        if ($this->isChildOwnedQuestion($sessionState, $runId)
-            && null !== $sessionState
-            && !$sessionState->subagentLiveView->active) {
-            return;
         }
 
         // Parse schema to determine the overlay type.
@@ -578,50 +552,31 @@ final class RuntimeQuestionEventHandler
             return (string) $payload['header'];
         }
 
-        $label = $this->resolveChildQuestionLabel($sessionState, $runId);
-        if (null === $label) {
+        $agentName = $this->resolveSubagentLabel($sessionState, $runId);
+        if (null === $agentName) {
             return null;
         }
 
-        return \sprintf('Child agent %s %s', $label['agentName'], $suffix);
+        return \sprintf('Subagent %s %s', $agentName, $suffix);
     }
 
-    /**
-     * @return array{agentName: string, artifactId: string}|null
-     */
-    private function resolveChildQuestionLabel(?TuiSessionState $sessionState, string $runId): ?array
+    private function resolveSubagentLabel(?TuiSessionState $sessionState, string $runId): ?string
     {
         if (null === $sessionState) {
             return null;
         }
 
-        $parentRunId = null !== $sessionState->handle ? $sessionState->handle->runId : $sessionState->sessionId;
-        if ($runId === $parentRunId) {
-            return null;
-        }
-
         $live = $sessionState->subagentLiveView;
         if ($live->active && null !== $live->selected && $live->selected->agentRunId === $runId) {
-            return [
-                'agentName' => $live->selected->agentName,
-                'artifactId' => $live->selected->artifactId,
-            ];
+            return $live->selected->agentName;
         }
 
         foreach ($sessionState->subagentLiveCatalog->all() as $catalogChild) {
             if ($catalogChild->agentRunId === $runId) {
-                return [
-                    'agentName' => $catalogChild->agentName,
-                    'artifactId' => $catalogChild->artifactId,
-                ];
+                return $catalogChild->agentName;
             }
         }
 
         return null;
-    }
-
-    private function isChildOwnedQuestion(?TuiSessionState $sessionState, string $runId): bool
-    {
-        return null !== $this->resolveChildQuestionLabel($sessionState, $runId);
     }
 }

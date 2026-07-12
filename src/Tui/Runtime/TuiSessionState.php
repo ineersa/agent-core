@@ -142,6 +142,16 @@ final class TuiSessionState
 
     public SubagentLiveViewState $subagentLiveView;
 
+    /** Last microtime poll for background child catalog ingest (fork-owned poller). */
+    public float $subagentLiveBackgroundLastPoll = 0.0;
+
+    /**
+     * Last processed event seq per child run id for background catalog poller.
+     *
+     * @var array<string, int>
+     */
+    public array $subagentLiveBackgroundSeqByRunId = [];
+
     /**
      * Staged pasted images keyed by placeholder index ([Image #N]).
      * Promoted into .hatfield/sessions/<id>/attachments/ on submit (issue #119).
