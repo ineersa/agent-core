@@ -31,6 +31,11 @@ final class RawWebSocketResult implements CancellableRawResultInterface
         $this->logger = $logger ?? new NullLogger();
     }
 
+    public function __destruct()
+    {
+        $this->closeConnection();
+    }
+
     public function getData(): array
     {
         throw new \RuntimeException('Codex WebSocket results are streaming-only.');
@@ -107,6 +112,7 @@ final class RawWebSocketResult implements CancellableRawResultInterface
         }
     }
 
+    /** Idempotent: stream iteration, abort(), and __destruct() all funnel here. */
     private function closeConnection(): void
     {
         if ($this->connectionClosed) {

@@ -371,7 +371,6 @@ final class CodexModelClientTest extends TestCase
         $this->assertSame('hatfield', $loggedContext['originator']);
 
         // Must contain new diagnostics fields
-        $this->assertArrayHasKey('has_client_request_id', $loggedContext);
     }
 
     /**

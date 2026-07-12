@@ -65,6 +65,8 @@ class CodexModelClient implements ModelClientInterface
 
         $this->logRequestSummary($model, $jsonBody);
 
+        // Bare HttpClient: Codex may omit text/event-stream on the response Content-Type.
+        // CodexSseStream (via RawHttpResult) parses the SSE body independently of that header.
         $response = $this->httpClient->request('POST', $this->baseUrl.$this->path, $requestOptions);
 
         if (401 === $response->getStatusCode() && null !== $this->accessTokenRefresher) {
@@ -78,6 +80,11 @@ class CodexModelClient implements ModelClientInterface
     }
 
     /**
+     * On 401, force-refresh OAuth once and retry the POST with the new bearer token.
+     *
+     * Bounded: at most one refresh and one retry. Returns null when refresh is unavailable,
+     * unchanged, or throws — caller keeps the original 401 response (uncancelled).
+     *
      * @param array<string, mixed> $requestOptions
      */
     private function refreshAndRetryOnce(array $requestOptions, Model $model, ResponseInterface $failedResponse): ?ResponseInterface
@@ -111,12 +118,18 @@ class CodexModelClient implements ModelClientInterface
             'attempt' => 1,
         ]);
 
+        // Release the failed 401 connection before the retry POST
+        // (mirrors LlmRetryingHttpClient's cancel-before-retry).
         $failedResponse->cancel();
 
         return $this->httpClient->request('POST', $this->baseUrl.$this->path, $retryOptions);
     }
 
     /**
+     * Privacy-safe outgoing request summary: structural metadata only (no prompts/tokens/account IDs).
+     *
+     * input_types summarizes item type/role keys seen in the input array without logging content.
+     *
      * @param array<string, mixed> $jsonBody
      */
     private function logRequestSummary(Model $model, array $jsonBody): void
@@ -152,7 +165,6 @@ class CodexModelClient implements ModelClientInterface
             'has_text' => isset($jsonBody['text']),
             'has_store' => isset($jsonBody['store']),
             'has_stream' => isset($jsonBody['stream']),
-            'has_client_request_id' => true,
             'originator' => $this->originator,
         ]);
     }

@@ -15,7 +15,7 @@ use Symfony\AI\Platform\ModelClientInterface;
 use Symfony\AI\Platform\Result\RawResultInterface;
 use Symfony\Component\Uid\UuidV4;
 
-class CodexWebSocketModelClient implements ModelClientInterface
+final class CodexWebSocketModelClient implements ModelClientInterface
 {
     private const float DEFAULT_CONNECT_TIMEOUT_SECONDS = 30.0;
     private const float DEFAULT_IDLE_TIMEOUT_SECONDS = 120.0;
@@ -61,8 +61,9 @@ class CodexWebSocketModelClient implements ModelClientInterface
         $connection = $this->connectWithOptional401Refresh($model, $websocketUrl, $requestId);
 
         try {
+            // Protocol frame type must win: merge body first, then force response.create.
             $frame = json_encode(
-                array_merge(['type' => 'response.create'], $jsonBody),
+                array_merge($jsonBody, ['type' => 'response.create']),
                 \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE,
             );
             $connection->sendText($frame);
@@ -165,6 +166,8 @@ class CodexWebSocketModelClient implements ModelClientInterface
     }
 
     /**
+     * Privacy-safe outgoing request summary: structural metadata only.
+     *
      * @param array<string, mixed> $jsonBody
      */
     private function logRequestSummary(Model $model, array $jsonBody, string $websocketUrl): void
@@ -185,10 +188,15 @@ class CodexWebSocketModelClient implements ModelClientInterface
             }
         }
 
+        $requestUrlPath = parse_url($websocketUrl, \PHP_URL_PATH);
+        $requestUrlPath = \is_string($requestUrlPath) && '' !== $requestUrlPath
+            ? $requestUrlPath
+            : $this->responsesPath;
+
         $this->logger->info('llm.provider.request_prepared', [
             'event_type' => 'llm.provider.request_prepared',
             'transport' => 'websocket',
-            'request_url_path' => (parse_url($websocketUrl, \PHP_URL_PATH) ?? '') !== '' ? (string) parse_url($websocketUrl, \PHP_URL_PATH) : $this->responsesPath,
+            'request_url_path' => $requestUrlPath,
             'model' => $model->getName(),
             'body_keys' => implode(', ', array_keys($jsonBody)),
             'input_count' => $inputCount,
@@ -200,7 +208,6 @@ class CodexWebSocketModelClient implements ModelClientInterface
             'has_text' => isset($jsonBody['text']),
             'has_store' => isset($jsonBody['store']),
             'has_stream' => isset($jsonBody['stream']),
-            'has_client_request_id' => true,
             'originator' => $this->originator,
         ]);
     }

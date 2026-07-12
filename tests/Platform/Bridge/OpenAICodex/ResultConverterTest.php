@@ -717,9 +717,6 @@ final class ResultConverterTest extends TestCase
             'error_description' => $secret,
         ]));
 
-        $events = [
-            ['type' => 'response.output_text.delta', 'delta' => 'Should never yield'],
-        ];
         $raw = new RawHttpResult($httpResponse, new CodexSseStream());
 
         try {

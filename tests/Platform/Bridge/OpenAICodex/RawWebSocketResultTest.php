@@ -103,4 +103,14 @@ final class RawWebSocketResultTest extends TestCase
         $this->assertSame('raw_websocket_result', $logger->records[0]['context']['component']);
         $this->assertSame(\RuntimeException::class, $logger->records[0]['context']['exception_class']);
     }
+
+    public function testDestructorClosesConnectionWhenStreamNeverConsumed(): void
+    {
+        $connection = $this->createMock(WebsocketConnection::class);
+        $connection->expects($this->never())->method('receive');
+        $connection->expects($this->once())->method('close');
+
+        $raw = new RawWebSocketResult($connection, 5.0);
+        unset($raw);
+    }
 }

@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Symfony\AI\Platform\Bridge\OpenAICodex\Tests;
 
+use Amp\Http\Client\Request;
+use Amp\Http\Client\Response;
+use Amp\Websocket\Client\WebsocketConnectException;
 use Amp\Websocket\Client\WebsocketConnection;
 use PHPUnit\Framework\TestCase;
 use Symfony\AI\Platform\Bridge\OpenAICodex\CodexModel;
@@ -52,8 +55,11 @@ final class CodexWebSocketModelClientTest extends TestCase
 
         $result = $client->request(
             new CodexModel('gpt-5.6-luna'),
-            ['input' => [['role' => 'user', 'content' => 'hi']]],
-            ['temperature' => 0.5],
+            [
+                'input' => [['role' => 'user', 'content' => 'hi']],
+                'type' => 'malicious.override',
+            ],
+            ['temperature' => 0.5, 'type' => 'options.override'],
         );
 
         $this->assertInstanceOf(RawWebSocketResult::class, $result);
@@ -101,5 +107,120 @@ final class CodexWebSocketModelClientTest extends TestCase
         } catch (\RuntimeException $e) {
             $this->assertSame('Codex WebSocket request frame could not be sent.', $e->getMessage());
         }
+    }
+
+    public function testHandshake401RefreshesOnceAndRetriesWithNewBearerAndRequestIds(): void
+    {
+        $secret = 'LEAKED_HANDSHAKE_SECRET_9f3c2a1b';
+        $connection = $this->createMock(WebsocketConnection::class);
+        $connection->expects($this->once())->method('sendText');
+
+        $connectCalls = [];
+        $connector = $this->createMock(CodexWebSocketConnectorInterface::class);
+        $connector->expects($this->exactly(2))
+            ->method('connect')
+            ->willReturnCallback(function (string $url, array $headers, float $timeout) use (&$connectCalls, $connection, $secret) {
+                $connectCalls[] = $headers;
+                if (1 === \count($connectCalls)) {
+                    throw $this->websocketConnectException(401, $secret);
+                }
+
+                return $connection;
+            });
+
+        $refresherCalls = 0;
+        $client = new CodexWebSocketModelClient(
+            $connector,
+            new CodexWebSocketUrlResolver(),
+            new CodexWebSocketHandshakeHeadersFactory(),
+            new CodexRequestBodyFactory(),
+            'https://chatgpt.com/backend-api',
+            'stale-access',
+            'acct-1',
+            accessTokenRefresher: static function () use (&$refresherCalls): string {
+                ++$refresherCalls;
+
+                return 'fresh-access-token';
+            },
+        );
+
+        $client->request(
+            new CodexModel('gpt-5.6-luna'),
+            ['input' => [['role' => 'user', 'content' => 'hi']]],
+        );
+
+        $this->assertSame(1, $refresherCalls);
+        $this->assertSame('Bearer stale-access', $connectCalls[0]['Authorization']);
+        $this->assertSame('Bearer fresh-access-token', $connectCalls[1]['Authorization']);
+        $this->assertNotSame($connectCalls[0]['session-id'], $connectCalls[1]['session-id']);
+        $this->assertSame($connectCalls[1]['session-id'], $connectCalls[1]['x-client-request-id']);
+    }
+
+    public function testHandshake401DoesNotRetryWhenRefreshThrows(): void
+    {
+        $secret = 'LEAKED_REFRESH_FAIL_SECRET_7f3a91c2';
+        $connector = $this->createMock(CodexWebSocketConnectorInterface::class);
+        $connector->expects($this->once())
+            ->method('connect')
+            ->willThrowException($this->websocketConnectException(401, $secret));
+
+        $client = new CodexWebSocketModelClient(
+            $connector,
+            new CodexWebSocketUrlResolver(),
+            new CodexWebSocketHandshakeHeadersFactory(),
+            new CodexRequestBodyFactory(),
+            'https://chatgpt.com/backend-api',
+            'stale-access',
+            'acct-1',
+            accessTokenRefresher: static function (): string {
+                throw new \RuntimeException('refresh exploded');
+            },
+        );
+
+        try {
+            $client->request(
+                new CodexModel('gpt-5.6-luna'),
+                ['input' => [['role' => 'user', 'content' => 'hi']]],
+            );
+            $this->fail('Expected handshake failure');
+        } catch (\RuntimeException $e) {
+            $this->assertSame('Codex WebSocket handshake failed with HTTP 401.', $e->getMessage());
+            $this->assertStringNotContainsString($secret, $e->getMessage());
+        }
+    }
+
+    public function testHandshake401DoesNotRetryWhenRefreshReturnsUnchangedToken(): void
+    {
+        $connector = $this->createMock(CodexWebSocketConnectorInterface::class);
+        $connector->expects($this->once())
+            ->method('connect')
+            ->willThrowException($this->websocketConnectException(401));
+
+        $client = new CodexWebSocketModelClient(
+            $connector,
+            new CodexWebSocketUrlResolver(),
+            new CodexWebSocketHandshakeHeadersFactory(),
+            new CodexRequestBodyFactory(),
+            'https://chatgpt.com/backend-api',
+            'same-access',
+            'acct-1',
+            accessTokenRefresher: static fn (): string => 'same-access',
+        );
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Codex WebSocket handshake failed with HTTP 401.');
+
+        $client->request(
+            new CodexModel('gpt-5.6-luna'),
+            ['input' => [['role' => 'user', 'content' => 'hi']]],
+        );
+    }
+
+    private function websocketConnectException(int $status, string $secretMarker = ''): WebsocketConnectException
+    {
+        $request = new Request('wss://chatgpt.com/backend-api/codex/responses');
+        $response = new Response('1.1', $status, null, [], null, $request);
+
+        return new WebsocketConnectException('upgrade failed '.$secretMarker, $response);
     }
 }

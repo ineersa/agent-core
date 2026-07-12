@@ -13,6 +13,14 @@ use Symfony\AI\Platform\StructuredOutput\PlatformSubscriber;
 final class CodexRequestBodyFactory
 {
     /**
+     * Internal option keys that must not be serialized into the Codex JSON body.
+     *
+     * Injected by Hatfield/Symfony AI for routing, metadata, or hook dispatch — not
+     * valid Codex Responses API fields. build() strips these before merging.
+     *
+     * stream is deliberately omitted: Codex requires stream=true and LlmPlatformAdapter
+     * may inject it via options; it must survive sanitization.
+     *
      * @var list<string>
      */
     private const array INTERNAL_OPTION_KEYS = [
@@ -32,6 +40,8 @@ final class CodexRequestBodyFactory
      */
     public function build(Model $model, array $payload, array $options): array
     {
+        // Structured output: map Symfony AI RESPONSE_FORMAT into Codex text.format
+        // before internal keys are stripped (format lives under options['text']).
         if (isset($options[PlatformSubscriber::RESPONSE_FORMAT]['json_schema']['schema'])) {
             $schema = $options[PlatformSubscriber::RESPONSE_FORMAT]['json_schema'];
             $options['text']['format'] = $schema;
@@ -42,14 +52,21 @@ final class CodexRequestBodyFactory
         }
 
         $bodyOptions = array_diff_key($options, array_flip(self::INTERNAL_OPTION_KEYS));
+
+        // run_id is internal for the wire body but drives prompt_cache_key (pi-mono: sessionId).
         $runId = $options['run_id'] ?? null;
 
+        // Merge order: bodyOptions, then model name, then contract payload last so
+        // CodexContract keys (input, instructions, …) win over duplicate top-level options.
+        // Payload also wins over the injected model key when both set a field.
         $jsonBody = array_merge($bodyOptions, ['model' => $model->getName()], $payload);
 
+        // After merge: explicit prompt_cache_key in payload/options wins; else run_id.
         if (\is_string($runId) && '' !== $runId) {
             $jsonBody['prompt_cache_key'] ??= $runId;
         }
 
+        // Codex Responses defaults — pi-mono openai-codex-responses.ts buildRequestBody parity.
         $jsonBody['store'] ??= false;
         $jsonBody['stream'] ??= true;
 
