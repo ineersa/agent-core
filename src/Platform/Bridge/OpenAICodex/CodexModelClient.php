@@ -13,6 +13,7 @@ use Symfony\AI\Platform\Result\RawHttpResult;
 use Symfony\AI\Platform\StructuredOutput\PlatformSubscriber;
 use Symfony\Component\Uid\UuidV4;
 use Symfony\Contracts\HttpClient\HttpClientInterface;
+use Symfony\Contracts\HttpClient\ResponseInterface;
 
 class CodexModelClient implements ModelClientInterface
 {
@@ -45,6 +46,8 @@ class CodexModelClient implements ModelClientInterface
         private readonly string $path = '/codex/responses',
         private readonly string $originator = 'hatfield',
         ?LoggerInterface $logger = null,
+        /** @var (\Closure(): ?string)|null */
+        private readonly ?\Closure $accessTokenRefresher = null,
     ) {
         $this->httpClient = $httpClient;
         $this->logger = $logger ?? new NullLogger();
@@ -111,6 +114,8 @@ class CodexModelClient implements ModelClientInterface
             'auth_bearer' => $this->accessToken,
             'headers' => [
                 'Content-Type' => 'application/json',
+                'Accept' => 'text/event-stream',
+                'User-Agent' => 'hatfield',
                 'chatgpt-account-id' => $this->accountId,
                 'originator' => $this->originator,
                 'OpenAI-Beta' => 'responses=experimental',
@@ -127,7 +132,61 @@ class CodexModelClient implements ModelClientInterface
         // independently of the content-type header.
         $response = $this->httpClient->request('POST', $this->baseUrl.$this->path, $requestOptions);
 
+        if (401 === $response->getStatusCode() && null !== $this->accessTokenRefresher) {
+            $retried = $this->refreshAndRetryOnce($requestOptions, $model, $response);
+            if (null !== $retried) {
+                $response = $retried;
+            }
+        }
+
         return new RawHttpResult($response, new CodexSseStream());
+    }
+
+    /**
+     * On 401, force-refresh OAuth once and retry the POST with the new bearer token.
+     *
+     * Bounded: at most one refresh and one retry. On retry, the failed 401 response
+     * is cancelled before the retry POST. Returns null when refresh is unavailable,
+     * unchanged, or throws — caller keeps the original 401 response (uncancelled).
+     *
+     * @param array<string, mixed> $requestOptions
+     */
+    private function refreshAndRetryOnce(array $requestOptions, Model $model, ResponseInterface $failedResponse): ?ResponseInterface
+    {
+        try {
+            $fresh = ($this->accessTokenRefresher)();
+        } catch (\Throwable $e) {
+            $this->logger->warning('codex.token.refresh_failed', [
+                'event_type' => 'codex.token.refresh_failed',
+                'component' => 'codex_model_client',
+                'model' => $model->getName(),
+                'attempt' => 1,
+                'exception_class' => $e::class,
+            ]);
+
+            return null;
+        }
+
+        if (null === $fresh || $fresh === $this->accessToken) {
+            return null;
+        }
+
+        $retryOptions = $requestOptions;
+        $retryOptions['auth_bearer'] = $fresh;
+        $retryOptions['headers']['x-client-request-id'] = UuidV4::v4()->toRfc4122();
+
+        $this->logger->info('codex.token.refreshed_on_401', [
+            'event_type' => 'codex.token.refreshed_on_401',
+            'component' => 'codex_model_client',
+            'model' => $model->getName(),
+            'attempt' => 1,
+        ]);
+
+        // Release the failed 401 connection before the retry POST
+        // (mirrors LlmRetryingHttpClient's cancel-before-retry).
+        $failedResponse->cancel();
+
+        return $this->httpClient->request('POST', $this->baseUrl.$this->path, $retryOptions);
     }
 
     /**

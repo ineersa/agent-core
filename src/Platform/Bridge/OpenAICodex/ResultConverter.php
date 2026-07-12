@@ -60,6 +60,11 @@ final class ResultConverter implements ResultConverterInterface
             throw new RateLimitExceededException(null, $this->extractErrorDiagnostics($response));
         }
 
+        $statusCode = $response->getStatusCode();
+        if ($statusCode < 200 || $statusCode >= 300) {
+            throw new RuntimeException($this->formatGenericHttpExceptionMessage($statusCode, $response));
+        }
+
         if (true === ($options['stream'] ?? false)) {
             return new StreamResult($this->convertStream($result));
         }
@@ -161,6 +166,57 @@ final class ResultConverter implements ResultConverterInterface
         }
 
         return \sprintf('"%s"', $preview);
+    }
+
+    /**
+     * Privacy-safe exception text for generic non-2xx statuses (not 400/401/429).
+     *
+     * Never includes provider-controlled message bodies, error_description, detail,
+     * or non-JSON body previews.
+     */
+    private function formatGenericHttpExceptionMessage(int $statusCode, ResponseInterface $response): string
+    {
+        $structural = $this->extractAllowlistedStructuralErrorMetadata($response);
+        if ('' !== $structural) {
+            return \sprintf('HTTP %d: %s', $statusCode, $structural);
+        }
+
+        return \sprintf('HTTP %d', $statusCode);
+    }
+
+    /**
+     * Allowlisted JSON error metadata only (code, type, param) — bounded, no free-text message.
+     */
+    private function extractAllowlistedStructuralErrorMetadata(ResponseInterface $response): string
+    {
+        try {
+            $body = $response->getContent(false);
+        } catch (\Throwable) {
+            return '';
+        }
+
+        $data = json_decode($body, true);
+        if (!\is_array($data) || !isset($data['error']) || !\is_array($data['error'])) {
+            return '';
+        }
+
+        $error = $data['error'];
+        $parts = [];
+        foreach (['code', 'type', 'param'] as $key) {
+            if (!isset($error[$key]) || '' === $error[$key]) {
+                continue;
+            }
+            $sanitized = mb_substr(trim((string) $error[$key]), 0, 64);
+            if ('' !== $sanitized) {
+                $parts[] = $sanitized;
+            }
+        }
+
+        if ([] === $parts) {
+            return '';
+        }
+
+        return '['.implode('/', $parts).']';
     }
 
     /**
