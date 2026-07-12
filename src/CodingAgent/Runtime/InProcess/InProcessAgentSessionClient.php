@@ -308,7 +308,7 @@ final class InProcessAgentSessionClient implements AgentSessionClient
 
     public function completeRun(string $runId): void
     {
-        $this->requireCommittedStore()->append(new RunEvent(
+        $this->eventStore->append(new RunEvent(
             runId: $runId,
             seq: 0,
             turnNo: 0,
@@ -320,11 +320,6 @@ final class InProcessAgentSessionClient implements AgentSessionClient
     public function compact(string $runId, ?string $customInstructions = null): void
     {
         $this->runner->compact($runId, $customInstructions);
-    }
-
-    private function requireCommittedStore(): EventStoreInterface
-    {
-        return $this->eventStore;
     }
 
     /**
@@ -393,9 +388,7 @@ final class InProcessAgentSessionClient implements AgentSessionClient
 
         $toolCallId = uniqid('sh_', true);
 
-        $sequenced = $this->requireCommittedStore();
-
-        $sequenced->append(new RunEvent(
+        $this->eventStore->append(new RunEvent(
             runId: $runId,
             seq: 0,
             turnNo: 0,
@@ -409,7 +402,7 @@ final class InProcessAgentSessionClient implements AgentSessionClient
 
         if (null === $this->toolExecutor) {
             // No ToolExecutor configured — emit a diagnostic error event.
-            $this->requireCommittedStore()->append(new RunEvent(
+            $this->eventStore->append(new RunEvent(
                 runId: $runId,
                 seq: 0,
                 turnNo: 0,
@@ -446,7 +439,7 @@ final class InProcessAgentSessionClient implements AgentSessionClient
         }
 
         // Emit tool_execution_end event with result text.
-        $this->requireCommittedStore()->append(new RunEvent(
+        $this->eventStore->append(new RunEvent(
             runId: $runId,
             seq: 0,
             turnNo: 0,

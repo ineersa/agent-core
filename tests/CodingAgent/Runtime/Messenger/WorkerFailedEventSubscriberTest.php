@@ -2,10 +2,9 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\CodingAgent\Messenger\Runtime;
+namespace Ineersa\CodingAgent\Tests\Runtime\Messenger;
 
 use Ineersa\AgentCore\Application\Handler\RunStateDuplicateSequenceReplayException;
-use Ineersa\AgentCore\Application\Handler\RunStateReplayException;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\RunStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
@@ -13,6 +12,7 @@ use Ineersa\AgentCore\Domain\Message\StartRun;
 use Ineersa\AgentCore\Domain\Message\StartRunPayload;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
+use Ineersa\CodingAgent\Runtime\Messenger\WorkerFailedEventSubscriber;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
@@ -295,22 +295,9 @@ class WorkerFailedEventSubscriberTest extends TestCase
         $message = $this->createStartRun();
 
         $duplicate = new RunStateDuplicateSequenceReplayException('duplicate');
-        $other = new RunStateReplayException('other replay failure', null);
-        $this->assertTrue($duplicate->isDuplicateSequences());
-        $this->assertFalse($other->isDuplicateSequences());
 
         $runStore->expects($this->never())->method('compareAndSwap');
         $subscriber->onWorkerMessageFailed($this->createFinalFailedEvent(new Envelope($message), $duplicate));
-
-        $runStore = $this->createMock(RunStoreInterface::class);
-        $runStore->method('get')->willReturn($currentState);
-        $runStore->expects($this->once())->method('compareAndSwap')->willReturn(true);
-        $eventStore = $this->createMock(EventStoreInterface::class);
-        $eventStore->expects($this->once())
-            ->method('append')
-            ->willReturn(new RunEvent(self::RUN_ID, 5, 1, 'agent_end', ['reason' => 'failed']));
-        $subscriber = new WorkerFailedEventSubscriber($runStore, $eventStore, new NullLogger());
-        $subscriber->onWorkerMessageFailed($this->createFinalFailedEvent(new Envelope($message), $other));
     }
 
     private function createFinalFailedEvent(Envelope $envelope, \Throwable $exception): WorkerMessageFailedEvent

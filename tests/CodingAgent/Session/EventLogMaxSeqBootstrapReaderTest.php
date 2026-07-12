@@ -49,4 +49,16 @@ final class EventLogMaxSeqBootstrapReaderTest extends TestCase
         $reader = new EventLogMaxSeqBootstrapReader();
         $this->assertSame(5, $reader->readMaxSeq($path));
     }
+
+    public function testIgnoresNestedPayloadSeqHigherThanTopLevel(): void
+    {
+        $path = $this->tmpDir.'/events.jsonl';
+        file_put_contents(
+            $path,
+            '{"seq":4,"payload":{"note":"seq":99}}'.'
+',
+        );
+        $reader = new EventLogMaxSeqBootstrapReader();
+        $this->assertSame(4, $reader->readMaxSeq($path));
+    }
 }

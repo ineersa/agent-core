@@ -6,7 +6,6 @@ namespace Ineersa\CodingAgent\Session\Rewind;
 
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Application\Handler\RunStateDuplicateSequenceReplayException;
-use Ineersa\AgentCore\Application\Handler\RunStateReplayException;
 use Ineersa\AgentCore\Application\Replay\ReplayEventPreparer;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
@@ -50,10 +49,9 @@ final readonly class SessionRewindService implements RunRewindServiceInterface
      *
      * @return array{rebuiltState: RunState, leafSetSeq: int}
      *
-     * @throws RunStateReplayException when persisted event history contains duplicate sequence numbers
-     *                                 ({@see RunStateReplayException::REASON_DUPLICATE_SEQUENCES})
-     * @throws \RuntimeException       when the target turn does not exist, no events are found,
-     *                                 sequenced store is unavailable, rebuild fails, or persistence fails (CAS conflict)
+     * @throws RunStateDuplicateSequenceReplayException when persisted event history contains duplicate sequence numbers
+     * @throws \RuntimeException                        when the target turn does not exist, no events are found,
+     *                                                  rebuild fails, or persistence fails (CAS conflict)
      */
     public function rewind(string $runId, int $targetTurnNo): array
     {

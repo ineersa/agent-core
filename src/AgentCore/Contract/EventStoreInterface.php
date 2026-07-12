@@ -11,11 +11,6 @@ interface EventStoreInterface
     public function append(RunEvent $event): RunEvent;
 
     /**
-     * Persists an array of RunEvents to the store.
-     *
-     * @param list<RunEvent> $events
-     */
-    /**
      * @param list<RunEvent> $events
      *
      * @return list<RunEvent>

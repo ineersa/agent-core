@@ -15,7 +15,6 @@ final class InMemoryEventStore implements CommittedEventStoreInterface
     /** @var array<string, int> */
     private array $highWaterByRun = [];
 
-
     /**
      * Test-only: insert a persisted row with explicit seq (gaps/historical logs).
      */

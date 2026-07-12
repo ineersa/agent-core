@@ -12,8 +12,8 @@ namespace Ineersa\CodingAgent\Session;
  */
 final class EventLogMaxSeqBootstrapReader
 {
-    /** Match top-level JSON "seq": <positive int> without full json_decode per line. */
-    private const SEQ_FIELD_PATTERN = '/"seq"\s*:\s*(\d+)/';
+    /** JSON object key "seq" (comma or opening brace before the key), not arbitrary "seq" inside string values. */
+    private const SEQ_FIELD_PATTERN = '/(?:^|[,{])\s*"seq"\s*:\s*(\d+)/';
 
     public function readMaxSeq(string $path): int
     {

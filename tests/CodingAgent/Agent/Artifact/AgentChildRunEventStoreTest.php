@@ -179,6 +179,28 @@ final class AgentChildRunEventStoreTest extends TestCase
         $this->assertSame(3, $retrieved[2]->seq);
     }
 
+    public function testAppendManyRejectsMismatchedRunIdBeforeAllocation(): void
+    {
+        $parentRunId = 'parent-'.bin2hex(random_bytes(4));
+        $agentRunId = 'child-'.bin2hex(random_bytes(4));
+        $artifactId = 'scout-001';
+        $store = $this->createStore($parentRunId, $agentRunId, $artifactId);
+
+        $events = [
+            new RunEvent(runId: $agentRunId, seq: 0, turnNo: 0, type: 'run_started'),
+            new RunEvent(runId: 'other-child', seq: 0, turnNo: 1, type: 'tool_execution.started'),
+        ];
+
+        try {
+            $store->appendMany($events);
+            $this->fail('Expected RuntimeException for mismatched runId');
+        } catch (\RuntimeException $exception) {
+            $this->assertStringContainsString('does not match bound agentRunId', $exception->getMessage());
+        }
+
+        $this->assertCount(0, $store->allFor($agentRunId));
+    }
+
     public function testMultipleChildrenDoNotInterfere(): void
     {
         $parentRunId = 'parent-'.bin2hex(random_bytes(4));

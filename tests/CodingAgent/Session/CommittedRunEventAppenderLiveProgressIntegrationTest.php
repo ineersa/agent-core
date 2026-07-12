@@ -113,7 +113,9 @@ final class CommittedRunEventAppenderLiveProgressIntegrationTest extends PerMeth
             $this->recordingSink,
             true,
         );
-        $container->set(EventStoreInterface::class, $streaming);
+        // Both EventStoreInterface and CommittedEventStoreInterface alias this concrete
+        // service; replace once so CommittedRunEventAppender and generic callers share the recording sink.
+        $container->set(StreamingCommittedRuntimeEventStore::class, $streaming);
     }
 }
 

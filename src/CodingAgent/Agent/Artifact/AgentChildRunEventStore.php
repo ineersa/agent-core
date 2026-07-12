@@ -91,6 +91,12 @@ final class AgentChildRunEventStore implements CommittedEventStoreInterface
             return [];
         }
 
+        foreach ($events as $event) {
+            if ($event->runId !== $this->agentRunId) {
+                throw new \RuntimeException(\sprintf('RunEvent integrity error: embedded runId "%s" does not match bound agentRunId "%s".', $event->runId, $this->agentRunId));
+            }
+        }
+
         $path = $this->eventsPath();
         $lock = $this->lockFactory->createLock("hatfield-run-{$this->agentRunId}");
         $lock->acquire(true);
@@ -105,10 +111,6 @@ final class AgentChildRunEventStore implements CommittedEventStoreInterface
             $persisted = [];
 
             foreach ($events as $index => $event) {
-                if ($event->runId !== $this->agentRunId) {
-                    throw new \RuntimeException(\sprintf('RunEvent integrity error: embedded runId "%s" does not match bound agentRunId "%s".', $event->runId, $this->agentRunId));
-                }
-
                 $persistedEvent = new RunEvent(
                     runId: $event->runId,
                     seq: $seqBlock[$index],

@@ -2,10 +2,9 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\CodingAgent\Messenger\Runtime;
+namespace Ineersa\CodingAgent\Runtime\Messenger;
 
 use Ineersa\AgentCore\Application\Handler\RunStateDuplicateSequenceReplayException;
-use Ineersa\AgentCore\Application\Handler\RunStateReplayException;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\RunStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
@@ -117,7 +116,7 @@ final readonly class WorkerFailedEventSubscriber implements EventSubscriberInter
                 return;
             }
 
-            if ($exception instanceof RunStateDuplicateSequenceReplayException || ($exception instanceof RunStateReplayException && $exception->isDuplicateSequences())) {
+            if ($exception instanceof RunStateDuplicateSequenceReplayException) {
                 $this->logger->warning('agent_loop.worker_failed_skipped_replay_corruption', [
                     'run_id' => $runId,
                     'component' => 'messenger.worker',
