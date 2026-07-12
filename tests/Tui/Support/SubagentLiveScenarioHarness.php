@@ -174,6 +174,18 @@ final class SubagentLiveScenarioHarness
             subagentLiveInputPolicy: new SubagentLiveInputPolicy(),
             logger: new NullLogger(),
             history: new PromptHistory(),
+            pastedImageSubmissionService: new \Ineersa\Tui\ImagePaste\PastedImageSubmissionService(
+                new \Ineersa\Tui\ImagePaste\PastedImageValidationService(new \Ineersa\CodingAgent\Config\ImageToolConfig(), new \Ineersa\AgentCore\Tests\Support\TestLogger()),
+                $context->sessionStore,
+                new AppConfig(
+                    tui: new TuiConfig(theme: 'default'),
+                    logging: new LoggingConfig(),
+                    sessions: new SessionsConfig(),
+                    cwd: getcwd() ?: '/tmp',
+                ),
+                new TranscriptBlockFactory(),
+                new \Ineersa\AgentCore\Tests\Support\TestLogger(),
+            ),
         );
         $submitListener->register($context);
 

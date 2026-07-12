@@ -206,8 +206,8 @@ final class ApplicationMigrationExecutor
     private function isApplied(string $versionId): bool
     {
         $row = $this->connection->fetchOne(
-            'SELECT 1 FROM doctrine_migration_versions WHERE version = ?',
-            [$versionId],
+            'SELECT 1 FROM doctrine_migration_versions WHERE version = ? OR version = ?',
+            [$versionId, 'DoctrineMigrations\\'.$versionId],
         );
 
         return false !== $row;
