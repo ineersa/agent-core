@@ -11,6 +11,7 @@ use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryRunStore;
 use Ineersa\AgentCore\Infrastructure\Storage\RunEventStore;
+use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
 use Ineersa\CodingAgent\Session\Repair\RepairResult;
 use Ineersa\CodingAgent\Session\Repair\SessionRepairRefusalReasonEnum;
@@ -22,7 +23,6 @@ use Ineersa\Tui\Listener\RepairCommandHandler;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
-use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Psr\Log\NullLogger;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\FlockStore;
@@ -76,7 +76,6 @@ final class RepairCommandHandlerTest extends TestCase
         $this->assertSame('Session repair refused: duplicate event sequences.', $result->text);
         $this->assertSame('error', $result->style);
     }
-
 
     #[Test]
     public function logsStructuredDegradationWhenRepairThrows(): void
