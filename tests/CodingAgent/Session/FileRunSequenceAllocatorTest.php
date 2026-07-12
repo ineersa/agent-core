@@ -35,7 +35,7 @@ final class FileRunSequenceAllocatorTest extends TestCase
     public function testBootstrapFromExistingLogMaxFiveAllocatesSix(): void
     {
         $dir = $this->tmpDir.'/run';
-        mkdir($dir, 0777, true);
+        mkdir(directory: $dir, recursive: true);
         $events = $dir.'/events.jsonl';
         file_put_contents($events, '{"seq":1}'."\n".'{"seq":5}'."\n".'{"seq":3}'."\n");
         $counter = FileRunSequenceAllocator::counterPathForEventsLog($events);

@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Agent\Artifact;
 
+use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
-use Ineersa\CodingAgent\Runtime\Contract\CommittedEventStoreInterface;
 
 /**
  * Child-aware decorator for EventStoreInterface that delegates between parent-scoped and
@@ -18,13 +18,13 @@ use Ineersa\CodingAgent\Runtime\Contract\CommittedEventStoreInterface;
  * Child run location uses the same AgentChildRunDirectory cache as
  * {@see ChildAwareRunStore}.
  */
-final class ChildAwareEventStore implements CommittedEventStoreInterface
+final class ChildAwareEventStore implements EventStoreInterface
 {
     /** @var array<string, AgentChildRunEventStore> agentRunId → store */
     private array $childStores = [];
 
     public function __construct(
-        private readonly CommittedEventStoreInterface $parentStore,
+        private readonly EventStoreInterface $parentStore,
         private readonly AgentChildRunEventStoreFactory $childStoreFactory,
         private readonly AgentChildRunDirectory $childRunDirectory,
     ) {

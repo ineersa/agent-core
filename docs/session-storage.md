@@ -217,7 +217,7 @@ event sequence allocator beside its canonical log:
 - **Corruption:** Duplicate `seq` values in the canonical stream remain a typed
   `RunStateReplayException` corruption failure.
 - **Writers:** Canonical production writers allocate through
-  `CommittedEventStoreInterface` (`append` / `appendMany`).
+  `EventStoreInterface` (`append` / `appendMany`).
   Parent session, child artifact, and `ChildAwareEventStore` routing share the
   same contract.
 

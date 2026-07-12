@@ -118,7 +118,7 @@ final class FileRunSequenceAllocator implements RunSequenceAllocatorInterface
     private function openCounterHandle(string $counterPath): mixed
     {
         $dir = \dirname($counterPath);
-        if (!is_dir($dir) && !mkdir($dir, 0777, true) && !is_dir($dir)) {
+        if (!is_dir($dir) && !mkdir(directory: $dir, recursive: true) && !is_dir($dir)) {
             throw new \RuntimeException(\sprintf('Cannot create directory for sequence counter "%s".', $counterPath));
         }
 

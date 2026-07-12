@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Agent\Artifact;
 
+use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
 use Ineersa\AgentCore\Schema\SchemaVersion;
-use Ineersa\CodingAgent\Runtime\Contract\CommittedEventStoreInterface;
 use Ineersa\CodingAgent\Session\Contract\RunSequenceAllocatorInterface;
 use Ineersa\CodingAgent\Session\EventLogMaxSeqBootstrapReader;
 use Ineersa\CodingAgent\Session\FileRunSequenceAllocator;
@@ -36,7 +36,7 @@ use Symfony\Component\Lock\LockFactory;
  * Path resolution and validation are delegated to
  * {@see AgentArtifactPathResolver}.
  */
-final class AgentChildRunEventStore implements CommittedEventStoreInterface
+final class AgentChildRunEventStore implements EventStoreInterface
 {
     public function __construct(
         private readonly AgentArtifactPathResolver $pathResolver,

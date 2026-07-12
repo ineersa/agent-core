@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Tests\Support;
 
+use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
-use Ineersa\CodingAgent\Runtime\Contract\CommittedEventStoreInterface;
 
-final class InMemoryEventStore implements CommittedEventStoreInterface
+final class InMemoryEventStore implements EventStoreInterface
 {
     /** @var array<string, list<RunEvent>> */
     private array $eventsByRun = [];

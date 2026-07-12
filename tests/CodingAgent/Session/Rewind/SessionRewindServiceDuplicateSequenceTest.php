@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Tests\Session\Rewind;
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Application\Handler\RunStateReplayException;
 use Ineersa\AgentCore\Application\Replay\ReplayEventPreparer;
+use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
 use Ineersa\AgentCore\Contract\TurnTree\TurnTreeNodeSnapshotDTO;
 use Ineersa\AgentCore\Contract\TurnTree\TurnTreeProjectorInterface;
@@ -16,7 +17,6 @@ use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryRunStore;
-use Ineersa\CodingAgent\Runtime\Contract\CommittedEventStoreInterface;
 use Ineersa\CodingAgent\Session\Rewind\SessionRewindService;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
@@ -33,7 +33,7 @@ final class SessionRewindServiceDuplicateSequenceTest extends TestCase
             new RunEvent($runId, 1, 1, 'user.message', ['text' => 'hi']),
         ];
 
-        $eventStore = new class($events) implements CommittedEventStoreInterface {
+        $eventStore = new class($events) implements EventStoreInterface {
             public function __construct(private readonly array $events)
             {
             }

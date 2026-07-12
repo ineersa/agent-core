@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Session;
 
+use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryRunStore;
-use Ineersa\CodingAgent\Runtime\Contract\CommittedEventStoreInterface;
 use Ineersa\CodingAgent\Session\CommittedRunEventAppender;
 use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use PHPUnit\Framework\TestCase;
@@ -23,7 +23,7 @@ final class CommittedRunEventAppenderTest extends TestCase
         $runStore = new InMemoryRunStore();
         $runStore->compareAndSwap(new RunState(runId: $runId, status: RunStatus::Running, version: 1, lastSeq: 3), 0);
 
-        $eventStore = $this->createMock(CommittedEventStoreInterface::class);
+        $eventStore = $this->createMock(EventStoreInterface::class);
         $eventStore->method('append')->willReturn(new RunEvent($runId, 4, 1, 'tool_execution_update', []));
 
         $appender = new CommittedRunEventAppender($eventStore, $runStore, new NullLogger());

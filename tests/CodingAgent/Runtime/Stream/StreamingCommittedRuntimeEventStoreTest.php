@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Runtime\Stream;
 
+use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
-use Ineersa\CodingAgent\Runtime\Contract\CommittedEventStoreInterface;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeEventSinkInterface;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
@@ -84,7 +84,7 @@ final class StreamingCommittedRuntimeEventStoreTest extends TestCase
 /**
  * @internal
  */
-final class RecordingCommittedEventStore implements CommittedEventStoreInterface
+final class RecordingCommittedEventStore implements EventStoreInterface
 {
     /** @var list<RunEvent> */
     public array $appended = [];

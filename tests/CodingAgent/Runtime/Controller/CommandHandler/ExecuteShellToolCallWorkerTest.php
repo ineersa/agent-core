@@ -11,7 +11,6 @@ use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\ExecuteShellToolCall;
 use Ineersa\AgentCore\Domain\Tool\ToolCall;
 use Ineersa\AgentCore\Domain\Tool\ToolResult;
-use Ineersa\CodingAgent\Runtime\Contract\CommittedEventStoreInterface;
 use Ineersa\CodingAgent\Runtime\Controller\CommandHandler\ExecuteShellToolCallWorker;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
@@ -124,7 +123,7 @@ final class ExecuteShellToolCallWorkerTest extends TestCase
      */
     private function createEventStore(): EventStoreInterface
     {
-        return new class($this->appendedEvents) implements CommittedEventStoreInterface {
+        return new class($this->appendedEvents) implements EventStoreInterface {
             /** @var list<RunEvent> */
             private array $collector;
 

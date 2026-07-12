@@ -9,6 +9,7 @@ use Ineersa\AgentCore\Application\Handler\HookDispatcher;
 use Ineersa\AgentCore\Application\Handler\HookSubscriberRegistry;
 use Ineersa\AgentCore\Application\Handler\StepDispatcher;
 use Ineersa\AgentCore\Application\Pipeline\RunCommit;
+use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\Replay\HotPromptStateRebuilderInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
@@ -25,7 +26,6 @@ use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
-use Ineersa\CodingAgent\Runtime\Contract\CommittedEventStoreInterface;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\SessionToolBatchStore;
 use Ineersa\CodingAgent\Session\ToolBatchSnapshotCleanupHookSubscriber;
@@ -216,7 +216,7 @@ final class ToolBatchSnapshotCleanupHookSubscriberTest extends TestCase
     }
 }
 
-final class CleanupHookSubscriberNoOpEventStore implements CommittedEventStoreInterface
+final class CleanupHookSubscriberNoOpEventStore implements EventStoreInterface
 {
     public function append(RunEvent $event): RunEvent
     {

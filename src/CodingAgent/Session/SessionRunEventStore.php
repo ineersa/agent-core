@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Session;
 
+use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
 use Ineersa\AgentCore\Schema\SchemaVersion;
-use Ineersa\CodingAgent\Runtime\Contract\CommittedEventStoreInterface;
 use Ineersa\CodingAgent\Session\Contract\RunSequenceAllocatorInterface;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Lock\LockFactory;
@@ -21,7 +21,7 @@ use Symfony\Component\Lock\LockFactory;
  * Sequence allocation uses a per-run {@see FileRunSequenceAllocator::COUNTER_BASENAME} file.
  * events.jsonl is never scanned during normal append (only bootstrap when cursor is missing).
  */
-final class SessionRunEventStore implements CommittedEventStoreInterface
+final class SessionRunEventStore implements EventStoreInterface
 {
     private readonly string $sessionsBasePath;
 
@@ -181,7 +181,7 @@ final class SessionRunEventStore implements CommittedEventStoreInterface
     {
         $dir = \dirname($path);
         if (!is_dir($dir)) {
-            mkdir($dir, 0777, true);
+            mkdir(directory: $dir, recursive: true);
         }
 
         $entry = $this->eventPayloadNormalizer->normalizeRunEvent($event);

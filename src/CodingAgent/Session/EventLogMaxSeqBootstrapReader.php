@@ -12,8 +12,11 @@ namespace Ineersa\CodingAgent\Session;
  */
 final class EventLogMaxSeqBootstrapReader
 {
-    /** JSON object key "seq" (comma or opening brace before the key), not arbitrary "seq" inside string values. */
-    private const SEQ_FIELD_PATTERN = '/(?:^|[,{])\s*"seq"\s*:\s*(\d+)/';
+    /**
+     * Canonical envelope order is schema_version, run_id, seq (see {@see EventPayloadNormalizer::normalize()}).
+     * Require run_id immediately before seq so nested payload "seq" keys cannot win.
+     */
+    private const TOP_LEVEL_SEQ_PATTERN = '/"run_id"\s*:\s*"[^"]*"\s*,\s*"seq"\s*:\s*(\d+)/';
 
     public function readMaxSeq(string $path): int
     {
@@ -21,37 +24,27 @@ final class EventLogMaxSeqBootstrapReader
             return 0;
         }
 
-        $handle = fopen($path, 'rb');
-        if (false === $handle) {
+        $contents = file_get_contents($path);
+        if (false === $contents || '' === $contents) {
             return 0;
         }
 
-        try {
-            $maxSeq = 0;
+        if (!preg_match_all(self::TOP_LEVEL_SEQ_PATTERN, $contents, $matches)) {
+            return 0;
+        }
 
-            while (($line = fgets($handle)) !== false) {
-                $trimmed = trim($line);
-                if ('' === $trimmed) {
-                    continue;
-                }
-
-                if (!preg_match(self::SEQ_FIELD_PATTERN, $trimmed, $matches)) {
-                    continue;
-                }
-
-                $seq = (int) $matches[1];
-                if ($seq < 1) {
-                    continue;
-                }
-
-                if ($seq > $maxSeq) {
-                    $maxSeq = $seq;
-                }
+        $maxSeq = 0;
+        foreach ($matches[1] as $rawSeq) {
+            $seq = (int) $rawSeq;
+            if ($seq < 1) {
+                continue;
             }
 
-            return $maxSeq;
-        } finally {
-            fclose($handle);
+            if ($seq > $maxSeq) {
+                $maxSeq = $seq;
+            }
         }
+
+        return $maxSeq;
     }
 }

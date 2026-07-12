@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Runtime\Stream;
 
+use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
-use Ineersa\CodingAgent\Runtime\Contract\CommittedEventStoreInterface;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeEventSinkInterface;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
@@ -21,7 +21,7 @@ final class StreamingCommittedRuntimeEventStoreSequencingTest extends TestCase
 {
     public function testAppendWithNextSeqEmitsPersistedAssignedSeq(): void
     {
-        $inner = $this->createMock(CommittedEventStoreInterface::class);
+        $inner = $this->createMock(EventStoreInterface::class);
         $input = new RunEvent('run-a', 0, 0, RunEventTypeEnum::RunStarted->value, []);
         $persisted = new RunEvent('run-a', 42, 0, RunEventTypeEnum::RunStarted->value, []);
         $inner->expects($this->once())->method('append')->with($input)->willReturn($persisted);

@@ -31,7 +31,12 @@ final class EventLogMaxSeqBootstrapReaderTest extends TestCase
     public function testOutOfOrderPhysicalLinesReturnMaxSeq(): void
     {
         $path = $this->tmpDir.'/events.jsonl';
-        file_put_contents($path, '{"seq":2}'."\n".'{"seq":7}'."\n".'{"seq":4}'."\n");
+        file_put_contents(
+            $path,
+            '{"schema_version":"1.0.0","run_id":"6","seq":2,"turn_no":1,"type":"x","payload":{},"ts":"2026-01-01T00:00:00+00:00"}'."\n"
+            .'{"schema_version":"1.0.0","run_id":"6","seq":7,"turn_no":1,"type":"x","payload":{},"ts":"2026-01-01T00:00:00+00:00"}'."\n"
+            .'{"schema_version":"1.0.0","run_id":"6","seq":4,"turn_no":1,"type":"x","payload":{},"ts":"2026-01-01T00:00:00+00:00"}'."\n",
+        );
         $reader = new EventLogMaxSeqBootstrapReader();
         $this->assertSame(7, $reader->readMaxSeq($path));
     }
@@ -41,10 +46,10 @@ final class EventLogMaxSeqBootstrapReaderTest extends TestCase
         $path = $this->tmpDir.'/events.jsonl';
         file_put_contents(
             $path,
-            '  {"seq": 3}  '."\n"
+            '  {"schema_version":"1.0.0","run_id":"6","seq": 3,"turn_no":1,"type":"x","payload":{},"ts":"2026-01-01T00:00:00+00:00"}  '."\n"
             .'not json at all'."\n"
-            .'{"seq":0}'."\n"
-            .'{"seq":5}'."\n",
+            .'{"schema_version":"1.0.0","run_id":"6","seq":0,"turn_no":1,"type":"x","payload":{},"ts":"2026-01-01T00:00:00+00:00"}'."\n"
+            .'{"schema_version":"1.0.0","run_id":"6","seq":5,"turn_no":1,"type":"x","payload":{},"ts":"2026-01-01T00:00:00+00:00"}'."\n",
         );
         $reader = new EventLogMaxSeqBootstrapReader();
         $this->assertSame(5, $reader->readMaxSeq($path));
@@ -55,8 +60,18 @@ final class EventLogMaxSeqBootstrapReaderTest extends TestCase
         $path = $this->tmpDir.'/events.jsonl';
         file_put_contents(
             $path,
-            '{"seq":4,"payload":{"note":"seq":99}}'.'
-',
+            '{"schema_version":"1.0.0","run_id":"6","seq":4,"turn_no":1,"type":"x","payload":{"seq":99,"turn_no":0},"ts":"2026-01-01T00:00:00+00:00"}'."\n",
+        );
+        $reader = new EventLogMaxSeqBootstrapReader();
+        $this->assertSame(4, $reader->readMaxSeq($path));
+    }
+
+    public function testNestedPayloadSeqBeforeTopLevelOnSameLineCannotOvercount(): void
+    {
+        $path = $this->tmpDir.'/events.jsonl';
+        file_put_contents(
+            $path,
+            '{"schema_version":"1.0.0","run_id":"6","seq":4,"turn_no":1,"type":"x","payload":{"seq":99},"ts":"2026-01-01T00:00:00+00:00"}'."\n",
         );
         $reader = new EventLogMaxSeqBootstrapReader();
         $this->assertSame(4, $reader->readMaxSeq($path));

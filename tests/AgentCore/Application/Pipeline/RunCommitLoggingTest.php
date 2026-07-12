@@ -9,6 +9,7 @@ use Ineersa\AgentCore\Application\Handler\StepDispatcher;
 use Ineersa\AgentCore\Application\Pipeline\RunCommit;
 use Ineersa\AgentCore\Application\Replay\PromptStateReplayService;
 use Ineersa\AgentCore\Application\Replay\ReplayEventPreparer;
+use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\RunStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Run\RunState;
@@ -18,7 +19,6 @@ use Ineersa\AgentCore\Infrastructure\Storage\InMemoryPromptStateStore;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryRunStore;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
-use Ineersa\CodingAgent\Runtime\Contract\CommittedEventStoreInterface;
 use Ineersa\CodingAgent\Session\Replay\SessionHotPromptReplayService;
 use PHPUnit\Framework\TestCase;
 
@@ -263,7 +263,7 @@ final class FailsSecondCompareAndSwapRunStore implements RunStoreInterface
     }
 }
 
-final class RecordingEventStore implements CommittedEventStoreInterface
+final class RecordingEventStore implements EventStoreInterface
 {
     public int $appendManyCalls = 0;
 

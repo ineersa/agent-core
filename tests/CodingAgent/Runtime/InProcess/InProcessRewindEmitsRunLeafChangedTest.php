@@ -9,7 +9,6 @@ use Ineersa\AgentCore\Contract\RunStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Run\RunState;
-use Ineersa\CodingAgent\Runtime\Contract\CommittedEventStoreInterface;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
 use Ineersa\CodingAgent\Runtime\InProcess\InMemoryRuntimeEventSink;
 use Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient;
@@ -49,7 +48,7 @@ final class InProcessRewindEmitsRunLeafChangedTest extends IsolatedKernelTestCas
         $events = self::minimalSessionEvents();
 
         // ── Anonymous stub for EventStoreInterface ───────────────
-        $eventStore = new class($events) implements CommittedEventStoreInterface {
+        $eventStore = new class($events) implements EventStoreInterface {
             /** @param list<RunEvent> $events */
             public function __construct(private array $events)
             {
