@@ -111,6 +111,27 @@ final class ApplicationMigrationExecutorTest extends TestCase
         );
     }
 
+    public function testIsAppliedAcceptsFqcnVersionRowsRecordedByConsoleMigrate(): void
+    {
+        $connection = $this->createSqliteConnection($this->isolatedDir.'/fqcn.sqlite');
+        $executor = new ApplicationMigrationExecutor($connection, new NullLogger());
+        $executor();
+
+        $connection->executeStatement(
+            "UPDATE doctrine_migration_versions
+             SET version = 'DoctrineMigrations\' || version
+             WHERE version NOT LIKE 'DoctrineMigrations\%'"
+        );
+
+        $executor = new ApplicationMigrationExecutor($connection, new NullLogger());
+        $executor();
+
+        $this->assertTrue(
+            $connection->createSchemaManager()->tablesExist(['hatfield_session']),
+            'Second startup pass must remain idempotent after FQCN version normalization by console migrate',
+        );
+    }
+
     public function testStartupExecutorIsIdempotentPerProcess(): void
     {
         $connection = $this->createSqliteConnection($this->isolatedDir.'/idempotent.sqlite');

@@ -9,6 +9,7 @@ use Ineersa\AgentCore\Application\Replay\ReplayEventPreparer;
 use Ineersa\AgentCore\Application\Replay\RunStateReducer;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
+use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryRunStore;
@@ -66,12 +67,12 @@ final class SessionRepairServiceTest extends TestCase
         $before = $this->readEvents($runId);
 
         $dryRun = $service->repair($runId, false);
-        $this->assertFalse($dryRun->needsRepair);
+        $this->assertFalse($dryRun->repairWasNeeded);
         $this->assertFalse($dryRun->staleCancellationRepaired);
         $this->assertStringContainsStringIgnoringCase('no repairable corruption', $dryRun->message);
 
         $apply = $service->repair($runId, true);
-        $this->assertFalse($apply->needsRepair);
+        $this->assertFalse($apply->repairWasNeeded);
         $this->assertFalse($apply->staleCancellationRepaired);
         $this->assertSame($before, $this->readEvents($runId));
     }
@@ -169,7 +170,7 @@ final class SessionRepairServiceTest extends TestCase
         $lineCountAfterFirst = \count($this->readRawLines($runId));
 
         $second = $service->repair($runId, true);
-        $this->assertFalse($second->needsRepair);
+        $this->assertFalse($second->repairWasNeeded);
         $this->assertSame(0, $second->terminalEventsAppended);
         $this->assertSame($lineCountAfterFirst, \count($this->readRawLines($runId)));
     }
@@ -218,7 +219,7 @@ final class SessionRepairServiceTest extends TestCase
         $before = $this->readRawLines($runId);
         $result = $service->repair($runId, true);
 
-        $this->assertTrue($result->needsRepair);
+        $this->assertTrue($result->repairWasNeeded);
         $this->assertNotEmpty($result->duplicateSeqs);
         $this->assertSame(SessionRepairRefusalReasonEnum::DuplicateSequences, $result->refusalReason);
         $this->assertStringContainsStringIgnoringCase('duplicate', $result->message);
@@ -284,7 +285,7 @@ final class SessionRepairServiceTest extends TestCase
             '{"schema_version":"1.0","run_id":"ambiguous","seq":1,"turn_no":0,"type":"agent_start","payload":{},"ts":"2026-07-09T01:00:00+00:00"}',
             '{"schema_version":"1.0","run_id":"ambiguous","seq":2,"turn_no":1,"type":"turn_advanced","payload":{"turn_no":1,"step_id":"llm-1"},"ts":"2026-07-09T01:00:01+00:00"}',
             '{"schema_version":"1.0","run_id":"ambiguous","seq":3,"turn_no":1,"type":"llm_step_completed","payload":{"assistant_message":{"role":"assistant","content":null,"tool_calls":[{"id":"call_amb","type":"function","function":{"name":"read","arguments":"{}"}}]}},"ts":"2026-07-09T01:00:02+00:00"}',
-            '{"schema_version":"1.0","run_id":"ambiguous","seq":4,"turn_no":1,"type":"tool_execution_start","payload":{"tool_call_id":"call_amb","tool_name":"read"},"ts":"2026-07-09T01:00:03+00:00"}',
+            '{"schema_version":"1.0","run_id":"ambiguous","seq":4,"turn_no":1,"type":"tool_execution_start","payload":{"tool_call_id":"call_amb","tool_name":"read","step_id":"llm-1","order_index":0},"ts":"2026-07-09T01:00:03+00:00"}',
         ]);
 
         $runStore = new InMemoryRunStore();
@@ -326,7 +327,7 @@ final class SessionRepairServiceTest extends TestCase
         $this->assertSame(1, $toolEndCountAfterFirst, 'Canonical stream must contain exactly one durable tool_execution_end');
 
         $second = $service->repair($runId, true);
-        $this->assertFalse($second->needsRepair);
+        $this->assertFalse($second->repairWasNeeded);
         $this->assertSame(0, $second->terminalEventsAppended);
 
         $toolEndCountAfterSecond = 0;
@@ -413,7 +414,7 @@ final class SessionRepairServiceTest extends TestCase
             runStateReducer: new RunStateReducer(),
             replayEventPreparer: new ReplayEventPreparer(),
             eventFactory: new EventFactory(),
-            eventPayloadNormalizer: new EventPayloadNormalizer(),
+            messageNormalizer: new AgentMessageNormalizer(),
             lockManager: new RunLockManager(new LockFactory(new FlockStore($lockDir))),
             logger: new NullLogger(),
         );
@@ -446,8 +447,8 @@ final class SessionRepairServiceTest extends TestCase
     private function staleCancellationJsonLines(string $runId, bool $unresolvedTool = false): array
     {
         $toolLine = $unresolvedTool
-            ? '{"schema_version":"1.0","run_id":"'.$runId.'","seq":5,"turn_no":33,"type":"tool_execution_start","payload":{"tool_call_id":"call_00_abc","tool_name":"subagent"},"ts":"2026-07-09T01:00:04+00:00"}'
-            : '{"schema_version":"1.0","run_id":"'.$runId.'","seq":5,"turn_no":33,"type":"tool_execution_end","payload":{"tool_call_id":"call_00_abc","tool_name":"subagent","success":true},"ts":"2026-07-09T01:00:04+00:00"}';
+            ? '{"schema_version":"1.0","run_id":"'.$runId.'","seq":5,"turn_no":33,"type":"tool_execution_start","payload":{"tool_call_id":"call_00_abc","tool_name":"subagent","step_id":"follow_up-xyz","order_index":0},"ts":"2026-07-09T01:00:04+00:00"}'
+            : '{"schema_version":"1.0","run_id":"'.$runId.'","seq":5,"turn_no":33,"type":"tool_execution_end","payload":{"tool_call_id":"call_00_abc","tool_name":"subagent","order_index":0,"is_error":false,"result":"done"},"ts":"2026-07-09T01:00:04+00:00"}';
 
         return [
             '{"schema_version":"1.0","run_id":"'.$runId.'","seq":1,"turn_no":0,"type":"agent_start","payload":{"messages":[]},"ts":"2026-07-09T01:00:00+00:00"}',
@@ -497,6 +498,4 @@ final class SessionRepairServiceTest extends TestCase
             ++$expected;
         }
     }
-
-    
 }

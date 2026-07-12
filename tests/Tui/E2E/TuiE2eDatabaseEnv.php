@@ -124,21 +124,6 @@ final class TuiE2eDatabaseEnv
     }
 
     /**
-     * After doctrine:migrations:migrate, version rows use FQCN (DoctrineMigrations\Version…).
-     * ApplicationMigrationExecutor::isApplied() expects the short class name (Version…).
-     * Normalize so agent startup does not re-run migrations on an already-migrated isolated DB.
-     */
-    public static function normalizeConsoleMigrationVersionIds(string $appDbAbsolutePath): void
-    {
-        $pdo = new \PDO('sqlite:'.$appDbAbsolutePath);
-        $pdo->exec(
-            "UPDATE doctrine_migration_versions
-             SET version = substr(version, length('DoctrineMigrations\\') + 1)
-             WHERE version LIKE 'DoctrineMigrations\\%'",
-        );
-    }
-
-    /**
      * Ensure messenger_messages exists on the isolated transport SQLite file.
      *
      * doctrine:migrations:migrate may not touch the transport connection in all setups;

@@ -12,6 +12,5 @@ enum SessionRepairRefusalReasonEnum: string
     case AmbiguousPendingWork = 'ambiguous_pending_work';
     case NoEvents = 'no_events';
     case RunStateUnavailable = 'run_state_unavailable';
-    case CompareAndSwapConflict = 'compare_and_swap_conflict';
-    case NotRepairable = 'not_repairable';
+    case ReplayValidationFailed = 'replay_validation_failed';
 }

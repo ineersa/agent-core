@@ -17,7 +17,7 @@ use Symfony\Component\Serializer\Normalizer\ObjectNormalizer;
 use Symfony\Component\Serializer\Serializer;
 
 /**
- * Replay-backed tmux proof for /repair on a stale Cancelling session.
+ * Real tmux proof for /repair on a stale Cancelling session (no LLM invocation).
  *
  * @group tui-e2e-replay
  */
@@ -151,7 +151,6 @@ final class TuiRepairCommandE2eTest extends TestCase
             $this->fail('Failed to migrate test database for /repair E2E: '.implode("\n", $output));
         }
 
-        TuiE2eDatabaseEnv::normalizeConsoleMigrationVersionIds($this->appDbAbsolutePath);
         TuiE2eDatabaseEnv::ensureIsolatedMessengerTransportSchema(
             TuiE2eDatabaseEnv::isolatedSqliteAbsolutePath($this->testProjectDir, $this->transportDbPath),
         );

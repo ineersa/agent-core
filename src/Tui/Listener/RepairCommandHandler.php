@@ -6,7 +6,7 @@ namespace Ineersa\Tui\Listener;
 
 use Ineersa\CodingAgent\Session\Repair\RepairResult;
 use Ineersa\CodingAgent\Session\Repair\SessionRepairRefusalReasonEnum;
-use Ineersa\CodingAgent\Session\Repair\SessionRepairService;
+use Ineersa\CodingAgent\Session\Repair\SessionRepairServiceInterface;
 use Ineersa\Tui\Command\CommandResult;
 use Ineersa\Tui\Command\SlashCommand;
 use Ineersa\Tui\Command\SlashCommandHandler;
@@ -21,7 +21,7 @@ use Ineersa\Tui\Runtime\TuiSessionState;
 final class RepairCommandHandler implements SlashCommandHandler
 {
     public function __construct(
-        private readonly SessionRepairService $repairService,
+        private readonly SessionRepairServiceInterface $repairService,
         private readonly TuiSessionState $state,
     ) {
     }
@@ -72,8 +72,7 @@ final class RepairCommandHandler implements SlashCommandHandler
                 SessionRepairRefusalReasonEnum::AmbiguousPendingWork => 'Session repair refused: pending tool work is ambiguous.',
                 SessionRepairRefusalReasonEnum::NoEvents => 'Session repair refused: no canonical events were found.',
                 SessionRepairRefusalReasonEnum::RunStateUnavailable => 'Session repair refused: run state is unavailable.',
-                SessionRepairRefusalReasonEnum::CompareAndSwapConflict => 'Session repair refused: run state changed during repair.',
-                SessionRepairRefusalReasonEnum::NotRepairable => 'Session repair refused: no repairable corruption detected.',
+                SessionRepairRefusalReasonEnum::ReplayValidationFailed => 'Session repair refused: replay validation failed.',
             };
         }
 
@@ -81,7 +80,7 @@ final class RepairCommandHandler implements SlashCommandHandler
             return 'Session repaired: stale cancellation terminalized.';
         }
 
-        if (!$result->needsRepair) {
+        if (!$result->repairWasNeeded) {
             return 'No repairable corruption detected.';
         }
 

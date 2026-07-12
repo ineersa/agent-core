@@ -12,12 +12,13 @@ use Ineersa\AgentCore\Contract\RunStoreInterface;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
+use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
+use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
-use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
 use Psr\Log\LoggerInterface;
 
-readonly class SessionRepairService
+final readonly class SessionRepairService implements SessionRepairServiceInterface
 {
     private const string SYNTHETIC_CANCEL_MESSAGE = 'Tool execution cancelled by user.';
 
@@ -27,8 +28,7 @@ readonly class SessionRepairService
         private RunStateReducer $runStateReducer,
         private ReplayEventPreparer $replayEventPreparer,
         private EventFactory $eventFactory,
-        /** @phpstan-ignore property.onlyWritten (accepted RED test constructor contract) */
-        private EventPayloadNormalizer $eventPayloadNormalizer,
+        private AgentMessageNormalizer $messageNormalizer,
         private RunLockManager $lockManager,
         private LoggerInterface $logger,
     ) {
@@ -54,44 +54,30 @@ readonly class SessionRepairService
         $sorted = $this->replayEventPreparer->sortBySequence($events);
         $duplicateSeqs = $this->replayEventPreparer->duplicateSequences($sorted);
         if ([] !== $duplicateSeqs) {
-            $this->logger->warning('session_repair.refused', [
-                'run_id' => $runId,
-                'component' => 'session.repair',
-                'event_type' => 'session.repair.refused',
-                'refusal_reason' => SessionRepairRefusalReasonEnum::DuplicateSequences->value,
-                'duplicate_count' => \count($duplicateSeqs),
-            ]);
+            $this->logRefusal($runId, SessionRepairRefusalReasonEnum::DuplicateSequences, ['duplicate_count' => \count($duplicateSeqs)]);
 
             return new RepairResult(
-                needsRepair: true,
+                repairWasNeeded: true,
                 staleCancellationRepaired: false,
                 terminalEventsAppended: 0,
                 replayOk: false,
                 message: 'Session repair refused: duplicate event sequences detected.',
                 duplicateSeqs: $duplicateSeqs,
-                backupEventsPath: null,
                 refusalReason: SessionRepairRefusalReasonEnum::DuplicateSequences,
             );
         }
 
         $missingSeqs = $this->replayEventPreparer->missingSequences($sorted);
         if ([] !== $missingSeqs) {
-            $this->logger->warning('session_repair.refused', [
-                'run_id' => $runId,
-                'component' => 'session.repair',
-                'event_type' => 'session.repair.refused',
-                'refusal_reason' => SessionRepairRefusalReasonEnum::MissingSequences->value,
-                'missing_count' => \count($missingSeqs),
-            ]);
+            $this->logRefusal($runId, SessionRepairRefusalReasonEnum::MissingSequences, ['missing_count' => \count($missingSeqs)]);
 
             return new RepairResult(
-                needsRepair: true,
+                repairWasNeeded: true,
                 staleCancellationRepaired: false,
                 terminalEventsAppended: 0,
                 replayOk: false,
                 message: 'Session repair refused: missing event sequences detected.',
                 duplicateSeqs: [],
-                backupEventsPath: null,
                 refusalReason: SessionRepairRefusalReasonEnum::MissingSequences,
                 missingSeqs: $missingSeqs,
             );
@@ -106,21 +92,14 @@ readonly class SessionRepairService
         }
 
         if ($storedState->isStreaming) {
-            $this->logger->warning('session_repair.refused', [
-                'run_id' => $runId,
-                'component' => 'session.repair',
-                'event_type' => 'session.repair.refused',
-                'refusal_reason' => SessionRepairRefusalReasonEnum::ActiveStreaming->value,
-            ]);
+            $this->logRefusal($runId, SessionRepairRefusalReasonEnum::ActiveStreaming);
 
             return new RepairResult(
-                needsRepair: true,
+                repairWasNeeded: true,
                 staleCancellationRepaired: false,
                 terminalEventsAppended: 0,
                 replayOk: false,
                 message: 'Session repair refused: active streaming detected.',
-                duplicateSeqs: [],
-                backupEventsPath: null,
                 refusalReason: SessionRepairRefusalReasonEnum::ActiveStreaming,
             );
         }
@@ -128,15 +107,7 @@ readonly class SessionRepairService
         $replayed = $this->runStateReducer->replay(RunState::queued($runId), $sorted);
 
         if ($this->hasTerminalAgentEnd($sorted)) {
-            return new RepairResult(
-                needsRepair: false,
-                staleCancellationRepaired: false,
-                terminalEventsAppended: 0,
-                replayOk: true,
-                message: 'No repairable corruption detected.',
-                duplicateSeqs: [],
-                backupEventsPath: null,
-            );
+            return $this->noRepairResult('No repairable corruption detected.');
         }
 
         if (RunStatus::Cancelling !== $replayed->status) {
@@ -144,45 +115,33 @@ readonly class SessionRepairService
                 return $this->ambiguousRefusal($runId);
             }
 
-            return new RepairResult(
-                needsRepair: false,
-                staleCancellationRepaired: false,
-                terminalEventsAppended: 0,
-                replayOk: true,
-                message: 'No repairable corruption detected.',
-                duplicateSeqs: [],
-                backupEventsPath: null,
-            );
+            return $this->noRepairResult('No repairable corruption detected.');
         }
 
-        $cancelContext = $this->hasCancellationContext($sorted);
-        $unresolvedIds = $this->unresolvedPendingToolCallIds($replayed);
-
-        if ([] !== $unresolvedIds && !$cancelContext) {
+        if (!$this->hasCancellationContext($sorted)) {
             return $this->ambiguousRefusal($runId);
         }
 
         if (!$apply) {
             return new RepairResult(
-                needsRepair: true,
+                repairWasNeeded: true,
                 staleCancellationRepaired: false,
                 terminalEventsAppended: 0,
                 replayOk: false,
                 message: 'Stale non-terminal cancellation detected; repair available.',
-                duplicateSeqs: [],
-                backupEventsPath: null,
             );
         }
 
         $maxSeq = $this->replayEventPreparer->maxSequence($sorted);
         $turnNo = $replayed->turnNo;
+        $stepId = $replayed->activeStepId ?? \sprintf('repair-cancel-%d', hrtime(true));
         $eventSpecs = [];
 
-        if (null !== $replayed->activeStepId && '' !== $replayed->activeStepId) {
+        if ($this->llmStepRemainedIncomplete($sorted)) {
             $eventSpecs[] = [
                 'type' => RunEventTypeEnum::LlmStepAborted->value,
                 'payload' => [
-                    'step_id' => $replayed->activeStepId,
+                    'step_id' => $stepId,
                     'stop_reason' => 'cancelled',
                     'usage' => null,
                     'aborted_assistant' => null,
@@ -190,34 +149,37 @@ readonly class SessionRepairService
             ];
         }
 
+        $unresolvedIds = $this->unresolvedPendingToolCallIds($replayed);
         $resolvedCount = 0;
-        if ([] !== $unresolvedIds) {
-            $toolInfo = $this->toolCallInfoFromEvents($sorted);
-            foreach ($unresolvedIds as $toolCallId) {
-                $info = $toolInfo[$toolCallId] ?? [];
-                $toolName = \is_string($info['name'] ?? null) ? $info['name'] : 'unknown';
-                $orderIndex = \is_int($info['order_index'] ?? null) ? $info['order_index'] : 0;
-
-                $eventSpecs[] = [
-                    'type' => RunEventTypeEnum::ToolExecutionEnd->value,
-                    'payload' => [
-                        'tool_call_id' => $toolCallId,
-                        'order_index' => $orderIndex,
-                        'is_error' => true,
-                        'result' => self::SYNTHETIC_CANCEL_MESSAGE,
-                        'cancelled' => true,
-                        'cancellation_reason' => 'user',
-                    ],
-                ];
-                ++$resolvedCount;
+        $toolInfo = $this->toolCallInfoFromEvents($sorted);
+        foreach ($unresolvedIds as $toolCallId) {
+            if ($this->hasDurableToolEnd($sorted, $toolCallId)) {
+                continue;
             }
 
+            $info = $toolInfo[$toolCallId] ?? [];
+            $toolName = \is_string($info['name'] ?? null) ? $info['name'] : 'unknown';
+            $orderIndex = \is_int($info['order_index'] ?? null) ? $info['order_index'] : 0;
+
+            $this->appendSyntheticCancelledToolResultEvents(
+                eventSpecs: $eventSpecs,
+                runId: $runId,
+                turnNo: $turnNo,
+                stepId: $stepId,
+                toolCallId: $toolCallId,
+                toolName: $toolName,
+                orderIndex: $orderIndex,
+            );
+            ++$resolvedCount;
+        }
+
+        if ($resolvedCount > 0) {
             $eventSpecs[] = [
                 'type' => RunEventTypeEnum::ToolBatchCommitted->value,
                 'payload' => [
                     'count' => $resolvedCount,
                     'turn_no' => $turnNo,
-                    'step_id' => $replayed->activeStepId,
+                    'step_id' => $stepId,
                 ],
             ];
         }
@@ -229,33 +191,44 @@ readonly class SessionRepairService
             ],
         ];
 
-        $newEvents = $this->eventFactory->eventsFromSpecs($runId, $turnNo, $maxSeq + 1, $eventSpecs);
-        foreach ($newEvents as $event) {
-            $this->eventStore->append($event);
-        }
+        $proposedEvents = $this->eventFactory->eventsFromSpecs($runId, $turnNo, $maxSeq + 1, $eventSpecs);
+        $hypothetical = array_merge($sorted, $proposedEvents);
+        $hypotheticalReplay = $this->runStateReducer->replay(RunState::queued($runId), $hypothetical);
 
-        $allEvents = $this->eventStore->allFor($runId);
-        $allSorted = $this->replayEventPreparer->sortBySequence($allEvents);
-        $finalReplay = $this->runStateReducer->replay(RunState::queued($runId), $allSorted);
-
-        if (RunStatus::Cancelled !== $finalReplay->status) {
-            $this->logger->error('session_repair.replay_validation_failed', [
+        if (RunStatus::Cancelled !== $hypotheticalReplay->status) {
+            $this->logger->warning('session_repair.refused', [
                 'run_id' => $runId,
                 'component' => 'session.repair',
-                'event_type' => 'session.repair.replay_validation_failed',
-                'final_status' => $finalReplay->status->value,
+                'event_type' => 'session.repair.refused',
+                'refusal_reason' => SessionRepairRefusalReasonEnum::ReplayValidationFailed->value,
+                'final_status' => $hypotheticalReplay->status->value,
             ]);
 
             return new RepairResult(
-                needsRepair: true,
+                repairWasNeeded: true,
                 staleCancellationRepaired: false,
-                terminalEventsAppended: \count($newEvents),
+                terminalEventsAppended: 0,
                 replayOk: false,
-                message: 'Session repair appended events but replay did not reach Cancelled.',
-                duplicateSeqs: [],
-                backupEventsPath: null,
+                message: 'Session repair refused: hypothetical replay did not reach Cancelled.',
+                refusalReason: SessionRepairRefusalReasonEnum::ReplayValidationFailed,
             );
         }
+
+        try {
+            $this->eventStore->appendMany($proposedEvents);
+        } catch (\Throwable $exception) {
+            $this->logger->error('session_repair.append_failed', [
+                'run_id' => $runId,
+                'component' => 'session.repair',
+                'event_type' => 'session.repair.append_failed',
+                'exception_class' => $exception::class,
+                'exception_message' => $exception->getMessage(),
+            ]);
+
+            throw $exception;
+        }
+
+        $finalReplay = $hypotheticalReplay;
 
         $persisted = new RunState(
             runId: $finalReplay->runId,
@@ -274,22 +247,19 @@ readonly class SessionRepairService
         );
 
         if (!$this->runStore->compareAndSwap($persisted, $storedState->version)) {
-            $this->logger->warning('session_repair.refused', [
+            $this->logger->warning('session_repair.cas_degraded', [
                 'run_id' => $runId,
                 'component' => 'session.repair',
-                'event_type' => 'session.repair.refused',
-                'refusal_reason' => SessionRepairRefusalReasonEnum::CompareAndSwapConflict->value,
+                'event_type' => 'session.repair.cas_degraded',
+                'terminal_events_appended' => \count($proposedEvents),
             ]);
 
             return new RepairResult(
-                needsRepair: true,
-                staleCancellationRepaired: false,
-                terminalEventsAppended: \count($newEvents),
+                repairWasNeeded: true,
+                staleCancellationRepaired: true,
+                terminalEventsAppended: \count($proposedEvents),
                 replayOk: true,
-                message: 'Session repair refused: run state changed during repair.',
-                duplicateSeqs: [],
-                backupEventsPath: null,
-                refusalReason: SessionRepairRefusalReasonEnum::CompareAndSwapConflict,
+                message: 'Session repaired: canonical events appended; hot run state will self-heal on replay.',
             );
         }
 
@@ -297,18 +267,87 @@ readonly class SessionRepairService
             'run_id' => $runId,
             'component' => 'session.repair',
             'event_type' => 'session.repair.completed',
-            'terminal_events_appended' => \count($newEvents),
+            'terminal_events_appended' => \count($proposedEvents),
         ]);
 
         return new RepairResult(
-            needsRepair: true,
+            repairWasNeeded: true,
             staleCancellationRepaired: true,
-            terminalEventsAppended: \count($newEvents),
+            terminalEventsAppended: \count($proposedEvents),
             replayOk: true,
             message: 'Stale non-terminal cancellation repaired.',
-            duplicateSeqs: [],
-            backupEventsPath: null,
         );
+    }
+
+    /**
+     * @param list<array{type: string, payload: array<string, mixed>}> $eventSpecs
+     */
+    private function appendSyntheticCancelledToolResultEvents(
+        array &$eventSpecs,
+        string $runId,
+        int $turnNo,
+        string $stepId,
+        string $toolCallId,
+        string $toolName,
+        int $orderIndex,
+    ): void {
+        $syntheticResult = new ToolCallResult(
+            runId: $runId,
+            turnNo: $turnNo,
+            stepId: $stepId,
+            attempt: 1,
+            idempotencyKey: hash('sha256', \sprintf('repair-cancel-%s-%s', $runId, $toolCallId)),
+            toolCallId: $toolCallId,
+            orderIndex: $orderIndex,
+            result: [
+                'tool_name' => $toolName,
+                'content' => [['type' => 'text', 'text' => self::SYNTHETIC_CANCEL_MESSAGE]],
+            ],
+            isError: true,
+            error: [
+                'type' => 'cancelled',
+                'message' => self::SYNTHETIC_CANCEL_MESSAGE,
+            ],
+        );
+
+        $eventSpecs[] = [
+            'type' => RunEventTypeEnum::ToolCallResultReceived->value,
+            'payload' => [
+                'tool_call_id' => $toolCallId,
+                'order_index' => $orderIndex,
+                'is_error' => true,
+            ],
+        ];
+        $eventSpecs[] = [
+            'type' => RunEventTypeEnum::ToolExecutionEnd->value,
+            'payload' => [
+                'tool_call_id' => $toolCallId,
+                'order_index' => $orderIndex,
+                'is_error' => true,
+                'result' => self::SYNTHETIC_CANCEL_MESSAGE,
+                'cancelled' => true,
+                'cancellation_reason' => 'user',
+            ],
+        ];
+
+        $toolMsg = $this->messageNormalizer->toolMessage($syntheticResult);
+        $toolMsgArray = $toolMsg->toArray();
+
+        $eventSpecs[] = [
+            'type' => RunEventTypeEnum::MessageStart->value,
+            'payload' => [
+                'message_role' => 'tool',
+                'tool_call_id' => $toolCallId,
+            ],
+        ];
+        $eventSpecs[] = [
+            'type' => RunEventTypeEnum::MessageEnd->value,
+            'payload' => [
+                'message_role' => 'tool',
+                'tool_call_id' => $toolCallId,
+                'message' => $toolMsgArray,
+            ],
+        ];
     }
 
     /**
@@ -337,6 +376,50 @@ readonly class SessionRepairService
 
             $kind = \is_string($event->payload['kind'] ?? null) ? $event->payload['kind'] : null;
             if ('cancel' === $kind) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @param list<RunEvent> $events
+     */
+    private function llmStepRemainedIncomplete(array $events): bool
+    {
+        $started = false;
+        $completed = false;
+        $aborted = false;
+
+        foreach ($events as $event) {
+            if (RunEventTypeEnum::MessageStart->value === $event->type) {
+                $role = \is_string($event->payload['message_role'] ?? null) ? $event->payload['message_role'] : null;
+                if ('assistant' === $role) {
+                    $started = true;
+                }
+            }
+            if (RunEventTypeEnum::LlmStepCompleted->value === $event->type) {
+                $completed = true;
+            }
+            if (RunEventTypeEnum::LlmStepAborted->value === $event->type) {
+                $aborted = true;
+            }
+        }
+
+        return $started && !$completed && !$aborted;
+    }
+
+    /**
+     * @param list<RunEvent> $events
+     */
+    private function hasDurableToolEnd(array $events, string $toolCallId): bool
+    {
+        foreach ($events as $event) {
+            if (RunEventTypeEnum::ToolExecutionEnd->value !== $event->type) {
+                continue;
+            }
+            if (($event->payload['tool_call_id'] ?? null) === $toolCallId) {
                 return true;
             }
         }
@@ -405,8 +488,9 @@ readonly class SessionRepairService
                     continue;
                 }
                 $name = \is_string($event->payload['tool_name'] ?? null) ? $event->payload['tool_name'] : ($map[$id]['name'] ?? 'unknown');
+                $orderIndex = \is_int($event->payload['order_index'] ?? null) ? $event->payload['order_index'] : ($map[$id]['order_index'] ?? $order);
                 if (!isset($map[$id])) {
-                    $map[$id] = ['name' => $name, 'order_index' => $order];
+                    $map[$id] = ['name' => $name, 'order_index' => $orderIndex];
                     ++$order;
                 }
             }
@@ -417,36 +501,51 @@ readonly class SessionRepairService
 
     private function ambiguousRefusal(string $runId): RepairResult
     {
-        $this->logger->warning('session_repair.refused', [
-            'run_id' => $runId,
-            'component' => 'session.repair',
-            'event_type' => 'session.repair.refused',
-            'refusal_reason' => SessionRepairRefusalReasonEnum::AmbiguousPendingWork->value,
-        ]);
+        $this->logRefusal($runId, SessionRepairRefusalReasonEnum::AmbiguousPendingWork);
 
         return new RepairResult(
-            needsRepair: true,
+            repairWasNeeded: true,
             staleCancellationRepaired: false,
             terminalEventsAppended: 0,
             replayOk: false,
             message: 'Session repair refused: ambiguous pending work.',
-            duplicateSeqs: [],
-            backupEventsPath: null,
             refusalReason: SessionRepairRefusalReasonEnum::AmbiguousPendingWork,
+        );
+    }
+
+    private function noRepairResult(string $message): RepairResult
+    {
+        return new RepairResult(
+            repairWasNeeded: false,
+            staleCancellationRepaired: false,
+            terminalEventsAppended: 0,
+            replayOk: true,
+            message: $message,
         );
     }
 
     private function refusalResult(string $message, SessionRepairRefusalReasonEnum $reason): RepairResult
     {
         return new RepairResult(
-            needsRepair: false,
+            repairWasNeeded: false,
             staleCancellationRepaired: false,
             terminalEventsAppended: 0,
             replayOk: false,
             message: $message,
-            duplicateSeqs: [],
-            backupEventsPath: null,
             refusalReason: $reason,
         );
+    }
+
+    /**
+     * @param array<string, int|string> $extra
+     */
+    private function logRefusal(string $runId, SessionRepairRefusalReasonEnum $reason, array $extra = []): void
+    {
+        $this->logger->warning('session_repair.refused', array_merge([
+            'run_id' => $runId,
+            'component' => 'session.repair',
+            'event_type' => 'session.repair.refused',
+            'refusal_reason' => $reason->value,
+        ], $extra));
     }
 }
