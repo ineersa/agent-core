@@ -359,7 +359,7 @@ Why results are not mutated inside llm/tool workers:
   - Execution workers only enqueue immutable result envelopes; the run_control process owns CAS + event append
   - AdvanceRun/CompactRun remain synchronous/unrouted on agent.command.bus (and AdvanceRun on agent.execution.bus for effect paths) by design
 
-WorkerFailedEventSubscriber (run_control only):
+WorkerFailedEventSubscriber (`CodingAgent/Runtime/Messenger`, run_control only):
   - Intentional last-resort exception when RunMessageProcessor permanently fails after retries
   - Directly writes terminal Failed + agent_end in the same run_control process (bypasses RunCommit/post-commit hooks)
   - Does not replace normal mutation; only prevents silent hangs when the primary writer path is exhausted

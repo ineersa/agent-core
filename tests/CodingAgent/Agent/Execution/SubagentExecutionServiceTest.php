@@ -18,6 +18,7 @@ use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Domain\Run\StartRunInput;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryRunStore;
+use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
 use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunDirectory;
@@ -42,6 +43,8 @@ use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Markdown\MarkdownFrontmatterExtractor;
 use Ineersa\CodingAgent\Mcp\Catalog\McpToolCatalogStoreInterface;
+use Ineersa\CodingAgent\Session\CommittedRunEventAppender;
+use Ineersa\CodingAgent\Session\FileRunSequenceAllocator;
 use Ineersa\CodingAgent\Skills\SkillContextRenderer;
 use Ineersa\CodingAgent\Skills\SkillDiscovery;
 use Ineersa\CodingAgent\Skills\SkillsConfig;
@@ -167,6 +170,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             runStore: $runStore,
             parentRunStore: $parentRunStore,
             eventStore: $eventStore,
+            committedRunEventAppender: self::getContainer()->get(CommittedRunEventAppender::class),
             metadataReader: $metadataReader,
             childRunDirectory: $directory,
             contextAccessor: self::getContainer()->get(StackToolExecutionContextAccessor::class),
@@ -244,6 +248,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             runStore: $runStore,
             parentRunStore: $parentRunStore,
             eventStore: $eventStore,
+            committedRunEventAppender: self::getContainer()->get(CommittedRunEventAppender::class),
             metadataReader: $metadataReader,
             childRunDirectory: $directory,
             contextAccessor: self::getContainer()->get(StackToolExecutionContextAccessor::class),
@@ -317,6 +322,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             runStore: $runStore,
             parentRunStore: $parentRunStore,
             eventStore: $eventStore,
+            committedRunEventAppender: self::getContainer()->get(CommittedRunEventAppender::class),
             metadataReader: $metadataReader,
             childRunDirectory: $directory,
             contextAccessor: self::getContainer()->get(StackToolExecutionContextAccessor::class),
@@ -392,6 +398,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             runStore: $runStore,
             parentRunStore: $parentRunStore,
             eventStore: $eventStore,
+            committedRunEventAppender: self::getContainer()->get(CommittedRunEventAppender::class),
             metadataReader: $metadataReader,
             childRunDirectory: $directory,
             contextAccessor: self::getContainer()->get(StackToolExecutionContextAccessor::class),
@@ -427,6 +434,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             runStore: $this->createStub(RunStoreInterface::class),
             parentRunStore: $this->createStub(RunStoreInterface::class),
             eventStore: $eventStore,
+            committedRunEventAppender: self::getContainer()->get(CommittedRunEventAppender::class),
             metadataReader: new SubagentRunMetadataReader($eventStore),
             childRunDirectory: $directory,
             contextAccessor: self::getContainer()->get(StackToolExecutionContextAccessor::class),
@@ -471,6 +479,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             runStore: $this->createStub(RunStoreInterface::class),
             parentRunStore: $this->createStub(RunStoreInterface::class),
             eventStore: $eventStore,
+            committedRunEventAppender: self::getContainer()->get(CommittedRunEventAppender::class),
             metadataReader: new SubagentRunMetadataReader($eventStore),
             childRunDirectory: $directory,
             contextAccessor: self::getContainer()->get(StackToolExecutionContextAccessor::class),
@@ -555,20 +564,8 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
         $catalog = new AgentDefinitionCatalog([$def]);
         $directory = self::getContainer()->get(AgentChildRunDirectory::class);
 
-        // Collecting event store that tracks appended events per runId.
-        $appendedEvents = [];
-        $eventStore = $this->createStub(EventStoreInterface::class);
-        $eventStore->method('append')
-            ->willReturnCallback(static function (RunEvent $event) use (&$appendedEvents): void {
-                $appendedEvents[] = $event;
-            });
-        $eventStore->method('allFor')
-            ->willReturnCallback(static function (string $runId) use (&$appendedEvents): array {
-                return array_values(array_filter(
-                    $appendedEvents,
-                    static fn (RunEvent $e): bool => $e->runId === $runId,
-                ));
-            });
+        $eventStore = new InMemoryEventStore();
+        $sequencedAppender = new CommittedRunEventAppender($eventStore, $parentRunStore, new \Psr\Log\NullLogger());
 
         $metadataReader = new SubagentRunMetadataReader($eventStore);
         $registry = self::getContainer()->get(AgentArtifactRegistry::class);
@@ -595,6 +592,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             runStore: $runStore,
             parentRunStore: $parentRunStore,
             eventStore: $eventStore,
+            committedRunEventAppender: $sequencedAppender,
             metadataReader: $metadataReader,
             childRunDirectory: $directory,
             contextAccessor: $contextAccessor,
@@ -621,9 +619,9 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             'Parent lastSeq should advance past initial seed (5) after progress events.',
         );
 
-        // At least one progress event should have been emitted.
+        $parentEvents = $eventStore->allFor('parent-seq');
         $progressEvents = array_filter(
-            $appendedEvents,
+            $parentEvents,
             static fn (RunEvent $e): bool => RunEventTypeEnum::ToolExecutionUpdate->value === $e->type,
         );
         $this->assertNotEmpty($progressEvents, 'At least one progress event should be emitted.');
@@ -709,6 +707,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             runStore: $runStore,
             parentRunStore: $parentRunStore,
             eventStore: $eventStore,
+            committedRunEventAppender: self::getContainer()->get(CommittedRunEventAppender::class),
             metadataReader: $metadataReader,
             childRunDirectory: $directory,
             contextAccessor: self::getContainer()->get(StackToolExecutionContextAccessor::class),
@@ -1274,25 +1273,18 @@ CHILD_SKILL_BODY_UNIQUE',
             cancellationToken: new NullCancellationToken(),
             timeoutSeconds: null,
         );
-        $appendedEvents = [];
-        $eventStore = $this->createStub(EventStoreInterface::class);
-        $eventStore->method('append')
-            ->willReturnCallback(static function (RunEvent $event) use (&$appendedEvents): void {
-                $appendedEvents[] = $event;
-            });
-        $eventStore->method('allFor')
-            ->willReturnCallback(static function (string $runId) use (&$appendedEvents): array {
-                return array_values(array_filter(
-                    $appendedEvents,
-                    static fn (RunEvent $e): bool => $e->runId === $runId,
-                ));
-            });
+        $parentRunStore = new InMemoryRunStore();
+        $parentRunStore->compareAndSwap(new RunState(runId: 'parent-timeout-single', status: RunStatus::Running, version: 1, lastSeq: 0), 0);
+        $eventStore = new InMemoryEventStore();
+        $sequencedAppender = new CommittedRunEventAppender($eventStore, $parentRunStore, new \Psr\Log\NullLogger());
 
         $service = $this->makeService([
             'catalog' => new AgentDefinitionCatalog([$def]),
             'agentRunner' => $agentRunner,
             'runStore' => $runStore,
+            'parentRunStore' => $parentRunStore,
             'eventStore' => $eventStore,
+            'committedRunEventAppender' => $sequencedAppender,
             'contextAccessor' => $contextAccessor,
             'agentsConfig' => new AgentsConfig(subagentToolTimeoutSeconds: 60),
             'clock' => new MockClock(),
@@ -1308,7 +1300,7 @@ CHILD_SKILL_BODY_UNIQUE',
         $this->assertSame(AgentArtifactStatusEnum::Failed, $entries[0]->status);
 
         $progressEvents = array_values(array_filter(
-            $appendedEvents,
+            $eventStore->allFor('parent-timeout-single'),
             static fn (RunEvent $e): bool => RunEventTypeEnum::ToolExecutionUpdate->value === $e->type,
         ));
         $this->assertNotEmpty($progressEvents);
@@ -1370,26 +1362,19 @@ CHILD_SKILL_BODY_UNIQUE',
             timeoutSeconds: 120,
         );
 
-        $appendedEvents = [];
-        $eventStore = $this->createStub(EventStoreInterface::class);
-        $eventStore->method('append')
-            ->willReturnCallback(static function (RunEvent $event) use (&$appendedEvents): void {
-                $appendedEvents[] = $event;
-            });
-        $eventStore->method('allFor')
-            ->willReturnCallback(static function (string $runId) use (&$appendedEvents): array {
-                return array_values(array_filter(
-                    $appendedEvents,
-                    static fn (RunEvent $e): bool => $e->runId === $runId,
-                ));
-            });
+        $parentRunStore = new InMemoryRunStore();
+        $parentRunStore->compareAndSwap(new RunState(runId: 'parent-cancel-single', status: RunStatus::Running, version: 1, lastSeq: 0), 0);
+        $eventStore = new InMemoryEventStore();
+        $sequencedAppender = new CommittedRunEventAppender($eventStore, $parentRunStore, new \Psr\Log\NullLogger());
 
         $service = $this->makeService([
             'catalog' => new AgentDefinitionCatalog([$def]),
             'agentRunner' => $agentRunner,
             'runStore' => $runStore,
+            'parentRunStore' => $parentRunStore,
             'contextAccessor' => $contextAccessor,
             'eventStore' => $eventStore,
+            'committedRunEventAppender' => $sequencedAppender,
         ]);
 
         try {
@@ -1412,7 +1397,7 @@ CHILD_SKILL_BODY_UNIQUE',
         $this->assertStringContainsString('turn_no: 3', $handoff);
         $this->assertStringContainsString('Partial scout findings before cancel.', $handoff);
         $progressEvents = array_values(array_filter(
-            $appendedEvents,
+            $eventStore->allFor('parent-cancel-single'),
             static fn (RunEvent $e): bool => RunEventTypeEnum::ToolExecutionUpdate->value === $e->type,
         ));
         $this->assertCount(1, $progressEvents);
@@ -1554,6 +1539,7 @@ CHILD_SKILL_BODY_UNIQUE',
                 eventPayloadNormalizer: new \Ineersa\AgentCore\Schema\EventPayloadNormalizer(),
                 lockFactory: new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\FlockStore()),
                 logger: new \Psr\Log\NullLogger(),
+                sequenceAllocator: new FileRunSequenceAllocator(),
                 parentRunId: $parentRunId,
                 agentRunId: $childRunId,
                 artifactId: $artifactId,
@@ -1599,6 +1585,7 @@ CHILD_SKILL_BODY_UNIQUE',
                 new \Ineersa\AgentCore\Schema\EventPayloadNormalizer(),
                 new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\FlockStore()),
                 new \Psr\Log\NullLogger(),
+                new FileRunSequenceAllocator(),
             );
 
             $runStore = $this->createStub(RunStoreInterface::class);
@@ -1743,6 +1730,7 @@ CHILD_SKILL_BODY_UNIQUE',
             'runStore' => $this->createStub(RunStoreInterface::class),
             'parentRunStore' => $this->createStub(RunStoreInterface::class),
             'eventStore' => $this->createStub(EventStoreInterface::class),
+            'committedRunEventAppender' => self::getContainer()->get(CommittedRunEventAppender::class),
             'metadataReader' => new SubagentRunMetadataReader($this->createStub(EventStoreInterface::class)),
             'childRunDirectory' => self::getContainer()->get(AgentChildRunDirectory::class),
             'contextAccessor' => self::getContainer()->get(StackToolExecutionContextAccessor::class),
@@ -1767,6 +1755,7 @@ CHILD_SKILL_BODY_UNIQUE',
             runStore: $args['runStore'],
             parentRunStore: $args['parentRunStore'],
             eventStore: $args['eventStore'],
+            committedRunEventAppender: $args['committedRunEventAppender'],
             metadataReader: $args['metadataReader'],
             childRunDirectory: $args['childRunDirectory'],
             contextAccessor: $args['contextAccessor'],

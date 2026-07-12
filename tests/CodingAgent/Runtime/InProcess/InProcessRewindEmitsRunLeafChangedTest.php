@@ -59,13 +59,28 @@ final class InProcessRewindEmitsRunLeafChangedTest extends IsolatedKernelTestCas
                 return $this->events;
             }
 
-            public function append(RunEvent $event): void
+            public function append(RunEvent $event): RunEvent
             {
-                // Accept without persisting.
+                $max = 0;
+                foreach ($this->events as $existing) {
+                    if ($existing->runId === $event->runId && $existing->seq > $max) {
+                        $max = $existing->seq;
+                    }
+                }
+                $persisted = new RunEvent($event->runId, $max + 1, $event->turnNo, $event->type, $event->payload, $event->createdAt);
+                $this->events[] = $persisted;
+
+                return $persisted;
             }
 
-            public function appendMany(array $events): void
+            public function appendMany(array $events): array
             {
+                $out = [];
+                foreach ($events as $event) {
+                    $out[] = $this->append($event);
+                }
+
+                return $out;
             }
         };
         self::getContainer()->set(EventStoreInterface::class, $eventStore);

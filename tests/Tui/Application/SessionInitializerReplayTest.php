@@ -23,6 +23,7 @@ use Ineersa\CodingAgent\Runtime\ProjectionPipeline\UserMessageProjectionSubscrib
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTranslator;
 use Ineersa\CodingAgent\Runtime\Protocol\TurnTreeView;
+use Ineersa\CodingAgent\Session\FileRunSequenceAllocator;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\SessionRunEventStore;
 use Ineersa\Tui\Application\SessionInitializer;
@@ -99,6 +100,7 @@ final class SessionInitializerReplayTest extends TestCase
             eventPayloadNormalizer: new EventPayloadNormalizer(),
             lockFactory: new LockFactory(new FlockStore()),
             logger: new NullLogger(),
+            sequenceAllocator: new FileRunSequenceAllocator(),
         );
 
         $turnTreeProvider = $this->createStub(TurnTreeProviderInterface::class);
@@ -739,7 +741,15 @@ final class SessionInitializerReplayTest extends TestCase
             type: $type,
             payload: $payload,
         );
-        $this->eventStore->append($event);
+        $path = $this->projectDir.'/.hatfield/sessions/'.$runId.'/events.jsonl';
+        $normalizer = new EventPayloadNormalizer();
+        $json = json_encode($normalizer->normalizeRunEvent($event), \JSON_THROW_ON_ERROR);
+        file_put_contents($path, $json."\n", \FILE_APPEND);
+        $counterPath = FileRunSequenceAllocator::counterPathForEventsLog($path);
+        $current = is_readable($counterPath) ? (int) trim((string) file_get_contents($counterPath)) : 0;
+        if ($seq > $current) {
+            file_put_contents($counterPath, (string) $seq."\n");
+        }
     }
 
     /**

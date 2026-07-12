@@ -218,12 +218,14 @@ final class ToolBatchSnapshotCleanupHookSubscriberTest extends TestCase
 
 final class CleanupHookSubscriberNoOpEventStore implements EventStoreInterface
 {
-    public function append(RunEvent $event): void
+    public function append(RunEvent $event): RunEvent
     {
+        return $event;
     }
 
-    public function appendMany(array $events): void
+    public function appendMany(array $events): array
     {
+        return $events;
     }
 
     public function allFor(string $runId): array

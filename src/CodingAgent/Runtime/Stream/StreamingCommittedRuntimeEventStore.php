@@ -9,12 +9,6 @@ use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeEventSinkInterface;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
 
-/**
- * Decorates EventStoreInterface to stream mapped RuntimeEvents to stdout after durable append.
- *
- * Live transport path: messenger consumer persists RunEvent → this decorator emits JSONL on
- * stdout → controller ConsumerStdoutPoller → TUI. events.jsonl remains recovery/replay only.
- */
 final class StreamingCommittedRuntimeEventStore implements EventStoreInterface
 {
     public function __construct(
@@ -25,18 +19,22 @@ final class StreamingCommittedRuntimeEventStore implements EventStoreInterface
     ) {
     }
 
-    public function append(RunEvent $event): void
+    public function append(RunEvent $event): RunEvent
     {
-        $this->inner->append($event);
-        $this->emitMapped($event);
+        $persisted = $this->inner->append($event);
+        $this->emitMapped($persisted);
+
+        return $persisted;
     }
 
-    public function appendMany(array $events): void
+    public function appendMany(array $events): array
     {
-        $this->inner->appendMany($events);
-        foreach ($events as $event) {
+        $persisted = $this->inner->appendMany($events);
+        foreach ($persisted as $event) {
             $this->emitMapped($event);
         }
+
+        return $persisted;
     }
 
     public function allFor(string $runId): array

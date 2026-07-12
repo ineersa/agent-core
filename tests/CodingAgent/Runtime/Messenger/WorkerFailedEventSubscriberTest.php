@@ -2,8 +2,9 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\AgentCore\Tests\Infrastructure\Messenger;
+namespace Ineersa\CodingAgent\Tests\Runtime\Messenger;
 
+use Ineersa\AgentCore\Application\Handler\RunStateDuplicateSequenceReplayException;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\RunStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
@@ -11,7 +12,7 @@ use Ineersa\AgentCore\Domain\Message\StartRun;
 use Ineersa\AgentCore\Domain\Message\StartRunPayload;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
-use Ineersa\AgentCore\Infrastructure\Messenger\WorkerFailedEventSubscriber;
+use Ineersa\CodingAgent\Runtime\Messenger\WorkerFailedEventSubscriber;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
@@ -128,14 +129,17 @@ class WorkerFailedEventSubscriberTest extends TestCase
         $eventStore = $this->createMock(EventStoreInterface::class);
         $eventStore->expects($this->once())
             ->method('append')
-            ->with($this->callback(static function (RunEvent $event) use (&$capturedEvent): bool {
-                $capturedEvent = $event;
-
+            ->with($this->callback(static function (RunEvent $event): bool {
                 return self::RUN_ID === $event->runId
                     && 'agent_end' === $event->type
                     && 'failed' === ($event->payload['reason'] ?? '')
-                    && 1 === $event->seq;
-            }));
+                    && 0 === $event->seq;
+            }))
+            ->willReturnCallback(static function (RunEvent $event) use (&$capturedEvent): RunEvent {
+                $capturedEvent = new RunEvent($event->runId, 1, $event->turnNo, $event->type, $event->payload);
+
+                return $capturedEvent;
+            });
 
         $logger = new NullLogger();
 
@@ -183,14 +187,11 @@ class WorkerFailedEventSubscriberTest extends TestCase
         $eventStore = $this->createMock(EventStoreInterface::class);
         $eventStore->expects($this->once())
             ->method('append')
-            ->with($this->callback(static function (RunEvent $event) use (&$capturedEvent): bool {
-                $capturedEvent = $event;
+            ->willReturnCallback(static function (RunEvent $event) use (&$capturedEvent): RunEvent {
+                $capturedEvent = new RunEvent($event->runId, 6, $event->turnNo, $event->type, $event->payload);
 
-                return self::RUN_ID === $event->runId
-                    && 'agent_end' === $event->type
-                    && 'failed' === ($event->payload['reason'] ?? '')
-                    && 6 === $event->seq;  // lastSeq 5 + 1
-            }));
+                return $capturedEvent;
+            });
 
         $logger = new NullLogger();
 
@@ -208,17 +209,20 @@ class WorkerFailedEventSubscriberTest extends TestCase
     }
 
     #[Test]
-    public function handlesCasConflictGracefully(): void
+    public function handlesCasConflictAfterSequencedAppendWithoutThrowing(): void
     {
-        $currentState = new RunState(runId: self::RUN_ID, status: RunStatus::Running, version: 3);
+        $currentState = new RunState(runId: self::RUN_ID, status: RunStatus::Running, version: 3, turnNo: 1, lastSeq: 4);
 
-        $runStore = $this->createStub(RunStoreInterface::class);
-        $runStore->method('get')->willReturn($currentState);
-        // CAS fails — another process already updated state
-        $runStore->method('compareAndSwap')->willReturn(false);
+        $runStore = $this->createMock(RunStoreInterface::class);
+        $runStore->method('get')->willReturnOnConsecutiveCalls($currentState, $currentState);
+        $runStore->expects($this->once())
+            ->method('compareAndSwap')
+            ->willReturn(false);
 
         $eventStore = $this->createMock(EventStoreInterface::class);
-        $eventStore->expects($this->never())->method('append');
+        $eventStore->expects($this->once())
+            ->method('append')
+            ->willReturn(new RunEvent(self::RUN_ID, 5, 1, 'agent_end', ['reason' => 'failed']));
 
         $logger = new NullLogger();
 
@@ -228,7 +232,6 @@ class WorkerFailedEventSubscriberTest extends TestCase
         $envelope = new Envelope($message);
         $event = $this->createFinalFailedEvent($envelope, new \RuntimeException('test'));
 
-        // Should not throw
         $subscriber->onWorkerMessageFailed($event);
         $this->assertTrue(true);
     }
@@ -244,7 +247,9 @@ class WorkerFailedEventSubscriberTest extends TestCase
         $runStore->method('compareAndSwap')->willThrowException(new \RuntimeException('Lock acquisition failed'));
 
         $eventStore = $this->createMock(EventStoreInterface::class);
-        $eventStore->expects($this->never())->method('append');
+        $eventStore->expects($this->once())
+            ->method('append')
+            ->willReturn(new RunEvent(self::RUN_ID, 5, 1, 'agent_end', ['reason' => 'failed']));
 
         $logger = new NullLogger();
 
@@ -254,7 +259,7 @@ class WorkerFailedEventSubscriberTest extends TestCase
         $envelope = new Envelope($message);
         $event = $this->createFinalFailedEvent($envelope, new \RuntimeException('test'));
 
-        // Should not throw
+        // Should not throw (append-before-CAS: terminal event may persist even when CAS throws)
         $subscriber->onWorkerMessageFailed($event);
         $this->assertTrue(true);
     }
@@ -265,6 +270,26 @@ class WorkerFailedEventSubscriberTest extends TestCase
         $events = WorkerFailedEventSubscriber::getSubscribedEvents();
         $this->assertArrayHasKey(WorkerMessageFailedEvent::class, $events);
         $this->assertSame('onWorkerMessageFailed', $events[WorkerMessageFailedEvent::class]);
+    }
+
+    #[Test]
+    public function skipsOnlyTypedDuplicateReplayCorruption(): void
+    {
+        $currentState = new RunState(runId: self::RUN_ID, status: RunStatus::Running, version: 3, turnNo: 1, lastSeq: 4);
+
+        $runStore = $this->createMock(RunStoreInterface::class);
+        $runStore->method('get')->willReturn($currentState);
+
+        $eventStore = $this->createMock(EventStoreInterface::class);
+        $eventStore->expects($this->never())->method('append');
+
+        $subscriber = new WorkerFailedEventSubscriber($runStore, $eventStore, new NullLogger());
+        $message = $this->createStartRun();
+
+        $duplicate = new RunStateDuplicateSequenceReplayException('duplicate');
+
+        $runStore->expects($this->never())->method('compareAndSwap');
+        $subscriber->onWorkerMessageFailed($this->createFinalFailedEvent(new Envelope($message), $duplicate));
     }
 
     /**

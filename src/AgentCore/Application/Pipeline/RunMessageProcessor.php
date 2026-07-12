@@ -121,8 +121,8 @@ final readonly class RunMessageProcessor
                         ]);
                     }
                 } catch (RunStateReplayException $replayException) {
-                    // Non-contiguous or corrupted history — fail explicitly
-                    // rather than continuing from a stale or queued state.
+                    // Corrupted history (e.g. duplicate sequence numbers) — fail explicitly
+                    // rather than continuing from a stale or queued state. Sequence gaps are tolerated by replay.
                     $this->logger->error('messenger.state.replay_failed', [
                         'run_id' => $runId,
                         'reason' => $replayException->getMessage(),

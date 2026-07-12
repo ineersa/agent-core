@@ -70,16 +70,9 @@ final readonly class ExecuteShellToolCallWorker
             return;
         }
 
-        // Compute next sequence number from existing events.
-        $existingEvents = $this->eventStore->allFor($runId);
-        $nextSeq = [] !== $existingEvents
-            ? max(array_map(static fn (RunEvent $e): int => $e->seq, $existingEvents)) + 1
-            : 1;
-
-        // Emit tool_execution_start event.
         $this->eventStore->append(new RunEvent(
             runId: $runId,
-            seq: $nextSeq,
+            seq: 0,
             turnNo: 0,
             type: RunEventTypeEnum::ToolExecutionStart->value,
             payload: [
@@ -121,7 +114,7 @@ final readonly class ExecuteShellToolCallWorker
         // Emit tool_execution_end event with result text.
         $this->eventStore->append(new RunEvent(
             runId: $runId,
-            seq: $nextSeq + 1,
+            seq: 0,
             turnNo: 0,
             type: RunEventTypeEnum::ToolExecutionEnd->value,
             payload: [
@@ -150,7 +143,7 @@ final readonly class ExecuteShellToolCallWorker
         if ($message->standalone) {
             $this->eventStore->append(new RunEvent(
                 runId: $runId,
-                seq: $nextSeq + 2,
+                seq: 0,
                 turnNo: 0,
                 type: RunEventTypeEnum::AgentEnd->value,
                 payload: ['reason' => 'completed'],
