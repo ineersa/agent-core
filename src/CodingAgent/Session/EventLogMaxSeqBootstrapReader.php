@@ -50,9 +50,20 @@ final class EventLogMaxSeqBootstrapReader
 
         $maxSeq = 0;
         $carry = '';
+        $capturedStderr = '';
 
         foreach ($process->getIterator() as $type => $buffer) {
-            if (Process::OUT !== $type || '' === $buffer) {
+            if ('' === $buffer) {
+                continue;
+            }
+
+            if (Process::ERR === $type) {
+                $this->appendBoundedDiagnostic($capturedStderr, $buffer);
+
+                continue;
+            }
+
+            if (Process::OUT !== $type) {
                 continue;
             }
 
@@ -76,7 +87,7 @@ final class EventLogMaxSeqBootstrapReader
         }
 
         if (0 !== $exitCode) {
-            throw new \RuntimeException(\sprintf('grep failed while scanning event log for bootstrap seq (path=%s, exit_code=%d, error_output=%s).', $this->safePathForMessage($path), $exitCode, $this->truncateDiagnostic($process->getErrorOutput())));
+            throw new \RuntimeException(\sprintf('grep failed while scanning event log for bootstrap seq (path=%s, exit_code=%d, error_output=%s).', $this->safePathForMessage($path), $exitCode, $this->truncateDiagnostic($capturedStderr)));
         }
 
         return $maxSeq;
@@ -110,6 +121,32 @@ final class EventLogMaxSeqBootstrapReader
         }
 
         return substr($path, 0, 128).'…'.substr($path, -64);
+    }
+
+    private function appendBoundedDiagnostic(string &$buffer, string $chunk): void
+    {
+        if ('' === $chunk) {
+            return;
+        }
+
+        if (str_ends_with($buffer, '…')) {
+            return;
+        }
+
+        $remaining = 512 - \strlen($buffer);
+        if ($remaining <= 0) {
+            $buffer .= '…';
+
+            return;
+        }
+
+        if (\strlen($chunk) <= $remaining) {
+            $buffer .= $chunk;
+
+            return;
+        }
+
+        $buffer .= substr($chunk, 0, $remaining).'…';
     }
 
     private function truncateDiagnostic(string $text): string
