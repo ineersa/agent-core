@@ -32,8 +32,10 @@ use Ineersa\CodingAgent\Agent\Execution\AgentDepthGuard;
 use Ineersa\CodingAgent\Agent\Execution\AgentMcpToolsResolver;
 use Ineersa\CodingAgent\Agent\Execution\AgentPromptBuilder;
 use Ineersa\CodingAgent\Agent\Execution\AgentToolPolicyResolver;
+use Ineersa\CodingAgent\Agent\Execution\ParallelSubagentExecutionService;
 use Ineersa\CodingAgent\Agent\Execution\SubagentChildProgressSummaryBuilder;
 use Ineersa\CodingAgent\Agent\Execution\SubagentExecutionService;
+use Ineersa\CodingAgent\Agent\Execution\SubagentLaunchPreparationService;
 use Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader;
 use Ineersa\CodingAgent\Agent\Execution\SubagentTaskDTO;
 use Ineersa\CodingAgent\Config\AgentsConfig;
@@ -52,6 +54,7 @@ use Ineersa\CodingAgent\Skills\SkillsContextBuilder;
 use Ineersa\CodingAgent\SystemPrompt\SystemPromptBuilder;
 use Ineersa\CodingAgent\Tests\Support\Mcp\TestMcpConfigLoaderFactory;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
+use Ineersa\CodingAgent\Tests\Agent\Execution\Support\SubagentExecutionServiceFactory;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tool\ToolRegistryInterface;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -159,28 +162,28 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
 
         $registry = self::getContainer()->get(AgentArtifactRegistry::class);
 
-        $service = new SubagentExecutionService(
-            catalog: $catalog,
-            depthGuard: new AgentDepthGuard(),
-            policyResolver: $this->defaultPolicyResolver(),
-            promptBuilder: new AgentPromptBuilder(self::getContainer()->get(SystemPromptBuilder::class)),
-            skillsContextBuilder: self::getContainer()->get(SkillsContextBuilder::class),
-            artifactRegistry: $registry,
-            agentRunner: $agentRunner,
-            runStore: $runStore,
-            parentRunStore: $parentRunStore,
-            eventStore: $eventStore,
-            committedRunEventAppender: self::getContainer()->get(CommittedRunEventAppender::class),
-            metadataReader: $metadataReader,
-            childRunDirectory: $directory,
-            contextAccessor: self::getContainer()->get(StackToolExecutionContextAccessor::class),
-            logger: self::getContainer()->get('logger'),
-            agentsConfig: new AgentsConfig(),
-            progressSnapshotBuilder: new \Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder(),
-            childProgressSummaryBuilder: new SubagentChildProgressSummaryBuilder(self::getContainer()->get(AgentChildRunEventStoreFactory::class)),
-            agentsContextBuilder: self::getContainer()->get(AgentsContextBuilder::class),
-            appConfig: self::getContainer()->get(AppConfig::class),
-        );
+        $service = $this->makeService([
+            'catalog' => $catalog,
+            'depthGuard' => new AgentDepthGuard(),
+            'policyResolver' => $this->defaultPolicyResolver(),
+            'promptBuilder' => new AgentPromptBuilder(self::getContainer()->get(SystemPromptBuilder::class)),
+            'skillsContextBuilder' => self::getContainer()->get(SkillsContextBuilder::class),
+            'artifactRegistry' => $registry,
+            'agentRunner' => $agentRunner,
+            'runStore' => $runStore,
+            'parentRunStore' => $parentRunStore,
+            'eventStore' => $eventStore,
+            'committedRunEventAppender' => self::getContainer()->get(CommittedRunEventAppender::class),
+            'metadataReader' => $metadataReader,
+            'childRunDirectory' => $directory,
+            'contextAccessor' => self::getContainer()->get(StackToolExecutionContextAccessor::class),
+            'logger' => self::getContainer()->get('logger'),
+            'agentsConfig' => new AgentsConfig(),
+            'progressSnapshotBuilder' => new \Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder(),
+            'childProgressSummaryBuilder' => new SubagentChildProgressSummaryBuilder(self::getContainer()->get(AgentChildRunEventStoreFactory::class)),
+            'agentsContextBuilder' => self::getContainer()->get(AgentsContextBuilder::class),
+            'appConfig' => self::getContainer()->get(AppConfig::class),
+        ]);
 
         $result = $service->execute('parent-1', 'test-agent', 'Inspect Foo.php');
 
@@ -237,28 +240,28 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
         $metadataReader = new SubagentRunMetadataReader($eventStore);
         $registry = self::getContainer()->get(AgentArtifactRegistry::class);
 
-        $service = new SubagentExecutionService(
-            catalog: $catalog,
-            depthGuard: new AgentDepthGuard(),
-            policyResolver: $this->defaultPolicyResolver(),
-            promptBuilder: new AgentPromptBuilder(self::getContainer()->get(SystemPromptBuilder::class)),
-            skillsContextBuilder: self::getContainer()->get(SkillsContextBuilder::class),
-            artifactRegistry: $registry,
-            agentRunner: $agentRunner,
-            runStore: $runStore,
-            parentRunStore: $parentRunStore,
-            eventStore: $eventStore,
-            committedRunEventAppender: self::getContainer()->get(CommittedRunEventAppender::class),
-            metadataReader: $metadataReader,
-            childRunDirectory: $directory,
-            contextAccessor: self::getContainer()->get(StackToolExecutionContextAccessor::class),
-            logger: self::getContainer()->get('logger'),
-            agentsConfig: new AgentsConfig(),
-            progressSnapshotBuilder: new \Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder(),
-            childProgressSummaryBuilder: new SubagentChildProgressSummaryBuilder(self::getContainer()->get(AgentChildRunEventStoreFactory::class)),
-            agentsContextBuilder: self::getContainer()->get(AgentsContextBuilder::class),
-            appConfig: self::getContainer()->get(AppConfig::class),
-        );
+        $service = $this->makeService([
+            'catalog' => $catalog,
+            'depthGuard' => new AgentDepthGuard(),
+            'policyResolver' => $this->defaultPolicyResolver(),
+            'promptBuilder' => new AgentPromptBuilder(self::getContainer()->get(SystemPromptBuilder::class)),
+            'skillsContextBuilder' => self::getContainer()->get(SkillsContextBuilder::class),
+            'artifactRegistry' => $registry,
+            'agentRunner' => $agentRunner,
+            'runStore' => $runStore,
+            'parentRunStore' => $parentRunStore,
+            'eventStore' => $eventStore,
+            'committedRunEventAppender' => self::getContainer()->get(CommittedRunEventAppender::class),
+            'metadataReader' => $metadataReader,
+            'childRunDirectory' => $directory,
+            'contextAccessor' => self::getContainer()->get(StackToolExecutionContextAccessor::class),
+            'logger' => self::getContainer()->get('logger'),
+            'agentsConfig' => new AgentsConfig(),
+            'progressSnapshotBuilder' => new \Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder(),
+            'childProgressSummaryBuilder' => new SubagentChildProgressSummaryBuilder(self::getContainer()->get(AgentChildRunEventStoreFactory::class)),
+            'agentsContextBuilder' => self::getContainer()->get(AgentsContextBuilder::class),
+            'appConfig' => self::getContainer()->get(AppConfig::class),
+        ]);
 
         $result = $service->execute('parent-2', 'fail-agent', 'Try to read nothing');
 
@@ -311,28 +314,28 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
         $metadataReader = new SubagentRunMetadataReader($eventStore);
         $registry = self::getContainer()->get(AgentArtifactRegistry::class);
 
-        $service = new SubagentExecutionService(
-            catalog: $catalog,
-            depthGuard: new AgentDepthGuard(),
-            policyResolver: $this->defaultPolicyResolver(),
-            promptBuilder: new AgentPromptBuilder(self::getContainer()->get(SystemPromptBuilder::class)),
-            skillsContextBuilder: self::getContainer()->get(SkillsContextBuilder::class),
-            artifactRegistry: $registry,
-            agentRunner: $agentRunner,
-            runStore: $runStore,
-            parentRunStore: $parentRunStore,
-            eventStore: $eventStore,
-            committedRunEventAppender: self::getContainer()->get(CommittedRunEventAppender::class),
-            metadataReader: $metadataReader,
-            childRunDirectory: $directory,
-            contextAccessor: self::getContainer()->get(StackToolExecutionContextAccessor::class),
-            logger: self::getContainer()->get('logger'),
-            agentsConfig: new AgentsConfig(),
-            progressSnapshotBuilder: new \Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder(),
-            childProgressSummaryBuilder: new SubagentChildProgressSummaryBuilder(self::getContainer()->get(AgentChildRunEventStoreFactory::class)),
-            agentsContextBuilder: self::getContainer()->get(AgentsContextBuilder::class),
-            appConfig: self::getContainer()->get(AppConfig::class),
-        );
+        $service = $this->makeService([
+            'catalog' => $catalog,
+            'depthGuard' => new AgentDepthGuard(),
+            'policyResolver' => $this->defaultPolicyResolver(),
+            'promptBuilder' => new AgentPromptBuilder(self::getContainer()->get(SystemPromptBuilder::class)),
+            'skillsContextBuilder' => self::getContainer()->get(SkillsContextBuilder::class),
+            'artifactRegistry' => $registry,
+            'agentRunner' => $agentRunner,
+            'runStore' => $runStore,
+            'parentRunStore' => $parentRunStore,
+            'eventStore' => $eventStore,
+            'committedRunEventAppender' => self::getContainer()->get(CommittedRunEventAppender::class),
+            'metadataReader' => $metadataReader,
+            'childRunDirectory' => $directory,
+            'contextAccessor' => self::getContainer()->get(StackToolExecutionContextAccessor::class),
+            'logger' => self::getContainer()->get('logger'),
+            'agentsConfig' => new AgentsConfig(),
+            'progressSnapshotBuilder' => new \Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder(),
+            'childProgressSummaryBuilder' => new SubagentChildProgressSummaryBuilder(self::getContainer()->get(AgentChildRunEventStoreFactory::class)),
+            'agentsContextBuilder' => self::getContainer()->get(AgentsContextBuilder::class),
+            'appConfig' => self::getContainer()->get(AppConfig::class),
+        ]);
 
         $result = $service->execute('parent-waiting', 'asker', 'Need clarification');
 
@@ -387,28 +390,28 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
 
         $metadataReader = new SubagentRunMetadataReader($eventStore);
 
-        $service = new SubagentExecutionService(
-            catalog: $catalog,
-            depthGuard: new AgentDepthGuard(),
-            policyResolver: $this->defaultPolicyResolver(),
-            promptBuilder: new AgentPromptBuilder(self::getContainer()->get(SystemPromptBuilder::class)),
-            skillsContextBuilder: self::getContainer()->get(SkillsContextBuilder::class),
-            artifactRegistry: $registry,
-            agentRunner: $agentRunner,
-            runStore: $runStore,
-            parentRunStore: $parentRunStore,
-            eventStore: $eventStore,
-            committedRunEventAppender: self::getContainer()->get(CommittedRunEventAppender::class),
-            metadataReader: $metadataReader,
-            childRunDirectory: $directory,
-            contextAccessor: self::getContainer()->get(StackToolExecutionContextAccessor::class),
-            logger: self::getContainer()->get('logger'),
-            agentsConfig: new AgentsConfig(),
-            progressSnapshotBuilder: new \Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder(),
-            childProgressSummaryBuilder: new SubagentChildProgressSummaryBuilder(self::getContainer()->get(AgentChildRunEventStoreFactory::class)),
-            agentsContextBuilder: self::getContainer()->get(AgentsContextBuilder::class),
-            appConfig: self::getContainer()->get(AppConfig::class),
-        );
+        $service = $this->makeService([
+            'catalog' => $catalog,
+            'depthGuard' => new AgentDepthGuard(),
+            'policyResolver' => $this->defaultPolicyResolver(),
+            'promptBuilder' => new AgentPromptBuilder(self::getContainer()->get(SystemPromptBuilder::class)),
+            'skillsContextBuilder' => self::getContainer()->get(SkillsContextBuilder::class),
+            'artifactRegistry' => $registry,
+            'agentRunner' => $agentRunner,
+            'runStore' => $runStore,
+            'parentRunStore' => $parentRunStore,
+            'eventStore' => $eventStore,
+            'committedRunEventAppender' => self::getContainer()->get(CommittedRunEventAppender::class),
+            'metadataReader' => $metadataReader,
+            'childRunDirectory' => $directory,
+            'contextAccessor' => self::getContainer()->get(StackToolExecutionContextAccessor::class),
+            'logger' => self::getContainer()->get('logger'),
+            'agentsConfig' => new AgentsConfig(),
+            'progressSnapshotBuilder' => new \Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder(),
+            'childProgressSummaryBuilder' => new SubagentChildProgressSummaryBuilder(self::getContainer()->get(AgentChildRunEventStoreFactory::class)),
+            'agentsContextBuilder' => self::getContainer()->get(AgentsContextBuilder::class),
+            'appConfig' => self::getContainer()->get(AppConfig::class),
+        ]);
 
         $this->expectException(ToolCallException::class);
         $this->expectExceptionMessage('Nested subagent launches are not supported');
@@ -423,28 +426,28 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
         $registry = self::getContainer()->get(AgentArtifactRegistry::class);
         $eventStore = $this->createStub(EventStoreInterface::class);
 
-        $service = new SubagentExecutionService(
-            catalog: $catalog,
-            depthGuard: new AgentDepthGuard(),
-            policyResolver: $this->defaultPolicyResolver(),
-            promptBuilder: new AgentPromptBuilder(self::getContainer()->get(SystemPromptBuilder::class)),
-            skillsContextBuilder: self::getContainer()->get(SkillsContextBuilder::class),
-            artifactRegistry: $registry,
-            agentRunner: $this->createStub(AgentRunnerInterface::class),
-            runStore: $this->createStub(RunStoreInterface::class),
-            parentRunStore: $this->createStub(RunStoreInterface::class),
-            eventStore: $eventStore,
-            committedRunEventAppender: self::getContainer()->get(CommittedRunEventAppender::class),
-            metadataReader: new SubagentRunMetadataReader($eventStore),
-            childRunDirectory: $directory,
-            contextAccessor: self::getContainer()->get(StackToolExecutionContextAccessor::class),
-            logger: self::getContainer()->get('logger'),
-            agentsConfig: new AgentsConfig(),
-            progressSnapshotBuilder: new \Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder(),
-            childProgressSummaryBuilder: new SubagentChildProgressSummaryBuilder(self::getContainer()->get(AgentChildRunEventStoreFactory::class)),
-            agentsContextBuilder: self::getContainer()->get(AgentsContextBuilder::class),
-            appConfig: self::getContainer()->get(AppConfig::class),
-        );
+        $service = $this->makeService([
+            'catalog' => $catalog,
+            'depthGuard' => new AgentDepthGuard(),
+            'policyResolver' => $this->defaultPolicyResolver(),
+            'promptBuilder' => new AgentPromptBuilder(self::getContainer()->get(SystemPromptBuilder::class)),
+            'skillsContextBuilder' => self::getContainer()->get(SkillsContextBuilder::class),
+            'artifactRegistry' => $registry,
+            'agentRunner' => $this->createStub(AgentRunnerInterface::class),
+            'runStore' => $this->createStub(RunStoreInterface::class),
+            'parentRunStore' => $this->createStub(RunStoreInterface::class),
+            'eventStore' => $eventStore,
+            'committedRunEventAppender' => self::getContainer()->get(CommittedRunEventAppender::class),
+            'metadataReader' => new SubagentRunMetadataReader($eventStore),
+            'childRunDirectory' => $directory,
+            'contextAccessor' => self::getContainer()->get(StackToolExecutionContextAccessor::class),
+            'logger' => self::getContainer()->get('logger'),
+            'agentsConfig' => new AgentsConfig(),
+            'progressSnapshotBuilder' => new \Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder(),
+            'childProgressSummaryBuilder' => new SubagentChildProgressSummaryBuilder(self::getContainer()->get(AgentChildRunEventStoreFactory::class)),
+            'agentsContextBuilder' => self::getContainer()->get(AgentsContextBuilder::class),
+            'appConfig' => self::getContainer()->get(AppConfig::class),
+        ]);
 
         $this->expectException(ToolCallException::class);
         $this->expectExceptionMessage('not available');
@@ -468,28 +471,28 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
         $registry = self::getContainer()->get(AgentArtifactRegistry::class);
         $eventStore = $this->createStub(EventStoreInterface::class);
 
-        $service = new SubagentExecutionService(
-            catalog: $catalog,
-            depthGuard: new AgentDepthGuard(),
-            policyResolver: $this->defaultPolicyResolver(),
-            promptBuilder: new AgentPromptBuilder(self::getContainer()->get(SystemPromptBuilder::class)),
-            skillsContextBuilder: self::getContainer()->get(SkillsContextBuilder::class),
-            artifactRegistry: $registry,
-            agentRunner: $this->createStub(AgentRunnerInterface::class),
-            runStore: $this->createStub(RunStoreInterface::class),
-            parentRunStore: $this->createStub(RunStoreInterface::class),
-            eventStore: $eventStore,
-            committedRunEventAppender: self::getContainer()->get(CommittedRunEventAppender::class),
-            metadataReader: new SubagentRunMetadataReader($eventStore),
-            childRunDirectory: $directory,
-            contextAccessor: self::getContainer()->get(StackToolExecutionContextAccessor::class),
-            logger: self::getContainer()->get('logger'),
-            agentsConfig: new AgentsConfig(),
-            progressSnapshotBuilder: new \Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder(),
-            childProgressSummaryBuilder: new SubagentChildProgressSummaryBuilder(self::getContainer()->get(AgentChildRunEventStoreFactory::class)),
-            agentsContextBuilder: self::getContainer()->get(AgentsContextBuilder::class),
-            appConfig: self::getContainer()->get(AppConfig::class),
-        );
+        $service = $this->makeService([
+            'catalog' => $catalog,
+            'depthGuard' => new AgentDepthGuard(),
+            'policyResolver' => $this->defaultPolicyResolver(),
+            'promptBuilder' => new AgentPromptBuilder(self::getContainer()->get(SystemPromptBuilder::class)),
+            'skillsContextBuilder' => self::getContainer()->get(SkillsContextBuilder::class),
+            'artifactRegistry' => $registry,
+            'agentRunner' => $this->createStub(AgentRunnerInterface::class),
+            'runStore' => $this->createStub(RunStoreInterface::class),
+            'parentRunStore' => $this->createStub(RunStoreInterface::class),
+            'eventStore' => $eventStore,
+            'committedRunEventAppender' => self::getContainer()->get(CommittedRunEventAppender::class),
+            'metadataReader' => new SubagentRunMetadataReader($eventStore),
+            'childRunDirectory' => $directory,
+            'contextAccessor' => self::getContainer()->get(StackToolExecutionContextAccessor::class),
+            'logger' => self::getContainer()->get('logger'),
+            'agentsConfig' => new AgentsConfig(),
+            'progressSnapshotBuilder' => new \Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder(),
+            'childProgressSummaryBuilder' => new SubagentChildProgressSummaryBuilder(self::getContainer()->get(AgentChildRunEventStoreFactory::class)),
+            'agentsContextBuilder' => self::getContainer()->get(AgentsContextBuilder::class),
+            'appConfig' => self::getContainer()->get(AppConfig::class),
+        ]);
 
         $this->expectException(ToolCallException::class);
         $this->expectExceptionMessage('does not allow foreground');
@@ -581,28 +584,28 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             timeoutSeconds: 120,
         );
 
-        $service = new SubagentExecutionService(
-            catalog: $catalog,
-            depthGuard: new AgentDepthGuard(),
-            policyResolver: $this->defaultPolicyResolver(),
-            promptBuilder: new AgentPromptBuilder(self::getContainer()->get(SystemPromptBuilder::class)),
-            skillsContextBuilder: self::getContainer()->get(SkillsContextBuilder::class),
-            artifactRegistry: $registry,
-            agentRunner: $agentRunner,
-            runStore: $runStore,
-            parentRunStore: $parentRunStore,
-            eventStore: $eventStore,
-            committedRunEventAppender: $sequencedAppender,
-            metadataReader: $metadataReader,
-            childRunDirectory: $directory,
-            contextAccessor: $contextAccessor,
-            logger: self::getContainer()->get('logger'),
-            agentsConfig: new AgentsConfig(),
-            progressSnapshotBuilder: new \Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder(),
-            childProgressSummaryBuilder: new SubagentChildProgressSummaryBuilder(self::getContainer()->get(AgentChildRunEventStoreFactory::class)),
-            agentsContextBuilder: self::getContainer()->get(AgentsContextBuilder::class),
-            appConfig: self::getContainer()->get(AppConfig::class),
-        );
+        $service = $this->makeService([
+            'catalog' => $catalog,
+            'depthGuard' => new AgentDepthGuard(),
+            'policyResolver' => $this->defaultPolicyResolver(),
+            'promptBuilder' => new AgentPromptBuilder(self::getContainer()->get(SystemPromptBuilder::class)),
+            'skillsContextBuilder' => self::getContainer()->get(SkillsContextBuilder::class),
+            'artifactRegistry' => $registry,
+            'agentRunner' => $agentRunner,
+            'runStore' => $runStore,
+            'parentRunStore' => $parentRunStore,
+            'eventStore' => $eventStore,
+            'committedRunEventAppender' => $sequencedAppender,
+            'metadataReader' => $metadataReader,
+            'childRunDirectory' => $directory,
+            'contextAccessor' => $contextAccessor,
+            'logger' => self::getContainer()->get('logger'),
+            'agentsConfig' => new AgentsConfig(),
+            'progressSnapshotBuilder' => new \Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder(),
+            'childProgressSummaryBuilder' => new SubagentChildProgressSummaryBuilder(self::getContainer()->get(AgentChildRunEventStoreFactory::class)),
+            'agentsContextBuilder' => self::getContainer()->get(AgentsContextBuilder::class),
+            'appConfig' => self::getContainer()->get(AppConfig::class),
+        ]);
 
         $result = $contextAccessor->with($toolContext, static function () use ($service): string {
             return $service->execute('parent-seq', 'seq-agent', 'Do work');
@@ -696,28 +699,28 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
         $metadataReader = new SubagentRunMetadataReader($eventStore);
         $registry = self::getContainer()->get(AgentArtifactRegistry::class);
 
-        $service = new SubagentExecutionService(
-            catalog: $catalog,
-            depthGuard: new AgentDepthGuard(),
-            policyResolver: $this->defaultPolicyResolver(),
-            promptBuilder: new AgentPromptBuilder(self::getContainer()->get(SystemPromptBuilder::class)),
-            skillsContextBuilder: self::getContainer()->get(SkillsContextBuilder::class),
-            artifactRegistry: $registry,
-            agentRunner: $agentRunner,
-            runStore: $runStore,
-            parentRunStore: $parentRunStore,
-            eventStore: $eventStore,
-            committedRunEventAppender: self::getContainer()->get(CommittedRunEventAppender::class),
-            metadataReader: $metadataReader,
-            childRunDirectory: $directory,
-            contextAccessor: self::getContainer()->get(StackToolExecutionContextAccessor::class),
-            logger: self::getContainer()->get('logger'),
-            agentsConfig: new AgentsConfig(),
-            progressSnapshotBuilder: new \Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder(),
-            childProgressSummaryBuilder: new SubagentChildProgressSummaryBuilder(self::getContainer()->get(AgentChildRunEventStoreFactory::class)),
-            agentsContextBuilder: self::getContainer()->get(AgentsContextBuilder::class),
-            appConfig: self::getContainer()->get(AppConfig::class),
-        );
+        $service = $this->makeService([
+            'catalog' => $catalog,
+            'depthGuard' => new AgentDepthGuard(),
+            'policyResolver' => $this->defaultPolicyResolver(),
+            'promptBuilder' => new AgentPromptBuilder(self::getContainer()->get(SystemPromptBuilder::class)),
+            'skillsContextBuilder' => self::getContainer()->get(SkillsContextBuilder::class),
+            'artifactRegistry' => $registry,
+            'agentRunner' => $agentRunner,
+            'runStore' => $runStore,
+            'parentRunStore' => $parentRunStore,
+            'eventStore' => $eventStore,
+            'committedRunEventAppender' => self::getContainer()->get(CommittedRunEventAppender::class),
+            'metadataReader' => $metadataReader,
+            'childRunDirectory' => $directory,
+            'contextAccessor' => self::getContainer()->get(StackToolExecutionContextAccessor::class),
+            'logger' => self::getContainer()->get('logger'),
+            'agentsConfig' => new AgentsConfig(),
+            'progressSnapshotBuilder' => new \Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder(),
+            'childProgressSummaryBuilder' => new SubagentChildProgressSummaryBuilder(self::getContainer()->get(AgentChildRunEventStoreFactory::class)),
+            'agentsContextBuilder' => self::getContainer()->get(AgentsContextBuilder::class),
+            'appConfig' => self::getContainer()->get(AppConfig::class),
+        ]);
 
         $result = $service->execute('parent-compact', 'compact-agent', 'Compact then finish');
 
@@ -1612,13 +1615,16 @@ CHILD_SKILL_BODY_UNIQUE',
             ];
             $activeTurns = [$childRunId => 1];
 
-            $service = $this->makeService([
-                'runStore' => $runStore,
-                'childProgressSummaryBuilder' => new SubagentChildProgressSummaryBuilder($childFactory),
-            ]);
+            $progressEmitter = new \Ineersa\CodingAgent\Agent\Execution\ChildRun\AgentChildProgressEmitter(
+                self::getContainer()->get(StackToolExecutionContextAccessor::class),
+                self::getContainer()->get(CommittedRunEventAppender::class),
+                new \Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder(),
+                new SubagentChildProgressSummaryBuilder($childFactory),
+                $runStore,
+            );
 
-            $method = new \ReflectionMethod(SubagentExecutionService::class, 'parallelProgressSignature');
-            $signatureRead = $method->invoke($service, $parentRunId, $reports, $activeTurns);
+            $method = new \ReflectionMethod(\Ineersa\CodingAgent\Agent\Execution\ChildRun\AgentChildProgressEmitter::class, 'parallelProgressSignature');
+            $signatureRead = $method->invoke($progressEmitter, $parentRunId, $reports, $activeTurns);
 
             $useBashState = true;
             $childEventStore->append(new RunEvent($childRunId, 3, 1, RunEventTypeEnum::ToolExecutionEnd->value, [
@@ -1639,7 +1645,7 @@ CHILD_SKILL_BODY_UNIQUE',
                 ],
             ]));
 
-            $signatureBash = $method->invoke($service, $parentRunId, $reports, $activeTurns);
+            $signatureBash = $method->invoke($progressEmitter, $parentRunId, $reports, $activeTurns);
 
             $this->assertNotSame($signatureRead, $signatureBash);
             $this->assertStringContainsString('bash: command="sleep 120"', $signatureBash);
@@ -1742,30 +1748,6 @@ CHILD_SKILL_BODY_UNIQUE',
             'clock' => new NativeClock(),
         ];
 
-        $args = array_merge($defaults, $overrides);
-
-        return new SubagentExecutionService(
-            catalog: $args['catalog'],
-            depthGuard: $args['depthGuard'],
-            policyResolver: $args['policyResolver'],
-            promptBuilder: $args['promptBuilder'],
-            skillsContextBuilder: $args['skillsContextBuilder'],
-            artifactRegistry: $args['artifactRegistry'],
-            agentRunner: $args['agentRunner'],
-            runStore: $args['runStore'],
-            parentRunStore: $args['parentRunStore'],
-            eventStore: $args['eventStore'],
-            committedRunEventAppender: $args['committedRunEventAppender'],
-            metadataReader: $args['metadataReader'],
-            childRunDirectory: $args['childRunDirectory'],
-            contextAccessor: $args['contextAccessor'],
-            logger: $args['logger'],
-            agentsConfig: $args['agentsConfig'],
-            progressSnapshotBuilder: $args['progressSnapshotBuilder'],
-            childProgressSummaryBuilder: $args['childProgressSummaryBuilder'],
-            appConfig: $args['appConfig'],
-            agentsContextBuilder: $args['agentsContextBuilder'],
-            clock: $args['clock'],
-        );
+        return SubagentExecutionServiceFactory::build(array_merge($defaults, $overrides));
     }
 }

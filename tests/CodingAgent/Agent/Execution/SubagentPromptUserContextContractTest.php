@@ -306,28 +306,26 @@ final class SubagentPromptUserContextContractTest extends IsolatedKernelTestCase
         $registry ??= self::getContainer()->get(ToolRegistryInterface::class);
         $policy = new AgentToolPolicyResolver($registry, $this->emptyMcpToolsResolver());
 
-        return new SubagentExecutionService(
-            catalog: $catalog,
-            depthGuard: new AgentDepthGuard(),
-            policyResolver: $policy,
-            promptBuilder: new AgentPromptBuilder(self::getContainer()->get(SystemPromptBuilder::class)),
-            skillsContextBuilder: self::getContainer()->get(SkillsContextBuilder::class),
-            artifactRegistry: self::getContainer()->get(\Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry::class),
-            agentRunner: $agentRunner,
-            runStore: $this->pollingChildRunStore($childRunStore),
-            parentRunStore: $parentRunStore,
-            eventStore: $eventStore,
-            committedRunEventAppender: self::getContainer()->get(CommittedRunEventAppender::class),
-            metadataReader: new SubagentRunMetadataReader($eventStore),
-            childRunDirectory: self::getContainer()->get(AgentChildRunDirectory::class),
-            contextAccessor: self::getContainer()->get(\Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor::class),
-            logger: self::getContainer()->get('logger'),
-            agentsConfig: new AgentsConfig(subagentToolTimeoutSeconds: 2),
-            progressSnapshotBuilder: new \Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder(),
-            childProgressSummaryBuilder: new SubagentChildProgressSummaryBuilder(self::getContainer()->get(AgentChildRunEventStoreFactory::class)),
-            agentsContextBuilder: self::getContainer()->get(AgentsContextBuilder::class),
-            appConfig: self::getContainer()->get(\Ineersa\CodingAgent\Config\AppConfig::class),
-        );
+        return \Ineersa\CodingAgent\Tests\Agent\Execution\Support\SubagentExecutionServiceFactory::build([
+            'catalog' => $catalog,
+            'policyResolver' => $policy,
+            'promptBuilder' => new AgentPromptBuilder(self::getContainer()->get(SystemPromptBuilder::class)),
+            'skillsContextBuilder' => self::getContainer()->get(SkillsContextBuilder::class),
+            'agentsContextBuilder' => self::getContainer()->get(AgentsContextBuilder::class),
+            'artifactRegistry' => self::getContainer()->get(\Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry::class),
+            'agentRunner' => $agentRunner,
+            'runStore' => $this->pollingChildRunStore($childRunStore),
+            'parentRunStore' => $parentRunStore,
+            'eventStore' => $eventStore,
+            'committedRunEventAppender' => self::getContainer()->get(CommittedRunEventAppender::class),
+            'metadataReader' => new SubagentRunMetadataReader($eventStore),
+            'childRunDirectory' => self::getContainer()->get(AgentChildRunDirectory::class),
+            'contextAccessor' => self::getContainer()->get(\Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor::class),
+            'logger' => self::getContainer()->get('logger'),
+            'agentsConfig' => new AgentsConfig(subagentToolTimeoutSeconds: 2),
+            'childProgressSummaryBuilder' => new SubagentChildProgressSummaryBuilder(self::getContainer()->get(AgentChildRunEventStoreFactory::class)),
+            'appConfig' => self::getContainer()->get(\Ineersa\CodingAgent\Config\AppConfig::class),
+        ]);
     }
 
     private function pollingChildRunStore(RunStoreInterface $inner): RunStoreInterface
