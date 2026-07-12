@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Agent\Artifact;
 
 use Ineersa\AgentCore\Contract\EventStoreInterface;
-use Ineersa\AgentCore\Contract\SequencedEventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 
 /**
@@ -19,13 +18,13 @@ use Ineersa\AgentCore\Domain\Event\RunEvent;
  * Child run location uses the same AgentChildRunDirectory cache as
  * {@see ChildAwareRunStore}.
  */
-final class ChildAwareEventStore implements SequencedEventStoreInterface
+final class ChildAwareEventStore implements EventStoreInterface
 {
     /** @var array<string, AgentChildRunEventStore> agentRunId → store */
     private array $childStores = [];
 
     public function __construct(
-        private readonly SequencedEventStoreInterface $parentStore,
+        private readonly EventStoreInterface $parentStore,
         private readonly AgentChildRunEventStoreFactory $childStoreFactory,
         private readonly AgentChildRunDirectory $childRunDirectory,
     ) {
@@ -60,37 +59,6 @@ final class ChildAwareEventStore implements SequencedEventStoreInterface
         }
 
         return $this->parentStore->appendMany($events);
-    }
-
-    public function appendWithNextSeq(RunEvent $event): RunEvent
-    {
-        $childStore = $this->resolveChildStore($event->runId);
-        if (null !== $childStore) {
-            return $childStore->appendWithNextSeq($event);
-        }
-
-        return $this->parentStore->appendWithNextSeq($event);
-    }
-
-    public function appendManyWithNextSeq(array $events): array
-    {
-        if ([] === $events) {
-            return [];
-        }
-
-        $runId = $events[0]->runId;
-        foreach ($events as $event) {
-            if ($event->runId !== $runId) {
-                throw new \InvalidArgumentException('appendManyWithNextSeq requires all events to share the same runId.');
-            }
-        }
-
-        $childStore = $this->resolveChildStore($runId);
-        if (null !== $childStore) {
-            return $childStore->appendManyWithNextSeq($events);
-        }
-
-        return $this->parentStore->appendManyWithNextSeq($events);
     }
 
     public function allFor(string $runId): array
