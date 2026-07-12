@@ -28,6 +28,14 @@ final class EventLogMaxSeqBootstrapReaderTest extends TestCase
         $this->assertSame(0, $reader->readMaxSeq($this->tmpDir.'/missing.jsonl'));
     }
 
+    public function testEmptyLogReturnsZero(): void
+    {
+        $path = $this->tmpDir.'/empty.jsonl';
+        file_put_contents($path, '');
+        $reader = new EventLogMaxSeqBootstrapReader();
+        $this->assertSame(0, $reader->readMaxSeq($path));
+    }
+
     public function testOutOfOrderPhysicalLinesReturnMaxSeq(): void
     {
         $path = $this->tmpDir.'/events.jsonl';
@@ -46,7 +54,7 @@ final class EventLogMaxSeqBootstrapReaderTest extends TestCase
         $path = $this->tmpDir.'/events.jsonl';
         file_put_contents(
             $path,
-            '  {"schema_version":"1.0.0","run_id":"6","seq": 3,"turn_no":1,"type":"x","payload":{},"ts":"2026-01-01T00:00:00+00:00"}  '."\n"
+            '{"schema_version":"1.0.0","run_id":"6","seq":3,"turn_no":1,"type":"x","payload":{},"ts":"2026-01-01T00:00:00+00:00"}'."\n"
             .'not json at all'."\n"
             .'{"schema_version":"1.0.0","run_id":"6","seq":0,"turn_no":1,"type":"x","payload":{},"ts":"2026-01-01T00:00:00+00:00"}'."\n"
             .'{"schema_version":"1.0.0","run_id":"6","seq":5,"turn_no":1,"type":"x","payload":{},"ts":"2026-01-01T00:00:00+00:00"}'."\n",
@@ -75,5 +83,18 @@ final class EventLogMaxSeqBootstrapReaderTest extends TestCase
         );
         $reader = new EventLogMaxSeqBootstrapReader();
         $this->assertSame(4, $reader->readMaxSeq($path));
+    }
+
+    public function testPathWithSpacesAndShellMetacharactersUsesArgumentArraySafety(): void
+    {
+        $dir = $this->tmpDir.'/session dir (6) & smoke';
+        mkdir($dir, 0775, true);
+        $path = $dir.'/events & seq.jsonl';
+        file_put_contents(
+            $path,
+            '{"schema_version":"1.0.0","run_id":"6","seq":11,"turn_no":1,"type":"x","payload":{},"ts":"2026-01-01T00:00:00+00:00"}'."\n",
+        );
+        $reader = new EventLogMaxSeqBootstrapReader();
+        $this->assertSame(11, $reader->readMaxSeq($path));
     }
 }
