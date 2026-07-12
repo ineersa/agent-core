@@ -40,8 +40,15 @@ final class SubagentParallelLaunchFailureFinalizer
 
         $items = [];
         $neverLaunchedMessage = 'Child run was not launched after a parallel launch failure.';
+        $lastRunningChildIndex = -1;
+        foreach ($identities as $index => $identity) {
+            $status = $this->artifactLifecycle->getArtifactStatus($parentRunId, $identity->artifactId);
+            if (AgentArtifactStatusEnum::Running === $status) {
+                $lastRunningChildIndex = $index;
+            }
+        }
 
-        foreach ($identities as $identity) {
+        foreach ($identities as $index => $identity) {
             $snapshot = new ChildRunBatchItemSnapshotDTO($identity, false, null, '');
             if (!$this->artifactLifecycle->hasRegistryEntry($parentRunId, $identity->artifactId)) {
                 $snapshot->terminal = true;
@@ -89,15 +96,22 @@ final class SubagentParallelLaunchFailureFinalizer
                 continue;
             }
 
-            $this->terminalizer->applyTerminalOutcome(new ChildRunTerminalOutcomeDTO(
-                $identity,
-                AgentArtifactStatusEnum::Failed,
-                failureReason: $cause->getMessage(),
-                summary: 'Child run failed to start.',
-            ));
-            $snapshot->terminal = true;
-            $snapshot->artifactStatus = AgentArtifactStatusEnum::Failed;
-            $snapshot->message = 'Child run failed to start.';
+            if ($index > $lastRunningChildIndex + 1) {
+                $this->artifactLifecycle->removePendingRegistryEntry($identity);
+                $snapshot->terminal = true;
+                $snapshot->artifactStatus = AgentArtifactStatusEnum::Failed;
+                $snapshot->message = $neverLaunchedMessage;
+            } else {
+                $this->terminalizer->applyTerminalOutcome(new ChildRunTerminalOutcomeDTO(
+                    $identity,
+                    AgentArtifactStatusEnum::Failed,
+                    failureReason: $cause->getMessage(),
+                    summary: 'Child run failed to start.',
+                ));
+                $snapshot->terminal = true;
+                $snapshot->artifactStatus = AgentArtifactStatusEnum::Failed;
+                $snapshot->message = 'Child run failed to start.';
+            }
             $items[] = $snapshot;
         }
 

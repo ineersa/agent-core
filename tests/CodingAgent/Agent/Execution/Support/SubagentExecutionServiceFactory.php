@@ -4,23 +4,18 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Agent\Execution\Support;
 
-use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
-use Ineersa\AgentCore\Contract\AgentRunnerInterface;
-use Ineersa\AgentCore\Contract\EventStoreInterface;
-use Ineersa\AgentCore\Contract\RunStoreInterface;
-use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
-use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunDirectory;
-use Ineersa\CodingAgent\Agent\Context\AgentsContextBuilder;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionCatalog;
 use Ineersa\CodingAgent\Agent\Execution\AgentDepthGuard;
-use Ineersa\CodingAgent\Agent\Execution\AgentPromptBuilder;
-use Ineersa\CodingAgent\Agent\Execution\AgentToolPolicyResolver;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\AgentChildArtifactFinalizer;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\AgentChildArtifactLifecycleAdapter;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\AgentChildHandoffRenderer;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\AgentChildParentSequenceCoordinator;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\AgentChildProgressEmitter;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\AgentChildRunProcessAdapter;
+use Ineersa\CodingAgent\Agent\Execution\ChildRun\ChildRunBatchInterruptionCoordinator;
+use Ineersa\CodingAgent\Agent\Execution\ChildRun\ChildRunBatchLaunchCoordinator;
+use Ineersa\CodingAgent\Agent\Execution\ChildRun\ChildRunBatchProgressCoordinator;
+use Ineersa\CodingAgent\Agent\Execution\ChildRun\ChildRunBatchSnapshotTransitionCoordinator;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\ForegroundAgentChildRunSupervisor;
 use Ineersa\CodingAgent\Agent\Execution\ParallelSubagentExecutionService;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\SubagentArtifactReservationService;
@@ -31,17 +26,10 @@ use Ineersa\CodingAgent\Agent\Execution\Subagent\SubagentLaunchDefinitionPolicyS
 use Ineersa\CodingAgent\Agent\Execution\Subagent\SubagentParallelAggregateResultFormatter;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\SubagentParallelLaunchFailureFinalizer;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\SubagentSupervisionResultMapper;
-use Ineersa\CodingAgent\Agent\Execution\SubagentChildProgressSummaryBuilder;
 use Ineersa\CodingAgent\Agent\Execution\SubagentExecutionService;
 use Ineersa\CodingAgent\Agent\Execution\SubagentLaunchPreparationService;
 use Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder;
-use Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader;
 use Ineersa\CodingAgent\Config\AgentsConfig;
-use Ineersa\CodingAgent\Config\AppConfig;
-use Ineersa\CodingAgent\Session\CommittedRunEventAppender;
-use Ineersa\CodingAgent\Skills\SkillsContextBuilder;
-use Psr\Log\LoggerInterface;
-use Symfony\Component\Clock\ClockInterface;
 use Symfony\Component\Clock\NativeClock;
 
 final class SubagentExecutionServiceFactory
@@ -115,7 +103,11 @@ final class SubagentExecutionServiceFactory
         $launchInputFactory = new SubagentChildLaunchInputFactory($promptBuilder, $skillsContextBuilder, $agentsContextBuilder, $parentRunStore, $appConfig);
         $launchPreparation = new SubagentLaunchPreparationService($definitionPolicy, $artifactReservation, $launchInputFactory);
 
-        $batchSupervisor = new ForegroundAgentChildRunSupervisor($processPort, $artifactLifecycle, $progressSink, $terminalizer, $sequenceCoordinator, $contextAccessor, $logger, $clock);
+        $launchCoordinator = new ChildRunBatchLaunchCoordinator($processPort, $artifactLifecycle, $terminalizer, $logger);
+        $transitionCoordinator = new ChildRunBatchSnapshotTransitionCoordinator($artifactLifecycle, $terminalizer);
+        $progressCoordinator = new ChildRunBatchProgressCoordinator($progressSink, $sequenceCoordinator, $processPort);
+        $interruptionCoordinator = new ChildRunBatchInterruptionCoordinator($processPort, $terminalizer, $progressCoordinator);
+        $batchSupervisor = new ForegroundAgentChildRunSupervisor($processPort, $terminalizer, $sequenceCoordinator, $launchCoordinator, $transitionCoordinator, $progressCoordinator, $interruptionCoordinator, $contextAccessor, $clock);
         $parallelFormatter = new SubagentParallelAggregateResultFormatter();
         $resultMapper = new SubagentSupervisionResultMapper($parallelFormatter, $handoffRenderer, $args['agentsConfig']);
         $launchFailureFinalizer = new SubagentParallelLaunchFailureFinalizer($artifactLifecycle, $processPort, $terminalizer, $logger);

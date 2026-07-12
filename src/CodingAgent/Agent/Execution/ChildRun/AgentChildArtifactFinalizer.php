@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Agent\Execution\ChildRun;
 
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
-use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
 use Psr\Log\LoggerInterface;
 
 final class AgentChildArtifactFinalizer

@@ -64,6 +64,7 @@ final class SubagentLaunchPreparationService
         ?string $artifactId = null,
         ?string $childRunId = null,
         bool $artifactReservedPending = false,
+        ?ChildRunIdentityDTO $identityTemplate = null,
     ): PreparedAgentChildRunDTO {
         $artifactId ??= 'agent_'.bin2hex(random_bytes(8));
         $childRunId ??= Uuid::v4()->toRfc4122();
@@ -71,7 +72,7 @@ final class SubagentLaunchPreparationService
         $allowSubagentLaunch = null !== $definition->tools && \in_array('subagent', $definition->tools, true);
         $policy = $this->definitionPolicy->resolveToolPolicy($definition, $parentRunId, $allowSubagentLaunch);
 
-        $identity = new ChildRunIdentityDTO(
+        $identity = $identityTemplate ?? new ChildRunIdentityDTO(
             parentRunId: $parentRunId,
             childRunId: $childRunId,
             artifactId: $artifactId,

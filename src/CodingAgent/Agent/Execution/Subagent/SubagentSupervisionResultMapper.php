@@ -33,23 +33,10 @@ final class SubagentSupervisionResultMapper
     {
         return match ($result->completionKind) {
             ChildRunBatchCompletionKindEnum::AllSucceeded => $this->parallelFormatter->formatSuccess($result),
-            ChildRunBatchCompletionKindEnum::LaunchAborted => throw new ToolCallException(
-                'Parallel subagent launch failed: '.($result->launchFailure?->getMessage() ?? 'unknown error')."\n\n".$this->parallelFormatter->formatReport($result),
-                retryable: false,
-                previous: $result->launchFailure,
-            ),
-            ChildRunBatchCompletionKindEnum::ParentCancelled => throw new ToolCallException(
-                "Parallel subagent tool cancelled by parent run.\n\n".$this->parallelFormatter->formatReport($result),
-                retryable: false,
-            ),
-            ChildRunBatchCompletionKindEnum::BatchTimedOut => throw new ToolCallException(
-                \sprintf('Parallel subagents timed out after %d seconds.', $this->agentsConfig->subagentToolTimeoutSeconds)."\n\n".$this->parallelFormatter->formatReport($result),
-                retryable: false,
-            ),
-            ChildRunBatchCompletionKindEnum::PartialFailure => throw new ToolCallException(
-                'Parallel subagent execution failed for one or more children.'."\n\n".$this->parallelFormatter->formatReport($result),
-                retryable: false,
-            ),
+            ChildRunBatchCompletionKindEnum::LaunchAborted => throw new ToolCallException('Parallel subagent launch failed: '.($result->launchFailure?->getMessage() ?? 'unknown error')."\n\n".$this->parallelFormatter->formatReport($result), retryable: false, previous: $result->launchFailure),
+            ChildRunBatchCompletionKindEnum::ParentCancelled => throw new ToolCallException("Parallel subagent tool cancelled by parent run.\n\n".$this->parallelFormatter->formatReport($result), retryable: false),
+            ChildRunBatchCompletionKindEnum::BatchTimedOut => throw new ToolCallException(\sprintf('Parallel subagents timed out after %d seconds.', $this->agentsConfig->subagentToolTimeoutSeconds)."\n\n".$this->parallelFormatter->formatReport($result), retryable: false),
+            ChildRunBatchCompletionKindEnum::PartialFailure => throw new ToolCallException('Parallel subagent execution failed for one or more children.'."\n\n".$this->parallelFormatter->formatReport($result), retryable: false),
             default => throw new ToolCallException('Unexpected parallel supervision outcome: '.$result->completionKind->value, retryable: false),
         };
     }

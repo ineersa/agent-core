@@ -13,11 +13,12 @@ final readonly class ChildRunBatchDTO
         public string $parentRunId,
         public array $children,
         public int $timeoutSeconds,
+        public ChildRunBatchExecutionModeEnum $executionMode,
     ) {
     }
 
     public function isSingle(): bool
     {
-        return 1 === \count($this->children);
+        return ChildRunBatchExecutionModeEnum::Single === $this->executionMode;
     }
 }

@@ -4,10 +4,9 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Agent\Execution\Subagent;
 
-use Ineersa\CodingAgent\Agent\Execution\ChildRun\AgentChildArtifactLifecycleAdapter;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\ChildRunIdentityDTO;
-use Ineersa\CodingAgent\Agent\Execution\ChildRun\PreparedAgentChildRunDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Port\ChildRunArtifactLifecyclePort;
+use Ineersa\CodingAgent\Agent\Execution\ChildRun\PreparedAgentChildRunDTO;
 
 final class SubagentArtifactReservationService
 {

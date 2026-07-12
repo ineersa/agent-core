@@ -21,4 +21,6 @@ interface ChildRunArtifactLifecyclePort
     public function getArtifactStatus(string $parentRunId, string $artifactId): ?AgentArtifactStatusEnum;
 
     public function hasRegistryEntry(string $parentRunId, string $artifactId): bool;
+
+    public function removePendingRegistryEntry(ChildRunIdentityDTO $identity): void;
 }

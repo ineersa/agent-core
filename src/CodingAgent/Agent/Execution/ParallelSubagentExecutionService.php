@@ -8,6 +8,7 @@ use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\ChildRunBatchDTO;
+use Ineersa\CodingAgent\Agent\Execution\ChildRun\ChildRunBatchExecutionModeEnum;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\ChildRunIdentityDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\ForegroundAgentChildRunSupervisor;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\SubagentParallelLaunchFailureFinalizer;
@@ -82,6 +83,7 @@ final class ParallelSubagentExecutionService
                     $launch['artifactId'],
                     $launch['agentRunId'],
                     artifactReservedPending: true,
+                    identityTemplate: $identity,
                 );
             }
         } catch (\Throwable $e) {
@@ -90,7 +92,7 @@ final class ParallelSubagentExecutionService
             return $this->resultMapper->mapParallel($aborted);
         }
 
-        $batch = new ChildRunBatchDTO($parentRunId, $preparedChildren, $this->agentsConfig->subagentToolTimeoutSeconds);
+        $batch = new ChildRunBatchDTO($parentRunId, $preparedChildren, $this->agentsConfig->subagentToolTimeoutSeconds, ChildRunBatchExecutionModeEnum::Parallel);
         $result = $this->batchSupervisor->supervise($batch);
 
         return $this->resultMapper->mapParallel($result);

@@ -243,6 +243,44 @@ final class AgentArtifactRegistry
      *
      * @return list<AgentArtifactEntryDTO>
      */
+
+    /**
+     * Drop a Pending-only registry entry (child never reached Running).
+     *
+     * Used when parallel preparation reserved artifacts for siblings that never launched.
+     */
+    public function removePendingEntry(string $parentRunId, string $artifactId): void
+    {
+        $this->pathResolver->validatePathComponent($parentRunId, 'parentRunId');
+        $this->pathResolver->validatePathComponent($artifactId, 'artifactId');
+
+        $lock = $this->lockFactory->createLock("hatfield-agent-artifacts-{$parentRunId}");
+        $lock->acquire(true);
+
+        try {
+            $entries = $this->loadRegistry($parentRunId);
+            $filtered = [];
+            $removed = false;
+            foreach ($entries as $entry) {
+                if ($entry->artifactId === $artifactId && AgentArtifactStatusEnum::Pending === $entry->status) {
+                    $removed = true;
+
+                    continue;
+                }
+                $filtered[] = $entry;
+            }
+            if (!$removed) {
+                return;
+            }
+            $this->writeRegistry($parentRunId, $filtered);
+        } finally {
+            $lock->release();
+        }
+    }
+
+    /**
+     * @return list<AgentArtifactEntryDTO>
+     */
     public function list(string $parentRunId): array
     {
         $this->pathResolver->validatePathComponent($parentRunId, 'parentRunId');

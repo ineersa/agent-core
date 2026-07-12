@@ -72,4 +72,9 @@ final class AgentChildArtifactLifecycleAdapter implements ChildRunArtifactLifecy
     {
         return null !== $this->artifactRegistry->get($parentRunId, $artifactId);
     }
+
+    public function removePendingRegistryEntry(ChildRunIdentityDTO $identity): void
+    {
+        $this->artifactRegistry->removePendingEntry($identity->parentRunId, $identity->artifactId);
+    }
 }
