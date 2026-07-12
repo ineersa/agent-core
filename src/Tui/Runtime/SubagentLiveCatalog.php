@@ -87,6 +87,9 @@ final class SubagentLiveCatalog
             status: $status,
             taskSummary: $existing->taskSummary,
             lastActivityAtMs: (int) (microtime(true) * 1000),
+            model: $existing->model,
+            latestInputTokens: $existing->latestInputTokens,
+            contextWindow: $existing->contextWindow,
         );
     }
 
@@ -137,6 +140,10 @@ final class SubagentLiveCatalog
         $status = SubagentLiveStatusEnum::fromProgressString((string) ($row['status'] ?? 'running'));
         $taskSummary = trim((string) ($row['task_summary'] ?? ''));
 
+        $model = $this->optionalString($row['model'] ?? null);
+        $latestInputTokens = $this->optionalPositiveInt($row['latest_input_tokens'] ?? null);
+        $contextWindow = $this->optionalPositiveInt($row['context_window'] ?? null);
+
         if ('' === $agentRunId) {
             $existing = $this->byArtifactId[$artifactId] ?? null;
             $agentRunId = null !== $existing ? $existing->agentRunId : '';
@@ -152,6 +159,16 @@ final class SubagentLiveCatalog
             return;
         }
 
+        if (null === $model && null !== $existing) {
+            $model = $existing->model;
+        }
+        if (0 === $latestInputTokens && null !== $existing) {
+            $latestInputTokens = $existing->latestInputTokens;
+        }
+        if (0 === $contextWindow && null !== $existing) {
+            $contextWindow = $existing->contextWindow;
+        }
+
         $this->byArtifactId[$artifactId] = new SubagentLiveChildDTO(
             agentRunId: $agentRunId,
             artifactId: $artifactId,
@@ -159,6 +176,29 @@ final class SubagentLiveCatalog
             status: $status,
             taskSummary: $taskSummary,
             lastActivityAtMs: $now,
+            model: $model,
+            latestInputTokens: $latestInputTokens,
+            contextWindow: $contextWindow,
         );
+    }
+
+    private function optionalString(mixed $value): ?string
+    {
+        if (!\is_string($value)) {
+            return null;
+        }
+        $trimmed = trim($value);
+
+        return '' !== $trimmed ? $trimmed : null;
+    }
+
+    private function optionalPositiveInt(mixed $value): int
+    {
+        if (!is_numeric($value)) {
+            return 0;
+        }
+        $int = (int) $value;
+
+        return $int > 0 ? $int : 0;
     }
 }

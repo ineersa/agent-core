@@ -275,6 +275,65 @@ final class SubagentResultRendererTest extends TestCase
         $this->assertTrue($renderer->supports($block));
     }
 
+    public function testChildTranscriptCardContextUsageContract(): void
+    {
+        $base = [
+            'mode' => 'single', 'status' => 'completed', 'agent_name' => 'scout',
+            'artifact_id' => 'agent_ctx', 'agent_run_id' => 'child-run-ctx',
+            'task_summary' => 'Context stats', 'turn_no' => 3,
+            'input_tokens' => 35000, 'output_tokens' => 14000,
+        ];
+
+        $canonical = array_merge($base, \Ineersa\Tui\Tests\Support\ChildContextStatisticsFixture::progressPayloadOverrides());
+        $plainCanonical = $this->plainRenderedSubagentCard($canonical);
+        $this->assertStringContainsString(\Ineersa\Tui\Tests\Support\ChildContextStatisticsFixture::TRANSCRIPT_CTX_LINE, $plainCanonical);
+
+        $missingLatest = array_merge($base, ['model' => \Ineersa\Tui\Tests\Support\ChildContextStatisticsFixture::MODEL]);
+        $plainMissingLatest = $this->plainRenderedSubagentCard($missingLatest);
+        $this->assertStringNotContainsString('CTX ', $plainMissingLatest, 'Missing latest_input_tokens must not fabricate a CTX line');
+        $this->assertDoesNotMatchRegularExpression('/\b\d+%\s+\d/', $plainMissingLatest, 'Missing latest tokens must not show a context percentage');
+
+        $missingModel = array_merge($base, \Ineersa\Tui\Tests\Support\ChildContextStatisticsFixture::progressPayloadOverridesWithLatestInput(
+            \Ineersa\Tui\Tests\Support\ChildContextStatisticsFixture::LATEST_INPUT_TOKENS,
+            '',
+        ));
+        unset($missingModel['model']);
+        $plainMissingModel = $this->plainRenderedSubagentCard($missingModel);
+        $this->assertStringNotContainsString('CTX ', $plainMissingModel, 'Missing model must not fabricate a CTX line');
+
+        $missingWindow = array_merge($base, \Ineersa\Tui\Tests\Support\ChildContextStatisticsFixture::progressPayloadOverridesMissingContextWindow());
+        $plainMissingWindow = $this->plainRenderedSubagentCard($missingWindow);
+        $this->assertStringNotContainsString('CTX ', $plainMissingWindow, 'Missing context_window must not fabricate a CTX line');
+        $this->assertDoesNotMatchRegularExpression('/\b\d+%\s+\d/', $plainMissingWindow);
+
+        $unresolvableModelWithWindow = array_merge($base, \Ineersa\Tui\Tests\Support\ChildContextStatisticsFixture::progressPayloadOverridesUnresolvableModelWithWindow());
+        $plainUnresolvableWithWindow = $this->plainRenderedSubagentCard($unresolvableModelWithWindow);
+        $this->assertStringContainsString(\Ineersa\Tui\Tests\Support\ChildContextStatisticsFixture::TRANSCRIPT_CTX_LINE, $plainUnresolvableWithWindow, 'Explicit context_window must format CTX even when model is not catalog-resolvable');
+
+        $unresolvableNoWindow = array_merge($base, \Ineersa\Tui\Tests\Support\ChildContextStatisticsFixture::progressPayloadOverridesWithLatestInput(
+            \Ineersa\Tui\Tests\Support\ChildContextStatisticsFixture::LATEST_INPUT_TOKENS,
+            'unknown-provider/no-context-window',
+            0,
+        ));
+        unset($unresolvableNoWindow['context_window']);
+        $plainUnresolvableNoWindow = $this->plainRenderedSubagentCard($unresolvableNoWindow);
+        $this->assertStringNotContainsString('CTX ', $plainUnresolvableNoWindow, 'Without context_window, unresolvable model must not fabricate CTX');
+    }
+
+    /**
+     * @param array<string, mixed> $progress
+     */
+    private function plainRenderedSubagentCard(array $progress): string
+    {
+        $block = new TranscriptBlock(
+            id: 'tool_result_ctx', kind: TranscriptBlockKindEnum::ToolResult, runId: 'run1', seq: 1,
+            text: '', meta: ['tool_name' => 'subagent', 'subagent_progress' => $progress],
+        );
+        $joined = implode("\n", $this->renderer()->renderBlock($block, $this->context()));
+
+        return preg_replace('/\x1b\[[0-9;]*m/', '', $joined) ?? $joined;
+    }
+
     private function renderer(int $previewLines = 8, bool $expanded = false): TranscriptBlockRenderer
     {
         $displayConfig = new TranscriptDisplayConfig(toolResultPreviewLines: $previewLines);

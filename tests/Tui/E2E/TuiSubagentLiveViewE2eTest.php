@@ -6,6 +6,7 @@ namespace Ineersa\Tui\Tests\E2E;
 
 use Ineersa\CodingAgent\Tests\Support\ProjectDir;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
+use Ineersa\Tui\Tests\Support\ChildContextStatisticsFixture;
 use Ineersa\Tui\Tests\Support\SubagentProgressEventsFixture;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
@@ -62,10 +63,16 @@ final class TuiSubagentLiveViewE2eTest extends TestCase
             $this->tmux->sendLiteral($pane, '/agents-live');
             $this->tmux->sendKey($pane, 'Enter');
             $this->tmux->waitForCaptureContains($pane, 'agent_e2e_progress_fixture', 10.0, 'Picker must list subagent artifact');
+            $pickerCap = $this->tmux->capturePlainWithHistory($pane, 2500);
+            $this->assertStringContainsString(ChildContextStatisticsFixture::CONTEXT_DETAIL, $pickerCap, 'Picker row must show child context usage');
+            $this->assertStringContainsString(ChildContextStatisticsFixture::MODEL_SHORT, $pickerCap, 'Picker row must show child model');
 
             $this->tmux->sendKey($pane, 'Enter');
             $this->tmux->waitForCaptureContains($pane, 'Child agent', 10.0, 'Live view working line must appear');
             $this->tmux->waitForCaptureContains($pane, '[completed]', 10.0, 'Fixture child must show completed status in live view');
+            $liveCap = $this->tmux->capturePlainWithHistory($pane, 2500);
+            $this->assertStringContainsString(ChildContextStatisticsFixture::CONTEXT_DETAIL, $liveCap, 'Child live footer must show context usage');
+            $this->assertStringContainsString(ChildContextStatisticsFixture::MODEL_SHORT, $liveCap, 'Child live footer must show child model');
 
             $this->tmux->sendKey($pane, 'C-u');
             usleep(50_000);
@@ -92,6 +99,8 @@ final class TuiSubagentLiveViewE2eTest extends TestCase
             $this->tmux->sendLiteral($pane, '/agents-main');
             $this->tmux->sendKey($pane, 'Enter');
             $this->tmux->waitForCaptureContains($pane, 'scout [completed]', 10.0, 'Parent transcript must restore after /agents-main');
+            $parentCap = $this->tmux->capturePlainWithHistory($pane, 2500);
+            $this->assertStringContainsString(ChildContextStatisticsFixture::TRANSCRIPT_CTX_LINE, $parentCap, 'Parent child card must show context usage line after resume');
             $this->assertStringNotContainsString('Subagent live:', $this->tmux->capturePlainWithHistory($pane, 2500));
 
             $this->tmux->sendKey($pane, 'C-d');
@@ -158,7 +167,7 @@ final class TuiSubagentLiveViewE2eTest extends TestCase
         $dir = TestDirectoryIsolation::createProjectTempDir('tui-e2e-subagent-live');
         @mkdir($dir.'/.hatfield', 0o777, true);
         @mkdir($dir.'/home/.hatfield', 0o777, true);
-        $settings = ['ai' => ['providers' => ['llama_cpp_test' => ['api' => 'openai-completions', 'api_key' => 'dummy', 'completions_path' => '/chat/completions', 'supports_completions' => true, 'supports_embeddings' => false, 'supports_thinking_levels' => true, 'models' => ['test' => ['name' => 'test', 'context_window' => 32768, 'max_tokens' => 32768, 'input' => ['text'], 'tool_calling' => true, 'reasoning' => true, 'thinking_level_map' => ['off' => '0'], 'cost' => ['input' => 0, 'output' => 0]]]]]]];
+        $settings = ['ai' => ['providers' => ['deepseek' => ChildContextStatisticsFixture::deepseekProviderSettings(), 'llama_cpp_test' => ['api' => 'openai-completions', 'api_key' => 'dummy', 'completions_path' => '/chat/completions', 'supports_completions' => true, 'supports_embeddings' => false, 'supports_thinking_levels' => true, 'models' => ['test' => ['name' => 'test', 'context_window' => 32768, 'max_tokens' => 32768, 'input' => ['text'], 'tool_calling' => true, 'reasoning' => true, 'thinking_level_map' => ['off' => '0'], 'cost' => ['input' => 0, 'output' => 0]]]]]]];
         $yaml = \Symfony\Component\Yaml\Yaml::dump($settings, 6, 4);
         file_put_contents($dir.'/.hatfield/settings.yaml', $yaml);
         file_put_contents($dir.'/home/.hatfield/settings.yaml', $yaml);

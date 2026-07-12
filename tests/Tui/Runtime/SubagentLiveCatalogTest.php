@@ -159,6 +159,52 @@ final class SubagentLiveCatalogTest extends TestCase
         $this->assertNull($catalog->findByArtifactId('agent_a'));
     }
 
+    public function testCatalogChildExposesModelAndLatestInputTokensFromProgress(): void
+    {
+        $catalog = new SubagentLiveCatalog();
+        $catalog->ingestRuntimeEvent($this->progressEvent('parent-1', [
+            'mode' => 'single',
+            'status' => 'completed',
+            'agent_name' => 'scout',
+            'artifact_id' => 'agent_ctx',
+            'agent_run_id' => 'child-run-ctx',
+            'task_summary' => 'Context stats',
+            'model' => \Ineersa\Tui\Tests\Support\ChildContextStatisticsFixture::MODEL,
+            'latest_input_tokens' => \Ineersa\Tui\Tests\Support\ChildContextStatisticsFixture::LATEST_INPUT_TOKENS,
+            'context_window' => \Ineersa\Tui\Tests\Support\ChildContextStatisticsFixture::CONTEXT_WINDOW,
+        ]));
+
+        $child = $catalog->findByArtifactId('agent_ctx');
+        $this->assertNotNull($child);
+        $this->assertSame(\Ineersa\Tui\Tests\Support\ChildContextStatisticsFixture::MODEL, $this->childContextString($child, 'model'));
+        $this->assertSame(\Ineersa\Tui\Tests\Support\ChildContextStatisticsFixture::LATEST_INPUT_TOKENS, $this->childContextInt($child, 'latestInputTokens'));
+        $this->assertSame(\Ineersa\Tui\Tests\Support\ChildContextStatisticsFixture::CONTEXT_WINDOW, $this->childContextInt($child, 'contextWindow'));
+    }
+
+    public function testCatalogPreservesModelAndLatestInputTokensAcrossStatusUpdates(): void
+    {
+        $catalog = new SubagentLiveCatalog();
+        $base = [
+            'mode' => 'single',
+            'agent_name' => 'scout',
+            'artifact_id' => 'agent_ctx',
+            'agent_run_id' => 'child-run-ctx',
+            'task_summary' => 'Context stats',
+            'model' => \Ineersa\Tui\Tests\Support\ChildContextStatisticsFixture::MODEL,
+            'latest_input_tokens' => \Ineersa\Tui\Tests\Support\ChildContextStatisticsFixture::LATEST_INPUT_TOKENS,
+            'context_window' => \Ineersa\Tui\Tests\Support\ChildContextStatisticsFixture::CONTEXT_WINDOW,
+        ];
+        $catalog->ingestRuntimeEvent($this->progressEvent('parent-1', $base + ['status' => 'running']));
+        $catalog->applyChildStatus('agent_ctx', SubagentLiveStatusEnum::Cancelled);
+
+        $child = $catalog->findByArtifactId('agent_ctx');
+        $this->assertNotNull($child);
+        $this->assertSame(SubagentLiveStatusEnum::Cancelled, $child->status);
+        $this->assertSame(\Ineersa\Tui\Tests\Support\ChildContextStatisticsFixture::MODEL, $this->childContextString($child, 'model'));
+        $this->assertSame(\Ineersa\Tui\Tests\Support\ChildContextStatisticsFixture::LATEST_INPUT_TOKENS, $this->childContextInt($child, 'latestInputTokens'));
+        $this->assertSame(\Ineersa\Tui\Tests\Support\ChildContextStatisticsFixture::CONTEXT_WINDOW, $this->childContextInt($child, 'contextWindow'));
+    }
+
     /** @param array<string, mixed> $progress */
     private function progressEvent(string $runId, array $progress): RuntimeEvent
     {
@@ -168,5 +214,25 @@ final class SubagentLiveCatalogTest extends TestCase
             seq: 1,
             payload: ['tool_call_id' => 'tc1', 'tool_name' => 'subagent', 'delta' => '', 'subagent_progress' => $progress],
         );
+    }
+
+    private function childContextString(\Ineersa\Tui\Runtime\SubagentLiveChildDTO $child, string $property): ?string
+    {
+        if (!property_exists($child, $property)) {
+            $this->fail('SubagentLiveChildDTO must expose '.$property.' for child context statistics');
+        }
+
+        $value = $child->$property;
+
+        return \is_string($value) ? $value : null;
+    }
+
+    private function childContextInt(\Ineersa\Tui\Runtime\SubagentLiveChildDTO $child, string $property): int
+    {
+        if (!property_exists($child, $property)) {
+            $this->fail('SubagentLiveChildDTO must expose '.$property.' for child context statistics');
+        }
+
+        return (int) $child->$property;
     }
 }
