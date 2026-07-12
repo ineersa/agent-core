@@ -19,6 +19,8 @@ use Ineersa\Tui\Command\StatusUpdate;
 use Ineersa\Tui\Command\SubagentLiveInputPolicy;
 use Ineersa\Tui\Command\SubmissionRouter;
 use Ineersa\Tui\Command\TranscriptMessage;
+use Ineersa\Tui\ImagePaste\PastedImagePlaceholderFormatter;
+use Ineersa\Tui\ImagePaste\PastedImageSubmissionService;
 use Ineersa\Tui\Question\QuestionController;
 use Ineersa\Tui\Question\QuestionCoordinator;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
@@ -55,6 +57,7 @@ final class SubmitListener implements TuiListenerRegistrar
         private readonly SubagentLiveInputPolicy $subagentLiveInputPolicy,
         private readonly LoggerInterface $logger,
         private readonly PromptHistory $history,
+        private readonly PastedImageSubmissionService $pastedImageSubmissionService,
     ) {
     }
 
@@ -75,13 +78,14 @@ final class SubmitListener implements TuiListenerRegistrar
         $subagentLiveInputPolicy = $this->subagentLiveInputPolicy;
         $lifecycle = $context->lifecycle;
         $history = $this->history;
+        $pastedImageSubmissionService = $this->pastedImageSubmissionService;
 
         // Wire the question controller with TUI runtime references
         $questionController->setRuntimeRefs($context, $screen);
 
         $context->tui->addListener(static function (SubmitEvent $event) use (
             $client, $sessionStore, $state, $screen, $tui, $router, $blockFactory,
-            $questionCoordinator, $questionController, $subagentLiveInputPolicy, $logger, $lifecycle, $history,
+            $questionCoordinator, $questionController, $subagentLiveInputPolicy, $logger, $lifecycle, $history, $pastedImageSubmissionService,
         ) {
             $text = $screen->extract();
             if ('' === $text) {
@@ -153,7 +157,7 @@ final class SubmitListener implements TuiListenerRegistrar
                     $history->append($text);
                     self::dispatchToRuntime(
                         $commandResult->payload, $state, $screen,
-                        $sessionStore, $blockFactory, $client, $logger, $tui, $lifecycle,
+                        $sessionStore, $blockFactory, $client, $logger, $tui, $lifecycle, $pastedImageSubmissionService,
                     );
 
                     return;
@@ -170,7 +174,7 @@ final class SubmitListener implements TuiListenerRegistrar
             // user blocks (avoiding duplicate block IDs), and events.jsonl is
             // the single source of truth for transcript replay on resume.
             $history->append($text);
-            self::dispatchToRuntime($text, $state, $screen, $sessionStore, $blockFactory, $client, $logger, $tui, $lifecycle);
+            self::dispatchToRuntime($text, $state, $screen, $sessionStore, $blockFactory, $client, $logger, $tui, $lifecycle, $pastedImageSubmissionService);
         });
     }
 
@@ -258,6 +262,7 @@ final class SubmitListener implements TuiListenerRegistrar
         LoggerInterface $logger,
         Tui $tui,
         TuiSessionLifecycleDispatcher $lifecycle,
+        PastedImageSubmissionService $pastedImageSubmissionService,
     ): void {
         // Show immediate visual feedback (◐ Working...) before heavy
         // synchronous work (session creation, system prompt discovery,
@@ -279,27 +284,40 @@ final class SubmitListener implements TuiListenerRegistrar
         }
 
         try {
+            // Capture first-run intent before pasted-image promotion may create a session id
+            // (e.g. lazy /new --model draft still has handle=null and a preconfigured request).
+            $shouldStartFirstRun = null === $state->handle
+                && (null === $state->request || '' === $state->sessionId);
+
+            $text = self::promotePastedImagesInPrompt(
+                $text,
+                $state,
+                $screen,
+                $blockFactory,
+                $sessionStore,
+                $pastedImageSubmissionService,
+                $logger,
+                $lifecycle,
+            );
+            if (null === $text) {
+                return;
+            }
+
             // Start a run if this is the first message
-            if (null === $state->handle && (null === $state->request || '' === $state->sessionId)) {
+            if ($shouldStartFirstRun) {
                 // ── Draft session promotion ──
                 // If this is a lazy draft (sessionId === ''), create the
                 // real session row now so no orphan records are left when
                 // /new is typed but never followed by a message.
-                if ('' === $state->sessionId) {
-                    $state->sessionId = $sessionStore->createSession($text);
-                    $screen->updateSessionId($state->sessionId);
-                    $lifecycle->dispatch(new \Ineersa\Tui\Runtime\TuiSessionLifecycleEventDTO(
-                        type: \Ineersa\Tui\Runtime\TuiSessionLifecycleEventTypeEnum::SessionStarted,
-                        sessionId: $state->sessionId,
-                        isDraft: false,
-                        resuming: false,
-                    ));
-                    $logger->info('Draft session promoted to real session', [
-                        'component' => 'SubmitListener',
-                        'event_type' => 'draft_promoted',
-                        'session_id' => $state->sessionId,
-                    ]);
-                }
+                self::ensureRealSessionForSubmit(
+                    $text,
+                    $state,
+                    $screen,
+                    $sessionStore,
+                    $lifecycle,
+                    $logger,
+                    'draft_promoted',
+                );
 
                 // Merge any pre-configured draft request (e.g. from /new --model)
                 // with the submitted text so model/reasoning metadata carries
@@ -429,6 +447,85 @@ final class SubmitListener implements TuiListenerRegistrar
      * text (including the `!` prefix) so the prompt history
      * can recall shell commands via Up/Down.
      */
+
+    /**
+     * Create a real session row when the TUI is still on a lazy draft (empty session id).
+     */
+    private static function ensureRealSessionForSubmit(
+        string $seedPrompt,
+        TuiSessionState $state,
+        ChatScreen $screen,
+        HatfieldSessionStore $sessionStore,
+        TuiSessionLifecycleDispatcher $lifecycle,
+        LoggerInterface $logger,
+        string $eventType,
+    ): void {
+        if ('' !== $state->sessionId) {
+            return;
+        }
+
+        $state->sessionId = $sessionStore->createSession($seedPrompt);
+        $screen->updateSessionId($state->sessionId);
+        $lifecycle->dispatch(new \Ineersa\Tui\Runtime\TuiSessionLifecycleEventDTO(
+            type: \Ineersa\Tui\Runtime\TuiSessionLifecycleEventTypeEnum::SessionStarted,
+            sessionId: $state->sessionId,
+            isDraft: false,
+            resuming: false,
+        ));
+        $logger->info('Draft session promoted to real session', [
+            'component' => 'SubmitListener',
+            'event_type' => $eventType,
+            'session_id' => $state->sessionId,
+        ]);
+    }
+
+    /**
+     * Promote pasted image placeholders once a session id exists (draft promotion when needed).
+     */
+    private static function promotePastedImagesInPrompt(
+        string $text,
+        TuiSessionState $state,
+        ChatScreen $screen,
+        TranscriptBlockFactory $blockFactory,
+        HatfieldSessionStore $sessionStore,
+        PastedImageSubmissionService $pastedImageSubmissionService,
+        LoggerInterface $logger,
+        TuiSessionLifecycleDispatcher $lifecycle,
+    ): ?string {
+        if (null !== $state->pastedImagePasteInProgressIndex) {
+            $inFlightPlaceholder = PastedImagePlaceholderFormatter::placeholder($state->pastedImagePasteInProgressIndex);
+            if (str_contains($text, $inFlightPlaceholder)) {
+                $state->transcript[] = $blockFactory->system(
+                    runId: '' !== $state->sessionId ? $state->sessionId : 'draft',
+                    text: 'Image paste is still being read from the clipboard. Wait a moment, then submit again.',
+                    seq: \count($state->transcript) + 1,
+                    style: 'info',
+                );
+                $screen->setTranscriptBlocks($state->transcript);
+                $screen->requestRender();
+
+                return null;
+            }
+        }
+
+        if (!$pastedImageSubmissionService->textContainsPlaceholder($text)
+            && [] === $state->pastedImagePendingByIndex) {
+            return $text;
+        }
+
+        self::ensureRealSessionForSubmit(
+            $text,
+            $state,
+            $screen,
+            $sessionStore,
+            $lifecycle,
+            $logger,
+            'draft_promoted_paste',
+        );
+
+        return $pastedImageSubmissionService->resolveSubmittedText($text, $state, $screen);
+    }
+
     private static function handleShellCommand(
         DispatchShellCommand $shellCommand,
         TuiSessionState $state,
@@ -440,6 +537,7 @@ final class SubmitListener implements TuiListenerRegistrar
         TuiSessionLifecycleDispatcher $lifecycle,
     ): void {
         try {
+            // Shell commands do not promote [Image #N] placeholders — image paste is chat-submit only.
             // Create a session if this is the first input.
             if ('' === $state->sessionId) {
                 $state->sessionId = $sessionStore->createSession('!'.$shellCommand->command);

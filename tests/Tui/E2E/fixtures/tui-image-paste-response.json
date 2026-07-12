@@ -1,0 +1,27 @@
+{
+  "model": "llama_cpp_test/test",
+  "provider_id": "llama_cpp_test",
+  "reasoning": "off",
+  "recorded_at": "2026-07-11T00:00:00+00:00",
+  "recording_source": "synthetic",
+  "input": {
+    "messages": [
+      {
+        "role": "user",
+        "content": "describe pasted image"
+      }
+    ]
+  },
+  "usage": {
+    "input_tokens": 5,
+    "output_tokens": 3,
+    "total_tokens": 8
+  },
+  "stop_reason": "stop",
+  "deltas": [
+    {
+      "type": "text",
+      "content": "Image paste acknowledged."
+    }
+  ]
+}

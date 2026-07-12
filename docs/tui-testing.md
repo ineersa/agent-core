@@ -313,3 +313,12 @@ capture manually.
 Use `capture-pane -p -e` for ANSI-preserving snapshots. These contain
 escape sequences that display correctly in a terminal but not in a
 plain text editor unless you pipe through `less -R` or similar.
+
+
+### Image paste (issue #119)
+
+- Virtual: `tests/Tui/Listener/ImagePasteInputVirtualTest.php` (`castor test --filter=ImagePasteInputVirtualTest`).
+- Submission contract: `tests/Tui/ImagePaste/PastedImageSubmissionServiceTest.php`.
+- Tmux smoke: `tests/Tui/E2E/TuiImagePasteE2eTest.php` — fake `wl-paste` on isolated `PATH`, real `C-v`, replay fixture `tui-image-paste-response.json`.
+- Staging uses PHP `tempnam()` under system temp; promotion moves into `.hatfield/sessions/<id>/attachments/`. Unsubmitted orphan temp files are best-effort only.
+- SSH/remote: clipboard tools read the **host where Hatfield runs**, not the desktop behind SSH.
