@@ -35,6 +35,8 @@ services:
     autowire: true
     autoconfigure: true
 
+  Ineersa\Tui\ImagePaste\ClipboardImageReaderInterface: '@Ineersa\Tui\ImagePaste\ClipboardImageReader'
+
   _instanceof:
     Ineersa\Tui\Listener\TuiListenerRegistrar:
       tags: ['app.tui_listener']
@@ -548,6 +550,10 @@ services:
   Ineersa\AgentCore\Application\Handler\ExecuteLlmStepWorker:
     arguments:
       $defaultModel: '%app.default_model%'
+      $runModelResolver: '@Ineersa\AgentCore\Contract\Model\RunModelResolverInterface'
+
+  Ineersa\AgentCore\Contract\Model\RunModelResolverInterface:
+    alias: Ineersa\CodingAgent\Compaction\ModelSelectionActiveModelResolver
 
 
   Ineersa\AgentCore\Application\Pipeline\AdvanceRunHandler:

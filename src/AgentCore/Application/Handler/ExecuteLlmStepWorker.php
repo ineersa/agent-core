@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Application\Handler;
 
 use Ineersa\AgentCore\Contract\Model\PlatformInterface;
+use Ineersa\AgentCore\Contract\Model\RunModelResolverInterface;
 use Ineersa\AgentCore\Domain\Message\ExecuteLlmStep;
 use Ineersa\AgentCore\Domain\Message\LlmStepResult;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationInput;
@@ -27,6 +28,7 @@ final readonly class ExecuteLlmStepWorker
         private ?RunMetrics $metrics = null,
         private ?RunTracer $tracer = null,
         private LoggerInterface $logger = new NullLogger(),
+        private ?RunModelResolverInterface $runModelResolver = null,
     ) {
     }
 
@@ -76,15 +78,17 @@ final readonly class ExecuteLlmStepWorker
     {
         $startedAt = hrtime(true);
 
+        $invocationModel = $this->resolveInvocationModel($message->runId());
+
         RunLogContext::enter([
             'event_type' => 'llm.request.started',
-            'model' => $this->defaultModel,
+            'model' => $invocationModel,
             'provider' => 'symfony-ai',
         ]);
 
         try {
             $invoke = fn (): PlatformInvocationResult => $this->platform->invoke(new ModelInvocationRequest(
-                model: $this->defaultModel,
+                model: $invocationModel,
                 input: new ModelInvocationInput(
                     runId: $message->runId(),
                     turnNo: $message->turnNo(),
@@ -100,7 +104,7 @@ final readonly class ExecuteLlmStepWorker
                     'run_id' => $message->runId(),
                     'turn_no' => $message->turnNo(),
                     'step_id' => $message->stepId(),
-                    'model' => $this->defaultModel,
+                    'model' => $invocationModel,
                 ], $invoke)
             ;
 
@@ -128,7 +132,7 @@ final readonly class ExecuteLlmStepWorker
                         'run_id' => $message->runId(),
                         'turn_no' => $message->turnNo(),
                         'step_id' => $message->stepId(),
-                        'model' => $this->defaultModel,
+                        'model' => $invocationModel,
                     ], $invoke)
                 ;
             }
@@ -268,6 +272,23 @@ final readonly class ExecuteLlmStepWorker
         } finally {
             RunLogContext::leave();
         }
+    }
+
+    /**
+     * Resolve the model sent to the platform for this run.
+     *
+     * Normal turns use the active session model from {@see RunModelResolverInterface}.
+     * $defaultModel remains a documented fallback for isolated tests or degenerate
+     * configurations where no resolver or catalog model is available.
+     */
+    private function resolveInvocationModel(string $runId): string
+    {
+        $resolved = $this->runModelResolver?->resolveActiveModel($runId);
+        if (null !== $resolved && '' !== $resolved) {
+            return $resolved;
+        }
+
+        return $this->defaultModel;
     }
 
     /**

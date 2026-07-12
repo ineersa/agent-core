@@ -409,6 +409,109 @@ final class PlatformIntegrationTest extends TestCase
         $this->assertSame(1500, $response->usage['total_tokens']);
     }
 
+    public function testImageRefSurvivesAdapterConvertWhenRequestCarriesActualVisionModel(): void
+    {
+        $tmpDir = \Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation::createOsTempDir('platform-image-gate');
+        try {
+            $imagePath = $tmpDir.'/vision-gate.png';
+            $png = base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==');
+            file_put_contents($imagePath, $png);
+
+            $runStore = new InMemoryRunStore();
+            $runStore->compareAndSwap(new RunState(
+                runId: 'run-image-gate-01',
+                status: RunStatus::Running,
+                version: 1,
+                turnNo: 1,
+                lastSeq: 0,
+                isStreaming: false,
+                streamingMessage: null,
+                pendingToolCalls: [],
+                errorMessage: null,
+                messages: [
+                    new AgentMessage('user', [['type' => 'text', 'text' => 'describe image']]),
+                    new AgentMessage(
+                        role: 'assistant',
+                        content: [['type' => 'text', 'text' => 'Calling view_image']],
+                        metadata: [
+                            'tool_calls' => [[
+                                'id' => 'call_view',
+                                'name' => 'view_image',
+                                'args' => ['path' => $imagePath],
+                                'order_index' => 0,
+                            ]],
+                        ],
+                    ),
+                    new AgentMessage(
+                        role: 'tool',
+                        content: [
+                            ['type' => 'text', 'text' => '{"type":"view_image"}'],
+                            [
+                                'type' => 'image_ref',
+                                'path' => $imagePath,
+                                'media_type' => 'image/png',
+                                'bytes' => \strlen($png),
+                                'width' => 1,
+                                'height' => 1,
+                            ],
+                        ],
+                        toolCallId: 'call_view',
+                        toolName: 'view_image',
+                    ),
+                ],
+                activeStepId: 'turn-1-llm-1',
+            ), 0);
+
+            $checker = $this->createStub(\Ineersa\AgentCore\Contract\Model\ImageCapabilityCheckerInterface::class);
+            $checker->method('supportsImages')->willReturn(true);
+
+            $imageGatingHook = new \Ineersa\CodingAgent\Tool\ImageProcessing\ImageGatingConvertHook(
+                $checker,
+                new AgentMessageConverter(),
+            );
+
+            $modelClient = new FakeSymfonyModelClient(new FakeTokenUsage(
+                promptTokens: 10,
+                completionTokens: 5,
+                totalTokens: 15,
+            ));
+
+            $platform = $this->createSymfonyPlatform(
+                modelClient: $modelClient,
+                streamFactory: static fn (): iterable => [new TextDelta('ok')],
+            );
+
+            $adapter = new LlmPlatformAdapter(
+                runStore: $runStore,
+                messageConverter: new AgentMessageConverter(),
+                toolDescriptionProcessor: new DynamicToolDescriptionProcessor(),
+                platform: $platform,
+                transformContextHooks: [],
+                convertToLlmHooks: [$imageGatingHook],
+                streamObserver: null,
+                costCalculator: null,
+                logger: new NullLogger(),
+            );
+
+            $adapter->invoke(new ModelInvocationRequest(
+                model: 'llama_cpp/flash',
+                input: new ModelInvocationInput(
+                    runId: 'run-image-gate-01',
+                    turnNo: 1,
+                    stepId: 'turn-1-llm-1',
+                ),
+            ));
+
+            $payload = $modelClient->capturedPayload;
+            $this->assertIsArray($payload);
+            $serialized = json_encode($payload);
+            $this->assertIsString($serialized);
+            $this->assertStringNotContainsString('does not support images', $serialized, 'Convert hooks must receive the actual request model, not an empty sentinel.');
+        } finally {
+            \Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation::removeDirectory($tmpDir);
+        }
+    }
+
     public function testStreamingCancellationReturnsAbortedWithPartialOutput(): void
     {
         $platform = $this->createSymfonyPlatform(
