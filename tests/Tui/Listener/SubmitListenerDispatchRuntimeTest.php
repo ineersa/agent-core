@@ -546,6 +546,70 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
         $this->assertSame([], $history->prompts());
     }
 
+    #[Test]
+    #[AllowMockObjectsWithoutExpectations]
+    public function dispatchRuntimeStartsRunForPreconfiguredDraftWithPastedImage(): void
+    {
+        $this->state->sessionId = '';
+        $this->state->handle = null;
+        $this->state->activity = RunActivityStateEnum::Idle;
+        $this->state->request = new StartRunRequest(
+            prompt: '',
+            runId: '',
+            cwd: $this->tempCwd,
+            options: [],
+            model: 'llama_cpp_test/test',
+            reasoning: 'off',
+        );
+
+        $nextId = 1;
+        $persisted = null;
+        $em = $this->createMock(EntityManagerInterface::class);
+        $em->method('persist')->willReturnCallback(static function ($entity) use (&$persisted) {
+            $persisted = $entity;
+        });
+        $em->method('flush')->willReturnCallback(static function () use (&$persisted, &$nextId) {
+            if ($persisted instanceof HatfieldSession) {
+                $persisted->id = $nextId++;
+                $persisted = null;
+            }
+        });
+        $em->method('find')->willReturn(null);
+
+        $sessionStore = new HatfieldSessionStore(
+            appConfig: new \Ineersa\CodingAgent\Config\AppConfig(
+                tui: new \Ineersa\CodingAgent\Config\TuiConfig(theme: 'default'),
+                logging: new \Ineersa\CodingAgent\Config\LoggingConfig(),
+                sessions: new \Ineersa\CodingAgent\Config\SessionsConfig(),
+                cwd: $this->tempCwd,
+            ),
+            entityManager: $em,
+        );
+
+        $png = file_get_contents(__DIR__.'/../E2E/fixtures/paste-test-1x1.png');
+        $this->assertNotFalse($png);
+        $staged = $this->tempCwd.'/staged-paste-1.png';
+        file_put_contents($staged, $png);
+        $this->state->pastedImagePendingByIndex[1] = new \Ineersa\Tui\ImagePaste\PastedImagePendingDTO(1, '[Image #1]', $staged);
+
+        $this->client->expects($this->once())
+            ->method('start')
+            ->with($this->callback(static function (StartRunRequest $req): bool {
+                return str_contains($req->prompt, 'view_image')
+                    && str_contains($req->prompt, 'attachments/pasted-image-1.png')
+                    && 'llama_cpp_test/test' === $req->model
+                    && 'off' === $req->reasoning;
+            }))
+            ->willReturn(new RunHandle('draft-paste-run'));
+
+        $this->dispatchSubmit('describe [Image #1]', $sessionStore);
+
+        $this->assertNotSame('', $this->state->sessionId);
+        $this->assertSame(RunActivityStateEnum::Starting, $this->state->activity);
+        $this->assertNotNull($this->state->handle);
+        $this->assertStringContainsString('view_image', $this->state->request->prompt ?? '');
+    }
+
     // ── Helpers ─────────────────────────────────────────────────────
 
     /**
@@ -588,6 +652,18 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
             subagentLiveInputPolicy: new SubagentLiveInputPolicy(),
             logger: $this->logger,
             history: $history ?? new PromptHistory(),
+            pastedImageSubmissionService: new \Ineersa\Tui\ImagePaste\PastedImageSubmissionService(
+                new \Ineersa\Tui\ImagePaste\PastedImageValidationService(new \Ineersa\CodingAgent\Config\ImageToolConfig(), new \Ineersa\AgentCore\Tests\Support\TestLogger()),
+                $context->sessionStore,
+                new \Ineersa\CodingAgent\Config\AppConfig(
+                    tui: new \Ineersa\CodingAgent\Config\TuiConfig(theme: 'default'),
+                    logging: new \Ineersa\CodingAgent\Config\LoggingConfig(),
+                    sessions: new \Ineersa\CodingAgent\Config\SessionsConfig(),
+                    cwd: $this->tempCwd,
+                ),
+                new \Ineersa\Tui\Transcript\TranscriptBlockFactory(),
+                new \Ineersa\AgentCore\Tests\Support\TestLogger(),
+            ),
         );
         $listener->register($context);
 

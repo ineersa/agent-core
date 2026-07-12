@@ -64,7 +64,7 @@ final class ExecutionFailureDrillTest extends TestCase
         }
 
         $collectingBus = new TestMessageBus();
-        $retryWorker = new ExecuteLlmStepWorker($platform, $collectingBus, 'test-model');
+        $retryWorker = new ExecuteLlmStepWorker($platform, $collectingBus, 'test-model', runModelResolver: null);
         $retryWorker($message);
 
         $this->assertCount(1, $collectingBus->messages);

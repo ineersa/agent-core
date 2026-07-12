@@ -373,6 +373,7 @@ parameters:
       - AppRuntimeProjection
       - AppSession
       - AppConfig
+      - TuiImagePaste
       - TuiRuntime
       - TuiScreen
       - TuiLayout
@@ -514,6 +515,14 @@ parameters:
       - SymfonyTui
 
     TuiUtility:
+      - SymfonyProcess
+
+    TuiImagePaste:
+      - AppConfig
+      - AppSession
+      - TuiRuntime
+      - TuiScreen
+      - TuiTranscript
       - SymfonyProcess
 
     AppRuntimeInternals:

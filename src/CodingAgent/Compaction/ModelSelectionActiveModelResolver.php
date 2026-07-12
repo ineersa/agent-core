@@ -17,8 +17,16 @@ final readonly class ModelSelectionActiveModelResolver implements ActiveModelRes
     ) {
     }
 
+    public function resolveActiveModel(string $runId): ?string
+    {
+        return $this->modelSelectionService->resolveInitialModel(
+            explicitModel: null,
+            sessionId: $runId,
+        )?->toString();
+    }
+
     public function getActiveModel(string $runId): ?string
     {
-        return $this->modelSelectionService->getCurrentModel($runId)?->toString();
+        return $this->resolveActiveModel($runId);
     }
 }

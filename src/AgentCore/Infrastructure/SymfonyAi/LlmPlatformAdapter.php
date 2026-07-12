@@ -77,10 +77,11 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
         // silent filtering.
         $this->toolCallSequenceValidator->validate($messages);
 
+        $baseOptions = $this->buildInputOptions($request);
+
         $messageBag = $this->applyConvertHooks($messages, $cancelToken, $request->model);
 
-        $options = $this->buildInputOptions($request);
-        $input = new Input($request->model, $messageBag, $options);
+        $input = new Input($request->model, $messageBag, $baseOptions);
         $this->toolDescriptionProcessor->processInput($input);
 
         // Build a privacy-safe request summary for error diagnostics.
