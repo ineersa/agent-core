@@ -703,13 +703,17 @@ final class ResultConverterTest extends TestCase
     public function testStreamNon2xxHttp404ThrowsBeforeSseIteration(): void
     {
         $converter = new ResultConverter();
+        $secret = 'LEAKED_PROVIDER_SECRET_MARKER_9f3c2a1b';
         $httpResponse = $this->createMock(ResponseInterface::class);
         $httpResponse->method('getStatusCode')->willReturn(404);
         $httpResponse->method('getContent')->willReturn(json_encode([
             'error' => [
                 'code' => 'not_found',
-                'message' => 'The requested resource was not found',
+                'type' => 'resource_missing',
+                'message' => 'The requested resource was not found '.$secret,
+                'detail' => $secret,
             ],
+            'error_description' => $secret,
         ]));
 
         $events = [
@@ -717,11 +721,16 @@ final class ResultConverterTest extends TestCase
         ];
         $raw = new InMemoryRawResult([], $events, $httpResponse);
 
-        $this->expectException(RuntimeException::class);
-        $this->expectExceptionMessage('HTTP 404');
-        $this->expectExceptionMessage('[not_found]: The requested resource was not found');
-
-        $converter->convert($raw, ['stream' => true]);
+        try {
+            $converter->convert($raw, ['stream' => true]);
+            $this->fail('Expected RuntimeException');
+        } catch (RuntimeException $e) {
+            $this->assertStringContainsString('HTTP 404', $e->getMessage());
+            $this->assertStringContainsString('[not_found/resource_missing]', $e->getMessage());
+            $this->assertStringNotContainsString($secret, $e->getMessage());
+            $this->assertStringNotContainsString('The requested resource was not found', $e->getMessage());
+            $this->assertDoesNotMatchRegularExpression('/HTTP 404: HTTP 404/', $e->getMessage());
+        }
     }
 
     // -- Stream error handling (regression: silent mid-turn death) --

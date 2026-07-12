@@ -479,6 +479,9 @@ final class CodexModelClientTest extends TestCase
             static function (string $method, string $url, array $options) use (&$requestCount): HttpResponse {
                 ++$requestCount;
                 self::assertSame('Authorization: Bearer new-token', $options['normalized_headers']['authorization'][0]);
+                self::assertSame('Accept: text/event-stream', $options['normalized_headers']['accept'][0]);
+                self::assertSame('User-Agent: hatfield', $options['normalized_headers']['user-agent'][0]);
+                self::assertSame('originator: hatfield', $options['normalized_headers']['originator'][0]);
 
                 return new MockResponse('', ['http_code' => 200]);
             },
