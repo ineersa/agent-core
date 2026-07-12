@@ -27,6 +27,7 @@ use Ineersa\CodingAgent\Agent\Execution\SubagentExecutionService;
 use Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader;
 use Ineersa\CodingAgent\Agent\Execution\SubagentToolSetResolver;
 use Ineersa\CodingAgent\Config\AgentsConfig;
+use Ineersa\CodingAgent\Session\CommittedRunEventAppender;
 use Ineersa\CodingAgent\Mcp\Catalog\McpToolCatalogStoreInterface;
 use Ineersa\CodingAgent\Skills\SkillsContextBuilder;
 use Ineersa\CodingAgent\SystemPrompt\SystemPromptBuilder;
@@ -316,6 +317,7 @@ final class SubagentPromptUserContextContractTest extends IsolatedKernelTestCase
             runStore: $this->pollingChildRunStore($childRunStore),
             parentRunStore: $parentRunStore,
             eventStore: $eventStore,
+            committedRunEventAppender: self::getContainer()->get(CommittedRunEventAppender::class),
             metadataReader: new SubagentRunMetadataReader($eventStore),
             childRunDirectory: self::getContainer()->get(AgentChildRunDirectory::class),
             contextAccessor: self::getContainer()->get(\Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor::class),

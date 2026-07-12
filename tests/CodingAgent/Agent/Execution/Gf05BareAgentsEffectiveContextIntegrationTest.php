@@ -24,6 +24,7 @@ use Ineersa\CodingAgent\Agent\Execution\SubagentChildProgressSummaryBuilder;
 use Ineersa\CodingAgent\Agent\Execution\SubagentExecutionService;
 use Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader;
 use Ineersa\CodingAgent\Config\AgentsConfig;
+use Ineersa\CodingAgent\Session\CommittedRunEventAppender;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient;
 use Ineersa\CodingAgent\SystemPrompt\SystemPromptBuilder;
@@ -140,6 +141,7 @@ final class Gf05BareAgentsEffectiveContextIntegrationTest extends PerMethodIsola
             runStore: $this->pollingChildRunStore($childRunStore),
             parentRunStore: $parentRunStore,
             eventStore: $childEventStore,
+            committedRunEventAppender: self::getContainer()->get(CommittedRunEventAppender::class),
             metadataReader: new SubagentRunMetadataReader($childEventStore),
             childRunDirectory: self::getContainer()->get(\Ineersa\CodingAgent\Agent\Artifact\AgentChildRunDirectory::class),
             contextAccessor: self::getContainer()->get(\Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor::class),
