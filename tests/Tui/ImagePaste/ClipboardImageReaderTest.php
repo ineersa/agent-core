@@ -71,7 +71,7 @@ final class ClipboardImageReaderTest extends TestCase
     }
 
     #[Test]
-    public function streamsSmallImageWithinConfiguredLimit(): void
+    public function startPollCompletesSmallImageWithinConfiguredLimit(): void
     {
         $png = file_get_contents(__DIR__.'/../E2E/fixtures/paste-test-1x1.png');
         $this->assertNotFalse($png);
@@ -83,8 +83,12 @@ final class ClipboardImageReaderTest extends TestCase
         putenv('WAYLAND_DISPLAY=wayland-test');
 
         $reader = new ClipboardImageReader(new ImageToolConfig(maxBytes: 4096), new TestLogger());
-        $result = $reader->readImageToTempFile();
+        $start = $reader->startRead();
+        $this->assertTrue($start->started);
+        $this->assertTrue($reader->isReading());
 
+        $result = $this->pollUntilTerminal($reader);
+        $this->assertFalse($reader->isReading());
         $this->assertSame(ClipboardImageReadOutcomeEnum::Image, $result->outcome);
         $this->assertNotNull($result->tempPath);
         $this->assertFileExists($result->tempPath);
@@ -101,7 +105,8 @@ final class ClipboardImageReaderTest extends TestCase
         putenv('WAYLAND_DISPLAY=wayland-test');
 
         $reader = new ClipboardImageReader(new ImageToolConfig(maxBytes: 1024), new TestLogger());
-        $result = $reader->readImageToTempFile();
+        $this->assertTrue($reader->startRead()->started);
+        $result = $this->pollUntilTerminal($reader);
 
         $this->assertSame(ClipboardImageReadOutcomeEnum::Failed, $result->outcome);
         $this->assertStringContainsString('too large', strtolower($result->userMessage ?? ''));
@@ -116,7 +121,8 @@ final class ClipboardImageReaderTest extends TestCase
         putenv('WAYLAND_DISPLAY=wayland-test');
 
         $reader = new ClipboardImageReader(new ImageToolConfig(), new TestLogger());
-        $result = $reader->readImageToTempFile();
+        $this->assertTrue($reader->startRead()->started);
+        $result = $this->pollUntilTerminal($reader);
 
         $this->assertSame(ClipboardImageReadOutcomeEnum::NoImage, $result->outcome);
     }
@@ -130,7 +136,8 @@ final class ClipboardImageReaderTest extends TestCase
         putenv('WAYLAND_DISPLAY=wayland-test');
 
         $reader = new ClipboardImageReader(new ImageToolConfig(), new TestLogger());
-        $result = $reader->readImageToTempFile();
+        $this->assertTrue($reader->startRead()->started);
+        $result = $this->pollUntilTerminal($reader);
 
         $this->assertSame(ClipboardImageReadOutcomeEnum::Failed, $result->outcome);
         $this->assertStringContainsString('permission denied', strtolower($result->diagnostic ?? ''));
@@ -146,7 +153,8 @@ echo "No image/png in clipboard" 1>&2; exit 1');
         putenv('WAYLAND_DISPLAY=');
 
         $reader = new ClipboardImageReader(new ImageToolConfig(), new TestLogger());
-        $result = $reader->readImageToTempFile();
+        $this->assertTrue($reader->startRead()->started);
+        $result = $this->pollUntilTerminal($reader);
 
         $this->assertSame(ClipboardImageReadOutcomeEnum::NoImage, $result->outcome);
     }
@@ -161,14 +169,15 @@ echo "xclip: Error: Can\'t open display" 1>&2; exit 1');
         putenv('WAYLAND_DISPLAY=');
 
         $reader = new ClipboardImageReader(new ImageToolConfig(), new TestLogger());
-        $result = $reader->readImageToTempFile();
+        $this->assertTrue($reader->startRead()->started);
+        $result = $this->pollUntilTerminal($reader);
 
         $this->assertSame(ClipboardImageReadOutcomeEnum::Failed, $result->outcome);
         $this->assertStringContainsString('display', strtolower($result->diagnostic ?? ''));
     }
 
     #[Test]
-    public function hungClipboardBackendTimesOutWithoutLeavingTempFile(): void
+    public function hungClipboardBackendTimesOutAndCancelCleansUp(): void
     {
         $this->installScript('wl-paste', '#!/bin/sh'.'
 sleep 30');
@@ -177,11 +186,42 @@ sleep 30');
         putenv('WAYLAND_DISPLAY=wayland-test');
 
         $reader = new ClipboardImageReader(new ImageToolConfig(), new TestLogger());
-        $result = $reader->readImageToTempFile();
+        $this->assertTrue($reader->startRead()->started);
 
+        $deadline = microtime(true) + 8.0;
+        $result = null;
+        while (microtime(true) < $deadline) {
+            $poll = $reader->poll();
+            if (!$poll->pending && null !== $poll->terminal) {
+                $result = $poll->terminal;
+                break;
+            }
+            usleep(20_000);
+        }
+
+        $this->assertNotNull($result);
         $this->assertSame(ClipboardImageReadOutcomeEnum::Failed, $result->outcome);
         $this->assertStringContainsString('timed out', strtolower($result->userMessage ?? ''));
         $this->assertNull($result->tempPath);
+        $this->assertFalse($reader->isReading());
+
+        $reader2 = new ClipboardImageReader(new ImageToolConfig(), new TestLogger());
+        $this->assertTrue($reader2->startRead()->started);
+        $reader2->cancel();
+        $this->assertFalse($reader2->isReading());
+    }
+
+    private function pollUntilTerminal(ClipboardImageReader $reader, int $maxSteps = 500): \Ineersa\Tui\ImagePaste\ClipboardImageReadResultDTO
+    {
+        for ($i = 0; $i < $maxSteps; ++$i) {
+            $poll = $reader->poll();
+            if (!$poll->pending && null !== $poll->terminal) {
+                return $poll->terminal;
+            }
+            usleep(5_000);
+        }
+
+        $this->fail('Clipboard read did not complete within poll budget');
     }
 
     private function installScript(string $name, string $contents): void

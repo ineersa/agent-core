@@ -153,6 +153,12 @@ final class TuiSessionState
     /** Next sequential pasted image index for this TUI session. */
     public int $nextPastedImageIndex = 1;
 
+    /**
+     * Placeholder index with an in-flight clipboard read ([Image #N] inserted, bytes not ready).
+     * Scalar only — the reader service owns the Process handle (issue #119).
+     */
+    public ?int $pastedImagePasteInProgressIndex = null;
+
     public function __construct(
         string $sessionId,
         bool $resuming = false,

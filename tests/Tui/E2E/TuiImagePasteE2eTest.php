@@ -44,6 +44,66 @@ final class TuiImagePasteE2eTest extends TestCase
         }
     }
 
+    public function testCtrlVPasteDoesNotBlockEditorWhileClipboardHelperIsSlow(): void
+    {
+        $this->installFakeWlPaste(delaySeconds: 2);
+
+        $pane = $this->tmux->startDetached(
+            command: $this->agentCommand(),
+            prefix: 'tui-image-paste-slow',
+            width: 120,
+            height: 60,
+            cwd: $this->testProjectDir,
+        );
+
+        try {
+            $this->tmux->waitForCaptureContains($pane, '█', 10.0);
+            $this->tmux->waitForTuiReadyAfterLogo($pane);
+
+            $marker = 'PASTE_RESPONSIVE_'.bin2hex(random_bytes(4));
+            $this->tmux->sendKey($pane, 'C-v');
+            $this->tmux->sendLiteral($pane, ' '.$marker);
+
+            $this->tmux->waitForCallback(
+                $pane,
+                static fn (string $cap): bool => str_contains($cap, '[Image #1]') && str_contains($cap, $marker),
+                timeout: 1.5,
+                message: 'Placeholder and typed input must appear before slow clipboard helper finishes (~2s)',
+                history: 500,
+            );
+
+            // Allow the delayed fake wl-paste (2s) to finish before submit promotion.
+            usleep(2_500_000);
+
+            $this->tmux->sendLiteral($pane, ' describe pasted image');
+            $this->tmux->sendKey($pane, 'Enter');
+
+            $this->tmux->waitForCallback(
+                $pane,
+                static fn (string $cap): bool => str_contains($cap, 'Image paste acknowledged'),
+                timeout: 25.0,
+                message: 'Expected replay assistant response after slow image paste submit',
+                history: 3000,
+            );
+
+            $sessionId = $this->resolveSingleCreatedSessionId();
+            $this->assertNotNull($sessionId);
+            $attachment = $this->testProjectDir.'/.hatfield/sessions/'.$sessionId.'/attachments/pasted-image-1.png';
+            $this->assertFileExists($attachment);
+
+            $this->saveAnsiSnapshot($pane, 'image-paste-slow');
+            $this->tmux->sendKey($pane, 'C-d');
+        } catch (\Throwable $e) {
+            $this->saveAnsiSnapshot($pane, 'image-paste-slow-FAILURE');
+            try {
+                $this->tmux->sendKey($pane, 'C-d');
+            } catch (\Throwable $shutdownFailure) {
+                // Best-effort graceful shutdown before rethrowing the original assertion failure.
+            }
+            throw $e;
+        }
+    }
+
     public function testCtrlVPastePromotesSessionAttachmentAndCanonicalReference(): void
     {
         $pane = $this->tmux->startDetached(
@@ -107,11 +167,13 @@ final class TuiImagePasteE2eTest extends TestCase
         }
     }
 
-    private function installFakeWlPaste(): void
+    private function installFakeWlPaste(int $delaySeconds = 0): void
     {
         @mkdir($this->fakeBinDir, 0o777, true);
         $png = __DIR__.'/fixtures/paste-test-1x1.png';
-        $script = '#!/bin/sh'."\n".'cat '.escapeshellarg($png)."\n";
+        $delay = $delaySeconds > 0 ? 'sleep '.(int) $delaySeconds.'
+' : '';
+        $script = '#!/bin/sh'."\n".$delay.'cat '.escapeshellarg($png)."\n";
         file_put_contents($this->fakeBinDir.'/wl-paste', $script);
         chmod($this->fakeBinDir.'/wl-paste', 0o755);
     }

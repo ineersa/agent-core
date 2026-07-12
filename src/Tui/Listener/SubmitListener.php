@@ -19,6 +19,7 @@ use Ineersa\Tui\Command\StatusUpdate;
 use Ineersa\Tui\Command\SubagentLiveInputPolicy;
 use Ineersa\Tui\Command\SubmissionRouter;
 use Ineersa\Tui\Command\TranscriptMessage;
+use Ineersa\Tui\ImagePaste\PastedImagePlaceholderFormatter;
 use Ineersa\Tui\ImagePaste\PastedImageSubmissionService;
 use Ineersa\Tui\Question\QuestionController;
 use Ineersa\Tui\Question\QuestionCoordinator;
@@ -292,6 +293,7 @@ final class SubmitListener implements TuiListenerRegistrar
                 $text,
                 $state,
                 $screen,
+                $blockFactory,
                 $sessionStore,
                 $pastedImageSubmissionService,
                 $logger,
@@ -484,11 +486,28 @@ final class SubmitListener implements TuiListenerRegistrar
         string $text,
         TuiSessionState $state,
         ChatScreen $screen,
+        TranscriptBlockFactory $blockFactory,
         HatfieldSessionStore $sessionStore,
         PastedImageSubmissionService $pastedImageSubmissionService,
         LoggerInterface $logger,
         TuiSessionLifecycleDispatcher $lifecycle,
     ): ?string {
+        if (null !== $state->pastedImagePasteInProgressIndex) {
+            $inFlightPlaceholder = PastedImagePlaceholderFormatter::placeholder($state->pastedImagePasteInProgressIndex);
+            if (str_contains($text, $inFlightPlaceholder)) {
+                $state->transcript[] = $blockFactory->system(
+                    runId: '' !== $state->sessionId ? $state->sessionId : 'draft',
+                    text: 'Image paste is still being read from the clipboard. Wait a moment, then submit again.',
+                    seq: \count($state->transcript) + 1,
+                    style: 'info',
+                );
+                $screen->setTranscriptBlocks($state->transcript);
+                $screen->requestRender();
+
+                return null;
+            }
+        }
+
         if (!$pastedImageSubmissionService->textContainsPlaceholder($text)
             && [] === $state->pastedImagePendingByIndex) {
             return $text;
