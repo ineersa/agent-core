@@ -23,7 +23,7 @@ final class EventLogMaxSeqBootstrapReader
      * Canonical envelope order is schema_version, run_id, seq (see {@see EventPayloadNormalizer::normalize()}).
      * grep -o emits a compact prefix ending at the top-level seq digits so nested payload "seq" cannot match.
      */
-    private const GREP_ERE_PREFIX = '^\{"schema_version":[^,]*,"run_id":[^,]*,"seq":[0-9]+';
+    private const GREP_ERE_PREFIX = '^[{]"schema_version":[^,]*,"run_id":[^,]*,"seq":[0-9]+';
 
     private const SEQ_SUFFIX_PATTERN = '/,"seq"\s*:\s*(\d+)$/';
 
@@ -78,8 +78,6 @@ final class EventLogMaxSeqBootstrapReader
         if ('' !== $carry) {
             $this->updateMaxFromGrepLine($carry, $maxSeq);
         }
-
-        $process->wait();
 
         $exitCode = $process->getExitCode();
         if (1 === $exitCode) {

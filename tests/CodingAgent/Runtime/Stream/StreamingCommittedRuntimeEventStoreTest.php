@@ -23,7 +23,7 @@ final class StreamingCommittedRuntimeEventStoreTest extends TestCase
 {
     public function testAppendEmitsMappedRuntimeEventAfterInnerAppend(): void
     {
-        $inner = new RecordingCommittedEventStore();
+        $inner = new RecordingEventStore();
         $sink = new RecordingCommittedStdoutSink();
         $mapper = new RuntimeEventMapper(new RuntimeEventTranslator(new EventDispatcher()));
 
@@ -39,7 +39,7 @@ final class StreamingCommittedRuntimeEventStoreTest extends TestCase
     public function testAppendChildRunEventEmitsRuntimeEventPreservingChildRunId(): void
     {
         $childRunId = 'child-subagent-run-7f3a';
-        $inner = new RecordingCommittedEventStore();
+        $inner = new RecordingEventStore();
         $sink = new RecordingCommittedStdoutSink();
         $mapper = new RuntimeEventMapper(new RuntimeEventTranslator(new EventDispatcher()));
 
@@ -54,7 +54,7 @@ final class StreamingCommittedRuntimeEventStoreTest extends TestCase
 
     public function testAppendManyEmitsInOrderAfterBatchAppend(): void
     {
-        $inner = new RecordingCommittedEventStore();
+        $inner = new RecordingEventStore();
         $sink = new RecordingCommittedStdoutSink();
         $mapper = new RuntimeEventMapper(new RuntimeEventTranslator(new EventDispatcher()));
 
@@ -69,7 +69,7 @@ final class StreamingCommittedRuntimeEventStoreTest extends TestCase
 
     public function testStreamingDisabledSkipsStdoutEmit(): void
     {
-        $inner = new RecordingCommittedEventStore();
+        $inner = new RecordingEventStore();
         $sink = new RecordingCommittedStdoutSink();
         $mapper = new RuntimeEventMapper(new RuntimeEventTranslator(new EventDispatcher()));
 
@@ -84,7 +84,7 @@ final class StreamingCommittedRuntimeEventStoreTest extends TestCase
 /**
  * @internal
  */
-final class RecordingCommittedEventStore implements EventStoreInterface
+final class RecordingEventStore implements EventStoreInterface
 {
     /** @var list<RunEvent> */
     public array $appended = [];
