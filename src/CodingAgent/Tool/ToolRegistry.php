@@ -228,6 +228,62 @@ final class ToolRegistry implements ToolRegistryInterface
         return $guidelines;
     }
 
+    public function permanentToolLinesForNames(array $names): array
+    {
+        $requested = $this->normalizeRequestedPermanentNames($names);
+        if ([] === $requested) {
+            return [];
+        }
+
+        $lines = [];
+        $seen = [];
+
+        foreach ($this->permanentOrder as $name) {
+            if (!isset($requested[$name]) || !$this->isToolVisible($name)) {
+                continue;
+            }
+
+            $line = trim($this->permanentTools[$name]->promptLine);
+            if ('' === $line || isset($seen[$line])) {
+                continue;
+            }
+
+            $seen[$line] = true;
+            $lines[] = $line;
+        }
+
+        return $lines;
+    }
+
+    public function permanentGuidelinesForNames(array $names): array
+    {
+        $requested = $this->normalizeRequestedPermanentNames($names);
+        if ([] === $requested) {
+            return [];
+        }
+
+        $guidelines = [];
+        $seen = [];
+
+        foreach ($this->permanentOrder as $name) {
+            if (!isset($requested[$name]) || !$this->isToolVisible($name)) {
+                continue;
+            }
+
+            foreach ($this->permanentTools[$name]->promptGuidelines as $guideline) {
+                $guideline = trim($guideline);
+                if ('' === $guideline || isset($seen[$guideline])) {
+                    continue;
+                }
+
+                $seen[$guideline] = true;
+                $guidelines[] = $guideline;
+            }
+        }
+
+        return $guidelines;
+    }
+
     public function setAllowedToolNames(array $names): void
     {
         $allowed = [];
@@ -328,6 +384,25 @@ final class ToolRegistry implements ToolRegistryInterface
         }
 
         return null;
+    }
+
+    /**
+     * @param list<string> $names
+     *
+     * @return array<string, true> permanent tool names requested at most once each
+     */
+    private function normalizeRequestedPermanentNames(array $names): array
+    {
+        $requested = [];
+        foreach ($names as $name) {
+            $name = trim($name);
+            if ('' === $name || !isset($this->permanentTools[$name])) {
+                continue;
+            }
+            $requested[$name] = true;
+        }
+
+        return $requested;
     }
 
     /**

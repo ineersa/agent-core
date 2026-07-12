@@ -1,0 +1,238 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Ineersa\CodingAgent\Tests\Agent\Execution\Support;
+
+use Ineersa\AgentCore\Contract\EventStoreInterface;
+use Ineersa\AgentCore\Domain\Event\RunEvent;
+use Ineersa\AgentCore\Domain\Message\AgentMessage;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageConverter;
+use Symfony\AI\Platform\Message\MessageBag;
+
+/**
+ * Shared assertions for GF-05 prompt/message contract RED specifications.
+ *
+ * @internal
+ */
+final class PromptContractTestSupport
+{
+    public static function messageText(AgentMessage $message): string
+    {
+        $parts = [];
+        foreach ($message->content as $block) {
+            if ('text' === ($block['type'] ?? '') && isset($block['text'])) {
+                $parts[] = (string) $block['text'];
+            }
+        }
+
+        return implode("\n", $parts);
+    }
+
+    /**
+     * @param list<AgentMessage> $messages
+     *
+     * @return list<array{role: string, source: ?string, text: string}>
+     */
+    public static function summarizeMessages(array $messages): array
+    {
+        $out = [];
+        foreach ($messages as $message) {
+            $out[] = [
+                'role' => $message->role,
+                'source' => $message->metadata['source'] ?? null,
+                'text' => self::messageText($message),
+            ];
+        }
+
+        return $out;
+    }
+
+    /**
+     * @param list<AgentMessage> $messages
+     *
+     * @return list<array{role: string, text: string}>
+     */
+    public static function providerVisibleSummaries(array $messages): array
+    {
+        $bag = (new AgentMessageConverter())->toMessageBag($messages);
+        $out = [];
+        foreach ($bag->getMessages() as $message) {
+            $text = method_exists($message, 'asText') ? $message->asText() : '';
+            if ('' === $text && method_exists($message, 'getContent')) {
+                $content = $message->getContent();
+                if (is_iterable($content)) {
+                    foreach ($content as $part) {
+                        if (\is_object($part) && method_exists($part, 'asText')) {
+                            $text .= $part->asText();
+                        }
+                    }
+                }
+            }
+            $role = $message->getRole();
+            if ($role instanceof \BackedEnum) {
+                $role = $role->value;
+            } elseif ($role instanceof \UnitEnum) {
+                $role = strtolower($role->name);
+            } else {
+                $role = (string) $role;
+            }
+
+            $out[] = [
+                'role' => $role,
+                'text' => $text,
+            ];
+        }
+
+        return $out;
+    }
+
+    /**
+     * @param list<AgentMessage> $canonical
+     * @param list<AgentMessage> $fromRunStartedPayload
+     */
+    public static function assertCanonicalMatchesRunStartedMessages(array $canonical, array $fromRunStartedPayload): void
+    {
+        self::assertMessageListsEquivalent($canonical, $fromRunStartedPayload);
+    }
+
+    /**
+     * @param list<AgentMessage> $canonical
+     * @param list<AgentMessage> $fromStartRunInput
+     */
+    public static function assertCanonicalMatchesStartRunInput(array $canonical, array $fromStartRunInput): void
+    {
+        self::assertMessageListsEquivalent($canonical, $fromStartRunInput);
+    }
+
+    /**
+     * @param list<AgentMessage> $left
+     * @param list<AgentMessage> $right
+     */
+    public static function assertMessageListsEquivalent(array $left, array $right): void
+    {
+        if (\count($left) !== \count($right)) {
+            throw new \PHPUnit\Framework\AssertionFailedError(\sprintf('Message count mismatch: %d vs %d', \count($left), \count($right)));
+        }
+
+        foreach ($left as $index => $message) {
+            $other = $right[$index];
+            if ($message->role !== $other->role) {
+                throw new \PHPUnit\Framework\AssertionFailedError(\sprintf('Message[%d] role mismatch: %s vs %s', $index, $message->role, $other->role));
+            }
+
+            $leftSource = $message->metadata['source'] ?? null;
+            $rightSource = $other->metadata['source'] ?? null;
+            if ($leftSource !== $rightSource) {
+                throw new \PHPUnit\Framework\AssertionFailedError(\sprintf('Message[%d] metadata.source mismatch: %s vs %s', $index, (string) $leftSource, (string) $rightSource));
+            }
+
+            if (self::messageText($message) !== self::messageText($other)) {
+                throw new \PHPUnit\Framework\AssertionFailedError(\sprintf('Message[%d] text mismatch for role=%s source=%s', $index, $message->role, (string) $leftSource));
+            }
+        }
+    }
+
+    /**
+     * @param list<array{role: string, source: ?string, text: string}> $summaries
+     *
+     * @return list<string>
+     */
+    public static function roleSourceKeys(array $summaries): array
+    {
+        return array_map(
+            static fn (array $row): string => $row['role'].':'.($row['source'] ?? ''),
+            $summaries,
+        );
+    }
+
+    public static function findRunStartedEvent(EventStoreInterface $eventStore, string $runId): ?RunEvent
+    {
+        foreach ($eventStore->allFor($runId) as $event) {
+            if ('run_started' === $event->type) {
+                return $event;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @return list<AgentMessage>
+     */
+    public static function messagesFromRunStartedPayload(array $payload): array
+    {
+        $nested = $payload['payload'] ?? [];
+        $raw = $nested['messages'] ?? [];
+        if (!\is_array($raw)) {
+            return [];
+        }
+
+        $messages = [];
+        foreach ($raw as $item) {
+            if (!\is_array($item)) {
+                continue;
+            }
+            $messages[] = new AgentMessage(
+                role: (string) ($item['role'] ?? ''),
+                content: \is_array($item['content'] ?? null) ? $item['content'] : [],
+                metadata: \is_array($item['metadata'] ?? null) ? $item['metadata'] : [],
+            );
+        }
+
+        return $messages;
+    }
+
+    public static function systemPromptFromRunStartedPayload(array $payload): string
+    {
+        $nested = $payload['payload'] ?? [];
+
+        return (string) ($nested['system_prompt'] ?? $nested['systemPrompt'] ?? '');
+    }
+
+    /**
+     * @param list<AgentMessage> $messages
+     */
+    public static function assertSentinelCountInAgentsContext(array $messages, string $sentinel, int $expected): void
+    {
+        $count = 0;
+        foreach ($messages as $message) {
+            if ('user-context' !== $message->role) {
+                continue;
+            }
+            if ('agents_context' !== ($message->metadata['source'] ?? null)) {
+                continue;
+            }
+            if (str_contains(self::messageText($message), $sentinel)) {
+                ++$count;
+            }
+        }
+        if ($count !== $expected) {
+            throw new \PHPUnit\Framework\AssertionFailedError(\sprintf('Expected sentinel %s in agents_context exactly %d times, found %d', $sentinel, $expected, $count));
+        }
+    }
+
+    /**
+     * @param list<array{role: string, text: string}> $providerMessages
+     */
+    public static function assertProviderUserMessagesContainSentinelOnce(array $providerMessages, string $sentinel): void
+    {
+        $hits = 0;
+        foreach ($providerMessages as $row) {
+            if ('user' !== $row['role']) {
+                continue;
+            }
+            if (str_contains($row['text'], $sentinel)) {
+                ++$hits;
+            }
+        }
+        if (1 !== $hits) {
+            throw new \PHPUnit\Framework\AssertionFailedError(\sprintf('Expected sentinel in exactly one provider user message, hits=%d', $hits));
+        }
+    }
+
+    public static function providerBag(array $messages): MessageBag
+    {
+        return (new AgentMessageConverter())->toMessageBag($messages);
+    }
+}

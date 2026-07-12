@@ -23,6 +23,7 @@ use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
 use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunDirectory;
 use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunEventStoreFactory;
+use Ineersa\CodingAgent\Agent\Context\AgentsContextBuilder;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionCatalog;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionDTO;
 use Ineersa\CodingAgent\Agent\Definition\McpAgentModeEnum;
@@ -177,6 +178,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             agentsConfig: new AgentsConfig(),
             progressSnapshotBuilder: new \Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder(),
             childProgressSummaryBuilder: new SubagentChildProgressSummaryBuilder(self::getContainer()->get(AgentChildRunEventStoreFactory::class)),
+            agentsContextBuilder: self::getContainer()->get(AgentsContextBuilder::class),
             appConfig: self::getContainer()->get(AppConfig::class),
         );
 
@@ -254,6 +256,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             agentsConfig: new AgentsConfig(),
             progressSnapshotBuilder: new \Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder(),
             childProgressSummaryBuilder: new SubagentChildProgressSummaryBuilder(self::getContainer()->get(AgentChildRunEventStoreFactory::class)),
+            agentsContextBuilder: self::getContainer()->get(AgentsContextBuilder::class),
             appConfig: self::getContainer()->get(AppConfig::class),
         );
 
@@ -327,6 +330,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             agentsConfig: new AgentsConfig(),
             progressSnapshotBuilder: new \Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder(),
             childProgressSummaryBuilder: new SubagentChildProgressSummaryBuilder(self::getContainer()->get(AgentChildRunEventStoreFactory::class)),
+            agentsContextBuilder: self::getContainer()->get(AgentsContextBuilder::class),
             appConfig: self::getContainer()->get(AppConfig::class),
         );
 
@@ -402,6 +406,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             agentsConfig: new AgentsConfig(),
             progressSnapshotBuilder: new \Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder(),
             childProgressSummaryBuilder: new SubagentChildProgressSummaryBuilder(self::getContainer()->get(AgentChildRunEventStoreFactory::class)),
+            agentsContextBuilder: self::getContainer()->get(AgentsContextBuilder::class),
             appConfig: self::getContainer()->get(AppConfig::class),
         );
 
@@ -437,6 +442,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             agentsConfig: new AgentsConfig(),
             progressSnapshotBuilder: new \Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder(),
             childProgressSummaryBuilder: new SubagentChildProgressSummaryBuilder(self::getContainer()->get(AgentChildRunEventStoreFactory::class)),
+            agentsContextBuilder: self::getContainer()->get(AgentsContextBuilder::class),
             appConfig: self::getContainer()->get(AppConfig::class),
         );
 
@@ -481,6 +487,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             agentsConfig: new AgentsConfig(),
             progressSnapshotBuilder: new \Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder(),
             childProgressSummaryBuilder: new SubagentChildProgressSummaryBuilder(self::getContainer()->get(AgentChildRunEventStoreFactory::class)),
+            agentsContextBuilder: self::getContainer()->get(AgentsContextBuilder::class),
             appConfig: self::getContainer()->get(AppConfig::class),
         );
 
@@ -593,6 +600,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             agentsConfig: new AgentsConfig(),
             progressSnapshotBuilder: new \Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder(),
             childProgressSummaryBuilder: new SubagentChildProgressSummaryBuilder(self::getContainer()->get(AgentChildRunEventStoreFactory::class)),
+            agentsContextBuilder: self::getContainer()->get(AgentsContextBuilder::class),
             appConfig: self::getContainer()->get(AppConfig::class),
         );
 
@@ -707,6 +715,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             agentsConfig: new AgentsConfig(),
             progressSnapshotBuilder: new \Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder(),
             childProgressSummaryBuilder: new SubagentChildProgressSummaryBuilder(self::getContainer()->get(AgentChildRunEventStoreFactory::class)),
+            agentsContextBuilder: self::getContainer()->get(AgentsContextBuilder::class),
             appConfig: self::getContainer()->get(AppConfig::class),
         );
 
@@ -1210,7 +1219,15 @@ CHILD_SKILL_BODY_UNIQUE',
         $service->execute('parent-run2', 'inherit-agents', 'Task');
 
         $this->assertNotNull($capturedInput);
-        $this->assertStringContainsString('AGENTS_INHERIT_OK', $capturedInput->systemPrompt);
+        $foundAgents = false;
+        foreach ($capturedInput->messages as $message) {
+            if ('agents_context' === ($message->metadata['source'] ?? null)) {
+                $this->assertStringContainsString('AGENTS_INHERIT_OK', (string) ($message->content[0]['text'] ?? ''));
+                $foundAgents = true;
+            }
+        }
+        $this->assertTrue($foundAgents);
+        $this->assertStringNotContainsString('AGENTS_INHERIT_OK', $capturedInput->systemPrompt);
     }
 
     public function testInternalPollTimeoutCancelsChildAndMarksArtifactFailed(): void
@@ -1707,6 +1724,7 @@ CHILD_SKILL_BODY_UNIQUE',
             'policyResolver' => $this->defaultPolicyResolver(),
             'promptBuilder' => new AgentPromptBuilder(self::getContainer()->get(SystemPromptBuilder::class)),
             'skillsContextBuilder' => self::getContainer()->get(SkillsContextBuilder::class),
+            'agentsContextBuilder' => self::getContainer()->get(AgentsContextBuilder::class),
             'artifactRegistry' => self::getContainer()->get(AgentArtifactRegistry::class),
             'agentRunner' => $this->createStub(AgentRunnerInterface::class),
             'runStore' => $this->createStub(RunStoreInterface::class),
@@ -1746,6 +1764,7 @@ CHILD_SKILL_BODY_UNIQUE',
             progressSnapshotBuilder: $args['progressSnapshotBuilder'],
             childProgressSummaryBuilder: $args['childProgressSummaryBuilder'],
             appConfig: $args['appConfig'],
+            agentsContextBuilder: $args['agentsContextBuilder'],
             clock: $args['clock'],
         );
     }

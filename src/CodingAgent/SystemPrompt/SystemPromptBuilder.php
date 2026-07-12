@@ -336,6 +336,7 @@ final readonly class SystemPromptBuilder
 
         $contributorOutput = $this->drainContributors();
         if ('' !== $contributorOutput) {
+            // Opaque extension/user markdown: never parse or scrub contributor text.
             $parts[] = $contributorOutput;
         }
 
@@ -346,6 +347,9 @@ final readonly class SystemPromptBuilder
         $concatenated = implode("\n\n", $parts);
         $appendVariables = $this->buildChildVariables($cwd, $allowedToolNames, '');
 
+        // Only {available_tools_list} and {registered_guidelines} inside APPEND_SYSTEM
+        // are structurally filtered to the child permanent subset (TOOLS-R00). No post-render
+        // text scrubbing — excluded tools must not appear in those placeholders at all.
         return $this->render($concatenated, $appendVariables);
     }
 
@@ -354,32 +358,7 @@ final readonly class SystemPromptBuilder
      */
     private function buildToolsListForNames(array $allowedToolNames): string
     {
-        $lines = [];
-        $seen = [];
-
-        foreach ($allowedToolNames as $name) {
-            $name = trim($name);
-            if ('' === $name) {
-                continue;
-            }
-
-            $definition = $this->toolRegistry->toolDefinition($name);
-            if (null === $definition) {
-                continue;
-            }
-
-            $line = $definition->promptLine;
-            if ('' === $line) {
-                $line = '- '.$name.': '.$definition->description;
-            }
-
-            if (!isset($seen[$line])) {
-                $seen[$line] = true;
-                $lines[] = $line;
-            }
-        }
-
-        return implode("\n", $lines);
+        return implode("\n", $this->toolRegistry->permanentToolLinesForNames($allowedToolNames));
     }
 
     /**
@@ -387,32 +366,7 @@ final readonly class SystemPromptBuilder
      */
     private function buildGuidelinesForNames(array $allowedToolNames): string
     {
-        $guidelines = [];
-        $seen = [];
-
-        foreach ($allowedToolNames as $name) {
-            $name = trim($name);
-            if ('' === $name) {
-                continue;
-            }
-
-            $definition = $this->toolRegistry->toolDefinition($name);
-            if (null === $definition) {
-                continue;
-            }
-
-            foreach ($definition->promptGuidelines as $guideline) {
-                if ('' === $guideline) {
-                    continue;
-                }
-                if (!isset($seen[$guideline])) {
-                    $seen[$guideline] = true;
-                    $guidelines[] = $guideline;
-                }
-            }
-        }
-
-        return implode("\n", $guidelines);
+        return implode("\n", $this->toolRegistry->permanentGuidelinesForNames($allowedToolNames));
     }
 
     /**
