@@ -434,6 +434,7 @@ ai:
                     cost: { input: 0, output: 0, cache_read: 0, cache_write: 0 }
         openai-codex:
              type: codex
+             transport: websocket
              enabled: true
              base_url: https://chatgpt.com/backend-api
              api: openai-responses

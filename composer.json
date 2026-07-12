@@ -38,7 +38,8 @@
         "symfony/scheduler": "^8.1",
         "mcp/sdk": "^0.6.0",
         "league/commonmark": "^2.8",
-        "tempest/highlight": "^2.27"
+        "tempest/highlight": "^2.27",
+        "amphp/websocket-client": "^2.0"
     },
     "require-dev": {
         "friendsofphp/php-cs-fixer": "^3.94",
@@ -62,7 +63,8 @@
             "Ineersa\\Platform\\": "src/Platform/",
             "Ineersa\\HatfieldExt\\TaskWorkflow\\": ".hatfield/extensions/task-workflow/src/",
             "Ineersa\\HatfieldExt\\CastorLlmMode\\": ".hatfield/extensions/castor-llm-mode/src/",
-            "Ineersa\\HatfieldExt\\FileRewind\\": ".hatfield/extensions/file-rewind/src/"
+            "Ineersa\\HatfieldExt\\FileRewind\\": ".hatfield/extensions/file-rewind/src/",
+            "Symfony\\AI\\Platform\\Result\\": "src/Platform/Result/"
         }
     },
     "autoload-dev": {

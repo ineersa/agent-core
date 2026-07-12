@@ -27,6 +27,7 @@ final readonly class AiProviderConfig
      * @param bool                             $supportsEmbeddings     Whether embeddings are supported
      * @param bool                             $supportsThinkingLevels Whether reasoning-level cycling is meaningful for this provider
      * @param AiCompatibility|null             $compatibility          Provider-level compatibility metadata
+     * @param string|null                      $transport              Codex transport (websocket|sse); null uses Codex default
      * @param array<string, AiModelDefinition> $models                 Exposed models keyed by model name
      */
     public function __construct(
@@ -44,6 +45,7 @@ final readonly class AiProviderConfig
         public bool $supportsEmbeddings = false,
         public bool $supportsThinkingLevels = true,
         public ?AiCompatibility $compatibility = null,
+        public ?string $transport = null,
         public array $models = [],
     ) {
     }
@@ -79,6 +81,7 @@ final readonly class AiProviderConfig
             supportsEmbeddings: (bool) ($data['supports_embeddings'] ?? false),
             supportsThinkingLevels: (bool) ($data['supports_thinking_levels'] ?? true),
             compatibility: isset($data['compatibility']) && \is_array($data['compatibility']) ? AiCompatibility::fromArray($data['compatibility']) : null,
+            transport: isset($data['transport']) ? (string) $data['transport'] : null,
             models: $models,
         );
     }

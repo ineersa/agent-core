@@ -6,6 +6,7 @@ namespace Symfony\AI\Platform\Bridge\OpenAICodex\Tests;
 
 use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use PHPUnit\Framework\TestCase;
+use Symfony\AI\Platform\Bridge\OpenAICodex\CodexSseStream;
 use Symfony\AI\Platform\Bridge\OpenAICodex\ResultConverter;
 use Symfony\AI\Platform\Exception\AuthenticationException;
 use Symfony\AI\Platform\Exception\BadRequestException;
@@ -369,7 +370,7 @@ final class ResultConverterTest extends TestCase
         ]);
 
         $this->expectException(RuntimeException::class);
-        $this->expectExceptionMessage('Error "invalid_request_error"-invalid_request (model): "The model `unknown` does not exist".');
+        $this->expectExceptionMessage('[invalid_request_error/invalid_request/model]');
 
         $converter->convert(new RawHttpResult($httpResponse));
     }
@@ -719,7 +720,7 @@ final class ResultConverterTest extends TestCase
         $events = [
             ['type' => 'response.output_text.delta', 'delta' => 'Should never yield'],
         ];
-        $raw = new InMemoryRawResult([], $events, $httpResponse);
+        $raw = new RawHttpResult($httpResponse, new CodexSseStream());
 
         try {
             $converter->convert($raw, ['stream' => true]);
@@ -730,6 +731,34 @@ final class ResultConverterTest extends TestCase
             $this->assertStringNotContainsString($secret, $e->getMessage());
             $this->assertStringNotContainsString('The requested resource was not found', $e->getMessage());
             $this->assertDoesNotMatchRegularExpression('/HTTP 404: HTTP 404/', $e->getMessage());
+        }
+    }
+
+    public function testStreamErrorMessageDoesNotLeakProviderSecret(): void
+    {
+        $converter = new ResultConverter();
+        $httpResponse = $this->createStub(ResponseInterface::class);
+        $httpResponse->method('getStatusCode')->willReturn(200);
+
+        $secret = 'LEAKED_STREAM_SECRET_MARKER_7f3a91c2';
+        $events = [
+            ['type' => 'error', 'error' => [
+                'code' => 'invalid_request_error',
+                'type' => 'invalid_request',
+                'param' => 'model',
+                'message' => $secret,
+            ]],
+        ];
+
+        $raw = new InMemoryRawResult([], $events, $httpResponse);
+
+        try {
+            $streamResult = $converter->convert($raw, ['stream' => true]);
+            iterator_to_array($streamResult->getContent());
+            $this->fail('Expected stream error');
+        } catch (RuntimeException $e) {
+            $this->assertStringContainsString('[invalid_request_error/invalid_request/model]', $e->getMessage());
+            $this->assertStringNotContainsString($secret, $e->getMessage());
         }
     }
 
@@ -754,7 +783,7 @@ final class ResultConverterTest extends TestCase
         $raw = new InMemoryRawResult([], $events, $httpResponse);
 
         $this->expectException(RuntimeException::class);
-        $this->expectExceptionMessageMatches('/server_error.*Internal error/');
+        $this->expectExceptionMessage('[server_error]');
 
         $streamResult = $converter->convert($raw, ['stream' => true]);
         iterator_to_array($streamResult->getContent());
@@ -781,7 +810,7 @@ final class ResultConverterTest extends TestCase
         $raw = new InMemoryRawResult([], $events, $httpResponse);
 
         $this->expectException(RuntimeException::class);
-        $this->expectExceptionMessageMatches('/rate_limited.*Rate limited/');
+        $this->expectExceptionMessage('[rate_limited]');
 
         $streamResult = $converter->convert($raw, ['stream' => true]);
         iterator_to_array($streamResult->getContent());

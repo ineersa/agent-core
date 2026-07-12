@@ -18,6 +18,7 @@ use Ineersa\AgentCore\Domain\Model\ModelInvocationInput;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationRequest;
 use Ineersa\AgentCore\Domain\Model\ModelResolutionOptions;
 use Ineersa\AgentCore\Domain\Model\PlatformInvocationResult;
+use Ineersa\Platform\Result\CancellableRawResultInterface;
 use Psr\Log\LoggerInterface;
 use Symfony\AI\Agent\Input;
 use Symfony\AI\Platform\Message\AssistantMessage;
@@ -626,7 +627,9 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
     {
         try {
             $rawResult = $deferredResult->getRawResult();
-            if ($rawResult instanceof RawHttpResult) {
+            if ($rawResult instanceof CancellableRawResultInterface) {
+                $rawResult->abort();
+            } elseif ($rawResult instanceof RawHttpResult) {
                 $rawResult->getObject()->cancel();
             }
         } catch (\Throwable $e) {
