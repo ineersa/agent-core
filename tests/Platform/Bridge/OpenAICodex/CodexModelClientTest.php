@@ -38,6 +38,8 @@ final class CodexModelClientTest extends TestCase
             self::assertSame('Authorization: Bearer test-access-token', $options['normalized_headers']['authorization'][0]);
             self::assertSame('chatgpt-account-id: acct-123', $options['normalized_headers']['chatgpt-account-id'][0]);
             self::assertSame('originator: hatfield', $options['normalized_headers']['originator'][0]);
+            self::assertSame('Accept: text/event-stream', $options['normalized_headers']['accept'][0]);
+            self::assertSame('User-Agent: hatfield', $options['normalized_headers']['user-agent'][0]);
             self::assertSame('OpenAI-Beta: responses=experimental', $options['normalized_headers']['openai-beta'][0]);
             self::assertArrayHasKey('x-client-request-id', $options['normalized_headers']);
 

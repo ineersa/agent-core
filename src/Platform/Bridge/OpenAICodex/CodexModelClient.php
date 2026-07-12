@@ -114,6 +114,8 @@ class CodexModelClient implements ModelClientInterface
             'auth_bearer' => $this->accessToken,
             'headers' => [
                 'Content-Type' => 'application/json',
+                'Accept' => 'text/event-stream',
+                'User-Agent' => 'hatfield',
                 'chatgpt-account-id' => $this->accountId,
                 'originator' => $this->originator,
                 'OpenAI-Beta' => 'responses=experimental',

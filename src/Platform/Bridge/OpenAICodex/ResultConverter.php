@@ -60,6 +60,11 @@ final class ResultConverter implements ResultConverterInterface
             throw new RateLimitExceededException(null, $this->extractErrorDiagnostics($response));
         }
 
+        $statusCode = $response->getStatusCode();
+        if ($statusCode < 200 || $statusCode >= 300) {
+            throw new RuntimeException(\sprintf('HTTP %d: %s', $statusCode, $this->extractErrorDiagnostics($response)));
+        }
+
         if (true === ($options['stream'] ?? false)) {
             return new StreamResult($this->convertStream($result));
         }

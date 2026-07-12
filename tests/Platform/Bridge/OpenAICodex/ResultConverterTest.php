@@ -37,6 +37,7 @@ final class ResultConverterTest extends TestCase
     {
         $converter = new ResultConverter();
         $httpResponse = $this->createMock(ResponseInterface::class);
+        $httpResponse->method('getStatusCode')->willReturn(200);
         $httpResponse->method('toArray')->willReturn([
             'output' => [
                 [
@@ -60,6 +61,7 @@ final class ResultConverterTest extends TestCase
     {
         $converter = new ResultConverter();
         $httpResponse = $this->createMock(ResponseInterface::class);
+        $httpResponse->method('getStatusCode')->willReturn(200);
         $httpResponse->method('toArray')->willReturn([
             'output' => [
                 [
@@ -85,6 +87,7 @@ final class ResultConverterTest extends TestCase
     {
         $converter = new ResultConverter();
         $httpResponse = $this->createMock(ResponseInterface::class);
+        $httpResponse->method('getStatusCode')->willReturn(200);
         $httpResponse->method('toArray')->willReturn([
             'output' => [
                 [
@@ -119,6 +122,7 @@ final class ResultConverterTest extends TestCase
     {
         $converter = new ResultConverter();
         $httpResponse = $this->createMock(ResponseInterface::class);
+        $httpResponse->method('getStatusCode')->willReturn(200);
         $httpResponse->method('toArray')->willReturn([
             'output' => [
                 [
@@ -155,6 +159,7 @@ final class ResultConverterTest extends TestCase
     {
         $converter = new ResultConverter();
         $httpResponse = $this->createMock(ResponseInterface::class);
+        $httpResponse->method('getStatusCode')->willReturn(200);
         $httpResponse->method('toArray')->willReturn([
             'output' => [
                 [
@@ -194,6 +199,7 @@ final class ResultConverterTest extends TestCase
     {
         $converter = new ResultConverter();
         $httpResponse = $this->createMock(ResponseInterface::class);
+        $httpResponse->method('getStatusCode')->willReturn(200);
         $httpResponse->method('toArray')->willReturn([
             'output' => [
                 [
@@ -223,6 +229,7 @@ final class ResultConverterTest extends TestCase
     {
         $converter = new ResultConverter();
         $httpResponse = $this->createMock(ResponseInterface::class);
+        $httpResponse->method('getStatusCode')->willReturn(200);
         $httpResponse->method('toArray')->willReturn([
             'output' => [
                 [
@@ -247,6 +254,7 @@ final class ResultConverterTest extends TestCase
     {
         $converter = new ResultConverter();
         $httpResponse = $this->createMock(ResponseInterface::class);
+        $httpResponse->method('getStatusCode')->willReturn(200);
 
         $httpResponse->expects($this->exactly(1))
             ->method('toArray')
@@ -295,6 +303,7 @@ final class ResultConverterTest extends TestCase
     {
         $converter = new ResultConverter();
         $httpResponse = $this->createMock(ResponseInterface::class);
+        $httpResponse->method('getStatusCode')->willReturn(200);
         $httpResponse->method('toArray')->willReturn([]);
 
         $this->expectException(RuntimeException::class);
@@ -349,6 +358,7 @@ final class ResultConverterTest extends TestCase
     {
         $converter = new ResultConverter();
         $httpResponse = $this->createMock(ResponseInterface::class);
+        $httpResponse->method('getStatusCode')->willReturn(200);
         $httpResponse->method('toArray')->willReturn([
             'error' => [
                 'code' => 'invalid_request_error',
@@ -684,6 +694,34 @@ final class ResultConverterTest extends TestCase
         $this->expectExceptionMessage('Rate limit exceeded. [rate_limited/rate_limit_error]: Too many requests, please retry after 60 seconds');
 
         $converter->convert(new RawHttpResult($httpResponse));
+    }
+
+    /**
+     * Regression: non-2xx HTTP responses must throw before SSE iteration instead of
+     * returning an empty StreamResult (observed HTTP 404 on Codex streaming path).
+     */
+    public function testStreamNon2xxHttp404ThrowsBeforeSseIteration(): void
+    {
+        $converter = new ResultConverter();
+        $httpResponse = $this->createMock(ResponseInterface::class);
+        $httpResponse->method('getStatusCode')->willReturn(404);
+        $httpResponse->method('getContent')->willReturn(json_encode([
+            'error' => [
+                'code' => 'not_found',
+                'message' => 'The requested resource was not found',
+            ],
+        ]));
+
+        $events = [
+            ['type' => 'response.output_text.delta', 'delta' => 'Should never yield'],
+        ];
+        $raw = new InMemoryRawResult([], $events, $httpResponse);
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('HTTP 404');
+        $this->expectExceptionMessage('[not_found]: The requested resource was not found');
+
+        $converter->convert($raw, ['stream' => true]);
     }
 
     // -- Stream error handling (regression: silent mid-turn death) --
