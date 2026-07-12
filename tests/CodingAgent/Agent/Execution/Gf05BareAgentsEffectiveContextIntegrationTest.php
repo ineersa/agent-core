@@ -10,7 +10,7 @@ use Ineersa\AgentCore\Contract\RunStoreInterface;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryRunStore;
-use Ineersa\AgentCore\Infrastructure\Storage\RunEventStore;
+use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
 use Ineersa\CodingAgent\Agent\Context\AgentsContextBuilder;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionCatalog;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionDTO;
@@ -73,7 +73,7 @@ final class Gf05BareAgentsEffectiveContextIntegrationTest extends PerMethodIsola
         PromptContractTestSupport::assertProviderUserMessagesContainSentinelOnce($parentCapture->capturedProviderMessages(), $sentinel);
 
         $childRunStore = new InMemoryRunStore();
-        $childEventStore = new RunEventStore();
+        $childEventStore = new InMemoryEventStore();
         $childRunner = PipelineCapturingAgentRunner::create($childRunStore, $childEventStore);
 
         $service = $this->buildSubagentService(
