@@ -20,6 +20,7 @@ use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
+use Ineersa\CodingAgent\Session\FileRunSequenceAllocator;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\Repair\SessionRepairRefusalReasonEnum;
 use Ineersa\CodingAgent\Session\Repair\SessionRepairService;
@@ -833,6 +834,7 @@ final class SessionRepairServiceTest extends TestCase
             eventPayloadNormalizer: new EventPayloadNormalizer(),
             lockFactory: new LockFactory(new FlockStore($lockDir)),
             logger: new NullLogger(),
+            sequenceAllocator: new FileRunSequenceAllocator(),
         );
 
         return new SessionRepairService(
@@ -915,6 +917,7 @@ final class SessionRepairServiceTest extends TestCase
             eventPayloadNormalizer: new EventPayloadNormalizer(),
             lockFactory: new LockFactory(new FlockStore($lockDir)),
             logger: new NullLogger(),
+            sequenceAllocator: new FileRunSequenceAllocator(),
         );
 
         $events = $eventStore->allFor($runId);
@@ -941,6 +944,7 @@ final class SessionRepairServiceTest extends TestCase
             eventPayloadNormalizer: new EventPayloadNormalizer(),
             lockFactory: new LockFactory(new FlockStore($lockDir)),
             logger: new NullLogger(),
+            sequenceAllocator: new FileRunSequenceAllocator(),
         );
 
         $events = $eventStore->allFor($runId);
