@@ -8,6 +8,7 @@ use Ineersa\CodingAgent\Session\Repair\SessionRepairServiceInterface;
 use Ineersa\Tui\Command\CommandMetadata;
 use Ineersa\Tui\Command\SlashCommandRegistry;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
+use Psr\Log\LoggerInterface;
 
 /**
  * Registers the /repair slash command for the active session.
@@ -19,12 +20,13 @@ final class RepairCommandRegistrar implements TuiListenerRegistrar
     public function __construct(
         private readonly SlashCommandRegistry $commandRegistry,
         private readonly SessionRepairServiceInterface $repairService,
+        private readonly LoggerInterface $logger,
     ) {
     }
 
     public function register(TuiRuntimeContext $context): void
     {
-        $handler = new RepairCommandHandler($this->repairService, $context->state);
+        $handler = new RepairCommandHandler($this->repairService, $context->state, $this->logger);
 
         if ($this->commandRegistry->has('repair')) {
             $this->commandRegistry->setHandler('repair', $handler);

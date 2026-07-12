@@ -12,6 +12,7 @@ use Ineersa\Tui\Command\SlashCommand;
 use Ineersa\Tui\Command\SlashCommandHandler;
 use Ineersa\Tui\Command\TranscriptMessage;
 use Ineersa\Tui\Runtime\TuiSessionState;
+use Psr\Log\LoggerInterface;
 
 /**
  * Handler for the /repair slash command on the active session.
@@ -23,6 +24,7 @@ final class RepairCommandHandler implements SlashCommandHandler
     public function __construct(
         private readonly SessionRepairServiceInterface $repairService,
         private readonly TuiSessionState $state,
+        private readonly LoggerInterface $logger,
     ) {
     }
 
@@ -47,7 +49,15 @@ final class RepairCommandHandler implements SlashCommandHandler
 
         try {
             $result = $this->repairService->repair($runId, true);
-        } catch (\Throwable) {
+        } catch (\Throwable $exception) {
+            $this->logger->error('session_repair.command_failed', [
+                'run_id' => $runId,
+                'component' => 'tui.repair_command',
+                'event_type' => 'session_repair.command_failed',
+                'exception_class' => $exception::class,
+                'exception_code' => $exception->getCode(),
+            ]);
+
             return new TranscriptMessage(
                 'Session repair failed due to an internal error.',
                 'system',
@@ -80,7 +90,7 @@ final class RepairCommandHandler implements SlashCommandHandler
             return 'Session repaired: stale cancellation terminalized.';
         }
 
-        if (!$result->repairWasNeeded) {
+        if (!$result->repairableStaleCancellationDetected) {
             return 'No repairable corruption detected.';
         }
 

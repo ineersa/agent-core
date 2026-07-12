@@ -11,14 +11,14 @@ final readonly class RepairResult
      * @param list<int> $missingSeqs
      */
     public function __construct(
-        public bool $repairWasNeeded,
+        public bool $repairableStaleCancellationDetected,
         public bool $staleCancellationRepaired,
         public int $terminalEventsAppended,
         public bool $replayOk,
         public string $message,
         public array $duplicateSeqs = [],
-        public ?SessionRepairRefusalReasonEnum $refusalReason = null,
         public array $missingSeqs = [],
+        public ?SessionRepairRefusalReasonEnum $refusalReason = null,
     ) {
     }
 }

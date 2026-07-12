@@ -23,6 +23,7 @@ use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\Repair\SessionRepairRefusalReasonEnum;
 use Ineersa\CodingAgent\Session\Repair\SessionRepairService;
 use Ineersa\CodingAgent\Session\SessionRunEventStore;
+use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
@@ -74,12 +75,12 @@ final class SessionRepairServiceTest extends TestCase
         $before = $this->readEvents($runId);
 
         $dryRun = $service->repair($runId, false);
-        $this->assertFalse($dryRun->repairWasNeeded);
+        $this->assertFalse($dryRun->repairableStaleCancellationDetected);
         $this->assertFalse($dryRun->staleCancellationRepaired);
         $this->assertStringContainsStringIgnoringCase('no repairable corruption', $dryRun->message);
 
         $apply = $service->repair($runId, true);
-        $this->assertFalse($apply->repairWasNeeded);
+        $this->assertFalse($apply->repairableStaleCancellationDetected);
         $this->assertFalse($apply->staleCancellationRepaired);
         $this->assertSame($before, $this->readEvents($runId));
     }
@@ -93,6 +94,7 @@ final class SessionRepairServiceTest extends TestCase
         $service = $this->createService($runStore);
         $result = $service->repair($runId, false);
 
+        $this->assertTrue($result->repairableStaleCancellationDetected);
         $this->assertStringContainsStringIgnoringCase('stale non-terminal cancellation', $result->message);
     }
 
@@ -161,7 +163,7 @@ final class SessionRepairServiceTest extends TestCase
         $this->assertSame(self::TOOL_CALL_ID, $replayed[1]->toolCallId);
 
         $second = $service->repair($runId, true);
-        $this->assertFalse($second->repairWasNeeded);
+        $this->assertFalse($second->repairableStaleCancellationDetected);
         $this->assertSame(1, $this->countEvents($this->readEvents($runId), RunEventTypeEnum::ToolCallResultReceived->value, self::TOOL_CALL_ID));
         $this->assertSame(1, $this->countEvents($this->readEvents($runId), RunEventTypeEnum::ToolExecutionEnd->value, self::TOOL_CALL_ID));
         $this->assertSame(1, $this->countEvents($this->readEvents($runId), RunEventTypeEnum::MessageEnd->value, self::TOOL_CALL_ID, role: 'tool'));
@@ -181,7 +183,7 @@ final class SessionRepairServiceTest extends TestCase
         $lineCountAfterFirst = \count($this->readRawLines($runId));
 
         $second = $service->repair($runId, true);
-        $this->assertFalse($second->repairWasNeeded);
+        $this->assertFalse($second->repairableStaleCancellationDetected);
         $this->assertSame(0, $second->terminalEventsAppended);
         $this->assertSame($lineCountAfterFirst, \count($this->readRawLines($runId)));
     }
@@ -223,7 +225,7 @@ final class SessionRepairServiceTest extends TestCase
         $before = $this->readRawLines($runId);
         $result = $service->repair($runId, true);
 
-        $this->assertTrue($result->repairWasNeeded);
+        $this->assertFalse($result->repairableStaleCancellationDetected);
         $this->assertNotEmpty($result->duplicateSeqs);
         $this->assertSame(SessionRepairRefusalReasonEnum::DuplicateSequences, $result->refusalReason);
         $this->assertStringContainsStringIgnoringCase('duplicate', $result->message);
@@ -334,7 +336,7 @@ final class SessionRepairServiceTest extends TestCase
         $this->assertSame(1, $this->countEvents($afterFirst, RunEventTypeEnum::ToolBatchCommitted->value));
 
         $second = $service->repair($runId, true);
-        $this->assertFalse($second->repairWasNeeded);
+        $this->assertFalse($second->repairableStaleCancellationDetected);
         $this->assertSame(0, $second->terminalEventsAppended);
 
         $afterSecond = $this->readEvents($runId);
@@ -395,6 +397,161 @@ final class SessionRepairServiceTest extends TestCase
         $appended = \array_slice($decoded, $prefix);
         $this->assertSame(0, $this->countInSlice($appended, RunEventTypeEnum::LlmStepAborted->value));
         $this->assertGreaterThanOrEqual(1, $this->countInSlice($appended, RunEventTypeEnum::ToolExecutionEnd->value, self::TOOL_CALL_ID));
+    }
+
+
+
+    public function testNoEventsRefusalLogsStructuredRefusal(): void
+    {
+        $runId = 'no-events';
+        $logger = new TestLogger();
+        $service = $this->createService(logger: $logger);
+        $result = $service->repair($runId, true);
+
+        $this->assertSame(SessionRepairRefusalReasonEnum::NoEvents, $result->refusalReason);
+        $this->assertCount(1, $logger->records);
+        $this->assertSame('session_repair.refused', $logger->records[0]['message']);
+        $this->assertSame('no_events', $logger->records[0]['context']['refusal_reason']);
+        $this->assertSame($runId, $logger->records[0]['context']['run_id']);
+    }
+
+    public function testRunStateUnavailableRefusalLogsStructuredRefusal(): void
+    {
+        $runId = 'missing-state';
+        $factory = new EventFactory();
+        $this->persistRunEvents($runId, $factory->eventsFromSpecs($runId, 1, 1, [
+            ['type' => RunEventTypeEnum::AgentStart->value, 'payload' => []],
+            ['type' => RunEventTypeEnum::TurnAdvanced->value, 'payload' => ['turn_no' => 1, 'step_id' => 's1']],
+        ]));
+
+        $logger = new TestLogger();
+        $service = $this->createService(runStore: new InMemoryRunStore(), logger: $logger);
+        $result = $service->repair($runId, true);
+
+        $this->assertSame(SessionRepairRefusalReasonEnum::RunStateUnavailable, $result->refusalReason);
+        $this->assertCount(1, $logger->records);
+        $this->assertSame('session_repair.refused', $logger->records[0]['message']);
+        $this->assertSame('run_state_unavailable', $logger->records[0]['context']['refusal_reason']);
+    }
+
+    public function testMultiTurnLlmAbortTargetsOnlyLatestIncompletePhase(): void
+    {
+        $runId = 'multi-turn-llm';
+        $factory = new EventFactory();
+        $firstStep = 'follow_up-first';
+        $secondStep = 'follow_up-second';
+        $events = $factory->eventsFromSpecs($runId, 33, 1, [
+            ['type' => RunEventTypeEnum::AgentStart->value, 'payload' => ['messages' => []]],
+            ['type' => RunEventTypeEnum::TurnAdvanced->value, 'payload' => ['turn_no' => 1, 'step_id' => $firstStep]],
+            ['type' => RunEventTypeEnum::MessageStart->value, 'payload' => ['message_id' => 'asst-old', 'message_role' => 'assistant']],
+            ['type' => RunEventTypeEnum::MessageEnd->value, 'payload' => ['message_id' => 'asst-old', 'message_role' => 'assistant', 'message' => ['role' => 'assistant', 'content' => 'done']]],
+            ['type' => RunEventTypeEnum::LlmStepCompleted->value, 'payload' => ['step_id' => $firstStep, 'assistant_message' => ['role' => 'assistant', 'content' => 'done']]],
+            ['type' => RunEventTypeEnum::TurnAdvanced->value, 'payload' => ['turn_no' => 33, 'step_id' => $secondStep]],
+            ['type' => RunEventTypeEnum::MessageStart->value, 'payload' => ['message_id' => 'asst-new', 'message_role' => 'assistant']],
+            ['type' => RunEventTypeEnum::MessageUpdate->value, 'payload' => ['message_id' => 'asst-new', 'delta' => 'partial']],
+            ['type' => RunEventTypeEnum::AgentCommandApplied->value, 'payload' => ['kind' => 'cancel']],
+        ]);
+        $this->persistRunEvents($runId, $events);
+
+        $runStore = new InMemoryRunStore();
+        $runStore->compareAndSwap(new RunState(
+            runId: $runId,
+            status: RunStatus::Cancelling,
+            version: 1,
+            turnNo: 33,
+            lastSeq: \count($events),
+            activeStepId: $secondStep,
+        ), 0);
+
+        $service = $this->createService($runStore);
+        $prefix = \count($events);
+        $service->repair($runId, true);
+        $decoded = $this->readEvents($runId);
+        $appended = \array_slice($decoded, $prefix);
+        $this->assertSame(1, $this->countInSlice($appended, RunEventTypeEnum::LlmStepAborted->value));
+        $abort = null;
+        foreach ($appended as $row) {
+            if (RunEventTypeEnum::LlmStepAborted->value === $row['type']) {
+                $abort = $row;
+            }
+        }
+        $this->assertNotNull($abort);
+        $this->assertSame($secondStep, $abort['payload']['step_id'] ?? null);
+    }
+
+    public function testToolOrderIndexComesFromExecutionStartNotGlobalCounter(): void
+    {
+        $runId = 'order-index';
+        $firstTool = 'call_first';
+        $secondTool = 'call_second';
+        $factory = new EventFactory();
+        $events = $factory->eventsFromSpecs($runId, 33, 1, [
+            ['type' => RunEventTypeEnum::AgentStart->value, 'payload' => ['messages' => []]],
+            ['type' => RunEventTypeEnum::TurnAdvanced->value, 'payload' => ['turn_no' => 1, 'step_id' => 's1']],
+            ['type' => RunEventTypeEnum::LlmStepCompleted->value, 'payload' => [
+                'step_id' => 's1',
+                'assistant_message' => ['role' => 'assistant', 'content' => null, 'tool_calls' => [[
+                    'id' => $firstTool,
+                    'type' => 'function',
+                    'function' => ['name' => 'read', 'arguments' => '{}'],
+                ]]],
+            ]],
+            ['type' => RunEventTypeEnum::ToolExecutionStart->value, 'payload' => [
+                'tool_call_id' => $firstTool,
+                'tool_name' => 'read',
+                'order_index' => 7,
+                'mode' => 'async',
+                'step_id' => 's1',
+            ]],
+            ['type' => RunEventTypeEnum::ToolExecutionEnd->value, 'payload' => [
+                'tool_call_id' => $firstTool,
+                'order_index' => 7,
+                'is_error' => false,
+                'result' => 'ok',
+            ]],
+            ['type' => RunEventTypeEnum::TurnAdvanced->value, 'payload' => ['turn_no' => 33, 'step_id' => self::STEP_ID]],
+            ['type' => RunEventTypeEnum::LlmStepCompleted->value, 'payload' => [
+                'step_id' => self::STEP_ID,
+                'assistant_message' => ['role' => 'assistant', 'content' => null, 'tool_calls' => [[
+                    'id' => $secondTool,
+                    'type' => 'function',
+                    'function' => ['name' => 'subagent', 'arguments' => '{}'],
+                ]]],
+            ]],
+            ['type' => RunEventTypeEnum::ToolExecutionStart->value, 'payload' => [
+                'tool_call_id' => $secondTool,
+                'tool_name' => 'subagent',
+                'order_index' => 2,
+                'mode' => 'async',
+                'step_id' => self::STEP_ID,
+            ]],
+            ['type' => RunEventTypeEnum::AgentCommandApplied->value, 'payload' => ['kind' => 'cancel']],
+        ]);
+        $this->persistRunEvents($runId, $events);
+
+        $runStore = new InMemoryRunStore();
+        $runStore->compareAndSwap(new RunState(
+            runId: $runId,
+            status: RunStatus::Cancelling,
+            version: 1,
+            turnNo: 33,
+            lastSeq: \count($events),
+            pendingToolCalls: [$secondTool => false],
+            activeStepId: self::STEP_ID,
+        ), 0);
+
+        $service = $this->createService($runStore);
+        $service->repair($runId, true);
+        $decoded = $this->readEvents($runId);
+        foreach ($decoded as $row) {
+            if (RunEventTypeEnum::ToolExecutionEnd->value !== $row['type']) {
+                continue;
+            }
+            if (($row['payload']['tool_call_id'] ?? null) !== $secondTool) {
+                continue;
+            }
+            $this->assertSame(2, $row['payload']['order_index'] ?? null);
+        }
     }
 
     /**
@@ -652,7 +809,7 @@ final class SessionRepairServiceTest extends TestCase
         return $lines;
     }
 
-    private function createService(?InMemoryRunStore $runStore = null): SessionRepairService
+    private function createService(?InMemoryRunStore $runStore = null, ?TestLogger $logger = null): SessionRepairService
     {
         $runStore ??= new InMemoryRunStore();
 
@@ -674,7 +831,7 @@ final class SessionRepairServiceTest extends TestCase
             hatfieldSessionStore: $hatfieldSessionStore,
             eventPayloadNormalizer: new EventPayloadNormalizer(),
             lockFactory: new LockFactory(new FlockStore($lockDir)),
-            logger: new NullLogger(),
+            logger: $logger ?? new NullLogger(),
         );
 
         return new SessionRepairService(
@@ -685,7 +842,7 @@ final class SessionRepairServiceTest extends TestCase
             eventFactory: new EventFactory(),
             messageNormalizer: new AgentMessageNormalizer(),
             lockManager: new RunLockManager(new LockFactory(new FlockStore($lockDir))),
-            logger: new NullLogger(),
+            logger: $logger ?? new NullLogger(),
         );
     }
 
@@ -756,7 +913,7 @@ final class SessionRepairServiceTest extends TestCase
             hatfieldSessionStore: $hatfieldSessionStore,
             eventPayloadNormalizer: new EventPayloadNormalizer(),
             lockFactory: new LockFactory(new FlockStore($lockDir)),
-            logger: new NullLogger(),
+            logger: $logger ?? new NullLogger(),
         );
 
         $events = $eventStore->allFor($runId);
@@ -782,7 +939,7 @@ final class SessionRepairServiceTest extends TestCase
             hatfieldSessionStore: $hatfieldSessionStore,
             eventPayloadNormalizer: new EventPayloadNormalizer(),
             lockFactory: new LockFactory(new FlockStore($lockDir)),
-            logger: new NullLogger(),
+            logger: $logger ?? new NullLogger(),
         );
 
         $events = $eventStore->allFor($runId);

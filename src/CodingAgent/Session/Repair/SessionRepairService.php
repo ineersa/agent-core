@@ -46,6 +46,7 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
         $events = $this->eventStore->allFor($runId);
         if ([] === $events) {
             return $this->refusalResult(
+                runId: $runId,
                 message: 'No canonical events found for session repair.',
                 reason: SessionRepairRefusalReasonEnum::NoEvents,
             );
@@ -57,7 +58,7 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
             $this->logRefusal($runId, SessionRepairRefusalReasonEnum::DuplicateSequences, ['duplicate_count' => \count($duplicateSeqs)]);
 
             return new RepairResult(
-                repairWasNeeded: true,
+                repairableStaleCancellationDetected: false,
                 staleCancellationRepaired: false,
                 terminalEventsAppended: 0,
                 replayOk: false,
@@ -72,7 +73,7 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
             $this->logRefusal($runId, SessionRepairRefusalReasonEnum::MissingSequences, ['missing_count' => \count($missingSeqs)]);
 
             return new RepairResult(
-                repairWasNeeded: true,
+                repairableStaleCancellationDetected: false,
                 staleCancellationRepaired: false,
                 terminalEventsAppended: 0,
                 replayOk: false,
@@ -86,6 +87,7 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
         $storedState = $this->runStore->get($runId);
         if (null === $storedState) {
             return $this->refusalResult(
+                runId: $runId,
                 message: 'Session repair refused: run state is unavailable.',
                 reason: SessionRepairRefusalReasonEnum::RunStateUnavailable,
             );
@@ -95,7 +97,7 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
             $this->logRefusal($runId, SessionRepairRefusalReasonEnum::ActiveStreaming);
 
             return new RepairResult(
-                repairWasNeeded: true,
+                repairableStaleCancellationDetected: false,
                 staleCancellationRepaired: false,
                 terminalEventsAppended: 0,
                 replayOk: false,
@@ -124,7 +126,7 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
 
         if (!$apply) {
             return new RepairResult(
-                repairWasNeeded: true,
+                repairableStaleCancellationDetected: true,
                 staleCancellationRepaired: false,
                 terminalEventsAppended: 0,
                 replayOk: false,
@@ -205,7 +207,7 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
             ]);
 
             return new RepairResult(
-                repairWasNeeded: true,
+                repairableStaleCancellationDetected: false,
                 staleCancellationRepaired: false,
                 terminalEventsAppended: 0,
                 replayOk: false,
@@ -222,7 +224,7 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
                 'component' => 'session.repair',
                 'event_type' => 'session.repair.append_failed',
                 'exception_class' => $exception::class,
-                'exception_message' => $exception->getMessage(),
+                'exception_code' => $exception->getCode(),
             ]);
 
             throw $exception;
@@ -255,7 +257,7 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
             ]);
 
             return new RepairResult(
-                repairWasNeeded: true,
+                repairableStaleCancellationDetected: true,
                 staleCancellationRepaired: true,
                 terminalEventsAppended: \count($proposedEvents),
                 replayOk: true,
@@ -271,7 +273,7 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
         ]);
 
         return new RepairResult(
-            repairWasNeeded: true,
+            repairableStaleCancellationDetected: true,
             staleCancellationRepaired: true,
             terminalEventsAppended: \count($proposedEvents),
             replayOk: true,
@@ -388,26 +390,58 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
      */
     private function llmStepRemainedIncomplete(array $events): bool
     {
-        $started = false;
-        $completed = false;
-        $aborted = false;
+        $openAssistantMessageId = null;
+        $openStepId = null;
 
         foreach ($events as $event) {
             if (RunEventTypeEnum::MessageStart->value === $event->type) {
                 $role = \is_string($event->payload['message_role'] ?? null) ? $event->payload['message_role'] : null;
                 if ('assistant' === $role) {
-                    $started = true;
+                    $openAssistantMessageId = \is_string($event->payload['message_id'] ?? null) ? $event->payload['message_id'] : 'assistant';
+                    $openStepId = null;
                 }
+
+                continue;
             }
+
+            if (RunEventTypeEnum::MessageEnd->value === $event->type) {
+                $role = \is_string($event->payload['message_role'] ?? null) ? $event->payload['message_role'] : null;
+                if ('assistant' === $role) {
+                    $messageId = \is_string($event->payload['message_id'] ?? null) ? $event->payload['message_id'] : null;
+                    if (null === $openAssistantMessageId || null === $messageId || $messageId === $openAssistantMessageId) {
+                        $openAssistantMessageId = null;
+                    }
+                }
+
+                continue;
+            }
+
             if (RunEventTypeEnum::LlmStepCompleted->value === $event->type) {
-                $completed = true;
+                $stepId = \is_string($event->payload['step_id'] ?? null) ? $event->payload['step_id'] : null;
+                if (null === $openStepId || (null !== $stepId && $stepId === $openStepId)) {
+                    $openAssistantMessageId = null;
+                    $openStepId = null;
+                }
+
+                continue;
             }
+
             if (RunEventTypeEnum::LlmStepAborted->value === $event->type) {
-                $aborted = true;
+                $stepId = \is_string($event->payload['step_id'] ?? null) ? $event->payload['step_id'] : null;
+                if (null === $openStepId || (null !== $stepId && $stepId === $openStepId)) {
+                    $openAssistantMessageId = null;
+                    $openStepId = null;
+                }
+
+                continue;
+            }
+
+            if (RunEventTypeEnum::TurnAdvanced->value === $event->type) {
+                $openStepId = \is_string($event->payload['step_id'] ?? null) ? $event->payload['step_id'] : $openStepId;
             }
         }
 
-        return $started && !$completed && !$aborted;
+        return null !== $openAssistantMessageId;
     }
 
     /**
@@ -461,38 +495,37 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
     private function toolCallInfoFromEvents(array $events): array
     {
         $map = [];
-        $order = 0;
 
         foreach ($events as $event) {
-            if (RunEventTypeEnum::LlmStepCompleted->value === $event->type) {
-                $assistant = \is_array($event->payload['assistant_message'] ?? null) ? $event->payload['assistant_message'] : [];
-                $toolCalls = \is_array($assistant['tool_calls'] ?? null) ? $assistant['tool_calls'] : [];
-                foreach ($toolCalls as $toolCall) {
-                    if (!\is_array($toolCall)) {
-                        continue;
-                    }
-                    $id = \is_string($toolCall['id'] ?? null) ? $toolCall['id'] : null;
-                    if (null === $id) {
-                        continue;
-                    }
-                    $function = \is_array($toolCall['function'] ?? null) ? $toolCall['function'] : [];
-                    $name = \is_string($function['name'] ?? null) ? $function['name'] : 'unknown';
-                    $map[$id] = ['name' => $name, 'order_index' => $order];
-                    ++$order;
-                }
-            }
-
             if (RunEventTypeEnum::ToolExecutionStart->value === $event->type) {
                 $id = \is_string($event->payload['tool_call_id'] ?? null) ? $event->payload['tool_call_id'] : null;
                 if (null === $id) {
                     continue;
                 }
                 $name = \is_string($event->payload['tool_name'] ?? null) ? $event->payload['tool_name'] : ($map[$id]['name'] ?? 'unknown');
-                $orderIndex = \is_int($event->payload['order_index'] ?? null) ? $event->payload['order_index'] : ($map[$id]['order_index'] ?? $order);
-                if (!isset($map[$id])) {
-                    $map[$id] = ['name' => $name, 'order_index' => $orderIndex];
-                    ++$order;
+                $orderIndex = \is_int($event->payload['order_index'] ?? null) ? $event->payload['order_index'] : ($map[$id]['order_index'] ?? 0);
+                $map[$id] = ['name' => $name, 'order_index' => $orderIndex];
+
+                continue;
+            }
+
+            if (RunEventTypeEnum::LlmStepCompleted->value !== $event->type) {
+                continue;
+            }
+
+            $assistant = \is_array($event->payload['assistant_message'] ?? null) ? $event->payload['assistant_message'] : [];
+            $toolCalls = \is_array($assistant['tool_calls'] ?? null) ? $assistant['tool_calls'] : [];
+            foreach ($toolCalls as $localIndex => $toolCall) {
+                if (!\is_array($toolCall)) {
+                    continue;
                 }
+                $id = \is_string($toolCall['id'] ?? null) ? $toolCall['id'] : null;
+                if (null === $id || isset($map[$id])) {
+                    continue;
+                }
+                $function = \is_array($toolCall['function'] ?? null) ? $toolCall['function'] : [];
+                $name = \is_string($function['name'] ?? null) ? $function['name'] : 'unknown';
+                $map[$id] = ['name' => $name, 'order_index' => $localIndex];
             }
         }
 
@@ -504,7 +537,7 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
         $this->logRefusal($runId, SessionRepairRefusalReasonEnum::AmbiguousPendingWork);
 
         return new RepairResult(
-            repairWasNeeded: true,
+            repairableStaleCancellationDetected: false,
             staleCancellationRepaired: false,
             terminalEventsAppended: 0,
             replayOk: false,
@@ -516,7 +549,7 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
     private function noRepairResult(string $message): RepairResult
     {
         return new RepairResult(
-            repairWasNeeded: false,
+            repairableStaleCancellationDetected: false,
             staleCancellationRepaired: false,
             terminalEventsAppended: 0,
             replayOk: true,
@@ -524,10 +557,12 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
         );
     }
 
-    private function refusalResult(string $message, SessionRepairRefusalReasonEnum $reason): RepairResult
+    private function refusalResult(string $runId, string $message, SessionRepairRefusalReasonEnum $reason): RepairResult
     {
+        $this->logRefusal($runId, $reason);
+
         return new RepairResult(
-            repairWasNeeded: false,
+            repairableStaleCancellationDetected: false,
             staleCancellationRepaired: false,
             terminalEventsAppended: 0,
             replayOk: false,

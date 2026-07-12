@@ -165,10 +165,15 @@ final class TuiRepairCommandE2eTest extends TestCase
             '{"schema_version":"1.0","run_id":"'.self::SESSION_ID.'","seq":1,"turn_no":0,"type":"agent_start","payload":{"messages":[]},"ts":"2026-07-09T01:00:00+00:00"}',
             '{"schema_version":"1.0","run_id":"'.self::SESSION_ID.'","seq":2,"turn_no":33,"type":"agent_command_applied","payload":{"kind":"follow_up","payload":{"text":"run subagent"}},"ts":"2026-07-09T01:00:01+00:00"}',
             '{"schema_version":"1.0","run_id":"'.self::SESSION_ID.'","seq":3,"turn_no":33,"type":"turn_advanced","payload":{"turn_no":33,"step_id":"follow_up-abc"},"ts":"2026-07-09T01:00:02+00:00"}',
-            '{"schema_version":"1.0","run_id":"'.self::SESSION_ID.'","seq":4,"turn_no":33,"type":"llm_step_completed","payload":{"assistant_message":{"role":"assistant","content":null,"tool_calls":[{"id":"call_00_abc","type":"function","function":{"name":"subagent","arguments":"{}"}}]}},"ts":"2026-07-09T01:00:03+00:00"}',
-            '{"schema_version":"1.0","run_id":"'.self::SESSION_ID.'","seq":5,"turn_no":33,"type":"tool_execution_end","payload":{"tool_call_id":"call_00_abc","tool_name":"subagent","success":true},"ts":"2026-07-09T01:00:04+00:00"}',
-            '{"schema_version":"1.0","run_id":"'.self::SESSION_ID.'","seq":6,"turn_no":33,"type":"agent_command_applied","payload":{"kind":"cancel"},"ts":"2026-07-09T01:00:05+00:00"}',
-            '{"schema_version":"1.0","run_id":"'.self::SESSION_ID.'","seq":7,"turn_no":33,"type":"agent_command_rejected","payload":{"reason":"Command \"follow_up\" rejected because cancellation is in progress."},"ts":"2026-07-09T01:00:06+00:00"}',
+            '{"schema_version":"1.0","run_id":"'.self::SESSION_ID.'","seq":4,"turn_no":33,"type":"llm_step_completed","payload":{"step_id":"follow_up-xyz","assistant_message":{"role":"assistant","content":null,"tool_calls":[{"id":"call_00_abc","type":"function","function":{"name":"subagent","arguments":"{}"}}]}},"ts":"2026-07-09T01:00:03+00:00"}',
+            '{"schema_version":"1.0","run_id":"'.self::SESSION_ID.'","seq":5,"turn_no":33,"type":"tool_execution_start","payload":{"tool_call_id":"call_00_abc","tool_name":"subagent","order_index":0,"mode":"async","step_id":"follow_up-xyz"},"ts":"2026-07-09T01:00:04+00:00"}',
+            '{"schema_version":"1.0","run_id":"'.self::SESSION_ID.'","seq":6,"turn_no":33,"type":"tool_call_result_received","payload":{"tool_call_id":"call_00_abc","order_index":0,"is_error":false},"ts":"2026-07-09T01:00:05+00:00"}',
+            '{"schema_version":"1.0","run_id":"'.self::SESSION_ID.'","seq":7,"turn_no":33,"type":"tool_execution_end","payload":{"tool_call_id":"call_00_abc","order_index":0,"is_error":false,"result":"done"},"ts":"2026-07-09T01:00:06+00:00"}',
+            '{"schema_version":"1.0","run_id":"'.self::SESSION_ID.'","seq":8,"turn_no":33,"type":"message_start","payload":{"message_role":"tool","tool_call_id":"call_00_abc"},"ts":"2026-07-09T01:00:07+00:00"}',
+            '{"schema_version":"1.0","run_id":"'.self::SESSION_ID.'","seq":9,"turn_no":33,"type":"message_end","payload":{"message_role":"tool","tool_call_id":"call_00_abc","message":{"role":"tool","content":"done","tool_call_id":"call_00_abc"}},"ts":"2026-07-09T01:00:08+00:00"}',
+            '{"schema_version":"1.0","run_id":"'.self::SESSION_ID.'","seq":10,"turn_no":33,"type":"tool_batch_committed","payload":{"count":1,"turn_no":33,"step_id":"follow_up-xyz"},"ts":"2026-07-09T01:00:09+00:00"}',
+            '{"schema_version":"1.0","run_id":"'.self::SESSION_ID.'","seq":11,"turn_no":33,"type":"agent_command_applied","payload":{"kind":"cancel"},"ts":"2026-07-09T01:00:10+00:00"}',
+            '{"schema_version":"1.0","run_id":"'.self::SESSION_ID.'","seq":12,"turn_no":33,"type":"agent_command_rejected","payload":{"reason":"Command \"follow_up\" rejected because cancellation is in progress."},"ts":"2026-07-09T01:00:11+00:00"}',
         ];
         file_put_contents($sessionDir.'/events.jsonl', implode("\n", $lines)."\n");
 
@@ -181,9 +186,9 @@ final class TuiRepairCommandE2eTest extends TestCase
             status: RunStatus::Cancelling,
             version: 1,
             turnNo: 33,
-            lastSeq: 7,
+            lastSeq: 12,
             pendingToolCalls: ['call_00_abc' => true],
-            activeStepId: 'follow_up-abc',
+            activeStepId: 'follow_up-xyz',
         );
         $json = json_encode($serializer->normalize($state), \JSON_PRETTY_PRINT | \JSON_THROW_ON_ERROR);
         file_put_contents($sessionDir.'/state.json', $json);

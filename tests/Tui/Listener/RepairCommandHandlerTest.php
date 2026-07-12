@@ -22,6 +22,7 @@ use Ineersa\Tui\Listener\RepairCommandHandler;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Psr\Log\NullLogger;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\FlockStore;
@@ -31,7 +32,7 @@ final class RepairCommandHandlerTest extends TestCase
     #[Test]
     public function rejectsArguments(): void
     {
-        $handler = new RepairCommandHandler($this->createRepairService(), new TuiSessionState('repair'));
+        $handler = new RepairCommandHandler($this->createRepairService(), new TuiSessionState('repair'), new NullLogger());
 
         $result = $handler->handle(new SlashCommand('repair', 'apply', '/repair apply'));
 
@@ -43,7 +44,7 @@ final class RepairCommandHandlerTest extends TestCase
     #[Test]
     public function returnsNoActiveSessionWhenRunIdMissing(): void
     {
-        $handler = new RepairCommandHandler($this->createRepairService(), new TuiSessionState('repair'));
+        $handler = new RepairCommandHandler($this->createRepairService(), new TuiSessionState('repair'), new NullLogger());
 
         $result = $handler->handle(new SlashCommand('repair', '', '/repair'));
 
@@ -56,7 +57,7 @@ final class RepairCommandHandlerTest extends TestCase
     {
         $service = $this->createStub(SessionRepairServiceInterface::class);
         $service->method('repair')->willReturn(new RepairResult(
-            repairWasNeeded: true,
+            repairableStaleCancellationDetected: true,
             staleCancellationRepaired: false,
             terminalEventsAppended: 0,
             replayOk: false,
@@ -67,13 +68,37 @@ final class RepairCommandHandlerTest extends TestCase
 
         $state = new TuiSessionState('repair');
         $state->handle = new RunHandle('run-1');
-        $handler = new RepairCommandHandler($service, $state);
+        $handler = new RepairCommandHandler($service, $state, new NullLogger());
 
         $result = $handler->handle(new SlashCommand('repair', '', '/repair'));
 
         $this->assertInstanceOf(TranscriptMessage::class, $result);
         $this->assertSame('Session repair refused: duplicate event sequences.', $result->text);
         $this->assertSame('error', $result->style);
+    }
+
+
+    #[Test]
+    public function logsStructuredDegradationWhenRepairThrows(): void
+    {
+        $service = $this->createStub(SessionRepairServiceInterface::class);
+        $service->method('repair')->willThrowException(new \RuntimeException('corrupt json with secrets'));
+
+        $logger = new TestLogger();
+        $state = new TuiSessionState('repair');
+        $state->handle = new RunHandle('run-err');
+        $handler = new RepairCommandHandler($service, $state, $logger);
+
+        $result = $handler->handle(new SlashCommand('repair', '', '/repair'));
+
+        $this->assertInstanceOf(TranscriptMessage::class, $result);
+        $this->assertSame('Session repair failed due to an internal error.', $result->text);
+        $this->assertCount(1, $logger->records);
+        $this->assertSame('session_repair.command_failed', $logger->records[0]['message']);
+        $this->assertSame('run-err', $logger->records[0]['context']['run_id']);
+        $this->assertSame(\RuntimeException::class, $logger->records[0]['context']['exception_class']);
+        $this->assertArrayNotHasKey('exception', $logger->records[0]['context']);
+        $this->assertArrayNotHasKey('exception_message', $logger->records[0]['context']);
     }
 
     private function createRepairService(): SessionRepairService
