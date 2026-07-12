@@ -134,30 +134,6 @@ final class CodexSymfonyAiProviderBuilderTest extends TestCase
         $factory->createProviders();
     }
 
-    public function testCodexProviderThrowsWhenAuthStorageNotConfigured(): void
-    {
-        $provider = new AiProviderConfig(
-            id: 'openai-codex',
-            type: 'codex',
-            enabled: true,
-            baseUrl: 'https://chatgpt.com/backend-api',
-            models: [
-                'gpt-5.5' => new AiModelDefinition(
-                    id: 'gpt-5.5',
-                    toolCalling: true,
-                    reasoning: true,
-                ),
-            ],
-        );
-
-        $factory = $this->createFactory([$provider->id => $provider]);
-
-        $this->expectException(\RuntimeException::class);
-        $this->expectExceptionMessage('requires stored OAuth credentials');
-
-        $factory->createProviders();
-    }
-
     #[DataProvider('authKeyProvider')]
     public function testCodexProviderWithAuthKeyLoadsCorrectCredentials(
         ?string $configAuthKey,
@@ -339,6 +315,8 @@ final class CodexSymfonyAiProviderBuilderTest extends TestCase
     {
         $builder = new CodexSymfonyAiProviderBuilder(
             $this->createStub(EventDispatcherInterface::class),
+            $this->authStorage,
+            new CodexOAuthService($this->authStorage),
         );
 
         $codex = new AiProviderConfig(id: 'openai-codex', type: 'codex', enabled: true, baseUrl: 'https://example.com');
@@ -385,8 +363,11 @@ final class CodexSymfonyAiProviderBuilderTest extends TestCase
     /**
      * @param array<string, AiProviderConfig> $providers
      */
-    private function createFactory(array $providers, ?CodexAuthStorage $codexAuth = null, ?CodexOAuthService $codexOAuth = null): SymfonyAiProviderFactory
-    {
+    private function createFactory(
+        array $providers,
+        ?CodexAuthStorage $codexAuth = null,
+        ?CodexOAuthService $codexOAuth = null,
+    ): SymfonyAiProviderFactory {
         $aiConfig = new AiConfig(
             defaultModel: 'openai-codex/gpt-5.5',
             providers: $providers,
@@ -399,10 +380,11 @@ final class CodexSymfonyAiProviderBuilderTest extends TestCase
         );
 
         $eventDispatcher = $this->createStub(EventDispatcherInterface::class);
+        $storage = $codexAuth ?? $this->authStorage;
         $codexBuilder = new CodexSymfonyAiProviderBuilder(
             eventDispatcher: $eventDispatcher,
-            codexAuth: $codexAuth,
-            codexOAuth: $codexOAuth,
+            codexAuth: $storage,
+            codexOAuth: $codexOAuth ?? new CodexOAuthService($storage),
         );
 
         return new SymfonyAiProviderFactory(

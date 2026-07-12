@@ -34,7 +34,7 @@ class Factory
         string $originator = 'hatfield',
         string $name = 'openai-codex',
         ?LoggerInterface $logger = null,
-        ?AccessTokenRefresherInterface $accessTokenRefresher = null,
+        ?\Closure $accessTokenRefresher = null,
     ): ProviderInterface {
         // Use the raw HttpClientInterface directly — no EventSourceHttpClient
         // wrapping. The CodexSseStream (inside CodexModelClient) handles SSE
@@ -67,7 +67,7 @@ class Factory
         string $name = 'openai-codex',
         ?ModelRouterInterface $modelRouter = null,
         ?LoggerInterface $logger = null,
-        ?AccessTokenRefresherInterface $accessTokenRefresher = null,
+        ?\Closure $accessTokenRefresher = null,
     ): Platform {
         return new Platform(
             [self::createProvider($baseUrl, $accessToken, $accountId, $httpClient, $modelCatalog, $contract, $eventDispatcher, $responsesPath, $originator, $name, $logger, $accessTokenRefresher)],

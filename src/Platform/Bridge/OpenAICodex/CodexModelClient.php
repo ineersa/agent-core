@@ -46,7 +46,8 @@ class CodexModelClient implements ModelClientInterface
         private readonly string $path = '/codex/responses',
         private readonly string $originator = 'hatfield',
         ?LoggerInterface $logger = null,
-        private readonly ?AccessTokenRefresherInterface $accessTokenRefresher = null,
+        /** @var (\Closure(): ?string)|null */
+        private readonly ?\Closure $accessTokenRefresher = null,
     ) {
         $this->httpClient = $httpClient;
         $this->logger = $logger ?? new NullLogger();
@@ -151,7 +152,7 @@ class CodexModelClient implements ModelClientInterface
     private function refreshAndRetryOnce(array $requestOptions, Model $model, ResponseInterface $failedResponse): ?ResponseInterface
     {
         try {
-            $fresh = $this->accessTokenRefresher->refreshAccessToken();
+            $fresh = ($this->accessTokenRefresher)();
         } catch (\Throwable $e) {
             $this->logger->warning('codex.token.refresh_failed', [
                 'event_type' => 'codex.token.refresh_failed',

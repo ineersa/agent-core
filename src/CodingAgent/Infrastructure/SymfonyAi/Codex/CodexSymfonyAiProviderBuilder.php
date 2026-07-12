@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Infrastructure\SymfonyAi\Codex;
 
-use Ineersa\CodingAgent\Auth\CodexAccessTokenRefresher;
 use Ineersa\CodingAgent\Auth\CodexAuthStorage;
 use Ineersa\CodingAgent\Auth\CodexOAuthConfig;
 use Ineersa\CodingAgent\Auth\CodexOAuthService;
@@ -22,8 +21,8 @@ final class CodexSymfonyAiProviderBuilder implements SymfonyAiProviderBuilderInt
 {
     public function __construct(
         private readonly EventDispatcherInterface $eventDispatcher,
-        private readonly ?CodexAuthStorage $codexAuth = null,
-        private readonly ?CodexOAuthService $codexOAuth = null,
+        private readonly CodexAuthStorage $codexAuth,
+        private readonly CodexOAuthService $codexOAuth,
         private readonly ?LoggerInterface $logger = null,
     ) {
     }
@@ -42,11 +41,6 @@ final class CodexSymfonyAiProviderBuilder implements SymfonyAiProviderBuilderInt
 
         $authKey = $this->resolveCodexAuthKey($provider);
 
-        if (null === $this->codexAuth) {
-            $hint = CodexOAuthConfig::authCommandHintForProviderKey($authKey);
-            throw new \RuntimeException(\sprintf('OpenAI Codex provider "%s" requires stored OAuth credentials. Run: %s', $provider->id, $hint));
-        }
-
         $record = $this->codexAuth->loadCredentials($authKey);
         if (null === $record) {
             $hint = CodexOAuthConfig::authCommandHintForProviderKey($authKey);
@@ -57,10 +51,10 @@ final class CodexSymfonyAiProviderBuilder implements SymfonyAiProviderBuilderInt
         // so a YAML provider with an empty base_url does not silently break the bridge.
         $baseUrl = '' !== $provider->baseUrl ? $provider->baseUrl : 'https://chatgpt.com/backend-api';
 
-        $accessTokenRefresher = null;
-        if (null !== $this->codexOAuth) {
-            $accessTokenRefresher = new CodexAccessTokenRefresher($this->codexOAuth, $authKey);
-        }
+        $oAuth = $this->codexOAuth;
+        $accessTokenRefresher = static function () use ($oAuth, $authKey): string {
+            return $oAuth->refreshCredentials($authKey)->access;
+        };
 
         return OpenAICodexFactory::createProvider(
             baseUrl: $baseUrl,

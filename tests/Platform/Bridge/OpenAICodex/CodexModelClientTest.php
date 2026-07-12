@@ -462,17 +462,10 @@ final class CodexModelClientTest extends TestCase
     {
         $refreshCalls = 0;
         $requestCount = 0;
-        $refresher = new class($refreshCalls) implements \Symfony\AI\Platform\Bridge\OpenAICodex\AccessTokenRefresherInterface {
-            public function __construct(private int &$refreshCalls)
-            {
-            }
+        $refresher = static function () use (&$refreshCalls): string {
+            ++$refreshCalls;
 
-            public function refreshAccessToken(): ?string
-            {
-                ++$this->refreshCalls;
-
-                return 'new-token';
-            }
+            return 'new-token';
         };
 
         $httpClient = new MockHttpClient([
@@ -513,11 +506,8 @@ final class CodexModelClientTest extends TestCase
     public function test401WhenRefreshReturnsNullDoesNotRetry(): void
     {
         $requestCount = 0;
-        $refresher = new class implements \Symfony\AI\Platform\Bridge\OpenAICodex\AccessTokenRefresherInterface {
-            public function refreshAccessToken(): ?string
-            {
-                return null;
-            }
+        $refresher = static function (): ?string {
+            return null;
         };
 
         $httpClient = new MockHttpClient([
@@ -552,17 +542,10 @@ final class CodexModelClientTest extends TestCase
     {
         $refreshCalls = 0;
         $requestCount = 0;
-        $refresher = new class($refreshCalls) implements \Symfony\AI\Platform\Bridge\OpenAICodex\AccessTokenRefresherInterface {
-            public function __construct(private int &$refreshCalls)
-            {
-            }
+        $refresher = static function () use (&$refreshCalls): string {
+            ++$refreshCalls;
 
-            public function refreshAccessToken(): ?string
-            {
-                ++$this->refreshCalls;
-
-                return 'new-token';
-            }
+            return 'new-token';
         };
 
         $httpClient = new MockHttpClient([
@@ -606,11 +589,8 @@ final class CodexModelClientTest extends TestCase
     public function test401WhenRefresherThrowsDoesNotRetryAndLogsRefreshFailed(): void
     {
         $requestCount = 0;
-        $refresher = new class implements \Symfony\AI\Platform\Bridge\OpenAICodex\AccessTokenRefresherInterface {
-            public function refreshAccessToken(): ?string
-            {
-                throw new \RuntimeException('refresh token revoked');
-            }
+        $refresher = static function (): ?string {
+            throw new \RuntimeException('refresh token revoked');
         };
 
         $httpClient = new MockHttpClient([
