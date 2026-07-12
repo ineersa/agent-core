@@ -37,7 +37,7 @@ final class ExecutionWorkerTest extends TestCase
         };
 
         $commandBus = new TestMessageBus();
-        $worker = new ExecuteLlmStepWorker($platform, $commandBus, 'test-model');
+        $worker = new ExecuteLlmStepWorker($platform, $commandBus, 'test-model', runModelResolver: null);
 
         $worker(new ExecuteLlmStep(
             runId: 'run-worker-1',
@@ -73,7 +73,7 @@ final class ExecutionWorkerTest extends TestCase
         };
 
         $commandBus = new TestMessageBus();
-        $worker = new ExecuteLlmStepWorker($platform, $commandBus, 'test-model');
+        $worker = new ExecuteLlmStepWorker($platform, $commandBus, 'test-model', runModelResolver: null);
 
         $worker(new ExecuteLlmStep(
             runId: 'run-malformed-1',
@@ -116,7 +116,7 @@ final class ExecutionWorkerTest extends TestCase
         $traceLogger = new TestLogger();
         $tracer = new RunTracer($traceLogger);
 
-        $worker = new ExecuteLlmStepWorker($platform, $commandBus, 'test-model', $metrics, $tracer);
+        $worker = new ExecuteLlmStepWorker($platform, $commandBus, 'test-model', $metrics, $tracer, runModelResolver: null);
 
         $worker(new ExecuteLlmStep(
             runId: 'run-worker-obs-1',
@@ -262,7 +262,7 @@ final class ExecutionWorkerTest extends TestCase
         $testLogger = new TestLogger();
 
         // Non-null logger passed so the worker logs (bypasses NullLogger default).
-        $worker = new ExecuteLlmStepWorker($platform, $commandBus, 'test-model', $metrics, null, $testLogger);
+        $worker = new ExecuteLlmStepWorker($platform, $commandBus, 'test-model', $metrics, null, $testLogger, runModelResolver: null);
 
         $worker(new ExecuteLlmStep(
             runId: 'run-empty-metrics-1',
@@ -323,7 +323,7 @@ final class ExecutionWorkerTest extends TestCase
         };
 
         $commandBus = new TestMessageBus();
-        $worker = new ExecuteLlmStepWorker($platform, $commandBus, 'test-model');
+        $worker = new ExecuteLlmStepWorker($platform, $commandBus, 'test-model', runModelResolver: null);
 
         $worker(new ExecuteLlmStep(
             runId: 'run-empty-1',

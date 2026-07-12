@@ -543,6 +543,10 @@ services:
   Ineersa\AgentCore\Application\Handler\ExecuteLlmStepWorker:
     arguments:
       $defaultModel: '%app.default_model%'
+      $runModelResolver: '@Ineersa\AgentCore\Contract\Model\RunModelResolverInterface'
+
+  Ineersa\AgentCore\Contract\Model\RunModelResolverInterface:
+    alias: Ineersa\CodingAgent\Compaction\ModelSelectionActiveModelResolver
 
 
   Ineersa\AgentCore\Application\Pipeline\AdvanceRunHandler:

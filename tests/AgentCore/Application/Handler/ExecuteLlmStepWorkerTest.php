@@ -40,7 +40,7 @@ final class ExecuteLlmStepWorkerTest extends TestCase
         $testBus = new TestMessageBus();
         $testLogger = new TestLogger();
 
-        $worker = new ExecuteLlmStepWorker($platform, $testBus, 'test-model', logger: $testLogger);
+        $worker = new ExecuteLlmStepWorker($platform, $testBus, 'test-model', logger: $testLogger, runModelResolver: null);
 
         $worker(new ExecuteLlmStep(
             runId: 'run-1',
@@ -77,7 +77,7 @@ final class ExecuteLlmStepWorkerTest extends TestCase
         $testBus = new TestMessageBus();
         $testLogger = new TestLogger();
 
-        $worker = new ExecuteLlmStepWorker($platform, $testBus, 'test-model', logger: $testLogger);
+        $worker = new ExecuteLlmStepWorker($platform, $testBus, 'test-model', logger: $testLogger, runModelResolver: null);
 
         $worker(new ExecuteLlmStep(
             runId: 'run-2',
@@ -115,7 +115,7 @@ final class ExecuteLlmStepWorkerTest extends TestCase
         $testBus = new TestMessageBus();
         $testLogger = new TestLogger();
 
-        $worker = new ExecuteLlmStepWorker($platform, $testBus, 'test-model', logger: $testLogger);
+        $worker = new ExecuteLlmStepWorker($platform, $testBus, 'test-model', logger: $testLogger, runModelResolver: null);
 
         $worker(new ExecuteLlmStep(
             runId: 'run-3',
@@ -156,7 +156,7 @@ final class ExecuteLlmStepWorkerTest extends TestCase
         $testBus = new TestMessageBus();
         $testLogger = new TestLogger();
 
-        $worker = new ExecuteLlmStepWorker($platform, $testBus, 'test-model', logger: $testLogger);
+        $worker = new ExecuteLlmStepWorker($platform, $testBus, 'test-model', logger: $testLogger, runModelResolver: null);
 
         $worker(new ExecuteLlmStep(
             runId: 'run-4',
@@ -183,6 +183,76 @@ final class ExecuteLlmStepWorkerTest extends TestCase
         $this->assertCount(0, $retryLogs, 'No retry on provider error.');
     }
 
+    public function testInvokesPlatformWithResolvedActiveModel(): void
+    {
+        $validResponse = new AssistantMessage(new Text('ok'));
+        $platform = $this->createAlternatingPlatform([$validResponse]);
+        $testBus = new TestMessageBus();
+
+        $resolver = new class implements \Ineersa\AgentCore\Contract\Model\RunModelResolverInterface {
+            public function resolveActiveModel(string $runId): ?string
+            {
+                return 'llama_cpp/flash';
+            }
+        };
+
+        $worker = new ExecuteLlmStepWorker(
+            $platform,
+            $testBus,
+            '',
+            logger: new TestLogger(),
+            runModelResolver: $resolver,
+        );
+
+        $worker(new ExecuteLlmStep(
+            runId: 'session-42',
+            turnNo: 1,
+            stepId: 'step-vision',
+            attempt: 1,
+            idempotencyKey: 'key-vision',
+            contextRef: 'ctx',
+            toolsRef: 'tools',
+        ));
+
+        $this->assertSame('llama_cpp/flash', $platform->lastRequestModel);
+    }
+
+    public function testThinkingOnlyRetryReusesResolvedModel(): void
+    {
+        $thinkingOnly = new AssistantMessage(new Thinking('reasoning'));
+        $validResponse = new AssistantMessage(new Text('recovered'));
+        $platform = $this->createAlternatingPlatform([$thinkingOnly, $validResponse]);
+        $testBus = new TestMessageBus();
+
+        $resolver = new class implements \Ineersa\AgentCore\Contract\Model\RunModelResolverInterface {
+            public function resolveActiveModel(string $runId): ?string
+            {
+                return 'runpod/Qwen3.6-27B';
+            }
+        };
+
+        $worker = new ExecuteLlmStepWorker(
+            $platform,
+            $testBus,
+            '',
+            logger: new TestLogger(),
+            runModelResolver: $resolver,
+        );
+
+        $worker(new ExecuteLlmStep(
+            runId: 'session-retry',
+            turnNo: 1,
+            stepId: 'step-retry',
+            attempt: 1,
+            idempotencyKey: 'key-retry',
+            contextRef: 'ctx',
+            toolsRef: 'tools',
+        ));
+
+        $this->assertSame(2, $platform->invocationCount);
+        $this->assertSame(['runpod/Qwen3.6-27B', 'runpod/Qwen3.6-27B'], $platform->requestModels);
+    }
+
     // ── helpers ──
 
     /**
@@ -207,6 +277,11 @@ final class ExecuteLlmStepWorkerTest extends TestCase
         return new class($responses) implements PlatformInterface {
             public int $invocationCount = 0;
 
+            public ?string $lastRequestModel = null;
+
+            /** @var list<string> */
+            public array $requestModels = [];
+
             /** @var list<AssistantMessage|PlatformInvocationResult> */
             private array $responses;
 
@@ -222,6 +297,8 @@ final class ExecuteLlmStepWorkerTest extends TestCase
             {
                 $index = $this->invocationCount;
                 ++$this->invocationCount;
+                $this->lastRequestModel = $request->model;
+                $this->requestModels[] = $request->model;
 
                 $item = $this->responses[min($index, \count($this->responses) - 1)];
 

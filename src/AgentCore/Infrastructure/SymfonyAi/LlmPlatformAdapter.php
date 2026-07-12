@@ -77,22 +77,9 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
         // silent filtering.
         $this->toolCallSequenceValidator->validate($messages);
 
-        // Capability-aware convert hooks (e.g. ImageGatingConvertHook) need the
-        // effective session model, not the empty app.default_model sentinel.
-        // SessionAwareModelResolver ignores MessageBag content, so we can resolve
-        // before conversion using base invocation options only.
         $baseOptions = $this->buildInputOptions($request);
-        $modelForConvertHooks = $request->model;
-        if (null !== $this->modelResolver) {
-            $modelForConvertHooks = $this->modelResolver->resolve(
-                defaultModel: $request->model,
-                messages: new MessageBag(),
-                input: $request->input,
-                options: new ModelResolutionOptions($baseOptions),
-            )->model;
-        }
 
-        $messageBag = $this->applyConvertHooks($messages, $cancelToken, $modelForConvertHooks);
+        $messageBag = $this->applyConvertHooks($messages, $cancelToken, $request->model);
 
         $input = new Input($request->model, $messageBag, $baseOptions);
         $this->toolDescriptionProcessor->processInput($input);
@@ -101,7 +88,7 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
         // This is included in the error array when the request fails.
         $inputOptions = $input->getOptions();
         $requestSummary = [
-            'model' => $modelForConvertHooks,
+            'model' => $request->model,
             'input_count' => \count($messageBag->withoutSystemMessage()->getMessages()),
             'has_instructions' => null !== $messageBag->getSystemMessage(),
             'has_tools' => isset($inputOptions['tools']),

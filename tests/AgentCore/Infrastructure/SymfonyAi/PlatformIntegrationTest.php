@@ -409,96 +409,7 @@ final class PlatformIntegrationTest extends TestCase
         $this->assertSame(1500, $response->usage['total_tokens']);
     }
 
-    /**
-     * Regression: empty request model must not reach capability-aware convert hooks.
-     *
-     * Production passes app.default_model ('') as a sentinel; SessionAwareModelResolver
-     * resolves the session model later on routing. ImageGatingConvertHook used to see ''
-     * and strip image_ref before resolution.
-     */
-    public function testConvertHooksReceiveResolvedModelWhenRequestModelIsEmpty(): void
-    {
-        $runStore = new InMemoryRunStore();
-        $runStore->compareAndSwap(new RunState(
-            runId: 'run-convert-model-01',
-            status: RunStatus::Running,
-            version: 1,
-            turnNo: 1,
-            lastSeq: 0,
-            isStreaming: false,
-            streamingMessage: null,
-            pendingToolCalls: [],
-            errorMessage: null,
-            messages: [new AgentMessage('user', [['type' => 'text', 'text' => 'ping']])],
-            activeStepId: 'turn-1-llm-1',
-        ), 0);
-
-        $capturedConvertModel = null;
-
-        $convertHook = new class($capturedConvertModel) implements ConvertToLlmHookInterface {
-            public function __construct(private ?string &$capturedConvertModel)
-            {
-            }
-
-            public function convertToLlm(array $messages, ?CancellationTokenInterface $cancelToken = null, string $modelName = ''): \Symfony\AI\Platform\Message\MessageBag
-            {
-                $this->capturedConvertModel = $modelName;
-
-                return new \Symfony\AI\Platform\Message\MessageBag(\Symfony\AI\Platform\Message\Message::ofUser('converted'));
-            }
-        };
-
-        $modelResolver = new class implements ModelResolverInterface {
-            public function resolve(
-                string $defaultModel,
-                \Symfony\AI\Platform\Message\MessageBag $messages,
-                ModelInvocationInput $input,
-                ModelResolutionOptions $options,
-            ): ResolvedModel {
-                unset($defaultModel, $messages, $input, $options);
-
-                return new ResolvedModel(model: 'runpod/Qwen3.6-27B');
-            }
-        };
-
-        $modelClient = new FakeSymfonyModelClient(new FakeTokenUsage(
-            promptTokens: 10,
-            completionTokens: 5,
-            totalTokens: 15,
-        ));
-
-        $platform = $this->createSymfonyPlatform(
-            modelClient: $modelClient,
-            streamFactory: static fn (): iterable => [new TextDelta('ok')],
-            modelResolver: $modelResolver,
-        );
-
-        $adapter = new LlmPlatformAdapter(
-            runStore: $runStore,
-            messageConverter: new AgentMessageConverter(),
-            toolDescriptionProcessor: new DynamicToolDescriptionProcessor(),
-            platform: $platform,
-            transformContextHooks: [],
-            convertToLlmHooks: [$convertHook],
-            streamObserver: null,
-            costCalculator: null,
-            modelResolver: $modelResolver,
-            logger: new NullLogger(),
-        );
-
-        $adapter->invoke(new ModelInvocationRequest(
-            model: '',
-            input: new ModelInvocationInput(
-                runId: 'run-convert-model-01',
-                turnNo: 1,
-                stepId: 'turn-1-llm-1',
-            ),
-        ));
-
-        $this->assertSame('runpod/Qwen3.6-27B', $capturedConvertModel, 'Convert hook must receive resolved model, not empty sentinel.');
-    }
-
-    public function testImageRefSurvivesAdapterConvertWhenRequestModelEmptyAndResolverReturnsVisionModel(): void
+    public function testImageRefSurvivesAdapterConvertWhenRequestCarriesActualVisionModel(): void
     {
         $tmpDir = \Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation::createOsTempDir('platform-image-gate');
         try {
@@ -559,19 +470,6 @@ final class PlatformIntegrationTest extends TestCase
                 new AgentMessageConverter(),
             );
 
-            $modelResolver = new class implements ModelResolverInterface {
-                public function resolve(
-                    string $defaultModel,
-                    \Symfony\AI\Platform\Message\MessageBag $messages,
-                    ModelInvocationInput $input,
-                    ModelResolutionOptions $options,
-                ): ResolvedModel {
-                    unset($defaultModel, $messages, $input, $options);
-
-                    return new ResolvedModel(model: 'llama_cpp/flash');
-                }
-            };
-
             $modelClient = new FakeSymfonyModelClient(new FakeTokenUsage(
                 promptTokens: 10,
                 completionTokens: 5,
@@ -581,7 +479,6 @@ final class PlatformIntegrationTest extends TestCase
             $platform = $this->createSymfonyPlatform(
                 modelClient: $modelClient,
                 streamFactory: static fn (): iterable => [new TextDelta('ok')],
-                modelResolver: $modelResolver,
             );
 
             $adapter = new LlmPlatformAdapter(
@@ -593,12 +490,11 @@ final class PlatformIntegrationTest extends TestCase
                 convertToLlmHooks: [$imageGatingHook],
                 streamObserver: null,
                 costCalculator: null,
-                modelResolver: $modelResolver,
                 logger: new NullLogger(),
             );
 
             $adapter->invoke(new ModelInvocationRequest(
-                model: '',
+                model: 'llama_cpp/flash',
                 input: new ModelInvocationInput(
                     runId: 'run-image-gate-01',
                     turnNo: 1,
@@ -610,7 +506,7 @@ final class PlatformIntegrationTest extends TestCase
             $this->assertIsArray($payload);
             $serialized = json_encode($payload);
             $this->assertIsString($serialized);
-            $this->assertStringNotContainsString('does not support images', $serialized, 'image_ref must not be stripped when resolver returns a vision model.');
+            $this->assertStringNotContainsString('does not support images', $serialized, 'Convert hooks must receive the actual request model, not an empty sentinel.');
         } finally {
             \Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation::removeDirectory($tmpDir);
         }
