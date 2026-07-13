@@ -127,20 +127,43 @@ final class RawWebSocketResult implements CancellableRawResultInterface
             yield $event;
 
             $type = $event['type'] ?? '';
-            if ('response.completed' === $type || 'response.done' === $type) {
-                if ('response.done' === $type && isset($event['response']) && \is_array($event['response'])) {
-                    $event['type'] = 'response.completed';
-                }
+            if ('response.completed' === $type) {
                 $this->commitContinuationIfSuccessful($event);
                 $streamSucceeded = true;
 
                 return;
             }
 
+            if ('response.done' === $type) {
+                if ($this->isSuccessfulTerminalResponse($event)) {
+                    $this->commitContinuationIfSuccessful($event);
+                    $streamSucceeded = true;
+
+                    return;
+                }
+
+                throw new \RuntimeException('Codex WebSocket stream ended with a non-success terminal event.');
+            }
+
             if ('response.failed' === $type || 'response.incomplete' === $type || str_starts_with((string) $type, 'error')) {
                 throw new \RuntimeException('Codex WebSocket stream ended with a non-success terminal event.');
             }
         }
+    }
+
+    /**
+     * @param array<string, mixed> $event
+     */
+    private function isSuccessfulTerminalResponse(array $event): bool
+    {
+        $response = $event['response'] ?? null;
+        if (!\is_array($response)) {
+            return false;
+        }
+
+        $responseId = $response['id'] ?? null;
+
+        return \is_string($responseId) && '' !== $responseId;
     }
 
     /**
@@ -201,6 +224,7 @@ final class RawWebSocketResult implements CancellableRawResultInterface
         }
 
         $context->cache->invalidateEntry($context->lease->entry, $success ? 'stream_end' : 'stream_failure');
+        $this->connectionClosed = true;
     }
 
     /** Idempotent: stream iteration, abort(), and __destruct() all funnel here. */

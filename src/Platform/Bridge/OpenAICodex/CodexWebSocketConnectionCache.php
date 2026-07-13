@@ -8,6 +8,8 @@ use Amp\Websocket\Client\WebsocketConnection;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 use Revolt\EventLoop;
+use Symfony\Component\Clock\ClockInterface;
+use Symfony\Component\Clock\NativeClock;
 
 /**
  * Process-scoped cache of Codex WebSocket connections keyed by session correlation identity.
@@ -22,10 +24,14 @@ final class CodexWebSocketConnectionCache
 
     private readonly LoggerInterface $logger;
 
+    private readonly ClockInterface $clock;
+
     public function __construct(
         ?LoggerInterface $logger = null,
+        ?ClockInterface $clock = null,
     ) {
         $this->logger = $logger ?? new NullLogger();
+        $this->clock = $clock ?? new NativeClock();
     }
 
     public function acquire(
@@ -39,15 +45,8 @@ final class CodexWebSocketConnectionCache
         if (null !== $existing) {
             $this->cancelIdleTimer($sessionKey);
 
-            if ($existing->identity->fingerprint !== $identity->fingerprint) {
-                $this->closeEntry($existing, 'identity_mismatch');
-                unset($this->entries[$sessionKey]);
-                $existing = null;
-            } elseif ($this->isExpired($existing, $settings)) {
-                $this->closeEntry($existing, 'max_age');
-                unset($this->entries[$sessionKey]);
-                $existing = null;
-            } elseif ($existing->busy) {
+            // Busy wins: never close, expire, or replace an actively streaming cached socket.
+            if ($existing->busy) {
                 $connection = $connect();
                 $this->logger->info('codex.websocket.cache.busy_one_shot', [
                     'event_type' => 'codex.websocket.cache.busy_one_shot',
@@ -56,6 +55,16 @@ final class CodexWebSocketConnectionCache
                 ]);
 
                 return new CodexWebSocketCacheLease($connection, false, false, true, null);
+            }
+
+            if ($existing->identity->fingerprint !== $identity->fingerprint) {
+                $this->closeEntry($existing, 'identity_mismatch');
+                unset($this->entries[$sessionKey]);
+                $existing = null;
+            } elseif ($this->isExpired($existing, $settings)) {
+                $this->closeEntry($existing, 'max_age');
+                unset($this->entries[$sessionKey]);
+                $existing = null;
             } else {
                 $existing->busy = true;
                 $this->logger->info('codex.websocket.cache.reused', [
@@ -69,7 +78,12 @@ final class CodexWebSocketConnectionCache
         }
 
         $connection = $connect();
-        $entry = new CodexWebSocketCacheEntry($connection, $identity, microtime(true), $settings);
+        $entry = new CodexWebSocketCacheEntry(
+            $connection,
+            $identity,
+            $this->clock->now()->getTimestamp(),
+            $settings,
+        );
         $this->entries[$sessionKey] = $entry;
 
         $this->logger->info('codex.websocket.cache.created', [
@@ -153,7 +167,9 @@ final class CodexWebSocketConnectionCache
 
     private function isExpired(CodexWebSocketCacheEntry $entry, CodexWebSocketCacheSettings $settings): bool
     {
-        return (microtime(true) - $entry->createdAt) >= $settings->maxAgeSeconds;
+        $now = $this->clock->now()->getTimestamp();
+
+        return ($now - $entry->createdAt) >= $settings->maxAgeSeconds;
     }
 
     private function scheduleIdleExpiry(string $sessionKey, CodexWebSocketCacheEntry $entry, CodexWebSocketCacheSettings $settings): void

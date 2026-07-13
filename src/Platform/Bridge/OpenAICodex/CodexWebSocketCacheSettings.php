@@ -23,19 +23,4 @@ final readonly class CodexWebSocketCacheSettings
             throw new \InvalidArgumentException('Codex WebSocket cache max age must be at least 1 second.');
         }
     }
-
-    /**
-     * @param array<string, mixed> $providerData
-     */
-    public static function fromProviderConfigArray(array $providerData): self
-    {
-        $idle = isset($providerData['websocket_cache_idle_ttl_seconds'])
-            ? (int) $providerData['websocket_cache_idle_ttl_seconds']
-            : self::DEFAULT_IDLE_TTL_SECONDS;
-        $maxAge = isset($providerData['websocket_cache_max_age_seconds'])
-            ? (int) $providerData['websocket_cache_max_age_seconds']
-            : self::DEFAULT_MAX_AGE_SECONDS;
-
-        return new self($idle, $maxAge);
-    }
 }

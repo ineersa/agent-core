@@ -28,17 +28,11 @@ final readonly class CodexWebSocketWorkerShutdownSubscriber
             return;
         }
 
-        $sessionId = $_SERVER['HATFIELD_SESSION_ID'] ?? $_ENV['HATFIELD_SESSION_ID'] ?? 'unknown';
-        if ('' !== $sessionId && 'unknown' !== $sessionId) {
-            $this->connectionCache->closeSession($sessionId);
-        }
-
         $this->connectionCache->closeAll();
 
         $this->logger->info('codex.websocket.worker.shutdown', [
             'event_type' => 'codex.websocket.worker.shutdown',
             'component' => 'codex_websocket_worker_shutdown_subscriber',
-            'session_id' => '' !== $sessionId && 'unknown' !== $sessionId ? $sessionId : 'unknown',
         ]);
     }
 }

@@ -78,13 +78,9 @@ final class CodexWebSocketContinuationState
     ): self {
         $canonicalItems = [];
         foreach ($responseItems as $item) {
-            if (!\is_array($item)) {
-                continue;
+            if (\is_array($item)) {
+                $canonicalItems[] = $item;
             }
-            if ('function_call_output' === ($item['type'] ?? null)) {
-                continue;
-            }
-            $canonicalItems[] = $item;
         }
 
         return new self($fullRequestBody, $responseId, $canonicalItems);

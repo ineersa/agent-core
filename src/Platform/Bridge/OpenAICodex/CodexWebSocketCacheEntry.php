@@ -18,7 +18,7 @@ final class CodexWebSocketCacheEntry
     public function __construct(
         public readonly WebsocketConnection $connection,
         public readonly CodexWebSocketCompatibilityFingerprint $identity,
-        public readonly float $createdAt,
+        public readonly int $createdAt,
         public readonly CodexWebSocketCacheSettings $settings,
     ) {
     }

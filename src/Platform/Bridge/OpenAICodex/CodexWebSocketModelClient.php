@@ -75,7 +75,7 @@ final class CodexWebSocketModelClient implements ModelClientInterface
             );
             $connection->sendText($frame);
         } catch (\Throwable $e) {
-            if (null !== $lease && null !== $this->connectionCache) {
+            if (null !== $lease && $lease->cached && !$lease->oneShot && null !== $lease->entry && null !== $this->connectionCache) {
                 $this->connectionCache->invalidateEntry($lease->entry, 'send_failure');
             } else {
                 $this->closeConnectionQuietly($connection);
@@ -107,19 +107,20 @@ final class CodexWebSocketModelClient implements ModelClientInterface
     ): array {
         [$bodyPayload, $bodyOptions] = $this->normalizeBodyInputs($payload, $options, $resolution);
 
-        if (CodexTransportEnum::WebsocketCached !== $this->transport || null === $this->connectionCache) {
+        $useCache = CodexTransportEnum::WebsocketCached === $this->transport
+            && null !== $this->connectionCache
+            && CodexCorrelationProvenance::Generated !== $resolution->provenance;
+
+        if (!$useCache) {
             [$connection, $effectiveRequestId, $effectiveProvenance] = $this->connectWithOptional401Refresh(
                 $model,
                 $websocketUrl,
                 $resolution,
-                null,
             );
             $fullBody = $this->buildFullRequestBody($model, $bodyPayload, $bodyOptions, $effectiveRequestId, $effectiveProvenance);
 
             return [$connection, $effectiveRequestId, $effectiveProvenance, null, $fullBody, $fullBody];
         }
-
-        $fullBody = $this->buildFullRequestBody($model, $bodyPayload, $bodyOptions, $resolution->id, $resolution->provenance);
 
         $identity = CodexWebSocketCompatibilityFingerprint::fromContext(
             $resolution->id,
@@ -128,23 +129,30 @@ final class CodexWebSocketModelClient implements ModelClientInterface
             $this->baseUrl,
             $this->responsesPath,
             $this->accountId,
-            $this->accessToken,
         );
+
+        $effectiveRequestId = $resolution->id;
+        $effectiveProvenance = $resolution->provenance;
 
         $lease = $this->connectionCache->acquire(
             $identity,
             $this->cacheSettings,
-            fn (): WebsocketConnection => $this->connectFreshForCache($model, $websocketUrl, $resolution, $identity),
+            function () use ($model, $websocketUrl, $resolution, &$effectiveRequestId, &$effectiveProvenance): WebsocketConnection {
+                [$connection, $effectiveRequestId, $effectiveProvenance] = $this->connectWithOptional401Refresh(
+                    $model,
+                    $websocketUrl,
+                    $resolution,
+                );
+
+                return $connection;
+            },
         );
 
+        $fullBody = $this->buildFullRequestBody($model, $bodyPayload, $bodyOptions, $effectiveRequestId, $effectiveProvenance);
         $wireBody = $this->buildWireRequestBody($lease, $fullBody);
 
-        return [$lease->connection, $resolution->id, $resolution->provenance, $lease, $wireBody, $fullBody];
+        return [$lease->connection, $effectiveRequestId, $effectiveProvenance, $lease, $wireBody, $fullBody];
     }
-
-    /**
-     * @return array<string, mixed>
-     */
 
     /**
      * @param array<string, mixed> $payload
@@ -156,9 +164,6 @@ final class CodexWebSocketModelClient implements ModelClientInterface
     {
         $bodyOptions = $resolution->options;
         $bodyPayload = $payload;
-        if (CodexCorrelationProvenance::ExplicitRunId === $resolution->provenance || CodexCorrelationProvenance::Generated === $resolution->provenance) {
-            $bodyOptions['run_id'] = $resolution->id;
-        }
         if (CodexCorrelationProvenance::Generated === $resolution->provenance) {
             unset($bodyPayload['prompt_cache_key']);
         }
@@ -229,17 +234,6 @@ final class CodexWebSocketModelClient implements ModelClientInterface
         return $wireBody;
     }
 
-    private function connectFreshForCache(
-        Model $model,
-        string $websocketUrl,
-        CodexCorrelationResolution $resolution,
-        CodexWebSocketCompatibilityFingerprint $identity,
-    ): WebsocketConnection {
-        [$connection] = $this->connectWithOptional401Refresh($model, $websocketUrl, $resolution, $identity->sessionKey);
-
-        return $connection;
-    }
-
     /**
      * @return array{0: WebsocketConnection, 1: string, 2: CodexCorrelationProvenance}
      */
@@ -247,7 +241,6 @@ final class CodexWebSocketModelClient implements ModelClientInterface
         Model $model,
         string $websocketUrl,
         CodexCorrelationResolution $resolution,
-        ?string $sessionKeyForInvalidation,
     ): array {
         $requestId = $resolution->id;
         try {
@@ -268,10 +261,6 @@ final class CodexWebSocketModelClient implements ModelClientInterface
             $fresh = $this->refreshAccessTokenOnce($model);
             if (null === $fresh || $fresh === $this->accessToken) {
                 throw $this->toHandshakeRuntimeException($e);
-            }
-
-            if (null !== $this->connectionCache && null !== $sessionKeyForInvalidation) {
-                $this->connectionCache->closeSession($sessionKeyForInvalidation);
             }
 
             $this->accessToken = $fresh;
@@ -300,6 +289,8 @@ final class CodexWebSocketModelClient implements ModelClientInterface
     }
 
     /**
+     * Privacy-safe outgoing request summary: structural metadata only.
+     *
      * @param array<string, mixed> $jsonBody
      */
     private function logRequestSummary(Model $model, array $jsonBody, string $websocketUrl, ?CodexWebSocketCacheLease $lease): void
@@ -307,6 +298,18 @@ final class CodexWebSocketModelClient implements ModelClientInterface
         $input = $jsonBody['input'] ?? [];
         $inputCount = \is_array($input) ? \count($input) : 0;
         $tools = $jsonBody['tools'] ?? [];
+
+        $inputTypes = [];
+        if (\is_array($input)) {
+            foreach ($input as $item) {
+                if (isset($item['type']) && \is_string($item['type'])) {
+                    $inputTypes[$item['type']] = true;
+                }
+                if (isset($item['role']) && \is_string($item['role'])) {
+                    $inputTypes['role:'.$item['role']] = true;
+                }
+            }
+        }
 
         $requestUrlPath = parse_url($websocketUrl, \PHP_URL_PATH);
         $requestUrlPath = \is_string($requestUrlPath) && '' !== $requestUrlPath
@@ -318,8 +321,16 @@ final class CodexWebSocketModelClient implements ModelClientInterface
             'transport' => $this->transport->value,
             'request_url_path' => $requestUrlPath,
             'model' => $model->getName(),
+            'body_keys' => implode(', ', array_keys($jsonBody)),
             'input_count' => $inputCount,
+            'input_types' => [] !== $inputTypes ? implode(', ', array_keys($inputTypes)) : 'none',
             'tool_count' => \is_array($tools) ? \count($tools) : 0,
+            'has_instructions' => isset($jsonBody['instructions']),
+            'has_reasoning' => isset($jsonBody['reasoning']),
+            'has_include' => isset($jsonBody['include']),
+            'has_text' => isset($jsonBody['text']),
+            'has_store' => isset($jsonBody['store']),
+            'has_stream' => isset($jsonBody['stream']),
             'has_previous_response_id' => isset($jsonBody['previous_response_id']),
             'cache_reused' => null !== $lease && $lease->reused,
             'cache_one_shot' => null !== $lease && $lease->oneShot,

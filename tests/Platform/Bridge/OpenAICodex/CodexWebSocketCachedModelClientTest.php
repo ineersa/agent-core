@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Symfony\AI\Platform\Bridge\OpenAICodex\Tests;
 
+use Amp\Http\Client\Request;
+use Amp\Http\Client\Response;
+use Amp\Websocket\Client\WebsocketConnectException;
 use Amp\Websocket\Client\WebsocketConnection;
 use Amp\Websocket\WebsocketMessage;
 use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
@@ -108,6 +111,94 @@ final class CodexWebSocketCachedModelClientTest extends TestCase
         $this->assertSame(2, $connectCount);
     }
 
+    public function testBusyOneShotSendFailureClosesConnectionOnce(): void
+    {
+        $cacheKey = '0194aaaa-bbbb-7ccc-8ddd-aaaaaaaaaaaa';
+        self::assertUuidVersion7($cacheKey);
+
+        $frames = [];
+        $primary = $this->createStreamingConnection($frames);
+        $oneShot = $this->createMock(WebsocketConnection::class);
+        $oneShot->expects($this->once())->method('close');
+        $oneShot->expects($this->once())->method('sendText')->willThrowException(new \RuntimeException('send failed'));
+
+        $connector = $this->createMock(CodexWebSocketConnectorInterface::class);
+        $connector->method('connect')->willReturnOnConsecutiveCalls($primary, $oneShot);
+
+        $client = new CodexWebSocketModelClient(
+            $connector,
+            new CodexWebSocketUrlResolver(),
+            new CodexWebSocketHandshakeHeadersFactory(),
+            new CodexRequestBodyFactory(),
+            'https://chatgpt.com/backend-api',
+            'access',
+            'acct-1',
+            transport: CodexTransportEnum::WebsocketCached,
+            connectionCache: new CodexWebSocketConnectionCache(),
+        );
+
+        $options = ['provider_cache_key' => $cacheKey];
+        $first = $client->request(new CodexModel('gpt-5.6-luna'), ['input' => [['role' => 'user', 'content' => 'first']]], $options);
+
+        try {
+            $client->request(new CodexModel('gpt-5.6-luna'), ['input' => [['role' => 'user', 'content' => 'second']]], $options);
+            $this->fail('Expected send failure');
+        } catch (\RuntimeException $e) {
+            $this->assertSame('Codex WebSocket request frame could not be sent.', $e->getMessage());
+        }
+
+        iterator_to_array($first->getDataStream());
+    }
+
+    public function testGeneratedCorrelationBypassesCacheOn401AndAlignsPromptCacheKey(): void
+    {
+        $connectCalls = [];
+        $sentFrame = '';
+        $connection = $this->createMock(WebsocketConnection::class);
+        $connection->method('sendText')->willReturnCallback(static function (string $data) use (&$sentFrame): void {
+            $sentFrame = $data;
+        });
+        $connection->method('receive')->willReturnCallback(static function (): WebsocketMessage {
+            return WebsocketMessage::fromText(json_encode(['type' => 'response.completed', 'response' => ['id' => 'r1', 'output' => []]], \JSON_THROW_ON_ERROR));
+        });
+
+        $connector = $this->createMock(CodexWebSocketConnectorInterface::class);
+        $connector->method('connect')->willReturnCallback(function (string $url, array $headers, float $timeout) use (&$connectCalls, $connection) {
+            $connectCalls[] = $headers;
+            if (1 === \count($connectCalls)) {
+                throw $this->websocketConnectException(401);
+            }
+
+            return $connection;
+        });
+
+        $cache = new CodexWebSocketConnectionCache();
+        $client = new CodexWebSocketModelClient(
+            $connector,
+            new CodexWebSocketUrlResolver(),
+            new CodexWebSocketHandshakeHeadersFactory(),
+            new CodexRequestBodyFactory(),
+            'https://chatgpt.com/backend-api',
+            'stale',
+            'acct-1',
+            accessTokenRefresher: static fn (): string => 'fresh',
+            transport: CodexTransportEnum::WebsocketCached,
+            connectionCache: $cache,
+        );
+
+        $result = $client->request(new CodexModel('gpt-5.6-luna'), ['input' => [['role' => 'user', 'content' => 'hi']]]);
+        iterator_to_array($result->getDataStream());
+
+        $this->assertCount(2, $connectCalls);
+        $this->assertNotSame($connectCalls[0]['session-id'], $connectCalls[1]['session-id']);
+        $frame = json_decode($sentFrame, true, flags: \JSON_THROW_ON_ERROR);
+        $this->assertSame($connectCalls[1]['session-id'], $frame['prompt_cache_key']);
+
+        $reflection = new \ReflectionClass($cache);
+        $prop = $reflection->getProperty('entries');
+        $this->assertSame([], $prop->getValue($cache));
+    }
+
     /**
      * @param list<string> $frames
      */
@@ -128,5 +219,13 @@ final class CodexWebSocketCachedModelClientTest extends TestCase
         });
 
         return $connection;
+    }
+
+    private function websocketConnectException(int $status): WebsocketConnectException
+    {
+        $request = new Request('wss://chatgpt.com/backend-api/codex/responses');
+        $response = new Response('1.1', $status, null, [], null, $request);
+
+        return new WebsocketConnectException('upgrade failed', $response);
     }
 }

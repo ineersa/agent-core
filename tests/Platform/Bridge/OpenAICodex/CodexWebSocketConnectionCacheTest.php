@@ -10,6 +10,7 @@ use PHPUnit\Framework\TestCase;
 use Symfony\AI\Platform\Bridge\OpenAICodex\CodexWebSocketCacheSettings;
 use Symfony\AI\Platform\Bridge\OpenAICodex\CodexWebSocketCompatibilityFingerprint;
 use Symfony\AI\Platform\Bridge\OpenAICodex\CodexWebSocketConnectionCache;
+use Symfony\Component\Clock\MockClock;
 
 #[AllowMockObjectsWithoutExpectations]
 final class CodexWebSocketConnectionCacheTest extends TestCase
@@ -20,7 +21,7 @@ final class CodexWebSocketConnectionCacheTest extends TestCase
     {
         $cache = new CodexWebSocketConnectionCache();
         $settings = new CodexWebSocketCacheSettings(idleTtlSeconds: 300, maxAgeSeconds: 3300);
-        $identity = $this->identity('0194aaaa-bbbb-7ccc-8ddd-eeeeeeeeeeee', 'token-a');
+        $identity = $this->identity('0194aaaa-bbbb-7ccc-8ddd-eeeeeeeeeeee', 'gpt-5.6-luna');
 
         $connectCount = 0;
         $connection = $this->createMock(WebsocketConnection::class);
@@ -46,7 +47,7 @@ final class CodexWebSocketConnectionCacheTest extends TestCase
     {
         $cache = new CodexWebSocketConnectionCache();
         $settings = new CodexWebSocketCacheSettings();
-        $identity = $this->identity('0194bbbb-bbbb-7ccc-8ddd-eeeeeeeeeeee', 'token-a');
+        $identity = $this->identity('0194bbbb-bbbb-7ccc-8ddd-eeeeeeeeeeee', 'gpt-5.6-luna');
 
         $primary = $this->createMock(WebsocketConnection::class);
         $oneShot = $this->createMock(WebsocketConnection::class);
@@ -64,20 +65,60 @@ final class CodexWebSocketConnectionCacheTest extends TestCase
         $this->assertTrue($leaseAfter->reused);
     }
 
-    public function testIdentityMismatchReplacesCachedEntry(): void
+    public function testBusyWinsOverIdentityMismatchWithoutClosingActiveSocket(): void
     {
         $cache = new CodexWebSocketConnectionCache();
         $settings = new CodexWebSocketCacheSettings();
         $sessionKey = '0194cccc-bbbb-7ccc-8ddd-eeeeeeeeeeee';
 
+        $primary = $this->createMock(WebsocketConnection::class);
+        $primary->expects($this->never())->method('close');
+        $oneShot = $this->createMock(WebsocketConnection::class);
+        $oneShot->expects($this->once())->method('close');
+
+        $leaseBusy = $cache->acquire($this->identity($sessionKey, 'gpt-5.6-luna'), $settings, static fn (): WebsocketConnection => $primary);
+
+        $leaseOneShot = $cache->acquire($this->identity($sessionKey, 'gpt-5.6-sol'), $settings, static fn (): WebsocketConnection => $oneShot);
+        $this->assertTrue($leaseOneShot->oneShot);
+        $cache->release($leaseOneShot, false);
+
+        $cache->release($leaseBusy, true);
+    }
+
+    public function testIdentityMismatchReplacesCachedEntryAfterRelease(): void
+    {
+        $cache = new CodexWebSocketConnectionCache();
+        $settings = new CodexWebSocketCacheSettings();
+        $sessionKey = '0194dddd-bbbb-7ccc-8ddd-eeeeeeeeeeee';
+
         $first = $this->createMock(WebsocketConnection::class);
         $first->expects($this->once())->method('close');
         $second = $this->createMock(WebsocketConnection::class);
 
-        $lease1 = $cache->acquire($this->identity($sessionKey, 'token-a'), $settings, static fn (): WebsocketConnection => $first);
+        $lease1 = $cache->acquire($this->identity($sessionKey, 'gpt-5.6-luna'), $settings, static fn (): WebsocketConnection => $first);
         $cache->release($lease1, true);
 
-        $lease2 = $cache->acquire($this->identity($sessionKey, 'token-b'), $settings, static fn (): WebsocketConnection => $second);
+        $lease2 = $cache->acquire($this->identity($sessionKey, 'gpt-5.6-sol'), $settings, static fn (): WebsocketConnection => $second);
+        $this->assertFalse($lease2->reused);
+    }
+
+    public function testMaxAgeExpiryOnAcquireUsesInjectedClock(): void
+    {
+        $clock = new MockClock(new \DateTimeImmutable('2026-07-13 10:00:00'));
+        $cache = new CodexWebSocketConnectionCache(clock: $clock);
+        $settings = new CodexWebSocketCacheSettings(maxAgeSeconds: 60);
+        $identity = $this->identity('0194eeee-bbbb-7ccc-8ddd-eeeeeeeeeeee', 'gpt-5.6-luna');
+
+        $first = $this->createMock(WebsocketConnection::class);
+        $first->expects($this->once())->method('close');
+        $second = $this->createMock(WebsocketConnection::class);
+
+        $lease1 = $cache->acquire($identity, $settings, static fn (): WebsocketConnection => $first);
+        $cache->release($lease1, true);
+
+        $clock->sleep(61);
+
+        $lease2 = $cache->acquire($identity, $settings, static fn (): WebsocketConnection => $second);
         $this->assertFalse($lease2->reused);
     }
 
@@ -88,23 +129,22 @@ final class CodexWebSocketConnectionCacheTest extends TestCase
         $connection = $this->createMock(WebsocketConnection::class);
         $connection->expects($this->once())->method('close');
 
-        $lease = $cache->acquire($this->identity('0194dddd-bbbb-7ccc-8ddd-eeeeeeeeeeee', 'token-a'), $settings, static fn (): WebsocketConnection => $connection);
+        $lease = $cache->acquire($this->identity('0194ffff-bbbb-7ccc-8ddd-eeeeeeeeeeee', 'gpt-5.6-luna'), $settings, static fn (): WebsocketConnection => $connection);
         $cache->release($lease, true);
         $cache->closeAll();
     }
 
-    private function identity(string $sessionKey, string $token): CodexWebSocketCompatibilityFingerprint
+    private function identity(string $sessionKey, string $model): CodexWebSocketCompatibilityFingerprint
     {
         self::assertUuidVersion7($sessionKey);
 
         return CodexWebSocketCompatibilityFingerprint::fromContext(
             $sessionKey,
             'openai-codex',
-            'gpt-5.6-luna',
+            $model,
             'https://chatgpt.com/backend-api',
             '/codex/responses',
             'acct-1',
-            $token,
         );
     }
 }
