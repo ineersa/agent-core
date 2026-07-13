@@ -61,8 +61,16 @@ final class CodexRequestBodyFactory
         // Payload also wins over the injected model key when both set a field.
         $jsonBody = array_merge($bodyOptions, ['model' => $model->getName()], $payload);
 
-        // After merge: explicit prompt_cache_key in payload/options wins; else run_id.
-        if (\is_string($runId) && '' !== $runId) {
+        // After merge: non-empty explicit prompt_cache_key in payload wins; empty string is treated as absent.
+        if (\array_key_exists('prompt_cache_key', $payload)) {
+            $cacheKeyInPayload = $payload['prompt_cache_key'];
+            if (\is_string($cacheKeyInPayload) && '' === $cacheKeyInPayload) {
+                unset($jsonBody['prompt_cache_key']);
+                if (\is_string($runId) && '' !== $runId) {
+                    $jsonBody['prompt_cache_key'] = $runId;
+                }
+            }
+        } elseif (\is_string($runId) && '' !== $runId) {
             $jsonBody['prompt_cache_key'] ??= $runId;
         }
 

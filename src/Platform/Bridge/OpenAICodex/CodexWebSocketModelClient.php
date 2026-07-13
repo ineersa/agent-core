@@ -51,19 +51,18 @@ final class CodexWebSocketModelClient implements ModelClientInterface
             throw new InvalidArgumentException(\sprintf('Payload must be an array, but a string was given to "%s".', self::class));
         }
 
-        [$requestId, $options] = CodexCorrelationRequestId::resolve($options, $payload);
+        $resolution = CodexCorrelationRequestId::resolve($options, $payload);
         $websocketUrl = $this->urlResolver->resolve($this->baseUrl, $this->responsesPath);
 
-        [$connection, $effectiveRequestId] = $this->connectWithOptional401Refresh($model, $websocketUrl, $requestId);
+        [$connection, $effectiveRequestId, $effectiveProvenance] = $this->connectWithOptional401Refresh($model, $websocketUrl, $resolution);
 
-        $bodyOptions = $options;
+        $bodyOptions = $resolution->options;
         $bodyPayload = $payload;
-        if ($effectiveRequestId !== $requestId) {
-            // 401 retry rotated handshake IDs; align wire body prompt_cache_key with the retry correlation ID.
+        if (CodexCorrelationProvenance::ExplicitRunId === $effectiveProvenance || CodexCorrelationProvenance::Generated === $effectiveProvenance) {
             $bodyOptions['run_id'] = $effectiveRequestId;
+        }
+        if (CodexCorrelationProvenance::Generated === $effectiveProvenance) {
             unset($bodyPayload['prompt_cache_key']);
-        } elseif (!isset($bodyOptions['run_id'])) {
-            $bodyOptions['run_id'] = $effectiveRequestId;
         }
 
         $jsonBody = $this->requestBodyFactory->build($model, $bodyPayload, $bodyOptions);
@@ -100,10 +99,11 @@ final class CodexWebSocketModelClient implements ModelClientInterface
     }
 
     /**
-     * @return array{0: WebsocketConnection, 1: string} connection and correlation ID used for the successful handshake
+     * @return array{0: WebsocketConnection, 1: string, 2: CodexCorrelationProvenance} connection, correlation ID, provenance
      */
-    private function connectWithOptional401Refresh(Model $model, string $websocketUrl, string $requestId): array
+    private function connectWithOptional401Refresh(Model $model, string $websocketUrl, CodexCorrelationResolution $resolution): array
     {
+        $requestId = $resolution->id;
         try {
             return [
                 $this->connector->connect(
@@ -112,6 +112,7 @@ final class CodexWebSocketModelClient implements ModelClientInterface
                     $this->connectTimeoutSeconds,
                 ),
                 $requestId,
+                $resolution->provenance,
             ];
         } catch (WebsocketConnectException $e) {
             if (HttpStatus::UNAUTHORIZED !== $e->getResponse()->getStatus() || null === $this->accessTokenRefresher) {
@@ -124,7 +125,7 @@ final class CodexWebSocketModelClient implements ModelClientInterface
             }
 
             $this->accessToken = $fresh;
-            $retryRequestId = CodexCorrelationRequestId::generate();
+            $retryRequestId = $resolution->idFor401Retry();
 
             $this->logger->info('codex.token.refreshed_on_401', [
                 'event_type' => 'codex.token.refreshed_on_401',
@@ -140,6 +141,7 @@ final class CodexWebSocketModelClient implements ModelClientInterface
                         $this->connectTimeoutSeconds,
                     ),
                     $retryRequestId,
+                    $resolution->provenance,
                 ];
             } catch (WebsocketConnectException $retry) {
                 throw $this->toHandshakeRuntimeException($retry);

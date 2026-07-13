@@ -169,6 +169,53 @@ final class CodexWebSocketModelClientTest extends TestCase
         $this->assertSame($connectCalls[1]['session-id'], $frame['prompt_cache_key']);
     }
 
+    public function testHandshake401RetryPreservesExplicitRunIdAcrossHandshakeAndFrame(): void
+    {
+        $sentFrame = '';
+        $connection = $this->createMock(WebsocketConnection::class);
+        $connection->expects($this->once())
+            ->method('sendText')
+            ->willReturnCallback(static function (string $data) use (&$sentFrame): void {
+                $sentFrame = $data;
+            });
+
+        $connectCalls = [];
+        $connector = $this->createMock(CodexWebSocketConnectorInterface::class);
+        $connector->expects($this->exactly(2))
+            ->method('connect')
+            ->willReturnCallback(function (string $url, array $headers, float $timeout) use (&$connectCalls, $connection) {
+                $connectCalls[] = $headers;
+                if (1 === \count($connectCalls)) {
+                    throw $this->websocketConnectException(401);
+                }
+
+                return $connection;
+            });
+
+        $client = new CodexWebSocketModelClient(
+            $connector,
+            new CodexWebSocketUrlResolver(),
+            new CodexWebSocketHandshakeHeadersFactory(),
+            new CodexRequestBodyFactory(),
+            'https://chatgpt.com/backend-api',
+            'stale-access',
+            'acct-1',
+            accessTokenRefresher: static fn (): string => 'fresh-access-token',
+        );
+
+        $client->request(
+            new CodexModel('gpt-5.6-luna'),
+            ['input' => [['role' => 'user', 'content' => 'hi']]],
+            ['run_id' => 'session-run-keep'],
+        );
+
+        $this->assertSame('session-run-keep', $connectCalls[0]['session-id']);
+        $this->assertSame('session-run-keep', $connectCalls[1]['session-id']);
+        $this->assertSame('session-run-keep', $connectCalls[1]['x-client-request-id']);
+        $frame = json_decode($sentFrame, true, flags: \JSON_THROW_ON_ERROR);
+        $this->assertSame('session-run-keep', $frame['prompt_cache_key']);
+    }
+
     public function testHandshake401DoesNotRetryWhenRefreshThrows(): void
     {
         $secret = 'LEAKED_REFRESH_FAIL_SECRET_7f3a91c2';

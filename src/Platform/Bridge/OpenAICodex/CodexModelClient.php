@@ -46,8 +46,8 @@ class CodexModelClient implements ModelClientInterface
             throw new InvalidArgumentException(\sprintf('Payload must be an array, but a string was given to "%s".', self::class));
         }
 
-        [$requestId, $options] = CodexCorrelationRequestId::resolve($options, $payload);
-        $jsonBody = $this->requestBodyFactory->build($model, $payload, $options);
+        $resolution = CodexCorrelationRequestId::resolve($options, $payload);
+        $jsonBody = $this->requestBodyFactory->build($model, $payload, $resolution->options);
 
         $requestOptions = [
             'auth_bearer' => $this->accessToken,
@@ -58,7 +58,7 @@ class CodexModelClient implements ModelClientInterface
                 'chatgpt-account-id' => $this->accountId,
                 'originator' => $this->originator,
                 'OpenAI-Beta' => 'responses=experimental',
-                'x-client-request-id' => $requestId,
+                'x-client-request-id' => $resolution->id,
             ],
             'json' => $jsonBody,
         ];
@@ -70,7 +70,7 @@ class CodexModelClient implements ModelClientInterface
         $response = $this->httpClient->request('POST', $this->baseUrl.$this->path, $requestOptions);
 
         if (401 === $response->getStatusCode() && null !== $this->accessTokenRefresher) {
-            $retried = $this->refreshAndRetryOnce($requestOptions, $model, $payload, $options, $response);
+            $retried = $this->refreshAndRetryOnce($requestOptions, $model, $payload, $resolution, $response);
             if (null !== $retried) {
                 $response = $retried;
             }
@@ -87,9 +87,8 @@ class CodexModelClient implements ModelClientInterface
      *
      * @param array<string, mixed> $requestOptions
      * @param array<string, mixed> $payload
-     * @param array<string, mixed> $options
      */
-    private function refreshAndRetryOnce(array $requestOptions, Model $model, array $payload, array $options, ResponseInterface $failedResponse): ?ResponseInterface
+    private function refreshAndRetryOnce(array $requestOptions, Model $model, array $payload, CodexCorrelationResolution $resolution, ResponseInterface $failedResponse): ?ResponseInterface
     {
         try {
             $fresh = ($this->accessTokenRefresher)();
@@ -109,11 +108,15 @@ class CodexModelClient implements ModelClientInterface
             return null;
         }
 
-        $retryRequestId = CodexCorrelationRequestId::generate();
-        $retryInvocationOptions = $options;
-        $retryInvocationOptions['run_id'] = $retryRequestId;
+        $retryRequestId = $resolution->idFor401Retry();
+        $retryInvocationOptions = $resolution->options;
+        if (CodexCorrelationProvenance::ExplicitRunId === $resolution->provenance || CodexCorrelationProvenance::Generated === $resolution->provenance) {
+            $retryInvocationOptions['run_id'] = $retryRequestId;
+        }
         $retryPayload = $payload;
-        unset($retryPayload['prompt_cache_key']);
+        if (CodexCorrelationProvenance::Generated === $resolution->provenance) {
+            unset($retryPayload['prompt_cache_key']);
+        }
 
         $retryOptions = $requestOptions;
         $retryOptions['auth_bearer'] = $fresh;

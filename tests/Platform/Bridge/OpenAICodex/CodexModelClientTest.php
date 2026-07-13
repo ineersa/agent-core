@@ -467,6 +467,33 @@ final class CodexModelClientTest extends TestCase
         );
     }
 
+    public function testEmptyPromptCacheKeyUsesGeneratedUuidVersion7AlignedWithHeader(): void
+    {
+        $httpClient = new MockHttpClient([
+            static function (string $method, string $url, array $options): HttpResponse {
+                $header = $options['normalized_headers']['x-client-request-id'][0];
+                $requestId = substr($header, \strlen('x-client-request-id: '));
+                self::assertUuidVersion7($requestId);
+
+                $body = json_decode($options['body'], true);
+                self::assertSame($requestId, $body['prompt_cache_key'] ?? null);
+
+                return new MockResponse('', ['http_code' => 200]);
+            },
+        ]);
+
+        $modelClient = new CodexModelClient(
+            $httpClient,
+            'https://chatgpt.com/backend-api',
+            'test-token',
+            'acct-123',
+        );
+        $modelClient->request(
+            new CodexModel('gpt-5.6-luna'),
+            ['input' => [['role' => 'user', 'content' => 'Hello']], 'prompt_cache_key' => ''],
+        );
+    }
+
     /**
      * Test thesis: a long-lived worker recovers from an expired/revoked token via
      * one force-refresh + retry, without manual auth:codex --refresh.
@@ -523,6 +550,57 @@ final class CodexModelClientTest extends TestCase
         $result = $modelClient->request(
             new CodexModel('gpt-5.6-luna'),
             ['input' => [['role' => 'user', 'content' => 'Hello']]],
+        );
+
+        $this->assertSame(200, $result->getObject()->getStatusCode());
+        $this->assertSame(2, $requestCount);
+        $this->assertSame(1, $refreshCalls);
+    }
+
+    public function test401RetryPreservesExplicitRunIdAcrossHeaderAndBody(): void
+    {
+        $refreshCalls = 0;
+        $requestCount = 0;
+        $refresher = static function () use (&$refreshCalls): string {
+            ++$refreshCalls;
+
+            return 'new-token';
+        };
+
+        $httpClient = new MockHttpClient([
+            static function (string $method, string $url, array $options) use (&$requestCount): HttpResponse {
+                ++$requestCount;
+
+                return new MockResponse('', ['http_code' => 401]);
+            },
+            static function (string $method, string $url, array $options) use (&$requestCount): HttpResponse {
+                ++$requestCount;
+                $retryHeader = $options['normalized_headers']['x-client-request-id'][0];
+                $retryRequestId = substr($retryHeader, \strlen('x-client-request-id: '));
+                self::assertSame('session-run-keep', $retryRequestId);
+
+                $body = json_decode($options['body'], true);
+                self::assertSame('session-run-keep', $body['prompt_cache_key'] ?? null);
+
+                return new MockResponse('', ['http_code' => 200]);
+            },
+        ]);
+
+        $modelClient = new CodexModelClient(
+            $httpClient,
+            'https://chatgpt.com/backend-api',
+            'stale-token',
+            'acct-123',
+            '/codex/responses',
+            'hatfield',
+            null,
+            $refresher,
+        );
+
+        $result = $modelClient->request(
+            new CodexModel('gpt-5.6-luna'),
+            ['input' => [['role' => 'user', 'content' => 'Hello']]],
+            ['run_id' => 'session-run-keep'],
         );
 
         $this->assertSame(200, $result->getObject()->getStatusCode());

@@ -16,36 +16,29 @@ use Symfony\Component\Uid\UuidV7;
  * Explicit caller identifiers are preserved as-is: when resolve() returns an explicit
  * options['run_id'] or payload prompt_cache_key, that value is used for headers
  * and body correlation without rewriting. The caller is responsible for satisfying the backend's
- * ID contract for those values.
+ * ID contract for those values. Bounded 401 retry reuses explicit IDs; only generated IDs rotate.
  */
 final class CodexCorrelationRequestId
 {
     /**
      * @param array<string, mixed> $options
      * @param array<string, mixed> $payload
-     *
-     * @return array{0: string, 1: array<string, mixed>} [correlationId, options possibly augmented with run_id]
      */
-    public static function resolve(array $options, array $payload): array
+    public static function resolve(array $options, array $payload): CodexCorrelationResolution
     {
         $explicitRunId = $options['run_id'] ?? null;
         if (\is_string($explicitRunId) && '' !== $explicitRunId) {
-            return [$explicitRunId, $options];
+            return new CodexCorrelationResolution($explicitRunId, $options, CodexCorrelationProvenance::ExplicitRunId);
         }
 
         $explicitCacheKey = $payload['prompt_cache_key'] ?? null;
         if (\is_string($explicitCacheKey) && '' !== $explicitCacheKey) {
-            return [$explicitCacheKey, $options];
+            return new CodexCorrelationResolution($explicitCacheKey, $options, CodexCorrelationProvenance::ExplicitPromptCacheKey);
         }
 
         $generated = UuidV7::v7()->toRfc4122();
         $options['run_id'] = $generated;
 
-        return [$generated, $options];
-    }
-
-    public static function generate(): string
-    {
-        return UuidV7::v7()->toRfc4122();
+        return new CodexCorrelationResolution($generated, $options, CodexCorrelationProvenance::Generated);
     }
 }
