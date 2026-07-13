@@ -29,13 +29,18 @@ use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Entity\HatfieldSession;
 use Ineersa\CodingAgent\Infrastructure\SymfonyAi\ProjectedSymfonyModelCatalog;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+use Ineersa\Platform\Bridge\Generic\DurableResultConverter;
+use Ineersa\Platform\Bridge\Generic\SanitizedGenericModelClient;
 use PHPUnit\Framework\Attributes\Group;
 use Psr\Log\NullLogger;
-use Symfony\AI\Platform\Bridge\Generic\Factory as GenericFactory;
+use Symfony\AI\Platform\Bridge\Generic\Completions\ModelClient as GenericCompletionsModelClient;
+use Symfony\AI\Platform\Bridge\Generic\CompletionsModel;
 use Symfony\AI\Platform\Platform;
+use Symfony\AI\Platform\Provider;
 use Symfony\AI\Platform\ProviderInterface;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\EventDispatcher\EventDispatcher;
+use Symfony\Component\HttpClient\HttpClient;
 use Symfony\Component\Yaml\Yaml;
 
 /**
@@ -150,16 +155,22 @@ final class LlamaCppSmokeTest extends KernelTestCase
         $this->assertNotNull($modelDefinition, 'Expected configured llama_cpp model in test AppConfig');
 
         // ── Build the real Platform with a live Provider ──
-        $provider = GenericFactory::createProvider(
-            baseUrl: $baseUrl,
-            apiKey: $apiKey,
-            httpClient: null,
-            modelCatalog: new ProjectedSymfonyModelCatalog([$modelName => $modelDefinition]),
-            eventDispatcher: $eventDispatcher,
-            supportsCompletions: true,
-            supportsEmbeddings: false,
-            completionsPath: $completionsPath,
-            name: $llamaCppProviderKey,
+        // Mirror production SymfonyAiProviderFactory: sanitize internal Hatfield options
+        // before generic completions wire JSON (run_id, provider_cache_key, etc.).
+        $provider = new Provider(
+            $llamaCppProviderKey,
+            [
+                new SanitizedGenericModelClient(new GenericCompletionsModelClient(
+                    HttpClient::create(),
+                    $baseUrl,
+                    $apiKey,
+                    $completionsPath,
+                )),
+            ],
+            [new DurableResultConverter()],
+            new ProjectedSymfonyModelCatalog([$modelName => $modelDefinition], CompletionsModel::class),
+            null,
+            $eventDispatcher,
         );
 
         $eventDispatcher->addSubscriber(new ModelResolverRoutingSubscriber(

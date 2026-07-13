@@ -32,6 +32,10 @@ final class CodexCorrelationRequestId
     {
         $providerCacheKey = $options['provider_cache_key'] ?? null;
         if (\is_string($providerCacheKey) && '' !== $providerCacheKey) {
+            if (!Uuid::isValid($providerCacheKey) || !Uuid::fromString($providerCacheKey) instanceof UuidV7) {
+                throw new \RuntimeException('Codex provider_cache_key must be a UUID version 7.');
+            }
+
             return new CodexCorrelationResolution($providerCacheKey, $options, CodexCorrelationProvenance::ExplicitProviderCacheKey);
         }
 

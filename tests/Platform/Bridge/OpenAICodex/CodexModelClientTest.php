@@ -177,7 +177,6 @@ final class CodexModelClientTest extends TestCase
         );
     }
 
-
     public function testProviderCacheKeyDrivesHeadersAndPromptCacheKeyNotNumericRunId(): void
     {
         $providerKey = '0194a000-0000-7000-8000-000000000099';

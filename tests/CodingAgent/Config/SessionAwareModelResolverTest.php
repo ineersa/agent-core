@@ -225,6 +225,51 @@ final class SessionAwareModelResolverTest extends IsolatedKernelTestCase
         $this->assertSame('high', $result->reasoning);
     }
 
+    public function testUuidV7ChildRunWithoutSessionRowResolvesWithoutProviderCacheKey(): void
+    {
+        $resolver = $this->createResolver($this->standardAiData());
+        $childRunId = UuidV7::v7()->toRfc4122();
+
+        $result = $resolver->resolve(
+            '',
+            new MessageBag(),
+            new ModelInvocationInput(runId: $childRunId),
+            new ModelResolutionOptions(),
+        );
+
+        $this->assertSame('deepseek/deepseek-v4-pro', $result->model);
+        $this->assertSame([], $result->options);
+    }
+
+    public function testEphemeralHexRunWithoutSessionRowResolvesWithoutProviderCacheKey(): void
+    {
+        $resolver = $this->createResolver($this->standardAiData());
+
+        $result = $resolver->resolve(
+            '',
+            new MessageBag(),
+            new ModelInvocationInput(runId: 'db1f3c6bdccc'),
+            new ModelResolutionOptions(),
+        );
+
+        $this->assertSame([], $result->options);
+    }
+
+    public function testMissingNumericSessionMetadataThrows(): void
+    {
+        $resolver = $this->createResolver($this->standardAiData());
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Session "42" has no metadata for model resolution.');
+
+        $resolver->resolve(
+            '',
+            new MessageBag(),
+            new ModelInvocationInput(runId: '42'),
+            new ModelResolutionOptions(),
+        );
+    }
+
     public function testZaiOffReasoningProducesDisabledThinkingOptions(): void
     {
         $aiData = $this->standardAiData();

@@ -17,6 +17,9 @@ final class Version20260713120000 extends AbstractMigration
 
     public function up(Schema $schema): void
     {
+        // SQLite keeps provider_cache_key nullable at the DDL level; ORM + backfill enforce
+        // non-null UUIDv7 for all rows. A strict NOT NULL constraint would require table rebuild.
+
         $this->addSql('ALTER TABLE hatfield_session ADD COLUMN provider_cache_key VARCHAR(36) DEFAULT NULL');
 
         $ids = $this->connection->fetchFirstColumn('SELECT id FROM hatfield_session');

@@ -114,7 +114,14 @@ final class SessionAwareModelResolver implements ModelResolverInterface
 
         $metadata = $this->sessionMetadataStore->readSessionMetadata($sessionId);
         if ([] === $metadata) {
-            throw new \RuntimeException(\sprintf('Session "%s" has no metadata for model resolution.', $sessionId));
+            // Persisted Hatfield sessions use numeric string ids. Missing metadata for those ids
+            // is a stale or corrupt session reference. Ephemeral child/controller runs use UUIDv7
+            // or other non-numeric run ids without a hatfield_session row.
+            if (ctype_digit($sessionId)) {
+                throw new \RuntimeException(\sprintf('Session "%s" has no metadata for model resolution.', $sessionId));
+            }
+
+            return [];
         }
 
         $providerCacheKey = $metadata['provider_cache_key'] ?? null;

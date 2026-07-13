@@ -10,6 +10,8 @@ use Ineersa\CodingAgent\Migrations\ApplicationMigrationExecutor;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
+use Symfony\Component\Uid\Uuid;
+use Symfony\Component\Uid\UuidV7;
 
 /**
  * @psalm-suppress PropertyNotSetInConstructor
@@ -161,6 +163,54 @@ final class ApplicationMigrationExecutorTest extends TestCase
             ['Version20260628140000'],
         );
         $this->assertSame(1, $countNew);
+    }
+
+
+
+
+    public function testProviderCacheKeyBackfillAssignsDistinctUuidV7ForPreMigrationRows(): void
+    {
+        $connection = $this->createSqliteConnection($this->isolatedDir.'/provider-key-backfill.sqlite');
+        $connection->executeStatement(<<<'SQL'
+CREATE TABLE hatfield_session (
+    id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+    cwd VARCHAR(255) NOT NULL,
+    prompt VARCHAR(255) DEFAULT NULL,
+    parent_id VARCHAR(255) DEFAULT NULL,
+    root_id VARCHAR(255) DEFAULT NULL,
+    model VARCHAR(255) DEFAULT NULL,
+    model_provider VARCHAR(255) DEFAULT NULL,
+    model_name VARCHAR(255) DEFAULT NULL,
+    reasoning VARCHAR(255) DEFAULT NULL,
+    name VARCHAR(200) DEFAULT '' NOT NULL,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL
+)
+SQL);
+        $now = '2026-07-13 00:00:00';
+        $connection->insert('hatfield_session', ['cwd' => '/a', 'name' => 'one', 'created_at' => $now, 'updated_at' => $now]);
+        $connection->insert('hatfield_session', ['cwd' => '/b', 'name' => 'two', 'created_at' => $now, 'updated_at' => $now]);
+
+        // Mirror Version20260713120000 up() SQL/backfill without AbstractMigration construction.
+        $connection->executeStatement('ALTER TABLE hatfield_session ADD COLUMN provider_cache_key VARCHAR(36) DEFAULT NULL');
+        $ids = $connection->fetchFirstColumn('SELECT id FROM hatfield_session');
+        foreach ($ids as $id) {
+            $key = UuidV7::v7()->toRfc4122();
+            $connection->executeStatement(
+                'UPDATE hatfield_session SET provider_cache_key = ? WHERE id = ?',
+                [$key, $id],
+            );
+        }
+        $connection->executeStatement('CREATE UNIQUE INDEX uniq_hatfield_session_provider_cache_key ON hatfield_session (provider_cache_key)');
+
+        $keys = $connection->fetchFirstColumn('SELECT provider_cache_key FROM hatfield_session ORDER BY id');
+        $this->assertCount(2, $keys);
+        $this->assertNotSame($keys[0], $keys[1]);
+        foreach ($keys as $key) {
+            $this->assertIsString($key);
+            $this->assertTrue(Uuid::isValid($key));
+            $this->assertInstanceOf(UuidV7::class, Uuid::fromString($key));
+        }
     }
 
     public function testBusyTimeoutBelowMinimumThrowsRuntimeException(): void

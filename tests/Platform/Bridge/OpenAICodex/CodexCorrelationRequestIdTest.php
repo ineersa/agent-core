@@ -85,4 +85,26 @@ final class CodexCorrelationRequestIdTest extends TestCase
         $this->assertSame('child-run-uuid', $resolution->id);
         $this->assertSame(CodexCorrelationProvenance::ExplicitRunId, $resolution->provenance);
     }
+
+    public function testResolveRejectsInvalidProviderCacheKey(): void
+    {
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Codex provider_cache_key must be a UUID version 7.');
+
+        CodexCorrelationRequestId::resolve(
+            ['provider_cache_key' => 'not-a-uuid', 'run_id' => '1'],
+            [],
+        );
+    }
+
+    public function testResolveRejectsUuidVersion4ProviderCacheKey(): void
+    {
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Codex provider_cache_key must be a UUID version 7.');
+
+        CodexCorrelationRequestId::resolve(
+            ['provider_cache_key' => '550e8400-e29b-41d4-a716-446655440000', 'run_id' => '1'],
+            [],
+        );
+    }
 }
