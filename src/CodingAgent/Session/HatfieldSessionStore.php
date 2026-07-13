@@ -157,6 +157,7 @@ final class HatfieldSessionStore
             $meta['reasoning'] = $entity->reasoning;
         }
         $meta['name'] = $entity->name;
+        $meta['provider_cache_key'] = $entity->providerCacheKey;
 
         return $meta;
     }

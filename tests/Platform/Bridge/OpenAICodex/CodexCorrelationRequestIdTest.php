@@ -52,15 +52,37 @@ final class CodexCorrelationRequestIdTest extends TestCase
         $this->assertSame('cache-key-xyz', $resolution->idFor401Retry());
     }
 
-    public function testResolvePrefersExplicitRunIdOverPromptCacheKey(): void
+    public function testResolvePrefersProviderCacheKeyOverRunIdAndPayload(): void
     {
         $resolution = CodexCorrelationRequestId::resolve(
-            ['run_id' => 'run-wins'],
+            [
+                'provider_cache_key' => '0194a000-0000-7000-8000-000000000001',
+                'run_id' => '1',
+            ],
             ['prompt_cache_key' => 'cache-loses'],
         );
 
-        $this->assertSame('run-wins', $resolution->id);
-        $this->assertSame('run-wins', $resolution->options['run_id']);
+        $this->assertSame('0194a000-0000-7000-8000-000000000001', $resolution->id);
+        $this->assertSame(CodexCorrelationProvenance::ExplicitProviderCacheKey, $resolution->provenance);
+        $this->assertSame('0194a000-0000-7000-8000-000000000001', $resolution->idFor401Retry());
+    }
+
+    public function testResolveUsesPayloadPromptCacheKeyBeforeRunIdWhenProviderCacheKeyAbsent(): void
+    {
+        $resolution = CodexCorrelationRequestId::resolve(
+            ['run_id' => 'run-loses'],
+            ['prompt_cache_key' => 'cache-wins'],
+        );
+
+        $this->assertSame('cache-wins', $resolution->id);
+        $this->assertSame(CodexCorrelationProvenance::ExplicitPromptCacheKey, $resolution->provenance);
+    }
+
+    public function testResolveUsesRunIdWhenOnlyRunIdPresent(): void
+    {
+        $resolution = CodexCorrelationRequestId::resolve(['run_id' => 'child-run-uuid'], []);
+
+        $this->assertSame('child-run-uuid', $resolution->id);
         $this->assertSame(CodexCorrelationProvenance::ExplicitRunId, $resolution->provenance);
     }
 }

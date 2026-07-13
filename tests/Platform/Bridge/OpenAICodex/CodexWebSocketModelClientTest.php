@@ -276,6 +276,52 @@ final class CodexWebSocketModelClientTest extends TestCase
         );
     }
 
+    public function testProviderCacheKeyUsedForHandshakeAndFrameWhenRunIdIsNumeric(): void
+    {
+        $providerKey = '0194a000-0000-7000-8000-000000000088';
+        $captured = new \stdClass();
+        $captured->headers = [];
+        $captured->frame = '';
+
+        $connection = $this->createMock(WebsocketConnection::class);
+        $connection->expects($this->once())
+            ->method('sendText')
+            ->willReturnCallback(static function (string $data) use ($captured): void {
+                $captured->frame = $data;
+            });
+
+        $connector = $this->createMock(CodexWebSocketConnectorInterface::class);
+        $connector->expects($this->once())
+            ->method('connect')
+            ->willReturnCallback(static function (string $url, array $headers, float $timeout) use ($connection, $captured): WebsocketConnection {
+                $captured->headers = $headers;
+
+                return $connection;
+            });
+
+        $client = new CodexWebSocketModelClient(
+            $connector,
+            new CodexWebSocketUrlResolver(),
+            new CodexWebSocketHandshakeHeadersFactory(),
+            new CodexRequestBodyFactory(),
+            'https://chatgpt.com/backend-api',
+            'access',
+            'acct-1',
+        );
+
+        $client->request(
+            new CodexModel('gpt-5.6-luna'),
+            ['input' => [['role' => 'user', 'content' => 'Hi']]],
+            ['run_id' => '1', 'provider_cache_key' => $providerKey],
+        );
+
+        $this->assertSame($providerKey, $captured->headers['session-id']);
+        $this->assertSame($providerKey, $captured->headers['x-client-request-id']);
+        $frame = json_decode($captured->frame, true, flags: \JSON_THROW_ON_ERROR);
+        $this->assertSame($providerKey, $frame['prompt_cache_key']);
+        $this->assertArrayNotHasKey('provider_cache_key', $frame);
+    }
+
     private function websocketConnectException(int $status, string $secretMarker = ''): WebsocketConnectException
     {
         $request = new Request('wss://chatgpt.com/backend-api/codex/responses');

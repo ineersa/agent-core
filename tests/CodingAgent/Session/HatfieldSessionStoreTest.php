@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Session;
 
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+use Symfony\Component\Uid\Uuid;
+use Symfony\Component\Uid\UuidV7;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Symfony\Component\Clock\Clock;
 use Symfony\Component\Clock\MockClock;
@@ -47,6 +49,12 @@ final class HatfieldSessionStoreTest extends IsolatedKernelTestCase
         // Name is always present as a non-empty string.
         $this->assertArrayHasKey('name', $meta);
         $this->assertSame('Hello', $meta['name']);
+        $this->assertArrayHasKey('provider_cache_key', $meta);
+        $this->assertTrue(Uuid::isValid($meta['provider_cache_key']));
+        $this->assertInstanceOf(UuidV7::class, Uuid::fromString($meta['provider_cache_key']));
+
+        $metaAgain = $this->store->loadMetadata($sessionId);
+        $this->assertSame($meta['provider_cache_key'], $metaAgain['provider_cache_key']);
 
         // Core files created (no metadata.yaml)
         $this->assertFileExists($sessionPath.'/state.json');

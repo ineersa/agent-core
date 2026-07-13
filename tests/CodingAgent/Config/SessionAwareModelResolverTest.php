@@ -24,6 +24,8 @@ use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Symfony\AI\Platform\Message\MessageBag;
+use Symfony\Component\Uid\Uuid;
+use Symfony\Component\Uid\UuidV7;
 
 final class SessionAwareModelResolverTest extends IsolatedKernelTestCase
 {
@@ -67,6 +69,8 @@ final class SessionAwareModelResolverTest extends IsolatedKernelTestCase
         $this->assertSame('llama_cpp/flash', $result->model);
         $this->assertSame('llama_cpp', $result->providerId);
         $this->assertSame('medium', $result->reasoning);
+        $this->assertArrayHasKey('provider_cache_key', $result->options);
+        $this->assertInstanceOf(UuidV7::class, Uuid::fromString($result->options['provider_cache_key']));
     }
 
     public function testExplicitModelWinsOverSessionMetadata(): void
@@ -287,7 +291,7 @@ final class SessionAwareModelResolverTest extends IsolatedKernelTestCase
 
         $catalog = $appConfig->catalog ?? new HatfieldModelCatalog(new AiConfig(defaultModel: '', defaultReasoning: 'medium', providers: []));
 
-        return new SessionAwareModelResolver($selectionService, $catalog);
+        return new SessionAwareModelResolver($selectionService, $catalog, $sessionMetaStore);
     }
 
     private function makeAppConfig(array $aiData): AppConfig

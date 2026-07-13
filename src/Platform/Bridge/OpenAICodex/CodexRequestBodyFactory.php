@@ -30,6 +30,7 @@ final class CodexRequestBodyFactory
         'tools_ref',
         'turn_no',
         'run_id',
+        'provider_cache_key',
     ];
 
     /**
@@ -53,8 +54,11 @@ final class CodexRequestBodyFactory
 
         $bodyOptions = array_diff_key($options, array_flip(self::INTERNAL_OPTION_KEYS));
 
-        // run_id is internal for the wire body but drives prompt_cache_key (pi-mono: sessionId).
-        $runId = $options['run_id'] ?? null;
+        // provider_cache_key (persisted session) or run_id (child run) drives prompt_cache_key internally.
+        $cacheSource = $options['provider_cache_key'] ?? null;
+        if (!\is_string($cacheSource) || '' === $cacheSource) {
+            $cacheSource = $options['run_id'] ?? null;
+        }
 
         // Merge order: bodyOptions, then model name, then contract payload last so
         // CodexContract keys (input, instructions, …) win over duplicate top-level options.
@@ -66,12 +70,12 @@ final class CodexRequestBodyFactory
             $cacheKeyInPayload = $payload['prompt_cache_key'];
             if (\is_string($cacheKeyInPayload) && '' === $cacheKeyInPayload) {
                 unset($jsonBody['prompt_cache_key']);
-                if (\is_string($runId) && '' !== $runId) {
-                    $jsonBody['prompt_cache_key'] = $runId;
+                if (\is_string($cacheSource) && '' !== $cacheSource) {
+                    $jsonBody['prompt_cache_key'] = $cacheSource;
                 }
             }
-        } elseif (\is_string($runId) && '' !== $runId) {
-            $jsonBody['prompt_cache_key'] ??= $runId;
+        } elseif (\is_string($cacheSource) && '' !== $cacheSource) {
+            $jsonBody['prompt_cache_key'] ??= $cacheSource;
         }
 
         // Codex Responses defaults — pi-mono openai-codex-responses.ts buildRequestBody parity.

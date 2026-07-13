@@ -151,6 +151,7 @@ final class CodexModelClientTest extends TestCase
             self::assertArrayNotHasKey('tools_ref', $body);
             self::assertArrayNotHasKey('turn_no', $body);
             self::assertArrayNotHasKey('run_id', $body);
+            self::assertArrayNotHasKey('provider_cache_key', $body);
 
             return new MockResponse();
         };
@@ -165,6 +166,7 @@ final class CodexModelClientTest extends TestCase
             'tools_ref' => 'toolset-1',
             'turn_no' => 1,
             'run_id' => 'run-abc',
+            'provider_cache_key' => '0194a000-0000-7000-8000-000000000001',
             'temperature' => 0.7,
         ];
 
@@ -172,6 +174,30 @@ final class CodexModelClientTest extends TestCase
             new CodexModel('gpt-5.5'),
             ['input' => [['role' => 'user', 'content' => 'Hello']]],
             $options,
+        );
+    }
+
+
+    public function testProviderCacheKeyDrivesHeadersAndPromptCacheKeyNotNumericRunId(): void
+    {
+        $providerKey = '0194a000-0000-7000-8000-000000000099';
+        $httpClient = new MockHttpClient([
+            static function (string $method, string $url, array $options) use ($providerKey): HttpResponse {
+                $header = $options['normalized_headers']['x-client-request-id'][0];
+                self::assertSame('x-client-request-id: '.$providerKey, $header);
+                self::assertSame('session-id: '.$providerKey, $options['normalized_headers']['session-id'][0]);
+                $body = json_decode($options['body'], true);
+                self::assertSame($providerKey, $body['prompt_cache_key']);
+                self::assertArrayNotHasKey('provider_cache_key', $body);
+
+                return new MockResponse('', ['http_code' => 200]);
+            },
+        ]);
+        $modelClient = new CodexModelClient($httpClient, 'https://chatgpt.com/backend-api', 'test-access-token', 'acct-123');
+        $modelClient->request(
+            new CodexModel('gpt-5.6-luna'),
+            ['input' => [['role' => 'user', 'content' => 'Hello']]],
+            ['run_id' => '1', 'provider_cache_key' => $providerKey],
         );
     }
 
@@ -254,6 +280,7 @@ final class CodexModelClientTest extends TestCase
             self::assertArrayNotHasKey('tools_ref', $body);
             self::assertArrayNotHasKey('turn_no', $body);
             self::assertArrayNotHasKey('run_id', $body);
+            self::assertArrayNotHasKey('provider_cache_key', $body);
 
             return new MockResponse();
         };

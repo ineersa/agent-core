@@ -22,6 +22,7 @@ final class GenericProviderInternalOptionKeys
      */
     public const array ALL = [
         'run_id',
+        'provider_cache_key',
         'tools_ref',
         'turn_no',
     ];

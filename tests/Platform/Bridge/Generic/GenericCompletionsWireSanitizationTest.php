@@ -39,6 +39,7 @@ final class GenericCompletionsWireSanitizationTest extends TestCase
             'run_id' => 'volatile-session-run-id',
             'tools_ref' => 'default',
             'turn_no' => 2,
+            'provider_cache_key' => '0194a000-0000-7000-8000-000000000099',
             'temperature' => 0.0,
         ]);
 
@@ -47,6 +48,7 @@ final class GenericCompletionsWireSanitizationTest extends TestCase
         $this->assertArrayNotHasKey('run_id', $decoded);
         $this->assertArrayNotHasKey('tools_ref', $decoded);
         $this->assertArrayNotHasKey('turn_no', $decoded);
+        $this->assertArrayNotHasKey('provider_cache_key', $decoded);
         $this->assertSame(0.0, $decoded['temperature']);
         $this->assertSame('ping', $decoded['messages'][0]['content']);
     }

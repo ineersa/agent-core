@@ -8,6 +8,12 @@
   identity. One DB-issued auto-increment ID (numeric string) names the session
   directory and is used as the AgentCore `RunState::$runId` and every
   `RunEvent::$runId`.
+- **`provider_cache_key`.** Each persisted session row also stores an immutable
+  UUIDv7 (`hatfield_session.provider_cache_key`) generated once at creation (and
+  backfilled for existing rows). Model resolution exposes it as an internal
+  invocation option for provider adapters. Codex uses it for `prompt_cache_key`
+  and correlation headers. DeepSeek, Z.AI, and generic OpenAI-compatible
+  providers do not receive this field on the wire today.
 - **Self-contained.** Every session directory holds everything needed to resume the
   conversation or fork it in the future — no global `.hatfield/runs/` registry.
 - **Canonical directory name.** The directory name under `.hatfield/sessions/` is
@@ -83,6 +89,7 @@ and `updateMetadata()`.  The returned array shape for callers:
     'model_name'     => 'deepseek-v4-pro',       // nullable
     'reasoning'  => 'medium',                    // nullable
     'name'       => 'Write a README',              // non-empty, initialized from first user message
+    'provider_cache_key' => '0194....-....-7...-....-............', // immutable UUIDv7; provider cache/correlation
 ]
 ```
 

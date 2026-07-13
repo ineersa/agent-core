@@ -58,6 +58,7 @@ class CodexModelClient implements ModelClientInterface
                 'chatgpt-account-id' => $this->accountId,
                 'originator' => $this->originator,
                 'OpenAI-Beta' => 'responses=experimental',
+                'session-id' => $resolution->id,
                 'x-client-request-id' => $resolution->id,
             ],
             'json' => $jsonBody,
@@ -120,6 +121,7 @@ class CodexModelClient implements ModelClientInterface
 
         $retryOptions = $requestOptions;
         $retryOptions['auth_bearer'] = $fresh;
+        $retryOptions['headers']['session-id'] = $retryRequestId;
         $retryOptions['headers']['x-client-request-id'] = $retryRequestId;
         $retryOptions['json'] = $this->requestBodyFactory->build($model, $retryPayload, $retryInvocationOptions);
 

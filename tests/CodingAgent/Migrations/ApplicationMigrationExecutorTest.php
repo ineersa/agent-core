@@ -104,6 +104,15 @@ final class ApplicationMigrationExecutorTest extends TestCase
         );
 
         $busyTimeout = (int) $connection->executeQuery('PRAGMA busy_timeout')->fetchOne();
+        $columns = $connection->createSchemaManager()->listTableColumns('hatfield_session');
+        $this->assertArrayHasKey('provider_cache_key', $columns);
+
+        $recordedProviderKey = $connection->fetchOne(
+            'SELECT 1 FROM doctrine_migration_versions WHERE version = ?',
+            ['Version20260713120000'],
+        );
+        $this->assertNotFalse($recordedProviderKey);
+
         $this->assertGreaterThanOrEqual(
             5000,
             $busyTimeout,
