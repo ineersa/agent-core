@@ -5,12 +5,10 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred;
 
 use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitEventSummary;
+use Ineersa\AgentCore\Domain\Run\RunStatus;
 
 /**
  * Durable cross-process observation of one child RunCommit batch (Piece 3B1).
- *
- * Handled on agent.command.bus / run_control transport. Parent progress and
- * deferred tool completion are wired in Piece 3B2.
  */
 final readonly class ObserveDeferredSingleSubagentChildTurnMessage
 {
@@ -20,7 +18,7 @@ final readonly class ObserveDeferredSingleSubagentChildTurnMessage
     public function __construct(
         public string $lifecycleId,
         public string $childRunId,
-        public string $committedStatus,
+        public RunStatus $committedStatus,
         public int $turnNo,
         public array $committedEvents,
     ) {

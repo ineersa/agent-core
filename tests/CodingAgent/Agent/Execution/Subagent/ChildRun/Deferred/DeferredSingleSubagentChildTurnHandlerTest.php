@@ -56,7 +56,7 @@ final class DeferredSingleSubagentChildTurnHandlerTest extends IsolatedKernelTes
         $handler(new ObserveDeferredSingleSubagentChildTurnMessage(
             lifecycleId: $launch->lifecycleId,
             childRunId: 'child-3b1-uuid',
-            committedStatus: RunStatus::Running->value,
+            committedStatus: RunStatus::Running,
             turnNo: 1,
             committedEvents: $batch1,
         ));
@@ -73,7 +73,7 @@ final class DeferredSingleSubagentChildTurnHandlerTest extends IsolatedKernelTes
         $handler(new ObserveDeferredSingleSubagentChildTurnMessage(
             lifecycleId: $launch->lifecycleId,
             childRunId: 'child-3b1-uuid',
-            committedStatus: RunStatus::Completed->value,
+            committedStatus: RunStatus::Completed,
             turnNo: 1,
             committedEvents: $batch2,
         ));
@@ -84,7 +84,7 @@ final class DeferredSingleSubagentChildTurnHandlerTest extends IsolatedKernelTes
         $handler(new ObserveDeferredSingleSubagentChildTurnMessage(
             lifecycleId: $launch->lifecycleId,
             childRunId: 'child-3b1-uuid',
-            committedStatus: RunStatus::Completed->value,
+            committedStatus: RunStatus::Completed,
             turnNo: 1,
             committedEvents: $batch2,
         ));
@@ -94,12 +94,155 @@ final class DeferredSingleSubagentChildTurnHandlerTest extends IsolatedKernelTes
         $handler(new ObserveDeferredSingleSubagentChildTurnMessage(
             lifecycleId: $launch->lifecycleId,
             childRunId: 'child-3b1-uuid',
-            committedStatus: RunStatus::Running->value,
+            committedStatus: RunStatus::Running,
             turnNo: 2,
             committedEvents: [new AfterTurnCommitEventSummary(5, RunEventTypeEnum::TurnAdvanced->value, ['turn_no' => 2])],
         ));
         $entityGap = $repo->findEntityByLifecycleId($launch->lifecycleId);
         $this->assertSame(3, $entityGap->childEventCursor);
         $this->assertContains('deferred_single_subagent.child_event_gap', array_column($logger->records, 'message'));
+    }
+
+    public function testProjectionPrivacyStatusAndFullAssistantText(): void
+    {
+        /** @var DeferredSingleSubagentLaunchRepository $repo */
+        $repo = self::getContainer()->get(DeferredSingleSubagentLaunchRepository::class);
+        $deadline = new \DateTimeImmutable('+600 seconds');
+        $repo->reserve(
+            parentRunId: 'parent-privacy',
+            parentTurnNo: 1,
+            parentToolCallId: 'tool-privacy',
+            parentOrderIndex: 0,
+            childRunId: 'child-privacy-uuid',
+            artifactId: 'agent_cccccccccccccccc',
+            agentName: 'worker',
+            task: 'task',
+            definitionModel: null,
+            deadlineAt: $deadline,
+        );
+        $repo->markLaunched('parent-privacy', 'tool-privacy', new \DateTimeImmutable());
+        $launch = $repo->findByParentRunAndToolCall('parent-privacy', 'tool-privacy');
+        $this->assertNotNull($launch);
+
+        $handler = new ObserveDeferredSingleSubagentChildTurnHandler(
+            $repo,
+            new DeferredSingleSubagentChildEventProjector(),
+            new TestLogger(),
+        );
+
+        $longText = str_repeat('Z', 300);
+        $secretArgs = json_encode(['path' => '/safe/path.php', 'api_key' => 'super-secret', 'new_string' => 'leak'], \JSON_THROW_ON_ERROR);
+        $batch = [
+            new AfterTurnCommitEventSummary(1, RunEventTypeEnum::LlmStepCompleted->value, [
+                'usage' => ['input_tokens' => 1, 'output_tokens' => 1, 'total_tokens' => 2],
+                'assistant_message' => ['role' => 'assistant', 'content' => [['type' => 'text', 'text' => $longText]]],
+            ]),
+            new AfterTurnCommitEventSummary(2, RunEventTypeEnum::LlmStepCompleted->value, [
+                'usage' => ['input_tokens' => 0, 'output_tokens' => 0, 'total_tokens' => 0],
+                'assistant_message' => [
+                    'role' => 'assistant',
+                    'content' => [['type' => 'text', 'text' => '']],
+                    'tool_calls' => [['id' => 'tc1', 'name' => 'read', 'arguments' => $secretArgs]],
+                ],
+            ]),
+            new AfterTurnCommitEventSummary(3, RunEventTypeEnum::ToolExecutionEnd->value, ['tool_call_id' => 'tc1']),
+        ];
+        $handler(new ObserveDeferredSingleSubagentChildTurnMessage(
+            lifecycleId: $launch->lifecycleId,
+            childRunId: 'child-privacy-uuid',
+            committedStatus: RunStatus::WaitingHuman,
+            turnNo: 4,
+            committedEvents: $batch,
+        ));
+
+        $entity = $repo->findEntityByLifecycleId($launch->lifecycleId);
+        $this->assertNotNull($entity);
+        $this->assertNotEmpty($entity->childLifecycleProjection['recent_tools']);
+        $this->assertStringContainsString('safe/path.php', (string) $entity->childLifecycleProjection['recent_tools'][0]);
+        $json = json_encode($entity->childLifecycleProjection, \JSON_THROW_ON_ERROR);
+        $this->assertStringNotContainsString('super-secret', $json);
+        $this->assertStringNotContainsString('leak', $json);
+        $this->assertStringNotContainsString('"args"', $json);
+        $this->assertSame('waiting_human', $entity->childLifecycleProjection['child_status']);
+        $this->assertSame(4, $entity->childLifecycleProjection['child_turn_no']);
+        $this->assertSame($longText, $entity->childLifecycleProjection['assistant_result_text']);
+        $this->assertLessThanOrEqual(220, mb_strlen((string) $entity->childLifecycleProjection['assistant_excerpt']));
+
+        $handler(new ObserveDeferredSingleSubagentChildTurnMessage(
+            lifecycleId: $launch->lifecycleId,
+            childRunId: 'child-privacy-uuid',
+            committedStatus: RunStatus::Running,
+            turnNo: 5,
+            committedEvents: [new AfterTurnCommitEventSummary(4, RunEventTypeEnum::TurnAdvanced->value, ['turn_no' => 5])],
+        ));
+        $entity = $repo->findEntityByLifecycleId($launch->lifecycleId);
+        $this->assertSame('running', $entity->childLifecycleProjection['child_status']);
+        $this->assertSame(5, $entity->childLifecycleProjection['child_turn_no']);
+
+        $malformed = new AfterTurnCommitEventSummary(5, RunEventTypeEnum::LlmStepCompleted->value, [
+            'assistant_message' => [
+                'role' => 'assistant',
+                'tool_calls' => [['id' => 'tc2', 'name' => 'grep', 'arguments' => '{not-json']],
+            ],
+        ]);
+        $handler(new ObserveDeferredSingleSubagentChildTurnMessage(
+            lifecycleId: $launch->lifecycleId,
+            childRunId: 'child-privacy-uuid',
+            committedStatus: RunStatus::Compacting,
+            turnNo: 5,
+            committedEvents: [$malformed],
+        ));
+        $entity = $repo->findEntityByLifecycleId($launch->lifecycleId);
+        $this->assertSame('compacting', $entity->childLifecycleProjection['child_status']);
+        $this->assertStringContainsString('grep', json_encode($entity->childLifecycleProjection, \JSON_THROW_ON_ERROR));
+
+        $handler(new ObserveDeferredSingleSubagentChildTurnMessage(
+            lifecycleId: $launch->lifecycleId,
+            childRunId: 'child-privacy-uuid',
+            committedStatus: RunStatus::Cancelling,
+            turnNo: 6,
+            committedEvents: [new AfterTurnCommitEventSummary(6, RunEventTypeEnum::TurnAdvanced->value, ['turn_no' => 6])],
+        ));
+        $entity = $repo->findEntityByLifecycleId($launch->lifecycleId);
+        $this->assertSame('cancelling', $entity->childLifecycleProjection['child_status']);
+        $this->assertSame(6, $entity->childLifecycleProjection['child_turn_no']);
+    }
+
+    public function testOptimisticProjectionVersionPreventsStaleCursorRegression(): void
+    {
+        /** @var DeferredSingleSubagentLaunchRepository $repo */
+        $repo = self::getContainer()->get(DeferredSingleSubagentLaunchRepository::class);
+        $repo->reserve(
+            parentRunId: 'parent-lock',
+            parentTurnNo: 1,
+            parentToolCallId: 'tool-lock',
+            parentOrderIndex: 0,
+            childRunId: 'child-lock-uuid',
+            artifactId: 'agent_dddddddddddddddd',
+            agentName: 'worker',
+            task: 'task',
+            definitionModel: null,
+            deadlineAt: new \DateTimeImmutable('+600 seconds'),
+        );
+        $repo->markLaunched('parent-lock', 'tool-lock', new \DateTimeImmutable());
+        $launch = $repo->findByParentRunAndToolCall('parent-lock', 'tool-lock');
+        $this->assertNotNull($launch);
+        $entity = $repo->findEntityByLifecycleId($launch->lifecycleId);
+        $this->assertNotNull($entity);
+        $versionBeforeApply = $entity->projectionVersion;
+
+        $projection = new \Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredSingleSubagentChildLifecycleProjectionDTO(
+            childStatus: RunStatus::Running,
+            childTurnNo: 1,
+            lastCommittedSeq: 1,
+        );
+
+        $repo->applyChildLifecycleProjection($launch->lifecycleId, $projection, 1, $versionBeforeApply);
+        $entity = $repo->findEntityByLifecycleId($launch->lifecycleId);
+        $this->assertGreaterThan($versionBeforeApply, $entity->projectionVersion);
+        $this->assertSame(1, $entity->childEventCursor);
+
+        $this->expectException(\Doctrine\ORM\OptimisticLockException::class);
+        $repo->applyChildLifecycleProjection($launch->lifecycleId, $projection, 99, $versionBeforeApply);
     }
 }

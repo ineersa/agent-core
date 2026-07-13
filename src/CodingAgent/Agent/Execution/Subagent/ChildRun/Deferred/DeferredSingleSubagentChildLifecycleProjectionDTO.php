@@ -12,13 +12,15 @@ use Ineersa\AgentCore\Domain\Run\RunStatus;
 final readonly class DeferredSingleSubagentChildLifecycleProjectionDTO
 {
     /**
-     * @param list<string> $recentTools
+     * @param list<string>                                            $recentTools
+     * @param array<string, array{name: string, displayLine: string}> $pendingToolCalls
      */
     public function __construct(
         public RunStatus $childStatus,
         public int $childTurnNo,
         public int $lastCommittedSeq,
         public ?string $errorMessage = null,
+        public ?string $assistantResultText = null,
         public ?string $assistantExcerpt = null,
         public int $toolCount = 0,
         public int $inputTokens = 0,
@@ -32,7 +34,6 @@ final readonly class DeferredSingleSubagentChildLifecycleProjectionDTO
         public ?string $provider = null,
         public array $recentTools = [],
         public ?string $activeToolLine = null,
-        /** @var array<string, array{name: string, args: array<string, mixed>}> */
         public array $pendingToolCalls = [],
     ) {
     }
@@ -55,6 +56,9 @@ final readonly class DeferredSingleSubagentChildLifecycleProjectionDTO
         ];
         if (null !== $this->errorMessage && '' !== $this->errorMessage) {
             $data['error_message'] = $this->errorMessage;
+        }
+        if (null !== $this->assistantResultText && '' !== $this->assistantResultText) {
+            $data['assistant_result_text'] = $this->assistantResultText;
         }
         if (null !== $this->assistantExcerpt && '' !== $this->assistantExcerpt) {
             $data['assistant_excerpt'] = $this->assistantExcerpt;
@@ -93,6 +97,7 @@ final readonly class DeferredSingleSubagentChildLifecycleProjectionDTO
             childTurnNo: isset($data['child_turn_no']) && is_numeric($data['child_turn_no']) ? (int) $data['child_turn_no'] : 0,
             lastCommittedSeq: isset($data['last_committed_seq']) && is_numeric($data['last_committed_seq']) ? (int) $data['last_committed_seq'] : 0,
             errorMessage: \is_string($data['error_message'] ?? null) ? $data['error_message'] : null,
+            assistantResultText: \is_string($data['assistant_result_text'] ?? null) ? $data['assistant_result_text'] : null,
             assistantExcerpt: \is_string($data['assistant_excerpt'] ?? null) ? $data['assistant_excerpt'] : null,
             toolCount: isset($data['tool_count']) && is_numeric($data['tool_count']) ? (int) $data['tool_count'] : 0,
             inputTokens: isset($data['input_tokens']) && is_numeric($data['input_tokens']) ? (int) $data['input_tokens'] : 0,
@@ -111,7 +116,7 @@ final readonly class DeferredSingleSubagentChildLifecycleProjectionDTO
     }
 
     /**
-     * @return array<string, array{name: string, args: array<string, mixed>}>
+     * @return array<string, array{name: string, displayLine: string}>
      */
     private static function decodePendingToolCalls(mixed $raw): array
     {
@@ -124,8 +129,10 @@ final readonly class DeferredSingleSubagentChildLifecycleProjectionDTO
                 continue;
             }
             $name = \is_string($entry['name'] ?? null) ? $entry['name'] : 'tool';
-            $args = \is_array($entry['args'] ?? null) ? $entry['args'] : [];
-            $out[$id] = ['name' => $name, 'args' => $args];
+            $displayLine = \is_string($entry['displayLine'] ?? null)
+                ? $entry['displayLine']
+                : (\is_string($entry['display_line'] ?? null) ? $entry['display_line'] : $name);
+            $out[$id] = ['name' => $name, 'displayLine' => $displayLine];
         }
 
         return $out;

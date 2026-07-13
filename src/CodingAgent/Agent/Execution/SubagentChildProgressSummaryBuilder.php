@@ -20,14 +20,13 @@ use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunEventStoreFactory;
 final class SubagentChildProgressSummaryBuilder
 {
     private const int MAX_RECENT_TOOLS = 4;
-    private const int MAX_ARG_VALUE_LEN = 72;
-    private const int MAX_ASSISTANT_EXCERPT = 220;
 
     /** @var array<string, array{lastSeq: int, summary: SubagentChildProgressSummary}> */
     private array $cache = [];
 
     public function __construct(
         private readonly AgentChildRunEventStoreFactory $childEventStoreFactory,
+        private readonly SubagentChildToolProgressPresentationFormatter $presentationFormatter = new SubagentChildToolProgressPresentationFormatter(),
     ) {
     }
 
@@ -116,9 +115,9 @@ final class SubagentChildProgressSummaryBuilder
 
                 $assistantPayload = \is_array($payload['assistant_message'] ?? null) ? $payload['assistant_message'] : null;
                 if (null !== $assistantPayload) {
-                    $excerpt = $this->assistantExcerptFromPayload($assistantPayload);
-                    if ('' !== $excerpt) {
-                        $assistantExcerpt = $excerpt;
+                    $fullText = $this->presentationFormatter->assistantTextFromPayload($assistantPayload);
+                    if ('' !== $fullText) {
+                        $assistantExcerpt = $this->presentationFormatter->assistantExcerptFromText($fullText);
                     }
                     $toolCalls = \is_array($assistantPayload['tool_calls'] ?? null) ? $assistantPayload['tool_calls'] : [];
                     foreach ($toolCalls as $toolCall) {
@@ -127,7 +126,7 @@ final class SubagentChildProgressSummaryBuilder
                         }
                         $id = \is_string($toolCall['id'] ?? null) ? $toolCall['id'] : null;
                         $name = \is_string($toolCall['name'] ?? null) ? $toolCall['name'] : 'tool';
-                        $args = $this->normalizeArgs($toolCall['arguments'] ?? $toolCall['args'] ?? []);
+                        $args = $this->presentationFormatter->normalizeToolArguments($toolCall['arguments'] ?? $toolCall['args'] ?? []);
                         if (null !== $id) {
                             $pendingById[$id] = ['name' => $name, 'args' => $args];
                         }
@@ -161,14 +160,14 @@ final class SubagentChildProgressSummaryBuilder
         $recentLines = [];
         $slice = \array_slice($completedTools, -self::MAX_RECENT_TOOLS);
         foreach ($slice as $tool) {
-            $recentLines[] = $this->formatToolLine($tool['name'], $tool['args']);
+            $recentLines[] = $this->presentationFormatter->formatToolDisplayLine($tool['name'], $tool['args']);
         }
 
         $activeLine = null;
         if ([] !== $pendingById) {
             $lastPending = array_values($pendingById);
             $last = $lastPending[\count($lastPending) - 1];
-            $activeLine = $this->formatToolLine($last['name'], $last['args']);
+            $activeLine = $this->presentationFormatter->formatToolDisplayLine($last['name'], $last['args']);
         }
 
         $artifactPath = AgentArtifactPathsDTO::forArtifactId($artifactId)->artifactDir;
@@ -198,119 +197,13 @@ final class SubagentChildProgressSummaryBuilder
             if (!$message instanceof AgentMessage || 'assistant' !== $message->role) {
                 continue;
             }
-            $text = $this->textFromMessage($message);
+            $text = $this->presentationFormatter->assistantTextFromMessage($message);
             if ('' !== $text) {
-                return $this->truncateLine($text, self::MAX_ASSISTANT_EXCERPT);
+                return $this->presentationFormatter->assistantExcerptFromText($text);
             }
         }
 
         return null;
-    }
-
-    /**
-     * @param array<string, mixed> $assistantPayload
-     */
-    private function assistantExcerptFromPayload(array $assistantPayload): string
-    {
-        $msg = AgentMessage::fromPayload($assistantPayload);
-        if (null === $msg || 'assistant' !== $msg->role) {
-            return '';
-        }
-
-        return $this->truncateLine($this->textFromMessage($msg), self::MAX_ASSISTANT_EXCERPT);
-    }
-
-    private function textFromMessage(AgentMessage $message): string
-    {
-        $parts = [];
-        foreach ($message->content as $part) {
-            if (!\is_array($part)) {
-                continue;
-            }
-            if ('text' === ($part['type'] ?? null) && \is_string($part['text'] ?? null)) {
-                $parts[] = $part['text'];
-            }
-        }
-
-        return trim(implode(' ', $parts));
-    }
-
-    /**
-     * @return array<string, mixed>
-     */
-    private function normalizeArgs(mixed $raw): array
-    {
-        if (\is_array($raw)) {
-            return $raw;
-        }
-        if (\is_string($raw) && '' !== $raw) {
-            try {
-                $decoded = json_decode($raw, true, 512, \JSON_THROW_ON_ERROR);
-                if (\is_array($decoded)) {
-                    return $decoded;
-                }
-            } catch (\JsonException) {
-                return [];
-            }
-        }
-
-        return [];
-    }
-
-    /**
-     * @param array<string, mixed> $args
-     */
-    private function formatToolLine(string $name, array $args): string
-    {
-        $pairs = $this->safeArgPairs($name, $args);
-        if ([] === $pairs) {
-            return $name;
-        }
-
-        return $name.': '.implode(', ', $pairs);
-    }
-
-    /**
-     * @param array<string, mixed> $args
-     *
-     * @return list<string>
-     */
-    private function safeArgPairs(string $toolName, array $args): array
-    {
-        $keys = match ($toolName) {
-            'read', 'write', 'edit' => ['path'],
-            'bash', 'shell' => ['command', 'cmd'],
-            'grep' => ['pattern', 'path'],
-            'glob', 'find' => ['pattern', 'path'],
-            default => ['path', 'command', 'cmd', 'query', 'pattern', 'file'],
-        };
-
-        $pairs = [];
-        foreach ($keys as $key) {
-            if (!isset($args[$key]) || !\is_scalar($args[$key])) {
-                continue;
-            }
-            $value = (string) $args[$key];
-            if ('' === $value) {
-                continue;
-            }
-            $pairs[] = $key.'="'.$this->truncateLine($value, self::MAX_ARG_VALUE_LEN).'"';
-            if (\count($pairs) >= 2) {
-                break;
-            }
-        }
-
-        return $pairs;
-    }
-
-    private function truncateLine(string $text, int $max): string
-    {
-        $normalized = preg_replace('/\s+/', ' ', $text) ?? $text;
-        if (mb_strlen($normalized) <= $max) {
-            return $normalized;
-        }
-
-        return mb_substr($normalized, 0, $max - 1).'…';
     }
 
     private function intVal(mixed $value): int

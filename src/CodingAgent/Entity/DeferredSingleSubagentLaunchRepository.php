@@ -6,10 +6,12 @@ namespace Ineersa\CodingAgent\Entity;
 
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
+use Doctrine\ORM\OptimisticLockException;
 use Doctrine\Persistence\ManagerRegistry;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\CodingAgent\Agent\Execution\DeferredSingleSubagentLaunchStatusEnum;
 use Ineersa\CodingAgent\Agent\Execution\DeferredSingleSubagentProjectionDTO;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredSingleSubagentChildLifecycleProjectionDTO;
 use Symfony\Component\Clock\Clock;
 use Symfony\Component\Uid\Uuid;
 
@@ -39,14 +41,18 @@ final class DeferredSingleSubagentLaunchRepository extends ServiceEntityReposito
 
     public function applyChildLifecycleProjection(
         string $lifecycleId,
-        \Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredSingleSubagentChildLifecycleProjectionDTO $projection,
+        DeferredSingleSubagentChildLifecycleProjectionDTO $projection,
         int $childEventCursor,
+        int $expectedProjectionVersion,
     ): void {
         $em = $this->getEntityManager();
-        $em->clear();
         $row = $this->findOneBy(['lifecycleId' => $lifecycleId]);
         if (!$row instanceof DeferredSingleSubagentLaunch) {
             throw new \RuntimeException(\sprintf('Deferred single subagent projection missing for lifecycle "%s".', $lifecycleId));
+        }
+
+        if ($row->projectionVersion !== $expectedProjectionVersion) {
+            throw OptimisticLockException::lockFailed($row);
         }
 
         $row->childLifecycleProjection = $projection->toArray();
@@ -104,6 +110,7 @@ final class DeferredSingleSubagentLaunchRepository extends ServiceEntityReposito
                 'definition_model' => $definitionModel,
                 'launch_status' => DeferredSingleSubagentLaunchStatusEnum::Reserved->value,
                 'child_event_cursor' => 0,
+                'projection_version' => 1,
                 'started_at' => null,
                 'deadline_at' => $deadlineAt->format('Y-m-d H:i:s'),
                 'created_at' => $now,
@@ -223,12 +230,12 @@ final class DeferredSingleSubagentLaunchRepository extends ServiceEntityReposito
     /**
      * @param array<string, mixed>|null $raw
      */
-    private function decodeChildLifecycleProjection(?array $raw): ?\Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredSingleSubagentChildLifecycleProjectionDTO
+    private function decodeChildLifecycleProjection(?array $raw): ?DeferredSingleSubagentChildLifecycleProjectionDTO
     {
         if (null === $raw || [] === $raw) {
             return null;
         }
 
-        return \Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredSingleSubagentChildLifecycleProjectionDTO::fromArray($raw);
+        return DeferredSingleSubagentChildLifecycleProjectionDTO::fromArray($raw);
     }
 }

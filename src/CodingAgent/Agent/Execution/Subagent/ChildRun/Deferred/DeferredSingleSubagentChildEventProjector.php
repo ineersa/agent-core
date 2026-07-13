@@ -6,8 +6,8 @@ namespace Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred;
 
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitEventSummary;
-use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
+use Ineersa\CodingAgent\Agent\Execution\SubagentChildToolProgressPresentationFormatter;
 
 /**
  * Incrementally reduces committed child event summaries into a compact lifecycle projection.
@@ -15,8 +15,11 @@ use Ineersa\AgentCore\Domain\Run\RunStatus;
 final class DeferredSingleSubagentChildEventProjector
 {
     private const int MAX_RECENT_TOOLS = 4;
-    private const int MAX_ARG_VALUE_LEN = 72;
-    private const int MAX_ASSISTANT_EXCERPT = 220;
+
+    public function __construct(
+        private readonly SubagentChildToolProgressPresentationFormatter $presentationFormatter = new SubagentChildToolProgressPresentationFormatter(),
+    ) {
+    }
 
     /**
      * @param list<AfterTurnCommitEventSummary> $summaries Ordered, contiguous, seq > cursor
@@ -25,12 +28,14 @@ final class DeferredSingleSubagentChildEventProjector
         DeferredSingleSubagentChildLifecycleProjectionDTO $current,
         array $summaries,
         ?string $definitionModel,
-        ?string $artifactPath,
+        RunStatus $committedStatus,
+        int $committedTurnNo,
     ): DeferredSingleSubagentChildLifecycleProjectionDTO {
         $status = $current->childStatus;
         $turnNo = $current->childTurnNo;
         $lastSeq = $current->lastCommittedSeq;
         $errorMessage = $current->errorMessage;
+        $assistantResultText = $current->assistantResultText;
         $assistantExcerpt = $current->assistantExcerpt;
         $toolCount = $current->toolCount;
         $inputTokens = $current->inputTokens;
@@ -46,7 +51,7 @@ final class DeferredSingleSubagentChildEventProjector
         $recentTools = $current->recentTools;
         $activeToolLine = $current->activeToolLine;
 
-        /** @var array<string, array{name: string, args: array<string, mixed>}> $pendingById */
+        /** @var array<string, array{name: string, displayLine: string}> $pendingById */
         $pendingById = $current->pendingToolCalls;
 
         foreach ($summaries as $summary) {
@@ -95,9 +100,10 @@ final class DeferredSingleSubagentChildEventProjector
 
                 $assistantPayload = \is_array($payload['assistant_message'] ?? null) ? $payload['assistant_message'] : null;
                 if (null !== $assistantPayload) {
-                    $excerpt = $this->assistantExcerptFromPayload($assistantPayload);
-                    if ('' !== $excerpt) {
-                        $assistantExcerpt = $excerpt;
+                    $fullText = $this->presentationFormatter->assistantTextFromPayload($assistantPayload);
+                    if ('' !== $fullText) {
+                        $assistantResultText = $fullText;
+                        $assistantExcerpt = $this->presentationFormatter->assistantExcerptFromText($fullText);
                     }
                     $toolCalls = \is_array($assistantPayload['tool_calls'] ?? null) ? $assistantPayload['tool_calls'] : [];
                     foreach ($toolCalls as $toolCall) {
@@ -106,9 +112,10 @@ final class DeferredSingleSubagentChildEventProjector
                         }
                         $id = \is_string($toolCall['id'] ?? null) ? $toolCall['id'] : null;
                         $name = \is_string($toolCall['name'] ?? null) ? $toolCall['name'] : 'tool';
-                        $args = $this->normalizeArgs($toolCall['arguments'] ?? $toolCall['args'] ?? []);
+                        $args = $this->presentationFormatter->normalizeToolArguments($toolCall['arguments'] ?? $toolCall['args'] ?? []);
+                        $displayLine = $this->presentationFormatter->formatToolDisplayLine($name, $args);
                         if (null !== $id) {
-                            $pendingById[$id] = ['name' => $name, 'args' => $args];
+                            $pendingById[$id] = ['name' => $name, 'displayLine' => $displayLine];
                         }
                     }
                 }
@@ -119,17 +126,16 @@ final class DeferredSingleSubagentChildEventProjector
             if (RunEventTypeEnum::ToolExecutionEnd->value === $type) {
                 ++$toolCount;
                 $toolCallId = \is_string($payload['tool_call_id'] ?? null) ? $payload['tool_call_id'] : null;
-                $name = \is_string($payload['tool_name'] ?? null) ? $payload['tool_name'] : null;
-                $args = [];
+                $displayLine = null;
                 if (null !== $toolCallId && isset($pendingById[$toolCallId])) {
-                    $name = $pendingById[$toolCallId]['name'];
-                    $args = $pendingById[$toolCallId]['args'];
+                    $displayLine = $pendingById[$toolCallId]['displayLine'];
                     unset($pendingById[$toolCallId]);
                 }
-                if (null === $name) {
-                    $name = 'tool';
+                if (null === $displayLine) {
+                    $name = \is_string($payload['tool_name'] ?? null) ? $payload['tool_name'] : 'tool';
+                    $displayLine = $this->presentationFormatter->formatToolDisplayLine($name, []);
                 }
-                $recentTools[] = $this->formatToolLine($name, $args);
+                $recentTools[] = $displayLine;
                 if (\count($recentTools) > self::MAX_RECENT_TOOLS) {
                     $recentTools = \array_slice($recentTools, -self::MAX_RECENT_TOOLS);
                 }
@@ -169,14 +175,18 @@ final class DeferredSingleSubagentChildEventProjector
         if ([] !== $pendingById) {
             $lastPending = array_values($pendingById);
             $last = $lastPending[\count($lastPending) - 1];
-            $activeToolLine = $this->formatToolLine($last['name'], $last['args']);
+            $activeToolLine = $last['displayLine'];
         }
+
+        $status = $committedStatus;
+        $turnNo = $committedTurnNo;
 
         return new DeferredSingleSubagentChildLifecycleProjectionDTO(
             childStatus: $status,
             childTurnNo: $turnNo,
             lastCommittedSeq: $lastSeq,
             errorMessage: $errorMessage,
+            assistantResultText: $assistantResultText,
             assistantExcerpt: $assistantExcerpt,
             toolCount: $toolCount,
             inputTokens: $inputTokens,
@@ -192,86 +202,6 @@ final class DeferredSingleSubagentChildEventProjector
             activeToolLine: $activeToolLine,
             pendingToolCalls: $pendingById,
         );
-    }
-
-    /** @param array<string, mixed> $assistantPayload */
-    private function assistantExcerptFromPayload(array $assistantPayload): string
-    {
-        $msg = AgentMessage::fromPayload($assistantPayload);
-        if (null === $msg || 'assistant' !== $msg->role) {
-            return '';
-        }
-
-        return $this->truncateLine($this->textFromMessage($msg), self::MAX_ASSISTANT_EXCERPT);
-    }
-
-    private function textFromMessage(AgentMessage $message): string
-    {
-        $parts = [];
-        foreach ($message->content as $part) {
-            if (!\is_array($part)) {
-                continue;
-            }
-            if ('text' === ($part['type'] ?? null) && \is_string($part['text'] ?? null)) {
-                $parts[] = $part['text'];
-            }
-        }
-
-        return trim(implode(' ', $parts));
-    }
-
-    /** @return array<string, mixed> */
-    private function normalizeArgs(mixed $raw): array
-    {
-        if (\is_array($raw)) {
-            return $raw;
-        }
-        if (\is_string($raw) && '' !== $raw) {
-            try {
-                $decoded = json_decode($raw, true, 512, \JSON_THROW_ON_ERROR);
-                if (\is_array($decoded)) {
-                    return $decoded;
-                }
-            } catch (\JsonException) {
-            }
-        }
-
-        return [];
-    }
-
-    /** @param array<string, mixed> $args */
-    private function formatToolLine(string $name, array $args): string
-    {
-        if ([] === $args) {
-            return $name;
-        }
-        $pairs = [];
-        foreach ($args as $key => $value) {
-            if (!\is_string($key)) {
-                continue;
-            }
-            $pairs[] = $key.'='.$this->truncateArgValue($value);
-        }
-
-        return $name.': '.implode(', ', $pairs);
-    }
-
-    private function truncateArgValue(mixed $value): string
-    {
-        $encoded = json_encode($value, \JSON_UNESCAPED_UNICODE);
-        $text = \is_scalar($value) ? (string) $value : (false !== $encoded ? $encoded : '');
-
-        return $this->truncateLine($text, self::MAX_ARG_VALUE_LEN);
-    }
-
-    private function truncateLine(string $text, int $max): string
-    {
-        $text = preg_replace('/\s+/', ' ', $text) ?? $text;
-        if (\strlen($text) <= $max) {
-            return $text;
-        }
-
-        return substr($text, 0, $max - 3).'...';
     }
 
     private function intVal(mixed $value): int

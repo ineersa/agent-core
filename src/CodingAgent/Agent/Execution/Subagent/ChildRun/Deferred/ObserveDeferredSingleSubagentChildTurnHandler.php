@@ -4,15 +4,14 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred;
 
+use Doctrine\ORM\OptimisticLockException;
 use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitEventSummary;
-use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactPathsDTO;
+use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\CodingAgent\Entity\DeferredSingleSubagentLaunchRepository;
 use Psr\Log\LoggerInterface;
 
 /**
  * Applies one child commit batch to the durable deferred-single lifecycle projection.
- *
- * Assumes run_control consumer ordering per lifecycle; duplicate delivery is safe via cursor.
  */
 final readonly class ObserveDeferredSingleSubagentChildTurnHandler
 {
@@ -65,24 +64,38 @@ final readonly class ObserveDeferredSingleSubagentChildTurnHandler
         $current = \is_array($rawProjection) && [] !== $rawProjection
             ? DeferredSingleSubagentChildLifecycleProjectionDTO::fromArray($rawProjection)
             : new DeferredSingleSubagentChildLifecycleProjectionDTO(
-                childStatus: \Ineersa\AgentCore\Domain\Run\RunStatus::Running,
+                childStatus: RunStatus::Running,
                 childTurnNo: $message->turnNo,
                 lastCommittedSeq: $cursor,
             );
-        $artifactPath = AgentArtifactPathsDTO::forArtifactId($row->artifactId)->artifactDir;
 
         $updated = $this->projector->apply(
-            $current,
-            $newEvents,
-            $row->definitionModel,
-            $artifactPath,
+            current: $current,
+            summaries: $newEvents,
+            definitionModel: $row->definitionModel,
+            committedStatus: $message->committedStatus,
+            committedTurnNo: $message->turnNo,
         );
 
-        $this->launchRepository->applyChildLifecycleProjection(
-            lifecycleId: $message->lifecycleId,
-            projection: $updated,
-            childEventCursor: $updated->lastCommittedSeq,
-        );
+        try {
+            $this->launchRepository->applyChildLifecycleProjection(
+                lifecycleId: $message->lifecycleId,
+                projection: $updated,
+                childEventCursor: $updated->lastCommittedSeq,
+                expectedProjectionVersion: $row->projectionVersion,
+            );
+        } catch (OptimisticLockException $exception) {
+            $this->logger->warning('deferred_single_subagent.child_projection_version_conflict', [
+                'lifecycle_id' => $message->lifecycleId,
+                'child_run_id' => $message->childRunId,
+                'cursor' => $cursor,
+                'component' => 'agent.execution',
+                'event_type' => 'deferred_single_subagent.child_projection_version_conflict',
+                'exception_class' => $exception::class,
+            ]);
+
+            throw $exception;
+        }
     }
 
     /**
