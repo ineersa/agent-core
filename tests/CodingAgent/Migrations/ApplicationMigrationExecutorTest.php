@@ -165,9 +165,6 @@ final class ApplicationMigrationExecutorTest extends TestCase
         $this->assertSame(1, $countNew);
     }
 
-
-
-
     public function testProviderCacheKeyBackfillAssignsDistinctUuidV7ForPreMigrationRows(): void
     {
         $connection = $this->createSqliteConnection($this->isolatedDir.'/provider-key-backfill.sqlite');
