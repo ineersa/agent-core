@@ -13,7 +13,6 @@ use Symfony\AI\Platform\Exception\InvalidArgumentException;
 use Symfony\AI\Platform\Model;
 use Symfony\AI\Platform\ModelClientInterface;
 use Symfony\AI\Platform\Result\RawResultInterface;
-use Symfony\Component\Uid\UuidV4;
 
 final class CodexWebSocketModelClient implements ModelClientInterface
 {
@@ -52,8 +51,8 @@ final class CodexWebSocketModelClient implements ModelClientInterface
             throw new InvalidArgumentException(\sprintf('Payload must be an array, but a string was given to "%s".', self::class));
         }
 
+        [$requestId, $options] = CodexCorrelationRequestId::resolve($options, $payload);
         $jsonBody = $this->requestBodyFactory->build($model, $payload, $options);
-        $requestId = UuidV4::v4()->toRfc4122();
         $websocketUrl = $this->urlResolver->resolve($this->baseUrl, $this->responsesPath);
 
         $this->logRequestSummary($model, $jsonBody, $websocketUrl);
@@ -108,7 +107,7 @@ final class CodexWebSocketModelClient implements ModelClientInterface
             }
 
             $this->accessToken = $fresh;
-            $retryRequestId = UuidV4::v4()->toRfc4122();
+            $retryRequestId = CodexCorrelationRequestId::generate();
 
             $this->logger->info('codex.token.refreshed_on_401', [
                 'event_type' => 'codex.token.refreshed_on_401',

@@ -11,7 +11,6 @@ use Symfony\AI\Platform\Model;
 use Symfony\AI\Platform\ModelClientInterface;
 use Symfony\AI\Platform\Result\RawHttpResult;
 use Symfony\AI\Platform\Result\RawResultInterface;
-use Symfony\Component\Uid\UuidV4;
 use Symfony\Contracts\HttpClient\HttpClientInterface;
 use Symfony\Contracts\HttpClient\ResponseInterface;
 
@@ -47,6 +46,7 @@ class CodexModelClient implements ModelClientInterface
             throw new InvalidArgumentException(\sprintf('Payload must be an array, but a string was given to "%s".', self::class));
         }
 
+        [$requestId, $options] = CodexCorrelationRequestId::resolve($options, $payload);
         $jsonBody = $this->requestBodyFactory->build($model, $payload, $options);
 
         $requestOptions = [
@@ -58,7 +58,7 @@ class CodexModelClient implements ModelClientInterface
                 'chatgpt-account-id' => $this->accountId,
                 'originator' => $this->originator,
                 'OpenAI-Beta' => 'responses=experimental',
-                'x-client-request-id' => UuidV4::v4()->toRfc4122(),
+                'x-client-request-id' => $requestId,
             ],
             'json' => $jsonBody,
         ];
@@ -109,7 +109,7 @@ class CodexModelClient implements ModelClientInterface
 
         $retryOptions = $requestOptions;
         $retryOptions['auth_bearer'] = $fresh;
-        $retryOptions['headers']['x-client-request-id'] = UuidV4::v4()->toRfc4122();
+        $retryOptions['headers']['x-client-request-id'] = CodexCorrelationRequestId::generate();
 
         $this->logger->info('codex.token.refreshed_on_401', [
             'event_type' => 'codex.token.refreshed_on_401',

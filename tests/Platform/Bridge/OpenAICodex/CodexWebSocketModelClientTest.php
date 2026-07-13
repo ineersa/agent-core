@@ -9,6 +9,7 @@ use Amp\Http\Client\Response;
 use Amp\Websocket\Client\WebsocketConnectException;
 use Amp\Websocket\Client\WebsocketConnection;
 use PHPUnit\Framework\TestCase;
+use Symfony\AI\Platform\Bridge\OpenAICodex\CodexCorrelationRequestId;
 use Symfony\AI\Platform\Bridge\OpenAICodex\CodexModel;
 use Symfony\AI\Platform\Bridge\OpenAICodex\CodexRequestBodyFactory;
 use Symfony\AI\Platform\Bridge\OpenAICodex\CodexWebSocketConnectorInterface;
@@ -68,8 +69,10 @@ final class CodexWebSocketModelClientTest extends TestCase
         $this->assertSame('responses_websockets=2026-02-06', $captured->headers['OpenAI-Beta']);
         $this->assertSame('acct-1', $captured->headers['chatgpt-account-id']);
         $this->assertSame($captured->headers['session-id'], $captured->headers['x-client-request-id']);
+        $this->assertTrue(CodexCorrelationRequestId::isVersion7($captured->headers['session-id']));
 
         $frame = json_decode($captured->frame, true, flags: \JSON_THROW_ON_ERROR);
+        $this->assertSame($captured->headers['session-id'], $frame['prompt_cache_key']);
         $this->assertSame('response.create', $frame['type']);
         $this->assertSame('gpt-5.6-luna', $frame['model']);
         $this->assertSame('hi', $frame['input'][0]['content']);
@@ -154,6 +157,8 @@ final class CodexWebSocketModelClientTest extends TestCase
         $this->assertSame('Bearer fresh-access-token', $connectCalls[1]['Authorization']);
         $this->assertNotSame($connectCalls[0]['session-id'], $connectCalls[1]['session-id']);
         $this->assertSame($connectCalls[1]['session-id'], $connectCalls[1]['x-client-request-id']);
+        $this->assertTrue(CodexCorrelationRequestId::isVersion7($connectCalls[0]['session-id']));
+        $this->assertTrue(CodexCorrelationRequestId::isVersion7($connectCalls[1]['session-id']));
     }
 
     public function testHandshake401DoesNotRetryWhenRefreshThrows(): void

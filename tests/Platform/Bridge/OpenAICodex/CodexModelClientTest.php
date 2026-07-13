@@ -7,6 +7,7 @@ namespace Symfony\AI\Platform\Bridge\OpenAICodex\Tests;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
+use Symfony\AI\Platform\Bridge\OpenAICodex\CodexCorrelationRequestId;
 use Symfony\AI\Platform\Bridge\OpenAICodex\CodexModel;
 use Symfony\AI\Platform\Bridge\OpenAICodex\CodexModelClient;
 use Symfony\AI\Platform\Model;
@@ -42,8 +43,13 @@ final class CodexModelClientTest extends TestCase
             self::assertSame('User-Agent: hatfield', $options['normalized_headers']['user-agent'][0]);
             self::assertSame('OpenAI-Beta: responses=experimental', $options['normalized_headers']['openai-beta'][0]);
             self::assertArrayHasKey('x-client-request-id', $options['normalized_headers']);
+            $requestId = $options['normalized_headers']['x-client-request-id'][0];
+            self::assertStringStartsWith('x-client-request-id: ', $requestId);
+            $requestId = substr($requestId, \strlen('x-client-request-id: '));
+            self::assertTrue(CodexCorrelationRequestId::isVersion7($requestId));
 
             $body = json_decode($options['body'], true);
+            self::assertSame($requestId, $body['prompt_cache_key'] ?? null);
             self::assertSame('POST', $method);
             self::assertSame('gpt-5.5', $body['model']);
             self::assertSame('test message', $body['input'][0]['content']);
@@ -403,13 +409,18 @@ final class CodexModelClientTest extends TestCase
     }
 
     /**
-     * Without run_id, prompt_cache_key must NOT be present.
+     * Without explicit run_id, Codex correlation uses a generated UUIDv7 for x-client-request-id and prompt_cache_key.
      */
-    public function testItDoesNotSetPromptCacheKeyWithoutRunId(): void
+    public function testItSetsPromptCacheKeyFromGeneratedCorrelationIdWithoutRunId(): void
     {
         $resultCallback = static function (string $method, string $url, array $options): HttpResponse {
+            $requestId = $options['normalized_headers']['x-client-request-id'][0];
+            self::assertStringStartsWith('x-client-request-id: ', $requestId);
+            $requestId = substr($requestId, \strlen('x-client-request-id: '));
+            self::assertTrue(CodexCorrelationRequestId::isVersion7($requestId));
+
             $body = json_decode($options['body'], true, 512, \JSON_THROW_ON_ERROR);
-            self::assertArrayNotHasKey('prompt_cache_key', $body);
+            self::assertSame($requestId, $body['prompt_cache_key']);
 
             return new MockResponse();
         };
