@@ -65,8 +65,8 @@ final class ModelResolver
 
         // 2. Session metadata
         if ('' !== $sessionId) {
-            $meta = $this->sessionMetaStore->readSessionMetadata($sessionId);
-            $sessionModel = \is_string($meta['model'] ?? null) ? $meta['model'] : null;
+            $session = $this->sessionMetaStore->findSession($sessionId);
+            $sessionModel = null !== $session && null !== $session->model ? $session->model : null;
             if (null !== $sessionModel) {
                 $ref = AiModelReference::tryParse($sessionModel);
                 if (null !== $ref && $catalog->isAvailable($ref)) {
@@ -108,8 +108,8 @@ final class ModelResolver
 
         // 2. Session metadata
         if ('' !== $sessionId) {
-            $meta = $this->sessionMetaStore->readSessionMetadata($sessionId);
-            $sessionReasoning = \is_string($meta['reasoning'] ?? null) ? $meta['reasoning'] : null;
+            $session = $this->sessionMetaStore->findSession($sessionId);
+            $sessionReasoning = null !== $session && null !== $session->reasoning ? $session->reasoning : null;
             if (null !== $sessionReasoning) {
                 return $sessionReasoning;
             }

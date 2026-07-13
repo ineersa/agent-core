@@ -9,6 +9,7 @@ use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Infrastructure\SymfonyAi\Http\LlmHttpRetryPolicy;
 use Ineersa\CodingAgent\Infrastructure\SymfonyAi\Http\LlmRetryingHttpClient;
 use Ineersa\Platform\Bridge\Generic\DurableResultConverter;
+use Ineersa\Platform\Bridge\Generic\SanitizedGenericModelClient;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 use Symfony\AI\Platform\Bridge\Generic\Completions\ModelClient as GenericCompletionsModelClient;
@@ -148,12 +149,14 @@ class SymfonyAiProviderFactory
 
         if ($provider->supportsCompletions) {
             $completionsPath = $provider->completionsPath ?? '/v1/chat/completions';
-            $modelClients[] = new GenericCompletionsModelClient(
+            // Strip Hatfield-internal invocation metadata before the vendor client
+            // merges options into the OpenAI-compatible wire JSON (cache keys, 400s).
+            $modelClients[] = new SanitizedGenericModelClient(new GenericCompletionsModelClient(
                 $httpClient,
                 $provider->baseUrl,
                 $this->resolveApiKey($provider->apiKey),
                 $completionsPath,
-            );
+            ));
             $resultConverters[] = new DurableResultConverter(
                 onStreamEvent: $this->buildCaptureListener($provider->id),
             );
@@ -161,12 +164,12 @@ class SymfonyAiProviderFactory
 
         if ($provider->supportsEmbeddings) {
             $embeddingsPath = $provider->embeddingsPath ?? '/v1/embeddings';
-            $modelClients[] = new GenericEmbeddingsModelClient(
+            $modelClients[] = new SanitizedGenericModelClient(new GenericEmbeddingsModelClient(
                 $httpClient,
                 $provider->baseUrl,
                 $this->resolveApiKey($provider->apiKey),
                 $embeddingsPath,
-            );
+            ));
             $resultConverters[] = new GenericEmbeddingsResultConverter();
         }
 

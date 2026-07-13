@@ -15,6 +15,7 @@ use Symfony\Component\Serializer\Normalizer\BackedEnumNormalizer;
 use Symfony\Component\Serializer\Normalizer\DateTimeNormalizer;
 use Symfony\Component\Serializer\Normalizer\ObjectNormalizer;
 use Symfony\Component\Serializer\Serializer;
+use Symfony\Component\Uid\UuidV7;
 
 /**
  * Real tmux proof for /repair on a stale Cancelling session (no LLM invocation).
@@ -196,12 +197,14 @@ final class TuiRepairCommandE2eTest extends TestCase
         // Doctrine opens kernel.project_dir/var/test/{env}; env is relative to var/test (see TuiE2eDatabaseEnv).
         $pdo = new \PDO('sqlite:'.$this->appDbAbsolutePath);
         $now = (new \DateTimeImmutable())->format('Y-m-d H:i:s');
-        $stmt = $pdo->prepare('INSERT INTO hatfield_session (id, cwd, prompt, name, created_at, updated_at) VALUES (:id, :cwd, :prompt, :name, :created_at, :updated_at)');
+        $providerCacheKey = UuidV7::v7()->toRfc4122();
+        $stmt = $pdo->prepare('INSERT INTO hatfield_session (id, cwd, prompt, name, provider_cache_key, created_at, updated_at) VALUES (:id, :cwd, :prompt, :name, :provider_cache_key, :created_at, :updated_at)');
         $stmt->execute([
             'id' => (int) self::SESSION_ID,
             'cwd' => $this->testProjectDir,
             'prompt' => 'stale cancel repair e2e',
             'name' => 'repair-e2e',
+            'provider_cache_key' => $providerCacheKey,
             'created_at' => $now,
             'updated_at' => $now,
         ]);

@@ -8,6 +8,8 @@ use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Symfony\Component\Clock\Clock;
 use Symfony\Component\Clock\MockClock;
+use Symfony\Component\Uid\Uuid;
+use Symfony\Component\Uid\UuidV7;
 
 final class HatfieldSessionStoreTest extends IsolatedKernelTestCase
 {
@@ -36,17 +38,23 @@ final class HatfieldSessionStoreTest extends IsolatedKernelTestCase
 
         // Metadata lives in the DB, not as metadata.yaml
         $this->assertFileDoesNotExist($sessionPath.'/metadata.yaml');
-        $meta = $this->store->loadMetadata($sessionId);
-        $this->assertNotNull($meta);
-        $this->assertSame($sessionId, $meta['session_id']);
-        $this->assertSame($sessionId, $meta['run_id'], 'session_id must equal run_id');
-        $this->assertNull($meta['parent_id'], 'parent_id must be null for new sessions');
-        $this->assertNull($meta['root_id'], 'root_id must be null for new sessions');
-        $this->assertSame('Hello', $meta['prompt']);
-        $this->assertArrayHasKey('created_at', $meta);
+        $session = $this->store->findSession($sessionId);
+        $this->assertNotNull($session);
+        $this->assertSame($sessionId, (string) $session->id, 'public session_id and run_id both derive from DB auto-increment id');
+        $this->assertNull($session->parentId, 'parent_id must be null for new sessions');
+        $this->assertNull($session->rootId, 'root_id must be null for new sessions');
+        $this->assertSame('Hello', $session->prompt);
+        $this->assertInstanceOf(\DateTimeImmutable::class, $session->createdAt);
         // Name is always present as a non-empty string.
-        $this->assertArrayHasKey('name', $meta);
-        $this->assertSame('Hello', $meta['name']);
+
+        $this->assertSame('Hello', $session->name);
+
+        $this->assertTrue(Uuid::isValid($session->providerCacheKey));
+        $this->assertInstanceOf(UuidV7::class, Uuid::fromString($session->providerCacheKey));
+
+        $sessionAgain = $this->store->findSession($sessionId);
+        $this->assertNotNull($sessionAgain);
+        $this->assertSame($session->providerCacheKey, $sessionAgain->providerCacheKey);
 
         // Core files created (no metadata.yaml)
         $this->assertFileExists($sessionPath.'/state.json');
@@ -59,9 +67,9 @@ final class HatfieldSessionStoreTest extends IsolatedKernelTestCase
         $this->assertFalse($this->store->exists('nonexistent-session-id'));
     }
 
-    public function testLoadMetadataReturnsNullForMissingSession(): void
+    public function testFindSessionReturnsNullForMissingSession(): void
     {
-        $this->assertNull($this->store->loadMetadata('nonexistent-session-id'));
+        $this->assertNull($this->store->findSession('nonexistent-session-id'));
     }
 
     public function testUpdateMetadataMergesFields(): void
@@ -73,12 +81,12 @@ final class HatfieldSessionStoreTest extends IsolatedKernelTestCase
             'model' => 'deepseek-v4',
         ]);
 
-        $meta = $this->store->loadMetadata($sessionId);
-        $this->assertNotNull($meta);
-        $this->assertSame($sessionId, $meta['run_id'], 'run_id always equals session_id (id from DB)');
-        $this->assertSame('deepseek-v4', $meta['model']);
-        $this->assertArrayHasKey('session_id', $meta);
-        $this->assertArrayHasKey('updated_at', $meta);
+        $session = $this->store->findSession($sessionId);
+        $this->assertNotNull($session);
+        $this->assertSame($sessionId, (string) $session->id, 'run_id always equals session_id (id from DB)');
+        $this->assertSame('deepseek-v4', $session->model);
+
+        $this->assertInstanceOf(\DateTimeImmutable::class, $session->updatedAt);
     }
 
     public function testCreateSessionReturnsAutoIncrementIds(): void
@@ -94,16 +102,16 @@ final class HatfieldSessionStoreTest extends IsolatedKernelTestCase
         $this->assertDirectoryExists($this->store->resolveSessionsBasePath().'/'.$id1);
         $this->assertDirectoryExists($this->store->resolveSessionsBasePath().'/'.$id2);
 
-        $meta1 = $this->store->loadMetadata($id1);
-        $this->assertNotNull($meta1);
-        $this->assertSame('session one', $meta1['prompt']);
+        $session1 = $this->store->findSession($id1);
+        $this->assertNotNull($session1);
+        $this->assertSame('session one', $session1->prompt);
         // Name is derived from prompt
-        $this->assertSame('session one', $meta1['name']);
+        $this->assertSame('session one', $session1->name);
 
-        $meta2 = $this->store->loadMetadata($id2);
-        $this->assertNotNull($meta2);
-        $this->assertSame('session two', $meta2['prompt']);
-        $this->assertSame('session two', $meta2['name']);
+        $session2 = $this->store->findSession($id2);
+        $this->assertNotNull($session2);
+        $this->assertSame('session two', $session2->prompt);
+        $this->assertSame('session two', $session2->name);
     }
 
     public function testResolveSessionsBasePath(): void
@@ -123,10 +131,10 @@ final class HatfieldSessionStoreTest extends IsolatedKernelTestCase
     {
         $sessionId = $this->store->createSession('Write a README');
 
-        $meta = $this->store->loadMetadata($sessionId);
-        $this->assertNotNull($meta);
-        $this->assertArrayHasKey('name', $meta);
-        $this->assertSame('Write a README', $meta['name']);
+        $session = $this->store->findSession($sessionId);
+        $this->assertNotNull($session);
+
+        $this->assertSame('Write a README', $session->name);
     }
 
     public function testCreateSessionGeneratesNameFromLongMultilinePrompt(): void
@@ -135,12 +143,12 @@ final class HatfieldSessionStoreTest extends IsolatedKernelTestCase
         $prompt = "Write\ta comprehensive\n\nREADME   for the   project";
         $sessionId = $this->store->createSession($prompt);
 
-        $meta = $this->store->loadMetadata($sessionId);
-        $this->assertNotNull($meta);
+        $session = $this->store->findSession($sessionId);
+        $this->assertNotNull($session);
         // Internal whitespace collapsed to single spaces.
         $this->assertSame(
             'Write a comprehensive README for the project',
-            $meta['name'],
+            $session->name,
         );
     }
 
@@ -150,30 +158,30 @@ final class HatfieldSessionStoreTest extends IsolatedKernelTestCase
         $longPrompt = str_repeat('x', 250);
         $sessionId = $this->store->createSession($longPrompt);
 
-        $meta = $this->store->loadMetadata($sessionId);
-        $this->assertNotNull($meta);
-        $this->assertLessThanOrEqual(200, mb_strlen($meta['name']));
-        $this->assertStringStartsWith('x', $meta['name']);
+        $session = $this->store->findSession($sessionId);
+        $this->assertNotNull($session);
+        $this->assertLessThanOrEqual(200, mb_strlen($session->name));
+        $this->assertStringStartsWith('x', $session->name);
         // Truncated with no ellipsis — name is exactly 200 chars.
-        $this->assertSame(200, mb_strlen($meta['name']));
+        $this->assertSame(200, mb_strlen($session->name));
     }
 
     public function testCreateSessionGeneratesFallbackNameForEmptyPrompt(): void
     {
         $sessionId = $this->store->createSession('');
 
-        $meta = $this->store->loadMetadata($sessionId);
-        $this->assertNotNull($meta);
-        $this->assertSame('Session', $meta['name']);
+        $session = $this->store->findSession($sessionId);
+        $this->assertNotNull($session);
+        $this->assertSame('Session', $session->name);
     }
 
     public function testCreateSessionGeneratesFallbackNameForWhitespaceOnlyPrompt(): void
     {
         $sessionId = $this->store->createSession("  \n\t  ");
 
-        $meta = $this->store->loadMetadata($sessionId);
-        $this->assertNotNull($meta);
-        $this->assertSame('Session', $meta['name']);
+        $session = $this->store->findSession($sessionId);
+        $this->assertNotNull($session);
+        $this->assertSame('Session', $session->name);
     }
 
     // ── Session name update (rename / clear) ──────────────────────────────
@@ -183,9 +191,9 @@ final class HatfieldSessionStoreTest extends IsolatedKernelTestCase
         $sessionId = $this->store->createSession('test');
 
         $this->store->updateMetadata($sessionId, ['name' => 'My Session']);
-        $meta = $this->store->loadMetadata($sessionId);
-        $this->assertNotNull($meta);
-        $this->assertSame('My Session', $meta['name']);
+        $session = $this->store->findSession($sessionId);
+        $this->assertNotNull($session);
+        $this->assertSame('My Session', $session->name);
     }
 
     public function testUpdateMetadataTrimsAndCollapsesName(): void
@@ -193,10 +201,10 @@ final class HatfieldSessionStoreTest extends IsolatedKernelTestCase
         $sessionId = $this->store->createSession('test');
 
         $this->store->updateMetadata($sessionId, ['name' => "  Padded\n\tMultiline  Name  "]);
-        $meta = $this->store->loadMetadata($sessionId);
-        $this->assertNotNull($meta);
+        $session = $this->store->findSession($sessionId);
+        $this->assertNotNull($session);
         // Whitespace trimmed and internal whitespace collapsed to single spaces.
-        $this->assertSame('Padded Multiline Name', $meta['name']);
+        $this->assertSame('Padded Multiline Name', $session->name);
     }
 
     public function testUpdateMetadataTruncatesLongName(): void
@@ -205,12 +213,12 @@ final class HatfieldSessionStoreTest extends IsolatedKernelTestCase
         $longName = str_repeat('y', 250);
 
         $this->store->updateMetadata($sessionId, ['name' => $longName]);
-        $meta = $this->store->loadMetadata($sessionId);
-        $this->assertNotNull($meta);
-        $this->assertSame(200, mb_strlen($meta['name']));
-        $this->assertStringStartsWith('y', $meta['name']);
+        $session = $this->store->findSession($sessionId);
+        $this->assertNotNull($session);
+        $this->assertSame(200, mb_strlen($session->name));
+        $this->assertStringStartsWith('y', $session->name);
         // No ellipsis suffix.
-        $this->assertStringEndsWith('y', $meta['name']);
+        $this->assertStringEndsWith('y', $session->name);
     }
 
     public function testUpdateMetadataFallsBackForEmptyName(): void
@@ -219,13 +227,14 @@ final class HatfieldSessionStoreTest extends IsolatedKernelTestCase
 
         // Set a name first, then clear via empty string.
         $this->store->updateMetadata($sessionId, ['name' => 'Will Clear']);
-        $meta = $this->store->loadMetadata($sessionId);
-        $this->assertSame('Will Clear', $meta['name']);
+        $session = $this->store->findSession($sessionId);
+        $this->assertNotNull($session);
+        $this->assertSame('Will Clear', $session->name);
 
         $this->store->updateMetadata($sessionId, ['name' => '']);
-        $meta = $this->store->loadMetadata($sessionId);
+        $session = $this->store->findSession($sessionId);
         // Name stays non-null; falls back to deterministic 'Session'.
-        $this->assertSame('Session', $meta['name']);
+        $this->assertSame('Session', $session->name);
     }
 
     public function testUpdateMetadataFallsBackForNullName(): void
@@ -233,13 +242,14 @@ final class HatfieldSessionStoreTest extends IsolatedKernelTestCase
         $sessionId = $this->store->createSession('test');
 
         $this->store->updateMetadata($sessionId, ['name' => 'To Be Nulled']);
-        $meta = $this->store->loadMetadata($sessionId);
-        $this->assertSame('To Be Nulled', $meta['name']);
+        $session = $this->store->findSession($sessionId);
+        $this->assertNotNull($session);
+        $this->assertSame('To Be Nulled', $session->name);
 
         $this->store->updateMetadata($sessionId, ['name' => null]);
-        $meta = $this->store->loadMetadata($sessionId);
+        $session = $this->store->findSession($sessionId);
         // Null → deterministic non-null fallback.
-        $this->assertSame('Session', $meta['name']);
+        $this->assertSame('Session', $session->name);
     }
 
     public function testUpdateMetadataFallsBackForNonStringName(): void
@@ -247,8 +257,9 @@ final class HatfieldSessionStoreTest extends IsolatedKernelTestCase
         $sessionId = $this->store->createSession('test');
 
         $this->store->updateMetadata($sessionId, ['name' => 123]);
-        $meta = $this->store->loadMetadata($sessionId);
-        $this->assertSame('Session', $meta['name']);
+        $session = $this->store->findSession($sessionId);
+        $this->assertNotNull($session);
+        $this->assertSame('Session', $session->name);
     }
 
     public function testUpdateMetadataFallsBackForWhitespaceOnlyName(): void
@@ -256,13 +267,14 @@ final class HatfieldSessionStoreTest extends IsolatedKernelTestCase
         $sessionId = $this->store->createSession('test');
 
         $this->store->updateMetadata($sessionId, ['name' => 'Named']);
-        $meta = $this->store->loadMetadata($sessionId);
-        $this->assertSame('Named', $meta['name']);
+        $session = $this->store->findSession($sessionId);
+        $this->assertNotNull($session);
+        $this->assertSame('Named', $session->name);
 
         $this->store->updateMetadata($sessionId, ['name' => '   ']);
-        $meta = $this->store->loadMetadata($sessionId);
+        $session = $this->store->findSession($sessionId);
         // Whitespace-only → deterministic fallback, never null.
-        $this->assertSame('Session', $meta['name']);
+        $this->assertSame('Session', $session->name);
     }
 
     public function testUpdateMetadataIgnoresUnknownKeys(): void
@@ -270,9 +282,9 @@ final class HatfieldSessionStoreTest extends IsolatedKernelTestCase
         $sessionId = $this->store->createSession('test');
 
         $this->store->updateMetadata($sessionId, ['random_unknown_key' => 'value']);
-        $meta = $this->store->loadMetadata($sessionId);
-        $this->assertNotNull($meta);
-        $this->assertArrayNotHasKey('random_unknown_key', $meta);
+        $session = $this->store->findSession($sessionId);
+        $this->assertNotNull($session);
+        $this->assertFalse(property_exists($session, 'random_unknown_key'));
     }
 
     // ── Session listing / catalog ─────────────────────────────────────────
@@ -416,15 +428,16 @@ final class HatfieldSessionStoreTest extends IsolatedKernelTestCase
         $sessionId = $this->store->createSession('test prompt');
 
         // Load metadata to capture the generated name.
-        $meta = $this->store->loadMetadata($sessionId);
-        $this->assertNotNull($meta);
-        $originalName = $meta['name'];
+        $session = $this->store->findSession($sessionId);
+        $this->assertNotNull($session);
+        $originalName = $session->name;
 
         // Calling listSessions must not change the persisted name.
         $this->store->listSessions();
 
-        $metaAfter = $this->store->loadMetadata($sessionId);
-        $this->assertSame($originalName, $metaAfter['name']);
+        $sessionAfter = $this->store->findSession($sessionId);
+        $this->assertNotNull($sessionAfter);
+        $this->assertSame($originalName, $sessionAfter->name);
     }
 
     // ── Name with model metadata ──────────────────────────────────────────

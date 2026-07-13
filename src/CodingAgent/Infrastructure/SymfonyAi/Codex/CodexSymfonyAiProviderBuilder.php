@@ -12,6 +12,7 @@ use Ineersa\CodingAgent\Infrastructure\SymfonyAi\ProjectedSymfonyModelCatalog;
 use Ineersa\CodingAgent\Infrastructure\SymfonyAi\SymfonyAiProviderBuilderInterface;
 use Psr\Log\LoggerInterface;
 use Symfony\AI\Platform\Bridge\OpenAICodex\CodexModel;
+use Symfony\AI\Platform\Bridge\OpenAICodex\CodexTransportEnum;
 use Symfony\AI\Platform\Bridge\OpenAICodex\Factory as OpenAICodexFactory;
 use Symfony\AI\Platform\ProviderInterface;
 use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
@@ -34,6 +35,8 @@ final class CodexSymfonyAiProviderBuilder implements SymfonyAiProviderBuilderInt
 
     public function build(AiProviderConfig $provider, HttpClientInterface $httpClient): ProviderInterface
     {
+        $transport = CodexTransportEnum::fromNullableString($provider->transport);
+
         $projectedCatalog = new ProjectedSymfonyModelCatalog(
             hatfieldModels: $provider->models,
             modelClass: CodexModel::class,
@@ -68,6 +71,7 @@ final class CodexSymfonyAiProviderBuilder implements SymfonyAiProviderBuilderInt
             name: $provider->id,
             logger: $this->logger,
             accessTokenRefresher: $accessTokenRefresher,
+            transport: $transport,
         );
     }
 
