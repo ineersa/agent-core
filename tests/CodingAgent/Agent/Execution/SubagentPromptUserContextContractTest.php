@@ -316,7 +316,6 @@ final class SubagentPromptUserContextContractTest extends IsolatedKernelTestCase
             agentRunner: $agentRunner,
             runStore: $this->pollingChildRunStore($childRunStore),
             parentRunStore: $parentRunStore,
-            eventStore: $eventStore,
             committedRunEventAppender: self::getContainer()->get(CommittedRunEventAppender::class),
             metadataReader: new SubagentRunMetadataReader($eventStore),
             childRunDirectory: self::getContainer()->get(AgentChildRunDirectory::class),

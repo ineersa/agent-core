@@ -6,7 +6,6 @@ namespace Ineersa\CodingAgent\Agent\Execution;
 
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Contract\AgentRunnerInterface;
-use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\RunStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
@@ -60,7 +59,6 @@ final class SubagentExecutionService
         private readonly AgentRunnerInterface $agentRunner,
         private readonly RunStoreInterface $runStore,
         private readonly RunStoreInterface $parentRunStore,
-        private readonly EventStoreInterface $eventStore,
         private readonly CommittedRunEventAppender $committedRunEventAppender,
         private readonly SubagentRunMetadataReader $metadataReader,
         private readonly AgentChildRunDirectory $childRunDirectory,
@@ -180,9 +178,6 @@ final class SubagentExecutionService
         $context = $this->contextAccessor->current();
         $cancelToken = $context?->cancellationToken();
 
-        // Monotonically increasing event seq for progress updates,
-        // initialised from max(parent state lastSeq, max parent event seq) + 1.
-        $progressSeq = $this->resolveNextProgressSeq($parentRunId);
         $lastSingleProgressSignature = null;
 
         while (true) {
@@ -210,10 +205,8 @@ final class SubagentExecutionService
                         definitionModel: $definition->model,
                         state: $cancelState,
                         terminalStatus: 'cancelled',
-                        seq: $progressSeq,
                         progressStartedMicros: $progressStartedMicros,
                     );
-                    $this->advanceParentSequence($parentRunId, $progressSeq);
                 }
 
                 throw new ToolCallException($this->formatParentCancelledSingleMessage($agentName, $artifactId), retryable: false);
@@ -233,11 +226,8 @@ final class SubagentExecutionService
                         definitionModel: $definition->model,
                         state: $timeoutState,
                         terminalStatus: 'failed',
-                        seq: $progressSeq,
                         progressStartedMicros: $progressStartedMicros,
                     );
-                    $this->advanceParentSequence($parentRunId, $progressSeq);
-                    ++$progressSeq;
                 }
                 $this->finalize(
                     parentRunId: $parentRunId,
@@ -285,11 +275,8 @@ final class SubagentExecutionService
                         taskSummary: $task,
                         definitionModel: $definition->model,
                         state: $state,
-                        seq: $progressSeq,
                         progressStartedMicros: $progressStartedMicros,
                     );
-                    $this->advanceParentSequence($parentRunId, $progressSeq);
-                    ++$progressSeq;
                     $lastSingleProgressSignature = $signature;
                 }
 
@@ -319,12 +306,9 @@ final class SubagentExecutionService
                         taskSummary: $task,
                         definitionModel: $definition->model,
                         state: $state,
-                        seq: $progressSeq,
                         progressStartedMicros: $progressStartedMicros,
                         progressStatus: 'waiting_human',
                     );
-                    $this->advanceParentSequence($parentRunId, $progressSeq);
-                    ++$progressSeq;
                     $lastSingleProgressSignature = $signature;
                 }
 
@@ -343,11 +327,8 @@ final class SubagentExecutionService
                 definitionModel: $definition->model,
                 state: $state,
                 terminalStatus: $terminalStatus,
-                seq: $progressSeq,
                 progressStartedMicros: $progressStartedMicros,
             );
-            $this->advanceParentSequence($parentRunId, $progressSeq);
-            ++$progressSeq;
 
             return match ($status) {
                 RunStatus::Completed => $this->handleCompleted(
@@ -492,7 +473,6 @@ final class SubagentExecutionService
         $deadline = $this->nowMicros() + $timeoutSeconds * 1_000_000;
         $context = $this->contextAccessor->current();
         $cancelToken = $context?->cancellationToken();
-        $progressSeq = $this->resolveNextProgressSeq($parentRunId);
         $lastProgressSignature = null;
         $parallelProgressStartedMicros = $this->nowMicros();
 
@@ -522,11 +502,9 @@ final class SubagentExecutionService
                     $parentRunId,
                     $reports,
                     $this->parallelActiveTurns($reports),
-                    $progressSeq,
                     $parallelProgressStartedMicros,
                     aggregateStatus: 'cancelled',
                 );
-                $this->advanceParentSequence($parentRunId, $progressSeq);
 
                 throw new ToolCallException("Parallel subagent tool cancelled by parent run.\n\n".$this->formatParallelReport($reports), retryable: false);
             }
@@ -633,9 +611,7 @@ final class SubagentExecutionService
 
             $signature = $this->parallelProgressSignature($parentRunId, $reports, $activeTurns);
             if (null === $lastProgressSignature || $signature !== $lastProgressSignature) {
-                $this->emitParallelProgressUpdate($parentRunId, $reports, $activeTurns, $progressSeq, $parallelProgressStartedMicros);
-                $this->advanceParentSequence($parentRunId, $progressSeq);
-                ++$progressSeq;
+                $this->emitParallelProgressUpdate($parentRunId, $reports, $activeTurns, $parallelProgressStartedMicros);
                 $lastProgressSignature = $signature;
             }
 
@@ -646,12 +622,9 @@ final class SubagentExecutionService
             $parentRunId,
             $reports,
             $this->parallelActiveTurns($reports),
-            $progressSeq,
             $parallelProgressStartedMicros,
             aggregateStatus: $this->resolveParallelAggregateStatus($reports),
         );
-        $this->advanceParentSequence($parentRunId, $progressSeq);
-        ++$progressSeq;
 
         $failed = array_filter($reports, static fn (array $r): bool => AgentArtifactStatusEnum::Completed !== $r['status']);
 
@@ -843,7 +816,6 @@ final class SubagentExecutionService
         string $parentRunId,
         array $reports,
         array $activeTurns,
-        int $seq,
         int $progressStartedMicros,
         string $aggregateStatus = 'running',
     ): void {
@@ -864,7 +836,7 @@ final class SubagentExecutionService
         );
         $event = new RunEvent(
             runId: $parentRunId,
-            seq: $seq,
+            seq: 0,
             turnNo: $context->turnNo(),
             type: RunEventTypeEnum::ToolExecutionUpdate->value,
             payload: [
@@ -876,6 +848,8 @@ final class SubagentExecutionService
             ],
         );
 
+        // seq 0 is deliberately unallocated; the committed store atomically assigns persisted seq
+        // and CommittedRunEventAppender synchronizes parent RunState.lastSeq.
         $this->committedRunEventAppender->append($event);
     }
 
@@ -1273,7 +1247,6 @@ TXT;
         ?string $definitionModel,
         RunState $state,
         string $terminalStatus,
-        int $seq,
         int $progressStartedMicros,
     ): void {
         $context = $this->contextAccessor->current();
@@ -1299,7 +1272,7 @@ TXT;
             $elapsedMs,
             $enrichment,
         );
-        $this->appendSubagentProgressEvent($parentRunId, $context, $seq, $progress);
+        $this->appendSubagentProgressEvent($parentRunId, $context, $progress);
     }
 
     /**
@@ -1397,12 +1370,11 @@ TXT;
     private function appendSubagentProgressEvent(
         string $parentRunId,
         \Ineersa\AgentCore\Application\Tool\ToolContext $context,
-        int $seq,
         array $progress,
     ): void {
         $event = new RunEvent(
             runId: $parentRunId,
-            seq: $seq,
+            seq: 0,
             turnNo: $context->turnNo(),
             type: RunEventTypeEnum::ToolExecutionUpdate->value,
             payload: [
@@ -1414,6 +1386,8 @@ TXT;
             ],
         );
 
+        // seq 0 is deliberately unallocated; the committed store atomically assigns persisted seq
+        // and CommittedRunEventAppender synchronizes parent RunState.lastSeq.
         $this->committedRunEventAppender->append($event);
     }
 
@@ -1431,7 +1405,6 @@ TXT;
         string $taskSummary,
         ?string $definitionModel,
         RunState $state,
-        int $seq,
         int $progressStartedMicros,
         string $progressStatus = 'running',
     ): void {
@@ -1458,105 +1431,7 @@ TXT;
             $enrichment,
             $progressStatus,
         );
-        $this->appendSubagentProgressEvent($parentRunId, $context, $seq, $progress);
-    }
-
-    /**
-     * Resolve the next sequence number for parent progress events.
-     *
-     * Uses the greater of parent state lastSeq and the maximum existing
-     * parent event seq, so progress events never collide with events
-     * appended by other writers or pending commits.
-     */
-    private function resolveNextProgressSeq(string $parentRunId): int
-    {
-        $parentState = $this->parentRunStore->get($parentRunId);
-        $stateLastSeq = null !== $parentState ? $parentState->lastSeq : 0;
-
-        // Fallback to max event seq in case state is temporarily stale
-        // (e.g. mid-commit, or another writer advanced the log without
-        // yet persisting the state checkpoint).
-        $parentEvents = $this->eventStore->allFor($parentRunId);
-        $maxEventSeq = 0;
-        foreach ($parentEvents as $event) {
-            if ($event->seq > $maxEventSeq) {
-                $maxEventSeq = $event->seq;
-            }
-        }
-
-        return max($stateLastSeq, $maxEventSeq) + 1;
-    }
-
-    /**
-     * Advance the parent RunState.lastSeq to include the progress event.
-     *
-     * Uses compareAndSwap in a short retry loop to handle races with
-     * other parent state writers.  If CAS fails and the current state
-     * already covers our seq, treats it as a non-issue.  Exhausted
-     * retries are logged but do not block or re-append — the progress
-     * event already exists in the event log and replay will catch up.
-     */
-    private function advanceParentSequence(string $parentRunId, int $seq): void
-    {
-        $parentState = $this->parentRunStore->get($parentRunId);
-        if (null === $parentState) {
-            // Parent state not yet persisted — the first progress event
-            // lands while the run is still initialising.  Non-fatal.
-            $this->logger->warning('subagent_execution.parent_state_missing_for_seq_advance', [
-                'component' => 'agent.execution',
-                'event_type' => 'subagent_execution.parent_state_missing_for_seq_advance',
-                'parent_run_id' => $parentRunId,
-                'target_seq' => $seq,
-            ]);
-
-            return;
-        }
-
-        $maxAttempts = 3;
-
-        for ($attempt = 0; $attempt < $maxAttempts; ++$attempt) {
-            $nextState = new RunState(
-                runId: $parentState->runId,
-                status: $parentState->status,
-                version: $parentState->version + 1,
-                turnNo: $parentState->turnNo,
-                lastSeq: $seq,
-                isStreaming: $parentState->isStreaming,
-                streamingMessage: $parentState->streamingMessage,
-                pendingToolCalls: $parentState->pendingToolCalls,
-                errorMessage: $parentState->errorMessage,
-                messages: $parentState->messages,
-                activeStepId: $parentState->activeStepId,
-                retryableFailure: $parentState->retryableFailure,
-            );
-
-            $oldVersion = $parentState->version;
-
-            if ($this->parentRunStore->compareAndSwap($nextState, $oldVersion)) {
-                return;
-            }
-
-            // CAS failed — re-read in case another writer moved past us.
-            $parentState = $this->parentRunStore->get($parentRunId);
-            if (null === $parentState) {
-                return;
-            }
-
-            if ($parentState->lastSeq >= $seq) {
-                // Another writer already advanced past our seq.
-                return;
-            }
-        }
-
-        // Exhausted retries; event is already in the log.
-        $this->logger->warning('subagent_execution.progress_seq_cas_failed', [
-            'component' => 'agent.execution',
-            'event_type' => 'subagent_execution.progress_seq_cas_failed',
-            'parent_run_id' => $parentRunId,
-            'target_seq' => $seq,
-            'attempts' => $maxAttempts,
-            'parent_state_last_seq' => $parentState->lastSeq,
-        ]);
+        $this->appendSubagentProgressEvent($parentRunId, $context, $progress);
     }
 
     /**

@@ -140,7 +140,6 @@ final class Gf05BareAgentsEffectiveContextIntegrationTest extends PerMethodIsola
             agentRunner: $childRunner,
             runStore: $this->pollingChildRunStore($childRunStore),
             parentRunStore: $parentRunStore,
-            eventStore: $childEventStore,
             committedRunEventAppender: self::getContainer()->get(CommittedRunEventAppender::class),
             metadataReader: new SubagentRunMetadataReader($childEventStore),
             childRunDirectory: self::getContainer()->get(\Ineersa\CodingAgent\Agent\Artifact\AgentChildRunDirectory::class),
