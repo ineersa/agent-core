@@ -111,6 +111,9 @@ services:
     arguments:
       $homeDir: '@=service("Ineersa\\CodingAgent\\Config\\SettingsPathResolver").getHomeDir()'
 
+
+  Symfony\AI\Platform\Bridge\OpenAICodex\CodexWebSocketConnectionCache:
+    shared: true
   Ineersa\CodingAgent\Infrastructure\SymfonyAi\SymfonyAiProviderFactory:
     arguments:
       $builders: !tagged_iterator hatfield.symfony_ai.provider_builder

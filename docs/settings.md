@@ -1059,7 +1059,15 @@ Codex providers support an explicit transport:
 | `transport` | Behavior |
 | --- | --- |
 | `websocket` (default) | WebSocket handshake to `wss://…/codex/responses`, one connection per request, `response.create` frame. Required for GPT-5.6 models. |
+| `websocket-cached` | Reuses one healthy WebSocket per compatible Hatfield session between turns. After a successful terminal response, compatible follow-up turns may send `previous_response_id` with only the new input delta. |
 | `sse` | Legacy HTTP/SSE POST to `/codex/responses`. Diagnostic only; GPT-5.6 models return model-not-found on SSE. |
+
+Optional cache tuning keys (Codex providers only):
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `websocket_cache_idle_ttl_seconds` | `300` | Close an idle cached socket after this many seconds. |
+| `websocket_cache_max_age_seconds` | `3300` | Close a cached socket after this many seconds regardless of reuse. |
 
 WebSocket handshake sends `OpenAI-Beta: responses_websockets=2026-02-06` and does **not** send SSE `Accept` / `Content-Type` headers.
 

@@ -13,22 +13,24 @@ namespace Ineersa\CodingAgent\Config\Ai;
 final readonly class AiProviderConfig
 {
     /**
-     * @param string                           $id                     Provider ID used in model references (e.g. deepseek, llama_cpp, zai)
-     * @param string                           $type                   Provider type (generic for OpenAI-completions-style)
-     * @param bool                             $enabled                Whether this provider is active
-     * @param string                           $baseUrl                Base URL for the provider's API
-     * @param string                           $api                    API flavor (e.g. openai-completions)
-     * @param string|null                      $apiKey                 API key (plain or env:VAR format; resolved by SecretResolver)
-     * @param string|null                      $accountId              Account ID for provider (e.g. Codex chatgpt-account-id header)
-     * @param string|null                      $authKey                Auth storage key for Codex OAuth credentials (defaults to 'openai-codex' when null)
-     * @param string|null                      $completionsPath        Chat completions endpoint path (e.g. /chat/completions)
-     * @param string|null                      $embeddingsPath         Embeddings endpoint path (e.g. /embeddings)
-     * @param bool                             $supportsCompletions    Whether chat completions are supported
-     * @param bool                             $supportsEmbeddings     Whether embeddings are supported
-     * @param bool                             $supportsThinkingLevels Whether reasoning-level cycling is meaningful for this provider
-     * @param AiCompatibility|null             $compatibility          Provider-level compatibility metadata
-     * @param string|null                      $transport              Codex transport (websocket|sse); null uses Codex default
-     * @param array<string, AiModelDefinition> $models                 Exposed models keyed by model name
+     * @param string                           $id                           Provider ID used in model references (e.g. deepseek, llama_cpp, zai)
+     * @param string                           $type                         Provider type (generic for OpenAI-completions-style)
+     * @param bool                             $enabled                      Whether this provider is active
+     * @param string                           $baseUrl                      Base URL for the provider's API
+     * @param string                           $api                          API flavor (e.g. openai-completions)
+     * @param string|null                      $apiKey                       API key (plain or env:VAR format; resolved by SecretResolver)
+     * @param string|null                      $accountId                    Account ID for provider (e.g. Codex chatgpt-account-id header)
+     * @param string|null                      $authKey                      Auth storage key for Codex OAuth credentials (defaults to 'openai-codex' when null)
+     * @param string|null                      $completionsPath              Chat completions endpoint path (e.g. /chat/completions)
+     * @param string|null                      $embeddingsPath               Embeddings endpoint path (e.g. /embeddings)
+     * @param bool                             $supportsCompletions          Whether chat completions are supported
+     * @param bool                             $supportsEmbeddings           Whether embeddings are supported
+     * @param bool                             $supportsThinkingLevels       Whether reasoning-level cycling is meaningful for this provider
+     * @param AiCompatibility|null             $compatibility                Provider-level compatibility metadata
+     * @param string|null                      $transport                    Codex transport (websocket|websocket-cached|sse); null uses Codex default
+     * @param int|null                         $websocketCacheIdleTtlSeconds Codex websocket-cached idle TTL (default 300)
+     * @param int|null                         $websocketCacheMaxAgeSeconds  Codex websocket-cached max age (default 3300)
+     * @param array<string, AiModelDefinition> $models                       Exposed models keyed by model name
      */
     public function __construct(
         public string $id,
@@ -46,6 +48,8 @@ final readonly class AiProviderConfig
         public bool $supportsThinkingLevels = true,
         public ?AiCompatibility $compatibility = null,
         public ?string $transport = null,
+        public ?int $websocketCacheIdleTtlSeconds = null,
+        public ?int $websocketCacheMaxAgeSeconds = null,
         public array $models = [],
     ) {
     }
@@ -82,6 +86,8 @@ final readonly class AiProviderConfig
             supportsThinkingLevels: (bool) ($data['supports_thinking_levels'] ?? true),
             compatibility: isset($data['compatibility']) && \is_array($data['compatibility']) ? AiCompatibility::fromArray($data['compatibility']) : null,
             transport: isset($data['transport']) ? (string) $data['transport'] : null,
+            websocketCacheIdleTtlSeconds: isset($data['websocket_cache_idle_ttl_seconds']) ? (int) $data['websocket_cache_idle_ttl_seconds'] : null,
+            websocketCacheMaxAgeSeconds: isset($data['websocket_cache_max_age_seconds']) ? (int) $data['websocket_cache_max_age_seconds'] : null,
             models: $models,
         );
     }

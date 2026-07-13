@@ -19,6 +19,7 @@ use Ineersa\CodingAgent\Infrastructure\SymfonyAi\Codex\CodexSymfonyAiProviderBui
 use Ineersa\CodingAgent\Infrastructure\SymfonyAi\SymfonyAiProviderFactory;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
+use Symfony\AI\Platform\Bridge\OpenAICodex\CodexWebSocketConnectionCache;
 use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\FlockStore;
@@ -318,6 +319,7 @@ final class CodexSymfonyAiProviderBuilderTest extends TestCase
             $this->createStub(EventDispatcherInterface::class),
             $this->authStorage,
             new CodexOAuthService($this->authStorage),
+            new CodexWebSocketConnectionCache(),
         );
 
         $codex = new AiProviderConfig(id: 'openai-codex', type: 'codex', enabled: true, baseUrl: 'https://example.com');
@@ -406,6 +408,7 @@ final class CodexSymfonyAiProviderBuilderTest extends TestCase
             eventDispatcher: $this->createStub(EventDispatcherInterface::class),
             codexAuth: $this->authStorage,
             codexOAuth: new CodexOAuthService($this->authStorage),
+            codexWebSocketConnectionCache: new CodexWebSocketConnectionCache(),
         );
 
         $this->expectException(\InvalidArgumentException::class);
@@ -437,6 +440,7 @@ final class CodexSymfonyAiProviderBuilderTest extends TestCase
             eventDispatcher: $eventDispatcher,
             codexAuth: $storage,
             codexOAuth: $codexOAuth ?? new CodexOAuthService($storage),
+            codexWebSocketConnectionCache: new CodexWebSocketConnectionCache(),
         );
 
         return new SymfonyAiProviderFactory(
