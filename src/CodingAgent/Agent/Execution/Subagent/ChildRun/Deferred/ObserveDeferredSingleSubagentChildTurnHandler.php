@@ -31,6 +31,10 @@ final readonly class ObserveDeferredSingleSubagentChildTurnHandler
             return;
         }
 
+        if (null !== $row->terminalCompletionEnqueuedAt) {
+            return;
+        }
+
         if ($row->childRunId !== $message->childRunId) {
             $this->logger->warning('deferred_single_subagent.child_turn_child_mismatch', [
                 'lifecycle_id' => $message->lifecycleId,

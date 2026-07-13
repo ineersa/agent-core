@@ -4,12 +4,15 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Agent\Execution\Subagent\ChildRun\Deferred;
 
+use Ineersa\AgentCore\Contract\AgentRunnerInterface;
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\AgentCore\Domain\Event\DeferredToolCompletionRegisteredEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitEventSummary;
+use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitHookContext;
 use Ineersa\AgentCore\Domain\Message\CompleteDeferredToolCall;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
+use Ineersa\AgentCore\Domain\Run\StartRunInput;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
@@ -19,8 +22,13 @@ use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunIdentityDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Lifecycle\ChildRunArtifactLifecycleService;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredSingleSubagentChildEventProjector;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredSingleSubagentInterruptionKindEnum;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredSingleSubagentInterruptionService;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredSingleSubagentLifecycleDeliveryService;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredSingleSubagentParentCancelHookSubscriber;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredSingleSubagentTerminalCompletionService;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredToolCompletionRegisteredSubagentListener;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\InterruptDeferredSingleSubagentMessage;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\ObserveDeferredSingleSubagentChildTurnHandler;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\ObserveDeferredSingleSubagentChildTurnMessage;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Progress\SubagentProgressEventAppender;
@@ -69,8 +77,9 @@ final class DeferredSingleSubagentLifecycleDeliveryTest extends IsolatedKernelTe
             orderIndex: 3,
         )));
 
-        $this->assertCount(1, $bus->messages);
+        $this->assertCount(2, $bus->messages);
         $this->assertSame($projection->lifecycleId, $bus->messages[0]->lifecycleId);
+        $this->assertInstanceOf(InterruptDeferredSingleSubagentMessage::class, $bus->messages[1]);
     }
 
     public function testDeliveryEmitsParentProgressAndCompletesDeferredToolWithNormalPresentation(): void
@@ -200,6 +209,230 @@ final class DeferredSingleSubagentLifecycleDeliveryTest extends IsolatedKernelTe
         $this->assertSame(AgentArtifactStatusEnum::Cancelled, $registry->get('parent-cancel', 'agent_2222222222222222')?->status);
     }
 
+    public function testRegistrationListenerSchedulesDelayedTimeoutInterrupt(): void
+    {
+        $repo = self::getContainer()->get(DeferredSingleSubagentLaunchRepository::class);
+        $deadline = new \DateTimeImmutable('+30 seconds');
+        $projection = $repo->reserve('parent-timeout-sched', 1, 'tool-timeout-sched', 0, 'child-timeout-sched', 'agent_3333333333333333', 'worker', 'Wait', null, $deadline);
+        $repo->markLaunched('parent-timeout-sched', 'tool-timeout-sched', new \DateTimeImmutable());
+
+        $bus = new DelayStampCapturingBus();
+        $listener = new DeferredToolCompletionRegisteredSubagentListener($repo, $bus);
+        $listener(new DeferredToolCompletionRegisteredEvent(new DeferredToolCompletionCorrelation(
+            deferredId: $projection->lifecycleId,
+            runId: 'parent-timeout-sched',
+            turnNo: 1,
+            stepId: 'turn-1-tools-1',
+            attempt: 1,
+            idempotencyKey: 'idemp',
+            toolCallId: 'tool-timeout-sched',
+            toolName: 'subagent',
+            arguments: [],
+            orderIndex: 0,
+        )));
+
+        $this->assertCount(2, $bus->messages);
+        $this->assertInstanceOf(InterruptDeferredSingleSubagentMessage::class, $bus->messages[1]);
+        $this->assertSame(DeferredSingleSubagentInterruptionKindEnum::Timeout, $bus->messages[1]->kind);
+        $delay = $this->extractDelayMs($bus->stampSets[1]);
+        $this->assertGreaterThanOrEqual(25_000, $delay);
+    }
+
+    public function testTimeoutInterruptionEnforcesForegroundSemanticsAndIdempotentCompletion(): void
+    {
+        $repo = self::getContainer()->get(DeferredSingleSubagentLaunchRepository::class);
+        $started = new \DateTimeImmutable('-120 seconds');
+        $deadline = $started->modify('+60 seconds');
+        $launch = $repo->reserve('parent-timeout', 2, 'tool-timeout', 1, 'child-timeout', 'agent_4444444444444444', 'worker', 'Slow task', null, $deadline);
+        $repo->markLaunched('parent-timeout', 'tool-timeout', $started);
+        $this->ensureArtifactReserved('parent-timeout', 'child-timeout', 'agent_4444444444444444', 'worker', 'Slow task');
+
+        $runner = new RecordingAgentRunner();
+        $commandBus = new TestMessageBus();
+        $interruption = new DeferredSingleSubagentInterruptionService(
+            $repo,
+            $this->buildDeliveryService($commandBus),
+            $runner,
+            new \Ineersa\CodingAgent\Agent\Execution\Subagent\SubagentChildRunBatchLifecyclePolicyFactory(),
+            $commandBus,
+            new TestLogger(),
+        );
+
+        $deferredRepo = self::getContainer()->get(DeferredToolCompletionRepositoryInterface::class);
+        $deferredRepo->registerPending($this->correlation($launch->lifecycleId, 'parent-timeout', 'tool-timeout'));
+        $interruption->interrupt($launch->lifecycleId, DeferredSingleSubagentInterruptionKindEnum::Timeout);
+        $this->assertSame(['child-timeout'], $runner->cancelledChildRunIds);
+        $this->assertSame('Subagent timed out.', $runner->lastReason);
+
+        $this->assertCount(1, $commandBus->messages);
+        $complete = $commandBus->messages[0];
+        $this->assertInstanceOf(CompleteDeferredToolCall::class, $complete);
+        $this->assertFalse($complete->isError);
+        $this->assertStringContainsString('timed out after 60 seconds', $complete->content[0]['text']);
+
+        $registry = self::getContainer()->get(AgentArtifactRegistry::class);
+        $entry = $registry->get('parent-timeout', 'agent_4444444444444444');
+        $this->assertSame(AgentArtifactStatusEnum::Failed, $entry?->status);
+        $this->assertSame('Child run timed out.', $entry?->failureReason);
+        $this->assertSame('Timed out after 60s.', $entry?->summary);
+
+        $interruption->interrupt($launch->lifecycleId, DeferredSingleSubagentInterruptionKindEnum::Timeout);
+        $this->assertCount(1, $commandBus->messages);
+    }
+
+    public function testEarlyTimeoutInterruptRedispatchesWithoutCancel(): void
+    {
+        $repo = self::getContainer()->get(DeferredSingleSubagentLaunchRepository::class);
+        $deadline = new \DateTimeImmutable('+120 seconds');
+        $launch = $repo->reserve('parent-early-timeout', 1, 'tool-early', 0, 'child-early', 'agent_5555555555555555', 'worker', 'Later', null, $deadline);
+        $repo->markLaunched('parent-early-timeout', 'tool-early', new \DateTimeImmutable());
+
+        $runner = new RecordingAgentRunner();
+        $bus = new DelayStampCapturingBus();
+        $interruption = new DeferredSingleSubagentInterruptionService(
+            $repo,
+            $this->buildDeliveryService(new TestMessageBus()),
+            $runner,
+            new \Ineersa\CodingAgent\Agent\Execution\Subagent\SubagentChildRunBatchLifecyclePolicyFactory(),
+            $bus,
+            new TestLogger(),
+        );
+
+        $interruption->interrupt($launch->lifecycleId, DeferredSingleSubagentInterruptionKindEnum::Timeout);
+        $this->assertSame([], $runner->cancelledChildRunIds);
+        $this->assertCount(1, $bus->messages);
+        $this->assertInstanceOf(InterruptDeferredSingleSubagentMessage::class, $bus->messages[0]);
+        $this->assertGreaterThan(60_000, $this->extractDelayMs($bus->stampSets[0]));
+    }
+
+    public function testParentCancelHookPropagatesErrorCompletionEnvelope(): void
+    {
+        $repo = self::getContainer()->get(DeferredSingleSubagentLaunchRepository::class);
+        $deadline = new \DateTimeImmutable('+600 seconds');
+        $launch = $repo->reserve('parent-pcancel', 3, 'tool-pcancel', 2, 'child-pcancel', 'agent_6666666666666666', 'worker', 'Cancel me', null, $deadline);
+        $repo->markLaunched('parent-pcancel', 'tool-pcancel', new \DateTimeImmutable());
+        $this->ensureArtifactReserved('parent-pcancel', 'child-pcancel', 'agent_6666666666666666', 'worker', 'Cancel me');
+
+        $bus = new TestMessageBus();
+        $hook = new DeferredSingleSubagentParentCancelHookSubscriber($repo, $bus);
+        $hook->handleAfterTurnCommit(new AfterTurnCommitHookContext(
+            runId: 'parent-pcancel',
+            turnNo: 3,
+            status: RunStatus::Cancelling->value,
+            events: [],
+            effectsCount: 0,
+        ));
+        $this->assertCount(1, $bus->messages);
+        $this->assertInstanceOf(InterruptDeferredSingleSubagentMessage::class, $bus->messages[0]);
+        $this->assertSame(DeferredSingleSubagentInterruptionKindEnum::ParentCancelled, $bus->messages[0]->kind);
+
+        $runner = new RecordingAgentRunner();
+        $commandBus = new TestMessageBus();
+        $interruption = new DeferredSingleSubagentInterruptionService(
+            $repo,
+            $this->buildDeliveryService($commandBus),
+            $runner,
+            new \Ineersa\CodingAgent\Agent\Execution\Subagent\SubagentChildRunBatchLifecyclePolicyFactory(),
+            $commandBus,
+            new TestLogger(),
+        );
+        $deferredRepo = self::getContainer()->get(DeferredToolCompletionRepositoryInterface::class);
+        $deferredRepo->registerPending($this->correlation($launch->lifecycleId, 'parent-pcancel', 'tool-pcancel'));
+        $interruption->interrupt($launch->lifecycleId, DeferredSingleSubagentInterruptionKindEnum::ParentCancelled);
+
+        $this->assertTrue($commandBus->messages[0]->isError);
+        $this->assertStringContainsString('cancelled by parent run', $commandBus->messages[0]->content[0]['text']);
+        $this->assertSame(\Ineersa\AgentCore\Contract\Tool\ToolCallException::class, $commandBus->messages[0]->error['type']);
+
+        $hook->handleAfterTurnCommit(new AfterTurnCommitHookContext(
+            runId: 'parent-pcancel',
+            turnNo: 4,
+            status: RunStatus::Cancelled->value,
+            events: [],
+            effectsCount: 0,
+        ));
+        $this->assertCount(1, $bus->messages);
+    }
+
+    public function testTerminalChildBeforeStaleTimeoutUsesNaturalCompletion(): void
+    {
+        $repo = self::getContainer()->get(DeferredSingleSubagentLaunchRepository::class);
+        $deadline = new \DateTimeImmutable('-5 seconds');
+        $launch = $repo->reserve('parent-race', 1, 'tool-race', 0, 'child-race', 'agent_7777777777777777', 'worker', 'Done', null, $deadline);
+        $repo->markLaunched('parent-race', 'tool-race', new \DateTimeImmutable('-30 seconds'));
+        $this->ensureArtifactReserved('parent-race', 'child-race', 'agent_7777777777777777', 'worker', 'Done');
+        $this->projectTerminal($repo, $launch->lifecycleId, 'child-race', RunStatus::Completed, [
+            new AfterTurnCommitEventSummary(1, RunEventTypeEnum::LlmStepCompleted->value, [
+                'assistant_message' => ['role' => 'assistant', 'content' => [['type' => 'text', 'text' => 'done']]],
+            ]),
+            new AfterTurnCommitEventSummary(2, RunEventTypeEnum::AgentEnd->value, ['reason' => 'completed']),
+        ]);
+
+        $runner = new RecordingAgentRunner();
+        $commandBus = new TestMessageBus();
+        $interruption = new DeferredSingleSubagentInterruptionService(
+            $repo,
+            $this->buildDeliveryService($commandBus),
+            $runner,
+            new \Ineersa\CodingAgent\Agent\Execution\Subagent\SubagentChildRunBatchLifecyclePolicyFactory(),
+            $commandBus,
+            new TestLogger(),
+        );
+        $deferredRepo = self::getContainer()->get(DeferredToolCompletionRepositoryInterface::class);
+        $deferredRepo->registerPending($this->correlation($launch->lifecycleId, 'parent-race', 'tool-race'));
+        $interruption->interrupt($launch->lifecycleId, DeferredSingleSubagentInterruptionKindEnum::Timeout);
+
+        $this->assertSame([], $runner->cancelledChildRunIds);
+        $this->assertFalse($commandBus->messages[0]->isError);
+        $this->assertStringContainsString('completed', $commandBus->messages[0]->content[0]['text']);
+    }
+
+    public function testLateChildObservationAfterSyntheticInterruptionDoesNotEmitProgress(): void
+    {
+        $repo = self::getContainer()->get(DeferredSingleSubagentLaunchRepository::class);
+        $started = new \DateTimeImmutable('-90 seconds');
+        $deadline = $started->modify('+60 seconds');
+        $launch = $repo->reserve('parent-late', 1, 'tool-late', 0, 'child-late', 'agent_8888888888888888', 'worker', 'Interrupted', null, $deadline);
+        $repo->markLaunched('parent-late', 'tool-late', $started);
+        $this->ensureArtifactReserved('parent-late', 'child-late', 'agent_8888888888888888', 'worker', 'Interrupted');
+
+        $runner = new RecordingAgentRunner();
+        $commandBus = new TestMessageBus();
+        $delivery = $this->buildDeliveryService($commandBus);
+        $interruption = new DeferredSingleSubagentInterruptionService(
+            $repo,
+            $delivery,
+            $runner,
+            new \Ineersa\CodingAgent\Agent\Execution\Subagent\SubagentChildRunBatchLifecyclePolicyFactory(),
+            $commandBus,
+            new TestLogger(),
+        );
+        $deferredRepo = self::getContainer()->get(DeferredToolCompletionRepositoryInterface::class);
+        $deferredRepo->registerPending($this->correlation($launch->lifecycleId, 'parent-late', 'tool-late'));
+        $interruption->interrupt($launch->lifecycleId, DeferredSingleSubagentInterruptionKindEnum::Timeout);
+        $this->assertCount(1, $commandBus->messages);
+
+        $observeBus = new TestMessageBus();
+        $observeHandler = new ObserveDeferredSingleSubagentChildTurnHandler(
+            $repo,
+            new DeferredSingleSubagentChildEventProjector(),
+            new TestLogger(),
+            $observeBus,
+        );
+        $observeHandler(new ObserveDeferredSingleSubagentChildTurnMessage(
+            lifecycleId: $launch->lifecycleId,
+            childRunId: 'child-late',
+            committedStatus: RunStatus::Completed,
+            turnNo: 2,
+            committedEvents: [
+                new AfterTurnCommitEventSummary(1, RunEventTypeEnum::AgentEnd->value, ['reason' => 'completed']),
+            ],
+        ));
+        $this->assertCount(0, $observeBus->messages);
+        $delivery->deliver($launch->lifecycleId);
+        $this->assertCount(1, $commandBus->messages);
+    }
+
     private function ensureArtifactReserved(
         string $parentRunId,
         string $childRunId,
@@ -222,8 +455,7 @@ final class DeferredSingleSubagentLifecycleDeliveryTest extends IsolatedKernelTe
     private function buildDeliveryService(TestMessageBus $commandBus): DeferredSingleSubagentLifecycleDeliveryService
     {
         $container = self::getContainer();
-
-        return new DeferredSingleSubagentLifecycleDeliveryService(
+        $terminal = new DeferredSingleSubagentTerminalCompletionService(
             launchRepository: $container->get(DeferredSingleSubagentLaunchRepository::class),
             deferredToolCompletionRepository: $container->get(DeferredToolCompletionRepositoryInterface::class),
             progressEventAppender: new SubagentProgressEventAppender($container->get(CommittedRunEventAppender::class)),
@@ -233,6 +465,11 @@ final class DeferredSingleSubagentLifecycleDeliveryTest extends IsolatedKernelTe
             handoffRenderer: new SubagentChildRunHandoffRenderer(),
             commandBus: $commandBus,
             logger: new TestLogger(),
+        );
+
+        return new DeferredSingleSubagentLifecycleDeliveryService(
+            launchRepository: $container->get(DeferredSingleSubagentLaunchRepository::class),
+            terminalCompletionService: $terminal,
         );
     }
 
@@ -264,5 +501,78 @@ final class DeferredSingleSubagentLifecycleDeliveryTest extends IsolatedKernelTe
             arguments: [],
             orderIndex: 0,
         );
+    }
+
+    /**
+     * @param list<object> $stamps
+     */
+    private function extractDelayMs(array $stamps): int
+    {
+        foreach ($stamps as $stamp) {
+            if ($stamp instanceof \Symfony\Component\Messenger\Stamp\DelayStamp) {
+                return $stamp->getDelay();
+            }
+        }
+
+        return 0;
+    }
+}
+
+final class DelayStampCapturingBus implements \Symfony\Component\Messenger\MessageBusInterface
+{
+    /** @var list<object> */
+    public array $messages = [];
+
+    /** @var list<list<object>> */
+    public array $stampSets = [];
+
+    public function dispatch(object $message, array $stamps = []): \Symfony\Component\Messenger\Envelope
+    {
+        $this->messages[] = $message;
+        $this->stampSets[] = $stamps;
+
+        return new \Symfony\Component\Messenger\Envelope($message, $stamps);
+    }
+}
+
+final class RecordingAgentRunner implements AgentRunnerInterface
+{
+    /** @var list<string> */
+    public array $cancelledChildRunIds = [];
+    public ?string $lastReason = null;
+
+    public function start(StartRunInput $input): string
+    {
+        return $input->runId ?? 'child';
+    }
+
+    public function continue(string $runId): void
+    {
+    }
+
+    public function steer(string $runId, \Ineersa\AgentCore\Domain\Message\AgentMessage $message): void
+    {
+    }
+
+    public function followUp(string $runId, \Ineersa\AgentCore\Domain\Message\AgentMessage $message): void
+    {
+    }
+
+    public function appendMessage(string $runId, \Ineersa\AgentCore\Domain\Message\AgentMessage $message): void
+    {
+    }
+
+    public function cancel(string $runId, ?string $reason = null): void
+    {
+        $this->cancelledChildRunIds[] = $runId;
+        $this->lastReason = $reason;
+    }
+
+    public function answerHuman(string $runId, string $questionId, mixed $answer): void
+    {
+    }
+
+    public function compact(string $runId, ?string $customInstructions = null): void
+    {
     }
 }

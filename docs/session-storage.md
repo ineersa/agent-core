@@ -74,7 +74,14 @@ For parent sessions that launch a **single** deferred subagent child:
   - Delivery uses stored parent tool correlation (`parent_turn_no`, `parent_tool_call_id`, `parent_order_index`) via `SubagentProgressEventAppender`; it does not use `StackToolExecutionContextAccessor`.
   - `lifecycle_id` is the generic `CompleteDeferredToolCall` `deferredId` for single deferred subagents.
   - Steady-state delivery reads only the `deferred_single_subagent_launch` row (projection JSON + cursors/markers). It does not read child `events.jsonl`, child `state.json`, or `EventStore::allFor`.
-  - **Piece 3C** owns timeout, parent cancellation, and one-time gap/restart replay when `child_event_cursor` is behind committed child events.
+  - **Piece 3C1** adds durable timeout and parent-cancellation safety without polling parent or child `RunStore`:
+  - After generic deferred registration, `DeferredToolCompletionRegisteredSubagentListener` schedules `InterruptDeferredSingleSubagentMessage(Timeout)` on `run_control` with `DelayStamp` derived from persisted `deadline_at` (duplicate schedules are safe; the interruption handler redispatches early arrivals).
+  - Parent `AfterTurnCommit` hook (`DeferredSingleSubagentParentCancelHookSubscriber`) queries active deferred single rows only when committed parent status is `cancelling` or `cancelled`, then enqueues `InterruptDeferredSingleSubagentMessage(ParentCancelled)` (no parent `state.json` reads).
+  - `interruption_kind` + `interruption_requested_at` persist the first synthetic terminal intent under optimistic locking; `AgentRunner::cancel(childRunId, policy reason)` runs before lifecycle delivery. If the child projection is already terminal without an interruption, stale timeout messages complete naturally instead of forcing timeout semantics.
+  - Timeout uses foreground failed progress + Failed artifact (`Child run timed out.` / `Timed out after Ns.`) and normal `CompleteDeferredToolCall` text (`isError=false`). Parent cancel uses cancelled progress + Cancelled artifact and error completion envelope matching parent-cancel `ToolCallException` semantics (`isError=true`, normal text content).
+  - After `terminal_completion_enqueued_at` is set, later child observations and delivery wakeups are ignored so late child commits cannot append parent progress after final tool completion.
+  - **Piece 3C2** owns gap/restart replay when `child_event_cursor` lags committed child events (no `events.jsonl` scans in 3C1).
+
 
 - All child stores use per-instance binding (`parentRunId` + `agentRunId` +
   `artifactId`) and resolve paths through `AgentArtifactPathResolver`.

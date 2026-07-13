@@ -12,6 +12,7 @@ use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\CodingAgent\Agent\Execution\DeferredSingleSubagentLaunchStatusEnum;
 use Ineersa\CodingAgent\Agent\Execution\DeferredSingleSubagentProjectionDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredSingleSubagentChildLifecycleProjectionDTO;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredSingleSubagentInterruptionKindEnum;
 use Symfony\Component\Clock\Clock;
 use Symfony\Component\Uid\Uuid;
 
@@ -100,6 +101,58 @@ final class DeferredSingleSubagentLaunchRepository extends ServiceEntityReposito
         }
 
         $row->terminalCompletionEnqueuedAt = $row->terminalCompletionEnqueuedAt ?? $enqueuedAt;
+        $this->getEntityManager()->flush();
+    }
+
+    /**
+     * @return list<DeferredSingleSubagentProjectionDTO>
+     */
+    public function findActiveByParentRunId(string $parentRunId): array
+    {
+        $rows = $this->findBy([
+            'parentRunId' => $parentRunId,
+            'launchStatus' => DeferredSingleSubagentLaunchStatusEnum::Launched,
+        ]);
+
+        $active = [];
+        foreach ($rows as $row) {
+            if (!$row instanceof DeferredSingleSubagentLaunch) {
+                continue;
+            }
+            if (null !== $row->terminalCompletionEnqueuedAt) {
+                continue;
+            }
+            $active[] = $this->toDto($row);
+        }
+
+        return $active;
+    }
+
+    public function persistInterruptionIntent(
+        string $lifecycleId,
+        DeferredSingleSubagentInterruptionKindEnum $kind,
+        \DateTimeImmutable $requestedAt,
+        int $expectedProjectionVersion,
+    ): void {
+        $row = $this->findOneBy(['lifecycleId' => $lifecycleId]);
+        if (!$row instanceof DeferredSingleSubagentLaunch) {
+            throw new \RuntimeException(\sprintf('Deferred single subagent projection missing for lifecycle "%s".', $lifecycleId));
+        }
+
+        if ($row->projectionVersion !== $expectedProjectionVersion) {
+            throw OptimisticLockException::lockFailed($row);
+        }
+
+        if (null !== $row->terminalCompletionEnqueuedAt) {
+            return;
+        }
+
+        if (null !== $row->interruptionKind) {
+            return;
+        }
+
+        $row->interruptionKind = $kind;
+        $row->interruptionRequestedAt = $requestedAt;
         $this->getEntityManager()->flush();
     }
 
@@ -269,6 +322,8 @@ final class DeferredSingleSubagentLaunchRepository extends ServiceEntityReposito
             terminalCompletionEnqueuedAt: $row->terminalCompletionEnqueuedAt,
             startedAt: $row->startedAt,
             deadlineAt: $row->deadlineAt,
+            interruptionKind: $row->interruptionKind,
+            interruptionRequestedAt: $row->interruptionRequestedAt,
             childLifecycleProjection: $this->decodeChildLifecycleProjection($row->childLifecycleProjection),
         );
     }
