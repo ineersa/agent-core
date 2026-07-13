@@ -11,7 +11,7 @@ final class Version20260713140000 extends AbstractMigration
 {
     public function getDescription(): string
     {
-        return 'Add deferred_single_subagent_launch projection for Piece 3A idempotent single-child deferred launch';
+        return 'Add deferred_single_subagent_launch projection for Piece 3A/3B1 child lifecycle idempotent single-child deferred launch';
     }
 
     public function up(Schema $schema): void

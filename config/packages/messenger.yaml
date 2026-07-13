@@ -86,6 +86,7 @@ framework:
             Ineersa\AgentCore\Domain\Message\LlmStepResult: run_control
             Ineersa\AgentCore\Domain\Message\ToolCallResult: run_control
             Ineersa\AgentCore\Domain\Message\CompactionStepResult: run_control
+            Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\ObserveDeferredSingleSubagentChildTurnMessage: run_control
             # AdvanceRun is intentionally NOT routed to a transport.
             # It is handled synchronously by AdvanceRunHandler (registered on
             # agent.command.bus AND agent.execution.bus via RunMessageHandler

@@ -23,6 +23,37 @@ final class DeferredSingleSubagentLaunchRepository extends ServiceEntityReposito
         parent::__construct($registry, DeferredSingleSubagentLaunch::class);
     }
 
+    public function findByChildRunId(string $childRunId): ?DeferredSingleSubagentProjectionDTO
+    {
+        $row = $this->findOneBy(['childRunId' => $childRunId]);
+
+        return $row instanceof DeferredSingleSubagentLaunch ? $this->toDto($row) : null;
+    }
+
+    public function findEntityByLifecycleId(string $lifecycleId): ?DeferredSingleSubagentLaunch
+    {
+        $row = $this->findOneBy(['lifecycleId' => $lifecycleId]);
+
+        return $row instanceof DeferredSingleSubagentLaunch ? $row : null;
+    }
+
+    public function applyChildLifecycleProjection(
+        string $lifecycleId,
+        \Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredSingleSubagentChildLifecycleProjectionDTO $projection,
+        int $childEventCursor,
+    ): void {
+        $em = $this->getEntityManager();
+        $em->clear();
+        $row = $this->findOneBy(['lifecycleId' => $lifecycleId]);
+        if (!$row instanceof DeferredSingleSubagentLaunch) {
+            throw new \RuntimeException(\sprintf('Deferred single subagent projection missing for lifecycle "%s".', $lifecycleId));
+        }
+
+        $row->childLifecycleProjection = $projection->toArray();
+        $row->childEventCursor = $childEventCursor;
+        $em->flush();
+    }
+
     public function findByParentRunAndToolCall(string $parentRunId, string $toolCallId): ?DeferredSingleSubagentProjectionDTO
     {
         $row = $this->findOneBy([
@@ -185,6 +216,19 @@ final class DeferredSingleSubagentLaunchRepository extends ServiceEntityReposito
             childEventCursor: $row->childEventCursor,
             startedAt: $row->startedAt,
             deadlineAt: $row->deadlineAt,
+            childLifecycleProjection: $this->decodeChildLifecycleProjection($row->childLifecycleProjection),
         );
+    }
+
+    /**
+     * @param array<string, mixed>|null $raw
+     */
+    private function decodeChildLifecycleProjection(?array $raw): ?\Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredSingleSubagentChildLifecycleProjectionDTO
+    {
+        if (null === $raw || [] === $raw) {
+            return null;
+        }
+
+        return \Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredSingleSubagentChildLifecycleProjectionDTO::fromArray($raw);
     }
 }

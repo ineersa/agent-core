@@ -59,6 +59,17 @@ Parent sessions that launch child subagents store child run data under
 - **Child events and state** use the same Canonical JSONL and CAS patterns as
   parent runs, stored under the parent directory via `AgentChildRunEventStore`
   and `AgentChildRunStore`.
+
+### Deferred single subagent live observation (Piece 3B1)
+
+For parent sessions that launch a **single** deferred subagent child:
+
+- `events.jsonl` and `state.json` under the child artifact remain **durable replay, recovery, and diagnostics** only. Steady-state deferred supervision does **not** poll these files.
+- After each child `RunCommit`, `AfterTurnCommitHookContext` carries the **persisted** committed event summaries (allocated `seq`, not pre-append `seq: 0`).
+- A CodingAgent hook subscriber looks up the child run in `deferred_single_subagent_launch` and dispatches a typed Messenger message to the `run_control` transport.
+- The run_control handler incrementally reduces those summaries into a compact JSON projection on the same table (`child_lifecycle_projection`, authoritative `child_event_cursor`). No `RunStore::get`, `EventStore::allFor`, or filesystem wake markers in this path.
+- **Piece 3B2** will emit parent `subagent_progress` and complete the deferred parent tool call from this projection. **Piece 3C** owns one-time gap/restart replay when the cursor is behind committed child events.
+
 - All child stores use per-instance binding (`parentRunId` + `agentRunId` +
   `artifactId`) and resolve paths through `AgentArtifactPathResolver`.
 

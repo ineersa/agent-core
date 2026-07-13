@@ -56,6 +56,9 @@ class DeferredSingleSubagentLaunch
     #[ORM\Column(name: 'child_event_cursor', type: 'integer')]
     public int $childEventCursor = 0;
 
+    #[ORM\Column(name: 'child_lifecycle_projection', type: 'json', nullable: true)]
+    public ?array $childLifecycleProjection = null;
+
     #[ORM\Column(name: 'started_at', type: 'datetime_immutable', nullable: true)]
     public ?\DateTimeImmutable $startedAt = null;
 

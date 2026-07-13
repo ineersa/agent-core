@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Agent\Execution;
 
+use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredSingleSubagentChildLifecycleProjectionDTO;
+
 /**
  * Durable single-child deferred launch projection (Piece 3A).
  *
@@ -27,6 +29,7 @@ final readonly class DeferredSingleSubagentProjectionDTO
         public int $childEventCursor,
         public ?\DateTimeImmutable $startedAt,
         public ?\DateTimeImmutable $deadlineAt,
+        public ?DeferredSingleSubagentChildLifecycleProjectionDTO $childLifecycleProjection = null,
     ) {
     }
 }
