@@ -82,6 +82,10 @@ services:
 
   # ─── Session stores — resolved via HatfieldSessionStore for path ───
 
+
+  Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface:
+    alias: Ineersa\CodingAgent\Entity\DeferredToolCompletionRepository
+
   Ineersa\AgentCore\Contract\IdempotencyStoreInterface:
     alias: Ineersa\CodingAgent\Session\JsonlIdempotencyStore
 

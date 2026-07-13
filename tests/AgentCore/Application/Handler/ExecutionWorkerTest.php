@@ -19,6 +19,7 @@ use Ineersa\AgentCore\Domain\Model\PlatformInvocationResult;
 use Ineersa\AgentCore\Domain\Tool\ToolCall;
 use Ineersa\AgentCore\Domain\Tool\ToolResult;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\MalformedToolCallSequenceException;
+use Ineersa\AgentCore\Tests\Support\InMemoryDeferredToolCompletionRepository;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use PHPUnit\Framework\TestCase;
@@ -165,7 +166,7 @@ final class ExecutionWorkerTest extends TestCase
 
         $commandBus = new TestMessageBus();
         $metrics = new RunMetrics();
-        $worker = new ExecuteToolCallWorker($toolExecutor, $commandBus, null, $metrics);
+        $worker = new ExecuteToolCallWorker($toolExecutor, $commandBus, new InMemoryDeferredToolCompletionRepository(), null, $metrics);
 
         $worker(new ExecuteToolCall(
             runId: 'run-worker-obs-2',
@@ -205,7 +206,7 @@ final class ExecutionWorkerTest extends TestCase
         };
 
         $commandBus = new TestMessageBus();
-        $worker = new ExecuteToolCallWorker($toolExecutor, $commandBus);
+        $worker = new ExecuteToolCallWorker($toolExecutor, $commandBus, new InMemoryDeferredToolCompletionRepository());
 
         $worker(new ExecuteToolCall(
             runId: 'run-worker-2',

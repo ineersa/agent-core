@@ -6,23 +6,28 @@ namespace Ineersa\AgentCore\Application\Handler;
 
 use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
 use Ineersa\AgentCore\Contract\RunStoreInterface;
-use Ineersa\AgentCore\Contract\Tool\ToolCallException;
+use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolExecutorInterface;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
+use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation;
+use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
 use Ineersa\AgentCore\Domain\Tool\ToolCall;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
+use Ineersa\AgentCore\Domain\Tool\ToolResult;
 use Ineersa\AgentCore\Infrastructure\RunLogContext;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\RunCancellationToken;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
 use Symfony\Component\Messenger\Exception\ExceptionInterface;
 use Symfony\Component\Messenger\MessageBusInterface;
+use Symfony\Component\Uid\Uuid;
 
 final readonly class ExecuteToolCallWorker
 {
     public function __construct(
         private ToolExecutorInterface $toolExecutor,
         private MessageBusInterface $commandBus,
+        private DeferredToolCompletionRepositoryInterface $deferredToolCompletionRepository,
         private ?RunStoreInterface $runStore = null,
         private ?RunMetrics $metrics = null,
         private ?RunTracer $tracer = null,
@@ -46,10 +51,13 @@ final readonly class ExecuteToolCallWorker
 
         try {
             $execute = function () use ($message): void {
-                $result = $this->execute($message);
+                $outcome = $this->execute($message);
+                if (null === $outcome) {
+                    return;
+                }
 
                 try {
-                    $this->commandBus->dispatch($result);
+                    $this->commandBus->dispatch($outcome);
                 } catch (ExceptionInterface $exception) {
                     throw new \RuntimeException('Failed to dispatch tool result to command bus.', previous: $exception);
                 }
@@ -74,8 +82,13 @@ final readonly class ExecuteToolCallWorker
         }
     }
 
-    private function execute(ExecuteToolCall $message): ToolCallResult
+    private function execute(ExecuteToolCall $message): ?ToolCallResult
     {
+        $existing = $this->deferredToolCompletionRepository->findPendingByRunAndToolCall($message->runId(), $message->toolCallId);
+        if (null !== $existing) {
+            return null;
+        }
+
         $cancelToken = null !== $this->runStore
             ? new RunCancellationToken($this->runStore, $message->runId())
             : new NullCancellationToken();
@@ -131,77 +144,61 @@ final readonly class ExecuteToolCallWorker
             $timedOut = \is_array($toolResult->details) && true === ($toolResult->details['timed_out'] ?? false);
             $this->metrics?->recordToolLatency($durationMs, $toolResult->isError, $timedOut);
 
-            $toolIdempotencyKey = \is_array($toolResult->details)
-                && \is_string($toolResult->details['tool_idempotency_key'] ?? null)
-                    ? $toolResult->details['tool_idempotency_key']
-                    : $message->toolIdempotencyKey;
+            if ($this->isDeferredOutcome($toolResult)) {
+                $this->registerDeferredExecution($message, $toolResult);
 
-            return new ToolCallResult(
-                runId: $message->runId(),
-                turnNo: $message->turnNo(),
-                stepId: $message->stepId(),
-                attempt: $message->attempt(),
-                idempotencyKey: $message->idempotencyKey(),
-                toolCallId: $message->toolCallId,
-                orderIndex: $message->orderIndex,
-                result: [
-                    'tool_name' => $toolResult->toolName,
-                    'content' => $toolResult->content,
-                    'details' => $toolResult->details,
-                    'tool_idempotency_key' => $toolIdempotencyKey,
-                    'mode' => $message->mode,
-                    'arguments' => $message->args,
-                ],
-                isError: $toolResult->isError,
-                error: null,
-            );
+                return null;
+            }
+
+            return ToolCallResultFactory::fromExecuteToolCallAndToolResult($message, $toolResult);
         } catch (\Throwable $exception) {
             $durationMs = (hrtime(true) - $startedAt) / 1_000_000;
             $this->metrics?->recordToolLatency($durationMs, true, false);
 
-            $errorType = $exception::class;
-            $details = [
-                'error_type' => $errorType,
-            ];
-
-            if ($exception instanceof ToolCallException) {
-                $details['retryable'] = $exception->retryable();
-                $details['hint'] = $exception->hint();
-            }
-
-            $error = [
-                'type' => $errorType,
-                'message' => $exception->getMessage(),
-            ];
-            if ($exception instanceof ToolCallException) {
-                $error['retryable'] = $exception->retryable();
-                $error['hint'] = $exception->hint();
-            }
-
-            return new ToolCallResult(
-                runId: $message->runId(),
-                turnNo: $message->turnNo(),
-                stepId: $message->stepId(),
-                attempt: $message->attempt(),
-                idempotencyKey: $message->idempotencyKey(),
-                toolCallId: $message->toolCallId,
-                orderIndex: $message->orderIndex,
-                result: [
-                    'tool_name' => $message->toolName,
-                    'content' => [[
-                        'type' => 'text',
-                        'text' => $exception->getMessage(),
-                    ]],
-                    'details' => $details,
-                    'tool_idempotency_key' => $message->toolIdempotencyKey,
-                    'mode' => $message->mode,
-                    'arguments' => $message->args,
-                ],
-                isError: true,
-                error: $error,
-            );
+            return ToolCallResultFactory::fromExecuteToolCallAndThrowable($message, $exception);
         } finally {
             RunLogContext::leave(); // event_type scope
         }
+    }
+
+    private function isDeferredOutcome(ToolResult $toolResult): bool
+    {
+        $details = $toolResult->details;
+        if (!\is_array($details)) {
+            return false;
+        }
+
+        $raw = $details['raw_result'] ?? null;
+
+        return $raw instanceof DeferredToolCompletionOutcome;
+    }
+
+    private function registerDeferredExecution(ExecuteToolCall $message, ToolResult $toolResult): void
+    {
+        $details = \is_array($toolResult->details) ? $toolResult->details : [];
+        $raw = $details['raw_result'] ?? null;
+        $reason = $raw instanceof DeferredToolCompletionOutcome ? $raw->reason : null;
+
+        $correlation = new DeferredToolCompletionCorrelation(
+            deferredId: Uuid::v7()->toRfc4122(),
+            runId: $message->runId(),
+            turnNo: $message->turnNo(),
+            stepId: $message->stepId(),
+            attempt: $message->attempt(),
+            idempotencyKey: $message->idempotencyKey(),
+            toolCallId: $message->toolCallId,
+            toolName: $message->toolName,
+            arguments: $message->args,
+            orderIndex: $message->orderIndex,
+            toolIdempotencyKey: $message->toolIdempotencyKey,
+            mode: $message->mode,
+            timeoutSeconds: $message->timeoutSeconds,
+            maxParallelism: $message->maxParallelism,
+            assistantMessage: $message->assistantMessage,
+            argSchema: $message->argSchema,
+            toolsRef: $message->toolsRef,
+        );
+
+        $this->deferredToolCompletionRepository->registerPending($correlation);
     }
 }
