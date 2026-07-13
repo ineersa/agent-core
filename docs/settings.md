@@ -1058,8 +1058,8 @@ Codex providers support an explicit transport:
 
 | `transport` | Behavior |
 | --- | --- |
-| `websocket` (default) | WebSocket handshake to `wss://…/codex/responses`, one connection per request, `response.create` frame. Required for GPT-5.6 models. |
-| `websocket-cached` | Reuses one healthy WebSocket per compatible Hatfield session between turns. After a successful terminal response, compatible follow-up turns may send `previous_response_id` with only the new input delta. |
+| `websocket-cached` (tracked project default) | Reuses one healthy WebSocket per compatible Hatfield session between turns. After a successful terminal response, compatible follow-up turns may send `previous_response_id` with only the new input delta. Recommended normal mode for Codex in this repo. |
+| `websocket` | Explicit one-shot fallback: WebSocket handshake to `wss://…/codex/responses`, one connection per request, `response.create` frame. Use when you want no cross-turn socket reuse. Required transport shape for GPT-5.6 models (cached mode still uses WebSocket). |
 | `sse` | Legacy HTTP/SSE POST to `/codex/responses`. Diagnostic only; GPT-5.6 models return model-not-found on SSE. |
 
 Optional cache tuning keys (Codex providers only):
