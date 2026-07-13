@@ -239,9 +239,14 @@ final class AgentArtifactRegistry
     }
 
     /**
-     * Discard a Pending-only reservation: registry row, artifact directory sidecars, returns child run id for cache cleanup.
+     * Discard a Pending-only reservation: canonical registry row plus artifact directory sidecars.
      *
      * Running or terminal artifacts are left unchanged (returns null).
+     *
+     * Ordering: registry.json is written before directory removal so list/get/load never resurrect a
+     * discarded Pending child from a stale row. Sidecar deletion is best-effort afterward; a failure
+     * leaves orphan files under the parent session but does not roll back the registry — callers retry
+     * discard or manual cleanup, and in-process cache unregister is handled by the lifecycle adapter.
      */
     public function discardPendingReservation(string $parentRunId, string $artifactId): ?string
     {
@@ -266,7 +271,11 @@ final class AgentArtifactRegistry
             if (null === $agentRunId) {
                 return null;
             }
+
+            // Canonical registry first — readers must not see a Pending row after a successful discard.
             $this->writeRegistry($parentRunId, $filtered);
+
+            // Sidecars (metadata/handoff/events/state paths) are disposable once the row is gone.
             $this->removeReservedArtifactDirectory($parentRunId, $artifactId);
 
             return $agentRunId;

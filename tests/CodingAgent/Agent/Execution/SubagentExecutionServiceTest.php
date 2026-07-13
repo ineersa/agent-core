@@ -19,6 +19,7 @@ use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Domain\Run\StartRunInput;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryRunStore;
 use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
+use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactEntryDTO;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
 use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunDirectory;
@@ -1008,6 +1009,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
         );
 
         $registry = self::getContainer()->get(AgentArtifactRegistry::class);
+        $childRunDirectory = self::getContainer()->get(AgentChildRunDirectory::class);
         $service = $this->makeService([
             'catalog' => new AgentDefinitionCatalog([
                 $def('first-agent'),
@@ -1016,6 +1018,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             ]),
             'agentRunner' => $agentRunner,
             'runStore' => $runStore,
+            'childRunDirectory' => $childRunDirectory,
         ]);
 
         try {
@@ -1046,6 +1049,33 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             $this->assertDirectoryDoesNotExist($pathResolver->resolveArtifactDir('parent-launch-fail', $thirdArtifactId));
             $artifactDirs = glob($pathResolver->resolveArtifactsBasePath('parent-launch-fail').'/*', \GLOB_ONLYDIR) ?: [];
             $this->assertCount(2, $artifactDirs, 'Aborted never-launched child must not leave a reserved artifact directory.');
+
+            $cacheReflection = new \ReflectionProperty(AgentChildRunDirectory::class, 'cache');
+            $cachedEntries = $cacheReflection->getValue($childRunDirectory);
+            $cachedForParent = array_values(array_filter(
+                $cachedEntries,
+                static fn (AgentArtifactEntryDTO $entry): bool => 'parent-launch-fail' === $entry->parentRunId,
+            ));
+            $this->assertCount(2, $cachedForParent, 'Never-launched Pending child must not remain in AgentChildRunDirectory cache.');
+            $staleCachedRunIds = [];
+            foreach ($cachedForParent as $cachedEntry) {
+                $this->assertNotNull(
+                    $registry->findByAgentRunId('parent-launch-fail', $cachedEntry->agentRunId),
+                    'Cached child run must still exist in the canonical registry.',
+                );
+            }
+            foreach ($cachedEntries as $runId => $cachedEntry) {
+                if ('parent-launch-fail' !== $cachedEntry->parentRunId) {
+                    continue;
+                }
+                if (null === $registry->findByAgentRunId('parent-launch-fail', $runId)) {
+                    $staleCachedRunIds[] = $runId;
+                }
+            }
+            $this->assertSame([], $staleCachedRunIds, 'Discarded Pending child must not stay cache-locatable without a registry row.');
+            foreach ($staleCachedRunIds as $staleRunId) {
+                $this->assertNull($childRunDirectory->locate($staleRunId));
+            }
         }
 
         $entries = $registry->list('parent-launch-fail');
