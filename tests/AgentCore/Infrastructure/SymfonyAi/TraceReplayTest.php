@@ -269,8 +269,9 @@ final class TraceReplayTest extends KernelTestCase
 
         // Initially no model/reasoning metadata — only identity fields exist
         $session = $this->sessionMetaStore->findSession($persistSessId);
-        $this->assertArrayNotHasKey('model', $meta, 'Model not set before change');
-        $this->assertArrayNotHasKey('reasoning', $meta, 'Reasoning not set before change');
+        $this->assertNotNull($session);
+        $this->assertNull($session->model, 'Model not set before change');
+        $this->assertNull($session->reasoning, 'Reasoning not set before change');
 
         // Change model and reasoning
         $selectionService->changeModel(
@@ -281,6 +282,7 @@ final class TraceReplayTest extends KernelTestCase
 
         // Verify metadata was persisted
         $session = $this->sessionMetaStore->findSession($persistSessId);
+        $this->assertNotNull($session);
         $this->assertSame('deepseek/deepseek-v4-flash', $session->model ?? null);
         $this->assertSame('deepseek', $session->modelProvider ?? null);
         $this->assertSame('deepseek-v4-flash', $session->modelName ?? null);

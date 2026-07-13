@@ -87,6 +87,7 @@ class ModelSettingsPersisterTest extends IsolatedKernelTestCase
 
         // Session metadata
         $session = $this->sessionMetaStore->findSession($this->sessionId);
+        $this->assertNotNull($session);
         $this->assertSame('deepseek/deepseek-v4-flash', $session->model);
         $this->assertSame('deepseek', $session->modelProvider);
         $this->assertSame('deepseek-v4-flash', $session->modelName);
@@ -107,6 +108,7 @@ class ModelSettingsPersisterTest extends IsolatedKernelTestCase
 
         // Session metadata
         $session = $this->sessionMetaStore->findSession($this->sessionId);
+        $this->assertNotNull($session);
         $this->assertSame('xhigh', $session->reasoning);
 
         // Home settings YAML

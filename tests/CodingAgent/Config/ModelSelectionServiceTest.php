@@ -165,6 +165,7 @@ class ModelSelectionServiceTest extends IsolatedKernelTestCase
         $service->changeReasoning('low', $this->sessionId);
 
         $session = $this->findSessionEntity($this->sessionId);
+        $this->assertNotNull($session);
         $this->assertSame('low', $session->reasoning);
         $this->assertSame('llama_cpp/flash', $session->model);
     }
@@ -197,6 +198,7 @@ class ModelSelectionServiceTest extends IsolatedKernelTestCase
         $service->changeModel($ref, $this->sessionId);
 
         $session = $this->findSessionEntity($this->sessionId);
+        $this->assertNotNull($session);
         $this->assertSame('deepseek/deepseek-v4-flash', $session->model);
         $this->assertSame('deepseek', $session->modelProvider);
         $this->assertSame('deepseek-v4-flash', $session->modelName);
@@ -224,6 +226,7 @@ class ModelSelectionServiceTest extends IsolatedKernelTestCase
         $service->changeReasoning('xhigh', $this->sessionId);
 
         $session = $this->findSessionEntity($this->sessionId);
+        $this->assertNotNull($session);
         $this->assertSame('xhigh', $session->reasoning);
     }
 
@@ -349,6 +352,7 @@ class ModelSelectionServiceTest extends IsolatedKernelTestCase
         $this->assertSame('high', $result);
 
         $session = $this->findSessionEntity($this->sessionId);
+        $this->assertNotNull($session);
         $this->assertSame('high', $session->reasoning);
     }
 

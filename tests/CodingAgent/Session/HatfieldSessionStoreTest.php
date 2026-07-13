@@ -40,8 +40,7 @@ final class HatfieldSessionStoreTest extends IsolatedKernelTestCase
         $this->assertFileDoesNotExist($sessionPath.'/metadata.yaml');
         $session = $this->store->findSession($sessionId);
         $this->assertNotNull($session);
-        $this->assertSame($sessionId, (string) $session->id);
-        $this->assertSame($sessionId, (string) $session->id, 'session_id must equal run_id');
+        $this->assertSame($sessionId, (string) $session->id, 'public session_id and run_id both derive from DB auto-increment id');
         $this->assertNull($session->parentId, 'parent_id must be null for new sessions');
         $this->assertNull($session->rootId, 'root_id must be null for new sessions');
         $this->assertSame('Hello', $session->prompt);
