@@ -51,54 +51,22 @@ final class DeferredSingleSubagentLaunchService
         }
 
         $toolCallId = $toolContext->toolCallId();
-        $existing = $this->launchProjectionRepository->findByParentRunAndToolCall($parentRunId, $toolCallId);
+        $ids = $this->identityFactory->forParentToolCall($parentRunId, $toolCallId);
+        $deadlineAt = (new \DateTimeImmutable())->modify(\sprintf('+%d seconds', $this->agentsConfig->subagentToolTimeoutSeconds));
 
-        if (null !== $existing && DeferredSingleSubagentLaunchStatusEnum::Launched === $existing->launchStatus) {
-            return new DeferredToolCompletionOutcome();
-        }
+        $existing = $this->launchProjectionRepository->findByParentRunAndToolCall($parentRunId, $toolCallId);
 
         if (null !== $existing && DeferredSingleSubagentLaunchStatusEnum::Failed === $existing->launchStatus) {
             throw new ToolCallException('Subagent child launch previously failed for this tool call.', retryable: false);
         }
 
-        $ids = $this->identityFactory->forParentToolCall($parentRunId, $toolCallId);
-        $deadlineAt = (new \DateTimeImmutable())->modify(\sprintf('+%d seconds', $this->agentsConfig->subagentToolTimeoutSeconds));
-
-        if (null === $existing) {
-            $projection = $this->launchProjectionRepository->reserve(
-                parentRunId: $parentRunId,
-                parentTurnNo: $toolContext->turnNo(),
-                parentToolCallId: $toolCallId,
-                parentOrderIndex: $toolContext->orderIndex(),
-                childRunId: $ids['childRunId'],
-                artifactId: $ids['artifactId'],
-                agentName: $agentName,
-                task: $task,
-                definitionModel: $definition->model,
-                deadlineAt: $deadlineAt,
-            );
-
-            $prepared = $this->launchPreparation->prepareFromDefinition(
-                $parentRunId,
-                $definition,
-                $agentName,
-                $task,
-                $ids['artifactId'],
-                $ids['childRunId'],
-                skipReservation: true,
-            );
-            $this->artifactLifecycle->ensureReservedPending($prepared->identity);
-
-            return $this->dispatchLaunch($parentRunId, $toolCallId, $prepared, $projection);
-        }
-
-        $this->launchProjectionRepository->reserve(
+        $projection = $this->launchProjectionRepository->reserve(
             parentRunId: $parentRunId,
             parentTurnNo: $toolContext->turnNo(),
             parentToolCallId: $toolCallId,
             parentOrderIndex: $toolContext->orderIndex(),
-            childRunId: $existing->childRunId,
-            artifactId: $existing->artifactId,
+            childRunId: null !== $existing ? $existing->childRunId : $ids['childRunId'],
+            artifactId: null !== $existing ? $existing->artifactId : $ids['artifactId'],
             agentName: $agentName,
             task: $task,
             definitionModel: $definition->model,
@@ -110,20 +78,19 @@ final class DeferredSingleSubagentLaunchService
             $definition,
             $agentName,
             $task,
-            $existing->artifactId,
-            $existing->childRunId,
+            $projection->artifactId,
+            $projection->childRunId,
             skipReservation: true,
         );
         $this->artifactLifecycle->ensureReservedPending($prepared->identity);
 
-        return $this->dispatchLaunch($parentRunId, $toolCallId, $prepared, $existing);
+        return $this->dispatchLaunch($parentRunId, $toolCallId, $prepared);
     }
 
     private function dispatchLaunch(
         string $parentRunId,
         string $toolCallId,
         PreparedAgentChildRunDTO $prepared,
-        DeferredSingleSubagentProjectionDTO $projection,
     ): DeferredToolCompletionOutcome {
         $artifactStatus = $this->artifactLifecycle->getArtifactStatus($parentRunId, $prepared->identity->artifactId);
         if ($this->isArtifactBeyondPending($artifactStatus)) {
@@ -136,14 +103,41 @@ final class DeferredSingleSubagentLaunchService
             $this->agentRunner->start($prepared->startRunInput);
         } catch (\Throwable $e) {
             $policy = $this->lifecyclePolicyFactory->create();
-            $this->batchLaunchService->abort(
-                $parentRunId,
-                [$prepared->identity],
-                $policy,
-                $e,
-                ChildRunBatchLaunchAbortContextDTO::runtimeStart(),
-            );
-            $this->launchProjectionRepository->markFailed($parentRunId, $toolCallId);
+            try {
+                $this->batchLaunchService->abort(
+                    $parentRunId,
+                    [$prepared->identity],
+                    $policy,
+                    $e,
+                    ChildRunBatchLaunchAbortContextDTO::runtimeStart(),
+                );
+            } catch (\Throwable $abortFailure) {
+                $this->logger->warning('deferred_single_subagent.launch_abort_failed', [
+                    'run_id' => $parentRunId,
+                    'tool_call_id' => $toolCallId,
+                    'child_run_id' => $prepared->identity->childRunId,
+                    'artifact_id' => $prepared->identity->artifactId,
+                    'component' => 'agent.execution',
+                    'event_type' => 'deferred_single_subagent.launch_abort_failed',
+                    'exception_class' => $abortFailure::class,
+                    'message' => $abortFailure->getMessage(),
+                ]);
+            }
+
+            try {
+                $this->launchProjectionRepository->markFailed($parentRunId, $toolCallId);
+            } catch (\Throwable $markFailedFailure) {
+                $this->logger->warning('deferred_single_subagent.projection_mark_failed_failed', [
+                    'run_id' => $parentRunId,
+                    'tool_call_id' => $toolCallId,
+                    'child_run_id' => $prepared->identity->childRunId,
+                    'artifact_id' => $prepared->identity->artifactId,
+                    'component' => 'agent.execution',
+                    'event_type' => 'deferred_single_subagent.projection_mark_failed_failed',
+                    'exception_class' => $markFailedFailure::class,
+                    'message' => $markFailedFailure->getMessage(),
+                ]);
+            }
 
             throw new ToolCallException('Subagent child launch failed: '.$e->getMessage(), retryable: false, previous: $e);
         }
@@ -160,7 +154,7 @@ final class DeferredSingleSubagentLaunchService
         PreparedAgentChildRunDTO $prepared,
     ): void {
         try {
-            $this->artifactLifecycle->markRunningForwardOnly($prepared->identity);
+            $this->artifactLifecycle->markRunning($prepared->identity);
         } catch (\Throwable $e) {
             $this->logger->warning('deferred_single_subagent.artifact_running_persist_failed', [
                 'run_id' => $parentRunId,

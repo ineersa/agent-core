@@ -92,30 +92,9 @@ final class AgentArtifactRegistry
                 }
             }
 
-            $now = new \DateTimeImmutable();
-            $paths = AgentArtifactPathsDTO::forArtifactId($artifactId);
-
-            $entry = new AgentArtifactEntryDTO(
-                artifactId: $artifactId,
-                parentRunId: $parentRunId,
-                agentRunId: $agentRunId,
-                agentName: $agentName,
-                kind: $kind,
-                status: AgentArtifactStatusEnum::Pending,
-                paths: $paths,
-                createdAt: $now,
-            );
-
-            // Create the artifact directory and files.
-            $this->ensureArtifactDir($parentRunId, $artifactId);
-            $this->writeHandoff($parentRunId, $artifactId, '');
-
-            // Write the canonical registry first — if a later sidecar write
-            // fails, the canonical registry is still correct.  metadata.json
-            // is never read by this code; it is an inspectable sidecar.
+            $entry = $this->buildPendingEntry($parentRunId, $artifactId, $agentRunId, $agentName, $kind);
             $entries[] = $entry;
-            $this->writeRegistry($parentRunId, $entries);
-            $this->writeMetadata($parentRunId, $entry);
+            $this->persistPendingEntry($parentRunId, $artifactId, $entry, $entries);
 
             return $entry;
         } finally {
@@ -161,26 +140,9 @@ final class AgentArtifactRegistry
                 return $existing;
             }
 
-            $now = new \DateTimeImmutable();
-            $paths = AgentArtifactPathsDTO::forArtifactId($artifactId);
-
-            $entry = new AgentArtifactEntryDTO(
-                artifactId: $artifactId,
-                parentRunId: $parentRunId,
-                agentRunId: $agentRunId,
-                agentName: $agentName,
-                kind: $kind,
-                status: AgentArtifactStatusEnum::Pending,
-                paths: $paths,
-                createdAt: $now,
-            );
-
-            $this->ensureArtifactDir($parentRunId, $artifactId);
-            $this->writeHandoff($parentRunId, $artifactId, '');
-
+            $entry = $this->buildPendingEntry($parentRunId, $artifactId, $agentRunId, $agentName, $kind);
             $entries[] = $entry;
-            $this->writeRegistry($parentRunId, $entries);
-            $this->writeMetadata($parentRunId, $entry);
+            $this->persistPendingEntry($parentRunId, $artifactId, $entry, $entries);
 
             return $entry;
         } finally {
@@ -246,6 +208,85 @@ final class AgentArtifactRegistry
                     summary: $summary ?? $entry->summary,
                     failureReason: $failureReason ?? $entry->failureReason,
                     needsClarification: $needsClarification ?? $entry->needsClarification,
+                );
+
+                $entries[$i] = $updated;
+
+                break;
+            }
+
+            if (null === $updated) {
+                return null;
+            }
+
+            $this->writeRegistry($parentRunId, $entries);
+            $this->writeMetadata($parentRunId, $updated);
+
+            return $updated;
+        } finally {
+            $lock->release();
+        }
+    }
+
+    /**
+     * Atomically promote Pending/NeedsClarification to Running under the parent artifact lock.
+     *
+     * Running and terminal statuses are left unchanged so a concurrent terminal write cannot be
+     * regressed by a later forward-only promotion.
+     */
+    public function promoteToRunningForwardOnly(
+        string $parentRunId,
+        string $artifactId,
+        \DateTimeImmutable $startedAt,
+    ): ?AgentArtifactEntryDTO {
+        $this->pathResolver->validatePathComponent($parentRunId, 'parentRunId');
+        $this->pathResolver->validatePathComponent($artifactId, 'artifactId');
+
+        $lock = $this->lockFactory->createLock("hatfield-agent-artifacts-{$parentRunId}");
+        $lock->acquire(true);
+
+        try {
+            $entries = $this->loadRegistry($parentRunId);
+            $updated = null;
+
+            foreach ($entries as $i => $entry) {
+                if ($entry->artifactId !== $artifactId) {
+                    continue;
+                }
+
+                if (\in_array($entry->status, [
+                    AgentArtifactStatusEnum::Completed,
+                    AgentArtifactStatusEnum::Failed,
+                    AgentArtifactStatusEnum::Cancelled,
+                ], true)) {
+                    return $entry;
+                }
+
+                if (AgentArtifactStatusEnum::Running === $entry->status) {
+                    return $entry;
+                }
+
+                if (!\in_array($entry->status, [
+                    AgentArtifactStatusEnum::Pending,
+                    AgentArtifactStatusEnum::NeedsClarification,
+                ], true)) {
+                    return $entry;
+                }
+
+                $updated = new AgentArtifactEntryDTO(
+                    artifactId: $entry->artifactId,
+                    parentRunId: $entry->parentRunId,
+                    agentRunId: $entry->agentRunId,
+                    agentName: $entry->agentName,
+                    kind: $entry->kind,
+                    status: AgentArtifactStatusEnum::Running,
+                    paths: $entry->paths,
+                    createdAt: $entry->createdAt,
+                    startedAt: $startedAt,
+                    completedAt: $entry->completedAt,
+                    summary: $entry->summary,
+                    failureReason: $entry->failureReason,
+                    needsClarification: $entry->needsClarification,
                 );
 
                 $entries[$i] = $updated;
@@ -417,15 +458,49 @@ final class AgentArtifactRegistry
 
     // ── Internal read/write methods ─────────────────────────────────────
 
+    private function buildPendingEntry(
+        string $parentRunId,
+        string $artifactId,
+        string $agentRunId,
+        string $agentName,
+        AgentArtifactKindEnum $kind,
+    ): AgentArtifactEntryDTO {
+        $now = new \DateTimeImmutable();
+        $paths = AgentArtifactPathsDTO::forArtifactId($artifactId);
+
+        return new AgentArtifactEntryDTO(
+            artifactId: $artifactId,
+            parentRunId: $parentRunId,
+            agentRunId: $agentRunId,
+            agentName: $agentName,
+            kind: $kind,
+            status: AgentArtifactStatusEnum::Pending,
+            paths: $paths,
+            createdAt: $now,
+        );
+    }
+
     /**
-     * Load all entries from registry.json for a parent session.
-     *
-     * A missing file is legitimate empty.  Corrupt JSON or an
-     * unsupported schema version throw — never silently return [].
-     *
+     * @param list<AgentArtifactEntryDTO> $entries
+     */
+    private function persistPendingEntry(
+        string $parentRunId,
+        string $artifactId,
+        AgentArtifactEntryDTO $entry,
+        array $entries,
+    ): void {
+        $this->ensureArtifactDir($parentRunId, $artifactId);
+        $this->writeHandoff($parentRunId, $artifactId, '');
+
+        // Write the canonical registry first — if a later sidecar write
+        // fails, the canonical registry is still correct.  metadata.json
+        // is never read by this code; it is an inspectable sidecar.
+        $this->writeRegistry($parentRunId, $entries);
+        $this->writeMetadata($parentRunId, $entry);
+    }
+
+    /**
      * @return list<AgentArtifactEntryDTO>
-     *
-     * @throws \RuntimeException when the registry file is corrupt
      */
     private function loadRegistry(string $parentRunId): array
     {
@@ -503,7 +578,7 @@ final class AgentArtifactRegistry
 
         // Temp-file + rename for atomic replacement.
         $tmpPath = $path.'.'.bin2hex(random_bytes(4)).'.tmp';
-        $written = file_put_contents($tmpPath, $json, \LOCK_EX);
+        $written = @file_put_contents($tmpPath, $json, \LOCK_EX);
         if (false === $written) {
             throw new \RuntimeException(\sprintf('Failed to write registry.json for parent run "%s".', $parentRunId));
         }
@@ -528,7 +603,7 @@ final class AgentArtifactRegistry
 
         $json = json_encode($this->normalizeEntry($entry), \JSON_PRETTY_PRINT | \JSON_THROW_ON_ERROR);
         $tmpPath = $path.'.'.bin2hex(random_bytes(4)).'.tmp';
-        $written = file_put_contents($tmpPath, $json, \LOCK_EX);
+        $written = @file_put_contents($tmpPath, $json, \LOCK_EX);
         if (false === $written) {
             throw new \RuntimeException(\sprintf('Failed to write metadata.json for artifact "%s" parent "%s".', $entry->artifactId, $parentRunId));
         }

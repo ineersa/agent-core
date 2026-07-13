@@ -43,35 +43,9 @@ final class ChildRunArtifactLifecycleService
 
     public function markRunning(ChildRunIdentityDTO $identity): void
     {
-        $this->markRunningForwardOnly($identity);
-    }
-
-    /**
-     * Promote Pending/NeedsClarification to Running without regressing terminal artifact status.
-     */
-    public function markRunningForwardOnly(ChildRunIdentityDTO $identity): void
-    {
-        $current = $this->getArtifactStatus($identity->parentRunId, $identity->artifactId);
-        if (null === $current) {
-            return;
-        }
-
-        if (\in_array($current, [
-            AgentArtifactStatusEnum::Completed,
-            AgentArtifactStatusEnum::Failed,
-            AgentArtifactStatusEnum::Cancelled,
-        ], true)) {
-            return;
-        }
-
-        if (AgentArtifactStatusEnum::Running === $current) {
-            return;
-        }
-
-        $this->artifactRegistry->update(
+        $this->artifactRegistry->promoteToRunningForwardOnly(
             parentRunId: $identity->parentRunId,
             artifactId: $identity->artifactId,
-            status: AgentArtifactStatusEnum::Running,
             startedAt: new \DateTimeImmutable(),
         );
     }
