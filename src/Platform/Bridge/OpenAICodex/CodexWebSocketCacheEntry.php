@@ -15,6 +15,9 @@ final class CodexWebSocketCacheEntry
 
     public ?CodexWebSocketContinuationState $continuation = null;
 
+    /** Timestamp when the entry last became idle after a successful cached lease release; null while busy or before first release. */
+    public ?int $idleSince = null;
+
     public function __construct(
         public readonly WebsocketConnection $connection,
         public readonly CodexWebSocketCompatibilityFingerprint $identity,

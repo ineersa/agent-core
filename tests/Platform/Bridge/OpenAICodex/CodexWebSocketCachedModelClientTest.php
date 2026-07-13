@@ -14,12 +14,14 @@ use PHPUnit\Framework\TestCase;
 use Symfony\AI\Platform\Bridge\OpenAICodex\CodexModel;
 use Symfony\AI\Platform\Bridge\OpenAICodex\CodexRequestBodyFactory;
 use Symfony\AI\Platform\Bridge\OpenAICodex\CodexTransportEnum;
+use Symfony\AI\Platform\Bridge\OpenAICodex\CodexWebSocketCacheSettings;
 use Symfony\AI\Platform\Bridge\OpenAICodex\CodexWebSocketConnectionCache;
 use Symfony\AI\Platform\Bridge\OpenAICodex\CodexWebSocketConnectorInterface;
 use Symfony\AI\Platform\Bridge\OpenAICodex\CodexWebSocketHandshakeHeadersFactory;
 use Symfony\AI\Platform\Bridge\OpenAICodex\CodexWebSocketModelClient;
 use Symfony\AI\Platform\Bridge\OpenAICodex\CodexWebSocketUrlResolver;
 use Symfony\AI\Platform\Bridge\OpenAICodex\RawWebSocketResult;
+use Symfony\Component\Clock\MockClock;
 
 #[AllowMockObjectsWithoutExpectations]
 final class CodexWebSocketCachedModelClientTest extends TestCase
@@ -76,6 +78,64 @@ final class CodexWebSocketCachedModelClientTest extends TestCase
         $this->assertSame('resp_cached_1', $secondFrame['previous_response_id']);
         $this->assertCount(1, $secondFrame['input']);
         $this->assertSame('second', $secondFrame['input'][0]['content']);
+    }
+
+    public function testPostIdleExpirySendsFullContextWithoutPreviousResponseId(): void
+    {
+        $cacheKey = '0194ffff-bbbb-7ccc-8ddd-444444444444';
+        self::assertUuidVersion7($cacheKey);
+
+        $clock = new MockClock(new \DateTimeImmutable('2026-07-13 20:44:00'));
+        $cache = new CodexWebSocketConnectionCache(clock: $clock);
+        $settings = new CodexWebSocketCacheSettings(idleTtlSeconds: 300, maxAgeSeconds: 3300);
+
+        $connectCount = 0;
+        $frames = [];
+        $connection = $this->createStreamingConnection($frames);
+
+        $connector = $this->createMock(CodexWebSocketConnectorInterface::class);
+        $connector->method('connect')->willReturnCallback(static function () use (&$connectCount, $connection): WebsocketConnection {
+            ++$connectCount;
+
+            return $connection;
+        });
+
+        $client = new CodexWebSocketModelClient(
+            $connector,
+            new CodexWebSocketUrlResolver(),
+            new CodexWebSocketHandshakeHeadersFactory(),
+            new CodexRequestBodyFactory(),
+            'https://chatgpt.com/backend-api',
+            'access',
+            'acct-1',
+            transport: CodexTransportEnum::WebsocketCached,
+            connectionCache: $cache,
+            cacheSettings: $settings,
+        );
+
+        $options = ['provider_cache_key' => $cacheKey];
+        $firstPayload = ['input' => [['role' => 'user', 'content' => 'first']]];
+        $first = $client->request(new CodexModel('gpt-5.6-luna'), $firstPayload, $options);
+        iterator_to_array($first->getDataStream());
+
+        $clock->sleep(308);
+
+        $secondPayload = [
+            'input' => [
+                ['role' => 'user', 'content' => 'first'],
+                ['type' => 'message', 'role' => 'assistant', 'content' => 'ok'],
+                ['role' => 'user', 'content' => 'after-idle'],
+            ],
+        ];
+        $second = $client->request(new CodexModel('gpt-5.6-luna'), $secondPayload, $options);
+        iterator_to_array($second->getDataStream());
+
+        $this->assertSame(2, $connectCount);
+        $this->assertCount(2, $frames);
+        $secondFrame = json_decode($frames[1], true, flags: \JSON_THROW_ON_ERROR);
+        $this->assertArrayNotHasKey('previous_response_id', $secondFrame);
+        $this->assertCount(3, $secondFrame['input']);
+        $this->assertSame('after-idle', $secondFrame['input'][2]['content']);
     }
 
     public function testPlainWebsocketStillOpensConnectionPerRequest(): void

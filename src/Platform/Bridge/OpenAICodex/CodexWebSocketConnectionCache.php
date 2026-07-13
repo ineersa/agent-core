@@ -7,20 +7,19 @@ namespace Symfony\AI\Platform\Bridge\OpenAICodex;
 use Amp\Websocket\Client\WebsocketConnection;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
-use Revolt\EventLoop;
 use Symfony\Component\Clock\ClockInterface;
 use Symfony\Component\Clock\NativeClock;
 
 /**
  * Process-scoped cache of Codex WebSocket connections keyed by session correlation identity.
+ *
+ * Idle TTL is enforced synchronously on acquire (not via a background event loop), because
+ * long-lived Messenger workers block between messages and Revolt timers do not run reliably.
  */
 final class CodexWebSocketConnectionCache
 {
     /** @var array<string, CodexWebSocketCacheEntry> */
     private array $entries = [];
-
-    /** @var array<string, string> */
-    private array $idleTimerIds = [];
 
     private readonly LoggerInterface $logger;
 
@@ -43,8 +42,6 @@ final class CodexWebSocketConnectionCache
         $existing = $this->entries[$sessionKey] ?? null;
 
         if (null !== $existing) {
-            $this->cancelIdleTimer($sessionKey);
-
             // Busy wins: never close, expire, or replace an actively streaming cached socket.
             if ($existing->busy) {
                 $connection = $connect();
@@ -57,16 +54,22 @@ final class CodexWebSocketConnectionCache
                 return new CodexWebSocketCacheLease($connection, false, false, true, null);
             }
 
-            if ($existing->identity->fingerprint !== $identity->fingerprint) {
-                $this->closeEntry($existing, 'identity_mismatch');
+            $discardReason = $this->discardReasonForIdleEntry($existing, $identity, $settings);
+            if (null !== $discardReason) {
+                $this->closeEntry($existing, $discardReason);
                 unset($this->entries[$sessionKey]);
-                $existing = null;
-            } elseif ($this->isExpired($existing, $settings)) {
-                $this->closeEntry($existing, 'max_age');
-                unset($this->entries[$sessionKey]);
+                if ('idle_ttl' === $discardReason) {
+                    $this->logger->info('codex.websocket.cache.expired', [
+                        'event_type' => 'codex.websocket.cache.expired',
+                        'component' => 'codex_websocket_connection_cache',
+                        'reason' => 'idle_ttl',
+                        'session_key_length' => \strlen($sessionKey),
+                    ]);
+                }
                 $existing = null;
             } else {
                 $existing->busy = true;
+                $existing->idleSince = null;
                 $this->logger->info('codex.websocket.cache.reused', [
                     'event_type' => 'codex.websocket.cache.reused',
                     'component' => 'codex_websocket_connection_cache',
@@ -113,13 +116,12 @@ final class CodexWebSocketConnectionCache
         if (!$keepInCache) {
             $this->closeEntry($lease->entry, 'release_discard');
             unset($this->entries[$sessionKey]);
-            $this->cancelIdleTimer($sessionKey);
 
             return;
         }
 
         $lease->entry->busy = false;
-        $this->scheduleIdleExpiry($sessionKey, $lease->entry, $lease->entry->settings);
+        $lease->entry->idleSince = $this->clock->now()->getTimestamp();
     }
 
     public function invalidateEntry(?CodexWebSocketCacheEntry $entry, string $reason): void
@@ -136,9 +138,9 @@ final class CodexWebSocketConnectionCache
         }
 
         $entry->continuation = null;
+        $entry->idleSince = null;
         $this->closeEntry($entry, $reason);
         unset($this->entries[$sessionKey]);
-        $this->cancelIdleTimer($sessionKey);
 
         $this->logger->info('codex.websocket.cache.reset', [
             'event_type' => 'codex.websocket.cache.reset',
@@ -165,48 +167,52 @@ final class CodexWebSocketConnectionCache
         }
     }
 
-    private function isExpired(CodexWebSocketCacheEntry $entry, CodexWebSocketCacheSettings $settings): bool
+    private function discardReasonForIdleEntry(
+        CodexWebSocketCacheEntry $entry,
+        CodexWebSocketCompatibilityFingerprint $identity,
+        CodexWebSocketCacheSettings $settings,
+    ): ?string {
+        if ($entry->connection->isClosed()) {
+            return 'connection_closed';
+        }
+
+        if ($entry->identity->fingerprint !== $identity->fingerprint) {
+            return 'identity_mismatch';
+        }
+
+        if ($this->isMaxAgeExpired($entry, $settings)) {
+            return 'max_age';
+        }
+
+        if ($this->isIdleTtlExpired($entry, $settings)) {
+            return 'idle_ttl';
+        }
+
+        return null;
+    }
+
+    private function isMaxAgeExpired(CodexWebSocketCacheEntry $entry, CodexWebSocketCacheSettings $settings): bool
     {
         $now = $this->clock->now()->getTimestamp();
 
         return ($now - $entry->createdAt) >= $settings->maxAgeSeconds;
     }
 
-    private function scheduleIdleExpiry(string $sessionKey, CodexWebSocketCacheEntry $entry, CodexWebSocketCacheSettings $settings): void
+    private function isIdleTtlExpired(CodexWebSocketCacheEntry $entry, CodexWebSocketCacheSettings $settings): bool
     {
-        $this->cancelIdleTimer($sessionKey);
-        $ttl = $settings->idleTtlSeconds;
-        $this->idleTimerIds[$sessionKey] = EventLoop::delay((float) $ttl, function () use ($sessionKey, $entry): void {
-            unset($this->idleTimerIds[$sessionKey]);
-            if (($this->entries[$sessionKey] ?? null) !== $entry) {
-                return;
-            }
-            if ($entry->busy) {
-                return;
-            }
-            $this->invalidateEntry($entry, 'idle_ttl');
-            $this->logger->info('codex.websocket.cache.expired', [
-                'event_type' => 'codex.websocket.cache.expired',
-                'component' => 'codex_websocket_connection_cache',
-                'reason' => 'idle_ttl',
-                'session_key_length' => \strlen($sessionKey),
-            ]);
-        });
-    }
-
-    private function cancelIdleTimer(string $sessionKey): void
-    {
-        $timerId = $this->idleTimerIds[$sessionKey] ?? null;
-        if (null === $timerId) {
-            return;
+        if (null === $entry->idleSince) {
+            return false;
         }
-        EventLoop::cancel($timerId);
-        unset($this->idleTimerIds[$sessionKey]);
+
+        $now = $this->clock->now()->getTimestamp();
+
+        return ($now - $entry->idleSince) >= $settings->idleTtlSeconds;
     }
 
     private function closeEntry(CodexWebSocketCacheEntry $entry, string $reason): void
     {
         $entry->continuation = null;
+        $entry->idleSince = null;
         $this->closeConnection($entry->connection, $reason);
     }
 

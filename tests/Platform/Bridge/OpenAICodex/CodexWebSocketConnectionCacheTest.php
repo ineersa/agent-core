@@ -122,6 +122,81 @@ final class CodexWebSocketConnectionCacheTest extends TestCase
         $this->assertFalse($lease2->reused);
     }
 
+    public function testIdleTtlExpiryOnAcquireUsesInjectedClockAndClosesStaleConnection(): void
+    {
+        $clock = new MockClock(new \DateTimeImmutable('2026-07-13 20:44:00'));
+        $cache = new CodexWebSocketConnectionCache(clock: $clock);
+        $settings = new CodexWebSocketCacheSettings(idleTtlSeconds: 300, maxAgeSeconds: 3300);
+        $identity = $this->identity('0194aaaa-bbbb-7ccc-8ddd-111111111111', 'gpt-5.6-luna');
+
+        $first = $this->createMock(WebsocketConnection::class);
+        $first->expects($this->once())->method('close');
+        $second = $this->createMock(WebsocketConnection::class);
+
+        $connectCount = 0;
+        $lease1 = $cache->acquire($identity, $settings, static function () use (&$connectCount, $first): WebsocketConnection {
+            ++$connectCount;
+
+            return $first;
+        });
+        $cache->release($lease1, true);
+
+        $clock->sleep(308);
+
+        $lease2 = $cache->acquire($identity, $settings, static function () use (&$connectCount, $second): WebsocketConnection {
+            ++$connectCount;
+
+            return $second;
+        });
+        $this->assertFalse($lease2->reused);
+        $this->assertSame(2, $connectCount);
+    }
+
+    public function testClosedIdleConnectionIsDiscardedBeforeIdleTtl(): void
+    {
+        $cache = new CodexWebSocketConnectionCache();
+        $settings = new CodexWebSocketCacheSettings(idleTtlSeconds: 300);
+        $identity = $this->identity('0194bbbb-bbbb-7ccc-8ddd-222222222222', 'gpt-5.6-luna');
+
+        $first = $this->createMock(WebsocketConnection::class);
+        $first->expects($this->once())->method('close');
+        $isClosed = false;
+        $first->method('isClosed')->willReturnCallback(static function () use (&$isClosed): bool {
+            return $isClosed;
+        });
+
+        $lease1 = $cache->acquire($identity, $settings, static fn (): WebsocketConnection => $first);
+        $cache->release($lease1, true);
+        $isClosed = true;
+
+        $second = $this->createMock(WebsocketConnection::class);
+        $lease2 = $cache->acquire($identity, $settings, static fn (): WebsocketConnection => $second);
+        $this->assertFalse($lease2->reused);
+    }
+
+    public function testBusyWinsOverIdleTtlWithoutClosingActiveSocket(): void
+    {
+        $clock = new MockClock(new \DateTimeImmutable('2026-07-13 20:44:00'));
+        $cache = new CodexWebSocketConnectionCache(clock: $clock);
+        $settings = new CodexWebSocketCacheSettings(idleTtlSeconds: 300);
+        $identity = $this->identity('0194cccc-bbbb-7ccc-8ddd-333333333333', 'gpt-5.6-luna');
+
+        $primary = $this->createMock(WebsocketConnection::class);
+        $primary->expects($this->never())->method('close');
+        $oneShot = $this->createMock(WebsocketConnection::class);
+        $oneShot->expects($this->once())->method('close');
+
+        $leaseBusy = $cache->acquire($identity, $settings, static fn (): WebsocketConnection => $primary);
+
+        $clock->sleep(400);
+
+        $leaseOneShot = $cache->acquire($identity, $settings, static fn (): WebsocketConnection => $oneShot);
+        $this->assertTrue($leaseOneShot->oneShot);
+        $cache->release($leaseOneShot, false);
+
+        $cache->release($leaseBusy, true);
+    }
+
     public function testCloseAllClosesOwnedConnections(): void
     {
         $cache = new CodexWebSocketConnectionCache();
