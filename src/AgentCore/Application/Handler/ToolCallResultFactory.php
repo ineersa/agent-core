@@ -86,4 +86,37 @@ final class ToolCallResultFactory
             error: $error,
         );
     }
+
+    /**
+     * @param array<int, array<string, mixed>> $content
+     * @param array<string, mixed>|null        $details
+     * @param array<string, mixed>|null        $error
+     */
+    public static function fromDeferredCorrelationAndCompletion(
+        \Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation $correlation,
+        array $content,
+        ?array $details = null,
+        bool $isError = false,
+        ?array $error = null,
+    ): ToolCallResult {
+        return new ToolCallResult(
+            runId: $correlation->runId,
+            turnNo: $correlation->turnNo,
+            stepId: $correlation->stepId,
+            attempt: $correlation->attempt,
+            idempotencyKey: $correlation->idempotencyKey,
+            toolCallId: $correlation->toolCallId,
+            orderIndex: $correlation->orderIndex,
+            result: [
+                'tool_name' => $correlation->toolName,
+                'content' => $content,
+                'details' => $details,
+                'tool_idempotency_key' => $correlation->toolIdempotencyKey,
+                'mode' => $correlation->mode,
+                'arguments' => $correlation->arguments,
+            ],
+            isError: $isError,
+            error: $error,
+        );
+    }
 }

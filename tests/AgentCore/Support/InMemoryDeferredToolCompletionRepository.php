@@ -24,6 +24,10 @@ final class InMemoryDeferredToolCompletionRepository implements DeferredToolComp
             return $this->byDeferredId[$deferredId]['correlation'];
         }
 
+        if (isset($this->byDeferredId[$correlation->deferredId])) {
+            throw new \RuntimeException(\sprintf('Deferred id "%s" already registered.', $correlation->deferredId));
+        }
+
         $this->byDeferredId[$correlation->deferredId] = [
             'correlation' => $correlation,
             'status' => 'pending',
@@ -56,21 +60,6 @@ final class InMemoryDeferredToolCompletionRepository implements DeferredToolComp
     public function status(string $deferredId): ?string
     {
         return $this->byDeferredId[$deferredId]['status'] ?? null;
-    }
-
-    public function tryBeginCompletion(string $deferredId): bool
-    {
-        if (!isset($this->byDeferredId[$deferredId])) {
-            return false;
-        }
-
-        if ('pending' !== $this->byDeferredId[$deferredId]['status']) {
-            return false;
-        }
-
-        $this->byDeferredId[$deferredId]['status'] = 'completing';
-
-        return true;
     }
 
     public function markCompleted(string $deferredId): void

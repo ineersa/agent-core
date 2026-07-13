@@ -21,14 +21,9 @@ interface DeferredToolCompletionRepositoryInterface
     public function findByDeferredId(string $deferredId): ?DeferredToolCompletionCorrelation;
 
     /**
-     * @return 'completed'|'completing'|'pending'|null
+     * @return 'completed'|'pending'|null
      */
     public function status(string $deferredId): ?string;
-
-    /**
-     * Atomically moves pending → completing. Returns false when already completing/completed or missing.
-     */
-    public function tryBeginCompletion(string $deferredId): bool;
 
     public function markCompleted(string $deferredId): void;
 }

@@ -406,8 +406,6 @@ final class ToolExecutor implements ToolExecutorInterface
                 ]],
                 details: [
                     'raw_result' => $rawResult,
-                    'deferred_tool_completion' => true,
-                    'deferred_reason' => $rawResult->reason,
                 ],
                 isError: false,
             );

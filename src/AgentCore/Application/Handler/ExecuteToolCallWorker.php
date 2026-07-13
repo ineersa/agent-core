@@ -175,10 +175,6 @@ final readonly class ExecuteToolCallWorker
 
     private function registerDeferredExecution(ExecuteToolCall $message, ToolResult $toolResult): void
     {
-        $details = \is_array($toolResult->details) ? $toolResult->details : [];
-        $raw = $details['raw_result'] ?? null;
-        $reason = $raw instanceof DeferredToolCompletionOutcome ? $raw->reason : null;
-
         $correlation = new DeferredToolCompletionCorrelation(
             deferredId: Uuid::v7()->toRfc4122(),
             runId: $message->runId(),

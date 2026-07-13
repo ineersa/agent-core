@@ -6,19 +6,46 @@ namespace Ineersa\AgentCore\Tests\Application\Handler;
 
 use Ineersa\AgentCore\Application\Handler\CompleteDeferredToolCallHandler;
 use Ineersa\AgentCore\Application\Handler\ExecuteToolCallWorker;
+use Ineersa\AgentCore\Application\Handler\MessageIdempotencyService;
+use Ineersa\AgentCore\Application\Handler\RunLockManager;
+use Ineersa\AgentCore\Application\Handler\StepDispatcher;
+use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
+use Ineersa\AgentCore\Application\Pipeline\RunCommit;
+use Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor;
+use Ineersa\AgentCore\Application\Pipeline\ToolCallExtractor;
+use Ineersa\AgentCore\Application\Pipeline\ToolCallResultHandler;
+use Ineersa\AgentCore\Application\Replay\PromptStateReplayService;
+use Ineersa\AgentCore\Application\Replay\ReplayEventPreparer;
+use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolExecutorInterface;
+use Ineersa\AgentCore\Domain\Event\EventFactory;
+use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
 use Ineersa\AgentCore\Domain\Message\CompleteDeferredToolCall;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
+use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
 use Ineersa\AgentCore\Domain\Tool\ToolCall;
 use Ineersa\AgentCore\Domain\Tool\ToolResult;
+use Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore;
+use Ineersa\AgentCore\Infrastructure\Storage\InMemoryPromptStateStore;
+use Ineersa\AgentCore\Infrastructure\Storage\InMemoryRunStore;
+use Ineersa\AgentCore\Tests\Support\Builder\RunStateBuilder;
 use Ineersa\AgentCore\Tests\Support\InMemoryDeferredToolCompletionRepository;
+use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use Ineersa\CodingAgent\Entity\DeferredToolCompletionRepository;
+use Ineersa\CodingAgent\Session\Replay\SessionHotPromptReplayService;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use PHPUnit\Framework\Attributes\Group;
+use Psr\Log\NullLogger;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\Store\InMemoryStore;
+use Symfony\Component\Messenger\Envelope;
+use Symfony\Component\Messenger\Exception\MessageDecodingFailedException;
+use Symfony\Component\Messenger\MessageBusInterface;
+use Symfony\Component\Messenger\Stamp\HandledStamp;
 
 /**
  * Regression: generic deferred tool completion persists ExecuteToolCall correlation,
@@ -83,10 +110,7 @@ final class DeferredToolCompletionRuntimeTest extends IsolatedKernelTestCase
                     toolCallId: $toolCall->toolCallId,
                     toolName: $toolCall->toolName,
                     content: [['type' => 'text', 'text' => 'deferred']],
-                    details: [
-                        'raw_result' => new DeferredToolCompletionOutcome(reason: 'piece-2'),
-                        'deferred_tool_completion' => true,
-                    ],
+                    details: ['raw_result' => new DeferredToolCompletionOutcome()],
                     isError: false,
                 );
             }
@@ -148,6 +172,17 @@ final class DeferredToolCompletionRuntimeTest extends IsolatedKernelTestCase
         $this->assertCount(0, $commandBus->messages);
     }
 
+    public function testRegisterPendingReturnsCanonicalCorrelationForDuplicateRunAndToolCall(): void
+    {
+        $repo = new InMemoryDeferredToolCompletionRepository();
+
+        $first = $repo->registerPending($this->sampleCorrelation(deferredId: 'def-a', toolCallId: 'call-dup-reg'));
+        $second = $repo->registerPending($this->sampleCorrelation(deferredId: 'def-b', toolCallId: 'call-dup-reg'));
+
+        $this->assertSame($first->deferredId, $second->deferredId);
+        $this->assertSame('def-a', $second->deferredId);
+    }
+
     public function testCompleteDeferredToolCallDispatchesCanonicalResultFromStoredCorrelation(): void
     {
         $toolExecutor = new class implements ToolExecutorInterface {
@@ -176,21 +211,11 @@ final class DeferredToolCompletionRuntimeTest extends IsolatedKernelTestCase
         $handler = new CompleteDeferredToolCallHandler($repo, $completionBus, new TestLogger());
 
         $handler(new CompleteDeferredToolCall(
-            runId: 'run-deferred-1',
-            turnNo: 99,
-            stepId: 'wrong-step',
-            attempt: 99,
-            idempotencyKey: 'wrong-key',
             deferredId: $pending->deferredId,
-            toolCallId: 'call-complete',
-            toolName: 'web_search',
             content: [['type' => 'text', 'text' => 'final']],
             details: ['done' => true],
             isError: false,
             error: null,
-            toolIdempotencyKey: 'tool-invocation-1',
-            mode: 'ignored',
-            arguments: ['ignored' => true],
         ));
 
         $this->assertCount(1, $completionBus->messages);
@@ -203,42 +228,157 @@ final class DeferredToolCompletionRuntimeTest extends IsolatedKernelTestCase
         $this->assertSame(2, $result->attempt());
         $this->assertSame('tool-idemp-immediate', $result->idempotencyKey());
         $this->assertSame('call-complete', $result->toolCallId);
+        $this->assertSame('web_search', $result->result['tool_name']);
         $this->assertSame(1, $result->orderIndex);
         $this->assertSame('parallel', $result->result['mode']);
         $this->assertSame(['query' => 'x'], $result->result['arguments']);
         $this->assertSame('final', $result->result['content'][0]['text']);
     }
 
-    public function testDuplicateCompletionDispatchesAtMostOneObservableResult(): void
+    public function testDispatchFailureLeavesPendingAndRetryDispatches(): void
     {
         $repo = new InMemoryDeferredToolCompletionRepository();
-        $correlation = $repo->registerPending(new \Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation(
-            deferredId: 'def-dup-1',
-            runId: 'run-deferred-1',
-            turnNo: 3,
-            stepId: 'turn-3-tools-1',
-            attempt: 2,
-            idempotencyKey: 'tool-idemp-immediate',
-            toolCallId: 'call-dup',
-            toolName: 'web_search',
-            arguments: ['query' => 'x'],
-            orderIndex: 1,
-            mode: 'parallel',
-            timeoutSeconds: 120,
-        ));
+        $correlation = $repo->registerPending($this->sampleCorrelation(deferredId: 'def-dispatch-fail', toolCallId: 'call-fail-dispatch'));
+
+        $bus = new FailingOnceMessageBus();
+        $handler = new CompleteDeferredToolCallHandler($repo, $bus, new TestLogger());
+
+        $complete = new CompleteDeferredToolCall(
+            deferredId: $correlation->deferredId,
+            content: [['type' => 'text', 'text' => 'late']],
+            isError: false,
+        );
+
+        try {
+            $handler($complete);
+            $this->fail('Expected dispatch failure');
+        } catch (\RuntimeException $exception) {
+            $this->assertStringContainsString('Failed to dispatch', $exception->getMessage());
+        }
+
+        $this->assertSame('pending', $repo->status($correlation->deferredId));
+        $this->assertCount(1, $bus->messages);
+
+        $handler($complete);
+
+        $this->assertSame('completed', $repo->status($correlation->deferredId));
+        $this->assertCount(2, $bus->messages);
+    }
+
+    public function testMarkCompletedFailureAfterDispatchAllowsRedispatchWithIdempotentPipelineHandling(): void
+    {
+        $repo = new InMemoryDeferredToolCompletionRepository();
+        $correlation = $repo->registerPending($this->sampleCorrelation(deferredId: 'def-mark-fail', toolCallId: 'call-mark-fail'));
+
+        $innerBus = new TestMessageBus();
+        $failingRepo = new MarkCompletedFailsOnceRepository($repo);
+        $handler = new CompleteDeferredToolCallHandler($failingRepo, $innerBus, new TestLogger());
+
+        $complete = new CompleteDeferredToolCall(
+            deferredId: $correlation->deferredId,
+            content: [['type' => 'text', 'text' => 'payload']],
+            isError: false,
+        );
+
+        try {
+            $handler($complete);
+            $this->fail('Expected markCompleted failure');
+        } catch (\RuntimeException $exception) {
+            $this->assertSame('mark failed', $exception->getMessage());
+        }
+
+        $this->assertSame('pending', $repo->status($correlation->deferredId));
+        $this->assertCount(1, $innerBus->messages);
+
+        $handler($complete);
+        $this->assertSame('completed', $repo->status($correlation->deferredId));
+        $this->assertCount(2, $innerBus->messages);
+
+        $toolCallResult = $innerBus->messages[0];
+        $this->assertInstanceOf(ToolCallResult::class, $toolCallResult);
+
+        $runStore = new InMemoryRunStore();
+        $runStore->compareAndSwap(
+            RunStateBuilder::running('run-deferred-1')
+                ->withVersion(1)
+                ->withTurnNo(3)
+                ->withLastSeq(0)
+                ->withPendingToolCalls(['call-mark-fail' => false])
+                ->withActiveStepId('turn-3-tools-1')
+                ->build(),
+            0,
+        );
+
+        $eventStore = new InMemoryEventStore();
+        $replayService = new SessionHotPromptReplayService(
+            eventStore: $eventStore,
+            promptStateStore: new InMemoryPromptStateStore(),
+            promptStateReplayService: new PromptStateReplayService(),
+            replayEventPreparer: new ReplayEventPreparer(),
+        );
+
+        $collector = new ToolBatchCollector();
+        $collector->registerExpectedBatch('run-deferred-1', 3, 'turn-3-tools-1', [
+            new ExecuteToolCall(
+                runId: 'run-deferred-1',
+                turnNo: 3,
+                stepId: 'turn-3-tools-1',
+                attempt: 2,
+                idempotencyKey: 'tool-idemp-immediate',
+                toolCallId: 'call-mark-fail',
+                toolName: 'web_search',
+                args: ['query' => 'x'],
+                orderIndex: 1,
+                mode: 'parallel',
+            ),
+        ]);
+
+        $processor = new RunMessageProcessor(
+            runStore: $runStore,
+            idempotency: new MessageIdempotencyService(new InMemoryIdempotencyStore()),
+            runLockManager: new RunLockManager(new LockFactory(new InMemoryStore())),
+            runCommit: new RunCommit(
+                runStore: $runStore,
+                eventStore: $eventStore,
+                commandStore: new InMemoryCommandStore(),
+                hotPromptStateRebuilder: $replayService,
+                stepDispatcher: new StepDispatcher(new TestMessageBus()),
+                logger: new NullLogger(),
+            ),
+            stepDispatcher: new StepDispatcher(new TestMessageBus()),
+            handlers: [
+                new ToolCallResultHandler(
+                    toolBatchCollector: $collector,
+                    eventFactory: new EventFactory(),
+                    toolCallExtractor: new ToolCallExtractor(),
+                    messageNormalizer: new AgentMessageNormalizer(),
+                ),
+            ],
+            logger: new NullLogger(),
+        );
+
+        $processor->process('result.tool', $toolCallResult);
+        $stateAfterFirst = $runStore->get('run-deferred-1');
+        $this->assertNotNull($stateAfterFirst);
+        $this->assertSame([], $stateAfterFirst->pendingToolCalls);
+
+        $processor->process('result.tool', $toolCallResult);
+        $stateAfterSecond = $runStore->get('run-deferred-1');
+        $this->assertNotNull($stateAfterSecond);
+        $this->assertSame([], $stateAfterSecond->pendingToolCalls);
+        $this->assertCount(1, $stateAfterSecond->messages);
+    }
+
+    public function testDuplicateCompletionAfterCompletedIsNoOp(): void
+    {
+        $repo = new InMemoryDeferredToolCompletionRepository();
+        $correlation = $repo->registerPending($this->sampleCorrelation(deferredId: 'def-dup-1', toolCallId: 'call-dup'));
 
         $bus = new TestMessageBus();
         $handler = new CompleteDeferredToolCallHandler($repo, $bus, new TestLogger());
 
         $complete = new CompleteDeferredToolCall(
-            runId: 'run-deferred-1',
-            turnNo: 3,
-            stepId: 'turn-3-tools-1',
-            attempt: 2,
-            idempotencyKey: 'complete-key',
             deferredId: $correlation->deferredId,
-            toolCallId: 'call-dup',
-            toolName: 'web_search',
             content: [['type' => 'text', 'text' => 'once']],
             isError: false,
         );
@@ -260,14 +400,7 @@ final class DeferredToolCompletionRuntimeTest extends IsolatedKernelTestCase
         $this->expectExceptionMessage('Unknown deferred tool completion id');
 
         $handler(new CompleteDeferredToolCall(
-            runId: 'run-deferred-1',
-            turnNo: 3,
-            stepId: 'turn-3-tools-1',
-            attempt: 2,
-            idempotencyKey: 'complete-key',
             deferredId: 'missing-id',
-            toolCallId: 'call-missing',
-            toolName: 'web_search',
             content: [['type' => 'text', 'text' => 'nope']],
             isError: false,
         ));
@@ -278,7 +411,7 @@ final class DeferredToolCompletionRuntimeTest extends IsolatedKernelTestCase
         /** @var DeferredToolCompletionRepository $repo */
         $repo = self::getContainer()->get(DeferredToolCompletionRepository::class);
 
-        $correlation = $repo->registerPending(new \Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation(
+        $correlation = $repo->registerPending(new DeferredToolCompletionCorrelation(
             deferredId: '550e8400-e29b-41d4-a716-446655440000',
             runId: 'run-db-1',
             turnNo: 1,
@@ -298,6 +431,22 @@ final class DeferredToolCompletionRuntimeTest extends IsolatedKernelTestCase
         $this->assertSame('call-db', $loaded->toolCallId);
         $this->assertSame(30, $loaded->timeoutSeconds);
         $this->assertSame('pending', $repo->status($correlation->deferredId));
+
+        $canonical = $repo->registerPending(new DeferredToolCompletionCorrelation(
+            deferredId: '660e8400-e29b-41d4-a716-446655440001',
+            runId: 'run-db-1',
+            turnNo: 9,
+            stepId: 'other-step',
+            attempt: 9,
+            idempotencyKey: 'other-key',
+            toolCallId: 'call-db',
+            toolName: 'write',
+            arguments: ['path' => './b.txt'],
+            orderIndex: 2,
+        ));
+
+        $this->assertSame($correlation->deferredId, $canonical->deferredId);
+        $this->assertSame('read', $canonical->toolName);
     }
 
     private function executeMessage(string $toolCallId): ExecuteToolCall
@@ -316,5 +465,84 @@ final class DeferredToolCompletionRuntimeTest extends IsolatedKernelTestCase
             mode: 'parallel',
             timeoutSeconds: 120,
         );
+    }
+
+    private function sampleCorrelation(string $deferredId, string $toolCallId): DeferredToolCompletionCorrelation
+    {
+        return new DeferredToolCompletionCorrelation(
+            deferredId: $deferredId,
+            runId: 'run-deferred-1',
+            turnNo: 3,
+            stepId: 'turn-3-tools-1',
+            attempt: 2,
+            idempotencyKey: 'tool-idemp-immediate',
+            toolCallId: $toolCallId,
+            toolName: 'web_search',
+            arguments: ['query' => 'x'],
+            orderIndex: 1,
+            mode: 'parallel',
+            timeoutSeconds: 120,
+        );
+    }
+}
+
+final class FailingOnceMessageBus implements MessageBusInterface
+{
+    /** @var list<object> */
+    public array $messages = [];
+
+    private int $failuresRemaining = 1;
+
+    public function dispatch(object $message, array $stamps = []): Envelope
+    {
+        $this->messages[] = $message;
+
+        if ($this->failuresRemaining > 0) {
+            --$this->failuresRemaining;
+
+            throw new MessageDecodingFailedException('simulated transport dispatch failure');
+        }
+
+        return new Envelope($message, [new HandledStamp(null, 'test')]);
+    }
+}
+
+final class MarkCompletedFailsOnceRepository implements DeferredToolCompletionRepositoryInterface
+{
+    public function __construct(
+        private readonly DeferredToolCompletionRepositoryInterface $inner,
+        private int $failuresRemaining = 1,
+    ) {
+    }
+
+    public function registerPending(DeferredToolCompletionCorrelation $correlation): DeferredToolCompletionCorrelation
+    {
+        return $this->inner->registerPending($correlation);
+    }
+
+    public function findPendingByRunAndToolCall(string $runId, string $toolCallId): ?DeferredToolCompletionCorrelation
+    {
+        return $this->inner->findPendingByRunAndToolCall($runId, $toolCallId);
+    }
+
+    public function findByDeferredId(string $deferredId): ?DeferredToolCompletionCorrelation
+    {
+        return $this->inner->findByDeferredId($deferredId);
+    }
+
+    public function status(string $deferredId): ?string
+    {
+        return $this->inner->status($deferredId);
+    }
+
+    public function markCompleted(string $deferredId): void
+    {
+        if ($this->failuresRemaining > 0) {
+            --$this->failuresRemaining;
+
+            throw new \RuntimeException('mark failed');
+        }
+
+        $this->inner->markCompleted($deferredId);
     }
 }

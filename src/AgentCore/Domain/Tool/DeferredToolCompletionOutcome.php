@@ -12,8 +12,4 @@ namespace Ineersa\AgentCore\Domain\Tool;
  */
 final readonly class DeferredToolCompletionOutcome
 {
-    public function __construct(
-        public ?string $reason = null,
-    ) {
-    }
 }

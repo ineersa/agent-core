@@ -6,7 +6,6 @@ namespace Ineersa\AgentCore\Application\Handler;
 
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\AgentCore\Domain\Message\CompleteDeferredToolCall;
-use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Infrastructure\RunLogContext;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
@@ -25,62 +24,42 @@ final readonly class CompleteDeferredToolCallHandler
     #[AsMessageHandler(bus: 'agent.command.bus')]
     public function __invoke(CompleteDeferredToolCall $message): void
     {
+        $correlation = $this->deferredRepository->findByDeferredId($message->deferredId);
+        if (null === $correlation) {
+            $this->logger->warning('deferred_tool_completion.unknown_correlation', [
+                'deferred_id' => $message->deferredId,
+                'component' => 'tool',
+                'event_type' => 'deferred_tool_completion.unknown_correlation',
+            ]);
+
+            throw new \RuntimeException(\sprintf('Unknown deferred tool completion id "%s".', $message->deferredId));
+        }
+
         RunLogContext::enter([
-            'run_id' => $message->runId(),
-            'session_id' => $message->runId(),
+            'run_id' => $correlation->runId,
+            'session_id' => $correlation->runId,
             'component' => 'tool',
             'event_type' => 'deferred_tool_completion.started',
             'deferred_id' => $message->deferredId,
-            'tool_call_id' => $message->toolCallId,
+            'tool_call_id' => $correlation->toolCallId,
         ]);
 
         try {
-            $correlation = $this->deferredRepository->findByDeferredId($message->deferredId);
-            if (null === $correlation) {
-                $this->logger->warning('deferred_tool_completion.unknown_correlation', [
-                    'run_id' => $message->runId(),
-                    'deferred_id' => $message->deferredId,
-                    'tool_call_id' => $message->toolCallId,
-                    'component' => 'tool',
-                    'event_type' => 'deferred_tool_completion.unknown_correlation',
-                ]);
-
-                throw new \RuntimeException(\sprintf('Unknown deferred tool completion id "%s" for run "%s".', $message->deferredId, $message->runId()));
-            }
-
             if ('completed' === $this->deferredRepository->status($message->deferredId)) {
                 return;
             }
 
-            if (!$this->deferredRepository->tryBeginCompletion($message->deferredId)) {
-                $status = $this->deferredRepository->status($message->deferredId);
-                if ('completed' === $status || 'completing' === $status) {
-                    return;
-                }
-
-                throw new \RuntimeException(\sprintf('Deferred tool completion "%s" cannot begin (status=%s).', $message->deferredId, $status ?? 'missing'));
-            }
-
-            $toolIdempotencyKey = $correlation->toolIdempotencyKey ?? $message->toolIdempotencyKey;
-
-            $toolCallResult = new ToolCallResult(
-                runId: $correlation->runId,
-                turnNo: $correlation->turnNo,
-                stepId: $correlation->stepId,
-                attempt: $correlation->attempt,
-                idempotencyKey: $correlation->idempotencyKey,
-                toolCallId: $correlation->toolCallId,
-                orderIndex: $correlation->orderIndex,
-                result: [
-                    'tool_name' => $message->toolName,
-                    'content' => $message->content,
-                    'details' => $message->details,
-                    'tool_idempotency_key' => $toolIdempotencyKey,
-                    'mode' => $correlation->mode,
-                    'arguments' => $correlation->arguments,
-                ],
-                isError: $message->isError,
-                error: $message->error,
+            // Dispatch first while status remains pending so Messenger retries can re-dispatch
+            // after transport/handler failures. Mark completed only after dispatch succeeds.
+            // If dispatch succeeds but markCompleted fails, a later retry may dispatch again;
+            // ToolCallResult uses the stored ExecuteToolCall idempotency key so RunMessageProcessor
+            // suppresses duplicate observable pipeline effects (at-least-once transport, exactly-once handling).
+            $toolCallResult = ToolCallResultFactory::fromDeferredCorrelationAndCompletion(
+                $correlation,
+                $message->content,
+                $message->details,
+                $message->isError,
+                $message->error,
             );
 
             try {
