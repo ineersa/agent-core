@@ -9,6 +9,7 @@ use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Doctrine\Persistence\ManagerRegistry;
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation;
+use Symfony\Component\Clock\Clock;
 
 /**
  * @extends ServiceEntityRepository<DeferredToolCompletion>
@@ -31,26 +32,49 @@ final class DeferredToolCompletionRepository extends ServiceEntityRepository imp
             return $this->toCorrelation($existing);
         }
 
-        $entity = $this->newEntityFromCorrelation($correlation);
+        $now = Clock::get()->now()->format('Y-m-d H:i:s');
 
-        $em = $this->getEntityManager();
         try {
-            $em->persist($entity);
-            $em->flush();
-        } catch (UniqueConstraintViolationException) {
-            $em->clear();
-            $existing = $this->findOneBy([
-                'runId' => $correlation->runId,
-                'toolCallId' => $correlation->toolCallId,
+            $this->getEntityManager()->getConnection()->insert('deferred_tool_completion', [
+                'deferred_id' => $correlation->deferredId,
+                'run_id' => $correlation->runId,
+                'turn_no' => $correlation->turnNo,
+                'step_id' => $correlation->stepId,
+                'attempt' => $correlation->attempt,
+                'idempotency_key' => $correlation->idempotencyKey,
+                'tool_call_id' => $correlation->toolCallId,
+                'tool_name' => $correlation->toolName,
+                'arguments' => json_encode($correlation->arguments, \JSON_THROW_ON_ERROR),
+                'order_index' => $correlation->orderIndex,
+                'tool_idempotency_key' => $correlation->toolIdempotencyKey,
+                'mode' => $correlation->mode,
+                'timeout_seconds' => $correlation->timeoutSeconds,
+                'max_parallelism' => $correlation->maxParallelism,
+                'assistant_message' => null !== $correlation->assistantMessage
+                    ? json_encode($correlation->assistantMessage, \JSON_THROW_ON_ERROR)
+                    : null,
+                'arg_schema' => null !== $correlation->argSchema
+                    ? json_encode($correlation->argSchema, \JSON_THROW_ON_ERROR)
+                    : null,
+                'tools_ref' => $correlation->toolsRef,
+                'status' => 'pending',
+                'created_at' => $now,
+                'updated_at' => $now,
             ]);
-            if (!$existing instanceof DeferredToolCompletion) {
-                throw new \RuntimeException(\sprintf('Deferred tool registration conflict for run "%s" tool call "%s" but no row could be reloaded.', $correlation->runId, $correlation->toolCallId));
-            }
-
-            return $this->toCorrelation($existing);
+        } catch (UniqueConstraintViolationException $exception) {
+            return $this->resolveRegistrationConflict($correlation, $exception);
         }
 
-        return $this->toCorrelation($entity);
+        $inserted = $this->findOneBy([
+            'runId' => $correlation->runId,
+            'toolCallId' => $correlation->toolCallId,
+        ]);
+
+        if (!$inserted instanceof DeferredToolCompletion) {
+            throw new \RuntimeException(\sprintf('Deferred tool registration for run "%s" tool call "%s" succeeded but row could not be loaded.', $correlation->runId, $correlation->toolCallId));
+        }
+
+        return $this->toCorrelation($inserted);
     }
 
     public function findPendingByRunAndToolCall(string $runId, string $toolCallId): ?DeferredToolCompletionCorrelation
@@ -87,42 +111,63 @@ final class DeferredToolCompletionRepository extends ServiceEntityRepository imp
 
     public function markCompleted(string $deferredId): void
     {
+        $em = $this->getEntityManager();
+        $updated = $em->getConnection()->executeStatement(
+            'UPDATE deferred_tool_completion SET status = :completed, updated_at = :now WHERE deferred_id = :deferred_id AND status = :pending',
+            [
+                'completed' => 'completed',
+                'pending' => 'pending',
+                'deferred_id' => $deferredId,
+                'now' => Clock::get()->now()->format('Y-m-d H:i:s'),
+            ],
+        );
+
+        if ($updated > 0) {
+            // DBAL write bypasses the identity map; detach any stale managed row so status()/find* read fresh state.
+            $managed = $this->findOneBy(['deferredId' => $deferredId]);
+            if ($managed instanceof DeferredToolCompletion) {
+                $em->detach($managed);
+            }
+
+            return;
+        }
+
         $entity = $this->findOneBy(['deferredId' => $deferredId]);
         if (!$entity instanceof DeferredToolCompletion) {
             return;
         }
 
+        if ('completed' === $entity->status) {
+            return;
+        }
+
         $entity->status = 'completed';
-        $this->getEntityManager()->flush();
+        $em->flush();
     }
 
-    private function newEntityFromCorrelation(DeferredToolCompletionCorrelation $correlation): DeferredToolCompletion
-    {
-        $entity = new DeferredToolCompletion();
-        $entity->deferredId = $correlation->deferredId;
-        $entity->runId = $correlation->runId;
-        $entity->turnNo = $correlation->turnNo;
-        $entity->stepId = $correlation->stepId;
-        $entity->attempt = $correlation->attempt;
-        $entity->idempotencyKey = $correlation->idempotencyKey;
-        $entity->toolCallId = $correlation->toolCallId;
-        $entity->toolName = $correlation->toolName;
-        $entity->arguments = json_encode($correlation->arguments, \JSON_THROW_ON_ERROR);
-        $entity->orderIndex = $correlation->orderIndex;
-        $entity->toolIdempotencyKey = $correlation->toolIdempotencyKey;
-        $entity->mode = $correlation->mode;
-        $entity->timeoutSeconds = $correlation->timeoutSeconds;
-        $entity->maxParallelism = $correlation->maxParallelism;
-        $entity->assistantMessage = null !== $correlation->assistantMessage
-            ? json_encode($correlation->assistantMessage, \JSON_THROW_ON_ERROR)
-            : null;
-        $entity->argSchema = null !== $correlation->argSchema
-            ? json_encode($correlation->argSchema, \JSON_THROW_ON_ERROR)
-            : null;
-        $entity->toolsRef = $correlation->toolsRef;
-        $entity->status = 'pending';
+    private function resolveRegistrationConflict(
+        DeferredToolCompletionCorrelation $correlation,
+        UniqueConstraintViolationException $exception,
+    ): DeferredToolCompletionCorrelation {
+        $byRunTool = $this->findOneBy([
+            'runId' => $correlation->runId,
+            'toolCallId' => $correlation->toolCallId,
+        ]);
 
-        return $entity;
+        if ($byRunTool instanceof DeferredToolCompletion) {
+            return $this->toCorrelation($byRunTool);
+        }
+
+        $byDeferredId = $this->findOneBy(['deferredId' => $correlation->deferredId]);
+        if ($byDeferredId instanceof DeferredToolCompletion) {
+            if ($byDeferredId->runId !== $correlation->runId || $byDeferredId->toolCallId !== $correlation->toolCallId) {
+                throw new \RuntimeException(\sprintf('Deferred id "%s" is already registered for run "%s" tool call "%s"; cannot register run "%s" tool call "%s".', $correlation->deferredId, $byDeferredId->runId, $byDeferredId->toolCallId, $correlation->runId, $correlation->toolCallId));
+            }
+
+            return $this->toCorrelation($byDeferredId);
+        }
+
+        throw $exception;
     }
 
     private function toCorrelation(DeferredToolCompletion $entity): DeferredToolCompletionCorrelation

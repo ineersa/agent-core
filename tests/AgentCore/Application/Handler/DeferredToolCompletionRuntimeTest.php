@@ -240,7 +240,7 @@ final class DeferredToolCompletionRuntimeTest extends IsolatedKernelTestCase
         $repo = new InMemoryDeferredToolCompletionRepository();
         $correlation = $repo->registerPending($this->sampleCorrelation(deferredId: 'def-dispatch-fail', toolCallId: 'call-fail-dispatch'));
 
-        $bus = new FailingOnceMessageBus();
+        $bus = new DeferredCompletionFailingOnceMessageBus();
         $handler = new CompleteDeferredToolCallHandler($repo, $bus, new TestLogger());
 
         $complete = new CompleteDeferredToolCall(
@@ -449,6 +449,41 @@ final class DeferredToolCompletionRuntimeTest extends IsolatedKernelTestCase
         $this->assertSame('read', $canonical->toolName);
     }
 
+    public function testDoctrineRegisterPendingRejectsConflictingDeferredIdForDifferentRunToolCall(): void
+    {
+        /** @var DeferredToolCompletionRepository $repo */
+        $repo = self::getContainer()->get(DeferredToolCompletionRepository::class);
+
+        $repo->registerPending(new DeferredToolCompletionCorrelation(
+            deferredId: '770e8400-e29b-41d4-a716-446655440002',
+            runId: 'run-db-conflict-a',
+            turnNo: 1,
+            stepId: 'turn-1-tools-1',
+            attempt: 1,
+            idempotencyKey: 'idemp-a',
+            toolCallId: 'call-a',
+            toolName: 'read',
+            arguments: [],
+            orderIndex: 0,
+        ));
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('cannot register run "run-db-conflict-b" tool call "call-b"');
+
+        $repo->registerPending(new DeferredToolCompletionCorrelation(
+            deferredId: '770e8400-e29b-41d4-a716-446655440002',
+            runId: 'run-db-conflict-b',
+            turnNo: 1,
+            stepId: 'turn-1-tools-1',
+            attempt: 1,
+            idempotencyKey: 'idemp-b',
+            toolCallId: 'call-b',
+            toolName: 'write',
+            arguments: [],
+            orderIndex: 0,
+        ));
+    }
+
     private function executeMessage(string $toolCallId): ExecuteToolCall
     {
         return new ExecuteToolCall(
@@ -486,7 +521,7 @@ final class DeferredToolCompletionRuntimeTest extends IsolatedKernelTestCase
     }
 }
 
-final class FailingOnceMessageBus implements MessageBusInterface
+final class DeferredCompletionFailingOnceMessageBus implements MessageBusInterface
 {
     /** @var list<object> */
     public array $messages = [];
