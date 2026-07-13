@@ -9,6 +9,13 @@ use Amp\Websocket\Client\WebsocketConnection;
 use Amp\Websocket\WebsocketMessage;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use PHPUnit\Framework\TestCase;
+use Symfony\AI\Platform\Bridge\OpenAICodex\CodexWebSocketCachedStreamContext;
+use Symfony\AI\Platform\Bridge\OpenAICodex\CodexWebSocketCacheEntry;
+use Symfony\AI\Platform\Bridge\OpenAICodex\CodexWebSocketCacheLease;
+use Symfony\AI\Platform\Bridge\OpenAICodex\CodexWebSocketCacheSettings;
+use Symfony\AI\Platform\Bridge\OpenAICodex\CodexWebSocketCompatibilityFingerprint;
+use Symfony\AI\Platform\Bridge\OpenAICodex\CodexWebSocketConnectionCache;
+use Symfony\AI\Platform\Bridge\OpenAICodex\CodexWebSocketContinuationState;
 use Symfony\AI\Platform\Bridge\OpenAICodex\CodexWebSocketResultHandle;
 use Symfony\AI\Platform\Bridge\OpenAICodex\RawWebSocketResult;
 
@@ -102,6 +109,48 @@ final class RawWebSocketResultTest extends TestCase
         $this->assertSame('codex.websocket.close_failed', $logger->records[0]['context']['event_type']);
         $this->assertSame('raw_websocket_result', $logger->records[0]['context']['component']);
         $this->assertSame(\RuntimeException::class, $logger->records[0]['context']['exception_class']);
+    }
+
+    public function testCachedStreamFailureInvalidatesWithoutRetainingConnection(): void
+    {
+        $cache = new CodexWebSocketConnectionCache();
+        $settings = new CodexWebSocketCacheSettings();
+        $identity = CodexWebSocketCompatibilityFingerprint::fromContext(
+            '0194bbbb-bbbb-7ccc-8ddd-bbbbbbbbbbbb',
+            'openai-codex',
+            'gpt-5.6-luna',
+            'https://chatgpt.com/backend-api',
+            '/codex/responses',
+            'acct-1',
+        );
+        $connection = $this->createMock(WebsocketConnection::class);
+        $connection->method('receive')->willReturn(WebsocketMessage::fromText(json_encode(['type' => 'response.failed'], \JSON_THROW_ON_ERROR)));
+        $connection->expects($this->once())->method('close');
+
+        $entry = new CodexWebSocketCacheEntry($connection, $identity, time(), $settings);
+        $entry->continuation = CodexWebSocketContinuationState::fromSuccessfulResponse(
+            ['input' => []],
+            'resp-old',
+            [],
+        );
+        $lease = new CodexWebSocketCacheLease($connection, true, true, false, $entry);
+        $context = new CodexWebSocketCachedStreamContext($cache, $lease, ['input' => []]);
+
+        $reflection = new \ReflectionClass($cache);
+        $prop = $reflection->getProperty('entries');
+        $prop->setValue($cache, [$identity->sessionKey => $entry]);
+
+        $raw = new RawWebSocketResult($connection, 5.0, cachedStreamContext: $context);
+
+        try {
+            iterator_to_array($raw->getDataStream());
+            $this->fail('Expected stream failure');
+        } catch (\RuntimeException $e) {
+            $this->assertStringContainsString('non-success terminal', $e->getMessage());
+        }
+
+        $this->assertNull($entry->continuation);
+        $this->assertSame([], $prop->getValue($cache));
     }
 
     public function testDestructorClosesConnectionWhenStreamNeverConsumed(): void

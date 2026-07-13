@@ -13,6 +13,8 @@ use Ineersa\CodingAgent\Infrastructure\SymfonyAi\SymfonyAiProviderBuilderInterfa
 use Psr\Log\LoggerInterface;
 use Symfony\AI\Platform\Bridge\OpenAICodex\CodexModel;
 use Symfony\AI\Platform\Bridge\OpenAICodex\CodexTransportEnum;
+use Symfony\AI\Platform\Bridge\OpenAICodex\CodexWebSocketCacheSettings;
+use Symfony\AI\Platform\Bridge\OpenAICodex\CodexWebSocketConnectionCache;
 use Symfony\AI\Platform\Bridge\OpenAICodex\Factory as OpenAICodexFactory;
 use Symfony\AI\Platform\ProviderInterface;
 use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
@@ -24,6 +26,7 @@ final class CodexSymfonyAiProviderBuilder implements SymfonyAiProviderBuilderInt
         private readonly EventDispatcherInterface $eventDispatcher,
         private readonly CodexAuthStorage $codexAuth,
         private readonly CodexOAuthService $codexOAuth,
+        private readonly CodexWebSocketConnectionCache $codexWebSocketConnectionCache,
         private readonly ?LoggerInterface $logger = null,
     ) {
     }
@@ -59,6 +62,11 @@ final class CodexSymfonyAiProviderBuilder implements SymfonyAiProviderBuilderInt
             return $oAuth->refreshCredentials($authKey)->access;
         };
 
+        $cacheSettings = new CodexWebSocketCacheSettings(
+            idleTtlSeconds: $provider->websocketCacheIdleTtlSeconds ?? CodexWebSocketCacheSettings::DEFAULT_IDLE_TTL_SECONDS,
+            maxAgeSeconds: $provider->websocketCacheMaxAgeSeconds ?? CodexWebSocketCacheSettings::DEFAULT_MAX_AGE_SECONDS,
+        );
+
         return OpenAICodexFactory::createProvider(
             baseUrl: $baseUrl,
             accessToken: $record->access,
@@ -72,6 +80,9 @@ final class CodexSymfonyAiProviderBuilder implements SymfonyAiProviderBuilderInt
             logger: $this->logger,
             accessTokenRefresher: $accessTokenRefresher,
             transport: $transport,
+            websocketConnector: null,
+            websocketConnectionCache: $this->codexWebSocketConnectionCache,
+            websocketCacheSettings: $cacheSettings,
         );
     }
 

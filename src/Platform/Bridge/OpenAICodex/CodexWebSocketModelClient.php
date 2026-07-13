@@ -31,11 +31,15 @@ final class CodexWebSocketModelClient implements ModelClientInterface
         private readonly string $accountId,
         private readonly string $responsesPath = '/codex/responses',
         private readonly string $originator = 'hatfield',
+        private readonly string $providerId = 'openai-codex',
         ?LoggerInterface $logger = null,
         /** @var (\Closure(): ?string)|null */
         private readonly ?\Closure $accessTokenRefresher = null,
         private readonly float $connectTimeoutSeconds = self::DEFAULT_CONNECT_TIMEOUT_SECONDS,
         private readonly float $idleTimeoutSeconds = self::DEFAULT_IDLE_TIMEOUT_SECONDS,
+        private readonly CodexTransportEnum $transport = CodexTransportEnum::Websocket,
+        private readonly ?CodexWebSocketConnectionCache $connectionCache = null,
+        private readonly CodexWebSocketCacheSettings $cacheSettings = new CodexWebSocketCacheSettings(),
     ) {
         $this->logger = $logger ?? new NullLogger();
     }
@@ -54,55 +58,190 @@ final class CodexWebSocketModelClient implements ModelClientInterface
         $resolution = CodexCorrelationRequestId::resolve($options, $payload);
         $websocketUrl = $this->urlResolver->resolve($this->baseUrl, $this->responsesPath);
 
-        [$connection, $effectiveRequestId, $effectiveProvenance] = $this->connectWithOptional401Refresh($model, $websocketUrl, $resolution);
+        [$connection, $effectiveRequestId, $effectiveProvenance, $lease, $wireBody, $fullBody] = $this->prepareCachedOrFreshRequest(
+            $model,
+            $payload,
+            $options,
+            $resolution,
+            $websocketUrl,
+        );
 
-        $bodyOptions = $resolution->options;
-        $bodyPayload = $payload;
-        if (CodexCorrelationProvenance::ExplicitRunId === $effectiveProvenance || CodexCorrelationProvenance::Generated === $effectiveProvenance) {
-            $bodyOptions['run_id'] = $effectiveRequestId;
-        }
-        if (CodexCorrelationProvenance::Generated === $effectiveProvenance) {
-            unset($bodyPayload['prompt_cache_key']);
-        }
-
-        $jsonBody = $this->requestBodyFactory->build($model, $bodyPayload, $bodyOptions);
-
-        $this->logRequestSummary($model, $jsonBody, $websocketUrl);
+        $this->logRequestSummary($model, $wireBody, $websocketUrl, $lease);
 
         try {
-            // Protocol frame type must win: merge body first, then force response.create.
             $frame = json_encode(
-                array_merge($jsonBody, ['type' => 'response.create']),
+                array_merge($wireBody, ['type' => 'response.create']),
                 \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE,
             );
             $connection->sendText($frame);
         } catch (\Throwable $e) {
-            $this->closeConnectionQuietly($connection);
+            if (null !== $lease && $lease->cached && !$lease->oneShot && null !== $lease->entry && null !== $this->connectionCache) {
+                $this->connectionCache->invalidateEntry($lease->entry, 'send_failure');
+            } else {
+                $this->closeConnectionQuietly($connection);
+            }
 
             throw new \RuntimeException('Codex WebSocket request frame could not be sent.', previous: $e);
         }
 
-        return new RawWebSocketResult($connection, $this->idleTimeoutSeconds, $this->logger);
+        $cachedContext = null;
+        if (CodexTransportEnum::WebsocketCached === $this->transport && null !== $this->connectionCache && null !== $lease && $lease->cached && !$lease->oneShot) {
+            $cachedContext = new CodexWebSocketCachedStreamContext($this->connectionCache, $lease, $fullBody);
+        }
+
+        return new RawWebSocketResult($connection, $this->idleTimeoutSeconds, $this->logger, cachedStreamContext: $cachedContext);
     }
 
     /**
-     * @return array<string, string>
+     * @param array<string, mixed> $payload
+     * @param array<string, mixed> $options
+     *
+     * @return array{0: WebsocketConnection, 1: string, 2: CodexCorrelationProvenance, 3: ?CodexWebSocketCacheLease, 4: array<string, mixed>, 5: array<string, mixed>}
      */
-    private function buildHandshakeHeaders(string $requestId): array
-    {
-        return $this->handshakeHeadersFactory->create(
-            $this->accessToken,
+    private function prepareCachedOrFreshRequest(
+        Model $model,
+        array $payload,
+        array $options,
+        CodexCorrelationResolution $resolution,
+        string $websocketUrl,
+    ): array {
+        [$bodyPayload, $bodyOptions] = $this->normalizeBodyInputs($payload, $options, $resolution);
+
+        $useCache = CodexTransportEnum::WebsocketCached === $this->transport
+            && null !== $this->connectionCache
+            && CodexCorrelationProvenance::Generated !== $resolution->provenance;
+
+        if (!$useCache) {
+            [$connection, $effectiveRequestId, $effectiveProvenance] = $this->connectWithOptional401Refresh(
+                $model,
+                $websocketUrl,
+                $resolution,
+            );
+            $fullBody = $this->buildFullRequestBody($model, $bodyPayload, $bodyOptions, $effectiveRequestId, $effectiveProvenance);
+
+            return [$connection, $effectiveRequestId, $effectiveProvenance, null, $fullBody, $fullBody];
+        }
+
+        $identity = CodexWebSocketCompatibilityFingerprint::fromContext(
+            $resolution->id,
+            $this->providerId,
+            $model->getName(),
+            $this->baseUrl,
+            $this->responsesPath,
             $this->accountId,
-            $this->originator,
-            $requestId,
         );
+
+        $effectiveRequestId = $resolution->id;
+        $effectiveProvenance = $resolution->provenance;
+
+        $lease = $this->connectionCache->acquire(
+            $identity,
+            $this->cacheSettings,
+            function () use ($model, $websocketUrl, $resolution, &$effectiveRequestId, &$effectiveProvenance): WebsocketConnection {
+                [$connection, $effectiveRequestId, $effectiveProvenance] = $this->connectWithOptional401Refresh(
+                    $model,
+                    $websocketUrl,
+                    $resolution,
+                );
+
+                return $connection;
+            },
+        );
+
+        $fullBody = $this->buildFullRequestBody($model, $bodyPayload, $bodyOptions, $effectiveRequestId, $effectiveProvenance);
+        $wireBody = $this->buildWireRequestBody($lease, $fullBody);
+
+        return [$lease->connection, $effectiveRequestId, $effectiveProvenance, $lease, $wireBody, $fullBody];
     }
 
     /**
-     * @return array{0: WebsocketConnection, 1: string, 2: CodexCorrelationProvenance} connection, correlation ID, provenance
+     * @param array<string, mixed> $payload
+     * @param array<string, mixed> $options
+     *
+     * @return array{0: array<string, mixed>, 1: array<string, mixed>}
      */
-    private function connectWithOptional401Refresh(Model $model, string $websocketUrl, CodexCorrelationResolution $resolution): array
+    private function normalizeBodyInputs(array $payload, array $options, CodexCorrelationResolution $resolution): array
     {
+        $bodyOptions = $resolution->options;
+        $bodyPayload = $payload;
+        if (CodexCorrelationProvenance::Generated === $resolution->provenance) {
+            unset($bodyPayload['prompt_cache_key']);
+        }
+
+        return [$bodyPayload, $bodyOptions];
+    }
+
+    /**
+     * @param array<string, mixed> $bodyPayload
+     * @param array<string, mixed> $bodyOptions
+     *
+     * @return array<string, mixed>
+     */
+    private function buildFullRequestBody(
+        Model $model,
+        array $bodyPayload,
+        array $bodyOptions,
+        string $correlationId,
+        CodexCorrelationProvenance $provenance,
+    ): array {
+        if (CodexCorrelationProvenance::ExplicitRunId === $provenance || CodexCorrelationProvenance::Generated === $provenance) {
+            $bodyOptions['run_id'] = $correlationId;
+        }
+
+        return $this->requestBodyFactory->build($model, $bodyPayload, $bodyOptions);
+    }
+
+    /**
+     * @param array<string, mixed> $fullBody
+     *
+     * @return array<string, mixed>
+     */
+    private function buildWireRequestBody(CodexWebSocketCacheLease $lease, array $fullBody): array
+    {
+        if ($lease->oneShot || null === $lease->entry || null === $lease->entry->continuation) {
+            $this->logger->info('codex.websocket.continuation.full_context', [
+                'event_type' => 'codex.websocket.continuation.full_context',
+                'component' => 'codex_websocket_model_client',
+                'reason' => $lease->oneShot ? 'busy_one_shot' : 'no_continuation',
+            ]);
+
+            return $fullBody;
+        }
+
+        $delta = $lease->entry->continuation->buildDeltaRequest($fullBody);
+        if (null === $delta) {
+            $lease->entry->continuation = null;
+            $this->logger->info('codex.websocket.continuation.full_context', [
+                'event_type' => 'codex.websocket.continuation.full_context',
+                'component' => 'codex_websocket_model_client',
+                'reason' => 'divergent_input',
+            ]);
+
+            return $fullBody;
+        }
+
+        $wireBody = $fullBody;
+        $wireBody['previous_response_id'] = $delta['previous_response_id'];
+        $wireBody['input'] = $delta['input'];
+        unset($wireBody['prompt_cache_key']);
+
+        $this->logger->info('codex.websocket.continuation.delta', [
+            'event_type' => 'codex.websocket.continuation.delta',
+            'component' => 'codex_websocket_model_client',
+            'delta_input_count' => \count($delta['input']),
+        ]);
+
+        return $wireBody;
+    }
+
+    /**
+     * @return array{0: WebsocketConnection, 1: string, 2: CodexCorrelationProvenance}
+     */
+    private function connectWithOptional401Refresh(
+        Model $model,
+        string $websocketUrl,
+        CodexCorrelationResolution $resolution,
+    ): array {
         $requestId = $resolution->id;
         try {
             return [
@@ -149,6 +288,69 @@ final class CodexWebSocketModelClient implements ModelClientInterface
         }
     }
 
+    /**
+     * Privacy-safe outgoing request summary: structural metadata only.
+     *
+     * @param array<string, mixed> $jsonBody
+     */
+    private function logRequestSummary(Model $model, array $jsonBody, string $websocketUrl, ?CodexWebSocketCacheLease $lease): void
+    {
+        $input = $jsonBody['input'] ?? [];
+        $inputCount = \is_array($input) ? \count($input) : 0;
+        $tools = $jsonBody['tools'] ?? [];
+
+        $inputTypes = [];
+        if (\is_array($input)) {
+            foreach ($input as $item) {
+                if (isset($item['type']) && \is_string($item['type'])) {
+                    $inputTypes[$item['type']] = true;
+                }
+                if (isset($item['role']) && \is_string($item['role'])) {
+                    $inputTypes['role:'.$item['role']] = true;
+                }
+            }
+        }
+
+        $requestUrlPath = parse_url($websocketUrl, \PHP_URL_PATH);
+        $requestUrlPath = \is_string($requestUrlPath) && '' !== $requestUrlPath
+            ? $requestUrlPath
+            : $this->responsesPath;
+
+        $this->logger->info('llm.provider.request_prepared', [
+            'event_type' => 'llm.provider.request_prepared',
+            'transport' => $this->transport->value,
+            'request_url_path' => $requestUrlPath,
+            'model' => $model->getName(),
+            'body_keys' => implode(', ', array_keys($jsonBody)),
+            'input_count' => $inputCount,
+            'input_types' => [] !== $inputTypes ? implode(', ', array_keys($inputTypes)) : 'none',
+            'tool_count' => \is_array($tools) ? \count($tools) : 0,
+            'has_instructions' => isset($jsonBody['instructions']),
+            'has_reasoning' => isset($jsonBody['reasoning']),
+            'has_include' => isset($jsonBody['include']),
+            'has_text' => isset($jsonBody['text']),
+            'has_store' => isset($jsonBody['store']),
+            'has_stream' => isset($jsonBody['stream']),
+            'has_previous_response_id' => isset($jsonBody['previous_response_id']),
+            'cache_reused' => null !== $lease && $lease->reused,
+            'cache_one_shot' => null !== $lease && $lease->oneShot,
+            'originator' => $this->originator,
+        ]);
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function buildHandshakeHeaders(string $requestId): array
+    {
+        return $this->handshakeHeadersFactory->create(
+            $this->accessToken,
+            $this->accountId,
+            $this->originator,
+            $requestId,
+        );
+    }
+
     private function refreshAccessTokenOnce(?Model $model): ?string
     {
         try {
@@ -184,52 +386,5 @@ final class CodexWebSocketModelClient implements ModelClientInterface
         $status = $e->getResponse()->getStatus();
 
         return new \RuntimeException(\sprintf('Codex WebSocket handshake failed with HTTP %d.', $status), previous: $e);
-    }
-
-    /**
-     * Privacy-safe outgoing request summary: structural metadata only.
-     *
-     * @param array<string, mixed> $jsonBody
-     */
-    private function logRequestSummary(Model $model, array $jsonBody, string $websocketUrl): void
-    {
-        $input = $jsonBody['input'] ?? [];
-        $inputCount = \is_array($input) ? \count($input) : 0;
-        $tools = $jsonBody['tools'] ?? [];
-
-        $inputTypes = [];
-        if (\is_array($input)) {
-            foreach ($input as $item) {
-                if (isset($item['type']) && \is_string($item['type'])) {
-                    $inputTypes[$item['type']] = true;
-                }
-                if (isset($item['role']) && \is_string($item['role'])) {
-                    $inputTypes['role:'.$item['role']] = true;
-                }
-            }
-        }
-
-        $requestUrlPath = parse_url($websocketUrl, \PHP_URL_PATH);
-        $requestUrlPath = \is_string($requestUrlPath) && '' !== $requestUrlPath
-            ? $requestUrlPath
-            : $this->responsesPath;
-
-        $this->logger->info('llm.provider.request_prepared', [
-            'event_type' => 'llm.provider.request_prepared',
-            'transport' => 'websocket',
-            'request_url_path' => $requestUrlPath,
-            'model' => $model->getName(),
-            'body_keys' => implode(', ', array_keys($jsonBody)),
-            'input_count' => $inputCount,
-            'input_types' => [] !== $inputTypes ? implode(', ', array_keys($inputTypes)) : 'none',
-            'tool_count' => \is_array($tools) ? \count($tools) : 0,
-            'has_instructions' => isset($jsonBody['instructions']),
-            'has_reasoning' => isset($jsonBody['reasoning']),
-            'has_include' => isset($jsonBody['include']),
-            'has_text' => isset($jsonBody['text']),
-            'has_store' => isset($jsonBody['store']),
-            'has_stream' => isset($jsonBody['stream']),
-            'originator' => $this->originator,
-        ]);
     }
 }
