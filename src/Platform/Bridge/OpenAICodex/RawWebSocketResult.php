@@ -21,11 +21,16 @@ final class RawWebSocketResult implements CancellableRawResultInterface
 
     private readonly LoggerInterface $logger;
 
+    private bool $retainConnection = false;
+
+    private bool $cacheFinalized = false;
+
     public function __construct(
         private readonly WebsocketConnection $connection,
         private readonly float $idleTimeoutSeconds,
         ?LoggerInterface $logger = null,
         private bool $aborted = false,
+        private readonly ?CodexWebSocketCachedStreamContext $cachedStreamContext = null,
     ) {
         $this->handle = new CodexWebSocketResultHandle();
         $this->logger = $logger ?? new NullLogger();
@@ -33,6 +38,9 @@ final class RawWebSocketResult implements CancellableRawResultInterface
 
     public function __destruct()
     {
+        if (!$this->cacheFinalized) {
+            $this->finalizeCachedLifecycle(false);
+        }
         $this->closeConnection();
     }
 
@@ -47,10 +55,20 @@ final class RawWebSocketResult implements CancellableRawResultInterface
             return;
         }
 
+        $streamSucceeded = false;
         try {
-            yield from $this->iterateEvents();
-        } finally {
+            yield from $this->iterateEvents($streamSucceeded);
+        } catch (\Throwable $e) {
+            $this->finalizeCachedLifecycle(false);
             $this->closeConnection();
+            throw $e;
+        } finally {
+            if ($streamSucceeded) {
+                $this->finalizeCachedLifecycle(true);
+            } else {
+                $this->finalizeCachedLifecycle(false);
+                $this->closeConnection();
+            }
         }
     }
 
@@ -62,13 +80,16 @@ final class RawWebSocketResult implements CancellableRawResultInterface
     public function abort(): void
     {
         $this->aborted = true;
+        $this->finalizeCachedLifecycle(false);
         $this->closeConnection();
     }
 
     /**
      * @return \Generator<int, array<string, mixed>, mixed, void>
+     *
+     * @param-out bool $streamSucceeded
      */
-    private function iterateEvents(): \Generator
+    private function iterateEvents(bool &$streamSucceeded): \Generator
     {
         while (!$this->aborted) {
             try {
@@ -106,10 +127,104 @@ final class RawWebSocketResult implements CancellableRawResultInterface
             yield $event;
 
             $type = $event['type'] ?? '';
-            if ('response.completed' === $type || 'response.done' === $type) {
+            if ('response.completed' === $type) {
+                $this->commitContinuationIfSuccessful($event);
+                $streamSucceeded = true;
+
                 return;
             }
+
+            if ('response.done' === $type) {
+                if ($this->isSuccessfulTerminalResponse($event)) {
+                    $this->commitContinuationIfSuccessful($event);
+                    $streamSucceeded = true;
+
+                    return;
+                }
+
+                throw new \RuntimeException('Codex WebSocket stream ended with a non-success terminal event.');
+            }
+
+            if ('response.failed' === $type || 'response.incomplete' === $type || str_starts_with((string) $type, 'error')) {
+                throw new \RuntimeException('Codex WebSocket stream ended with a non-success terminal event.');
+            }
         }
+    }
+
+    /**
+     * @param array<string, mixed> $event
+     */
+    private function isSuccessfulTerminalResponse(array $event): bool
+    {
+        $response = $event['response'] ?? null;
+        if (!\is_array($response)) {
+            return false;
+        }
+
+        $responseId = $response['id'] ?? null;
+
+        return \is_string($responseId) && '' !== $responseId;
+    }
+
+    /**
+     * @param array<string, mixed> $event
+     */
+    private function commitContinuationIfSuccessful(array $event): void
+    {
+        $context = $this->cachedStreamContext;
+        if (null === $context || $context->lease->oneShot || null === $context->lease->entry) {
+            return;
+        }
+
+        $response = $event['response'] ?? null;
+        if (!\is_array($response)) {
+            return;
+        }
+
+        $responseId = $response['id'] ?? null;
+        if (!\is_string($responseId) || '' === $responseId) {
+            return;
+        }
+
+        $output = $response['output'] ?? [];
+        if (!\is_array($output)) {
+            $output = [];
+        }
+
+        $items = [];
+        foreach ($output as $item) {
+            if (\is_array($item)) {
+                $items[] = $item;
+            }
+        }
+
+        $context->lease->entry->continuation = CodexWebSocketContinuationState::fromSuccessfulResponse(
+            $context->fullRequestBody,
+            $responseId,
+            $items,
+        );
+    }
+
+    private function finalizeCachedLifecycle(bool $success): void
+    {
+        if ($this->cacheFinalized) {
+            return;
+        }
+        $context = $this->cachedStreamContext;
+        if (null === $context) {
+            return;
+        }
+        $this->cacheFinalized = true;
+
+        if ($success && $context->lease->cached && !$context->lease->oneShot) {
+            $this->retainConnection = true;
+            $context->cache->release($context->lease, true);
+
+            return;
+        }
+
+        $context->cache->invalidateEntry($context->lease->entry, $success ? 'stream_end' : 'stream_failure');
+        $this->connectionClosed = true;
     }
 
     /** Idempotent: stream iteration, abort(), and __destruct() all funnel here. */
@@ -120,6 +235,10 @@ final class RawWebSocketResult implements CancellableRawResultInterface
         }
 
         $this->connectionClosed = true;
+
+        if ($this->retainConnection) {
+            return;
+        }
 
         try {
             $this->connection->close();

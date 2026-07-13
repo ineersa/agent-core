@@ -38,6 +38,8 @@ class Factory
         ?\Closure $accessTokenRefresher = null,
         CodexTransportEnum $transport = CodexTransportEnum::Websocket,
         ?CodexWebSocketConnectorInterface $websocketConnector = null,
+        ?CodexWebSocketConnectionCache $websocketConnectionCache = null,
+        CodexWebSocketCacheSettings $websocketCacheSettings = new CodexWebSocketCacheSettings(),
     ): ProviderInterface {
         $httpClient ??= HttpClient::create();
         $requestBodyFactory = new CodexRequestBodyFactory();
@@ -54,6 +56,9 @@ class Factory
             $accessTokenRefresher,
             $requestBodyFactory,
             $websocketConnector,
+            $websocketConnectionCache,
+            $websocketCacheSettings,
+            $name,
         );
 
         return new Provider(
@@ -85,9 +90,11 @@ class Factory
         ?\Closure $accessTokenRefresher = null,
         CodexTransportEnum $transport = CodexTransportEnum::Websocket,
         ?CodexWebSocketConnectorInterface $websocketConnector = null,
+        ?CodexWebSocketConnectionCache $websocketConnectionCache = null,
+        CodexWebSocketCacheSettings $websocketCacheSettings = new CodexWebSocketCacheSettings(),
     ): Platform {
         return new Platform(
-            [self::createProvider($baseUrl, $accessToken, $accountId, $httpClient, $modelCatalog, $contract, $eventDispatcher, $responsesPath, $originator, $name, $logger, $accessTokenRefresher, $transport, $websocketConnector)],
+            [self::createProvider($baseUrl, $accessToken, $accountId, $httpClient, $modelCatalog, $contract, $eventDispatcher, $responsesPath, $originator, $name, $logger, $accessTokenRefresher, $transport, $websocketConnector, $websocketConnectionCache, $websocketCacheSettings)],
             $modelRouter ?? new CatalogBasedModelRouter(),
             $eventDispatcher,
         );
@@ -105,6 +112,9 @@ class Factory
         ?\Closure $accessTokenRefresher,
         CodexRequestBodyFactory $requestBodyFactory,
         ?CodexWebSocketConnectorInterface $websocketConnector,
+        ?CodexWebSocketConnectionCache $websocketConnectionCache,
+        CodexWebSocketCacheSettings $websocketCacheSettings,
+        string $providerId,
     ): ModelClientInterface {
         return match ($transport) {
             CodexTransportEnum::Sse => new CodexModelClient(
@@ -118,7 +128,7 @@ class Factory
                 $accessTokenRefresher,
                 $requestBodyFactory,
             ),
-            CodexTransportEnum::Websocket => new CodexWebSocketModelClient(
+            CodexTransportEnum::Websocket, CodexTransportEnum::WebsocketCached => new CodexWebSocketModelClient(
                 $websocketConnector ?? new AmpCodexWebSocketConnector(),
                 new CodexWebSocketUrlResolver(),
                 new CodexWebSocketHandshakeHeadersFactory(),
@@ -128,8 +138,12 @@ class Factory
                 $accountId,
                 $responsesPath,
                 $originator,
+                $providerId,
                 $logger,
                 $accessTokenRefresher,
+                transport: $transport,
+                connectionCache: CodexTransportEnum::WebsocketCached === $transport ? $websocketConnectionCache : null,
+                cacheSettings: $websocketCacheSettings,
             ),
         };
     }

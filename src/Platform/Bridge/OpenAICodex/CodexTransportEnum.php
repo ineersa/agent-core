@@ -7,6 +7,7 @@ namespace Symfony\AI\Platform\Bridge\OpenAICodex;
 enum CodexTransportEnum: string
 {
     case Websocket = 'websocket';
+    case WebsocketCached = 'websocket-cached';
     case Sse = 'sse';
 
     public static function fromNullableString(?string $value): self
@@ -24,8 +25,9 @@ enum CodexTransportEnum: string
 
         return match ($normalized) {
             self::Websocket->value => self::Websocket,
+            self::WebsocketCached->value => self::WebsocketCached,
             self::Sse->value => self::Sse,
-            default => throw new \InvalidArgumentException(\sprintf('Invalid Codex transport "%s". Allowed values: websocket, sse.', $value)),
+            default => throw new \InvalidArgumentException(\sprintf('Invalid Codex transport "%s". Allowed values: websocket, websocket-cached, sse.', $value)),
         };
     }
 
