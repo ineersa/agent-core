@@ -7,8 +7,8 @@ namespace Ineersa\CodingAgent\Agent\Execution;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\ChildRunIdentityDTO;
+use Ineersa\CodingAgent\Agent\Execution\ChildRun\Port\ChildRunArtifactLifecyclePort;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\PreparedAgentChildRunDTO;
-use Ineersa\CodingAgent\Agent\Execution\Subagent\SubagentArtifactReservationService;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\SubagentChildLaunchInputFactory;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\SubagentLaunchDefinitionPolicyService;
 use Symfony\Component\Uid\Uuid;
@@ -20,14 +20,14 @@ final class SubagentLaunchPreparationService
 {
     public function __construct(
         private readonly SubagentLaunchDefinitionPolicyService $definitionPolicy,
-        private readonly SubagentArtifactReservationService $artifactReservation,
+        private readonly ChildRunArtifactLifecyclePort $artifactLifecycle,
         private readonly SubagentChildLaunchInputFactory $launchInputFactory,
     ) {
     }
 
     public function reserveIdentity(ChildRunIdentityDTO $identity): void
     {
-        $this->artifactReservation->reserve($identity);
+        $this->artifactLifecycle->reservePending($identity);
     }
 
     public function assertDepthAllowed(string $parentRunId): void
@@ -83,7 +83,7 @@ final class SubagentLaunchPreparationService
         );
 
         if (!$skipReservation) {
-            $this->artifactReservation->reserve($identity);
+            $this->artifactLifecycle->reservePending($identity);
         }
 
         return $this->launchInputFactory->buildPrepared(

@@ -62,9 +62,9 @@ final class AgentChildParentSequenceCoordinator
         if (null === $parentState) {
             // Parent state not yet persisted — the first progress event
             // lands while the run is still initialising.  Non-fatal.
-            $this->logger->warning('subagent_execution.parent_state_missing_for_seq_advance', [
+            $this->logger->warning('child_run.parent_state_missing_for_seq_advance', [
                 'component' => 'agent.execution',
-                'event_type' => 'subagent_execution.parent_state_missing_for_seq_advance',
+                'event_type' => 'child_run.parent_state_missing_for_seq_advance',
                 'parent_run_id' => $parentRunId,
                 'target_seq' => $seq,
             ]);
@@ -109,9 +109,9 @@ final class AgentChildParentSequenceCoordinator
         }
 
         // Exhausted retries; event is already in the log.
-        $this->logger->warning('subagent_execution.progress_seq_cas_failed', [
+        $this->logger->warning('child_run.progress_seq_cas_failed', [
             'component' => 'agent.execution',
-            'event_type' => 'subagent_execution.progress_seq_cas_failed',
+            'event_type' => 'child_run.progress_seq_cas_failed',
             'parent_run_id' => $parentRunId,
             'target_seq' => $seq,
             'attempts' => $maxAttempts,

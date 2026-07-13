@@ -59,6 +59,7 @@ final class ChildRunBatchProgressCoordinator
 
     /**
      * @param-out int $progressSeq
+     * @param string|null $lastSignature
      * @param-out string $lastSignature
      */
     public function emitDedupedIfChanged(
@@ -113,12 +114,30 @@ final class ChildRunBatchProgressCoordinator
             }
         }
 
+        $hasFailed = false;
+        $hasCancelled = false;
         foreach ($snapshots as $snapshot) {
+            if (!$snapshot->terminal || null === $snapshot->artifactStatus) {
+                continue;
+            }
+
             if (AgentArtifactStatusEnum::Failed === $snapshot->artifactStatus) {
-                return 'failed';
+                $hasFailed = true;
+            }
+
+            if (AgentArtifactStatusEnum::Cancelled === $snapshot->artifactStatus) {
+                $hasCancelled = true;
             }
         }
 
-        return 'done';
+        if ($hasFailed) {
+            return 'failed';
+        }
+
+        if ($hasCancelled) {
+            return 'cancelled';
+        }
+
+        return 'completed';
     }
 }

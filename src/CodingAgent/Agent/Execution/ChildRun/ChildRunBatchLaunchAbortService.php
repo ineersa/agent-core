@@ -11,7 +11,7 @@ use Ineersa\CodingAgent\Agent\Execution\ChildRun\Port\ChildRunTerminalizerPort;
 use Psr\Log\LoggerInterface;
 
 /**
- * Canonical launch-abort state machine for a foreground child batch (runtime start failure or preparation failure).
+ * Canonical launch-abort state machine for a foreground child batch (preparation failure or runtime start failure).
  */
 final class ChildRunBatchLaunchAbortService
 {
@@ -31,6 +31,7 @@ final class ChildRunBatchLaunchAbortService
         array $identities,
         ChildRunBatchLifecyclePolicyDTO $policy,
         \Throwable $cause,
+        ChildRunBatchLaunchAbortContextDTO $abortContext,
     ): ChildRunBatchSupervisionResultDTO {
         $this->logger->warning('child_run.batch_launch_aborted', [
             'run_id' => $parentRunId,
@@ -38,6 +39,8 @@ final class ChildRunBatchLaunchAbortService
             'event_type' => 'child_run.batch_launch_aborted',
             'task_count' => \count($identities),
             'exception_class' => $cause::class,
+            'abort_phase' => $abortContext->phase->value,
+            'preparation_failure_batch_index' => $abortContext->preparationFailureBatchIndex,
         ]);
 
         $snapshots = [];
@@ -46,6 +49,68 @@ final class ChildRunBatchLaunchAbortService
         }
 
         $neverLaunchedMessage = 'Child run was not launched after a parallel launch failure.';
+        $cancelledAfterMessage = 'Cancelled after parallel launch failure.';
+        $failedToStartMessage = 'Child run failed to start.';
+
+        if (ChildRunBatchLaunchAbortPhaseEnum::Preparation === $abortContext->phase) {
+            $failureIndex = $abortContext->preparationFailureBatchIndex
+                ?? throw new \InvalidArgumentException('Preparation abort requires preparationFailureBatchIndex.');
+
+            foreach ($identities as $identity) {
+                $childRunId = $identity->childRunId;
+                $snapshot = $snapshots[$childRunId] ?? null;
+                if (null === $snapshot || $snapshot->terminal) {
+                    continue;
+                }
+
+                if ($identity->batchIndex < $failureIndex) {
+                    $this->terminalizer->applyTerminalOutcome(new ChildRunTerminalOutcomeDTO(
+                        $identity,
+                        AgentArtifactStatusEnum::Failed,
+                        failureReason: $cause->getMessage(),
+                        summary: $cancelledAfterMessage,
+                    ));
+                    $snapshot->markTerminalFailed($cancelledAfterMessage);
+
+                    continue;
+                }
+
+                if ($identity->batchIndex === $failureIndex) {
+                    if (!$this->artifactLifecycle->hasRegistryEntry($parentRunId, $identity->artifactId)) {
+                        $snapshot->markTerminalFailed($neverLaunchedMessage);
+
+                        continue;
+                    }
+
+                    $this->terminalizer->applyTerminalOutcome(new ChildRunTerminalOutcomeDTO(
+                        $identity,
+                        AgentArtifactStatusEnum::Failed,
+                        failureReason: $cause->getMessage(),
+                        summary: $failedToStartMessage,
+                    ));
+                    $snapshot->markTerminalFailed($failedToStartMessage);
+
+                    continue;
+                }
+
+                if (!$this->artifactLifecycle->hasRegistryEntry($parentRunId, $identity->artifactId)) {
+                    $snapshot->markTerminalFailed($neverLaunchedMessage);
+
+                    continue;
+                }
+
+                $this->artifactLifecycle->removePendingReservation($identity);
+                $snapshot->markTerminalFailed($neverLaunchedMessage);
+            }
+
+            return new ChildRunBatchSupervisionResultDTO(
+                $parentRunId,
+                array_values($snapshots),
+                ChildRunBatchCompletionKindEnum::LaunchAborted,
+                launchFailure: $cause,
+            );
+        }
+
         $lastRunningChildIndex = -1;
         foreach ($identities as $index => $identity) {
             $status = $this->artifactLifecycle->getArtifactStatus($parentRunId, $identity->artifactId);
@@ -56,11 +121,8 @@ final class ChildRunBatchLaunchAbortService
 
         foreach ($identities as $index => $identity) {
             $childRunId = $identity->childRunId;
-            if (!isset($snapshots[$childRunId])) {
-                continue;
-            }
-            $snapshot = $snapshots[$childRunId];
-            if ($snapshot->terminal) {
+            $snapshot = $snapshots[$childRunId] ?? null;
+            if (null === $snapshot || $snapshot->terminal) {
                 continue;
             }
 
@@ -92,9 +154,9 @@ final class ChildRunBatchLaunchAbortService
                     $identity,
                     AgentArtifactStatusEnum::Failed,
                     failureReason: $cause->getMessage(),
-                    summary: 'Cancelled after parallel launch failure.',
+                    summary: $cancelledAfterMessage,
                 ));
-                $snapshot->markTerminalFailed('Cancelled after parallel launch failure.');
+                $snapshot->markTerminalFailed($cancelledAfterMessage);
 
                 continue;
             }
@@ -107,9 +169,9 @@ final class ChildRunBatchLaunchAbortService
                     $identity,
                     AgentArtifactStatusEnum::Failed,
                     failureReason: $cause->getMessage(),
-                    summary: 'Child run failed to start.',
+                    summary: $failedToStartMessage,
                 ));
-                $snapshot->markTerminalFailed('Child run failed to start.');
+                $snapshot->markTerminalFailed($failedToStartMessage);
             }
         }
 

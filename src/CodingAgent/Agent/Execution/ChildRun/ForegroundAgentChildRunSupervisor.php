@@ -48,6 +48,7 @@ final class ForegroundAgentChildRunSupervisor
                 array_map(static fn (PreparedAgentChildRunDTO $p): ChildRunIdentityDTO => $p->identity, $batch->children),
                 $batch->lifecyclePolicy,
                 $e,
+                ChildRunBatchLaunchAbortContextDTO::runtimeStart(),
             );
         }
 

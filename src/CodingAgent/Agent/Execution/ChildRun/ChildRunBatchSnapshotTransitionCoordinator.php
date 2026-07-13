@@ -45,14 +45,14 @@ final class ChildRunBatchSnapshotTransitionCoordinator
         $identity = $snapshot->identity;
         if (RunStatus::WaitingHuman === $state->status) {
             $this->artifactLifecycle->markNeedsClarification($identity);
-            $snapshot->artifactStatus = AgentArtifactStatusEnum::NeedsClarification;
+            $snapshot->markNeedsClarification();
 
             return;
         }
 
         if (AgentArtifactStatusEnum::NeedsClarification === $snapshot->artifactStatus) {
             $this->artifactLifecycle->clearNeedsClarificationToRunning($identity);
-            $snapshot->artifactStatus = AgentArtifactStatusEnum::Running;
+            $snapshot->markRunning();
         }
     }
 
@@ -68,7 +68,7 @@ final class ChildRunBatchSnapshotTransitionCoordinator
         if (RunStatus::Running === $status || RunStatus::Queued === $status || RunStatus::Compacting === $status) {
             if (AgentArtifactStatusEnum::NeedsClarification === $snapshot->artifactStatus) {
                 $this->artifactLifecycle->clearNeedsClarificationToRunning($identity);
-                $snapshot->artifactStatus = AgentArtifactStatusEnum::Running;
+                $snapshot->markRunning();
             }
 
             return;
@@ -76,7 +76,7 @@ final class ChildRunBatchSnapshotTransitionCoordinator
 
         if (RunStatus::WaitingHuman === $status) {
             $this->artifactLifecycle->markNeedsClarification($identity);
-            $snapshot->artifactStatus = AgentArtifactStatusEnum::NeedsClarification;
+            $snapshot->markNeedsClarification();
             $snapshot->message = 'Waiting for human input.';
 
             return;

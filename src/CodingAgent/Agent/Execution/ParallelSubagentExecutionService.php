@@ -9,6 +9,7 @@ use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\ChildRunBatchDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\ChildRunBatchExecutionModeEnum;
+use Ineersa\CodingAgent\Agent\Execution\ChildRun\ChildRunBatchLaunchAbortContextDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\ChildRunBatchLaunchAbortService;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\ChildRunIdentityDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\ForegroundAgentChildRunSupervisor;
@@ -74,9 +75,9 @@ final class ParallelSubagentExecutionService
         }
 
         $preparedChildren = [];
-        try {
-            foreach ($launches as $index => $launch) {
-                $identity = $identities[$index];
+        foreach ($launches as $index => $launch) {
+            $identity = $identities[$index];
+            try {
                 $this->launchPreparation->reserveIdentity($identity);
                 $preparedChildren[] = $this->launchPreparation->prepareFromDefinition(
                     $parentRunId,
@@ -88,11 +89,17 @@ final class ParallelSubagentExecutionService
                     skipReservation: true,
                     identityTemplate: $identity,
                 );
-            }
-        } catch (\Throwable $e) {
-            $aborted = $this->launchAbortService->abort($parentRunId, $identities, $lifecyclePolicy, $e);
+            } catch (\Throwable $e) {
+                $aborted = $this->launchAbortService->abort(
+                    $parentRunId,
+                    $identities,
+                    $lifecyclePolicy,
+                    $e,
+                    ChildRunBatchLaunchAbortContextDTO::preparationFailure($identity->batchIndex),
+                );
 
-            return $this->resultMapper->mapParallel($aborted);
+                return $this->resultMapper->mapParallel($aborted);
+            }
         }
 
         $batch = new ChildRunBatchDTO(

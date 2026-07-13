@@ -769,16 +769,33 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
         );
 
         $registry = self::getContainer()->get(AgentArtifactRegistry::class);
+        $parentRunStore = new InMemoryRunStore();
+        $parentRunStore->compareAndSwap(new RunState(runId: 'parent-parallel-ok', status: RunStatus::Running, version: 1, lastSeq: 0), 0);
+        $eventStore = new InMemoryEventStore();
+        $sequencedAppender = new CommittedRunEventAppender($eventStore, $parentRunStore, new \Psr\Log\NullLogger());
+        $contextAccessor = new StackToolExecutionContextAccessor();
+        $toolContext = new ToolContext(
+            runId: 'parent-parallel-ok',
+            turnNo: 1,
+            toolCallId: 'tc-parallel-ok',
+            toolName: 'subagent',
+            cancellationToken: new NullCancellationToken(),
+            timeoutSeconds: 120,
+        );
         $service = $this->makeService([
             'catalog' => new AgentDefinitionCatalog([$def('parallel-a'), $def('parallel-b')]),
             'agentRunner' => $agentRunner,
             'runStore' => $runStore,
+            'parentRunStore' => $parentRunStore,
+            'eventStore' => $eventStore,
+            'committedRunEventAppender' => $sequencedAppender,
+            'contextAccessor' => $contextAccessor,
         ]);
 
-        $result = $service->executeParallel('parent-parallel-ok', [
+        $result = $contextAccessor->with($toolContext, static fn (): string => $service->executeParallel('parent-parallel-ok', [
             new SubagentTaskDTO(agent: 'parallel-a', task: 'Task A'),
             new SubagentTaskDTO(agent: 'parallel-b', task: 'Task B'),
-        ]);
+        ]));
 
         $this->assertStringContainsString('Parallel subagents completed', $result);
         $this->assertStringContainsString('A_OK', $result);
@@ -790,6 +807,17 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
         foreach ($entries as $entry) {
             $this->assertSame(AgentArtifactStatusEnum::Completed, $entry->status);
         }
+
+        $progressEvents = array_values(array_filter(
+            $eventStore->allFor('parent-parallel-ok'),
+            static fn (RunEvent $e): bool => RunEventTypeEnum::ToolExecutionUpdate->value === $e->type,
+        ));
+        $this->assertNotEmpty($progressEvents);
+        $this->assertSame(
+            'completed',
+            $progressEvents[\count($progressEvents) - 1]->payload['subagent_progress']['status'] ?? null,
+            'Final parallel progress payload must use origin/main aggregate status completed when all children succeed.',
+        );
     }
 
     public function testExecuteParallelLongChildMessageNotTruncated(): void
@@ -1055,6 +1083,87 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
         foreach ($entries as $entry) {
             $this->assertNotSame(AgentArtifactStatusEnum::Running, $entry->status);
             $this->assertSame(AgentArtifactStatusEnum::Failed, $entry->status);
+        }
+    }
+
+    public function testExecuteParallelPreparationFailurePreservesOriginAbortSemantics(): void
+    {
+        $parentRunStore = $this->createStub(RunStoreInterface::class);
+        $parentRunStore->method('get')->willReturnCallback(static function (string $runId): RunState {
+            static $calls = 0;
+            ++$calls;
+            if ($calls > 1) {
+                throw new \RuntimeException('second child context blew up');
+            }
+
+            return new RunState(runId: $runId, status: RunStatus::Running, version: 1, messages: []);
+        });
+
+        $agentRunner = $this->createMock(AgentRunnerInterface::class);
+        $agentRunner->expects($this->never())->method('start');
+        $agentRunner->expects($this->never())->method('cancel');
+
+        $def = static fn (string $name) => new AgentDefinitionDTO(
+            name: $name,
+            description: $name,
+            tools: ['read'],
+            mcp: new McpPolicyDTO(mode: McpAgentModeEnum::None),
+            instructions: 'x',
+            parallelAllowed: true,
+        );
+
+        $registry = self::getContainer()->get(AgentArtifactRegistry::class);
+        $pathResolver = self::getContainer()->get(\Ineersa\CodingAgent\Agent\Artifact\AgentArtifactPathResolver::class);
+        $service = $this->makeService([
+            'catalog' => new AgentDefinitionCatalog([
+                $def('first-agent'),
+                $def('second-agent'),
+                $def('third-agent'),
+            ]),
+            'parentRunStore' => $parentRunStore,
+            'agentRunner' => $agentRunner,
+        ]);
+
+        try {
+            $service->executeParallel('parent-prep-fail', [
+                new SubagentTaskDTO(agent: 'first-agent', task: 'ok'),
+                new SubagentTaskDTO(agent: 'second-agent', task: 'boom'),
+                new SubagentTaskDTO(agent: 'third-agent', task: 'never'),
+            ]);
+            $this->fail('Expected ToolCallException');
+        } catch (ToolCallException $e) {
+            $message = $e->getMessage();
+            $this->assertStringContainsString('Parallel subagent launch failed', $message);
+            $this->assertStringContainsString('second child context blew up', $message);
+            $this->assertInstanceOf(\RuntimeException::class, $e->getPrevious());
+            $this->assertStringContainsString('second child context blew up', (string) $e->getPrevious()?->getMessage());
+
+            $this->assertMatchesRegularExpression(
+                '/#1 first-agent — failed\s+Artifact: agent_[0-9a-f]{16}\s+Cancelled after parallel launch failure\./s',
+                $message,
+            );
+            $this->assertMatchesRegularExpression(
+                '/#2 second-agent — failed\s+Artifact: agent_[0-9a-f]{16}\s+Child run failed to start\./s',
+                $message,
+            );
+            $this->assertMatchesRegularExpression(
+                '/#3 third-agent — failed\s+Artifact: agent_[0-9a-f]{16}\s+Child run was not launched after a parallel launch failure\./s',
+                $message,
+            );
+
+            if (!preg_match('/#3 third-agent — failed\s+Artifact: (agent_[0-9a-f]{16})/', $message, $matches)) {
+                $this->fail('Expected third-agent artifact line in aggregate report');
+            }
+            $thirdArtifactId = $matches[1];
+            $this->assertNull($registry->get('parent-prep-fail', $thirdArtifactId));
+            $this->assertDirectoryDoesNotExist($pathResolver->resolveArtifactDir('parent-prep-fail', $thirdArtifactId));
+        }
+
+        $entries = $registry->list('parent-prep-fail');
+        $this->assertCount(2, $entries);
+        foreach ($entries as $entry) {
+            $this->assertSame(AgentArtifactStatusEnum::Failed, $entry->status);
+            $this->assertSame('second child context blew up', $entry->failureReason);
         }
     }
 

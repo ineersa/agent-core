@@ -19,7 +19,6 @@ use Ineersa\CodingAgent\Agent\Execution\ChildRun\ChildRunBatchProgressCoordinato
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\ChildRunBatchSnapshotTransitionCoordinator;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\ForegroundAgentChildRunSupervisor;
 use Ineersa\CodingAgent\Agent\Execution\ParallelSubagentExecutionService;
-use Ineersa\CodingAgent\Agent\Execution\Subagent\SubagentArtifactReservationService;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\SubagentChildLaunchInputFactory;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\SubagentChildRunBatchLifecyclePolicyFactory;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\SubagentChildRunProgressSinkAdapter;
@@ -100,9 +99,8 @@ final class SubagentExecutionServiceFactory
         $artifactLifecycle = new AgentChildArtifactLifecycleAdapter($artifactRegistry, $childRunDirectory);
 
         $definitionPolicy = new SubagentLaunchDefinitionPolicyService($args['catalog'], $args['depthGuard'], $policyResolver, $metadataReader);
-        $artifactReservation = new SubagentArtifactReservationService($artifactLifecycle);
         $launchInputFactory = new SubagentChildLaunchInputFactory($promptBuilder, $skillsContextBuilder, $agentsContextBuilder, $parentRunStore, $appConfig);
-        $launchPreparation = new SubagentLaunchPreparationService($definitionPolicy, $artifactReservation, $launchInputFactory);
+        $launchPreparation = new SubagentLaunchPreparationService($definitionPolicy, $artifactLifecycle, $launchInputFactory);
         $lifecyclePolicyFactory = new SubagentChildRunBatchLifecyclePolicyFactory();
 
         $launchCoordinator = new ChildRunBatchLaunchCoordinator($processPort, $artifactLifecycle);
