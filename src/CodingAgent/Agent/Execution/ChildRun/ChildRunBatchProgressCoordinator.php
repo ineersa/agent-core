@@ -59,7 +59,6 @@ final class ChildRunBatchProgressCoordinator
 
     /**
      * @param-out int $progressSeq
-     * @param string|null $lastSignature
      * @param-out string $lastSignature
      */
     public function emitDedupedIfChanged(
