@@ -17,6 +17,18 @@ final class ChildRunArtifactLifecycleService
     ) {
     }
 
+    public function ensureReservedPending(ChildRunIdentityDTO $identity): void
+    {
+        $entry = $this->artifactRegistry->ensureReserved(
+            parentRunId: $identity->parentRunId,
+            artifactId: $identity->artifactId,
+            agentRunId: $identity->childRunId,
+            agentName: $identity->displayName,
+            kind: $identity->artifactKind,
+        );
+        $this->childRunDirectory->register($entry);
+    }
+
     public function reservePending(ChildRunIdentityDTO $identity): void
     {
         $entry = $this->artifactRegistry->create(
@@ -31,6 +43,31 @@ final class ChildRunArtifactLifecycleService
 
     public function markRunning(ChildRunIdentityDTO $identity): void
     {
+        $this->markRunningForwardOnly($identity);
+    }
+
+    /**
+     * Promote Pending/NeedsClarification to Running without regressing terminal artifact status.
+     */
+    public function markRunningForwardOnly(ChildRunIdentityDTO $identity): void
+    {
+        $current = $this->getArtifactStatus($identity->parentRunId, $identity->artifactId);
+        if (null === $current) {
+            return;
+        }
+
+        if (\in_array($current, [
+            AgentArtifactStatusEnum::Completed,
+            AgentArtifactStatusEnum::Failed,
+            AgentArtifactStatusEnum::Cancelled,
+        ], true)) {
+            return;
+        }
+
+        if (AgentArtifactStatusEnum::Running === $current) {
+            return;
+        }
+
         $this->artifactRegistry->update(
             parentRunId: $identity->parentRunId,
             artifactId: $identity->artifactId,

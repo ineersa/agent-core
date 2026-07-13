@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Entity;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Doctrine\Persistence\ManagerRegistry;
+use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\CodingAgent\Agent\Execution\DeferredSingleSubagentLaunchStatusEnum;
 use Ineersa\CodingAgent\Agent\Execution\DeferredSingleSubagentProjectionDTO;
 use Symfony\Component\Clock\Clock;
@@ -50,6 +51,8 @@ final class DeferredSingleSubagentLaunchRepository extends ServiceEntityReposito
         ]);
 
         if ($existing instanceof DeferredSingleSubagentLaunch) {
+            $this->assertMatchesIntent($existing, $childRunId, $artifactId, $agentName, $task, $definitionModel);
+
             return $this->toDto($existing);
         }
 
@@ -85,6 +88,8 @@ final class DeferredSingleSubagentLaunchRepository extends ServiceEntityReposito
                 throw new \RuntimeException(\sprintf('Deferred single subagent reserve conflict for parent "%s" tool call "%s" but row missing.', $parentRunId, $parentToolCallId));
             }
 
+            $this->assertMatchesIntent($row, $childRunId, $artifactId, $agentName, $task, $definitionModel);
+
             return $this->toDto($row);
         }
 
@@ -103,14 +108,27 @@ final class DeferredSingleSubagentLaunchRepository extends ServiceEntityReposito
     public function markLaunched(string $parentRunId, string $toolCallId, \DateTimeImmutable $startedAt): void
     {
         $row = $this->requireRow($parentRunId, $toolCallId);
+
+        if (DeferredSingleSubagentLaunchStatusEnum::Launched === $row->launchStatus) {
+            return;
+        }
+
+        if (DeferredSingleSubagentLaunchStatusEnum::Failed === $row->launchStatus) {
+            return;
+        }
+
         $row->launchStatus = DeferredSingleSubagentLaunchStatusEnum::Launched;
-        $row->startedAt = $startedAt;
+        $row->startedAt = $row->startedAt ?? $startedAt;
         $this->getEntityManager()->flush();
     }
 
     public function markFailed(string $parentRunId, string $toolCallId): void
     {
         $row = $this->requireRow($parentRunId, $toolCallId);
+        if (DeferredSingleSubagentLaunchStatusEnum::Launched === $row->launchStatus) {
+            return;
+        }
+
         $row->launchStatus = DeferredSingleSubagentLaunchStatusEnum::Failed;
         $this->getEntityManager()->flush();
     }
@@ -127,6 +145,27 @@ final class DeferredSingleSubagentLaunchRepository extends ServiceEntityReposito
         }
 
         return $row;
+    }
+
+    private function assertMatchesIntent(
+        DeferredSingleSubagentLaunch $row,
+        string $childRunId,
+        string $artifactId,
+        string $agentName,
+        string $task,
+        ?string $definitionModel,
+    ): void {
+        if ($row->childRunId !== $childRunId || $row->artifactId !== $artifactId) {
+            throw new ToolCallException('Deferred single subagent projection for this tool call uses a different child identity than the deterministic launch.', retryable: false);
+        }
+
+        if ($row->agentName !== $agentName || $row->task !== $task) {
+            throw new ToolCallException('Deferred single subagent projection for this tool call was reserved for a different agent or task.', retryable: false);
+        }
+
+        if (null !== $definitionModel && $row->definitionModel !== $definitionModel) {
+            throw new ToolCallException('Deferred single subagent projection for this tool call was reserved with a different model.', retryable: false);
+        }
     }
 
     private function toDto(DeferredSingleSubagentLaunch $row): DeferredSingleSubagentProjectionDTO

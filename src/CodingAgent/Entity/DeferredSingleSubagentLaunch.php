@@ -9,6 +9,7 @@ use Ineersa\CodingAgent\Agent\Execution\DeferredSingleSubagentLaunchStatusEnum;
 
 #[ORM\Entity]
 #[ORM\Table(name: 'deferred_single_subagent_launch')]
+#[ORM\UniqueConstraint(name: 'uniq_deferred_single_subagent_parent_tool', columns: ['parent_run_id', 'parent_tool_call_id'])]
 #[ORM\HasLifecycleCallbacks]
 class DeferredSingleSubagentLaunch
 {

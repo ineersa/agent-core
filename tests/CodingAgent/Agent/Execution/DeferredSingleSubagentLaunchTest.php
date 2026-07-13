@@ -118,7 +118,7 @@ final class DeferredSingleSubagentLaunchTest extends IsolatedKernelTestCase
             childRunId: $ids['childRunId'],
             artifactId: $ids['artifactId'],
             agentName: 'worker-reserved',
-            task: 'Reserved only',
+            task: 'Finish launch',
             definitionModel: null,
             deadlineAt: $deadline,
         );
@@ -137,6 +137,227 @@ final class DeferredSingleSubagentLaunchTest extends IsolatedKernelTestCase
         $this->assertNotNull($projection);
         $this->assertSame(DeferredSingleSubagentLaunchStatusEnum::Launched, $projection->launchStatus);
         $this->assertSame($ids['childRunId'], $projection->childRunId);
+    }
+
+    public function testConcurrentReservationConvergesOnSingleArtifact(): void
+    {
+        $parentRunId = 'parent-deferred-race';
+        $toolCallId = 'call-deferred-race';
+        $identityFactory = new DeferredSingleSubagentIdentityFactory();
+        $ids = $identityFactory->forParentToolCall($parentRunId, $toolCallId);
+        $deadline = (new \DateTimeImmutable())->modify('+120 seconds');
+
+        /** @var DeferredSingleSubagentLaunchRepository $repo */
+        $repo = self::getContainer()->get(DeferredSingleSubagentLaunchRepository::class);
+        $first = $repo->reserve(
+            parentRunId: $parentRunId,
+            parentTurnNo: 2,
+            parentToolCallId: $toolCallId,
+            parentOrderIndex: 0,
+            childRunId: $ids['childRunId'],
+            artifactId: $ids['artifactId'],
+            agentName: 'worker-race',
+            task: 'Race task',
+            definitionModel: null,
+            deadlineAt: $deadline,
+        );
+        $second = $repo->reserve(
+            parentRunId: $parentRunId,
+            parentTurnNo: 2,
+            parentToolCallId: $toolCallId,
+            parentOrderIndex: 0,
+            childRunId: $ids['childRunId'],
+            artifactId: $ids['artifactId'],
+            agentName: 'worker-race',
+            task: 'Race task',
+            definitionModel: null,
+            deadlineAt: $deadline,
+        );
+
+        $this->assertSame($first->lifecycleId, $second->lifecycleId);
+        $this->assertSame($ids['childRunId'], $second->childRunId);
+
+        $identity = new \Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunIdentityDTO(
+            parentRunId: $parentRunId,
+            childRunId: $ids['childRunId'],
+            artifactId: $ids['artifactId'],
+            displayName: 'worker-race',
+            taskSummary: 'Race task',
+            definitionModel: null,
+            artifactKind: \Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum::Subagent,
+        );
+        $lifecycle = self::getContainer()->get(\Ineersa\CodingAgent\Agent\Execution\ChildRun\Lifecycle\ChildRunArtifactLifecycleService::class);
+        $lifecycle->ensureReservedPending($identity);
+        $lifecycle->ensureReservedPending($identity);
+
+        $registry = self::getContainer()->get(AgentArtifactRegistry::class);
+        $entry = $registry->get($parentRunId, $ids['artifactId']);
+        $this->assertNotNull($entry);
+        $this->assertSame($ids['childRunId'], $entry->agentRunId);
+    }
+
+    public function testReserveRejectsDifferentTaskForSameToolCall(): void
+    {
+        $parentRunId = 'parent-deferred-mismatch';
+        $toolCallId = 'call-deferred-mismatch';
+        $identityFactory = new DeferredSingleSubagentIdentityFactory();
+        $ids = $identityFactory->forParentToolCall($parentRunId, $toolCallId);
+        $deadline = (new \DateTimeImmutable())->modify('+120 seconds');
+
+        /** @var DeferredSingleSubagentLaunchRepository $repo */
+        $repo = self::getContainer()->get(DeferredSingleSubagentLaunchRepository::class);
+        $repo->reserve(
+            parentRunId: $parentRunId,
+            parentTurnNo: 2,
+            parentToolCallId: $toolCallId,
+            parentOrderIndex: 0,
+            childRunId: $ids['childRunId'],
+            artifactId: $ids['artifactId'],
+            agentName: 'worker-mismatch',
+            task: 'Original task',
+            definitionModel: null,
+            deadlineAt: $deadline,
+        );
+
+        $this->expectException(\Ineersa\AgentCore\Contract\Tool\ToolCallException::class);
+        $this->expectExceptionMessage('different agent or task');
+
+        $repo->reserve(
+            parentRunId: $parentRunId,
+            parentTurnNo: 2,
+            parentToolCallId: $toolCallId,
+            parentOrderIndex: 0,
+            childRunId: $ids['childRunId'],
+            artifactId: $ids['artifactId'],
+            agentName: 'worker-mismatch',
+            task: 'Different task',
+            definitionModel: null,
+            deadlineAt: $deadline,
+        );
+    }
+
+    public function testAlreadyRunningArtifactRetrySkipsSecondStart(): void
+    {
+        $parentRunId = 'parent-deferred-running';
+        $toolCallId = 'call-deferred-running';
+        $identityFactory = new DeferredSingleSubagentIdentityFactory();
+        $ids = $identityFactory->forParentToolCall($parentRunId, $toolCallId);
+
+        $registry = self::getContainer()->get(AgentArtifactRegistry::class);
+        $registry->create($parentRunId, $ids['artifactId'], $ids['childRunId'], 'worker-running', \Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum::Subagent);
+        $registry->update($parentRunId, $ids['artifactId'], status: AgentArtifactStatusEnum::Running, startedAt: new \DateTimeImmutable());
+
+        /** @var DeferredSingleSubagentLaunchRepository $repo */
+        $repo = self::getContainer()->get(DeferredSingleSubagentLaunchRepository::class);
+        $deadline = (new \DateTimeImmutable())->modify('+120 seconds');
+        $repo->reserve(
+            parentRunId: $parentRunId,
+            parentTurnNo: 2,
+            parentToolCallId: $toolCallId,
+            parentOrderIndex: 0,
+            childRunId: $ids['childRunId'],
+            artifactId: $ids['artifactId'],
+            agentName: 'worker-running',
+            task: 'Running retry',
+            definitionModel: null,
+            deadlineAt: $deadline,
+        );
+
+        $agentRunner = $this->createMock(AgentRunnerInterface::class);
+        $agentRunner->expects($this->never())->method('start');
+
+        $def = $this->foregroundDefinition('worker-running');
+        $service = $this->buildService($agentRunner, $this->createStub(RunStoreInterface::class), $def);
+
+        $outcome = $this->withToolContext($parentRunId, $toolCallId, static fn () => $service->execute($parentRunId, 'worker-running', 'Running retry'));
+
+        $this->assertInstanceOf(DeferredToolCompletionOutcome::class, $outcome);
+        $entry = $registry->get($parentRunId, $ids['artifactId']);
+        $this->assertSame(AgentArtifactStatusEnum::Running, $entry->status);
+        $projection = $repo->findByParentRunAndToolCall($parentRunId, $toolCallId);
+        $this->assertSame(DeferredSingleSubagentLaunchStatusEnum::Launched, $projection?->launchStatus);
+    }
+
+    public function testStartFailureAbortsAndMarksProjectionFailed(): void
+    {
+        $parentRunId = 'parent-deferred-start-fail';
+        $toolCallId = 'call-deferred-start-fail';
+
+        $agentRunner = $this->createStub(AgentRunnerInterface::class);
+        $agentRunner->method('start')->willThrowException(new \RuntimeException('dispatch refused'));
+
+        $def = $this->foregroundDefinition('worker-start-fail');
+        $service = $this->buildService($agentRunner, $this->createStub(RunStoreInterface::class), $def);
+
+        try {
+            $this->withToolContext($parentRunId, $toolCallId, static fn () => $service->execute($parentRunId, 'worker-start-fail', 'Fail start'));
+            $this->fail('Expected ToolCallException');
+        } catch (\Ineersa\AgentCore\Contract\Tool\ToolCallException $e) {
+            $this->assertStringContainsString('Subagent child launch failed', $e->getMessage());
+            $this->assertStringNotContainsString('Parallel subagent', $e->getMessage());
+        }
+
+        /** @var DeferredSingleSubagentLaunchRepository $repo */
+        $repo = self::getContainer()->get(DeferredSingleSubagentLaunchRepository::class);
+        $projection = $repo->findByParentRunAndToolCall($parentRunId, $toolCallId);
+        $this->assertSame(DeferredSingleSubagentLaunchStatusEnum::Failed, $projection?->launchStatus);
+    }
+
+    public function testPostStartPersistenceFailureReturnsDeferredMarker(): void
+    {
+        $parentRunId = 'parent-deferred-post-start';
+        $toolCallId = 'call-deferred-post-start';
+
+        $agentRunner = $this->createMock(AgentRunnerInterface::class);
+        $agentRunner->expects($this->once())->method('start')->willReturnCallback(static function ($input) use ($parentRunId): string {
+            $resolver = self::getContainer()->get(\Ineersa\CodingAgent\Agent\Artifact\AgentArtifactPathResolver::class);
+            $registryFile = $resolver->registryPath($parentRunId);
+            if (is_file($registryFile)) {
+                chmod($registryFile, 0o444);
+            }
+
+            return $input->runId;
+        });
+
+        $def = $this->foregroundDefinition('worker-post-start');
+        $service = $this->buildService($agentRunner, $this->createStub(RunStoreInterface::class), $def);
+
+        try {
+            $outcome = $this->withToolContext($parentRunId, $toolCallId, static fn () => $service->execute($parentRunId, 'worker-post-start', 'Post start'));
+            $this->assertInstanceOf(DeferredToolCompletionOutcome::class, $outcome);
+        } finally {
+            $resolver = self::getContainer()->get(\Ineersa\CodingAgent\Agent\Artifact\AgentArtifactPathResolver::class);
+            $registryFile = $resolver->registryPath($parentRunId);
+            if (is_file($registryFile)) {
+                chmod($registryFile, 0o644);
+            }
+        }
+    }
+
+    public function testMarkRunningForwardOnlyDoesNotRegressCompletedArtifact(): void
+    {
+        $parentRunId = 'parent-deferred-terminal';
+        $identityFactory = new DeferredSingleSubagentIdentityFactory();
+        $ids = $identityFactory->forParentToolCall($parentRunId, 'call-terminal');
+
+        $registry = self::getContainer()->get(AgentArtifactRegistry::class);
+        $registry->create($parentRunId, $ids['artifactId'], $ids['childRunId'], 'worker-terminal', \Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum::Subagent);
+        $registry->update($parentRunId, $ids['artifactId'], status: AgentArtifactStatusEnum::Completed, completedAt: new \DateTimeImmutable());
+
+        $identity = new \Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunIdentityDTO(
+            parentRunId: $parentRunId,
+            childRunId: $ids['childRunId'],
+            artifactId: $ids['artifactId'],
+            displayName: 'worker-terminal',
+            taskSummary: 'Done',
+            definitionModel: null,
+            artifactKind: \Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum::Subagent,
+        );
+        $lifecycle = self::getContainer()->get(\Ineersa\CodingAgent\Agent\Execution\ChildRun\Lifecycle\ChildRunArtifactLifecycleService::class);
+        $lifecycle->markRunningForwardOnly($identity);
+
+        $entry = $registry->get($parentRunId, $ids['artifactId']);
+        $this->assertSame(AgentArtifactStatusEnum::Completed, $entry->status);
     }
 
     private function foregroundDefinition(string $name): AgentDefinitionDTO

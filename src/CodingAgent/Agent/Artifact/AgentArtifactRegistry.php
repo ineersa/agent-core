@@ -124,6 +124,71 @@ final class AgentArtifactRegistry
     }
 
     /**
+     * Idempotently reserve an artifact for an exact immutable child identity.
+     *
+     * When the artifact already exists with the same agentRunId, agentName, and kind,
+     * returns the existing entry without mutating status (Pending, Running, or terminal).
+     * Conflicting identity fields throw so retries cannot fork a second child.
+     */
+    public function ensureReserved(
+        string $parentRunId,
+        string $artifactId,
+        string $agentRunId,
+        string $agentName,
+        AgentArtifactKindEnum $kind,
+    ): AgentArtifactEntryDTO {
+        $this->pathResolver->validatePathComponent($parentRunId, 'parentRunId');
+        $this->pathResolver->validatePathComponent($artifactId, 'artifactId');
+        $this->pathResolver->validatePathComponent($agentRunId, 'agentRunId');
+
+        $lock = $this->lockFactory->createLock("hatfield-agent-artifacts-{$parentRunId}");
+        $lock->acquire(true);
+
+        try {
+            $entries = $this->loadRegistry($parentRunId);
+
+            foreach ($entries as $existing) {
+                if ($existing->artifactId !== $artifactId) {
+                    continue;
+                }
+
+                if ($existing->agentRunId !== $agentRunId
+                    || $existing->agentName !== $agentName
+                    || $existing->kind !== $kind) {
+                    throw new \RuntimeException(\sprintf('Agent artifact "%s" already exists for parent run "%s" with conflicting identity (agentRunId/agentName/kind).', $artifactId, $parentRunId));
+                }
+
+                return $existing;
+            }
+
+            $now = new \DateTimeImmutable();
+            $paths = AgentArtifactPathsDTO::forArtifactId($artifactId);
+
+            $entry = new AgentArtifactEntryDTO(
+                artifactId: $artifactId,
+                parentRunId: $parentRunId,
+                agentRunId: $agentRunId,
+                agentName: $agentName,
+                kind: $kind,
+                status: AgentArtifactStatusEnum::Pending,
+                paths: $paths,
+                createdAt: $now,
+            );
+
+            $this->ensureArtifactDir($parentRunId, $artifactId);
+            $this->writeHandoff($parentRunId, $artifactId, '');
+
+            $entries[] = $entry;
+            $this->writeRegistry($parentRunId, $entries);
+            $this->writeMetadata($parentRunId, $entry);
+
+            return $entry;
+        } finally {
+            $lock->release();
+        }
+    }
+
+    /**
      * Update an existing artifact entry.
      *
      * Only the status, timestamps, summary, and error/clarification

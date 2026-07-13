@@ -61,6 +61,7 @@ final class SubagentExecutionServiceFactory
             'clock' => new NativeClock(),
             'launchProjectionRepository' => null,
             'identityFactory' => new DeferredSingleSubagentIdentityFactory(),
+            'artifactLifecycle' => null,
         ];
 
         $args = array_merge($defaults, $overrides);
@@ -78,7 +79,7 @@ final class SubagentExecutionServiceFactory
             $artifactFinalizer,
             $handoffRenderer,
         );
-        $artifactLifecycle = new ChildRunArtifactLifecycleService($args['artifactRegistry'], $args['childRunDirectory']);
+        $artifactLifecycle = $args['artifactLifecycle'] ?? new ChildRunArtifactLifecycleService($args['artifactRegistry'], $args['childRunDirectory']);
 
         $definitionPolicy = new SubagentLaunchDefinitionPolicyService($args['catalog'], $args['depthGuard'], $args['policyResolver'], $args['metadataReader']);
         $launchInputFactory = new SubagentChildLaunchInputFactory($args['promptBuilder'], $args['skillsContextBuilder'], $args['agentsContextBuilder'], $args['parentRunStore'], $args['appConfig']);
@@ -114,8 +115,9 @@ final class SubagentExecutionServiceFactory
             $lifecyclePolicyFactory,
             $args['contextAccessor'],
             $args['agentsConfig'],
+            $args['logger'],
         );
 
-        return new SubagentExecutionService($deferredSingleLaunch, $parallelExecution, $args['agentsConfig']);
+        return new SubagentExecutionService($deferredSingleLaunch, $parallelExecution);
     }
 }
