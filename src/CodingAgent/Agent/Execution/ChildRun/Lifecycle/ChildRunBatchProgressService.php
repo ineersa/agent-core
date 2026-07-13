@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Agent\Execution\ChildRun\Lifecycle;
 
 use Ineersa\AgentCore\Contract\RunStoreInterface;
 use Ineersa\AgentCore\Domain\Run\RunState;
+use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchItemSnapshotDTO;
@@ -27,7 +28,12 @@ final class ChildRunBatchProgressService
 
     public function mapTerminalProgressStatus(RunState $state): string
     {
-        return $this->lifecycleListener->mapTerminalProgressStatus($state);
+        return match ($state->status) {
+            RunStatus::Completed => 'completed',
+            RunStatus::Failed => 'failed',
+            RunStatus::Cancelled, RunStatus::Cancelling => 'cancelled',
+            default => 'done',
+        };
     }
 
     /**

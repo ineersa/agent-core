@@ -12,6 +12,7 @@ use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchItemSnapshotDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchSupervisionResultDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunSingleProgressContextDTO;
+use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunTerminalFinalizationRequestDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunTerminalOutcomeDTO;
 
 /**
@@ -45,12 +46,12 @@ final class ChildRunBatchInterruptionService
             $reason = $batch->isSingle() ? $policy->parentCancelSingleReason : $policy->parentCancelParallelReason;
             $this->agentRunner->cancel($childRunId, $reason);
             $cancelState = $this->childRunStore->get($childRunId);
-            $this->lifecycleListener->applyTerminalOutcome(new ChildRunTerminalOutcomeDTO(
+            $this->lifecycleListener->finalizeTerminalOutcome(ChildRunTerminalFinalizationRequestDTO::persistOnly(new ChildRunTerminalOutcomeDTO(
                 $snapshot->identity,
                 AgentArtifactStatusEnum::Cancelled,
                 summary: 'Cancelled by parent run.',
                 childState: $cancelState,
-            ));
+            )));
             $snapshot->markTerminalCancelled('Cancelled by parent run.');
         }
 
@@ -103,13 +104,16 @@ final class ChildRunBatchInterruptionService
                 $this->progressService->emitAndAdvance($batch->parentRunId, $update, $progressSeq);
             }
 
-            $this->lifecycleListener->applyTerminalOutcome(new ChildRunTerminalOutcomeDTO(
+            $artifactOutcome = new ChildRunTerminalOutcomeDTO(
                 $only,
                 AgentArtifactStatusEnum::Failed,
                 failureReason: 'Child run timed out.',
                 summary: 'Timed out after '.$batch->timeoutSeconds.'s.',
-            ));
-            $result = $this->lifecycleListener->timeoutToolResult($only, $batch->timeoutSeconds);
+            );
+            $finalization = $this->lifecycleListener->finalizeTerminalOutcome(
+                ChildRunTerminalFinalizationRequestDTO::singleTimeout($only, $batch->timeoutSeconds, $artifactOutcome),
+            );
+            $result = $finalization->presentationMessage;
 
             return new ChildRunBatchSupervisionResultDTO($batch->parentRunId, array_values($snapshots), ChildRunBatchCompletionKindEnum::SingleTimedOut, $result);
         }
@@ -120,12 +124,12 @@ final class ChildRunBatchInterruptionService
             }
 
             $this->agentRunner->cancel($childRunId, $policy->parallelTimeoutCancelReason);
-            $this->lifecycleListener->applyTerminalOutcome(new ChildRunTerminalOutcomeDTO(
+            $this->lifecycleListener->finalizeTerminalOutcome(ChildRunTerminalFinalizationRequestDTO::persistOnly(new ChildRunTerminalOutcomeDTO(
                 $snapshot->identity,
                 AgentArtifactStatusEnum::Failed,
                 failureReason: 'Child run timed out.',
                 summary: 'Timed out after '.$batch->timeoutSeconds.'s.',
-            ));
+            )));
             $snapshot->markTerminalFailed('Timed out after '.$batch->timeoutSeconds.'s.');
         }
 

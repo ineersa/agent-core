@@ -8,6 +8,7 @@ use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchItemSnapshotDTO;
+use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunTerminalFinalizationRequestDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunTerminalOutcomeDTO;
 
 /**
@@ -83,8 +84,8 @@ final class ChildRunBatchSnapshotTransitionService
         }
 
         if (RunStatus::Completed === $status) {
-            $summary = $this->lifecycleListener->summarizeCompletedSummary($state);
-            $this->lifecycleListener->applyTerminalOutcome(new ChildRunTerminalOutcomeDTO($identity, AgentArtifactStatusEnum::Completed, summary: $summary));
+            $result = $this->lifecycleListener->finalizeTerminalOutcome(ChildRunTerminalFinalizationRequestDTO::parallelRunTerminal($identity, $state));
+            $summary = $result->persistedArtifactSummary ?? '';
             $snapshot->markTerminalFromArtifactStatus(AgentArtifactStatusEnum::Completed, $summary);
 
             return;
@@ -92,14 +93,18 @@ final class ChildRunBatchSnapshotTransitionService
 
         if (RunStatus::Failed === $status) {
             $errorMsg = $state->errorMessage ?? 'Run failed without error message.';
-            $this->lifecycleListener->applyTerminalOutcome(new ChildRunTerminalOutcomeDTO($identity, AgentArtifactStatusEnum::Failed, failureReason: $errorMsg, summary: $errorMsg));
+            $this->lifecycleListener->finalizeTerminalOutcome(ChildRunTerminalFinalizationRequestDTO::persistOnly(
+                new ChildRunTerminalOutcomeDTO($identity, AgentArtifactStatusEnum::Failed, failureReason: $errorMsg, summary: $errorMsg),
+            ));
             $snapshot->markTerminalFailed($errorMsg);
 
             return;
         }
 
         if (\in_array($status, [RunStatus::Cancelled, RunStatus::Cancelling], true)) {
-            $this->lifecycleListener->applyTerminalOutcome(new ChildRunTerminalOutcomeDTO($identity, AgentArtifactStatusEnum::Cancelled, summary: 'Child run was cancelled.', childState: $state));
+            $this->lifecycleListener->finalizeTerminalOutcome(ChildRunTerminalFinalizationRequestDTO::persistOnly(
+                new ChildRunTerminalOutcomeDTO($identity, AgentArtifactStatusEnum::Cancelled, summary: 'Child run was cancelled.', childState: $state),
+            ));
             $snapshot->markTerminalCancelled('Child run was cancelled.');
         }
     }

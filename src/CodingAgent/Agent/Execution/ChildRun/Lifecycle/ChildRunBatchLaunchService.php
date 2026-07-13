@@ -14,6 +14,7 @@ use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchLaunchAbo
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchLifecyclePolicyDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchSupervisionResultDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunIdentityDTO;
+use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunTerminalFinalizationRequestDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunTerminalOutcomeDTO;
 use Psr\Log\LoggerInterface;
 
@@ -93,12 +94,12 @@ final class ChildRunBatchLaunchService
                 }
 
                 if ($identity->batchIndex < $failureIndex) {
-                    $this->lifecycleListener->applyTerminalOutcome(new ChildRunTerminalOutcomeDTO(
+                    $this->lifecycleListener->finalizeTerminalOutcome(ChildRunTerminalFinalizationRequestDTO::persistOnly(new ChildRunTerminalOutcomeDTO(
                         $identity,
                         AgentArtifactStatusEnum::Failed,
                         failureReason: $cause->getMessage(),
                         summary: $cancelledAfterMessage,
-                    ));
+                    )));
                     $snapshot->markTerminalFailed($cancelledAfterMessage);
 
                     continue;
@@ -111,12 +112,12 @@ final class ChildRunBatchLaunchService
                         continue;
                     }
 
-                    $this->lifecycleListener->applyTerminalOutcome(new ChildRunTerminalOutcomeDTO(
+                    $this->lifecycleListener->finalizeTerminalOutcome(ChildRunTerminalFinalizationRequestDTO::persistOnly(new ChildRunTerminalOutcomeDTO(
                         $identity,
                         AgentArtifactStatusEnum::Failed,
                         failureReason: $cause->getMessage(),
                         summary: $failedToStartMessage,
-                    ));
+                    )));
                     $snapshot->markTerminalFailed($failedToStartMessage);
 
                     continue;
@@ -179,12 +180,12 @@ final class ChildRunBatchLaunchService
 
             if (AgentArtifactStatusEnum::Running === $status) {
                 $this->agentRunner->cancel($childRunId, $policy->launchAbortSiblingCancelReason);
-                $this->lifecycleListener->applyTerminalOutcome(new ChildRunTerminalOutcomeDTO(
+                $this->lifecycleListener->finalizeTerminalOutcome(ChildRunTerminalFinalizationRequestDTO::persistOnly(new ChildRunTerminalOutcomeDTO(
                     $identity,
                     AgentArtifactStatusEnum::Failed,
                     failureReason: $cause->getMessage(),
                     summary: $cancelledAfterMessage,
-                ));
+                )));
                 $snapshot->markTerminalFailed($cancelledAfterMessage);
 
                 continue;
@@ -194,12 +195,12 @@ final class ChildRunBatchLaunchService
                 $this->artifactLifecycle->removePendingReservation($identity);
                 $snapshot->markTerminalFailed($neverLaunchedMessage);
             } else {
-                $this->lifecycleListener->applyTerminalOutcome(new ChildRunTerminalOutcomeDTO(
+                $this->lifecycleListener->finalizeTerminalOutcome(ChildRunTerminalFinalizationRequestDTO::persistOnly(new ChildRunTerminalOutcomeDTO(
                     $identity,
                     AgentArtifactStatusEnum::Failed,
                     failureReason: $cause->getMessage(),
                     summary: $failedToStartMessage,
-                ));
+                )));
                 $snapshot->markTerminalFailed($failedToStartMessage);
             }
         }

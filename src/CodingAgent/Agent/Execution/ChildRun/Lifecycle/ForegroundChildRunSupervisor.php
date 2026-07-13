@@ -17,6 +17,7 @@ use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchLaunchAbo
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchSupervisionResultDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunIdentityDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunSingleProgressContextDTO;
+use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunTerminalFinalizationRequestDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\PreparedAgentChildRunDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Infrastructure\ChildRunParentSequenceCoordinator;
 use Symfony\Component\Clock\ClockInterface;
@@ -158,12 +159,13 @@ final class ForegroundChildRunSupervisor
         );
         $this->progressService->emitAndAdvance($batch->parentRunId, $update, $progressSeq);
 
-        $result = match ($state->status) {
-            RunStatus::Completed => $this->lifecycleListener->completeToolResult($identity, $state),
-            RunStatus::Failed => $this->lifecycleListener->failToolResult($identity, $state),
-            RunStatus::Cancelled, RunStatus::Cancelling => $this->lifecycleListener->cancelChildToolResult($identity, $state),
+        $finalizationRequest = match ($state->status) {
+            RunStatus::Completed => ChildRunTerminalFinalizationRequestDTO::singleCompleted($identity, $state),
+            RunStatus::Failed => ChildRunTerminalFinalizationRequestDTO::singleFailed($identity, $state),
+            RunStatus::Cancelled, RunStatus::Cancelling => ChildRunTerminalFinalizationRequestDTO::singleChildCancelled($identity, $state),
             default => throw new ToolCallException('Unexpected terminal child status: '.$state->status->value, retryable: false),
         };
+        $result = $this->lifecycleListener->finalizeTerminalOutcome($finalizationRequest)->presentationMessage;
 
         $snapshot->terminal = true;
         $snapshot->artifactStatus = match ($state->status) {
