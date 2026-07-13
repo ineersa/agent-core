@@ -13,6 +13,7 @@ use Symfony\AI\Platform\Exception\RateLimitExceededException;
 use Symfony\AI\Platform\Exception\RuntimeException;
 use Symfony\AI\Platform\Model;
 use Symfony\AI\Platform\Result\MultiPartResult;
+use Symfony\AI\Platform\Result\RawHttpResult;
 use Symfony\AI\Platform\Result\RawResultInterface;
 use Symfony\AI\Platform\Result\ResultInterface;
 use Symfony\AI\Platform\Result\Stream\Delta\TextDelta;
@@ -46,8 +47,46 @@ final class ResultConverter implements ResultConverterInterface
 
     public function convert(RawResultInterface $result, array $options = []): ResultInterface
     {
-        $response = $result->getObject();
+        if (true === ($options['stream'] ?? false)) {
+            if ($result instanceof RawHttpResult) {
+                $this->assertSuccessfulHttpResponse($result->getObject());
+            }
 
+            return new StreamResult($this->convertStream($result));
+        }
+
+        if (!$result instanceof RawHttpResult) {
+            throw new RuntimeException('Codex non-streaming conversion requires an HTTP response.');
+        }
+
+        $this->assertSuccessfulHttpResponse($result->getObject());
+
+        $data = $result->getData();
+
+        if (isset($data['error']['code']) && 'content_filter' === $data['error']['code']) {
+            throw new ContentFilterException($data['error']['message'] ?? 'Content filter triggered');
+        }
+
+        if (isset($data['error'])) {
+            throw new RuntimeException($this->generateErrorMessage($this->extractStreamError(['error' => $data['error']])));
+        }
+
+        if (!isset($data[self::KEY_OUTPUT])) {
+            throw new RuntimeException('Response does not contain output.');
+        }
+
+        $results = $this->convertOutputArray($data[self::KEY_OUTPUT]);
+
+        return 1 === \count($results) ? array_pop($results) : new MultiPartResult(array_values($results));
+    }
+
+    public function getTokenUsageExtractor(): TokenUsageExtractor
+    {
+        return new TokenUsageExtractor();
+    }
+
+    private function assertSuccessfulHttpResponse(ResponseInterface $response): void
+    {
         if (401 === $response->getStatusCode()) {
             throw new AuthenticationException($this->extractErrorDiagnostics($response));
         }
@@ -64,33 +103,6 @@ final class ResultConverter implements ResultConverterInterface
         if ($statusCode < 200 || $statusCode >= 300) {
             throw new RuntimeException($this->formatGenericHttpExceptionMessage($statusCode, $response));
         }
-
-        if (true === ($options['stream'] ?? false)) {
-            return new StreamResult($this->convertStream($result));
-        }
-
-        $data = $result->getData();
-
-        if (isset($data['error']['code']) && 'content_filter' === $data['error']['code']) {
-            throw new ContentFilterException($data['error']['message'] ?? 'Content filter triggered');
-        }
-
-        if (isset($data['error'])) {
-            throw new RuntimeException(\sprintf('Error "%s"-%s (%s): "%s".', $data['error']['code'] ?? '-', $data['error']['type'] ?? '-', $data['error']['param'] ?? '-', $data['error']['message'] ?? '-'));
-        }
-
-        if (!isset($data[self::KEY_OUTPUT])) {
-            throw new RuntimeException('Response does not contain output.');
-        }
-
-        $results = $this->convertOutputArray($data[self::KEY_OUTPUT]);
-
-        return 1 === \count($results) ? array_pop($results) : new MultiPartResult(array_values($results));
-    }
-
-    public function getTokenUsageExtractor(): TokenUsageExtractor
-    {
-        return new TokenUsageExtractor();
     }
 
     /**
@@ -294,7 +306,7 @@ final class ResultConverter implements ResultConverterInterface
             // response.incomplete — context limit or other truncation.
             if ('response.incomplete' === $type) {
                 $response = \is_array($event['response'] ?? null) ? $event['response'] : [];
-                $reason = $response['incomplete_details']['reason'] ?? 'unknown';
+                $reason = $this->sanitizeIncompleteReason($response['incomplete_details']['reason'] ?? null);
 
                 throw new RuntimeException(\sprintf('Codex stream ended incomplete (%s).', $reason));
             }
@@ -445,7 +457,7 @@ final class ResultConverter implements ResultConverterInterface
      *
      * @param array<string, mixed> $event
      *
-     * @return array{code?: string|null, type?: string|null, param?: string|null, message?: string|null}
+     * @return array{code?: string|null, type?: string|null, param?: string|null}
      */
     private function extractStreamError(array $event): array
     {
@@ -457,25 +469,51 @@ final class ResultConverter implements ResultConverterInterface
             'code' => \is_string($event['code'] ?? null) ? $event['code'] : null,
             'type' => \is_string($event['type'] ?? null) && 'error' !== $event['type'] ? $event['type'] : null,
             'param' => \is_string($event['param'] ?? null) ? $event['param'] : null,
-            'message' => \is_string($event['message'] ?? null) ? $event['message'] : null,
         ];
     }
 
     /**
-     * Build a privacy-safe error message from extracted stream error fields,
-     * following the same format as the non-stream error path.
+     * Privacy-safe stream error text: allowlisted code/type/param only (bounded).
      *
-     * @param array{code?: string|null, type?: string|null, param?: string|null, message?: string|null} $error
+     * @param array{code?: string|null, type?: string|null, param?: string|null} $error
      */
     private function generateErrorMessage(array $error): string
     {
-        return \sprintf(
-            'Error "%s"-%s (%s): "%s".',
-            $error['code'] ?? '-',
-            $error['type'] ?? '-',
-            $error['param'] ?? '-',
-            $error['message'] ?? '-',
-        );
+        $parts = [];
+        foreach (['code', 'type', 'param'] as $key) {
+            $value = $error[$key] ?? null;
+            if (!\is_string($value) || '' === trim($value)) {
+                continue;
+            }
+            $sanitized = mb_substr(trim($value), 0, 64);
+            if ('' !== $sanitized) {
+                $parts[] = $sanitized;
+            }
+        }
+
+        if ([] === $parts) {
+            return 'Codex stream error.';
+        }
+
+        return \sprintf('[%s]', implode('/', $parts));
+    }
+
+    private function sanitizeIncompleteReason(mixed $reason): string
+    {
+        if (!\is_string($reason) || '' === trim($reason)) {
+            return 'unknown';
+        }
+
+        $sanitized = mb_substr(trim($reason), 0, 64);
+        if ('' === $sanitized) {
+            return 'unknown';
+        }
+
+        if (!preg_match('/^[a-zA-Z0-9_.-]+$/', $sanitized)) {
+            return 'unknown';
+        }
+
+        return $sanitized;
     }
 
     /**

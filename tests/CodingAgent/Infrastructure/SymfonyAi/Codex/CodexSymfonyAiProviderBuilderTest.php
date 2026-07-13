@@ -19,6 +19,7 @@ use Ineersa\CodingAgent\Infrastructure\SymfonyAi\Codex\CodexSymfonyAiProviderBui
 use Ineersa\CodingAgent\Infrastructure\SymfonyAi\SymfonyAiProviderFactory;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\FlockStore;
 use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
@@ -358,6 +359,57 @@ final class CodexSymfonyAiProviderBuilderTest extends TestCase
 
         $factory = $this->createFactory(['openai-codex' => $providerConfig]);
         $factory->createProviders();
+    }
+
+    public function testNullAndBlankTransportDefaultToWebsocketProvider(): void
+    {
+        $this->authStorage->saveCredentials('openai-codex', new CodexAuthRecord(
+            access: 'stored-access-token',
+            refresh: 'stored-refresh-token',
+            expires: time() + 3600,
+            accountId: 'stored-account-id',
+        ));
+
+        foreach ([null, '', '   '] as $transport) {
+            $provider = new AiProviderConfig(
+                id: 'openai-codex',
+                type: 'codex',
+                enabled: true,
+                baseUrl: 'https://chatgpt.com/backend-api',
+                transport: $transport,
+                models: [
+                    'gpt-5.5' => new AiModelDefinition(
+                        id: 'gpt-5.5',
+                        toolCalling: true,
+                        reasoning: true,
+                    ),
+                ],
+            );
+
+            $factory = $this->createFactory([$provider->id => $provider], $this->authStorage);
+            $providers = $factory->createProviders();
+            $this->assertArrayHasKey('openai-codex', $providers, 'transport='.var_export($transport, true));
+        }
+    }
+
+    public function testInvalidTransportThrows(): void
+    {
+        $provider = new AiProviderConfig(
+            id: 'openai-codex',
+            type: 'codex',
+            enabled: true,
+            baseUrl: 'https://chatgpt.com/backend-api',
+            transport: 'auto',
+        );
+
+        $builder = new CodexSymfonyAiProviderBuilder(
+            eventDispatcher: $this->createStub(EventDispatcherInterface::class),
+            codexAuth: $this->authStorage,
+            codexOAuth: new CodexOAuthService($this->authStorage),
+        );
+
+        $this->expectException(\InvalidArgumentException::class);
+        $builder->build($provider, new MockHttpClient());
     }
 
     /**

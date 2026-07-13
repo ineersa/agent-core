@@ -16,6 +16,8 @@ use Symfony\Contracts\HttpClient\ResponseInterface as HttpResponse;
 
 final class CodexModelClientTest extends TestCase
 {
+    use AssertUuidV7Trait;
+
     public function testItSupportsCodexModel(): void
     {
         $modelClient = new CodexModelClient(new MockHttpClient(), 'https://chatgpt.com/backend-api', 'test-token', 'acct-123');
@@ -42,8 +44,13 @@ final class CodexModelClientTest extends TestCase
             self::assertSame('User-Agent: hatfield', $options['normalized_headers']['user-agent'][0]);
             self::assertSame('OpenAI-Beta: responses=experimental', $options['normalized_headers']['openai-beta'][0]);
             self::assertArrayHasKey('x-client-request-id', $options['normalized_headers']);
+            $requestId = $options['normalized_headers']['x-client-request-id'][0];
+            self::assertStringStartsWith('x-client-request-id: ', $requestId);
+            $requestId = substr($requestId, \strlen('x-client-request-id: '));
+            self::assertUuidVersion7($requestId);
 
             $body = json_decode($options['body'], true);
+            self::assertSame($requestId, $body['prompt_cache_key'] ?? null);
             self::assertSame('POST', $method);
             self::assertSame('gpt-5.5', $body['model']);
             self::assertSame('test message', $body['input'][0]['content']);
@@ -144,6 +151,7 @@ final class CodexModelClientTest extends TestCase
             self::assertArrayNotHasKey('tools_ref', $body);
             self::assertArrayNotHasKey('turn_no', $body);
             self::assertArrayNotHasKey('run_id', $body);
+            self::assertArrayNotHasKey('provider_cache_key', $body);
 
             return new MockResponse();
         };
@@ -158,6 +166,7 @@ final class CodexModelClientTest extends TestCase
             'tools_ref' => 'toolset-1',
             'turn_no' => 1,
             'run_id' => 'run-abc',
+            'provider_cache_key' => '0194a000-0000-7000-8000-000000000001',
             'temperature' => 0.7,
         ];
 
@@ -165,6 +174,29 @@ final class CodexModelClientTest extends TestCase
             new CodexModel('gpt-5.5'),
             ['input' => [['role' => 'user', 'content' => 'Hello']]],
             $options,
+        );
+    }
+
+    public function testProviderCacheKeyDrivesHeadersAndPromptCacheKeyNotNumericRunId(): void
+    {
+        $providerKey = '0194a000-0000-7000-8000-000000000099';
+        $httpClient = new MockHttpClient([
+            static function (string $method, string $url, array $options) use ($providerKey): HttpResponse {
+                $header = $options['normalized_headers']['x-client-request-id'][0];
+                self::assertSame('x-client-request-id: '.$providerKey, $header);
+                self::assertSame('session-id: '.$providerKey, $options['normalized_headers']['session-id'][0]);
+                $body = json_decode($options['body'], true);
+                self::assertSame($providerKey, $body['prompt_cache_key']);
+                self::assertArrayNotHasKey('provider_cache_key', $body);
+
+                return new MockResponse('', ['http_code' => 200]);
+            },
+        ]);
+        $modelClient = new CodexModelClient($httpClient, 'https://chatgpt.com/backend-api', 'test-access-token', 'acct-123');
+        $modelClient->request(
+            new CodexModel('gpt-5.6-luna'),
+            ['input' => [['role' => 'user', 'content' => 'Hello']]],
+            ['run_id' => '1', 'provider_cache_key' => $providerKey],
         );
     }
 
@@ -247,6 +279,7 @@ final class CodexModelClientTest extends TestCase
             self::assertArrayNotHasKey('tools_ref', $body);
             self::assertArrayNotHasKey('turn_no', $body);
             self::assertArrayNotHasKey('run_id', $body);
+            self::assertArrayNotHasKey('provider_cache_key', $body);
 
             return new MockResponse();
         };
@@ -371,7 +404,6 @@ final class CodexModelClientTest extends TestCase
         $this->assertSame('hatfield', $loggedContext['originator']);
 
         // Must contain new diagnostics fields
-        $this->assertArrayHasKey('has_client_request_id', $loggedContext);
     }
 
     /**
@@ -404,13 +436,18 @@ final class CodexModelClientTest extends TestCase
     }
 
     /**
-     * Without run_id, prompt_cache_key must NOT be present.
+     * Without explicit run_id, Codex correlation uses a generated UUIDv7 for x-client-request-id and prompt_cache_key.
      */
-    public function testItDoesNotSetPromptCacheKeyWithoutRunId(): void
+    public function testItSetsPromptCacheKeyFromGeneratedCorrelationIdWithoutRunId(): void
     {
         $resultCallback = static function (string $method, string $url, array $options): HttpResponse {
+            $requestId = $options['normalized_headers']['x-client-request-id'][0];
+            self::assertStringStartsWith('x-client-request-id: ', $requestId);
+            $requestId = substr($requestId, \strlen('x-client-request-id: '));
+            self::assertUuidVersion7($requestId);
+
             $body = json_decode($options['body'], true, 512, \JSON_THROW_ON_ERROR);
-            self::assertArrayNotHasKey('prompt_cache_key', $body);
+            self::assertSame($requestId, $body['prompt_cache_key']);
 
             return new MockResponse();
         };
@@ -456,6 +493,33 @@ final class CodexModelClientTest extends TestCase
         );
     }
 
+    public function testEmptyPromptCacheKeyUsesGeneratedUuidVersion7AlignedWithHeader(): void
+    {
+        $httpClient = new MockHttpClient([
+            static function (string $method, string $url, array $options): HttpResponse {
+                $header = $options['normalized_headers']['x-client-request-id'][0];
+                $requestId = substr($header, \strlen('x-client-request-id: '));
+                self::assertUuidVersion7($requestId);
+
+                $body = json_decode($options['body'], true);
+                self::assertSame($requestId, $body['prompt_cache_key'] ?? null);
+
+                return new MockResponse('', ['http_code' => 200]);
+            },
+        ]);
+
+        $modelClient = new CodexModelClient(
+            $httpClient,
+            'https://chatgpt.com/backend-api',
+            'test-token',
+            'acct-123',
+        );
+        $modelClient->request(
+            new CodexModel('gpt-5.6-luna'),
+            ['input' => [['role' => 'user', 'content' => 'Hello']], 'prompt_cache_key' => ''],
+        );
+    }
+
     /**
      * Test thesis: a long-lived worker recovers from an expired/revoked token via
      * one force-refresh + retry, without manual auth:codex --refresh.
@@ -464,6 +528,7 @@ final class CodexModelClientTest extends TestCase
     {
         $refreshCalls = 0;
         $requestCount = 0;
+        $firstRequestId = null;
         $refresher = static function () use (&$refreshCalls): string {
             ++$refreshCalls;
 
@@ -471,17 +536,27 @@ final class CodexModelClientTest extends TestCase
         };
 
         $httpClient = new MockHttpClient([
-            static function () use (&$requestCount): HttpResponse {
+            static function (string $method, string $url, array $options) use (&$requestCount, &$firstRequestId): HttpResponse {
                 ++$requestCount;
+                $firstHeader = $options['normalized_headers']['x-client-request-id'][0];
+                $firstRequestId = substr($firstHeader, \strlen('x-client-request-id: '));
 
                 return new MockResponse('', ['http_code' => 401]);
             },
-            static function (string $method, string $url, array $options) use (&$requestCount): HttpResponse {
+            static function (string $method, string $url, array $options) use (&$requestCount, &$firstRequestId): HttpResponse {
                 ++$requestCount;
                 self::assertSame('Authorization: Bearer new-token', $options['normalized_headers']['authorization'][0]);
                 self::assertSame('Accept: text/event-stream', $options['normalized_headers']['accept'][0]);
                 self::assertSame('User-Agent: hatfield', $options['normalized_headers']['user-agent'][0]);
                 self::assertSame('originator: hatfield', $options['normalized_headers']['originator'][0]);
+                $retryHeader = $options['normalized_headers']['x-client-request-id'][0];
+                self::assertStringStartsWith('x-client-request-id: ', $retryHeader);
+                $retryRequestId = substr($retryHeader, \strlen('x-client-request-id: '));
+                self::assertUuidVersion7($retryRequestId);
+                self::assertNotSame($firstRequestId, $retryRequestId);
+
+                $body = json_decode($options['body'], true);
+                self::assertSame($retryRequestId, $body['prompt_cache_key'] ?? null);
 
                 return new MockResponse('', ['http_code' => 200]);
             },
@@ -501,6 +576,57 @@ final class CodexModelClientTest extends TestCase
         $result = $modelClient->request(
             new CodexModel('gpt-5.6-luna'),
             ['input' => [['role' => 'user', 'content' => 'Hello']]],
+        );
+
+        $this->assertSame(200, $result->getObject()->getStatusCode());
+        $this->assertSame(2, $requestCount);
+        $this->assertSame(1, $refreshCalls);
+    }
+
+    public function test401RetryPreservesExplicitRunIdAcrossHeaderAndBody(): void
+    {
+        $refreshCalls = 0;
+        $requestCount = 0;
+        $refresher = static function () use (&$refreshCalls): string {
+            ++$refreshCalls;
+
+            return 'new-token';
+        };
+
+        $httpClient = new MockHttpClient([
+            static function (string $method, string $url, array $options) use (&$requestCount): HttpResponse {
+                ++$requestCount;
+
+                return new MockResponse('', ['http_code' => 401]);
+            },
+            static function (string $method, string $url, array $options) use (&$requestCount): HttpResponse {
+                ++$requestCount;
+                $retryHeader = $options['normalized_headers']['x-client-request-id'][0];
+                $retryRequestId = substr($retryHeader, \strlen('x-client-request-id: '));
+                self::assertSame('session-run-keep', $retryRequestId);
+
+                $body = json_decode($options['body'], true);
+                self::assertSame('session-run-keep', $body['prompt_cache_key'] ?? null);
+
+                return new MockResponse('', ['http_code' => 200]);
+            },
+        ]);
+
+        $modelClient = new CodexModelClient(
+            $httpClient,
+            'https://chatgpt.com/backend-api',
+            'stale-token',
+            'acct-123',
+            '/codex/responses',
+            'hatfield',
+            null,
+            $refresher,
+        );
+
+        $result = $modelClient->request(
+            new CodexModel('gpt-5.6-luna'),
+            ['input' => [['role' => 'user', 'content' => 'Hello']]],
+            ['run_id' => 'session-run-keep'],
         );
 
         $this->assertSame(200, $result->getObject()->getStatusCode());

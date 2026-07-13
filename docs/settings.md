@@ -1054,6 +1054,16 @@ All z.ai models have zero cost (plan-based billing).
 
 #### openai-codex
 
+Codex providers support an explicit transport:
+
+| `transport` | Behavior |
+| --- | --- |
+| `websocket` (default) | WebSocket handshake to `wss://…/codex/responses`, one connection per request, `response.create` frame. Required for GPT-5.6 models. |
+| `sse` | Legacy HTTP/SSE POST to `/codex/responses`. Diagnostic only; GPT-5.6 models return model-not-found on SSE. |
+
+WebSocket handshake sends `OpenAI-Beta: responses_websockets=2026-02-06` and does **not** send SSE `Accept` / `Content-Type` headers.
+
+
 OpenAI Codex backend via OpenAI Responses API (`type: codex`). Uses the
 OpenAICodex platform bridge which talks to the ChatGPT backend at
 `https://chatgpt.com/backend-api/codex/responses`.

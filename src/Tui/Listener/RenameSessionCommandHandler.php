@@ -81,8 +81,8 @@ final class RenameSessionCommandHandler implements SlashCommandHandler
 
         // Load the persisted name to confirm what was stored (the store may
         // sanitise/truncate the requested name).
-        $meta = $this->sessionStore->loadMetadata($sessionId);
-        $persistedName = $meta['name'] ?? trim($newName);
+        $session = $this->sessionStore->findSession($sessionId);
+        $persistedName = null !== $session ? $session->name : trim($newName);
 
         return new TranscriptMessage(
             \sprintf('Session %s renamed to "%s"', $sessionId, $persistedName),

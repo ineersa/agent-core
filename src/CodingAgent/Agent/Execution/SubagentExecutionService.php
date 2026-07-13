@@ -30,7 +30,7 @@ use Ineersa\CodingAgent\Skills\SkillsContextBuilder;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Clock\ClockInterface;
 use Symfony\Component\Clock\MonotonicClock;
-use Symfony\Component\Uid\Uuid;
+use Symfony\Component\Uid\UuidV7;
 
 /**
  * Orchestrates foreground subagent execution (single child or parallel tasks).
@@ -116,7 +116,7 @@ final class SubagentExecutionService
 
         // 4. Create artifact ID and child run ID (RFC 4122).
         $artifactId = 'agent_'.bin2hex(random_bytes(8));
-        $agentRunId = Uuid::v4()->toRfc4122();
+        $agentRunId = UuidV7::v7()->toRfc4122();
 
         // 5. Create artifact entry in Pending.
         $entry = $this->artifactRegistry->create(
@@ -410,7 +410,7 @@ final class SubagentExecutionService
                 'agentName' => $agentName,
                 'task' => $taskText,
                 'artifactId' => 'agent_'.bin2hex(random_bytes(8)),
-                'agentRunId' => Uuid::v4()->toRfc4122(),
+                'agentRunId' => UuidV7::v7()->toRfc4122(),
                 'definition' => $definition,
             ];
         }

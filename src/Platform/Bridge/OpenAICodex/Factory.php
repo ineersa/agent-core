@@ -8,6 +8,7 @@ use Psr\Log\LoggerInterface;
 use Symfony\AI\Platform\Bridge\OpenAICodex\Contract\CodexContract;
 use Symfony\AI\Platform\Contract;
 use Symfony\AI\Platform\ModelCatalog\ModelCatalogInterface;
+use Symfony\AI\Platform\ModelClientInterface;
 use Symfony\AI\Platform\ModelRouter\CatalogBasedModelRouter;
 use Symfony\AI\Platform\ModelRouterInterface;
 use Symfony\AI\Platform\Platform;
@@ -35,15 +36,29 @@ class Factory
         string $name = 'openai-codex',
         ?LoggerInterface $logger = null,
         ?\Closure $accessTokenRefresher = null,
+        CodexTransportEnum $transport = CodexTransportEnum::Websocket,
+        ?CodexWebSocketConnectorInterface $websocketConnector = null,
     ): ProviderInterface {
-        // Use the raw HttpClientInterface directly — no EventSourceHttpClient
-        // wrapping. The CodexSseStream (inside CodexModelClient) handles SSE
-        // parsing independently of content-type headers.
         $httpClient ??= HttpClient::create();
+        $requestBodyFactory = new CodexRequestBodyFactory();
+
+        $modelClient = self::createModelClient(
+            $transport,
+            $httpClient,
+            $baseUrl,
+            $accessToken,
+            $accountId,
+            $responsesPath,
+            $originator,
+            $logger,
+            $accessTokenRefresher,
+            $requestBodyFactory,
+            $websocketConnector,
+        );
 
         return new Provider(
             $name,
-            [new CodexModelClient($httpClient, $baseUrl, $accessToken, $accountId, $responsesPath, $originator, $logger, $accessTokenRefresher)],
+            [$modelClient],
             [new ResultConverter()],
             $modelCatalog,
             $contract ?? CodexContract::create(),
@@ -68,11 +83,54 @@ class Factory
         ?ModelRouterInterface $modelRouter = null,
         ?LoggerInterface $logger = null,
         ?\Closure $accessTokenRefresher = null,
+        CodexTransportEnum $transport = CodexTransportEnum::Websocket,
+        ?CodexWebSocketConnectorInterface $websocketConnector = null,
     ): Platform {
         return new Platform(
-            [self::createProvider($baseUrl, $accessToken, $accountId, $httpClient, $modelCatalog, $contract, $eventDispatcher, $responsesPath, $originator, $name, $logger, $accessTokenRefresher)],
+            [self::createProvider($baseUrl, $accessToken, $accountId, $httpClient, $modelCatalog, $contract, $eventDispatcher, $responsesPath, $originator, $name, $logger, $accessTokenRefresher, $transport, $websocketConnector)],
             $modelRouter ?? new CatalogBasedModelRouter(),
             $eventDispatcher,
         );
+    }
+
+    private static function createModelClient(
+        CodexTransportEnum $transport,
+        HttpClientInterface $httpClient,
+        string $baseUrl,
+        string $accessToken,
+        string $accountId,
+        string $responsesPath,
+        string $originator,
+        ?LoggerInterface $logger,
+        ?\Closure $accessTokenRefresher,
+        CodexRequestBodyFactory $requestBodyFactory,
+        ?CodexWebSocketConnectorInterface $websocketConnector,
+    ): ModelClientInterface {
+        return match ($transport) {
+            CodexTransportEnum::Sse => new CodexModelClient(
+                $httpClient,
+                $baseUrl,
+                $accessToken,
+                $accountId,
+                $responsesPath,
+                $originator,
+                $logger,
+                $accessTokenRefresher,
+                $requestBodyFactory,
+            ),
+            CodexTransportEnum::Websocket => new CodexWebSocketModelClient(
+                $websocketConnector ?? new AmpCodexWebSocketConnector(),
+                new CodexWebSocketUrlResolver(),
+                new CodexWebSocketHandshakeHeadersFactory(),
+                $requestBodyFactory,
+                $baseUrl,
+                $accessToken,
+                $accountId,
+                $responsesPath,
+                $originator,
+                $logger,
+                $accessTokenRefresher,
+            ),
+        };
     }
 }

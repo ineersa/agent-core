@@ -170,9 +170,10 @@ final class TraceReplayTest extends KernelTestCase
         $this->assertSame($fixture['usage']['total_tokens'], $result->usage['total_tokens']);
 
         // Session metadata remains available
-        $meta = $this->sessionMetaStore->readSessionMetadata($replaySessId);
-        $this->assertSame($fixture['model'], $meta['model'] ?? null);
-        $this->assertSame($fixture['reasoning'], $meta['reasoning'] ?? null);
+        $session = $this->sessionMetaStore->findSession($replaySessId);
+        $this->assertNotNull($session);
+        $this->assertSame($fixture['model'], $session->model ?? null);
+        $this->assertSame($fixture['reasoning'], $session->reasoning ?? null);
     }
 
     // ──────────────────────────────────────────────
@@ -268,9 +269,10 @@ final class TraceReplayTest extends KernelTestCase
         $persistSessId = $this->writeSessionMetadata('', []);
 
         // Initially no model/reasoning metadata — only identity fields exist
-        $meta = $this->sessionMetaStore->readSessionMetadata($persistSessId);
-        $this->assertArrayNotHasKey('model', $meta, 'Model not set before change');
-        $this->assertArrayNotHasKey('reasoning', $meta, 'Reasoning not set before change');
+        $session = $this->sessionMetaStore->findSession($persistSessId);
+        $this->assertNotNull($session);
+        $this->assertNull($session->model, 'Model not set before change');
+        $this->assertNull($session->reasoning, 'Reasoning not set before change');
 
         // Change model and reasoning
         $selectionService->changeModel(
@@ -280,12 +282,13 @@ final class TraceReplayTest extends KernelTestCase
         $selectionService->changeReasoning('low', $persistSessId);
 
         // Verify metadata was persisted
-        $meta = $this->sessionMetaStore->readSessionMetadata($persistSessId);
-        $this->assertSame('deepseek/deepseek-v4-flash', $meta['model'] ?? null);
-        $this->assertSame('deepseek', $meta['model_provider'] ?? null);
-        $this->assertSame('deepseek-v4-flash', $meta['model_name'] ?? null);
-        $this->assertSame('low', $meta['reasoning'] ?? null);
-        $this->assertArrayHasKey('updated_at', $meta);
+        $session = $this->sessionMetaStore->findSession($persistSessId);
+        $this->assertNotNull($session);
+        $this->assertSame('deepseek/deepseek-v4-flash', $session->model ?? null);
+        $this->assertSame('deepseek', $session->modelProvider ?? null);
+        $this->assertSame('deepseek-v4-flash', $session->modelName ?? null);
+        $this->assertSame('low', $session->reasoning ?? null);
+        $this->assertInstanceOf(\DateTimeImmutable::class, $session->updatedAt);
 
         // Resume resolves from persisted metadata
         $resolvedModel = $selectionService->resolveInitialModel(
@@ -406,7 +409,7 @@ final class TraceReplayTest extends KernelTestCase
         $catalog = $appConfig->catalog
             ?? new HatfieldModelCatalog(new AiConfig(defaultModel: '', defaultReasoning: 'medium', providers: []));
 
-        return new SessionAwareModelResolver($selectionService, $catalog);
+        return new SessionAwareModelResolver($selectionService, $catalog, $this->sessionMetaStore);
     }
 
     private function createSelectionService(array $aiData): ModelSelectionService
