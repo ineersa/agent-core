@@ -118,9 +118,10 @@ final readonly class DynamicToolDescriptionProcessor implements InputProcessorIn
         $activeSet = $this->toolSetResolver->resolve($toolsRef, $turnNo, $runId);
 
         // Clean up resolver-only options so they don't leak to the platform.
-        // run_id is also consumed here for ToolSetResolver context, but must remain
-        // in options for downstream provider correlation (e.g. Codex prompt_cache_key).
-        // CodexRequestBodyFactory strips run_id from the wire JSON after deriving cache keys.
+        // run_id is consumed here for ToolSetResolver context but must remain in options
+        // for downstream provider correlation/cache context; provider-specific request
+        // mapping is responsible for consuming or sanitizing internal correlation fields
+        // before wire serialization.
         unset($options['tools_ref'], $options['turn_no']);
 
         if ([] === $activeSet->toolNames) {
