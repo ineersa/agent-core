@@ -259,8 +259,8 @@ final class LlamaCppSmokeTest extends KernelTestCase
         }
 
         // Session metadata is still intact — model resolution used it correctly
-        $meta = $this->sessionMetaStore->readSessionMetadata($this->sessionId);
-        $this->assertSame($modelRef, $meta['model'] ?? null,
+        $session = $this->sessionMetaStore->findSession($this->sessionId);
+        $this->assertSame($modelRef, $session->model ?? null,
             'Session metadata model should be preserved after invocation');
     }
 
@@ -465,9 +465,6 @@ final class LlamaCppSmokeTest extends KernelTestCase
         }
         if (isset($meta['reasoning']) && \is_string($meta['reasoning'])) {
             $entity->reasoning = $meta['reasoning'];
-        }
-        if (isset($meta['session_id']) && \is_string($meta['session_id'])) {
-            // No-op: session_id is always the auto-increment id.
         }
 
         $this->entityManager->flush();

@@ -86,10 +86,10 @@ class ModelSettingsPersisterTest extends IsolatedKernelTestCase
         $this->persister->persistModel('deepseek/deepseek-v4-flash', 'deepseek', 'deepseek-v4-flash', $this->sessionId);
 
         // Session metadata
-        $meta = $this->sessionMetaStore->readSessionMetadata($this->sessionId);
-        $this->assertSame('deepseek/deepseek-v4-flash', $meta['model']);
-        $this->assertSame('deepseek', $meta['model_provider']);
-        $this->assertSame('deepseek-v4-flash', $meta['model_name']);
+        $session = $this->sessionMetaStore->findSession($this->sessionId);
+        $this->assertSame('deepseek/deepseek-v4-flash', $session->model);
+        $this->assertSame('deepseek', $session->modelProvider);
+        $this->assertSame('deepseek-v4-flash', $session->modelName);
 
         // Home settings YAML
         $homeContent = file_get_contents($this->homeDir.'/.hatfield/settings.yaml');
@@ -106,8 +106,8 @@ class ModelSettingsPersisterTest extends IsolatedKernelTestCase
         $this->persister->persistReasoning('xhigh', $this->sessionId);
 
         // Session metadata
-        $meta = $this->sessionMetaStore->readSessionMetadata($this->sessionId);
-        $this->assertSame('xhigh', $meta['reasoning']);
+        $session = $this->sessionMetaStore->findSession($this->sessionId);
+        $this->assertSame('xhigh', $session->reasoning);
 
         // Home settings YAML
         $homeContent = file_get_contents($this->homeDir.'/.hatfield/settings.yaml');

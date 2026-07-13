@@ -35,9 +35,7 @@ final class CodexSymfonyAiProviderBuilder implements SymfonyAiProviderBuilderInt
 
     public function build(AiProviderConfig $provider, HttpClientInterface $httpClient): ProviderInterface
     {
-        $transport = null !== $provider->transport && '' !== trim($provider->transport)
-            ? CodexTransportEnum::fromString($provider->transport)
-            : CodexTransportEnum::default();
+        $transport = CodexTransportEnum::fromNullableString($provider->transport);
 
         $projectedCatalog = new ProjectedSymfonyModelCatalog(
             hatfieldModels: $provider->models,

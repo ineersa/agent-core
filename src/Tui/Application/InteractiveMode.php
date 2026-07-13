@@ -419,9 +419,9 @@ final readonly class InteractiveMode
             }
             $screen->setTranscriptBlocks($state->transcript);
         } elseif ($state->resuming) {
-            $meta = $this->sessionStore->loadMetadata($state->sessionId);
-            $existingRunId = $meta['run_id'] ?? null;
-            if (\is_string($existingRunId) && '' !== $existingRunId) {
+            $session = $this->sessionStore->findSession($state->sessionId);
+            if (null !== $session && $session->id > 0) {
+                $existingRunId = (string) $session->id;
                 try {
                     $state->handle = $client->attach($existingRunId);
                     $state->transcript[] = $this->blockFactory->system(

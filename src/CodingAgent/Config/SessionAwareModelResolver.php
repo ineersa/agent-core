@@ -112,8 +112,8 @@ final class SessionAwareModelResolver implements ModelResolverInterface
             return [];
         }
 
-        $metadata = $this->sessionMetadataStore->readSessionMetadata($sessionId);
-        if ([] === $metadata) {
+        $session = $this->sessionMetadataStore->findSession($sessionId);
+        if (null === $session) {
             // Persisted Hatfield sessions use numeric string ids. Missing metadata for those ids
             // is a stale or corrupt session reference. Ephemeral child/controller runs use UUIDv7
             // or other non-numeric run ids without a hatfield_session row.
@@ -124,8 +124,8 @@ final class SessionAwareModelResolver implements ModelResolverInterface
             return [];
         }
 
-        $providerCacheKey = $metadata['provider_cache_key'] ?? null;
-        if (!\is_string($providerCacheKey) || '' === $providerCacheKey) {
+        $providerCacheKey = $session->providerCacheKey;
+        if ('' === $providerCacheKey) {
             throw new \RuntimeException(\sprintf('Session "%s" is missing a provider_cache_key.', $sessionId));
         }
 

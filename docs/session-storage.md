@@ -71,7 +71,7 @@ Parent sessions that launch child subagents store child run data under
 ### Session metadata (database)
 
 Session identity and metadata are stored in the `hatfield_session` DB table
-(authoritative) and exposed through `HatfieldSessionStore::loadMetadata()`
+(authoritative) and exposed through `HatfieldSessionStore::findSession()`
 and `updateMetadata()`.  The returned array shape for callers:
 
 ```php
@@ -110,7 +110,7 @@ on creation (trimmed, internal whitespace collapsed to single spaces,
 and capped at 200 characters via Symfony String).  Empty or
 whitespace-only prompts receive the deterministic default `"Session"`.
 Persisted in `hatfield_session.name` and returned unconditionally by
-`loadMetadata()` and `listSessions()`.
+`findSession()` and `listSessions()`.
 
 A stored non-empty `name` is always the `displayTitle` in picker output.
 The `promptPreview` field remains a separate computed value (first 60

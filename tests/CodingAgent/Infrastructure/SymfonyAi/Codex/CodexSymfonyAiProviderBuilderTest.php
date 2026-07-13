@@ -361,6 +361,37 @@ final class CodexSymfonyAiProviderBuilderTest extends TestCase
         $factory->createProviders();
     }
 
+    public function testNullAndBlankTransportDefaultToWebsocketProvider(): void
+    {
+        $this->authStorage->saveCredentials('openai-codex', new CodexAuthRecord(
+            access: 'stored-access-token',
+            refresh: 'stored-refresh-token',
+            expires: time() + 3600,
+            accountId: 'stored-account-id',
+        ));
+
+        foreach ([null, '', '   '] as $transport) {
+            $provider = new AiProviderConfig(
+                id: 'openai-codex',
+                type: 'codex',
+                enabled: true,
+                baseUrl: 'https://chatgpt.com/backend-api',
+                transport: $transport,
+                models: [
+                    'gpt-5.5' => new AiModelDefinition(
+                        id: 'gpt-5.5',
+                        toolCalling: true,
+                        reasoning: true,
+                    ),
+                ],
+            );
+
+            $factory = $this->createFactory([$provider->id => $provider], $this->authStorage);
+            $providers = $factory->createProviders();
+            $this->assertArrayHasKey('openai-codex', $providers, 'transport='.var_export($transport, true));
+        }
+    }
+
     public function testInvalidTransportThrows(): void
     {
         $provider = new AiProviderConfig(

@@ -9,6 +9,15 @@ enum CodexTransportEnum: string
     case Websocket = 'websocket';
     case Sse = 'sse';
 
+    public static function fromNullableString(?string $value): self
+    {
+        if (null === $value || '' === trim($value)) {
+            return self::default();
+        }
+
+        return self::fromString($value);
+    }
+
     public static function fromString(string $value): self
     {
         $normalized = strtolower(trim($value));
