@@ -32,7 +32,8 @@ final readonly class AgentRunner implements AgentRunnerInterface
     public function start(StartRunInput $input): string
     {
         $runId = $input->runId ?? Uuid::v4()->toRfc4122();
-        $stepId = $this->nextStepId('start');
+        $stepId = $this->resolveStartStepId($runId, $input->runId);
+        $idempotencyKey = $this->idempotencyKey($runId, $stepId);
 
         try {
             $this->commandBus->dispatch(new StartRun(
@@ -40,7 +41,7 @@ final readonly class AgentRunner implements AgentRunnerInterface
                 turnNo: 0,
                 stepId: $stepId,
                 attempt: 1,
-                idempotencyKey: $this->idempotencyKey($runId, $stepId),
+                idempotencyKey: $idempotencyKey,
                 payload: new StartRunPayload(
                     systemPrompt: $input->systemPrompt,
                     messages: $input->messages,
@@ -146,6 +147,19 @@ final readonly class AgentRunner implements AgentRunnerInterface
     private function nextStepId(string $prefix): string
     {
         return \sprintf('%s-%d', $prefix, hrtime(true));
+    }
+
+    /**
+     * Explicit child run ids use a stable StartRun step/idempotency identity so
+     * redelivered launches dedupe through RunMessageProcessor. Fresh runs keep hrtime steps.
+     */
+    private function resolveStartStepId(string $runId, ?string $explicitRunId): string
+    {
+        if (null !== $explicitRunId && '' !== $explicitRunId) {
+            return 'start-'.substr(hash('sha256', $runId.'|start'), 0, 32);
+        }
+
+        return $this->nextStepId('start');
     }
 
     private function idempotencyKey(string $runId, string $stepId): string

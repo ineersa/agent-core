@@ -99,6 +99,11 @@ final class ToolCallResultFactory
         bool $isError = false,
         ?array $error = null,
     ): ToolCallResult {
+        $toolIdempotencyKey = \is_array($details)
+            && \is_string($details['tool_idempotency_key'] ?? null)
+                ? $details['tool_idempotency_key']
+                : $correlation->toolIdempotencyKey;
+
         return new ToolCallResult(
             runId: $correlation->runId,
             turnNo: $correlation->turnNo,
@@ -111,7 +116,7 @@ final class ToolCallResultFactory
                 'tool_name' => $correlation->toolName,
                 'content' => $content,
                 'details' => $details,
-                'tool_idempotency_key' => $correlation->toolIdempotencyKey,
+                'tool_idempotency_key' => $toolIdempotencyKey,
                 'mode' => $correlation->mode,
                 'arguments' => $correlation->arguments,
             ],

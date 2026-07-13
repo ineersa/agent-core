@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Agent\Execution;
 
+use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
+use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\AgentRunnerInterface;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
+use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
 use Ineersa\AgentCore\Contract\RunStoreInterface;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
@@ -83,7 +86,15 @@ final class Gf05BareAgentsEffectiveContextIntegrationTest extends PerMethodIsola
             childRunner: $childRunner,
         );
 
-        $service->execute($parentRunId, 'gf05-scout', 'Verify inherited AGENTS context');
+        $accessor = self::getContainer()->get(StackToolExecutionContextAccessor::class);
+        $accessor->with(new ToolContext(
+            runId: $parentRunId,
+            turnNo: 1,
+            toolCallId: 'gf05-tool-call',
+            toolName: 'subagent',
+            cancellationToken: new NullCancellationToken(),
+            timeoutSeconds: 120,
+        ), static fn () => $service->execute($parentRunId, 'gf05-scout', 'Verify inherited AGENTS context'));
 
         $this->assertNotNull($childRunner->lastStartInput);
         $childCanonical = $childRunner->lastStartInput->messages;
@@ -142,12 +153,13 @@ final class Gf05BareAgentsEffectiveContextIntegrationTest extends PerMethodIsola
             'committedRunEventAppender' => self::getContainer()->get(CommittedRunEventAppender::class),
             'metadataReader' => new SubagentRunMetadataReader($childEventStore),
             'childRunDirectory' => self::getContainer()->get(\Ineersa\CodingAgent\Agent\Artifact\AgentChildRunDirectory::class),
-            'contextAccessor' => self::getContainer()->get(\Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor::class),
+            'contextAccessor' => self::getContainer()->get(StackToolExecutionContextAccessor::class),
             'logger' => self::getContainer()->get('logger'),
             'agentsConfig' => new AgentsConfig(subagentToolTimeoutSeconds: 2),
             'childProgressSummaryBuilder' => new SubagentChildProgressSummaryBuilder(self::getContainer()->get(\Ineersa\CodingAgent\Agent\Artifact\AgentChildRunEventStoreFactory::class)),
             'agentsContextBuilder' => self::getContainer()->get(AgentsContextBuilder::class),
             'appConfig' => self::getContainer()->get(\Ineersa\CodingAgent\Config\AppConfig::class),
+            'launchProjectionRepository' => self::getContainer()->get(\Ineersa\CodingAgent\Entity\DeferredSingleSubagentLaunchRepository::class),
         ]);
     }
 

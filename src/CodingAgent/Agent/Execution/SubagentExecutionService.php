@@ -5,27 +5,19 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Agent\Execution;
 
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
-use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchDTO;
-use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchExecutionModeEnum;
-use Ineersa\CodingAgent\Agent\Execution\ChildRun\Lifecycle\ForegroundChildRunSupervisor;
-use Ineersa\CodingAgent\Agent\Execution\Subagent\SubagentChildRunBatchLifecyclePolicyFactory;
-use Ineersa\CodingAgent\Agent\Execution\Subagent\SubagentSupervisionResultMapper;
-use Ineersa\CodingAgent\Config\AgentsConfig;
+use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
 
 /**
  * Stable public façade for foreground subagent tool execution.
  *
- * Single and parallel runs share {@see ForegroundChildRunSupervisor::supervise()} (batch of one vs many).
+ * Single runs defer through {@see DeferredSingleSubagentLaunchService}; parallel runs
+ * remain on {@see ParallelSubagentExecutionService} + {@see ForegroundChildRunSupervisor}.
  */
 final class SubagentExecutionService
 {
     public function __construct(
-        private readonly SubagentLaunchPreparationService $launchPreparation,
-        private readonly ForegroundChildRunSupervisor $batchSupervisor,
+        private readonly DeferredSingleSubagentLaunchService $deferredSingleLaunch,
         private readonly ParallelSubagentExecutionService $parallelExecution,
-        private readonly SubagentSupervisionResultMapper $resultMapper,
-        private readonly SubagentChildRunBatchLifecyclePolicyFactory $lifecyclePolicyFactory,
-        private readonly AgentsConfig $agentsConfig,
     ) {
     }
 
@@ -36,18 +28,8 @@ final class SubagentExecutionService
         string $parentRunId,
         string $agentName,
         string $task,
-    ): string {
-        $prepared = $this->launchPreparation->prepareSingle($parentRunId, $agentName, $task);
-        $batch = new ChildRunBatchDTO(
-            $parentRunId,
-            [$prepared],
-            $this->agentsConfig->subagentToolTimeoutSeconds,
-            ChildRunBatchExecutionModeEnum::Single,
-            $this->lifecyclePolicyFactory->create(),
-        );
-        $result = $this->batchSupervisor->supervise($batch);
-
-        return $this->resultMapper->mapSingle($result);
+    ): DeferredToolCompletionOutcome {
+        return $this->deferredSingleLaunch->launch($parentRunId, $agentName, $task);
     }
 
     /**

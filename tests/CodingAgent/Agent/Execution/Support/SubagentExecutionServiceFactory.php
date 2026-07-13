@@ -12,6 +12,8 @@ use Ineersa\CodingAgent\Agent\Execution\ChildRun\Lifecycle\ChildRunBatchLaunchSe
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Lifecycle\ChildRunBatchProgressService;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Lifecycle\ChildRunBatchSnapshotTransitionService;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Lifecycle\ForegroundChildRunSupervisor;
+use Ineersa\CodingAgent\Agent\Execution\DeferredSingleSubagentIdentityFactory;
+use Ineersa\CodingAgent\Agent\Execution\DeferredSingleSubagentLaunchService;
 use Ineersa\CodingAgent\Agent\Execution\ParallelSubagentExecutionService;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Preparation\SubagentChildLaunchInputFactory;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Preparation\SubagentLaunchDefinitionPolicyService;
@@ -57,11 +59,13 @@ final class SubagentExecutionServiceFactory
             'childProgressSummaryBuilder' => null,
             'appConfig' => null,
             'clock' => new NativeClock(),
+            'launchProjectionRepository' => null,
+            'identityFactory' => new DeferredSingleSubagentIdentityFactory(),
         ];
 
         $args = array_merge($defaults, $overrides);
 
-        foreach (['policyResolver', 'promptBuilder', 'skillsContextBuilder', 'agentsContextBuilder', 'artifactRegistry', 'agentRunner', 'runStore', 'parentRunStore', 'eventStore', 'committedRunEventAppender', 'metadataReader', 'childRunDirectory', 'contextAccessor', 'logger', 'childProgressSummaryBuilder', 'appConfig'] as $required) {
+        foreach (['policyResolver', 'promptBuilder', 'skillsContextBuilder', 'agentsContextBuilder', 'artifactRegistry', 'agentRunner', 'runStore', 'parentRunStore', 'eventStore', 'committedRunEventAppender', 'metadataReader', 'childRunDirectory', 'contextAccessor', 'logger', 'childProgressSummaryBuilder', 'appConfig', 'launchProjectionRepository'] as $required) {
             if (null === $args[$required]) {
                 throw new \InvalidArgumentException(\sprintf('SubagentExecutionServiceFactory requires override "%s".', $required));
             }
@@ -100,6 +104,18 @@ final class SubagentExecutionServiceFactory
 
         $parallelExecution = new ParallelSubagentExecutionService($launchPreparation, $batchSupervisor, $launchService, $lifecyclePolicyFactory, $resultMapper, $args['agentsConfig']);
 
-        return new SubagentExecutionService($launchPreparation, $batchSupervisor, $parallelExecution, $resultMapper, $lifecyclePolicyFactory, $args['agentsConfig']);
+        $deferredSingleLaunch = new DeferredSingleSubagentLaunchService(
+            $launchPreparation,
+            $args['identityFactory'],
+            $args['launchProjectionRepository'],
+            $artifactLifecycle,
+            $args['agentRunner'],
+            $launchService,
+            $lifecyclePolicyFactory,
+            $args['contextAccessor'],
+            $args['agentsConfig'],
+        );
+
+        return new SubagentExecutionService($deferredSingleLaunch, $parallelExecution, $args['agentsConfig']);
     }
 }
