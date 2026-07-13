@@ -6,11 +6,11 @@ namespace Ineersa\CodingAgent\Agent\Execution;
 
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionDTO;
-use Ineersa\CodingAgent\Agent\Execution\ChildRun\ChildRunIdentityDTO;
-use Ineersa\CodingAgent\Agent\Execution\ChildRun\Port\ChildRunArtifactLifecyclePort;
-use Ineersa\CodingAgent\Agent\Execution\ChildRun\PreparedAgentChildRunDTO;
-use Ineersa\CodingAgent\Agent\Execution\Subagent\SubagentChildLaunchInputFactory;
-use Ineersa\CodingAgent\Agent\Execution\Subagent\SubagentLaunchDefinitionPolicyService;
+use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunIdentityDTO;
+use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\PreparedAgentChildRunDTO;
+use Ineersa\CodingAgent\Agent\Execution\ChildRun\Lifecycle\ChildRunArtifactLifecycleService;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Preparation\SubagentChildLaunchInputFactory;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Preparation\SubagentLaunchDefinitionPolicyService;
 use Symfony\Component\Uid\Uuid;
 
 /**
@@ -20,7 +20,7 @@ final class SubagentLaunchPreparationService
 {
     public function __construct(
         private readonly SubagentLaunchDefinitionPolicyService $definitionPolicy,
-        private readonly ChildRunArtifactLifecyclePort $artifactLifecycle,
+        private readonly ChildRunArtifactLifecycleService $artifactLifecycle,
         private readonly SubagentChildLaunchInputFactory $launchInputFactory,
     ) {
     }

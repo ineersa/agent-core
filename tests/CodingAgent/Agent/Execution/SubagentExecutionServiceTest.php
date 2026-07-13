@@ -1729,7 +1729,7 @@ CHILD_SKILL_BODY_UNIQUE',
             ];
             $activeTurns = [$childRunId => 1];
 
-            $progressEmitter = new \Ineersa\CodingAgent\Agent\Execution\ChildRun\AgentChildProgressEmitter(
+            $progressEmitter = new \Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Progress\SubagentChildRunProgressEmitter(
                 self::getContainer()->get(StackToolExecutionContextAccessor::class),
                 self::getContainer()->get(CommittedRunEventAppender::class),
                 new \Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder(),
@@ -1737,7 +1737,7 @@ CHILD_SKILL_BODY_UNIQUE',
                 $runStore,
             );
 
-            $method = new \ReflectionMethod(\Ineersa\CodingAgent\Agent\Execution\ChildRun\AgentChildProgressEmitter::class, 'parallelProgressSignature');
+            $method = new \ReflectionMethod(\Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Progress\SubagentChildRunProgressEmitter::class, 'parallelProgressSignature');
             $signatureRead = $method->invoke($progressEmitter, $parentRunId, $reports, $activeTurns);
 
             $useBashState = true;

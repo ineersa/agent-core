@@ -5,16 +5,16 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Agent\Execution\Subagent;
 
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
-use Ineersa\CodingAgent\Agent\Execution\ChildRun\AgentChildHandoffRenderer;
-use Ineersa\CodingAgent\Agent\Execution\ChildRun\ChildRunBatchCompletionKindEnum;
-use Ineersa\CodingAgent\Agent\Execution\ChildRun\ChildRunBatchSupervisionResultDTO;
+use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchCompletionKindEnum;
+use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchSupervisionResultDTO;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Result\SubagentChildRunHandoffRenderer;
 use Ineersa\CodingAgent\Config\AgentsConfig;
 
 final class SubagentSupervisionResultMapper
 {
     public function __construct(
         private readonly SubagentParallelAggregateResultFormatter $parallelFormatter,
-        private readonly AgentChildHandoffRenderer $handoffRenderer,
+        private readonly SubagentChildRunHandoffRenderer $handoffRenderer,
         private readonly AgentsConfig $agentsConfig,
     ) {
     }

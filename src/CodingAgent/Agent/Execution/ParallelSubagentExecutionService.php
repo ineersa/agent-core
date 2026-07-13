@@ -7,12 +7,12 @@ namespace Ineersa\CodingAgent\Agent\Execution;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionDTO;
-use Ineersa\CodingAgent\Agent\Execution\ChildRun\ChildRunBatchDTO;
-use Ineersa\CodingAgent\Agent\Execution\ChildRun\ChildRunBatchExecutionModeEnum;
-use Ineersa\CodingAgent\Agent\Execution\ChildRun\ChildRunBatchLaunchAbortContextDTO;
-use Ineersa\CodingAgent\Agent\Execution\ChildRun\ChildRunBatchLaunchAbortService;
-use Ineersa\CodingAgent\Agent\Execution\ChildRun\ChildRunIdentityDTO;
-use Ineersa\CodingAgent\Agent\Execution\ChildRun\ForegroundAgentChildRunSupervisor;
+use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchDTO;
+use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchExecutionModeEnum;
+use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchLaunchAbortContextDTO;
+use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunIdentityDTO;
+use Ineersa\CodingAgent\Agent\Execution\ChildRun\Lifecycle\ChildRunBatchLaunchService;
+use Ineersa\CodingAgent\Agent\Execution\ChildRun\Lifecycle\ForegroundChildRunSupervisor;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\SubagentChildRunBatchLifecyclePolicyFactory;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\SubagentSupervisionResultMapper;
 use Ineersa\CodingAgent\Config\AgentsConfig;
@@ -22,8 +22,8 @@ final class ParallelSubagentExecutionService
 {
     public function __construct(
         private readonly SubagentLaunchPreparationService $launchPreparation,
-        private readonly ForegroundAgentChildRunSupervisor $batchSupervisor,
-        private readonly ChildRunBatchLaunchAbortService $launchAbortService,
+        private readonly ForegroundChildRunSupervisor $batchSupervisor,
+        private readonly ChildRunBatchLaunchService $launchService,
         private readonly SubagentChildRunBatchLifecyclePolicyFactory $lifecyclePolicyFactory,
         private readonly SubagentSupervisionResultMapper $resultMapper,
         private readonly AgentsConfig $agentsConfig,
@@ -90,7 +90,7 @@ final class ParallelSubagentExecutionService
                     identityTemplate: $identity,
                 );
             } catch (\Throwable $e) {
-                $aborted = $this->launchAbortService->abort(
+                $aborted = $this->launchService->abort(
                     $parentRunId,
                     $identities,
                     $lifecyclePolicy,

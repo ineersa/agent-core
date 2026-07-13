@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Agent\Execution\Subagent;
 
-use Ineersa\CodingAgent\Agent\Execution\ChildRun\ChildRunBatchLifecyclePolicyDTO;
+use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchLifecyclePolicyDTO;
 
 final class SubagentChildRunBatchLifecyclePolicyFactory
 {
