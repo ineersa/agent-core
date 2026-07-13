@@ -29,12 +29,14 @@ final class ChildRunBatchInterruptionCoordinator
         int $progressSeq,
         int $progressStartedMicros,
     ): ChildRunBatchSupervisionResultDTO {
+        $policy = $batch->lifecyclePolicy;
         foreach ($snapshots as $childRunId => $snapshot) {
             if ($snapshot->terminal) {
                 continue;
             }
 
-            $this->processPort->cancel($childRunId, $batch->isSingle() ? 'Parent run cancelled subagent tool.' : 'Parent run cancelled parallel subagent tool.');
+            $reason = $batch->isSingle() ? $policy->parentCancelSingleReason : $policy->parentCancelParallelReason;
+            $this->processPort->cancel($childRunId, $reason);
             $cancelState = $this->processPort->getState($childRunId);
             $this->terminalizer->applyTerminalOutcome(new ChildRunTerminalOutcomeDTO(
                 $snapshot->identity,
@@ -42,16 +44,22 @@ final class ChildRunBatchInterruptionCoordinator
                 summary: 'Cancelled by parent run.',
                 childState: $cancelState,
             ));
-            $snapshot->terminal = true;
-            $snapshot->artifactStatus = AgentArtifactStatusEnum::Cancelled;
-            $snapshot->message = 'Cancelled by parent run.';
+            $snapshot->markTerminalCancelled('Cancelled by parent run.');
         }
 
         if ($batch->isSingle()) {
             $only = $batch->children[0]->identity;
             $state = $this->processPort->getState($only->childRunId);
             if (null !== $state) {
-                $update = $this->progressCoordinator->buildProgressUpdate($batch, $snapshots, [$only->childRunId => $state->turnNo], $progressSeq, $progressStartedMicros, 'cancelled', $only, $state, 'cancelled');
+                $update = $this->progressCoordinator->buildProgressUpdate(
+                    $batch,
+                    $snapshots,
+                    [$only->childRunId => $state->turnNo],
+                    $progressSeq,
+                    $progressStartedMicros,
+                    'cancelled',
+                    new ChildRunSingleProgressContextDTO($only, $state, 'cancelled'),
+                );
                 $this->progressCoordinator->emitAndAdvance($batch->parentRunId, $update, $progressSeq);
             }
         } else {
@@ -70,12 +78,21 @@ final class ChildRunBatchInterruptionCoordinator
         int $progressSeq,
         int $progressStartedMicros,
     ): ChildRunBatchSupervisionResultDTO {
+        $policy = $batch->lifecyclePolicy;
         if ($batch->isSingle()) {
             $only = $batch->children[0]->identity;
-            $this->processPort->cancel($only->childRunId, 'Subagent timed out.');
+            $this->processPort->cancel($only->childRunId, $policy->singleTimeoutCancelReason);
             $timeoutState = $this->processPort->getState($only->childRunId);
             if (null !== $timeoutState) {
-                $update = $this->progressCoordinator->buildProgressUpdate($batch, $snapshots, [$only->childRunId => $timeoutState->turnNo], $progressSeq, $progressStartedMicros, 'failed', $only, $timeoutState, 'failed');
+                $update = $this->progressCoordinator->buildProgressUpdate(
+                    $batch,
+                    $snapshots,
+                    [$only->childRunId => $timeoutState->turnNo],
+                    $progressSeq,
+                    $progressStartedMicros,
+                    'failed',
+                    new ChildRunSingleProgressContextDTO($only, $timeoutState, 'failed'),
+                );
                 $this->progressCoordinator->emitAndAdvance($batch->parentRunId, $update, $progressSeq);
             }
 
@@ -95,16 +112,14 @@ final class ChildRunBatchInterruptionCoordinator
                 continue;
             }
 
-            $this->processPort->cancel($childRunId, 'Parallel subagent timed out.');
+            $this->processPort->cancel($childRunId, $policy->parallelTimeoutCancelReason);
             $this->terminalizer->applyTerminalOutcome(new ChildRunTerminalOutcomeDTO(
                 $snapshot->identity,
                 AgentArtifactStatusEnum::Failed,
                 failureReason: 'Child run timed out.',
                 summary: 'Timed out after '.$batch->timeoutSeconds.'s.',
             ));
-            $snapshot->terminal = true;
-            $snapshot->artifactStatus = AgentArtifactStatusEnum::Failed;
-            $snapshot->message = 'Timed out after '.$batch->timeoutSeconds.'s.';
+            $snapshot->markTerminalFailed('Timed out after '.$batch->timeoutSeconds.'s.');
         }
 
         return new ChildRunBatchSupervisionResultDTO($batch->parentRunId, array_values($snapshots), ChildRunBatchCompletionKindEnum::BatchTimedOut);

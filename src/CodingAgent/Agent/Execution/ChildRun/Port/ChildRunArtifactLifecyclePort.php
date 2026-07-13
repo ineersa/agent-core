@@ -6,11 +6,10 @@ namespace Ineersa\CodingAgent\Agent\Execution\ChildRun\Port;
 
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\ChildRunIdentityDTO;
-use Ineersa\CodingAgent\Agent\Execution\ChildRun\PreparedAgentChildRunDTO;
 
 interface ChildRunArtifactLifecyclePort
 {
-    public function reservePending(PreparedAgentChildRunDTO $prepared): void;
+    public function reservePending(ChildRunIdentityDTO $identity): void;
 
     public function markRunning(ChildRunIdentityDTO $identity): void;
 
@@ -22,5 +21,5 @@ interface ChildRunArtifactLifecyclePort
 
     public function hasRegistryEntry(string $parentRunId, string $artifactId): bool;
 
-    public function removePendingRegistryEntry(ChildRunIdentityDTO $identity): void;
+    public function removePendingReservation(ChildRunIdentityDTO $identity): void;
 }

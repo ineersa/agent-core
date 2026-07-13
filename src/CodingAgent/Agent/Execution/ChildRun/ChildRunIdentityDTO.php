@@ -15,7 +15,7 @@ final readonly class ChildRunIdentityDTO
         public string $displayName,
         public string $taskSummary,
         public ?string $definitionModel,
-        public AgentArtifactKindEnum $artifactKind = AgentArtifactKindEnum::Subagent,
+        public AgentArtifactKindEnum $artifactKind,
         public int $batchIndex = 1,
     ) {
     }

@@ -63,7 +63,7 @@ final class SubagentLaunchPreparationService
         string $task,
         ?string $artifactId = null,
         ?string $childRunId = null,
-        bool $artifactReservedPending = false,
+        bool $skipReservation = false,
         ?ChildRunIdentityDTO $identityTemplate = null,
     ): PreparedAgentChildRunDTO {
         $artifactId ??= 'agent_'.bin2hex(random_bytes(8));
@@ -82,9 +82,8 @@ final class SubagentLaunchPreparationService
             artifactKind: AgentArtifactKindEnum::Subagent,
         );
 
-        if (!$artifactReservedPending) {
+        if (!$skipReservation) {
             $this->artifactReservation->reserve($identity);
-            $artifactReservedPending = true;
         }
 
         return $this->launchInputFactory->buildPrepared(
@@ -92,7 +91,6 @@ final class SubagentLaunchPreparationService
             $definition,
             $policy['tools'],
             $policy['mcp'],
-            $artifactReservedPending,
         );
     }
 }

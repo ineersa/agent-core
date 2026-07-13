@@ -239,17 +239,11 @@ final class AgentArtifactRegistry
     }
 
     /**
-     * List all artifact entries for a parent session.
+     * Discard a Pending-only reservation: registry row, artifact directory sidecars, returns child run id for cache cleanup.
      *
-     * @return list<AgentArtifactEntryDTO>
+     * Running or terminal artifacts are left unchanged (returns null).
      */
-
-    /**
-     * Drop a Pending-only registry entry (child never reached Running).
-     *
-     * Used when parallel preparation reserved artifacts for siblings that never launched.
-     */
-    public function removePendingEntry(string $parentRunId, string $artifactId): void
+    public function discardPendingReservation(string $parentRunId, string $artifactId): ?string
     {
         $this->pathResolver->validatePathComponent($parentRunId, 'parentRunId');
         $this->pathResolver->validatePathComponent($artifactId, 'artifactId');
@@ -260,19 +254,22 @@ final class AgentArtifactRegistry
         try {
             $entries = $this->loadRegistry($parentRunId);
             $filtered = [];
-            $removed = false;
+            $agentRunId = null;
             foreach ($entries as $entry) {
                 if ($entry->artifactId === $artifactId && AgentArtifactStatusEnum::Pending === $entry->status) {
-                    $removed = true;
+                    $agentRunId = $entry->agentRunId;
 
                     continue;
                 }
                 $filtered[] = $entry;
             }
-            if (!$removed) {
-                return;
+            if (null === $agentRunId) {
+                return null;
             }
             $this->writeRegistry($parentRunId, $filtered);
+            $this->removeReservedArtifactDirectory($parentRunId, $artifactId);
+
+            return $agentRunId;
         } finally {
             $lock->release();
         }
@@ -491,6 +488,48 @@ final class AgentArtifactRegistry
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────
+
+    /**
+     * Remove a reserved artifact directory tree after a Pending-only discard.
+     */
+    private function removeReservedArtifactDirectory(string $parentRunId, string $artifactId): void
+    {
+        $dir = $this->pathResolver->resolveArtifactDir($parentRunId, $artifactId);
+        if (!is_dir($dir)) {
+            return;
+        }
+
+        $this->removeDirectoryTree($dir);
+    }
+
+    /**
+     * @throws \RuntimeException when removal fails
+     */
+    private function removeDirectoryTree(string $dir): void
+    {
+        $iterator = new \RecursiveIteratorIterator(
+            new \RecursiveDirectoryIterator($dir, \FilesystemIterator::SKIP_DOTS),
+            \RecursiveIteratorIterator::CHILD_FIRST,
+        );
+
+        foreach ($iterator as $item) {
+            $path = $item->getPathname();
+            if ($item->isDir()) {
+                if (!@rmdir($path)) {
+                    throw new \RuntimeException(\sprintf('Failed to remove artifact directory "%s".', $path));
+                }
+
+                continue;
+            }
+            if (!@unlink($path)) {
+                throw new \RuntimeException(\sprintf('Failed to remove artifact file "%s".', $path));
+            }
+        }
+
+        if (!@rmdir($dir)) {
+            throw new \RuntimeException(\sprintf('Failed to remove artifact root directory "%s".', $dir));
+        }
+    }
 
     /**
      * Ensure the artifact directory exists for a given parent + artifact ID.

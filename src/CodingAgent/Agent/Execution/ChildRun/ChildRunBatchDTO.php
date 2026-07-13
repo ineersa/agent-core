@@ -14,6 +14,7 @@ final readonly class ChildRunBatchDTO
         public array $children,
         public int $timeoutSeconds,
         public ChildRunBatchExecutionModeEnum $executionMode,
+        public ChildRunBatchLifecyclePolicyDTO $lifecyclePolicy,
     ) {
     }
 

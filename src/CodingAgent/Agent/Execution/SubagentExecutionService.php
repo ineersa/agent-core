@@ -8,6 +8,7 @@ use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\ChildRunBatchDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\ChildRunBatchExecutionModeEnum;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\ForegroundAgentChildRunSupervisor;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\SubagentChildRunBatchLifecyclePolicyFactory;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\SubagentSupervisionResultMapper;
 use Ineersa\CodingAgent\Config\AgentsConfig;
 
@@ -23,6 +24,7 @@ final class SubagentExecutionService
         private readonly ForegroundAgentChildRunSupervisor $batchSupervisor,
         private readonly ParallelSubagentExecutionService $parallelExecution,
         private readonly SubagentSupervisionResultMapper $resultMapper,
+        private readonly SubagentChildRunBatchLifecyclePolicyFactory $lifecyclePolicyFactory,
         private readonly AgentsConfig $agentsConfig,
     ) {
     }
@@ -41,6 +43,7 @@ final class SubagentExecutionService
             [$prepared],
             $this->agentsConfig->subagentToolTimeoutSeconds,
             ChildRunBatchExecutionModeEnum::Single,
+            $this->lifecyclePolicyFactory->create(),
         );
         $result = $this->batchSupervisor->supervise($batch);
 

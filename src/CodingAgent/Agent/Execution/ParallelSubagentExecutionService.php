@@ -9,9 +9,10 @@ use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\ChildRunBatchDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\ChildRunBatchExecutionModeEnum;
+use Ineersa\CodingAgent\Agent\Execution\ChildRun\ChildRunBatchLaunchAbortService;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\ChildRunIdentityDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\ForegroundAgentChildRunSupervisor;
-use Ineersa\CodingAgent\Agent\Execution\Subagent\SubagentParallelLaunchFailureFinalizer;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\SubagentChildRunBatchLifecyclePolicyFactory;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\SubagentSupervisionResultMapper;
 use Ineersa\CodingAgent\Config\AgentsConfig;
 use Symfony\Component\Uid\Uuid;
@@ -21,7 +22,8 @@ final class ParallelSubagentExecutionService
     public function __construct(
         private readonly SubagentLaunchPreparationService $launchPreparation,
         private readonly ForegroundAgentChildRunSupervisor $batchSupervisor,
-        private readonly SubagentParallelLaunchFailureFinalizer $launchFailureFinalizer,
+        private readonly ChildRunBatchLaunchAbortService $launchAbortService,
+        private readonly SubagentChildRunBatchLifecyclePolicyFactory $lifecyclePolicyFactory,
         private readonly SubagentSupervisionResultMapper $resultMapper,
         private readonly AgentsConfig $agentsConfig,
     ) {
@@ -39,6 +41,7 @@ final class ParallelSubagentExecutionService
         }
 
         $this->launchPreparation->assertDepthAllowed($parentRunId);
+        $lifecyclePolicy = $this->lifecyclePolicyFactory->create();
 
         /** @var list<array{index:int,agentName:string,task:string,artifactId:string,agentRunId:string,definition:AgentDefinitionDTO}> $launches */
         $launches = [];
@@ -82,17 +85,23 @@ final class ParallelSubagentExecutionService
                     $launch['task'],
                     $launch['artifactId'],
                     $launch['agentRunId'],
-                    artifactReservedPending: true,
+                    skipReservation: true,
                     identityTemplate: $identity,
                 );
             }
         } catch (\Throwable $e) {
-            $aborted = $this->launchFailureFinalizer->finalize($parentRunId, $identities, $e);
+            $aborted = $this->launchAbortService->abort($parentRunId, $identities, $lifecyclePolicy, $e);
 
             return $this->resultMapper->mapParallel($aborted);
         }
 
-        $batch = new ChildRunBatchDTO($parentRunId, $preparedChildren, $this->agentsConfig->subagentToolTimeoutSeconds, ChildRunBatchExecutionModeEnum::Parallel);
+        $batch = new ChildRunBatchDTO(
+            $parentRunId,
+            $preparedChildren,
+            $this->agentsConfig->subagentToolTimeoutSeconds,
+            ChildRunBatchExecutionModeEnum::Parallel,
+            $lifecyclePolicy,
+        );
         $result = $this->batchSupervisor->supervise($batch);
 
         return $this->resultMapper->mapParallel($result);

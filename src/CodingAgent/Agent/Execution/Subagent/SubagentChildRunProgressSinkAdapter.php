@@ -20,13 +20,15 @@ final class SubagentChildRunProgressSinkAdapter implements ChildRunProgressSinkP
 
     public function progressSignature(ChildRunProgressUpdateDTO $update): string
     {
-        if ($update->isSingleChild && null !== $update->singleIdentity && null !== $update->singleState) {
+        if ($update->isSingleChild) {
+            $ctx = $update->singleContext;
+
             return $this->progressEmitter->singleProgressSignature(
                 $update->parentRunId,
-                $update->singleIdentity->childRunId,
-                $update->singleIdentity->artifactId,
-                $update->singleState,
-                $update->singleIdentity->definitionModel,
+                $ctx->identity->childRunId,
+                $ctx->identity->artifactId,
+                $ctx->state,
+                $ctx->identity->definitionModel,
             );
         }
 
@@ -39,10 +41,11 @@ final class SubagentChildRunProgressSinkAdapter implements ChildRunProgressSinkP
 
     public function emit(ChildRunProgressUpdateDTO $update): void
     {
-        if ($update->isSingleChild && null !== $update->singleIdentity && null !== $update->singleState) {
-            $id = $update->singleIdentity;
-            $state = $update->singleState;
-            if (\in_array($update->singleProgressStatus, ['completed', 'failed', 'cancelled', 'done'], true)) {
+        if ($update->isSingleChild) {
+            $ctx = $update->singleContext;
+            $id = $ctx->identity;
+            $state = $ctx->state;
+            if (\in_array($ctx->progressStatus, ['completed', 'failed', 'cancelled', 'done'], true)) {
                 $this->progressEmitter->emitTerminalSingle(
                     $update->parentRunId,
                     $id->childRunId,
@@ -51,7 +54,7 @@ final class SubagentChildRunProgressSinkAdapter implements ChildRunProgressSinkP
                     $id->taskSummary,
                     $id->definitionModel,
                     $state,
-                    $update->singleProgressStatus,
+                    $ctx->progressStatus,
                     $update->seq,
                     $update->progressStartedMicros,
                 );
@@ -69,7 +72,7 @@ final class SubagentChildRunProgressSinkAdapter implements ChildRunProgressSinkP
                 $state,
                 $update->seq,
                 $update->progressStartedMicros,
-                $update->singleProgressStatus,
+                $ctx->progressStatus,
             );
 
             return;

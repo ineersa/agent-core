@@ -85,9 +85,7 @@ final class ChildRunBatchSnapshotTransitionCoordinator
         if (RunStatus::Completed === $status) {
             $summary = $this->terminalizer->summarizeCompletedSummary($state);
             $this->terminalizer->applyTerminalOutcome(new ChildRunTerminalOutcomeDTO($identity, AgentArtifactStatusEnum::Completed, summary: $summary));
-            $snapshot->terminal = true;
-            $snapshot->artifactStatus = AgentArtifactStatusEnum::Completed;
-            $snapshot->message = $summary;
+            $snapshot->markTerminalFromArtifactStatus(AgentArtifactStatusEnum::Completed, $summary);
 
             return;
         }
@@ -95,18 +93,14 @@ final class ChildRunBatchSnapshotTransitionCoordinator
         if (RunStatus::Failed === $status) {
             $errorMsg = $state->errorMessage ?? 'Run failed without error message.';
             $this->terminalizer->applyTerminalOutcome(new ChildRunTerminalOutcomeDTO($identity, AgentArtifactStatusEnum::Failed, failureReason: $errorMsg, summary: $errorMsg));
-            $snapshot->terminal = true;
-            $snapshot->artifactStatus = AgentArtifactStatusEnum::Failed;
-            $snapshot->message = $errorMsg;
+            $snapshot->markTerminalFailed($errorMsg);
 
             return;
         }
 
         if (\in_array($status, [RunStatus::Cancelled, RunStatus::Cancelling], true)) {
             $this->terminalizer->applyTerminalOutcome(new ChildRunTerminalOutcomeDTO($identity, AgentArtifactStatusEnum::Cancelled, summary: 'Child run was cancelled.', childState: $state));
-            $snapshot->terminal = true;
-            $snapshot->artifactStatus = AgentArtifactStatusEnum::Cancelled;
-            $snapshot->message = 'Child run was cancelled.';
+            $snapshot->markTerminalCancelled('Child run was cancelled.');
         }
     }
 }

@@ -11,7 +11,6 @@ final readonly class PreparedAgentChildRunDTO
     public function __construct(
         public ChildRunIdentityDTO $identity,
         public StartRunInput $startRunInput,
-        public bool $artifactReservedPending = false,
     ) {
     }
 

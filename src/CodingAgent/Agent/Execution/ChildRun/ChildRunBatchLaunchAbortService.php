@@ -2,20 +2,18 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\CodingAgent\Agent\Execution\Subagent;
+namespace Ineersa\CodingAgent\Agent\Execution\ChildRun;
 
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
-use Ineersa\CodingAgent\Agent\Execution\ChildRun\ChildRunBatchCompletionKindEnum;
-use Ineersa\CodingAgent\Agent\Execution\ChildRun\ChildRunBatchItemSnapshotDTO;
-use Ineersa\CodingAgent\Agent\Execution\ChildRun\ChildRunBatchSupervisionResultDTO;
-use Ineersa\CodingAgent\Agent\Execution\ChildRun\ChildRunIdentityDTO;
-use Ineersa\CodingAgent\Agent\Execution\ChildRun\ChildRunTerminalOutcomeDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Port\ChildRunArtifactLifecyclePort;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Port\ChildRunProcessPort;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Port\ChildRunTerminalizerPort;
 use Psr\Log\LoggerInterface;
 
-final class SubagentParallelLaunchFailureFinalizer
+/**
+ * Canonical launch-abort state machine for a foreground child batch (runtime start failure or preparation failure).
+ */
+final class ChildRunBatchLaunchAbortService
 {
     public function __construct(
         private readonly ChildRunArtifactLifecyclePort $artifactLifecycle,
@@ -28,17 +26,25 @@ final class SubagentParallelLaunchFailureFinalizer
     /**
      * @param list<ChildRunIdentityDTO> $identities
      */
-    public function finalize(string $parentRunId, array $identities, \Throwable $cause): ChildRunBatchSupervisionResultDTO
-    {
-        $this->logger->warning('subagent_execution.parallel_launch_aborted', [
+    public function abort(
+        string $parentRunId,
+        array $identities,
+        ChildRunBatchLifecyclePolicyDTO $policy,
+        \Throwable $cause,
+    ): ChildRunBatchSupervisionResultDTO {
+        $this->logger->warning('child_run.batch_launch_aborted', [
             'run_id' => $parentRunId,
             'component' => 'agent.execution',
-            'event_type' => 'subagent_execution.parallel_launch_aborted',
+            'event_type' => 'child_run.batch_launch_aborted',
             'task_count' => \count($identities),
             'exception_class' => $cause::class,
         ]);
 
-        $items = [];
+        $snapshots = [];
+        foreach ($identities as $identity) {
+            $snapshots[$identity->childRunId] = new ChildRunBatchItemSnapshotDTO($identity, false, null, '');
+        }
+
         $neverLaunchedMessage = 'Child run was not launched after a parallel launch failure.';
         $lastRunningChildIndex = -1;
         foreach ($identities as $index => $identity) {
@@ -49,20 +55,23 @@ final class SubagentParallelLaunchFailureFinalizer
         }
 
         foreach ($identities as $index => $identity) {
-            $snapshot = new ChildRunBatchItemSnapshotDTO($identity, false, null, '');
+            $childRunId = $identity->childRunId;
+            if (!isset($snapshots[$childRunId])) {
+                continue;
+            }
+            $snapshot = $snapshots[$childRunId];
+            if ($snapshot->terminal) {
+                continue;
+            }
+
             if (!$this->artifactLifecycle->hasRegistryEntry($parentRunId, $identity->artifactId)) {
-                $snapshot->terminal = true;
-                $snapshot->artifactStatus = AgentArtifactStatusEnum::Failed;
-                $snapshot->message = $neverLaunchedMessage;
-                $items[] = $snapshot;
+                $snapshot->markTerminalFailed($neverLaunchedMessage);
 
                 continue;
             }
 
             $status = $this->artifactLifecycle->getArtifactStatus($parentRunId, $identity->artifactId);
             if (null === $status) {
-                $items[] = $snapshot;
-
                 continue;
             }
 
@@ -72,35 +81,27 @@ final class SubagentParallelLaunchFailureFinalizer
                 AgentArtifactStatusEnum::Cancelled,
                 AgentArtifactStatusEnum::NeedsClarification,
             ], true)) {
-                $snapshot->terminal = true;
-                $snapshot->artifactStatus = $status;
-                $snapshot->message = $status->value;
-                $items[] = $snapshot;
+                $snapshot->markTerminalFromArtifactStatus($status, $status->value);
 
                 continue;
             }
 
             if (AgentArtifactStatusEnum::Running === $status) {
-                $this->processPort->cancel($identity->childRunId, 'Parallel subagent launch aborted after sibling failure.');
+                $this->processPort->cancel($childRunId, $policy->launchAbortSiblingCancelReason);
                 $this->terminalizer->applyTerminalOutcome(new ChildRunTerminalOutcomeDTO(
                     $identity,
                     AgentArtifactStatusEnum::Failed,
                     failureReason: $cause->getMessage(),
                     summary: 'Cancelled after parallel launch failure.',
                 ));
-                $snapshot->terminal = true;
-                $snapshot->artifactStatus = AgentArtifactStatusEnum::Failed;
-                $snapshot->message = 'Cancelled after parallel launch failure.';
-                $items[] = $snapshot;
+                $snapshot->markTerminalFailed('Cancelled after parallel launch failure.');
 
                 continue;
             }
 
             if ($index > $lastRunningChildIndex + 1) {
-                $this->artifactLifecycle->removePendingRegistryEntry($identity);
-                $snapshot->terminal = true;
-                $snapshot->artifactStatus = AgentArtifactStatusEnum::Failed;
-                $snapshot->message = $neverLaunchedMessage;
+                $this->artifactLifecycle->removePendingReservation($identity);
+                $snapshot->markTerminalFailed($neverLaunchedMessage);
             } else {
                 $this->terminalizer->applyTerminalOutcome(new ChildRunTerminalOutcomeDTO(
                     $identity,
@@ -108,13 +109,15 @@ final class SubagentParallelLaunchFailureFinalizer
                     failureReason: $cause->getMessage(),
                     summary: 'Child run failed to start.',
                 ));
-                $snapshot->terminal = true;
-                $snapshot->artifactStatus = AgentArtifactStatusEnum::Failed;
-                $snapshot->message = 'Child run failed to start.';
+                $snapshot->markTerminalFailed('Child run failed to start.');
             }
-            $items[] = $snapshot;
         }
 
-        return new ChildRunBatchSupervisionResultDTO($parentRunId, $items, ChildRunBatchCompletionKindEnum::LaunchAborted, launchFailure: $cause);
+        return new ChildRunBatchSupervisionResultDTO(
+            $parentRunId,
+            array_values($snapshots),
+            ChildRunBatchCompletionKindEnum::LaunchAborted,
+            launchFailure: $cause,
+        );
     }
 }

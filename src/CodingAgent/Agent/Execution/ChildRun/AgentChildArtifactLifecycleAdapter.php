@@ -17,15 +17,14 @@ final class AgentChildArtifactLifecycleAdapter implements ChildRunArtifactLifecy
     ) {
     }
 
-    public function reservePending(PreparedAgentChildRunDTO $prepared): void
+    public function reservePending(ChildRunIdentityDTO $identity): void
     {
-        $id = $prepared->identity;
         $entry = $this->artifactRegistry->create(
-            parentRunId: $id->parentRunId,
-            artifactId: $id->artifactId,
-            agentRunId: $id->childRunId,
-            agentName: $id->displayName,
-            kind: $id->artifactKind,
+            parentRunId: $identity->parentRunId,
+            artifactId: $identity->artifactId,
+            agentRunId: $identity->childRunId,
+            agentName: $identity->displayName,
+            kind: $identity->artifactKind,
         );
         $this->childRunDirectory->register($entry);
     }
@@ -73,8 +72,11 @@ final class AgentChildArtifactLifecycleAdapter implements ChildRunArtifactLifecy
         return null !== $this->artifactRegistry->get($parentRunId, $artifactId);
     }
 
-    public function removePendingRegistryEntry(ChildRunIdentityDTO $identity): void
+    public function removePendingReservation(ChildRunIdentityDTO $identity): void
     {
-        $this->artifactRegistry->removePendingEntry($identity->parentRunId, $identity->artifactId);
+        $agentRunId = $this->artifactRegistry->discardPendingReservation($identity->parentRunId, $identity->artifactId);
+        if (null !== $agentRunId) {
+            $this->childRunDirectory->unregister($agentRunId);
+        }
     }
 }

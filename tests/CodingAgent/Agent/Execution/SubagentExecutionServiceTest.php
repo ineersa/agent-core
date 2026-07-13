@@ -1041,6 +1041,11 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             }
             $thirdArtifactId = $matches[1];
             $this->assertNull($registry->get('parent-launch-fail', $thirdArtifactId));
+
+            $pathResolver = self::getContainer()->get(\Ineersa\CodingAgent\Agent\Artifact\AgentArtifactPathResolver::class);
+            $this->assertDirectoryDoesNotExist($pathResolver->resolveArtifactDir('parent-launch-fail', $thirdArtifactId));
+            $artifactDirs = glob($pathResolver->resolveArtifactsBasePath('parent-launch-fail').'/*', \GLOB_ONLYDIR) ?: [];
+            $this->assertCount(2, $artifactDirs, 'Aborted never-launched child must not leave a reserved artifact directory.');
         }
 
         $entries = $registry->list('parent-launch-fail');

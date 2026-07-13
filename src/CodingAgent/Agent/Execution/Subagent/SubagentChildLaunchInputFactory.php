@@ -37,7 +37,6 @@ final class SubagentChildLaunchInputFactory
         AgentDefinitionDTO $definition,
         array $allowedTools,
         array $mcp,
-        bool $artifactReservedPending,
     ): PreparedAgentChildRunDTO {
         $launchContext = $this->resolveChildLaunchContext($identity->parentRunId, $definition, $allowedTools);
         $prompt = $this->promptBuilder->build(
@@ -68,7 +67,6 @@ final class SubagentChildLaunchInputFactory
                 runId: $identity->childRunId,
                 metadata: $childMetadata,
             ),
-            artifactReservedPending: $artifactReservedPending,
         );
     }
 

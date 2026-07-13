@@ -37,17 +37,8 @@ final class ChildRunBatchProgressCoordinator
         int $seq,
         int $progressStartedMicros,
         string $aggregateStatus,
-        ?ChildRunIdentityDTO $singleIdentity = null,
-        ?RunState $singleState = null,
-        string $singleProgressStatus = 'running',
+        ?ChildRunSingleProgressContextDTO $singleContext = null,
     ): ChildRunProgressUpdateDTO {
-        if ($batch->isSingle() && null === $singleIdentity) {
-            $only = $batch->children[0]->identity;
-            $state = $this->processPort->getState($only->childRunId);
-            $singleIdentity = $only;
-            $singleState = $state;
-        }
-
         return new ChildRunProgressUpdateDTO(
             parentRunId: $batch->parentRunId,
             items: array_values($snapshots),
@@ -56,9 +47,7 @@ final class ChildRunBatchProgressCoordinator
             progressStartedMicros: $progressStartedMicros,
             aggregateStatus: $aggregateStatus,
             isSingleChild: $batch->isSingle(),
-            singleIdentity: $singleIdentity,
-            singleState: $singleState,
-            singleProgressStatus: $singleProgressStatus,
+            singleContext: $singleContext,
         );
     }
 
@@ -118,28 +107,18 @@ final class ChildRunBatchProgressCoordinator
      */
     public function resolveAggregateStatus(array $snapshots): string
     {
-        $hasFailed = false;
-        $hasCancelled = false;
         foreach ($snapshots as $snapshot) {
-            if (!$snapshot->terminal || null === $snapshot->artifactStatus) {
-                continue;
+            if (!$snapshot->terminal) {
+                return 'running';
             }
+        }
+
+        foreach ($snapshots as $snapshot) {
             if (AgentArtifactStatusEnum::Failed === $snapshot->artifactStatus) {
-                $hasFailed = true;
-            }
-            if (AgentArtifactStatusEnum::Cancelled === $snapshot->artifactStatus) {
-                $hasCancelled = true;
+                return 'failed';
             }
         }
 
-        if ($hasFailed) {
-            return 'failed';
-        }
-
-        if ($hasCancelled) {
-            return 'cancelled';
-        }
-
-        return 'completed';
+        return 'done';
     }
 }

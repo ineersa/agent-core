@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Agent\Execution\ChildRun;
 
-use Ineersa\AgentCore\Domain\Run\RunState;
-
 final readonly class ChildRunProgressUpdateDTO
 {
     /**
@@ -20,9 +18,13 @@ final readonly class ChildRunProgressUpdateDTO
         public int $progressStartedMicros,
         public string $aggregateStatus,
         public bool $isSingleChild,
-        public ?ChildRunIdentityDTO $singleIdentity = null,
-        public ?RunState $singleState = null,
-        public string $singleProgressStatus = 'running',
+        public ?ChildRunSingleProgressContextDTO $singleContext = null,
     ) {
+        if ($isSingleChild && null === $singleContext) {
+            throw new \InvalidArgumentException('Single-child progress updates require singleContext.');
+        }
+        if (!$isSingleChild && null !== $singleContext) {
+            throw new \InvalidArgumentException('Parallel progress updates must not include singleContext.');
+        }
     }
 }

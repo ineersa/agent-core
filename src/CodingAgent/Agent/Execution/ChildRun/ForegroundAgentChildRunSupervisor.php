@@ -16,8 +16,6 @@ use Symfony\Component\Clock\MonotonicClock;
 
 /**
  * One shared typed batch lifecycle for foreground child runs (single child = batch of one).
- *
- * Subagent-specific progress payloads and handoff wording stay behind progress/terminalizer ports.
  */
 final class ForegroundAgentChildRunSupervisor
 {
@@ -28,6 +26,7 @@ final class ForegroundAgentChildRunSupervisor
         private readonly ChildRunTerminalizerPort $terminalizer,
         private readonly AgentChildParentSequenceCoordinator $sequenceCoordinator,
         private readonly ChildRunBatchLaunchCoordinator $launchCoordinator,
+        private readonly ChildRunBatchLaunchAbortService $launchAbortService,
         private readonly ChildRunBatchSnapshotTransitionCoordinator $transitionCoordinator,
         private readonly ChildRunBatchProgressCoordinator $progressCoordinator,
         private readonly ChildRunBatchInterruptionCoordinator $interruptionCoordinator,
@@ -44,9 +43,12 @@ final class ForegroundAgentChildRunSupervisor
         try {
             $this->launchCoordinator->launchAll($batch);
         } catch (\Throwable $e) {
-            $this->launchCoordinator->abortLaunch($batch, $snapshots, $e);
-
-            return new ChildRunBatchSupervisionResultDTO($parentRunId, array_values($snapshots), ChildRunBatchCompletionKindEnum::LaunchAborted, launchFailure: $e);
+            return $this->launchAbortService->abort(
+                $parentRunId,
+                array_map(static fn (PreparedAgentChildRunDTO $p): ChildRunIdentityDTO => $p->identity, $batch->children),
+                $batch->lifecyclePolicy,
+                $e,
+            );
         }
 
         $progressStartedMicros = $this->nowMicros();
@@ -83,16 +85,15 @@ final class ForegroundAgentChildRunSupervisor
                     }
 
                     $this->transitionCoordinator->applySingleActiveTransition($snapshot, $state);
+                    $progressStatus = RunStatus::WaitingHuman === $state->status ? 'waiting_human' : 'running';
                     $update = $this->progressCoordinator->buildProgressUpdate(
                         $batch,
                         $snapshots,
                         $activeTurns,
                         $progressSeq,
                         $progressStartedMicros,
-                        RunStatus::WaitingHuman === $state->status ? 'waiting_human' : 'running',
-                        $snapshot->identity,
-                        $state,
-                        RunStatus::WaitingHuman === $state->status ? 'waiting_human' : 'running',
+                        $progressStatus,
+                        new ChildRunSingleProgressContextDTO($snapshot->identity, $state, $progressStatus),
                     );
                     $this->progressCoordinator->emitDedupedIfChanged($parentRunId, $update, $progressSeq, $lastSignature);
 
@@ -145,9 +146,7 @@ final class ForegroundAgentChildRunSupervisor
             $progressSeq,
             $progressStartedMicros,
             $terminalStatus,
-            $identity,
-            $state,
-            $terminalStatus,
+            new ChildRunSingleProgressContextDTO($identity, $state, $terminalStatus),
         );
         $this->progressCoordinator->emitAndAdvance($batch->parentRunId, $update, $progressSeq);
 

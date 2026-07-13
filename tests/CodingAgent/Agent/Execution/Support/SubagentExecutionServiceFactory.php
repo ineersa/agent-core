@@ -13,6 +13,7 @@ use Ineersa\CodingAgent\Agent\Execution\ChildRun\AgentChildParentSequenceCoordin
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\AgentChildProgressEmitter;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\AgentChildRunProcessAdapter;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\ChildRunBatchInterruptionCoordinator;
+use Ineersa\CodingAgent\Agent\Execution\ChildRun\ChildRunBatchLaunchAbortService;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\ChildRunBatchLaunchCoordinator;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\ChildRunBatchProgressCoordinator;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\ChildRunBatchSnapshotTransitionCoordinator;
@@ -20,11 +21,11 @@ use Ineersa\CodingAgent\Agent\Execution\ChildRun\ForegroundAgentChildRunSupervis
 use Ineersa\CodingAgent\Agent\Execution\ParallelSubagentExecutionService;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\SubagentArtifactReservationService;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\SubagentChildLaunchInputFactory;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\SubagentChildRunBatchLifecyclePolicyFactory;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\SubagentChildRunProgressSinkAdapter;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\SubagentChildRunTerminalizerAdapter;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\SubagentLaunchDefinitionPolicyService;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\SubagentParallelAggregateResultFormatter;
-use Ineersa\CodingAgent\Agent\Execution\Subagent\SubagentParallelLaunchFailureFinalizer;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\SubagentSupervisionResultMapper;
 use Ineersa\CodingAgent\Agent\Execution\SubagentExecutionService;
 use Ineersa\CodingAgent\Agent\Execution\SubagentLaunchPreparationService;
@@ -102,18 +103,19 @@ final class SubagentExecutionServiceFactory
         $artifactReservation = new SubagentArtifactReservationService($artifactLifecycle);
         $launchInputFactory = new SubagentChildLaunchInputFactory($promptBuilder, $skillsContextBuilder, $agentsContextBuilder, $parentRunStore, $appConfig);
         $launchPreparation = new SubagentLaunchPreparationService($definitionPolicy, $artifactReservation, $launchInputFactory);
+        $lifecyclePolicyFactory = new SubagentChildRunBatchLifecyclePolicyFactory();
 
-        $launchCoordinator = new ChildRunBatchLaunchCoordinator($processPort, $artifactLifecycle, $terminalizer, $logger);
+        $launchCoordinator = new ChildRunBatchLaunchCoordinator($processPort, $artifactLifecycle);
+        $launchAbortService = new ChildRunBatchLaunchAbortService($artifactLifecycle, $processPort, $terminalizer, $logger);
         $transitionCoordinator = new ChildRunBatchSnapshotTransitionCoordinator($artifactLifecycle, $terminalizer);
         $progressCoordinator = new ChildRunBatchProgressCoordinator($progressSink, $sequenceCoordinator, $processPort);
         $interruptionCoordinator = new ChildRunBatchInterruptionCoordinator($processPort, $terminalizer, $progressCoordinator);
-        $batchSupervisor = new ForegroundAgentChildRunSupervisor($processPort, $terminalizer, $sequenceCoordinator, $launchCoordinator, $transitionCoordinator, $progressCoordinator, $interruptionCoordinator, $contextAccessor, $clock);
+        $batchSupervisor = new ForegroundAgentChildRunSupervisor($processPort, $terminalizer, $sequenceCoordinator, $launchCoordinator, $launchAbortService, $transitionCoordinator, $progressCoordinator, $interruptionCoordinator, $contextAccessor, $clock);
         $parallelFormatter = new SubagentParallelAggregateResultFormatter();
         $resultMapper = new SubagentSupervisionResultMapper($parallelFormatter, $handoffRenderer, $args['agentsConfig']);
-        $launchFailureFinalizer = new SubagentParallelLaunchFailureFinalizer($artifactLifecycle, $processPort, $terminalizer, $logger);
 
-        $parallelExecution = new ParallelSubagentExecutionService($launchPreparation, $batchSupervisor, $launchFailureFinalizer, $resultMapper, $args['agentsConfig']);
+        $parallelExecution = new ParallelSubagentExecutionService($launchPreparation, $batchSupervisor, $launchAbortService, $lifecyclePolicyFactory, $resultMapper, $args['agentsConfig']);
 
-        return new SubagentExecutionService($launchPreparation, $batchSupervisor, $parallelExecution, $resultMapper, $args['agentsConfig']);
+        return new SubagentExecutionService($launchPreparation, $batchSupervisor, $parallelExecution, $resultMapper, $lifecyclePolicyFactory, $args['agentsConfig']);
     }
 }
