@@ -406,7 +406,7 @@ final class TraceReplayTest extends KernelTestCase
         $catalog = $appConfig->catalog
             ?? new HatfieldModelCatalog(new AiConfig(defaultModel: '', defaultReasoning: 'medium', providers: []));
 
-        return new SessionAwareModelResolver($selectionService, $catalog);
+        return new SessionAwareModelResolver($selectionService, $catalog, $this->sessionMetaStore);
     }
 
     private function createSelectionService(array $aiData): ModelSelectionService
