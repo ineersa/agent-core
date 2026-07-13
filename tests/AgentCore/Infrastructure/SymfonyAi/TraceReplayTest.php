@@ -171,6 +171,7 @@ final class TraceReplayTest extends KernelTestCase
 
         // Session metadata remains available
         $session = $this->sessionMetaStore->findSession($replaySessId);
+        $this->assertNotNull($session);
         $this->assertSame($fixture['model'], $session->model ?? null);
         $this->assertSame($fixture['reasoning'], $session->reasoning ?? null);
     }

@@ -260,6 +260,7 @@ final class LlamaCppSmokeTest extends KernelTestCase
 
         // Session metadata is still intact — model resolution used it correctly
         $session = $this->sessionMetaStore->findSession($this->sessionId);
+        $this->assertNotNull($session);
         $this->assertSame($modelRef, $session->model ?? null,
             'Session metadata model should be preserved after invocation');
     }

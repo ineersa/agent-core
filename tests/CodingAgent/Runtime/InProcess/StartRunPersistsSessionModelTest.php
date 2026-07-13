@@ -88,6 +88,7 @@ final class StartRunPersistsSessionModelTest extends IsolatedKernelTestCase
 
         // Assert session metadata was persisted.
         $session = $this->sessionMetaStore()->findSession($sessionId);
+        $this->assertNotNull($session);
         $this->assertSame('llama_cpp/flash', $session->model ?? null,
             'Session metadata must contain the persisted model reference');
         $this->assertSame('llama_cpp', $session->modelProvider ?? null,
@@ -115,6 +116,7 @@ final class StartRunPersistsSessionModelTest extends IsolatedKernelTestCase
         ));
 
         $session = $this->sessionMetaStore()->findSession($sessionId);
+        $this->assertNotNull($session);
         $this->assertSame('llama_cpp/flash', $session->model ?? null,
             'Model must be persisted even when reasoning is null');
 
@@ -237,6 +239,7 @@ final class StartRunPersistsSessionModelTest extends IsolatedKernelTestCase
         ));
 
         $session = $this->sessionMetaStore()->findSession($sessionId);
+        $this->assertNotNull($session);
 
         $resolver = $this->buildModelResolver($cwd);
 
@@ -296,6 +299,7 @@ final class StartRunPersistsSessionModelTest extends IsolatedKernelTestCase
 
         // Assert the resolved defaults WERE persisted.
         $session = $this->sessionMetaStore()->findSession($sessionId);
+        $this->assertNotNull($session);
         $this->assertSame($expectedRef->toString(), $session->model ?? null,
             'resolved global-default model must be persisted even without --model flag');
         $this->assertSame($expectedRef->providerId, $session->modelProvider ?? null);

@@ -53,6 +53,7 @@ final class HatfieldSessionStoreTest extends IsolatedKernelTestCase
         $this->assertInstanceOf(UuidV7::class, Uuid::fromString($session->providerCacheKey));
 
         $sessionAgain = $this->store->findSession($sessionId);
+        $this->assertNotNull($sessionAgain);
         $this->assertSame($session->providerCacheKey, $sessionAgain->providerCacheKey);
 
         // Core files created (no metadata.yaml)
@@ -227,6 +228,7 @@ final class HatfieldSessionStoreTest extends IsolatedKernelTestCase
         // Set a name first, then clear via empty string.
         $this->store->updateMetadata($sessionId, ['name' => 'Will Clear']);
         $session = $this->store->findSession($sessionId);
+        $this->assertNotNull($session);
         $this->assertSame('Will Clear', $session->name);
 
         $this->store->updateMetadata($sessionId, ['name' => '']);
@@ -241,6 +243,7 @@ final class HatfieldSessionStoreTest extends IsolatedKernelTestCase
 
         $this->store->updateMetadata($sessionId, ['name' => 'To Be Nulled']);
         $session = $this->store->findSession($sessionId);
+        $this->assertNotNull($session);
         $this->assertSame('To Be Nulled', $session->name);
 
         $this->store->updateMetadata($sessionId, ['name' => null]);
@@ -255,6 +258,7 @@ final class HatfieldSessionStoreTest extends IsolatedKernelTestCase
 
         $this->store->updateMetadata($sessionId, ['name' => 123]);
         $session = $this->store->findSession($sessionId);
+        $this->assertNotNull($session);
         $this->assertSame('Session', $session->name);
     }
 
@@ -264,6 +268,7 @@ final class HatfieldSessionStoreTest extends IsolatedKernelTestCase
 
         $this->store->updateMetadata($sessionId, ['name' => 'Named']);
         $session = $this->store->findSession($sessionId);
+        $this->assertNotNull($session);
         $this->assertSame('Named', $session->name);
 
         $this->store->updateMetadata($sessionId, ['name' => '   ']);
@@ -431,6 +436,7 @@ final class HatfieldSessionStoreTest extends IsolatedKernelTestCase
         $this->store->listSessions();
 
         $sessionAfter = $this->store->findSession($sessionId);
+        $this->assertNotNull($sessionAfter);
         $this->assertSame($originalName, $sessionAfter->name);
     }
 
