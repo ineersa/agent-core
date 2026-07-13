@@ -5,17 +5,13 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Progress;
 
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
-use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\RunStoreInterface;
-use Ineersa\AgentCore\Domain\Event\RunEvent;
-use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
 use Ineersa\CodingAgent\Agent\Execution\SubagentChildProgressSummary;
 use Ineersa\CodingAgent\Agent\Execution\SubagentChildProgressSummaryBuilder;
 use Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder;
-use Ineersa\CodingAgent\Session\CommittedRunEventAppender;
 use Symfony\Component\Clock\ClockInterface;
 use Symfony\Component\Clock\MonotonicClock;
 
@@ -26,7 +22,7 @@ final class SubagentChildRunProgressEmitter
 {
     public function __construct(
         private readonly StackToolExecutionContextAccessor $contextAccessor,
-        private readonly CommittedRunEventAppender $committedRunEventAppender,
+        private readonly SubagentProgressEventAppender $progressEventAppender,
         private readonly SubagentProgressSnapshotBuilder $progressSnapshotBuilder,
         private readonly SubagentChildProgressSummaryBuilder $childProgressSummaryBuilder,
         private readonly RunStoreInterface $childRunStore,
@@ -106,7 +102,7 @@ final class SubagentChildRunProgressEmitter
             $enrichment,
             $progressStatus,
         );
-        $this->appendSubagentProgressEvent($parentRunId, $context, $progress);
+        $this->progressEventAppender->append($parentRunId, $context->turnNo(), $context->toolCallId(), $context->orderIndex(), $context->toolName(), $progress);
     }
 
     public function emitTerminalSingle(
@@ -143,7 +139,7 @@ final class SubagentChildRunProgressEmitter
             $elapsedMs,
             $enrichment,
         );
-        $this->appendSubagentProgressEvent($parentRunId, $context, $progress);
+        $this->progressEventAppender->append($parentRunId, $context->turnNo(), $context->toolCallId(), $context->orderIndex(), $context->toolName(), $progress);
     }
 
     /**
@@ -219,7 +215,7 @@ final class SubagentChildRunProgressEmitter
             $enrichmentByRun,
             $aggregateStatus,
         );
-        $this->appendSubagentProgressEvent($parentRunId, $context, $progress);
+        $this->progressEventAppender->append($parentRunId, $context->turnNo(), $context->toolCallId(), $context->orderIndex(), $context->toolName(), $progress);
     }
 
     /**
@@ -247,33 +243,6 @@ final class SubagentChildRunProgressEmitter
         }
 
         return $enrichmentByRun;
-    }
-
-    /**
-     * @param array<string, mixed> $progress
-     */
-    private function appendSubagentProgressEvent(
-        string $parentRunId,
-        ToolContext $context,
-        array $progress,
-    ): void {
-        $event = new RunEvent(
-            runId: $parentRunId,
-            seq: 0,
-            turnNo: $context->turnNo(),
-            type: RunEventTypeEnum::ToolExecutionUpdate->value,
-            payload: [
-                'tool_call_id' => $context->toolCallId(),
-                'tool_name' => $context->toolName(),
-                'delta' => '',
-                'subagent_progress' => $progress,
-                'order_index' => $context->orderIndex(),
-            ],
-        );
-
-        // seq 0 is deliberately unallocated; the committed store atomically assigns persisted seq
-        // and CommittedRunEventAppender synchronizes parent RunState.lastSeq.
-        $this->committedRunEventAppender->append($event);
     }
 
     private function elapsedMsSince(int $startedMicros): int

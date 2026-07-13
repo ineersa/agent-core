@@ -27,6 +27,8 @@ final readonly class DeferredSingleSubagentProjectionDTO
         public ?string $definitionModel,
         public DeferredSingleSubagentLaunchStatusEnum $launchStatus,
         public int $childEventCursor,
+        public int $parentProgressCursor,
+        public ?\DateTimeImmutable $terminalCompletionEnqueuedAt,
         public ?\DateTimeImmutable $startedAt,
         public ?\DateTimeImmutable $deadlineAt,
         public ?DeferredSingleSubagentChildLifecycleProjectionDTO $childLifecycleProjection = null,

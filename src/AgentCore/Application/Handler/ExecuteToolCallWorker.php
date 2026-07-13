@@ -8,6 +8,7 @@ use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
 use Ineersa\AgentCore\Contract\RunStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolExecutorInterface;
+use Ineersa\AgentCore\Domain\Event\DeferredToolCompletionRegisteredEvent;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation;
@@ -17,10 +18,10 @@ use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\AgentCore\Domain\Tool\ToolResult;
 use Ineersa\AgentCore\Infrastructure\RunLogContext;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\RunCancellationToken;
+use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
 use Symfony\Component\Messenger\Exception\ExceptionInterface;
 use Symfony\Component\Messenger\MessageBusInterface;
-use Symfony\Component\Uid\Uuid;
 
 final readonly class ExecuteToolCallWorker
 {
@@ -31,6 +32,7 @@ final readonly class ExecuteToolCallWorker
         private ?RunStoreInterface $runStore = null,
         private ?RunMetrics $metrics = null,
         private ?RunTracer $tracer = null,
+        private ?EventDispatcherInterface $eventDispatcher = null,
     ) {
     }
 
@@ -86,6 +88,8 @@ final readonly class ExecuteToolCallWorker
     {
         $existing = $this->deferredToolCompletionRepository->findPendingByRunAndToolCall($message->runId(), $message->toolCallId);
         if (null !== $existing) {
+            $this->dispatchDeferredRegistered($existing);
+
             return null;
         }
 
@@ -145,7 +149,8 @@ final readonly class ExecuteToolCallWorker
             $this->metrics?->recordToolLatency($durationMs, $toolResult->isError, $timedOut);
 
             if ($this->isDeferredOutcome($toolResult)) {
-                $this->registerDeferredExecution($message, $toolResult);
+                $correlation = $this->registerDeferredExecution($message, $toolResult);
+                $this->dispatchDeferredRegistered($correlation);
 
                 return null;
             }
@@ -173,10 +178,15 @@ final readonly class ExecuteToolCallWorker
         return $raw instanceof DeferredToolCompletionOutcome;
     }
 
-    private function registerDeferredExecution(ExecuteToolCall $message, ToolResult $toolResult): void
+    private function registerDeferredExecution(ExecuteToolCall $message, ToolResult $toolResult): DeferredToolCompletionCorrelation
     {
+        $raw = $toolResult->details['raw_result'] ?? null;
+        if (!$raw instanceof DeferredToolCompletionOutcome) {
+            throw new \RuntimeException('Deferred tool outcome missing typed raw_result marker.');
+        }
+
         $correlation = new DeferredToolCompletionCorrelation(
-            deferredId: Uuid::v7()->toRfc4122(),
+            deferredId: $raw->deferredId,
             runId: $message->runId(),
             turnNo: $message->turnNo(),
             stepId: $message->stepId(),
@@ -195,6 +205,15 @@ final readonly class ExecuteToolCallWorker
             toolsRef: $message->toolsRef,
         );
 
-        $this->deferredToolCompletionRepository->registerPending($correlation);
+        return $this->deferredToolCompletionRepository->registerPending($correlation);
+    }
+
+    private function dispatchDeferredRegistered(DeferredToolCompletionCorrelation $correlation): void
+    {
+        if (null === $this->eventDispatcher) {
+            return;
+        }
+
+        $this->eventDispatcher->dispatch(new DeferredToolCompletionRegisteredEvent($correlation));
     }
 }

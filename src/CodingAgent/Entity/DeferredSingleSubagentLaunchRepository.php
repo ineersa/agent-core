@@ -32,6 +32,13 @@ final class DeferredSingleSubagentLaunchRepository extends ServiceEntityReposito
         return $row instanceof DeferredSingleSubagentLaunch ? $this->toDto($row) : null;
     }
 
+    public function findByLifecycleId(string $lifecycleId): ?DeferredSingleSubagentProjectionDTO
+    {
+        $row = $this->findOneBy(['lifecycleId' => $lifecycleId]);
+
+        return $row instanceof DeferredSingleSubagentLaunch ? $this->toDto($row) : null;
+    }
+
     public function findEntityByLifecycleId(string $lifecycleId): ?DeferredSingleSubagentLaunch
     {
         $row = $this->findOneBy(['lifecycleId' => $lifecycleId]);
@@ -58,6 +65,42 @@ final class DeferredSingleSubagentLaunchRepository extends ServiceEntityReposito
         $row->childLifecycleProjection = $projection->toArray();
         $row->childEventCursor = $childEventCursor;
         $em->flush();
+    }
+
+    public function markParentProgressCursor(
+        string $lifecycleId,
+        int $parentProgressCursor,
+        int $expectedProjectionVersion,
+    ): void {
+        $row = $this->findOneBy(['lifecycleId' => $lifecycleId]);
+        if (!$row instanceof DeferredSingleSubagentLaunch) {
+            throw new \RuntimeException(\sprintf('Deferred single subagent projection missing for lifecycle "%s".', $lifecycleId));
+        }
+
+        if ($row->projectionVersion !== $expectedProjectionVersion) {
+            throw OptimisticLockException::lockFailed($row);
+        }
+
+        $row->parentProgressCursor = $parentProgressCursor;
+        $this->getEntityManager()->flush();
+    }
+
+    public function markTerminalCompletionEnqueued(
+        string $lifecycleId,
+        \DateTimeImmutable $enqueuedAt,
+        int $expectedProjectionVersion,
+    ): void {
+        $row = $this->findOneBy(['lifecycleId' => $lifecycleId]);
+        if (!$row instanceof DeferredSingleSubagentLaunch) {
+            throw new \RuntimeException(\sprintf('Deferred single subagent projection missing for lifecycle "%s".', $lifecycleId));
+        }
+
+        if ($row->projectionVersion !== $expectedProjectionVersion) {
+            throw OptimisticLockException::lockFailed($row);
+        }
+
+        $row->terminalCompletionEnqueuedAt = $row->terminalCompletionEnqueuedAt ?? $enqueuedAt;
+        $this->getEntityManager()->flush();
     }
 
     public function findByParentRunAndToolCall(string $parentRunId, string $toolCallId): ?DeferredSingleSubagentProjectionDTO
@@ -110,6 +153,7 @@ final class DeferredSingleSubagentLaunchRepository extends ServiceEntityReposito
                 'definition_model' => $definitionModel,
                 'launch_status' => DeferredSingleSubagentLaunchStatusEnum::Reserved->value,
                 'child_event_cursor' => 0,
+                'parent_progress_cursor' => 0,
                 'projection_version' => 1,
                 'started_at' => null,
                 'deadline_at' => $deadlineAt->format('Y-m-d H:i:s'),
@@ -221,6 +265,8 @@ final class DeferredSingleSubagentLaunchRepository extends ServiceEntityReposito
             definitionModel: $row->definitionModel,
             launchStatus: $row->launchStatus,
             childEventCursor: $row->childEventCursor,
+            parentProgressCursor: $row->parentProgressCursor,
+            terminalCompletionEnqueuedAt: $row->terminalCompletionEnqueuedAt,
             startedAt: $row->startedAt,
             deadlineAt: $row->deadlineAt,
             childLifecycleProjection: $this->decodeChildLifecycleProjection($row->childLifecycleProjection),

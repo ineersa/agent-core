@@ -32,6 +32,7 @@ use Ineersa\CodingAgent\Agent\Execution\AgentDepthGuard;
 use Ineersa\CodingAgent\Agent\Execution\AgentMcpToolsResolver;
 use Ineersa\CodingAgent\Agent\Execution\AgentPromptBuilder;
 use Ineersa\CodingAgent\Agent\Execution\AgentToolPolicyResolver;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Progress\SubagentProgressEventAppender;
 use Ineersa\CodingAgent\Agent\Execution\SubagentChildProgressSummaryBuilder;
 use Ineersa\CodingAgent\Agent\Execution\SubagentExecutionService;
 use Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader;
@@ -118,7 +119,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             'runStore' => $runStore,
             'parentRunStore' => $parentRunStore,
             'eventStore' => $eventStore,
-            'committedRunEventAppender' => self::getContainer()->get(CommittedRunEventAppender::class),
+            'committedRunEventAppender' => new SubagentProgressEventAppender(self::getContainer()->get(CommittedRunEventAppender::class)),
             'metadataReader' => $metadataReader,
             'childRunDirectory' => $directory,
             'contextAccessor' => self::getContainer()->get(StackToolExecutionContextAccessor::class),
@@ -154,7 +155,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             'runStore' => $this->createStub(RunStoreInterface::class),
             'parentRunStore' => $this->createStub(RunStoreInterface::class),
             'eventStore' => $eventStore,
-            'committedRunEventAppender' => self::getContainer()->get(CommittedRunEventAppender::class),
+            'committedRunEventAppender' => new SubagentProgressEventAppender(self::getContainer()->get(CommittedRunEventAppender::class)),
             'metadataReader' => new SubagentRunMetadataReader($eventStore),
             'childRunDirectory' => $directory,
             'contextAccessor' => self::getContainer()->get(StackToolExecutionContextAccessor::class),
@@ -199,7 +200,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             'runStore' => $this->createStub(RunStoreInterface::class),
             'parentRunStore' => $this->createStub(RunStoreInterface::class),
             'eventStore' => $eventStore,
-            'committedRunEventAppender' => self::getContainer()->get(CommittedRunEventAppender::class),
+            'committedRunEventAppender' => new SubagentProgressEventAppender(self::getContainer()->get(CommittedRunEventAppender::class)),
             'metadataReader' => new SubagentRunMetadataReader($eventStore),
             'childRunDirectory' => $directory,
             'contextAccessor' => self::getContainer()->get(StackToolExecutionContextAccessor::class),
@@ -821,7 +822,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
 
             $progressEmitter = new \Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Progress\SubagentChildRunProgressEmitter(
                 self::getContainer()->get(StackToolExecutionContextAccessor::class),
-                self::getContainer()->get(CommittedRunEventAppender::class),
+                new SubagentProgressEventAppender(self::getContainer()->get(CommittedRunEventAppender::class)),
                 new \Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder(),
                 new SubagentChildProgressSummaryBuilder($childFactory),
                 $runStore,
@@ -940,7 +941,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             'runStore' => $this->createStub(RunStoreInterface::class),
             'parentRunStore' => $this->createStub(RunStoreInterface::class),
             'eventStore' => $this->createStub(EventStoreInterface::class),
-            'committedRunEventAppender' => self::getContainer()->get(CommittedRunEventAppender::class),
+            'committedRunEventAppender' => new SubagentProgressEventAppender(self::getContainer()->get(CommittedRunEventAppender::class)),
             'metadataReader' => new SubagentRunMetadataReader($this->createStub(EventStoreInterface::class)),
             'childRunDirectory' => self::getContainer()->get(AgentChildRunDirectory::class),
             'contextAccessor' => self::getContainer()->get(StackToolExecutionContextAccessor::class),

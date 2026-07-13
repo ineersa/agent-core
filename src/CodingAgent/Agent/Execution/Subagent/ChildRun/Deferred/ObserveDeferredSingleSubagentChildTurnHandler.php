@@ -9,6 +9,7 @@ use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitEventSummary;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\CodingAgent\Entity\DeferredSingleSubagentLaunchRepository;
 use Psr\Log\LoggerInterface;
+use Symfony\Component\Messenger\MessageBusInterface;
 
 /**
  * Applies one child commit batch to the durable deferred-single lifecycle projection.
@@ -19,6 +20,7 @@ final readonly class ObserveDeferredSingleSubagentChildTurnHandler
         private DeferredSingleSubagentLaunchRepository $launchRepository,
         private DeferredSingleSubagentChildEventProjector $projector,
         private LoggerInterface $logger,
+        private MessageBusInterface $commandBus,
     ) {
     }
 
@@ -43,6 +45,8 @@ final readonly class ObserveDeferredSingleSubagentChildTurnHandler
         $cursor = $row->childEventCursor;
         $newEvents = $this->filterNewEvents($message->committedEvents, $cursor);
         if ([] === $newEvents) {
+            $this->enqueueDeliveryIfNeeded($row);
+
             return;
         }
 
@@ -96,6 +100,28 @@ final readonly class ObserveDeferredSingleSubagentChildTurnHandler
 
             throw $exception;
         }
+
+        $this->enqueueDelivery($message->lifecycleId);
+    }
+
+    private function enqueueDeliveryIfNeeded(\Ineersa\CodingAgent\Entity\DeferredSingleSubagentLaunch $row): void
+    {
+        $needsProgress = $row->childEventCursor > $row->parentProgressCursor;
+        $needsTerminal = null === $row->terminalCompletionEnqueuedAt
+            && \is_array($row->childLifecycleProjection)
+            && [] !== $row->childLifecycleProjection
+            && (RunStatus::tryFrom((string) ($row->childLifecycleProjection['child_status'] ?? 'running')) ?? RunStatus::Running)->isTerminal();
+
+        if (!$needsProgress && !$needsTerminal) {
+            return;
+        }
+
+        $this->enqueueDelivery($row->lifecycleId);
+    }
+
+    private function enqueueDelivery(string $lifecycleId): void
+    {
+        $this->commandBus->dispatch(new DeliverDeferredSingleSubagentLifecycleMessage($lifecycleId));
     }
 
     /**

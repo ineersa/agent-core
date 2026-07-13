@@ -10,6 +10,7 @@ use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactPathsDTO;
 use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunEventStoreFactory;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredSingleSubagentChildLifecycleProjectionDTO;
 
 /**
  * Builds bounded child-run progress summaries by scanning parent-scoped artifact events.
@@ -28,6 +29,30 @@ final class SubagentChildProgressSummaryBuilder
         private readonly AgentChildRunEventStoreFactory $childEventStoreFactory,
         private readonly SubagentChildToolProgressPresentationFormatter $presentationFormatter = new SubagentChildToolProgressPresentationFormatter(),
     ) {
+    }
+
+    public function fromDeferredProjection(
+        DeferredSingleSubagentChildLifecycleProjectionDTO $projection,
+        string $artifactId,
+    ): SubagentChildProgressSummary {
+        $recentTools = $projection->recentTools;
+
+        return new SubagentChildProgressSummary(
+            toolCount: $projection->toolCount,
+            inputTokens: $projection->inputTokens,
+            latestInputTokens: $projection->latestInputTokens,
+            contextWindow: $projection->contextWindow,
+            outputTokens: $projection->outputTokens,
+            reasoningTokens: $projection->reasoningTokens,
+            totalTokens: $projection->totalTokens,
+            cost: $projection->cost,
+            model: $projection->model,
+            provider: $projection->provider,
+            artifactPath: AgentArtifactPathsDTO::forArtifactId($artifactId)->artifactDir,
+            assistantExcerpt: $projection->assistantExcerpt,
+            recentTools: $recentTools,
+            activeToolLine: $projection->activeToolLine,
+        );
     }
 
     public function summarize(

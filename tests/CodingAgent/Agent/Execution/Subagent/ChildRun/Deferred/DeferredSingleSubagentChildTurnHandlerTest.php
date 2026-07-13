@@ -8,6 +8,7 @@ use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitEventSummary;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
+use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredSingleSubagentChildEventProjector;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\ObserveDeferredSingleSubagentChildTurnHandler;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\ObserveDeferredSingleSubagentChildTurnMessage;
@@ -44,6 +45,7 @@ final class DeferredSingleSubagentChildTurnHandlerTest extends IsolatedKernelTes
             $repo,
             new DeferredSingleSubagentChildEventProjector(),
             $logger,
+            new TestMessageBus(),
         );
 
         $batch1 = [
@@ -128,6 +130,7 @@ final class DeferredSingleSubagentChildTurnHandlerTest extends IsolatedKernelTes
             $repo,
             new DeferredSingleSubagentChildEventProjector(),
             new TestLogger(),
+            new TestMessageBus(),
         );
 
         $longText = str_repeat('Z', 300);

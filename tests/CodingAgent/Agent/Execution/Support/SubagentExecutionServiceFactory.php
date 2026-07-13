@@ -18,6 +18,7 @@ use Ineersa\CodingAgent\Agent\Execution\ParallelSubagentExecutionService;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Preparation\SubagentChildLaunchInputFactory;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Preparation\SubagentLaunchDefinitionPolicyService;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Progress\SubagentChildRunProgressEmitter;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Progress\SubagentProgressEventAppender;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Result\SubagentChildRunArtifactFinalizer;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Result\SubagentChildRunHandoffRenderer;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\SubagentChildRunBatchLifecycleListener;
@@ -74,8 +75,11 @@ final class SubagentExecutionServiceFactory
 
         $handoffRenderer = new SubagentChildRunHandoffRenderer();
         $artifactFinalizer = new SubagentChildRunArtifactFinalizer($args['artifactRegistry'], $handoffRenderer, $args['logger']);
+        $progressEventAppender = $args['committedRunEventAppender'] instanceof SubagentProgressEventAppender
+            ? $args['committedRunEventAppender']
+            : new SubagentProgressEventAppender($args['committedRunEventAppender']);
         $lifecycleListener = new SubagentChildRunBatchLifecycleListener(
-            new SubagentChildRunProgressEmitter($args['contextAccessor'], $args['committedRunEventAppender'], $args['progressSnapshotBuilder'], $args['childProgressSummaryBuilder'], $args['runStore'], $args['clock']),
+            new SubagentChildRunProgressEmitter($args['contextAccessor'], $progressEventAppender, $args['progressSnapshotBuilder'], $args['childProgressSummaryBuilder'], $args['runStore'], $args['clock']),
             $artifactFinalizer,
             $handoffRenderer,
         );

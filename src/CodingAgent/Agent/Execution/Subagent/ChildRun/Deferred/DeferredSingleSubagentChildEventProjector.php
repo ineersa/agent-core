@@ -100,9 +100,13 @@ final class DeferredSingleSubagentChildEventProjector
 
                 $assistantPayload = \is_array($payload['assistant_message'] ?? null) ? $payload['assistant_message'] : null;
                 if (null !== $assistantPayload) {
+                    $resultText = $this->presentationFormatter->assistantResultTextFromPayload($assistantPayload);
+                    if ('' !== $resultText) {
+                        $assistantResultText = $resultText;
+                        $assistantExcerpt = $this->presentationFormatter->assistantExcerptFromText($resultText);
+                    }
                     $fullText = $this->presentationFormatter->assistantTextFromPayload($assistantPayload);
-                    if ('' !== $fullText) {
-                        $assistantResultText = $fullText;
+                    if ('' !== $fullText && '' === $assistantExcerpt) {
                         $assistantExcerpt = $this->presentationFormatter->assistantExcerptFromText($fullText);
                     }
                     $toolCalls = \is_array($assistantPayload['tool_calls'] ?? null) ? $assistantPayload['tool_calls'] : [];

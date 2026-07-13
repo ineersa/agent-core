@@ -91,6 +91,34 @@ final class SubagentChildToolProgressPresentationFormatter
     /**
      * @param array<string, mixed> $assistantPayload
      */
+
+    /**
+     * First assistant text block only — matches foreground {@see SubagentChildRunHandoffRenderer::extractLastMessage()}.
+     *
+     * @param array<string, mixed> $assistantPayload
+     */
+    public function assistantResultTextFromPayload(array $assistantPayload): string
+    {
+        $msg = AgentMessage::fromPayload($assistantPayload);
+        if (null === $msg || 'assistant' !== $msg->role) {
+            return '';
+        }
+
+        foreach ($msg->content as $part) {
+            if (!\is_array($part)) {
+                continue;
+            }
+            if ('text' === ($part['type'] ?? null) && \is_string($part['text'] ?? null)) {
+                return trim($part['text']);
+            }
+        }
+
+        return '';
+    }
+
+    /**
+     * @param array<string, mixed> $assistantPayload
+     */
     public function assistantTextFromPayload(array $assistantPayload): string
     {
         $msg = AgentMessage::fromPayload($assistantPayload);

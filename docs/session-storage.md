@@ -68,7 +68,13 @@ For parent sessions that launch a **single** deferred subagent child:
 - After each child `RunCommit`, `AfterTurnCommitHookContext` carries the **persisted** committed event summaries (allocated `seq`, not pre-append `seq: 0`).
 - A CodingAgent hook subscriber looks up the child run in `deferred_single_subagent_launch` and dispatches a typed Messenger message to the `run_control` transport.
 - The run_control handler incrementally reduces those summaries into a compact JSON projection on the same table (`child_lifecycle_projection`, authoritative `child_event_cursor`). No `RunStore::get`, `EventStore::allFor`, or filesystem wake markers in this path.
-- **Piece 3B2** will emit parent `subagent_progress` and complete the deferred parent tool call from this projection. **Piece 3C** owns one-time gap/restart replay when the cursor is behind committed child events.
+- **Piece 3B2** emits parent `subagent_progress` and completes the deferred parent tool call from the durable projection:
+  - `ObserveDeferredSingleSubagentChildTurnHandler` remains the projection owner and enqueues `DeliverDeferredSingleSubagentLifecycleMessage` after successful projection writes (and on duplicate observe when undelivered progress/terminal work remains).
+  - `DeferredToolCompletionRegisteredEvent` (dispatched after generic deferred registration or pending redelivery) also enqueues the same delivery message, closing registration-before-observation and observation-before-registration races without polling.
+  - Delivery uses stored parent tool correlation (`parent_turn_no`, `parent_tool_call_id`, `parent_order_index`) via `SubagentProgressEventAppender`; it does not use `StackToolExecutionContextAccessor`.
+  - `lifecycle_id` is the generic `CompleteDeferredToolCall` `deferredId` for single deferred subagents.
+  - Steady-state delivery reads only the `deferred_single_subagent_launch` row (projection JSON + cursors/markers). It does not read child `events.jsonl`, child `state.json`, or `EventStore::allFor`.
+  - **Piece 3C** owns timeout, parent cancellation, and one-time gap/restart replay when `child_event_cursor` is behind committed child events.
 
 - All child stores use per-instance binding (`parentRunId` + `agentRunId` +
   `artifactId`) and resolve paths through `AgentArtifactPathResolver`.

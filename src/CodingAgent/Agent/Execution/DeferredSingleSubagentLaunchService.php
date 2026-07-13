@@ -84,19 +84,20 @@ final class DeferredSingleSubagentLaunchService
         );
         $this->artifactLifecycle->ensureReservedPending($prepared->identity);
 
-        return $this->dispatchLaunch($parentRunId, $toolCallId, $prepared);
+        return $this->dispatchLaunch($parentRunId, $toolCallId, $prepared, $projection->lifecycleId);
     }
 
     private function dispatchLaunch(
         string $parentRunId,
         string $toolCallId,
         PreparedAgentChildRunDTO $prepared,
+        string $lifecycleId,
     ): DeferredToolCompletionOutcome {
         $artifactStatus = $this->artifactLifecycle->getArtifactStatus($parentRunId, $prepared->identity->artifactId);
         if ($this->isArtifactBeyondPending($artifactStatus)) {
             $this->reconcileLaunchedProjection($parentRunId, $toolCallId);
 
-            return new DeferredToolCompletionOutcome();
+            return new DeferredToolCompletionOutcome($lifecycleId);
         }
 
         try {
@@ -145,7 +146,7 @@ final class DeferredSingleSubagentLaunchService
         // start() returned: child StartRun is idempotently dispatched; do not abort/cancel on persistence failures.
         $this->reconcilePostDispatch($parentRunId, $toolCallId, $prepared);
 
-        return new DeferredToolCompletionOutcome();
+        return new DeferredToolCompletionOutcome($lifecycleId);
     }
 
     private function reconcilePostDispatch(

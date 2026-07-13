@@ -18,6 +18,7 @@ use Ineersa\AgentCore\Application\Replay\PromptStateReplayService;
 use Ineersa\AgentCore\Application\Replay\ReplayEventPreparer;
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolExecutorInterface;
+use Ineersa\AgentCore\Domain\Event\DeferredToolCompletionRegisteredEvent;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
 use Ineersa\AgentCore\Domain\Message\CompleteDeferredToolCall;
@@ -52,6 +53,54 @@ use Symfony\Component\Messenger\Stamp\HandledStamp;
  * skips immediate ToolCallResult, and completes later through the canonical bus path.
  */
 #[Group('db')]
+final class DeferredRegisteredEventCollector implements \Symfony\Component\EventDispatcher\EventDispatcherInterface
+{
+    /** @var list<DeferredToolCompletionRegisteredEvent> */
+    public array $events = [];
+    public int $count = 0;
+
+    public function dispatch(object $event, ?string $eventName = null): object
+    {
+        if ($event instanceof DeferredToolCompletionRegisteredEvent) {
+            $this->events[] = $event;
+            ++$this->count;
+        }
+
+        return $event;
+    }
+
+    public function addListener(string $eventName, callable|array $listener, int $priority = 0): void
+    {
+    }
+
+    public function addSubscriber(\Symfony\Component\EventDispatcher\EventSubscriberInterface $subscriber): void
+    {
+    }
+
+    public function removeListener(string $eventName, callable|array $listener): void
+    {
+    }
+
+    public function removeSubscriber(\Symfony\Component\EventDispatcher\EventSubscriberInterface $subscriber): void
+    {
+    }
+
+    public function getListeners(?string $eventName = null): array
+    {
+        return [];
+    }
+
+    public function getListenerPriority(string $eventName, callable|array $listener): ?int
+    {
+        return null;
+    }
+
+    public function hasListeners(?string $eventName = null): bool
+    {
+        return false;
+    }
+}
+
 final class DeferredToolCompletionRuntimeTest extends IsolatedKernelTestCase
 {
     public function testImmediateToolStillDispatchesCanonicalToolCallResult(): void
@@ -110,7 +159,7 @@ final class DeferredToolCompletionRuntimeTest extends IsolatedKernelTestCase
                     toolCallId: $toolCall->toolCallId,
                     toolName: $toolCall->toolName,
                     content: [['type' => 'text', 'text' => 'deferred']],
-                    details: ['raw_result' => new DeferredToolCompletionOutcome()],
+                    details: ['raw_result' => new DeferredToolCompletionOutcome('def-outcome-1')],
                     isError: false,
                 );
             }
@@ -154,7 +203,7 @@ final class DeferredToolCompletionRuntimeTest extends IsolatedKernelTestCase
                     toolCallId: $toolCall->toolCallId,
                     toolName: $toolCall->toolName,
                     content: [['type' => 'text', 'text' => 'deferred']],
-                    details: ['raw_result' => new DeferredToolCompletionOutcome()],
+                    details: ['raw_result' => new DeferredToolCompletionOutcome('def-outcome-1')],
                     isError: false,
                 );
             }
@@ -192,7 +241,7 @@ final class DeferredToolCompletionRuntimeTest extends IsolatedKernelTestCase
                     toolCallId: $toolCall->toolCallId,
                     toolName: $toolCall->toolName,
                     content: [['type' => 'text', 'text' => 'deferred']],
-                    details: ['raw_result' => new DeferredToolCompletionOutcome()],
+                    details: ['raw_result' => new DeferredToolCompletionOutcome('def-outcome-1')],
                     isError: false,
                 );
             }
@@ -482,6 +531,67 @@ final class DeferredToolCompletionRuntimeTest extends IsolatedKernelTestCase
             arguments: [],
             orderIndex: 0,
         ));
+    }
+
+    public function testDeferredToolRegistersExactOutcomeDeferredIdAndDispatchesRegisteredEvent(): void
+    {
+        $dispatcher = new DeferredRegisteredEventCollector();
+
+        $toolExecutor = new class implements ToolExecutorInterface {
+            public function execute(ToolCall $toolCall): ToolResult
+            {
+                return new ToolResult(
+                    toolCallId: $toolCall->toolCallId,
+                    toolName: $toolCall->toolName,
+                    content: [['type' => 'text', 'text' => 'deferred']],
+                    details: ['raw_result' => new DeferredToolCompletionOutcome('lifecycle-exact-1')],
+                    isError: false,
+                );
+            }
+        };
+
+        $commandBus = new TestMessageBus();
+        $repo = new InMemoryDeferredToolCompletionRepository();
+        $worker = new ExecuteToolCallWorker($toolExecutor, $commandBus, $repo, eventDispatcher: $dispatcher);
+
+        $worker($this->executeMessage(toolCallId: 'call-exact-id'));
+
+        $pending = $repo->findPendingByRunAndToolCall('run-deferred-1', 'call-exact-id');
+        $this->assertNotNull($pending);
+        $this->assertSame('lifecycle-exact-1', $pending->deferredId);
+        $this->assertCount(1, $dispatcher->events);
+        $this->assertSame('lifecycle-exact-1', $dispatcher->events[0]->correlation->deferredId);
+    }
+
+    public function testPendingRedeliveryDispatchesRegisteredEventWithoutSecondExecution(): void
+    {
+        $dispatcher = new DeferredRegisteredEventCollector();
+
+        $toolExecutor = new class implements ToolExecutorInterface {
+            public int $calls = 0;
+
+            public function execute(ToolCall $toolCall): ToolResult
+            {
+                ++$this->calls;
+
+                return new ToolResult(
+                    toolCallId: $toolCall->toolCallId,
+                    toolName: $toolCall->toolName,
+                    content: [['type' => 'text', 'text' => 'deferred']],
+                    details: ['raw_result' => new DeferredToolCompletionOutcome('lifecycle-redelivery-1')],
+                    isError: false,
+                );
+            }
+        };
+
+        $repo = new InMemoryDeferredToolCompletionRepository();
+        $worker = new ExecuteToolCallWorker($toolExecutor, new TestMessageBus(), $repo, eventDispatcher: $dispatcher);
+        $message = $this->executeMessage(toolCallId: 'call-redelivery-event');
+        $worker($message);
+        $worker($message);
+
+        $this->assertSame(1, $toolExecutor->calls);
+        $this->assertSame(2, $dispatcher->count);
     }
 
     private function executeMessage(string $toolCallId): ExecuteToolCall
