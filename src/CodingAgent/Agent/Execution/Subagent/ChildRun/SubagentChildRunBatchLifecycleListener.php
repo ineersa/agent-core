@@ -62,7 +62,6 @@ final class SubagentChildRunBatchLifecycleListener implements ChildRunBatchLifec
                     $id->definitionModel,
                     $state,
                     $ctx->progressStatus,
-                    $update->seq,
                     $update->progressStartedMicros,
                 );
 
@@ -77,7 +76,6 @@ final class SubagentChildRunBatchLifecycleListener implements ChildRunBatchLifec
                 $id->taskSummary,
                 $id->definitionModel,
                 $state,
-                $update->seq,
                 $update->progressStartedMicros,
                 $ctx->progressStatus,
             );
@@ -89,7 +87,6 @@ final class SubagentChildRunBatchLifecycleListener implements ChildRunBatchLifec
             $update->parentRunId,
             $this->toReportMap($update->items),
             $update->activeTurns,
-            $update->seq,
             $update->progressStartedMicros,
             $update->aggregateStatus,
         );

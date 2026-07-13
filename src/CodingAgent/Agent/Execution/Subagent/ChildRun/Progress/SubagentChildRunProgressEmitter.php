@@ -80,7 +80,6 @@ final class SubagentChildRunProgressEmitter
         string $taskSummary,
         ?string $definitionModel,
         RunState $state,
-        int $seq,
         int $progressStartedMicros,
         string $progressStatus = 'running',
     ): void {
@@ -107,7 +106,7 @@ final class SubagentChildRunProgressEmitter
             $enrichment,
             $progressStatus,
         );
-        $this->appendSubagentProgressEvent($parentRunId, $context, $seq, $progress);
+        $this->appendSubagentProgressEvent($parentRunId, $context, $progress);
     }
 
     public function emitTerminalSingle(
@@ -119,7 +118,6 @@ final class SubagentChildRunProgressEmitter
         ?string $definitionModel,
         RunState $state,
         string $terminalStatus,
-        int $seq,
         int $progressStartedMicros,
     ): void {
         $context = $this->contextAccessor->current();
@@ -145,7 +143,7 @@ final class SubagentChildRunProgressEmitter
             $elapsedMs,
             $enrichment,
         );
-        $this->appendSubagentProgressEvent($parentRunId, $context, $seq, $progress);
+        $this->appendSubagentProgressEvent($parentRunId, $context, $progress);
     }
 
     /**
@@ -203,7 +201,6 @@ final class SubagentChildRunProgressEmitter
         string $parentRunId,
         array $reports,
         array $activeTurns,
-        int $seq,
         int $progressStartedMicros,
         string $aggregateStatus = 'running',
     ): void {
@@ -222,21 +219,7 @@ final class SubagentChildRunProgressEmitter
             $enrichmentByRun,
             $aggregateStatus,
         );
-        $event = new RunEvent(
-            runId: $parentRunId,
-            seq: $seq,
-            turnNo: $context->turnNo(),
-            type: RunEventTypeEnum::ToolExecutionUpdate->value,
-            payload: [
-                'tool_call_id' => $context->toolCallId(),
-                'tool_name' => $context->toolName(),
-                'delta' => '',
-                'subagent_progress' => $progress,
-                'order_index' => $context->orderIndex(),
-            ],
-        );
-
-        $this->committedRunEventAppender->append($event);
+        $this->appendSubagentProgressEvent($parentRunId, $context, $progress);
     }
 
     /**
@@ -272,12 +255,11 @@ final class SubagentChildRunProgressEmitter
     private function appendSubagentProgressEvent(
         string $parentRunId,
         ToolContext $context,
-        int $seq,
         array $progress,
     ): void {
         $event = new RunEvent(
             runId: $parentRunId,
-            seq: $seq,
+            seq: 0,
             turnNo: $context->turnNo(),
             type: RunEventTypeEnum::ToolExecutionUpdate->value,
             payload: [
@@ -289,6 +271,8 @@ final class SubagentChildRunProgressEmitter
             ],
         );
 
+        // seq 0 is deliberately unallocated; the committed store atomically assigns persisted seq
+        // and CommittedRunEventAppender synchronizes parent RunState.lastSeq.
         $this->committedRunEventAppender->append($event);
     }
 

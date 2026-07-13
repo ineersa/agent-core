@@ -499,26 +499,24 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
     }
 
     /**
-     * Prove that parent RunState.lastSeq is advanced after progress events
-     * via compareAndSwap, preventing sequence collisions with later
-     * ToolCallResultHandler-generated events.
+     * Regression: progress events are submitted with unallocated seq 0; the committed
+     * store allocates monotonic persisted sequences above the parent high-water mark and
+     * CommittedRunEventAppender synchronizes parent RunState.lastSeq.
      */
-    public function testProgressUpdatesAdvanceParentSequence(): void
+    public function testProgressUpdatesDelegateSequenceAllocationToCommittedAppender(): void
     {
-        // Use real InMemoryRunStore so compareAndSwap works.
-        $parentRunStore = new InMemoryRunStore();
+        $parentRunId = 'parent-seq';
+        $highWater = 5;
 
-        // Seed parent state so resolveNextProgressSeq has a starting point.
-        $parentState = new RunState(
-            runId: 'parent-seq',
+        $parentRunStore = new InMemoryRunStore();
+        $parentRunStore->compareAndSwap(new RunState(
+            runId: $parentRunId,
             status: RunStatus::Running,
             version: 3,
-            lastSeq: 5,
+            lastSeq: $highWater,
             messages: [],
-        );
-        $parentRunStore->compareAndSwap($parentState, 0);
+        ), 0);
 
-        // Child polls: first Running, then Completed.
         $getCount = 0;
         $runningState = new RunState(
             runId: 'child-seq',
@@ -562,19 +560,19 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             instructions: 'Seq test.',
         );
 
-        $catalog = new AgentDefinitionCatalog([$def]);
-        $directory = self::getContainer()->get(AgentChildRunDirectory::class);
+        $innerBackingStore = new InMemoryEventStore();
+        $innerBackingStore->seed(new RunEvent($parentRunId, $highWater, 0, 'run_started', []));
+        $backingEventStore = new ProgressAppendInputRecordingEventStore($innerBackingStore);
 
-        $eventStore = new InMemoryEventStore();
-        $sequencedAppender = new CommittedRunEventAppender($eventStore, $parentRunStore, new \Psr\Log\NullLogger());
+        $metadataEventStore = new InMemoryEventStore();
+        $sequencedAppender = new CommittedRunEventAppender($backingEventStore, $parentRunStore, new \Psr\Log\NullLogger());
 
-        $metadataReader = new SubagentRunMetadataReader($eventStore);
+        $metadataReader = new SubagentRunMetadataReader($metadataEventStore);
         $registry = self::getContainer()->get(AgentArtifactRegistry::class);
 
-        // Push a ToolContext so emitProgressUpdate has an active context.
         $contextAccessor = new StackToolExecutionContextAccessor();
         $toolContext = new ToolContext(
-            runId: 'parent-seq',
+            runId: $parentRunId,
             turnNo: 0,
             toolCallId: 'tc-seq',
             toolName: 'subagent',
@@ -583,7 +581,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
         );
 
         $service = $this->makeService([
-            'catalog' => $catalog,
+            'catalog' => new AgentDefinitionCatalog([$def]),
             'depthGuard' => new AgentDepthGuard(),
             'policyResolver' => $this->defaultPolicyResolver(),
             'promptBuilder' => new AgentPromptBuilder(self::getContainer()->get(SystemPromptBuilder::class)),
@@ -592,10 +590,10 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             'agentRunner' => $agentRunner,
             'runStore' => $runStore,
             'parentRunStore' => $parentRunStore,
-            'eventStore' => $eventStore,
+            'eventStore' => $metadataEventStore,
             'committedRunEventAppender' => $sequencedAppender,
             'metadataReader' => $metadataReader,
-            'childRunDirectory' => $directory,
+            'childRunDirectory' => self::getContainer()->get(AgentChildRunDirectory::class),
             'contextAccessor' => $contextAccessor,
             'logger' => self::getContainer()->get('logger'),
             'agentsConfig' => new AgentsConfig(),
@@ -605,35 +603,39 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             'appConfig' => self::getContainer()->get(AppConfig::class),
         ]);
 
-        $result = $contextAccessor->with($toolContext, static function () use ($service): string {
-            return $service->execute('parent-seq', 'seq-agent', 'Do work');
+        $result = $contextAccessor->with($toolContext, static function () use ($service, $parentRunId): string {
+            return $service->execute($parentRunId, 'seq-agent', 'Do work');
         });
 
         $this->assertStringContainsString('done', $result);
+        $this->assertNotEmpty($backingEventStore->appendInputs, 'Progress path should append via CommittedRunEventAppender.');
+        foreach ($backingEventStore->appendInputs as $inputEvent) {
+            $this->assertSame(0, $inputEvent->seq, 'Service must submit unallocated seq 0 to the appender.');
+            $this->assertArrayHasKey('subagent_progress', $inputEvent->payload);
+        }
 
-        // Parent lastSeq should have advanced past the initial seed.
-        $finalParentState = $parentRunStore->get('parent-seq');
-        $this->assertNotNull($finalParentState);
-        $this->assertGreaterThan(
-            5,
-            $finalParentState->lastSeq,
-            'Parent lastSeq should advance past initial seed (5) after progress events.',
-        );
-
-        $parentEvents = $eventStore->allFor('parent-seq');
-        $progressEvents = array_filter(
+        $parentEvents = $backingEventStore->allFor($parentRunId);
+        $progressEvents = array_values(array_filter(
             $parentEvents,
             static fn (RunEvent $e): bool => RunEventTypeEnum::ToolExecutionUpdate->value === $e->type,
-        );
-        $this->assertNotEmpty($progressEvents, 'At least one progress event should be emitted.');
+        ));
+        $this->assertNotEmpty($progressEvents);
 
-        // Progress events should have unique sequences.
-        $progressSeqs = array_map(static fn (RunEvent $e): int => $e->seq, $progressEvents);
-        $this->assertSame(
-            \count($progressEvents),
-            \count(array_unique($progressSeqs)),
-            'Progress events should have unique sequence numbers.',
-        );
+        $runningEvents = array_values(array_filter(
+            $progressEvents,
+            static fn (RunEvent $e): bool => 'running' === ($e->payload['subagent_progress']['status'] ?? null),
+        ));
+        $this->assertNotEmpty($runningEvents, 'Expected at least one running subagent_progress snapshot.');
+
+        $persistedSeqs = array_map(static fn (RunEvent $e): int => $e->seq, $progressEvents);
+        foreach ($persistedSeqs as $seq) {
+            $this->assertGreaterThan($highWater, $seq);
+        }
+        $this->assertSame(\count($progressEvents), \count(array_unique($persistedSeqs)));
+
+        $finalParentState = $parentRunStore->get($parentRunId);
+        $this->assertNotNull($finalParentState);
+        $this->assertSame(max($persistedSeqs), $finalParentState->lastSeq);
     }
 
     public function testCompactingChildRunTreatedAsActiveAndCompletes(): void
@@ -1863,5 +1865,40 @@ CHILD_SKILL_BODY_UNIQUE',
         ];
 
         return SubagentExecutionServiceFactory::build(array_merge($defaults, $overrides));
+    }
+}
+
+/**
+ * Records RunEvent inputs before delegating allocation to InMemoryEventStore.
+ */
+final class ProgressAppendInputRecordingEventStore implements EventStoreInterface
+{
+    /** @var list<RunEvent> */
+    public array $appendInputs = [];
+
+    public function __construct(private readonly InMemoryEventStore $inner)
+    {
+    }
+
+    public function append(RunEvent $event): RunEvent
+    {
+        $this->appendInputs[] = $event;
+
+        return $this->inner->append($event);
+    }
+
+    public function appendMany(array $events): array
+    {
+        $out = [];
+        foreach ($events as $event) {
+            $out[] = $this->append($event);
+        }
+
+        return $out;
+    }
+
+    public function allFor(string $runId): array
+    {
+        return $this->inner->allFor($runId);
     }
 }

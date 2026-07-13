@@ -6,7 +6,6 @@ namespace Ineersa\CodingAgent\Tests\Agent\Execution\Support;
 
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionCatalog;
 use Ineersa\CodingAgent\Agent\Execution\AgentDepthGuard;
-use Ineersa\CodingAgent\Agent\Execution\ChildRun\Infrastructure\ChildRunParentSequenceCoordinator;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Lifecycle\ChildRunArtifactLifecycleService;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Lifecycle\ChildRunBatchInterruptionService;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Lifecycle\ChildRunBatchLaunchService;
@@ -68,7 +67,6 @@ final class SubagentExecutionServiceFactory
             }
         }
 
-        $sequenceCoordinator = new ChildRunParentSequenceCoordinator($args['parentRunStore'], $args['eventStore'], $args['logger']);
         $handoffRenderer = new SubagentChildRunHandoffRenderer();
         $artifactFinalizer = new SubagentChildRunArtifactFinalizer($args['artifactRegistry'], $handoffRenderer, $args['logger']);
         $lifecycleListener = new SubagentChildRunBatchLifecycleListener(
@@ -85,11 +83,10 @@ final class SubagentExecutionServiceFactory
 
         $launchService = new ChildRunBatchLaunchService($args['agentRunner'], $artifactLifecycle, $lifecycleListener, $args['logger']);
         $transitionService = new ChildRunBatchSnapshotTransitionService($artifactLifecycle, $lifecycleListener);
-        $progressService = new ChildRunBatchProgressService($lifecycleListener, $sequenceCoordinator, $args['runStore']);
+        $progressService = new ChildRunBatchProgressService($lifecycleListener, $args['runStore']);
         $interruptionService = new ChildRunBatchInterruptionService($args['agentRunner'], $args['runStore'], $lifecycleListener, $progressService);
         $batchSupervisor = new ForegroundChildRunSupervisor(
             $lifecycleListener,
-            $sequenceCoordinator,
             $args['runStore'],
             $launchService,
             $transitionService,

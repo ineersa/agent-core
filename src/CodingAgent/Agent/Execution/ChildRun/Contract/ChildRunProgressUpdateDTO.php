@@ -14,7 +14,6 @@ final readonly class ChildRunProgressUpdateDTO
         public string $parentRunId,
         public array $items,
         public array $activeTurns,
-        public int $seq,
         public int $progressStartedMicros,
         public string $aggregateStatus,
         public bool $isSingleChild,

@@ -19,7 +19,6 @@ use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunIdentityDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunSingleProgressContextDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunTerminalFinalizationRequestDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\PreparedAgentChildRunDTO;
-use Ineersa\CodingAgent\Agent\Execution\ChildRun\Infrastructure\ChildRunParentSequenceCoordinator;
 use Symfony\Component\Clock\ClockInterface;
 use Symfony\Component\Clock\MonotonicClock;
 
@@ -32,7 +31,6 @@ final class ForegroundChildRunSupervisor
 
     public function __construct(
         private readonly ChildRunBatchLifecycleListenerInterface $lifecycleListener,
-        private readonly ChildRunParentSequenceCoordinator $sequenceCoordinator,
         private readonly RunStoreInterface $childRunStore,
         private readonly ChildRunBatchLaunchService $launchService,
         private readonly ChildRunBatchSnapshotTransitionService $transitionService,
@@ -63,16 +61,15 @@ final class ForegroundChildRunSupervisor
         $progressStartedMicros = $this->nowMicros();
         $deadline = $progressStartedMicros + $batch->timeoutSeconds * 1_000_000;
         $cancelToken = $this->contextAccessor->current()?->cancellationToken();
-        $progressSeq = $this->sequenceCoordinator->resolveNextProgressSeq($parentRunId);
         $lastSignature = null;
 
         while ($this->transitionService->hasActiveChildren($snapshots)) {
             if (null !== $cancelToken && $cancelToken->isCancellationRequested()) {
-                return $this->interruptionService->handleParentCancellation($batch, $snapshots, $progressSeq, $progressStartedMicros);
+                return $this->interruptionService->handleParentCancellation($batch, $snapshots, $progressStartedMicros);
             }
 
             if ($this->nowMicros() > $deadline) {
-                return $this->interruptionService->handleBatchTimeout($batch, $snapshots, $progressSeq, $progressStartedMicros);
+                return $this->interruptionService->handleBatchTimeout($batch, $snapshots, $progressStartedMicros);
             }
 
             $activeTurns = [];
@@ -90,7 +87,7 @@ final class ForegroundChildRunSupervisor
 
                 if ($batch->isSingle()) {
                     if ($this->transitionService->isRunTerminal($state->status)) {
-                        return $this->finishSingleFromTerminalState($batch, $snapshot, $state, $progressSeq, $progressStartedMicros, $snapshots);
+                        return $this->finishSingleFromTerminalState($batch, $snapshot, $state, $progressStartedMicros, $snapshots);
                     }
 
                     $this->transitionService->applySingleActiveTransition($snapshot, $state);
@@ -99,12 +96,11 @@ final class ForegroundChildRunSupervisor
                         $batch,
                         $snapshots,
                         $activeTurns,
-                        $progressSeq,
                         $progressStartedMicros,
                         $progressStatus,
                         new ChildRunSingleProgressContextDTO($snapshot->identity, $state, $progressStatus),
                     );
-                    $this->progressService->emitDedupedIfChanged($parentRunId, $update, $progressSeq, $lastSignature);
+                    $this->progressService->emitDedupedIfChanged($update, $lastSignature);
 
                     continue;
                 }
@@ -113,13 +109,13 @@ final class ForegroundChildRunSupervisor
             }
 
             if (!$batch->isSingle()) {
-                $update = $this->progressService->buildProgressUpdate($batch, $snapshots, $activeTurns, $progressSeq, $progressStartedMicros, 'running');
-                $this->progressService->emitDedupedIfChanged($parentRunId, $update, $progressSeq, $lastSignature);
+                $update = $this->progressService->buildProgressUpdate($batch, $snapshots, $activeTurns, $progressStartedMicros, 'running');
+                $this->progressService->emitDedupedIfChanged($update, $lastSignature);
             }
             $this->sleepPollInterval();
         }
 
-        $this->progressService->emitAggregateProgress($batch, $snapshots, $progressSeq, $progressStartedMicros, $this->progressService->resolveAggregateStatus($snapshots));
+        $this->progressService->emitAggregateProgress($batch, $snapshots, $progressStartedMicros, $this->progressService->resolveAggregateStatus($snapshots));
 
         if ($batch->isSingle()) {
             throw new ToolCallException('Single child supervision ended without terminal state.', retryable: false);
@@ -141,7 +137,6 @@ final class ForegroundChildRunSupervisor
         ChildRunBatchDTO $batch,
         ChildRunBatchItemSnapshotDTO $snapshot,
         RunState $state,
-        int $progressSeq,
         int $progressStartedMicros,
         array $snapshots,
     ): ChildRunBatchSupervisionResultDTO {
@@ -152,12 +147,11 @@ final class ForegroundChildRunSupervisor
             $batch,
             $snapshots,
             [$identity->childRunId => $state->turnNo],
-            $progressSeq,
             $progressStartedMicros,
             $terminalStatus,
             new ChildRunSingleProgressContextDTO($identity, $state, $terminalStatus),
         );
-        $this->progressService->emitAndAdvance($batch->parentRunId, $update, $progressSeq);
+        $this->progressService->emitProgress($update);
 
         $finalizationRequest = match ($state->status) {
             RunStatus::Completed => ChildRunTerminalFinalizationRequestDTO::singleCompleted($identity, $state),

@@ -34,7 +34,6 @@ final class ChildRunBatchInterruptionService
     public function handleParentCancellation(
         ChildRunBatchDTO $batch,
         array $snapshots,
-        int $progressSeq,
         int $progressStartedMicros,
     ): ChildRunBatchSupervisionResultDTO {
         $policy = $batch->lifecyclePolicy;
@@ -63,15 +62,14 @@ final class ChildRunBatchInterruptionService
                     $batch,
                     $snapshots,
                     [$only->childRunId => $state->turnNo],
-                    $progressSeq,
                     $progressStartedMicros,
                     'cancelled',
                     new ChildRunSingleProgressContextDTO($only, $state, 'cancelled'),
                 );
-                $this->progressService->emitAndAdvance($batch->parentRunId, $update, $progressSeq);
+                $this->progressService->emitProgress($update);
             }
         } else {
-            $this->progressService->emitAggregateProgress($batch, $snapshots, $progressSeq, $progressStartedMicros, 'cancelled');
+            $this->progressService->emitAggregateProgress($batch, $snapshots, $progressStartedMicros, 'cancelled');
         }
 
         return new ChildRunBatchSupervisionResultDTO($batch->parentRunId, array_values($snapshots), ChildRunBatchCompletionKindEnum::ParentCancelled);
@@ -83,7 +81,6 @@ final class ChildRunBatchInterruptionService
     public function handleBatchTimeout(
         ChildRunBatchDTO $batch,
         array $snapshots,
-        int $progressSeq,
         int $progressStartedMicros,
     ): ChildRunBatchSupervisionResultDTO {
         $policy = $batch->lifecyclePolicy;
@@ -96,12 +93,11 @@ final class ChildRunBatchInterruptionService
                     $batch,
                     $snapshots,
                     [$only->childRunId => $timeoutState->turnNo],
-                    $progressSeq,
                     $progressStartedMicros,
                     'failed',
                     new ChildRunSingleProgressContextDTO($only, $timeoutState, 'failed'),
                 );
-                $this->progressService->emitAndAdvance($batch->parentRunId, $update, $progressSeq);
+                $this->progressService->emitProgress($update);
             }
 
             $artifactOutcome = new ChildRunTerminalOutcomeDTO(

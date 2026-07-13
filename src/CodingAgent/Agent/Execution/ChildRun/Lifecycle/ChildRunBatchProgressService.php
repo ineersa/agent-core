@@ -12,16 +12,17 @@ use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchItemSnapshotDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunProgressUpdateDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunSingleProgressContextDTO;
-use Ineersa\CodingAgent\Agent\Execution\ChildRun\Infrastructure\ChildRunParentSequenceCoordinator;
 
 /**
- * Progress snapshot assembly, deduplication signatures, committed emit path, and parent sequence advancement.
+ * Progress snapshot assembly, deduplication signatures, and committed emit path.
+ *
+ * Parent RunEvent sequence allocation and RunState.lastSeq synchronization are owned
+ * solely by CommittedRunEventAppender (via the committed EventStore allocator).
  */
 final class ChildRunBatchProgressService
 {
     public function __construct(
         private readonly ChildRunBatchLifecycleListenerInterface $lifecycleListener,
-        private readonly ChildRunParentSequenceCoordinator $sequenceCoordinator,
         private readonly RunStoreInterface $childRunStore,
     ) {
     }
@@ -44,7 +45,6 @@ final class ChildRunBatchProgressService
         ChildRunBatchDTO $batch,
         array $snapshots,
         array $activeTurns,
-        int $seq,
         int $progressStartedMicros,
         string $aggregateStatus,
         ?ChildRunSingleProgressContextDTO $singleContext = null,
@@ -53,7 +53,6 @@ final class ChildRunBatchProgressService
             parentRunId: $batch->parentRunId,
             items: array_values($snapshots),
             activeTurns: $activeTurns,
-            seq: $seq,
             progressStartedMicros: $progressStartedMicros,
             aggregateStatus: $aggregateStatus,
             isSingleChild: $batch->isSingle(),
@@ -61,26 +60,21 @@ final class ChildRunBatchProgressService
         );
     }
 
-    public function emitAndAdvance(string $parentRunId, ChildRunProgressUpdateDTO $update, int $progressSeq): void
+    public function emitProgress(ChildRunProgressUpdateDTO $update): void
     {
         $this->lifecycleListener->emitProgress($update);
-        $this->sequenceCoordinator->advanceParentSequence($parentRunId, $progressSeq);
     }
 
     /**
-     * @param-out int $progressSeq
      * @param-out string $lastSignature
      */
     public function emitDedupedIfChanged(
-        string $parentRunId,
         ChildRunProgressUpdateDTO $update,
-        int &$progressSeq,
         ?string &$lastSignature,
     ): void {
         $signature = $this->lifecycleListener->progressSignature($update);
         if (null === $lastSignature || $signature !== $lastSignature) {
-            $this->emitAndAdvance($parentRunId, $update, $progressSeq);
-            ++$progressSeq;
+            $this->emitProgress($update);
             $lastSignature = $signature;
         }
     }
@@ -88,10 +82,10 @@ final class ChildRunBatchProgressService
     /**
      * @param array<string, ChildRunBatchItemSnapshotDTO> $snapshots
      */
-    public function emitAggregateProgress(ChildRunBatchDTO $batch, array $snapshots, int $progressSeq, int $progressStartedMicros, string $aggregateStatus): void
+    public function emitAggregateProgress(ChildRunBatchDTO $batch, array $snapshots, int $progressStartedMicros, string $aggregateStatus): void
     {
-        $update = $this->buildProgressUpdate($batch, $snapshots, $this->collectActiveTurns($snapshots), $progressSeq, $progressStartedMicros, $aggregateStatus);
-        $this->emitAndAdvance($batch->parentRunId, $update, $progressSeq);
+        $update = $this->buildProgressUpdate($batch, $snapshots, $this->collectActiveTurns($snapshots), $progressStartedMicros, $aggregateStatus);
+        $this->emitProgress($update);
     }
 
     /**
