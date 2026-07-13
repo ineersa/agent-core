@@ -52,12 +52,23 @@ final class CodexWebSocketModelClient implements ModelClientInterface
         }
 
         [$requestId, $options] = CodexCorrelationRequestId::resolve($options, $payload);
-        $jsonBody = $this->requestBodyFactory->build($model, $payload, $options);
         $websocketUrl = $this->urlResolver->resolve($this->baseUrl, $this->responsesPath);
 
-        $this->logRequestSummary($model, $jsonBody, $websocketUrl);
+        [$connection, $effectiveRequestId] = $this->connectWithOptional401Refresh($model, $websocketUrl, $requestId);
 
-        $connection = $this->connectWithOptional401Refresh($model, $websocketUrl, $requestId);
+        $bodyOptions = $options;
+        $bodyPayload = $payload;
+        if ($effectiveRequestId !== $requestId) {
+            // 401 retry rotated handshake IDs; align wire body prompt_cache_key with the retry correlation ID.
+            $bodyOptions['run_id'] = $effectiveRequestId;
+            unset($bodyPayload['prompt_cache_key']);
+        } elseif (!isset($bodyOptions['run_id'])) {
+            $bodyOptions['run_id'] = $effectiveRequestId;
+        }
+
+        $jsonBody = $this->requestBodyFactory->build($model, $bodyPayload, $bodyOptions);
+
+        $this->logRequestSummary($model, $jsonBody, $websocketUrl);
 
         try {
             // Protocol frame type must win: merge body first, then force response.create.
@@ -88,14 +99,20 @@ final class CodexWebSocketModelClient implements ModelClientInterface
         );
     }
 
-    private function connectWithOptional401Refresh(Model $model, string $websocketUrl, string $requestId): WebsocketConnection
+    /**
+     * @return array{0: WebsocketConnection, 1: string} connection and correlation ID used for the successful handshake
+     */
+    private function connectWithOptional401Refresh(Model $model, string $websocketUrl, string $requestId): array
     {
         try {
-            return $this->connector->connect(
-                $websocketUrl,
-                $this->buildHandshakeHeaders($requestId),
-                $this->connectTimeoutSeconds,
-            );
+            return [
+                $this->connector->connect(
+                    $websocketUrl,
+                    $this->buildHandshakeHeaders($requestId),
+                    $this->connectTimeoutSeconds,
+                ),
+                $requestId,
+            ];
         } catch (WebsocketConnectException $e) {
             if (HttpStatus::UNAUTHORIZED !== $e->getResponse()->getStatus() || null === $this->accessTokenRefresher) {
                 throw $this->toHandshakeRuntimeException($e);
@@ -116,11 +133,14 @@ final class CodexWebSocketModelClient implements ModelClientInterface
             ]);
 
             try {
-                return $this->connector->connect(
-                    $websocketUrl,
-                    $this->buildHandshakeHeaders($retryRequestId),
-                    $this->connectTimeoutSeconds,
-                );
+                return [
+                    $this->connector->connect(
+                        $websocketUrl,
+                        $this->buildHandshakeHeaders($retryRequestId),
+                        $this->connectTimeoutSeconds,
+                    ),
+                    $retryRequestId,
+                ];
             } catch (WebsocketConnectException $retry) {
                 throw $this->toHandshakeRuntimeException($retry);
             }

@@ -70,7 +70,7 @@ class CodexModelClient implements ModelClientInterface
         $response = $this->httpClient->request('POST', $this->baseUrl.$this->path, $requestOptions);
 
         if (401 === $response->getStatusCode() && null !== $this->accessTokenRefresher) {
-            $retried = $this->refreshAndRetryOnce($requestOptions, $model, $response);
+            $retried = $this->refreshAndRetryOnce($requestOptions, $model, $payload, $options, $response);
             if (null !== $retried) {
                 $response = $retried;
             }
@@ -86,8 +86,10 @@ class CodexModelClient implements ModelClientInterface
      * unchanged, or throws — caller keeps the original 401 response (uncancelled).
      *
      * @param array<string, mixed> $requestOptions
+     * @param array<string, mixed> $payload
+     * @param array<string, mixed> $options
      */
-    private function refreshAndRetryOnce(array $requestOptions, Model $model, ResponseInterface $failedResponse): ?ResponseInterface
+    private function refreshAndRetryOnce(array $requestOptions, Model $model, array $payload, array $options, ResponseInterface $failedResponse): ?ResponseInterface
     {
         try {
             $fresh = ($this->accessTokenRefresher)();
@@ -107,9 +109,16 @@ class CodexModelClient implements ModelClientInterface
             return null;
         }
 
+        $retryRequestId = CodexCorrelationRequestId::generate();
+        $retryInvocationOptions = $options;
+        $retryInvocationOptions['run_id'] = $retryRequestId;
+        $retryPayload = $payload;
+        unset($retryPayload['prompt_cache_key']);
+
         $retryOptions = $requestOptions;
         $retryOptions['auth_bearer'] = $fresh;
-        $retryOptions['headers']['x-client-request-id'] = CodexCorrelationRequestId::generate();
+        $retryOptions['headers']['x-client-request-id'] = $retryRequestId;
+        $retryOptions['json'] = $this->requestBodyFactory->build($model, $retryPayload, $retryInvocationOptions);
 
         $this->logger->info('codex.token.refreshed_on_401', [
             'event_type' => 'codex.token.refreshed_on_401',

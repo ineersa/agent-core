@@ -9,7 +9,6 @@ use Amp\Http\Client\Response;
 use Amp\Websocket\Client\WebsocketConnectException;
 use Amp\Websocket\Client\WebsocketConnection;
 use PHPUnit\Framework\TestCase;
-use Symfony\AI\Platform\Bridge\OpenAICodex\CodexCorrelationRequestId;
 use Symfony\AI\Platform\Bridge\OpenAICodex\CodexModel;
 use Symfony\AI\Platform\Bridge\OpenAICodex\CodexRequestBodyFactory;
 use Symfony\AI\Platform\Bridge\OpenAICodex\CodexWebSocketConnectorInterface;
@@ -20,6 +19,8 @@ use Symfony\AI\Platform\Bridge\OpenAICodex\RawWebSocketResult;
 
 final class CodexWebSocketModelClientTest extends TestCase
 {
+    use AssertUuidV7Trait;
+
     public function testSendsResponseCreateFrameWithSharedBodyMapping(): void
     {
         $captured = new \stdClass();
@@ -69,7 +70,7 @@ final class CodexWebSocketModelClientTest extends TestCase
         $this->assertSame('responses_websockets=2026-02-06', $captured->headers['OpenAI-Beta']);
         $this->assertSame('acct-1', $captured->headers['chatgpt-account-id']);
         $this->assertSame($captured->headers['session-id'], $captured->headers['x-client-request-id']);
-        $this->assertTrue(CodexCorrelationRequestId::isVersion7($captured->headers['session-id']));
+        self::assertUuidVersion7($captured->headers['session-id']);
 
         $frame = json_decode($captured->frame, true, flags: \JSON_THROW_ON_ERROR);
         $this->assertSame($captured->headers['session-id'], $frame['prompt_cache_key']);
@@ -115,8 +116,13 @@ final class CodexWebSocketModelClientTest extends TestCase
     public function testHandshake401RefreshesOnceAndRetriesWithNewBearerAndRequestIds(): void
     {
         $secret = 'LEAKED_HANDSHAKE_SECRET_9f3c2a1b';
+        $sentFrame = '';
         $connection = $this->createMock(WebsocketConnection::class);
-        $connection->expects($this->once())->method('sendText');
+        $connection->expects($this->once())
+            ->method('sendText')
+            ->willReturnCallback(static function (string $data) use (&$sentFrame): void {
+                $sentFrame = $data;
+            });
 
         $connectCalls = [];
         $connector = $this->createMock(CodexWebSocketConnectorInterface::class);
@@ -157,8 +163,10 @@ final class CodexWebSocketModelClientTest extends TestCase
         $this->assertSame('Bearer fresh-access-token', $connectCalls[1]['Authorization']);
         $this->assertNotSame($connectCalls[0]['session-id'], $connectCalls[1]['session-id']);
         $this->assertSame($connectCalls[1]['session-id'], $connectCalls[1]['x-client-request-id']);
-        $this->assertTrue(CodexCorrelationRequestId::isVersion7($connectCalls[0]['session-id']));
-        $this->assertTrue(CodexCorrelationRequestId::isVersion7($connectCalls[1]['session-id']));
+        self::assertUuidVersion7($connectCalls[0]['session-id']);
+        self::assertUuidVersion7($connectCalls[1]['session-id']);
+        $frame = json_decode($sentFrame, true, flags: \JSON_THROW_ON_ERROR);
+        $this->assertSame($connectCalls[1]['session-id'], $frame['prompt_cache_key']);
     }
 
     public function testHandshake401DoesNotRetryWhenRefreshThrows(): void

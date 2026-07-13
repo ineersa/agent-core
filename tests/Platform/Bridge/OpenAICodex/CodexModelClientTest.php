@@ -7,7 +7,6 @@ namespace Symfony\AI\Platform\Bridge\OpenAICodex\Tests;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
-use Symfony\AI\Platform\Bridge\OpenAICodex\CodexCorrelationRequestId;
 use Symfony\AI\Platform\Bridge\OpenAICodex\CodexModel;
 use Symfony\AI\Platform\Bridge\OpenAICodex\CodexModelClient;
 use Symfony\AI\Platform\Model;
@@ -17,6 +16,8 @@ use Symfony\Contracts\HttpClient\ResponseInterface as HttpResponse;
 
 final class CodexModelClientTest extends TestCase
 {
+    use AssertUuidV7Trait;
+
     public function testItSupportsCodexModel(): void
     {
         $modelClient = new CodexModelClient(new MockHttpClient(), 'https://chatgpt.com/backend-api', 'test-token', 'acct-123');
@@ -46,7 +47,7 @@ final class CodexModelClientTest extends TestCase
             $requestId = $options['normalized_headers']['x-client-request-id'][0];
             self::assertStringStartsWith('x-client-request-id: ', $requestId);
             $requestId = substr($requestId, \strlen('x-client-request-id: '));
-            self::assertTrue(CodexCorrelationRequestId::isVersion7($requestId));
+            self::assertUuidVersion7($requestId);
 
             $body = json_decode($options['body'], true);
             self::assertSame($requestId, $body['prompt_cache_key'] ?? null);
@@ -417,7 +418,7 @@ final class CodexModelClientTest extends TestCase
             $requestId = $options['normalized_headers']['x-client-request-id'][0];
             self::assertStringStartsWith('x-client-request-id: ', $requestId);
             $requestId = substr($requestId, \strlen('x-client-request-id: '));
-            self::assertTrue(CodexCorrelationRequestId::isVersion7($requestId));
+            self::assertUuidVersion7($requestId);
 
             $body = json_decode($options['body'], true, 512, \JSON_THROW_ON_ERROR);
             self::assertSame($requestId, $body['prompt_cache_key']);
@@ -474,6 +475,7 @@ final class CodexModelClientTest extends TestCase
     {
         $refreshCalls = 0;
         $requestCount = 0;
+        $firstRequestId = null;
         $refresher = static function () use (&$refreshCalls): string {
             ++$refreshCalls;
 
@@ -481,17 +483,27 @@ final class CodexModelClientTest extends TestCase
         };
 
         $httpClient = new MockHttpClient([
-            static function () use (&$requestCount): HttpResponse {
+            static function (string $method, string $url, array $options) use (&$requestCount, &$firstRequestId): HttpResponse {
                 ++$requestCount;
+                $firstHeader = $options['normalized_headers']['x-client-request-id'][0];
+                $firstRequestId = substr($firstHeader, \strlen('x-client-request-id: '));
 
                 return new MockResponse('', ['http_code' => 401]);
             },
-            static function (string $method, string $url, array $options) use (&$requestCount): HttpResponse {
+            static function (string $method, string $url, array $options) use (&$requestCount, &$firstRequestId): HttpResponse {
                 ++$requestCount;
                 self::assertSame('Authorization: Bearer new-token', $options['normalized_headers']['authorization'][0]);
                 self::assertSame('Accept: text/event-stream', $options['normalized_headers']['accept'][0]);
                 self::assertSame('User-Agent: hatfield', $options['normalized_headers']['user-agent'][0]);
                 self::assertSame('originator: hatfield', $options['normalized_headers']['originator'][0]);
+                $retryHeader = $options['normalized_headers']['x-client-request-id'][0];
+                self::assertStringStartsWith('x-client-request-id: ', $retryHeader);
+                $retryRequestId = substr($retryHeader, \strlen('x-client-request-id: '));
+                self::assertUuidVersion7($retryRequestId);
+                self::assertNotSame($firstRequestId, $retryRequestId);
+
+                $body = json_decode($options['body'], true);
+                self::assertSame($retryRequestId, $body['prompt_cache_key'] ?? null);
 
                 return new MockResponse('', ['http_code' => 200]);
             },

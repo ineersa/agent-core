@@ -9,18 +9,20 @@ use Symfony\AI\Platform\Bridge\OpenAICodex\CodexCorrelationRequestId;
 
 final class CodexCorrelationRequestIdTest extends TestCase
 {
+    use AssertUuidV7Trait;
+
     public function testGenerateProducesUuidVersion7(): void
     {
         $id = CodexCorrelationRequestId::generate();
 
-        $this->assertTrue(CodexCorrelationRequestId::isVersion7($id));
+        self::assertUuidVersion7($id);
     }
 
     public function testResolveGeneratesUuidVersion7AndAugmentsRunIdWhenNoExplicitIdentifiers(): void
     {
         [$id, $options] = CodexCorrelationRequestId::resolve([], []);
 
-        $this->assertTrue(CodexCorrelationRequestId::isVersion7($id));
+        self::assertUuidVersion7($id);
         $this->assertSame($id, $options['run_id']);
     }
 

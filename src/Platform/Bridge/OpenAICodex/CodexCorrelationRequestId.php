@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Symfony\AI\Platform\Bridge\OpenAICodex;
 
-use Symfony\Component\Uid\Uuid;
 use Symfony\Component\Uid\UuidV7;
 
 /**
@@ -13,6 +12,11 @@ use Symfony\Component\Uid\UuidV7;
  * Codex model routing for some models (e.g. gpt-5.6-luna over WebSocket) rejects RFC 4122 UUID
  * version 4 values on session-id / x-client-request-id / fallback prompt_cache_key and surfaces
  * invalid_request_error/model. Pi uses time-ordered UUID version 7 session IDs; Hatfield must match.
+ *
+ * Explicit caller identifiers are preserved as-is: when resolve() returns an explicit
+ * options['run_id'] or payload prompt_cache_key, that value is used for headers
+ * and body correlation without rewriting. The caller is responsible for satisfying the backend's
+ * ID contract for those values.
  */
 final class CodexCorrelationRequestId
 {
@@ -43,10 +47,5 @@ final class CodexCorrelationRequestId
     public static function generate(): string
     {
         return UuidV7::v7()->toRfc4122();
-    }
-
-    public static function isVersion7(string $id): bool
-    {
-        return Uuid::fromString($id) instanceof UuidV7;
     }
 }
