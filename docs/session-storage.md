@@ -62,46 +62,19 @@ Parent sessions that launch child subagents store child run data under
 
 
 
-### Deferred subagent batch launch storage (Piece 4A)
+### Deferred subagent supervision (Single and Parallel)
 
-- Normalized durable tables `deferred_subagent_batch` and `deferred_subagent_child` store one batch per parent tool call with independently versioned child rows (ordered `batch_index`, per-child cursors/projections reserved for later slices).
-- **Piece 4C1b** adds normalized-batch gap/restart recovery without steady-state file reads:
-  - Observed non-contiguous batch child hook batches enqueue `RecoverDeferredSubagentBatchLifecycleMessage` and do not advance the child cursor from the hook batch.
-  - Recovery tails each child `events.jsonl` only via `AgentChildRunEventStore::readAfterSeq(cursor)` (recovery-only JSONL reads), reconciles every durable child row in `batch_index` order with fresh batch/child CAS versions, then enqueues `DeliverDeferredSubagentBatchLifecycleMessage` (even when tails are empty).
-  - `run_control` `WorkerStartedEvent` recovery is scoped to `%env(HATFIELD_SESSION_ID)%` and reconciles unfinished `Reserved` or `Launched` batch rows for that parent session only; persisted interruption intents and pending deferred timeouts are re-enqueued from durable markers.
-- `DeferredSubagentBatchLaunchService` performs durable idempotent batch launch and returns `DeferredToolCompletionOutcome` with a deterministic batch `lifecycle_id` (UUID v5 from parent run + tool call). Child `child_run_id` / `artifact_id` values are deterministic per `batch_index`.
-- Production parallel subagent tool calls use the normalized deferred batch path (`SubagentExecutionService::executeParallel` → `DeferredSubagentBatchLaunchService`). Steady-state supervision uses committed child events and Messenger on `run_control`; child `events.jsonl` is read only on recovery via `readAfterSeq`. Legacy foreground polling supervision has been removed.
-- Single-child deferred launches still use `deferred_single_subagent_launch` until **Piece 4D** migrates single mode onto the generic batch model and removes the dedicated single stack.
+Parent subagent tool calls (single or parallel) use the normalized deferred batch model:
 
-### Deferred single subagent live observation (Piece 3B1)
-
-For parent sessions that launch a **single** deferred subagent child:
-
-- `events.jsonl` and `state.json` under the child artifact remain **durable replay, recovery, and diagnostics** only. Steady-state deferred supervision does **not** poll these files.
-- After each child `RunCommit`, `AfterTurnCommitHookContext` carries the **persisted** committed event summaries (allocated `seq`, not pre-append `seq: 0`).
-- A CodingAgent hook subscriber looks up the child run in `deferred_single_subagent_launch` and dispatches a typed Messenger message to the `run_control` transport.
-- The run_control handler incrementally reduces those summaries into a compact JSON projection on the same table (`child_lifecycle_projection`, authoritative `child_event_cursor`). No `RunStore::get`, `EventStore::allFor`, or filesystem wake markers in this path.
-- **Piece 3B2** emits parent `subagent_progress` and completes the deferred parent tool call from the durable projection:
-  - `ObserveDeferredSingleSubagentChildTurnHandler` remains the projection owner and enqueues `DeliverDeferredSingleSubagentLifecycleMessage` after successful projection writes (and on duplicate observe when undelivered progress/terminal work remains).
-  - `DeferredToolCompletionRegisteredEvent` (dispatched after generic deferred registration or pending redelivery) also enqueues the same delivery message, closing registration-before-observation and observation-before-registration races without polling.
-  - Delivery uses stored parent tool correlation (`parent_turn_no`, `parent_tool_call_id`, `parent_order_index`) via `SubagentProgressEventAppender`; it does not use `StackToolExecutionContextAccessor`.
-  - `lifecycle_id` is the generic `CompleteDeferredToolCall` `deferredId` for single deferred subagents.
-  - Steady-state delivery reads only the `deferred_single_subagent_launch` row (projection JSON + cursors/markers). It does not read child `events.jsonl`, child `state.json`, or `EventStore::allFor`.
-  - **Piece 3C1** adds durable timeout and parent-cancellation safety without polling parent or child `RunStore`:
-  - After generic deferred registration, `DeferredToolCompletionRegisteredSubagentListener` schedules `InterruptDeferredSingleSubagentMessage(Timeout)` on `run_control` with `DelayStamp` derived from persisted `deadline_at` (duplicate schedules are safe; the interruption handler redispatches early arrivals).
-  - Parent `AfterTurnCommit` hook (`DeferredSingleSubagentParentCancelHookSubscriber`) queries active deferred single rows only when committed parent status is `cancelling` or `cancelled`, then enqueues `InterruptDeferredSingleSubagentMessage(ParentCancelled)` (no parent `state.json` reads).
-  - `interruption_kind` + `interruption_requested_at` persist the first synthetic terminal intent under optimistic locking; `AgentRunner::cancel(childRunId, policy reason)` runs before lifecycle delivery. If the child projection is already terminal without an interruption, stale timeout messages complete naturally instead of forcing timeout semantics.
-  - Timeout uses foreground failed progress + Failed artifact (`Child run timed out.` / `Timed out after Ns.`) and normal `CompleteDeferredToolCall` text (`isError=false`). Parent cancel uses cancelled progress + Cancelled artifact and error completion envelope matching parent-cancel `ToolCallException` semantics (`isError=true`, normal text content).
-  - After `terminal_completion_enqueued_at` is set, later child observations and delivery wakeups are ignored so late child commits cannot append parent progress after final tool completion.
-  - **Piece 3C2** adds gap/restart recovery without steady-state file reads:
-  - Observed non-contiguous child hook batches enqueue `RecoverDeferredSingleSubagentLifecycleMessage` and do not advance the cursor from the hook batch.
-  - Recovery tails child `events.jsonl` only via `AgentChildRunEventStore::readAfterSeq(cursor)` under the child run lock, accepts legitimate sequence holes, maps events through the same projector/CAS path, then enqueues normal lifecycle delivery (even when the tail is empty).
-  - `run_control` `WorkerStartedEvent` recovery is scoped to `%env(HATFIELD_SESSION_ID)%` and reconciles unfinished `Reserved` (post-dispatch) or `Launched` rows for that parent session only.
-  - Parent cancel and timeout interruption intents may be persisted before generic deferred registration; registration wakeup dispatches the stored interruption instead of scheduling timeout when an intent already exists.
-
-
-- All child stores use per-instance binding (`parentRunId` + `agentRunId` +
-  `artifactId`) and resolve paths through `AgentArtifactPathResolver`.
+- Durable tables `deferred_subagent_batch` and `deferred_subagent_child` store one batch per parent tool call. `execution_mode` distinguishes explicit Single vs Parallel. Parent tool correlation (`parent_turn_no`, `parent_tool_call_id`, `parent_order_index`) is stored durably on the batch row.
+- `SubagentExecutionService` delegates both `execute()` and `executeParallel()` to `DeferredSubagentBatchLaunchService`, which reserves the batch, starts children in `batch_index` order, and returns `DeferredToolCompletionOutcome` with deterministic `lifecycle_id` (batch UUID v5 from parent run + tool call).
+- Child `events.jsonl` and `state.json` under the parent artifact remain **durable replay, recovery, and diagnostics only**. Steady-state supervision does **not** poll these files or parent/child `RunStore`.
+- After each child `RunCommit`, `AfterTurnCommitHookContext` carries persisted committed event summaries (allocated `seq`). `DeferredSubagentBatchChildTurnHookSubscriber` dispatches `ObserveDeferredSubagentBatchChildTurnMessage` to `run_control` for tracked Launched children only.
+- The run_control observe handler incrementally reduces summaries into a compact per-child JSON projection (`child_lifecycle_projection`, `child_event_cursor`) with batch-level `aggregate_progress_revision` and delivery markers. Parent `subagent_progress` uses mode-aware payloads (flat single vs aggregate parallel) and stored parent correlation via `SubagentProgressEventAppender` (not `StackToolExecutionContextAccessor`).
+- `DeferredToolCompletionRegisteredEvent` wakes batch lifecycle delivery after generic deferred registration. Natural terminal completion and interruption completion are mode-aware on the normalized batch stack.
+- Timeout uses `InterruptDeferredSubagentBatchMessage` on `run_control` with `DelayStamp` from persisted `deadline_at`. Parent cancellation uses `DeferredSubagentBatchParentCancelHookSubscriber` on parent `AfterTurnCommit` when status is `cancelling` or `cancelled`. First-wins interruption intent is durable under optimistic locking; `AgentRunner::cancel` runs before delivery when appropriate.
+- Gap observation enqueues `RecoverDeferredSubagentBatchLifecycleMessage` without advancing the cursor from the gap batch. Recovery tails each child `events.jsonl` only via `AgentChildRunEventStore::readAfterSeq(cursor)`, reconciles all child rows in `batch_index` order, then enqueues `DeliverDeferredSubagentBatchLifecycleMessage` (even when tails are empty).
+- `run_control` `WorkerStartedEvent` recovery is scoped to `%env(HATFIELD_SESSION_ID)%` and reconciles unfinished `Reserved` or `Launched` batch rows for that parent session; persisted interruption intents and pending timeouts are re-enqueued from durable markers.
 
 ### Session metadata (database)
 

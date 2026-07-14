@@ -14,10 +14,6 @@ use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\ObserveDeferredS
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\RecoverDeferredSubagentBatchLifecycleHandler;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\RecoverDeferredSubagentBatchLifecycleMessage;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredSubagentInterruptionKindEnum;
-use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\ObserveDeferredSingleSubagentChildTurnHandler;
-use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\ObserveDeferredSingleSubagentChildTurnMessage;
-use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\RecoverDeferredSingleSubagentLifecycleHandler;
-use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\RecoverDeferredSingleSubagentLifecycleMessage;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Component\Messenger\Envelope;
@@ -25,9 +21,8 @@ use Symfony\Component\Messenger\Handler\HandlerDescriptor;
 use Symfony\Component\Messenger\Handler\HandlersLocatorInterface;
 
 /**
- * Test thesis: routed deferred single-subagent run_control messages must resolve
- * at least one Messenger handler on agent.command.bus in the compiled container.
- * Manual handler invocation in other tests does not prove production consumption.
+ * Test thesis: normalized deferred batch run_control messages must resolve at least one
+ * Messenger handler on agent.command.bus in the compiled container.
  *
  * @coversNothing
  */
@@ -71,16 +66,6 @@ final class DeferredSubagentRunControlHandlersWiringTest extends IsolatedKernelT
     public static function runControlMessageProvider(): array
     {
         return [
-            'ObserveDeferredSingleSubagentChildTurnMessage' => [
-                new ObserveDeferredSingleSubagentChildTurnMessage(
-                    lifecycleId: 'lifecycle-wiring-observe',
-                    childRunId: 'child-run-wiring-observe',
-                    committedStatus: RunStatus::Running,
-                    turnNo: 0,
-                    committedEvents: [],
-                ),
-                ObserveDeferredSingleSubagentChildTurnHandler::class,
-            ],
             'ObserveDeferredSubagentBatchChildTurnMessage' => [
                 new ObserveDeferredSubagentBatchChildTurnMessage(
                     batchLifecycleId: 'batch-wiring-observe',
@@ -104,12 +89,6 @@ final class DeferredSubagentRunControlHandlersWiringTest extends IsolatedKernelT
                     kind: DeferredSubagentInterruptionKindEnum::Timeout,
                 ),
                 InterruptDeferredSubagentBatchHandler::class,
-            ],
-            'RecoverDeferredSingleSubagentLifecycleMessage' => [
-                new RecoverDeferredSingleSubagentLifecycleMessage(
-                    lifecycleId: 'lifecycle-wiring-recover',
-                ),
-                RecoverDeferredSingleSubagentLifecycleHandler::class,
             ],
             'RecoverDeferredSubagentBatchLifecycleMessage' => [
                 new RecoverDeferredSubagentBatchLifecycleMessage(

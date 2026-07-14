@@ -115,7 +115,7 @@ final readonly class DeferredSubagentBatchProgressSnapshotFactory
 
     /**
      * Single-child flat normal payload: produces mode=single flat payload analogous to
-     * the dedicated-single DeferredSingleSubagentTerminalCompletionService oracle.
+     * the normalized single-batch terminal completion oracle.
      *
      * @return array<string, mixed>
      */

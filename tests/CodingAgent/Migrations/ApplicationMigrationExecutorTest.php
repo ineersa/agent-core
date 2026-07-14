@@ -141,9 +141,18 @@ final class ApplicationMigrationExecutorTest extends TestCase
             'deferred_subagent_batch and deferred_subagent_child must exist after startup executor (Piece 4A)',
         );
 
-        $this->assertTrue(
+        $recordedDeferredSingleDrop = $connection->fetchOne(
+            'SELECT 1 FROM doctrine_migration_versions WHERE version = ?',
+            ['Version20260714140000'],
+        );
+        $this->assertNotFalse(
+            $recordedDeferredSingleDrop,
+            'Version20260714140000 (drop deferred_single_subagent_launch) must be recorded in doctrine_migration_versions',
+        );
+
+        $this->assertFalse(
             $schemaManager->tablesExist(['deferred_single_subagent_launch']),
-            'deferred_single_subagent_launch must exist after startup executor (WorkerStarted recovery queries)',
+            'deferred_single_subagent_launch must be dropped after Version20260714140000',
         );
 
         $busyTimeout = (int) $connection->executeQuery('PRAGMA busy_timeout')->fetchOne();

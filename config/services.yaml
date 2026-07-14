@@ -86,9 +86,6 @@ services:
   Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface:
     alias: Ineersa\CodingAgent\Entity\DeferredToolCompletionRepository
 
-  Ineersa\CodingAgent\Entity\DeferredSingleSubagentLaunchRepository:
-    autowire: true
-
   Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository:
     autowire: true
 
