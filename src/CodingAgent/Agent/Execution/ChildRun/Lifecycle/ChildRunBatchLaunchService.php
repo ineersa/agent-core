@@ -56,12 +56,17 @@ final class ChildRunBatchLaunchService
     /**
      * @param list<ChildRunIdentityDTO> $identities
      */
+    /**
+     * @param list<ChildRunIdentityDTO> $identities
+     * @param list<string>              $knownStartedChildRunIds child runs whose {@see AgentRunnerInterface::start()} returned successfully in this launch attempt (authoritative when artifact Running persistence degraded)
+     */
     public function abort(
         string $parentRunId,
         array $identities,
         ChildRunBatchLifecyclePolicyDTO $policy,
         \Throwable $cause,
         ChildRunBatchLaunchAbortContextDTO $abortContext,
+        array $knownStartedChildRunIds = [],
     ): ChildRunBatchSupervisionResultDTO {
         $this->logger->warning('child_run.batch_launch_aborted', [
             'run_id' => $parentRunId,
@@ -141,8 +146,17 @@ final class ChildRunBatchLaunchService
             );
         }
 
+        $knownStartedChildRunIds = array_values(array_unique($knownStartedChildRunIds));
+        $knownStartedSet = array_fill_keys($knownStartedChildRunIds, true);
+
         $lastRunningChildIndex = -1;
         foreach ($identities as $index => $identity) {
+            if (isset($knownStartedSet[$identity->childRunId])) {
+                $lastRunningChildIndex = $index;
+
+                continue;
+            }
+
             $status = $this->artifactLifecycle->getArtifactStatus($parentRunId, $identity->artifactId);
             if (AgentArtifactStatusEnum::Running === $status) {
                 $lastRunningChildIndex = $index;
@@ -178,7 +192,8 @@ final class ChildRunBatchLaunchService
                 continue;
             }
 
-            if (AgentArtifactStatusEnum::Running === $status) {
+            $knownStarted = isset($knownStartedSet[$childRunId]);
+            if ($knownStarted || AgentArtifactStatusEnum::Running === $status) {
                 $this->agentRunner->cancel($childRunId, $policy->launchAbortSiblingCancelReason);
                 $this->lifecycleListener->finalizeTerminalOutcome(ChildRunTerminalFinalizationRequestDTO::persistOnly(new ChildRunTerminalOutcomeDTO(
                     $identity,

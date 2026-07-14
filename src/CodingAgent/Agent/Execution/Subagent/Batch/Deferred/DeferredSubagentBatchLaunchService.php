@@ -17,7 +17,6 @@ use Ineersa\CodingAgent\Agent\Execution\SubagentLaunchPreparationService;
 use Ineersa\CodingAgent\Agent\Execution\SubagentTaskDTO;
 use Ineersa\CodingAgent\Config\AgentsConfig;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
-use Ineersa\CodingAgent\Entity\DeferredSubagentChildRepository;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Clock\Clock;
 
@@ -32,7 +31,6 @@ final class DeferredSubagentBatchLaunchService
         private readonly SubagentLaunchPreparationService $launchPreparation,
         private readonly DeferredSubagentBatchIdentityFactory $identityFactory,
         private readonly DeferredSubagentBatchRepository $batchRepository,
-        private readonly DeferredSubagentChildRepository $childRepository,
         private readonly ChildRunArtifactLifecycleService $artifactLifecycle,
         private readonly DeferredSubagentBatchRuntimeStartService $runtimeStart,
         private readonly StackToolExecutionContextAccessor $contextAccessor,
@@ -135,6 +133,8 @@ final class DeferredSubagentBatchLaunchService
         );
 
         if ([] === $preparedChildren) {
+            $this->reconcileLaunchSuccessFromArtifacts($parentRunId, $toolCallId, $lifecycleId, $projection, $childIntents);
+
             return new DeferredToolCompletionOutcome($lifecycleId);
         }
 
@@ -143,21 +143,47 @@ final class DeferredSubagentBatchLaunchService
             $this->runtimeStart->startPreparedInOrder($parentRunId, $toolCallId, $identities, $preparedChildren);
         } catch (DeferredSubagentBatchRuntimeStartFailure $e) {
             $failureIndex = $e->failureBatchIndex;
+            $launchedBeforeFailure = [];
             foreach ($preparedChildren as $prepared) {
                 if ($prepared->identity->batchIndex < $failureIndex) {
-                    $this->reconcileChildLaunched($parentRunId, $toolCallId, $lifecycleId, $prepared->identity->batchIndex, $startedAt);
+                    $launchedBeforeFailure[] = $prepared->identity->batchIndex;
                 }
             }
-            $this->markBatchLaunchFailed($parentRunId, $toolCallId, $childIntents, $failureIndex);
+            try {
+                $this->batchRepository->applyLaunchFailureRuntime(
+                    $parentRunId,
+                    $toolCallId,
+                    $lifecycleId,
+                    $failureIndex,
+                    $launchedBeforeFailure,
+                );
+            } catch (\Throwable $persistFailure) {
+                $this->logger->warning('deferred_subagent_batch.launch_failure_persist_failed', [
+                    'run_id' => $parentRunId,
+                    'tool_call_id' => $toolCallId,
+                    'component' => 'agent.execution',
+                    'event_type' => 'deferred_subagent_batch.launch_failure_persist_failed',
+                    'failure_phase' => 'runtime_start',
+                    'failure_batch_index' => $failureIndex,
+                    'exception_class' => $persistFailure::class,
+                ]);
+            }
 
             throw new ToolCallException('Subagent batch launch failed.', retryable: false, previous: $e->getPrevious() ?? $e);
         }
 
-        foreach ($preparedChildren as $prepared) {
-            $this->reconcileChildLaunched($parentRunId, $toolCallId, $lifecycleId, $prepared->identity->batchIndex, $startedAt);
+        $launchedIndices = $this->collectLaunchedBatchIndices($parentRunId, $projection, $childIntents, $preparedChildren);
+        try {
+            $this->batchRepository->applyLaunchSuccessState($parentRunId, $toolCallId, $lifecycleId, $startedAt, $launchedIndices);
+        } catch (\Throwable $persistFailure) {
+            $this->logger->warning('deferred_subagent_batch.launch_success_persist_failed', [
+                'run_id' => $parentRunId,
+                'tool_call_id' => $toolCallId,
+                'component' => 'agent.execution',
+                'event_type' => 'deferred_subagent_batch.launch_success_persist_failed',
+                'exception_class' => $persistFailure::class,
+            ]);
         }
-
-        $this->reconcileBatchLaunched($parentRunId, $toolCallId, $startedAt);
 
         return new DeferredToolCompletionOutcome($lifecycleId);
     }
@@ -243,7 +269,18 @@ final class DeferredSubagentBatchLaunchService
                     $e,
                     $identity->batchIndex,
                 );
-                $this->markBatchLaunchFailed($parentRunId, $toolCallId, $childIntents, $identity->batchIndex);
+                try {
+                    $this->batchRepository->applyLaunchFailurePreparation($parentRunId, $toolCallId, $this->identityFactory->batchLifecycleId($parentRunId, $toolCallId));
+                } catch (\Throwable $persistFailure) {
+                    $this->logger->warning('deferred_subagent_batch.launch_failure_persist_failed', [
+                        'run_id' => $parentRunId,
+                        'tool_call_id' => $toolCallId,
+                        'component' => 'agent.execution',
+                        'event_type' => 'deferred_subagent_batch.launch_failure_persist_failed',
+                        'failure_phase' => 'preparation',
+                        'exception_class' => $persistFailure::class,
+                    ]);
+                }
 
                 throw new ToolCallException('Subagent batch launch failed.', retryable: false, previous: $e);
             }
@@ -280,80 +317,81 @@ final class DeferredSubagentBatchLaunchService
         return null;
     }
 
-    private function reconcileBatchLaunched(string $parentRunId, string $toolCallId, \DateTimeImmutable $startedAt): void
-    {
-        try {
-            $this->batchRepository->markLaunched($parentRunId, $toolCallId, $startedAt);
-        } catch (\Throwable $e) {
-            $this->logger->warning('deferred_subagent_batch.projection_launched_persist_failed', [
-                'run_id' => $parentRunId,
-                'tool_call_id' => $toolCallId,
-                'component' => 'agent.execution',
-                'event_type' => 'deferred_subagent_batch.projection_launched_persist_failed',
-                'exception_class' => $e::class,
-            ]);
-        }
-    }
-
-    private function reconcileChildLaunched(
+    /**
+     * Retry path: children already running in artifact/projection while batch row is still Reserved.
+     *
+     * @param list<array{batchIndex: int, childRunId: string, artifactId: string, agentName: string, task: string, definitionModel: ?string}> $childIntents
+     */
+    private function reconcileLaunchSuccessFromArtifacts(
         string $parentRunId,
         string $toolCallId,
         string $lifecycleId,
-        int $batchIndex,
-        \DateTimeImmutable $startedAt,
+        DeferredSubagentBatchProjectionDTO $projection,
+        array $childIntents,
     ): void {
+        $launchedIndices = $this->collectLaunchedBatchIndices($parentRunId, $projection, $childIntents, []);
+        if ([] === $launchedIndices) {
+            return;
+        }
+
         try {
-            $this->childRepository->markChildLaunched($lifecycleId, $batchIndex, $startedAt);
-        } catch (\Throwable $e) {
-            $this->logger->warning('deferred_subagent_batch.child_launched_persist_failed', [
+            $this->batchRepository->applyLaunchSuccessState(
+                $parentRunId,
+                $toolCallId,
+                $lifecycleId,
+                Clock::get()->now(),
+                $launchedIndices,
+            );
+        } catch (\Throwable $persistFailure) {
+            $this->logger->warning('deferred_subagent_batch.launch_success_persist_failed', [
                 'run_id' => $parentRunId,
                 'tool_call_id' => $toolCallId,
-                'batch_index' => $batchIndex,
                 'component' => 'agent.execution',
-                'event_type' => 'deferred_subagent_batch.child_launched_persist_failed',
-                'exception_class' => $e::class,
+                'event_type' => 'deferred_subagent_batch.launch_success_persist_failed',
+                'exception_class' => $persistFailure::class,
             ]);
         }
     }
 
     /**
      * @param list<array{batchIndex: int, childRunId: string, artifactId: string, agentName: string, task: string, definitionModel: ?string}> $childIntents
+     * @param list<PreparedAgentChildRunDTO>                                                                                                  $preparedChildren
+     *
+     * @return list<int>
      */
-    private function markBatchLaunchFailed(
+    private function collectLaunchedBatchIndices(
         string $parentRunId,
-        string $toolCallId,
+        DeferredSubagentBatchProjectionDTO $projection,
         array $childIntents,
-        int $failureBatchIndex,
-    ): void {
-        try {
-            $this->batchRepository->markFailed($parentRunId, $toolCallId);
-        } catch (\Throwable $e) {
-            $this->logger->warning('deferred_subagent_batch.projection_mark_failed_failed', [
-                'run_id' => $parentRunId,
-                'tool_call_id' => $toolCallId,
-                'component' => 'agent.execution',
-                'event_type' => 'deferred_subagent_batch.projection_mark_failed_failed',
-                'exception_class' => $e::class,
-            ]);
+        array $preparedChildren,
+    ): array {
+        $preparedIndexes = [];
+        foreach ($preparedChildren as $prepared) {
+            $preparedIndexes[$prepared->identity->batchIndex] = true;
         }
 
-        $lifecycleId = $this->identityFactory->batchLifecycleId($parentRunId, $toolCallId);
+        $launched = [];
         foreach ($childIntents as $intent) {
-            if ($intent['batchIndex'] >= $failureBatchIndex) {
-                try {
-                    $this->childRepository->markChildFailed($lifecycleId, $intent['batchIndex']);
-                } catch (\Throwable $e) {
-                    $this->logger->warning('deferred_subagent_batch.child_mark_failed_failed', [
-                        'run_id' => $parentRunId,
-                        'tool_call_id' => $toolCallId,
-                        'batch_index' => $intent['batchIndex'],
-                        'component' => 'agent.execution',
-                        'event_type' => 'deferred_subagent_batch.child_mark_failed_failed',
-                        'exception_class' => $e::class,
-                    ]);
-                }
+            $childProjection = $this->childProjectionForIndex($projection->children, $intent['batchIndex']);
+            if (null !== $childProjection && DeferredSubagentChildLaunchStatusEnum::Launched === $childProjection->launchStatus) {
+                $launched[] = $intent['batchIndex'];
+
+                continue;
+            }
+
+            if (isset($preparedIndexes[$intent['batchIndex']])) {
+                $launched[] = $intent['batchIndex'];
+
+                continue;
+            }
+
+            $artifactStatus = $this->artifactLifecycle->getArtifactStatus($parentRunId, $intent['artifactId']);
+            if ($this->isArtifactBeyondPending($artifactStatus)) {
+                $launched[] = $intent['batchIndex'];
             }
         }
+
+        return $launched;
     }
 
     private function isArtifactBeyondPending(?AgentArtifactStatusEnum $status): bool

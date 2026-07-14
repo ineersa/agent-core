@@ -24,7 +24,6 @@ use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\DeferredSubagent
 use Ineersa\CodingAgent\Agent\Execution\SubagentLaunchPreparationService;
 use Ineersa\CodingAgent\Agent\Execution\SubagentTaskDTO;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
-use Ineersa\CodingAgent\Entity\DeferredSubagentChildRepository;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\Group;
@@ -137,9 +136,12 @@ final class DeferredSubagentBatchLaunchTest extends IsolatedKernelTestCase
         $childTwo = $identityFactory->childIdentity($parentRunId, $toolCallId, 2);
         $childThree = $identityFactory->childIdentity($parentRunId, $toolCallId, 3);
 
+        $registry = self::getContainer()->get(AgentArtifactRegistry::class);
         $agentRunner = $this->createMock(AgentRunnerInterface::class);
-        $agentRunner->expects($this->exactly(2))->method('start')->willReturnCallback(static function ($input) use ($childTwo): string {
+        $agentRunner->expects($this->exactly(2))->method('start')->willReturnCallback(static function ($input) use ($childTwo, $childOne, $parentRunId, $registry): string {
             if ($input->runId === $childTwo['childRunId']) {
+                $registry->update($parentRunId, $childOne['artifactId'], AgentArtifactStatusEnum::Pending);
+
                 throw new \RuntimeException('second child start refused');
             }
 
@@ -177,7 +179,6 @@ final class DeferredSubagentBatchLaunchTest extends IsolatedKernelTestCase
         $this->assertSame(DeferredSubagentChildLaunchStatusEnum::Failed, $batch->children[1]->launchStatus);
         $this->assertSame(DeferredSubagentChildLaunchStatusEnum::Failed, $batch->children[2]->launchStatus);
 
-        $registry = self::getContainer()->get(AgentArtifactRegistry::class);
         $third = $registry->get($parentRunId, $childThree['artifactId']);
         $this->assertNull($third, 'Never-started child must not leave a Pending artifact reservation after launch abort.');
 
@@ -232,7 +233,6 @@ final class DeferredSubagentBatchLaunchTest extends IsolatedKernelTestCase
             $launchPreparation,
             new DeferredSubagentBatchIdentityFactory(),
             self::getContainer()->get(DeferredSubagentBatchRepository::class),
-            self::getContainer()->get(DeferredSubagentChildRepository::class),
             $artifactLifecycle,
             $runtimeStart,
             self::getContainer()->get(StackToolExecutionContextAccessor::class),

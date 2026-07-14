@@ -11,6 +11,7 @@ use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchExecutionModeEnum;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\DeferredSubagentBatchLaunchStatusEnum;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\DeferredSubagentBatchProjectionDTO;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\DeferredSubagentChildLaunchStatusEnum;
 use Symfony\Component\Clock\Clock;
 
 /**
@@ -154,6 +155,177 @@ final class DeferredSubagentBatchRepository extends ServiceEntityRepository
 
         $row->launchStatus = DeferredSubagentBatchLaunchStatusEnum::Failed;
         $this->getEntityManager()->flush();
+    }
+
+    /**
+     * Preparation failed before any runtime start: every child row becomes Failed and batch becomes Failed (forward-only).
+     */
+    public function applyLaunchFailurePreparation(string $parentRunId, string $parentToolCallId, string $lifecycleId): void
+    {
+        $now = Clock::get()->now()->format('Y-m-d H:i:s');
+        $conn = $this->getEntityManager()->getConnection();
+
+        $conn->beginTransaction();
+        try {
+            $conn->executeStatement(
+                'UPDATE deferred_subagent_batch SET launch_status = :failed, updated_at = :now, projection_version = projection_version + 1
+                 WHERE parent_run_id = :parent AND parent_tool_call_id = :tool AND launch_status = :reserved',
+                [
+                    'failed' => DeferredSubagentBatchLaunchStatusEnum::Failed->value,
+                    'now' => $now,
+                    'parent' => $parentRunId,
+                    'tool' => $parentToolCallId,
+                    'reserved' => DeferredSubagentBatchLaunchStatusEnum::Reserved->value,
+                ],
+            );
+            $conn->executeStatement(
+                'UPDATE deferred_subagent_child SET launch_status = :failed, updated_at = :now, projection_version = projection_version + 1
+                 WHERE batch_lifecycle_id = :lifecycle AND launch_status = :reserved',
+                [
+                    'failed' => DeferredSubagentChildLaunchStatusEnum::Failed->value,
+                    'now' => $now,
+                    'lifecycle' => $lifecycleId,
+                    'reserved' => DeferredSubagentChildLaunchStatusEnum::Reserved->value,
+                ],
+            );
+            $conn->commit();
+        } catch (\Throwable $e) {
+            if ($conn->isTransactionActive()) {
+                $conn->rollBack();
+            }
+
+            throw $e;
+        }
+
+        $this->getEntityManager()->clear();
+    }
+
+    /**
+     * @param list<int> $launchedBatchIndices batch indices whose runtime start succeeded before the failing index
+     */
+    public function applyLaunchFailureRuntime(
+        string $parentRunId,
+        string $parentToolCallId,
+        string $lifecycleId,
+        int $failureBatchIndex,
+        array $launchedBatchIndices,
+    ): void {
+        $now = Clock::get()->now()->format('Y-m-d H:i:s');
+        $conn = $this->getEntityManager()->getConnection();
+        $launchedSet = array_fill_keys($launchedBatchIndices, true);
+
+        $conn->beginTransaction();
+        try {
+            $conn->executeStatement(
+                'UPDATE deferred_subagent_batch SET launch_status = :failed, updated_at = :now, projection_version = projection_version + 1
+                 WHERE parent_run_id = :parent AND parent_tool_call_id = :tool AND launch_status = :reserved',
+                [
+                    'failed' => DeferredSubagentBatchLaunchStatusEnum::Failed->value,
+                    'now' => $now,
+                    'parent' => $parentRunId,
+                    'tool' => $parentToolCallId,
+                    'reserved' => DeferredSubagentBatchLaunchStatusEnum::Reserved->value,
+                ],
+            );
+
+            $children = $this->childRepository->findOrderedByBatchLifecycleId($lifecycleId);
+            foreach ($children as $child) {
+                if ($child->batchIndex < $failureBatchIndex && isset($launchedSet[$child->batchIndex])) {
+                    $conn->executeStatement(
+                        'UPDATE deferred_subagent_child SET launch_status = :launched, started_at = COALESCE(started_at, :now), updated_at = :now, projection_version = projection_version + 1
+                         WHERE batch_lifecycle_id = :lifecycle AND batch_index = :idx AND launch_status = :reserved',
+                        [
+                            'launched' => DeferredSubagentChildLaunchStatusEnum::Launched->value,
+                            'now' => $now,
+                            'lifecycle' => $lifecycleId,
+                            'idx' => $child->batchIndex,
+                            'reserved' => DeferredSubagentChildLaunchStatusEnum::Reserved->value,
+                        ],
+                    );
+
+                    continue;
+                }
+
+                if ($child->batchIndex >= $failureBatchIndex) {
+                    $conn->executeStatement(
+                        'UPDATE deferred_subagent_child SET launch_status = :failed, updated_at = :now, projection_version = projection_version + 1
+                         WHERE batch_lifecycle_id = :lifecycle AND batch_index = :idx AND launch_status = :reserved',
+                        [
+                            'failed' => DeferredSubagentChildLaunchStatusEnum::Failed->value,
+                            'now' => $now,
+                            'lifecycle' => $lifecycleId,
+                            'idx' => $child->batchIndex,
+                            'reserved' => DeferredSubagentChildLaunchStatusEnum::Reserved->value,
+                        ],
+                    );
+                }
+            }
+
+            $conn->commit();
+        } catch (\Throwable $e) {
+            if ($conn->isTransactionActive()) {
+                $conn->rollBack();
+            }
+
+            throw $e;
+        }
+
+        $this->getEntityManager()->clear();
+    }
+
+    /**
+     * @param list<int> $launchedBatchIndices children known started or artifact already beyond Pending
+     */
+    public function applyLaunchSuccessState(
+        string $parentRunId,
+        string $parentToolCallId,
+        string $lifecycleId,
+        \DateTimeImmutable $startedAt,
+        array $launchedBatchIndices,
+    ): void {
+        $now = Clock::get()->now()->format('Y-m-d H:i:s');
+        $started = $startedAt->format('Y-m-d H:i:s');
+        $conn = $this->getEntityManager()->getConnection();
+        $conn->beginTransaction();
+        try {
+            foreach ($launchedBatchIndices as $batchIndex) {
+                $conn->executeStatement(
+                    'UPDATE deferred_subagent_child SET launch_status = :launched, started_at = COALESCE(started_at, :started), updated_at = :now, projection_version = projection_version + 1
+                     WHERE batch_lifecycle_id = :lifecycle AND batch_index = :idx AND launch_status = :reserved',
+                    [
+                        'launched' => DeferredSubagentChildLaunchStatusEnum::Launched->value,
+                        'started' => $started,
+                        'now' => $now,
+                        'lifecycle' => $lifecycleId,
+                        'idx' => $batchIndex,
+                        'reserved' => DeferredSubagentChildLaunchStatusEnum::Reserved->value,
+                    ],
+                );
+            }
+
+            $conn->executeStatement(
+                'UPDATE deferred_subagent_batch SET launch_status = :launched, started_at = COALESCE(started_at, :started), updated_at = :now, projection_version = projection_version + 1
+                 WHERE parent_run_id = :parent AND parent_tool_call_id = :tool AND launch_status = :reserved',
+                [
+                    'launched' => DeferredSubagentBatchLaunchStatusEnum::Launched->value,
+                    'started' => $started,
+                    'now' => $now,
+                    'parent' => $parentRunId,
+                    'tool' => $parentToolCallId,
+                    'reserved' => DeferredSubagentBatchLaunchStatusEnum::Reserved->value,
+                ],
+            );
+
+            $conn->commit();
+        } catch (\Throwable $e) {
+            if ($conn->isTransactionActive()) {
+                $conn->rollBack();
+            }
+
+            throw $e;
+        }
+
+        $this->getEntityManager()->clear();
     }
 
     /**
