@@ -131,85 +131,68 @@ final readonly class DeferredSubagentBatchProgressDeliveryService
         DeferredSubagentChildProjectionDTO $child,
     ): array {
         $identity = $this->identityFromChild($batch, $child);
-        $projection = $child->childLifecycleProjection;
-
-        if (null !== $projection) {
-            $terminal = $projection->childStatus->isTerminal();
-            $artifactStatus = $this->artifactStatusFromProjection($projection->childStatus);
-            $message = $this->progressMessageFromProjection($projection);
-
-            return [
-                'snapshot' => new ChildRunBatchItemSnapshotDTO(
-                    identity: $identity,
-                    terminal: $terminal,
-                    artifactStatus: $artifactStatus,
-                    message: $message,
-                ),
-                'report' => [
-                    'index' => $child->batchIndex,
-                    'agentName' => $child->agentName,
-                    'task' => $child->task,
-                    'artifactId' => $child->artifactId,
-                    'agentRunId' => $child->childRunId,
-                    'terminal' => $terminal,
-                    'status' => $artifactStatus,
-                    'message' => $message,
-                    'model' => $child->definitionModel,
-                ],
-                'turnNo' => $projection->childTurnNo,
-                'enrichment' => $this->childProgressSummaryBuilder->fromDeferredProjection($projection, $child->artifactId),
-            ];
-        }
-
-        if (DeferredSubagentChildLaunchStatusEnum::Failed === $child->launchStatus) {
-            $artifactStatus = AgentArtifactStatusEnum::Failed;
-            $message = self::LAUNCH_FAILED_MESSAGE;
-
-            return [
-                'snapshot' => new ChildRunBatchItemSnapshotDTO(
-                    identity: $identity,
-                    terminal: true,
-                    artifactStatus: $artifactStatus,
-                    message: $message,
-                ),
-                'report' => [
-                    'index' => $child->batchIndex,
-                    'agentName' => $child->agentName,
-                    'task' => $child->task,
-                    'artifactId' => $child->artifactId,
-                    'agentRunId' => $child->childRunId,
-                    'terminal' => true,
-                    'status' => $artifactStatus,
-                    'message' => $message,
-                    'model' => $child->definitionModel,
-                ],
-                'turnNo' => 0,
-                'enrichment' => null,
-            ];
-        }
-
-        $artifactStatus = AgentArtifactStatusEnum::Running;
+        $state = $this->resolveChildProgressState($child);
 
         return [
             'snapshot' => new ChildRunBatchItemSnapshotDTO(
                 identity: $identity,
-                terminal: false,
-                artifactStatus: $artifactStatus,
-                message: '',
+                terminal: $state->terminal,
+                artifactStatus: $state->artifactStatus,
+                message: $state->message,
             ),
-            'report' => [
-                'index' => $child->batchIndex,
-                'agentName' => $child->agentName,
-                'task' => $child->task,
-                'artifactId' => $child->artifactId,
-                'agentRunId' => $child->childRunId,
-                'terminal' => false,
-                'status' => $artifactStatus,
-                'message' => '',
-                'model' => $child->definitionModel,
-            ],
-            'turnNo' => 0,
-            'enrichment' => null,
+            'report' => $this->buildChildReport($child, $state),
+            'turnNo' => $state->turnNo,
+            'enrichment' => $state->enrichment,
+        ];
+    }
+
+    private function resolveChildProgressState(DeferredSubagentChildProjectionDTO $child): DeferredSubagentBatchChildProgressStateDTO
+    {
+        $projection = $child->childLifecycleProjection;
+        if (null !== $projection) {
+            return new DeferredSubagentBatchChildProgressStateDTO(
+                terminal: $projection->childStatus->isTerminal(),
+                artifactStatus: $this->artifactStatusFromProjection($projection->childStatus),
+                message: $this->progressMessageFromProjection($projection),
+                turnNo: $projection->childTurnNo,
+                enrichment: $this->childProgressSummaryBuilder->fromDeferredProjection($projection, $child->artifactId),
+            );
+        }
+
+        if (DeferredSubagentChildLaunchStatusEnum::Failed === $child->launchStatus) {
+            return new DeferredSubagentBatchChildProgressStateDTO(
+                terminal: true,
+                artifactStatus: AgentArtifactStatusEnum::Failed,
+                message: self::LAUNCH_FAILED_MESSAGE,
+                turnNo: 0,
+                enrichment: null,
+            );
+        }
+
+        return new DeferredSubagentBatchChildProgressStateDTO(
+            terminal: false,
+            artifactStatus: AgentArtifactStatusEnum::Running,
+            message: '',
+            turnNo: 0,
+            enrichment: null,
+        );
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function buildChildReport(DeferredSubagentChildProjectionDTO $child, DeferredSubagentBatchChildProgressStateDTO $state): array
+    {
+        return [
+            'index' => $child->batchIndex,
+            'agentName' => $child->agentName,
+            'task' => $child->task,
+            'artifactId' => $child->artifactId,
+            'agentRunId' => $child->childRunId,
+            'terminal' => $state->terminal,
+            'status' => $state->artifactStatus,
+            'message' => $state->message,
+            'model' => $child->definitionModel,
         ];
     }
 

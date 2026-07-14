@@ -232,6 +232,8 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         $this->assertTrue($progress->deliverIfNeeded($batch));
         $this->assertSame('failed', $appended[1]['status']);
         $this->assertNotSame('done', $appended[1]['status']);
+        $this->assertSame('cancelled', $appended[1]['children'][0]['status']);
+        $this->assertNotSame('completed', $appended[1]['children'][0]['status']);
 
         $batchAfter = $repo->findByLifecycleId($lifecycle);
         $this->assertSame($batchAfter->aggregateProgressRevision, $batchAfter->deliveredProgressRevision);
@@ -335,6 +337,11 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
                 new AfterTurnCommitEventSummary(1, RunEventTypeEnum::LlmStepCompleted->value, ['assistant_message' => ['content' => [['type' => 'text', 'text' => 'done-two']]]]),
                 new AfterTurnCommitEventSummary(2, RunEventTypeEnum::AgentEnd->value, ['reason' => 'completed']),
             ]));
+        } elseif ('partial_cancelled' === $scenario) {
+            $handler(new ObserveDeferredSubagentBatchChildTurnMessage($lifecycle, 2, $c2['childRunId'], RunStatus::Cancelled, 2, [
+                new AfterTurnCommitEventSummary(1, RunEventTypeEnum::AgentEnd->value, ['reason' => 'cancelled']),
+                new AfterTurnCommitEventSummary(2, RunEventTypeEnum::AgentEnd->value, ['reason' => 'cancelled']),
+            ]));
         } else {
             $handler(new ObserveDeferredSubagentBatchChildTurnMessage($lifecycle, 2, $c2['childRunId'], RunStatus::Failed, 2, [
                 new AfterTurnCommitEventSummary(1, RunEventTypeEnum::LlmStepFailed->value, ['error' => ['message' => 'child-two-boom']]),
@@ -382,13 +389,33 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         if ('all_completed' === $scenario) {
             $this->assertFalse($complete->isError);
             $this->assertStringContainsString('Parallel subagents completed', $complete->content[0]['text']);
+        } elseif ('partial_failure' === $scenario) {
+            $this->assertTrue($complete->isError);
+            $text = $complete->content[0]['text'];
+            $this->assertStringStartsWith('Parallel subagent execution failed for one or more children.', $text);
+            $pos1 = strpos($text, $c1['artifactId']);
+            $pos2 = strpos($text, $c2['artifactId']);
+            $this->assertNotFalse($pos1);
+            $this->assertNotFalse($pos2);
+            $this->assertLessThan($pos2, $pos1);
+            $this->assertStringContainsString('child-two-boom', $text);
+            $this->assertFalse($complete->details['retryable'] ?? true);
+            $this->assertFalse($complete->error['retryable'] ?? true);
         } else {
             $this->assertTrue($complete->isError);
             $text = $complete->content[0]['text'];
             $this->assertStringStartsWith('Parallel subagent execution failed for one or more children.', $text);
-            $this->assertStringContainsString($c1['artifactId'], $text);
-            $this->assertStringContainsString($c2['artifactId'], $text);
-            $this->assertStringContainsString('child-two-boom', $text);
+            $pos1 = strpos($text, $c1['artifactId']);
+            $pos2 = strpos($text, $c2['artifactId']);
+            $this->assertNotFalse($pos1);
+            $this->assertNotFalse($pos2);
+            $this->assertLessThan($pos2, $pos1);
+            $this->assertStringContainsString('Child run was cancelled.', $text);
+            $c2pos = strpos($text, $c2['artifactId']);
+            $this->assertNotFalse($c2pos);
+            $child2Section = substr($text, $c2pos);
+            $this->assertStringContainsString('Child run was cancelled.', $child2Section);
+            $this->assertStringNotContainsString('Completed with status completed.', $child2Section);
             $this->assertFalse($complete->details['retryable'] ?? true);
             $this->assertFalse($complete->error['retryable'] ?? true);
         }
@@ -400,8 +427,10 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         $this->assertSame(AgentArtifactStatusEnum::Completed, $registry->get($parent, $c1['artifactId'])->status);
         if ('all_completed' === $scenario) {
             $this->assertSame(AgentArtifactStatusEnum::Completed, $registry->get($parent, $c2['artifactId'])->status);
-        } else {
+        } elseif ('partial_failure' === $scenario) {
             $this->assertSame(AgentArtifactStatusEnum::Failed, $registry->get($parent, $c2['artifactId'])->status);
+        } else {
+            $this->assertSame(AgentArtifactStatusEnum::Cancelled, $registry->get($parent, $c2['artifactId'])->status);
         }
     }
 
@@ -413,6 +442,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         return [
             'all_completed' => ['all_completed'],
             'partial_failure' => ['partial_failure'],
+            'partial_cancelled' => ['partial_cancelled'],
         ];
     }
 
