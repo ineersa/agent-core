@@ -1,0 +1,12 @@
+{
+  "compilerOptions": {
+    "baseUrl": "../..",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "target": "ES2022",
+    "strict": true,
+    "paths": {
+      "@earendil-works/pi-coding-agent": ["tests/pi-task-workflow/shims/pi-coding-agent.ts"]
+    }
+  }
+}

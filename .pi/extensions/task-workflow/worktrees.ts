@@ -13,7 +13,7 @@ import { join, resolve, dirname, basename } from "node:path";
 // @ts-ignore
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { TaskInfo, WorktreeCreateResult } from "./types";
-import { gitOk, git, branchExists } from "./exec";
+import { gitOk, git, branchExists, run } from "./exec";
 
 // ── Worktree default base ────────────────────────────────────────────────────
 
@@ -244,6 +244,61 @@ export async function removeWorktreeExclusions(
 	}
 }
 
+
+const EXTENSIONS_COMPOSER_TIMEOUT_MS = 120_000;
+
+function sanitizeComposerDiagnostic(stdout: string, stderr: string, code: number): string {
+	const raw = (stderr || stdout || "").trim().replace(/\s+/g, " ");
+	const prefix = `composer install -d .hatfield/extensions failed (exit ${code})`;
+	if (!raw) {
+		return prefix + ".";
+	}
+	const max = 240;
+	const body = raw.length > max ? raw.slice(0, max) + "…" : raw;
+	return `${prefix}: ${body}`;
+}
+
+/**
+ * Install Hatfield extension Composer dependencies in a new worktree.
+ * Non-fatal: missing package or composer failure must not block worktree creation.
+ */
+async function installExtensionsVendor(
+	pi: ExtensionAPI,
+	worktree: string,
+	signal?: AbortSignal,
+): Promise<{ installed: boolean; note?: string }> {
+	const extensionsDir = join(worktree, ".hatfield", "extensions");
+	const composerJson = join(extensionsDir, "composer.json");
+	if (!existsSync(extensionsDir) || !existsSync(composerJson)) {
+		return { installed: false };
+	}
+
+	try {
+		const result = await run(
+			pi,
+			"composer",
+			["install", "-d", ".hatfield/extensions", "--no-interaction", "--no-progress"],
+			worktree,
+			signal,
+			EXTENSIONS_COMPOSER_TIMEOUT_MS,
+		);
+		if (result.code !== 0) {
+			return {
+				installed: false,
+				note: sanitizeComposerDiagnostic(result.stdout, result.stderr, result.code),
+			};
+		}
+		return { installed: true };
+	} catch (err: any) {
+		// Non-fatal: extensions vendor is a developer convenience; the worker
+		// can run composer install manually. Do not hard-fail worktree creation.
+		const message = err?.message ? String(err.message).trim() : "composer install failed";
+		const max = 240;
+		const body = message.length > max ? message.slice(0, max) + "…" : message;
+		return { installed: false, note: `composer install -d .hatfield/extensions failed: ${body}` };
+	}
+}
+
 // ── Create worktree ─────────────────────────────────────────────────────────
 //
 // Creates a task/ branch + git worktree, copies vendor/.vera,
@@ -299,12 +354,18 @@ export async function createWorktreeForTask(
 	// ── Update parent IDEA worktree exclusions ─────────────────────────────
 	const { updated: ideaExclusionsUpdated, note: ideaNote } = await addWorktreeExclusions(slug, base);
 
+	// ── Install .hatfield/extensions vendor (new worktrees only) ───────────
+	const { installed: extensionsVendorInstalled, note: extensionsVendorNote } =
+		await installExtensionsVendor(pi, worktree, signal);
+
 	return {
 		branch,
 		worktree,
 		output: result.stdout || result.stderr,
 		veraCopied,
 		vendorCopied,
+		extensionsVendorInstalled,
+		extensionsVendorNote,
 		ideaExclusionsUpdated,
 		ideaNote,
 	};
