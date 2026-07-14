@@ -33,7 +33,7 @@ final readonly class DeferredSingleSubagentInterruptionService
     ) {
     }
 
-    public function interrupt(string $lifecycleId, DeferredSingleSubagentInterruptionKindEnum $kind): void
+    public function interrupt(string $lifecycleId, DeferredSubagentInterruptionKindEnum $kind): void
     {
         $row = $this->launchRepository->findEntityByLifecycleId($lifecycleId);
         if (null === $row) {
@@ -49,7 +49,7 @@ final readonly class DeferredSingleSubagentInterruptionService
             return;
         }
 
-        if (DeferredSingleSubagentInterruptionKindEnum::Timeout === $kind && null !== $projection->deadlineAt) {
+        if (DeferredSubagentInterruptionKindEnum::Timeout === $kind && null !== $projection->deadlineAt) {
             $delayMs = ($projection->deadlineAt->getTimestamp() - $this->clock->now()->getTimestamp()) * 1000;
             if ($delayMs > 0) {
                 try {
@@ -122,7 +122,7 @@ final readonly class DeferredSingleSubagentInterruptionService
         }
 
         $policy = $this->lifecyclePolicyFactory->create();
-        $cancelReason = DeferredSingleSubagentInterruptionKindEnum::Timeout === $effectiveKind
+        $cancelReason = DeferredSubagentInterruptionKindEnum::Timeout === $effectiveKind
             ? $policy->singleTimeoutCancelReason
             : $policy->parentCancelSingleReason;
 

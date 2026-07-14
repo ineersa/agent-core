@@ -12,7 +12,7 @@ use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\CodingAgent\Agent\Execution\DeferredSingleSubagentLaunchStatusEnum;
 use Ineersa\CodingAgent\Agent\Execution\DeferredSingleSubagentProjectionDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredChildRunLifecycleProjectionDTO;
-use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredSingleSubagentInterruptionKindEnum;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredSubagentInterruptionKindEnum;
 use Symfony\Component\Clock\Clock;
 use Symfony\Component\Uid\Uuid;
 
@@ -164,7 +164,7 @@ final class DeferredSingleSubagentLaunchRepository extends ServiceEntityReposito
 
     public function persistInterruptionIntent(
         string $lifecycleId,
-        DeferredSingleSubagentInterruptionKindEnum $kind,
+        DeferredSubagentInterruptionKindEnum $kind,
         \DateTimeImmutable $requestedAt,
         int $expectedProjectionVersion,
     ): void {

@@ -7,8 +7,11 @@ namespace Ineersa\CodingAgent\Tests\Messenger;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\DeliverDeferredSubagentBatchLifecycleHandler;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\DeliverDeferredSubagentBatchLifecycleMessage;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\InterruptDeferredSubagentBatchHandler;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\InterruptDeferredSubagentBatchMessage;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\ObserveDeferredSubagentBatchChildTurnHandler;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\ObserveDeferredSubagentBatchChildTurnMessage;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredSubagentInterruptionKindEnum;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\ObserveDeferredSingleSubagentChildTurnHandler;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\ObserveDeferredSingleSubagentChildTurnMessage;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\RecoverDeferredSingleSubagentLifecycleHandler;
@@ -92,6 +95,13 @@ final class DeferredSubagentRunControlHandlersWiringTest extends IsolatedKernelT
                     batchLifecycleId: 'batch-wiring-deliver',
                 ),
                 DeliverDeferredSubagentBatchLifecycleHandler::class,
+            ],
+            'InterruptDeferredSubagentBatchMessage' => [
+                new InterruptDeferredSubagentBatchMessage(
+                    batchLifecycleId: 'batch-wiring-interrupt',
+                    kind: DeferredSubagentInterruptionKindEnum::Timeout,
+                ),
+                InterruptDeferredSubagentBatchHandler::class,
             ],
             'RecoverDeferredSingleSubagentLifecycleMessage' => [
                 new RecoverDeferredSingleSubagentLifecycleMessage(

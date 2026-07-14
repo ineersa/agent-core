@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred;
 
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchExecutionModeEnum;
-use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredSingleSubagentInterruptionKindEnum;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredSubagentInterruptionKindEnum;
 
 /**
  * Durable batch projection with ordered child rows (Piece 4A).
@@ -29,9 +29,10 @@ final readonly class DeferredSubagentBatchProjectionDTO
         public ?\DateTimeImmutable $terminalCompletionEnqueuedAt,
         public ?\DateTimeImmutable $startedAt,
         public ?\DateTimeImmutable $deadlineAt,
+        public \DateTimeImmutable $createdAt,
         public int $projectionVersion,
         public array $children,
-        public ?DeferredSingleSubagentInterruptionKindEnum $interruptionKind = null,
+        public ?DeferredSubagentInterruptionKindEnum $interruptionKind = null,
         public ?\DateTimeImmutable $interruptionRequestedAt = null,
         public ?\DateTimeImmutable $interruptionProgressEnqueuedAt = null,
     ) {

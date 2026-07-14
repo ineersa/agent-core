@@ -50,7 +50,7 @@ final readonly class DeferredSingleSubagentTerminalCompletionService
         DeferredSingleSubagentProjectionDTO $projection,
         DeferredChildRunLifecycleProjectionDTO $childProjection,
         int $expectedProjectionVersion,
-        ?DeferredSingleSubagentInterruptionKindEnum $interruptionKind = null,
+        ?DeferredSubagentInterruptionKindEnum $interruptionKind = null,
         bool $forceInterruptionTerminalProgress = false,
     ): void {
         if (!$forceInterruptionTerminalProgress && $projection->childEventCursor <= $projection->parentProgressCursor) {
@@ -135,7 +135,7 @@ final readonly class DeferredSingleSubagentTerminalCompletionService
         DeferredSingleSubagentProjectionDTO $projection,
         DeferredChildRunLifecycleProjectionDTO $childProjection,
         int $expectedProjectionVersion,
-        DeferredSingleSubagentInterruptionKindEnum $interruptionKind,
+        DeferredSubagentInterruptionKindEnum $interruptionKind,
     ): void {
         if (null !== $projection->interruptionProgressEnqueuedAt) {
             return;
@@ -178,7 +178,7 @@ final readonly class DeferredSingleSubagentTerminalCompletionService
         $kind = $projection->interruptionKind ?? throw new \RuntimeException('Interruption completion requires persisted interruption kind.');
         $identity = $this->identityFromProjection($projection);
 
-        if (DeferredSingleSubagentInterruptionKindEnum::Timeout === $kind) {
+        if (DeferredSubagentInterruptionKindEnum::Timeout === $kind) {
             $timeoutSeconds = $this->resolveTimeoutSeconds($projection);
             $artifactOutcome = new ChildRunTerminalOutcomeDTO(
                 identity: $identity,
@@ -366,12 +366,12 @@ final readonly class DeferredSingleSubagentTerminalCompletionService
 
     private function resolveProgressStatus(
         DeferredChildRunLifecycleProjectionDTO $childProjection,
-        ?DeferredSingleSubagentInterruptionKindEnum $interruptionKind,
+        ?DeferredSubagentInterruptionKindEnum $interruptionKind,
     ): string {
-        if (DeferredSingleSubagentInterruptionKindEnum::Timeout === $interruptionKind) {
+        if (DeferredSubagentInterruptionKindEnum::Timeout === $interruptionKind) {
             return 'failed';
         }
-        if (DeferredSingleSubagentInterruptionKindEnum::ParentCancelled === $interruptionKind) {
+        if (DeferredSubagentInterruptionKindEnum::ParentCancelled === $interruptionKind) {
             return 'cancelled';
         }
 

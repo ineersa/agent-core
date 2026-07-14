@@ -5,10 +5,14 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred;
 
 use Ineersa\AgentCore\Domain\Event\DeferredToolCompletionRegisteredEvent;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredSubagentInterruptionKindEnum;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
+use Symfony\Component\Clock\ClockInterface;
+use Symfony\Component\Clock\MonotonicClock;
 use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
 use Symfony\Component\Messenger\Exception\ExceptionInterface;
 use Symfony\Component\Messenger\MessageBusInterface;
+use Symfony\Component\Messenger\Stamp\DelayStamp;
 
 #[AsEventListener(event: DeferredToolCompletionRegisteredEvent::class)]
 final readonly class DeferredToolCompletionRegisteredBatchListener
@@ -16,6 +20,7 @@ final readonly class DeferredToolCompletionRegisteredBatchListener
     public function __construct(
         private DeferredSubagentBatchRepository $batchRepository,
         private MessageBusInterface $commandBus,
+        private ClockInterface $clock = new MonotonicClock(),
     ) {
     }
 
@@ -35,6 +40,40 @@ final readonly class DeferredToolCompletionRegisteredBatchListener
             $this->commandBus->dispatch(new DeliverDeferredSubagentBatchLifecycleMessage($batch->lifecycleId));
         } catch (ExceptionInterface $exception) {
             throw new \RuntimeException('Failed to enqueue deferred subagent batch lifecycle delivery.', previous: $exception);
+        }
+
+        // Re-dispatch interruption intent if already persisted
+        if (null !== $batch->interruptionKind) {
+            try {
+                $this->commandBus->dispatch(new InterruptDeferredSubagentBatchMessage(
+                    $batch->lifecycleId,
+                    $batch->interruptionKind,
+                ));
+            } catch (ExceptionInterface $exception) {
+                throw new \RuntimeException('Failed to enqueue deferred subagent batch interruption after registration.', previous: $exception);
+            }
+
+            return;
+        }
+
+        // Schedule timeout interruption
+        if (null === $batch->deadlineAt) {
+            return;
+        }
+
+        $delayMs = max(0, ($batch->deadlineAt->getTimestamp() - $this->clock->now()->getTimestamp()) * 1000);
+        $stamps = $delayMs > 0 ? [new DelayStamp($delayMs)] : [];
+
+        try {
+            $this->commandBus->dispatch(
+                new InterruptDeferredSubagentBatchMessage(
+                    $batch->lifecycleId,
+                    DeferredSubagentInterruptionKindEnum::Timeout,
+                ),
+                $stamps,
+            );
+        } catch (ExceptionInterface $exception) {
+            throw new \RuntimeException('Failed to schedule deferred subagent batch timeout interruption.', previous: $exception);
         }
     }
 }

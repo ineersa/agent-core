@@ -67,7 +67,7 @@ final readonly class DeferredToolCompletionRegisteredSubagentListener
             $this->commandBus->dispatch(
                 new InterruptDeferredSingleSubagentMessage(
                     $projection->lifecycleId,
-                    DeferredSingleSubagentInterruptionKindEnum::Timeout,
+                    DeferredSubagentInterruptionKindEnum::Timeout,
                 ),
                 $stamps,
             );

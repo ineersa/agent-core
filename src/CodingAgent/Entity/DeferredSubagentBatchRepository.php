@@ -14,6 +14,7 @@ use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\DeferredSubagent
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\DeferredSubagentBatchProjectionDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\DeferredSubagentChildLaunchStatusEnum;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredChildRunLifecycleProjectionDTO;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredSubagentInterruptionKindEnum;
 use Symfony\Component\Clock\Clock;
 
 /**
@@ -481,6 +482,80 @@ final class DeferredSubagentBatchRepository extends ServiceEntityRepository
     }
 
     /**
+     * @return list<DeferredSubagentBatchProjectionDTO>
+     */
+    public function findActiveByParentRunId(string $parentRunId): array
+    {
+        $qb = $this->createQueryBuilder('b')
+            ->andWhere('b.parentRunId = :parentRunId')
+            ->andWhere('b.terminalCompletionEnqueuedAt IS NULL')
+            ->andWhere('b.launchStatus IN (:statuses)')
+            ->setParameter('parentRunId', $parentRunId)
+            ->setParameter('statuses', [
+                DeferredSubagentBatchLaunchStatusEnum::Reserved->value,
+                DeferredSubagentBatchLaunchStatusEnum::Launched->value,
+            ]);
+
+        return array_map($this->toDto(...), $qb->getQuery()->getResult());
+    }
+
+    /**
+     * Persist first-wins interruption intent with optimistic lock guard.
+     */
+    public function persistInterruptionIntent(
+        string $batchLifecycleId,
+        DeferredSubagentInterruptionKindEnum $kind,
+        \DateTimeImmutable $requestedAt,
+        int $expectedProjectionVersion,
+    ): void {
+        $row = $this->findOneBy(['lifecycleId' => $batchLifecycleId]);
+        if (!$row instanceof DeferredSubagentBatch) {
+            throw new \RuntimeException(\sprintf('Deferred subagent batch missing for lifecycle "%s".', $batchLifecycleId));
+        }
+
+        if ($row->projectionVersion !== $expectedProjectionVersion) {
+            throw OptimisticLockException::lockFailed($row);
+        }
+
+        if (null !== $row->terminalCompletionEnqueuedAt) {
+            return;
+        }
+
+        if (null !== $row->interruptionKind) {
+            return;
+        }
+
+        $row->interruptionKind = $kind;
+        $row->interruptionRequestedAt = $requestedAt;
+        $this->getEntityManager()->flush();
+    }
+
+    /**
+     * Durable first-wins marker that interruption terminal progress was emitted.
+     */
+    public function markInterruptionProgressEnqueued(
+        string $batchLifecycleId,
+        \DateTimeImmutable $enqueuedAt,
+        int $expectedProjectionVersion,
+    ): void {
+        $row = $this->findOneBy(['lifecycleId' => $batchLifecycleId]);
+        if (!$row instanceof DeferredSubagentBatch) {
+            throw new \RuntimeException(\sprintf('Deferred subagent batch missing for lifecycle "%s".', $batchLifecycleId));
+        }
+
+        if ($row->projectionVersion !== $expectedProjectionVersion) {
+            throw OptimisticLockException::lockFailed($row);
+        }
+
+        if (null !== $row->interruptionProgressEnqueuedAt) {
+            return;
+        }
+
+        $row->interruptionProgressEnqueuedAt = $enqueuedAt;
+        $this->getEntityManager()->flush();
+    }
+
+    /**
      * @param list<array{batchIndex: int, childRunId: string, artifactId: string, agentName: string, task: string, definitionModel: ?string}> $childIntents
      */
     private function assertBatchMatchesIntent(
@@ -559,6 +634,7 @@ final class DeferredSubagentBatchRepository extends ServiceEntityRepository
             terminalCompletionEnqueuedAt: $row->terminalCompletionEnqueuedAt,
             startedAt: $row->startedAt,
             deadlineAt: $row->deadlineAt,
+            createdAt: $row->createdAt,
             projectionVersion: $row->projectionVersion,
             children: $this->childRepository->findOrderedByBatchLifecycleId($row->lifecycleId),
             interruptionKind: $row->interruptionKind,

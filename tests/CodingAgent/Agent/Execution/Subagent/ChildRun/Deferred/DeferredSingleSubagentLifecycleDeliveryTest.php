@@ -22,11 +22,11 @@ use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunIdentityDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Lifecycle\ChildRunArtifactLifecycleService;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredChildRunEventProjector;
-use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredSingleSubagentInterruptionKindEnum;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredSingleSubagentInterruptionService;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredSingleSubagentLifecycleDeliveryService;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredSingleSubagentParentCancelHookSubscriber;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredSingleSubagentTerminalCompletionService;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredSubagentInterruptionKindEnum;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredToolCompletionRegisteredSubagentListener;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\InterruptDeferredSingleSubagentMessage;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\ObserveDeferredSingleSubagentChildTurnHandler;
@@ -233,7 +233,7 @@ final class DeferredSingleSubagentLifecycleDeliveryTest extends IsolatedKernelTe
 
         $this->assertCount(2, $bus->messages);
         $this->assertInstanceOf(InterruptDeferredSingleSubagentMessage::class, $bus->messages[1]);
-        $this->assertSame(DeferredSingleSubagentInterruptionKindEnum::Timeout, $bus->messages[1]->kind);
+        $this->assertSame(DeferredSubagentInterruptionKindEnum::Timeout, $bus->messages[1]->kind);
         $delay = $this->extractDelayMs($bus->stampSets[1]);
         $this->assertGreaterThanOrEqual(25_000, $delay);
     }
@@ -261,7 +261,7 @@ final class DeferredSingleSubagentLifecycleDeliveryTest extends IsolatedKernelTe
 
         $deferredRepo = self::getContainer()->get(DeferredToolCompletionRepositoryInterface::class);
         $deferredRepo->registerPending($this->correlation($launch->lifecycleId, 'parent-timeout', 'tool-timeout'));
-        $interruption->interrupt($launch->lifecycleId, DeferredSingleSubagentInterruptionKindEnum::Timeout);
+        $interruption->interrupt($launch->lifecycleId, DeferredSubagentInterruptionKindEnum::Timeout);
         $this->assertSame(['child-timeout'], $runner->cancelledChildRunIds);
         $this->assertSame('Subagent timed out.', $runner->lastReason);
 
@@ -277,7 +277,7 @@ final class DeferredSingleSubagentLifecycleDeliveryTest extends IsolatedKernelTe
         $this->assertSame('Child run timed out.', $entry?->failureReason);
         $this->assertSame('Timed out after 60s.', $entry?->summary);
 
-        $interruption->interrupt($launch->lifecycleId, DeferredSingleSubagentInterruptionKindEnum::Timeout);
+        $interruption->interrupt($launch->lifecycleId, DeferredSubagentInterruptionKindEnum::Timeout);
         $this->assertCount(1, $commandBus->messages);
     }
 
@@ -300,7 +300,7 @@ final class DeferredSingleSubagentLifecycleDeliveryTest extends IsolatedKernelTe
             new TestLogger(),
         );
 
-        $interruption->interrupt($launch->lifecycleId, DeferredSingleSubagentInterruptionKindEnum::Timeout);
+        $interruption->interrupt($launch->lifecycleId, DeferredSubagentInterruptionKindEnum::Timeout);
         $this->assertSame([], $runner->cancelledChildRunIds);
         $this->assertCount(1, $bus->messages);
         $this->assertInstanceOf(InterruptDeferredSingleSubagentMessage::class, $bus->messages[0]);
@@ -326,7 +326,7 @@ final class DeferredSingleSubagentLifecycleDeliveryTest extends IsolatedKernelTe
         ));
         $this->assertCount(1, $bus->messages);
         $this->assertInstanceOf(InterruptDeferredSingleSubagentMessage::class, $bus->messages[0]);
-        $this->assertSame(DeferredSingleSubagentInterruptionKindEnum::ParentCancelled, $bus->messages[0]->kind);
+        $this->assertSame(DeferredSubagentInterruptionKindEnum::ParentCancelled, $bus->messages[0]->kind);
 
         $runner = new RecordingAgentRunner();
         $commandBus = new TestMessageBus();
@@ -341,7 +341,7 @@ final class DeferredSingleSubagentLifecycleDeliveryTest extends IsolatedKernelTe
         );
         $deferredRepo = self::getContainer()->get(DeferredToolCompletionRepositoryInterface::class);
         $deferredRepo->registerPending($this->correlation($launch->lifecycleId, 'parent-pcancel', 'tool-pcancel'));
-        $interruption->interrupt($launch->lifecycleId, DeferredSingleSubagentInterruptionKindEnum::ParentCancelled);
+        $interruption->interrupt($launch->lifecycleId, DeferredSubagentInterruptionKindEnum::ParentCancelled);
 
         $this->assertTrue($commandBus->messages[0]->isError);
         $this->assertStringContainsString('cancelled by parent run', $commandBus->messages[0]->content[0]['text']);
@@ -386,7 +386,7 @@ final class DeferredSingleSubagentLifecycleDeliveryTest extends IsolatedKernelTe
         );
         $deferredRepo = self::getContainer()->get(DeferredToolCompletionRepositoryInterface::class);
         $deferredRepo->registerPending($this->correlation($launch->lifecycleId, 'parent-race', 'tool-race'));
-        $interruption->interrupt($launch->lifecycleId, DeferredSingleSubagentInterruptionKindEnum::Timeout);
+        $interruption->interrupt($launch->lifecycleId, DeferredSubagentInterruptionKindEnum::Timeout);
 
         $this->assertSame([], $runner->cancelledChildRunIds);
         $this->assertFalse($commandBus->messages[0]->isError);
@@ -416,7 +416,7 @@ final class DeferredSingleSubagentLifecycleDeliveryTest extends IsolatedKernelTe
         );
         $deferredRepo = self::getContainer()->get(DeferredToolCompletionRepositoryInterface::class);
         $deferredRepo->registerPending($this->correlation($launch->lifecycleId, 'parent-late', 'tool-late'));
-        $interruption->interrupt($launch->lifecycleId, DeferredSingleSubagentInterruptionKindEnum::Timeout);
+        $interruption->interrupt($launch->lifecycleId, DeferredSubagentInterruptionKindEnum::Timeout);
         $this->assertCount(1, $commandBus->messages);
 
         $observeBus = new TestMessageBus();
@@ -474,13 +474,13 @@ final class DeferredSingleSubagentLifecycleDeliveryTest extends IsolatedKernelTe
             $commandBus,
             new TestLogger(),
         );
-        $interruption->interrupt($launch->lifecycleId, DeferredSingleSubagentInterruptionKindEnum::ParentCancelled);
+        $interruption->interrupt($launch->lifecycleId, DeferredSubagentInterruptionKindEnum::ParentCancelled);
 
         $this->assertCount(2, $capturingAppender->progressStatuses);
         $this->assertSame('cancelled', $capturingAppender->progressStatuses[1]);
         $this->assertTrue($commandBus->messages[0]->isError);
 
-        $interruption->interrupt($launch->lifecycleId, DeferredSingleSubagentInterruptionKindEnum::ParentCancelled);
+        $interruption->interrupt($launch->lifecycleId, DeferredSubagentInterruptionKindEnum::ParentCancelled);
         $this->assertCount(2, $capturingAppender->progressStatuses);
         $this->assertCount(1, $commandBus->messages);
     }
@@ -515,7 +515,7 @@ final class DeferredSingleSubagentLifecycleDeliveryTest extends IsolatedKernelTe
             new TestLogger(),
             $clock,
         );
-        $interruption->interrupt($launch->lifecycleId, DeferredSingleSubagentInterruptionKindEnum::Timeout);
+        $interruption->interrupt($launch->lifecycleId, DeferredSubagentInterruptionKindEnum::Timeout);
 
         $this->assertInstanceOf(CompleteDeferredToolCall::class, $commandBus->messages[0]);
         $registry = self::getContainer()->get(AgentArtifactRegistry::class);
@@ -541,12 +541,12 @@ final class DeferredSingleSubagentLifecycleDeliveryTest extends IsolatedKernelTe
             $bus,
             new TestLogger(),
         );
-        $interruption->interrupt($launch->lifecycleId, DeferredSingleSubagentInterruptionKindEnum::ParentCancelled);
+        $interruption->interrupt($launch->lifecycleId, DeferredSubagentInterruptionKindEnum::ParentCancelled);
         $this->assertSame([], $runner->cancelledChildRunIds);
 
         $row = $repo->findByLifecycleId($launch->lifecycleId);
         $this->assertNotNull($row);
-        $this->assertSame(DeferredSingleSubagentInterruptionKindEnum::ParentCancelled, $row->interruptionKind);
+        $this->assertSame(DeferredSubagentInterruptionKindEnum::ParentCancelled, $row->interruptionKind);
     }
 
     private function ensureArtifactReserved(

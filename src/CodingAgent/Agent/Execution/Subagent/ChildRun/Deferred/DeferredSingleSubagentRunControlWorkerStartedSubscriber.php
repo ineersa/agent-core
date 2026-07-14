@@ -77,7 +77,7 @@ final readonly class DeferredSingleSubagentRunControlWorkerStartedSubscriber
                 $this->commandBus->dispatch(
                     new InterruptDeferredSingleSubagentMessage(
                         $projection->lifecycleId,
-                        DeferredSingleSubagentInterruptionKindEnum::Timeout,
+                        DeferredSubagentInterruptionKindEnum::Timeout,
                     ),
                     $stamps,
                 );

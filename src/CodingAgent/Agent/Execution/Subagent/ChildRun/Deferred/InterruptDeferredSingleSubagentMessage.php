@@ -11,7 +11,7 @@ final readonly class InterruptDeferredSingleSubagentMessage
 {
     public function __construct(
         public string $lifecycleId,
-        public DeferredSingleSubagentInterruptionKindEnum $kind,
+        public DeferredSubagentInterruptionKindEnum $kind,
     ) {
     }
 }

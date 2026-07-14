@@ -114,7 +114,7 @@ final readonly class DeferredSingleSubagentRecoveryService
         }
     }
 
-    private function dispatchInterrupt(string $lifecycleId, DeferredSingleSubagentInterruptionKindEnum $kind): void
+    private function dispatchInterrupt(string $lifecycleId, DeferredSubagentInterruptionKindEnum $kind): void
     {
         try {
             $this->commandBus->dispatch(new InterruptDeferredSingleSubagentMessage($lifecycleId, $kind));

@@ -7,7 +7,7 @@ namespace Ineersa\CodingAgent\Entity;
 use Doctrine\ORM\Mapping as ORM;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchExecutionModeEnum;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\DeferredSubagentBatchLaunchStatusEnum;
-use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredSingleSubagentInterruptionKindEnum;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredSubagentInterruptionKindEnum;
 
 #[ORM\Entity]
 #[ORM\Table(name: 'deferred_subagent_batch')]
@@ -65,8 +65,8 @@ class DeferredSubagentBatch
     #[ORM\Column(name: 'deadline_at', type: 'datetime_immutable', nullable: true)]
     public ?\DateTimeImmutable $deadlineAt = null;
 
-    #[ORM\Column(name: 'interruption_kind', type: 'string', length: 32, enumType: DeferredSingleSubagentInterruptionKindEnum::class, nullable: true)]
-    public ?DeferredSingleSubagentInterruptionKindEnum $interruptionKind = null;
+    #[ORM\Column(name: 'interruption_kind', type: 'string', length: 32, enumType: DeferredSubagentInterruptionKindEnum::class, nullable: true)]
+    public ?DeferredSubagentInterruptionKindEnum $interruptionKind = null;
 
     #[ORM\Column(name: 'interruption_requested_at', type: 'datetime_immutable', nullable: true)]
     public ?\DateTimeImmutable $interruptionRequestedAt = null;

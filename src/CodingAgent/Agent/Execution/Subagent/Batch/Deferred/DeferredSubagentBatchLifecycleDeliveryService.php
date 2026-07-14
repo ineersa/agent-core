@@ -29,6 +29,13 @@ final readonly class DeferredSubagentBatchLifecycleDeliveryService
             return;
         }
 
+        // Route persisted interruption to the interruption path before natural completion
+        if (null !== $batch->interruptionKind) {
+            $this->terminalCompletion->completeFromInterruption($batch);
+
+            return;
+        }
+
         if ($batch->aggregateProgressRevision > $batch->deliveredProgressRevision) {
             $this->progressDelivery->deliverIfNeeded($batch);
             $batch = $this->batchRepository->findByLifecycleId($batchLifecycleId);
