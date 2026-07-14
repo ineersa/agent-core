@@ -64,10 +64,7 @@ final class DeferredSubagentBatchLaunchTest extends IsolatedKernelTestCase
             $this->parallelDefinition('batch-a'),
             $this->parallelDefinition('batch-b'),
         ]);
-        $execution = new SubagentExecutionService(
-            self::getContainer()->get(\Ineersa\CodingAgent\Agent\Execution\DeferredSingleSubagentLaunchService::class),
-            $batchLaunch,
-        );
+        $execution = new SubagentExecutionService($batchLaunch);
 
         $outcome = $this->withToolContext($parentRunId, $toolCallId, static fn () => $execution->executeParallel(
             $parentRunId,
@@ -293,12 +290,13 @@ final class DeferredSubagentBatchLaunchTest extends IsolatedKernelTestCase
         $agentRunner = $this->createMock(AgentRunnerInterface::class);
         $agentRunner->expects($this->once())->method('start')->willReturnCallback(static fn ($input) => $input->runId);
 
-        $service = $this->buildBatchLaunchService($agentRunner, [$foregroundOnly, $parallelOnly]);
+        $batchLaunch = $this->buildBatchLaunchService($agentRunner, [$foregroundOnly, $parallelOnly]);
+        $execution = new SubagentExecutionService($batchLaunch);
 
-        $outcome = $this->withToolContext($parentRunId, $toolCallId, static fn () => $service->launch(
+        $outcome = $this->withToolContext($parentRunId, $toolCallId, static fn () => $execution->execute(
             $parentRunId,
-            [new SubagentTaskDTO(agent: 'fg-only', task: 'Single task')],
-            ChildRunBatchExecutionModeEnum::Single,
+            'fg-only',
+            'Single task',
         ));
 
         $this->assertInstanceOf(DeferredToolCompletionOutcome::class, $outcome);
@@ -309,6 +307,7 @@ final class DeferredSubagentBatchLaunchTest extends IsolatedKernelTestCase
         $this->assertSame(1, $batch->totalChildCount);
         $this->assertCount(1, $batch->children);
 
+        $service = $batchLaunch;
         try {
             $this->withToolContext($parentRunId, $otherTool, static fn () => $service->launch(
                 $parentRunId,
@@ -337,10 +336,7 @@ final class DeferredSubagentBatchLaunchTest extends IsolatedKernelTestCase
             $this->parallelDefinition('cap-a'),
             $this->parallelDefinition('cap-b'),
         ], agentsConfig: new AgentsConfig(maxAgents: 1));
-        $execution = new SubagentExecutionService(
-            self::getContainer()->get(\Ineersa\CodingAgent\Agent\Execution\DeferredSingleSubagentLaunchService::class),
-            $batchLaunch,
-        );
+        $execution = new SubagentExecutionService($batchLaunch);
 
         try {
             $this->withToolContext($parentRunId, $toolCallId, static fn () => $execution->executeParallel(
@@ -395,10 +391,7 @@ final class DeferredSubagentBatchLaunchTest extends IsolatedKernelTestCase
             [$def('first-agent'), $def('second-agent'), $def('third-agent')],
             parentRunStore: $parentRunStore,
         );
-        $execution = new SubagentExecutionService(
-            self::getContainer()->get(\Ineersa\CodingAgent\Agent\Execution\DeferredSingleSubagentLaunchService::class),
-            $batchLaunch,
-        );
+        $execution = new SubagentExecutionService($batchLaunch);
 
         try {
             $this->withToolContext($parentRunId, $toolCallId, static fn () => $execution->executeParallel(

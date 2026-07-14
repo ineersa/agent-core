@@ -8,21 +8,16 @@ use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionCatalog;
 use Ineersa\CodingAgent\Agent\Execution\AgentDepthGuard;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Lifecycle\ChildRunArtifactLifecycleService;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Lifecycle\ChildRunBatchLaunchService;
-use Ineersa\CodingAgent\Agent\Execution\DeferredSingleSubagentIdentityFactory;
-use Ineersa\CodingAgent\Agent\Execution\DeferredSingleSubagentLaunchService;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\DeferredSubagentBatchIdentityFactory;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\DeferredSubagentBatchLaunchService;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\DeferredSubagentBatchPreparationService;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\DeferredSubagentBatchRuntimeStartService;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Preparation\SubagentChildLaunchInputFactory;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Preparation\SubagentLaunchDefinitionPolicyService;
-use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Progress\SubagentChildRunProgressEmitter;
-use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Progress\SubagentProgressEventAppender;
-use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Result\SubagentChildRunArtifactFinalizer;
-use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Result\SubagentChildRunHandoffRenderer;
-use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\SubagentChildRunBatchLifecycleListener;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\SubagentChildRunBatchLifecyclePolicyFactory;
 use Ineersa\CodingAgent\Agent\Execution\SubagentExecutionService;
 use Ineersa\CodingAgent\Agent\Execution\SubagentLaunchPreparationService;
-use Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder;
 use Ineersa\CodingAgent\Config\AgentsConfig;
-use Symfony\Component\Clock\NativeClock;
 
 final class SubagentExecutionServiceFactory
 {
@@ -40,43 +35,25 @@ final class SubagentExecutionServiceFactory
             'agentsContextBuilder' => null,
             'artifactRegistry' => null,
             'agentRunner' => null,
-            'runStore' => null,
             'parentRunStore' => null,
-            'eventStore' => null,
-            'committedRunEventAppender' => null,
             'metadataReader' => null,
             'childRunDirectory' => null,
             'contextAccessor' => null,
             'logger' => null,
             'agentsConfig' => new AgentsConfig(maxAgents: 8),
-            'progressSnapshotBuilder' => new SubagentProgressSnapshotBuilder(),
-            'childProgressSummaryBuilder' => null,
             'appConfig' => null,
-            'clock' => new NativeClock(),
-            'launchProjectionRepository' => null,
-            'identityFactory' => new DeferredSingleSubagentIdentityFactory(),
-            'artifactLifecycle' => null,
-            'deferredBatchLaunch' => null,
+            'batchRepository' => null,
+            'lifecycleListener' => null,
         ];
 
         $args = array_merge($defaults, $overrides);
 
-        foreach (['policyResolver', 'promptBuilder', 'skillsContextBuilder', 'agentsContextBuilder', 'artifactRegistry', 'agentRunner', 'runStore', 'parentRunStore', 'eventStore', 'committedRunEventAppender', 'metadataReader', 'childRunDirectory', 'contextAccessor', 'logger', 'childProgressSummaryBuilder', 'appConfig', 'launchProjectionRepository', 'deferredBatchLaunch'] as $required) {
+        foreach (['policyResolver', 'promptBuilder', 'skillsContextBuilder', 'agentsContextBuilder', 'artifactRegistry', 'agentRunner', 'parentRunStore', 'metadataReader', 'childRunDirectory', 'contextAccessor', 'logger', 'appConfig', 'batchRepository', 'lifecycleListener'] as $required) {
             if (null === $args[$required]) {
                 throw new \InvalidArgumentException(\sprintf('SubagentExecutionServiceFactory requires override "%s".', $required));
             }
         }
 
-        $handoffRenderer = new SubagentChildRunHandoffRenderer();
-        $artifactFinalizer = new SubagentChildRunArtifactFinalizer($args['artifactRegistry'], $handoffRenderer, $args['logger']);
-        $progressEventAppender = $args['committedRunEventAppender'] instanceof SubagentProgressEventAppender
-            ? $args['committedRunEventAppender']
-            : new SubagentProgressEventAppender($args['committedRunEventAppender']);
-        $lifecycleListener = new SubagentChildRunBatchLifecycleListener(
-            new SubagentChildRunProgressEmitter($args['contextAccessor'], $progressEventAppender, $args['progressSnapshotBuilder'], $args['childProgressSummaryBuilder'], $args['runStore'], $args['clock']),
-            $artifactFinalizer,
-            $handoffRenderer,
-        );
         $artifactLifecycle = $args['artifactLifecycle'] ?? new ChildRunArtifactLifecycleService($args['artifactRegistry'], $args['childRunDirectory']);
 
         $definitionPolicy = new SubagentLaunchDefinitionPolicyService($args['catalog'], $args['depthGuard'], $args['policyResolver'], $args['metadataReader']);
@@ -84,21 +61,36 @@ final class SubagentExecutionServiceFactory
         $launchPreparation = new SubagentLaunchPreparationService($definitionPolicy, $artifactLifecycle, $launchInputFactory);
         $lifecyclePolicyFactory = new SubagentChildRunBatchLifecyclePolicyFactory();
 
-        $launchService = new ChildRunBatchLaunchService($args['agentRunner'], $artifactLifecycle, $lifecycleListener, $args['logger']);
-
-        $deferredSingleLaunch = new DeferredSingleSubagentLaunchService(
-            $launchPreparation,
-            $args['identityFactory'],
-            $args['launchProjectionRepository'],
-            $artifactLifecycle,
+        $batchLaunchService = new ChildRunBatchLaunchService(
             $args['agentRunner'],
-            $launchService,
+            $artifactLifecycle,
+            $args['lifecycleListener'],
+            $args['logger'],
+        );
+
+        $identityFactory = new DeferredSubagentBatchIdentityFactory();
+        $runtimeStart = new DeferredSubagentBatchRuntimeStartService(
+            $args['agentRunner'],
+            $artifactLifecycle,
+            $batchLaunchService,
             $lifecyclePolicyFactory,
+            $args['logger'],
+        );
+        $batchPreparation = new DeferredSubagentBatchPreparationService(
+            $launchPreparation,
+            $identityFactory,
+            $artifactLifecycle,
+        );
+
+        $deferredBatchLaunch = new DeferredSubagentBatchLaunchService(
+            $batchPreparation,
+            $args['batchRepository'],
+            $runtimeStart,
             $args['contextAccessor'],
             $args['agentsConfig'],
             $args['logger'],
         );
 
-        return new SubagentExecutionService($deferredSingleLaunch, $args['deferredBatchLaunch']);
+        return new SubagentExecutionService($deferredBatchLaunch);
     }
 }

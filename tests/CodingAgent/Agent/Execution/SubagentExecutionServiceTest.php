@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Agent\Execution;
 
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
+use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\AgentRunnerInterface;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
+use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
 use Ineersa\AgentCore\Contract\RunStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
@@ -33,7 +35,6 @@ use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Config\TuiConfig;
-use Ineersa\CodingAgent\Entity\DeferredSingleSubagentLaunchRepository;
 use Ineersa\CodingAgent\Markdown\MarkdownFrontmatterExtractor;
 use Ineersa\CodingAgent\Mcp\Catalog\McpToolCatalogStoreInterface;
 use Ineersa\CodingAgent\Session\CommittedRunEventAppender;
@@ -123,7 +124,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
         $this->expectException(ToolCallException::class);
         $this->expectExceptionMessage('Nested subagent launches are not supported');
 
-        $service->execute('parent-child-run', 'nested', 'Go deeper');
+        $this->withToolContext('parent-child-run', 'call-nested', static fn () => $service->execute('parent-child-run', 'nested', 'Go deeper'));
     }
 
     public function testMissingAgentDefinitionThrowsNonRetryable(): void
@@ -159,7 +160,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
         $this->expectException(ToolCallException::class);
         $this->expectExceptionMessage('not available');
 
-        $service->execute('parent-4', 'nonexistent-agent', 'Do something');
+        $this->withToolContext('parent-4', 'call-missing', static fn () => $service->execute('parent-4', 'nonexistent-agent', 'Do something'));
     }
 
     public function testForegroundNotAllowedThrowsNonRetryable(): void
@@ -204,7 +205,30 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
         $this->expectException(ToolCallException::class);
         $this->expectExceptionMessage('does not allow foreground');
 
-        $service->execute('parent-5', 'background-only', 'Task');
+        $this->withToolContext('parent-5', 'call-bg', static fn () => $service->execute('parent-5', 'background-only', 'Task'));
+    }
+
+    /**
+     * @template T
+     *
+     * @param callable(): T $callback
+     *
+     * @return T
+     */
+    private function withToolContext(string $parentRunId, string $toolCallId, callable $callback): mixed
+    {
+        $accessor = self::getContainer()->get(StackToolExecutionContextAccessor::class);
+        $context = new ToolContext(
+            runId: $parentRunId,
+            turnNo: 2,
+            toolCallId: $toolCallId,
+            toolName: 'subagent',
+            cancellationToken: new NullCancellationToken(),
+            timeoutSeconds: 120,
+            orderIndex: 0,
+        );
+
+        return $accessor->with($context, $callback);
     }
 
     private function defaultPolicyResolver(): AgentToolPolicyResolver
@@ -298,8 +322,8 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             'childProgressSummaryBuilder' => new SubagentChildProgressSummaryBuilder(self::getContainer()->get(AgentChildRunEventStoreFactory::class)),
             'appConfig' => self::getContainer()->get(AppConfig::class),
             'clock' => new NativeClock(),
-            'launchProjectionRepository' => self::getContainer()->get(DeferredSingleSubagentLaunchRepository::class),
-            'deferredBatchLaunch' => self::getContainer()->get(\Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\DeferredSubagentBatchLaunchService::class),
+            'batchRepository' => self::getContainer()->get(\Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository::class),
+            'lifecycleListener' => self::getContainer()->get(\Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\SubagentChildRunBatchLifecycleListener::class),
         ];
 
         return SubagentExecutionServiceFactory::build(array_merge($defaults, $overrides));

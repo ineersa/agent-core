@@ -159,8 +159,8 @@ final class Gf05BareAgentsEffectiveContextIntegrationTest extends PerMethodIsola
             'childProgressSummaryBuilder' => new SubagentChildProgressSummaryBuilder(self::getContainer()->get(\Ineersa\CodingAgent\Agent\Artifact\AgentChildRunEventStoreFactory::class)),
             'agentsContextBuilder' => self::getContainer()->get(AgentsContextBuilder::class),
             'appConfig' => self::getContainer()->get(\Ineersa\CodingAgent\Config\AppConfig::class),
-            'launchProjectionRepository' => self::getContainer()->get(\Ineersa\CodingAgent\Entity\DeferredSingleSubagentLaunchRepository::class),
-            'deferredBatchLaunch' => self::getContainer()->get(\Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\DeferredSubagentBatchLaunchService::class),
+            'batchRepository' => self::getContainer()->get(\Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository::class),
+            'lifecycleListener' => self::getContainer()->get(\Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\SubagentChildRunBatchLifecycleListener::class),
         ]);
     }
 
