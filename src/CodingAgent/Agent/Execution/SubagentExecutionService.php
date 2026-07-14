@@ -6,18 +6,20 @@ namespace Ineersa\CodingAgent\Agent\Execution;
 
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
+use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchExecutionModeEnum;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\DeferredSubagentBatchLaunchService;
 
 /**
- * Stable public façade for foreground subagent tool execution.
+ * Stable public façade for subagent tool execution.
  *
- * Single runs defer through {@see DeferredSingleSubagentLaunchService}; parallel runs
- * remain on {@see ParallelSubagentExecutionService} + {@see ForegroundChildRunSupervisor}.
+ * Single and parallel runs defer through durable launch services; completion is
+ * delivered asynchronously via the generic deferred-tool runtime.
  */
 final class SubagentExecutionService
 {
     public function __construct(
         private readonly DeferredSingleSubagentLaunchService $deferredSingleLaunch,
-        private readonly ParallelSubagentExecutionService $parallelExecution,
+        private readonly DeferredSubagentBatchLaunchService $deferredBatchLaunch,
     ) {
     }
 
@@ -34,9 +36,11 @@ final class SubagentExecutionService
 
     /**
      * @param list<SubagentTaskDTO> $tasks
+     *
+     * @throws ToolCallException
      */
-    public function executeParallel(string $parentRunId, array $tasks): string
+    public function executeParallel(string $parentRunId, array $tasks): DeferredToolCompletionOutcome
     {
-        return $this->parallelExecution->execute($parentRunId, $tasks);
+        return $this->deferredBatchLaunch->launch($parentRunId, $tasks, ChildRunBatchExecutionModeEnum::Parallel);
     }
 }

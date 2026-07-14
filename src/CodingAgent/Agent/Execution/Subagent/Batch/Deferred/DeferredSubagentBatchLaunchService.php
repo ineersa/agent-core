@@ -15,9 +15,7 @@ use Psr\Log\LoggerInterface;
 use Symfony\Component\Clock\Clock;
 
 /**
- * Durable idempotent deferred subagent batch launch (Piece 4A foundation).
- *
- * Not wired to production executeParallel until Piece 4C.
+ * Durable idempotent deferred subagent batch launch for single and parallel tool calls.
  */
 final class DeferredSubagentBatchLaunchService
 {

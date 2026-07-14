@@ -38,9 +38,9 @@ final class SubagentToolHandler implements ToolHandlerInterface
     /**
      * @param array<string, mixed> $arguments
      */
-    public function __invoke(array $arguments): string|DeferredToolCompletionOutcome
+    public function __invoke(array $arguments): DeferredToolCompletionOutcome
     {
-        return $this->toolRuntime->run(function () use ($arguments): string|DeferredToolCompletionOutcome {
+        return $this->toolRuntime->run(function () use ($arguments): DeferredToolCompletionOutcome {
             $context = $this->contextAccessor->current();
             if (null === $context) {
                 throw new ToolCallException('The subagent tool requires an active parent run context. Subagents cannot be launched outside a session.', retryable: false);

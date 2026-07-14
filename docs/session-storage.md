@@ -70,7 +70,8 @@ Parent sessions that launch child subagents store child run data under
   - Recovery tails each child `events.jsonl` only via `AgentChildRunEventStore::readAfterSeq(cursor)` (recovery-only JSONL reads), reconciles every durable child row in `batch_index` order with fresh batch/child CAS versions, then enqueues `DeliverDeferredSubagentBatchLifecycleMessage` (even when tails are empty).
   - `run_control` `WorkerStartedEvent` recovery is scoped to `%env(HATFIELD_SESSION_ID)%` and reconciles unfinished `Reserved` or `Launched` batch rows for that parent session only; persisted interruption intents and pending deferred timeouts are re-enqueued from durable markers.
 - `DeferredSubagentBatchLaunchService` performs durable idempotent batch launch and returns `DeferredToolCompletionOutcome` with a deterministic batch `lifecycle_id` (UUID v5 from parent run + tool call). Child `child_run_id` / `artifact_id` values are deterministic per `batch_index`.
-- Piece 4A is **storage/launch foundation only**: production `executeParallel()` still uses foreground polling. Child-event observation, aggregate parent progress, interruption, recovery, and parallel cutover remain **Piece 4B/4C**; single-mode migration onto the generic batch model remains **Piece 4D**.
+- Production parallel subagent tool calls use the normalized deferred batch path (`SubagentExecutionService::executeParallel` → `DeferredSubagentBatchLaunchService`). Steady-state supervision uses committed child events and Messenger on `run_control`; child `events.jsonl` is read only on recovery via `readAfterSeq`. Legacy foreground polling supervision has been removed.
+- Single-child deferred launches still use `deferred_single_subagent_launch` until **Piece 4D** migrates single mode onto the generic batch model and removes the dedicated single stack.
 
 ### Deferred single subagent live observation (Piece 3B1)
 

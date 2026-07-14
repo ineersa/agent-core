@@ -441,6 +441,7 @@ final class DeferredSingleSubagentLaunchTest extends IsolatedKernelTestCase
             'agentRunner' => $agentRunner,
             'runStore' => $runStore,
             'launchProjectionRepository' => self::getContainer()->get(DeferredSingleSubagentLaunchRepository::class),
+            'deferredBatchLaunch' => self::getContainer()->get(\Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\DeferredSubagentBatchLaunchService::class),
             'policyResolver' => self::getContainer()->get(\Ineersa\CodingAgent\Agent\Execution\AgentToolPolicyResolver::class),
             'promptBuilder' => self::getContainer()->get(\Ineersa\CodingAgent\Agent\Execution\AgentPromptBuilder::class),
             'skillsContextBuilder' => self::getContainer()->get(\Ineersa\CodingAgent\Skills\SkillsContextBuilder::class),

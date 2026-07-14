@@ -74,7 +74,7 @@ final readonly class DeferredSubagentBatchProgressSnapshotFactory
         );
     }
 
-    /** @return array{snapshot: ChildRunBatchItemSnapshotDTO, report: array<string, mixed>, turnNo: int, enrichment: SubagentChildProgressSummary} */
+    /** @return array{snapshot: ChildRunBatchItemSnapshotDTO, report: array<string, mixed>, turnNo: int, enrichment: ?SubagentChildProgressSummary} */
     private function buildChildProgressRow(
         DeferredSubagentBatchProjectionDTO $batch,
         DeferredSubagentChildProjectionDTO $child,
@@ -93,7 +93,7 @@ final readonly class DeferredSubagentBatchProgressSnapshotFactory
         ];
     }
 
-    /** @return array{snapshot: ChildRunBatchItemSnapshotDTO, report: array<string, mixed>, turnNo: int, enrichment: SubagentChildProgressSummary} */
+    /** @return array{snapshot: ChildRunBatchItemSnapshotDTO, report: array<string, mixed>, turnNo: int, enrichment: ?SubagentChildProgressSummary} */
     private function buildForcedCancelChildRow(
         DeferredSubagentBatchProjectionDTO $batch,
         DeferredSubagentChildProjectionDTO $child,
@@ -126,7 +126,7 @@ final readonly class DeferredSubagentBatchProgressSnapshotFactory
         );
     }
 
-    /** @return array{snapshot: ChildRunBatchItemSnapshotDTO, report: array<string, mixed>, turnNo: int, enrichment: SubagentChildProgressSummary} */
+    /** @return array{snapshot: ChildRunBatchItemSnapshotDTO, report: array<string, mixed>, turnNo: int, enrichment: ?SubagentChildProgressSummary} */
     private function forcedCancelResult(ChildRunIdentityDTO $identity, DeferredSubagentChildProjectionDTO $child, DeferredSubagentBatchChildProgressStateDTO $state, int $turnNo, ?SubagentChildProgressSummary $enrichment): array
     {
         return [
