@@ -944,10 +944,6 @@ services:
     arguments:
       $parentRunStore: '@Ineersa\CodingAgent\Session\SessionRunStore'
 
-  Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Progress\SubagentChildRunProgressEmitter:
-    arguments:
-      $childRunStore: '@Ineersa\AgentCore\Contract\RunStoreInterface'
-
   # ─── AGENT-05 Subagent tool storage routing ─────────────────────────
 
   # ChildAwareRunStore — delegates RunStoreInterface between parent-scoped

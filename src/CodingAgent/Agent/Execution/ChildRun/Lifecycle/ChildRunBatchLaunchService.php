@@ -7,7 +7,6 @@ namespace Ineersa\CodingAgent\Agent\Execution\ChildRun\Lifecycle;
 use Ineersa\AgentCore\Contract\AgentRunnerInterface;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchCompletionKindEnum;
-use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchItemSnapshotDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchLaunchAbortContextDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchLaunchAbortPhaseEnum;
@@ -29,28 +28,6 @@ final class ChildRunBatchLaunchService
         private readonly ChildRunBatchLifecycleListenerInterface $lifecycleListener,
         private readonly LoggerInterface $logger,
     ) {
-    }
-
-    /**
-     * @return array<string, ChildRunBatchItemSnapshotDTO>
-     */
-    public function initialSnapshots(ChildRunBatchDTO $batch): array
-    {
-        $snapshots = [];
-        foreach ($batch->children as $prepared) {
-            $id = $prepared->identity;
-            $snapshots[$id->childRunId] = new ChildRunBatchItemSnapshotDTO($id, false, null, '');
-        }
-
-        return $snapshots;
-    }
-
-    public function launchAll(ChildRunBatchDTO $batch): void
-    {
-        foreach ($batch->children as $prepared) {
-            $this->agentRunner->start($prepared->startRunInput);
-            $this->artifactLifecycle->markRunning($prepared->identity);
-        }
     }
 
     /**

@@ -23,7 +23,6 @@ use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchExecutionModeEnum;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunIdentityDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Lifecycle\ChildRunArtifactLifecycleService;
-use Ineersa\CodingAgent\Agent\Execution\ChildRun\Lifecycle\ChildRunBatchProgressService;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\DeferredSubagentBatchChildOutcomeFactory;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\DeferredSubagentBatchCompletionDispatcher;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\DeferredSubagentBatchIdentityFactory;
@@ -1120,7 +1119,6 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
             new DeferredSubagentBatchChildOutcomeFactory(),
             self::getContainer()->get(SubagentChildProgressSummaryBuilder::class),
             self::getContainer()->get(SubagentProgressSnapshotBuilder::class),
-            self::getContainer()->get(ChildRunBatchProgressService::class),
         );
     }
 

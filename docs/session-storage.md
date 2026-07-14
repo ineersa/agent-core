@@ -60,8 +60,6 @@ Parent sessions that launch child subagents store child run data under
   parent runs, stored under the parent directory via `AgentChildRunEventStore`
   and `AgentChildRunStore`.
 
-
-
 ### Deferred subagent supervision (Single and Parallel)
 
 Parent subagent tool calls (single or parallel) use the normalized deferred batch model:

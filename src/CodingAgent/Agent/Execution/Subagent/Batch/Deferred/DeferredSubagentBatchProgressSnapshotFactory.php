@@ -9,7 +9,6 @@ use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchExecutionModeEnum;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchItemSnapshotDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunIdentityDTO;
-use Ineersa\CodingAgent\Agent\Execution\ChildRun\Lifecycle\ChildRunBatchProgressService;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredChildRunLifecycleProjectionDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredSubagentInterruptionKindEnum;
 use Ineersa\CodingAgent\Agent\Execution\SubagentChildProgressSummary;
@@ -27,7 +26,6 @@ final readonly class DeferredSubagentBatchProgressSnapshotFactory
         private DeferredSubagentBatchChildOutcomeFactory $outcomeFactory,
         private SubagentChildProgressSummaryBuilder $childProgressSummaryBuilder,
         private SubagentProgressSnapshotBuilder $progressSnapshotBuilder,
-        private ChildRunBatchProgressService $batchProgressService,
         private ClockInterface $clock = new MonotonicClock(),
     ) {
     }
@@ -181,7 +179,7 @@ final readonly class DeferredSubagentBatchProgressSnapshotFactory
 
         return $this->progressSnapshotBuilder->parallelSnapshot(
             $reports, $activeTurns, $this->elapsedMsSince($batch->startedAt),
-            $enrichmentByRun, $this->batchProgressService->resolveAggregateStatus($snapshots),
+            $enrichmentByRun, $this->resolveAggregateStatus($snapshots),
         );
     }
 
@@ -356,5 +354,43 @@ final readonly class DeferredSubagentBatchProgressSnapshotFactory
         $delta = $now->getTimestamp() - $startedAt->getTimestamp();
 
         return max(0, $delta * 1000);
+    }
+
+    /**
+     * @param array<string, ChildRunBatchItemSnapshotDTO> $snapshots
+     */
+    private function resolveAggregateStatus(array $snapshots): string
+    {
+        foreach ($snapshots as $snapshot) {
+            if (!$snapshot->terminal) {
+                return 'running';
+            }
+        }
+
+        $hasFailed = false;
+        $hasCancelled = false;
+        foreach ($snapshots as $snapshot) {
+            if (!$snapshot->terminal || null === $snapshot->artifactStatus) {
+                continue;
+            }
+
+            if (AgentArtifactStatusEnum::Failed === $snapshot->artifactStatus) {
+                $hasFailed = true;
+            }
+
+            if (AgentArtifactStatusEnum::Cancelled === $snapshot->artifactStatus) {
+                $hasCancelled = true;
+            }
+        }
+
+        if ($hasFailed) {
+            return 'failed';
+        }
+
+        if ($hasCancelled) {
+            return 'cancelled';
+        }
+
+        return 'completed';
     }
 }
