@@ -14,7 +14,8 @@ final readonly class DeferredSubagentBatchLifecycleDeliveryService
     public function __construct(
         private DeferredSubagentBatchRepository $batchRepository,
         private DeferredSubagentBatchProgressDeliveryService $progressDelivery,
-        private DeferredSubagentBatchTerminalCompletionService $terminalCompletion,
+        private DeferredSubagentBatchTerminalCompletionService $naturalCompletion,
+        private DeferredSubagentBatchInterruptionCompletionService $interruptionCompletion,
     ) {
     }
 
@@ -31,7 +32,7 @@ final readonly class DeferredSubagentBatchLifecycleDeliveryService
 
         // Route persisted interruption to the interruption path before natural completion
         if (null !== $batch->interruptionKind) {
-            $this->terminalCompletion->completeFromInterruption($batch);
+            $this->interruptionCompletion->completeFromInterruption($batch);
 
             return;
         }
@@ -44,6 +45,6 @@ final readonly class DeferredSubagentBatchLifecycleDeliveryService
             }
         }
 
-        $this->terminalCompletion->completeIfAllTerminal($batch);
+        $this->naturalCompletion->completeIfAllTerminal($batch);
     }
 }

@@ -38,6 +38,66 @@ final readonly class DeferredSubagentBatchProgressDeliveryService
     ) {
     }
 
+    /**
+     * Emit exactly one forced parallel subagent_progress for parent cancellation, even when
+     * the normal revision was already delivered. Preserves naturally terminal children;
+     * overrides non-terminal and unprojected children to Cancelled + 'Cancelled by parent run.'.
+     * Does not bump deliveredProgressRevision — the interruption_progress_enqueued_at marker
+     * on the batch row guards dedup.
+     */
+    public function emitForcedParentCancelProgress(DeferredSubagentBatchProjectionDTO $batch): bool
+    {
+        if ([] === $batch->children) {
+            return false;
+        }
+
+        $reports = [];
+        $activeTurns = [];
+        $snapshots = [];
+
+        foreach ($batch->children as $child) {
+            $built = $this->buildForcedCancelChildRow($batch, $child);
+            $snapshots[$child->childRunId] = $built['snapshot'];
+            $activeTurns[$child->childRunId] = $built['turnNo'];
+            $reports[$child->childRunId] = $built['report'];
+        }
+
+        $aggregateStatus = 'cancelled';
+        $elapsedMs = $this->elapsedMsSince($batch->startedAt);
+
+        $payload = $this->progressSnapshotBuilder->parallelSnapshot(
+            $reports,
+            $activeTurns,
+            $elapsedMs,
+            [],
+            $aggregateStatus,
+        );
+
+        try {
+            $this->progressEventAppender->append(
+                parentRunId: $batch->parentRunId,
+                parentTurnNo: $batch->parentTurnNo,
+                parentToolCallId: $batch->parentToolCallId,
+                parentOrderIndex: $batch->parentOrderIndex,
+                toolName: 'subagent',
+                progress: $payload,
+            );
+        } catch (\Throwable $exception) {
+            $this->logger->warning('deferred_subagent_batch.forced_parent_cancel_progress_failed', [
+                'batch_lifecycle_id' => $batch->lifecycleId,
+                'parent_run_id' => $batch->parentRunId,
+                'tool_call_id' => $batch->parentToolCallId,
+                'component' => 'agent.execution',
+                'event_type' => 'deferred_subagent_batch.forced_parent_cancel_progress_failed',
+                'exception_class' => $exception::class,
+            ]);
+
+            throw $exception;
+        }
+
+        return true;
+    }
+
     public function deliverIfNeeded(DeferredSubagentBatchProjectionDTO $batch): bool
     {
         if ($batch->aggregateProgressRevision <= $batch->deliveredProgressRevision) {
@@ -116,6 +176,62 @@ final readonly class DeferredSubagentBatchProgressDeliveryService
         }
 
         return true;
+    }
+
+    /**
+     * @return array{snapshot: ChildRunBatchItemSnapshotDTO, report: array<string, mixed>, turnNo: int}
+     */
+    private function buildForcedCancelChildRow(
+        DeferredSubagentBatchProjectionDTO $batch,
+        DeferredSubagentChildProjectionDTO $child,
+    ): array {
+        $identity = $this->identityFromChild($batch, $child);
+
+        // Preserve naturally terminal children
+        $cp = $child->childLifecycleProjection;
+        if (null !== $cp && $cp->childStatus->isTerminal()) {
+            $state = $this->resolveChildProgressState($child);
+
+            return [
+                'snapshot' => $state->terminal
+                    ? new ChildRunBatchItemSnapshotDTO(
+                        identity: $identity,
+                        terminal: true,
+                        artifactStatus: $state->artifactStatus,
+                        message: $state->message,
+                    )
+                    : new ChildRunBatchItemSnapshotDTO(
+                        identity: $identity,
+                        terminal: false,
+                        artifactStatus: $state->artifactStatus,
+                        message: $state->message,
+                    ),
+                'report' => $this->buildChildReport($child, $state),
+                'turnNo' => $state->turnNo,
+            ];
+        }
+
+        // Override non-terminal/unprojected children to Cancelled
+        return [
+            'snapshot' => new ChildRunBatchItemSnapshotDTO(
+                identity: $identity,
+                terminal: true,
+                artifactStatus: AgentArtifactStatusEnum::Cancelled,
+                message: 'Cancelled by parent run.',
+            ),
+            'report' => [
+                'index' => $child->batchIndex,
+                'agentName' => $child->agentName,
+                'task' => $child->task,
+                'artifactId' => $child->artifactId,
+                'agentRunId' => $child->childRunId,
+                'terminal' => true,
+                'status' => AgentArtifactStatusEnum::Cancelled,
+                'message' => 'Cancelled by parent run.',
+                'model' => $child->definitionModel,
+            ],
+            'turnNo' => 0,
+        ];
     }
 
     /**

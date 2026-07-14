@@ -152,20 +152,7 @@ final readonly class DeferredSubagentBatchInterruptionService
                 continue;
             }
 
-            try {
-                $this->agentRunner->cancel($child->childRunId, $cancelReason);
-            } catch (\Throwable $exception) {
-                $this->logger->warning('deferred_subagent_batch.child_cancel_failed', [
-                    'batch_lifecycle_id' => $batchLifecycleId,
-                    'child_run_id' => $child->childRunId,
-                    'batch_index' => $child->batchIndex,
-                    'reason' => $cancelReason,
-                    'component' => 'agent.execution',
-                    'event_type' => 'deferred_subagent_batch.child_cancel_failed',
-                    'exception_class' => $exception::class,
-                    'exception_message' => $exception->getMessage(),
-                ]);
-            }
+            $this->agentRunner->cancel($child->childRunId, $cancelReason);
         }
 
         $this->deliveryService->deliver($batchLifecycleId);
