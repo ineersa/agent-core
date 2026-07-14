@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred;
 
 use Doctrine\ORM\OptimisticLockException;
+use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchExecutionModeEnum;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredSubagentInterruptionKindEnum;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Progress\SubagentProgressEventAppender;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
 use Psr\Log\LoggerInterface;
@@ -24,43 +26,44 @@ final readonly class DeferredSubagentBatchProgressDeliveryService
     }
 
     /**
-     * Emit exactly one forced parallel subagent_progress for parent cancellation, even when
-     * the normal revision was already delivered. Preserves naturally terminal children;
-     * overrides non-terminal and unprojected children to Cancelled + 'Cancelled by parent run.'.
-     * Does not bump deliveredProgressRevision — the interruption_progress_enqueued_at marker
-     * on the batch row guards dedup.
+     * Emit exactly one forced interruption progress payload.
+     *
+     * Parallel parent-cancel: aggregate parallel payload with status cancelled.
+     * Single timeout/parent-cancel: flat single payload when child projection exists.
+     * Does not bump deliveredProgressRevision — interruption_progress_enqueued_at guards dedup.
+     *
+     * @return bool true when a progress event was appended
      */
-    public function emitForcedParentCancelProgress(DeferredSubagentBatchProjectionDTO $batch): bool
-    {
+    public function emitForcedInterruptionProgress(
+        DeferredSubagentBatchProjectionDTO $batch,
+        DeferredSubagentInterruptionKindEnum $kind,
+    ): bool {
         if ([] === $batch->children) {
             return false;
         }
 
-        $payload = $this->snapshotFactory->buildForcedCancelPayload($batch);
+        if (ChildRunBatchExecutionModeEnum::Single === $batch->executionMode) {
+            $child = $batch->children[0];
+            if (null === $child->childLifecycleProjection) {
+                return false;
+            }
 
-        try {
-            $this->progressEventAppender->append(
-                parentRunId: $batch->parentRunId,
-                parentTurnNo: $batch->parentTurnNo,
-                parentToolCallId: $batch->parentToolCallId,
-                parentOrderIndex: $batch->parentOrderIndex,
-                toolName: 'subagent',
-                progress: $payload,
-            );
-        } catch (\Throwable $exception) {
-            $this->logger->warning('deferred_subagent_batch.forced_parent_cancel_progress_failed', [
-                'batch_lifecycle_id' => $batch->lifecycleId,
-                'parent_run_id' => $batch->parentRunId,
-                'tool_call_id' => $batch->parentToolCallId,
-                'component' => 'agent.execution',
-                'event_type' => 'deferred_subagent_batch.forced_parent_cancel_progress_failed',
-                'exception_class' => $exception::class,
-            ]);
+            $forcedStatus = DeferredSubagentInterruptionKindEnum::Timeout === $kind ? 'failed' : 'cancelled';
+            $payload = $this->snapshotFactory->buildSingleForcedPayload($batch, $forcedStatus);
+        } else {
+            if (DeferredSubagentInterruptionKindEnum::Timeout === $kind) {
+                return false;
+            }
 
-            throw $exception;
+            $payload = $this->snapshotFactory->buildForcedCancelPayload($batch);
         }
 
-        return true;
+        return $this->appendProgress($batch, $payload, 'deferred_subagent_batch.forced_interruption_progress_failed');
+    }
+
+    public function emitForcedParentCancelProgress(DeferredSubagentBatchProjectionDTO $batch): bool
+    {
+        return $this->emitForcedInterruptionProgress($batch, DeferredSubagentInterruptionKindEnum::ParentCancelled);
     }
 
     public function deliverIfNeeded(DeferredSubagentBatchProjectionDTO $batch): bool
@@ -75,6 +78,15 @@ final readonly class DeferredSubagentBatchProgressDeliveryService
 
         $payload = $this->snapshotFactory->buildNormalPayload($batch);
 
+        return $this->appendProgress($batch, $payload, 'deferred_subagent_batch.parent_progress_append_failed')
+            && $this->markDeliveredRevision($batch);
+    }
+
+    /**
+     * @param array<string, mixed> $payload
+     */
+    private function appendProgress(DeferredSubagentBatchProjectionDTO $batch, array $payload, string $failureEventType): bool
+    {
         try {
             $this->progressEventAppender->append(
                 parentRunId: $batch->parentRunId,
@@ -85,18 +97,23 @@ final readonly class DeferredSubagentBatchProgressDeliveryService
                 progress: $payload,
             );
         } catch (\Throwable $exception) {
-            $this->logger->warning('deferred_subagent_batch.parent_progress_append_failed', [
+            $this->logger->warning($failureEventType, [
                 'batch_lifecycle_id' => $batch->lifecycleId,
                 'parent_run_id' => $batch->parentRunId,
                 'tool_call_id' => $batch->parentToolCallId,
                 'component' => 'agent.execution',
-                'event_type' => 'deferred_subagent_batch.parent_progress_append_failed',
+                'event_type' => $failureEventType,
                 'exception_class' => $exception::class,
             ]);
 
             throw $exception;
         }
 
+        return true;
+    }
+
+    private function markDeliveredRevision(DeferredSubagentBatchProjectionDTO $batch): bool
+    {
         try {
             $this->batchRepository->markDeliveredProgressRevision(
                 batchLifecycleId: $batch->lifecycleId,

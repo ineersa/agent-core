@@ -37,6 +37,10 @@ final class DeferredSubagentBatchLaunchService
         array $tasks,
         ChildRunBatchExecutionModeEnum $executionMode,
     ): DeferredToolCompletionOutcome {
+        if (ChildRunBatchExecutionModeEnum::Single === $executionMode && 1 !== \count($tasks)) {
+            throw new ToolCallException('Single subagent requires exactly one task.', retryable: false);
+        }
+
         if ([] === $tasks) {
             throw new ToolCallException('Deferred subagent batch launch requires at least one task.', retryable: false);
         }

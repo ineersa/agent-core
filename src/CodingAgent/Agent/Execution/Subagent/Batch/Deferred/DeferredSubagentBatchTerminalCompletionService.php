@@ -8,12 +8,15 @@ use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchCompletionKindEnum;
+use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchExecutionModeEnum;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchItemSnapshotDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchSupervisionResultDTO;
+use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunIdentityDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunTerminalFinalizationRequestDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunTerminalOutcomeDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Lifecycle\ChildRunBatchLifecycleListenerInterface;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredChildRunLifecycleProjectionDTO;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Result\SubagentChildRunHandoffRenderer;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\SubagentParallelAggregateResultFormatter;
 
 /**
@@ -24,6 +27,7 @@ final readonly class DeferredSubagentBatchTerminalCompletionService
     public function __construct(
         private ChildRunBatchLifecycleListenerInterface $lifecycleListener,
         private SubagentParallelAggregateResultFormatter $parallelFormatter,
+        private SubagentChildRunHandoffRenderer $handoffRenderer,
         private DeferredSubagentBatchCompletionDispatcher $completionDispatcher,
         private DeferredSubagentBatchChildOutcomeFactory $outcomeFactory,
     ) {
@@ -35,6 +39,47 @@ final readonly class DeferredSubagentBatchTerminalCompletionService
             return;
         }
 
+        if (ChildRunBatchExecutionModeEnum::Single === $batch->executionMode) {
+            $this->completeSingleIfTerminal($batch);
+
+            return;
+        }
+
+        $this->completeParallelIfAllTerminal($batch);
+    }
+
+    private function completeSingleIfTerminal(DeferredSubagentBatchProjectionDTO $batch): void
+    {
+        if (null !== $batch->interruptionKind) {
+            return;
+        }
+
+        $child = $batch->children[0] ?? null;
+        $projection = $child?->childLifecycleProjection;
+        if (null === $child || null === $projection || !$projection->childStatus->isTerminal()) {
+            return;
+        }
+
+        $identity = $this->outcomeFactory->identityFromChild($batch, $child);
+        $artifactOutcome = $this->outcomeFactory->buildNaturalArtifactOutcome($identity, $projection);
+        $this->lifecycleListener->finalizeTerminalOutcome(
+            ChildRunTerminalFinalizationRequestDTO::persistOnly($artifactOutcome),
+        );
+
+        $presentation = $this->buildSingleNaturalPresentation($identity, $projection, $artifactOutcome);
+        $this->completionDispatcher->dispatchCompletion(
+            lifecycleId: $batch->lifecycleId,
+            parentRunId: $batch->parentRunId,
+            parentToolCallId: $batch->parentToolCallId,
+            expectedProjectionVersion: $batch->projectionVersion,
+            presentation: $presentation,
+            isError: false,
+            errorEnvelope: null,
+        );
+    }
+
+    private function completeParallelIfAllTerminal(DeferredSubagentBatchProjectionDTO $batch): void
+    {
         $items = [];
         foreach ($batch->children as $child) {
             $projection = $child->childLifecycleProjection;
@@ -113,6 +158,30 @@ final readonly class DeferredSubagentBatchTerminalCompletionService
                 errorEnvelope: $errorEnvelope,
             );
         }
+    }
+
+    private function buildSingleNaturalPresentation(
+        ChildRunIdentityDTO $identity,
+        DeferredChildRunLifecycleProjectionDTO $childProjection,
+        ChildRunTerminalOutcomeDTO $artifactOutcome,
+    ): string {
+        return match ($childProjection->childStatus) {
+            RunStatus::Completed => $this->handoffRenderer->formatCompletedResult(
+                $identity->displayName,
+                $identity->artifactId,
+                $this->outcomeFactory->completedSummaryText($childProjection),
+            ),
+            RunStatus::Failed => $this->handoffRenderer->formatFailedResult(
+                $identity->displayName,
+                $identity->artifactId,
+                $artifactOutcome->failureReason ?? 'Run failed without error message.',
+            ),
+            RunStatus::Cancelled, RunStatus::Cancelling => $this->handoffRenderer->formatChildCancelledMessage(
+                $identity->displayName,
+                $identity->artifactId,
+            ),
+            default => throw new \RuntimeException('Deferred single batch delivery cannot build presentation for non-terminal child status.'),
+        };
     }
 
     private function messageFromProjection(

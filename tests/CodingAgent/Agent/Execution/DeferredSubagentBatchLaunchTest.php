@@ -266,6 +266,66 @@ final class DeferredSubagentBatchLaunchTest extends IsolatedKernelTestCase
         ));
     }
 
+    public function testSingleBatchLaunchUsesForegroundPolicyAndRejectsTwoTasksBeforeReservation(): void
+    {
+        $parentRunId = 'parent-batch-single-4d1';
+        $toolCallId = 'call-batch-single-4d1';
+        $otherTool = 'call-batch-single-4d1-other';
+        $identityFactory = new DeferredSubagentBatchIdentityFactory();
+
+        $foregroundOnly = new AgentDefinitionDTO(
+            name: 'fg-only',
+            description: 'Foreground only',
+            tools: ['read'],
+            mcp: new McpPolicyDTO(mode: McpAgentModeEnum::None),
+            instructions: 'Test.',
+            parallelAllowed: false,
+        );
+        $parallelOnly = new AgentDefinitionDTO(
+            name: 'par-only',
+            description: 'Parallel only',
+            tools: ['read'],
+            mcp: new McpPolicyDTO(mode: McpAgentModeEnum::None),
+            instructions: 'Test.',
+            parallelAllowed: true,
+        );
+
+        $agentRunner = $this->createMock(AgentRunnerInterface::class);
+        $agentRunner->expects($this->once())->method('start')->willReturnCallback(static fn ($input) => $input->runId);
+
+        $service = $this->buildBatchLaunchService($agentRunner, [$foregroundOnly, $parallelOnly]);
+
+        $outcome = $this->withToolContext($parentRunId, $toolCallId, static fn () => $service->launch(
+            $parentRunId,
+            [new SubagentTaskDTO(agent: 'fg-only', task: 'Single task')],
+            ChildRunBatchExecutionModeEnum::Single,
+        ));
+
+        $this->assertInstanceOf(DeferredToolCompletionOutcome::class, $outcome);
+        $batchRepo = self::getContainer()->get(DeferredSubagentBatchRepository::class);
+        $batch = $batchRepo->findByParentRunAndToolCall($parentRunId, $toolCallId);
+        $this->assertNotNull($batch);
+        $this->assertSame(ChildRunBatchExecutionModeEnum::Single, $batch->executionMode);
+        $this->assertSame(1, $batch->totalChildCount);
+        $this->assertCount(1, $batch->children);
+
+        try {
+            $this->withToolContext($parentRunId, $otherTool, static fn () => $service->launch(
+                $parentRunId,
+                [
+                    new SubagentTaskDTO(agent: 'fg-only', task: 'A'),
+                    new SubagentTaskDTO(agent: 'fg-only', task: 'B'),
+                ],
+                ChildRunBatchExecutionModeEnum::Single,
+            ));
+            $this->fail('Expected ToolCallException');
+        } catch (ToolCallException $e) {
+            $this->assertStringContainsString('exactly one task', $e->getMessage());
+        }
+
+        $this->assertNull($batchRepo->findByParentRunAndToolCall($parentRunId, $otherTool));
+    }
+
     public function testExecuteParallelHardCapRejectsBeforeReservation(): void
     {
         $parentRunId = 'parent-batch-cap';

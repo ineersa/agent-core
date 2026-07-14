@@ -134,9 +134,15 @@ final readonly class DeferredSubagentBatchInterruptionService
         }
 
         $policy = $this->lifecyclePolicyFactory->create();
-        $cancelReason = DeferredSubagentInterruptionKindEnum::Timeout === $effectiveKind
-            ? $policy->parallelTimeoutCancelReason
-            : $policy->parentCancelParallelReason;
+        $isSingle = \Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchExecutionModeEnum::Single === $projection->executionMode;
+        $cancelReason = match ($effectiveKind) {
+            DeferredSubagentInterruptionKindEnum::Timeout => $isSingle
+                ? $policy->singleTimeoutCancelReason
+                : $policy->parallelTimeoutCancelReason,
+            DeferredSubagentInterruptionKindEnum::ParentCancelled => $isSingle
+                ? $policy->parentCancelSingleReason
+                : $policy->parentCancelParallelReason,
+        };
 
         // Cancel each potentially-started non-terminal child once
         foreach ($projection->children as $child) {

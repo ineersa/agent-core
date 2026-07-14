@@ -8,6 +8,7 @@ use Doctrine\ORM\OptimisticLockException;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchCompletionKindEnum;
+use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchExecutionModeEnum;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchItemSnapshotDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchSupervisionResultDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunIdentityDTO;
@@ -15,11 +16,12 @@ use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunTerminalFinali
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunTerminalOutcomeDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Lifecycle\ChildRunBatchLifecycleListenerInterface;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredSubagentInterruptionKindEnum;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Result\SubagentChildRunHandoffRenderer;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\SubagentParallelAggregateResultFormatter;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
 
 /**
- * Interruption completion: forced parent-cancel progress, artifact outcomes, and deferred dispatch.
+ * Interruption completion: forced progress, artifact outcomes, and deferred dispatch.
  */
 final readonly class DeferredSubagentBatchInterruptionCompletionService
 {
@@ -27,6 +29,7 @@ final readonly class DeferredSubagentBatchInterruptionCompletionService
         private DeferredSubagentBatchRepository $batchRepository,
         private ChildRunBatchLifecycleListenerInterface $lifecycleListener,
         private SubagentParallelAggregateResultFormatter $parallelFormatter,
+        private SubagentChildRunHandoffRenderer $handoffRenderer,
         private DeferredSubagentBatchProgressDeliveryService $progressDelivery,
         private DeferredSubagentBatchCompletionDispatcher $completionDispatcher,
         private DeferredSubagentBatchChildOutcomeFactory $outcomeFactory,
@@ -41,13 +44,109 @@ final readonly class DeferredSubagentBatchInterruptionCompletionService
 
         $kind = $batch->interruptionKind ?? throw new \RuntimeException('Interruption completion requires persisted interruption kind.');
 
-        // Emit forced parent-cancel progress exactly once
-        if (DeferredSubagentInterruptionKindEnum::ParentCancelled === $kind
-            && null === $batch->interruptionProgressEnqueuedAt) {
-            $this->progressDelivery->emitForcedParentCancelProgress($batch);
+        if (ChildRunBatchExecutionModeEnum::Single === $batch->executionMode) {
+            $this->completeSingleFromInterruption($batch, $kind);
+
+            return;
+        }
+
+        $this->completeParallelFromInterruption($batch, $kind);
+    }
+
+    private function completeSingleFromInterruption(
+        DeferredSubagentBatchProjectionDTO $batch,
+        DeferredSubagentInterruptionKindEnum $kind,
+    ): void {
+        if (null === $batch->interruptionProgressEnqueuedAt) {
+            $appended = $this->progressDelivery->emitForcedInterruptionProgress($batch, $kind);
 
             $batch = $this->batchRepository->findByLifecycleId($batch->lifecycleId);
             if (null === $batch || null !== $batch->terminalCompletionEnqueuedAt) {
+                return;
+            }
+
+            if ($appended) {
+                try {
+                    $this->batchRepository->markInterruptionProgressEnqueued(
+                        batchLifecycleId: $batch->lifecycleId,
+                        enqueuedAt: new \DateTimeImmutable(),
+                        expectedProjectionVersion: $batch->projectionVersion,
+                    );
+                } catch (OptimisticLockException $exception) {
+                    $resolved = $this->batchRepository->findByLifecycleId($batch->lifecycleId);
+                    if (null === $resolved || null !== $resolved->terminalCompletionEnqueuedAt) {
+                        return;
+                    }
+                    if (null === $resolved->interruptionProgressEnqueuedAt) {
+                        throw $exception;
+                    }
+                    $batch = $resolved;
+                }
+            }
+
+            $batch = $this->batchRepository->findByLifecycleId($batch->lifecycleId);
+            if (null === $batch || null !== $batch->terminalCompletionEnqueuedAt) {
+                return;
+            }
+        }
+
+        $child = $batch->children[0] ?? throw new \RuntimeException('Single batch interruption requires one child row.');
+        $identity = $this->outcomeFactory->identityFromChild($batch, $child);
+        $timeoutSecs = DeferredSubagentInterruptionKindEnum::Timeout === $kind
+            ? $this->resolveTimeoutSeconds($batch)
+            : 0;
+        $artifactOutcome = $this->buildSingleInterruptionArtifactOutcome($identity, $child, $kind, $timeoutSecs);
+        $this->lifecycleListener->finalizeTerminalOutcome(
+            ChildRunTerminalFinalizationRequestDTO::persistOnly($artifactOutcome),
+        );
+
+        if (DeferredSubagentInterruptionKindEnum::Timeout === $kind) {
+            $presentation = $this->handoffRenderer->formatTimeoutResult(
+                $identity->displayName,
+                $timeoutSecs,
+                $identity->taskSummary,
+                $identity->artifactId,
+            );
+            $this->completionDispatcher->dispatchCompletion(
+                lifecycleId: $batch->lifecycleId,
+                parentRunId: $batch->parentRunId,
+                parentToolCallId: $batch->parentToolCallId,
+                expectedProjectionVersion: $batch->projectionVersion,
+                presentation: $presentation,
+                isError: false,
+                errorEnvelope: null,
+            );
+
+            return;
+        }
+
+        $presentation = $this->handoffRenderer->formatParentCancelledSingleMessage($identity->displayName, $identity->artifactId);
+        $errorEnvelope = $this->buildErrorEnvelope($presentation, true);
+        $this->completionDispatcher->dispatchCompletion(
+            lifecycleId: $batch->lifecycleId,
+            parentRunId: $batch->parentRunId,
+            parentToolCallId: $batch->parentToolCallId,
+            expectedProjectionVersion: $batch->projectionVersion,
+            presentation: $presentation,
+            isError: true,
+            errorEnvelope: $errorEnvelope,
+        );
+    }
+
+    private function completeParallelFromInterruption(
+        DeferredSubagentBatchProjectionDTO $batch,
+        DeferredSubagentInterruptionKindEnum $kind,
+    ): void {
+        if (DeferredSubagentInterruptionKindEnum::ParentCancelled === $kind
+            && null === $batch->interruptionProgressEnqueuedAt) {
+            $appended = $this->progressDelivery->emitForcedInterruptionProgress($batch, $kind);
+
+            $batch = $this->batchRepository->findByLifecycleId($batch->lifecycleId);
+            if (null === $batch || null !== $batch->terminalCompletionEnqueuedAt) {
+                return;
+            }
+
+            if (!$appended) {
                 return;
             }
 
@@ -63,9 +162,7 @@ final readonly class DeferredSubagentBatchInterruptionCompletionService
                     return;
                 }
                 if (null !== $resolved->interruptionProgressEnqueuedAt) {
-                    // Concurrent winner already enqueued progress marker — continue with fresh batch
                     $batch = $resolved;
-                // fall through to terminal completion below
                 } else {
                     throw $exception;
                 }
@@ -84,7 +181,7 @@ final readonly class DeferredSubagentBatchInterruptionCompletionService
         $items = [];
         foreach ($batch->children as $child) {
             $identity = $this->outcomeFactory->identityFromChild($batch, $child);
-            $artifactOutcome = $this->buildInterruptionArtifactOutcome($identity, $child, $kind, $timeoutSecs);
+            $artifactOutcome = $this->buildParallelInterruptionArtifactOutcome($identity, $child, $kind, $timeoutSecs);
             $this->lifecycleListener->finalizeTerminalOutcome(
                 ChildRunTerminalFinalizationRequestDTO::persistOnly($artifactOutcome),
             );
@@ -149,13 +246,39 @@ final readonly class DeferredSubagentBatchInterruptionCompletionService
         return ['error' => $error, 'details' => $details];
     }
 
-    private function buildInterruptionArtifactOutcome(
+    private function buildSingleInterruptionArtifactOutcome(
         ChildRunIdentityDTO $identity,
         DeferredSubagentChildProjectionDTO $child,
         DeferredSubagentInterruptionKindEnum $kind,
         int $timeoutSecs,
     ): ChildRunTerminalOutcomeDTO {
-        // Preserve already-terminal children naturally
+        $cp = $child->childLifecycleProjection;
+        if (null !== $cp && $cp->childStatus->isTerminal()) {
+            return $this->outcomeFactory->buildNaturalArtifactOutcome($identity, $cp);
+        }
+
+        if (DeferredSubagentInterruptionKindEnum::Timeout === $kind) {
+            return new ChildRunTerminalOutcomeDTO(
+                identity: $identity,
+                status: AgentArtifactStatusEnum::Failed,
+                failureReason: 'Child run timed out.',
+                summary: 'Timed out after '.$timeoutSecs.'s.',
+            );
+        }
+
+        return new ChildRunTerminalOutcomeDTO(
+            identity: $identity,
+            status: AgentArtifactStatusEnum::Cancelled,
+            summary: 'Cancelled by parent run.',
+        );
+    }
+
+    private function buildParallelInterruptionArtifactOutcome(
+        ChildRunIdentityDTO $identity,
+        DeferredSubagentChildProjectionDTO $child,
+        DeferredSubagentInterruptionKindEnum $kind,
+        int $timeoutSecs,
+    ): ChildRunTerminalOutcomeDTO {
         $cp = $child->childLifecycleProjection;
         if (null !== $cp && $cp->childStatus->isTerminal()) {
             return $this->outcomeFactory->buildNaturalArtifactOutcome($identity, $cp);

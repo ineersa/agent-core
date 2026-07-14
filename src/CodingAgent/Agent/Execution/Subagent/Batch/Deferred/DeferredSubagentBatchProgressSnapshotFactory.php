@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred;
 
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
+use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchExecutionModeEnum;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchItemSnapshotDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunIdentityDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Lifecycle\ChildRunBatchProgressService;
@@ -30,31 +31,56 @@ final readonly class DeferredSubagentBatchProgressSnapshotFactory
     ) {
     }
 
-    /** @return array<string, mixed> */
+    /**
+     * Build normal progress payload, branching on execution mode.
+     *
+     * @return array<string, mixed>
+     */
     public function buildNormalPayload(DeferredSubagentBatchProjectionDTO $batch): array
     {
-        $reports = $activeTurns = $snapshots = $enrichmentByRun = [];
-        foreach ($batch->children as $child) {
-            $built = $this->buildChildProgressRow($batch, $child);
-            $snapshots[$child->childRunId] = $built['snapshot'];
-            $activeTurns[$child->childRunId] = $built['turnNo'];
-            $reports[$child->childRunId] = $built['report'];
-            if (null !== $built['enrichment']) {
-                $enrichmentByRun[$child->childRunId] = $built['enrichment'];
-            }
+        if (ChildRunBatchExecutionModeEnum::Single === $batch->executionMode) {
+            return $this->buildSingleNormalPayload($batch);
         }
 
-        return $this->progressSnapshotBuilder->parallelSnapshot(
-            $reports, $activeTurns, $this->elapsedMsSince($batch->startedAt),
-            $enrichmentByRun, $this->batchProgressService->resolveAggregateStatus($snapshots),
+        return $this->buildParallelNormalPayload($batch);
+    }
+
+    /**
+     * Build forced progress payload for interruption (single-child only).
+     *
+     * Single timeout → flat 'failed' payload.
+     * Single parent-cancel → flat 'cancelled' payload.
+     *
+     * @return array<string, mixed>
+     */
+    public function buildSingleForcedPayload(DeferredSubagentBatchProjectionDTO $batch, string $forcedStatus): array
+    {
+        $child = $batch->children[0];
+        $cp = $child->childLifecycleProjection;
+
+        $enrichment = null !== $cp
+            ? $this->childProgressSummaryBuilder->fromDeferredProjection($cp, $child->artifactId)
+            : null;
+
+        $turnNo = null !== $cp ? $cp->childTurnNo : 0;
+
+        return $this->progressSnapshotBuilder->singleTerminalFromChildTurn(
+            $forcedStatus,
+            $child->agentName,
+            $child->artifactId,
+            $child->childRunId,
+            $child->task,
+            $turnNo,
+            $this->elapsedMsSince($batch->startedAt),
+            $enrichment,
         );
     }
 
     /**
-     * @return array<string, mixed>
+     * Parallel forced parent-cancel payload: preserve terminal children;
+     * override non-terminal and unprojected children to Cancelled + "Cancelled by parent run.".
      *
-     * Forced parent-cancel payload: preserve terminal children; override non-terminal
-     * and unprojected children to terminal Cancelled + "Cancelled by parent run.".
+     * @return array<string, mixed>
      */
     public function buildForcedCancelPayload(DeferredSubagentBatchProjectionDTO $batch): array
     {
@@ -71,6 +97,75 @@ final readonly class DeferredSubagentBatchProgressSnapshotFactory
 
         return $this->progressSnapshotBuilder->parallelSnapshot(
             $reports, $activeTurns, $this->elapsedMsSince($batch->startedAt), $enrichmentByRun, 'cancelled',
+        );
+    }
+
+    /**
+     * Single-child flat normal payload: produces mode=single flat payload analogous to
+     * the dedicated-single DeferredSingleSubagentTerminalCompletionService oracle.
+     *
+     * @return array<string, mixed>
+     */
+    private function buildSingleNormalPayload(DeferredSubagentBatchProjectionDTO $batch): array
+    {
+        $child = $batch->children[0];
+        $cp = $child->childLifecycleProjection;
+
+        $enrichment = null !== $cp
+            ? $this->childProgressSummaryBuilder->fromDeferredProjection($cp, $child->artifactId)
+            : null;
+
+        $turnNo = null !== $cp ? $cp->childTurnNo : 0;
+        $elapsed = $this->elapsedMsSince($batch->startedAt);
+
+        if (null !== $cp && $cp->childStatus->isTerminal()) {
+            $status = $this->mapChildProgressStatus($cp->childStatus);
+
+            return $this->progressSnapshotBuilder->singleTerminalFromChildTurn(
+                $status,
+                $child->agentName,
+                $child->artifactId,
+                $child->childRunId,
+                $child->task,
+                $turnNo,
+                $elapsed,
+                $enrichment,
+            );
+        }
+
+        $status = null !== $cp
+            ? $this->mapChildProgressStatus($cp->childStatus)
+            : 'running';
+
+        return $this->progressSnapshotBuilder->singleRunningFromChildTurn(
+            $child->agentName,
+            $child->artifactId,
+            $child->childRunId,
+            $child->task,
+            $turnNo,
+            $elapsed,
+            $enrichment,
+            $status,
+        );
+    }
+
+    /** @return array<string, mixed> */
+    private function buildParallelNormalPayload(DeferredSubagentBatchProjectionDTO $batch): array
+    {
+        $reports = $activeTurns = $snapshots = $enrichmentByRun = [];
+        foreach ($batch->children as $child) {
+            $built = $this->buildChildProgressRow($batch, $child);
+            $snapshots[$child->childRunId] = $built['snapshot'];
+            $activeTurns[$child->childRunId] = $built['turnNo'];
+            $reports[$child->childRunId] = $built['report'];
+            if (null !== $built['enrichment']) {
+                $enrichmentByRun[$child->childRunId] = $built['enrichment'];
+            }
+        }
+
+        return $this->progressSnapshotBuilder->parallelSnapshot(
+            $reports, $activeTurns, $this->elapsedMsSince($batch->startedAt),
+            $enrichmentByRun, $this->batchProgressService->resolveAggregateStatus($snapshots),
         );
     }
 
@@ -212,6 +307,17 @@ final readonly class DeferredSubagentBatchProgressSnapshotFactory
         }
 
         return '';
+    }
+
+    private function mapChildProgressStatus(RunStatus $status): string
+    {
+        return match ($status) {
+            RunStatus::WaitingHuman => 'waiting_human',
+            RunStatus::Completed => 'completed',
+            RunStatus::Failed => 'failed',
+            RunStatus::Cancelled, RunStatus::Cancelling => 'cancelled',
+            default => 'running',
+        };
     }
 
     private function elapsedMsSince(?\DateTimeImmutable $startedAt): int
