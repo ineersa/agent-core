@@ -264,6 +264,11 @@ final class SubmitListener implements TuiListenerRegistrar
         TuiSessionLifecycleDispatcher $lifecycle,
         PastedImageSubmissionService $pastedImageSubmissionService,
     ): void {
+        // Drop the transient reasoning-level notice from the status panel
+        // when a new user turn begins; selected reasoning and editor/footer
+        // styling are unchanged (panel-only entry).
+        $screen->clearTransientReasoningNotice();
+
         // Show immediate visual feedback (◐ Working...) before heavy
         // synchronous work (session creation, system prompt discovery,
         // skills context building, runner start).  Force a terminal
