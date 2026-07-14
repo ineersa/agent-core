@@ -17,6 +17,8 @@ const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 
 /** @typedef {{ status: string; file: string; path: string; title: string }} TaskInfo */
 
+/** @typedef {"with-composer" | "missing-dir" | "dir-no-composer"} ExtensionsLayout */
+
 /**
  * @param {string} cwd
  * @param {string[]} args
@@ -27,14 +29,16 @@ function runGit(cwd, args) {
 
 /**
  * @param {string} root
- * @param {boolean} withExtensions
+ * @param {ExtensionsLayout} layout
  */
-function initRepoWithExtensions(root, withExtensions) {
+function initRepo(root, layout) {
 	mkdirSync(join(root, ".hatfield"), { recursive: true });
-	if (withExtensions) {
+	if (layout === "with-composer" || layout === "dir-no-composer") {
 		const ext = join(root, ".hatfield/extensions");
 		mkdirSync(ext, { recursive: true });
-		writeFileSync(join(ext, "composer.json"), '{"name":"test/extensions"}');
+		if (layout === "with-composer") {
+			writeFileSync(join(ext, "composer.json"), '{"name":"test/extensions"}');
+		}
 	}
 	writeFileSync(join(root, "README.md"), "test\n");
 	runGit(root, ["init", "-b", "main"]);
@@ -134,14 +138,21 @@ describe("createWorktreeForTask extensions vendor", () => {
 		tempRoot = makeTempRoot();
 		const codeRoot = join(tempRoot, "repo");
 		mkdirSync(codeRoot, { recursive: true });
-		initRepoWithExtensions(codeRoot, true);
+		initRepo(codeRoot, "with-composer");
 		const worktreeBase = join(tempRoot, "worktrees");
 		const slug = "2026-01-01-ext-vendor";
 		/** @type {RecordedExec[]} */
 		const calls = [];
 		const pi = createPiMock("success", calls);
+		const abort = new AbortController();
 
-		const result = await createWorktreeForTask(pi, codeRoot, makeTask(slug, "/tmp/board"), worktreeBase);
+		const result = await createWorktreeForTask(
+			pi,
+			codeRoot,
+			makeTask(slug, "/tmp/board"),
+			worktreeBase,
+			abort.signal,
+		);
 
 		assert.equal(result.extensionsVendorInstalled, true);
 		assert.equal(result.extensionsVendorNote, undefined);
@@ -154,60 +165,64 @@ describe("createWorktreeForTask extensions vendor", () => {
 		assert.deepEqual(call.args, ["install", "-d", ".hatfield/extensions", "--no-interaction", "--no-progress"]);
 		assert.equal(call.cwd, result.worktree);
 		assert.equal(call.timeout, 120_000);
+		assert.equal(call.signal, abort.signal);
 	});
 
-	it("skips composer when .hatfield/extensions is missing", async () => {
-		tempRoot = makeTempRoot();
-		const codeRoot = join(tempRoot, "repo");
-		mkdirSync(codeRoot, { recursive: true });
-		initRepoWithExtensions(codeRoot, false);
-		const worktreeBase = join(tempRoot, "worktrees");
-		const slug = "2026-01-01-no-ext";
-		/** @type {RecordedExec[]} */
-		const calls = [];
-		const pi = createPiMock("success", calls);
+	it("skips composer when extensions tree is not installable", async () => {
+		/** @type {Array<{ layout: ExtensionsLayout; slug: string }>} */
+		const cases = [
+			{ layout: "missing-dir", slug: "2026-01-01-no-ext-dir" },
+			{ layout: "dir-no-composer", slug: "2026-01-01-no-composer" },
+		];
 
-		const result = await createWorktreeForTask(pi, codeRoot, makeTask(slug, "/tmp/board"), worktreeBase);
+		for (const { layout, slug } of cases) {
+			const caseRoot = makeTempRoot();
+			try {
+				const codeRoot = join(caseRoot, "repo");
+				mkdirSync(codeRoot, { recursive: true });
+				initRepo(codeRoot, layout);
+				const worktreeBase = join(caseRoot, "worktrees");
+				/** @type {RecordedExec[]} */
+				const calls = [];
+				const pi = createPiMock("success", calls);
 
-		assert.equal(result.extensionsVendorInstalled, false);
-		assert.equal(calls.filter((c) => c.command === "composer").length, 0);
-		assert.ok(existsSync(result.worktree));
+				const result = await createWorktreeForTask(pi, codeRoot, makeTask(slug, "/tmp/board"), worktreeBase);
+
+				assert.equal(result.extensionsVendorInstalled, false, layout);
+				assert.equal(calls.filter((c) => c.command === "composer").length, 0, layout);
+				assert.ok(existsSync(result.worktree), layout);
+			} finally {
+				rmSync(caseRoot, { recursive: true, force: true });
+			}
+		}
 	});
 
-	it("treats composer non-zero exit as non-fatal with diagnostic", async () => {
-		tempRoot = makeTempRoot();
-		const codeRoot = join(tempRoot, "repo");
-		mkdirSync(codeRoot, { recursive: true });
-		initRepoWithExtensions(codeRoot, true);
-		const worktreeBase = join(tempRoot, "worktrees");
-		const slug = "2026-01-01-ext-fail";
-		/** @type {RecordedExec[]} */
-		const calls = [];
-		const pi = createPiMock("fail", calls);
+	it("treats composer failures as non-fatal with diagnostics", async () => {
+		/** @type {Array<{ behavior: "fail" | "throw"; slug: string }>} */
+		const cases = [
+			{ behavior: "fail", slug: "2026-01-01-ext-fail" },
+			{ behavior: "throw", slug: "2026-01-01-ext-throw" },
+		];
 
-		const result = await createWorktreeForTask(pi, codeRoot, makeTask(slug, "/tmp/board"), worktreeBase);
+		for (const { behavior, slug } of cases) {
+			const caseRoot = makeTempRoot();
+			try {
+				const codeRoot = join(caseRoot, "repo");
+				mkdirSync(codeRoot, { recursive: true });
+				initRepo(codeRoot, "with-composer");
+				const worktreeBase = join(caseRoot, "worktrees");
+				/** @type {RecordedExec[]} */
+				const calls = [];
+				const pi = createPiMock(behavior, calls);
 
-		assert.equal(result.extensionsVendorInstalled, false);
-		assert.ok(result.extensionsVendorNote?.includes("composer install"));
-		assert.ok(result.extensionsVendorNote?.includes("failed"));
-		assert.ok(existsSync(result.worktree));
-	});
+				const result = await createWorktreeForTask(pi, codeRoot, makeTask(slug, "/tmp/board"), worktreeBase);
 
-	it("treats composer exec throw as non-fatal with diagnostic", async () => {
-		tempRoot = makeTempRoot();
-		const codeRoot = join(tempRoot, "repo");
-		mkdirSync(codeRoot, { recursive: true });
-		initRepoWithExtensions(codeRoot, true);
-		const worktreeBase = join(tempRoot, "worktrees");
-		const slug = "2026-01-01-ext-throw";
-		/** @type {RecordedExec[]} */
-		const calls = [];
-		const pi = createPiMock("throw", calls);
-
-		const result = await createWorktreeForTask(pi, codeRoot, makeTask(slug, "/tmp/board"), worktreeBase);
-
-		assert.equal(result.extensionsVendorInstalled, false);
-		assert.ok(result.extensionsVendorNote?.includes("composer install"));
-		assert.ok(existsSync(result.worktree));
+				assert.equal(result.extensionsVendorInstalled, false, behavior);
+				assert.ok(result.extensionsVendorNote?.includes("composer install"), behavior);
+				assert.ok(existsSync(result.worktree), behavior);
+			} finally {
+				rmSync(caseRoot, { recursive: true, force: true });
+			}
+		}
 	});
 });

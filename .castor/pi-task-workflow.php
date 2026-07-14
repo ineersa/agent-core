@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 /**
  * Focused tests for the Pi task-workflow extension (.pi/extensions/task-workflow).
- * Uses Node built-in test runner + TypeScript stripping (Node 22+) and a test-local ESM resolve hook.
+ * Uses Node built-in test runner + explicit TypeScript stripping (Node >=22.6) and a test-local ESM resolve hook.
  */
 
 use Castor\Attribute\AsTask;
@@ -29,13 +29,14 @@ function pi_task_workflow_node_runtime(): array
     }
 
     $version = trim($versionProcess->getOutput());
-    if (!preg_match('/^v(\d+)\./', $version, $m)) {
+    if (!preg_match('/^v(\d+)\.(\d+)(?:\.(\d+))?/', $version, $m)) {
         throw new RuntimeException('Unsupported Node.js runtime for Pi task-workflow tests: '.$version);
     }
 
     $major = (int) $m[1];
-    if ($major < 22) {
-        throw new RuntimeException('Pi task-workflow tests require Node.js 22+ (TypeScript stripping). Found: '.$version.'. Set NODE_BINARY to a supported Node or upgrade the runtime.');
+    $minor = (int) $m[2];
+    if ($major < 22 || (22 === $major && $minor < 6)) {
+        throw new RuntimeException('Pi task-workflow tests require Node.js >=22.6 with TypeScript stripping (--experimental-strip-types). Found: '.$version.'. Set NODE_BINARY to a supported Node or upgrade the runtime.');
     }
 
     return [$node, $version];
@@ -58,11 +59,13 @@ function test_pi_task_workflow(): void
 
     echo "\n=== Pi task-workflow extension tests ===\n";
     echo 'Node runtime: '.$version.' ('.$node.")\n";
+    echo "Flags: --experimental-strip-types, --import register-loader.mjs\n";
     echo "Loader: tests/pi-task-workflow/register-loader.mjs (extensionless .ts + pi-coding-agent shim)\n\n";
 
     $process = new Process(
         [
             $node,
+            '--experimental-strip-types',
             '--import',
             $resolveHook,
             '--test',
