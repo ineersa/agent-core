@@ -1,0 +1,83 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Ineersa\CodingAgent\Tests\Messenger;
+
+use Ineersa\AgentCore\Domain\Run\RunStatus;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\ObserveDeferredSingleSubagentChildTurnHandler;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\ObserveDeferredSingleSubagentChildTurnMessage;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\RecoverDeferredSingleSubagentLifecycleHandler;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\RecoverDeferredSingleSubagentLifecycleMessage;
+use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
+use PHPUnit\Framework\Attributes\DataProvider;
+use Symfony\Component\Messenger\Envelope;
+use Symfony\Component\Messenger\Handler\HandlerDescriptor;
+use Symfony\Component\Messenger\Handler\HandlersLocatorInterface;
+
+/**
+ * Test thesis: routed deferred single-subagent run_control messages must resolve
+ * at least one Messenger handler on agent.command.bus in the compiled container.
+ * Manual handler invocation in other tests does not prove production consumption.
+ *
+ * @coversNothing
+ */
+final class DeferredSingleSubagentRunControlHandlersWiringTest extends IsolatedKernelTestCase
+{
+    #[DataProvider('runControlMessageProvider')]
+    public function testAgentCommandBusHandlersLocatorResolvesHandler(
+        object $message,
+        string $expectedHandlerClass,
+    ): void {
+        /** @var HandlersLocatorInterface $handlersLocator */
+        $handlersLocator = self::getContainer()->get('agent.command.bus.messenger.handlers_locator');
+
+        $handlers = iterator_to_array($handlersLocator->getHandlers(new Envelope($message)));
+        $this->assertNotEmpty($handlers, 'Expected at least one handler for '.$message::class);
+
+        $matched = false;
+        foreach ($handlers as $descriptor) {
+            $this->assertInstanceOf(HandlerDescriptor::class, $descriptor);
+            $this->assertIsCallable($descriptor->getHandler());
+            if (str_starts_with($descriptor->getName(), $expectedHandlerClass.'::')) {
+                $matched = true;
+                break;
+            }
+        }
+
+        $this->assertTrue(
+            $matched,
+            \sprintf(
+                'Expected a handler descriptor named %s::__invoke among %d descriptor(s) for %s.',
+                $expectedHandlerClass,
+                \count($handlers),
+                $message::class,
+            ),
+        );
+    }
+
+    /**
+     * @return array<string, array{0: object, 1: class-string}>
+     */
+    public static function runControlMessageProvider(): array
+    {
+        return [
+            'ObserveDeferredSingleSubagentChildTurnMessage' => [
+                new ObserveDeferredSingleSubagentChildTurnMessage(
+                    lifecycleId: 'lifecycle-wiring-observe',
+                    childRunId: 'child-run-wiring-observe',
+                    committedStatus: RunStatus::Running,
+                    turnNo: 0,
+                    committedEvents: [],
+                ),
+                ObserveDeferredSingleSubagentChildTurnHandler::class,
+            ],
+            'RecoverDeferredSingleSubagentLifecycleMessage' => [
+                new RecoverDeferredSingleSubagentLifecycleMessage(
+                    lifecycleId: 'lifecycle-wiring-recover',
+                ),
+                RecoverDeferredSingleSubagentLifecycleHandler::class,
+            ],
+        ];
+    }
+}

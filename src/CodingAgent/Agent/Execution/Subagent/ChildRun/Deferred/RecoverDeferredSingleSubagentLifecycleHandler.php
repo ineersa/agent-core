@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred;
 
 use Psr\Log\LoggerInterface;
+use Symfony\Component\Messenger\Attribute\AsMessageHandler;
 
+#[AsMessageHandler(bus: 'agent.command.bus')]
 final readonly class RecoverDeferredSingleSubagentLifecycleHandler
 {
     public function __construct(

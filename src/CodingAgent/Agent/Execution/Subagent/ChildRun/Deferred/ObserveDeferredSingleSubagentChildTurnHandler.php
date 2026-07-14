@@ -9,11 +9,13 @@ use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitEventSummary;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\CodingAgent\Entity\DeferredSingleSubagentLaunchRepository;
 use Psr\Log\LoggerInterface;
+use Symfony\Component\Messenger\Attribute\AsMessageHandler;
 use Symfony\Component\Messenger\MessageBusInterface;
 
 /**
  * Applies one child commit batch to the durable deferred-single lifecycle projection.
  */
+#[AsMessageHandler(bus: 'agent.command.bus')]
 final readonly class ObserveDeferredSingleSubagentChildTurnHandler
 {
     public function __construct(
