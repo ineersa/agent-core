@@ -123,6 +123,58 @@ final class DeferredSubagentBatchLaunchTest extends IsolatedKernelTestCase
         $this->assertNotNull($batchAfterRetry);
         $this->assertSame(DeferredSubagentBatchLaunchStatusEnum::Launched, $batchAfterRetry->launchStatus);
 
+        $partialLifecycleId = $identityFactory->batchLifecycleId('parent-batch-4a-partial', 'call-batch-4a-partial');
+        $partialChildOne = $identityFactory->childIdentity('parent-batch-4a-partial', 'call-batch-4a-partial', 1);
+        $partialChildTwo = $identityFactory->childIdentity('parent-batch-4a-partial', 'call-batch-4a-partial', 2);
+        $partialStartedAt = new \DateTimeImmutable('2026-07-13 12:00:00');
+        $batchRepo->reserveBatch(
+            lifecycleId: $partialLifecycleId,
+            parentRunId: 'parent-batch-4a-partial',
+            parentTurnNo: 2,
+            parentToolCallId: 'call-batch-4a-partial',
+            parentOrderIndex: 0,
+            executionMode: ChildRunBatchExecutionModeEnum::Parallel,
+            totalChildCount: 2,
+            deadlineAt: new \DateTimeImmutable('2026-07-13 13:00:00'),
+            childIntents: [
+                [
+                    'batchIndex' => 1,
+                    'childRunId' => $partialChildOne['childRunId'],
+                    'artifactId' => $partialChildOne['artifactId'],
+                    'agentName' => 'batch-retry',
+                    'task' => 'Partial one',
+                    'definitionModel' => null,
+                ],
+                [
+                    'batchIndex' => 2,
+                    'childRunId' => $partialChildTwo['childRunId'],
+                    'artifactId' => $partialChildTwo['artifactId'],
+                    'agentName' => 'batch-retry',
+                    'task' => 'Partial two',
+                    'definitionModel' => null,
+                ],
+            ],
+        );
+
+        try {
+            $batchRepo->applyLaunchSuccessState(
+                'parent-batch-4a-partial',
+                'call-batch-4a-partial',
+                $partialLifecycleId,
+                $partialStartedAt,
+                [1],
+            );
+            $this->fail('Expected RuntimeException for incomplete batch launch persistence');
+        } catch (\RuntimeException $e) {
+            $this->assertStringContainsString('left batch Reserved', $e->getMessage());
+        }
+
+        $partialBatch = $batchRepo->findByParentRunAndToolCall('parent-batch-4a-partial', 'call-batch-4a-partial');
+        $this->assertNotNull($partialBatch);
+        $this->assertSame(DeferredSubagentBatchLaunchStatusEnum::Reserved, $partialBatch->launchStatus);
+        $this->assertSame(DeferredSubagentChildLaunchStatusEnum::Launched, $partialBatch->children[0]->launchStatus);
+        $this->assertSame(DeferredSubagentChildLaunchStatusEnum::Reserved, $partialBatch->children[1]->launchStatus);
+
         $this->expectException(ToolCallException::class);
         $this->expectExceptionMessage('does not match the durable reservation');
 

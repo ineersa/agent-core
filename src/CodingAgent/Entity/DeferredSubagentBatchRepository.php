@@ -286,6 +286,7 @@ final class DeferredSubagentBatchRepository extends ServiceEntityRepository
         $now = Clock::get()->now()->format('Y-m-d H:i:s');
         $started = $startedAt->format('Y-m-d H:i:s');
         $conn = $this->getEntityManager()->getConnection();
+        $incompleteBatchTransition = false;
         $conn->beginTransaction();
         try {
             foreach ($launchedBatchIndices as $batchIndex) {
@@ -303,7 +304,9 @@ final class DeferredSubagentBatchRepository extends ServiceEntityRepository
                 );
             }
 
-            // Batch becomes Launched only when every child row is Launched (no partial success claim).
+            // Child evidence commits first; batch becomes Launched only when every child row is Launched.
+            // If known child indices were forward-marked but the all-child condition is not met, commit
+            // child updates, leave batch Reserved, then signal incomplete transition after commit.
             $batchAffected = $conn->executeStatement(
                 'UPDATE deferred_subagent_batch SET launch_status = :launched, started_at = COALESCE(started_at, :started), updated_at = :now, projection_version = projection_version + 1
                  WHERE parent_run_id = :parent AND parent_tool_call_id = :tool AND launch_status = :reserved
@@ -332,7 +335,7 @@ final class DeferredSubagentBatchRepository extends ServiceEntityRepository
                     ],
                 );
                 if (DeferredSubagentBatchLaunchStatusEnum::Launched->value !== $currentStatus) {
-                    throw new \RuntimeException('Deferred subagent batch launch success persistence left batch Reserved because not all child launch rows are Launched.');
+                    $incompleteBatchTransition = true;
                 }
             }
 
@@ -346,6 +349,10 @@ final class DeferredSubagentBatchRepository extends ServiceEntityRepository
         }
 
         $this->getEntityManager()->clear();
+
+        if ($incompleteBatchTransition) {
+            throw new \RuntimeException('Deferred subagent batch launch success persistence left batch Reserved because not all child launch rows are Launched.');
+        }
     }
 
     /**
