@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Entity;
 
 use Doctrine\ORM\Mapping as ORM;
-use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\DeferredSubagentChildLaunchStatusEnum;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentChildLaunchStatusEnum;
 
 #[ORM\Entity]
 #[ORM\Table(name: 'deferred_subagent_child')]

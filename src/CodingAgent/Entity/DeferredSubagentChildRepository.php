@@ -9,8 +9,8 @@ use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Doctrine\Persistence\ManagerRegistry;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
-use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\DeferredSubagentChildLaunchStatusEnum;
-use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\DeferredSubagentChildProjectionDTO;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentChildLaunchStatusEnum;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentChildProjectionDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredChildRunLifecycleProjectionDTO;
 use Symfony\Component\Clock\Clock;
 

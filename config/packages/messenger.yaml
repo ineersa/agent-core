@@ -86,10 +86,10 @@ framework:
             Ineersa\AgentCore\Domain\Message\LlmStepResult: run_control
             Ineersa\AgentCore\Domain\Message\ToolCallResult: run_control
             Ineersa\AgentCore\Domain\Message\CompactionStepResult: run_control
-            Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\ObserveDeferredSubagentBatchChildTurnMessage: run_control
-            Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\DeliverDeferredSubagentBatchLifecycleMessage: run_control
-            Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\InterruptDeferredSubagentBatchMessage: run_control
-            Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\RecoverDeferredSubagentBatchLifecycleMessage: run_control
+            Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Observation\ObserveDeferredSubagentBatchChildTurnMessage: run_control
+            Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Lifecycle\DeliverDeferredSubagentBatchLifecycleMessage: run_control
+            Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Interruption\InterruptDeferredSubagentBatchMessage: run_control
+            Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Recovery\RecoverDeferredSubagentBatchLifecycleMessage: run_control
 
             Ineersa\AgentCore\Domain\Message\CompleteDeferredToolCall: run_control
             # AdvanceRun is intentionally NOT routed to a transport.
