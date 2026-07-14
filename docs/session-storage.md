@@ -60,6 +60,14 @@ Parent sessions that launch child subagents store child run data under
   parent runs, stored under the parent directory via `AgentChildRunEventStore`
   and `AgentChildRunStore`.
 
+
+
+### Deferred subagent batch launch storage (Piece 4A)
+
+- Normalized durable tables `deferred_subagent_batch` and `deferred_subagent_child` store one batch per parent tool call with independently versioned child rows (ordered `batch_index`, per-child cursors/projections reserved for later slices).
+- `DeferredSubagentBatchLaunchService` performs durable idempotent batch launch and returns `DeferredToolCompletionOutcome` with a deterministic batch `lifecycle_id` (UUID v5 from parent run + tool call). Child `child_run_id` / `artifact_id` values are deterministic per `batch_index`.
+- Piece 4A is **storage/launch foundation only**: production `executeParallel()` still uses foreground polling. Child-event observation, aggregate parent progress, interruption, recovery, and parallel cutover remain **Piece 4B/4C**; single-mode migration onto the generic batch model remains **Piece 4D**.
+
 ### Deferred single subagent live observation (Piece 3B1)
 
 For parent sessions that launch a **single** deferred subagent child:

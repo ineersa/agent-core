@@ -126,6 +126,21 @@ final class ApplicationMigrationExecutorTest extends TestCase
             $schemaManager->tablesExist(['deferred_tool_completion']),
             'deferred_tool_completion must exist after startup executor (run_control deferred registration)',
         );
+
+        $recordedDeferredBatch = $connection->fetchOne(
+            'SELECT 1 FROM doctrine_migration_versions WHERE version = ?',
+            ['Version20260713160000'],
+        );
+        $this->assertNotFalse(
+            $recordedDeferredBatch,
+            'Version20260713160000 (deferred_subagent_batch) must be recorded in doctrine_migration_versions',
+        );
+
+        $this->assertTrue(
+            $schemaManager->tablesExist(['deferred_subagent_batch', 'deferred_subagent_child']),
+            'deferred_subagent_batch and deferred_subagent_child must exist after startup executor (Piece 4A)',
+        );
+
         $this->assertTrue(
             $schemaManager->tablesExist(['deferred_single_subagent_launch']),
             'deferred_single_subagent_launch must exist after startup executor (WorkerStarted recovery queries)',

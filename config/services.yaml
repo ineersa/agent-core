@@ -89,6 +89,12 @@ services:
   Ineersa\CodingAgent\Entity\DeferredSingleSubagentLaunchRepository:
     autowire: true
 
+  Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository:
+    autowire: true
+
+  Ineersa\CodingAgent\Entity\DeferredSubagentChildRepository:
+    autowire: true
+
   Ineersa\AgentCore\Contract\IdempotencyStoreInterface:
     alias: Ineersa\CodingAgent\Session\JsonlIdempotencyStore
 
