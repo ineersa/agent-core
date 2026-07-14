@@ -8,13 +8,18 @@ use Ineersa\CodingAgent\Tests\Support\ProjectDir;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Yaml\Yaml;
 
 /**
  * Minimal tmux proof for status-row stability and transient reasoning notice.
  *
- * Test thesis: real terminal Shift+Tab shows the panel-only reasoning line above
- * the working area; submitting the next turn removes that line while footer ◆
- * remains; when the notice clears, the footer-to-editor-region line gap stays constant across notice, submit, and idle (working slot stays one row via reserved blank).
+ * Test thesis (reasoning): Shift+Tab shows the panel-only reasoning line; submitting
+ * the next turn removes it while footer ◆ remains.
+ *
+ * Test thesis (layout): adding one status-panel row (Shift+Tab reasoning notice) must
+ * shift footer and footer-separator anchors down by exactly one line in the real terminal;
+ * a spurious working-slot collapse would shift them by an additional line (virtual layer
+ * covers hidden-working reserve in ChatScreenStatusRowVirtualRenderTest).
  *
  * @group tui-e2e-replay
  */
@@ -53,6 +58,10 @@ final class TuiStatusRowReasoningNoticeE2eTest extends TestCase
         if (isset($this->tmux)) {
             $this->tmux->killAll();
         }
+
+        if (isset($this->testProjectDir) && '' !== $this->testProjectDir) {
+            TestDirectoryIsolation::removeDirectory($this->testProjectDir);
+        }
     }
 
     public function testShiftTabReasoningNoticeClearsOnSubmitWithoutShiftingFooterAnchor(): void
@@ -69,8 +78,9 @@ final class TuiStatusRowReasoningNoticeE2eTest extends TestCase
             $this->tmux->waitForCaptureContains($pane, '█', TmuxHarness::TUI_STARTUP_LOGO_TIMEOUT_PARALLEL);
             $this->tmux->waitForTuiReadyAfterLogo($pane);
 
-            $baseline = $this->tmux->capturePlainWithHistory($pane, 2000);
-            $baselineLayoutGap = $this->footerToEditorRegionGap($baseline);
+            $baselineCapture = $this->tmux->capturePlainWithHistory($pane, 2000);
+            $baselineFooterIndex = $this->footerLineIndexLast($baselineCapture);
+            $baselineSeparatorIndex = $this->footerSeparatorLineIndexAboveFooter($baselineCapture);
 
             $this->tmux->sendLiteral($pane, self::SHIFT_TAB);
 
@@ -84,9 +94,15 @@ final class TuiStatusRowReasoningNoticeE2eTest extends TestCase
 
             $this->assertStringContainsString('◆', $withNotice, 'Footer diamond must remain after Shift+Tab');
             $this->assertMatchesRegularExpression('/\s{2}reasoning\s+minimal/', $withNotice, 'Status panel reasoning row expected');
-            $this->saveAnsiSnapshot($pane, 'status-reasoning-after-shift-tab');
 
-            $this->assertSame($baselineLayoutGap, $this->footerToEditorRegionGap($withNotice), 'Footer/region gap must stay stable when notice appears');
+            $noticeFooterIndex = $this->footerLineIndexLast($withNotice);
+            $noticeSeparatorIndex = $this->footerSeparatorLineIndexAboveFooter($withNotice);
+            $this->assertSame($baselineFooterIndex + 1, $noticeFooterIndex,
+                'Footer anchor must move down exactly one line when status panel gains the reasoning row');
+            $this->assertSame($baselineSeparatorIndex + 1, $noticeSeparatorIndex,
+                'Footer separator must move down exactly one line when status panel gains the reasoning row');
+
+            $this->saveAnsiSnapshot($pane, 'status-reasoning-after-shift-tab');
 
             $this->tmux->sendKey($pane, 'C-u');
             usleep(50_000);
@@ -105,11 +121,9 @@ final class TuiStatusRowReasoningNoticeE2eTest extends TestCase
             $this->assertStringContainsString('◆', $afterSubmit);
             $this->saveAnsiSnapshot($pane, 'status-reasoning-after-submit');
 
-            $this->assertSame($baselineLayoutGap, $this->footerToEditorRegionGap($afterSubmit), 'Footer/region gap must match baseline once notice clears');
-
             $this->tmux->waitForCallback(
                 $pane,
-                fn (string $cap): bool => $this->tailShowsIdleWithoutActiveWorking($cap),
+                fn (string $cap): bool => $this->captureShowsIdleWithoutActiveWorking($cap),
                 timeout: TmuxHarness::TUI_GATE_CALLBACK_TIMEOUT_PARALLEL,
                 message: 'Idle status not restored after replay turn',
                 history: 2000,
@@ -125,7 +139,7 @@ final class TuiStatusRowReasoningNoticeE2eTest extends TestCase
 
             $idleCapture = $this->tmux->capturePlainWithHistory($pane, 2000);
             $this->assertDoesNotMatchRegularExpression('/\s{2}reasoning\s+\S+/', $idleCapture, 'Transient reasoning panel line must stay cleared after turn');
-            $this->assertTrue($this->tailShowsIdleWithoutActiveWorking($idleCapture), 'Live status row must show idle after replay turn');
+            $this->assertTrue($this->captureShowsIdleWithoutActiveWorking($idleCapture), 'Live status row must show idle after replay turn');
 
             $this->saveAnsiSnapshot($pane, 'status-reasoning-idle-baseline');
             $this->tmux->sendKey($pane, 'C-d');
@@ -134,6 +148,7 @@ final class TuiStatusRowReasoningNoticeE2eTest extends TestCase
             try {
                 $this->tmux->sendKey($pane, 'C-d');
             } catch (\Throwable) {
+                // Best-effort tmux detach during failure diagnostics; pane may already be gone.
             }
             throw $e;
         }
@@ -216,7 +231,7 @@ final class TuiStatusRowReasoningNoticeE2eTest extends TestCase
             ],
         ];
 
-        $yaml = \Symfony\Component\Yaml\Yaml::dump($settings, 6, 4);
+        $yaml = Yaml::dump($settings, 6, 4);
         file_put_contents($dir.'/.hatfield/settings.yaml', $yaml);
         @mkdir($dir.'/home/.hatfield', 0o777, true);
         file_put_contents($dir.'/home/.hatfield/settings.yaml', $yaml);
@@ -224,18 +239,21 @@ final class TuiStatusRowReasoningNoticeE2eTest extends TestCase
         return $dir;
     }
 
-    private function footerToEditorRegionGap(string $capture, int $tailLines = 80): int
+    /**
+     * Last footer session-branch anchor line in the full capture (absolute index).
+     */
+    private function footerLineIndexLast(string $capture): int
     {
-        $lines = explode("\n", $capture);
-        $tail = implode("\n", \array_slice($lines, -$tailLines));
-
-        return $this->lineIndexLast($tail, self::FOOTER_ANCHOR) - $this->editorRegionSeparatorIndex($tail);
+        return $this->lineIndexLast($capture, self::FOOTER_ANCHOR);
     }
 
-    private function editorRegionSeparatorIndex(string $capture): int
+    /**
+     * Full-width separator line immediately above the footer anchor (not the editor separator).
+     */
+    private function footerSeparatorLineIndexAboveFooter(string $capture): int
     {
         $lines = explode("\n", $capture);
-        $footerIndex = $this->lineIndexLast($capture, self::FOOTER_ANCHOR);
+        $footerIndex = $this->footerLineIndexLast($capture);
 
         for ($i = $footerIndex - 1; $i >= 0; --$i) {
             if (str_contains($lines[$i], '─')) {
@@ -243,7 +261,7 @@ final class TuiStatusRowReasoningNoticeE2eTest extends TestCase
             }
         }
 
-        $this->fail('Editor-region separator missing above footer in tmux capture');
+        $this->fail('Footer separator line missing above footer anchor in tmux capture');
     }
 
     private function lineIndexLast(string $capture, string $needle): int
@@ -262,9 +280,11 @@ final class TuiStatusRowReasoningNoticeE2eTest extends TestCase
         return $last;
     }
 
-    private function tailShowsIdleWithoutActiveWorking(string $capture, int $lineCount = 45): bool
+    /**
+     * True when the newest working-status line in the capture is idle, not an active spinner.
+     */
+    private function captureShowsIdleWithoutActiveWorking(string $capture): bool
     {
-        unset($lineCount);
         $lines = explode("\n", $capture);
 
         for ($i = \count($lines) - 1; $i >= 0; --$i) {
