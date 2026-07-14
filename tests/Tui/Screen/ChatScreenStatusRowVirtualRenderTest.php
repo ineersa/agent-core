@@ -16,9 +16,8 @@ use PHPUnit\Framework\TestCase;
  * must not shift content below the status area; without a reserved row,
  * LiveTextWidget returns zero lines when hidden and the layout jumps.
  *
- * Editor-region anchor: last full-width separator line immediately above the
- * footer session label (stable in VirtualTerminal; loaded-resources ctrl+r line
- * is not mounted in the default harness).
+ * Footer anchor: last full-width separator line immediately above the footer
+ * session label (same naming as tmux E2E helper; stable in VirtualTerminal).
  */
 final class ChatScreenStatusRowVirtualRenderTest extends TestCase
 {
@@ -39,32 +38,32 @@ final class ChatScreenStatusRowVirtualRenderTest extends TestCase
         $screen->setWorkingMessage(null);
         $harness->render();
         $idleFooterIndex = $this->footerLineIndex($harness->plainScreenText());
-        $idleSepIndex = $this->editorRegionSeparatorIndex($harness->plainScreenText());
+        $idleSepIndex = $this->footerSeparatorLineIndexAboveFooter($harness->plainScreenText());
 
         $screen->setWorkingVisible(false);
         $harness->render();
         $hiddenFooterIndex = $this->footerLineIndex($harness->plainScreenText());
-        $hiddenSepIndex = $this->editorRegionSeparatorIndex($harness->plainScreenText());
+        $hiddenSepIndex = $this->footerSeparatorLineIndexAboveFooter($harness->plainScreenText());
 
         $screen->setWorkingVisible(true);
         $screen->setWorkingMessage('Working...');
         $harness->render();
         $workingFooterIndex = $this->footerLineIndex($harness->plainScreenText());
-        $workingSepIndex = $this->editorRegionSeparatorIndex($harness->plainScreenText());
+        $workingSepIndex = $this->footerSeparatorLineIndexAboveFooter($harness->plainScreenText());
 
         $screen->setWorkingVisible(true);
         $screen->setWorkingMessage(null);
         $harness->render();
         $idleAgainFooterIndex = $this->footerLineIndex($harness->plainScreenText());
-        $idleAgainSepIndex = $this->editorRegionSeparatorIndex($harness->plainScreenText());
+        $idleAgainSepIndex = $this->footerSeparatorLineIndexAboveFooter($harness->plainScreenText());
 
         $this->assertSame($idleFooterIndex, $hiddenFooterIndex, 'Hiding working row must not shift footer');
         $this->assertSame($idleFooterIndex, $workingFooterIndex, 'Working message must not shift footer');
         $this->assertSame($idleFooterIndex, $idleAgainFooterIndex, 'Returning to idle must not shift footer');
 
-        $this->assertSame($idleSepIndex, $hiddenSepIndex, 'Hiding working row must not shift editor-region separator');
-        $this->assertSame($idleSepIndex, $workingSepIndex, 'Working message must not shift editor-region separator');
-        $this->assertSame($idleSepIndex, $idleAgainSepIndex, 'Returning to idle must not shift editor-region separator');
+        $this->assertSame($idleSepIndex, $hiddenSepIndex, 'Hiding working row must not shift footer separator');
+        $this->assertSame($idleSepIndex, $workingSepIndex, 'Working message must not shift footer separator');
+        $this->assertSame($idleSepIndex, $idleAgainSepIndex, 'Returning to idle must not shift footer separator');
     }
 
     private function footerLineIndex(string $screen): int
@@ -72,7 +71,7 @@ final class ChatScreenStatusRowVirtualRenderTest extends TestCase
         return $this->lineIndex($screen, self::FOOTER_NEEDLE);
     }
 
-    private function editorRegionSeparatorIndex(string $screen): int
+    private function footerSeparatorLineIndexAboveFooter(string $screen): int
     {
         $lines = explode("\n", $screen);
         $footerIndex = $this->footerLineIndex($screen);
@@ -83,7 +82,7 @@ final class ChatScreenStatusRowVirtualRenderTest extends TestCase
             }
         }
 
-        $this->fail('Editor-region separator missing above footer');
+        $this->fail('Footer separator line missing above footer anchor in virtual screen');
     }
 
     private function lineIndex(string $screen, string $needle): int

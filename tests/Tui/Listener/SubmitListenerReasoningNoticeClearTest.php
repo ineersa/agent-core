@@ -75,6 +75,32 @@ final class SubmitListenerReasoningNoticeClearTest extends TestCase
         $this->assertStringContainsString('◆', $after, 'Footer should still render');
     }
 
+    #[Test]
+    public function testAbortedImagePromotionLeavesTransientReasoningNotice(): void
+    {
+        $state = new TuiSessionState('reasoning-abort-session');
+        $state->handle = new RunHandle('run-1');
+        $state->activity = RunActivityStateEnum::Completed;
+        $state->pastedImagePasteInProgressIndex = 1;
+
+        $client = $this->createMock(AgentSessionClient::class);
+        $client->expects($this->never())->method('send');
+
+        $harness = new VirtualTuiHarness(sessionId: $state->sessionId);
+        $screen = $harness->screen();
+        $screen->registry()->setStatus('reasoning', 'high');
+        $screen->refresh();
+
+        $tui = $harness->tui();
+        $this->registerSubmitListener($client, $state, $screen, $tui);
+
+        $screen->promptEditor()->setText('describe [Image #1]');
+        $this->fireSubmit($screen, $tui, 'describe [Image #1]');
+
+        $this->assertArrayHasKey('reasoning', $this->statusEntries($screen));
+        $this->assertSame('high', $this->statusEntries($screen)['reasoning']);
+    }
+
     private function registerSubmitListener(
         AgentSessionClient $client,
         TuiSessionState $state,
@@ -119,11 +145,11 @@ final class SubmitListenerReasoningNoticeClearTest extends TestCase
         $listener->register($context);
     }
 
-    private function fireSubmit(ChatScreen $screen, Tui $tui): void
+    private function fireSubmit(ChatScreen $screen, Tui $tui, string $text = 'next turn'): void
     {
         $listeners = $tui->getEventDispatcher()->getListeners(SubmitEvent::class);
         $this->assertNotEmpty($listeners);
-        ($listeners[0])(new SubmitEvent($screen->editorWidget(), 'next turn'));
+        ($listeners[0])(new SubmitEvent($screen->editorWidget(), $text));
     }
 
     /** @return array<string, string> */
