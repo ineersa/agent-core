@@ -32,6 +32,7 @@ use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\DeferredSubagent
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\DeferredSubagentBatchLifecycleDeliveryService;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\DeferredSubagentBatchParentCancelHookSubscriber;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\DeferredSubagentBatchProgressDeliveryService;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\DeferredSubagentBatchProgressSnapshotFactory;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\DeferredSubagentBatchTerminalCompletionService;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\DeferredToolCompletionRegisteredBatchListener;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\DeliverDeferredSubagentBatchLifecycleMessage;
@@ -161,25 +162,11 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
 
         // Observer delivers running progress
         $appendedSp = [];
-        $spyProgressAppender = new class(self::getContainer()->get(CommittedRunEventAppender::class), $appendedSp) extends SubagentProgressEventAppender {
-            public function __construct(CommittedRunEventAppender $inner, private array &$appendedSp)
-            {
-                parent::__construct($inner);
-            }
-
-            public function append(string $parentRunId, int $parentTurnNo, string $parentToolCallId, int $parentOrderIndex, string $toolName, array $progress): \Ineersa\AgentCore\Domain\Event\RunEvent
-            {
-                $this->appendedSp[] = $progress;
-
-                return parent::append($parentRunId, $parentTurnNo, $parentToolCallId, $parentOrderIndex, $toolName, $progress);
-            }
-        };
+        $spyProgressAppender = $this->createSpyProgressAppender($appendedSp);
 
         $progressService = new DeferredSubagentBatchProgressDeliveryService(
             $repo,
-            self::getContainer()->get(SubagentProgressSnapshotBuilder::class),
-            self::getContainer()->get(SubagentChildProgressSummaryBuilder::class),
-            self::getContainer()->get(ChildRunBatchProgressService::class),
+            $this->createSnapshotFactory(),
             $spyProgressAppender,
             new TestLogger(),
         );
@@ -275,7 +262,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         ));
 
         $commandBus = new TestMessageBus();
-        $delivery = $this->buildDeliveryService($commandBus);
+        $delivery = $this->buildLifecycleDelivery($commandBus);
         $delivery->deliver($lifecycle);
 
         $this->assertCount(1, $commandBus->messages);
@@ -300,13 +287,14 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
     {
         $repo = self::getContainer()->get(DeferredSubagentBatchRepository::class);
         $factory = new DeferredSubagentBatchIdentityFactory();
-        $parent = 'parent-batch-int-v2-'.$scenarioTag;
-        $tool = 'tool-batch-int-v2-'.$scenarioTag;
+        $parent = 'parent-batch-int-v3-'.$scenarioTag;
+        $tool = 'tool-batch-int-v3-'.$scenarioTag;
         $lifecycle = $factory->batchLifecycleId($parent, $tool);
         $c1 = $factory->childIdentity($parent, $tool, 1);
         $c2 = $factory->childIdentity($parent, $tool, 2);
         $deadline = new \DateTimeImmutable('+5 seconds');
         $startedAt = new \DateTimeImmutable('-3 seconds');
+        $timeoutSecs = max(1, $deadline->getTimestamp() - $startedAt->getTimestamp());
 
         $repo->reserveBatch(
             lifecycleId: $lifecycle,
@@ -327,7 +315,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
             $this->ensureArtifactReserved($parent, $child['childRunId'], $child['artifactId'], 'worker', 'task');
         }
 
-        // Make child 1 naturally Completed
+        // Observe child 1 naturally Completed
         $handler = new ObserveDeferredSubagentBatchChildTurnHandler(
             $repo,
             self::getContainer()->get(\Ineersa\CodingAgent\Entity\DeferredSubagentChildRepository::class),
@@ -339,6 +327,26 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
             new AfterTurnCommitEventSummary(1, RunEventTypeEnum::LlmStepCompleted->value, ['assistant_message' => ['content' => [['type' => 'text', 'text' => 'done-one']]]]),
             new AfterTurnCommitEventSummary(2, RunEventTypeEnum::AgentEnd->value, ['reason' => 'completed']),
         ]));
+
+        // Deliver initial running progress BEFORE registration so aggregate==delivered
+        $appendedProgress = [];
+        $spyAppender = $this->createSpyProgressAppender($appendedProgress);
+        $progressDelivery = new DeferredSubagentBatchProgressDeliveryService(
+            $repo,
+            $this->createSnapshotFactory(),
+            $spyAppender,
+            new TestLogger(),
+        );
+        $batchAfterObserve = $repo->findByLifecycleId($lifecycle);
+        $this->assertTrue($progressDelivery->deliverIfNeeded($batchAfterObserve), 'Initial running progress emitted');
+        $this->assertCount(1, $appendedProgress, 'One running payload before interruption');
+        $this->assertSame('running', $appendedProgress[0]['status'], 'Aggregate is running (child 2 unobserved)');
+        $this->assertSame(2, $appendedProgress[0]['total_count']);
+        $this->assertCount(2, $appendedProgress[0]['children']);
+
+        $batch = $repo->findByLifecycleId($lifecycle);
+        $this->assertSame($batch->aggregateProgressRevision, $batch->deliveredProgressRevision, 'Revision equalized before interruption');
+        $aggregateRevisionBeforeInterrupt = $batch->aggregateProgressRevision;
 
         // Test-local recording AgentRunner
         $cancelCalls = [];
@@ -391,10 +399,9 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         // MockClock: "now" is well past the 5s deadline so timeout fires immediately
         $mockClock = new MockClock((new \DateTimeImmutable())->modify('+10 seconds'));
 
-        // Build the interruption service and delivery chain
+        // Build ONE interruption service with the spy-wired lifecycle delivery
         $commandBus = new TestMessageBus();
-        $delivery = $this->buildDeliveryService($commandBus);
-        $lifecycleDelivery = $this->buildLifecycleDelivery($commandBus);
+        $lifecycleDelivery = $this->buildLifecycleDelivery($commandBus, $spyAppender);
 
         $intentKind = DeferredSubagentInterruptionKindEnum::from($kind);
         // STEP 1: Interrupt BEFORE generic registration — persists intent but performs no cancel/complete
@@ -416,6 +423,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         $batch = $repo->findByLifecycleId($lifecycle);
         $this->assertNotNull($batch->interruptionKind, 'First-wins interruption kind persisted');
         $this->assertSame($intentKind, $batch->interruptionKind);
+        $this->assertCount(1, $appendedProgress, 'No extra progress from pre-registration interrupt');
 
         // STEP 1b: Invoke OPPOSITE kind BEFORE registration — proves first-wins survives, no cancel since no reg
         $oppositeKind = DeferredSubagentInterruptionKindEnum::Timeout === $intentKind
@@ -443,59 +451,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         ));
 
         // STEP 3: Now with registration, invoke the ORIGINAL kind — cancels children and completes
-        $appendedProgress = [];
-        $spyProgressAppender2 = new class(self::getContainer()->get(CommittedRunEventAppender::class), $appendedProgress) extends SubagentProgressEventAppender {
-            public function __construct(CommittedRunEventAppender $inner, private array &$appended)
-            {
-                parent::__construct($inner);
-            }
-
-            public function append(string $parentRunId, int $parentTurnNo, string $parentToolCallId, int $parentOrderIndex, string $toolName, array $progress): \Ineersa\AgentCore\Domain\Event\RunEvent
-            {
-                $this->appended[] = $progress;
-
-                return parent::append($parentRunId, $parentTurnNo, $parentToolCallId, $parentOrderIndex, $toolName, $progress);
-            }
-        };
-        $progressDelivery = new DeferredSubagentBatchProgressDeliveryService(
-            $repo,
-            self::getContainer()->get(SubagentProgressSnapshotBuilder::class),
-            self::getContainer()->get(SubagentChildProgressSummaryBuilder::class),
-            self::getContainer()->get(ChildRunBatchProgressService::class),
-            $spyProgressAppender2,
-            new TestLogger(),
-        );
-        $completionDispatcher = new DeferredSubagentBatchCompletionDispatcher(
-            self::getContainer()->get(DeferredToolCompletionRepositoryInterface::class),
-            $repo,
-            $commandBus,
-            new TestLogger(),
-        );
-        $outcomeFactoryForInt = new DeferredSubagentBatchChildOutcomeFactory();
-        $interruptionCompletion2 = new DeferredSubagentBatchInterruptionCompletionService(
-            $repo,
-            self::getContainer()->get(SubagentChildRunBatchLifecycleListener::class),
-            self::getContainer()->get(\Ineersa\CodingAgent\Agent\Execution\Subagent\SubagentParallelAggregateResultFormatter::class),
-            $progressDelivery,
-            $completionDispatcher,
-            $outcomeFactoryForInt,
-        );
-        $interruptionService2 = new DeferredSubagentBatchInterruptionService(
-            $repo,
-            new DeferredSubagentBatchLifecycleDeliveryService(
-                $repo,
-                $progressDelivery,
-                self::getContainer()->get(DeferredSubagentBatchTerminalCompletionService::class),
-                $interruptionCompletion2,
-            ),
-            $agentRunner,
-            self::getContainer()->get(DeferredToolCompletionRepositoryInterface::class),
-            self::getContainer()->get(\Ineersa\CodingAgent\Agent\Execution\Subagent\SubagentChildRunBatchLifecyclePolicyFactory::class),
-            $commandBus,
-            new TestLogger(),
-            $mockClock,
-        );
-        $interruptionService2->interrupt($lifecycle, $intentKind);
+        $interruptionService->interrupt($lifecycle, $intentKind);
 
         // Only child 2 (active, not completed) should be cancelled
         $this->assertCount(1, $cancelCalls, 'Only active child cancelled');
@@ -507,14 +463,16 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
             $this->assertSame('Parent run cancelled parallel subagent tool.', $cancelCalls[0]['reason']);
         }
 
-        // Verify parent-cancel forced progress vs timeout no progress
+        // Verify parent-cancel forced progress vs timeout no extra progress
         if (DeferredSubagentInterruptionKindEnum::ParentCancelled === $intentKind) {
-            $this->assertCount(1, $appendedProgress, 'Parent cancel emits forced progress');
-            $payload = $appendedProgress[0];
-            $this->assertSame('cancelled', $payload['status']);
-            $this->assertCount(2, $payload['children']);
+            $this->assertCount(2, $appendedProgress, 'One running + one forced parent-cancel payload');
+            $forced = $appendedProgress[1];
+            $this->assertSame('cancelled', $forced['status'], 'Aggregate status forced cancelled');
+            $this->assertCount(2, $forced['children']);
+            $this->assertSame('completed', $forced['children'][0]['status'], 'Child 1 stays completed');
+            $this->assertSame('cancelled', $forced['children'][1]['status'], 'Child 2 forced cancelled');
         } else {
-            $this->assertCount(0, $appendedProgress, 'Timeout emits no progress');
+            $this->assertCount(1, $appendedProgress, 'Timeout emits no extra progress beyond initial running');
         }
 
         // Completion assertion
@@ -524,7 +482,6 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         $this->assertTrue($complete->isError);
 
         if ('timeout' === $kind) {
-            $timeoutSecs = max(1, $deadline->getTimestamp() - $startedAt->getTimestamp()); // 8s = 5 - (-3)
             $this->assertStringStartsWith(\sprintf('Parallel subagents timed out after %d seconds.', $timeoutSecs), $complete->content[0]['text']);
             $this->assertStringContainsString(\sprintf('Timed out after %d seconds.', $timeoutSecs), $complete->content[0]['text']);
             $this->assertArrayNotHasKey('cancelled', $complete->details ?? []);
@@ -542,20 +499,40 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
             $art2 = $registry->get($parent, $c2['artifactId']);
             $this->assertSame(AgentArtifactStatusEnum::Failed, $art2->status);
             $this->assertSame('Child run timed out.', $art2->failureReason);
+            $expectedSummary = \sprintf('Timed out after %d seconds.', $timeoutSecs);
+            $this->assertStringContainsString('Timed out after', $art2->summary ?? '');
+            $this->assertStringContainsString('seconds.', $art2->summary ?? '');
         } else {
             $art2 = $registry->get($parent, $c2['artifactId']);
             $this->assertSame(AgentArtifactStatusEnum::Cancelled, $art2->status);
             $this->assertSame('Cancelled by parent run.', $art2->summary);
         }
 
+        // Assert ordered artifact IDs in report
+        $text = $complete->content[0]['text'];
+        $pos1 = strpos($text, $c1['artifactId']);
+        $pos2 = strpos($text, $c2['artifactId']);
+        $this->assertNotFalse($pos1, 'Child 1 artifact appears in report');
+        $this->assertNotFalse($pos2, 'Child 2 artifact appears in report');
+        $this->assertLessThan($pos2, $pos1, 'Child 1 before child 2 in report');
+
+        // Interruption progress marker: only set for parent-cancel
+        $batchAfterCompletion = $repo->findByLifecycleId($lifecycle);
+        if (DeferredSubagentInterruptionKindEnum::ParentCancelled === $intentKind) {
+            $this->assertNotNull($batchAfterCompletion->interruptionProgressEnqueuedAt, 'Parent cancel sets progress marker');
+        } else {
+            $this->assertNull($batchAfterCompletion->interruptionProgressEnqueuedAt, 'Timeout leaves no progress marker');
+        }
+
         // Idempotent repeat: no additional cancel, no second dispatch
         $prevCancelCount = \count($cancelCalls);
         $commandBus->messages = [];
-        $interruptionService2->interrupt($lifecycle, $intentKind);
+        $interruptionService->interrupt($lifecycle, $intentKind);
         $this->assertCount($prevCancelCount, $cancelCalls, 'Cancel is not repeated');
         $this->assertCount(0, $commandBus->messages, 'Completion is not re-dispatched');
 
-        // Late Observe after interruption completion is suppressed
+        // Late Observe after interruption completion leaves aggregate revision and cursor unchanged
+        $cursorBeforeLateObserve = $repo->findByLifecycleId($lifecycle)->aggregateProgressRevision;
         $observeBus = new TestMessageBus();
         $lateHandler = new ObserveDeferredSubagentBatchChildTurnHandler(
             $repo,
@@ -568,7 +545,9 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
             new AfterTurnCommitEventSummary(3, RunEventTypeEnum::LlmStepCompleted->value, ['assistant_message' => ['content' => [['type' => 'text', 'text' => 'late']]]]),
         ]));
         $lateDeliver = array_filter($observeBus->messages, static fn ($m) => $m instanceof DeliverDeferredSubagentBatchLifecycleMessage);
-        $this->assertCount(0, $lateDeliver, 'Late observation does not re-enqueue delivery after terminal completion');
+        $this->assertCount(0, $lateDeliver, 'Late observation does not re-enqueue delivery');
+        $batchAfterLateObserve = $repo->findByLifecycleId($lifecycle);
+        $this->assertSame($cursorBeforeLateObserve, $batchAfterLateObserve->aggregateProgressRevision, 'Aggregate revision unchanged by late observe');
     }
 
     public function testRegistrationListenerAndParentCancelHookEnqueueCorrectMessages(): void
@@ -689,20 +668,43 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         ];
     }
 
-    private function buildDeliveryService(TestMessageBus $commandBus): DeferredSubagentBatchLifecycleDeliveryService
+    /**
+     * @param array<int, array<string, mixed>> $appended
+     */
+    private function createSpyProgressAppender(array &$appended): SubagentProgressEventAppender
     {
-        return $this->buildLifecycleDelivery($commandBus);
+        return new class(self::getContainer()->get(CommittedRunEventAppender::class), $appended) extends SubagentProgressEventAppender {
+            public function __construct(CommittedRunEventAppender $inner, private array &$appended)
+            {
+                parent::__construct($inner);
+            }
+
+            public function append(string $parentRunId, int $parentTurnNo, string $parentToolCallId, int $parentOrderIndex, string $toolName, array $progress): \Ineersa\AgentCore\Domain\Event\RunEvent
+            {
+                $this->appended[] = $progress;
+
+                return parent::append($parentRunId, $parentTurnNo, $parentToolCallId, $parentOrderIndex, $toolName, $progress);
+            }
+        };
     }
 
-    private function buildLifecycleDelivery(TestMessageBus $commandBus): DeferredSubagentBatchLifecycleDeliveryService
+    private function createSnapshotFactory(): DeferredSubagentBatchProgressSnapshotFactory
+    {
+        return new DeferredSubagentBatchProgressSnapshotFactory(
+            new DeferredSubagentBatchChildOutcomeFactory(),
+            self::getContainer()->get(SubagentChildProgressSummaryBuilder::class),
+            self::getContainer()->get(SubagentProgressSnapshotBuilder::class),
+            self::getContainer()->get(ChildRunBatchProgressService::class),
+        );
+    }
+
+    private function buildLifecycleDelivery(TestMessageBus $commandBus, ?SubagentProgressEventAppender $spyAppender = null): DeferredSubagentBatchLifecycleDeliveryService
     {
         $repo = self::getContainer()->get(DeferredSubagentBatchRepository::class);
         $progress = new DeferredSubagentBatchProgressDeliveryService(
             $repo,
-            self::getContainer()->get(SubagentProgressSnapshotBuilder::class),
-            self::getContainer()->get(SubagentChildProgressSummaryBuilder::class),
-            self::getContainer()->get(ChildRunBatchProgressService::class),
-            self::getContainer()->get(SubagentProgressEventAppender::class),
+            $this->createSnapshotFactory(),
+            $spyAppender ?? self::getContainer()->get(SubagentProgressEventAppender::class),
             new TestLogger(),
         );
         $completionDispatcher = new DeferredSubagentBatchCompletionDispatcher(
@@ -725,6 +727,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
             $progress,
             $completionDispatcher,
             $outcomeFactory,
+            new TestLogger(),
         );
 
         return new DeferredSubagentBatchLifecycleDeliveryService($repo, $progress, $naturalCompletion, $interruptionCompletion);

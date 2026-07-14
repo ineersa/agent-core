@@ -17,6 +17,7 @@ use Ineersa\CodingAgent\Agent\Execution\ChildRun\Lifecycle\ChildRunBatchLifecycl
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredSubagentInterruptionKindEnum;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\SubagentParallelAggregateResultFormatter;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
+use Psr\Log\LoggerInterface;
 
 /**
  * Interruption completion: forced parent-cancel progress, artifact outcomes, and deferred dispatch.
@@ -30,6 +31,7 @@ final readonly class DeferredSubagentBatchInterruptionCompletionService
         private DeferredSubagentBatchProgressDeliveryService $progressDelivery,
         private DeferredSubagentBatchCompletionDispatcher $completionDispatcher,
         private DeferredSubagentBatchChildOutcomeFactory $outcomeFactory,
+        private LoggerInterface $logger,
     ) {
     }
 
@@ -57,14 +59,24 @@ final readonly class DeferredSubagentBatchInterruptionCompletionService
                     enqueuedAt: new \DateTimeImmutable(),
                     expectedProjectionVersion: $batch->projectionVersion,
                 );
-            } catch (OptimisticLockException) {
-                // Re-read; conflict means another process already won
-                $batch = $this->batchRepository->findByLifecycleId($batch->lifecycleId);
-                if (null === $batch || null !== $batch->terminalCompletionEnqueuedAt) {
+            } catch (OptimisticLockException $exception) {
+                $this->logger->warning('deferred_subagent_batch.interruption_progress_marker_conflict', [
+                    'batch_lifecycle_id' => $batch->lifecycleId,
+                    'parent_run_id' => $batch->parentRunId,
+                    'tool_call_id' => $batch->parentToolCallId,
+                    'component' => 'agent.execution',
+                    'event_type' => 'deferred_subagent_batch.interruption_progress_marker_conflict',
+                    'exception_class' => $exception::class,
+                ]);
+
+                $resolved = $this->batchRepository->findByLifecycleId($batch->lifecycleId);
+                if (null === $resolved || null !== $resolved->terminalCompletionEnqueuedAt) {
                     return;
                 }
-
-                throw new \RuntimeException('Failed to mark interruption progress enqueued: version conflict.');
+                if (null === $resolved->interruptionProgressEnqueuedAt) {
+                    throw $exception;
+                }
+                // Concurrent winner already enqueued progress marker — continue with fresh batch below
             }
 
             $batch = $this->batchRepository->findByLifecycleId($batch->lifecycleId);
