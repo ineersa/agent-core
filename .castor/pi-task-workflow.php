@@ -4,48 +4,80 @@ declare(strict_types=1);
 
 /**
  * Focused tests for the Pi task-workflow extension (.pi/extensions/task-workflow).
- * Uses Node tsx + node:test from a sibling pi-mono checkout (no npm install in agent-core).
+ * Uses Node built-in test runner + TypeScript stripping (Node 22+) and a test-local ESM resolve hook.
  */
 
 use Castor\Attribute\AsTask;
-
-use function Castor\run;
+use Symfony\Component\Process\Process;
 
 require_once __DIR__.'/../vendor/autoload.php';
 
-function pi_task_workflow_tsx_binary(): string
+/**
+ * @return array{0: string, 1: string}
+ */
+function pi_task_workflow_node_runtime(): array
 {
-    $candidates = [
-        dirname(__DIR__, 2).'/claw/pi-mono/node_modules/tsx/dist/cli.mjs',
-        dirname(__DIR__, 2).'/pi-mono/node_modules/tsx/dist/cli.mjs',
-        '/home/ineersa/claw/pi-mono/node_modules/tsx/dist/cli.mjs',
-    ];
-    foreach ($candidates as $path) {
-        if (is_file($path)) {
-            return $path;
-        }
+    $node = getenv('NODE_BINARY');
+    if (false === $node || '' === $node) {
+        $node = 'node';
     }
 
-    throw new RuntimeException('tsx not found. Install dependencies in pi-mono (npm install) or set a checkout next to agent-core.');
+    $versionProcess = new Process([$node, '--version']);
+    $versionProcess->run();
+    if (!$versionProcess->isSuccessful()) {
+        throw new RuntimeException('Node.js is required for castor test:pi-task-workflow but `'.$node.' --version` failed: '.trim($versionProcess->getErrorOutput() ?: $versionProcess->getOutput()));
+    }
+
+    $version = trim($versionProcess->getOutput());
+    if (!preg_match('/^v(\d+)\./', $version, $m)) {
+        throw new RuntimeException('Unsupported Node.js runtime for Pi task-workflow tests: '.$version);
+    }
+
+    $major = (int) $m[1];
+    if ($major < 22) {
+        throw new RuntimeException('Pi task-workflow tests require Node.js 22+ (TypeScript stripping). Found: '.$version.'. Set NODE_BINARY to a supported Node or upgrade the runtime.');
+    }
+
+    return [$node, $version];
 }
 
-#[AsTask(name: 'test:pi-task-workflow', description: 'Run Pi task-workflow extension tests (Node/tsx)')]
+#[AsTask(name: 'test:pi-task-workflow', description: 'Run Pi task-workflow extension tests (Node built-in test)')]
 function test_pi_task_workflow(): void
 {
     $root = dirname(__DIR__);
-    $testFile = $root.'/tests/pi-task-workflow/worktrees-extensions-vendor.test.ts';
-    $tsconfig = $root.'/tests/pi-task-workflow/tsconfig.json';
+    $testFile = $root.'/tests/pi-task-workflow/worktrees-extensions-vendor.test.mjs';
+    $resolveHook = $root.'/tests/pi-task-workflow/register-loader.mjs';
     if (!is_file($testFile)) {
         throw new RuntimeException('Pi task-workflow test file missing: '.$testFile);
     }
+    if (!is_file($resolveHook)) {
+        throw new RuntimeException('Pi task-workflow resolve hook missing: '.$resolveHook);
+    }
 
-    $tsx = pi_task_workflow_tsx_binary();
-    $cmd = sprintf(
-        '%s %s --tsconfig %s --test %s',
-        escapeshellarg(\PHP_BINARY),
-        escapeshellarg($tsx),
-        escapeshellarg($tsconfig),
-        escapeshellarg($testFile),
+    [$node, $version] = pi_task_workflow_node_runtime();
+
+    echo "\n=== Pi task-workflow extension tests ===\n";
+    echo 'Node runtime: '.$version.' ('.$node.")\n";
+    echo "Loader: tests/pi-task-workflow/register-loader.mjs (extensionless .ts + pi-coding-agent shim)\n\n";
+
+    $process = new Process(
+        [
+            $node,
+            '--import',
+            $resolveHook,
+            '--test',
+            $testFile,
+        ],
+        $root,
+        null,
+        null,
+        300.0,
     );
-    run($cmd);
+    $process->run(static function (string $type, string $buffer): void {
+        echo $buffer;
+    });
+
+    if (!$process->isSuccessful()) {
+        throw new RuntimeException('Pi task-workflow tests failed (exit '.$process->getExitCode().'). Node '.$version.'.');
+    }
 }

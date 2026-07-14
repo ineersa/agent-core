@@ -1,40 +1,35 @@
 import { execFile, execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { afterEach, describe, it } from "node:test";
 import assert from "node:assert/strict";
 
-import worktrees from "../../.pi/extensions/task-workflow/worktrees.ts";
-const { createWorktreeForTask } = worktrees;
-import type { ExecResult, TaskInfo } from "../../.pi/extensions/task-workflow/types.ts";
+import { createWorktreeForTask } from "../../.pi/extensions/task-workflow/worktrees.ts";
 
 const execFileAsync = promisify(execFile);
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 
-type RecordedExec = {
-	command: string;
-	args: string[];
-	cwd: string;
-	signal?: AbortSignal;
-	timeout?: number;
-};
+/** @typedef {{ command: string; args: string[]; cwd: string; signal?: AbortSignal; timeout?: number }} RecordedExec */
 
-type ExtensionAPI = {
-	exec: (
-		command: string,
-		args: string[],
-		options: { cwd: string; signal?: AbortSignal; timeout?: number },
-	) => Promise<ExecResult>;
-};
+/** @typedef {{ stdout: string; stderr: string; code: number }} ExecResult */
 
-function runGit(cwd: string, args: string[]): void {
+/** @typedef {{ status: string; file: string; path: string; title: string }} TaskInfo */
+
+/**
+ * @param {string} cwd
+ * @param {string[]} args
+ */
+function runGit(cwd, args) {
 	execFileSync("git", args, { cwd, encoding: "utf8" });
 }
 
-function initRepoWithExtensions(root: string, withExtensions: boolean): void {
+/**
+ * @param {string} root
+ * @param {boolean} withExtensions
+ */
+function initRepoWithExtensions(root, withExtensions) {
 	mkdirSync(join(root, ".hatfield"), { recursive: true });
 	if (withExtensions) {
 		const ext = join(root, ".hatfield/extensions");
@@ -45,11 +40,17 @@ function initRepoWithExtensions(root: string, withExtensions: boolean): void {
 	runGit(root, ["init", "-b", "main"]);
 	runGit(root, ["config", "user.email", "test@example.com"]);
 	runGit(root, ["config", "user.name", "Test"]);
+	runGit(root, ["config", "commit.gpgsign", "false"]);
 	runGit(root, ["add", "."]);
 	runGit(root, ["commit", "-m", "init"]);
 }
 
-function makeTask(slug: string, boardPath: string): TaskInfo {
+/**
+ * @param {string} slug
+ * @param {string} boardPath
+ * @returns {TaskInfo}
+ */
+function makeTask(slug, boardPath) {
 	return {
 		status: "TODO",
 		file: `${slug}.md`,
@@ -58,11 +59,18 @@ function makeTask(slug: string, boardPath: string): TaskInfo {
 	};
 }
 
-function createPiMock(
-	composerBehavior: "success" | "fail" | "throw",
-	calls: RecordedExec[],
-): ExtensionAPI {
+/**
+ * @param {"success" | "fail" | "throw"} composerBehavior
+ * @param {RecordedExec[]} calls
+ */
+function createPiMock(composerBehavior, calls) {
 	return {
+		/**
+		 * @param {string} command
+		 * @param {string[]} args
+		 * @param {{ cwd: string; signal?: AbortSignal; timeout?: number }} options
+		 * @returns {Promise<ExecResult>}
+		 */
 		exec: async (command, args, options) => {
 			calls.push({
 				command,
@@ -76,10 +84,11 @@ function createPiMock(
 				try {
 					const { stdout, stderr } = await execFileAsync("git", args, { cwd: options.cwd });
 					return { stdout: stdout ?? "", stderr: stderr ?? "", code: 0 };
-				} catch (err: any) {
-					const stdout = err?.stdout?.toString?.() ?? "";
-					const stderr = err?.stderr?.toString?.() ?? "";
-					const code = typeof err?.code === "number" ? err.code : 1;
+				} catch (err) {
+					const e = /** @type {NodeJS.ErrnoException & { stdout?: Buffer; stderr?: Buffer }} */ (err);
+					const stdout = e.stdout?.toString?.() ?? "";
+					const stderr = e.stderr?.toString?.() ?? "";
+					const code = typeof e.code === "number" ? e.code : 1;
 					return { stdout, stderr, code };
 				}
 			}
@@ -102,7 +111,16 @@ function createPiMock(
 	};
 }
 
+/**
+ * @returns {string}
+ */
+function makeTempRoot() {
+	mkdirSync(join(projectRoot, "var/tmp"), { recursive: true });
+	return mkdtempSync(join(projectRoot, "var/tmp", "pi-tw-"));
+}
+
 describe("createWorktreeForTask extensions vendor", () => {
+	/** @type {string} */
 	let tempRoot = "";
 
 	afterEach(() => {
@@ -113,18 +131,17 @@ describe("createWorktreeForTask extensions vendor", () => {
 	});
 
 	it("runs composer install and creates autoload.php on success", async () => {
-		tempRoot = mkdirSync(join(projectRoot, "var/tmp"), { recursive: true });
-	mkdirSync(join(projectRoot, "var/tmp"), { recursive: true });
-			tempRoot = mkdtempSync(join(projectRoot, "var/tmp", "pi-tw-"));
+		tempRoot = makeTempRoot();
 		const codeRoot = join(tempRoot, "repo");
 		mkdirSync(codeRoot, { recursive: true });
 		initRepoWithExtensions(codeRoot, true);
 		const worktreeBase = join(tempRoot, "worktrees");
 		const slug = "2026-01-01-ext-vendor";
-		const calls: RecordedExec[] = [];
+		/** @type {RecordedExec[]} */
+		const calls = [];
 		const pi = createPiMock("success", calls);
 
-		const result = await createWorktreeForTask(pi as any, codeRoot, makeTask(slug, "/tmp/board"), worktreeBase);
+		const result = await createWorktreeForTask(pi, codeRoot, makeTask(slug, "/tmp/board"), worktreeBase);
 
 		assert.equal(result.extensionsVendorInstalled, true);
 		assert.equal(result.extensionsVendorNote, undefined);
@@ -140,18 +157,17 @@ describe("createWorktreeForTask extensions vendor", () => {
 	});
 
 	it("skips composer when .hatfield/extensions is missing", async () => {
-		tempRoot = mkdirSync(join(projectRoot, "var/tmp"), { recursive: true });
-	mkdirSync(join(projectRoot, "var/tmp"), { recursive: true });
-			tempRoot = mkdtempSync(join(projectRoot, "var/tmp", "pi-tw-"));
+		tempRoot = makeTempRoot();
 		const codeRoot = join(tempRoot, "repo");
 		mkdirSync(codeRoot, { recursive: true });
 		initRepoWithExtensions(codeRoot, false);
 		const worktreeBase = join(tempRoot, "worktrees");
 		const slug = "2026-01-01-no-ext";
-		const calls: RecordedExec[] = [];
+		/** @type {RecordedExec[]} */
+		const calls = [];
 		const pi = createPiMock("success", calls);
 
-		const result = await createWorktreeForTask(pi as any, codeRoot, makeTask(slug, "/tmp/board"), worktreeBase);
+		const result = await createWorktreeForTask(pi, codeRoot, makeTask(slug, "/tmp/board"), worktreeBase);
 
 		assert.equal(result.extensionsVendorInstalled, false);
 		assert.equal(calls.filter((c) => c.command === "composer").length, 0);
@@ -159,18 +175,17 @@ describe("createWorktreeForTask extensions vendor", () => {
 	});
 
 	it("treats composer non-zero exit as non-fatal with diagnostic", async () => {
-		tempRoot = mkdirSync(join(projectRoot, "var/tmp"), { recursive: true });
-	mkdirSync(join(projectRoot, "var/tmp"), { recursive: true });
-			tempRoot = mkdtempSync(join(projectRoot, "var/tmp", "pi-tw-"));
+		tempRoot = makeTempRoot();
 		const codeRoot = join(tempRoot, "repo");
 		mkdirSync(codeRoot, { recursive: true });
 		initRepoWithExtensions(codeRoot, true);
 		const worktreeBase = join(tempRoot, "worktrees");
 		const slug = "2026-01-01-ext-fail";
-		const calls: RecordedExec[] = [];
+		/** @type {RecordedExec[]} */
+		const calls = [];
 		const pi = createPiMock("fail", calls);
 
-		const result = await createWorktreeForTask(pi as any, codeRoot, makeTask(slug, "/tmp/board"), worktreeBase);
+		const result = await createWorktreeForTask(pi, codeRoot, makeTask(slug, "/tmp/board"), worktreeBase);
 
 		assert.equal(result.extensionsVendorInstalled, false);
 		assert.ok(result.extensionsVendorNote?.includes("composer install"));
@@ -179,18 +194,17 @@ describe("createWorktreeForTask extensions vendor", () => {
 	});
 
 	it("treats composer exec throw as non-fatal with diagnostic", async () => {
-		tempRoot = mkdirSync(join(projectRoot, "var/tmp"), { recursive: true });
-	mkdirSync(join(projectRoot, "var/tmp"), { recursive: true });
-			tempRoot = mkdtempSync(join(projectRoot, "var/tmp", "pi-tw-"));
+		tempRoot = makeTempRoot();
 		const codeRoot = join(tempRoot, "repo");
 		mkdirSync(codeRoot, { recursive: true });
 		initRepoWithExtensions(codeRoot, true);
 		const worktreeBase = join(tempRoot, "worktrees");
 		const slug = "2026-01-01-ext-throw";
-		const calls: RecordedExec[] = [];
+		/** @type {RecordedExec[]} */
+		const calls = [];
 		const pi = createPiMock("throw", calls);
 
-		const result = await createWorktreeForTask(pi as any, codeRoot, makeTask(slug, "/tmp/board"), worktreeBase);
+		const result = await createWorktreeForTask(pi, codeRoot, makeTask(slug, "/tmp/board"), worktreeBase);
 
 		assert.equal(result.extensionsVendorInstalled, false);
 		assert.ok(result.extensionsVendorNote?.includes("composer install"));
