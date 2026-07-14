@@ -484,7 +484,7 @@ final class DeferredSubagentBatchRepository extends ServiceEntityRepository
     /**
      * @return list<DeferredSubagentBatchProjectionDTO>
      */
-    public function findActiveByParentRunId(string $parentRunId): array
+    public function findUnfinishedByParentRunId(string $parentRunId): array
     {
         $qb = $this->createQueryBuilder('b')
             ->andWhere('b.parentRunId = :parentRunId')

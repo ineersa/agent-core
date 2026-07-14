@@ -93,6 +93,7 @@ framework:
             Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\ObserveDeferredSubagentBatchChildTurnMessage: run_control
             Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\DeliverDeferredSubagentBatchLifecycleMessage: run_control
             Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\InterruptDeferredSubagentBatchMessage: run_control
+            Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\RecoverDeferredSubagentBatchLifecycleMessage: run_control
 
             Ineersa\AgentCore\Domain\Message\CompleteDeferredToolCall: run_control
             # AdvanceRun is intentionally NOT routed to a transport.

@@ -10,6 +10,7 @@ use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchItemSnaps
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunIdentityDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Lifecycle\ChildRunBatchProgressService;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredChildRunLifecycleProjectionDTO;
+use Ineersa\CodingAgent\Agent\Execution\SubagentChildProgressSummary;
 use Ineersa\CodingAgent\Agent\Execution\SubagentChildProgressSummaryBuilder;
 use Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder;
 use Symfony\Component\Clock\ClockInterface;
@@ -34,12 +35,12 @@ final readonly class DeferredSubagentBatchProgressSnapshotFactory
     {
         $reports = $activeTurns = $snapshots = $enrichmentByRun = [];
         foreach ($batch->children as $child) {
-            $r = $this->buildChildProgressRow($batch, $child);
-            $snapshots[$child->childRunId] = $r['snapshot'];
-            $activeTurns[$child->childRunId] = $r['turnNo'];
-            $reports[$child->childRunId] = $r['report'];
-            if (null !== $r['enrichment']) {
-                $enrichmentByRun[$child->childRunId] = $r['enrichment'];
+            $built = $this->buildChildProgressRow($batch, $child);
+            $snapshots[$child->childRunId] = $built['snapshot'];
+            $activeTurns[$child->childRunId] = $built['turnNo'];
+            $reports[$child->childRunId] = $built['report'];
+            if (null !== $built['enrichment']) {
+                $enrichmentByRun[$child->childRunId] = $built['enrichment'];
             }
         }
 
@@ -50,20 +51,21 @@ final readonly class DeferredSubagentBatchProgressSnapshotFactory
     }
 
     /**
+     * @return array<string, mixed>
+     *
      * Forced parent-cancel payload: preserve terminal children; override non-terminal
      * and unprojected children to terminal Cancelled + "Cancelled by parent run.".
-     * @phpstan-ignore missingType.iterableValue
      */
     public function buildForcedCancelPayload(DeferredSubagentBatchProjectionDTO $batch): array
     {
         $reports = $activeTurns = $snapshots = $enrichmentByRun = [];
         foreach ($batch->children as $child) {
-            $r = $this->buildForcedCancelChildRow($batch, $child);
-            $snapshots[$child->childRunId] = $r['snapshot'];
-            $activeTurns[$child->childRunId] = $r['turnNo'];
-            $reports[$child->childRunId] = $r['report'];
-            if (null !== $r['enrichment']) {
-                $enrichmentByRun[$child->childRunId] = $r['enrichment'];
+            $built = $this->buildForcedCancelChildRow($batch, $child);
+            $snapshots[$child->childRunId] = $built['snapshot'];
+            $activeTurns[$child->childRunId] = $built['turnNo'];
+            $reports[$child->childRunId] = $built['report'];
+            if (null !== $built['enrichment']) {
+                $enrichmentByRun[$child->childRunId] = $built['enrichment'];
             }
         }
 
@@ -72,7 +74,7 @@ final readonly class DeferredSubagentBatchProgressSnapshotFactory
         );
     }
 
-    /** @return array{snapshot: ChildRunBatchItemSnapshotDTO, report: array<string, mixed>, turnNo: int, enrichment: ?\Ineersa\CodingAgent\Agent\Execution\SubagentChildProgressSummary} */
+    /** @return array{snapshot: ChildRunBatchItemSnapshotDTO, report: array<string, mixed>, turnNo: int, enrichment: SubagentChildProgressSummary} */
     private function buildChildProgressRow(
         DeferredSubagentBatchProjectionDTO $batch,
         DeferredSubagentChildProjectionDTO $child,
@@ -91,7 +93,7 @@ final readonly class DeferredSubagentBatchProgressSnapshotFactory
         ];
     }
 
-    /** @return array{snapshot: ChildRunBatchItemSnapshotDTO, report: array<string, mixed>, turnNo: int, enrichment: ?\Ineersa\CodingAgent\Agent\Execution\SubagentChildProgressSummary} */
+    /** @return array{snapshot: ChildRunBatchItemSnapshotDTO, report: array<string, mixed>, turnNo: int, enrichment: SubagentChildProgressSummary} */
     private function buildForcedCancelChildRow(
         DeferredSubagentBatchProjectionDTO $batch,
         DeferredSubagentChildProjectionDTO $child,
@@ -124,8 +126,8 @@ final readonly class DeferredSubagentBatchProgressSnapshotFactory
         );
     }
 
-    /** @return array{snapshot: ChildRunBatchItemSnapshotDTO, report: array<string, mixed>, turnNo: int, enrichment: ?\Ineersa\CodingAgent\Agent\Execution\SubagentChildProgressSummary} */
-    private function forcedCancelResult(ChildRunIdentityDTO $identity, DeferredSubagentChildProjectionDTO $child, DeferredSubagentBatchChildProgressStateDTO $state, int $turnNo, mixed $enrichment): array
+    /** @return array{snapshot: ChildRunBatchItemSnapshotDTO, report: array<string, mixed>, turnNo: int, enrichment: SubagentChildProgressSummary} */
+    private function forcedCancelResult(ChildRunIdentityDTO $identity, DeferredSubagentChildProjectionDTO $child, DeferredSubagentBatchChildProgressStateDTO $state, int $turnNo, ?SubagentChildProgressSummary $enrichment): array
     {
         return [
             'snapshot' => new ChildRunBatchItemSnapshotDTO(
@@ -163,7 +165,7 @@ final readonly class DeferredSubagentBatchProgressSnapshotFactory
         );
     }
 
-    /** @phpstan-ignore missingType.iterableValue */
+    /** @return array<string, mixed> */
     private function buildChildReport(DeferredSubagentChildProjectionDTO $child, DeferredSubagentBatchChildProgressStateDTO $state): array
     {
         return [

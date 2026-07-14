@@ -13,6 +13,7 @@ use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
 use Ineersa\CodingAgent\Entity\DeferredSubagentChildRepository;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
+use Symfony\Component\Messenger\Exception\ExceptionInterface;
 use Symfony\Component\Messenger\MessageBusInterface;
 
 #[AsMessageHandler(bus: 'agent.command.bus')]
@@ -70,6 +71,7 @@ final readonly class ObserveDeferredSubagentBatchChildTurnHandler
                 'component' => 'agent.execution',
                 'event_type' => 'deferred_subagent_batch.child_event_gap',
             ]);
+            $this->enqueueRecovery($message->batchLifecycleId);
 
             return;
         }
@@ -134,6 +136,15 @@ final readonly class ObserveDeferredSubagentBatchChildTurnHandler
         }
 
         $this->commandBus->dispatch(new DeliverDeferredSubagentBatchLifecycleMessage($message->batchLifecycleId));
+    }
+
+    private function enqueueRecovery(string $batchLifecycleId): void
+    {
+        try {
+            $this->commandBus->dispatch(new RecoverDeferredSubagentBatchLifecycleMessage($batchLifecycleId));
+        } catch (ExceptionInterface $exception) {
+            throw new \RuntimeException('Failed to enqueue deferred subagent batch lifecycle recovery after child event gap.', previous: $exception);
+        }
     }
 
     /**

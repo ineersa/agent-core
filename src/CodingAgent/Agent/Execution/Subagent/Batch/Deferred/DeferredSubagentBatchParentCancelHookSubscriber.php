@@ -30,7 +30,7 @@ final readonly class DeferredSubagentBatchParentCancelHookSubscriber implements 
             return $context;
         }
 
-        $active = $this->batchRepository->findActiveByParentRunId($context->runId);
+        $active = $this->batchRepository->findUnfinishedByParentRunId($context->runId);
         foreach ($active as $batch) {
             try {
                 $this->commandBus->dispatch(new InterruptDeferredSubagentBatchMessage(

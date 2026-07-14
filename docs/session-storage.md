@@ -65,6 +65,10 @@ Parent sessions that launch child subagents store child run data under
 ### Deferred subagent batch launch storage (Piece 4A)
 
 - Normalized durable tables `deferred_subagent_batch` and `deferred_subagent_child` store one batch per parent tool call with independently versioned child rows (ordered `batch_index`, per-child cursors/projections reserved for later slices).
+- **Piece 4C1b** adds normalized-batch gap/restart recovery without steady-state file reads:
+  - Observed non-contiguous batch child hook batches enqueue `RecoverDeferredSubagentBatchLifecycleMessage` and do not advance the child cursor from the hook batch.
+  - Recovery tails each child `events.jsonl` only via `AgentChildRunEventStore::readAfterSeq(cursor)` (recovery-only JSONL reads), reconciles every durable child row in `batch_index` order with fresh batch/child CAS versions, then enqueues `DeliverDeferredSubagentBatchLifecycleMessage` (even when tails are empty).
+  - `run_control` `WorkerStartedEvent` recovery is scoped to `%env(HATFIELD_SESSION_ID)%` and reconciles unfinished `Reserved` or `Launched` batch rows for that parent session only; persisted interruption intents and pending deferred timeouts are re-enqueued from durable markers.
 - `DeferredSubagentBatchLaunchService` performs durable idempotent batch launch and returns `DeferredToolCompletionOutcome` with a deterministic batch `lifecycle_id` (UUID v5 from parent run + tool call). Child `child_run_id` / `artifact_id` values are deterministic per `batch_index`.
 - Piece 4A is **storage/launch foundation only**: production `executeParallel()` still uses foreground polling. Child-event observation, aggregate parent progress, interruption, recovery, and parallel cutover remain **Piece 4B/4C**; single-mode migration onto the generic batch model remains **Piece 4D**.
 
