@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred;
 use Doctrine\ORM\OptimisticLockException;
 use Ineersa\AgentCore\Contract\AgentRunnerInterface;
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
+use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchExecutionModeEnum;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredSubagentInterruptionKindEnum;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\SubagentChildRunBatchLifecyclePolicyFactory;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
@@ -134,7 +135,7 @@ final readonly class DeferredSubagentBatchInterruptionService
         }
 
         $policy = $this->lifecyclePolicyFactory->create();
-        $isSingle = \Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchExecutionModeEnum::Single === $projection->executionMode;
+        $isSingle = ChildRunBatchExecutionModeEnum::Single === $projection->executionMode;
         $cancelReason = match ($effectiveKind) {
             DeferredSubagentInterruptionKindEnum::Timeout => $isSingle
                 ? $policy->singleTimeoutCancelReason

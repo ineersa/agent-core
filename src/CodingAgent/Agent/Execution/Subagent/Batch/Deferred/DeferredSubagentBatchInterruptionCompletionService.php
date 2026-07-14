@@ -90,7 +90,7 @@ final readonly class DeferredSubagentBatchInterruptionCompletionService
             }
         }
 
-        $child = $batch->children[0] ?? throw new \RuntimeException('Single batch interruption requires one child row.');
+        $child = $this->requireSingleChild($batch);
         $identity = $this->outcomeFactory->identityFromChild($batch, $child);
         $timeoutSecs = DeferredSubagentInterruptionKindEnum::Timeout === $kind
             ? $this->resolveTimeoutSeconds($batch)
@@ -252,11 +252,6 @@ final readonly class DeferredSubagentBatchInterruptionCompletionService
         DeferredSubagentInterruptionKindEnum $kind,
         int $timeoutSecs,
     ): ChildRunTerminalOutcomeDTO {
-        $cp = $child->childLifecycleProjection;
-        if (null !== $cp && $cp->childStatus->isTerminal()) {
-            return $this->outcomeFactory->buildNaturalArtifactOutcome($identity, $cp);
-        }
-
         if (DeferredSubagentInterruptionKindEnum::Timeout === $kind) {
             return new ChildRunTerminalOutcomeDTO(
                 identity: $identity,
@@ -322,5 +317,14 @@ final readonly class DeferredSubagentBatchInterruptionCompletionService
         }
 
         return 1;
+    }
+
+    private function requireSingleChild(DeferredSubagentBatchProjectionDTO $batch): DeferredSubagentChildProjectionDTO
+    {
+        if (1 !== $batch->totalChildCount || 1 !== \count($batch->children)) {
+            throw new \RuntimeException('Single batch interruption requires exactly one child row.');
+        }
+
+        return $batch->children[0];
     }
 }

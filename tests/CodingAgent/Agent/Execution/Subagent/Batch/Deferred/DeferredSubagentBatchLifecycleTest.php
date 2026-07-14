@@ -726,13 +726,15 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
 
         $appended = [];
         $spy = $this->createSpyProgressAppender($appended);
+        $commandBus = new TestMessageBus();
+        $delivery = $this->buildLifecycleDelivery($commandBus, $spy);
+        $batch = $repo->findByLifecycleId($lifecycle);
         $progress = new DeferredSubagentBatchProgressDeliveryService(
             $repo,
             $this->createSnapshotFactory(),
             $spy,
             new TestLogger(),
         );
-        $batch = $repo->findByLifecycleId($lifecycle);
         $progress->deliverIfNeeded($batch);
 
         $this->assertCount(1, $appended);
@@ -752,6 +754,12 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
             $this->assertSame('cancelled', $payload['status']);
         }
 
+        if ('completed' === $scenario) {
+            $commandBus->messages = [];
+            $delivery->deliver($lifecycle);
+            $this->assertCount(0, $commandBus->messages, 'No completion before deferred registration');
+        }
+
         $deferred = self::getContainer()->get(DeferredToolCompletionRepositoryInterface::class);
         $deferred->registerPending(new DeferredToolCompletionCorrelation(
             deferredId: $lifecycle,
@@ -766,8 +774,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
             orderIndex: 0,
         ));
 
-        $commandBus = new TestMessageBus();
-        $delivery = $this->buildLifecycleDelivery($commandBus, $spy);
+        $commandBus->messages = [];
         $delivery->deliver($lifecycle);
 
         $this->assertCount(1, $commandBus->messages);
@@ -776,18 +783,22 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         $this->assertFalse($complete->isError);
         $this->assertNull($complete->error);
         $this->assertNull($complete->details);
+        $presentation = $complete->content[0]['text'];
 
         $registry = self::getContainer()->get(AgentArtifactRegistry::class);
         $art = $registry->get($parent, $c1['artifactId']);
         $this->assertNotNull($art);
         if ('completed' === $scenario) {
             $this->assertSame(AgentArtifactStatusEnum::Completed, $art->status);
-            $this->assertStringContainsString('all done', $complete->content[0]['text']);
+            $this->assertStringStartsWith('Subagent s-nat completed.', $presentation);
+            $this->assertStringContainsString('all done', $presentation);
         } elseif ('failed' === $scenario) {
             $this->assertSame(AgentArtifactStatusEnum::Failed, $art->status);
-            $this->assertStringContainsString('boom-msg', $complete->content[0]['text']);
+            $this->assertStringStartsWith('Subagent s-nat failed:', $presentation);
+            $this->assertStringContainsString('boom-msg', $presentation);
         } else {
             $this->assertSame(AgentArtifactStatusEnum::Cancelled, $art->status);
+            $this->assertStringStartsWith('Subagent s-nat was cancelled.', $presentation);
         }
 
         $commandBus->messages = [];
@@ -796,8 +807,12 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
     }
 
     #[DataProvider('singleInterruptionScenarioProvider')]
-    public function testSingleBatchInterruptionUsesPolicyReasonsForcedProgressAndPresentation(string $kind, string $tag): void
-    {
+    public function testSingleBatchInterruptionUsesPolicyReasonsForcedProgressAndPresentation(
+        string $kind,
+        string $tag,
+        string $variant,
+        bool $expectCancel,
+    ): void {
         $repo = self::getContainer()->get(DeferredSubagentBatchRepository::class);
         $factory = new DeferredSubagentBatchIdentityFactory();
         $parent = 'parent-batch-single-int-'.$tag;
@@ -831,9 +846,17 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
             new TestLogger(),
             new TestMessageBus(),
         );
-        $handler(new ObserveDeferredSubagentBatchChildTurnMessage($lifecycle, 1, $c1['childRunId'], RunStatus::Running, 1, [
-            new AfterTurnCommitEventSummary(1, RunEventTypeEnum::LlmStepCompleted->value, ['assistant_message' => ['content' => [['type' => 'text', 'text' => 'working']]], 'usage' => ['input_tokens' => 7, 'output_tokens' => 3]]),
-        ]));
+
+        if ('no_projection' !== $variant) {
+            if ('natural_terminal' !== $variant) {
+                $handler(new ObserveDeferredSubagentBatchChildTurnMessage($lifecycle, 1, $c1['childRunId'], RunStatus::Running, 1, [
+                    new AfterTurnCommitEventSummary(1, RunEventTypeEnum::LlmStepCompleted->value, [
+                        'assistant_message' => ['content' => [['type' => 'text', 'text' => 'working']]],
+                        'usage' => ['input_tokens' => 7, 'output_tokens' => 3],
+                    ]),
+                ]));
+            }
+        }
 
         $appended = [];
         $spy = $this->createSpyProgressAppender($appended);
@@ -841,7 +864,9 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         $lifecycleDelivery = $this->buildLifecycleDelivery($commandBus, $spy);
         $batch = $repo->findByLifecycleId($lifecycle);
         $progressDelivery = new DeferredSubagentBatchProgressDeliveryService($repo, $this->createSnapshotFactory(), $spy, new TestLogger());
-        $progressDelivery->deliverIfNeeded($batch);
+        if ('no_projection' !== $variant) {
+            $progressDelivery->deliverIfNeeded($batch);
+        }
 
         $cancelCalls = [];
         $agentRunner = new class($cancelCalls) implements AgentRunnerInterface {
@@ -901,7 +926,28 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
             new TestLogger(),
             $mockClock,
         );
+
         $interruptionService->interrupt($lifecycle, $intentKind);
+        if ('natural_terminal' === $variant) {
+            $handler(new ObserveDeferredSubagentBatchChildTurnMessage($lifecycle, 1, $c1['childRunId'], RunStatus::Completed, 2, [
+                new AfterTurnCommitEventSummary(1, RunEventTypeEnum::LlmStepCompleted->value, [
+                    'assistant_message' => ['role' => 'assistant', 'content' => [['type' => 'text', 'text' => 'natural done']]],
+                    'usage' => ['input_tokens' => 4, 'output_tokens' => 2],
+                ]),
+                new AfterTurnCommitEventSummary(2, RunEventTypeEnum::AgentEnd->value, ['reason' => 'completed']),
+            ]));
+        }
+        $batch = $repo->findByLifecycleId($lifecycle);
+        $this->assertSame($intentKind, $batch->interruptionKind, 'First-wins kind persisted before registration');
+
+        $oppositeKind = DeferredSubagentInterruptionKindEnum::Timeout === $intentKind
+            ? DeferredSubagentInterruptionKindEnum::ParentCancelled
+            : DeferredSubagentInterruptionKindEnum::Timeout;
+        $interruptionService->interrupt($lifecycle, $oppositeKind);
+        $batch = $repo->findByLifecycleId($lifecycle);
+        $this->assertSame($intentKind, $batch->interruptionKind, 'Opposite kind before registration does not override first-wins');
+        $this->assertCount(0, $cancelCalls, 'No cancel before registration');
+        $this->assertCount(0, $commandBus->messages, 'No completion before registration');
 
         $deferred = self::getContainer()->get(DeferredToolCompletionRepositoryInterface::class);
         $deferred->registerPending(new DeferredToolCompletionCorrelation(
@@ -916,45 +962,97 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
             arguments: [],
             orderIndex: 0,
         ));
-        $interruptionService->interrupt($lifecycle, $intentKind);
 
-        $this->assertCount(1, $cancelCalls);
-        $this->assertSame($c1['childRunId'], $cancelCalls[0]['runId']);
-        if ('timeout' === $kind) {
-            $this->assertSame('Subagent timed out.', $cancelCalls[0]['reason']);
+        $interruptionService->interrupt($lifecycle, $oppositeKind);
+
+        if ($expectCancel) {
+            $this->assertCount(1, $cancelCalls);
+            $this->assertSame($c1['childRunId'], $cancelCalls[0]['runId']);
+            if ('timeout' === $kind) {
+                $this->assertSame('Subagent timed out.', $cancelCalls[0]['reason']);
+            } else {
+                $this->assertSame('Parent run cancelled subagent tool.', $cancelCalls[0]['reason']);
+            }
         } else {
-            $this->assertSame('Parent run cancelled subagent tool.', $cancelCalls[0]['reason']);
+            $this->assertCount(0, $cancelCalls);
         }
 
         $this->assertCount(1, $commandBus->messages);
         $complete = $commandBus->messages[0];
         $this->assertInstanceOf(CompleteDeferredToolCall::class, $complete);
+        $presentation = $complete->content[0]['text'];
+
+        $registry = self::getContainer()->get(AgentArtifactRegistry::class);
+        $art = $registry->get($parent, $c1['artifactId']);
+        $batchDone = $repo->findByLifecycleId($lifecycle);
 
         if ('timeout' === $kind) {
             $this->assertFalse($complete->isError);
-            $this->assertCount(2, $appended);
-            $forced = $appended[1];
-            $this->assertSame('single', $forced['mode']);
-            $this->assertSame('failed', $forced['status']);
-            $this->assertArrayHasKey('input_tokens', $forced);
-            $registry = self::getContainer()->get(AgentArtifactRegistry::class);
-            $art = $registry->get($parent, $c1['artifactId']);
+            $this->assertNull($complete->error);
+            $this->assertNull($complete->details);
+            $this->assertStringStartsWith('Subagent s-int timed out after '.$timeoutSecs.' seconds.', $presentation);
             $this->assertSame(AgentArtifactStatusEnum::Failed, $art->status);
+            $this->assertSame('Child run timed out.', $art->failureReason);
             $this->assertSame('Timed out after '.$timeoutSecs.'s.', $art->summary ?? '');
-            $batchDone = $repo->findByLifecycleId($lifecycle);
-            $this->assertNotNull($batchDone->interruptionProgressEnqueuedAt);
+            if ('running_projection' === $variant) {
+                $this->assertCount(2, $appended);
+                $forced = $appended[1];
+                $this->assertSame('single', $forced['mode']);
+                $this->assertSame('failed', $forced['status']);
+                $this->assertArrayHasKey('input_tokens', $forced);
+                $this->assertNotNull($batchDone->interruptionProgressEnqueuedAt);
+            } elseif ('natural_terminal' === $variant) {
+                $this->assertCount(1, $appended);
+                $this->assertNotNull($batchDone->interruptionProgressEnqueuedAt);
+            } else {
+                $this->assertCount('no_projection' === $variant ? 0 : 1, $appended);
+                $this->assertNull($batchDone->interruptionProgressEnqueuedAt);
+            }
         } else {
             $this->assertTrue($complete->isError);
             $this->assertTrue($complete->details['cancelled'] ?? false);
-            $this->assertCount(2, $appended);
-            $forced = $appended[1];
-            $this->assertSame('single', $forced['mode']);
-            $this->assertSame('cancelled', $forced['status']);
+            $this->assertTrue($complete->error['cancelled'] ?? false);
+            $this->assertStringStartsWith('Subagent s-int cancelled by parent run.', $presentation);
+            $this->assertSame(AgentArtifactStatusEnum::Cancelled, $art->status);
+            $this->assertSame('Cancelled by parent run.', $art->summary);
+            if ('running_projection' === $variant) {
+                $this->assertCount(2, $appended);
+                $forced = $appended[1];
+                $this->assertSame('single', $forced['mode']);
+                $this->assertSame('cancelled', $forced['status']);
+                $this->assertArrayHasKey('input_tokens', $forced);
+                $this->assertNotNull($batchDone->interruptionProgressEnqueuedAt);
+            } else {
+                if ('natural_terminal' === $variant) {
+                    $this->assertCount(1, $appended);
+                    $this->assertNotNull($batchDone->interruptionProgressEnqueuedAt);
+                } else {
+                    $this->assertCount('no_projection' === $variant ? 0 : 1, $appended);
+                    $this->assertNull($batchDone->interruptionProgressEnqueuedAt);
+                }
+            }
         }
 
+        if ('natural_terminal' === $variant) {
+            if ('timeout' === $kind) {
+                $this->assertSame(AgentArtifactStatusEnum::Failed, $art->status, 'Interruption owns artifact even after natural terminal projection');
+            } else {
+                $this->assertSame(AgentArtifactStatusEnum::Cancelled, $art->status, 'Interruption owns artifact even after natural terminal projection');
+            }
+        }
+
+        $cursorBeforeLate = $batchDone->children[0]->childEventCursor;
+        $revisionBeforeLate = $batchDone->aggregateProgressRevision;
+        $handler(new ObserveDeferredSubagentBatchChildTurnMessage($lifecycle, 2, $c1['childRunId'], RunStatus::Running, 2, [
+            new AfterTurnCommitEventSummary(2, RunEventTypeEnum::LlmStepCompleted->value, ['assistant_message' => ['content' => [['type' => 'text', 'text' => 'late']]]]),
+        ]));
+        $batchLate = $repo->findByLifecycleId($lifecycle);
+        $this->assertSame($cursorBeforeLate, $batchLate->children[0]->childEventCursor);
+        $this->assertSame($revisionBeforeLate, $batchLate->aggregateProgressRevision);
+
         $commandBus->messages = [];
-        $interruptionService->interrupt($lifecycle, DeferredSubagentInterruptionKindEnum::ParentCancelled);
-        $this->assertCount(0, $commandBus->messages);
+        $interruptionService->interrupt($lifecycle, $oppositeKind);
+        $this->assertCount(0, $commandBus->messages, 'Late observe and repeat interrupt stay idempotent');
     }
 
     public static function singleNaturalTerminalScenarioProvider(): array
@@ -969,8 +1067,10 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
     public static function singleInterruptionScenarioProvider(): array
     {
         return [
-            'timeout' => ['timeout', 'to'],
-            'parent_cancelled' => ['parent_cancelled', 'pc'],
+            'timeout_running_projection' => ['timeout', 'to-run', 'running_projection', true],
+            'parent_cancel_running_projection' => ['parent_cancelled', 'pc-run', 'running_projection', true],
+            'timeout_no_projection' => ['timeout', 'to-noproj', 'no_projection', true],
+            'parent_cancel_natural_terminal' => ['parent_cancelled', 'pc-nat', 'natural_terminal', false],
         ];
     }
 

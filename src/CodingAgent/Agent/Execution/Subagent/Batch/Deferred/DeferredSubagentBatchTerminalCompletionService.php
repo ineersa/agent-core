@@ -54,9 +54,9 @@ final readonly class DeferredSubagentBatchTerminalCompletionService
             return;
         }
 
-        $child = $batch->children[0] ?? null;
-        $projection = $child?->childLifecycleProjection;
-        if (null === $child || null === $projection || !$projection->childStatus->isTerminal()) {
+        $child = $this->requireSingleChild($batch);
+        $projection = $child->childLifecycleProjection;
+        if (null === $projection || !$projection->childStatus->isTerminal()) {
             return;
         }
 
@@ -196,5 +196,14 @@ final readonly class DeferredSubagentBatchTerminalCompletionService
         }
 
         return $this->outcomeFactory->completedSummaryText($projection);
+    }
+
+    private function requireSingleChild(DeferredSubagentBatchProjectionDTO $batch): DeferredSubagentChildProjectionDTO
+    {
+        if (1 !== $batch->totalChildCount || 1 !== \count($batch->children)) {
+            throw new \RuntimeException('Single batch natural completion requires exactly one child row.');
+        }
+
+        return $batch->children[0];
     }
 }

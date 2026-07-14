@@ -11,6 +11,7 @@ use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchItemSnaps
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunIdentityDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Lifecycle\ChildRunBatchProgressService;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredChildRunLifecycleProjectionDTO;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredSubagentInterruptionKindEnum;
 use Ineersa\CodingAgent\Agent\Execution\SubagentChildProgressSummary;
 use Ineersa\CodingAgent\Agent\Execution\SubagentChildProgressSummaryBuilder;
 use Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder;
@@ -53,16 +54,16 @@ final readonly class DeferredSubagentBatchProgressSnapshotFactory
      *
      * @return array<string, mixed>
      */
-    public function buildSingleForcedPayload(DeferredSubagentBatchProjectionDTO $batch, string $forcedStatus): array
+    public function buildSingleForcedPayload(DeferredSubagentBatchProjectionDTO $batch, DeferredSubagentInterruptionKindEnum $kind): array
     {
-        $child = $batch->children[0];
+        $child = $this->requireExactlyOneChild($batch);
         $cp = $child->childLifecycleProjection;
+        if (null === $cp) {
+            throw new \RuntimeException('Single forced interruption progress requires a child projection.');
+        }
 
-        $enrichment = null !== $cp
-            ? $this->childProgressSummaryBuilder->fromDeferredProjection($cp, $child->artifactId)
-            : null;
-
-        $turnNo = null !== $cp ? $cp->childTurnNo : 0;
+        $enrichment = $this->childProgressSummaryBuilder->fromDeferredProjection($cp, $child->artifactId);
+        $forcedStatus = DeferredSubagentInterruptionKindEnum::Timeout === $kind ? 'failed' : 'cancelled';
 
         return $this->progressSnapshotBuilder->singleTerminalFromChildTurn(
             $forcedStatus,
@@ -70,10 +71,19 @@ final readonly class DeferredSubagentBatchProgressSnapshotFactory
             $child->artifactId,
             $child->childRunId,
             $child->task,
-            $turnNo,
+            $cp->childTurnNo,
             $this->elapsedMsSince($batch->startedAt),
             $enrichment,
         );
+    }
+
+    public function requireExactlyOneChild(DeferredSubagentBatchProjectionDTO $batch): DeferredSubagentChildProjectionDTO
+    {
+        if (1 !== $batch->totalChildCount || 1 !== \count($batch->children)) {
+            throw new \RuntimeException('Single batch progress requires exactly one child row.');
+        }
+
+        return $batch->children[0];
     }
 
     /**
@@ -84,7 +94,10 @@ final readonly class DeferredSubagentBatchProgressSnapshotFactory
      */
     public function buildForcedCancelPayload(DeferredSubagentBatchProjectionDTO $batch): array
     {
-        $reports = $activeTurns = $snapshots = $enrichmentByRun = [];
+        $reports = [];
+        $activeTurns = [];
+        $snapshots = [];
+        $enrichmentByRun = [];
         foreach ($batch->children as $child) {
             $built = $this->buildForcedCancelChildRow($batch, $child);
             $snapshots[$child->childRunId] = $built['snapshot'];
@@ -108,7 +121,7 @@ final readonly class DeferredSubagentBatchProgressSnapshotFactory
      */
     private function buildSingleNormalPayload(DeferredSubagentBatchProjectionDTO $batch): array
     {
-        $child = $batch->children[0];
+        $child = $this->requireExactlyOneChild($batch);
         $cp = $child->childLifecycleProjection;
 
         $enrichment = null !== $cp
@@ -152,7 +165,10 @@ final readonly class DeferredSubagentBatchProgressSnapshotFactory
     /** @return array<string, mixed> */
     private function buildParallelNormalPayload(DeferredSubagentBatchProjectionDTO $batch): array
     {
-        $reports = $activeTurns = $snapshots = $enrichmentByRun = [];
+        $reports = [];
+        $activeTurns = [];
+        $snapshots = [];
+        $enrichmentByRun = [];
         foreach ($batch->children as $child) {
             $built = $this->buildChildProgressRow($batch, $child);
             $snapshots[$child->childRunId] = $built['snapshot'];
@@ -207,7 +223,11 @@ final readonly class DeferredSubagentBatchProgressSnapshotFactory
         if (null !== $cp) {
             $rs = $this->resolveChildProgressState($child);
             $cs = new DeferredSubagentBatchChildProgressStateDTO(
-                true, AgentArtifactStatusEnum::Cancelled, 'Cancelled by parent run.', $rs->turnNo, $rs->enrichment,
+                terminal: true,
+                artifactStatus: AgentArtifactStatusEnum::Cancelled,
+                message: 'Cancelled by parent run.',
+                turnNo: $rs->turnNo,
+                enrichment: $rs->enrichment,
             );
 
             return $this->forcedCancelResult($identity, $child, $cs, $rs->turnNo, $rs->enrichment);
@@ -216,7 +236,13 @@ final readonly class DeferredSubagentBatchProgressSnapshotFactory
         // Unprojected: no turn/enrichment
         return $this->forcedCancelResult(
             $identity, $child,
-            new DeferredSubagentBatchChildProgressStateDTO(true, AgentArtifactStatusEnum::Cancelled, 'Cancelled by parent run.', 0, null),
+            new DeferredSubagentBatchChildProgressStateDTO(
+                terminal: true,
+                artifactStatus: AgentArtifactStatusEnum::Cancelled,
+                message: 'Cancelled by parent run.',
+                turnNo: 0,
+                enrichment: null,
+            ),
             0, null,
         );
     }

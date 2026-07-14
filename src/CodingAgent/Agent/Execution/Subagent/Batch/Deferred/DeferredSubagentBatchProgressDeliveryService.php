@@ -43,13 +43,12 @@ final readonly class DeferredSubagentBatchProgressDeliveryService
         }
 
         if (ChildRunBatchExecutionModeEnum::Single === $batch->executionMode) {
-            $child = $batch->children[0];
+            $child = $this->snapshotFactory->requireExactlyOneChild($batch);
             if (null === $child->childLifecycleProjection) {
                 return false;
             }
 
-            $forcedStatus = DeferredSubagentInterruptionKindEnum::Timeout === $kind ? 'failed' : 'cancelled';
-            $payload = $this->snapshotFactory->buildSingleForcedPayload($batch, $forcedStatus);
+            $payload = $this->snapshotFactory->buildSingleForcedPayload($batch, $kind);
         } else {
             if (DeferredSubagentInterruptionKindEnum::Timeout === $kind) {
                 return false;
@@ -59,11 +58,6 @@ final readonly class DeferredSubagentBatchProgressDeliveryService
         }
 
         return $this->appendProgress($batch, $payload, 'deferred_subagent_batch.forced_interruption_progress_failed');
-    }
-
-    public function emitForcedParentCancelProgress(DeferredSubagentBatchProjectionDTO $batch): bool
-    {
-        return $this->emitForcedInterruptionProgress($batch, DeferredSubagentInterruptionKindEnum::ParentCancelled);
     }
 
     public function deliverIfNeeded(DeferredSubagentBatchProjectionDTO $batch): bool
