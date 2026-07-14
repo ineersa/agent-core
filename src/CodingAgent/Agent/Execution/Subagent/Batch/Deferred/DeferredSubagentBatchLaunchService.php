@@ -49,19 +49,15 @@ final class DeferredSubagentBatchLaunchService
             throw new ToolCallException(\sprintf('Parallel subagent execution supports at most %d agents per tool call, but %d tasks were requested.', $maxAgents, $taskCount), retryable: false, hint: \sprintf('Split the work into multiple subagent calls with at most %d tasks each.', $maxAgents));
         }
 
-        $this->batchPreparation->assertLaunchAllowed($parentRunId);
-
         $toolContext = $this->contextAccessor->requireCurrent();
         if ($parentRunId !== $toolContext->runId()) {
             throw new ToolCallException('Subagent parent run id does not match active tool context.', retryable: false);
         }
 
         $toolCallId = $toolContext->toolCallId();
-        $lifecycleId = $this->batchPreparation->batchLifecycleId($parentRunId, $toolCallId);
+        $plan = $this->batchPreparation->buildLaunchPlan($parentRunId, $toolCallId, $tasks, $executionMode);
+        $lifecycleId = $plan->lifecycleId;
         $deadlineAt = Clock::get()->now()->modify(\sprintf('+%d seconds', $this->agentsConfig->subagentToolTimeoutSeconds));
-
-        $childIntents = $this->batchPreparation->buildChildIntents($parentRunId, $toolCallId, $tasks, $executionMode);
-        $reserveIntents = array_map(static fn (DeferredSubagentBatchChildIntentDTO $intent): array => $intent->toReserveArray(), $childIntents);
 
         $existing = $this->batchRepository->findByParentRunAndToolCall($parentRunId, $toolCallId);
         if (null !== $existing && DeferredSubagentBatchLaunchStatusEnum::Failed === $existing->launchStatus) {
@@ -78,7 +74,7 @@ final class DeferredSubagentBatchLaunchService
                 executionMode: $executionMode,
                 totalChildCount: $taskCount,
                 deadlineAt: $deadlineAt,
-                childIntents: $reserveIntents,
+                childIntents: $plan->reserveChildIntents(),
             );
 
             return new DeferredToolCompletionOutcome($lifecycleId);
@@ -93,20 +89,19 @@ final class DeferredSubagentBatchLaunchService
             executionMode: $executionMode,
             totalChildCount: $taskCount,
             deadlineAt: $deadlineAt,
-            childIntents: $reserveIntents,
+            childIntents: $plan->reserveChildIntents(),
         );
 
-        $definitions = $this->batchPreparation->resolveDefinitionsByIndex($childIntents, $executionMode);
-
         try {
-            $preparation = $this->batchPreparation->preparePendingChildren(
+            $preparedChildren = $this->batchPreparation->preparePendingChildren($parentRunId, $projection, $plan);
+        } catch (DeferredSubagentBatchPreparationFailure $e) {
+            $this->runtimeStart->abortAfterPreparationFailure(
                 $parentRunId,
                 $toolCallId,
-                $projection,
-                $childIntents,
-                $definitions,
+                $plan->identities,
+                $e->getPrevious() ?? $e,
+                $e->failureBatchIndex,
             );
-        } catch (DeferredSubagentBatchPreparationFailure $e) {
             try {
                 $this->batchRepository->applyLaunchFailurePreparation($parentRunId, $toolCallId, $lifecycleId);
             } catch (\Throwable $persistFailure) {
@@ -124,8 +119,8 @@ final class DeferredSubagentBatchLaunchService
             throw new ToolCallException('Subagent batch launch failed.', retryable: false, previous: $e->getPrevious() ?? $e);
         }
 
-        if ([] === $preparation->preparedChildren) {
-            $this->reconcileLaunchSuccessFromArtifacts($parentRunId, $toolCallId, $lifecycleId, $projection, $childIntents);
+        if ([] === $preparedChildren) {
+            $this->reconcileLaunchSuccessFromArtifacts($parentRunId, $toolCallId, $lifecycleId, $projection, $plan);
 
             return new DeferredToolCompletionOutcome($lifecycleId);
         }
@@ -135,13 +130,13 @@ final class DeferredSubagentBatchLaunchService
             $this->runtimeStart->startPreparedInOrder(
                 $parentRunId,
                 $toolCallId,
-                $preparation->identities,
-                $preparation->preparedChildren,
+                $plan->identities,
+                $preparedChildren,
             );
         } catch (DeferredSubagentBatchRuntimeStartFailure $e) {
             $failureIndex = $e->failureBatchIndex;
             $launchedBeforeFailure = [];
-            foreach ($preparation->preparedChildren as $prepared) {
+            foreach ($preparedChildren as $prepared) {
                 if ($prepared->identity->batchIndex < $failureIndex) {
                     $launchedBeforeFailure[] = $prepared->identity->batchIndex;
                 }
@@ -172,8 +167,8 @@ final class DeferredSubagentBatchLaunchService
         $launchedIndices = $this->batchPreparation->collectLaunchedBatchIndices(
             $parentRunId,
             $projection,
-            $childIntents,
-            $preparation->preparedChildren,
+            $plan,
+            $preparedChildren,
         );
         try {
             $this->batchRepository->applyLaunchSuccessState($parentRunId, $toolCallId, $lifecycleId, $startedAt, $launchedIndices);
@@ -190,19 +185,14 @@ final class DeferredSubagentBatchLaunchService
         return new DeferredToolCompletionOutcome($lifecycleId);
     }
 
-    /**
-     * Retry path: children already running in artifact/projection while batch row is still Reserved.
-     *
-     * @param list<DeferredSubagentBatchChildIntentDTO> $childIntents
-     */
     private function reconcileLaunchSuccessFromArtifacts(
         string $parentRunId,
         string $toolCallId,
         string $lifecycleId,
         DeferredSubagentBatchProjectionDTO $projection,
-        array $childIntents,
+        DeferredSubagentBatchLaunchPlanDTO $plan,
     ): void {
-        $launchedIndices = $this->batchPreparation->collectLaunchedBatchIndices($parentRunId, $projection, $childIntents, []);
+        $launchedIndices = $this->batchPreparation->collectLaunchedBatchIndices($parentRunId, $projection, $plan, []);
         if ([] === $launchedIndices) {
             return;
         }

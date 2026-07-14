@@ -15,7 +15,7 @@ use Ineersa\CodingAgent\Agent\Execution\SubagentLaunchPreparationService;
 use Ineersa\CodingAgent\Agent\Execution\SubagentTaskDTO;
 
 /**
- * Builds ordered launch intents and prepares still-pending children for deferred batch launch (Piece 4A).
+ * Builds the deferred batch launch plan and prepares still-pending children (Piece 4A).
  */
 final class DeferredSubagentBatchPreparationService
 {
@@ -23,41 +23,33 @@ final class DeferredSubagentBatchPreparationService
         private readonly SubagentLaunchPreparationService $launchPreparation,
         private readonly DeferredSubagentBatchIdentityFactory $identityFactory,
         private readonly ChildRunArtifactLifecycleService $artifactLifecycle,
-        private readonly DeferredSubagentBatchRuntimeStartService $runtimeStart,
     ) {
-    }
-
-    public function assertLaunchAllowed(string $parentRunId): void
-    {
-        $this->launchPreparation->assertDepthAllowed($parentRunId);
-    }
-
-    public function batchLifecycleId(string $parentRunId, string $toolCallId): string
-    {
-        return $this->identityFactory->batchLifecycleId($parentRunId, $toolCallId);
     }
 
     /**
      * @param list<SubagentTaskDTO> $tasks
-     *
-     * @return list<DeferredSubagentBatchChildIntentDTO>
      */
-    public function buildChildIntents(
+    public function buildLaunchPlan(
         string $parentRunId,
         string $toolCallId,
         array $tasks,
         ChildRunBatchExecutionModeEnum $executionMode,
-    ): array {
-        $intents = [];
+    ): DeferredSubagentBatchLaunchPlanDTO {
+        $this->launchPreparation->assertDepthAllowed($parentRunId);
+
+        $lifecycleId = $this->identityFactory->batchLifecycleId($parentRunId, $toolCallId);
+        $childIntents = [];
+        $definitionsByBatchIndex = [];
+        $identities = [];
+
         foreach ($tasks as $index => $taskDto) {
             $batchIndex = $index + 1;
             $agentName = $taskDto->trimmedAgent();
             $taskText = $taskDto->trimmedTask();
-            $definition = ChildRunBatchExecutionModeEnum::Single === $executionMode
-                ? $this->launchPreparation->requireForegroundDefinition($agentName)
-                : $this->launchPreparation->requireParallelDefinition($agentName);
+            $definition = $this->resolveDefinition($agentName, $executionMode);
+            $definitionsByBatchIndex[$batchIndex] = $definition;
             $ids = $this->identityFactory->childIdentity($parentRunId, $toolCallId, $batchIndex);
-            $intents[] = new DeferredSubagentBatchChildIntentDTO(
+            $childIntents[] = new DeferredSubagentBatchChildIntentDTO(
                 batchIndex: $batchIndex,
                 childRunId: $ids['childRunId'],
                 artifactId: $ids['artifactId'],
@@ -65,69 +57,41 @@ final class DeferredSubagentBatchPreparationService
                 task: $taskText,
                 definitionModel: $definition->model,
             );
-        }
-
-        return $intents;
-    }
-
-    /**
-     * @param list<DeferredSubagentBatchChildIntentDTO> $childIntents
-     *
-     * @return array<int, AgentDefinitionDTO>
-     */
-    public function resolveDefinitionsByIndex(array $childIntents, ChildRunBatchExecutionModeEnum $executionMode): array
-    {
-        $definitions = [];
-        foreach ($childIntents as $intent) {
-            $definitions[$intent->batchIndex] = ChildRunBatchExecutionModeEnum::Single === $executionMode
-                ? $this->launchPreparation->requireForegroundDefinition($intent->agentName)
-                : $this->launchPreparation->requireParallelDefinition($intent->agentName);
-        }
-
-        return $definitions;
-    }
-
-    /**
-     * @param list<DeferredSubagentBatchChildIntentDTO> $childIntents
-     *
-     * @return list<ChildRunIdentityDTO>
-     */
-    public function buildIdentities(string $parentRunId, array $childIntents): array
-    {
-        $identities = [];
-        foreach ($childIntents as $intent) {
             $identities[] = new ChildRunIdentityDTO(
                 parentRunId: $parentRunId,
-                childRunId: $intent->childRunId,
-                artifactId: $intent->artifactId,
-                displayName: $intent->agentName,
-                taskSummary: $intent->task,
-                definitionModel: $intent->definitionModel,
+                childRunId: $ids['childRunId'],
+                artifactId: $ids['artifactId'],
+                displayName: $agentName,
+                taskSummary: $taskText,
+                definitionModel: $definition->model,
                 artifactKind: AgentArtifactKindEnum::Subagent,
-                batchIndex: $intent->batchIndex,
+                batchIndex: $batchIndex,
             );
         }
 
-        return $identities;
+        return new DeferredSubagentBatchLaunchPlanDTO(
+            lifecycleId: $lifecycleId,
+            executionMode: $executionMode,
+            totalChildCount: \count($tasks),
+            childIntents: $childIntents,
+            definitionsByBatchIndex: $definitionsByBatchIndex,
+            identities: $identities,
+        );
     }
 
     /**
-     * @param list<DeferredSubagentBatchChildIntentDTO> $childIntents
-     * @param array<int, AgentDefinitionDTO>            $definitions
+     * @return list<PreparedAgentChildRunDTO>
      *
      * @throws DeferredSubagentBatchPreparationFailure
      */
     public function preparePendingChildren(
         string $parentRunId,
-        string $toolCallId,
         DeferredSubagentBatchProjectionDTO $projection,
-        array $childIntents,
-        array $definitions,
-    ): DeferredSubagentBatchPreparationResultDTO {
-        $identities = $this->buildIdentities($parentRunId, $childIntents);
+        DeferredSubagentBatchLaunchPlanDTO $plan,
+    ): array {
         $preparedChildren = [];
 
-        foreach ($childIntents as $intent) {
+        foreach ($plan->childIntents as $intent) {
             $childProjection = $this->childProjectionForIndex($projection->children, $intent->batchIndex);
             if (null !== $childProjection && DeferredSubagentChildLaunchStatusEnum::Launched === $childProjection->launchStatus) {
                 continue;
@@ -142,8 +106,8 @@ final class DeferredSubagentBatchPreparationService
                 continue;
             }
 
-            $identity = $this->identityForIndex($identities, $intent->batchIndex);
-            $definition = $definitions[$intent->batchIndex];
+            $identity = $this->identityForIndex($plan->identities, $intent->batchIndex);
+            $definition = $plan->definitionsByBatchIndex[$intent->batchIndex];
             try {
                 $this->launchPreparation->reserveIdentity($identity);
                 $prepared = $this->launchPreparation->prepareFromDefinition(
@@ -159,45 +123,22 @@ final class DeferredSubagentBatchPreparationService
                 $this->artifactLifecycle->ensureReservedPending($identity);
                 $preparedChildren[] = $prepared;
             } catch (\Throwable $e) {
-                $this->runtimeStart->abortAfterPreparationFailure(
-                    $parentRunId,
-                    $toolCallId,
-                    $identities,
-                    $e,
-                    $intent->batchIndex,
-                );
-
                 throw new DeferredSubagentBatchPreparationFailure($intent->batchIndex, $e);
             }
         }
 
-        return new DeferredSubagentBatchPreparationResultDTO($identities, $preparedChildren);
+        return $preparedChildren;
     }
 
     /**
-     * @param list<DeferredSubagentChildProjectionDTO> $children
-     */
-    public function childProjectionForIndex(array $children, int $batchIndex): ?DeferredSubagentChildProjectionDTO
-    {
-        foreach ($children as $child) {
-            if ($child->batchIndex === $batchIndex) {
-                return $child;
-            }
-        }
-
-        return null;
-    }
-
-    /**
-     * @param list<DeferredSubagentBatchChildIntentDTO> $childIntents
-     * @param list<PreparedAgentChildRunDTO>            $preparedChildren
+     * @param list<PreparedAgentChildRunDTO> $preparedChildren
      *
      * @return list<int>
      */
     public function collectLaunchedBatchIndices(
         string $parentRunId,
         DeferredSubagentBatchProjectionDTO $projection,
-        array $childIntents,
+        DeferredSubagentBatchLaunchPlanDTO $plan,
         array $preparedChildren,
     ): array {
         $preparedIndexes = [];
@@ -206,7 +147,7 @@ final class DeferredSubagentBatchPreparationService
         }
 
         $launched = [];
-        foreach ($childIntents as $intent) {
+        foreach ($plan->childIntents as $intent) {
             $childProjection = $this->childProjectionForIndex($projection->children, $intent->batchIndex);
             if (null !== $childProjection && DeferredSubagentChildLaunchStatusEnum::Launched === $childProjection->launchStatus) {
                 $launched[] = $intent->batchIndex;
@@ -227,6 +168,27 @@ final class DeferredSubagentBatchPreparationService
         }
 
         return $launched;
+    }
+
+    private function resolveDefinition(string $agentName, ChildRunBatchExecutionModeEnum $executionMode): AgentDefinitionDTO
+    {
+        return ChildRunBatchExecutionModeEnum::Single === $executionMode
+            ? $this->launchPreparation->requireForegroundDefinition($agentName)
+            : $this->launchPreparation->requireParallelDefinition($agentName);
+    }
+
+    /**
+     * @param list<DeferredSubagentChildProjectionDTO> $children
+     */
+    private function childProjectionForIndex(array $children, int $batchIndex): ?DeferredSubagentChildProjectionDTO
+    {
+        foreach ($children as $child) {
+            if ($child->batchIndex === $batchIndex) {
+                return $child;
+            }
+        }
+
+        return null;
     }
 
     /**

@@ -304,7 +304,7 @@ final class DeferredSubagentBatchRepository extends ServiceEntityRepository
             }
 
             // Batch becomes Launched only when every child row is Launched (no partial success claim).
-            $conn->executeStatement(
+            $batchAffected = $conn->executeStatement(
                 'UPDATE deferred_subagent_batch SET launch_status = :launched, started_at = COALESCE(started_at, :started), updated_at = :now, projection_version = projection_version + 1
                  WHERE parent_run_id = :parent AND parent_tool_call_id = :tool AND launch_status = :reserved
                    AND total_child_count = (
@@ -322,6 +322,19 @@ final class DeferredSubagentBatchRepository extends ServiceEntityRepository
                     'child_launched' => DeferredSubagentChildLaunchStatusEnum::Launched->value,
                 ],
             );
+
+            if (0 === $batchAffected) {
+                $currentStatus = $conn->fetchOne(
+                    'SELECT launch_status FROM deferred_subagent_batch WHERE parent_run_id = :parent AND parent_tool_call_id = :tool',
+                    [
+                        'parent' => $parentRunId,
+                        'tool' => $parentToolCallId,
+                    ],
+                );
+                if (DeferredSubagentBatchLaunchStatusEnum::Launched->value !== $currentStatus) {
+                    throw new \RuntimeException('Deferred subagent batch launch success persistence left batch Reserved because not all child launch rows are Launched.');
+                }
+            }
 
             $conn->commit();
         } catch (\Throwable $e) {

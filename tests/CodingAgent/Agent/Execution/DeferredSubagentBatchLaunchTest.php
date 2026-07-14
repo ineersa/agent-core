@@ -117,6 +117,12 @@ final class DeferredSubagentBatchLaunchTest extends IsolatedKernelTestCase
         $this->assertSame($lifecycleId, $first->deferredId);
         $this->assertSame($lifecycleId, $second->deferredId);
 
+        /** @var DeferredSubagentBatchRepository $batchRepo */
+        $batchRepo = self::getContainer()->get(DeferredSubagentBatchRepository::class);
+        $batchAfterRetry = $batchRepo->findByParentRunAndToolCall($parentRunId, $toolCallId);
+        $this->assertNotNull($batchAfterRetry);
+        $this->assertSame(DeferredSubagentBatchLaunchStatusEnum::Launched, $batchAfterRetry->launchStatus);
+
         $this->expectException(ToolCallException::class);
         $this->expectExceptionMessage('does not match the durable reservation');
 
@@ -235,7 +241,6 @@ final class DeferredSubagentBatchLaunchTest extends IsolatedKernelTestCase
             $launchPreparation,
             $identityFactory,
             $artifactLifecycle,
-            $runtimeStart,
         );
 
         return new DeferredSubagentBatchLaunchService(
