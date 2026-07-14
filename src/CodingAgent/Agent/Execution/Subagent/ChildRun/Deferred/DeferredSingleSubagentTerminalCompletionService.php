@@ -48,7 +48,7 @@ final readonly class DeferredSingleSubagentTerminalCompletionService
 
     public function deliverProgressIfNeeded(
         DeferredSingleSubagentProjectionDTO $projection,
-        DeferredSingleSubagentChildLifecycleProjectionDTO $childProjection,
+        DeferredChildRunLifecycleProjectionDTO $childProjection,
         int $expectedProjectionVersion,
         ?DeferredSingleSubagentInterruptionKindEnum $interruptionKind = null,
         bool $forceInterruptionTerminalProgress = false,
@@ -133,7 +133,7 @@ final readonly class DeferredSingleSubagentTerminalCompletionService
 
     public function deliverInterruptionTerminalProgressIfNeeded(
         DeferredSingleSubagentProjectionDTO $projection,
-        DeferredSingleSubagentChildLifecycleProjectionDTO $childProjection,
+        DeferredChildRunLifecycleProjectionDTO $childProjection,
         int $expectedProjectionVersion,
         DeferredSingleSubagentInterruptionKindEnum $interruptionKind,
     ): void {
@@ -156,7 +156,7 @@ final readonly class DeferredSingleSubagentTerminalCompletionService
 
     public function completeFromChildProjection(
         DeferredSingleSubagentProjectionDTO $projection,
-        DeferredSingleSubagentChildLifecycleProjectionDTO $childProjection,
+        DeferredChildRunLifecycleProjectionDTO $childProjection,
         int $expectedProjectionVersion,
     ): void {
         if (null !== $projection->interruptionKind) {
@@ -317,7 +317,7 @@ final readonly class DeferredSingleSubagentTerminalCompletionService
 
     private function buildNaturalArtifactOutcome(
         ChildRunIdentityDTO $identity,
-        DeferredSingleSubagentChildLifecycleProjectionDTO $childProjection,
+        DeferredChildRunLifecycleProjectionDTO $childProjection,
     ): ChildRunTerminalOutcomeDTO {
         return match ($childProjection->childStatus) {
             RunStatus::Completed => new ChildRunTerminalOutcomeDTO(
@@ -342,7 +342,7 @@ final readonly class DeferredSingleSubagentTerminalCompletionService
 
     private function buildNaturalPresentation(
         ChildRunIdentityDTO $identity,
-        DeferredSingleSubagentChildLifecycleProjectionDTO $childProjection,
+        DeferredChildRunLifecycleProjectionDTO $childProjection,
         ChildRunTerminalOutcomeDTO $artifactOutcome,
     ): string {
         return match ($childProjection->childStatus) {
@@ -365,7 +365,7 @@ final readonly class DeferredSingleSubagentTerminalCompletionService
     }
 
     private function resolveProgressStatus(
-        DeferredSingleSubagentChildLifecycleProjectionDTO $childProjection,
+        DeferredChildRunLifecycleProjectionDTO $childProjection,
         ?DeferredSingleSubagentInterruptionKindEnum $interruptionKind,
     ): string {
         if (DeferredSingleSubagentInterruptionKindEnum::Timeout === $interruptionKind) {
@@ -389,7 +389,7 @@ final readonly class DeferredSingleSubagentTerminalCompletionService
         };
     }
 
-    private function completedSummaryText(DeferredSingleSubagentChildLifecycleProjectionDTO $childProjection): string
+    private function completedSummaryText(DeferredChildRunLifecycleProjectionDTO $childProjection): string
     {
         $text = trim($childProjection->assistantResultText ?? '');
         if ('' !== $text) {

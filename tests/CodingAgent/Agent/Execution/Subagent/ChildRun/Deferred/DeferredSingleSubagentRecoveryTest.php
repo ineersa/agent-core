@@ -11,7 +11,7 @@ use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunEventStoreFactory;
-use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredSingleSubagentChildEventProjector;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredChildRunEventProjector;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredSingleSubagentRecoveryService;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeliverDeferredSingleSubagentLifecycleMessage;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\ObserveDeferredSingleSubagentChildTurnHandler;
@@ -53,7 +53,7 @@ final class DeferredSingleSubagentRecoveryTest extends IsolatedKernelTestCase
 
         $repo->applyChildLifecycleProjection(
             lifecycleId: $launch->lifecycleId,
-            projection: \Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredSingleSubagentChildLifecycleProjectionDTO::fromArray([
+            projection: \Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredChildRunLifecycleProjectionDTO::fromArray([
                 'child_status' => 'running',
                 'child_turn_no' => 1,
                 'last_committed_seq' => 1,
@@ -66,7 +66,7 @@ final class DeferredSingleSubagentRecoveryTest extends IsolatedKernelTestCase
         $this->writeChildEventLine($parentRunId, $artifactId, $childRunId, 3, RunEventTypeEnum::AgentEnd->value, ['reason' => 'completed']);
 
         $bus = new TestMessageBus();
-        $observe = new ObserveDeferredSingleSubagentChildTurnHandler($repo, new DeferredSingleSubagentChildEventProjector(), new TestLogger(), $bus);
+        $observe = new ObserveDeferredSingleSubagentChildTurnHandler($repo, new DeferredChildRunEventProjector(), new TestLogger(), $bus);
         $observe(new ObserveDeferredSingleSubagentChildTurnMessage(
             $launch->lifecycleId,
             $childRunId,
@@ -83,7 +83,7 @@ final class DeferredSingleSubagentRecoveryTest extends IsolatedKernelTestCase
         $recovery = new DeferredSingleSubagentRecoveryService(
             $repo,
             self::getContainer()->get(AgentChildRunEventStoreFactory::class),
-            new DeferredSingleSubagentChildEventProjector(),
+            new DeferredChildRunEventProjector(),
             $recoveryBus,
             new TestLogger(),
         );

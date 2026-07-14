@@ -7,9 +7,9 @@ namespace Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 
 /**
- * Compact durable child lifecycle projection for deferred single subagents (Piece 3B1).
+ * Compact durable child lifecycle projection for deferred child runs (Piece 3B1).
  */
-final readonly class DeferredSingleSubagentChildLifecycleProjectionDTO
+final readonly class DeferredChildRunLifecycleProjectionDTO
 {
     /**
      * @param list<string>                                            $recentTools

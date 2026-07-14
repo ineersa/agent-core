@@ -10,7 +10,7 @@ use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactPathsDTO;
 use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunEventStoreFactory;
-use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredSingleSubagentChildLifecycleProjectionDTO;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredChildRunLifecycleProjectionDTO;
 
 /**
  * Builds bounded child-run progress summaries by scanning parent-scoped artifact events.
@@ -32,7 +32,7 @@ final class SubagentChildProgressSummaryBuilder
     }
 
     public function fromDeferredProjection(
-        DeferredSingleSubagentChildLifecycleProjectionDTO $projection,
+        DeferredChildRunLifecycleProjectionDTO $projection,
         string $artifactId,
     ): SubagentChildProgressSummary {
         $recentTools = $projection->recentTools;

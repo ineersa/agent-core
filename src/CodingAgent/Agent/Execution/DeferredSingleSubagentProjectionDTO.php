@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Agent\Execution;
 
-use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredSingleSubagentChildLifecycleProjectionDTO;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredChildRunLifecycleProjectionDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredSingleSubagentInterruptionKindEnum;
 
 /**
@@ -36,7 +36,7 @@ final readonly class DeferredSingleSubagentProjectionDTO
         public ?DeferredSingleSubagentInterruptionKindEnum $interruptionKind = null,
         public ?\DateTimeImmutable $interruptionRequestedAt = null,
         public ?\DateTimeImmutable $interruptionProgressEnqueuedAt = null,
-        public ?DeferredSingleSubagentChildLifecycleProjectionDTO $childLifecycleProjection = null,
+        public ?DeferredChildRunLifecycleProjectionDTO $childLifecycleProjection = null,
     ) {
     }
 }

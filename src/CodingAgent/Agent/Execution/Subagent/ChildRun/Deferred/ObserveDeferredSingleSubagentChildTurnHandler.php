@@ -20,7 +20,7 @@ final readonly class ObserveDeferredSingleSubagentChildTurnHandler
 {
     public function __construct(
         private DeferredSingleSubagentLaunchRepository $launchRepository,
-        private DeferredSingleSubagentChildEventProjector $projector,
+        private DeferredChildRunEventProjector $projector,
         private LoggerInterface $logger,
         private MessageBusInterface $commandBus,
     ) {
@@ -73,8 +73,8 @@ final readonly class ObserveDeferredSingleSubagentChildTurnHandler
 
         $rawProjection = $row->childLifecycleProjection;
         $current = \is_array($rawProjection) && [] !== $rawProjection
-            ? DeferredSingleSubagentChildLifecycleProjectionDTO::fromArray($rawProjection)
-            : new DeferredSingleSubagentChildLifecycleProjectionDTO(
+            ? DeferredChildRunLifecycleProjectionDTO::fromArray($rawProjection)
+            : new DeferredChildRunLifecycleProjectionDTO(
                 childStatus: RunStatus::Running,
                 childTurnNo: $message->turnNo,
                 lastCommittedSeq: $cursor,

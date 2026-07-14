@@ -9,7 +9,7 @@ use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitEventSummary;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
-use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredSingleSubagentChildEventProjector;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredChildRunEventProjector;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\ObserveDeferredSingleSubagentChildTurnHandler;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\ObserveDeferredSingleSubagentChildTurnMessage;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\RecoverDeferredSingleSubagentLifecycleMessage;
@@ -45,7 +45,7 @@ final class DeferredSingleSubagentChildTurnHandlerTest extends IsolatedKernelTes
         $bus = new TestMessageBus();
         $handler = new ObserveDeferredSingleSubagentChildTurnHandler(
             $repo,
-            new DeferredSingleSubagentChildEventProjector(),
+            new DeferredChildRunEventProjector(),
             $logger,
             $bus,
         );
@@ -138,7 +138,7 @@ final class DeferredSingleSubagentChildTurnHandlerTest extends IsolatedKernelTes
 
         $handler = new ObserveDeferredSingleSubagentChildTurnHandler(
             $repo,
-            new DeferredSingleSubagentChildEventProjector(),
+            new DeferredChildRunEventProjector(),
             new TestLogger(),
             new TestMessageBus(),
         );
@@ -244,7 +244,7 @@ final class DeferredSingleSubagentChildTurnHandlerTest extends IsolatedKernelTes
         $this->assertNotNull($entity);
         $versionBeforeApply = $entity->projectionVersion;
 
-        $projection = new \Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredSingleSubagentChildLifecycleProjectionDTO(
+        $projection = new \Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredChildRunLifecycleProjectionDTO(
             childStatus: RunStatus::Running,
             childTurnNo: 1,
             lastCommittedSeq: 1,

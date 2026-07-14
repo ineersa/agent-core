@@ -11,6 +11,7 @@ use Doctrine\Persistence\ManagerRegistry;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\DeferredSubagentChildLaunchStatusEnum;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\DeferredSubagentChildProjectionDTO;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredChildRunLifecycleProjectionDTO;
 use Symfony\Component\Clock\Clock;
 
 /**
@@ -138,6 +139,23 @@ final class DeferredSubagentChildRepository extends ServiceEntityRepository
         $this->getEntityManager()->flush();
     }
 
+    public function findEntityByChildRunId(string $childRunId): ?DeferredSubagentChild
+    {
+        $row = $this->findOneBy(['childRunId' => $childRunId]);
+
+        return $row instanceof DeferredSubagentChild ? $row : null;
+    }
+
+    public function findEntityByBatchLifecycleAndIndex(string $batchLifecycleId, int $batchIndex): ?DeferredSubagentChild
+    {
+        $row = $this->findOneBy([
+            'batchLifecycleId' => $batchLifecycleId,
+            'batchIndex' => $batchIndex,
+        ]);
+
+        return $row instanceof DeferredSubagentChild ? $row : null;
+    }
+
     private function requireChild(string $batchLifecycleId, int $batchIndex): DeferredSubagentChild
     {
         $row = $this->findOneBy([
@@ -164,8 +182,23 @@ final class DeferredSubagentChildRepository extends ServiceEntityRepository
             definitionModel: $row->definitionModel,
             launchStatus: $row->launchStatus,
             childEventCursor: $row->childEventCursor,
+            childLifecycleProjection: $this->decodeChildLifecycleProjection($row->childLifecycleProjection),
             startedAt: $row->startedAt,
+            terminalCompletedAt: $row->terminalCompletedAt,
+            terminalStatus: $row->terminalStatus,
             projectionVersion: $row->projectionVersion,
         );
+    }
+
+    /**
+     * @param array<string, mixed>|null $raw
+     */
+    private function decodeChildLifecycleProjection(?array $raw): ?DeferredChildRunLifecycleProjectionDTO
+    {
+        if (!\is_array($raw) || [] === $raw) {
+            return null;
+        }
+
+        return DeferredChildRunLifecycleProjectionDTO::fromArray($raw);
     }
 }

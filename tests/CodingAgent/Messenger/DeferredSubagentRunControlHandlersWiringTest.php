@@ -5,6 +5,10 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Messenger;
 
 use Ineersa\AgentCore\Domain\Run\RunStatus;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\DeliverDeferredSubagentBatchLifecycleHandler;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\DeliverDeferredSubagentBatchLifecycleMessage;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\ObserveDeferredSubagentBatchChildTurnHandler;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\ObserveDeferredSubagentBatchChildTurnMessage;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\ObserveDeferredSingleSubagentChildTurnHandler;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\ObserveDeferredSingleSubagentChildTurnMessage;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\RecoverDeferredSingleSubagentLifecycleHandler;
@@ -22,7 +26,7 @@ use Symfony\Component\Messenger\Handler\HandlersLocatorInterface;
  *
  * @coversNothing
  */
-final class DeferredSingleSubagentRunControlHandlersWiringTest extends IsolatedKernelTestCase
+final class DeferredSubagentRunControlHandlersWiringTest extends IsolatedKernelTestCase
 {
     #[DataProvider('runControlMessageProvider')]
     public function testAgentCommandBusHandlersLocatorResolvesHandler(
@@ -71,6 +75,23 @@ final class DeferredSingleSubagentRunControlHandlersWiringTest extends IsolatedK
                     committedEvents: [],
                 ),
                 ObserveDeferredSingleSubagentChildTurnHandler::class,
+            ],
+            'ObserveDeferredSubagentBatchChildTurnMessage' => [
+                new ObserveDeferredSubagentBatchChildTurnMessage(
+                    batchLifecycleId: 'batch-wiring-observe',
+                    batchIndex: 1,
+                    childRunId: 'child-run-batch-wiring',
+                    committedStatus: RunStatus::Running,
+                    turnNo: 0,
+                    committedEvents: [],
+                ),
+                ObserveDeferredSubagentBatchChildTurnHandler::class,
+            ],
+            'DeliverDeferredSubagentBatchLifecycleMessage' => [
+                new DeliverDeferredSubagentBatchLifecycleMessage(
+                    batchLifecycleId: 'batch-wiring-deliver',
+                ),
+                DeliverDeferredSubagentBatchLifecycleHandler::class,
             ],
             'RecoverDeferredSingleSubagentLifecycleMessage' => [
                 new RecoverDeferredSingleSubagentLifecycleMessage(

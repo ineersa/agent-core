@@ -21,7 +21,7 @@ use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunIdentityDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Lifecycle\ChildRunArtifactLifecycleService;
-use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredSingleSubagentChildEventProjector;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredChildRunEventProjector;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredSingleSubagentInterruptionKindEnum;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredSingleSubagentInterruptionService;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredSingleSubagentLifecycleDeliveryService;
@@ -110,7 +110,7 @@ final class DeferredSingleSubagentLifecycleDeliveryTest extends IsolatedKernelTe
         $observeBus = new TestMessageBus();
         $observeHandler = new ObserveDeferredSingleSubagentChildTurnHandler(
             $repo,
-            new DeferredSingleSubagentChildEventProjector(),
+            new DeferredChildRunEventProjector(),
             new TestLogger(),
             $observeBus,
         );
@@ -422,7 +422,7 @@ final class DeferredSingleSubagentLifecycleDeliveryTest extends IsolatedKernelTe
         $observeBus = new TestMessageBus();
         $observeHandler = new ObserveDeferredSingleSubagentChildTurnHandler(
             $repo,
-            new DeferredSingleSubagentChildEventProjector(),
+            new DeferredChildRunEventProjector(),
             new TestLogger(),
             $observeBus,
         );
@@ -602,7 +602,7 @@ final class DeferredSingleSubagentLifecycleDeliveryTest extends IsolatedKernelTe
         RunStatus $status,
         array $events,
     ): void {
-        $handler = new ObserveDeferredSingleSubagentChildTurnHandler($repo, new DeferredSingleSubagentChildEventProjector(), new TestLogger(), new TestMessageBus());
+        $handler = new ObserveDeferredSingleSubagentChildTurnHandler($repo, new DeferredChildRunEventProjector(), new TestLogger(), new TestMessageBus());
         $handler(new ObserveDeferredSingleSubagentChildTurnMessage($lifecycleId, $childRunId, $status, 1, $events));
     }
 

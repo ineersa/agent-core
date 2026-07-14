@@ -22,7 +22,7 @@ final readonly class DeferredSingleSubagentRecoveryService
     public function __construct(
         private DeferredSingleSubagentLaunchRepository $launchRepository,
         private AgentChildRunEventStoreFactory $childEventStoreFactory,
-        private DeferredSingleSubagentChildEventProjector $projector,
+        private DeferredChildRunEventProjector $projector,
         private MessageBusInterface $commandBus,
         private LoggerInterface $logger,
     ) {
@@ -61,8 +61,8 @@ final readonly class DeferredSingleSubagentRecoveryService
 
             $rawProjection = $row->childLifecycleProjection;
             $current = \is_array($rawProjection) && [] !== $rawProjection
-                ? DeferredSingleSubagentChildLifecycleProjectionDTO::fromArray($rawProjection)
-                : new DeferredSingleSubagentChildLifecycleProjectionDTO(
+                ? DeferredChildRunLifecycleProjectionDTO::fromArray($rawProjection)
+                : new DeferredChildRunLifecycleProjectionDTO(
                     childStatus: RunStatus::Running,
                     childTurnNo: 0,
                     lastCommittedSeq: $cursor,

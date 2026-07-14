@@ -6,12 +6,14 @@ namespace Ineersa\CodingAgent\Entity;
 
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
+use Doctrine\ORM\OptimisticLockException;
 use Doctrine\Persistence\ManagerRegistry;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchExecutionModeEnum;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\DeferredSubagentBatchLaunchStatusEnum;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\DeferredSubagentBatchProjectionDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\DeferredSubagentChildLaunchStatusEnum;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredChildRunLifecycleProjectionDTO;
 use Symfony\Component\Clock\Clock;
 
 /**
@@ -34,6 +36,119 @@ final class DeferredSubagentBatchRepository extends ServiceEntityRepository
         ]);
 
         return $row instanceof DeferredSubagentBatch ? $this->toDto($row) : null;
+    }
+
+    public function findEntityByLifecycleId(string $lifecycleId): ?DeferredSubagentBatch
+    {
+        $row = $this->findOneBy(['lifecycleId' => $lifecycleId]);
+
+        return $row instanceof DeferredSubagentBatch ? $row : null;
+    }
+
+    /**
+     * Atomically applies one child lifecycle projection and bumps aggregate progress revision when the child cursor advances.
+     */
+    public function applyBatchChildLifecycleProjection(
+        string $batchLifecycleId,
+        int $batchIndex,
+        DeferredChildRunLifecycleProjectionDTO $projection,
+        int $childEventCursor,
+        int $expectedChildProjectionVersion,
+        int $expectedBatchProjectionVersion,
+        bool $bumpAggregateRevision,
+    ): void {
+        $em = $this->getEntityManager();
+        $conn = $em->getConnection();
+        $now = Clock::get()->now()->format('Y-m-d H:i:s');
+        $terminalAt = $projection->childStatus->isTerminal() ? $now : null;
+        $terminalStatus = $projection->childStatus->isTerminal() ? $projection->childStatus->value : null;
+
+        $conn->beginTransaction();
+        try {
+            $childAffected = $conn->executeStatement(
+                'UPDATE deferred_subagent_child SET child_lifecycle_projection = :projection, child_event_cursor = :cursor,
+                    terminal_completed_at = COALESCE(terminal_completed_at, :terminal_at),
+                    terminal_status = COALESCE(terminal_status, :terminal_status),
+                    updated_at = :now, projection_version = projection_version + 1
+                 WHERE batch_lifecycle_id = :batch AND batch_index = :idx AND projection_version = :child_version',
+                [
+                    'projection' => json_encode($projection->toArray(), \JSON_THROW_ON_ERROR),
+                    'cursor' => $childEventCursor,
+                    'terminal_at' => $terminalAt,
+                    'terminal_status' => $terminalStatus,
+                    'now' => $now,
+                    'batch' => $batchLifecycleId,
+                    'idx' => $batchIndex,
+                    'child_version' => $expectedChildProjectionVersion,
+                ],
+            );
+
+            if (0 === $childAffected) {
+                throw new \RuntimeException('Deferred subagent child projection version conflict.');
+            }
+
+            if ($bumpAggregateRevision) {
+                $batchAffected = $conn->executeStatement(
+                    'UPDATE deferred_subagent_batch SET aggregate_progress_revision = aggregate_progress_revision + 1,
+                        updated_at = :now, projection_version = projection_version + 1
+                     WHERE lifecycle_id = :batch AND projection_version = :batch_version',
+                    [
+                        'now' => $now,
+                        'batch' => $batchLifecycleId,
+                        'batch_version' => $expectedBatchProjectionVersion,
+                    ],
+                );
+                if (0 === $batchAffected) {
+                    throw new \RuntimeException('Deferred subagent batch projection version conflict.');
+                }
+            }
+
+            $conn->commit();
+        } catch (\Throwable $e) {
+            if ($conn->isTransactionActive()) {
+                $conn->rollBack();
+            }
+
+            throw $e;
+        }
+
+        $em->clear();
+    }
+
+    public function markDeliveredProgressRevision(
+        string $batchLifecycleId,
+        int $deliveredProgressRevision,
+        int $expectedProjectionVersion,
+    ): void {
+        $row = $this->findOneBy(['lifecycleId' => $batchLifecycleId]);
+        if (!$row instanceof DeferredSubagentBatch) {
+            throw new \RuntimeException(\sprintf('Deferred subagent batch missing for lifecycle "%s".', $batchLifecycleId));
+        }
+
+        if ($row->projectionVersion !== $expectedProjectionVersion) {
+            throw OptimisticLockException::lockFailed($row);
+        }
+
+        $row->deliveredProgressRevision = max($row->deliveredProgressRevision, $deliveredProgressRevision);
+        $this->getEntityManager()->flush();
+    }
+
+    public function markTerminalCompletionEnqueued(
+        string $batchLifecycleId,
+        \DateTimeImmutable $enqueuedAt,
+        int $expectedProjectionVersion,
+    ): void {
+        $row = $this->findOneBy(['lifecycleId' => $batchLifecycleId]);
+        if (!$row instanceof DeferredSubagentBatch) {
+            throw new \RuntimeException(\sprintf('Deferred subagent batch missing for lifecycle "%s".', $batchLifecycleId));
+        }
+
+        if ($row->projectionVersion !== $expectedProjectionVersion) {
+            throw OptimisticLockException::lockFailed($row);
+        }
+
+        $row->terminalCompletionEnqueuedAt = $row->terminalCompletionEnqueuedAt ?? $enqueuedAt;
+        $this->getEntityManager()->flush();
     }
 
     public function findByLifecycleId(string $lifecycleId): ?DeferredSubagentBatchProjectionDTO

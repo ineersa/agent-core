@@ -12,7 +12,7 @@ use Ineersa\CodingAgent\Agent\Execution\SubagentChildToolProgressPresentationFor
 /**
  * Incrementally reduces committed child event summaries into a compact lifecycle projection.
  */
-final class DeferredSingleSubagentChildEventProjector
+final class DeferredChildRunEventProjector
 {
     private const int MAX_RECENT_TOOLS = 4;
 
@@ -25,12 +25,12 @@ final class DeferredSingleSubagentChildEventProjector
      * @param list<AfterTurnCommitEventSummary> $summaries Ordered, contiguous, seq > cursor
      */
     public function apply(
-        DeferredSingleSubagentChildLifecycleProjectionDTO $current,
+        DeferredChildRunLifecycleProjectionDTO $current,
         array $summaries,
         ?string $definitionModel,
         ?RunStatus $committedStatus,
         int $committedTurnNo,
-    ): DeferredSingleSubagentChildLifecycleProjectionDTO {
+    ): DeferredChildRunLifecycleProjectionDTO {
         $status = $current->childStatus;
         $turnNo = $current->childTurnNo;
         $lastSeq = $current->lastCommittedSeq;
@@ -188,7 +188,7 @@ final class DeferredSingleSubagentChildEventProjector
             $turnNo = $committedTurnNo;
         }
 
-        return new DeferredSingleSubagentChildLifecycleProjectionDTO(
+        return new DeferredChildRunLifecycleProjectionDTO(
             childStatus: $status,
             childTurnNo: $turnNo,
             lastCommittedSeq: $lastSeq,

@@ -11,7 +11,7 @@ use Doctrine\Persistence\ManagerRegistry;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\CodingAgent\Agent\Execution\DeferredSingleSubagentLaunchStatusEnum;
 use Ineersa\CodingAgent\Agent\Execution\DeferredSingleSubagentProjectionDTO;
-use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredSingleSubagentChildLifecycleProjectionDTO;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredChildRunLifecycleProjectionDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredSingleSubagentInterruptionKindEnum;
 use Symfony\Component\Clock\Clock;
 use Symfony\Component\Uid\Uuid;
@@ -49,7 +49,7 @@ final class DeferredSingleSubagentLaunchRepository extends ServiceEntityReposito
 
     public function applyChildLifecycleProjection(
         string $lifecycleId,
-        DeferredSingleSubagentChildLifecycleProjectionDTO $projection,
+        DeferredChildRunLifecycleProjectionDTO $projection,
         int $childEventCursor,
         int $expectedProjectionVersion,
     ): void {
@@ -367,12 +367,12 @@ final class DeferredSingleSubagentLaunchRepository extends ServiceEntityReposito
     /**
      * @param array<string, mixed>|null $raw
      */
-    private function decodeChildLifecycleProjection(?array $raw): ?DeferredSingleSubagentChildLifecycleProjectionDTO
+    private function decodeChildLifecycleProjection(?array $raw): ?DeferredChildRunLifecycleProjectionDTO
     {
         if (null === $raw || [] === $raw) {
             return null;
         }
 
-        return DeferredSingleSubagentChildLifecycleProjectionDTO::fromArray($raw);
+        return DeferredChildRunLifecycleProjectionDTO::fromArray($raw);
     }
 }
