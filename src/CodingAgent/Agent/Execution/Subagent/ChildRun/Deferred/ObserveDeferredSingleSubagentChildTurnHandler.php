@@ -64,6 +64,7 @@ final readonly class ObserveDeferredSingleSubagentChildTurnHandler
                 'component' => 'agent.execution',
                 'event_type' => 'deferred_single_subagent.child_event_gap',
             ]);
+            $this->enqueueRecovery($message->lifecycleId);
 
             return;
         }
@@ -126,6 +127,11 @@ final readonly class ObserveDeferredSingleSubagentChildTurnHandler
     private function enqueueDelivery(string $lifecycleId): void
     {
         $this->commandBus->dispatch(new DeliverDeferredSingleSubagentLifecycleMessage($lifecycleId));
+    }
+
+    private function enqueueRecovery(string $lifecycleId): void
+    {
+        $this->commandBus->dispatch(new RecoverDeferredSingleSubagentLifecycleMessage($lifecycleId));
     }
 
     /**

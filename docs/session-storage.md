@@ -80,7 +80,11 @@ For parent sessions that launch a **single** deferred subagent child:
   - `interruption_kind` + `interruption_requested_at` persist the first synthetic terminal intent under optimistic locking; `AgentRunner::cancel(childRunId, policy reason)` runs before lifecycle delivery. If the child projection is already terminal without an interruption, stale timeout messages complete naturally instead of forcing timeout semantics.
   - Timeout uses foreground failed progress + Failed artifact (`Child run timed out.` / `Timed out after Ns.`) and normal `CompleteDeferredToolCall` text (`isError=false`). Parent cancel uses cancelled progress + Cancelled artifact and error completion envelope matching parent-cancel `ToolCallException` semantics (`isError=true`, normal text content).
   - After `terminal_completion_enqueued_at` is set, later child observations and delivery wakeups are ignored so late child commits cannot append parent progress after final tool completion.
-  - **Piece 3C2** owns gap/restart replay when `child_event_cursor` lags committed child events (no `events.jsonl` scans in 3C1).
+  - **Piece 3C2** adds gap/restart recovery without steady-state file reads:
+  - Observed non-contiguous child hook batches enqueue `RecoverDeferredSingleSubagentLifecycleMessage` and do not advance the cursor from the hook batch.
+  - Recovery tails child `events.jsonl` only via `AgentChildRunEventStore::readAfterSeq(cursor)` under the child run lock, accepts legitimate sequence holes, maps events through the same projector/CAS path, then enqueues normal lifecycle delivery (even when the tail is empty).
+  - `run_control` `WorkerStartedEvent` recovery is scoped to `%env(HATFIELD_SESSION_ID)%` and reconciles unfinished `Reserved` (post-dispatch) or `Launched` rows for that parent session only.
+  - Parent cancel and timeout interruption intents may be persisted before generic deferred registration; registration wakeup dispatches the stored interruption instead of scheduling timeout when an intent already exists.
 
 
 - All child stores use per-instance binding (`parentRunId` + `agentRunId` +

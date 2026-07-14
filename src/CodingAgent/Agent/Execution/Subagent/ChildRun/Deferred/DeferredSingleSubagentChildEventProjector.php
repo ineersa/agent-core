@@ -28,7 +28,7 @@ final class DeferredSingleSubagentChildEventProjector
         DeferredSingleSubagentChildLifecycleProjectionDTO $current,
         array $summaries,
         ?string $definitionModel,
-        RunStatus $committedStatus,
+        ?RunStatus $committedStatus,
         int $committedTurnNo,
     ): DeferredSingleSubagentChildLifecycleProjectionDTO {
         $status = $current->childStatus;
@@ -63,6 +63,7 @@ final class DeferredSingleSubagentChildEventProjector
                 if (isset($payload['turn_no']) && is_numeric($payload['turn_no'])) {
                     $turnNo = (int) $payload['turn_no'];
                 }
+                $status = RunStatus::Running;
                 continue;
             }
 
@@ -182,8 +183,10 @@ final class DeferredSingleSubagentChildEventProjector
             $activeToolLine = $last['displayLine'];
         }
 
-        $status = $committedStatus;
-        $turnNo = $committedTurnNo;
+        if (null !== $committedStatus) {
+            $status = $committedStatus;
+            $turnNo = $committedTurnNo;
+        }
 
         return new DeferredSingleSubagentChildLifecycleProjectionDTO(
             childStatus: $status,

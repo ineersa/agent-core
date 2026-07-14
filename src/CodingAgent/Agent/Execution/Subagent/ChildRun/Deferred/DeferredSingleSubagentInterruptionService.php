@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred;
 
 use Doctrine\ORM\OptimisticLockException;
 use Ineersa\AgentCore\Contract\AgentRunnerInterface;
+use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\SubagentChildRunBatchLifecyclePolicyFactory;
 use Ineersa\CodingAgent\Entity\DeferredSingleSubagentLaunchRepository;
 use Psr\Log\LoggerInterface;
@@ -24,6 +25,7 @@ final readonly class DeferredSingleSubagentInterruptionService
         private DeferredSingleSubagentLaunchRepository $launchRepository,
         private DeferredSingleSubagentLifecycleDeliveryService $deliveryService,
         private AgentRunnerInterface $agentRunner,
+        private DeferredToolCompletionRepositoryInterface $deferredToolCompletionRepository,
         private SubagentChildRunBatchLifecyclePolicyFactory $lifecyclePolicyFactory,
         private MessageBusInterface $commandBus,
         private LoggerInterface $logger,
@@ -99,6 +101,24 @@ final readonly class DeferredSingleSubagentInterruptionService
                 return;
             }
             $effectiveKind = $projection->interruptionKind ?? $kind;
+        }
+
+        $deferredStatus = $this->deferredToolCompletionRepository->status($lifecycleId);
+        if (null === $deferredStatus) {
+            $this->logger->info('deferred_single_subagent.interruption_waiting_for_registration', [
+                'lifecycle_id' => $lifecycleId,
+                'kind' => $effectiveKind->value,
+                'component' => 'agent.execution',
+                'event_type' => 'deferred_single_subagent.interruption_waiting_for_registration',
+            ]);
+
+            return;
+        }
+
+        if ('completed' === $deferredStatus) {
+            $this->deliveryService->deliver($lifecycleId);
+
+            return;
         }
 
         $policy = $this->lifecyclePolicyFactory->create();

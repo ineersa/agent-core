@@ -35,10 +35,25 @@ final readonly class DeferredToolCompletionRegisteredSubagentListener
             return;
         }
 
+        $projection = $this->launchRepository->findByLifecycleId($projection->lifecycleId) ?? $projection;
+
         try {
             $this->commandBus->dispatch(new DeliverDeferredSingleSubagentLifecycleMessage($projection->lifecycleId));
         } catch (ExceptionInterface $exception) {
             throw new \RuntimeException('Failed to enqueue deferred single subagent lifecycle delivery.', previous: $exception);
+        }
+
+        if (null !== $projection->interruptionKind) {
+            try {
+                $this->commandBus->dispatch(new InterruptDeferredSingleSubagentMessage(
+                    $projection->lifecycleId,
+                    $projection->interruptionKind,
+                ));
+            } catch (ExceptionInterface $exception) {
+                throw new \RuntimeException('Failed to enqueue deferred single subagent interruption after registration.', previous: $exception);
+            }
+
+            return;
         }
 
         if (null === $projection->deadlineAt) {

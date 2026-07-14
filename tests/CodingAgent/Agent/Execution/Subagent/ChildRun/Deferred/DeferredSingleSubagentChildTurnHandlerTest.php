@@ -12,6 +12,7 @@ use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredSingleSubagentChildEventProjector;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\ObserveDeferredSingleSubagentChildTurnHandler;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\ObserveDeferredSingleSubagentChildTurnMessage;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\RecoverDeferredSingleSubagentLifecycleMessage;
 use Ineersa\CodingAgent\Entity\DeferredSingleSubagentLaunchRepository;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use PHPUnit\Framework\Attributes\Group;
@@ -41,11 +42,12 @@ final class DeferredSingleSubagentChildTurnHandlerTest extends IsolatedKernelTes
         $this->assertNotNull($launch);
 
         $logger = new TestLogger();
+        $bus = new TestMessageBus();
         $handler = new ObserveDeferredSingleSubagentChildTurnHandler(
             $repo,
             new DeferredSingleSubagentChildEventProjector(),
             $logger,
-            new TestMessageBus(),
+            $bus,
         );
 
         $batch1 = [
@@ -103,6 +105,14 @@ final class DeferredSingleSubagentChildTurnHandlerTest extends IsolatedKernelTes
         $entityGap = $repo->findEntityByLifecycleId($launch->lifecycleId);
         $this->assertSame(3, $entityGap->childEventCursor);
         $this->assertContains('deferred_single_subagent.child_event_gap', array_column($logger->records, 'message'));
+        $recoverFound = false;
+        foreach ($bus->messages as $message) {
+            if ($message instanceof RecoverDeferredSingleSubagentLifecycleMessage) {
+                $recoverFound = true;
+                break;
+            }
+        }
+        $this->assertTrue($recoverFound);
     }
 
     public function testProjectionPrivacyStatusAndFullAssistantText(): void

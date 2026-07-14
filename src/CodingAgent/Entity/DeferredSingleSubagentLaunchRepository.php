@@ -132,23 +132,34 @@ final class DeferredSingleSubagentLaunchRepository extends ServiceEntityReposito
      */
     public function findActiveByParentRunId(string $parentRunId): array
     {
-        $rows = $this->findBy([
-            'parentRunId' => $parentRunId,
-            'launchStatus' => DeferredSingleSubagentLaunchStatusEnum::Launched,
-        ]);
+        return $this->findRecoverableByParentRunId($parentRunId);
+    }
 
-        $active = [];
-        foreach ($rows as $row) {
-            if (!$row instanceof DeferredSingleSubagentLaunch) {
-                continue;
+    /**
+     * Unfinished deferred single rows for one parent session (Reserved post-dispatch or Launched).
+     *
+     * @return list<DeferredSingleSubagentProjectionDTO>
+     */
+    public function findRecoverableByParentRunId(string $parentRunId): array
+    {
+        $qb = $this->createQueryBuilder('d')
+            ->andWhere('d.parentRunId = :parentRunId')
+            ->andWhere('d.terminalCompletionEnqueuedAt IS NULL')
+            ->andWhere('d.launchStatus IN (:statuses)')
+            ->setParameter('parentRunId', $parentRunId)
+            ->setParameter('statuses', [
+                DeferredSingleSubagentLaunchStatusEnum::Reserved->value,
+                DeferredSingleSubagentLaunchStatusEnum::Launched->value,
+            ]);
+
+        $out = [];
+        foreach ($qb->getQuery()->getResult() as $row) {
+            if ($row instanceof DeferredSingleSubagentLaunch) {
+                $out[] = $this->toDto($row);
             }
-            if (null !== $row->terminalCompletionEnqueuedAt) {
-                continue;
-            }
-            $active[] = $this->toDto($row);
         }
 
-        return $active;
+        return $out;
     }
 
     public function persistInterruptionIntent(

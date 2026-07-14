@@ -234,7 +234,8 @@ final readonly class DeferredSingleSubagentTerminalCompletionService
             ChildRunTerminalFinalizationRequestDTO::persistOnly($artifactOutcome),
         );
 
-        if (null === $this->deferredToolCompletionRepository->findByDeferredId($projection->lifecycleId)) {
+        $deferredStatus = $this->deferredToolCompletionRepository->status($projection->lifecycleId);
+        if (null === $deferredStatus) {
             $this->logger->info('deferred_single_subagent.completion_waiting_for_registration', [
                 'lifecycle_id' => $projection->lifecycleId,
                 'parent_run_id' => $projection->parentRunId,
@@ -243,7 +244,30 @@ final readonly class DeferredSingleSubagentTerminalCompletionService
                 'event_type' => 'deferred_single_subagent.completion_waiting_for_registration',
             ]);
 
-            throw new \RuntimeException('Deferred single subagent completion is waiting for generic deferred tool registration.');
+            return;
+        }
+
+        if ('completed' === $deferredStatus) {
+            try {
+                $this->launchRepository->markTerminalCompletionEnqueued(
+                    lifecycleId: $projection->lifecycleId,
+                    enqueuedAt: new \DateTimeImmutable(),
+                    expectedProjectionVersion: $expectedProjectionVersion,
+                );
+            } catch (OptimisticLockException $exception) {
+                $this->logger->warning('deferred_single_subagent.terminal_completion_marker_conflict', [
+                    'lifecycle_id' => $projection->lifecycleId,
+                    'parent_run_id' => $projection->parentRunId,
+                    'child_run_id' => $projection->childRunId,
+                    'component' => 'agent.execution',
+                    'event_type' => 'deferred_single_subagent.terminal_completion_marker_conflict',
+                    'exception_class' => $exception::class,
+                ]);
+
+                throw $exception;
+            }
+
+            return;
         }
 
         try {
