@@ -12,6 +12,7 @@ use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
+use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionCatalog;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionDTO;
 use Ineersa\CodingAgent\Agent\Definition\McpAgentModeEnum;
@@ -140,6 +141,7 @@ final class DeferredSubagentBatchLaunchTest extends IsolatedKernelTestCase
         $agentRunner = $this->createMock(AgentRunnerInterface::class);
         $agentRunner->expects($this->exactly(2))->method('start')->willReturnCallback(static function ($input) use ($childTwo, $childOne, $parentRunId, $registry): string {
             if ($input->runId === $childTwo['childRunId']) {
+                // Simulate post-start artifact Running persistence degradation (Pending) for child one.
                 $registry->update($parentRunId, $childOne['artifactId'], AgentArtifactStatusEnum::Pending);
 
                 throw new \RuntimeException('second child start refused');
@@ -221,6 +223,7 @@ final class DeferredSubagentBatchLaunchTest extends IsolatedKernelTestCase
             self::getContainer()->get(\Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\SubagentChildRunBatchLifecycleListener::class),
             $logger,
         );
+        $identityFactory = new DeferredSubagentBatchIdentityFactory();
         $runtimeStart = new \Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\DeferredSubagentBatchRuntimeStartService(
             $agentRunner,
             $artifactLifecycle,
@@ -228,12 +231,16 @@ final class DeferredSubagentBatchLaunchTest extends IsolatedKernelTestCase
             $lifecyclePolicyFactory,
             $logger,
         );
+        $batchPreparation = new \Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\DeferredSubagentBatchPreparationService(
+            $launchPreparation,
+            $identityFactory,
+            $artifactLifecycle,
+            $runtimeStart,
+        );
 
         return new DeferredSubagentBatchLaunchService(
-            $launchPreparation,
-            new DeferredSubagentBatchIdentityFactory(),
+            $batchPreparation,
             self::getContainer()->get(DeferredSubagentBatchRepository::class),
-            $artifactLifecycle,
             $runtimeStart,
             self::getContainer()->get(StackToolExecutionContextAccessor::class),
             self::getContainer()->get(\Ineersa\CodingAgent\Config\AgentsConfig::class),

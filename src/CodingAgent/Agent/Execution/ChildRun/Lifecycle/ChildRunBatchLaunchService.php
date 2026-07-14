@@ -55,9 +55,6 @@ final class ChildRunBatchLaunchService
 
     /**
      * @param list<ChildRunIdentityDTO> $identities
-     */
-    /**
-     * @param list<ChildRunIdentityDTO> $identities
      * @param list<string>              $knownStartedChildRunIds child runs whose {@see AgentRunnerInterface::start()} returned successfully in this launch attempt (authoritative when artifact Running persistence degraded)
      */
     public function abort(
@@ -170,18 +167,13 @@ final class ChildRunBatchLaunchService
                 continue;
             }
 
-            if (!$this->artifactLifecycle->hasRegistryEntry($parentRunId, $identity->artifactId)) {
-                $snapshot->markTerminalFailed($neverLaunchedMessage);
+            $knownStarted = isset($knownStartedSet[$childRunId]);
+            $hasRegistryEntry = $this->artifactLifecycle->hasRegistryEntry($parentRunId, $identity->artifactId);
+            $status = $hasRegistryEntry
+                ? $this->artifactLifecycle->getArtifactStatus($parentRunId, $identity->artifactId)
+                : null;
 
-                continue;
-            }
-
-            $status = $this->artifactLifecycle->getArtifactStatus($parentRunId, $identity->artifactId);
-            if (null === $status) {
-                continue;
-            }
-
-            if (\in_array($status, [
+            if (null !== $status && \in_array($status, [
                 AgentArtifactStatusEnum::Completed,
                 AgentArtifactStatusEnum::Failed,
                 AgentArtifactStatusEnum::Cancelled,
@@ -192,17 +184,28 @@ final class ChildRunBatchLaunchService
                 continue;
             }
 
-            $knownStarted = isset($knownStartedSet[$childRunId]);
             if ($knownStarted || AgentArtifactStatusEnum::Running === $status) {
                 $this->agentRunner->cancel($childRunId, $policy->launchAbortSiblingCancelReason);
-                $this->lifecycleListener->finalizeTerminalOutcome(ChildRunTerminalFinalizationRequestDTO::persistOnly(new ChildRunTerminalOutcomeDTO(
-                    $identity,
-                    AgentArtifactStatusEnum::Failed,
-                    failureReason: $cause->getMessage(),
-                    summary: $cancelledAfterMessage,
-                )));
+                if ($hasRegistryEntry) {
+                    $this->lifecycleListener->finalizeTerminalOutcome(ChildRunTerminalFinalizationRequestDTO::persistOnly(new ChildRunTerminalOutcomeDTO(
+                        $identity,
+                        AgentArtifactStatusEnum::Failed,
+                        failureReason: $cause->getMessage(),
+                        summary: $cancelledAfterMessage,
+                    )));
+                }
                 $snapshot->markTerminalFailed($cancelledAfterMessage);
 
+                continue;
+            }
+
+            if (!$hasRegistryEntry) {
+                $snapshot->markTerminalFailed($neverLaunchedMessage);
+
+                continue;
+            }
+
+            if (null === $status) {
                 continue;
             }
 

@@ -40,9 +40,8 @@ final class DeferredSubagentBatchRuntimeStartService
         string $toolCallId,
         array $identities,
         array $preparedChildren,
-    ): int {
+    ): void {
         $policy = $this->lifecyclePolicyFactory->create();
-        $startInvocationCount = 0;
         /** @var list<string> $knownStartedChildRunIds */
         $knownStartedChildRunIds = [];
 
@@ -54,7 +53,6 @@ final class DeferredSubagentBatchRuntimeStartService
 
             try {
                 $this->agentRunner->start($prepared->startRunInput);
-                ++$startInvocationCount;
                 $knownStartedChildRunIds[] = $prepared->identity->childRunId;
             } catch (\Throwable $e) {
                 $this->abortAfterRuntimeFailure(
@@ -83,8 +81,6 @@ final class DeferredSubagentBatchRuntimeStartService
                 ]);
             }
         }
-
-        return $startInvocationCount;
     }
 
     /**
@@ -119,9 +115,6 @@ final class DeferredSubagentBatchRuntimeStartService
         }
     }
 
-    /**
-     * @param list<ChildRunIdentityDTO> $identities
-     */
     /**
      * @param list<ChildRunIdentityDTO> $identities
      * @param list<string>              $knownStartedChildRunIds
