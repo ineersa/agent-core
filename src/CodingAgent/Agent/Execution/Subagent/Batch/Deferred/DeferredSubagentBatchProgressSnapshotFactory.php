@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchItemSnapshotDTO;
+use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunIdentityDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Lifecycle\ChildRunBatchProgressService;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredChildRunLifecycleProjectionDTO;
 use Ineersa\CodingAgent\Agent\Execution\SubagentChildProgressSummaryBuilder;
@@ -14,13 +15,7 @@ use Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder;
 use Symfony\Component\Clock\ClockInterface;
 use Symfony\Component\Clock\MonotonicClock;
 
-/**
- * Pure aggregate payload assembly for deferred batch progress — normal and forced-parent-cancel modes.
- *
- * Owns ordered child state resolution, report/snapshot/enrichment construction, and
- * final parallelSnapshot payload building. Delivery service owns revision gating, append,
- * and marker CAS side effects.
- */
+/** Pure aggregate payload assembly for deferred batch progress. Delivery owns revision, append, markers. */
 final readonly class DeferredSubagentBatchProgressSnapshotFactory
 {
     private const LAUNCH_FAILED_MESSAGE = 'Child run failed to launch.';
@@ -34,79 +29,50 @@ final readonly class DeferredSubagentBatchProgressSnapshotFactory
     ) {
     }
 
-    /**
-     * Build the normal-mode parallel payload with enrichment and status precedence.
-     *
-     * @return array<string, mixed> the parallelSnapshot payload ready for SubagentProgressEventAppender
-     */
+    /** @return array<string, mixed> */
     public function buildNormalPayload(DeferredSubagentBatchProjectionDTO $batch): array
     {
-        $reports = [];
-        $activeTurns = [];
-        $snapshots = [];
-        $enrichmentByRun = [];
-
+        $reports = $activeTurns = $snapshots = $enrichmentByRun = [];
         foreach ($batch->children as $child) {
-            $built = $this->buildChildProgressRow($batch, $child);
-            $snapshots[$child->childRunId] = $built['snapshot'];
-            $activeTurns[$child->childRunId] = $built['turnNo'];
-            $reports[$child->childRunId] = $built['report'];
-            if (null !== $built['enrichment']) {
-                $enrichmentByRun[$child->childRunId] = $built['enrichment'];
+            $r = $this->buildChildProgressRow($batch, $child);
+            $snapshots[$child->childRunId] = $r['snapshot'];
+            $activeTurns[$child->childRunId] = $r['turnNo'];
+            $reports[$child->childRunId] = $r['report'];
+            if (null !== $r['enrichment']) {
+                $enrichmentByRun[$child->childRunId] = $r['enrichment'];
             }
         }
 
-        $aggregateStatus = $this->batchProgressService->resolveAggregateStatus($snapshots);
-        $elapsedMs = $this->elapsedMsSince($batch->startedAt);
-
         return $this->progressSnapshotBuilder->parallelSnapshot(
-            $reports,
-            $activeTurns,
-            $elapsedMs,
-            $enrichmentByRun,
-            $aggregateStatus,
+            $reports, $activeTurns, $this->elapsedMsSince($batch->startedAt),
+            $enrichmentByRun, $this->batchProgressService->resolveAggregateStatus($snapshots),
         );
     }
 
     /**
-     * Build forced parent-cancel payload: preserves naturally terminal children with their
-     * projection enrichment; overrides every non-terminal and unprojected child to
-     * terminal Cancelled + "Cancelled by parent run.".
-     *
-     * @return array<string, mixed>
+     * Forced parent-cancel payload: preserve terminal children; override non-terminal
+     * and unprojected children to terminal Cancelled + "Cancelled by parent run.".
+     * @phpstan-ignore missingType.iterableValue
      */
     public function buildForcedCancelPayload(DeferredSubagentBatchProjectionDTO $batch): array
     {
-        $reports = [];
-        $activeTurns = [];
-        $snapshots = [];
-
+        $reports = $activeTurns = $snapshots = $enrichmentByRun = [];
         foreach ($batch->children as $child) {
-            $built = $this->buildForcedCancelChildRow($batch, $child);
-            $snapshots[$child->childRunId] = $built['snapshot'];
-            $activeTurns[$child->childRunId] = $built['turnNo'];
-            $reports[$child->childRunId] = $built['report'];
+            $r = $this->buildForcedCancelChildRow($batch, $child);
+            $snapshots[$child->childRunId] = $r['snapshot'];
+            $activeTurns[$child->childRunId] = $r['turnNo'];
+            $reports[$child->childRunId] = $r['report'];
+            if (null !== $r['enrichment']) {
+                $enrichmentByRun[$child->childRunId] = $r['enrichment'];
+            }
         }
 
-        $elapsedMs = $this->elapsedMsSince($batch->startedAt);
-
         return $this->progressSnapshotBuilder->parallelSnapshot(
-            $reports,
-            $activeTurns,
-            $elapsedMs,
-            [],
-            'cancelled',
+            $reports, $activeTurns, $this->elapsedMsSince($batch->startedAt), $enrichmentByRun, 'cancelled',
         );
     }
 
-    /**
-     * @return array{
-     *     snapshot: ChildRunBatchItemSnapshotDTO,
-     *     report: array<string, mixed>,
-     *     turnNo: int,
-     *     enrichment: ?\Ineersa\CodingAgent\Agent\Execution\SubagentChildProgressSummary
-     * }
-     */
+    /** @return array{snapshot: ChildRunBatchItemSnapshotDTO, report: array<string, mixed>, turnNo: int, enrichment: ?\Ineersa\CodingAgent\Agent\Execution\SubagentChildProgressSummary} */
     private function buildChildProgressRow(
         DeferredSubagentBatchProjectionDTO $batch,
         DeferredSubagentChildProjectionDTO $child,
@@ -116,10 +82,8 @@ final readonly class DeferredSubagentBatchProgressSnapshotFactory
 
         return [
             'snapshot' => new ChildRunBatchItemSnapshotDTO(
-                identity: $identity,
-                terminal: $state->terminal,
-                artifactStatus: $state->artifactStatus,
-                message: $state->message,
+                identity: $identity, terminal: $state->terminal,
+                artifactStatus: $state->artifactStatus, message: $state->message,
             ),
             'report' => $this->buildChildReport($child, $state),
             'turnNo' => $state->turnNo,
@@ -127,9 +91,7 @@ final readonly class DeferredSubagentBatchProgressSnapshotFactory
         ];
     }
 
-    /**
-     * @return array{snapshot: ChildRunBatchItemSnapshotDTO, report: array<string, mixed>, turnNo: int}
-     */
+    /** @return array{snapshot: ChildRunBatchItemSnapshotDTO, report: array<string, mixed>, turnNo: int, enrichment: ?\Ineersa\CodingAgent\Agent\Execution\SubagentChildProgressSummary} */
     private function buildForcedCancelChildRow(
         DeferredSubagentBatchProjectionDTO $batch,
         DeferredSubagentChildProjectionDTO $child,
@@ -137,40 +99,41 @@ final readonly class DeferredSubagentBatchProgressSnapshotFactory
         $identity = $this->outcomeFactory->identityFromChild($batch, $child);
         $cp = $child->childLifecycleProjection;
 
-        // Preserve naturally terminal children with full projection enrichment and turn numbers
+        // Preserve naturally terminal children
         if (null !== $cp && $cp->childStatus->isTerminal()) {
             $state = $this->resolveChildProgressState($child);
 
-            return [
-                'snapshot' => new ChildRunBatchItemSnapshotDTO(
-                    identity: $identity,
-                    terminal: $state->terminal,
-                    artifactStatus: $state->artifactStatus,
-                    message: $state->message,
-                ),
-                'report' => $this->buildChildReport($child, $state),
-                'turnNo' => $state->turnNo,
-            ];
+            return $this->forcedCancelResult($identity, $child, $state, $state->turnNo, $state->enrichment);
         }
 
-        // Override non-terminal and unprojected children to Cancelled
-        $cancelledState = new DeferredSubagentBatchChildProgressStateDTO(
-            terminal: true,
-            artifactStatus: AgentArtifactStatusEnum::Cancelled,
-            message: 'Cancelled by parent run.',
-            turnNo: 0,
-            enrichment: null,
-        );
+        // Projected-nonterminal: preserve turnNo + enrichment, override terminal/status/message
+        if (null !== $cp) {
+            $rs = $this->resolveChildProgressState($child);
+            $cs = new DeferredSubagentBatchChildProgressStateDTO(
+                true, AgentArtifactStatusEnum::Cancelled, 'Cancelled by parent run.', $rs->turnNo, $rs->enrichment,
+            );
 
+            return $this->forcedCancelResult($identity, $child, $cs, $rs->turnNo, $rs->enrichment);
+        }
+
+        // Unprojected: no turn/enrichment
+        return $this->forcedCancelResult(
+            $identity, $child,
+            new DeferredSubagentBatchChildProgressStateDTO(true, AgentArtifactStatusEnum::Cancelled, 'Cancelled by parent run.', 0, null),
+            0, null,
+        );
+    }
+
+    /** @return array{snapshot: ChildRunBatchItemSnapshotDTO, report: array<string, mixed>, turnNo: int, enrichment: ?\Ineersa\CodingAgent\Agent\Execution\SubagentChildProgressSummary} */
+    private function forcedCancelResult(ChildRunIdentityDTO $identity, DeferredSubagentChildProjectionDTO $child, DeferredSubagentBatchChildProgressStateDTO $state, int $turnNo, mixed $enrichment): array
+    {
         return [
             'snapshot' => new ChildRunBatchItemSnapshotDTO(
-                identity: $identity,
-                terminal: true,
-                artifactStatus: AgentArtifactStatusEnum::Cancelled,
-                message: 'Cancelled by parent run.',
+                identity: $identity, terminal: $state->terminal, artifactStatus: $state->artifactStatus, message: $state->message,
             ),
-            'report' => $this->buildChildReport($child, $cancelledState),
-            'turnNo' => 0,
+            'report' => $this->buildChildReport($child, $state),
+            'turnNo' => $turnNo,
+            'enrichment' => $enrichment,
         ];
     }
 
@@ -189,26 +152,18 @@ final readonly class DeferredSubagentBatchProgressSnapshotFactory
 
         if (DeferredSubagentChildLaunchStatusEnum::Failed === $child->launchStatus) {
             return new DeferredSubagentBatchChildProgressStateDTO(
-                terminal: true,
-                artifactStatus: AgentArtifactStatusEnum::Failed,
-                message: self::LAUNCH_FAILED_MESSAGE,
-                turnNo: 0,
-                enrichment: null,
+                terminal: true, artifactStatus: AgentArtifactStatusEnum::Failed,
+                message: self::LAUNCH_FAILED_MESSAGE, turnNo: 0, enrichment: null,
             );
         }
 
         return new DeferredSubagentBatchChildProgressStateDTO(
-            terminal: false,
-            artifactStatus: AgentArtifactStatusEnum::Running,
-            message: '',
-            turnNo: 0,
-            enrichment: null,
+            terminal: false, artifactStatus: AgentArtifactStatusEnum::Running,
+            message: '', turnNo: 0, enrichment: null,
         );
     }
 
-    /**
-     * @return array<string, mixed>
-     */
+    /** @phpstan-ignore missingType.iterableValue */
     private function buildChildReport(DeferredSubagentChildProjectionDTO $child, DeferredSubagentBatchChildProgressStateDTO $state): array
     {
         return [

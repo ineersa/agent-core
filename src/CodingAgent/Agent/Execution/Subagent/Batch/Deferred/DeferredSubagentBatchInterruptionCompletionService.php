@@ -17,7 +17,6 @@ use Ineersa\CodingAgent\Agent\Execution\ChildRun\Lifecycle\ChildRunBatchLifecycl
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredSubagentInterruptionKindEnum;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\SubagentParallelAggregateResultFormatter;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
-use Psr\Log\LoggerInterface;
 
 /**
  * Interruption completion: forced parent-cancel progress, artifact outcomes, and deferred dispatch.
@@ -31,7 +30,6 @@ final readonly class DeferredSubagentBatchInterruptionCompletionService
         private DeferredSubagentBatchProgressDeliveryService $progressDelivery,
         private DeferredSubagentBatchCompletionDispatcher $completionDispatcher,
         private DeferredSubagentBatchChildOutcomeFactory $outcomeFactory,
-        private LoggerInterface $logger,
     ) {
     }
 
@@ -60,23 +58,17 @@ final readonly class DeferredSubagentBatchInterruptionCompletionService
                     expectedProjectionVersion: $batch->projectionVersion,
                 );
             } catch (OptimisticLockException $exception) {
-                $this->logger->warning('deferred_subagent_batch.interruption_progress_marker_conflict', [
-                    'batch_lifecycle_id' => $batch->lifecycleId,
-                    'parent_run_id' => $batch->parentRunId,
-                    'tool_call_id' => $batch->parentToolCallId,
-                    'component' => 'agent.execution',
-                    'event_type' => 'deferred_subagent_batch.interruption_progress_marker_conflict',
-                    'exception_class' => $exception::class,
-                ]);
-
                 $resolved = $this->batchRepository->findByLifecycleId($batch->lifecycleId);
                 if (null === $resolved || null !== $resolved->terminalCompletionEnqueuedAt) {
                     return;
                 }
-                if (null === $resolved->interruptionProgressEnqueuedAt) {
+                if (null !== $resolved->interruptionProgressEnqueuedAt) {
+                    // Concurrent winner already enqueued progress marker — continue with fresh batch
+                    $batch = $resolved;
+                // fall through to terminal completion below
+                } else {
                     throw $exception;
                 }
-                // Concurrent winner already enqueued progress marker — continue with fresh batch below
             }
 
             $batch = $this->batchRepository->findByLifecycleId($batch->lifecycleId);
@@ -174,7 +166,7 @@ final readonly class DeferredSubagentBatchInterruptionCompletionService
                 identity: $identity,
                 status: AgentArtifactStatusEnum::Failed,
                 failureReason: 'Child run timed out.',
-                summary: \sprintf('Timed out after %d%s.', $timeoutSecs, 1 === $timeoutSecs ? ' second' : ' seconds'),
+                summary: \sprintf('Timed out after %ds.', $timeoutSecs),
             );
         }
 
@@ -191,7 +183,7 @@ final readonly class DeferredSubagentBatchInterruptionCompletionService
         int $timeoutSecs,
     ): string {
         if (DeferredSubagentInterruptionKindEnum::Timeout === $kind) {
-            return \sprintf('Timed out after %d%s.', $timeoutSecs, 1 === $timeoutSecs ? ' second' : ' seconds');
+            return \sprintf('Timed out after %ds.', $timeoutSecs);
         }
 
         return $outcome->summary ?? '';

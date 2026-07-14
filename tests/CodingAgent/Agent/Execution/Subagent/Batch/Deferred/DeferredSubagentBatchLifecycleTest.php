@@ -328,6 +328,11 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
             new AfterTurnCommitEventSummary(2, RunEventTypeEnum::AgentEnd->value, ['reason' => 'completed']),
         ]));
 
+        // Observe child 2 as Running with usage data for enrichment/cursor proof
+        $handler(new ObserveDeferredSubagentBatchChildTurnMessage($lifecycle, 2, $c2['childRunId'], RunStatus::Running, 3, [
+            new AfterTurnCommitEventSummary(3, RunEventTypeEnum::LlmStepCompleted->value, ['assistant_message' => ['content' => [['type' => 'text', 'text' => 'working']]], 'usage' => ['input_tokens' => 50, 'output_tokens' => 30]]),
+        ]));
+
         // Deliver initial running progress BEFORE registration so aggregate==delivered
         $appendedProgress = [];
         $spyAppender = $this->createSpyProgressAppender($appendedProgress);
@@ -450,8 +455,8 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
             orderIndex: 0,
         ));
 
-        // STEP 3: Now with registration, invoke the ORIGINAL kind — cancels children and completes
-        $interruptionService->interrupt($lifecycle, $intentKind);
+        // STEP 3: Invoke OPPOSITE kind with registration — proves persisted first-wins controls actual behavior
+        $interruptionService->interrupt($lifecycle, $oppositeKind);
 
         // Only child 2 (active, not completed) should be cancelled
         $this->assertCount(1, $cancelCalls, 'Only active child cancelled');
@@ -483,7 +488,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
 
         if ('timeout' === $kind) {
             $this->assertStringStartsWith(\sprintf('Parallel subagents timed out after %d seconds.', $timeoutSecs), $complete->content[0]['text']);
-            $this->assertStringContainsString(\sprintf('Timed out after %d seconds.', $timeoutSecs), $complete->content[0]['text']);
+            $this->assertStringContainsString(\sprintf('Timed out after %ds.', $timeoutSecs), $complete->content[0]['text']);
             $this->assertArrayNotHasKey('cancelled', $complete->details ?? []);
             $this->assertArrayNotHasKey('cancelled', $complete->error ?? []);
         } else {
@@ -499,9 +504,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
             $art2 = $registry->get($parent, $c2['artifactId']);
             $this->assertSame(AgentArtifactStatusEnum::Failed, $art2->status);
             $this->assertSame('Child run timed out.', $art2->failureReason);
-            $expectedSummary = \sprintf('Timed out after %d seconds.', $timeoutSecs);
-            $this->assertStringContainsString('Timed out after', $art2->summary ?? '');
-            $this->assertStringContainsString('seconds.', $art2->summary ?? '');
+            $this->assertSame(\sprintf('Timed out after %ds.', $timeoutSecs), $art2->summary ?? '');
         } else {
             $art2 = $registry->get($parent, $c2['artifactId']);
             $this->assertSame(AgentArtifactStatusEnum::Cancelled, $art2->status);
@@ -527,12 +530,22 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         // Idempotent repeat: no additional cancel, no second dispatch
         $prevCancelCount = \count($cancelCalls);
         $commandBus->messages = [];
-        $interruptionService->interrupt($lifecycle, $intentKind);
+        $interruptionService->interrupt($lifecycle, $oppositeKind);
         $this->assertCount($prevCancelCount, $cancelCalls, 'Cancel is not repeated');
         $this->assertCount(0, $commandBus->messages, 'Completion is not re-dispatched');
 
         // Late Observe after interruption completion leaves aggregate revision and cursor unchanged
-        $cursorBeforeLateObserve = $repo->findByLifecycleId($lifecycle)->aggregateProgressRevision;
+        $batchBeforeLate = $repo->findByLifecycleId($lifecycle);
+        $cursorBeforeLateObserve = $batchBeforeLate->aggregateProgressRevision;
+        // Capture child2 projection cursor
+        $child2BeforeLate = null;
+        foreach ($batchBeforeLate->children as $ch) {
+            if ($ch->childRunId === $c2['childRunId']) {
+                $child2BeforeLate = $ch->childEventCursor;
+                break;
+            }
+        }
+        $this->assertNotNull($child2BeforeLate, 'Child 2 has event cursor before late observe');
         $observeBus = new TestMessageBus();
         $lateHandler = new ObserveDeferredSubagentBatchChildTurnHandler(
             $repo,
@@ -541,13 +554,20 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
             new TestLogger(),
             $observeBus,
         );
-        $lateHandler(new ObserveDeferredSubagentBatchChildTurnMessage($lifecycle, 2, $c2['childRunId'], RunStatus::Running, 3, [
-            new AfterTurnCommitEventSummary(3, RunEventTypeEnum::LlmStepCompleted->value, ['assistant_message' => ['content' => [['type' => 'text', 'text' => 'late']]]]),
+        $lateHandler(new ObserveDeferredSubagentBatchChildTurnMessage($lifecycle, 2, $c2['childRunId'], RunStatus::Running, 4, [
+            new AfterTurnCommitEventSummary(4, RunEventTypeEnum::LlmStepCompleted->value, ['assistant_message' => ['content' => [['type' => 'text', 'text' => 'late']]]]),
         ]));
         $lateDeliver = array_filter($observeBus->messages, static fn ($m) => $m instanceof DeliverDeferredSubagentBatchLifecycleMessage);
         $this->assertCount(0, $lateDeliver, 'Late observation does not re-enqueue delivery');
         $batchAfterLateObserve = $repo->findByLifecycleId($lifecycle);
         $this->assertSame($cursorBeforeLateObserve, $batchAfterLateObserve->aggregateProgressRevision, 'Aggregate revision unchanged by late observe');
+        // Child2 cursor unchanged after late observe
+        foreach ($batchAfterLateObserve->children as $ch) {
+            if ($ch->childRunId === $c2['childRunId']) {
+                $this->assertSame($child2BeforeLate, $ch->childEventCursor, 'Child 2 event cursor unchanged by late observe');
+                break;
+            }
+        }
     }
 
     public function testRegistrationListenerAndParentCancelHookEnqueueCorrectMessages(): void
@@ -727,7 +747,6 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
             $progress,
             $completionDispatcher,
             $outcomeFactory,
-            new TestLogger(),
         );
 
         return new DeferredSubagentBatchLifecycleDeliveryService($repo, $progress, $naturalCompletion, $interruptionCompletion);
