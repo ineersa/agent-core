@@ -6,10 +6,12 @@ namespace Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred;
 
 use Doctrine\ORM\OptimisticLockException;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
+use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchItemSnapshotDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunIdentityDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Lifecycle\ChildRunBatchProgressService;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredChildRunLifecycleProjectionDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Progress\SubagentProgressEventAppender;
 use Ineersa\CodingAgent\Agent\Execution\SubagentChildProgressSummaryBuilder;
 use Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder;
@@ -23,6 +25,8 @@ use Symfony\Component\Clock\MonotonicClock;
  */
 final readonly class DeferredSubagentBatchProgressDeliveryService
 {
+    private const LAUNCH_FAILED_MESSAGE = 'Child run failed to launch.';
+
     public function __construct(
         private DeferredSubagentBatchRepository $batchRepository,
         private SubagentProgressSnapshotBuilder $progressSnapshotBuilder,
@@ -40,65 +44,27 @@ final readonly class DeferredSubagentBatchProgressDeliveryService
             return false;
         }
 
+        if ([] === $batch->children) {
+            return false;
+        }
+
         $reports = [];
         $activeTurns = [];
         $snapshots = [];
+        $enrichmentByRun = [];
 
         foreach ($batch->children as $child) {
-            $projection = $child->childLifecycleProjection;
-            if (null === $projection) {
-                continue;
+            $built = $this->buildChildProgressRow($batch, $child);
+            $snapshots[$child->childRunId] = $built['snapshot'];
+            $activeTurns[$child->childRunId] = $built['turnNo'];
+            $reports[$child->childRunId] = $built['report'];
+            if (null !== $built['enrichment']) {
+                $enrichmentByRun[$child->childRunId] = $built['enrichment'];
             }
-
-            $terminal = $projection->childStatus->isTerminal();
-            $artifactStatus = $this->artifactStatusFromProjection($projection->childStatus);
-            $message = $this->messageFromProjection($projection);
-            $identity = new ChildRunIdentityDTO(
-                parentRunId: $batch->parentRunId,
-                childRunId: $child->childRunId,
-                artifactId: $child->artifactId,
-                displayName: $child->agentName,
-                taskSummary: $child->task,
-                definitionModel: $child->definitionModel,
-                artifactKind: \Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum::Subagent,
-                batchIndex: $child->batchIndex,
-            );
-            $snapshots[$child->childRunId] = new ChildRunBatchItemSnapshotDTO(
-                identity: $identity,
-                terminal: $terminal,
-                artifactStatus: $artifactStatus,
-                message: $message,
-            );
-            $activeTurns[$child->childRunId] = $projection->childTurnNo;
-            $reports[$child->childRunId] = [
-                'index' => $child->batchIndex,
-                'agentName' => $child->agentName,
-                'task' => $child->task,
-                'artifactId' => $child->artifactId,
-                'agentRunId' => $child->childRunId,
-                'terminal' => $terminal,
-                'status' => $artifactStatus,
-                'message' => $message,
-                'model' => $child->definitionModel,
-            ];
-        }
-
-        if ([] === $reports) {
-            return false;
         }
 
         $aggregateStatus = $this->batchProgressService->resolveAggregateStatus($snapshots);
         $elapsedMs = $this->elapsedMsSince($batch->startedAt);
-        $enrichmentByRun = [];
-        foreach ($batch->children as $child) {
-            if (null === $child->childLifecycleProjection) {
-                continue;
-            }
-            $enrichmentByRun[$child->childRunId] = $this->childProgressSummaryBuilder->fromDeferredProjection(
-                $child->childLifecycleProjection,
-                $child->artifactId,
-            );
-        }
 
         $payload = $this->progressSnapshotBuilder->parallelSnapshot(
             $reports,
@@ -152,6 +118,117 @@ final readonly class DeferredSubagentBatchProgressDeliveryService
         return true;
     }
 
+    /**
+     * @return array{
+     *     snapshot: ChildRunBatchItemSnapshotDTO,
+     *     report: array<string, mixed>,
+     *     turnNo: int,
+     *     enrichment: ?\Ineersa\CodingAgent\Agent\Execution\SubagentChildProgressSummary
+     * }
+     */
+    private function buildChildProgressRow(
+        DeferredSubagentBatchProjectionDTO $batch,
+        DeferredSubagentChildProjectionDTO $child,
+    ): array {
+        $identity = $this->identityFromChild($batch, $child);
+        $projection = $child->childLifecycleProjection;
+
+        if (null !== $projection) {
+            $terminal = $projection->childStatus->isTerminal();
+            $artifactStatus = $this->artifactStatusFromProjection($projection->childStatus);
+            $message = $this->progressMessageFromProjection($projection);
+
+            return [
+                'snapshot' => new ChildRunBatchItemSnapshotDTO(
+                    identity: $identity,
+                    terminal: $terminal,
+                    artifactStatus: $artifactStatus,
+                    message: $message,
+                ),
+                'report' => [
+                    'index' => $child->batchIndex,
+                    'agentName' => $child->agentName,
+                    'task' => $child->task,
+                    'artifactId' => $child->artifactId,
+                    'agentRunId' => $child->childRunId,
+                    'terminal' => $terminal,
+                    'status' => $artifactStatus,
+                    'message' => $message,
+                    'model' => $child->definitionModel,
+                ],
+                'turnNo' => $projection->childTurnNo,
+                'enrichment' => $this->childProgressSummaryBuilder->fromDeferredProjection($projection, $child->artifactId),
+            ];
+        }
+
+        if (DeferredSubagentChildLaunchStatusEnum::Failed === $child->launchStatus) {
+            $artifactStatus = AgentArtifactStatusEnum::Failed;
+            $message = self::LAUNCH_FAILED_MESSAGE;
+
+            return [
+                'snapshot' => new ChildRunBatchItemSnapshotDTO(
+                    identity: $identity,
+                    terminal: true,
+                    artifactStatus: $artifactStatus,
+                    message: $message,
+                ),
+                'report' => [
+                    'index' => $child->batchIndex,
+                    'agentName' => $child->agentName,
+                    'task' => $child->task,
+                    'artifactId' => $child->artifactId,
+                    'agentRunId' => $child->childRunId,
+                    'terminal' => true,
+                    'status' => $artifactStatus,
+                    'message' => $message,
+                    'model' => $child->definitionModel,
+                ],
+                'turnNo' => 0,
+                'enrichment' => null,
+            ];
+        }
+
+        $artifactStatus = AgentArtifactStatusEnum::Running;
+
+        return [
+            'snapshot' => new ChildRunBatchItemSnapshotDTO(
+                identity: $identity,
+                terminal: false,
+                artifactStatus: $artifactStatus,
+                message: '',
+            ),
+            'report' => [
+                'index' => $child->batchIndex,
+                'agentName' => $child->agentName,
+                'task' => $child->task,
+                'artifactId' => $child->artifactId,
+                'agentRunId' => $child->childRunId,
+                'terminal' => false,
+                'status' => $artifactStatus,
+                'message' => '',
+                'model' => $child->definitionModel,
+            ],
+            'turnNo' => 0,
+            'enrichment' => null,
+        ];
+    }
+
+    private function identityFromChild(
+        DeferredSubagentBatchProjectionDTO $batch,
+        DeferredSubagentChildProjectionDTO $child,
+    ): ChildRunIdentityDTO {
+        return new ChildRunIdentityDTO(
+            parentRunId: $batch->parentRunId,
+            childRunId: $child->childRunId,
+            artifactId: $child->artifactId,
+            displayName: $child->agentName,
+            taskSummary: $child->task,
+            definitionModel: $child->definitionModel,
+            artifactKind: AgentArtifactKindEnum::Subagent,
+            batchIndex: $child->batchIndex,
+        );
+    }
+
     private function artifactStatusFromProjection(RunStatus $status): AgentArtifactStatusEnum
     {
         return match ($status) {
@@ -163,10 +240,14 @@ final readonly class DeferredSubagentBatchProgressDeliveryService
         };
     }
 
-    private function messageFromProjection(\Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredChildRunLifecycleProjectionDTO $projection): string
+    private function progressMessageFromProjection(DeferredChildRunLifecycleProjectionDTO $projection): string
     {
         if (RunStatus::Failed === $projection->childStatus) {
             return $projection->errorMessage ?? 'Run failed without error message.';
+        }
+
+        if (RunStatus::Cancelled === $projection->childStatus || RunStatus::Cancelling === $projection->childStatus) {
+            return 'Child run was cancelled.';
         }
 
         $text = trim($projection->assistantResultText ?? '');

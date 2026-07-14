@@ -37,6 +37,7 @@ use Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
 use Ineersa\CodingAgent\Session\CommittedRunEventAppender;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 
 #[Group('db')]
@@ -174,12 +175,9 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         $handler(new ObserveDeferredSubagentBatchChildTurnMessage($lifecycle, 1, $c1['childRunId'], RunStatus::Running, 1, [
             new AfterTurnCommitEventSummary(1, RunEventTypeEnum::LlmStepCompleted->value, ['usage' => ['input_tokens' => 2, 'output_tokens' => 1, 'total_tokens' => 3]]),
         ]));
-        $handler(new ObserveDeferredSubagentBatchChildTurnMessage($lifecycle, 2, $c2['childRunId'], RunStatus::Failed, 1, [
-            new AfterTurnCommitEventSummary(1, RunEventTypeEnum::LlmStepFailed->value, ['error' => ['message' => 'child-two-failed']]),
-        ]));
 
         $batch = $repo->findByLifecycleId($lifecycle);
-        $this->assertSame(2, $batch->aggregateProgressRevision);
+        $this->assertSame(1, $batch->aggregateProgressRevision);
 
         $appended = [];
         $appender = new class(self::getContainer()->get(CommittedRunEventAppender::class), $appended) extends SubagentProgressEventAppender {
@@ -213,9 +211,17 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         $this->assertSame('parallel', $payload['mode']);
         $this->assertSame('running', $payload['status']);
         $this->assertNotSame('done', $payload['status']);
+        $this->assertSame(2, $payload['total_count']);
         $this->assertCount(2, $payload['children']);
         $this->assertSame(1, $payload['children'][0]['index']);
         $this->assertSame(2, $payload['children'][1]['index']);
+        $this->assertSame('running', $payload['children'][1]['status']);
+
+        $handler(new ObserveDeferredSubagentBatchChildTurnMessage($lifecycle, 2, $c2['childRunId'], RunStatus::Failed, 1, [
+            new AfterTurnCommitEventSummary(1, RunEventTypeEnum::LlmStepFailed->value, ['error' => ['message' => 'child-two-failed']]),
+        ]));
+        $batch = $repo->findByLifecycleId($lifecycle);
+        $this->assertSame(2, $batch->aggregateProgressRevision);
 
         $handler(new ObserveDeferredSubagentBatchChildTurnMessage($lifecycle, 1, $c1['childRunId'], RunStatus::Cancelled, 2, [
             new AfterTurnCommitEventSummary(2, RunEventTypeEnum::AgentEnd->value, ['reason' => 'cancelled']),
@@ -278,12 +284,13 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         $this->assertSame('running', $appendedSp[0]['status']);
     }
 
-    public function testTerminalDeliveryRegistrationRaceAndIdempotency(): void
+    #[DataProvider('terminalDeliveryScenarioProvider')]
+    public function testTerminalDeliveryRegistrationRaceAndIdempotency(string $scenario): void
     {
         $repo = self::getContainer()->get(DeferredSubagentBatchRepository::class);
         $factory = new DeferredSubagentBatchIdentityFactory();
-        $parent = 'parent-batch-term';
-        $tool = 'tool-batch-term';
+        $parent = 'parent-batch-term-'.$scenario;
+        $tool = 'tool-batch-term-'.$scenario;
         $lifecycle = $factory->batchLifecycleId($parent, $tool);
         $c1 = $factory->childIdentity($parent, $tool, 1);
         $c2 = $factory->childIdentity($parent, $tool, 2);
@@ -302,7 +309,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
             ],
         );
         $repo->applyLaunchSuccessState($parent, $tool, $lifecycle, new \DateTimeImmutable(), [1, 2]);
-        foreach ([[$c1, 'done-one'], [$c2, 'done-two']] as [$child, $text]) {
+        foreach ([$c1, $c2] as $child) {
             $this->ensureArtifactReserved($parent, $child['childRunId'], $child['artifactId'], 'worker', 'task');
         }
 
@@ -323,10 +330,17 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         $delivery->deliver($lifecycle);
         $this->assertCount(0, $commandBus->messages);
 
-        $handler(new ObserveDeferredSubagentBatchChildTurnMessage($lifecycle, 2, $c2['childRunId'], RunStatus::Completed, 2, [
-            new AfterTurnCommitEventSummary(1, RunEventTypeEnum::LlmStepCompleted->value, ['assistant_message' => ['content' => [['type' => 'text', 'text' => 'done-two']]]]),
-            new AfterTurnCommitEventSummary(2, RunEventTypeEnum::AgentEnd->value, ['reason' => 'completed']),
-        ]));
+        if ('all_completed' === $scenario) {
+            $handler(new ObserveDeferredSubagentBatchChildTurnMessage($lifecycle, 2, $c2['childRunId'], RunStatus::Completed, 2, [
+                new AfterTurnCommitEventSummary(1, RunEventTypeEnum::LlmStepCompleted->value, ['assistant_message' => ['content' => [['type' => 'text', 'text' => 'done-two']]]]),
+                new AfterTurnCommitEventSummary(2, RunEventTypeEnum::AgentEnd->value, ['reason' => 'completed']),
+            ]));
+        } else {
+            $handler(new ObserveDeferredSubagentBatchChildTurnMessage($lifecycle, 2, $c2['childRunId'], RunStatus::Failed, 2, [
+                new AfterTurnCommitEventSummary(1, RunEventTypeEnum::LlmStepFailed->value, ['error' => ['message' => 'child-two-boom']]),
+                new AfterTurnCommitEventSummary(2, RunEventTypeEnum::AgentEnd->value, ['reason' => 'failed']),
+            ]));
+        }
 
         $delivery->deliver($lifecycle);
         $this->assertCount(0, $commandBus->messages);
@@ -338,7 +352,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
             turnNo: 4,
             stepId: 'turn-4-tools-1',
             attempt: 1,
-            idempotencyKey: 'idem-batch',
+            idempotencyKey: 'idem-batch-'.$scenario,
             toolCallId: $tool,
             toolName: 'subagent',
             arguments: [],
@@ -352,7 +366,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
             turnNo: 4,
             stepId: 'turn-4-tools-1',
             attempt: 1,
-            idempotencyKey: 'idem-batch',
+            idempotencyKey: 'idem-batch-'.$scenario,
             toolCallId: $tool,
             toolName: 'subagent',
             arguments: [],
@@ -362,16 +376,44 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
 
         $delivery->deliver($lifecycle);
         $this->assertCount(1, $commandBus->messages);
-        $this->assertInstanceOf(CompleteDeferredToolCall::class, $commandBus->messages[0]);
-        $this->assertFalse($commandBus->messages[0]->isError);
-        $this->assertStringContainsString('Parallel subagents completed', $commandBus->messages[0]->content[0]['text']);
+        $complete = $commandBus->messages[0];
+        $this->assertInstanceOf(CompleteDeferredToolCall::class, $complete);
+
+        if ('all_completed' === $scenario) {
+            $this->assertFalse($complete->isError);
+            $this->assertStringContainsString('Parallel subagents completed', $complete->content[0]['text']);
+        } else {
+            $this->assertTrue($complete->isError);
+            $text = $complete->content[0]['text'];
+            $this->assertStringStartsWith('Parallel subagent execution failed for one or more children.', $text);
+            $this->assertStringContainsString($c1['artifactId'], $text);
+            $this->assertStringContainsString($c2['artifactId'], $text);
+            $this->assertStringContainsString('child-two-boom', $text);
+            $this->assertFalse($complete->details['retryable'] ?? true);
+            $this->assertFalse($complete->error['retryable'] ?? true);
+        }
 
         $delivery->deliver($lifecycle);
         $this->assertCount(1, $commandBus->messages);
 
         $registry = self::getContainer()->get(AgentArtifactRegistry::class);
         $this->assertSame(AgentArtifactStatusEnum::Completed, $registry->get($parent, $c1['artifactId'])->status);
-        $this->assertSame(AgentArtifactStatusEnum::Completed, $registry->get($parent, $c2['artifactId'])->status);
+        if ('all_completed' === $scenario) {
+            $this->assertSame(AgentArtifactStatusEnum::Completed, $registry->get($parent, $c2['artifactId'])->status);
+        } else {
+            $this->assertSame(AgentArtifactStatusEnum::Failed, $registry->get($parent, $c2['artifactId'])->status);
+        }
+    }
+
+    /**
+     * @return array<string, array{0: string}>
+     */
+    public static function terminalDeliveryScenarioProvider(): array
+    {
+        return [
+            'all_completed' => ['all_completed'],
+            'partial_failure' => ['partial_failure'],
+        ];
     }
 
     private function buildDeliveryService(TestMessageBus $commandBus): DeferredSubagentBatchLifecycleDeliveryService

@@ -236,6 +236,10 @@ final readonly class DeferredSubagentBatchTerminalCompletionService
             return $artifactOutcome->failureReason ?? 'Run failed without error message.';
         }
 
+        if (RunStatus::Cancelled === $projection->childStatus || RunStatus::Cancelling === $projection->childStatus) {
+            return 'Child run was cancelled.';
+        }
+
         return $this->completedSummaryText($projection);
     }
 

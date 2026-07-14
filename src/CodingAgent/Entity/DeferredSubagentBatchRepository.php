@@ -84,6 +84,11 @@ final class DeferredSubagentBatchRepository extends ServiceEntityRepository
             );
 
             if (0 === $childAffected) {
+                $childRow = $this->childRepository->findEntityByBatchLifecycleAndIndex($batchLifecycleId, $batchIndex);
+                if ($childRow instanceof DeferredSubagentChild) {
+                    throw OptimisticLockException::lockFailed($childRow);
+                }
+
                 throw new \RuntimeException('Deferred subagent child projection version conflict.');
             }
 
@@ -99,6 +104,11 @@ final class DeferredSubagentBatchRepository extends ServiceEntityRepository
                     ],
                 );
                 if (0 === $batchAffected) {
+                    $batchRow = $this->findOneBy(['lifecycleId' => $batchLifecycleId]);
+                    if ($batchRow instanceof DeferredSubagentBatch) {
+                        throw OptimisticLockException::lockFailed($batchRow);
+                    }
+
                     throw new \RuntimeException('Deferred subagent batch projection version conflict.');
                 }
             }

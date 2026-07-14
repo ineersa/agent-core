@@ -54,7 +54,7 @@ final readonly class ObserveDeferredSubagentBatchChildTurnHandler
         $cursor = $child->childEventCursor;
         $newEvents = $this->filterNewEvents($message->committedEvents, $cursor);
         if ([] === $newEvents) {
-            $this->enqueueDeliveryIfNeeded($batch->lifecycleId, $child->childEventCursor, $batch->aggregateProgressRevision, $batch->deliveredProgressRevision, $batch->terminalCompletionEnqueuedAt, $child->childLifecycleProjection);
+            $this->enqueueDeliveryIfNeeded($batch->lifecycleId, $batch->aggregateProgressRevision, $batch->deliveredProgressRevision, $batch->terminalCompletionEnqueuedAt, $child->childLifecycleProjection);
 
             return;
         }
@@ -115,6 +115,22 @@ final readonly class ObserveDeferredSubagentBatchChildTurnHandler
             ]);
 
             throw $exception;
+        } catch (\RuntimeException $exception) {
+            if (!str_contains($exception->getMessage(), 'projection version conflict')) {
+                throw $exception;
+            }
+
+            $this->logger->warning('deferred_subagent_batch.child_projection_persist_failed', [
+                'batch_lifecycle_id' => $message->batchLifecycleId,
+                'child_run_id' => $message->childRunId,
+                'batch_index' => $message->batchIndex,
+                'cursor' => $cursor,
+                'component' => 'agent.execution',
+                'event_type' => 'deferred_subagent_batch.child_projection_persist_failed',
+                'exception_class' => $exception::class,
+            ]);
+
+            throw $exception;
         }
 
         $this->commandBus->dispatch(new DeliverDeferredSubagentBatchLifecycleMessage($message->batchLifecycleId));
@@ -125,7 +141,6 @@ final readonly class ObserveDeferredSubagentBatchChildTurnHandler
      */
     private function enqueueDeliveryIfNeeded(
         string $batchLifecycleId,
-        int $childEventCursor,
         int $aggregateRevision,
         int $deliveredRevision,
         ?\DateTimeImmutable $terminalMarker,
