@@ -11,7 +11,7 @@ use Ineersa\CodingAgent\Session\CommittedRunEventAppender;
 /**
  * Canonical parent subagent_progress append using explicit stored parent tool correlation.
  */
-final readonly class SubagentProgressEventAppender
+class SubagentProgressEventAppender
 {
     public function __construct(
         private CommittedRunEventAppender $committedRunEventAppender,

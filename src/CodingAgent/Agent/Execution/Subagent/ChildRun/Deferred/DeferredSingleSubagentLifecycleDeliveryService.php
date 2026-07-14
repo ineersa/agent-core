@@ -37,15 +37,10 @@ final readonly class DeferredSingleSubagentLifecycleDeliveryService
         $expectedVersion = $row->projectionVersion;
 
         if (null !== $projection->interruptionKind) {
-            if ($projection->childEventCursor > $projection->parentProgressCursor) {
-                $childForProgress = $childProjection ?? new DeferredSingleSubagentChildLifecycleProjectionDTO(
-                    childStatus: \Ineersa\AgentCore\Domain\Run\RunStatus::Running,
-                    childTurnNo: 0,
-                    lastCommittedSeq: $projection->childEventCursor,
-                );
-                $this->terminalCompletionService->deliverProgressIfNeeded(
+            if (null !== $childProjection) {
+                $this->terminalCompletionService->deliverInterruptionTerminalProgressIfNeeded(
                     $projection,
-                    $childForProgress,
+                    $childProjection,
                     $expectedVersion,
                     $projection->interruptionKind,
                 );
@@ -54,6 +49,10 @@ final readonly class DeferredSingleSubagentLifecycleDeliveryService
                     return;
                 }
                 $expectedVersion = $row->projectionVersion;
+                $projection = $this->launchRepository->findByLifecycleId($lifecycleId);
+                if (null === $projection) {
+                    return;
+                }
             }
 
             $this->terminalCompletionService->completeFromInterruption($projection, $expectedVersion);

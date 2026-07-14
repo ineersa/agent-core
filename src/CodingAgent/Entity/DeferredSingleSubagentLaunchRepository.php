@@ -86,6 +86,29 @@ final class DeferredSingleSubagentLaunchRepository extends ServiceEntityReposito
         $this->getEntityManager()->flush();
     }
 
+    public function markParentProgressDelivery(
+        string $lifecycleId,
+        int $parentProgressCursor,
+        ?\DateTimeImmutable $interruptionProgressEnqueuedAt,
+        int $expectedProjectionVersion,
+    ): void {
+        $row = $this->findOneBy(['lifecycleId' => $lifecycleId]);
+        if (!$row instanceof DeferredSingleSubagentLaunch) {
+            throw new \RuntimeException(\sprintf('Deferred single subagent projection missing for lifecycle "%s".', $lifecycleId));
+        }
+
+        if ($row->projectionVersion !== $expectedProjectionVersion) {
+            throw OptimisticLockException::lockFailed($row);
+        }
+
+        $row->parentProgressCursor = max($row->parentProgressCursor, $parentProgressCursor);
+        if (null !== $interruptionProgressEnqueuedAt) {
+            $row->interruptionProgressEnqueuedAt = $row->interruptionProgressEnqueuedAt ?? $interruptionProgressEnqueuedAt;
+        }
+
+        $this->getEntityManager()->flush();
+    }
+
     public function markTerminalCompletionEnqueued(
         string $lifecycleId,
         \DateTimeImmutable $enqueuedAt,
@@ -322,8 +345,10 @@ final class DeferredSingleSubagentLaunchRepository extends ServiceEntityReposito
             terminalCompletionEnqueuedAt: $row->terminalCompletionEnqueuedAt,
             startedAt: $row->startedAt,
             deadlineAt: $row->deadlineAt,
+            createdAt: $row->createdAt,
             interruptionKind: $row->interruptionKind,
             interruptionRequestedAt: $row->interruptionRequestedAt,
+            interruptionProgressEnqueuedAt: $row->interruptionProgressEnqueuedAt,
             childLifecycleProjection: $this->decodeChildLifecycleProjection($row->childLifecycleProjection),
         );
     }

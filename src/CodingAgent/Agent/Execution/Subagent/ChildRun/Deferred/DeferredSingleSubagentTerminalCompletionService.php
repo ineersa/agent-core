@@ -51,8 +51,9 @@ final readonly class DeferredSingleSubagentTerminalCompletionService
         DeferredSingleSubagentChildLifecycleProjectionDTO $childProjection,
         int $expectedProjectionVersion,
         ?DeferredSingleSubagentInterruptionKindEnum $interruptionKind = null,
+        bool $forceInterruptionTerminalProgress = false,
     ): void {
-        if ($projection->childEventCursor <= $projection->parentProgressCursor) {
+        if (!$forceInterruptionTerminalProgress && $projection->childEventCursor <= $projection->parentProgressCursor) {
             return;
         }
 
@@ -105,10 +106,15 @@ final readonly class DeferredSingleSubagentTerminalCompletionService
             throw $exception;
         }
 
+        $interruptionProgressMarker = $forceInterruptionTerminalProgress && null !== $interruptionKind
+            ? new \DateTimeImmutable()
+            : null;
+
         try {
-            $this->launchRepository->markParentProgressCursor(
+            $this->launchRepository->markParentProgressDelivery(
                 lifecycleId: $projection->lifecycleId,
                 parentProgressCursor: $projection->childEventCursor,
+                interruptionProgressEnqueuedAt: $interruptionProgressMarker,
                 expectedProjectionVersion: $expectedProjectionVersion,
             );
         } catch (OptimisticLockException $exception) {
@@ -123,6 +129,29 @@ final readonly class DeferredSingleSubagentTerminalCompletionService
 
             throw $exception;
         }
+    }
+
+    public function deliverInterruptionTerminalProgressIfNeeded(
+        DeferredSingleSubagentProjectionDTO $projection,
+        DeferredSingleSubagentChildLifecycleProjectionDTO $childProjection,
+        int $expectedProjectionVersion,
+        DeferredSingleSubagentInterruptionKindEnum $interruptionKind,
+    ): void {
+        if (null !== $projection->interruptionProgressEnqueuedAt) {
+            return;
+        }
+
+        if (null === $projection->childLifecycleProjection) {
+            return;
+        }
+
+        $this->deliverProgressIfNeeded(
+            $projection,
+            $childProjection,
+            $expectedProjectionVersion,
+            $interruptionKind,
+            forceInterruptionTerminalProgress: true,
+        );
     }
 
     public function completeFromChildProjection(
@@ -179,11 +208,13 @@ final readonly class DeferredSingleSubagentTerminalCompletionService
             'message' => $presentation,
             'retryable' => false,
             'hint' => null,
+            'cancelled' => true,
         ];
         $details = [
             'error_type' => ToolCallException::class,
             'retryable' => false,
             'hint' => null,
+            'cancelled' => true,
         ];
         $this->finalizeAndDispatch($projection, $artifactOutcome, $presentation, true, ['error' => $error, 'details' => $details], $expectedProjectionVersion);
     }
@@ -346,14 +377,9 @@ final readonly class DeferredSingleSubagentTerminalCompletionService
 
     private function resolveTimeoutSeconds(DeferredSingleSubagentProjectionDTO $projection): int
     {
-        if (null !== $projection->startedAt && null !== $projection->deadlineAt) {
-            $seconds = $projection->deadlineAt->getTimestamp() - $projection->startedAt->getTimestamp();
-
-            return max(1, $seconds);
-        }
-
         if (null !== $projection->deadlineAt) {
-            $seconds = $projection->deadlineAt->getTimestamp() - $this->clock->now()->getTimestamp();
+            $anchor = $projection->startedAt ?? $projection->createdAt;
+            $seconds = $projection->deadlineAt->getTimestamp() - $anchor->getTimestamp();
 
             return max(1, $seconds);
         }

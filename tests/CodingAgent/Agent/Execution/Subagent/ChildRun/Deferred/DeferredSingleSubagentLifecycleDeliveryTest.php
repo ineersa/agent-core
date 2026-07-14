@@ -343,6 +343,8 @@ final class DeferredSingleSubagentLifecycleDeliveryTest extends IsolatedKernelTe
         $this->assertTrue($commandBus->messages[0]->isError);
         $this->assertStringContainsString('cancelled by parent run', $commandBus->messages[0]->content[0]['text']);
         $this->assertSame(\Ineersa\AgentCore\Contract\Tool\ToolCallException::class, $commandBus->messages[0]->error['type']);
+        $this->assertTrue($commandBus->messages[0]->details['cancelled'] ?? false);
+        $this->assertTrue($commandBus->messages[0]->error['cancelled'] ?? false);
 
         $hook->handleAfterTurnCommit(new AfterTurnCommitHookContext(
             runId: 'parent-pcancel',
@@ -433,6 +435,88 @@ final class DeferredSingleSubagentLifecycleDeliveryTest extends IsolatedKernelTe
         $this->assertCount(1, $commandBus->messages);
     }
 
+    public function testInterruptionEmitsTerminalProgressWhenChildCursorAlreadyDelivered(): void
+    {
+        $repo = self::getContainer()->get(DeferredSingleSubagentLaunchRepository::class);
+        $deadline = new \DateTimeImmutable('+600 seconds');
+        $launch = $repo->reserve('parent-int-progress', 2, 'tool-int-progress', 1, 'child-int-progress', 'agent_aaaaaaaaaaaaaaaa', 'worker', 'Work', null, $deadline);
+        $repo->markLaunched('parent-int-progress', 'tool-int-progress', new \DateTimeImmutable('-5 seconds'));
+        $this->ensureArtifactReserved('parent-int-progress', 'child-int-progress', 'agent_aaaaaaaaaaaaaaaa', 'worker', 'Work');
+
+        $this->projectTerminal($repo, $launch->lifecycleId, 'child-int-progress', RunStatus::Running, [
+            new AfterTurnCommitEventSummary(1, RunEventTypeEnum::LlmStepCompleted->value, [
+                'usage' => ['input_tokens' => 1, 'output_tokens' => 1, 'total_tokens' => 2],
+                'assistant_message' => ['role' => 'assistant', 'content' => [['type' => 'text', 'text' => 'working']]],
+            ]),
+        ]);
+
+        $capturingAppender = new CapturingSubagentProgressEventAppender(self::getContainer()->get(CommittedRunEventAppender::class));
+        $commandBus = new TestMessageBus();
+        $delivery = $this->buildDeliveryService($commandBus, $capturingAppender);
+        $deferredRepo = self::getContainer()->get(DeferredToolCompletionRepositoryInterface::class);
+        $deferredRepo->registerPending($this->correlation($launch->lifecycleId, 'parent-int-progress', 'tool-int-progress'));
+        $delivery->deliver($launch->lifecycleId);
+        $this->assertCount(1, $capturingAppender->progressStatuses);
+        $this->assertSame('running', $capturingAppender->progressStatuses[0]);
+
+        $runner = new RecordingAgentRunner();
+        $interruption = new DeferredSingleSubagentInterruptionService(
+            $repo,
+            $delivery,
+            $runner,
+            new \Ineersa\CodingAgent\Agent\Execution\Subagent\SubagentChildRunBatchLifecyclePolicyFactory(),
+            $commandBus,
+            new TestLogger(),
+        );
+        $interruption->interrupt($launch->lifecycleId, DeferredSingleSubagentInterruptionKindEnum::ParentCancelled);
+
+        $this->assertCount(2, $capturingAppender->progressStatuses);
+        $this->assertSame('cancelled', $capturingAppender->progressStatuses[1]);
+        $this->assertTrue($commandBus->messages[0]->isError);
+
+        $interruption->interrupt($launch->lifecycleId, DeferredSingleSubagentInterruptionKindEnum::ParentCancelled);
+        $this->assertCount(2, $capturingAppender->progressStatuses);
+        $this->assertCount(1, $commandBus->messages);
+    }
+
+    public function testTimeoutDurationUsesCreatedAtWhenStartedAtMissing(): void
+    {
+        $repo = self::getContainer()->get(DeferredSingleSubagentLaunchRepository::class);
+        $deadline = new \DateTimeImmutable('-5 seconds');
+        $launch = $repo->reserve('parent-no-start', 1, 'tool-no-start', 0, 'child-no-start', 'agent_bbbbbbbbbbbbbbbb', 'worker', 'No start', null, $deadline);
+        $this->ensureArtifactReserved('parent-no-start', 'child-no-start', 'agent_bbbbbbbbbbbbbbbb', 'worker', 'No start');
+        $this->projectTerminal($repo, $launch->lifecycleId, 'child-no-start', RunStatus::Running, [
+            new AfterTurnCommitEventSummary(1, RunEventTypeEnum::LlmStepCompleted->value, [
+                'assistant_message' => ['role' => 'assistant', 'content' => [['type' => 'text', 'text' => 'x']]],
+            ]),
+        ]);
+
+        $row = $repo->findByLifecycleId($launch->lifecycleId);
+        $this->assertNotNull($row);
+        $this->assertNull($row->startedAt);
+
+        $commandBus = new TestMessageBus();
+        $delivery = $this->buildDeliveryService($commandBus);
+        $deferredRepo = self::getContainer()->get(DeferredToolCompletionRepositoryInterface::class);
+        $deferredRepo->registerPending($this->correlation($launch->lifecycleId, 'parent-no-start', 'tool-no-start'));
+
+        $interruption = new DeferredSingleSubagentInterruptionService(
+            $repo,
+            $delivery,
+            new RecordingAgentRunner(),
+            new \Ineersa\CodingAgent\Agent\Execution\Subagent\SubagentChildRunBatchLifecyclePolicyFactory(),
+            $commandBus,
+            new TestLogger(),
+        );
+        $interruption->interrupt($launch->lifecycleId, DeferredSingleSubagentInterruptionKindEnum::Timeout);
+
+        $this->assertInstanceOf(CompleteDeferredToolCall::class, $commandBus->messages[0]);
+        $registry = self::getContainer()->get(AgentArtifactRegistry::class);
+        $entry = $registry->get('parent-no-start', 'agent_bbbbbbbbbbbbbbbb');
+        $this->assertStringContainsString('Timed out after', $entry?->summary ?? '');
+        $this->assertSame('Timed out after 1s.', $entry?->summary);
+    }
+
     private function ensureArtifactReserved(
         string $parentRunId,
         string $childRunId,
@@ -452,13 +536,16 @@ final class DeferredSingleSubagentLifecycleDeliveryTest extends IsolatedKernelTe
         ));
     }
 
-    private function buildDeliveryService(TestMessageBus $commandBus): DeferredSingleSubagentLifecycleDeliveryService
-    {
+    private function buildDeliveryService(
+        TestMessageBus $commandBus,
+        ?SubagentProgressEventAppender $progressEventAppender = null,
+    ): DeferredSingleSubagentLifecycleDeliveryService {
         $container = self::getContainer();
+        $progressEventAppender ??= new SubagentProgressEventAppender($container->get(CommittedRunEventAppender::class));
         $terminal = new DeferredSingleSubagentTerminalCompletionService(
             launchRepository: $container->get(DeferredSingleSubagentLaunchRepository::class),
             deferredToolCompletionRepository: $container->get(DeferredToolCompletionRepositoryInterface::class),
-            progressEventAppender: new SubagentProgressEventAppender($container->get(CommittedRunEventAppender::class)),
+            progressEventAppender: $progressEventAppender,
             progressSnapshotBuilder: new SubagentProgressSnapshotBuilder(),
             childProgressSummaryBuilder: $container->get(SubagentChildProgressSummaryBuilder::class),
             lifecycleListener: $container->get(SubagentChildRunBatchLifecycleListener::class),
@@ -515,6 +602,34 @@ final class DeferredSingleSubagentLifecycleDeliveryTest extends IsolatedKernelTe
         }
 
         return 0;
+    }
+}
+
+final class CapturingSubagentProgressEventAppender extends SubagentProgressEventAppender
+{
+    /** @var list<string> */
+    public array $progressStatuses = [];
+
+    public function __construct(CommittedRunEventAppender $committedRunEventAppender)
+    {
+        parent::__construct($committedRunEventAppender);
+    }
+
+    /**
+     * @param array<string, mixed> $progress
+     */
+    public function append(
+        string $parentRunId,
+        int $parentTurnNo,
+        string $parentToolCallId,
+        int $parentOrderIndex,
+        string $toolName,
+        array $progress,
+    ): \Ineersa\AgentCore\Domain\Event\RunEvent {
+        $status = \is_string($progress['status'] ?? null) ? $progress['status'] : 'unknown';
+        $this->progressStatuses[] = $status;
+
+        return parent::append($parentRunId, $parentTurnNo, $parentToolCallId, $parentOrderIndex, $toolName, $progress);
     }
 }
 

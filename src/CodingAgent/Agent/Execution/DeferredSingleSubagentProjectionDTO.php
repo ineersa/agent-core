@@ -32,8 +32,10 @@ final readonly class DeferredSingleSubagentProjectionDTO
         public ?\DateTimeImmutable $terminalCompletionEnqueuedAt,
         public ?\DateTimeImmutable $startedAt,
         public ?\DateTimeImmutable $deadlineAt,
+        public \DateTimeImmutable $createdAt,
         public ?DeferredSingleSubagentInterruptionKindEnum $interruptionKind = null,
         public ?\DateTimeImmutable $interruptionRequestedAt = null,
+        public ?\DateTimeImmutable $interruptionProgressEnqueuedAt = null,
         public ?DeferredSingleSubagentChildLifecycleProjectionDTO $childLifecycleProjection = null,
     ) {
     }

@@ -83,6 +83,9 @@ class DeferredSingleSubagentLaunch
     #[ORM\Column(name: 'interruption_requested_at', type: 'datetime_immutable', nullable: true)]
     public ?\DateTimeImmutable $interruptionRequestedAt = null;
 
+    #[ORM\Column(name: 'interruption_progress_enqueued_at', type: 'datetime_immutable', nullable: true)]
+    public ?\DateTimeImmutable $interruptionProgressEnqueuedAt = null;
+
     #[ORM\Column(name: 'created_at', type: 'datetime_immutable')]
     public \DateTimeImmutable $createdAt;
 
