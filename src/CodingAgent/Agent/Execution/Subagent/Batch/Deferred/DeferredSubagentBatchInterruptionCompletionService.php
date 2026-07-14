@@ -95,7 +95,7 @@ final readonly class DeferredSubagentBatchInterruptionCompletionService
         $timeoutSecs = DeferredSubagentInterruptionKindEnum::Timeout === $kind
             ? $this->resolveTimeoutSeconds($batch)
             : 0;
-        $artifactOutcome = $this->buildSingleInterruptionArtifactOutcome($identity, $child, $kind, $timeoutSecs);
+        $artifactOutcome = $this->buildSingleInterruptionArtifactOutcome($identity, $kind, $timeoutSecs);
         $this->lifecycleListener->finalizeTerminalOutcome(
             ChildRunTerminalFinalizationRequestDTO::persistOnly($artifactOutcome),
         );
@@ -248,7 +248,6 @@ final readonly class DeferredSubagentBatchInterruptionCompletionService
 
     private function buildSingleInterruptionArtifactOutcome(
         ChildRunIdentityDTO $identity,
-        DeferredSubagentChildProjectionDTO $child,
         DeferredSubagentInterruptionKindEnum $kind,
         int $timeoutSecs,
     ): ChildRunTerminalOutcomeDTO {

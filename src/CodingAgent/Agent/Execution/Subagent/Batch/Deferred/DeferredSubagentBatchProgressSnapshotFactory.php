@@ -52,14 +52,14 @@ final readonly class DeferredSubagentBatchProgressSnapshotFactory
      * Single timeout → flat 'failed' payload.
      * Single parent-cancel → flat 'cancelled' payload.
      *
-     * @return array<string, mixed>
+     * @return array<string, mixed>|null null when the single child has no lifecycle projection yet
      */
-    public function buildSingleForcedPayload(DeferredSubagentBatchProjectionDTO $batch, DeferredSubagentInterruptionKindEnum $kind): array
+    public function buildSingleForcedPayload(DeferredSubagentBatchProjectionDTO $batch, DeferredSubagentInterruptionKindEnum $kind): ?array
     {
         $child = $this->requireExactlyOneChild($batch);
         $cp = $child->childLifecycleProjection;
         if (null === $cp) {
-            throw new \RuntimeException('Single forced interruption progress requires a child projection.');
+            return null;
         }
 
         $enrichment = $this->childProgressSummaryBuilder->fromDeferredProjection($cp, $child->artifactId);
@@ -75,15 +75,6 @@ final readonly class DeferredSubagentBatchProgressSnapshotFactory
             $this->elapsedMsSince($batch->startedAt),
             $enrichment,
         );
-    }
-
-    public function requireExactlyOneChild(DeferredSubagentBatchProjectionDTO $batch): DeferredSubagentChildProjectionDTO
-    {
-        if (1 !== $batch->totalChildCount || 1 !== \count($batch->children)) {
-            throw new \RuntimeException('Single batch progress requires exactly one child row.');
-        }
-
-        return $batch->children[0];
     }
 
     /**
@@ -111,6 +102,15 @@ final readonly class DeferredSubagentBatchProgressSnapshotFactory
         return $this->progressSnapshotBuilder->parallelSnapshot(
             $reports, $activeTurns, $this->elapsedMsSince($batch->startedAt), $enrichmentByRun, 'cancelled',
         );
+    }
+
+    private function requireExactlyOneChild(DeferredSubagentBatchProjectionDTO $batch): DeferredSubagentChildProjectionDTO
+    {
+        if (1 !== $batch->totalChildCount || 1 !== \count($batch->children)) {
+            throw new \RuntimeException('Single batch progress requires exactly one child row.');
+        }
+
+        return $batch->children[0];
     }
 
     /**

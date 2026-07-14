@@ -43,12 +43,10 @@ final readonly class DeferredSubagentBatchProgressDeliveryService
         }
 
         if (ChildRunBatchExecutionModeEnum::Single === $batch->executionMode) {
-            $child = $this->snapshotFactory->requireExactlyOneChild($batch);
-            if (null === $child->childLifecycleProjection) {
+            $payload = $this->snapshotFactory->buildSingleForcedPayload($batch, $kind);
+            if (null === $payload) {
                 return false;
             }
-
-            $payload = $this->snapshotFactory->buildSingleForcedPayload($batch, $kind);
         } else {
             if (DeferredSubagentInterruptionKindEnum::Timeout === $kind) {
                 return false;
