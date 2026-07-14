@@ -103,6 +103,34 @@ final class ApplicationMigrationExecutorTest extends TestCase
             'Version20260710120000 (drop tool_batch_state) must be recorded in doctrine_migration_versions',
         );
 
+        $recordedDeferredTool = $connection->fetchOne(
+            'SELECT 1 FROM doctrine_migration_versions WHERE version = ?',
+            ['Version20260713130000'],
+        );
+        $this->assertNotFalse(
+            $recordedDeferredTool,
+            'Version20260713130000 (deferred_tool_completion) must be recorded in doctrine_migration_versions',
+        );
+
+        $recordedDeferredLaunch = $connection->fetchOne(
+            'SELECT 1 FROM doctrine_migration_versions WHERE version = ?',
+            ['Version20260713140000'],
+        );
+        $this->assertNotFalse(
+            $recordedDeferredLaunch,
+            'Version20260713140000 (deferred_single_subagent_launch) must be recorded in doctrine_migration_versions',
+        );
+
+        $schemaManager = $connection->createSchemaManager();
+        $this->assertTrue(
+            $schemaManager->tablesExist(['deferred_tool_completion']),
+            'deferred_tool_completion must exist after startup executor (run_control deferred registration)',
+        );
+        $this->assertTrue(
+            $schemaManager->tablesExist(['deferred_single_subagent_launch']),
+            'deferred_single_subagent_launch must exist after startup executor (WorkerStarted recovery queries)',
+        );
+
         $busyTimeout = (int) $connection->executeQuery('PRAGMA busy_timeout')->fetchOne();
         $this->assertGreaterThanOrEqual(
             5000,
