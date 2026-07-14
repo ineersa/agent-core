@@ -62,6 +62,12 @@ final class ChatScreen
     /** Number of blank lines rendered before the header logo. */
     private const int TOP_MARGIN_LINES = 4;
 
+    /**
+     * Producer output when the working indicator is hidden: one blank row so
+     * {@see LiveTextWidget} does not collapse the slot to zero lines.
+     */
+    private const string HIDDEN_WORKING_ROW_RESERVE = '  ';
+
     /* ── Symfony widget refs (internal) ── */
     private readonly LiveTextWidget $topMarginWidget;
     private readonly LiveTextWidget $headerWidget;
@@ -195,7 +201,7 @@ final class ChatScreen
                 // Reserve exactly one terminal row when the indicator is hidden so
                 // status-area visibility toggles do not shift the editor/footer.
                 if ([] === $lines) {
-                    return '  ';
+                    return self::HIDDEN_WORKING_ROW_RESERVE;
                 }
 
                 return implode("\n", $lines);

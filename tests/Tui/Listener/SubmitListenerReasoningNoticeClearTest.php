@@ -129,9 +129,6 @@ final class SubmitListenerReasoningNoticeClearTest extends TestCase
     /** @return array<string, string> */
     private function statusEntries(ChatScreen $screen): array
     {
-        $property = new \ReflectionProperty($screen, 'registry');
-        $registry = $property->getValue($screen);
-
-        return $registry->getStatusEntries();
+        return $screen->registry()->getStatusEntries();
     }
 }
