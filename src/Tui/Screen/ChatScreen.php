@@ -194,6 +194,8 @@ final class ChatScreen
                 $visible = $this->registry->isWorkingVisible();
                 $msg = $this->registry->getWorkingMessage();
                 $this->workingRenderable->setMessage($msg);
+                // Sync visibility on every render: WorkingStatusWidget is a cached
+                // renderable; registry is authoritative and may change between invalidations.
                 $this->workingRenderable->setVisible($visible);
                 $tuiCtx = $this->tuiContext($symfonyCtx);
                 $lines = $this->workingRenderable->render($tuiCtx);

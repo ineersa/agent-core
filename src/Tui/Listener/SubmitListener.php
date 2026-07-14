@@ -285,7 +285,8 @@ final class SubmitListener implements TuiListenerRegistrar
             }
 
             // Drop the transient reasoning-level notice from the status panel once
-            // pre-dispatch validation succeeded and a turn will actually start.
+            // pre-dispatch validation succeeded and we are about to attempt a turn
+            // (runtime dispatch may still fail afterward).
             // Selected reasoning and editor/footer styling are unchanged (panel-only entry).
             $screen->clearTransientReasoningNotice();
 
