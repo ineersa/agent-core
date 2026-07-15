@@ -126,6 +126,22 @@ final class AgentArtifactRegistryTest extends TestCase
         $this->assertCount(2, $all);
     }
 
+    public function testPromoteToRunningForwardOnlyDoesNotRegressCompletedUnderLock(): void
+    {
+        $parentRunId = 'parent-'.bin2hex(random_bytes(4));
+        $artifactId = 'agent_01HX';
+        $agentRunId = 'child-'.bin2hex(random_bytes(4));
+
+        $this->registry->create($parentRunId, $artifactId, $agentRunId, 'scout', AgentArtifactKindEnum::Subagent);
+        $this->registry->update($parentRunId, $artifactId, status: AgentArtifactStatusEnum::Completed, completedAt: new \DateTimeImmutable());
+
+        $promoted = $this->registry->promoteToRunningForwardOnly($parentRunId, $artifactId, new \DateTimeImmutable());
+
+        $this->assertSame(AgentArtifactStatusEnum::Completed, $promoted?->status);
+        $entry = $this->registry->get($parentRunId, $artifactId);
+        $this->assertSame(AgentArtifactStatusEnum::Completed, $entry->status);
+    }
+
     public function testCreateRejectsDuplicateArtifactIdInSameParent(): void
     {
         $parentRunId = 'parent-'.bin2hex(random_bytes(4));

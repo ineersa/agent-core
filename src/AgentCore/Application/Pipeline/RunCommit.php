@@ -47,12 +47,15 @@ final readonly class RunCommit
             }
 
             $eventsPersisted = false;
+            /** @var list<RunEvent> $persistedEvents */
+            $persistedEvents = [];
 
             try {
                 if ([] !== $events) {
                     $persisted = 1 === \count($events)
                         ? [$this->eventStore->append($events[0])]
                         : $this->eventStore->appendMany($events);
+                    $persistedEvents = $persisted;
                     $lastPersisted = $persisted[array_key_last($persisted)];
                     if ($resolvedNextState->lastSeq !== $lastPersisted->seq) {
                         $bumpedState = new RunState(
@@ -155,7 +158,7 @@ final readonly class RunCommit
                 }
             }
 
-            $this->logCommittedEvents($resolvedNextState, $events);
+            $this->logCommittedEvents($resolvedNextState, $persistedEvents);
 
             if ([] !== $effects) {
                 try {
@@ -175,7 +178,7 @@ final readonly class RunCommit
 
             try {
                 $this->hookDispatcher?->dispatchAfterTurnCommit(
-                    AfterTurnCommitHookContext::fromRunState($resolvedNextState, $events, \count($effects)),
+                    AfterTurnCommitHookContext::fromRunState($resolvedNextState, $persistedEvents, \count($effects)),
                 );
             } catch (\Throwable $exception) {
                 // After-turn commit hooks are optional extension points.

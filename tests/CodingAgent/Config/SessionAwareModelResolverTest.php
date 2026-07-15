@@ -270,6 +270,28 @@ final class SessionAwareModelResolverTest extends IsolatedKernelTestCase
         );
     }
 
+    public function testNumericSessionWithNullProviderCacheKeyInDatabaseThrowsExplicitRuntimeException(): void
+    {
+        $resolver = $this->createResolver($this->standardAiData());
+        $sessionId = $this->writeSessionMetadata('sess-null-key', ['model' => 'llama_cpp/flash']);
+
+        $this->entityManager->getConnection()->executeStatement(
+            'UPDATE hatfield_session SET provider_cache_key = NULL WHERE id = ?',
+            [(int) $sessionId],
+        );
+        $this->entityManager->clear();
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage(\sprintf('Session "%s" is missing a provider_cache_key.', $sessionId));
+
+        $resolver->resolve(
+            '',
+            new MessageBag(),
+            new ModelInvocationInput(runId: $sessionId),
+            new ModelResolutionOptions(),
+        );
+    }
+
     public function testZaiOffReasoningProducesDisabledThinkingOptions(): void
     {
         $aiData = $this->standardAiData();
