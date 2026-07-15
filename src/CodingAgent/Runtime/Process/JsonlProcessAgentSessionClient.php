@@ -38,8 +38,8 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
     /** Sliding window in seconds for restart rate-limiting. */
     private const float RESTART_WINDOW = 60.0;
     private const int EVENT_BUFFER_WARNING_THRESHOLD = 1000;
-    /** Max compact tail entries across all buffered run ids (replayable durable seq>0 is dropped for unobserved/non-primary runs). */
-    private const int EVENT_BUFFER_MAX = 10000;
+    /** Advisory compact tail size at which capacity diagnostics are emitted (not a hard eviction cap). */
+    private const int EVENT_BUFFER_CAPACITY_LOG_THRESHOLD = 10000;
     /** Minimum seconds between repeated watermark warnings while above threshold. */
     private const int EVENT_BUFFER_WATERMARK_LOG_INTERVAL_SECONDS = 60;
     /** @var resource|null */
@@ -134,6 +134,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
         // New run — clear stale state from any previous run or crash.
         $this->activeRunId = null;
         $this->primaryRunId = null;
+        $this->observedChildRunIds = [];
         $this->autoResumed = false;
 
         // Derive session-scoped queue names from the request runId before
@@ -197,6 +198,10 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
                 foreach ($this->readEventBatch() as $event) {
                     if ('run.started' === $event->type || 'run_started' === $event->type) {
                         $this->activeRunId = $event->runId;
+                        if ('' !== $event->runId) {
+                            $this->primaryRunId = $event->runId;
+                            $this->sessionId = $event->runId;
+                        }
                         $foundStarted = true;
 
                         continue;
@@ -256,6 +261,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
         // triggered by THIS attach() call should suppress the write below.
         // Mirrors start() which also resets these before a new run.
         $this->autoResumed = false;
+        $this->observedChildRunIds = [];
 
         // runId is the session ID — update session-scoped queue DSNs.
         $this->sessionId = $runId;
@@ -659,7 +665,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
     private function maybeLogBufferCapacity(string $runId, string $reason): void
     {
         $size = $this->compactEventBuffer->totalTailCount();
-        if ($size < self::EVENT_BUFFER_MAX) {
+        if ($size < self::EVENT_BUFFER_CAPACITY_LOG_THRESHOLD) {
             $this->eventBufferCapacityActive = false;
             $this->eventBufferCapacityLastLoggedAt = null;
 
@@ -683,7 +689,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
             'session_id' => $this->sessionId ?? '',
             'run_id' => $runId,
             'buffer_size' => $size,
-            'threshold' => self::EVENT_BUFFER_MAX,
+            'threshold' => self::EVENT_BUFFER_CAPACITY_LOG_THRESHOLD,
             'reason' => $reason,
         ]);
     }
@@ -728,7 +734,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
             $this->eventBufferWatermarkLastLoggedAt = null;
         }
 
-        if ($size < self::EVENT_BUFFER_MAX) {
+        if ($size < self::EVENT_BUFFER_CAPACITY_LOG_THRESHOLD) {
             $this->eventBufferCapacityActive = false;
             $this->eventBufferCapacityLastLoggedAt = null;
         }

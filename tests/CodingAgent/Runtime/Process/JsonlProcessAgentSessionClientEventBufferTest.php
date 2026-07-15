@@ -151,7 +151,7 @@ final class JsonlProcessAgentSessionClientEventBufferTest extends TestCase
         $ref = new \ReflectionClass($client);
 
         $warn = new \ReflectionClassConstant(JsonlProcessAgentSessionClient::class, 'EVENT_BUFFER_WARNING_THRESHOLD');
-        $max = new \ReflectionClassConstant(JsonlProcessAgentSessionClient::class, 'EVENT_BUFFER_MAX');
+        $max = new \ReflectionClassConstant(JsonlProcessAgentSessionClient::class, 'EVENT_BUFFER_CAPACITY_LOG_THRESHOLD');
         $this->assertSame(1000, $warn->getValue());
         $this->assertSame(10000, $max->getValue());
 
@@ -356,6 +356,45 @@ final class JsonlProcessAgentSessionClientEventBufferTest extends TestCase
         $this->assertSame([], iterator_to_array($client->events($parentRunId)));
     }
 
+    public function testGeneratedRunIdFromRunStartedSetsPrimaryForChildFirstPollRetention(): void
+    {
+        $generatedRunId = 'generated-parent-'.bin2hex(random_bytes(4));
+        $childRunId = 'child-agent-run';
+        $client = $this->createStartBatchFakeControllerClient($generatedRunId);
+        $handle = $client->start(new StartRunRequest(prompt: 'hello', runId: ''));
+
+        $this->assertSame($generatedRunId, $handle->runId);
+
+        // Drain post-start buffered lifecycle events so the regression targets only the injected parent durable event.
+        iterator_to_array($client->events($generatedRunId));
+
+        $this->injectStdoutJsonlLines($client, [
+            $this->jsonlEvent(RuntimeEventTypeEnum::TurnStarted->value, $generatedRunId, 11),
+        ]);
+
+        iterator_to_array($client->events($childRunId));
+
+        $parentFirst = iterator_to_array($client->events($generatedRunId));
+        $this->assertCount(1, $parentFirst);
+        $this->assertSame(RuntimeEventTypeEnum::TurnStarted->value, $parentFirst[0]->type);
+        $this->assertSame(11, $parentFirst[0]->seq);
+        $this->assertSame([], iterator_to_array($client->events($generatedRunId)));
+    }
+
+    public function testAttachClearsStaleObservedChildRunIds(): void
+    {
+        $client = $this->createIdleClient();
+        $client->beginObservingChildRun('stale-child');
+        $ref = new \ReflectionClass($client);
+        $prop = $ref->getProperty('observedChildRunIds');
+
+        $this->assertSame(['stale-child' => true], $prop->getValue($client));
+
+        $client->attach('other-session');
+
+        $this->assertSame([], $prop->getValue($client));
+    }
+
     public function testObservedChildRetainsParentPollHalfRaceForLosslessChildDrain(): void
     {
         $parentRunId = 'parent-run';
@@ -428,25 +467,34 @@ final class JsonlProcessAgentSessionClientEventBufferTest extends TestCase
         $this->assertCount(1, $capacityWarnings);
     }
 
-    private function createStartBatchFakeControllerClient(): JsonlProcessAgentSessionClient
+    private function createStartBatchFakeControllerClient(?string $generatedRunId = null): JsonlProcessAgentSessionClient
     {
         $fakeScript = $this->tmpDir.'/start-batch-controller.php';
-        file_put_contents($fakeScript, <<<'PHP'
+        $generatedLiteral = null === $generatedRunId ? 'null' : var_export($generatedRunId, true);
+        file_put_contents($fakeScript, <<<PHP
 <?php
 fwrite(STDOUT, json_encode(['type' => 'runtime.ready', 'runId' => '', 'seq' => 0, 'payload' => []]) . "\n");
 fflush(STDOUT);
-$line = fgets(STDIN);
-if (false === $line) {
+\$line = fgets(STDIN);
+if (false === \$line) {
     exit(0);
 }
-$cmd = json_decode(trim($line), true);
-$runId = is_array($cmd) ? (string) ($cmd['runId'] ?? 'batch-run') : 'batch-run';
-$events = [
-    ['type' => 'run.started', 'runId' => $runId, 'seq' => 1, 'payload' => []],
-    ['type' => 'turn.started', 'runId' => $runId, 'seq' => 2, 'payload' => []],
-    ['type' => 'run.completed', 'runId' => $runId, 'seq' => 3, 'payload' => []],
+\$cmd = json_decode(trim(\$line), true);
+\$requestedRunId = is_array(\$cmd) ? (string) (\$cmd['runId'] ?? '') : '';
+\$generatedRunId = {$generatedLiteral};
+if ('' !== \$requestedRunId) {
+    \$runId = \$requestedRunId;
+} elseif (null !== \$generatedRunId) {
+    \$runId = \$generatedRunId;
+} else {
+    \$runId = 'batch-run';
+}
+\$events = [
+    ['type' => 'run.started', 'runId' => \$runId, 'seq' => 1, 'payload' => []],
+    ['type' => 'turn.started', 'runId' => \$runId, 'seq' => 2, 'payload' => []],
+    ['type' => 'run.completed', 'runId' => \$runId, 'seq' => 3, 'payload' => []],
 ];
-fwrite(STDOUT, implode("\n", array_map(static fn (array $e): string => json_encode($e), $events)) . "\n");
+fwrite(STDOUT, implode("\n", array_map(static fn (array \$e): string => json_encode(\$e), \$events)) . "\n");
 fflush(STDOUT);
 while (fgets(STDIN) !== false) {
 }
