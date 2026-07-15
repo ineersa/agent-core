@@ -214,11 +214,13 @@ function _run_castor_check_body(string $root, string $qaRunId): void
     } finally {
         unset($GLOBALS['CASTOR_CHECK_AGGREGATING']);
         unset($GLOBALS['CASTOR_PHAR_READY']);
+        // Detached tmux panes live outside the lane setsid tree; finalize exact-run
+        // sessions here so external lane timeouts still release QA-owned resources
+        // before cache-guard or leak assertions can abort the check body.
+        finalize_qa_run_tui_tmux_sessions($qaRunId);
     }
 
     assert_castor_check_llama_proxy_cache_unchanged($llamaProxyCacheBaseline);
-
-    finalize_qa_run_tui_tmux_sessions($qaRunId);
 
     finalize_castor_check_run($qaRunId, $failures, $timings, array_keys($allCheckCommands));
 }

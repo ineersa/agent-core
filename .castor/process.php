@@ -44,6 +44,7 @@ use function CastorTasks\run_tmux_command_bounded;
 require_once __DIR__.'/../vendor/autoload.php';
 require_once __DIR__.'/helpers.php';
 require_once __DIR__.'/shared.php';
+require_once __DIR__.'/qa_tmux.php';
 
 // ── Shared proc_open parallel runner ──────────────────────────
 
