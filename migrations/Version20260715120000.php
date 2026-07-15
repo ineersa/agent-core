@@ -10,10 +10,10 @@ use Symfony\Component\Uid\UuidV7;
 
 /**
  * Repair hatfield_session rows left with NULL or empty provider_cache_key after
- * Version20260713120000. Startup ApplicationMigrationExecutor invokes up() but
- * only replays addSql() statements without query parameters, so the original
- * parameterized backfill may not have applied; this migration repairs via
- * connection executeStatement inside up().
+ * Version20260713120000 was recorded. The original backfill uses parameterized
+ * addSql() statements; if startup ever replayed SQL without binding parameters,
+ * rows could remain corrupt. This migration re-applies the same repair using
+ * guarded parameterized UPDATEs so ApplicationMigrationExecutor can replay it.
  */
 final class Version20260715120000 extends AbstractMigration
 {
@@ -31,7 +31,7 @@ final class Version20260715120000 extends AbstractMigration
 
         foreach ($ids as $id) {
             $key = UuidV7::v7()->toRfc4122();
-            $this->connection->executeStatement(
+            $this->addSql(
                 'UPDATE hatfield_session SET provider_cache_key = ? WHERE id = ? AND (provider_cache_key IS NULL OR provider_cache_key = ?)',
                 [$key, $id, ''],
             );

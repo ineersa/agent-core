@@ -304,7 +304,11 @@ final class ApplicationMigrationExecutor
             $transactionActive = true;
 
             foreach ($plannedSql as $query) {
-                $this->connection->executeStatement($query->getStatement());
+                $this->connection->executeStatement(
+                    $query->getStatement(),
+                    $query->getParameters(),
+                    $query->getTypes(),
+                );
             }
 
             $executionTime = (int) ((microtime(true) - $startTime) * 1000);

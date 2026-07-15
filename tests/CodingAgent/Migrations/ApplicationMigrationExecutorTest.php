@@ -226,7 +226,7 @@ final class ApplicationMigrationExecutorTest extends TestCase
         $this->assertSame(1, $countNew);
     }
 
-    public function testProviderCacheKeyBackfillAssignsDistinctUuidV7ForPreMigrationRows(): void
+    public function testStartupExecutorBindsParametersForProviderCacheKeyBackfill(): void
     {
         $connection = $this->createSqliteConnection($this->isolatedDir.'/provider-key-backfill.sqlite');
         $connection->executeStatement(<<<'SQL'
@@ -249,29 +249,29 @@ SQL);
         $connection->insert('hatfield_session', ['cwd' => '/a', 'name' => 'one', 'created_at' => $now, 'updated_at' => $now]);
         $connection->insert('hatfield_session', ['cwd' => '/b', 'name' => 'two', 'created_at' => $now, 'updated_at' => $now]);
 
-        // Mirror Version20260713120000 up() SQL/backfill without AbstractMigration construction.
-        $connection->executeStatement('ALTER TABLE hatfield_session ADD COLUMN provider_cache_key VARCHAR(36) DEFAULT NULL');
-        $ids = $connection->fetchFirstColumn('SELECT id FROM hatfield_session');
-        foreach ($ids as $id) {
-            $key = UuidV7::v7()->toRfc4122();
-            $connection->executeStatement(
-                'UPDATE hatfield_session SET provider_cache_key = ? WHERE id = ?',
-                [$key, $id],
-            );
-        }
-        $connection->executeStatement('CREATE UNIQUE INDEX uniq_hatfield_session_provider_cache_key ON hatfield_session (provider_cache_key)');
+        $this->recordAppliedMigrationsThrough($connection, 'Version20260710120000');
+
+        $executor = new ApplicationMigrationExecutor($connection, new NullLogger());
+        $executor();
+
+        $recorded = $connection->fetchOne(
+            'SELECT 1 FROM doctrine_migration_versions WHERE version = ?',
+            ['Version20260713120000'],
+        );
+        $this->assertNotFalse($recorded, 'Version20260713120000 must be recorded after startup executor');
 
         $keys = $connection->fetchFirstColumn('SELECT provider_cache_key FROM hatfield_session ORDER BY id');
         $this->assertCount(2, $keys);
         $this->assertNotSame($keys[0], $keys[1]);
         foreach ($keys as $key) {
             $this->assertIsString($key);
+            $this->assertNotSame('', $key);
             $this->assertTrue(Uuid::isValid($key));
             $this->assertInstanceOf(UuidV7::class, Uuid::fromString($key));
         }
     }
 
-    public function testProviderCacheKeyRepairMigrationBackfillsNullAndEmptyRows(): void
+    public function testStartupExecutorRepairsNullAndEmptyProviderCacheKeyRows(): void
     {
         $connection = $this->createSqliteConnection($this->isolatedDir.'/provider-key-repair.sqlite');
         $now = '2026-07-15 00:00:00';
@@ -298,8 +298,16 @@ SQL);
         $validKey = UuidV7::v7()->toRfc4122();
         $connection->insert('hatfield_session', ['cwd' => '/c', 'name' => 'valid', 'created_at' => $now, 'updated_at' => $now, 'provider_cache_key' => $validKey]);
 
-        $migration = new \DoctrineMigrations\Version20260715120000($connection, new NullLogger());
-        $migration->up(new \Doctrine\DBAL\Schema\Schema());
+        $this->recordAppliedMigrationsThrough($connection, 'Version20260714140000');
+
+        $executor = new ApplicationMigrationExecutor($connection, new NullLogger());
+        $executor();
+
+        $recordedRepair = $connection->fetchOne(
+            'SELECT 1 FROM doctrine_migration_versions WHERE version = ?',
+            ['Version20260715120000'],
+        );
+        $this->assertNotFalse($recordedRepair);
 
         $keys = $connection->fetchFirstColumn('SELECT provider_cache_key FROM hatfield_session ORDER BY id');
         $this->assertCount(3, $keys);
@@ -312,10 +320,47 @@ SQL);
             $this->assertInstanceOf(UuidV7::class, Uuid::fromString($key));
         }
 
-        $migration = new \DoctrineMigrations\Version20260715120000($connection, new NullLogger());
-        $migration->up(new \Doctrine\DBAL\Schema\Schema());
+        $executorAgain = new ApplicationMigrationExecutor($connection, new NullLogger());
+        $executorAgain();
         $keysAfterSecondPass = $connection->fetchFirstColumn('SELECT provider_cache_key FROM hatfield_session ORDER BY id');
         $this->assertSame($keys, $keysAfterSecondPass);
+    }
+
+    public function testStartupExecutorWithoutParameterBindingLeavesProviderCacheKeyNull(): void
+    {
+        $connection = $this->createSqliteConnection($this->isolatedDir.'/provider-key-binding-regression.sqlite');
+        $connection->executeStatement(<<<'SQL'
+CREATE TABLE hatfield_session (
+    id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+    cwd VARCHAR(255) NOT NULL,
+    prompt VARCHAR(255) DEFAULT NULL,
+    parent_id VARCHAR(255) DEFAULT NULL,
+    root_id VARCHAR(255) DEFAULT NULL,
+    model VARCHAR(255) DEFAULT NULL,
+    model_provider VARCHAR(255) DEFAULT NULL,
+    model_name VARCHAR(255) DEFAULT NULL,
+    reasoning VARCHAR(255) DEFAULT NULL,
+    name VARCHAR(200) DEFAULT '' NOT NULL,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL
+)
+SQL);
+        $now = '2026-07-13 00:00:00';
+        $connection->insert('hatfield_session', ['cwd' => '/a', 'name' => 'one', 'created_at' => $now, 'updated_at' => $now]);
+
+        $this->recordAppliedMigrationsThrough($connection, 'Version20260710120000');
+
+        $migration = new \DoctrineMigrations\Version20260713120000($connection, new NullLogger());
+        $migration->up(new \Doctrine\DBAL\Schema\Schema());
+        $plannedSql = $migration->getSql();
+
+        foreach ($plannedSql as $query) {
+            $connection->executeStatement($query->getStatement());
+        }
+
+        $keys = $connection->fetchFirstColumn('SELECT provider_cache_key FROM hatfield_session ORDER BY id');
+        $this->assertCount(1, $keys);
+        $this->assertNull($keys[0], 'Replaying parameterized UPDATE without binding leaves provider_cache_key NULL');
     }
 
     public function testBusyTimeoutBelowMinimumThrowsRuntimeException(): void
@@ -331,6 +376,49 @@ SQL);
         $this->expectExceptionMessage('5000');
 
         $executor();
+    }
+
+    /**
+     * @param non-empty-string $throughVersion basename of last migration already applied (exclusive of later ones)
+     */
+    private function recordAppliedMigrationsThrough(Connection $connection, string $throughVersion): void
+    {
+        $connection->executeStatement(
+            'CREATE TABLE IF NOT EXISTS doctrine_migration_versions (
+                version VARCHAR(191) NOT NULL PRIMARY KEY,
+                executed_at DATETIME DEFAULT NULL,
+                execution_time INTEGER DEFAULT NULL
+            )'
+        );
+
+        $ordered = [
+            'Version20260601152619',
+            'Version20260606140000',
+            'Version20260607000000',
+            'Version20260608162000',
+            'Version20260617141001',
+            'Version20260617141002',
+            'Version20260628140000',
+            'Version20260710120000',
+            'Version20260713120000',
+            'Version20260713130000',
+            'Version20260713140000',
+            'Version20260713160000',
+            'Version20260714140000',
+            'Version20260715120000',
+        ];
+
+        foreach ($ordered as $version) {
+            $connection->insert('doctrine_migration_versions', [
+                'version' => $version,
+                'executed_at' => '2026-07-15 00:00:00',
+                'execution_time' => 0,
+            ]);
+
+            if ($version === $throughVersion) {
+                break;
+            }
+        }
     }
 
     /**
