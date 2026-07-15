@@ -24,8 +24,10 @@ use Symfony\AI\Platform\Result\ToolCall;
  * an image_ref content part, the converter emits a synthetic UserMessage
  * containing a real Symfony AI Image attachment after the normal tool
  * call message. This provides the Pi-style fallback for multimodal tool
- * results where the Symfony AI ToolCallMessage string-only content
- * cannot directly carry image data.
+ * results where tool output must include multimodal image content.
+ * ToolCallMessage holds ContentInterface parts (Symfony AI 0.11), but
+ * provider normalizers for tool-role messages still serialize text output;
+ * a follow-up UserMessage with Image is the supported multimodal path.
  *
  * Image capability gating is handled upstream by ImageGatingConvertHook
  * (a ConvertToLlmHookInterface implementation). This converter always
@@ -85,8 +87,8 @@ final class AgentMessageConverter
      *
      * Most messages produce exactly one Symfony message. Tool messages that
      * carry image_ref content parts produce two:
-     * 1. ToolCallMessage with the text content (normal tool result)
-     * 2. UserMessage with Image attachment (synthetic follow-up)
+     * 1. ToolCallMessage with text tool output (normal tool result)
+     * 2. UserMessage with Image attachment (synthetic follow-up for vision)
      *
      * The top-level toMessageBag() method defers synthetic image messages
      * until the end of a consecutive tool-message batch so providers that
@@ -161,10 +163,9 @@ final class AgentMessageConverter
         }
 
         // 2. For each image_ref part, add a synthetic UserMessage.
-        //    Symfony AI ToolCallMessage is string-only, so we cannot
-        //    embed images in the tool result itself. Instead we emit
-        //    a follow-up user message that the provider normalizers
-        //    will serialize as proper image content.
+        //    Tool results are text on the wire for tool-role messages;
+        //    vision models need a user-role message with Image content.
+        //    ImageGatingConvertHook strips image_ref when the model lacks vision.
         //
         //    Image capability gating is handled upstream by
         //    ImageGatingConvertHook; this converter always attaches

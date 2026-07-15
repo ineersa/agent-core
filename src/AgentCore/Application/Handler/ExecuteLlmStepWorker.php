@@ -173,7 +173,7 @@ final readonly class ExecuteLlmStepWorker
             // silent success.
             $assistantMessage = $response->assistantMessage;
             $hasStreamDeltas = [] !== $response->deltas();
-            if (null === $assistantMessage && !$hasStreamDeltas && null === $response->stopReason && null === $response->error) {
+            if (null === $assistantMessage && !$hasStreamDeltas && null === $response->error) {
                 // The platform returned a fully empty response: no assistant
                 // message, no stream deltas, no stop reason, no error.
                 // This is a degenerate platform result; treat it as an error

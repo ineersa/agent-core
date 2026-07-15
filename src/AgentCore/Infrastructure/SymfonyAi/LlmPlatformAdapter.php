@@ -727,7 +727,7 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
             FinishReasonCase::LENGTH => 'length',
             FinishReasonCase::TOOL_CALL => 'tool_call',
             FinishReasonCase::CONTENT_FILTER => 'content_filter',
-            FinishReasonCase::STOP_SEQUENCE => 'stop_sequence',
+            FinishReasonCase::STOP_SEQUENCE => $finishReason->getRaw(),
             FinishReasonCase::OTHER => $finishReason->getRaw(),
         };
     }

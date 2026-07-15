@@ -9,7 +9,12 @@ use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use Symfony\AI\Platform\Exception\AuthenticationException;
+use Symfony\AI\Platform\Exception\BadRequestException;
 use Symfony\AI\Platform\Exception\IncompleteStreamException;
+use Symfony\AI\Platform\Exception\RateLimitExceededException;
+use Symfony\AI\Platform\Exception\RuntimeException as PlatformRuntimeException;
+use Symfony\AI\Platform\Exception\ServerException;
 use Symfony\AI\Platform\FinishReason\FinishReason;
 use Symfony\AI\Platform\FinishReason\FinishReasonCase;
 use Symfony\AI\Platform\Result\RawHttpResult;
@@ -725,7 +730,154 @@ final class DurableResultConverterTest extends TestCase
         $this->assertSame('stop', $value->getRaw());
     }
 
+    // ── HTTP status conversion (streaming path) ─────────────────────────────
+
+    #[Test]
+    public function streamingConvertThrowsAuthenticationExceptionOn401(): void
+    {
+        $result = $this->streamResultWithStatus(401, '{"error":{"message":"Invalid API key"}}', []);
+
+        $this->expectException(AuthenticationException::class);
+        $this->expectExceptionMessage('Invalid API key');
+
+        $this->converter->convert($result, ['stream' => true]);
+    }
+
+    #[Test]
+    public function streamingConvertThrowsRateLimitExceededExceptionOn429(): void
+    {
+        $result = $this->streamResultWithStatus(429, '{"error":{"message":"rate limited"}}', []);
+
+        $this->expectException(RateLimitExceededException::class);
+
+        $this->converter->convert($result, ['stream' => true]);
+    }
+
+    #[Test]
+    public function streamingConvertThrowsServerExceptionOn500(): void
+    {
+        $result = $this->streamResultWithStatus(500, '{"error":{"message":"upstream down"}}', []);
+
+        $this->expectException(ServerException::class);
+
+        $this->converter->convert($result, ['stream' => true]);
+    }
+
+    #[Test]
+    public function streamingConvertThrowsRuntimeExceptionOnGeneric4xx(): void
+    {
+        $result = $this->streamResultWithStatus(403, '{"error":{"message":"forbidden"}}', []);
+
+        $this->expectException(PlatformRuntimeException::class);
+        $this->expectExceptionMessage('Unexpected response code 403');
+
+        $this->converter->convert($result, ['stream' => true]);
+    }
+
+    #[Test]
+    public function streamingConvertThrowsBadRequestExceptionOn400(): void
+    {
+        $result = $this->streamResultWithStatus(400, '{"error":{"message":"Bad Request: invalid"}}', []);
+
+        $this->expectException(BadRequestException::class);
+
+        $this->converter->convert($result, ['stream' => true]);
+    }
+
+    // ── Stream payload error classification ───────────────────────────────────
+
+    #[Test]
+    public function streamErrorChunkRateLimitRaisesRateLimitExceededException(): void
+    {
+        $this->expectException(RateLimitExceededException::class);
+
+        $this->collectStream($this->streamResult([
+            $this->chunk(['error' => ['message' => 'Too many requests', 'code' => 'rate_limit_exceeded']]),
+        ]));
+    }
+
+    #[Test]
+    public function streamErrorChunkServerErrorRaisesServerException(): void
+    {
+        $this->expectException(ServerException::class);
+
+        $this->collectStream($this->streamResult([
+            $this->chunk(['error' => ['message' => 'Internal error', 'type' => 'server_error']]),
+        ]));
+    }
+
+    #[Test]
+    public function streamErrorChunkGenericRaisesRuntimeException(): void
+    {
+        $this->expectException(PlatformRuntimeException::class);
+        $this->expectExceptionMessage('Stream error');
+
+        $this->collectStream($this->streamResult([
+            $this->chunk(['error' => ['message' => 'Something broke']]),
+        ]));
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────────
+
+    /**
+     * @param list<array<string, mixed>> $chunks
+     */
+    private function streamResultWithStatus(int $statusCode, string $body, array $chunks): RawHttpResult
+    {
+        $response = new class($statusCode, $body) implements ResponseInterface {
+            public function __construct(private int $statusCode, private string $body)
+            {
+            }
+
+            public function getStatusCode(): int
+            {
+                return $this->statusCode;
+            }
+
+            public function getHeaders(bool $throw = true): array
+            {
+                return [];
+            }
+
+            public function getContent(bool $throw = true): string
+            {
+                return $this->body;
+            }
+
+            public function toArray(bool $throw = true): array
+            {
+                $decoded = json_decode($this->body, true);
+
+                return \is_array($decoded) ? $decoded : [];
+            }
+
+            public function cancel(): void
+            {
+            }
+
+            public function getInfo(?string $type = null): mixed
+            {
+                return null;
+            }
+        };
+
+        return new RawHttpResult(
+            $response,
+            new class($chunks) implements \Symfony\AI\Platform\Result\Stream\HttpStreamInterface {
+                /** @param list<array<string, mixed>> $chunks */
+                public function __construct(private readonly array $chunks)
+                {
+                }
+
+                public function stream(ResponseInterface $response): iterable
+                {
+                    foreach ($this->chunks as $chunk) {
+                        yield $chunk;
+                    }
+                }
+            },
+        );
+    }
 
     /**
      * Create a RawHttpResult configured for streaming mode, with a mock HTTP 200 response.
@@ -801,11 +953,6 @@ final class DurableResultConverterTest extends TestCase
     }
 
     /**
-     * Collect all deltas from a stream result using the given converter.
-     *
-     * @return list<object>
-     */
-    /**
      * @param list<object> $deltas
      */
     private function lastTokenUsageDelta(array $deltas): \Symfony\AI\Platform\TokenUsage\TokenUsage
@@ -819,6 +966,11 @@ final class DurableResultConverterTest extends TestCase
         $this->fail('Expected a TokenUsage delta in stream output');
     }
 
+    /**
+     * Drain a stream through the given converter and return yielded deltas.
+     *
+     * @return list<object>
+     */
     private function collectStreamWithConverter(DurableResultConverter $converter, RawHttpResult $rawResult): array
     {
         $result = $converter->convert($rawResult, ['stream' => true]);

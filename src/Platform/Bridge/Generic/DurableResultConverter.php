@@ -7,6 +7,9 @@ namespace Ineersa\Platform\Bridge\Generic;
 use Symfony\AI\Platform\Bridge\Generic\Completions\CompletionsConversionTrait;
 use Symfony\AI\Platform\Bridge\Generic\Completions\FinishReasonMapper;
 use Symfony\AI\Platform\Bridge\Generic\Completions\ResultConverter;
+use Symfony\AI\Platform\Exception\AuthenticationException;
+use Symfony\AI\Platform\Exception\BadRequestException;
+use Symfony\AI\Platform\Exception\ExceedContextSizeException;
 use Symfony\AI\Platform\Exception\IncompleteStreamException;
 use Symfony\AI\Platform\Exception\RateLimitExceededException;
 use Symfony\AI\Platform\Exception\RuntimeException;
@@ -63,7 +66,6 @@ use Symfony\AI\Platform\TokenUsage\TokenUsage;
 final class DurableResultConverter extends ResultConverter
 {
     use CompletionsConversionTrait {
-        convertStream as private vendorConvertStream;
         isRateLimitError as private vendorIsRateLimitError;
         isServerError as private vendorIsServerError;
     }
@@ -83,7 +85,39 @@ final class DurableResultConverter extends ResultConverter
      */
     public function convert(RawResultInterface|RawHttpResult $result, array $options = []): ResultInterface
     {
+        $response = $result->getObject();
+
+        if (401 === $response->getStatusCode()) {
+            $errorMessage = json_decode($response->getContent(false), true)['error']['message'] ?? 'Authentication failed.';
+            throw new AuthenticationException($errorMessage);
+        }
+
+        if (400 === $response->getStatusCode()) {
+            $error = json_decode($response->getContent(false), true)['error'] ?? [];
+            $errorMessage = $error['message'] ?? 'Bad Request';
+
+            if ('context_length_exceeded' === ($error['code'] ?? null) || preg_match('/context[_ ]length[_ ]exceeded/i', $errorMessage)) {
+                throw new ExceedContextSizeException($errorMessage);
+            }
+
+            throw new BadRequestException($errorMessage);
+        }
+
+        if (429 === $response->getStatusCode()) {
+            $errorMessage = json_decode($response->getContent(false), true)['error']['message'] ?? null;
+            throw new RateLimitExceededException(null, $errorMessage);
+        }
+
+        if (($code = $response->getStatusCode()) >= 500) {
+            $errorMessage = json_decode($response->getContent(false), true)['error']['message'] ?? null;
+            throw new ServerException($code, $errorMessage);
+        }
+
         if (true === ($options['stream'] ?? false)) {
+            if (($code = $response->getStatusCode()) >= 400) {
+                throw new RuntimeException(\sprintf('Unexpected response code %d: "%s"', $code, $response->getContent(false)));
+            }
+
             return new StreamResult($this->convertStream($result));
         }
 
@@ -246,6 +280,8 @@ final class DurableResultConverter extends ResultConverter
                     yield $delta;
                 }
 
+                // Arguments may arrive before the id-bearing chunk at this index;
+                // replay the buffered JSON once we can address a non-empty tool-call id.
                 $bufferedArgs = $blocks[$stableKey]['partialJson'] ?? '';
                 if ('' !== $bufferedArgs && '' !== $chunk['id']) {
                     $delta = new ToolInputDelta($chunk['id'], $chunk['function']['name'] ?? '', $bufferedArgs);
@@ -296,6 +332,8 @@ final class DurableResultConverter extends ResultConverter
                 if (null !== $stableKey && isset($blocks[$stableKey])) {
                     $blocks[$stableKey]['partialJson'] .= $chunk['function']['arguments'];
                 } else {
+                    // Orphan argument chunk: no id yet — hold in a placeholder block
+                    // so phantom/incomplete tool calls never surface in ToolCallComplete.
                     $stableKey = $nextStableKey++;
                     $blocks[$stableKey] = [
                         'id' => '',
@@ -389,6 +427,7 @@ final class DurableResultConverter extends ResultConverter
         $toolCalls = [];
 
         foreach ($blocks as $block) {
+            // Exclude phantom blocks: started without id/name or never completed.
             if ('' === $block['id'] || '' === $block['name']) {
                 continue;
             }
