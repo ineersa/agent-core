@@ -338,6 +338,24 @@ final class JsonlProcessAgentSessionClientEventBufferTest extends TestCase
         $this->assertCount(0, $capacityWarnings);
     }
 
+    public function testPrimarySessionRunRetainsParentDurableBufferedDuringChildPoll(): void
+    {
+        $parentRunId = 'parent-run';
+        $childRunId = 'child-agent-run';
+        $client = $this->createIdleClient();
+        $this->injectStdoutJsonlLines($client, [
+            $this->jsonlEvent(RuntimeEventTypeEnum::TurnStarted->value, $parentRunId, 11),
+        ]);
+
+        iterator_to_array($client->events($childRunId));
+
+        $parentFirst = iterator_to_array($client->events($parentRunId));
+        $this->assertCount(1, $parentFirst);
+        $this->assertSame(RuntimeEventTypeEnum::TurnStarted->value, $parentFirst[0]->type);
+        $this->assertSame(11, $parentFirst[0]->seq);
+        $this->assertSame([], iterator_to_array($client->events($parentRunId)));
+    }
+
     public function testObservedChildRetainsParentPollHalfRaceForLosslessChildDrain(): void
     {
         $parentRunId = 'parent-run';
@@ -384,14 +402,11 @@ final class JsonlProcessAgentSessionClientEventBufferTest extends TestCase
 
         $client->endObservingChildRun($childRunId);
 
-        $snapshot = $compact->tailSnapshotForTests();
-        $this->assertArrayHasKey($childRunId, $snapshot);
-        $this->assertCount(1, $snapshot[$childRunId]);
-        $this->assertSame(0, $snapshot[$childRunId][0]->seq);
-
         $drain = iterator_to_array($client->events($childRunId));
         $this->assertCount(1, $drain);
         $this->assertSame(RuntimeEventTypeEnum::AssistantTextDelta->value, $drain[0]->type);
+        $this->assertSame(0, $drain[0]->seq);
+        $this->assertSame([], iterator_to_array($client->events($childRunId)));
     }
 
     public function testTailAtCapacityLogsAtMostOncePerInterval(): void

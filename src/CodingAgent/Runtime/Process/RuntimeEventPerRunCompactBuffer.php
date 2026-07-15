@@ -10,8 +10,10 @@ use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 /**
  * Per-run compact tail for cross-run JSONL demux buffering.
  *
- * Committed events with seq > 0 are replayable from canonical events.jsonl and are not retained
- * as raw queue entries. Only the current non-durable stream tail (seq = 0 deltas) and protected
+ * Committed events with seq > 0 are replayable from canonical events.jsonl. Unobserved runs retain only
+ * checkpoints' pruning effects plus seq = 0 compact tail and protected controls — not durable backlog.
+ * Observed runs (explicit child observation or session primary run) may retain replayable durable events.
+ * Only the current non-durable stream tail (seq = 0 deltas) and protected
  * interactive/control events are kept until {@see drain()} for that run id.
  *
  * Stream subscribers emit incremental chunks (assistant text/thinking, tool partial_json, tool
@@ -51,7 +53,7 @@ final class RuntimeEventPerRunCompactBuffer
 
             if ($this->isRunTerminal($event)) {
                 $this->clearTransientTail($runId);
-                if ($observedRun || $this->isProtectedControlEvent($event)) {
+                if ($observedRun) {
                     $this->appendTail($runId, $event);
                 }
 
@@ -117,12 +119,6 @@ final class RuntimeEventPerRunCompactBuffer
         }
 
         return $count;
-    }
-
-    /** @return array<string, list<RuntimeEvent>> */
-    public function tailSnapshotForTests(): array
-    {
-        return $this->tailByRunId;
     }
 
     private function isProtectedControlEvent(RuntimeEvent $event): bool

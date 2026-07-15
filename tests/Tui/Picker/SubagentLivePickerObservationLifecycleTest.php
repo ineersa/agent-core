@@ -53,8 +53,9 @@ final class SubagentLivePickerObservationLifecycleTest extends TestCase
         ));
 
         $spy = new ObservingSpyClient();
-        $snapshotProvider = $this->createMock(ChildRunTranscriptSnapshotProviderInterface::class);
-        $snapshotProvider->method('snapshot')->willReturn(new ChildRunTranscriptSnapshotDTO([], [], 0));
+        $snapshotProvider = new FixedChildRunTranscriptSnapshotProvider(
+            new ChildRunTranscriptSnapshotDTO([], [], 0),
+        );
 
         $picker = new SubagentLivePickerController(
             new SubagentLiveChildViewPoller(
@@ -124,5 +125,17 @@ final class ObservingSpyClient implements AgentSessionClient
 
     public function compact(string $runId, ?string $customInstructions = null): void
     {
+    }
+}
+
+final class FixedChildRunTranscriptSnapshotProvider implements ChildRunTranscriptSnapshotProviderInterface
+{
+    public function __construct(private readonly ChildRunTranscriptSnapshotDTO $snapshot)
+    {
+    }
+
+    public function snapshot(string $childRunId): ChildRunTranscriptSnapshotDTO
+    {
+        return $this->snapshot;
     }
 }

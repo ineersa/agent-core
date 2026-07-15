@@ -38,7 +38,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
     /** Sliding window in seconds for restart rate-limiting. */
     private const float RESTART_WINDOW = 60.0;
     private const int EVENT_BUFFER_WARNING_THRESHOLD = 1000;
-    /** Max compact tail entries across all buffered run ids (durable seq>0 events are not retained). */
+    /** Max compact tail entries across all buffered run ids (replayable durable seq>0 is dropped for unobserved/non-primary runs). */
     private const int EVENT_BUFFER_MAX = 10000;
     /** Minimum seconds between repeated watermark warnings while above threshold. */
     private const int EVENT_BUFFER_WATERMARK_LOG_INTERVAL_SECONDS = 60;
@@ -77,6 +77,12 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
      * Hatfield instance — session_id === run_id per AGENTS.md.
      */
     private ?string $sessionId = null;
+
+    /**
+     * Session root run id (session_id === run_id). Retained across child live-view polls so
+     * parent durable events stay buffered while activeRunId targets a selected child.
+     */
+    private ?string $primaryRunId = null;
 
     /**
      * Whether ensureProcessRunning() auto-resumed the active run during
@@ -127,6 +133,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
     {
         // New run — clear stale state from any previous run or crash.
         $this->activeRunId = null;
+        $this->primaryRunId = null;
         $this->autoResumed = false;
 
         // Derive session-scoped queue names from the request runId before
@@ -161,6 +168,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
         // run.started arrives, auto-resume will target it.
         if (null !== $runId) {
             $this->activeRunId = $runId;
+            $this->primaryRunId = $runId;
         }
 
         $cmd = new RuntimeCommand(
@@ -252,6 +260,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
         // runId is the session ID — update session-scoped queue DSNs.
         $this->sessionId = $runId;
         $this->activeRunId = $runId;
+        $this->primaryRunId = $runId;
         $this->ensureProcessRunning();
 
         // Symmetric with start(): wait for runtime.ready before sending
@@ -409,6 +418,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
     {
         $this->activeRunId = $sessionId;
         $this->sessionId = $sessionId;
+        $this->primaryRunId = $sessionId;
         $this->ensureProcessRunning();
         $this->waitForRuntimeReady();
 
@@ -640,7 +650,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
     private function bufferEvent(RuntimeEvent $event, string $reason): void
     {
         $observed = isset($this->observedChildRunIds[$event->runId])
-            || ('' !== $event->runId && $event->runId === ($this->activeRunId ?? ''));
+            || ('' !== $event->runId && $event->runId === ($this->primaryRunId ?? ''));
         $this->compactEventBuffer->ingest($event, $observed);
         $this->maybeLogBufferCapacity($event->runId, $reason);
         $this->maybeLogBufferWatermark($reason);

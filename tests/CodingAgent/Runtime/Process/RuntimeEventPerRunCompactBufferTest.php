@@ -31,7 +31,6 @@ final class RuntimeEventPerRunCompactBufferTest extends TestCase
         $this->assertSame(RuntimeEventTypeEnum::RunCompleted->value, $drained[1]->type);
     }
 
-
     public function testUnobservedDurableLifecycleIsNotRetained(): void
     {
         $buffer = new RuntimeEventPerRunCompactBuffer();
