@@ -21,6 +21,8 @@ use Ineersa\AgentCore\Domain\Model\PlatformInvocationResult;
 use Ineersa\Platform\Result\CancellableRawResultInterface;
 use Psr\Log\LoggerInterface;
 use Symfony\AI\Agent\Input;
+use Symfony\AI\Platform\FinishReason\FinishReason;
+use Symfony\AI\Platform\FinishReason\FinishReasonCase;
 use Symfony\AI\Platform\Message\AssistantMessage;
 use Symfony\AI\Platform\Message\Content\ContentInterface;
 use Symfony\AI\Platform\Message\Content\Text;
@@ -410,7 +412,7 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
             assistantMessage: $assistantMessage,
             deltas: $deltas,
             usage: $this->extractUsage($deferredResult, $modelName),
-            stopReason: $aborted ? 'aborted' : $this->resolveStopReason($assistantMessage),
+            stopReason: $aborted ? 'aborted' : $this->resolveStopReason($assistantMessage, $deferredResult),
             error: null,
             modelNotifications: $modelNotifications,
         );
@@ -709,13 +711,25 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
         return new AssistantMessage(...$contentParts);
     }
 
-    private function resolveStopReason(?AssistantMessage $assistantMessage): ?string
+    private function resolveStopReason(?AssistantMessage $assistantMessage, DeferredResult $deferredResult): ?string
     {
         if ($assistantMessage?->hasToolCalls()) {
             return 'tool_call';
         }
 
-        return null;
+        $finishReason = $deferredResult->getMetadata()->get('finish_reason');
+        if (!$finishReason instanceof FinishReason) {
+            return null;
+        }
+
+        return match ($finishReason->getCase()) {
+            FinishReasonCase::STOP => 'stop',
+            FinishReasonCase::LENGTH => 'length',
+            FinishReasonCase::TOOL_CALL => 'tool_call',
+            FinishReasonCase::CONTENT_FILTER => 'content_filter',
+            FinishReasonCase::STOP_SEQUENCE => $finishReason->getRaw(),
+            FinishReasonCase::OTHER => $finishReason->getRaw(),
+        };
     }
 
     /**
