@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Config;
 
+use Ineersa\CodingAgent\Entity\HatfieldSession;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 
 /**
@@ -23,13 +24,13 @@ final class SessionMetadataStore
     }
 
     /**
-     * Read session metadata from the database.
+     * Load the persisted session row by public session id.
      *
-     * @return array<string, mixed> Empty array if the session does not exist
+     * Callers must treat the returned entity as read-only.
      */
-    public function readSessionMetadata(string $sessionId): array
+    public function findSession(string $sessionId): ?HatfieldSession
     {
-        return $this->hatfieldSessionStore->loadMetadata($sessionId) ?? [];
+        return $this->hatfieldSessionStore->findSession($sessionId);
     }
 
     /**

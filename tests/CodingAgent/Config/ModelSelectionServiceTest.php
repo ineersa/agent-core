@@ -164,9 +164,10 @@ class ModelSelectionServiceTest extends IsolatedKernelTestCase
 
         $service->changeReasoning('low', $this->sessionId);
 
-        $meta = $this->readSessionMetadata($this->sessionId);
-        $this->assertSame('low', $meta['reasoning']);
-        $this->assertSame('llama_cpp/flash', $meta['model']);
+        $session = $this->findSessionEntity($this->sessionId);
+        $this->assertNotNull($session);
+        $this->assertSame('low', $session->reasoning);
+        $this->assertSame('llama_cpp/flash', $session->model);
     }
 
     // ──────────────────────────────────────────────
@@ -196,10 +197,11 @@ class ModelSelectionServiceTest extends IsolatedKernelTestCase
 
         $service->changeModel($ref, $this->sessionId);
 
-        $meta = $this->readSessionMetadata($this->sessionId);
-        $this->assertSame('deepseek/deepseek-v4-flash', $meta['model']);
-        $this->assertSame('deepseek', $meta['model_provider']);
-        $this->assertSame('deepseek-v4-flash', $meta['model_name']);
+        $session = $this->findSessionEntity($this->sessionId);
+        $this->assertNotNull($session);
+        $this->assertSame('deepseek/deepseek-v4-flash', $session->model);
+        $this->assertSame('deepseek', $session->modelProvider);
+        $this->assertSame('deepseek-v4-flash', $session->modelName);
     }
 
     public function testChangeModelThrowsOnUnavailableModel(): void
@@ -223,8 +225,9 @@ class ModelSelectionServiceTest extends IsolatedKernelTestCase
 
         $service->changeReasoning('xhigh', $this->sessionId);
 
-        $meta = $this->readSessionMetadata($this->sessionId);
-        $this->assertSame('xhigh', $meta['reasoning']);
+        $session = $this->findSessionEntity($this->sessionId);
+        $this->assertNotNull($session);
+        $this->assertSame('xhigh', $session->reasoning);
     }
 
     public function testChangeReasoningThrowsOnInvalidLevel(): void
@@ -348,8 +351,9 @@ class ModelSelectionServiceTest extends IsolatedKernelTestCase
         $this->assertNotNull($result);
         $this->assertSame('high', $result);
 
-        $meta = $this->readSessionMetadata($this->sessionId);
-        $this->assertSame('high', $meta['reasoning']);
+        $session = $this->findSessionEntity($this->sessionId);
+        $this->assertNotNull($session);
+        $this->assertSame('high', $session->reasoning);
     }
 
     public function testCycleReasoningForCurrentModelReturnsNullWhenUnsupported(): void
@@ -622,9 +626,9 @@ class ModelSelectionServiceTest extends IsolatedKernelTestCase
         return (string) $entity->id;
     }
 
-    private function readSessionMetadata(string $sessionId): array
+    private function findSessionEntity(string $sessionId): ?HatfieldSession
     {
-        return $this->sessionMetaStore->readSessionMetadata($sessionId);
+        return $this->sessionMetaStore->findSession($sessionId);
     }
 
     private function homeSettingsPath(): string

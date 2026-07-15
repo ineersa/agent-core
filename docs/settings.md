@@ -1088,6 +1088,24 @@ All z.ai models have zero cost (plan-based billing).
 
 #### openai-codex
 
+Codex providers support an explicit transport:
+
+| `transport` | Behavior |
+| --- | --- |
+| `websocket-cached` (tracked project default) | Reuses one healthy WebSocket per compatible Hatfield session between turns. After a successful terminal response, compatible follow-up turns may send `previous_response_id` with only the new input delta. Recommended normal mode for Codex in this repo. |
+| `websocket` | Explicit one-shot fallback: WebSocket handshake to `wss://…/codex/responses`, one connection per request, `response.create` frame. Use when you want no cross-turn socket reuse. Required transport shape for GPT-5.6 models (cached mode still uses WebSocket). |
+| `sse` | Legacy HTTP/SSE POST to `/codex/responses`. Diagnostic only; GPT-5.6 models return model-not-found on SSE. |
+
+Optional cache tuning keys (Codex providers only):
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `websocket_cache_idle_ttl_seconds` | `300` | Close an idle cached socket after this many seconds. |
+| `websocket_cache_max_age_seconds` | `3300` | Close a cached socket after this many seconds regardless of reuse. |
+
+WebSocket handshake sends `OpenAI-Beta: responses_websockets=2026-02-06` and does **not** send SSE `Accept` / `Content-Type` headers.
+
+
 OpenAI Codex backend via OpenAI Responses API (`type: codex`). Uses the
 OpenAICodex platform bridge which talks to the ChatGPT backend at
 `https://chatgpt.com/backend-api/codex/responses`.

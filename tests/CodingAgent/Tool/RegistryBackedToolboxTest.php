@@ -187,7 +187,7 @@ final class RegistryBackedToolboxTest extends TestCase
         $dispatcher = new EventDispatcher();
         $events = [];
         $dispatcher->addListener(ToolCallRequested::class, static function (ToolCallRequested $event) use (&$events): void {
-            $events[] = ['requested', $event->getToolCall()->getName(), $event->getMetadata()->getName()];
+            $events[] = ['requested', $event->getToolCall()->getName(), $event->getDefinition()->getName()];
         });
         $dispatcher->addListener(ToolCallArgumentsResolved::class, static function (ToolCallArgumentsResolved $event) use (&$events, $handler): void {
             $events[] = ['arguments_resolved', $event->getTool() === $handler, $event->getArguments()];
@@ -283,7 +283,7 @@ final class RegistryBackedToolboxTest extends TestCase
 
         $this->assertInstanceOf(ToolCallFailed::class, $failedEvent);
         $this->assertSame($handler, $failedEvent->getTool());
-        $this->assertSame('failing', $failedEvent->getMetadata()->getName());
+        $this->assertSame('failing', $failedEvent->getDefinition()->getName());
         $this->assertSame(['path' => 'x'], $failedEvent->getArguments());
         $this->assertSame($exception, $failedEvent->getException());
     }

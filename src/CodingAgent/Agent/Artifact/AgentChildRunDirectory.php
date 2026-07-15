@@ -86,6 +86,14 @@ final class AgentChildRunDirectory
     }
 
     /**
+     * Drop a pre-registered cache entry when a pending reservation is discarded.
+     */
+    public function unregister(string $agentRunId): void
+    {
+        unset($this->cache[$agentRunId]);
+    }
+
+    /**
      * Scan all known parent sessions for child artifacts.
      *
      * No process-wide scanned guard — long-lived processes (messenger

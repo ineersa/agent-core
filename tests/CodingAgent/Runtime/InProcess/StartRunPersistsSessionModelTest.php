@@ -87,14 +87,15 @@ final class StartRunPersistsSessionModelTest extends IsolatedKernelTestCase
             'Runner must have been called with a StartRunInput');
 
         // Assert session metadata was persisted.
-        $meta = $this->sessionMetaStore()->readSessionMetadata($sessionId);
-        $this->assertSame('llama_cpp/flash', $meta['model'] ?? null,
+        $session = $this->sessionMetaStore()->findSession($sessionId);
+        $this->assertNotNull($session);
+        $this->assertSame('llama_cpp/flash', $session->model ?? null,
             'Session metadata must contain the persisted model reference');
-        $this->assertSame('llama_cpp', $meta['model_provider'] ?? null,
+        $this->assertSame('llama_cpp', $session->modelProvider ?? null,
             'Session metadata must contain the persisted model provider');
-        $this->assertSame('flash', $meta['model_name'] ?? null,
+        $this->assertSame('flash', $session->modelName ?? null,
             'Session metadata must contain the persisted model name');
-        $this->assertSame('high', $meta['reasoning'] ?? null,
+        $this->assertSame('high', $session->reasoning ?? null,
             'Session metadata must contain the persisted reasoning level');
     }
 
@@ -114,15 +115,16 @@ final class StartRunPersistsSessionModelTest extends IsolatedKernelTestCase
             reasoning: null,
         ));
 
-        $meta = $this->sessionMetaStore()->readSessionMetadata($sessionId);
-        $this->assertSame('llama_cpp/flash', $meta['model'] ?? null,
+        $session = $this->sessionMetaStore()->findSession($sessionId);
+        $this->assertNotNull($session);
+        $this->assertSame('llama_cpp/flash', $session->model ?? null,
             'Model must be persisted even when reasoning is null');
 
         // Resolve the expected reasoning independently via the container's
         // ModelResolver (the same path start() uses for its fallback).
         $expectedReasoning = $this->resolveDefaultReasoning();
         $this->assertNotNull($expectedReasoning);
-        $this->assertSame($expectedReasoning, $meta['reasoning'] ?? null,
+        $this->assertSame($expectedReasoning, $session->reasoning ?? null,
             'Resolved default reasoning must be persisted when no explicit reasoning given');
     }
 
@@ -140,8 +142,8 @@ final class StartRunPersistsSessionModelTest extends IsolatedKernelTestCase
             'Runner must still be called even when no session row exists');
 
         // No metadata must be written when no session row exists.
-        $meta = $this->hatfieldSessionStore()->loadMetadata('');
-        $this->assertEmpty($meta,
+        $session = $this->hatfieldSessionStore()->findSession('');
+        $this->assertNull($session,
             'No session metadata must be written for an empty session ID');
     }
 
@@ -159,19 +161,18 @@ final class StartRunPersistsSessionModelTest extends IsolatedKernelTestCase
             runId: $sessionId,
         ));
 
-        $meta = $this->sessionMetaStore()->readSessionMetadata($sessionId);
+        $session = $this->sessionMetaStore()->findSession($sessionId);
 
         // Model is persisted when a catalog is available.
-        $this->assertArrayHasKey('model', $meta,
-            'model key must be set when a catalog resolves the default');
-        $this->assertNotEmpty($meta['model'],
-            'persisted model must not be empty');
-        $this->assertArrayHasKey('model_provider', $meta);
-        $this->assertArrayHasKey('model_name', $meta);
+        $this->assertNotNull($session);
+        $this->assertNotEmpty($session->model,
+            'persisted model must not be empty when a catalog resolves the default');
+        $this->assertNotNull($session->modelProvider);
+        $this->assertNotNull($session->modelName);
 
         // Reasoning is always resolved (Tier 3/4 fallback).
         $expectedReasoning = $this->resolveDefaultReasoning();
-        $this->assertSame($expectedReasoning, $meta['reasoning'] ?? null,
+        $this->assertSame($expectedReasoning, $session->reasoning ?? null,
             'resolved default reasoning must be persisted');
     }
 
@@ -237,7 +238,8 @@ final class StartRunPersistsSessionModelTest extends IsolatedKernelTestCase
             runId: $sessionId,
         ));
 
-        $meta = $this->sessionMetaStore()->readSessionMetadata($sessionId);
+        $session = $this->sessionMetaStore()->findSession($sessionId);
+        $this->assertNotNull($session);
 
         $resolver = $this->buildModelResolver($cwd);
 
@@ -250,7 +252,7 @@ final class StartRunPersistsSessionModelTest extends IsolatedKernelTestCase
         // Reasoning was persisted by start() — resolver reads from metadata.
         $resolvedReasoning = $resolver->resolveInitialReasoning(null, $sessionId);
         $this->assertNotEmpty($resolvedReasoning);
-        $this->assertSame($meta['reasoning'] ?? null, $resolvedReasoning,
+        $this->assertSame($session->reasoning ?? null, $resolvedReasoning,
             'Resolved reasoning must match persisted session metadata');
     }
 
@@ -296,12 +298,13 @@ final class StartRunPersistsSessionModelTest extends IsolatedKernelTestCase
         $this->assertNotEmpty($expectedReasoning);
 
         // Assert the resolved defaults WERE persisted.
-        $meta = $this->sessionMetaStore()->readSessionMetadata($sessionId);
-        $this->assertSame($expectedRef->toString(), $meta['model'] ?? null,
+        $session = $this->sessionMetaStore()->findSession($sessionId);
+        $this->assertNotNull($session);
+        $this->assertSame($expectedRef->toString(), $session->model ?? null,
             'resolved global-default model must be persisted even without --model flag');
-        $this->assertSame($expectedRef->providerId, $meta['model_provider'] ?? null);
-        $this->assertSame($expectedRef->modelName, $meta['model_name'] ?? null);
-        $this->assertSame($expectedReasoning, $meta['reasoning'] ?? null,
+        $this->assertSame($expectedRef->providerId, $session->modelProvider ?? null);
+        $this->assertSame($expectedRef->modelName, $session->modelName ?? null);
+        $this->assertSame($expectedReasoning, $session->reasoning ?? null,
             'resolved default reasoning must be persisted');
 
         // Now simulate a global-default change: build a resolver whose

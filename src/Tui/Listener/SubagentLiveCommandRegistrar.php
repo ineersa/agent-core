@@ -46,6 +46,7 @@ final class SubagentLiveCommandRegistrar implements TuiListenerRegistrar
             $context->tui,
             $context->screen,
             $context->state,
+            $client,
             onHumanInputRequested: $onHumanInputRequested,
             onToolQuestionRequested: $onToolQuestionRequested,
             onToolTerminal: $onToolTerminal,
@@ -66,7 +67,7 @@ final class SubagentLiveCommandRegistrar implements TuiListenerRegistrar
             );
         }
 
-        $mainHandler = new AgentsMainCommandHandler($context->state, $context->screen);
+        $mainHandler = new AgentsMainCommandHandler($context->state, $context->screen, $client);
 
         if ($this->commandRegistry->has('agents-main')) {
             $this->commandRegistry->setHandler('agents-main', $mainHandler);

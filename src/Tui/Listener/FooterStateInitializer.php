@@ -30,12 +30,10 @@ final readonly class FooterStateInitializer
         // Seed model/reasoning from session metadata
         $fullModel = '';
         $reasoning = '';
-        $meta = $this->sessionStore->loadMetadata($state->sessionId);
-        if (null !== $meta) {
-            $v = $meta['model'] ?? '';
-            $fullModel = \is_string($v) ? $v : '';
-            $v = $meta['reasoning'] ?? '';
-            $reasoning = \is_string($v) ? $v : '';
+        $session = $this->sessionStore->findSession($state->sessionId);
+        if (null !== $session) {
+            $fullModel = $session->model ?? '';
+            $reasoning = $session->reasoning ?? '';
         }
 
         // Fallback: StartRunRequest (first run before session persisted)

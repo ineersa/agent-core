@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Picker;
 
+use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\ChildAgentEventsPathResolverInterface;
 use Ineersa\CodingAgent\Runtime\Contract\ChildRunTranscriptSnapshotDTO;
 use Ineersa\CodingAgent\Runtime\Contract\ChildRunTranscriptSnapshotProviderInterface;
@@ -36,6 +37,8 @@ final class SubagentLivePickerController
     private ?ChatScreen $screen = null;
     private ?TuiSessionState $state = null;
 
+    private ?AgentSessionClient $client = null;
+
     /** @var ?callable(\Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent): void */
     private $onHumanInputRequested;
 
@@ -57,6 +60,7 @@ final class SubagentLivePickerController
         Tui $tui,
         ChatScreen $screen,
         TuiSessionState $state,
+        ?AgentSessionClient $client = null,
         ?callable $onHumanInputRequested = null,
         ?callable $onToolQuestionRequested = null,
         ?callable $onToolTerminal = null,
@@ -64,6 +68,7 @@ final class SubagentLivePickerController
         $this->tui = $tui;
         $this->screen = $screen;
         $this->state = $state;
+        $this->client = $client;
         $this->onHumanInputRequested = $onHumanInputRequested;
         $this->onToolQuestionRequested = $onToolQuestionRequested;
         $this->onToolTerminal = $onToolTerminal;
@@ -388,7 +393,7 @@ final class SubagentLivePickerController
         if ($state->subagentLiveView->active
             && null !== $state->subagentLiveView->selected
             && $state->subagentLiveView->selected->artifactId === $artifactId) {
-            SubagentLiveMainReturn::returnToMain($state, $screen, requestRender: false);
+            SubagentLiveMainReturn::returnToMain($state, $screen, $this->client, requestRender: false);
         }
 
         $children = array_values(array_filter(
@@ -422,6 +427,16 @@ final class SubagentLivePickerController
 
     private function enterLiveView(SubagentLiveChildDTO $child, TuiSessionState $state, ChatScreen $screen): void
     {
+        $client = $this->client;
+        if (null !== $client) {
+            $previous = $state->subagentLiveView->selected;
+            if (null !== $previous && $previous->agentRunId !== $child->agentRunId) {
+                $client->endObservingChildRun($previous->agentRunId);
+            }
+
+            $client->beginObservingChildRun($child->agentRunId);
+        }
+
         $cached = $state->subagentLiveView->childCaches[$child->agentRunId] ?? null;
         $hasCachedTranscript = null !== $cached && [] !== $cached['transcript'];
 

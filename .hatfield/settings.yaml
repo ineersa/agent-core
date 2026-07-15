@@ -447,6 +447,9 @@ ai:
                     cost: { input: 0, output: 0, cache_read: 0, cache_write: 0 }
         openai-codex:
              type: codex
+             transport: websocket-cached  # project default: reuse connections and continuation deltas; set transport: websocket for one-shot per request
+             websocket_cache_idle_ttl_seconds: 300
+             websocket_cache_max_age_seconds: 3300
              enabled: true
              base_url: https://chatgpt.com/backend-api
              api: openai-responses

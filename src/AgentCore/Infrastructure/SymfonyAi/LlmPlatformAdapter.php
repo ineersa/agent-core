@@ -18,8 +18,11 @@ use Ineersa\AgentCore\Domain\Model\ModelInvocationInput;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationRequest;
 use Ineersa\AgentCore\Domain\Model\ModelResolutionOptions;
 use Ineersa\AgentCore\Domain\Model\PlatformInvocationResult;
+use Ineersa\Platform\Result\CancellableRawResultInterface;
 use Psr\Log\LoggerInterface;
 use Symfony\AI\Agent\Input;
+use Symfony\AI\Platform\FinishReason\FinishReason;
+use Symfony\AI\Platform\FinishReason\FinishReasonCase;
 use Symfony\AI\Platform\Message\AssistantMessage;
 use Symfony\AI\Platform\Message\Content\ContentInterface;
 use Symfony\AI\Platform\Message\Content\Text;
@@ -409,7 +412,7 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
             assistantMessage: $assistantMessage,
             deltas: $deltas,
             usage: $this->extractUsage($deferredResult, $modelName),
-            stopReason: $aborted ? 'aborted' : $this->resolveStopReason($assistantMessage),
+            stopReason: $aborted ? 'aborted' : $this->resolveStopReason($assistantMessage, $deferredResult),
             error: null,
             modelNotifications: $modelNotifications,
         );
@@ -454,8 +457,10 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
     /**
      * Extract privacy-safe response diagnostics from a DeferredResult.
      *
-     * Returns an array of diagnostics keys, with values truncated and
-     * sensitive data excluded.
+     * Returns structural HTTP metadata only. Provider-controlled free-text fields
+     * (error.message, error_description, detail, raw body) are never copied into
+     * diagnostics — response_error_message stays null here. Downstream classifiers
+     * may still consume response_error_message when another caller supplies it.
      *
      * @return array<string, mixed>
      */
@@ -522,12 +527,6 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
                 $diag['response_error_code'] = isset($error['code']) && '' !== $error['code'] ? $error['code'] : null;
                 $diag['response_error_type'] = $error['type'] ?? null;
                 $diag['response_error_param'] = $error['param'] ?? null;
-                $diag['response_error_message'] = mb_substr($error['message'] ?? '', 0, 500);
-            } elseif (\is_string($data['error'] ?? null)) {
-                // Alternative: {"error": "message string"}
-                $diag['response_error_message'] = mb_substr($data['error'], 0, 500);
-            } elseif (isset($data['error_description'])) {
-                $diag['response_error_message'] = mb_substr($data['error_description'], 0, 500);
             }
         } else {
             // Non-JSON body — never store raw body content.
@@ -630,7 +629,9 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
     {
         try {
             $rawResult = $deferredResult->getRawResult();
-            if ($rawResult instanceof RawHttpResult) {
+            if ($rawResult instanceof CancellableRawResultInterface) {
+                $rawResult->abort();
+            } elseif ($rawResult instanceof RawHttpResult) {
                 $rawResult->getObject()->cancel();
             }
         } catch (\Throwable $e) {
@@ -710,13 +711,25 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
         return new AssistantMessage(...$contentParts);
     }
 
-    private function resolveStopReason(?AssistantMessage $assistantMessage): ?string
+    private function resolveStopReason(?AssistantMessage $assistantMessage, DeferredResult $deferredResult): ?string
     {
         if ($assistantMessage?->hasToolCalls()) {
             return 'tool_call';
         }
 
-        return null;
+        $finishReason = $deferredResult->getMetadata()->get('finish_reason');
+        if (!$finishReason instanceof FinishReason) {
+            return null;
+        }
+
+        return match ($finishReason->getCase()) {
+            FinishReasonCase::STOP => 'stop',
+            FinishReasonCase::LENGTH => 'length',
+            FinishReasonCase::TOOL_CALL => 'tool_call',
+            FinishReasonCase::CONTENT_FILTER => 'content_filter',
+            FinishReasonCase::STOP_SEQUENCE => $finishReason->getRaw(),
+            FinishReasonCase::OTHER => $finishReason->getRaw(),
+        };
     }
 
     /**

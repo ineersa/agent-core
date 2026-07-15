@@ -24,6 +24,8 @@ use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Symfony\AI\Platform\Message\MessageBag;
+use Symfony\Component\Uid\Uuid;
+use Symfony\Component\Uid\UuidV7;
 
 final class SessionAwareModelResolverTest extends IsolatedKernelTestCase
 {
@@ -67,6 +69,8 @@ final class SessionAwareModelResolverTest extends IsolatedKernelTestCase
         $this->assertSame('llama_cpp/flash', $result->model);
         $this->assertSame('llama_cpp', $result->providerId);
         $this->assertSame('medium', $result->reasoning);
+        $this->assertArrayHasKey('provider_cache_key', $result->options);
+        $this->assertInstanceOf(UuidV7::class, Uuid::fromString($result->options['provider_cache_key']));
     }
 
     public function testExplicitModelWinsOverSessionMetadata(): void
@@ -221,6 +225,73 @@ final class SessionAwareModelResolverTest extends IsolatedKernelTestCase
         $this->assertSame('high', $result->reasoning);
     }
 
+    public function testUuidV7ChildRunWithoutSessionRowResolvesWithoutProviderCacheKey(): void
+    {
+        $resolver = $this->createResolver($this->standardAiData());
+        $childRunId = UuidV7::v7()->toRfc4122();
+
+        $result = $resolver->resolve(
+            '',
+            new MessageBag(),
+            new ModelInvocationInput(runId: $childRunId),
+            new ModelResolutionOptions(),
+        );
+
+        $this->assertSame('deepseek/deepseek-v4-pro', $result->model);
+        $this->assertSame([], $result->options);
+    }
+
+    public function testEphemeralHexRunWithoutSessionRowResolvesWithoutProviderCacheKey(): void
+    {
+        $resolver = $this->createResolver($this->standardAiData());
+
+        $result = $resolver->resolve(
+            '',
+            new MessageBag(),
+            new ModelInvocationInput(runId: 'db1f3c6bdccc'),
+            new ModelResolutionOptions(),
+        );
+
+        $this->assertSame([], $result->options);
+    }
+
+    public function testMissingNumericSessionMetadataThrows(): void
+    {
+        $resolver = $this->createResolver($this->standardAiData());
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Session "42" has no metadata for model resolution.');
+
+        $resolver->resolve(
+            '',
+            new MessageBag(),
+            new ModelInvocationInput(runId: '42'),
+            new ModelResolutionOptions(),
+        );
+    }
+
+    public function testNumericSessionWithNullProviderCacheKeyInDatabaseThrowsExplicitRuntimeException(): void
+    {
+        $resolver = $this->createResolver($this->standardAiData());
+        $sessionId = $this->writeSessionMetadata('sess-null-key', ['model' => 'llama_cpp/flash']);
+
+        $this->entityManager->getConnection()->executeStatement(
+            'UPDATE hatfield_session SET provider_cache_key = NULL WHERE id = ?',
+            [(int) $sessionId],
+        );
+        $this->entityManager->clear();
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage(\sprintf('Session "%s" is missing a provider_cache_key.', $sessionId));
+
+        $resolver->resolve(
+            '',
+            new MessageBag(),
+            new ModelInvocationInput(runId: $sessionId),
+            new ModelResolutionOptions(),
+        );
+    }
+
     public function testZaiOffReasoningProducesDisabledThinkingOptions(): void
     {
         $aiData = $this->standardAiData();
@@ -287,7 +358,7 @@ final class SessionAwareModelResolverTest extends IsolatedKernelTestCase
 
         $catalog = $appConfig->catalog ?? new HatfieldModelCatalog(new AiConfig(defaultModel: '', defaultReasoning: 'medium', providers: []));
 
-        return new SessionAwareModelResolver($selectionService, $catalog);
+        return new SessionAwareModelResolver($selectionService, $catalog, $sessionMetaStore);
     }
 
     private function makeAppConfig(array $aiData): AppConfig

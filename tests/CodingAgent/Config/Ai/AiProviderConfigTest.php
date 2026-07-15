@@ -38,4 +38,14 @@ final class AiProviderConfigTest extends TestCase
         // fromArray casts to string, so empty string is set
         $this->assertSame('', $config->authKey);
     }
+
+    public function testTransportFromArray(): void
+    {
+        $config = AiProviderConfig::fromArray([
+            'type' => 'codex',
+            'transport' => 'sse',
+        ], 'openai-codex');
+
+        $this->assertSame('sse', $config->transport);
+    }
 }

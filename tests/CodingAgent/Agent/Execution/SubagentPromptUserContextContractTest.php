@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Agent\Execution;
 
+use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
+use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
+use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
 use Ineersa\AgentCore\Contract\RunStoreInterface;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Run\RunState;
@@ -18,7 +21,6 @@ use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionCatalog;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionDTO;
 use Ineersa\CodingAgent\Agent\Definition\McpAgentModeEnum;
 use Ineersa\CodingAgent\Agent\Definition\McpPolicyDTO;
-use Ineersa\CodingAgent\Agent\Execution\AgentDepthGuard;
 use Ineersa\CodingAgent\Agent\Execution\AgentMcpToolsResolver;
 use Ineersa\CodingAgent\Agent\Execution\AgentPromptBuilder;
 use Ineersa\CodingAgent\Agent\Execution\AgentToolPolicyResolver;
@@ -104,7 +106,14 @@ final class SubagentPromptUserContextContractTest extends IsolatedKernelTestCase
             ]),
         );
 
-        $service->execute($parentRunId, 'gf05-scout', 'Inspect layout contract');
+        self::getContainer()->get(StackToolExecutionContextAccessor::class)->with(new ToolContext(
+            runId: $parentRunId,
+            turnNo: 1,
+            toolCallId: 'gf05-scout-call',
+            toolName: 'subagent',
+            cancellationToken: new NullCancellationToken(),
+            timeoutSeconds: 120,
+        ), static fn () => $service->execute($parentRunId, 'gf05-scout', 'Inspect layout contract'));
 
         $this->assertNotNull($pipelineRunner->lastStartInput);
         $canonical = $pipelineRunner->lastStartInput->messages;
@@ -207,7 +216,14 @@ final class SubagentPromptUserContextContractTest extends IsolatedKernelTestCase
             registry: $registry,
         );
 
-        $service->execute('parent-mcp', 'gf05-mcp', 'Use MCP tool');
+        self::getContainer()->get(StackToolExecutionContextAccessor::class)->with(new ToolContext(
+            runId: 'parent-mcp',
+            turnNo: 1,
+            toolCallId: 'parent-mcp-call',
+            toolName: 'subagent',
+            cancellationToken: new NullCancellationToken(),
+            timeoutSeconds: 120,
+        ), static fn () => $service->execute('parent-mcp', 'gf05-mcp', 'Use MCP tool'));
 
         $systemText = PromptContractTestSupport::messageText($pipelineRunner->lastStartInput->messages[0]);
         $this->assertStringContainsString('read path', $systemText);
@@ -284,7 +300,14 @@ final class SubagentPromptUserContextContractTest extends IsolatedKernelTestCase
             ]),
         );
 
-        $service->execute('parent-no-agents-def', 'gf05-worker', 'Task');
+        self::getContainer()->get(StackToolExecutionContextAccessor::class)->with(new ToolContext(
+            runId: 'parent-no-agents-def',
+            turnNo: 1,
+            toolCallId: 'parent-no-agents-call',
+            toolName: 'subagent',
+            cancellationToken: new NullCancellationToken(),
+            timeoutSeconds: 120,
+        ), static fn () => $service->execute('parent-no-agents-def', 'gf05-worker', 'Task'));
 
         foreach ($pipelineRunner->lastStartInput->messages as $message) {
             $this->assertNotSame(
@@ -306,28 +329,28 @@ final class SubagentPromptUserContextContractTest extends IsolatedKernelTestCase
         $registry ??= self::getContainer()->get(ToolRegistryInterface::class);
         $policy = new AgentToolPolicyResolver($registry, $this->emptyMcpToolsResolver());
 
-        return new SubagentExecutionService(
-            catalog: $catalog,
-            depthGuard: new AgentDepthGuard(),
-            policyResolver: $policy,
-            promptBuilder: new AgentPromptBuilder(self::getContainer()->get(SystemPromptBuilder::class)),
-            skillsContextBuilder: self::getContainer()->get(SkillsContextBuilder::class),
-            artifactRegistry: self::getContainer()->get(\Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry::class),
-            agentRunner: $agentRunner,
-            runStore: $this->pollingChildRunStore($childRunStore),
-            parentRunStore: $parentRunStore,
-            eventStore: $eventStore,
-            committedRunEventAppender: self::getContainer()->get(CommittedRunEventAppender::class),
-            metadataReader: new SubagentRunMetadataReader($eventStore),
-            childRunDirectory: self::getContainer()->get(AgentChildRunDirectory::class),
-            contextAccessor: self::getContainer()->get(\Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor::class),
-            logger: self::getContainer()->get('logger'),
-            agentsConfig: new AgentsConfig(subagentToolTimeoutSeconds: 2),
-            progressSnapshotBuilder: new \Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder(),
-            childProgressSummaryBuilder: new SubagentChildProgressSummaryBuilder(self::getContainer()->get(AgentChildRunEventStoreFactory::class)),
-            agentsContextBuilder: self::getContainer()->get(AgentsContextBuilder::class),
-            appConfig: self::getContainer()->get(\Ineersa\CodingAgent\Config\AppConfig::class),
-        );
+        return Support\SubagentExecutionServiceFactory::build([
+            'catalog' => $catalog,
+            'policyResolver' => $policy,
+            'promptBuilder' => new AgentPromptBuilder(self::getContainer()->get(SystemPromptBuilder::class)),
+            'skillsContextBuilder' => self::getContainer()->get(SkillsContextBuilder::class),
+            'agentsContextBuilder' => self::getContainer()->get(AgentsContextBuilder::class),
+            'artifactRegistry' => self::getContainer()->get(\Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry::class),
+            'agentRunner' => $agentRunner,
+            'runStore' => $this->pollingChildRunStore($childRunStore),
+            'parentRunStore' => $parentRunStore,
+            'eventStore' => $eventStore,
+            'committedRunEventAppender' => self::getContainer()->get(CommittedRunEventAppender::class),
+            'metadataReader' => new SubagentRunMetadataReader($eventStore),
+            'childRunDirectory' => self::getContainer()->get(AgentChildRunDirectory::class),
+            'contextAccessor' => self::getContainer()->get(StackToolExecutionContextAccessor::class),
+            'logger' => self::getContainer()->get('logger'),
+            'agentsConfig' => new AgentsConfig(subagentToolTimeoutSeconds: 2),
+            'childProgressSummaryBuilder' => new SubagentChildProgressSummaryBuilder(self::getContainer()->get(AgentChildRunEventStoreFactory::class)),
+            'appConfig' => self::getContainer()->get(\Ineersa\CodingAgent\Config\AppConfig::class),
+            'batchRepository' => self::getContainer()->get(\Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository::class),
+            'lifecycleListener' => self::getContainer()->get(\Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\SubagentChildRunBatchLifecycleListener::class),
+        ]);
     }
 
     private function pollingChildRunStore(RunStoreInterface $inner): RunStoreInterface

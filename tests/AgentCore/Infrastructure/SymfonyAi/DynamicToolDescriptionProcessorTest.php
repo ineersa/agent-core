@@ -54,9 +54,10 @@ final class DynamicToolDescriptionProcessorTest extends TestCase
         $tools = $options['tools'];
         $this->assertCount(1, $tools);
         $this->assertSame('read', $tools[0]->getName());
-        // Resolver-only options should be cleaned up
+        // Resolver-only options should be cleaned up; run_id stays for provider cache correlation
         $this->assertArrayNotHasKey('tools_ref', $options);
         $this->assertArrayNotHasKey('turn_no', $options);
+        $this->assertSame('abc', $options['run_id']);
     }
 
     public function testResolverPathWithEmptyActiveSetResultsInNoTools(): void
@@ -69,6 +70,7 @@ final class DynamicToolDescriptionProcessorTest extends TestCase
         $processor = new DynamicToolDescriptionProcessor($this->toolbox, $resolver);
         $input = new Input('test-model', new \Symfony\AI\Platform\Message\MessageBag(), [
             'tools_ref' => 'toolset:run:abc:turn:1',
+            'run_id' => 'session-stable-uuid',
         ]);
 
         $processor->processInput($input);
@@ -76,6 +78,9 @@ final class DynamicToolDescriptionProcessorTest extends TestCase
         $options = $input->getOptions();
         // Empty active set removes tools option, falling through to no-tools path
         $this->assertArrayNotHasKey('tools', $options);
+        $this->assertArrayNotHasKey('tools_ref', $options);
+        $this->assertArrayNotHasKey('turn_no', $options);
+        $this->assertSame('session-stable-uuid', $options['run_id']);
     }
 
     public function testResolverPathPassesTurnNoAndRunIdToResolver(): void
@@ -98,6 +103,21 @@ final class DynamicToolDescriptionProcessorTest extends TestCase
         $options = $input->getOptions();
         $this->assertCount(1, $options['tools']);
         $this->assertSame('bash', $options['tools'][0]->getName());
+        $this->assertSame('x', $options['run_id']);
+        $this->assertArrayNotHasKey('tools_ref', $options);
+        $this->assertArrayNotHasKey('turn_no', $options);
+    }
+
+    public function testRunIdPreservedWhenToolsRefAbsent(): void
+    {
+        $processor = new DynamicToolDescriptionProcessor($this->toolbox);
+        $input = new Input('test-model', new \Symfony\AI\Platform\Message\MessageBag(), [
+            'run_id' => 'hatfield-session-run',
+        ]);
+
+        $processor->processInput($input);
+
+        $this->assertSame('hatfield-session-run', $input->getOptions()['run_id']);
     }
 
     /* ───────── Fallback behavior unchanged ───────── */

@@ -252,6 +252,50 @@ final class AgentChildRunEventStoreTest extends TestCase
         $this->createStore('parent-x', 'child-x', '..');
     }
 
+    public function testReadAfterSeqReturnsOnlyEventsAfterCursorAndAcceptsSequenceHoles(): void
+    {
+        $parentRunId = 'parent-'.bin2hex(random_bytes(4));
+        $agentRunId = 'child-'.bin2hex(random_bytes(4));
+        $artifactId = 'scout-hole';
+
+        $store = $this->createStore($parentRunId, $agentRunId, $artifactId);
+        $normalizer = new EventPayloadNormalizer();
+        $path = "{$this->projectDir}/.hatfield/sessions/{$parentRunId}/artifacts/agents/{$artifactId}/events.jsonl";
+        mkdir(\dirname($path), 0775, true);
+
+        foreach ([
+            $normalizer->normalize($agentRunId, 1, 0, 'run_started', []),
+            $normalizer->normalize($agentRunId, 3, 1, 'turn_advanced', ['turn_no' => 1]),
+        ] as $line) {
+            file_put_contents($path, json_encode($line, \JSON_THROW_ON_ERROR).'
+', \FILE_APPEND);
+        }
+
+        $tail = $store->readAfterSeq(1);
+        $this->assertCount(1, $tail);
+        $this->assertSame(3, $tail[0]->seq);
+        $this->assertSame('turn_advanced', $tail[0]->type);
+    }
+
+    public function testReadAfterSeqRejectsRunIdMismatch(): void
+    {
+        $parentRunId = 'parent-'.bin2hex(random_bytes(4));
+        $agentRunId = 'child-'.bin2hex(random_bytes(4));
+        $artifactId = 'scout-mismatch';
+
+        $store = $this->createStore($parentRunId, $agentRunId, $artifactId);
+        $normalizer = new EventPayloadNormalizer();
+        $path = "{$this->projectDir}/.hatfield/sessions/{$parentRunId}/artifacts/agents/{$artifactId}/events.jsonl";
+        mkdir(\dirname($path), 0775, true);
+        $bad = $normalizer->normalize('other-child', 2, 0, 'run_started', []);
+        file_put_contents($path, json_encode($bad, \JSON_THROW_ON_ERROR).'
+', \FILE_APPEND);
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('integrity error');
+        $store->readAfterSeq(0);
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────
 
     private function createStore(string $parentRunId, string $agentRunId, string $artifactId): AgentChildRunEventStore

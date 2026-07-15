@@ -549,7 +549,8 @@ final class ViewImageToolTest extends TestCase
         // First message: ToolCallMessage with text content
         $toolCallMsg = $messages[0];
         $this->assertSame('tool', $toolCallMsg->getRole()->value);
-        $toolContent = $toolCallMsg->getContent();
+        $toolContent = $toolCallMsg->asText();
+        $this->assertNotNull($toolContent);
         // Use non-slash substrings to avoid JSON encoding escaping issues
         $this->assertStringContainsString('media_type', $toolContent, 'Tool message should contain image metadata');
         $this->assertStringContainsString('view_image', $toolContent, 'Tool message should reference view_image');
@@ -764,7 +765,7 @@ final class ViewImageToolTest extends TestCase
         // UserMessage::getContent() returns ContentInterface[]; use asText() for string
         $secondText = $secondMsg instanceof UserMessage
             ? ($secondMsg->asText() ?? '')
-            : (string) $secondMsg->getContent();
+            : ($secondMsg->asText() ?? '');
         $this->assertStringContainsString('deleted', $secondText);
         // When file is missing, hasImageContent should be false
         if ($secondMsg instanceof UserMessage) {
@@ -813,7 +814,8 @@ final class ViewImageToolTest extends TestCase
         $msg = $messages[0];
         $this->assertSame('tool', $msg->getRole()->value);
 
-        $msgText = $msg->getContent();
+        $msgText = $msg->asText();
+        $this->assertNotNull($msgText);
         $this->assertStringContainsString('does not support images', $msgText);
     }
 

@@ -19,6 +19,7 @@ use Ineersa\AgentCore\Domain\Model\PlatformInvocationResult;
 use Ineersa\AgentCore\Domain\Tool\ToolCall;
 use Ineersa\AgentCore\Domain\Tool\ToolResult;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\MalformedToolCallSequenceException;
+use Ineersa\AgentCore\Tests\Support\InMemoryDeferredToolCompletionRepository;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use PHPUnit\Framework\TestCase;
@@ -165,7 +166,7 @@ final class ExecutionWorkerTest extends TestCase
 
         $commandBus = new TestMessageBus();
         $metrics = new RunMetrics();
-        $worker = new ExecuteToolCallWorker($toolExecutor, $commandBus, null, $metrics);
+        $worker = new ExecuteToolCallWorker($toolExecutor, $commandBus, new InMemoryDeferredToolCompletionRepository(), null, $metrics);
 
         $worker(new ExecuteToolCall(
             runId: 'run-worker-obs-2',
@@ -205,7 +206,7 @@ final class ExecutionWorkerTest extends TestCase
         };
 
         $commandBus = new TestMessageBus();
-        $worker = new ExecuteToolCallWorker($toolExecutor, $commandBus);
+        $worker = new ExecuteToolCallWorker($toolExecutor, $commandBus, new InMemoryDeferredToolCompletionRepository());
 
         $worker(new ExecuteToolCall(
             runId: 'run-worker-2',
@@ -346,5 +347,48 @@ final class ExecutionWorkerTest extends TestCase
         $this->assertNotNull($result->error, 'Empty platform response must be treated as an error');
         $this->assertSame('empty_response', $result->error['type'] ?? '');
         $this->assertStringContainsString('empty response', $result->error['message'] ?? '');
+    }
+
+    /**
+     * Thesis: a finish_reason-only stream must not count as a successful LLM turn
+     * merely because stopReason is now populated (Symfony AI 0.11 metadata).
+     */
+    public function testLlmWorkerTreatsFinishReasonOnlyResponseAsEmptyError(): void
+    {
+        $platform = new class implements PlatformInterface {
+            public function invoke(ModelInvocationRequest $request): PlatformInvocationResult
+            {
+                unset($request);
+
+                return new PlatformInvocationResult(
+                    assistantMessage: null,
+                    deltas: [],
+                    usage: ['input_tokens' => 10, 'output_tokens' => 0],
+                    stopReason: 'stop',
+                    modelNotifications: [],
+                    error: null,
+                );
+            }
+        };
+
+        $commandBus = new TestMessageBus();
+        $worker = new ExecuteLlmStepWorker($platform, $commandBus, 'test-model', runModelResolver: null);
+
+        $worker(new ExecuteLlmStep(
+            runId: 'run-finish-only-1',
+            turnNo: 1,
+            stepId: 'turn-1-llm-1',
+            attempt: 1,
+            idempotencyKey: 'llm-finish-only-1',
+            contextRef: 'hot:run:run-finish-only-1',
+            toolsRef: 'toolset:run:run-finish-only-1:turn:1',
+        ));
+
+        $this->assertCount(1, $commandBus->messages);
+        $result = $commandBus->messages[0];
+        $this->assertInstanceOf(LlmStepResult::class, $result);
+        $this->assertNull($result->assistantMessage);
+        $this->assertNotNull($result->error);
+        $this->assertSame('empty_response', $result->error['type'] ?? '');
     }
 }

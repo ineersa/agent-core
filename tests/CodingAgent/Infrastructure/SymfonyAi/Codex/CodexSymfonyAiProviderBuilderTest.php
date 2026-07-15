@@ -2,11 +2,12 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\CodingAgent\Tests\Infrastructure\SymfonyAi;
+namespace Ineersa\CodingAgent\Tests\Infrastructure\SymfonyAi\Codex;
 
 use Ineersa\CodingAgent\Auth\CodexAuthRecord;
 use Ineersa\CodingAgent\Auth\CodexAuthStorage;
 use Ineersa\CodingAgent\Auth\CodexOAuthConfig;
+use Ineersa\CodingAgent\Auth\CodexOAuthService;
 use Ineersa\CodingAgent\Config\Ai\AiConfig;
 use Ineersa\CodingAgent\Config\Ai\AiModelDefinition;
 use Ineersa\CodingAgent\Config\Ai\AiProviderConfig;
@@ -14,14 +15,17 @@ use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
+use Ineersa\CodingAgent\Infrastructure\SymfonyAi\Codex\CodexSymfonyAiProviderBuilder;
 use Ineersa\CodingAgent\Infrastructure\SymfonyAi\SymfonyAiProviderFactory;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
+use Symfony\AI\Platform\Bridge\OpenAICodex\CodexWebSocketConnectionCache;
+use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\FlockStore;
 use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 
-final class SymfonyAiProviderFactoryCodexAuthTest extends TestCase
+final class CodexSymfonyAiProviderBuilderTest extends TestCase
 {
     private CodexAuthStorage $authStorage;
     private string $tmpDir;
@@ -125,30 +129,6 @@ final class SymfonyAiProviderFactoryCodexAuthTest extends TestCase
         );
 
         $factory = $this->createFactory([$provider->id => $provider], $this->authStorage);
-
-        $this->expectException(\RuntimeException::class);
-        $this->expectExceptionMessage('requires stored OAuth credentials');
-
-        $factory->createProviders();
-    }
-
-    public function testCodexProviderThrowsWhenAuthStorageNotConfigured(): void
-    {
-        $provider = new AiProviderConfig(
-            id: 'openai-codex',
-            type: 'codex',
-            enabled: true,
-            baseUrl: 'https://chatgpt.com/backend-api',
-            models: [
-                'gpt-5.5' => new AiModelDefinition(
-                    id: 'gpt-5.5',
-                    toolCalling: true,
-                    reasoning: true,
-                ),
-            ],
-        );
-
-        $factory = $this->createFactory([$provider->id => $provider]);
 
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('requires stored OAuth credentials');
@@ -333,11 +313,116 @@ final class SymfonyAiProviderFactoryCodexAuthTest extends TestCase
         }
     }
 
+    public function testSupportsCodexTypeOnly(): void
+    {
+        $builder = new CodexSymfonyAiProviderBuilder(
+            $this->createStub(EventDispatcherInterface::class),
+            $this->authStorage,
+            new CodexOAuthService($this->authStorage),
+            new CodexWebSocketConnectionCache(),
+        );
+
+        $codex = new AiProviderConfig(id: 'openai-codex', type: 'codex', enabled: true, baseUrl: 'https://example.com');
+        $generic = new AiProviderConfig(id: 'deepseek', type: 'generic', enabled: true, baseUrl: 'https://api.deepseek.com');
+
+        $this->assertTrue($builder->supports($codex));
+        $this->assertFalse($builder->supports($generic));
+    }
+
+    public function testCodexTypeThrowsWithoutAuthStorageViaFactory(): void
+    {
+        $providerConfig = new AiProviderConfig(
+            id: 'openai-codex',
+            type: 'codex',
+            enabled: true,
+            baseUrl: 'https://chatgpt.com/backend-api',
+        );
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('requires stored OAuth credentials');
+
+        $factory = $this->createFactory(['openai-codex' => $providerConfig]);
+        $factory->createProviders();
+    }
+
+    public function testCodexTypeThrowsRegardlessOfYamlCredentials(): void
+    {
+        $providerConfig = new AiProviderConfig(
+            id: 'openai-codex',
+            type: 'codex',
+            enabled: true,
+            baseUrl: 'https://chatgpt.com/backend-api',
+            apiKey: 'some-access-token',
+            accountId: 'chat-123456',
+        );
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('requires stored OAuth credentials');
+
+        $factory = $this->createFactory(['openai-codex' => $providerConfig]);
+        $factory->createProviders();
+    }
+
+    public function testNullAndBlankTransportDefaultToWebsocketProvider(): void
+    {
+        $this->authStorage->saveCredentials('openai-codex', new CodexAuthRecord(
+            access: 'stored-access-token',
+            refresh: 'stored-refresh-token',
+            expires: time() + 3600,
+            accountId: 'stored-account-id',
+        ));
+
+        foreach ([null, '', '   '] as $transport) {
+            $provider = new AiProviderConfig(
+                id: 'openai-codex',
+                type: 'codex',
+                enabled: true,
+                baseUrl: 'https://chatgpt.com/backend-api',
+                transport: $transport,
+                models: [
+                    'gpt-5.5' => new AiModelDefinition(
+                        id: 'gpt-5.5',
+                        toolCalling: true,
+                        reasoning: true,
+                    ),
+                ],
+            );
+
+            $factory = $this->createFactory([$provider->id => $provider], $this->authStorage);
+            $providers = $factory->createProviders();
+            $this->assertArrayHasKey('openai-codex', $providers, 'transport='.var_export($transport, true));
+        }
+    }
+
+    public function testInvalidTransportThrows(): void
+    {
+        $provider = new AiProviderConfig(
+            id: 'openai-codex',
+            type: 'codex',
+            enabled: true,
+            baseUrl: 'https://chatgpt.com/backend-api',
+            transport: 'auto',
+        );
+
+        $builder = new CodexSymfonyAiProviderBuilder(
+            eventDispatcher: $this->createStub(EventDispatcherInterface::class),
+            codexAuth: $this->authStorage,
+            codexOAuth: new CodexOAuthService($this->authStorage),
+            codexWebSocketConnectionCache: new CodexWebSocketConnectionCache(),
+        );
+
+        $this->expectException(\InvalidArgumentException::class);
+        $builder->build($provider, new MockHttpClient());
+    }
+
     /**
      * @param array<string, AiProviderConfig> $providers
      */
-    private function createFactory(array $providers, ?CodexAuthStorage $codexAuth = null): SymfonyAiProviderFactory
-    {
+    private function createFactory(
+        array $providers,
+        ?CodexAuthStorage $codexAuth = null,
+        ?CodexOAuthService $codexOAuth = null,
+    ): SymfonyAiProviderFactory {
         $aiConfig = new AiConfig(
             defaultModel: 'openai-codex/gpt-5.5',
             providers: $providers,
@@ -349,10 +434,19 @@ final class SymfonyAiProviderFactoryCodexAuthTest extends TestCase
             catalog: new HatfieldModelCatalog($aiConfig),
         );
 
+        $eventDispatcher = $this->createStub(EventDispatcherInterface::class);
+        $storage = $codexAuth ?? $this->authStorage;
+        $codexBuilder = new CodexSymfonyAiProviderBuilder(
+            eventDispatcher: $eventDispatcher,
+            codexAuth: $storage,
+            codexOAuth: $codexOAuth ?? new CodexOAuthService($storage),
+            codexWebSocketConnectionCache: new CodexWebSocketConnectionCache(),
+        );
+
         return new SymfonyAiProviderFactory(
             appConfig: $appConfig,
-            eventDispatcher: $this->createStub(EventDispatcherInterface::class),
-            codexAuth: $codexAuth,
+            eventDispatcher: $eventDispatcher,
+            builders: [$codexBuilder],
         );
     }
 }

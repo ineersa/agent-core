@@ -67,8 +67,8 @@ final class OutputCapLlmTransformHookTest extends TestCase
         $toolMsg = reset($toolMessages);
         $this->assertInstanceOf(ToolCallMessage::class, $toolMsg);
 
-        $providerContent = $toolMsg->getContent();
-        $this->assertIsString($providerContent);
+        $providerContent = $toolMsg->asText();
+        $this->assertNotNull($providerContent);
 
         $this->assertStringContainsString('Output capped', $providerContent);
         $this->assertStringNotContainsString($sentinel, $providerContent);
@@ -125,8 +125,8 @@ final class OutputCapLlmTransformHookTest extends TestCase
         $this->assertCount(1, $toolMessages);
 
         $toolMsg = reset($toolMessages);
-        $providerContent = $toolMsg->getContent();
-        $this->assertIsString($providerContent);
+        $providerContent = $toolMsg->asText();
+        $this->assertNotNull($providerContent);
 
         $this->assertStringContainsString('Output capped', $providerContent);
         $this->assertStringNotContainsString($sentinel, $providerContent);
@@ -418,8 +418,8 @@ final class OutputCapLlmTransformHookTest extends TestCase
         $this->assertCount(1, $toolMessages);
 
         $toolMsg = reset($toolMessages);
-        $providerContent = $toolMsg->getContent();
-        $this->assertIsString($providerContent);
+        $providerContent = $toolMsg->asText();
+        $this->assertNotNull($providerContent);
 
         // Must cap.
         $this->assertStringContainsString('Output capped', $providerContent);

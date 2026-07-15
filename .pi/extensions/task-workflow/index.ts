@@ -228,6 +228,10 @@ export default function (pi: ExtensionAPI) {
 					if (params.forkRun) text = updateField(text, "Fork run", params.forkRun);
 					notes.push(`Created branch ${wtResult.branch}.`, `Created worktree ${wtResult.worktree}.`);
 					if (wtResult.vendorCopied) notes.push(`Copied vendor directory into ${wtResult.worktree}.`);
+					if (wtResult.extensionsVendorInstalled) {
+						notes.push(`Installed extensions vendor into ${wtResult.worktree}.`);
+					}
+					if (wtResult.extensionsVendorNote) notes.push(wtResult.extensionsVendorNote);
 					if (wtResult.veraCopied) notes.push(`Copied .vera index into ${wtResult.worktree}.`);
 					if (wtResult.ideaExclusionsUpdated) notes.push(`Updated parent IDEA worktree exclusions for ${wtResult.worktree}.`);
 					if (wtResult.ideaNote) notes.push(wtResult.ideaNote);

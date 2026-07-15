@@ -62,6 +62,12 @@ final class ChatScreen
     /** Number of blank lines rendered before the header logo. */
     private const int TOP_MARGIN_LINES = 4;
 
+    /**
+     * Producer output when the working indicator is hidden: one blank row so
+     * {@see LiveTextWidget} does not collapse the slot to zero lines.
+     */
+    private const string HIDDEN_WORKING_ROW_RESERVE = '  ';
+
     /* ── Symfony widget refs (internal) ── */
     private readonly LiveTextWidget $topMarginWidget;
     private readonly LiveTextWidget $headerWidget;
@@ -185,15 +191,22 @@ final class ChatScreen
         // ── Working status ──
         $this->workingWidget = new LiveTextWidget(
             function (RenderContext $symfonyCtx): string {
-                if (!$this->registry->isWorkingVisible()) {
-                    return '';
-                }
+                $visible = $this->registry->isWorkingVisible();
                 $msg = $this->registry->getWorkingMessage();
                 $this->workingRenderable->setMessage($msg);
-                $this->workingRenderable->setVisible(true);
+                // Sync visibility on every render: WorkingStatusWidget is a cached
+                // renderable; registry is authoritative and may change between invalidations.
+                $this->workingRenderable->setVisible($visible);
                 $tuiCtx = $this->tuiContext($symfonyCtx);
+                $lines = $this->workingRenderable->render($tuiCtx);
 
-                return implode("\n", $this->workingRenderable->render($tuiCtx));
+                // Reserve exactly one terminal row when the indicator is hidden so
+                // status-area visibility toggles do not shift the editor/footer.
+                if ([] === $lines) {
+                    return self::HIDDEN_WORKING_ROW_RESERVE;
+                }
+
+                return implode("\n", $lines);
             },
         );
 
@@ -435,6 +448,17 @@ final class ChatScreen
         $this->footerDataProvider->setStatus($key, $text);
         $this->statusPanelWidget->invalidate();
         $this->footerWidget->invalidate();
+    }
+
+    /**
+     * Remove the transient Shift+Tab reasoning level line from the status panel.
+     *
+     * Does not change {@see TuiSessionState::footerReasoning}, editor border
+     * colour, or footer diamond/model styling — only the panel-only notice.
+     */
+    public function clearTransientReasoningNotice(): void
+    {
+        $this->setStatus('reasoning', null);
     }
 
     /**

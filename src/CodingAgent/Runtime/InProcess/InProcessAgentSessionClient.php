@@ -252,6 +252,14 @@ final class InProcessAgentSessionClient implements AgentSessionClient
         };
     }
 
+    public function beginObservingChildRun(string $childRunId): void
+    {
+    }
+
+    public function endObservingChildRun(string $childRunId): void
+    {
+    }
+
     public function events(string $runId): iterable
     {
         // Yield transient streaming events BEFORE canonical events.

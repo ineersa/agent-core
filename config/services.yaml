@@ -70,6 +70,9 @@ services:
     Ineersa\CodingAgent\Tool\HatfieldToolProviderInterface:
       tags: ['hatfield.tool_provider']
 
+    Ineersa\CodingAgent\Infrastructure\SymfonyAi\SymfonyAiProviderBuilderInterface:
+      tags: ['hatfield.symfony_ai.provider_builder']
+
   Ineersa\CodingAgent\:
     resource: '%kernel.project_dir%/src/CodingAgent/**/*.php'
     exclude: '%kernel.project_dir%/src/CodingAgent/ExtensionApi/**/*.php'
@@ -81,6 +84,16 @@ services:
     resource: '%kernel.project_dir%/src/Tui/**/*.php'
 
   # ─── Session stores — resolved via HatfieldSessionStore for path ───
+
+
+  Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface:
+    alias: Ineersa\CodingAgent\Entity\DeferredToolCompletionRepository
+
+  Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository:
+    autowire: true
+
+  Ineersa\CodingAgent\Entity\DeferredSubagentChildRepository:
+    autowire: true
 
   Ineersa\AgentCore\Contract\IdempotencyStoreInterface:
     alias: Ineersa\CodingAgent\Session\JsonlIdempotencyStore
@@ -107,6 +120,13 @@ services:
   Ineersa\CodingAgent\Auth\CodexAuthStorage:
     arguments:
       $homeDir: '@=service("Ineersa\\CodingAgent\\Config\\SettingsPathResolver").getHomeDir()'
+
+
+  Symfony\AI\Platform\Bridge\OpenAICodex\CodexWebSocketConnectionCache:
+    shared: true
+  Ineersa\CodingAgent\Infrastructure\SymfonyAi\SymfonyAiProviderFactory:
+    arguments:
+      $builders: !tagged_iterator hatfield.symfony_ai.provider_builder
 
   # AppConfig is a value object, not an autowireable service.
   # The container uses the fromContainer() factory to construct it.
@@ -947,16 +967,12 @@ services:
 
   # ─── AGENT-05 Subagent execution service ──────────────────────────
 
-  # SubagentExecutionService needs two RunStoreInterface bindings:
-  # $runStore auto-wires to the child-aware decorator (child runs), $parentRunStore to
-  # SessionRunStore (parent run state for prompt/metadata extraction).
-  # Parent-session progress events use CommittedRunEventAppender → EventStoreInterface
-  # (StreamingCommittedRuntimeEventStore → ChildAwareEventStore) for streaming after commit.
-  # so sequenced commits emit mapped RuntimeEvents on consumer stdout for the controller/TUI.
-  Ineersa\CodingAgent\Agent\Execution\SubagentExecutionService:
+  # Subagent child-run stack: child RunStore auto-wires to ChildAwareRunStore; parent RunStore
+  # binds to SessionRunStore for prompt/metadata. Parent progress events append via
+  # CommittedRunEventAppender only (seq 0 input; committed store allocates persisted seq).
+  Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Preparation\SubagentChildLaunchInputFactory:
     arguments:
       $parentRunStore: '@Ineersa\CodingAgent\Session\SessionRunStore'
-      $committedRunEventAppender: '@Ineersa\CodingAgent\Session\CommittedRunEventAppender'
 
 
 
