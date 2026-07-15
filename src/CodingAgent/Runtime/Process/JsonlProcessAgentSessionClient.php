@@ -38,7 +38,8 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
     /** Sliding window in seconds for restart rate-limiting. */
     private const float RESTART_WINDOW = 60.0;
     private const int EVENT_BUFFER_WARNING_THRESHOLD = 1000;
-    private const int EVENT_BUFFER_MAX = 10000;
+    /** Advisory compact tail size at which capacity diagnostics are emitted (not a hard eviction cap). */
+    private const int EVENT_BUFFER_CAPACITY_LOG_THRESHOLD = 10000;
     /** Minimum seconds between repeated watermark warnings while above threshold. */
     private const int EVENT_BUFFER_WATERMARK_LOG_INTERVAL_SECONDS = 60;
     /** @var resource|null */
@@ -50,14 +51,18 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
     private string $stdoutBuffer = '';
     private string $stderrBuffer = '';
 
-    /** @var array<string, \SplQueue<RuntimeEvent>> */
-    private array $eventBuffersByRunId = [];
+    private RuntimeEventPerRunCompactBuffer $compactEventBuffer;
 
-    private int $eventBufferTotalCount = 0;
+    /** @var array<string, true> */
+    private array $observedChildRunIds = [];
 
     private bool $eventBufferWatermarkActive = false;
 
     private ?float $eventBufferWatermarkLastLoggedAt = null;
+
+    private bool $eventBufferCapacityActive = false;
+
+    private ?float $eventBufferCapacityLastLoggedAt = null;
 
     /**
      * The most recently active run ID tracked across start/resume/send/cancel.
@@ -72,6 +77,12 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
      * Hatfield instance — session_id === run_id per AGENTS.md.
      */
     private ?string $sessionId = null;
+
+    /**
+     * Session root run id (session_id === run_id). Retained across child live-view polls so
+     * parent durable events stay buffered while activeRunId targets a selected child.
+     */
+    private ?string $primaryRunId = null;
 
     /**
      * Whether ensureProcessRunning() auto-resumed the active run during
@@ -108,8 +119,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
         private readonly PromptTemplatesRuntimeConfig $promptTemplatesConfig,
         private readonly LoggerInterface $logger,
     ) {
-        $this->eventBuffersByRunId = [];
-        $this->eventBufferTotalCount = 0;
+        $this->compactEventBuffer = new RuntimeEventPerRunCompactBuffer();
         $this->eventBufferWatermarkActive = false;
         $this->eventBufferWatermarkLastLoggedAt = null;
     }
@@ -123,6 +133,8 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
     {
         // New run — clear stale state from any previous run or crash.
         $this->activeRunId = null;
+        $this->primaryRunId = null;
+        $this->observedChildRunIds = [];
         $this->autoResumed = false;
 
         // Derive session-scoped queue names from the request runId before
@@ -157,6 +169,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
         // run.started arrives, auto-resume will target it.
         if (null !== $runId) {
             $this->activeRunId = $runId;
+            $this->primaryRunId = $runId;
         }
 
         $cmd = new RuntimeCommand(
@@ -185,6 +198,10 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
                 foreach ($this->readEventBatch() as $event) {
                     if ('run.started' === $event->type || 'run_started' === $event->type) {
                         $this->activeRunId = $event->runId;
+                        if ('' !== $event->runId) {
+                            $this->primaryRunId = $event->runId;
+                            $this->sessionId = $event->runId;
+                        }
                         $foundStarted = true;
 
                         continue;
@@ -244,10 +261,12 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
         // triggered by THIS attach() call should suppress the write below.
         // Mirrors start() which also resets these before a new run.
         $this->autoResumed = false;
+        $this->observedChildRunIds = [];
 
         // runId is the session ID — update session-scoped queue DSNs.
         $this->sessionId = $runId;
         $this->activeRunId = $runId;
+        $this->primaryRunId = $runId;
         $this->ensureProcessRunning();
 
         // Symmetric with start(): wait for runtime.ready before sending
@@ -346,6 +365,28 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
         }
     }
 
+    public function beginObservingChildRun(string $childRunId): void
+    {
+        $childRunId = trim($childRunId);
+        if ('' === $childRunId) {
+            return;
+        }
+
+        $this->observedChildRunIds[$childRunId] = true;
+    }
+
+    public function endObservingChildRun(string $childRunId): void
+    {
+        $childRunId = trim($childRunId);
+        if ('' === $childRunId) {
+            return;
+        }
+
+        unset($this->observedChildRunIds[$childRunId]);
+        $this->compactEventBuffer->releaseObservationRetention($childRunId);
+        $this->syncWatermarkStateAfterBufferMutation();
+    }
+
     public function cancel(string $runId): void
     {
         $this->activeRunId = $runId;
@@ -383,6 +424,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
     {
         $this->activeRunId = $sessionId;
         $this->sessionId = $sessionId;
+        $this->primaryRunId = $sessionId;
         $this->ensureProcessRunning();
         $this->waitForRuntimeReady();
 
@@ -604,84 +646,57 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
      */
     private function drainBufferedEventsForRun(string $runId): iterable
     {
-        if (!isset($this->eventBuffersByRunId[$runId])) {
-            return;
-        }
-
-        $queue = $this->eventBuffersByRunId[$runId];
-        while (!$queue->isEmpty()) {
-            $event = $queue->dequeue();
-            --$this->eventBufferTotalCount;
+        foreach ($this->compactEventBuffer->drain($runId) as $event) {
             yield $event;
         }
 
-        unset($this->eventBuffersByRunId[$runId]);
         $this->syncWatermarkStateAfterBufferMutation();
     }
 
     private function bufferEvent(RuntimeEvent $event, string $reason): void
     {
-        if ($this->eventBufferTotalCount >= self::EVENT_BUFFER_MAX) {
-            $dropped = $this->dropOldestBufferedEvent();
-            if ($dropped > 0) {
-                $this->logger->warning('JSONL event buffer dropped oldest events at max capacity', [
-                    'component' => 'JsonlProcessAgentSessionClient',
-                    'event_type' => 'jsonl_event_buffer.drop_oldest',
-                    'session_id' => $this->sessionId ?? '',
-                    'run_id' => $event->runId,
-                    'buffer_size' => $this->eventBufferTotalCount,
-                    'threshold' => self::EVENT_BUFFER_MAX,
-                    'dropped' => $dropped,
-                    'reason' => $reason,
-                ]);
-            }
-        }
-
-        $runId = $event->runId;
-        if (!isset($this->eventBuffersByRunId[$runId])) {
-            $this->eventBuffersByRunId[$runId] = new \SplQueue();
-        }
-
-        $this->eventBuffersByRunId[$runId]->enqueue($event);
-        ++$this->eventBufferTotalCount;
+        $observed = isset($this->observedChildRunIds[$event->runId])
+            || ('' !== $event->runId && $event->runId === ($this->primaryRunId ?? ''));
+        $this->compactEventBuffer->ingest($event, $observed);
+        $this->maybeLogBufferCapacity($event->runId, $reason);
         $this->maybeLogBufferWatermark($reason);
     }
 
-    private function dropOldestBufferedEvent(): int
+    private function maybeLogBufferCapacity(string $runId, string $reason): void
     {
-        $dropped = 0;
-        while ($this->eventBufferTotalCount >= self::EVENT_BUFFER_MAX) {
-            $removed = false;
-            foreach ($this->eventBuffersByRunId as $runId => $queue) {
-                if ($queue->isEmpty()) {
-                    unset($this->eventBuffersByRunId[$runId]);
-                    continue;
-                }
+        $size = $this->compactEventBuffer->totalTailCount();
+        if ($size < self::EVENT_BUFFER_CAPACITY_LOG_THRESHOLD) {
+            $this->eventBufferCapacityActive = false;
+            $this->eventBufferCapacityLastLoggedAt = null;
 
-                $queue->dequeue();
-                --$this->eventBufferTotalCount;
-                ++$dropped;
-                $removed = true;
-                if ($queue->isEmpty()) {
-                    unset($this->eventBuffersByRunId[$runId]);
-                }
-
-                break;
-            }
-
-            if (!$removed) {
-                break;
-            }
+            return;
         }
 
-        $this->syncWatermarkStateAfterBufferMutation();
+        $now = microtime(true);
+        $shouldLog = !$this->eventBufferCapacityActive
+            || null === $this->eventBufferCapacityLastLoggedAt
+            || ($now - $this->eventBufferCapacityLastLoggedAt) >= self::EVENT_BUFFER_WATERMARK_LOG_INTERVAL_SECONDS;
 
-        return $dropped;
+        if (!$shouldLog) {
+            return;
+        }
+
+        $this->eventBufferCapacityActive = true;
+        $this->eventBufferCapacityLastLoggedAt = $now;
+        $this->logger->warning('JSONL compact event tail at max capacity', [
+            'component' => 'JsonlProcessAgentSessionClient',
+            'event_type' => 'jsonl_event_buffer.tail_at_capacity',
+            'session_id' => $this->sessionId ?? '',
+            'run_id' => $runId,
+            'buffer_size' => $size,
+            'threshold' => self::EVENT_BUFFER_CAPACITY_LOG_THRESHOLD,
+            'reason' => $reason,
+        ]);
     }
 
     private function maybeLogBufferWatermark(string $reason): void
     {
-        $size = $this->eventBufferTotalCount;
+        $size = $this->compactEventBuffer->totalTailCount();
         if ($size < self::EVENT_BUFFER_WARNING_THRESHOLD) {
             $this->eventBufferWatermarkActive = false;
             $this->eventBufferWatermarkLastLoggedAt = null;
@@ -713,9 +728,15 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
 
     private function syncWatermarkStateAfterBufferMutation(): void
     {
-        if ($this->eventBufferTotalCount < self::EVENT_BUFFER_WARNING_THRESHOLD) {
+        $size = $this->compactEventBuffer->totalTailCount();
+        if ($size < self::EVENT_BUFFER_WARNING_THRESHOLD) {
             $this->eventBufferWatermarkActive = false;
             $this->eventBufferWatermarkLastLoggedAt = null;
+        }
+
+        if ($size < self::EVENT_BUFFER_CAPACITY_LOG_THRESHOLD) {
+            $this->eventBufferCapacityActive = false;
+            $this->eventBufferCapacityLastLoggedAt = null;
         }
     }
 
