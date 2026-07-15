@@ -8,6 +8,7 @@ use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
+use Ineersa\CodingAgent\Agent\Execution\ForkExecutionServiceInterface;
 use Ineersa\CodingAgent\Agent\Tool\ForkToolHandler;
 use Ineersa\CodingAgent\Tool\ToolRuntime;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -59,19 +60,6 @@ final class ForkToolHandlerTest extends TestCase
         $this->assertSame('test/model', $fake->lastModelOverride);
         $this->assertSame('high', $fake->lastReasoningOverride);
     }
-}
-
-/**
- * Intended narrow fork execution boundary (production interface to be introduced in green slice).
- */
-interface ForkExecutionServiceInterface
-{
-    public function execute(
-        string $parentRunId,
-        string $task,
-        ?string $modelOverride = null,
-        ?string $reasoningOverride = null,
-    ): DeferredToolCompletionOutcome;
 }
 
 final class FakeForkExecutionService implements ForkExecutionServiceInterface
