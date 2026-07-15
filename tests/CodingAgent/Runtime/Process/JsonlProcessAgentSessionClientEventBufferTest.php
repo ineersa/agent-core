@@ -127,14 +127,9 @@ final class JsonlProcessAgentSessionClientEventBufferTest extends TestCase
     {
         $client = $this->createIdleClient();
         $ref = new \ReflectionClass($client);
-        $buffers = $ref->getProperty('eventBuffersByRunId')->getValue($client);
-
-        $buffers['parent-run'] = new \SplQueue();
-        $buffers['parent-run']->enqueue(new RuntimeEvent(RuntimeEventTypeEnum::RunCompleted->value, 'parent-run', 10, []));
-        $buffers['child-run'] = new \SplQueue();
-        $buffers['child-run']->enqueue(new RuntimeEvent(RuntimeEventTypeEnum::TurnStarted->value, 'child-run', 5, []));
-        $ref->getProperty('eventBuffersByRunId')->setValue($client, $buffers);
-        $ref->getProperty('eventBufferTotalCount')->setValue($client, 2);
+        $compact = $ref->getProperty('compactEventBuffer')->getValue($client);
+        $compact->ingest(new RuntimeEvent(RuntimeEventTypeEnum::TurnStarted->value, 'child-run', 0, []));
+        $compact->ingest(new RuntimeEvent(RuntimeEventTypeEnum::HumanInputRequested->value, 'parent-run', 0, ['question_id' => 'q']));
 
         $childDrain = iterator_to_array($client->events('child-run'));
         $this->assertCount(1, $childDrain);
@@ -143,6 +138,7 @@ final class JsonlProcessAgentSessionClientEventBufferTest extends TestCase
         $parentDrain = iterator_to_array($client->events('parent-run'));
         $this->assertCount(1, $parentDrain);
         $this->assertSame('parent-run', $parentDrain[0]->runId);
+        $this->assertSame(RuntimeEventTypeEnum::HumanInputRequested->value, $parentDrain[0]->type);
     }
 
     public function testBufferWatermarkLogsWhenThresholdExceeded(): void
@@ -156,60 +152,81 @@ final class JsonlProcessAgentSessionClientEventBufferTest extends TestCase
         $this->assertSame(1000, $warn->getValue());
         $this->assertSame(10000, $max->getValue());
 
-        $bufferMethod = $ref->getMethod('bufferEvent');
+        $compact = $ref->getProperty('compactEventBuffer')->getValue($client);
         for ($i = 0; $i < 1001; ++$i) {
-            $bufferMethod->invoke($client, new RuntimeEvent(RuntimeEventTypeEnum::TurnStarted->value, 'parent-run', $i, []), 'test');
+            $compact->ingest(new RuntimeEvent(RuntimeEventTypeEnum::HumanInputRequested->value, 'parent-run', 0, [
+                'question_id' => 'q'.$i,
+            ]));
         }
+        $ref->getMethod('bufferEvent')->invoke($client, new RuntimeEvent(RuntimeEventTypeEnum::TurnStarted->value, 'parent-run', 0, []), 'test');
 
         $warnings = array_filter($logger->records, static fn (array $r): bool => 'jsonl_event_buffer.watermark' === ($r['context']['event_type'] ?? ''));
         $this->assertCount(1, $warnings);
     }
 
-    public function testAlternatingEventsDrainDoesNotRebufferOrSpamWatermarkLogs(): void
+    public function testAlternatingEventsDrainEmptiesCompactTailWithoutWatermarkSpam(): void
     {
         $logger = new TestLogger();
         $client = $this->createIdleClient($logger);
         $ref = new \ReflectionClass($client);
-        $buffersProp = $ref->getProperty('eventBuffersByRunId');
-        $buffers = $buffersProp->getValue($client);
-        $buffers['parent-run'] = new \SplQueue();
-        $buffers['child-run'] = new \SplQueue();
+        $compact = $ref->getProperty('compactEventBuffer')->getValue($client);
         for ($i = 0; $i < 1200; ++$i) {
-            $buffers['parent-run']->enqueue(new RuntimeEvent(RuntimeEventTypeEnum::TurnStarted->value, 'parent-run', $i, []));
-            $buffers['child-run']->enqueue(new RuntimeEvent(RuntimeEventTypeEnum::TurnStarted->value, 'child-run', $i, []));
+            $compact->ingest(new RuntimeEvent(RuntimeEventTypeEnum::AssistantTextDelta->value, 'parent-run', 0, [
+                'block_id' => 'p',
+                'delta' => 'a',
+            ]));
+            $compact->ingest(new RuntimeEvent(RuntimeEventTypeEnum::AssistantTextDelta->value, 'child-run', 0, [
+                'block_id' => 'c',
+                'delta' => 'b',
+            ]));
         }
-        $buffersProp->setValue($client, $buffers);
-        $ref->getProperty('eventBufferTotalCount')->setValue($client, 2400);
 
         for ($cycle = 0; $cycle < 20; ++$cycle) {
             iterator_to_array($client->events('child-run'));
             iterator_to_array($client->events('parent-run'));
         }
 
-        $remaining = $buffersProp->getValue($client);
-        $this->assertSame([], $remaining);
+        $this->assertSame(0, $compact->totalTailCount());
 
         $warnings = array_filter($logger->records, static fn (array $r): bool => 'jsonl_event_buffer.watermark' === ($r['context']['event_type'] ?? ''));
         $this->assertCount(0, $warnings);
     }
 
-    public function testBufferMaxDropsOldestWithBoundedDiagnostics(): void
+    public function testParentPollBuffersOnlyCompactTailForChildStream(): void
     {
-        $logger = new TestLogger();
-        $client = $this->createIdleClient($logger);
-        $ref = new \ReflectionClass($client);
-        $bufferMethod = $ref->getMethod('bufferEvent');
+        $parentRunId = 'parent-run';
+        $childRunId = 'child-agent-run';
+        $client = $this->createIdleClient();
+        $blockId = 'assistant-block';
+        $this->injectStdoutJsonlLines($client, [
+            $this->jsonlEvent(RuntimeEventTypeEnum::TurnStarted->value, $parentRunId, 1),
+            json_encode([
+                'type' => RuntimeEventTypeEnum::AssistantTextDelta->value,
+                'runId' => $childRunId,
+                'seq' => 0,
+                'payload' => ['block_id' => $blockId, 'delta' => 'partial'],
+            ], \JSON_THROW_ON_ERROR),
+            json_encode([
+                'type' => RuntimeEventTypeEnum::AssistantTextCompleted->value,
+                'runId' => $childRunId,
+                'seq' => 42,
+                'payload' => ['block_id' => $blockId, 'text' => 'partial'],
+            ], \JSON_THROW_ON_ERROR),
+            json_encode([
+                'type' => RuntimeEventTypeEnum::RunCompleted->value,
+                'runId' => $childRunId,
+                'seq' => 43,
+                'payload' => [],
+            ], \JSON_THROW_ON_ERROR),
+        ]);
 
-        for ($i = 0; $i < 10050; ++$i) {
-            $bufferMethod->invoke($client, new RuntimeEvent(RuntimeEventTypeEnum::TurnStarted->value, 'parent-run', $i, []), 'test');
-        }
+        iterator_to_array($client->events($parentRunId));
 
-        $total = $ref->getProperty('eventBufferTotalCount')->getValue($client);
-        $this->assertSame(10000, $total);
-
-        $drops = array_filter($logger->records, static fn (array $r): bool => 'jsonl_event_buffer.drop_oldest' === ($r['context']['event_type'] ?? ''));
-        $this->assertNotEmpty($drops);
-        $this->assertLessThanOrEqual(60, \count($drops));
+        $childDrain = iterator_to_array($client->events($childRunId));
+        $seqZero = array_filter($childDrain, static fn (RuntimeEvent $e): bool => 0 === $e->seq);
+        $this->assertSame([], array_values($seqZero), 'Stream checkpoints must prune replay-covered seq=0 tail');
+        $this->assertCount(1, $childDrain);
+        $this->assertSame(RuntimeEventTypeEnum::RunCompleted->value, $childDrain[0]->type);
     }
 
     private function createStartBatchFakeControllerClient(): JsonlProcessAgentSessionClient
