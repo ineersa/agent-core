@@ -14,8 +14,12 @@ use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
  * as raw queue entries. Only the current non-durable stream tail (seq = 0 deltas) and protected
  * interactive/control events are kept until {@see drain()} for that run id.
  *
- * Durable completion boundaries prune superseded transient tail so completed-child live-view entry
- * does not re-apply stale seq = 0 deltas after canonical snapshot replay.
+ * Stream subscribers emit incremental chunks (assistant text/thinking, tool partial_json, tool
+ * output delta). Coalescing appends those chunks — never latest-wins replacement.
+ *
+ * Durable and transient stream completion boundaries prune superseded transient tail so
+ * completed-child live-view entry does not re-apply stale seq = 0 deltas after canonical
+ * snapshot replay.
  */
 final class RuntimeEventPerRunCompactBuffer
 {
@@ -50,6 +54,12 @@ final class RuntimeEventPerRunCompactBuffer
             }
 
             $this->appendTail($runId, $event);
+
+            return;
+        }
+
+        if ($this->isStreamCheckpoint($event)) {
+            $this->pruneTransientTailForCheckpoint($runId, $event);
 
             return;
         }
@@ -134,29 +144,123 @@ final class RuntimeEventPerRunCompactBuffer
             return;
         }
 
-        $correlation = self::correlationKey($checkpoint);
-        if ('' === $correlation) {
-            return;
-        }
-
-        $supersededTypeKeys = $this->supersededTransientTypeKeys($checkpoint->type, $correlation);
-
         $this->tailByRunId[$runId] = array_values(array_filter(
             $this->tailByRunId[$runId],
-            static function (RuntimeEvent $candidate) use ($supersededTypeKeys): bool {
-                if ($candidate->seq > 0) {
-                    return true;
-                }
-
-                $candidateKey = $candidate->type.'|'.self::correlationKey($candidate);
-
-                return !\in_array($candidateKey, $supersededTypeKeys, true);
-            },
+            fn (RuntimeEvent $candidate): bool => !$this->isTransientSupersededByCheckpoint($candidate, $checkpoint),
         ));
 
         if ([] === $this->tailByRunId[$runId]) {
             unset($this->tailByRunId[$runId]);
         }
+    }
+
+    private function isTransientSupersededByCheckpoint(RuntimeEvent $candidate, RuntimeEvent $checkpoint): bool
+    {
+        if ($candidate->seq > 0) {
+            return false;
+        }
+
+        if (self::isProtectedControlEventStatic($candidate)) {
+            return false;
+        }
+
+        return match ($checkpoint->type) {
+            RuntimeEventTypeEnum::AssistantTextCompleted->value => $this->matchesBlockCorrelation($candidate, $checkpoint),
+            RuntimeEventTypeEnum::AssistantThinkingCompleted->value => $this->matchesBlockCorrelation($candidate, $checkpoint),
+            RuntimeEventTypeEnum::AssistantMessageCompleted->value => $this->matchesMessageStreamCorrelation($candidate, $checkpoint),
+            RuntimeEventTypeEnum::ToolCallArgumentsCompleted->value => $this->matchesToolCallArgumentsCorrelation($candidate, $checkpoint),
+            RuntimeEventTypeEnum::ToolExecutionCompleted->value,
+            RuntimeEventTypeEnum::ToolExecutionFailed->value,
+            RuntimeEventTypeEnum::ToolExecutionCancelled->value => $this->matchesToolExecutionOutputCorrelation($candidate, $checkpoint),
+            default => false,
+        };
+    }
+
+    private function matchesBlockCorrelation(RuntimeEvent $candidate, RuntimeEvent $checkpoint): bool
+    {
+        $blockId = self::payloadString($checkpoint->payload, 'block_id');
+        if ('' === $blockId) {
+            return false;
+        }
+
+        if (!\in_array($candidate->type, [
+            RuntimeEventTypeEnum::AssistantTextStarted->value,
+            RuntimeEventTypeEnum::AssistantTextDelta->value,
+            RuntimeEventTypeEnum::AssistantThinkingStarted->value,
+            RuntimeEventTypeEnum::AssistantThinkingDelta->value,
+        ], true)) {
+            return false;
+        }
+
+        return self::payloadString($candidate->payload, 'block_id') === $blockId;
+    }
+
+    private function matchesMessageStreamCorrelation(RuntimeEvent $candidate, RuntimeEvent $checkpoint): bool
+    {
+        $messageId = self::payloadString($checkpoint->payload, 'message_id');
+        if ('' === $messageId) {
+            return false;
+        }
+
+        if (!\in_array($candidate->type, [
+            RuntimeEventTypeEnum::AssistantMessageStarted->value,
+            RuntimeEventTypeEnum::AssistantTextStarted->value,
+            RuntimeEventTypeEnum::AssistantTextDelta->value,
+            RuntimeEventTypeEnum::AssistantTextCompleted->value,
+            RuntimeEventTypeEnum::AssistantThinkingStarted->value,
+            RuntimeEventTypeEnum::AssistantThinkingDelta->value,
+            RuntimeEventTypeEnum::AssistantThinkingCompleted->value,
+        ], true)) {
+            return false;
+        }
+
+        $candidateMessageId = self::payloadString($candidate->payload, 'message_id');
+        if ('' !== $candidateMessageId && $candidateMessageId === $messageId) {
+            return true;
+        }
+
+        $stepId = self::payloadString($candidate->payload, 'step_id');
+        if ('' !== $stepId && $stepId === $messageId) {
+            return true;
+        }
+
+        $blockId = self::payloadString($candidate->payload, 'block_id');
+        if ('' !== $blockId) {
+            $runPrefix = $checkpoint->runId.'_'.$messageId.'_';
+
+            return str_starts_with($blockId, $runPrefix);
+        }
+
+        return false;
+    }
+
+    private function matchesToolCallArgumentsCorrelation(RuntimeEvent $candidate, RuntimeEvent $checkpoint): bool
+    {
+        $toolCallId = self::payloadString($checkpoint->payload, 'tool_call_id');
+        if ('' === $toolCallId) {
+            return false;
+        }
+
+        if (!\in_array($candidate->type, [
+            RuntimeEventTypeEnum::ToolCallStarted->value,
+            RuntimeEventTypeEnum::ToolCallArgumentsDelta->value,
+        ], true)) {
+            return false;
+        }
+
+        return self::payloadString($candidate->payload, 'tool_call_id') === $toolCallId;
+    }
+
+    private function matchesToolExecutionOutputCorrelation(RuntimeEvent $candidate, RuntimeEvent $checkpoint): bool
+    {
+        if (RuntimeEventTypeEnum::ToolExecutionOutputDelta->value !== $candidate->type) {
+            return false;
+        }
+
+        $toolCallId = self::payloadString($checkpoint->payload, 'tool_call_id');
+
+        return '' !== $toolCallId
+            && self::payloadString($candidate->payload, 'tool_call_id') === $toolCallId;
     }
 
     private function clearTransientTail(string $runId): void
@@ -181,16 +285,18 @@ final class RuntimeEventPerRunCompactBuffer
             $this->tailByRunId[$runId] = [];
         }
 
-        if ($this->isCoalescableDelta($event)) {
-            $key = self::correlationKey($event);
+        if ($this->isCoalescableStreamEvent($event)) {
+            $key = self::streamCoalesceKey($event);
             foreach ($this->tailByRunId[$runId] as $index => $existing) {
-                if (0 === $existing->seq
-                    && $existing->type === $event->type
-                    && self::correlationKey($existing) === $key) {
-                    $this->tailByRunId[$runId][$index] = $event;
-
-                    return;
+                if (0 !== $existing->seq
+                    || $existing->type !== $event->type
+                    || self::streamCoalesceKey($existing) !== $key) {
+                    continue;
                 }
+
+                $this->tailByRunId[$runId][$index] = $this->mergeCoalescedStreamEvent($existing, $event);
+
+                return;
             }
         }
 
@@ -206,61 +312,107 @@ final class RuntimeEventPerRunCompactBuffer
         $this->tailByRunId[$runId][] = $event;
     }
 
-    /** @return list<string> */
-    private function supersededTransientTypeKeys(string $checkpointType, string $correlation): array
-    {
-        $prefix = static fn (string $type): string => $type.'|'.$correlation;
-
-        return match ($checkpointType) {
-            RuntimeEventTypeEnum::AssistantTextCompleted->value => [
-                $prefix(RuntimeEventTypeEnum::AssistantTextStarted->value),
-                $prefix(RuntimeEventTypeEnum::AssistantTextDelta->value),
-            ],
-            RuntimeEventTypeEnum::AssistantThinkingCompleted->value => [
-                $prefix(RuntimeEventTypeEnum::AssistantThinkingStarted->value),
-                $prefix(RuntimeEventTypeEnum::AssistantThinkingDelta->value),
-            ],
-            RuntimeEventTypeEnum::AssistantMessageCompleted->value => [
-                $prefix(RuntimeEventTypeEnum::AssistantMessageStarted->value),
-            ],
-            RuntimeEventTypeEnum::ToolCallArgumentsCompleted->value,
-            RuntimeEventTypeEnum::ToolExecutionCompleted->value,
-            RuntimeEventTypeEnum::ToolExecutionFailed->value,
-            RuntimeEventTypeEnum::ToolExecutionCancelled->value => [
-                $prefix(RuntimeEventTypeEnum::ToolCallStarted->value),
-                $prefix(RuntimeEventTypeEnum::ToolCallArgumentsDelta->value),
-                $prefix(RuntimeEventTypeEnum::ToolExecutionOutputDelta->value),
-            ],
-            default => [],
-        };
-    }
-
-    private function isCoalescableDelta(RuntimeEvent $event): bool
+    private function isCoalescableStreamEvent(RuntimeEvent $event): bool
     {
         return \in_array($event->type, [
+            RuntimeEventTypeEnum::AssistantTextStarted->value,
             RuntimeEventTypeEnum::AssistantTextDelta->value,
+            RuntimeEventTypeEnum::AssistantThinkingStarted->value,
             RuntimeEventTypeEnum::AssistantThinkingDelta->value,
             RuntimeEventTypeEnum::ToolCallArgumentsDelta->value,
             RuntimeEventTypeEnum::ToolExecutionOutputDelta->value,
         ], true);
     }
 
-    private static function correlationKey(RuntimeEvent $event): string
+    private function mergeCoalescedStreamEvent(RuntimeEvent $existing, RuntimeEvent $incoming): RuntimeEvent
     {
-        $payload = $event->payload;
+        $payload = $existing->payload;
 
-        if (isset($payload['block_id']) && '' !== (string) $payload['block_id']) {
-            return (string) $payload['block_id'];
+        return match ($incoming->type) {
+            RuntimeEventTypeEnum::AssistantTextStarted->value,
+            RuntimeEventTypeEnum::AssistantTextDelta->value => new RuntimeEvent(
+                type: $incoming->type,
+                runId: $incoming->runId,
+                seq: 0,
+                payload: self::mergePayloadChunk($payload, $incoming->payload, 'text'),
+            ),
+            RuntimeEventTypeEnum::AssistantThinkingStarted->value,
+            RuntimeEventTypeEnum::AssistantThinkingDelta->value => new RuntimeEvent(
+                type: $incoming->type,
+                runId: $incoming->runId,
+                seq: 0,
+                payload: self::mergePayloadChunk($payload, $incoming->payload, 'thinking'),
+            ),
+            RuntimeEventTypeEnum::ToolCallArgumentsDelta->value => new RuntimeEvent(
+                type: $incoming->type,
+                runId: $incoming->runId,
+                seq: 0,
+                payload: self::mergePayloadChunk($payload, $incoming->payload, 'partial_json'),
+            ),
+            RuntimeEventTypeEnum::ToolExecutionOutputDelta->value => $this->mergeToolExecutionOutputDelta($existing, $incoming),
+            default => $incoming,
+        };
+    }
+
+    /**
+     * @param array<string, mixed> $base
+     * @param array<string, mixed> $chunk
+     *
+     * @return array<string, mixed>
+     */
+    private static function mergePayloadChunk(array $base, array $chunk, string $field): array
+    {
+        $merged = array_merge($base, $chunk);
+        $merged[$field] = (string) ($base[$field] ?? '').(string) ($chunk[$field] ?? '');
+
+        return $merged;
+    }
+
+    private function mergeToolExecutionOutputDelta(RuntimeEvent $existing, RuntimeEvent $incoming): RuntimeEvent
+    {
+        $base = $existing->payload;
+        $chunk = $incoming->payload;
+
+        if (isset($chunk['subagent_progress']) && \is_array($chunk['subagent_progress'])) {
+            return $incoming;
         }
 
-        if (isset($payload['tool_call_id']) && '' !== (string) $payload['tool_call_id']) {
-            return (string) $payload['tool_call_id'];
+        if (isset($base['subagent_progress']) && \is_array($base['subagent_progress'])) {
+            return $existing;
         }
 
-        if (isset($payload['message_id']) && '' !== (string) $payload['message_id']) {
-            return (string) $payload['message_id'];
+        return new RuntimeEvent(
+            type: $incoming->type,
+            runId: $incoming->runId,
+            seq: 0,
+            payload: self::mergePayloadChunk($base, $chunk, 'delta'),
+        );
+    }
+
+    private static function streamCoalesceKey(RuntimeEvent $event): string
+    {
+        $blockId = self::payloadString($event->payload, 'block_id');
+        if ('' !== $blockId) {
+            return 'block:'.$blockId;
+        }
+
+        $toolCallId = self::payloadString($event->payload, 'tool_call_id');
+        if ('' !== $toolCallId) {
+            return 'tool:'.$toolCallId;
         }
 
         return '';
+    }
+
+    /**
+     * @param array<string, mixed> $payload
+     */
+    private static function payloadString(array $payload, string $key): string
+    {
+        if (!isset($payload[$key])) {
+            return '';
+        }
+
+        return (string) $payload[$key];
     }
 }

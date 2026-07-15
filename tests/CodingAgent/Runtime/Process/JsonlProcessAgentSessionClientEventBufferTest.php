@@ -173,11 +173,11 @@ final class JsonlProcessAgentSessionClientEventBufferTest extends TestCase
         for ($i = 0; $i < 1200; ++$i) {
             $compact->ingest(new RuntimeEvent(RuntimeEventTypeEnum::AssistantTextDelta->value, 'parent-run', 0, [
                 'block_id' => 'p',
-                'delta' => 'a',
+                'text' => 'a',
             ]));
             $compact->ingest(new RuntimeEvent(RuntimeEventTypeEnum::AssistantTextDelta->value, 'child-run', 0, [
                 'block_id' => 'c',
-                'delta' => 'b',
+                'text' => 'b',
             ]));
         }
 
@@ -204,7 +204,7 @@ final class JsonlProcessAgentSessionClientEventBufferTest extends TestCase
                 'type' => RuntimeEventTypeEnum::AssistantTextDelta->value,
                 'runId' => $childRunId,
                 'seq' => 0,
-                'payload' => ['block_id' => $blockId, 'delta' => 'partial'],
+                'payload' => ['block_id' => $blockId, 'text' => 'partial'],
             ], \JSON_THROW_ON_ERROR),
             json_encode([
                 'type' => RuntimeEventTypeEnum::AssistantTextCompleted->value,
@@ -227,6 +227,76 @@ final class JsonlProcessAgentSessionClientEventBufferTest extends TestCase
         $this->assertSame([], array_values($seqZero), 'Stream checkpoints must prune replay-covered seq=0 tail');
         $this->assertCount(1, $childDrain);
         $this->assertSame(RuntimeEventTypeEnum::RunCompleted->value, $childDrain[0]->type);
+    }
+
+    public function testCompletedChildDrainProjectsConcatenatedTextAfterParentPoll(): void
+    {
+        $parentRunId = 'parent-run';
+        $childRunId = 'child-agent-run';
+        $client = $this->createIdleClient();
+        $stepId = 'step-1';
+        $textBlock = $childRunId.'_'.$stepId.'_text';
+        $this->injectStdoutJsonlLines($client, [
+            $this->jsonlEvent(RuntimeEventTypeEnum::TurnStarted->value, $parentRunId, 1),
+            json_encode([
+                'type' => RuntimeEventTypeEnum::AssistantTextStarted->value,
+                'runId' => $childRunId,
+                'seq' => 0,
+                'payload' => ['block_id' => $textBlock, 'step_id' => $stepId, 'text' => 'A'],
+            ], \JSON_THROW_ON_ERROR),
+            json_encode([
+                'type' => RuntimeEventTypeEnum::AssistantTextDelta->value,
+                'runId' => $childRunId,
+                'seq' => 0,
+                'payload' => ['block_id' => $textBlock, 'step_id' => $stepId, 'text' => 'B'],
+            ], \JSON_THROW_ON_ERROR),
+            json_encode([
+                'type' => RuntimeEventTypeEnum::AssistantTextDelta->value,
+                'runId' => $childRunId,
+                'seq' => 0,
+                'payload' => ['block_id' => $textBlock, 'step_id' => $stepId, 'text' => 'C'],
+            ], \JSON_THROW_ON_ERROR),
+            json_encode([
+                'type' => RuntimeEventTypeEnum::AssistantMessageCompleted->value,
+                'runId' => $childRunId,
+                'seq' => 50,
+                'payload' => ['message_id' => $stepId, 'text' => 'ABC'],
+            ], \JSON_THROW_ON_ERROR),
+            json_encode([
+                'type' => RuntimeEventTypeEnum::RunCompleted->value,
+                'runId' => $childRunId,
+                'seq' => 51,
+                'payload' => [],
+            ], \JSON_THROW_ON_ERROR),
+        ]);
+
+        iterator_to_array($client->events($parentRunId));
+
+        $childDrain = iterator_to_array($client->events($childRunId));
+        $this->assertCount(1, $childDrain);
+        $this->assertSame(RuntimeEventTypeEnum::RunCompleted->value, $childDrain[0]->type);
+
+        $dispatcher = new \Symfony\Component\EventDispatcher\EventDispatcher();
+        $state = new \Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState();
+        $dispatcher->addSubscriber(new \Ineersa\CodingAgent\Runtime\ProjectionPipeline\AssistantStreamProjectionSubscriber());
+        $projector = new \Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector($dispatcher, $state);
+        $projector->accept([
+            'type' => RuntimeEventTypeEnum::AssistantMessageCompleted->value,
+            'runId' => $childRunId,
+            'seq' => 50,
+            'payload' => [
+                'message_id' => $stepId,
+                'text' => 'ABC',
+            ],
+        ]);
+
+        $assistantText = '';
+        foreach ($projector->blocks() as $block) {
+            if (\Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum::AssistantMessage === $block->kind) {
+                $assistantText .= $block->text;
+            }
+        }
+        $this->assertSame('ABC', $assistantText);
     }
 
     private function createStartBatchFakeControllerClient(): JsonlProcessAgentSessionClient
