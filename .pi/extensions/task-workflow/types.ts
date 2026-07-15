@@ -26,6 +26,9 @@ export type WorktreeCreateResult = {
 	output: string;
 	veraCopied: boolean;
 	vendorCopied: boolean;
+	extensionsVendorInstalled: boolean;
+	/** Non-fatal composer install diagnostic when install was attempted but failed. */
+	extensionsVendorNote?: string;
 	ideaExclusionsUpdated: boolean;
 	ideaNote?: string;
 };

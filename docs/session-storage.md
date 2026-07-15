@@ -8,6 +8,12 @@
   identity. One DB-issued auto-increment ID (numeric string) names the session
   directory and is used as the AgentCore `RunState::$runId` and every
   `RunEvent::$runId`.
+- **`provider_cache_key`.** Each persisted session row also stores an immutable
+  UUIDv7 (`hatfield_session.provider_cache_key`) generated once at creation (and
+  backfilled for existing rows). Model resolution exposes it as an internal
+  invocation option for provider adapters. Codex uses it for `prompt_cache_key`
+  and correlation headers. DeepSeek, Z.AI, and generic OpenAI-compatible
+  providers do not receive this field on the wire today.
 - **Self-contained.** Every session directory holds everything needed to resume the
   conversation or fork it in the future — no global `.hatfield/runs/` registry.
 - **Canonical directory name.** The directory name under `.hatfield/sessions/` is
@@ -77,33 +83,38 @@ Parent subagent tool calls (single or parallel) use the normalized deferred batc
 ### Session metadata (database)
 
 Session identity and metadata are stored in the `hatfield_session` DB table
-(authoritative) and exposed through `HatfieldSessionStore::loadMetadata()`
-and `updateMetadata()`.  The returned array shape for callers:
+(authoritative) and exposed through `HatfieldSessionStore::findSession()`
+and `SessionMetadataStore::findSession()`, which return
+`?HatfieldSession`. `updateMetadata()` and other store write APIs own
+mutations and flush; callers must treat entities from `findSession()` as
+read-only.
 
-```php
-[
-    'session_id' => '42',    // DB auto-increment id as string; always === run_id
-    'run_id'     => '42',
-    'parent_id'  => null,    // Future fork tree parent
-    'root_id'    => null,    // Future fork tree root
-    'created_at' => '...',
-    'updated_at' => '...',
-    'cwd'        => '/path/to/project',
-    'prompt'     => 'Write a README',  // nullable
-    'model'      => 'deepseek/deepseek-v4-pro',  // nullable
-    'model_provider' => 'deepseek',              // nullable
-    'model_name'     => 'deepseek-v4-pro',       // nullable
-    'reasoning'  => 'medium',                    // nullable
-    'name'       => 'Write a README',              // non-empty, initialized from first user message
-]
-```
+Public `session_id` and AgentCore `run_id` are both the string cast of
+`HatfieldSession::$id` (auto-increment integer). There is no separate
+`public_id` column.
 
-Non-null keys are always present; nullable fields are only included when
-non-null. `name` is always a non-empty string, initialized from the
-first user message (trimmed, collapsed to one line, capped at 200 chars)
-during session creation and later renameable via `/rename`. There is no
-separate public_id column — the auto-increment integer primary key is
-cast to string for all external identifiers.
+Typed fields on `HatfieldSession` (Doctrine entity):
+
+| Property | Type | Notes |
+| --- | --- | --- |
+| `id` | `int` | Cast to string for external session_id / run_id |
+| `cwd` | `string` | Project working directory at creation |
+| `prompt` | `?string` | Initial user prompt when set |
+| `parentId` | `?string` | Future fork tree parent |
+| `rootId` | `?string` | Future fork tree root |
+| `model` | `?string` | Full model ref, e.g. `deepseek/deepseek-v4-pro` |
+| `modelProvider` | `?string` | Denormalized provider id |
+| `modelName` | `?string` | Denormalized model name |
+| `reasoning` | `?string` | off/minimal/low/medium/high/xhigh/max when set |
+| `name` | `string` | Non-empty display name (default from first message) |
+| `providerCacheKey` | `string` | Immutable UUIDv7 for provider cache/correlation |
+| `createdAt` | `\DateTimeImmutable` | Row creation time |
+| `updatedAt` | `\DateTimeImmutable` | Last metadata update |
+
+Nullable columns are `null` on the entity when unset (not omitted keys).
+`name` is always a non-empty string, initialized from the first user
+message (trimmed, collapsed to one line, capped at 200 chars) during
+session creation and later renameable via `/rename`.
 
 Future forking will add parent_id/root_id support (see [Future fork tree](#future-fork-tree)).
 
@@ -115,7 +126,7 @@ on creation (trimmed, internal whitespace collapsed to single spaces,
 and capped at 200 characters via Symfony String).  Empty or
 whitespace-only prompts receive the deterministic default `"Session"`.
 Persisted in `hatfield_session.name` and returned unconditionally by
-`loadMetadata()` and `listSessions()`.
+`findSession()` and `listSessions()`.
 
 A stored non-empty `name` is always the `displayTitle` in picker output.
 The `promptPreview` field remains a separate computed value (first 60

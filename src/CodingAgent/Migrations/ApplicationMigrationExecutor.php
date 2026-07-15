@@ -81,6 +81,7 @@ final class ApplicationMigrationExecutor
         \DoctrineMigrations\Version20260617141002::class,
         \DoctrineMigrations\Version20260628140000::class,
         \DoctrineMigrations\Version20260710120000::class,
+        \DoctrineMigrations\Version20260713120000::class,
         \DoctrineMigrations\Version20260713130000::class,
         \DoctrineMigrations\Version20260713140000::class,
         \DoctrineMigrations\Version20260713160000::class,

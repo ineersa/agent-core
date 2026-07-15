@@ -71,11 +71,10 @@ final class ExportCommandHandler implements SlashCommandHandler
         $sessionCwd = '';
         $createdAt = '';
         if (!str_ends_with($outputPath, '.jsonl')) {
-            /** @var array<string, mixed> $metadata */
-            $metadata = $this->sessionStore->loadMetadata($sessionId) ?? [];
-            $sessionName = SessionEventsExportService::strFromArray($metadata, 'name', 'Session '.$sessionId);
-            $sessionCwd = SessionEventsExportService::strFromArray($metadata, 'cwd');
-            $createdAt = SessionEventsExportService::strFromArray($metadata, 'created_at');
+            $session = $this->sessionStore->findSession($sessionId);
+            $sessionName = null !== $session && '' !== $session->name ? $session->name : 'Session '.$sessionId;
+            $sessionCwd = null !== $session ? $session->cwd : '';
+            $createdAt = null !== $session ? $session->createdAt->format(\DateTimeInterface::ATOM) : '';
         }
 
         try {

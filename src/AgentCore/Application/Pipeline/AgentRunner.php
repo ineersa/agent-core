@@ -16,7 +16,7 @@ use Symfony\Component\Messenger\Exception\ExceptionInterface;
 use Symfony\Component\Messenger\MessageBusInterface;
 use Symfony\Component\Serializer\Normalizer\AbstractObjectNormalizer;
 use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
-use Symfony\Component\Uid\Uuid;
+use Symfony\Component\Uid\UuidV7;
 
 final readonly class AgentRunner implements AgentRunnerInterface
 {
@@ -31,7 +31,7 @@ final readonly class AgentRunner implements AgentRunnerInterface
      */
     public function start(StartRunInput $input): string
     {
-        $runId = $input->runId ?? Uuid::v4()->toRfc4122();
+        $runId = $input->runId ?? UuidV7::v7()->toRfc4122();
         $stepId = $this->resolveStartStepId($runId, $input->runId);
         $idempotencyKey = $this->idempotencyKey($runId, $stepId);
 

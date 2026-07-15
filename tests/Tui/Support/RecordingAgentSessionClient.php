@@ -34,6 +34,14 @@ final class RecordingAgentSessionClient implements AgentSessionClient
         $this->ops[] = ['op' => 'send', 'runId' => $runId, 'command' => $command];
     }
 
+    public function beginObservingChildRun(string $childRunId): void
+    {
+    }
+
+    public function endObservingChildRun(string $childRunId): void
+    {
+    }
+
     public function events(string $runId): iterable
     {
         return [];

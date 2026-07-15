@@ -14,6 +14,8 @@ use Ineersa\AgentCore\Infrastructure\SymfonyAi\ZaiToolStreamFeatureShaper;
 use Ineersa\CodingAgent\Config\Ai\AiModelReference;
 use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
 use Symfony\AI\Platform\Message\MessageBag;
+use Symfony\Component\Uid\Uuid;
+use Symfony\Component\Uid\UuidV7;
 
 /**
  * Production model resolver backed by Hatfield model/reasoning selection services.
@@ -33,6 +35,7 @@ final class SessionAwareModelResolver implements ModelResolverInterface
     public function __construct(
         private readonly ModelSelectionService $selectionService,
         private readonly HatfieldModelCatalog $catalog,
+        private readonly SessionMetadataStore $sessionMetadataStore,
     ) {
     }
 
@@ -91,12 +94,46 @@ final class SessionAwareModelResolver implements ModelResolverInterface
                 model: $modelRef->toString(),
                 providerId: $modelRef->providerId,
                 reasoning: $reasoning,
+                options: $this->resolveInvocationOptions($sessionId),
                 compatFeatures: $compatFeatures,
                 reasoningOptions: $reasoningOptions,
             );
         }
 
         throw new \RuntimeException('No AI model is configured. Add at least one enabled provider/model under ai.providers in ~/.hatfield/settings.yaml or project .hatfield/settings.yaml.');
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function resolveInvocationOptions(string $sessionId): array
+    {
+        if ('' === $sessionId) {
+            return [];
+        }
+
+        $session = $this->sessionMetadataStore->findSession($sessionId);
+        if (null === $session) {
+            // Persisted Hatfield sessions use numeric string ids. Missing metadata for those ids
+            // is a stale or corrupt session reference. Ephemeral child/controller runs use UUIDv7
+            // or other non-numeric run ids without a hatfield_session row.
+            if (ctype_digit($sessionId)) {
+                throw new \RuntimeException(\sprintf('Session "%s" has no metadata for model resolution.', $sessionId));
+            }
+
+            return [];
+        }
+
+        $providerCacheKey = $session->providerCacheKey;
+        if ('' === $providerCacheKey) {
+            throw new \RuntimeException(\sprintf('Session "%s" is missing a provider_cache_key.', $sessionId));
+        }
+
+        if (!Uuid::isValid($providerCacheKey) || !Uuid::fromString($providerCacheKey) instanceof UuidV7) {
+            throw new \RuntimeException(\sprintf('Session "%s" has an invalid provider_cache_key.', $sessionId));
+        }
+
+        return ['provider_cache_key' => $providerCacheKey];
     }
 
     /**

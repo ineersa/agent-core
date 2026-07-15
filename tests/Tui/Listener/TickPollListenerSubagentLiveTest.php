@@ -222,6 +222,14 @@ final class ParentEventClient implements AgentSessionClient
     {
     }
 
+    public function beginObservingChildRun(string $childRunId): void
+    {
+    }
+
+    public function endObservingChildRun(string $childRunId): void
+    {
+    }
+
     public function events(string $runId): iterable
     {
         if ($runId === $this->parentRun && !$this->yielded) {

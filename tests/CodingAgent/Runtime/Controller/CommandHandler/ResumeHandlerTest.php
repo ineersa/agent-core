@@ -91,6 +91,14 @@ final class AttachSpySessionClient implements AgentSessionClient
         throw new \RuntimeException('Unexpected send()');
     }
 
+    public function beginObservingChildRun(string $childRunId): void
+    {
+    }
+
+    public function endObservingChildRun(string $childRunId): void
+    {
+    }
+
     public function events(string $runId): iterable
     {
         return [];

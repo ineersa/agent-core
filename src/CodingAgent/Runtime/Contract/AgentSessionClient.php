@@ -35,6 +35,19 @@ interface AgentSessionClient
      */
     public function events(string $runId): iterable;
 
+    /**
+     * Begin retaining cross-run JSONL events for a child run opened in subagent live view.
+     *
+     * Must be called before canonical child snapshot replay so parent-poll half-race events
+     * are not lost. Pair with {@see endObservingChildRun()} on live-view exit or child switch.
+     */
+    public function beginObservingChildRun(string $childRunId): void;
+
+    /**
+     * Stop full observation retention for a child run; replayable durable backlog is released.
+     */
+    public function endObservingChildRun(string $childRunId): void;
+
     public function cancel(string $runId): void;
 
     /**

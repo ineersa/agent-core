@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Runtime;
 
+use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\Tui\Screen\ChatScreen;
 
 /**
@@ -11,10 +12,15 @@ use Ineersa\Tui\Screen\ChatScreen;
  */
 final class SubagentLiveMainReturn
 {
-    public static function returnToMain(TuiSessionState $state, ChatScreen $screen, bool $requestRender = true): void
+    public static function returnToMain(TuiSessionState $state, ChatScreen $screen, ?AgentSessionClient $client = null, bool $requestRender = true): void
     {
         if (!$state->subagentLiveView->active) {
             return;
+        }
+
+        $selected = $state->subagentLiveView->selected;
+        if (null !== $client && null !== $selected) {
+            $client->endObservingChildRun($selected->agentRunId);
         }
 
         $state->subagentLiveView->exit();

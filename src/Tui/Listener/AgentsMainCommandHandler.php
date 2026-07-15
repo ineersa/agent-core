@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Listener;
 
+use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\Tui\Command\CommandResult;
 use Ineersa\Tui\Command\NoOp;
 use Ineersa\Tui\Command\SlashCommand;
@@ -17,6 +18,7 @@ final class AgentsMainCommandHandler implements SlashCommandHandler
     public function __construct(
         private readonly TuiSessionState $state,
         private readonly ChatScreen $screen,
+        private readonly ?AgentSessionClient $client = null,
     ) {
     }
 
@@ -26,7 +28,7 @@ final class AgentsMainCommandHandler implements SlashCommandHandler
             return new NoOp();
         }
 
-        SubagentLiveMainReturn::returnToMain($this->state, $this->screen);
+        SubagentLiveMainReturn::returnToMain($this->state, $this->screen, $this->client);
 
         return new NoOp();
     }
