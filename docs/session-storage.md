@@ -110,7 +110,7 @@ Typed fields on `HatfieldSession` (Doctrine entity):
 | `modelName` | `?string` | Denormalized model name |
 | `reasoning` | `?string` | off/minimal/low/medium/high/xhigh/max when set |
 | `name` | `string` | Non-empty display name (default from first message) |
-| `providerCacheKey` | `string` | Immutable UUIDv7 for provider cache/correlation |
+| `providerCacheKey` | `?string` | UUIDv7 for provider cache/correlation; healthy persisted rows are non-null (assigned at creation or repaired at agent startup) |
 | `createdAt` | `\DateTimeImmutable` | Row creation time |
 | `updatedAt` | `\DateTimeImmutable` | Last metadata update |
 

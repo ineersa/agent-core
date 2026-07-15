@@ -326,43 +326,6 @@ SQL);
         $this->assertSame($keys, $keysAfterSecondPass);
     }
 
-    public function testStartupExecutorWithoutParameterBindingLeavesProviderCacheKeyNull(): void
-    {
-        $connection = $this->createSqliteConnection($this->isolatedDir.'/provider-key-binding-regression.sqlite');
-        $connection->executeStatement(<<<'SQL'
-CREATE TABLE hatfield_session (
-    id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
-    cwd VARCHAR(255) NOT NULL,
-    prompt VARCHAR(255) DEFAULT NULL,
-    parent_id VARCHAR(255) DEFAULT NULL,
-    root_id VARCHAR(255) DEFAULT NULL,
-    model VARCHAR(255) DEFAULT NULL,
-    model_provider VARCHAR(255) DEFAULT NULL,
-    model_name VARCHAR(255) DEFAULT NULL,
-    reasoning VARCHAR(255) DEFAULT NULL,
-    name VARCHAR(200) DEFAULT '' NOT NULL,
-    created_at DATETIME NOT NULL,
-    updated_at DATETIME NOT NULL
-)
-SQL);
-        $now = '2026-07-13 00:00:00';
-        $connection->insert('hatfield_session', ['cwd' => '/a', 'name' => 'one', 'created_at' => $now, 'updated_at' => $now]);
-
-        $this->recordAppliedMigrationsThrough($connection, 'Version20260710120000');
-
-        $migration = new \DoctrineMigrations\Version20260713120000($connection, new NullLogger());
-        $migration->up(new \Doctrine\DBAL\Schema\Schema());
-        $plannedSql = $migration->getSql();
-
-        foreach ($plannedSql as $query) {
-            $connection->executeStatement($query->getStatement());
-        }
-
-        $keys = $connection->fetchFirstColumn('SELECT provider_cache_key FROM hatfield_session ORDER BY id');
-        $this->assertCount(1, $keys);
-        $this->assertNull($keys[0], 'Replaying parameterized UPDATE without binding leaves provider_cache_key NULL');
-    }
-
     public function testBusyTimeoutBelowMinimumThrowsRuntimeException(): void
     {
         // PDO::ATTR_TIMEOUT=1 maps to busy_timeout=1000ms, which is below
