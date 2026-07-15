@@ -5,12 +5,16 @@ declare(strict_types=1);
 namespace Ineersa\Platform\Bridge\Generic;
 
 use Symfony\AI\Platform\Bridge\Generic\Completions\CompletionsConversionTrait;
+use Symfony\AI\Platform\Bridge\Generic\Completions\FinishReasonMapper;
 use Symfony\AI\Platform\Bridge\Generic\Completions\ResultConverter;
 use Symfony\AI\Platform\Exception\IncompleteStreamException;
+use Symfony\AI\Platform\Exception\RateLimitExceededException;
 use Symfony\AI\Platform\Exception\RuntimeException;
+use Symfony\AI\Platform\Exception\ServerException;
 use Symfony\AI\Platform\Result\RawHttpResult;
 use Symfony\AI\Platform\Result\RawResultInterface;
 use Symfony\AI\Platform\Result\ResultInterface;
+use Symfony\AI\Platform\Result\Stream\Delta\MetadataDelta;
 use Symfony\AI\Platform\Result\Stream\Delta\TextDelta;
 use Symfony\AI\Platform\Result\Stream\Delta\ThinkingComplete;
 use Symfony\AI\Platform\Result\Stream\Delta\ThinkingDelta;
@@ -20,7 +24,6 @@ use Symfony\AI\Platform\Result\Stream\Delta\ToolInputDelta;
 use Symfony\AI\Platform\Result\StreamResult;
 use Symfony\AI\Platform\Result\ToolCall;
 use Symfony\AI\Platform\TokenUsage\TokenUsage;
-use Symfony\AI\Platform\TokenUsage\TokenUsageExtractorInterface;
 
 /**
  * OpenAI-compatible completions ResultConverter with durable streaming tool-call conversion.
@@ -49,7 +52,8 @@ use Symfony\AI\Platform\TokenUsage\TokenUsageExtractorInterface;
  *     completed, or blocks that accumulated arguments without ever
  *     receiving an id, are excluded from the canonical tool‑call list.
  *
- * Error/usage/text/reasoning handling is identical to the vendor trait.
+ * Non-stream conversion, HTTP status handling, token usage extraction,
+ * and finish-reason metadata follow Symfony AI Generic v0.11.
  *
  * @internal
  *
@@ -58,7 +62,11 @@ use Symfony\AI\Platform\TokenUsage\TokenUsageExtractorInterface;
  */
 final class DurableResultConverter extends ResultConverter
 {
-    use CompletionsConversionTrait;
+    use CompletionsConversionTrait {
+        convertStream as private vendorConvertStream;
+        isRateLimitError as private vendorIsRateLimitError;
+        isServerError as private vendorIsServerError;
+    }
 
     /**
      * @param \Closure(string, int, array<string, mixed>): void|null $onStreamEvent Optional listener for debug capture.
@@ -71,9 +79,7 @@ final class DurableResultConverter extends ResultConverter
     }
 
     /**
-     * Override convert() to route the streaming path to our durable
-     * implementation while delegating the non-stream path (error
-     * handling, choice conversion) to the parent.
+     * Route streaming through the durable converter; delegate non-stream paths to Generic v0.11.
      */
     public function convert(RawResultInterface|RawHttpResult $result, array $options = []): ResultInterface
     {
@@ -81,26 +87,13 @@ final class DurableResultConverter extends ResultConverter
             return new StreamResult($this->convertStream($result));
         }
 
-        // Non-stream: delegate to parent for error handling and choice conversion.
         return parent::convert($result, $options);
-    }
-
-    public function getTokenUsageExtractor(): TokenUsageExtractorInterface
-    {
-        return new PromptCacheTokenUsageExtractor();
     }
 
     /**
      * Durable streaming conversion — replaces the trait's convertStream().
      *
-     * Track tool‑call blocks by both stream index and tool‑call id
-     * so that sparse/out‑of‑order chunks are correctly reconciled.
-     *
-     * When an $onStreamEvent closure is configured, each raw chunk and the
-     * converted deltas it produces are emitted as structured events for
-     * offline inspection.
-     *
-     * @return \Generator<TextDelta|ThinkingDelta|ThinkingComplete|ToolCallStart|ToolInputDelta|ToolCallComplete|TokenUsage>
+     * @return \Generator<TextDelta|ThinkingDelta|ThinkingComplete|ToolCallStart|ToolInputDelta|ToolCallComplete|TokenUsage|MetadataDelta>
      */
     protected function convertStream(RawResultInterface $result): \Generator
     {
@@ -114,7 +107,6 @@ final class DurableResultConverter extends ResultConverter
 
         $reasoning = '';
         $sawChunk = false;
-        $sawFinishReason = false;
         $finishReason = null;
         $chunkOrdinal = 0;
         $alreadyEmittedEnd = false;
@@ -127,14 +119,25 @@ final class DurableResultConverter extends ResultConverter
 
                 if (isset($data['error'])) {
                     $message = \is_array($data['error']) ? ($data['error']['message'] ?? 'Unknown error') : (string) $data['error'];
-                    throw new RuntimeException(\sprintf('Stream error: "%s".', $message));
+                    $code = \is_array($data['error']) ? ($data['error']['code'] ?? null) : null;
+                    $type = \is_array($data['error']) ? ($data['error']['type'] ?? null) : null;
+                    $errorMessage = \sprintf('Stream error: "%s".', $message);
+
+                    if ($this->vendorIsRateLimitError($code, $type)) {
+                        throw new RateLimitExceededException(null, $errorMessage);
+                    }
+
+                    if ($this->vendorIsServerError($code, $type)) {
+                        throw new ServerException(null, $errorMessage);
+                    }
+
+                    throw new RuntimeException($errorMessage);
                 }
 
                 $sawChunk = true;
 
                 if (null !== ($data['choices'][0]['finish_reason'] ?? null)) {
-                    $sawFinishReason = true;
-                    $finishReason = $data['choices'][0]['finish_reason'];
+                    $finishReason ??= FinishReasonMapper::map($data['choices'][0]['finish_reason']);
                 }
 
                 if (isset($data['usage'])) {
@@ -148,7 +151,6 @@ final class DurableResultConverter extends ResultConverter
                     yield $usage;
                 }
 
-                // Durable tool-call processing
                 $toolCallDeltas = $data['choices'][0]['delta']['tool_calls'] ?? null;
                 if (\is_array($toolCallDeltas)) {
                     yield from $this->yieldDurableToolCallDeltas($blocks, $blockByIndex, $blockById, $data, $chunkOrdinal);
@@ -195,13 +197,19 @@ final class DurableResultConverter extends ResultConverter
                 yield $delta;
             }
 
-            if ($sawChunk && !$sawFinishReason) {
+            if ($sawChunk && null === $finishReason) {
                 $this->emit('capture_end', -1, ['stop_reason' => 'incomplete']);
                 $alreadyEmittedEnd = true;
                 throw new IncompleteStreamException('Completions stream ended before a finish reason was received.');
             }
 
-            $this->emit('capture_end', -1, ['stop_reason' => $finishReason]);
+            if (null !== $finishReason) {
+                $delta = new MetadataDelta('finish_reason', $finishReason);
+                $this->emit('converted_delta', $chunkOrdinal, ['type' => 'MetadataDelta', 'key' => 'finish_reason']);
+                yield $delta;
+            }
+
+            $this->emit('capture_end', -1, ['stop_reason' => $finishReason?->getRaw() ?? null]);
         } catch (\Throwable $e) {
             if (!$alreadyEmittedEnd) {
                 $this->emit('capture_end', -1, ['stop_reason' => 'error']);
@@ -210,21 +218,7 @@ final class DurableResultConverter extends ResultConverter
         }
     }
 
-    // ── Token usage overrides ───────────────────────────────────────────────
-
     /**
-     * Override streaming usage conversion to use the prompt-cache-aware extractor.
-     *
-     * {@inheritDoc}
-     */
-    protected function convertStreamUsage(array $usage): TokenUsage
-    {
-        return (new PromptCacheTokenUsageExtractor())->extractFromArray($usage);
-    }
-
-    /**
-     * Yield streaming deltas for the current chunk using dual-map reconciliation.
-     *
      * @param array<int, array{id: string, name: string, partialJson: string, index: int}> $blocks
      * @param array<int, int>                                                              $blockByIndex
      * @param array<non-empty-string, int>                                                 $blockById
@@ -244,17 +238,14 @@ final class DurableResultConverter extends ResultConverter
             $index = $chunk['index'] ?? 0;
 
             if (isset($chunk['id'])) {
-                // ID-bearing chunk: resolve the block using the OpenAI stream index.
                 $stableKey = $this->resolveBlockKey($blocks, $blockByIndex, $blockById, $index, $chunk['id'], $chunk['function']['name'] ?? '');
 
-                // Only yield starts for non-empty IDs.
                 if ('' !== $chunk['id']) {
                     $delta = new ToolCallStart($chunk['id'], $chunk['function']['name'] ?? '');
                     $this->emit('converted_delta', $chunkOrdinal, $this->deltaContext($delta));
                     yield $delta;
                 }
 
-                // Replay any buffered arguments now that we have a stable identity.
                 $bufferedArgs = $blocks[$stableKey]['partialJson'] ?? '';
                 if ('' !== $bufferedArgs && '' !== $chunk['id']) {
                     $delta = new ToolInputDelta($chunk['id'], $chunk['function']['name'] ?? '', $bufferedArgs);
@@ -262,30 +253,22 @@ final class DurableResultConverter extends ResultConverter
                     yield $delta;
                 }
             } elseif (isset($chunk['function']['arguments'])) {
-                // Argument-only chunk: find the block by the OpenAI stream index.
                 $stableKey = $blockByIndex[$index] ?? null;
 
                 if (null !== $stableKey && isset($blocks[$stableKey])) {
                     $id = $blocks[$stableKey]['id'];
 
-                    // Only yield argument deltas for blocks with known non-empty IDs.
                     if ('' !== $id) {
                         $delta = new ToolInputDelta($id, $blocks[$stableKey]['name'], $chunk['function']['arguments']);
                         $this->emit('converted_delta', $chunkOrdinal, $this->deltaContext($delta));
                         yield $delta;
                     }
-                    // Arguments on a block without ID are silently buffered
-                    // in accumulateDurableToolCalls (called after this method).
                 }
-                // Arguments at an index without any associated block are
-                // suppressed — they are orphan phantom chunks.
             }
         }
     }
 
     /**
-     * Accumulate tool-call state from the current chunk.
-     *
      * @param array<int, array{id: string, name: string, partialJson: string, index: int}> $blocks
      * @param array<int, int>                                                              $blockByIndex
      * @param array<non-empty-string, int>                                                 $blockById
@@ -302,23 +285,17 @@ final class DurableResultConverter extends ResultConverter
             $index = $chunk['index'] ?? 0;
 
             if (isset($chunk['id'])) {
-                // ID-bearing chunk: resolve or create the block, update identity.
                 $stableKey = $this->resolveBlockKey($blocks, $blockByIndex, $blockById, $index, $chunk['id'], $chunk['function']['name'] ?? '');
 
-                // A chunk can carry both an id AND arguments (e.g. cross-index
-                // re-association or a provider that sends id+args together).
                 if (isset($chunk['function']['arguments'])) {
                     $blocks[$stableKey]['partialJson'] .= $chunk['function']['arguments'];
                 }
             } elseif (isset($chunk['function']['arguments'])) {
-                // Argument-only chunk: append to the block at this index.
                 $stableKey = $blockByIndex[$index] ?? null;
 
                 if (null !== $stableKey && isset($blocks[$stableKey])) {
                     $blocks[$stableKey]['partialJson'] .= $chunk['function']['arguments'];
                 } else {
-                    // No block exists yet for this index — create a placeholder
-                    // that will be upgraded when an ID-bearing chunk arrives.
                     $stableKey = $nextStableKey++;
                     $blocks[$stableKey] = [
                         'id' => '',
@@ -333,13 +310,6 @@ final class DurableResultConverter extends ResultConverter
     }
 
     /**
-     * Resolve or create a stable block key for a given stream index + id.
-     *
-     * Priority:
-     *  1. Look up by id (re-associate cross-index).
-     *  2. Look up by index (update existing block at this position).
-     *  3. Create a new block.
-     *
      * @param array<int, array{id: string, name: string, partialJson: string, index: int}> $blocks
      * @param array<int, int>                                                              $blockByIndex
      * @param array<non-empty-string, int>                                                 $blockById
@@ -354,32 +324,21 @@ final class DurableResultConverter extends ResultConverter
         string $id,
         string $name,
     ): int {
-        // 1. Re-associate by id (cross-index merge).
         if ('' !== $id && isset($blockById[$id])) {
             $stableKey = $blockById[$id];
-            // Update the index mapping.
             $blockByIndex[$index] = $stableKey;
             $blocks[$stableKey]['index'] = $index;
 
             return $stableKey;
         }
 
-        // 2. Update existing block at this index — but only when the arriving
-        //    id matches the block already at this position or the block is
-        //    anonymous (id empty).  A different id at a reused index means a
-        //    new tool call arrived under the same stream position, which can
-        //    happen with some providers that emit phantom or duplicate calls.
         $existingKey = $blockByIndex[$index] ?? null;
         if (null !== $existingKey && isset($blocks[$existingKey])) {
             $existingId = $blocks[$existingKey]['id'];
 
-            // If the arriving id is non-empty and differs from the existing
-            // block's identity, treat this as a new tool call — fall through
-            // to path 3 (create new block).
             if ('' !== $id && '' !== $existingId && $id !== $existingId) {
                 // New tool call at a reused index — create a fresh block below.
             } else {
-                // Same tool call (or anonymous block upgrade).
                 $blocks[$existingKey]['name'] = $name;
                 $blocks[$existingKey]['index'] = $index;
                 if ('' !== $id) {
@@ -391,7 +350,6 @@ final class DurableResultConverter extends ResultConverter
             }
         }
 
-        // 3. Create a new block.
         $stableKey = $this->nextBlockKey($blocks);
 
         $blocks[$stableKey] = [
@@ -410,8 +368,6 @@ final class DurableResultConverter extends ResultConverter
     }
 
     /**
-     * Compute the next available stable block key.
-     *
      * @param array<int, mixed> $blocks
      */
     private function nextBlockKey(array $blocks): int
@@ -424,11 +380,6 @@ final class DurableResultConverter extends ResultConverter
     }
 
     /**
-     * Build the final ToolCall array for ToolCallComplete.
-     *
-     * Only includes blocks that have BOTH a non-empty id and name.
-     * Phantom blocks (no id, no name, or both empty) are excluded.
-     *
      * @param array<int, array{id: string, name: string, partialJson: string, index: int}> $blocks
      *
      * @return list<ToolCall>
@@ -458,14 +409,8 @@ final class DurableResultConverter extends ResultConverter
         return $toolCalls;
     }
 
-    // ── Capture helpers ──────────────────────────────────────────────────────
-
     /**
-     * Emit a stream event to the optional listener.
-     *
-     * @param string               $event   Event name ('capture_start', 'raw_chunk', 'converted_delta', 'capture_end')
-     * @param int                  $ordinal Chunk ordinal (-1 for start/end)
-     * @param array<string, mixed> $context Event-specific context
+     * @param array<string, mixed> $context
      */
     private function emit(string $event, int $ordinal, array $context): void
     {
@@ -477,8 +422,6 @@ final class DurableResultConverter extends ResultConverter
     }
 
     /**
-     * Build context array from a delta object for emission.
-     *
      * @return array<string, mixed>
      */
     private function deltaContext(object $delta): array

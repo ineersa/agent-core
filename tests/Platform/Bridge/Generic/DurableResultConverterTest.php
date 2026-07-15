@@ -10,7 +10,10 @@ use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Symfony\AI\Platform\Exception\IncompleteStreamException;
+use Symfony\AI\Platform\FinishReason\FinishReason;
+use Symfony\AI\Platform\FinishReason\FinishReasonCase;
 use Symfony\AI\Platform\Result\RawHttpResult;
+use Symfony\AI\Platform\Result\Stream\Delta\MetadataDelta;
 use Symfony\AI\Platform\Result\Stream\Delta\TextDelta;
 use Symfony\AI\Platform\Result\Stream\Delta\ToolCallComplete;
 use Symfony\AI\Platform\Result\Stream\Delta\ToolCallStart;
@@ -422,11 +425,11 @@ final class DurableResultConverterTest extends TestCase
             $this->chunk(['choices' => [['finish_reason' => 'stop']]]),
         ]);
 
-        // Default constructor: should produce zero deltas for a finish-only chunk
+        // Finish-only chunk still yields normalized finish_reason metadata (Symfony AI v0.11).
         $deltas = $this->collectStreamWithConverter($converter, $result);
-        $this->assertCount(0, $deltas);
-        // No file written, no exception — no-op by default.
-        $this->addToAssertionCount(1);
+        $this->assertCount(1, $deltas);
+        $this->assertInstanceOf(MetadataDelta::class, $deltas[0]);
+        $this->assertSame('finish_reason', $deltas[0]->getKey());
     }
 
     #[Test]
@@ -467,10 +470,11 @@ final class DurableResultConverterTest extends TestCase
         $this->assertCount(1, $starts);
         $this->assertCount(1, $ends);
 
-        // Deltas should be unchanged
-        $this->assertCount(2, $deltas);
+        $this->assertCount(3, $deltas);
         $this->assertInstanceOf(TextDelta::class, $deltas[0]);
         $this->assertSame('Hello', $deltas[0]->getText());
+        $this->assertInstanceOf(TextDelta::class, $deltas[1]);
+        $this->assertInstanceOf(MetadataDelta::class, $deltas[2]);
     }
 
     #[Test]
@@ -612,44 +616,13 @@ final class DurableResultConverterTest extends TestCase
         ]));
 
         // Last delta should be a TokenUsage with the cache fields populated.
-        $last = end($deltas);
-        $this->assertInstanceOf(\Symfony\AI\Platform\TokenUsage\TokenUsage::class, $last);
+        $last = $this->lastTokenUsageDelta($deltas);
         $this->assertSame(100, $last->getPromptTokens());
         $this->assertSame(50, $last->getCompletionTokens());
         $this->assertSame(78, $last->getCachedTokens());
         $this->assertSame(78, $last->getCacheReadTokens(), 'cache_read_tokens must match prompt_tokens_details.cached_tokens');
         $this->assertNull($last->getCacheCreationTokens(), 'cache_creation_tokens must not be inferred');
         $this->assertSame(150, $last->getTotalTokens());
-    }
-
-    #[Test]
-    public function extractsInputTokensDetailsCachedTokens(): void
-    {
-        // OpenAI Responses format:
-        // usage.input_tokens_details.cached_tokens
-        $deltas = $this->collectStream($this->streamResult([
-            $this->chunk(['choices' => [[
-                'delta' => ['content' => 'Hello'],
-            ]]]),
-            $this->chunk([
-                'choices' => [['finish_reason' => 'stop']],
-                'usage' => [
-                    'input_tokens' => 200,
-                    'output_tokens' => 80,
-                    'input_tokens_details' => [
-                        'cached_tokens' => 120,
-                    ],
-                    'total_tokens' => 280,
-                ],
-            ]),
-        ]));
-
-        $last = end($deltas);
-        $this->assertInstanceOf(\Symfony\AI\Platform\TokenUsage\TokenUsage::class, $last);
-        $this->assertSame(200, $last->getPromptTokens());
-        $this->assertSame(80, $last->getCompletionTokens());
-        $this->assertSame(120, $last->getCachedTokens());
-        $this->assertSame(120, $last->getCacheReadTokens(), 'cache_read_tokens must match input_tokens_details.cached_tokens');
     }
 
     #[Test]
@@ -672,8 +645,7 @@ final class DurableResultConverterTest extends TestCase
             ]),
         ]));
 
-        $last = end($deltas);
-        $this->assertInstanceOf(\Symfony\AI\Platform\TokenUsage\TokenUsage::class, $last);
+        $last = $this->lastTokenUsageDelta($deltas);
         $this->assertSame(100, $last->getPromptTokens());
         $this->assertSame(50, $last->getCompletionTokens());
         $this->assertSame(60, $last->getCacheReadTokens(), 'cache_read_tokens must match prompt_cache_hit_tokens');
@@ -701,12 +673,11 @@ final class DurableResultConverterTest extends TestCase
             ]),
         ]));
 
-        $last = end($deltas);
-        $this->assertInstanceOf(\Symfony\AI\Platform\TokenUsage\TokenUsage::class, $last);
+        $last = $this->lastTokenUsageDelta($deltas);
         $this->assertSame(50, $last->getPromptTokens());
         $this->assertSame(25, $last->getCompletionTokens());
         $this->assertSame(30, $last->getCachedTokens());
-        $this->assertSame(30, $last->getCacheReadTokens(), 'cache_read_tokens falls back to num_cached_tokens');
+        $this->assertNull($last->getCacheReadTokens(), 'upstream extractor maps num_cached_tokens to cachedTokens only');
     }
 
     #[Test]
@@ -729,9 +700,29 @@ final class DurableResultConverterTest extends TestCase
             ]),
         ]));
 
-        $last = end($deltas);
-        $this->assertInstanceOf(\Symfony\AI\Platform\TokenUsage\TokenUsage::class, $last);
+        $last = $this->lastTokenUsageDelta($deltas);
         $this->assertSame(20, $last->getThinkingTokens());
+    }
+
+    #[Test]
+    public function yieldsFinishReasonMetadataDelta(): void
+    {
+        $deltas = $this->collectStream($this->streamResult([
+            $this->chunk(['choices' => [[
+                'delta' => ['content' => 'Hello'],
+            ]]]),
+            $this->chunk(['choices' => [[
+                'finish_reason' => 'stop',
+            ]]]),
+        ]));
+
+        $last = end($deltas);
+        $this->assertInstanceOf(MetadataDelta::class, $last);
+        $this->assertSame('finish_reason', $last->getKey());
+        $value = $last->getValue();
+        $this->assertInstanceOf(FinishReason::class, $value);
+        $this->assertSame(FinishReasonCase::STOP, $value->getCase());
+        $this->assertSame('stop', $value->getRaw());
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
@@ -814,6 +805,20 @@ final class DurableResultConverterTest extends TestCase
      *
      * @return list<object>
      */
+    /**
+     * @param list<object> $deltas
+     */
+    private function lastTokenUsageDelta(array $deltas): \Symfony\AI\Platform\TokenUsage\TokenUsage
+    {
+        for ($i = \count($deltas) - 1; $i >= 0; --$i) {
+            if ($deltas[$i] instanceof \Symfony\AI\Platform\TokenUsage\TokenUsage) {
+                return $deltas[$i];
+            }
+        }
+
+        $this->fail('Expected a TokenUsage delta in stream output');
+    }
+
     private function collectStreamWithConverter(DurableResultConverter $converter, RawHttpResult $rawResult): array
     {
         $result = $converter->convert($rawResult, ['stream' => true]);
