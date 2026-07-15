@@ -10,7 +10,9 @@
   `RunEvent::$runId`.
 - **`provider_cache_key`.** Each persisted session row also stores an immutable
   UUIDv7 (`hatfield_session.provider_cache_key`) generated once at creation (and
-  backfilled for existing rows). Model resolution exposes it as an internal
+  backfilled for existing rows; SQLite keeps the column nullable at DDL while
+  startup repair migration `Version20260715120000` assigns distinct UUIDv7 values
+  for any NULL or empty rows). Model resolution exposes it as an internal
   invocation option for provider adapters. Codex uses it for `prompt_cache_key`
   and correlation headers. DeepSeek, Z.AI, and generic OpenAI-compatible
   providers do not receive this field on the wire today.

@@ -82,8 +82,9 @@ class HatfieldSession
      * Public session_id/run_id remain the numeric DB id; this key is consumed by
      * provider adapters (e.g. Codex prompt_cache_key and correlation headers).
      */
-    #[ORM\Column(name: 'provider_cache_key', type: 'string', length: 36)]
-    public string $providerCacheKey = '';
+    /** Nullable at SQLite DDL; new sessions always receive a UUIDv7 in __construct(). */
+    #[ORM\Column(name: 'provider_cache_key', type: 'string', length: 36, nullable: true)]
+    public ?string $providerCacheKey = null;
 
     #[ORM\Column(name: 'created_at', type: 'datetime_immutable')]
     public \DateTimeImmutable $createdAt;

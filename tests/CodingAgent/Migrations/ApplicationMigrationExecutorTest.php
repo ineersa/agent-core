@@ -167,6 +167,15 @@ final class ApplicationMigrationExecutorTest extends TestCase
         );
         $this->assertNotFalse($recordedProviderKey);
 
+        $recordedProviderKeyRepair = $connection->fetchOne(
+            'SELECT 1 FROM doctrine_migration_versions WHERE version = ?',
+            ['Version20260715120000'],
+        );
+        $this->assertNotFalse(
+            $recordedProviderKeyRepair,
+            'Version20260715120000 (provider_cache_key repair) must be recorded in doctrine_migration_versions',
+        );
+
         $this->assertGreaterThanOrEqual(
             5000,
             $busyTimeout,
@@ -260,6 +269,53 @@ SQL);
             $this->assertTrue(Uuid::isValid($key));
             $this->assertInstanceOf(UuidV7::class, Uuid::fromString($key));
         }
+    }
+
+    public function testProviderCacheKeyRepairMigrationBackfillsNullAndEmptyRows(): void
+    {
+        $connection = $this->createSqliteConnection($this->isolatedDir.'/provider-key-repair.sqlite');
+        $now = '2026-07-15 00:00:00';
+        $connection->executeStatement(<<<'SQL'
+CREATE TABLE hatfield_session (
+    id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+    cwd VARCHAR(255) NOT NULL,
+    prompt VARCHAR(255) DEFAULT NULL,
+    parent_id VARCHAR(255) DEFAULT NULL,
+    root_id VARCHAR(255) DEFAULT NULL,
+    model VARCHAR(255) DEFAULT NULL,
+    model_provider VARCHAR(255) DEFAULT NULL,
+    model_name VARCHAR(255) DEFAULT NULL,
+    reasoning VARCHAR(255) DEFAULT NULL,
+    name VARCHAR(200) DEFAULT '' NOT NULL,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    provider_cache_key VARCHAR(36) DEFAULT NULL
+)
+SQL);
+        $connection->executeStatement('CREATE UNIQUE INDEX uniq_hatfield_session_provider_cache_key ON hatfield_session (provider_cache_key)');
+        $connection->insert('hatfield_session', ['cwd' => '/a', 'name' => 'null', 'created_at' => $now, 'updated_at' => $now, 'provider_cache_key' => null]);
+        $connection->insert('hatfield_session', ['cwd' => '/b', 'name' => 'empty', 'created_at' => $now, 'updated_at' => $now, 'provider_cache_key' => '']);
+        $validKey = UuidV7::v7()->toRfc4122();
+        $connection->insert('hatfield_session', ['cwd' => '/c', 'name' => 'valid', 'created_at' => $now, 'updated_at' => $now, 'provider_cache_key' => $validKey]);
+
+        $migration = new \DoctrineMigrations\Version20260715120000($connection, new NullLogger());
+        $migration->up(new \Doctrine\DBAL\Schema\Schema());
+
+        $keys = $connection->fetchFirstColumn('SELECT provider_cache_key FROM hatfield_session ORDER BY id');
+        $this->assertCount(3, $keys);
+        $this->assertSame($validKey, $keys[2]);
+        $this->assertNotSame($keys[0], $keys[1]);
+        foreach ($keys as $key) {
+            $this->assertIsString($key);
+            $this->assertNotSame('', $key);
+            $this->assertTrue(Uuid::isValid($key));
+            $this->assertInstanceOf(UuidV7::class, Uuid::fromString($key));
+        }
+
+        $migration = new \DoctrineMigrations\Version20260715120000($connection, new NullLogger());
+        $migration->up(new \Doctrine\DBAL\Schema\Schema());
+        $keysAfterSecondPass = $connection->fetchFirstColumn('SELECT provider_cache_key FROM hatfield_session ORDER BY id');
+        $this->assertSame($keys, $keysAfterSecondPass);
     }
 
     public function testBusyTimeoutBelowMinimumThrowsRuntimeException(): void
