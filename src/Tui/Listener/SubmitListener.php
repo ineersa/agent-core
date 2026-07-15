@@ -264,25 +264,6 @@ final class SubmitListener implements TuiListenerRegistrar
         TuiSessionLifecycleDispatcher $lifecycle,
         PastedImageSubmissionService $pastedImageSubmissionService,
     ): void {
-        // Show immediate visual feedback (◐ Working...) before heavy
-        // synchronous work (session creation, system prompt discovery,
-        // skills context building, runner start).  Force a terminal
-        // repaint so the user sees the indicator instantly instead of
-        // staring at a blank editor until the work completes.
-        $screen->setWorkingMessage('Working...');
-        try {
-            $tui->requestRender();
-            $tui->processRender();
-        } catch (\Throwable $e) {
-            // Non-fatal: render may fail if the terminal is in a
-            // transient state.  The next tick will render normally.
-            $logger->debug('SubmitListener: immediate render failed (non-fatal)', [
-                'component' => 'SubmitListener',
-                'exception' => $e,
-                'session_id' => $state->sessionId,
-            ]);
-        }
-
         try {
             // Capture first-run intent before pasted-image promotion may create a session id
             // (e.g. lazy /new --model draft still has handle=null and a preconfigured request).
@@ -301,6 +282,31 @@ final class SubmitListener implements TuiListenerRegistrar
             );
             if (null === $text) {
                 return;
+            }
+
+            // Drop the transient reasoning-level notice from the status panel once
+            // pre-dispatch validation succeeded and we are about to attempt a turn
+            // (runtime dispatch may still fail afterward).
+            // Selected reasoning and editor/footer styling are unchanged (panel-only entry).
+            $screen->clearTransientReasoningNotice();
+
+            // Show immediate visual feedback (◐ Working...) before heavy
+            // synchronous work (session creation, system prompt discovery,
+            // skills context building, runner start).  Force a terminal
+            // repaint so the user sees the indicator instantly instead of
+            // staring at a blank editor until the work completes.
+            $screen->setWorkingMessage('Working...');
+            try {
+                $tui->requestRender();
+                $tui->processRender();
+            } catch (\Throwable $e) {
+                // Non-fatal: render may fail if the terminal is in a
+                // transient state.  The next tick will render normally.
+                $logger->debug('SubmitListener: immediate render failed (non-fatal)', [
+                    'component' => 'SubmitListener',
+                    'exception' => $e,
+                    'session_id' => $state->sessionId,
+                ]);
             }
 
             // Start a run if this is the first message
