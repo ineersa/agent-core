@@ -236,6 +236,14 @@ final class ShellCommandSpyClient implements AgentSessionClient
         $this->lastCommand = $command;
     }
 
+    public function beginObservingChildRun(string $childRunId): void
+    {
+    }
+
+    public function endObservingChildRun(string $childRunId): void
+    {
+    }
+
     public function events(string $runId): iterable
     {
         return [];

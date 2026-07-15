@@ -22,13 +22,24 @@ final class RuntimeEventPerRunCompactBufferTest extends TestCase
     public function testDurableLifecycleEventsRemainUntilDrainWhileStreamCheckpointsDropRawDeltas(): void
     {
         $buffer = new RuntimeEventPerRunCompactBuffer();
-        $buffer->ingest(new RuntimeEvent(RuntimeEventTypeEnum::TurnStarted->value, 'child', 5, []));
-        $buffer->ingest(new RuntimeEvent(RuntimeEventTypeEnum::RunCompleted->value, 'child', 6, []));
+        $buffer->ingest(new RuntimeEvent(RuntimeEventTypeEnum::TurnStarted->value, 'child', 5, []), true);
+        $buffer->ingest(new RuntimeEvent(RuntimeEventTypeEnum::RunCompleted->value, 'child', 6, []), true);
 
         $drained = iterator_to_array($buffer->drain('child'));
         $this->assertCount(2, $drained);
         $this->assertSame(RuntimeEventTypeEnum::TurnStarted->value, $drained[0]->type);
         $this->assertSame(RuntimeEventTypeEnum::RunCompleted->value, $drained[1]->type);
+    }
+
+
+    public function testUnobservedDurableLifecycleIsNotRetained(): void
+    {
+        $buffer = new RuntimeEventPerRunCompactBuffer();
+        $buffer->ingest(new RuntimeEvent(RuntimeEventTypeEnum::TurnStarted->value, 'child', 5, []));
+        $buffer->ingest(new RuntimeEvent(RuntimeEventTypeEnum::RunCompleted->value, 'child', 6, []));
+
+        $this->assertSame(0, $buffer->totalTailCount());
+        $this->assertSame([], iterator_to_array($buffer->drain('child')));
     }
 
     public function testTextDeltasCoalesceToConcatenatedProductionTextKey(): void
@@ -161,11 +172,11 @@ final class RuntimeEventPerRunCompactBufferTest extends TestCase
         $buffer->ingest(new RuntimeEvent(RuntimeEventTypeEnum::RunCompleted->value, 'child', 99, []));
 
         $drained = iterator_to_array($buffer->drain('child'));
-        $this->assertCount(2, $drained);
+        $this->assertCount(1, $drained);
         $this->assertSame(RuntimeEventTypeEnum::HumanInputRequested->value, $drained[0]->type);
-        $this->assertSame(RuntimeEventTypeEnum::RunCompleted->value, $drained[1]->type);
         $types = array_map(static fn (RuntimeEvent $e): string => $e->type, $drained);
         $this->assertNotContains(RuntimeEventTypeEnum::AssistantTextDelta->value, $types);
+        $this->assertNotContains(RuntimeEventTypeEnum::RunCompleted->value, $types);
     }
 
     public function testCoalescesRepeatedDeltasToSingleTailEntry(): void

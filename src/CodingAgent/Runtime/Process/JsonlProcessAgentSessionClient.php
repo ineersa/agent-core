@@ -53,9 +53,16 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
 
     private RuntimeEventPerRunCompactBuffer $compactEventBuffer;
 
+    /** @var array<string, true> */
+    private array $observedChildRunIds = [];
+
     private bool $eventBufferWatermarkActive = false;
 
     private ?float $eventBufferWatermarkLastLoggedAt = null;
+
+    private bool $eventBufferCapacityActive = false;
+
+    private ?float $eventBufferCapacityLastLoggedAt = null;
 
     /**
      * The most recently active run ID tracked across start/resume/send/cancel.
@@ -343,6 +350,28 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
         }
     }
 
+    public function beginObservingChildRun(string $childRunId): void
+    {
+        $childRunId = trim($childRunId);
+        if ('' === $childRunId) {
+            return;
+        }
+
+        $this->observedChildRunIds[$childRunId] = true;
+    }
+
+    public function endObservingChildRun(string $childRunId): void
+    {
+        $childRunId = trim($childRunId);
+        if ('' === $childRunId) {
+            return;
+        }
+
+        unset($this->observedChildRunIds[$childRunId]);
+        $this->compactEventBuffer->releaseObservationRetention($childRunId);
+        $this->syncWatermarkStateAfterBufferMutation();
+    }
+
     public function cancel(string $runId): void
     {
         $this->activeRunId = $runId;
@@ -610,23 +639,43 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
 
     private function bufferEvent(RuntimeEvent $event, string $reason): void
     {
-        $sizeBefore = $this->compactEventBuffer->totalTailCount();
-        $this->compactEventBuffer->ingest($event);
-        $sizeAfter = $this->compactEventBuffer->totalTailCount();
+        $observed = isset($this->observedChildRunIds[$event->runId])
+            || ('' !== $event->runId && $event->runId === ($this->activeRunId ?? ''));
+        $this->compactEventBuffer->ingest($event, $observed);
+        $this->maybeLogBufferCapacity($event->runId, $reason);
+        $this->maybeLogBufferWatermark($reason);
+    }
 
-        if ($sizeAfter > $sizeBefore && $sizeAfter >= self::EVENT_BUFFER_MAX) {
-            $this->logger->warning('JSONL compact event tail at max capacity after ingest', [
-                'component' => 'JsonlProcessAgentSessionClient',
-                'event_type' => 'jsonl_event_buffer.tail_at_capacity',
-                'session_id' => $this->sessionId ?? '',
-                'run_id' => $event->runId,
-                'buffer_size' => $sizeAfter,
-                'threshold' => self::EVENT_BUFFER_MAX,
-                'reason' => $reason,
-            ]);
+    private function maybeLogBufferCapacity(string $runId, string $reason): void
+    {
+        $size = $this->compactEventBuffer->totalTailCount();
+        if ($size < self::EVENT_BUFFER_MAX) {
+            $this->eventBufferCapacityActive = false;
+            $this->eventBufferCapacityLastLoggedAt = null;
+
+            return;
         }
 
-        $this->maybeLogBufferWatermark($reason);
+        $now = microtime(true);
+        $shouldLog = !$this->eventBufferCapacityActive
+            || null === $this->eventBufferCapacityLastLoggedAt
+            || ($now - $this->eventBufferCapacityLastLoggedAt) >= self::EVENT_BUFFER_WATERMARK_LOG_INTERVAL_SECONDS;
+
+        if (!$shouldLog) {
+            return;
+        }
+
+        $this->eventBufferCapacityActive = true;
+        $this->eventBufferCapacityLastLoggedAt = $now;
+        $this->logger->warning('JSONL compact event tail at max capacity', [
+            'component' => 'JsonlProcessAgentSessionClient',
+            'event_type' => 'jsonl_event_buffer.tail_at_capacity',
+            'session_id' => $this->sessionId ?? '',
+            'run_id' => $runId,
+            'buffer_size' => $size,
+            'threshold' => self::EVENT_BUFFER_MAX,
+            'reason' => $reason,
+        ]);
     }
 
     private function maybeLogBufferWatermark(string $reason): void
@@ -663,9 +712,15 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
 
     private function syncWatermarkStateAfterBufferMutation(): void
     {
-        if ($this->compactEventBuffer->totalTailCount() < self::EVENT_BUFFER_WARNING_THRESHOLD) {
+        $size = $this->compactEventBuffer->totalTailCount();
+        if ($size < self::EVENT_BUFFER_WARNING_THRESHOLD) {
             $this->eventBufferWatermarkActive = false;
             $this->eventBufferWatermarkLastLoggedAt = null;
+        }
+
+        if ($size < self::EVENT_BUFFER_MAX) {
+            $this->eventBufferCapacityActive = false;
+            $this->eventBufferCapacityLastLoggedAt = null;
         }
     }
 

@@ -80,6 +80,7 @@ final class JsonlProcessAgentSessionClientEventBufferTest extends TestCase
         $parentRunId = 'parent-run';
         $childRunId = 'child-agent-run-a';
         $client = $this->createIdleClient();
+        $client->beginObservingChildRun($childRunId);
         $this->injectStdoutJsonlLines($client, [
             $this->jsonlEvent(RuntimeEventTypeEnum::TurnStarted->value, $parentRunId, 1),
             $this->jsonlEvent(RuntimeEventTypeEnum::TurnStarted->value, $childRunId, 2),
@@ -102,6 +103,8 @@ final class JsonlProcessAgentSessionClientEventBufferTest extends TestCase
         $childA = 'child-agent-a';
         $childB = 'child-agent-b';
         $client = $this->createIdleClient();
+        $client->beginObservingChildRun($childA);
+        $client->beginObservingChildRun($childB);
         $this->injectStdoutJsonlLines($client, [
             $this->jsonlEvent(RuntimeEventTypeEnum::TurnStarted->value, $childA, 10),
             $this->jsonlEvent(RuntimeEventTypeEnum::TurnStarted->value, $parentRunId, 11),
@@ -225,8 +228,7 @@ final class JsonlProcessAgentSessionClientEventBufferTest extends TestCase
         $childDrain = iterator_to_array($client->events($childRunId));
         $seqZero = array_filter($childDrain, static fn (RuntimeEvent $e): bool => 0 === $e->seq);
         $this->assertSame([], array_values($seqZero), 'Stream checkpoints must prune replay-covered seq=0 tail');
-        $this->assertCount(1, $childDrain);
-        $this->assertSame(RuntimeEventTypeEnum::RunCompleted->value, $childDrain[0]->type);
+        $this->assertSame([], $childDrain, 'Unobserved replayable durable terminal events are not retained');
     }
 
     public function testCompletedChildDrainProjectsConcatenatedTextAfterParentPoll(): void
@@ -234,6 +236,7 @@ final class JsonlProcessAgentSessionClientEventBufferTest extends TestCase
         $parentRunId = 'parent-run';
         $childRunId = 'child-agent-run';
         $client = $this->createIdleClient();
+        $client->beginObservingChildRun($childRunId);
         $stepId = 'step-1';
         $textBlock = $childRunId.'_'.$stepId.'_text';
         $this->injectStdoutJsonlLines($client, [
@@ -273,21 +276,25 @@ final class JsonlProcessAgentSessionClientEventBufferTest extends TestCase
         iterator_to_array($client->events($parentRunId));
 
         $childDrain = iterator_to_array($client->events($childRunId));
-        $this->assertCount(1, $childDrain);
-        $this->assertSame(RuntimeEventTypeEnum::RunCompleted->value, $childDrain[0]->type);
+        $seqZero = array_filter($childDrain, static fn (RuntimeEvent $e): bool => 0 === $e->seq);
+        $this->assertSame([], array_values($seqZero), 'Observed child drain must not replay stale seq=0 tail');
+
+        $messageCompleted = array_values(array_filter(
+            $childDrain,
+            static fn (RuntimeEvent $e): bool => RuntimeEventTypeEnum::AssistantMessageCompleted->value === $e->type,
+        ));
+        $this->assertCount(1, $messageCompleted);
+        $this->assertSame('ABC', $messageCompleted[0]->payload['text'] ?? '');
 
         $dispatcher = new \Symfony\Component\EventDispatcher\EventDispatcher();
         $state = new \Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState();
         $dispatcher->addSubscriber(new \Ineersa\CodingAgent\Runtime\ProjectionPipeline\AssistantStreamProjectionSubscriber());
         $projector = new \Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector($dispatcher, $state);
         $projector->accept([
-            'type' => RuntimeEventTypeEnum::AssistantMessageCompleted->value,
-            'runId' => $childRunId,
-            'seq' => 50,
-            'payload' => [
-                'message_id' => $stepId,
-                'text' => 'ABC',
-            ],
+            'type' => $messageCompleted[0]->type,
+            'runId' => $messageCompleted[0]->runId,
+            'seq' => $messageCompleted[0]->seq,
+            'payload' => $messageCompleted[0]->payload,
         ]);
 
         $assistantText = '';
@@ -297,6 +304,113 @@ final class JsonlProcessAgentSessionClientEventBufferTest extends TestCase
             }
         }
         $this->assertSame('ABC', $assistantText);
+    }
+
+    public function testUnobservedParallelChildrenDoNotRetainReplayableDurableBacklog(): void
+    {
+        $logger = new TestLogger();
+        $parentRunId = 'parent-run';
+        $children = ['child-a', 'child-b', 'child-c', 'child-d'];
+        $client = $this->createIdleClient($logger);
+        $ref = new \ReflectionClass($client);
+
+        $lines = [$this->jsonlEvent(RuntimeEventTypeEnum::TurnStarted->value, $parentRunId, 1)];
+        $seq = 2;
+        foreach ($children as $childRunId) {
+            for ($i = 0; $i < 3000; ++$i) {
+                $lines[] = $this->jsonlEvent(RuntimeEventTypeEnum::TurnStarted->value, $childRunId, $seq++);
+                $lines[] = json_encode([
+                    'type' => RuntimeEventTypeEnum::AssistantTextDelta->value,
+                    'runId' => $childRunId,
+                    'seq' => 0,
+                    'payload' => ['block_id' => $childRunId.'_block', 'text' => 'x'],
+                ], \JSON_THROW_ON_ERROR);
+            }
+        }
+        $this->injectStdoutJsonlLines($client, $lines);
+
+        iterator_to_array($client->events($parentRunId));
+
+        $compact = $ref->getProperty('compactEventBuffer')->getValue($client);
+        $this->assertLessThan(200, $compact->totalTailCount(), 'Unobserved children must not retain replayable durable backlog');
+
+        $capacityWarnings = array_filter($logger->records, static fn (array $r): bool => 'jsonl_event_buffer.tail_at_capacity' === ($r['context']['event_type'] ?? ''));
+        $this->assertCount(0, $capacityWarnings);
+    }
+
+    public function testObservedChildRetainsParentPollHalfRaceForLosslessChildDrain(): void
+    {
+        $parentRunId = 'parent-run';
+        $childRunId = 'child-agent-run';
+        $client = $this->createIdleClient();
+        $client->beginObservingChildRun($childRunId);
+        $blockId = 'assistant-block';
+        $this->injectStdoutJsonlLines($client, [
+            $this->jsonlEvent(RuntimeEventTypeEnum::TurnStarted->value, $parentRunId, 1),
+            json_encode([
+                'type' => RuntimeEventTypeEnum::AssistantTextDelta->value,
+                'runId' => $childRunId,
+                'seq' => 0,
+                'payload' => ['block_id' => $blockId, 'text' => 'AB'],
+            ], \JSON_THROW_ON_ERROR),
+            json_encode([
+                'type' => RuntimeEventTypeEnum::AssistantTextCompleted->value,
+                'runId' => $childRunId,
+                'seq' => 10,
+                'payload' => ['block_id' => $blockId, 'text' => 'AB'],
+            ], \JSON_THROW_ON_ERROR),
+        ]);
+
+        iterator_to_array($client->events($parentRunId));
+
+        $childDrain = iterator_to_array($client->events($childRunId));
+        $this->assertCount(1, $childDrain);
+        $this->assertSame(RuntimeEventTypeEnum::AssistantTextCompleted->value, $childDrain[0]->type);
+        $this->assertSame(10, $childDrain[0]->seq);
+    }
+
+    public function testEndObservingReleasesReplayableDurableBacklog(): void
+    {
+        $childRunId = 'child-agent-run';
+        $client = $this->createIdleClient();
+        $client->beginObservingChildRun($childRunId);
+        $ref = new \ReflectionClass($client);
+        $compact = $ref->getProperty('compactEventBuffer')->getValue($client);
+        $compact->ingest(new RuntimeEvent(RuntimeEventTypeEnum::TurnStarted->value, $childRunId, 5, []), true);
+        $compact->ingest(new RuntimeEvent(RuntimeEventTypeEnum::AssistantTextDelta->value, $childRunId, 0, [
+            'block_id' => 'b',
+            'text' => 'tail',
+        ]), true);
+
+        $client->endObservingChildRun($childRunId);
+
+        $snapshot = $compact->tailSnapshotForTests();
+        $this->assertArrayHasKey($childRunId, $snapshot);
+        $this->assertCount(1, $snapshot[$childRunId]);
+        $this->assertSame(0, $snapshot[$childRunId][0]->seq);
+
+        $drain = iterator_to_array($client->events($childRunId));
+        $this->assertCount(1, $drain);
+        $this->assertSame(RuntimeEventTypeEnum::AssistantTextDelta->value, $drain[0]->type);
+    }
+
+    public function testTailAtCapacityLogsAtMostOncePerInterval(): void
+    {
+        $logger = new TestLogger();
+        $client = $this->createIdleClient($logger);
+        $ref = new \ReflectionClass($client);
+        $compact = $ref->getProperty('compactEventBuffer')->getValue($client);
+        for ($i = 0; $i < 10001; ++$i) {
+            $compact->ingest(new RuntimeEvent(RuntimeEventTypeEnum::HumanInputRequested->value, 'parent-run', 0, [
+                'question_id' => 'q'.$i,
+            ]));
+        }
+        $bufferEvent = $ref->getMethod('bufferEvent');
+        $bufferEvent->invoke($client, new RuntimeEvent(RuntimeEventTypeEnum::TurnStarted->value, 'parent-run', 0, []), 'test');
+        $bufferEvent->invoke($client, new RuntimeEvent(RuntimeEventTypeEnum::TurnStarted->value, 'parent-run', 0, []), 'test');
+
+        $capacityWarnings = array_filter($logger->records, static fn (array $r): bool => 'jsonl_event_buffer.tail_at_capacity' === ($r['context']['event_type'] ?? ''));
+        $this->assertCount(1, $capacityWarnings);
     }
 
     private function createStartBatchFakeControllerClient(): JsonlProcessAgentSessionClient

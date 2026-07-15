@@ -26,7 +26,7 @@ final class SubagentLiveToggleInputListener implements TuiListenerRegistrar
         $picker = $this->pickerController;
 
         $context->tui->addListener(
-            static function (InputEvent $event) use ($state, $screen, $picker): void {
+            static function (InputEvent $event) use ($context, $state, $screen, $picker): void {
                 if ("\x1c" !== $event->getData()) {
                     return;
                 }
@@ -34,7 +34,7 @@ final class SubagentLiveToggleInputListener implements TuiListenerRegistrar
                 $event->stopPropagation();
 
                 if ($state->subagentLiveView->active) {
-                    SubagentLiveMainReturn::returnToMain($state, $screen);
+                    SubagentLiveMainReturn::returnToMain($state, $screen, $context->client);
                     $screen->setWorkingMessage('Returned to main session (Ctrl+\\).');
 
                     return;

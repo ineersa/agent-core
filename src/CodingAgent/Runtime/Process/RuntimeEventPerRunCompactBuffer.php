@@ -26,7 +26,7 @@ final class RuntimeEventPerRunCompactBuffer
     /** @var array<string, list<RuntimeEvent>> */
     private array $tailByRunId = [];
 
-    public function ingest(RuntimeEvent $event): void
+    public function ingest(RuntimeEvent $event, bool $observedRun = false): void
     {
         $runId = $event->runId;
         if ('' === $runId) {
@@ -42,18 +42,25 @@ final class RuntimeEventPerRunCompactBuffer
         if ($event->seq > 0) {
             if ($this->isStreamCheckpoint($event)) {
                 $this->pruneTransientTailForCheckpoint($runId, $event);
+                if ($observedRun) {
+                    $this->appendTail($runId, $event);
+                }
 
                 return;
             }
 
             if ($this->isRunTerminal($event)) {
                 $this->clearTransientTail($runId);
-                $this->appendTail($runId, $event);
+                if ($observedRun || $this->isProtectedControlEvent($event)) {
+                    $this->appendTail($runId, $event);
+                }
 
                 return;
             }
 
-            $this->appendTail($runId, $event);
+            if ($observedRun) {
+                $this->appendTail($runId, $event);
+            }
 
             return;
         }
@@ -79,6 +86,27 @@ final class RuntimeEventPerRunCompactBuffer
         }
 
         unset($this->tailByRunId[$runId]);
+    }
+
+    /**
+     * Drop replayable durable backlog after live-view observation ends.
+     *
+     * Retains seq = 0 compact stream tail and protected interactive events only.
+     */
+    public function releaseObservationRetention(string $runId): void
+    {
+        if (!isset($this->tailByRunId[$runId])) {
+            return;
+        }
+
+        $this->tailByRunId[$runId] = array_values(array_filter(
+            $this->tailByRunId[$runId],
+            static fn (RuntimeEvent $event): bool => 0 === $event->seq || self::isProtectedControlEventStatic($event),
+        ));
+
+        if ([] === $this->tailByRunId[$runId]) {
+            unset($this->tailByRunId[$runId]);
+        }
     }
 
     public function totalTailCount(): int
