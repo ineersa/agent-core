@@ -161,7 +161,7 @@ final class ReasoningContentFeatureShaperTest extends TestCase
     {
         $toolMessage = new ToolCallMessage(
             new ToolCall('tool-call-1', 'read', ['path' => 'file.txt']),
-            'file contents',
+            new Text('file contents'),
         );
 
         $bag = new MessageBag(

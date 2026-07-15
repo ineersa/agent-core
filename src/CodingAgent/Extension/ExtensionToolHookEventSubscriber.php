@@ -175,7 +175,7 @@ final readonly class ExtensionToolHookEventSubscriber implements EventSubscriber
         $this->runResultHooks(
             toolCall: new ToolCall(
                 id: '',
-                name: $event->getMetadata()->getName(),
+                name: $event->getDefinition()->getName(),
                 arguments: $event->getArguments(),
             ),
             isError: true,

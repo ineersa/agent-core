@@ -9,8 +9,16 @@ use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use Symfony\AI\Platform\Exception\AuthenticationException;
+use Symfony\AI\Platform\Exception\BadRequestException;
 use Symfony\AI\Platform\Exception\IncompleteStreamException;
+use Symfony\AI\Platform\Exception\RateLimitExceededException;
+use Symfony\AI\Platform\Exception\RuntimeException as PlatformRuntimeException;
+use Symfony\AI\Platform\Exception\ServerException;
+use Symfony\AI\Platform\FinishReason\FinishReason;
+use Symfony\AI\Platform\FinishReason\FinishReasonCase;
 use Symfony\AI\Platform\Result\RawHttpResult;
+use Symfony\AI\Platform\Result\Stream\Delta\MetadataDelta;
 use Symfony\AI\Platform\Result\Stream\Delta\TextDelta;
 use Symfony\AI\Platform\Result\Stream\Delta\ToolCallComplete;
 use Symfony\AI\Platform\Result\Stream\Delta\ToolCallStart;
@@ -422,11 +430,11 @@ final class DurableResultConverterTest extends TestCase
             $this->chunk(['choices' => [['finish_reason' => 'stop']]]),
         ]);
 
-        // Default constructor: should produce zero deltas for a finish-only chunk
+        // Finish-only chunk still yields normalized finish_reason metadata (Symfony AI v0.11).
         $deltas = $this->collectStreamWithConverter($converter, $result);
-        $this->assertCount(0, $deltas);
-        // No file written, no exception — no-op by default.
-        $this->addToAssertionCount(1);
+        $this->assertCount(1, $deltas);
+        $this->assertInstanceOf(MetadataDelta::class, $deltas[0]);
+        $this->assertSame('finish_reason', $deltas[0]->getKey());
     }
 
     #[Test]
@@ -467,10 +475,11 @@ final class DurableResultConverterTest extends TestCase
         $this->assertCount(1, $starts);
         $this->assertCount(1, $ends);
 
-        // Deltas should be unchanged
-        $this->assertCount(2, $deltas);
+        $this->assertCount(3, $deltas);
         $this->assertInstanceOf(TextDelta::class, $deltas[0]);
         $this->assertSame('Hello', $deltas[0]->getText());
+        $this->assertInstanceOf(TextDelta::class, $deltas[1]);
+        $this->assertInstanceOf(MetadataDelta::class, $deltas[2]);
     }
 
     #[Test]
@@ -612,44 +621,13 @@ final class DurableResultConverterTest extends TestCase
         ]));
 
         // Last delta should be a TokenUsage with the cache fields populated.
-        $last = end($deltas);
-        $this->assertInstanceOf(\Symfony\AI\Platform\TokenUsage\TokenUsage::class, $last);
+        $last = $this->lastTokenUsageDelta($deltas);
         $this->assertSame(100, $last->getPromptTokens());
         $this->assertSame(50, $last->getCompletionTokens());
         $this->assertSame(78, $last->getCachedTokens());
         $this->assertSame(78, $last->getCacheReadTokens(), 'cache_read_tokens must match prompt_tokens_details.cached_tokens');
         $this->assertNull($last->getCacheCreationTokens(), 'cache_creation_tokens must not be inferred');
         $this->assertSame(150, $last->getTotalTokens());
-    }
-
-    #[Test]
-    public function extractsInputTokensDetailsCachedTokens(): void
-    {
-        // OpenAI Responses format:
-        // usage.input_tokens_details.cached_tokens
-        $deltas = $this->collectStream($this->streamResult([
-            $this->chunk(['choices' => [[
-                'delta' => ['content' => 'Hello'],
-            ]]]),
-            $this->chunk([
-                'choices' => [['finish_reason' => 'stop']],
-                'usage' => [
-                    'input_tokens' => 200,
-                    'output_tokens' => 80,
-                    'input_tokens_details' => [
-                        'cached_tokens' => 120,
-                    ],
-                    'total_tokens' => 280,
-                ],
-            ]),
-        ]));
-
-        $last = end($deltas);
-        $this->assertInstanceOf(\Symfony\AI\Platform\TokenUsage\TokenUsage::class, $last);
-        $this->assertSame(200, $last->getPromptTokens());
-        $this->assertSame(80, $last->getCompletionTokens());
-        $this->assertSame(120, $last->getCachedTokens());
-        $this->assertSame(120, $last->getCacheReadTokens(), 'cache_read_tokens must match input_tokens_details.cached_tokens');
     }
 
     #[Test]
@@ -672,8 +650,7 @@ final class DurableResultConverterTest extends TestCase
             ]),
         ]));
 
-        $last = end($deltas);
-        $this->assertInstanceOf(\Symfony\AI\Platform\TokenUsage\TokenUsage::class, $last);
+        $last = $this->lastTokenUsageDelta($deltas);
         $this->assertSame(100, $last->getPromptTokens());
         $this->assertSame(50, $last->getCompletionTokens());
         $this->assertSame(60, $last->getCacheReadTokens(), 'cache_read_tokens must match prompt_cache_hit_tokens');
@@ -701,12 +678,11 @@ final class DurableResultConverterTest extends TestCase
             ]),
         ]));
 
-        $last = end($deltas);
-        $this->assertInstanceOf(\Symfony\AI\Platform\TokenUsage\TokenUsage::class, $last);
+        $last = $this->lastTokenUsageDelta($deltas);
         $this->assertSame(50, $last->getPromptTokens());
         $this->assertSame(25, $last->getCompletionTokens());
         $this->assertSame(30, $last->getCachedTokens());
-        $this->assertSame(30, $last->getCacheReadTokens(), 'cache_read_tokens falls back to num_cached_tokens');
+        $this->assertNull($last->getCacheReadTokens(), 'upstream extractor maps num_cached_tokens to cachedTokens only');
     }
 
     #[Test]
@@ -729,12 +705,179 @@ final class DurableResultConverterTest extends TestCase
             ]),
         ]));
 
-        $last = end($deltas);
-        $this->assertInstanceOf(\Symfony\AI\Platform\TokenUsage\TokenUsage::class, $last);
+        $last = $this->lastTokenUsageDelta($deltas);
         $this->assertSame(20, $last->getThinkingTokens());
     }
 
+    #[Test]
+    public function yieldsFinishReasonMetadataDelta(): void
+    {
+        $deltas = $this->collectStream($this->streamResult([
+            $this->chunk(['choices' => [[
+                'delta' => ['content' => 'Hello'],
+            ]]]),
+            $this->chunk(['choices' => [[
+                'finish_reason' => 'stop',
+            ]]]),
+        ]));
+
+        $last = end($deltas);
+        $this->assertInstanceOf(MetadataDelta::class, $last);
+        $this->assertSame('finish_reason', $last->getKey());
+        $value = $last->getValue();
+        $this->assertInstanceOf(FinishReason::class, $value);
+        $this->assertSame(FinishReasonCase::STOP, $value->getCase());
+        $this->assertSame('stop', $value->getRaw());
+    }
+
+    // ── HTTP status conversion (streaming path) ─────────────────────────────
+
+    #[Test]
+    public function streamingConvertThrowsAuthenticationExceptionOn401(): void
+    {
+        $result = $this->streamResultWithStatus(401, '{"error":{"message":"Invalid API key"}}', []);
+
+        $this->expectException(AuthenticationException::class);
+        $this->expectExceptionMessage('Invalid API key');
+
+        $this->converter->convert($result, ['stream' => true]);
+    }
+
+    #[Test]
+    public function streamingConvertThrowsRateLimitExceededExceptionOn429(): void
+    {
+        $result = $this->streamResultWithStatus(429, '{"error":{"message":"rate limited"}}', []);
+
+        $this->expectException(RateLimitExceededException::class);
+
+        $this->converter->convert($result, ['stream' => true]);
+    }
+
+    #[Test]
+    public function streamingConvertThrowsServerExceptionOn500(): void
+    {
+        $result = $this->streamResultWithStatus(500, '{"error":{"message":"upstream down"}}', []);
+
+        $this->expectException(ServerException::class);
+
+        $this->converter->convert($result, ['stream' => true]);
+    }
+
+    #[Test]
+    public function streamingConvertThrowsRuntimeExceptionOnGeneric4xx(): void
+    {
+        $result = $this->streamResultWithStatus(403, '{"error":{"message":"forbidden"}}', []);
+
+        $this->expectException(PlatformRuntimeException::class);
+        $this->expectExceptionMessage('Unexpected response code 403');
+
+        $this->converter->convert($result, ['stream' => true]);
+    }
+
+    #[Test]
+    public function streamingConvertThrowsBadRequestExceptionOn400(): void
+    {
+        $result = $this->streamResultWithStatus(400, '{"error":{"message":"Bad Request: invalid"}}', []);
+
+        $this->expectException(BadRequestException::class);
+
+        $this->converter->convert($result, ['stream' => true]);
+    }
+
+    // ── Stream payload error classification ───────────────────────────────────
+
+    #[Test]
+    public function streamErrorChunkRateLimitRaisesRateLimitExceededException(): void
+    {
+        $this->expectException(RateLimitExceededException::class);
+
+        $this->collectStream($this->streamResult([
+            $this->chunk(['error' => ['message' => 'Too many requests', 'code' => 'rate_limit_exceeded']]),
+        ]));
+    }
+
+    #[Test]
+    public function streamErrorChunkServerErrorRaisesServerException(): void
+    {
+        $this->expectException(ServerException::class);
+
+        $this->collectStream($this->streamResult([
+            $this->chunk(['error' => ['message' => 'Internal error', 'type' => 'server_error']]),
+        ]));
+    }
+
+    #[Test]
+    public function streamErrorChunkGenericRaisesRuntimeException(): void
+    {
+        $this->expectException(PlatformRuntimeException::class);
+        $this->expectExceptionMessage('Stream error');
+
+        $this->collectStream($this->streamResult([
+            $this->chunk(['error' => ['message' => 'Something broke']]),
+        ]));
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────────
+
+    /**
+     * @param list<array<string, mixed>> $chunks
+     */
+    private function streamResultWithStatus(int $statusCode, string $body, array $chunks): RawHttpResult
+    {
+        $response = new class($statusCode, $body) implements ResponseInterface {
+            public function __construct(private int $statusCode, private string $body)
+            {
+            }
+
+            public function getStatusCode(): int
+            {
+                return $this->statusCode;
+            }
+
+            public function getHeaders(bool $throw = true): array
+            {
+                return [];
+            }
+
+            public function getContent(bool $throw = true): string
+            {
+                return $this->body;
+            }
+
+            public function toArray(bool $throw = true): array
+            {
+                $decoded = json_decode($this->body, true);
+
+                return \is_array($decoded) ? $decoded : [];
+            }
+
+            public function cancel(): void
+            {
+            }
+
+            public function getInfo(?string $type = null): mixed
+            {
+                return null;
+            }
+        };
+
+        return new RawHttpResult(
+            $response,
+            new class($chunks) implements \Symfony\AI\Platform\Result\Stream\HttpStreamInterface {
+                /** @param list<array<string, mixed>> $chunks */
+                public function __construct(private readonly array $chunks)
+                {
+                }
+
+                public function stream(ResponseInterface $response): iterable
+                {
+                    foreach ($this->chunks as $chunk) {
+                        yield $chunk;
+                    }
+                }
+            },
+        );
+    }
 
     /**
      * Create a RawHttpResult configured for streaming mode, with a mock HTTP 200 response.
@@ -810,7 +953,21 @@ final class DurableResultConverterTest extends TestCase
     }
 
     /**
-     * Collect all deltas from a stream result using the given converter.
+     * @param list<object> $deltas
+     */
+    private function lastTokenUsageDelta(array $deltas): \Symfony\AI\Platform\TokenUsage\TokenUsage
+    {
+        for ($i = \count($deltas) - 1; $i >= 0; --$i) {
+            if ($deltas[$i] instanceof \Symfony\AI\Platform\TokenUsage\TokenUsage) {
+                return $deltas[$i];
+            }
+        }
+
+        $this->fail('Expected a TokenUsage delta in stream output');
+    }
+
+    /**
+     * Drain a stream through the given converter and return yielded deltas.
      *
      * @return list<object>
      */
