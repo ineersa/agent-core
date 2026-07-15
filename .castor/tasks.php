@@ -13,7 +13,7 @@ declare(strict_types=1);
  *
  * Lanes (typical shell timeouts):
  *   deptrac (30s), test ParaTest (120s), test:controller-replay (90s),
- *   test:tui (120s), test:llm-real (180s), phpstan (90s), cs-check (30s).
+ *   test:tui (180s), test:llm-real (180s), phpstan (90s), cs-check (30s).
  *   No PHAR in the gate.
  *
  * Budget for test:controller-replay (75s → 90s) reflects the current
@@ -22,6 +22,11 @@ declare(strict_types=1);
  * → SIGKILL teardown).  Observed sequential runtime is ~59s when idle;
  * ~71s under active-session host load; 90s gives bounded headroom
  * without masking a true hang.
+ *
+ * Budget for test:tui (120s → 180s): the replay TUI lane runs 36 tests on
+ * 2 ParaTest workers; healthy gate runs are often 108–118s, so 120s left
+ * little margin under concurrent lane contention and risked GNU timeout
+ * killing ParaTest before PHPUnit tearDown.
  *
  * =========================================================================
  * This file was split from the former monolithic .castor/tasks.php.
@@ -154,7 +159,7 @@ function _run_castor_check_body(string $root, string $qaRunId): void
         'test:tui' => [
             'cmd' => timeout_check_command(
                 build_test_tui_phpunit_command(null),
-                120,
+                180,
             ),
         ],
         'test:llm-real' => [

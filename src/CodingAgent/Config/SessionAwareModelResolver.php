@@ -125,7 +125,7 @@ final class SessionAwareModelResolver implements ModelResolverInterface
         }
 
         $providerCacheKey = $session->providerCacheKey;
-        if ('' === $providerCacheKey) {
+        if (null === $providerCacheKey || '' === $providerCacheKey) {
             throw new \RuntimeException(\sprintf('Session "%s" is missing a provider_cache_key.', $sessionId));
         }
 

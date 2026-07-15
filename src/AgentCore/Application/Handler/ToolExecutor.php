@@ -14,6 +14,7 @@ use Ineersa\AgentCore\Contract\Tool\ToolExecutorInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolIdempotencyKeyResolverInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolResultProcessorInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolSetResolverInterface;
+use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
 use Ineersa\AgentCore\Domain\Tool\ToolCall;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionPolicy;
 use Ineersa\AgentCore\Domain\Tool\ToolResult;
@@ -394,6 +395,21 @@ final class ToolExecutor implements ToolExecutorInterface
     private function toDomainResult(ToolCall $toolCall, SymfonyToolResult $toolboxResult): ToolResult
     {
         $rawResult = $toolboxResult->getResult();
+
+        if ($rawResult instanceof DeferredToolCompletionOutcome) {
+            return new ToolResult(
+                toolCallId: $toolCall->toolCallId,
+                toolName: $toolCall->toolName,
+                content: [[
+                    'type' => 'text',
+                    'text' => 'Tool execution deferred.',
+                ]],
+                details: [
+                    'raw_result' => $rawResult,
+                ],
+                isError: false,
+            );
+        }
 
         $details = [
             'raw_result' => $rawResult,
