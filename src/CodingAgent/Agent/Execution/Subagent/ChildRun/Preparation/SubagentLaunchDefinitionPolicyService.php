@@ -40,6 +40,15 @@ final class SubagentLaunchDefinitionPolicyService
         return $definition;
     }
 
+    public function requireForkDefinition(): AgentDefinitionDTO
+    {
+        try {
+            return $this->catalog->require('fork');
+        } catch (\RuntimeException $e) {
+            throw new ToolCallException('Fork agent definition is not available: '.$e->getMessage(), retryable: false);
+        }
+    }
+
     public function requireForegroundDefinition(string $agentName): AgentDefinitionDTO
     {
         try {

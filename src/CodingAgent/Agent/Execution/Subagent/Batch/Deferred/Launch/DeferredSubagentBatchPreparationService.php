@@ -69,7 +69,7 @@ final class DeferredSubagentBatchPreparationService
                 displayName: $agentName,
                 taskSummary: $taskText,
                 definitionModel: $definition->model,
-                artifactKind: AgentArtifactKindEnum::Subagent,
+                artifactKind: 'fork' === $agentName ? AgentArtifactKindEnum::Fork : AgentArtifactKindEnum::Subagent,
                 batchIndex: $batchIndex,
             );
         }
@@ -176,6 +176,10 @@ final class DeferredSubagentBatchPreparationService
 
     private function resolveDefinition(string $agentName, ChildRunBatchExecutionModeEnum $executionMode): AgentDefinitionDTO
     {
+        if ('fork' === $agentName) {
+            return $this->launchPreparation->requireForkDefinition();
+        }
+
         return ChildRunBatchExecutionModeEnum::Single === $executionMode
             ? $this->launchPreparation->requireForegroundDefinition($agentName)
             : $this->launchPreparation->requireParallelDefinition($agentName);

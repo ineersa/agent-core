@@ -118,8 +118,7 @@ final class ForkToolContractTest extends TestCase
         );
         $definition = ForkToolDefinitionBuilder::build($handler);
         $joined = implode("\n", $definition->promptGuidelines);
-        $this->assertStringNotContainsString('subagent', strtolower($joined));
-        $this->assertStringContainsString('cannot launch', strtolower($joined));
+        $this->assertStringContainsString('cannot launch fork or subagent', strtolower($joined));
     }
 }
 
