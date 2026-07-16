@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Messenger;
 
 use Ineersa\AgentCore\Domain\Run\RunStatus;
+use Ineersa\CodingAgent\Agent\Execution\Fork\Batch\Deferred\Prelaunch\ContinueForkDeferredPrelaunchHandler;
+use Ineersa\CodingAgent\Agent\Execution\Fork\Batch\Deferred\Prelaunch\ContinueForkDeferredPrelaunchMessage;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Interruption\InterruptDeferredSubagentBatchHandler;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Interruption\InterruptDeferredSubagentBatchMessage;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Lifecycle\DeliverDeferredSubagentBatchLifecycleHandler;
@@ -95,6 +97,14 @@ final class DeferredSubagentRunControlHandlersWiringTest extends IsolatedKernelT
                     batchLifecycleId: 'batch-wiring-recover',
                 ),
                 RecoverDeferredSubagentBatchLifecycleHandler::class,
+            ],
+            'ContinueForkDeferredPrelaunchMessage' => [
+                new ContinueForkDeferredPrelaunchMessage(
+                    batchLifecycleId: 'batch-wiring-fork-prelaunch',
+                    forkLocalRunId: 'fork-local-wiring',
+                    terminalEventType: 'context_compacted',
+                ),
+                ContinueForkDeferredPrelaunchHandler::class,
             ],
         ];
     }
