@@ -243,4 +243,34 @@ final class ForkChildStartRunInputCompositionTest extends IsolatedKernelTestCase
         $this->assertNotContains('fork', $active->toolNames);
         $this->assertNotContains('subagent', $active->toolNames);
     }
+    public function testForkChildContractListsNoneWhenAllowedToolsEmpty(): void
+    {
+        $parentRunId = 'parent-fork-empty-tools';
+        $runStore = self::getContainer()->get(\Ineersa\AgentCore\Contract\RunStoreInterface::class);
+        $runStore->compareAndSwap(new RunState(runId: $parentRunId, status: RunStatus::Running, version: 0, messages: [], turnNo: 1), 0);
+
+        $builder = self::getContainer()->get(ForkChildLaunchInputBuilder::class);
+        $identity = new ChildRunIdentityDTO(
+            parentRunId: $parentRunId,
+            childRunId: 'child-fork-empty-tools',
+            artifactId: 'artifact-fork-empty-tools',
+            displayName: 'fork',
+            taskSummary: 'Task',
+            definitionModel: null,
+            artifactKind: AgentArtifactKindEnum::Fork,
+        );
+        $policy = ['tools' => [], 'mcp' => ['mode' => 'inherit', 'tools' => []]];
+        $prepared = $builder->buildPrepared($identity, new ForkLaunchTaskDTO(task: 'Task'), $policy);
+
+        $contractMessages = array_values(array_filter(
+            $prepared->startRunInput->messages,
+            static fn (AgentMessage $m): bool => 'user-context' === $m->role
+                && 'agent_child_contract' === ($m->metadata['source'] ?? null),
+        ));
+        $this->assertCount(1, $contractMessages);
+        $contractText = (string) ($contractMessages[0]->content[0]['text'] ?? '');
+        $this->assertStringContainsString('your active tools are: none', $contractText);
+        $this->assertStringNotContainsString('your active tools are: .', $contractText);
+    }
+
 }

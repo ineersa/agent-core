@@ -29,20 +29,29 @@ final class AgentToolPolicyResolverTest extends TestCase
     public function testResolveExcludesSubagentByDefault(): void
     {
         $resolver = new AgentToolPolicyResolver($this->registry(['read']), $this->mcpResolver([]));
-        $policy = $resolver->resolve($this->definition(['read', 'subagent']), 'run-1');
+        $policy = $resolver->resolve($this->definition(['read', 'subagent', 'fork']), 'run-1');
         $this->assertNotContains('subagent', $policy['tools']);
+        $this->assertNotContains('fork', $policy['tools']);
     }
 
     public function testOmittedToolsInheritsRegistryAndGlobalMcp(): void
     {
         $resolver = new AgentToolPolicyResolver(
-            $this->registry(['read', 'subagent']),
+            $this->registry(['read', 'subagent', 'fork']),
             $this->mcpResolver(['context7_resolve']),
         );
         $policy = $resolver->resolve($this->definition(null), 'run-1');
         $this->assertContains('read', $policy['tools']);
         $this->assertContains('context7_resolve', $policy['tools']);
         $this->assertNotContains('subagent', $policy['tools']);
+        $this->assertNotContains('fork', $policy['tools']);
+    }
+
+    public function testAllowSubagentTrueKeepsLaunchToolsWhenExplicitlyListed(): void
+    {
+        $resolver = new AgentToolPolicyResolver($this->registry(['read', 'subagent', 'fork']), $this->mcpResolver([]));
+        $policy = $resolver->resolve($this->definition(['read', 'subagent', 'fork']), 'run-1', allowSubagent: true);
+        $this->assertSame(['read', 'subagent', 'fork'], $policy['tools']);
     }
 
     public function testExplicitToolsMergeMcpSelectors(): void
