@@ -37,8 +37,6 @@ final class ForkDeferredChildPreparationStrategy implements DeferredSubagentChil
             throw new ToolCallException('Fork launch task was not configured.', retryable: false);
         }
 
-        $this->launchPreparation->reserveIdentity($identity);
-
         return $this->launchInputBuilder->buildPrepared(
             $identity,
             $this->launchTask,

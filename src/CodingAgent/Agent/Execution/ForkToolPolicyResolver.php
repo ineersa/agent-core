@@ -24,7 +24,7 @@ final class ForkToolPolicyResolver
             name: 'fork',
             description: 'fork child',
             tools: null,
-            mcp: new McpPolicyDTO(mode: McpAgentModeEnum::Inherit),
+            mcp: new McpPolicyDTO(mode: McpAgentModeEnum::All),
             instructions: '',
             inheritProjectContext: true,
             inheritAgentsMd: true,

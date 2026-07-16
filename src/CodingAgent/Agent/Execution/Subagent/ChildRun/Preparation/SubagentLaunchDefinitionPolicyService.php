@@ -7,6 +7,8 @@ namespace Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Preparation;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionCatalog;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionDTO;
+use Ineersa\CodingAgent\Agent\Definition\McpAgentModeEnum;
+use Ineersa\CodingAgent\Agent\Definition\McpPolicyDTO;
 use Ineersa\CodingAgent\Agent\Execution\AgentDepthGuard;
 use Ineersa\CodingAgent\Agent\Execution\AgentToolPolicyResolver;
 use Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader;
@@ -42,11 +44,23 @@ final class SubagentLaunchDefinitionPolicyService
 
     public function requireForkDefinition(): AgentDefinitionDTO
     {
-        try {
-            return $this->catalog->require('fork');
-        } catch (\RuntimeException $e) {
-            throw new ToolCallException('Fork agent definition is not available: '.$e->getMessage(), retryable: false);
+        $definition = $this->catalog->get('fork');
+        if (null !== $definition) {
+            return $definition;
         }
+
+        return new AgentDefinitionDTO(
+            name: 'fork',
+            description: 'Internal fork child',
+            tools: null,
+            mcp: new McpPolicyDTO(mode: McpAgentModeEnum::All),
+            instructions: '',
+            inheritProjectContext: true,
+            inheritAgentsMd: true,
+            foregroundAllowed: true,
+            parallelAllowed: false,
+            disabled: true,
+        );
     }
 
     public function requireForegroundDefinition(string $agentName): AgentDefinitionDTO
