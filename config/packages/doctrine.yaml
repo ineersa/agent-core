@@ -28,6 +28,9 @@ doctrine:
                 options:
                     2: 5
 
+            # MessengerSqliteImmediateTransactionMiddleware (connection tag only) uses
+            # BEGIN IMMEDIATE so concurrent messenger:consume workers wait on the writer
+            # slot at transaction start instead of failing on deferred read→write upgrade.
             messenger_transport:
                 driver: pdo_sqlite
                 path: '%app.cwd%/.hatfield/messenger-transport.sqlite'
