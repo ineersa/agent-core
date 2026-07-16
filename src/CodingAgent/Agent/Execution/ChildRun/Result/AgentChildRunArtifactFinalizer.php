@@ -33,17 +33,7 @@ final class AgentChildRunArtifactFinalizer
             needsClarification: $outcome->needsClarification,
         );
 
-        $handoff = $this->handoffRenderer->buildHandoffMarkdown(
-            status: $outcome->status,
-            summary: $outcome->summary,
-            failureReason: $outcome->failureReason,
-            needsClarification: $outcome->needsClarification,
-            artifactId: $identity->artifactId,
-            agentName: $identity->displayName,
-            agentRunId: $identity->childRunId,
-            childState: $outcome->childState,
-            identity: $identity,
-        );
+        $handoff = $this->handoffRenderer->buildHandoffMarkdown($outcome);
 
         $this->artifactRegistry->writeHandoff($identity->parentRunId, $identity->artifactId, $handoff);
     }

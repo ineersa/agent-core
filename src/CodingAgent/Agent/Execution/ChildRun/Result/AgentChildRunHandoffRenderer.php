@@ -8,60 +8,51 @@ use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunIdentityDTO;
+use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunTerminalOutcomeDTO;
 
 /**
  * Builds handoff markdown and user-visible result strings for foreground child runs.
  */
 final class AgentChildRunHandoffRenderer
 {
-    public function buildHandoffMarkdown(
-        AgentArtifactStatusEnum $status,
-        ?string $summary,
-        ?string $failureReason,
-        ?string $needsClarification,
-        ?string $artifactId = null,
-        ?string $agentName = null,
-        ?string $agentRunId = null,
-        ?RunState $childState = null,
-        ?ChildRunIdentityDTO $identity = null,
-    ): string {
-        $kind = $identity?->artifactKind ?? AgentArtifactKindEnum::Subagent;
-        if (AgentArtifactStatusEnum::Cancelled === $status) {
+    public function buildHandoffMarkdown(ChildRunTerminalOutcomeDTO $outcome): string
+    {
+        $identity = $outcome->identity;
+        $kind = $identity->artifactKind;
+
+        if (AgentArtifactStatusEnum::Cancelled === $outcome->status) {
             return $this->buildCancelledHandoffMarkdown(
-                artifactId: $artifactId,
-                agentName: $agentName,
-                agentRunId: $agentRunId,
-                summary: $summary,
-                childState: $childState,
-                kind: $kind,
+                identity: $identity,
+                summary: $outcome->summary,
+                childState: $outcome->childState,
             );
         }
 
         $lines = [
             '# '.$this->handoffHeading($kind),
             '',
-            'Status: '.$status->value,
+            'Status: '.$outcome->status->value,
         ];
 
-        if (null !== $summary) {
+        if (null !== $outcome->summary) {
             $lines[] = '';
             $lines[] = '## Result';
             $lines[] = '';
-            $lines[] = $summary;
+            $lines[] = $outcome->summary;
         }
 
-        if (null !== $failureReason) {
+        if (null !== $outcome->failureReason) {
             $lines[] = '';
             $lines[] = '## Failure reason';
             $lines[] = '';
-            $lines[] = $failureReason;
+            $lines[] = $outcome->failureReason;
         }
 
-        if (null !== $needsClarification) {
+        if (null !== $outcome->needsClarification) {
             $lines[] = '';
             $lines[] = '## Needs clarification';
             $lines[] = '';
-            $lines[] = $needsClarification;
+            $lines[] = $outcome->needsClarification;
         }
 
         return implode("\n", $lines)."\n";
@@ -150,13 +141,15 @@ TXT;
     }
 
     private function buildCancelledHandoffMarkdown(
-        ?string $artifactId,
-        ?string $agentName,
-        ?string $agentRunId,
+        ChildRunIdentityDTO $identity,
         ?string $summary,
         ?RunState $childState,
-        AgentArtifactKindEnum $kind = AgentArtifactKindEnum::Subagent,
     ): string {
+        $kind = $identity->artifactKind;
+        $artifactId = $identity->artifactId;
+        $agentName = $identity->displayName;
+        $agentRunId = $identity->childRunId;
+
         $template = <<<'MD'
 # {handoff_heading}
 
@@ -170,11 +163,11 @@ MD;
 
         $summaryText = null !== $summary ? trim($summary) : '';
         $replacements = [
-            '{artifact_line}' => (null !== $artifactId && '' !== $artifactId) ? 'Artifact: {artifact_id}'.'
+            '{artifact_line}' => ('' !== $artifactId) ? 'Artifact: {artifact_id}'.'
 ' : '',
-            '{agent_line}' => (null !== $agentName && '' !== $agentName) ? 'Agent: {agent_name}'.'
+            '{agent_line}' => ('' !== $agentName) ? 'Agent: {agent_name}'.'
 ' : '',
-            '{agent_run_line}' => (null !== $agentRunId && '' !== $agentRunId) ? 'Agent run: {agent_run_id}'.'
+            '{agent_run_line}' => ('' !== $agentRunId) ? 'Agent run: {agent_run_id}'.'
 ' : '',
             '{summary_text}' => '' !== $summaryText ? $summaryText : 'Child run was cancelled.',
             '{partial_context_block}' => '',
@@ -224,9 +217,9 @@ Use agent_retrieve (metadata/events/history) for more child details.'.'
         $markdown = strtr($template, $replacements);
         $valueMap = [
             '{handoff_heading}' => $this->handoffHeading($kind),
-            '{artifact_id}' => $artifactId ?? '',
-            '{agent_name}' => $agentName ?? '',
-            '{agent_run_id}' => $agentRunId ?? '',
+            '{artifact_id}' => $artifactId,
+            '{agent_name}' => $agentName,
+            '{agent_run_id}' => $agentRunId,
         ];
 
         return strtr($markdown, $valueMap);

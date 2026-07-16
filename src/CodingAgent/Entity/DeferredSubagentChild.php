@@ -45,7 +45,7 @@ class DeferredSubagentChild
     public ?string $definitionModel = null;
 
     #[ORM\Column(name: 'artifact_kind', type: 'string', length: 32, enumType: AgentArtifactKindEnum::class)]
-    public AgentArtifactKindEnum $artifactKind = AgentArtifactKindEnum::Subagent;
+    public AgentArtifactKindEnum $artifactKind;
 
     #[ORM\Column(name: 'launch_status', type: 'string', length: 32, enumType: DeferredSubagentChildLaunchStatusEnum::class)]
     public DeferredSubagentChildLaunchStatusEnum $launchStatus = DeferredSubagentChildLaunchStatusEnum::Reserved;
