@@ -14,6 +14,8 @@ use Ineersa\CodingAgent\Agent\Execution\ChildRun\Lifecycle\ChildRunArtifactLifec
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentBatchProjectionDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentChildLaunchStatusEnum;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentChildProjectionDTO;
+use Ineersa\CodingAgent\Agent\Execution\ChildRun\Preparation\DefaultDeferredSubagentChildPreparationStrategy;
+use Ineersa\CodingAgent\Agent\Execution\ChildRun\Preparation\DeferredSubagentChildPreparationStrategyInterface;
 use Ineersa\CodingAgent\Agent\Execution\SubagentLaunchPreparationService;
 use Ineersa\CodingAgent\Agent\Execution\SubagentTaskDTO;
 
@@ -91,6 +93,7 @@ final class DeferredSubagentBatchPreparationService
         string $parentRunId,
         DeferredSubagentBatchProjectionDTO $projection,
         DeferredSubagentBatchLaunchPlanDTO $plan,
+        ?DeferredSubagentChildPreparationStrategyInterface $preparationStrategy = null,
     ): array {
         $preparedChildren = [];
 
@@ -113,15 +116,13 @@ final class DeferredSubagentBatchPreparationService
             $definition = $plan->definitionsByBatchIndex[$intent->batchIndex];
             try {
                 $this->launchPreparation->reserveIdentity($identity);
-                $prepared = $this->launchPreparation->prepareFromDefinition(
+                $strategy = $preparationStrategy ?? new DefaultDeferredSubagentChildPreparationStrategy($this->launchPreparation);
+                $prepared = $strategy->prepare(
                     $parentRunId,
+                    $identity,
                     $definition,
                     $intent->agentName,
                     $intent->task,
-                    $intent->artifactId,
-                    $intent->childRunId,
-                    skipReservation: true,
-                    identityTemplate: $identity,
                 );
                 $this->artifactLifecycle->ensureReservedPending($identity);
                 $preparedChildren[] = $prepared;

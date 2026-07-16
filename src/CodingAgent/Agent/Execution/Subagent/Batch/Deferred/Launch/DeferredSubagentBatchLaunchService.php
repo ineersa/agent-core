@@ -9,6 +9,7 @@ use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchExecutionModeEnum;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentBatchProjectionDTO;
+use Ineersa\CodingAgent\Agent\Execution\ChildRun\Preparation\DeferredSubagentChildPreparationStrategyInterface;
 use Ineersa\CodingAgent\Agent\Execution\SubagentTaskDTO;
 use Ineersa\CodingAgent\Config\AgentsConfig;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
@@ -37,6 +38,7 @@ final class DeferredSubagentBatchLaunchService
         string $parentRunId,
         array $tasks,
         ChildRunBatchExecutionModeEnum $executionMode,
+        ?DeferredSubagentChildPreparationStrategyInterface $preparationStrategy = null,
     ): DeferredToolCompletionOutcome {
         if (ChildRunBatchExecutionModeEnum::Single === $executionMode && 1 !== \count($tasks)) {
             throw new ToolCallException('Single subagent requires exactly one task.', retryable: false);
@@ -96,7 +98,7 @@ final class DeferredSubagentBatchLaunchService
         );
 
         try {
-            $preparedChildren = $this->batchPreparation->preparePendingChildren($parentRunId, $projection, $plan);
+            $preparedChildren = $this->batchPreparation->preparePendingChildren($parentRunId, $projection, $plan, $preparationStrategy);
         } catch (DeferredSubagentBatchPreparationFailure $e) {
             $this->runtimeStart->abortAfterPreparationFailure(
                 $parentRunId,
