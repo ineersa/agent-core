@@ -7,6 +7,10 @@ namespace Ineersa\CodingAgent\Config;
 /**
  * Dotted-path provenance against raw layers and merged effective config.
  *
+ * Paths use dot-separated YAML keys (e.g. "tui.theme"). Literal dots inside
+ * a key name cannot be addressed; current Hatfield settings keys do not
+ * contain dots.
+ *
  * Terminal paths (scalar, null, sequential list) report the winning layer.
  * Non-list associative maps are composite: they exist in effective config but
  * may mix child provenance, so no single layer is claimed.
@@ -37,6 +41,8 @@ final class SettingsDottedPathQuery
 
         $value = self::getAtPath($effective, $segments);
 
+        // Empty PHP [] is a terminal/list value, not composite: after YAML parse
+        // an empty map and an empty list are both [] in our array representation.
         if (\is_array($value) && self::isAssoc($value)) {
             return new SettingsValueDTO(
                 exists: true,

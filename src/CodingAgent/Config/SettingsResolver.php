@@ -52,6 +52,9 @@ final class SettingsResolver
     /**
      * Path-bearing config keys resolved at load time.
      *
+     * Register new path-bearing settings here instead of adding one-off
+     * conditionals in {@see resolveConfigPaths()}.
+     *
      * Keys use Symfony PropertyAccess bracket notation for array access.
      * The value indicates whether the resolved value is a list (each element
      * resolved individually) or a string (resolved as a single path).
@@ -140,7 +143,7 @@ final class SettingsResolver
     /**
      * @return array<string, mixed>
      */
-    public function loadYamlFile(string $path): array
+    private function loadYamlFile(string $path): array
     {
         if (!is_readable($path)) {
             return [];

@@ -30,7 +30,9 @@ final class HomeSettingsWriter
     }
 
     /**
-     * @param list<string> $models
+     * Persist the full favorite models list to home settings.
+     *
+     * @param list<string> $models List of "provider/modelname" strings
      */
     public function writeFavoriteModels(array $models): void
     {
@@ -50,7 +52,7 @@ final class HomeSettingsWriter
      * disable it, the writer inserts a fresh active key instead of silently
      * uncommenting the old one.
      *
-     * @param list<string> $values
+     * @param list<string> $values List of strings
      */
     private function writeAiListKey(string $filePath, string $key, array $values): void
     {
@@ -135,6 +137,10 @@ final class HomeSettingsWriter
         }
     }
 
+    /**
+     * Quote strings that contain YAML-significant characters.
+     * Plain-safe values (e.g. "zai/glm-5.1", "high", "off") stay unquoted.
+     */
     private function yamlScalar(string $value): string
     {
         if ('' === $value) {

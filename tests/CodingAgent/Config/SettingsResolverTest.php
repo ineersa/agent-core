@@ -57,7 +57,7 @@ YAML
     public function testLoadDefaultsOnly(): void
     {
         $cwd = $this->tmpDir.'/project';
-        @mkdir($cwd, 0755, true);
+        TestDirectoryIsolation::ensureDirectory($cwd);
 
         $resolution = $this->resolver->resolve($this->defaultsPath, $cwd);
         $config = $resolution->effective;
@@ -70,7 +70,7 @@ YAML
     public function testHomeSettingsOverrideDefaults(): void
     {
         $cwd = $this->tmpDir.'/project';
-        @mkdir($cwd, 0755, true);
+        TestDirectoryIsolation::ensureDirectory($cwd);
 
         // Create home settings that changes the theme
         file_put_contents($this->homeDir.'/.hatfield/settings.yaml', <<<'YAML'
@@ -91,7 +91,7 @@ YAML
     public function testProjectSettingsOverrideHomeSettings(): void
     {
         $cwd = $this->tmpDir.'/project';
-        @mkdir($cwd.'/.hatfield', 0755, true);
+        TestDirectoryIsolation::ensureDirectory($cwd.'/.hatfield');
 
         // Home says tokyo-night
         file_put_contents($this->homeDir.'/.hatfield/settings.yaml', <<<'YAML'
@@ -116,7 +116,7 @@ YAML
     public function testMissingSettingsFilesAreIgnored(): void
     {
         $cwd = $this->tmpDir.'/project_no_hatfield';
-        @mkdir($cwd, 0755, true);
+        TestDirectoryIsolation::ensureDirectory($cwd);
         // No .hatfield/ created — should not error
 
         $resolution = $this->resolver->resolve($this->defaultsPath, $cwd);
@@ -128,7 +128,7 @@ YAML
     public function testNestedMergePreservesUnchangedKeys(): void
     {
         $cwd = $this->tmpDir.'/project';
-        @mkdir($cwd.'/.hatfield', 0755, true);
+        TestDirectoryIsolation::ensureDirectory($cwd.'/.hatfield');
 
         // Project only sets theme, not theme_paths
         file_put_contents($cwd.'/.hatfield/settings.yaml', <<<'YAML'
@@ -150,7 +150,7 @@ YAML
     public function testListArraysReplaceNotMerge(): void
     {
         $cwd = $this->tmpDir.'/project';
-        @mkdir($cwd.'/.hatfield', 0755, true);
+        TestDirectoryIsolation::ensureDirectory($cwd.'/.hatfield');
 
         // Project specifies a new theme_paths list — should replace defaults
         file_put_contents($cwd.'/.hatfield/settings.yaml', <<<'YAML'
@@ -173,7 +173,7 @@ YAML
     public function testSessionsPathResolved(): void
     {
         $cwd = $this->tmpDir.'/project';
-        @mkdir($cwd, 0755, true);
+        TestDirectoryIsolation::ensureDirectory($cwd);
 
         $resolution = $this->resolver->resolve($this->defaultsPath, $cwd);
         $config = $resolution->effective;
@@ -185,7 +185,7 @@ YAML
     public function testLoggingPathResolvedToCwd(): void
     {
         $cwd = $this->tmpDir.'/project';
-        @mkdir($cwd, 0755, true);
+        TestDirectoryIsolation::ensureDirectory($cwd);
 
         $resolution = $this->resolver->resolve($this->defaultsPath, $cwd);
         $config = $resolution->effective;
@@ -199,7 +199,7 @@ YAML
     public function testLoggingPathNotKernelProjectDir(): void
     {
         $cwd = $this->tmpDir.'/project';
-        @mkdir($cwd, 0755, true);
+        TestDirectoryIsolation::ensureDirectory($cwd);
 
         $resolution = $this->resolver->resolve($this->defaultsPath, $cwd);
         $config = $resolution->effective;
@@ -349,7 +349,7 @@ YAML
     public function testDeepNestedMergePreservesUnchangedDeepKeys(): void
     {
         $cwd = $this->tmpDir.'/project';
-        @mkdir($cwd.'/.hatfield', 0755, true);
+        TestDirectoryIsolation::ensureDirectory($cwd.'/.hatfield');
 
         // Project overrides only tui.theme — tui.theme_paths from defaults survive
         file_put_contents($cwd.'/.hatfield/settings.yaml', <<<'YAML'
@@ -369,7 +369,7 @@ YAML
     public function testProjectExtensionsEnabledListReplacesDefaults(): void
     {
         $cwd = $this->tmpDir.'/project';
-        @mkdir($cwd.'/.hatfield', 0755, true);
+        TestDirectoryIsolation::ensureDirectory($cwd.'/.hatfield');
 
         file_put_contents($cwd.'/.hatfield/settings.yaml', <<<'YAML'
 extensions:
@@ -394,7 +394,7 @@ YAML
     public function testHomeThenProjectLayeredOverlay(): void
     {
         $cwd = $this->tmpDir.'/project';
-        @mkdir($cwd.'/.hatfield', 0755, true);
+        TestDirectoryIsolation::ensureDirectory($cwd.'/.hatfield');
 
         // Home overrides theme, adds custom list
         file_put_contents($this->homeDir.'/.hatfield/settings.yaml', <<<'YAML'
@@ -431,7 +431,7 @@ YAML
     {
         // Given a config with all path-bearing keys
         $cwd = $this->tmpDir.'/project';
-        @mkdir($cwd, 0755, true);
+        TestDirectoryIsolation::ensureDirectory($cwd);
 
         $resolution = $this->resolver->resolve($this->defaultsPath, $cwd);
         $config = $resolution->effective;
@@ -454,7 +454,7 @@ YAML
     {
         // Given a minimal config without any path keys
         $cwd = $this->tmpDir.'/project';
-        @mkdir($cwd, 0755, true);
+        TestDirectoryIsolation::ensureDirectory($cwd);
 
         // Load defaults WITHOUT path keys
         $minimalDefaults = $this->tmpDir.'/minimal-defaults.yaml';
@@ -478,7 +478,7 @@ YAML
     public function testResolveDoesNotCreateUserSettingsFile(): void
     {
         $cwd = $this->tmpDir.'/project';
-        @mkdir($cwd, 0755, true);
+        TestDirectoryIsolation::ensureDirectory($cwd);
 
         $homeFile = $this->homeDir.'/.hatfield/settings.yaml';
         $this->assertFileDoesNotExist($homeFile);
@@ -491,7 +491,7 @@ YAML
     public function testResolutionExposesRawLayers(): void
     {
         $cwd = $this->tmpDir.'/project';
-        @mkdir($cwd.'/.hatfield', 0755, true);
+        TestDirectoryIsolation::ensureDirectory($cwd.'/.hatfield');
         file_put_contents($this->homeDir.'/.hatfield/settings.yaml', 'tui:
     theme: home-theme
 ');
@@ -510,7 +510,7 @@ YAML
     public function testFreshResolveAfterDiskChange(): void
     {
         $cwd = $this->tmpDir.'/project';
-        @mkdir($cwd.'/.hatfield', 0755, true);
+        TestDirectoryIsolation::ensureDirectory($cwd.'/.hatfield');
 
         $first = $this->resolver->resolve($this->defaultsPath, $cwd);
         $this->assertSame('cyberpunk', $first->effective['tui']['theme']);
@@ -526,7 +526,7 @@ YAML
     public function testGetValueReportsScalarSourceLayers(): void
     {
         $cwd = $this->tmpDir.'/project';
-        @mkdir($cwd.'/.hatfield', 0755, true);
+        TestDirectoryIsolation::ensureDirectory($cwd.'/.hatfield');
         file_put_contents($this->homeDir.'/.hatfield/settings.yaml', 'tui:
     theme: home-theme
 ');
@@ -558,7 +558,7 @@ YAML
     public function testGetValueListSourceIsWholeListPath(): void
     {
         $cwd = $this->tmpDir.'/project';
-        @mkdir($cwd.'/.hatfield', 0755, true);
+        TestDirectoryIsolation::ensureDirectory($cwd.'/.hatfield');
         file_put_contents($cwd.'/.hatfield/settings.yaml', "tui:
     theme_paths:
         - '/only/project'
@@ -575,7 +575,7 @@ YAML
     public function testGetValueExplicitNullInOverlay(): void
     {
         $cwd = $this->tmpDir.'/project';
-        @mkdir($cwd.'/.hatfield', 0755, true);
+        TestDirectoryIsolation::ensureDirectory($cwd.'/.hatfield');
         file_put_contents($cwd.'/.hatfield/settings.yaml', 'tui:
     theme: null
 ');
@@ -591,7 +591,7 @@ YAML
     public function testCompositeGroupDoesNotClaimSingleLayer(): void
     {
         $cwd = $this->tmpDir.'/project';
-        @mkdir($cwd.'/.hatfield', 0755, true);
+        TestDirectoryIsolation::ensureDirectory($cwd.'/.hatfield');
 
         file_put_contents($cwd.'/.hatfield/settings.yaml', <<<'YAML'
 tui:
@@ -622,7 +622,7 @@ YAML
     public function testDottedPathRejectsControlCharacters(): void
     {
         $cwd = $this->tmpDir.'/project';
-        @mkdir($cwd, 0755, true);
+        TestDirectoryIsolation::ensureDirectory($cwd);
 
         $resolution = $this->resolver->resolve($this->defaultsPath, $cwd);
         $missing = $resolution->getValue("tui.theme\x00evil");
@@ -633,7 +633,7 @@ YAML
     public function testGetValueMissingPath(): void
     {
         $cwd = $this->tmpDir.'/project';
-        @mkdir($cwd, 0755, true);
+        TestDirectoryIsolation::ensureDirectory($cwd);
 
         $resolution = $this->resolver->resolve($this->defaultsPath, $cwd);
         $missing = $resolution->getValue('no.such.path');
@@ -645,7 +645,7 @@ YAML
     public function testGetValueUnknownUserKey(): void
     {
         $cwd = $this->tmpDir.'/project';
-        @mkdir($cwd, 0755, true);
+        TestDirectoryIsolation::ensureDirectory($cwd);
         file_put_contents($this->homeDir.'/.hatfield/settings.yaml', 'future_feature:
     enabled: true
 ');
