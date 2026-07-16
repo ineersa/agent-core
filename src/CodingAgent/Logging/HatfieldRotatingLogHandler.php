@@ -18,7 +18,7 @@ use Monolog\LogRecord;
  * the same path-resolution pattern as theme paths and session storage.
  *
  * {@see LoggingConfig::$logDir} is always an absolute path (default:
- * {@see <CWD>/.hatfield/logs}) resolved by {@see SettingsResolver} from
+ * {@see <CWD>/.hatfield/logs}) resolved by {@see AppConfigLoader} from
  * the {@see logging.path} setting.
  */
 final class HatfieldRotatingLogHandler extends RotatingFileHandler

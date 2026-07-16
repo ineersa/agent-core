@@ -47,7 +47,7 @@ use Symfony\Component\Yaml\Yaml;
  *  - Raw layer snapshots in {@see SettingsResolutionDTO} keep unresolved path
  *    strings; only {@see SettingsResolutionDTO::$effective} receives resolved paths.
  */
-final class SettingsResolver
+final class AppConfigLoader
 {
     /**
      * Path-bearing config keys resolved at load time.

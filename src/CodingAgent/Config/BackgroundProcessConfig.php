@@ -15,7 +15,7 @@ use Symfony\Component\Serializer\Attribute\SerializedName;
  *
  * Hydrated from the tools.background_process section of Hatfield merged
  * config via Symfony Serializer. The storageDir is made absolute by
- * {@see SettingsResolver::resolve()} before DTO construction.
+ * {@see AppConfigLoader::resolve()} before DTO construction.
  */
 final readonly class BackgroundProcessConfig
 {

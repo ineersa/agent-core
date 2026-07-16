@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Config;
 
 use Ineersa\CodingAgent\Config\AppConfig;
+use Ineersa\CodingAgent\Config\AppConfigLoader;
 use Ineersa\CodingAgent\Config\AppResourceLocator;
-use Ineersa\CodingAgent\Config\SettingsResolver;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Serializer\Mapping\Factory\ClassMetadataFactory;
@@ -18,13 +18,13 @@ use Symfony\Component\Serializer\SerializerInterface;
  * Tests that AppConfig rejects invalid ai.default_model at boot time.
  *
  * Uses the production fromContainer() factory through a controlled
- * SettingsResolver so only the AI config section changes across tests.
+ * AppConfigLoader so only the AI config section changes across tests.
  */
 class AppConfigTest extends TestCase
 {
     private string $tmpDir;
     private string $homeDir;
-    private SettingsResolver $resolver;
+    private AppConfigLoader $loader;
     private AppResourceLocator $resources;
     private string $defaultsDir;
 
@@ -45,7 +45,7 @@ class AppConfigTest extends TestCase
             appRoot: '/app',
             homeDir: $this->homeDir,
         );
-        $this->resolver = new SettingsResolver($pathResolver);
+        $this->loader = new AppConfigLoader($pathResolver);
         $this->resources = new AppResourceLocator($this->tmpDir);
 
         // Write a base defaults file that will be overwritten per test.
@@ -316,7 +316,7 @@ class AppConfigTest extends TestCase
     private function buildConfig(): AppConfig
     {
         return AppConfig::fromContainer(
-            $this->resolver,
+            $this->loader,
             $this->resources,
             $this->createSerializer(),
             $this->tmpDir,

@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Config\Tests;
 
 use Ineersa\CodingAgent\Config\AppConfig;
+use Ineersa\CodingAgent\Config\AppConfigLoader;
 use Ineersa\CodingAgent\Config\PromptsConfig;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
-use Ineersa\CodingAgent\Config\SettingsResolver;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
 
@@ -63,10 +63,10 @@ final class PromptsConfigTest extends TestCase
         $this->assertSame(['a.md', 'b.md'], $derived->paths);
     }
 
-    public function testPathResolutionViaSettingsResolver(): void
+    public function testPathResolutionViaAppConfigLoader(): void
     {
         // Prove that the PATH_CONFIG entry resolves prompt paths through
-        // SettingsResolver. We need to create a temporary layout with a
+        // AppConfigLoader. We need to create a temporary layout with a
         // settings file that has prompts paths with placeholders.
         $tmpDir = TestDirectoryIsolation::createProjectTempDir('pt-config');
 
@@ -86,7 +86,7 @@ final class PromptsConfigTest extends TestCase
             file_put_contents($defaultsDir.'/hatfield.defaults.yaml', "prompts: []\n");
 
             $pathResolver = new SettingsPathResolver('/app', $homeDir);
-            $resolver = new SettingsResolver($pathResolver);
+            $resolver = new AppConfigLoader($pathResolver);
             $resolution = $resolver->resolve($defaultsDir.'/hatfield.defaults.yaml', $cwd);
             $data = $resolution->effective;
 
@@ -124,7 +124,7 @@ final class PromptsConfigTest extends TestCase
             file_put_contents($defaultsDir.'/hatfield.defaults.yaml', "prompts: []\n");
 
             $pathResolver = new SettingsPathResolver('/app', $homeDir);
-            $resolver = new SettingsResolver($pathResolver);
+            $resolver = new AppConfigLoader($pathResolver);
             $resolution = $resolver->resolve($defaultsDir.'/hatfield.defaults.yaml', $cwd);
             $data = $resolution->effective;
 

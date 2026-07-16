@@ -6,8 +6,8 @@ namespace Ineersa\CodingAgent\Tests\Config;
 
 use Ineersa\CodingAgent\Config\AgentsConfig;
 use Ineersa\CodingAgent\Config\AppConfig;
+use Ineersa\CodingAgent\Config\AppConfigLoader;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
-use Ineersa\CodingAgent\Config\SettingsResolver;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
 
@@ -15,7 +15,7 @@ use PHPUnit\Framework\TestCase;
  * Tests for AgentsConfig covering defaults, fromRaw, and fromAppConfig.
  *
  * Test thesis: AgentsConfig correctly reads settings from YAML config data
- * including enabled flag and path resolution via SettingsResolver.
+ * including enabled flag and path resolution via AppConfigLoader.
  */
 final class AgentsConfigTest extends TestCase
 {
@@ -106,7 +106,7 @@ final class AgentsConfigTest extends TestCase
         $this->assertSame('valid-path', $config->paths[0]);
     }
 
-    public function testPathResolutionThroughSettingsResolver(): void
+    public function testPathResolutionThroughAppConfigLoader(): void
     {
         $appRoot = $this->tempDir.'/app';
         mkdir($appRoot, 0755, true);
@@ -119,7 +119,7 @@ final class AgentsConfigTest extends TestCase
         mkdir($cwd, 0755, true);
 
         $pathResolver = new SettingsPathResolver($appRoot);
-        $resolver = new SettingsResolver($pathResolver);
+        $resolver = new AppConfigLoader($pathResolver);
 
         $resolution = $resolver->resolve($defaultsPath, $cwd);
         $merged = $resolution->effective;

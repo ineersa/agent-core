@@ -136,7 +136,7 @@ services:
   Ineersa\CodingAgent\Config\AppConfig:
     factory: ['Ineersa\CodingAgent\Config\AppConfig', 'fromContainer']
     arguments:
-      $resolver: '@Ineersa\CodingAgent\Config\SettingsResolver'
+      $loader: '@Ineersa\CodingAgent\Config\AppConfigLoader'
       $resources: '@Ineersa\CodingAgent\Config\AppResourceLocator'
       $denormalizer: '@Symfony\Component\Serializer\SerializerInterface'
       $cwd: '%app.cwd%'

@@ -5,10 +5,10 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Config;
 
 use Ineersa\CodingAgent\Config\AppConfig;
+use Ineersa\CodingAgent\Config\AppConfigLoader;
 use Ineersa\CodingAgent\Config\AppResourceLocator;
 use Ineersa\CodingAgent\Config\CompactionConfig;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
-use Ineersa\CodingAgent\Config\SettingsResolver;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
@@ -201,7 +201,7 @@ final class CompactionConfigTest extends TestCase
             file_put_contents($configDir.'/hatfield.defaults.yaml', Yaml::dump($defaults));
 
             $pathResolver = new SettingsPathResolver('/app', $homeDir);
-            $resolver = new SettingsResolver($pathResolver);
+            $resolver = new AppConfigLoader($pathResolver);
             $resources = new AppResourceLocator($projectDir);
 
             // Serializer setup mirrors the production FrameworkBundle wiring:

@@ -13,7 +13,7 @@ use Symfony\Component\Serializer\Attribute\SerializedName;
  * agent definition file/directory paths.
  *
  * Path resolution (tilde, %kernel.project_dir%, relative paths) is handled
- * by the declarative PATH_CONFIG entry in SettingsResolver, not here.
+ * by the declarative PATH_CONFIG entry in AppConfigLoader, not here.
  */
 final readonly class AgentsConfig
 {
