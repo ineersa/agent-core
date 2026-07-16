@@ -176,6 +176,31 @@ final class ApplicationMigrationExecutorTest extends TestCase
             'Version20260715120000 (provider_cache_key repair) must be recorded in doctrine_migration_versions',
         );
 
+        $recordedForkPrelaunchBatch = $connection->fetchOne(
+            'SELECT 1 FROM doctrine_migration_versions WHERE version = ?',
+            ['Version20260717120000'],
+        );
+        $this->assertNotFalse(
+            $recordedForkPrelaunchBatch,
+            'Version20260717120000 (fork deferred prelaunch batch columns) must be recorded in doctrine_migration_versions',
+        );
+
+        $batchColumns = $connection->createSchemaManager()->listTableColumns('deferred_subagent_batch');
+        $this->assertArrayHasKey('fork_local_run_id', $batchColumns);
+        $this->assertArrayHasKey('prelaunch_phase', $batchColumns);
+
+        $recordedDeferredChildReasoning = $connection->fetchOne(
+            'SELECT 1 FROM doctrine_migration_versions WHERE version = ?',
+            ['Version20260718120000'],
+        );
+        $this->assertNotFalse(
+            $recordedDeferredChildReasoning,
+            'Version20260718120000 (deferred_subagent_child reasoning_override) must be recorded in doctrine_migration_versions',
+        );
+
+        $childColumns = $connection->createSchemaManager()->listTableColumns('deferred_subagent_child');
+        $this->assertArrayHasKey('reasoning_override', $childColumns);
+
         $this->assertGreaterThanOrEqual(
             5000,
             $busyTimeout,
