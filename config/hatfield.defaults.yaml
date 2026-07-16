@@ -541,3 +541,7 @@ agents:
 #                     context_window: 272000
 #                     max_tokens: 128000
 #                     cost: { input: 0.75, output: 4.50 }
+
+forks:
+    model: null
+    thinking_level: null

@@ -494,3 +494,7 @@ extensions:
         castor_llm_mode:
             enabled: true
 
+
+forks:
+    model: null
+    thinking_level: null

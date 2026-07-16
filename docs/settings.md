@@ -1462,3 +1462,20 @@ Project extension class: `Ineersa\HatfieldExt\FileRewind\FileRewindExtension` (e
 - `max_retained_turns` (default `100`)
 - `max_file_bytes` (default `2097152`)
 - `git_timeout_seconds` (default `30`)
+
+## Fork tool defaults
+
+The `fork` tool launches an isolated child with inherited parent conversation context. These settings apply only to fork launches (not the parent session):
+
+```yaml
+forks:
+    model: null
+    thinking_level: null
+```
+
+Precedence:
+
+- **model**: explicit `fork` tool argument → `forks.model` → parent session model → runtime default
+- **thinking**: explicit `fork` tool argument → `forks.thinking_level` → parent session reasoning → null
+
+Fork children cannot launch `fork` or `subagent`.
