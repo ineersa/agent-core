@@ -31,7 +31,7 @@ final class ForkDeferredLiveE2eTest extends ControllerE2eTestCase
             ],
         ]);
 
-        $events = $this->collectEventsUntilToolCompleted('fork', $this->liveLlmToolWaitTimeout());
+        $events = $this->collectEventsUntilDeferredToolCompleted('fork', $this->liveLlmDeferredForkToolWaitTimeout());
         $byType = $this->indexByType($events);
 
         $this->assertStartRunAcked($events, $startCmdId);
@@ -61,6 +61,14 @@ final class ForkDeferredLiveE2eTest extends ControllerE2eTestCase
             $resultText = json_encode($completedPayload, \JSON_THROW_ON_ERROR);
         }
         $this->assertStringContainsString(self::CHILD_REPLY, $resultText, 'Fork completion must include child reply token. '.$this->collectDiagnostics($events));
+    }
+
+    /**
+     * Deferred fork completion must stay within the live smoke per-test budget (<=15s).
+     */
+    protected function liveLlmDeferredForkToolWaitTimeout(): float
+    {
+        return min($this->liveLlmToolWaitTimeout(), 15.0);
     }
 
     protected function controllerExtraArgs(): array

@@ -482,9 +482,43 @@ abstract class ControllerE2eTestCase extends TestCase
      * of stopping at the first completed tool if the small smoke-test model
      * performs an exploratory call first.
      *
+     * Stops early when the parent/root run reaches a terminal lifecycle event
+     * ({@see isParentRunTerminalEvent()}). Use
+     * {@see collectEventsUntilDeferredToolCompleted()} for deferred tools that
+     * may finish after the parent turn ends.
+     *
      * @return list<array<string, mixed>>
      */
     protected function collectEventsUntilToolCompleted(string $toolName, float $timeout): array
+    {
+        return $this->collectEventsUntilNamedToolCompleted($toolName, $timeout, true);
+    }
+
+    /**
+     * Collect events until a deferred tool call has completed.
+     *
+     * Same started/completed correlation as {@see collectEventsUntilToolCompleted()},
+     * but does not return when the parent run hits run.completed/failed/cancelled.
+     * Deferred fork/subagent tools can emit parent run.completed while Messenger
+     * still projects the matching tool_execution.completed onto the controller
+     * JSONL stream; stopping on parent terminal would miss that completion under
+     * ParaTest contention.
+     *
+     * Parent terminal detection uses runId on lifecycle events: only events whose
+     * runId matches the parent run under test count as parent terminal. Child
+     * agent runs on the same stream use different runIds and are ignored.
+     *
+     * @return list<array<string, mixed>>
+     */
+    protected function collectEventsUntilDeferredToolCompleted(string $toolName, float $timeout): array
+    {
+        return $this->collectEventsUntilNamedToolCompleted($toolName, $timeout, false);
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function collectEventsUntilNamedToolCompleted(string $toolName, float $timeout, bool $stopOnParentTerminal): array
     {
         $events = [];
         $targetToolCallIds = [];
@@ -516,7 +550,7 @@ abstract class ControllerE2eTestCase extends TestCase
                     return $events;
                 }
 
-                if ($this->isParentRunTerminalEvent($event)) {
+                if ($stopOnParentTerminal && $this->isParentRunTerminalEvent($event)) {
                     return $events;
                 }
             }
