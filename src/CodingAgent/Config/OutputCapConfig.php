@@ -16,7 +16,7 @@ use Symfony\Component\Serializer\Attribute\SerializedName;
  *
  * Hydrated from the tools.output_cap section of Hatfield merged config
  * via Symfony Serializer. The storageDir is made absolute by
- * {@see AppConfigLoader::resolveConfigPaths()} before DTO construction.
+ * {@see SettingsResolver::resolve()} before DTO construction.
  */
 final readonly class OutputCapConfig
 {

@@ -4,15 +4,16 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Config;
 
-use Ineersa\CodingAgent\Config\AppConfigLoader;
+use Ineersa\CodingAgent\Config\SettingsLayerEnum;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
+use Ineersa\CodingAgent\Config\SettingsResolver;
 use PHPUnit\Framework\TestCase;
 
-class AppConfigLoaderTest extends TestCase
+class SettingsResolverTest extends TestCase
 {
     private string $tmpDir;
     private string $homeDir;
-    private AppConfigLoader $loader;
+    private SettingsResolver $resolver;
     private SettingsPathResolver $pathResolver;
     private string $defaultsPath;
 
@@ -28,7 +29,7 @@ class AppConfigLoaderTest extends TestCase
             appRoot: '/app',
             homeDir: $this->homeDir,
         );
-        $this->loader = new AppConfigLoader($this->pathResolver);
+        $this->resolver = new SettingsResolver($this->pathResolver);
 
         // Create a defaults file
         $this->defaultsPath = $this->tmpDir.'/defaults.yaml';
@@ -58,7 +59,8 @@ YAML
         $cwd = $this->tmpDir.'/project';
         @mkdir($cwd, 0755, true);
 
-        $config = $this->loader->load($this->defaultsPath, $cwd);
+        $resolution = $this->resolver->resolve($this->defaultsPath, $cwd);
+        $config = $resolution->effective;
 
         $this->assertSame('cyberpunk', $config['tui']['theme']);
         $this->assertNotEmpty($config['tui']['theme_paths']);
@@ -77,7 +79,8 @@ tui:
 YAML
         );
 
-        $config = $this->loader->load($this->defaultsPath, $cwd);
+        $resolution = $this->resolver->resolve($this->defaultsPath, $cwd);
+        $config = $resolution->effective;
 
         $this->assertSame('tokyo-night', $config['tui']['theme']);
         // Home should still have the default paths (merged, not replaced)
@@ -104,7 +107,8 @@ tui:
 YAML
         );
 
-        $config = $this->loader->load($this->defaultsPath, $cwd);
+        $resolution = $this->resolver->resolve($this->defaultsPath, $cwd);
+        $config = $resolution->effective;
 
         $this->assertSame('nord', $config['tui']['theme']);
     }
@@ -115,7 +119,8 @@ YAML
         @mkdir($cwd, 0755, true);
         // No .hatfield/ created — should not error
 
-        $config = $this->loader->load($this->defaultsPath, $cwd);
+        $resolution = $this->resolver->resolve($this->defaultsPath, $cwd);
+        $config = $resolution->effective;
 
         $this->assertSame('cyberpunk', $config['tui']['theme']);
     }
@@ -132,7 +137,8 @@ tui:
 YAML
         );
 
-        $config = $this->loader->load($this->defaultsPath, $cwd);
+        $resolution = $this->resolver->resolve($this->defaultsPath, $cwd);
+        $config = $resolution->effective;
 
         // Theme overridden
         $this->assertSame('nord', $config['tui']['theme']);
@@ -155,7 +161,8 @@ tui:
 YAML
         );
 
-        $config = $this->loader->load($this->defaultsPath, $cwd);
+        $resolution = $this->resolver->resolve($this->defaultsPath, $cwd);
+        $config = $resolution->effective;
 
         // theme_paths from project (not merged with defaults)
         $this->assertCount(2, $config['tui']['theme_paths']);
@@ -168,7 +175,8 @@ YAML
         $cwd = $this->tmpDir.'/project';
         @mkdir($cwd, 0755, true);
 
-        $config = $this->loader->load($this->defaultsPath, $cwd);
+        $resolution = $this->resolver->resolve($this->defaultsPath, $cwd);
+        $config = $resolution->effective;
 
         $this->assertArrayHasKey('path', $config['sessions']);
         $this->assertStringContainsString('.hatfield/sessions', (string) $config['sessions']['path']);
@@ -179,7 +187,8 @@ YAML
         $cwd = $this->tmpDir.'/project';
         @mkdir($cwd, 0755, true);
 
-        $config = $this->loader->load($this->defaultsPath, $cwd);
+        $resolution = $this->resolver->resolve($this->defaultsPath, $cwd);
+        $config = $resolution->effective;
 
         $this->assertArrayHasKey('path', $config['logging']);
         $logPath = (string) $config['logging']['path'];
@@ -192,7 +201,8 @@ YAML
         $cwd = $this->tmpDir.'/project';
         @mkdir($cwd, 0755, true);
 
-        $config = $this->loader->load($this->defaultsPath, $cwd);
+        $resolution = $this->resolver->resolve($this->defaultsPath, $cwd);
+        $config = $resolution->effective;
 
         $logPath = (string) $config['logging']['path'];
         // Must NOT contain the app install dir — logs are project-local
@@ -208,7 +218,7 @@ YAML
         $base = ['theme' => 'cyberpunk', 'version' => 1];
         $over = ['theme' => 'nord'];
 
-        $result = $this->loader->overlayConfig($base, $over);
+        $result = $this->resolver->overlayConfig($base, $over);
 
         $this->assertSame('nord', $result['theme']);
         $this->assertSame(1, $result['version']);
@@ -221,7 +231,7 @@ YAML
         $base = ['theme' => 'cyberpunk'];
         $over = ['theme' => 'nord'];
 
-        $result = $this->loader->overlayConfig($base, $over);
+        $result = $this->resolver->overlayConfig($base, $over);
 
         $this->assertIsString($result['theme']);
         $this->assertSame('nord', $result['theme']);
@@ -248,7 +258,7 @@ YAML
             ],
         ];
 
-        $result = $this->loader->overlayConfig($base, $over);
+        $result = $this->resolver->overlayConfig($base, $over);
 
         $this->assertSame('nord', $result['tui']['theme']);
         // Deeper associative key not touched by overlay survives
@@ -262,7 +272,7 @@ YAML
         $base = ['paths' => ['/default/a', '/default/b', '/default/c']];
         $over = ['paths' => ['/project/x']];
 
-        $result = $this->loader->overlayConfig($base, $over);
+        $result = $this->resolver->overlayConfig($base, $over);
 
         $this->assertCount(1, $result['paths']);
         $this->assertSame('/project/x', $result['paths'][0]);
@@ -276,7 +286,7 @@ YAML
         $base = ['items' => ['A', 'B', 'C']];
         $over = ['items' => ['X']];
 
-        $result = $this->loader->overlayConfig($base, $over);
+        $result = $this->resolver->overlayConfig($base, $over);
 
         $this->assertSame(['X'], $result['items']);
     }
@@ -286,7 +296,7 @@ YAML
         $base = ['key' => 'present'];
         $over = ['key' => null];
 
-        $result = $this->loader->overlayConfig($base, $over);
+        $result = $this->resolver->overlayConfig($base, $over);
 
         $this->assertNull($result['key']);
     }
@@ -296,7 +306,7 @@ YAML
         $base = ['existing' => true];
         $over = ['new_key' => 'added'];
 
-        $result = $this->loader->overlayConfig($base, $over);
+        $result = $this->resolver->overlayConfig($base, $over);
 
         $this->assertTrue($result['existing']);
         $this->assertSame('added', $result['new_key']);
@@ -307,7 +317,7 @@ YAML
         $base = ['enabled' => false];
         $over = ['enabled' => true];
 
-        $result = $this->loader->overlayConfig($base, $over);
+        $result = $this->resolver->overlayConfig($base, $over);
 
         $this->assertTrue($result['enabled']);
     }
@@ -317,7 +327,7 @@ YAML
         $base = ['limit' => 100];
         $over = ['limit' => 50];
 
-        $result = $this->loader->overlayConfig($base, $over);
+        $result = $this->resolver->overlayConfig($base, $over);
 
         $this->assertSame(50, $result['limit']);
     }
@@ -328,7 +338,7 @@ YAML
         $base = ['key' => 'string'];
         $over = ['key' => ['nested' => 'value']];
 
-        $result = $this->loader->overlayConfig($base, $over);
+        $result = $this->resolver->overlayConfig($base, $over);
 
         $this->assertIsArray($result['key']);
         $this->assertSame('value', $result['key']['nested']);
@@ -348,7 +358,8 @@ tui:
 YAML
         );
 
-        $config = $this->loader->load($this->defaultsPath, $cwd);
+        $resolution = $this->resolver->resolve($this->defaultsPath, $cwd);
+        $config = $resolution->effective;
 
         $this->assertSame('gruvbox-dark', $config['tui']['theme']);
         $this->assertNotEmpty($config['tui']['theme_paths']);
@@ -368,7 +379,8 @@ extensions:
 YAML
         );
 
-        $config = $this->loader->load($this->defaultsPath, $cwd);
+        $resolution = $this->resolver->resolve($this->defaultsPath, $cwd);
+        $config = $resolution->effective;
 
         $this->assertSame(
             [
@@ -400,7 +412,8 @@ tui:
 YAML
         );
 
-        $config = $this->loader->load($this->defaultsPath, $cwd);
+        $resolution = $this->resolver->resolve($this->defaultsPath, $cwd);
+        $config = $resolution->effective;
 
         // Project scalar wins
         $this->assertSame('project-theme', $config['tui']['theme']);
@@ -420,7 +433,8 @@ YAML
         $cwd = $this->tmpDir.'/project';
         @mkdir($cwd, 0755, true);
 
-        $config = $this->loader->load($this->defaultsPath, $cwd);
+        $resolution = $this->resolver->resolve($this->defaultsPath, $cwd);
+        $config = $resolution->effective;
 
         // All path-bearing keys should be resolved (not containing placeholders)
         // theme_paths is a list — each entry should be resolved
@@ -451,13 +465,155 @@ YAML
         );
 
         // Should not throw despite missing sessions.path, logging.path, etc.
-        $config = $this->loader->load($minimalDefaults, $cwd);
+        $resolution = $this->resolver->resolve($minimalDefaults, $cwd);
+        $config = $resolution->effective;
 
         // Path keys that don't exist in YAML should be absent from result
         // but the loader should not throw or crash.
         $this->assertArrayNotHasKey('sessions', $config);
         $this->assertArrayNotHasKey('logging', $config);
         $this->assertSame('cyberpunk', $config['tui']['theme']);
+    }
+
+    public function testResolveDoesNotCreateHomeSettingsFile(): void
+    {
+        $cwd = $this->tmpDir.'/project';
+        @mkdir($cwd, 0755, true);
+
+        $homeFile = $this->homeDir.'/.hatfield/settings.yaml';
+        $this->assertFileDoesNotExist($homeFile);
+
+        $this->resolver->resolve($this->defaultsPath, $cwd);
+
+        $this->assertFileDoesNotExist($homeFile);
+    }
+
+    public function testResolutionExposesRawLayers(): void
+    {
+        $cwd = $this->tmpDir.'/project';
+        @mkdir($cwd.'/.hatfield', 0755, true);
+        file_put_contents($this->homeDir.'/.hatfield/settings.yaml', 'tui:
+    theme: home-theme
+');
+        file_put_contents($cwd.'/.hatfield/settings.yaml', 'tui:
+    theme: project-theme
+');
+
+        $resolution = $this->resolver->resolve($this->defaultsPath, $cwd);
+
+        $this->assertSame('cyberpunk', $resolution->defaultsRaw['tui']['theme']);
+        $this->assertSame('home-theme', $resolution->homeRaw['tui']['theme']);
+        $this->assertSame('project-theme', $resolution->projectRaw['tui']['theme']);
+        $this->assertSame('project-theme', $resolution->effective['tui']['theme']);
+    }
+
+    public function testFreshResolveAfterDiskChange(): void
+    {
+        $cwd = $this->tmpDir.'/project';
+        @mkdir($cwd.'/.hatfield', 0755, true);
+
+        $first = $this->resolver->resolve($this->defaultsPath, $cwd);
+        $this->assertSame('cyberpunk', $first->effective['tui']['theme']);
+
+        file_put_contents($cwd.'/.hatfield/settings.yaml', 'tui:
+    theme: changed
+');
+
+        $second = $this->resolver->resolve($this->defaultsPath, $cwd);
+        $this->assertSame('changed', $second->effective['tui']['theme']);
+    }
+
+    public function testGetValueReportsScalarSourceLayers(): void
+    {
+        $cwd = $this->tmpDir.'/project';
+        @mkdir($cwd.'/.hatfield', 0755, true);
+        file_put_contents($this->homeDir.'/.hatfield/settings.yaml', 'tui:
+    theme: home-theme
+');
+        file_put_contents($cwd.'/.hatfield/settings.yaml', 'tui:
+    theme: project-theme
+');
+
+        $resolution = $this->resolver->resolve($this->defaultsPath, $cwd);
+
+        $defaultsTheme = $resolution->getValue('tui.theme');
+        $this->assertTrue($defaultsTheme->exists);
+        $this->assertSame('project-theme', $defaultsTheme->value);
+        $this->assertSame(SettingsLayerEnum::Project, $defaultsTheme->layer);
+
+        file_put_contents($cwd.'/.hatfield/settings.yaml', 'logging:
+    level: debug
+');
+        $resolution2 = $this->resolver->resolve($this->defaultsPath, $cwd);
+        $homeOnly = $resolution2->getValue('tui.theme');
+        $this->assertSame(SettingsLayerEnum::Home, $homeOnly->layer);
+
+        @unlink($this->homeDir.'/.hatfield/settings.yaml');
+        @unlink($cwd.'/.hatfield/settings.yaml');
+        $resolution3 = $this->resolver->resolve($this->defaultsPath, $cwd);
+        $fromDefaults = $resolution3->getValue('tui.theme');
+        $this->assertSame(SettingsLayerEnum::Defaults, $fromDefaults->layer);
+    }
+
+    public function testGetValueListSourceIsWholeListPath(): void
+    {
+        $cwd = $this->tmpDir.'/project';
+        @mkdir($cwd.'/.hatfield', 0755, true);
+        file_put_contents($cwd.'/.hatfield/settings.yaml', "tui:
+    theme_paths:
+        - '/only/project'
+");
+
+        $resolution = $this->resolver->resolve($this->defaultsPath, $cwd);
+        $paths = $resolution->getValue('tui.theme_paths');
+
+        $this->assertTrue($paths->exists);
+        $this->assertSame(SettingsLayerEnum::Project, $paths->layer);
+        $this->assertCount(1, $paths->value);
+    }
+
+    public function testGetValueExplicitNullInOverlay(): void
+    {
+        $cwd = $this->tmpDir.'/project';
+        @mkdir($cwd.'/.hatfield', 0755, true);
+        file_put_contents($cwd.'/.hatfield/settings.yaml', 'tui:
+    theme: null
+');
+
+        $resolution = $this->resolver->resolve($this->defaultsPath, $cwd);
+        $theme = $resolution->getValue('tui.theme');
+
+        $this->assertTrue($theme->exists);
+        $this->assertNull($theme->value);
+        $this->assertSame(SettingsLayerEnum::Project, $theme->layer);
+    }
+
+    public function testGetValueMissingPath(): void
+    {
+        $cwd = $this->tmpDir.'/project';
+        @mkdir($cwd, 0755, true);
+
+        $resolution = $this->resolver->resolve($this->defaultsPath, $cwd);
+        $missing = $resolution->getValue('no.such.path');
+
+        $this->assertFalse($missing->exists);
+        $this->assertNull($missing->layer);
+    }
+
+    public function testGetValueUnknownHomeKey(): void
+    {
+        $cwd = $this->tmpDir.'/project';
+        @mkdir($cwd, 0755, true);
+        file_put_contents($this->homeDir.'/.hatfield/settings.yaml', 'future_feature:
+    enabled: true
+');
+
+        $resolution = $this->resolver->resolve($this->defaultsPath, $cwd);
+        $value = $resolution->getValue('future_feature.enabled');
+
+        $this->assertTrue($value->exists);
+        $this->assertTrue($value->value);
+        $this->assertSame(SettingsLayerEnum::Home, $value->layer);
     }
 
     private function removeDir(string $dir): void

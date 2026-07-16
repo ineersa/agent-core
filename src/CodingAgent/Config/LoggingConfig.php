@@ -13,7 +13,7 @@ use Symfony\Component\Serializer\Attribute\SerializedName;
  * Immutable value object. Contains the log storage directory path,
  * minimum log level, and maximum rotated log files to retain.
  *
- * The logDir is always an absolute path resolved by {@see AppConfigLoader}
+ * The logDir is always an absolute path resolved by {@see SettingsResolver}
  * from the default {@see logging.path} setting (e.g. {@see .hatfield/logs}
  * resolves to {@see <CWD>/.hatfield/logs}).
  *

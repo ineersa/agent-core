@@ -12,7 +12,7 @@ namespace Ineersa\CodingAgent\Config;
  * auto-discovery directories (~/.hatfield/prompts/ and <cwd>/.hatfield/prompts/).
  *
  * Path resolution (tilde, %kernel.project_dir%, relative paths) is handled
- * by the declarative PATH_CONFIG entry in AppConfigLoader, not here.
+ * by the declarative PATH_CONFIG entry in SettingsResolver, not here.
  */
 final readonly class PromptsConfig
 {

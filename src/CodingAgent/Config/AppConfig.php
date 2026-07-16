@@ -14,7 +14,7 @@ use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
  *
  * Contains all settings loaded from defaults, home, and project YAML.
  * All properties are populated by the production DI factory
- * {@see fromContainer} which calls {@see AppConfigLoader} and then
+ * {@see fromContainer} which calls {@see SettingsResolver} and then
  * hydrates known sections through Symfony Serializer denormalization.
  *
  * Sections:
@@ -70,12 +70,12 @@ final class AppConfig
      * Used by the Symfony container via services.yaml factory definition.
      */
     public static function fromContainer(
-        AppConfigLoader $loader,
+        SettingsResolver $resolver,
         AppResourceLocator $resources,
         DenormalizerInterface $denormalizer,
         string $cwd,
     ): self {
-        $data = $loader->load($resources->getDefaultsPath(), $cwd);
+        $data = $resolver->resolve($resources->getDefaultsPath(), $cwd)->effective;
         $ai = AiConfig::optionalFromArray($data);
 
         $catalog = null !== $ai ? new HatfieldModelCatalog($ai) : null;

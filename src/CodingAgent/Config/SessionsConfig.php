@@ -16,7 +16,7 @@ final readonly class SessionsConfig
      * @param string $path Session storage directory. Relative paths resolve
      *                     against the active project CWD. Defaults to
      *                     {@see .hatfield/sessions}, resolved to absolute by
-     *                     {@see AppConfigLoader}.
+     *                     {@see SettingsResolver}.
      */
     public function __construct(
         public string $path = '.hatfield/sessions',

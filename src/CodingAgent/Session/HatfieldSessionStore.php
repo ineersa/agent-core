@@ -395,7 +395,7 @@ final class HatfieldSessionStore
      * Build the base sessions directory path from resolved config.
      *
      * Reads the typed SessionsConfig from AppConfig. In production
-     * the path is absolute (resolved by AppConfigLoader). For tests
+     * the path is absolute (resolved by SettingsResolver). For tests
      * that construct AppConfig directly with a relative path, we resolve
      * against the active project directory.
      */

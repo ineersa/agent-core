@@ -73,6 +73,17 @@ final class SafeGuardExtensionTest extends TestCase
         );
     }
 
+    public function testRegisterCreatesPolicyWriterWhenHatfieldDirectoryMissing(): void
+    {
+        $extension = new SafeGuardExtension();
+        $api = $this->createMock(ExtensionApiInterface::class);
+        $api->method('getSettings')->willReturn([]);
+        $api->method('getCwd')->willReturn('/tmp/no-hatfield-dir-yet');
+        $api->expects($this->once())->method('registerToolCallHook')
+            ->with($this->callback(static fn (ToolCallHookInterface $hook): bool => $hook instanceof SafeGuardToolCallHook));
+        $extension->register($api);
+    }
+
     public function testRegisterCanBeCalledMultipleTimes(): void
     {
         $extension = new SafeGuardExtension();

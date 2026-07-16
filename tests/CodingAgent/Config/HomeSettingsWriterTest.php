@@ -19,7 +19,6 @@ class HomeSettingsWriterTest extends TestCase
     protected function setUp(): void
     {
         $this->tmpDir = TestDirectoryIsolation::createProjectTempDir('hatfield_writer');
-        mkdir($this->tmpDir.'/.hatfield', 0o755, true);
         $this->file = $this->tmpDir.'/.hatfield/settings.yaml';
         $pathResolver = new SettingsPathResolver('/app', $this->tmpDir);
         $this->writer = new HomeSettingsWriter($pathResolver);
@@ -213,17 +212,69 @@ class HomeSettingsWriterTest extends TestCase
 
     // ── Error ──────────────────────────────────────────────────────────
 
-    public function testThrowsOnMissingFile(): void
+    public function testCreatesSparseHomeFileOnFirstScalarWrite(): void
     {
-        $this->expectException(\RuntimeException::class);
-        $this->expectExceptionMessage('Cannot read');
+        $this->assertFileDoesNotExist($this->file);
 
-        $writer = new HomeSettingsWriter(new SettingsPathResolver('/app', '/nonexistent'));
+        $this->writer->writeDefaultModel('zai/glm-5.1');
+
+        $this->assertFileExists($this->file);
+        $content = $this->read();
+        $this->assertStringContainsString('ai:
+', $content);
+        $this->assertStringContainsString('default_model: zai/glm-5.1', $content);
+        $this->assertStringNotContainsString('tui:', $content);
+
+        $p = $this->parse();
+        $this->assertSame('zai/glm-5.1', $p['ai']['default_model'] ?? null);
+    }
+
+    public function testCreatesSparseHomeFileOnFirstListWrite(): void
+    {
+        $this->assertFileDoesNotExist($this->file);
+
+        $this->writer->writeFavoriteModels(['zai/glm-5.1', 'deepseek/deepseek-v4-pro']);
+
+        $this->assertFileExists($this->file);
+        $p = $this->parse();
+        $this->assertSame(['zai/glm-5.1', 'deepseek/deepseek-v4-pro'], $p['ai']['favorite_models'] ?? null);
+    }
+
+    public function testThrowsWhenExistingHomeFileIsUnreadable(): void
+    {
+        mkdir(\dirname($this->file), 0o755, true);
+        file_put_contents($this->file, 'ai:
+    default_model: old
+');
+        chmod($this->file, 0o000);
+
+        try {
+            $this->expectException(\RuntimeException::class);
+            $this->expectExceptionMessage('Cannot read');
+            $this->writer->writeDefaultModel('new/model');
+        } finally {
+            chmod($this->file, 0o644);
+        }
+    }
+
+    public function testThrowsWhenHomeDirectoryCannotBeCreated(): void
+    {
+        $blockedHome = $this->tmpDir.'/blocked-home';
+        file_put_contents($blockedHome, 'not-a-directory');
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Cannot create home settings directory');
+
+        $writer = new HomeSettingsWriter(new SettingsPathResolver('/app', $blockedHome));
         $writer->writeDefaultModel('x');
     }
 
     private function write(string $content): void
     {
+        $dir = \dirname($this->file);
+        if (!is_dir($dir)) {
+            mkdir($dir, 0o755, true);
+        }
         file_put_contents($this->file, $content);
     }
 
