@@ -344,7 +344,7 @@ YAML
         $this->assertSame('value', $result['key']['nested']);
     }
 
-    // ── Integration-style tests via load() ─────────────────────────────────
+    // ── Integration-style tests via resolve() ─────────────────────────────────
 
     public function testDeepNestedMergePreservesUnchangedDeepKeys(): void
     {
