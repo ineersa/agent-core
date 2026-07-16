@@ -13,7 +13,7 @@ final class ForkInternalAgentDefinition
     public static function create(): AgentDefinitionDTO
     {
         return new AgentDefinitionDTO(
-            name: 'fork-internal',
+            name: 'fork',
             description: 'Internal fork child (tool specialization, not catalog-selectable)',
             tools: null,
             mcp: new McpPolicyDTO(mode: McpAgentModeEnum::All),

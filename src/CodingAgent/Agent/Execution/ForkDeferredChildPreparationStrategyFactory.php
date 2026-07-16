@@ -9,7 +9,7 @@ use Ineersa\CodingAgent\Agent\Fork\ForkChildLaunchInputBuilder;
 final class ForkDeferredChildPreparationStrategyFactory
 {
     public function __construct(
-        private readonly ForkLaunchPreparationService $launchPreparation,
+        private readonly ForkToolPolicyResolver $forkToolPolicyResolver,
         private readonly ForkChildLaunchInputBuilder $launchInputBuilder,
     ) {
     }
@@ -17,7 +17,7 @@ final class ForkDeferredChildPreparationStrategyFactory
     public function create(ForkLaunchTaskDTO $launchTask): ForkDeferredChildPreparationStrategy
     {
         return new ForkDeferredChildPreparationStrategy(
-            $this->launchPreparation,
+            $this->forkToolPolicyResolver,
             $this->launchInputBuilder,
             $launchTask,
         );

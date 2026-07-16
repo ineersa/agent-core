@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Agent\Execution;
 
-use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunIdentityDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\PreparedAgentChildRunDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Preparation\DeferredSubagentChildPreparationStrategyInterface;
@@ -13,7 +12,7 @@ use Ineersa\CodingAgent\Agent\Fork\ForkChildLaunchInputBuilder;
 final readonly class ForkDeferredChildPreparationStrategy implements DeferredSubagentChildPreparationStrategyInterface
 {
     public function __construct(
-        private ForkLaunchPreparationService $launchPreparation,
+        private ForkToolPolicyResolver $forkToolPolicyResolver,
         private ForkChildLaunchInputBuilder $launchInputBuilder,
         private ForkLaunchTaskDTO $launchTask,
     ) {
@@ -22,14 +21,17 @@ final readonly class ForkDeferredChildPreparationStrategy implements DeferredSub
     public function prepare(
         string $parentRunId,
         ChildRunIdentityDTO $identity,
-        AgentDefinitionDTO $definition,
+        \Ineersa\CodingAgent\Agent\Definition\AgentDefinitionDTO $definition,
         string $agentName,
         string $task,
     ): PreparedAgentChildRunDTO {
+        // $definition, $agentName, and $task come from the generic deferred batch seam; fork uses
+        // immutable $this->launchTask and resolves tool policy from the parent run via ForkToolPolicyResolver.
+
         return $this->launchInputBuilder->buildPrepared(
             $identity,
             $this->launchTask,
-            $this->launchPreparation->resolveToolPolicy($parentRunId),
+            $this->forkToolPolicyResolver->resolve($parentRunId),
         );
     }
 }

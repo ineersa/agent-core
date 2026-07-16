@@ -101,7 +101,7 @@ final readonly class ForkChildMessageComposer
      */
     private function buildForkChildContract(string $artifactId, array $allowedToolNames): string
     {
-        $toolList = implode(', ', $allowedToolNames);
+        $toolList = [] === $allowedToolNames ? 'none' : implode(', ', $allowedToolNames);
 
         return <<<EOT
 You are an isolated delegated fork child, not the parent session.

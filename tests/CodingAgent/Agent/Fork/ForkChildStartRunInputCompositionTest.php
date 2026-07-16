@@ -243,6 +243,7 @@ final class ForkChildStartRunInputCompositionTest extends IsolatedKernelTestCase
         $this->assertNotContains('fork', $active->toolNames);
         $this->assertNotContains('subagent', $active->toolNames);
     }
+
     public function testForkChildContractListsNoneWhenAllowedToolsEmpty(): void
     {
         $parentRunId = 'parent-fork-empty-tools';
@@ -272,5 +273,4 @@ final class ForkChildStartRunInputCompositionTest extends IsolatedKernelTestCase
         $this->assertStringContainsString('your active tools are: none', $contractText);
         $this->assertStringNotContainsString('your active tools are: .', $contractText);
     }
-
 }

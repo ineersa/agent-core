@@ -32,9 +32,10 @@ final readonly class AgentToolPolicyResolver
         }
 
         if (!$allowSubagent) {
+            // Child runs cannot launch fork or subagent; omit both from the advertised toolset.
             $tools = array_values(array_filter(
                 $tools,
-                static fn (string $name): bool => 'subagent' !== $name,
+                static fn (string $name): bool => 'subagent' !== $name && 'fork' !== $name,
             ));
         }
 

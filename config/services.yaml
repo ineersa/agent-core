@@ -679,8 +679,6 @@ services:
   Ineersa\CodingAgent\Agent\Tool\ForkToolDefinitionProvider:
     tags: ['hatfield.tool_provider']
 
-
-
   # CodingAgent ToolSetResolver — bridges ToolRegistry to AgentCore resolver seam.
   # The inner resolver (CodingAgentToolSetResolver) is wrapped by
   # McpCatalogRegisteringToolSetResolver so MCP dynamic tools from the
