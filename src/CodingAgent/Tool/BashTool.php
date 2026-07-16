@@ -344,8 +344,9 @@ final class BashTool implements HatfieldToolProviderInterface, ToolHandlerInterf
     }
 
     /**
-     * Read the log tail output from a background process.
+     * Read the full log for the exact immutable background-process record (completed foreground process).
      *
+     * @param int         $recordId  Immutable background-process record ID
      * @param string|null $sessionId Session ownership filter
      *
      * @return string The log content, or empty string on failure

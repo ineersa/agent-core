@@ -717,14 +717,6 @@ final class BackgroundProcessManager
         // since the last list() call (status file written, /proc gone).
         $this->refreshEntity($entity);
 
-        // Re-fetch by immutable record ID after refresh so a reusable OS PID
-        // cannot switch us to a different retained row (entity may be finished).
-        $refreshed = $this->store->fetchByRecordId($entity->id);
-        if (null === $refreshed) {
-            throw new \RuntimeException(\sprintf('Background process record %d disappeared during refresh.', $entity->id));
-        }
-        $entity = $refreshed;
-
         if (null !== $entity->finishedAt) {
             return new StopResult(
                 pid: $pid,

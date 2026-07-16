@@ -186,7 +186,7 @@ final class BackgroundProcessCompletionPoller
         $sessionId = $process->sessionId;
 
         if ('' === $sessionId) {
-            // Unscopped process — cannot send follow-up without a run.
+            // Unscoped process — cannot send follow-up without a run.
             // Mark notified to avoid re-polling.
             $now = new \DateTimeImmutable();
             $process->markCompletionNotified($now);
