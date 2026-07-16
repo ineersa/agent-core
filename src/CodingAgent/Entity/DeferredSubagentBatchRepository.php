@@ -211,7 +211,7 @@ final class DeferredSubagentBatchRepository extends ServiceEntityRepository
     }
 
     /**
-     * @param list<array{batchIndex: int, childRunId: string, artifactId: string, agentName: string, task: string, definitionModel: ?string, artifactKind: string}> $childIntents
+     * @param list<array{batchIndex: int, childRunId: string, artifactId: string, agentName: string, task: string, definitionModel: ?string, artifactKind: string, reasoningOverride?: ?string}> $childIntents
      */
     public function reserveBatch(
         string $lifecycleId,
@@ -597,7 +597,7 @@ final class DeferredSubagentBatchRepository extends ServiceEntityRepository
     }
 
     /**
-     * @param list<array{batchIndex: int, childRunId: string, artifactId: string, agentName: string, task: string, definitionModel: ?string, artifactKind: string}> $childIntents
+     * @param list<array{batchIndex: int, childRunId: string, artifactId: string, agentName: string, task: string, definitionModel: ?string, artifactKind: string, reasoningOverride?: ?string}> $childIntents
      */
     private function assertBatchMatchesIntent(
         DeferredSubagentBatch $row,

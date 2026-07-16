@@ -189,17 +189,12 @@ final readonly class ForkDeferredPrelaunchStagingService
         $serialized = array_map(static fn (AgentMessage $message): array => $message->toArray(), $sanitized);
 
         $events = $this->eventFactory->eventsFromSpecs($forkLocalRunId, $state->turnNo, $state->lastSeq + 1, [[
-            'type' => RunEventTypeEnum::ContextCompacted->value,
+            'type' => RunEventTypeEnum::RunMessagesReplaced->value,
             'payload' => [
-                'summary_text' => '',
                 'messages' => $serialized,
-                'estimated_tokens_before' => 0,
-                'estimated_tokens_after' => 0,
-                'messages_compacted' => 0,
-                'messages_retained' => \count($sanitized),
-                'first_retained_index' => 0,
-                'trigger' => 'fork_prelaunch_sanitize',
-                'continue_after_compaction' => false,
+                'pending_tool_calls' => [],
+                'reason' => 'fork_prelaunch_sanitize',
+                'final_status' => RunStatus::Completed->value,
             ],
         ]]);
 

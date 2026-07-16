@@ -20,6 +20,7 @@ final readonly class DeferredSubagentChildProjectionDTO
         public string $agentName,
         public string $task,
         public ?string $definitionModel,
+        public ?string $reasoningOverride,
         public AgentArtifactKindEnum $artifactKind,
         public DeferredSubagentChildLaunchStatusEnum $launchStatus,
         public int $childEventCursor,

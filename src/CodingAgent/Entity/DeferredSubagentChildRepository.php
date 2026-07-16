@@ -71,6 +71,7 @@ final class DeferredSubagentChildRepository extends ServiceEntityRepository
                     'agent_name' => $intent['agentName'],
                     'task' => $intent['task'],
                     'definition_model' => $intent['definitionModel'],
+                    'reasoning_override' => $intent['reasoningOverride'] ?? null,
                     'artifact_kind' => $intent['artifactKind'],
                     'launch_status' => DeferredSubagentChildLaunchStatusEnum::Reserved->value,
                     'child_event_cursor' => 0,
@@ -95,7 +96,7 @@ final class DeferredSubagentChildRepository extends ServiceEntityRepository
     }
 
     /**
-     * @param array{batchIndex: int, childRunId: string, artifactId: string, agentName: string, task: string, definitionModel: ?string, artifactKind: string} $intent
+     * @param array{batchIndex: int, childRunId: string, artifactId: string, agentName: string, task: string, definitionModel: ?string, artifactKind: string, reasoningOverride?: ?string} $intent
      */
     public function assertChildMatchesIntent(DeferredSubagentChild $row, array $intent): void
     {
@@ -185,6 +186,7 @@ final class DeferredSubagentChildRepository extends ServiceEntityRepository
             agentName: $row->agentName,
             task: $row->task,
             definitionModel: $row->definitionModel,
+            reasoningOverride: $row->reasoningOverride,
             artifactKind: $row->artifactKind,
             launchStatus: $row->launchStatus,
             childEventCursor: $row->childEventCursor,

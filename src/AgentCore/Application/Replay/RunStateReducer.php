@@ -108,6 +108,7 @@ final readonly class RunStateReducer
             RunEventTypeEnum::ContextCompactionStarted->value => $this->applyContextCompactionStarted($payload, $state),
             RunEventTypeEnum::ContextCompacted->value => $this->applyContextCompacted($payload, $state, $messages),
             RunEventTypeEnum::ContextCompactionFailed->value => $this->applyContextCompactionFailed($payload, $state),
+            RunEventTypeEnum::RunMessagesReplaced->value => $this->applyRunMessagesReplaced($payload, $state, $messages, $pendingToolCalls),
             RunEventTypeEnum::TurnBranched->value,
             RunEventTypeEnum::LeafSet->value => $this->applyNoMutation($event, $state),
             default => $this->applyNoMutation($event, $state),
@@ -562,6 +563,61 @@ final readonly class RunStateReducer
      * @param array<string, mixed> $payload
      * @param list<AgentMessage>   $messages
      */
+
+    /**
+     * Generic checkpoint: replace run messages from payload without compaction semantics.
+     *
+     * @param array<string, mixed> $payload
+     * @param list<AgentMessage>   $messages
+     * @param array<string, bool>  $pendingToolCalls
+     */
+    private function applyRunMessagesReplaced(array $payload, RunState $state, array &$messages, array &$pendingToolCalls): RunState
+    {
+        $rawMessages = \is_array($payload['messages'] ?? null) ? $payload['messages'] : [];
+        $messages = [];
+        foreach ($rawMessages as $rawMessage) {
+            if (!\is_array($rawMessage)) {
+                continue;
+            }
+            $msg = AgentMessage::fromPayload($rawMessage);
+            if (null !== $msg) {
+                $messages[] = $msg;
+            }
+        }
+
+        if (\array_key_exists('pending_tool_calls', $payload)) {
+            $pendingToolCalls = [];
+            $rawPending = $payload['pending_tool_calls'];
+            if (\is_array($rawPending)) {
+                foreach ($rawPending as $callId => $pending) {
+                    if (\is_string($callId)) {
+                        $pendingToolCalls[$callId] = (bool) $pending;
+                    }
+                }
+            }
+        }
+
+        $finalStatus = RunStatus::Completed;
+        if (\is_string($payload['final_status'] ?? null)) {
+            $finalStatus = RunStatus::tryFrom($payload['final_status']) ?? RunStatus::Completed;
+        }
+
+        return new RunState(
+            runId: $state->runId,
+            status: $finalStatus,
+            version: $state->version,
+            turnNo: $state->turnNo,
+            lastSeq: $state->lastSeq,
+            isStreaming: false,
+            streamingMessage: null,
+            pendingToolCalls: $state->pendingToolCalls,
+            errorMessage: $state->errorMessage,
+            messages: $state->messages,
+            activeStepId: null,
+            retryableFailure: $state->retryableFailure,
+        );
+    }
+
     private function applyContextCompacted(array $payload, RunState $state, array &$messages): RunState
     {
         $rawMessages = \is_array($payload['messages'] ?? null) ? $payload['messages'] : [];

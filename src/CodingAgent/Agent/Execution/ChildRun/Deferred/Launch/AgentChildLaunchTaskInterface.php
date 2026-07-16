@@ -19,7 +19,7 @@ interface AgentChildLaunchTaskInterface
     public function definitionModel(): ?string;
 
     /**
-     * Optional reasoning/thinking hint from the parent tool call (in-memory only; not persisted on reserve rows).
+     * Optional reasoning/thinking hint from the parent tool call (persisted on deferred child rows when provided).
      */
     public function reasoningOverride(): ?string;
 }

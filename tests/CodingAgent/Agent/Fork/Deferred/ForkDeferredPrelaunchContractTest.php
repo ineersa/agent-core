@@ -50,7 +50,7 @@ final class ForkDeferredPrelaunchContractTest extends PerMethodIsolatedKernelTes
         ), 0));
 
         $lifecycleId = (string) Uuid::v4();
-        $toolCallId = 'fork-contract-sanitize-' . bin2hex(random_bytes(4));
+        $toolCallId = 'fork-contract-sanitize-'.bin2hex(random_bytes(4));
         $batchRepository->reserveBatch(
             lifecycleId: $lifecycleId,
             parentRunId: $parentRunId,
@@ -63,7 +63,7 @@ final class ForkDeferredPrelaunchContractTest extends PerMethodIsolatedKernelTes
             childIntents: [[
                 'batchIndex' => 1,
                 'childRunId' => (string) Uuid::v4(),
-                'artifactId' => 'agent_contract_' . bin2hex(random_bytes(4)),
+                'artifactId' => 'agent_contract_'.bin2hex(random_bytes(4)),
                 'agentName' => 'fork',
                 'task' => 'Explore layout',
                 'definitionModel' => null,
@@ -85,7 +85,7 @@ final class ForkDeferredPrelaunchContractTest extends PerMethodIsolatedKernelTes
         );
 
         $events = $eventStore->allFor($forkLocalRunId);
-        $this->assertTrue($this->eventLogContainsType($events, 'run_messages_replaced'));
+        $this->assertTrue($this->eventLogContainsType($events, RunEventTypeEnum::RunMessagesReplaced->value));
         $this->assertFalse($this->eventLogContainsSyntheticForkSanitizeCompaction($events));
 
         $replay = $rebuilder->rebuildIfStale(new RunState(
@@ -107,7 +107,7 @@ final class ForkDeferredPrelaunchContractTest extends PerMethodIsolatedKernelTes
         $batchRepository = self::getContainer()->get(DeferredSubagentBatchRepository::class);
         $parentRunId = self::getContainer()->get(HatfieldSessionStore::class)->createSession('Parent reasoning contract');
         $lifecycleId = (string) Uuid::v4();
-        $toolCallId = 'fork-contract-reasoning-' . bin2hex(random_bytes(4));
+        $toolCallId = 'fork-contract-reasoning-'.bin2hex(random_bytes(4));
 
         $batchRepository->reserveBatch(
             lifecycleId: $lifecycleId,
@@ -121,7 +121,7 @@ final class ForkDeferredPrelaunchContractTest extends PerMethodIsolatedKernelTes
             childIntents: [[
                 'batchIndex' => 1,
                 'childRunId' => (string) Uuid::v4(),
-                'artifactId' => 'agent_reason_' . bin2hex(random_bytes(4)),
+                'artifactId' => 'agent_reason_'.bin2hex(random_bytes(4)),
                 'agentName' => 'fork',
                 'task' => 'Task with reasoning',
                 'definitionModel' => 'openai/gpt-test',
@@ -208,17 +208,31 @@ final class ContractNoOpCompactRunner implements AgentRunnerInterface
         throw new \LogicException('Not expected.');
     }
 
-    public function continue(string $runId): void {}
+    public function continue(string $runId): void
+    {
+    }
 
-    public function steer(string $runId, AgentMessage $message): void {}
+    public function steer(string $runId, AgentMessage $message): void
+    {
+    }
 
-    public function followUp(string $runId, AgentMessage $message): void {}
+    public function followUp(string $runId, AgentMessage $message): void
+    {
+    }
 
-    public function appendMessage(string $runId, AgentMessage $message): void {}
+    public function appendMessage(string $runId, AgentMessage $message): void
+    {
+    }
 
-    public function cancel(string $runId, ?string $reason = null): void {}
+    public function cancel(string $runId, ?string $reason = null): void
+    {
+    }
 
-    public function answerHuman(string $runId, string $questionId, mixed $answer): void {}
+    public function answerHuman(string $runId, string $questionId, mixed $answer): void
+    {
+    }
 
-    public function compact(string $runId, ?string $customInstructions = null): void {}
+    public function compact(string $runId, ?string $customInstructions = null): void
+    {
+    }
 }

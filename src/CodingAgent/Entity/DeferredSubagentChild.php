@@ -44,6 +44,9 @@ class DeferredSubagentChild
     #[ORM\Column(name: 'definition_model', type: 'string', length: 255, nullable: true)]
     public ?string $definitionModel = null;
 
+    #[ORM\Column(name: 'reasoning_override', type: 'string', length: 64, nullable: true)]
+    public ?string $reasoningOverride = null;
+
     #[ORM\Column(name: 'artifact_kind', type: 'string', length: 32, enumType: AgentArtifactKindEnum::class)]
     public AgentArtifactKindEnum $artifactKind;
 

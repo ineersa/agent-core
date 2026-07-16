@@ -20,16 +20,14 @@ final readonly class DeferredAgentChildBatchChildIntentDTO
         public ?string $definitionModel,
         public AgentArtifactKindEnum $artifactKind,
         /**
-         * In-memory only: tool-call model/thinking overrides for prepare. Not persisted on reserve rows.
-         * On Messenger redelivery the original ExecuteToolCall is replayed; buildLaunchPlan() rebuilds this
-         * from AgentChildLaunchTaskInterface before preparePendingChildren() runs again.
+         * Optional tool-call thinking override persisted on deferred_subagent_child for fork/subagent resume.
          */
         public ?string $reasoningOverride = null,
     ) {
     }
 
     /**
-     * @return array{batchIndex: int, childRunId: string, artifactId: string, agentName: string, task: string, definitionModel: ?string, artifactKind: string}
+     * @return array{batchIndex: int, childRunId: string, artifactId: string, agentName: string, task: string, definitionModel: ?string, artifactKind: string, reasoningOverride: ?string}
      */
     public function toReserveArray(): array
     {
@@ -41,6 +39,7 @@ final readonly class DeferredAgentChildBatchChildIntentDTO
             'task' => $this->task,
             'definitionModel' => $this->definitionModel,
             'artifactKind' => $this->artifactKind->value,
+            'reasoningOverride' => $this->reasoningOverride,
         ];
     }
 }

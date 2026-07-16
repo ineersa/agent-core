@@ -43,6 +43,7 @@ enum RunEventTypeEnum: string
     case ContextCompactionStarted = 'context_compaction_started';
     case ContextCompacted = 'context_compacted';
     case ContextCompactionFailed = 'context_compaction_failed';
+    case RunMessagesReplaced = 'run_messages_replaced';
     // ── Turn tree metadata (append-only canonical) ───────────────────────
     case TurnBranched = 'turn_branched';
     case LeafSet = 'leaf_set';
