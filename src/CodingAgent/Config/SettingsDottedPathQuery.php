@@ -6,18 +6,22 @@ namespace Ineersa\CodingAgent\Config;
 
 /**
  * Dotted-path provenance against raw layers and merged effective config.
+ *
+ * Terminal paths (scalar, null, sequential list) report the winning layer.
+ * Non-list associative maps are composite: they exist in effective config but
+ * may mix child provenance, so no single layer is claimed.
  */
 final class SettingsDottedPathQuery
 {
     /**
      * @param array<string, mixed> $defaultsRaw
-     * @param array<string, mixed> $homeRaw
+     * @param array<string, mixed> $userRaw
      * @param array<string, mixed> $projectRaw
      * @param array<string, mixed> $effective
      */
     public static function query(
         array $defaultsRaw,
-        array $homeRaw,
+        array $userRaw,
         array $projectRaw,
         array $effective,
         string $dottedPath,
@@ -33,12 +37,21 @@ final class SettingsDottedPathQuery
 
         $value = self::getAtPath($effective, $segments);
 
+        if (\is_array($value) && self::isAssoc($value)) {
+            return new SettingsValueDTO(
+                exists: true,
+                value: $value,
+                layer: null,
+                composite: true,
+            );
+        }
+
         if (self::pathExists($projectRaw, $segments)) {
             return new SettingsValueDTO(exists: true, value: $value, layer: SettingsLayerEnum::Project);
         }
 
-        if (self::pathExists($homeRaw, $segments)) {
-            return new SettingsValueDTO(exists: true, value: $value, layer: SettingsLayerEnum::Home);
+        if (self::pathExists($userRaw, $segments)) {
+            return new SettingsValueDTO(exists: true, value: $value, layer: SettingsLayerEnum::User);
         }
 
         if (self::pathExists($defaultsRaw, $segments)) {
@@ -58,7 +71,30 @@ final class SettingsDottedPathQuery
             return [];
         }
 
-        return array_values(array_filter(explode('.', $dottedPath), static fn (string $s): bool => '' !== $s));
+        $segments = [];
+        foreach (explode('.', $dottedPath) as $segment) {
+            if ('' === $segment) {
+                continue;
+            }
+            if (preg_match('/[\x00-\x1F\x7F]/', $segment)) {
+                return [];
+            }
+            $segments[] = $segment;
+        }
+
+        return $segments;
+    }
+
+    /**
+     * @param array<mixed> $arr
+     */
+    private static function isAssoc(array $arr): bool
+    {
+        if ([] === $arr) {
+            return false;
+        }
+
+        return array_keys($arr) !== range(0, \count($arr) - 1);
     }
 
     /**

@@ -13,6 +13,7 @@ final readonly class SettingsValueDTO
         public bool $exists,
         public mixed $value = null,
         public ?SettingsLayerEnum $layer = null,
+        public bool $composite = false,
     ) {
     }
 }

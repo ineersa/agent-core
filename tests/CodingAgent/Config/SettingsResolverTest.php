@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Tests\Config;
 use Ineersa\CodingAgent\Config\SettingsLayerEnum;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Config\SettingsResolver;
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
 
 class SettingsResolverTest extends TestCase
@@ -19,11 +20,11 @@ class SettingsResolverTest extends TestCase
 
     protected function setUp(): void
     {
-        $this->tmpDir = sys_get_temp_dir().'/hatfield_test_'.bin2hex(random_bytes(8));
+        $this->tmpDir = TestDirectoryIsolation::createProjectTempDir('hatfield_resolver');
         $this->homeDir = $this->tmpDir.'/home/user';
 
-        mkdir($this->homeDir, 0755, true);
-        mkdir($this->homeDir.'/.hatfield', 0755, true);
+        TestDirectoryIsolation::ensureDirectory($this->homeDir);
+        TestDirectoryIsolation::ensureDirectory($this->homeDir.'/.hatfield');
 
         $this->pathResolver = new SettingsPathResolver(
             appRoot: '/app',
@@ -50,8 +51,7 @@ YAML
 
     protected function tearDown(): void
     {
-        // Clean up temp directory
-        $this->removeDir($this->tmpDir);
+        TestDirectoryIsolation::removeDirectory($this->tmpDir);
     }
 
     public function testLoadDefaultsOnly(): void
@@ -475,7 +475,7 @@ YAML
         $this->assertSame('cyberpunk', $config['tui']['theme']);
     }
 
-    public function testResolveDoesNotCreateHomeSettingsFile(): void
+    public function testResolveDoesNotCreateUserSettingsFile(): void
     {
         $cwd = $this->tmpDir.'/project';
         @mkdir($cwd, 0755, true);
@@ -502,7 +502,7 @@ YAML
         $resolution = $this->resolver->resolve($this->defaultsPath, $cwd);
 
         $this->assertSame('cyberpunk', $resolution->defaultsRaw['tui']['theme']);
-        $this->assertSame('home-theme', $resolution->homeRaw['tui']['theme']);
+        $this->assertSame('home-theme', $resolution->userRaw['tui']['theme']);
         $this->assertSame('project-theme', $resolution->projectRaw['tui']['theme']);
         $this->assertSame('project-theme', $resolution->effective['tui']['theme']);
     }
@@ -546,7 +546,7 @@ YAML
 ');
         $resolution2 = $this->resolver->resolve($this->defaultsPath, $cwd);
         $homeOnly = $resolution2->getValue('tui.theme');
-        $this->assertSame(SettingsLayerEnum::Home, $homeOnly->layer);
+        $this->assertSame(SettingsLayerEnum::User, $homeOnly->layer);
 
         @unlink($this->homeDir.'/.hatfield/settings.yaml');
         @unlink($cwd.'/.hatfield/settings.yaml');
@@ -588,6 +588,48 @@ YAML
         $this->assertSame(SettingsLayerEnum::Project, $theme->layer);
     }
 
+    public function testCompositeGroupDoesNotClaimSingleLayer(): void
+    {
+        $cwd = $this->tmpDir.'/project';
+        @mkdir($cwd.'/.hatfield', 0755, true);
+
+        file_put_contents($cwd.'/.hatfield/settings.yaml', <<<'YAML'
+tui:
+    theme: project-only-theme
+YAML
+        );
+
+        $resolution = $this->resolver->resolve($this->defaultsPath, $cwd);
+
+        $group = $resolution->getValue('tui');
+        $this->assertTrue($group->exists);
+        $this->assertTrue($group->composite);
+        $this->assertNull($group->layer);
+        $this->assertIsArray($group->value);
+        $this->assertSame('project-only-theme', $group->value['theme']);
+
+        $theme = $resolution->getValue('tui.theme');
+        $this->assertFalse($theme->composite);
+        $this->assertSame(SettingsLayerEnum::Project, $theme->layer);
+        $this->assertSame('project-only-theme', $theme->value);
+
+        $paths = $resolution->getValue('tui.theme_paths');
+        $this->assertFalse($paths->composite);
+        $this->assertSame(SettingsLayerEnum::Defaults, $paths->layer);
+        $this->assertNotEmpty($paths->value);
+    }
+
+    public function testDottedPathRejectsControlCharacters(): void
+    {
+        $cwd = $this->tmpDir.'/project';
+        @mkdir($cwd, 0755, true);
+
+        $resolution = $this->resolver->resolve($this->defaultsPath, $cwd);
+        $missing = $resolution->getValue("tui.theme\x00evil");
+
+        $this->assertFalse($missing->exists);
+    }
+
     public function testGetValueMissingPath(): void
     {
         $cwd = $this->tmpDir.'/project';
@@ -600,7 +642,7 @@ YAML
         $this->assertNull($missing->layer);
     }
 
-    public function testGetValueUnknownHomeKey(): void
+    public function testGetValueUnknownUserKey(): void
     {
         $cwd = $this->tmpDir.'/project';
         @mkdir($cwd, 0755, true);
@@ -613,24 +655,6 @@ YAML
 
         $this->assertTrue($value->exists);
         $this->assertTrue($value->value);
-        $this->assertSame(SettingsLayerEnum::Home, $value->layer);
-    }
-
-    private function removeDir(string $dir): void
-    {
-        if (!is_dir($dir)) {
-            return;
-        }
-
-        $iterator = new \RecursiveIteratorIterator(
-            new \RecursiveDirectoryIterator($dir, \RecursiveDirectoryIterator::SKIP_DOTS),
-            \RecursiveIteratorIterator::CHILD_FIRST,
-        );
-
-        foreach ($iterator as $file) {
-            $file->isDir() ? rmdir($file->getPathname()) : unlink($file->getPathname());
-        }
-
-        rmdir($dir);
+        $this->assertSame(SettingsLayerEnum::User, $value->layer);
     }
 }

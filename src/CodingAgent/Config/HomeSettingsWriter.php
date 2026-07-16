@@ -8,7 +8,9 @@ namespace Ineersa\CodingAgent\Config;
  * Persists ai.* keys into the home settings YAML file without destroying
  * hand-written comments on existing files.
  *
- * The home file is created on first mutation as a minimal sparse YAML document.
+ * Uses regex line replacement so comments survive — a Yaml::parse/dump
+ * round-trip would strip them. The home file is created on first mutation as
+ * a minimal sparse YAML document (no full defaults snapshot).
  */
 final class HomeSettingsWriter
 {
@@ -41,6 +43,13 @@ final class HomeSettingsWriter
     }
 
     /**
+     * Write a list value under the ai section, preserving comments.
+     *
+     * Only replaces an *active* (non-commented) key. Commented-out lines with
+     * the same key are left untouched — if the user commented out a key to
+     * disable it, the writer inserts a fresh active key instead of silently
+     * uncommenting the old one.
+     *
      * @param list<string> $values
      */
     private function writeAiListKey(string $filePath, string $key, array $values): void
@@ -60,6 +69,8 @@ final class HomeSettingsWriter
             $content = preg_replace($activePattern, $line, $content, 1);
         } elseif (preg_match('/^ai:\s*$/m', $content)) {
             $content = preg_replace('/^ai:\s*$/m', "ai:\n".$line, $content, 1);
+        } elseif ('' === $content) {
+            $content = "ai:\n".$line."\n";
         } else {
             $content = rtrim($content)."\n\nai:\n".$line."\n";
         }
@@ -67,6 +78,9 @@ final class HomeSettingsWriter
         $this->writeHomeSettings($filePath, $content);
     }
 
+    /**
+     * @throws \RuntimeException when the file cannot be read or written
+     */
     private function writeAiKey(string $filePath, string $key, string $value): void
     {
         $content = $this->readOrCreateHomeSettings($filePath);
@@ -79,6 +93,8 @@ final class HomeSettingsWriter
             $content = preg_replace($activePattern, $line, $content, 1);
         } elseif (preg_match('/^ai:\s*$/m', $content)) {
             $content = preg_replace('/^ai:\s*$/m', "ai:\n".$line, $content, 1);
+        } elseif ('' === $content) {
+            $content = "ai:\n".$line."\n";
         } else {
             $content = rtrim($content)."\n\nai:\n".$line."\n";
         }

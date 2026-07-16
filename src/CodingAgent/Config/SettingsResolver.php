@@ -8,13 +8,54 @@ use Symfony\Component\PropertyAccess\PropertyAccess;
 use Symfony\Component\Yaml\Yaml;
 
 /**
- * Stateless resolver for Hatfield settings layers (defaults < home < project).
+ * Loads and overlays Hatfield settings layers from YAML files.
  *
- * Each {@see resolve()} call rereads YAML from disk. User and project files are
- * sparse overrides; missing files contribute an empty overlay.
+ * Precedence order (last wins):
+ *   built-in defaults  <  user settings (~/.hatfield/settings.yaml)
+ *   <  project settings (<cwd>/.hatfield/settings.yaml)
+ *
+ * Each {@see resolve()} call rereads YAML from disk. Missing user/project files
+ * contribute an empty overlay; resolve never creates ~/.hatfield/settings.yaml.
+ *
+ * Overlay semantics (implemented in {@see overlayConfig}):
+ *  - Associative arrays: recursive deep overlay — keys present in the higher-
+ *    priority layer override matching keys in the lower layer; keys only in the
+ *    lower layer survive untouched.
+ *  - Indexed/sequential list arrays: higher-priority entire list replaces the
+ *    lower-priority list. Lists never append or index-merge.
+ *  - Scalar values (string, int, float, bool): higher-priority value wins;
+ *    lower-priority value is discarded.
+ *  - null values in a higher layer: replace whatever was below, same as any
+ *    other scalar.
+ *
+ * Why not array_merge_recursive()?
+ *  - array_merge_recursive() turns conflicting scalar values into arrays:
+ *    array_merge_recursive(['theme' => 'cyberpunk'], ['theme' => 'nord'])
+ *    produces ['theme' => ['cyberpunk', 'nord']] — two values where a single
+ *    winning value is expected. Config override semantics require the
+ *    higher-priority scalar to win cleanly, not to create an array.
+ *  - array_replace_recursive() handles scalars correctly but uses array key
+ *    identity for list elements, which can cause partial replacement when a
+ *    whole-list replace is intended.
+ *
+ * Path resolution:
+ *  - %kernel.project_dir% → app install directory (via SettingsPathResolver::$appRoot)
+ *  - ~ → home directory
+ *  - Relative paths resolve against the canonical runtime cwd passed to
+ *    {@see resolve()}, which comes from the %app.cwd% container parameter
+ *    (resolved from HATFIELD_CWD or kernel.project_dir).
+ *  - Raw layer snapshots in {@see SettingsResolutionDTO} keep unresolved path
+ *    strings; only {@see SettingsResolutionDTO::$effective} receives resolved paths.
  */
 final class SettingsResolver
 {
+    /**
+     * Path-bearing config keys resolved at load time.
+     *
+     * Keys use Symfony PropertyAccess bracket notation for array access.
+     * The value indicates whether the resolved value is a list (each element
+     * resolved individually) or a string (resolved as a single path).
+     */
     private const PATH_CONFIG = [
         '[tui][theme_paths]' => 'list',
         '[sessions][path]' => 'string',
@@ -36,17 +77,20 @@ final class SettingsResolver
             throw new \InvalidArgumentException(\sprintf('%s::resolve() requires a non-empty $cwd. Pass %s from the container or an explicit absolute path.', self::class, '%app.cwd%'));
         }
 
+        // Layer 1: Built-in defaults (shipped with the app)
         $defaultsRaw = $this->loadYamlFile($defaultsPath);
 
-        $homeSettingsPath = $this->pathResolver->getHomeDir().'/.hatfield/settings.yaml';
-        $homeRaw = $this->loadYamlFile($homeSettingsPath);
+        // Layer 2: User settings (~/.hatfield/settings.yaml), sparse overrides only
+        $userSettingsPath = $this->pathResolver->getHomeDir().'/.hatfield/settings.yaml';
+        $userRaw = $this->loadYamlFile($userSettingsPath);
 
+        // Layer 3: Project settings (<cwd>/.hatfield/settings.yaml)
         $projectSettingsPath = rtrim($cwd, '/').'/.hatfield/settings.yaml';
         $projectRaw = $this->loadYamlFile($projectSettingsPath);
 
         $merged = $defaultsRaw;
-        if ([] !== $homeRaw) {
-            $merged = $this->overlayConfig($merged, $homeRaw);
+        if ([] !== $userRaw) {
+            $merged = $this->overlayConfig($merged, $userRaw);
         }
         if ([] !== $projectRaw) {
             $merged = $this->overlayConfig($merged, $projectRaw);
@@ -56,15 +100,23 @@ final class SettingsResolver
 
         return new SettingsResolutionDTO(
             defaultsRaw: $defaultsRaw,
-            homeRaw: $homeRaw,
+            userRaw: $userRaw,
             projectRaw: $projectRaw,
             effective: $effective,
         );
     }
 
     /**
-     * @param array<string, mixed> $base
-     * @param array<string, mixed> $over
+     * Recursively overlay config layers so the higher-priority layer wins.
+     *
+     * Rules (per key):
+     *  1. Both sides are associative arrays → recurse (deep overlay).
+     *  2. Either side is a list (sequential array) → higher-priority list
+     *     replaces the lower-priority list entirely. Lists never append.
+     *  3. One or both sides are scalar/null → higher-priority value wins.
+     *
+     * @param array<string, mixed> $base Lower-priority layer (defaults)
+     * @param array<string, mixed> $over Higher-priority layer (user or project)
      *
      * @return array<string, mixed>
      */

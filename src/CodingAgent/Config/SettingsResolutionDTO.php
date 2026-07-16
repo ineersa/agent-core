@@ -7,17 +7,17 @@ namespace Ineersa\CodingAgent\Config;
 /**
  * Fresh settings resolution from disk: raw layers and merged effective config.
  */
-final class SettingsResolutionDTO
+final readonly class SettingsResolutionDTO
 {
     /**
      * @param array<string, mixed> $defaultsRaw
-     * @param array<string, mixed> $homeRaw
+     * @param array<string, mixed> $userRaw
      * @param array<string, mixed> $projectRaw
      * @param array<string, mixed> $effective
      */
     public function __construct(
         public array $defaultsRaw,
-        public array $homeRaw,
+        public array $userRaw,
         public array $projectRaw,
         public array $effective,
     ) {
@@ -27,7 +27,7 @@ final class SettingsResolutionDTO
     {
         return SettingsDottedPathQuery::query(
             $this->defaultsRaw,
-            $this->homeRaw,
+            $this->userRaw,
             $this->projectRaw,
             $this->effective,
             $dottedPath,

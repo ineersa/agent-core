@@ -219,11 +219,7 @@ class HomeSettingsWriterTest extends TestCase
         $this->writer->writeDefaultModel('zai/glm-5.1');
 
         $this->assertFileExists($this->file);
-        $content = $this->read();
-        $this->assertStringContainsString('ai:
-', $content);
-        $this->assertStringContainsString('default_model: zai/glm-5.1', $content);
-        $this->assertStringNotContainsString('tui:', $content);
+        $this->assertSame("ai:\n    default_model: zai/glm-5.1\n", $this->read());
 
         $p = $this->parse();
         $this->assertSame('zai/glm-5.1', $p['ai']['default_model'] ?? null);
@@ -236,6 +232,10 @@ class HomeSettingsWriterTest extends TestCase
         $this->writer->writeFavoriteModels(['zai/glm-5.1', 'deepseek/deepseek-v4-pro']);
 
         $this->assertFileExists($this->file);
+        $this->assertSame(
+            "ai:\n    favorite_models: [zai/glm-5.1, deepseek/deepseek-v4-pro]\n",
+            $this->read(),
+        );
         $p = $this->parse();
         $this->assertSame(['zai/glm-5.1', 'deepseek/deepseek-v4-pro'], $p['ai']['favorite_models'] ?? null);
     }

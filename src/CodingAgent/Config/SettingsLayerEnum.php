@@ -7,6 +7,6 @@ namespace Ineersa\CodingAgent\Config;
 enum SettingsLayerEnum: string
 {
     case Defaults = 'defaults';
-    case Home = 'home';
+    case User = 'user';
     case Project = 'project';
 }
