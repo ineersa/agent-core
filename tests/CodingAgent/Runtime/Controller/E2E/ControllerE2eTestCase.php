@@ -516,59 +516,6 @@ abstract class ControllerE2eTestCase extends TestCase
     }
 
     /**
-     * @return list<array<string, mixed>>
-     */
-    private function collectEventsUntilNamedToolCompleted(string $toolName, float $timeout, bool $stopOnParentTerminal): array
-    {
-        $events = [];
-        $targetToolCallIds = [];
-        $deadline = microtime(true) + $timeout;
-        $this->parentRunIdForCollection = '' !== $this->runId ? $this->runId : null;
-
-        while (microtime(true) < $deadline) {
-            foreach ($this->readEvents() as $event) {
-                $events[] = $event;
-                $this->noteParentRunIdFromEvent($event);
-
-                $type = $event['type'] ?? '';
-                $payload = $event['payload'] ?? [];
-                if (!\is_array($payload)) {
-                    $payload = [];
-                }
-
-                if ('tool_execution.started' === $type
-                    && $toolName === ($payload['tool_name'] ?? null)
-                    && isset($payload['tool_call_id'])
-                ) {
-                    $targetToolCallIds[(string) $payload['tool_call_id']] = true;
-                }
-
-                if ('tool_execution.completed' === $type
-                    && isset($payload['tool_call_id'])
-                    && isset($targetToolCallIds[(string) $payload['tool_call_id']])
-                ) {
-                    return $events;
-                }
-
-                if ($stopOnParentTerminal && $this->isParentRunTerminalEvent($event)) {
-                    return $events;
-                }
-            }
-
-            if (!$this->isRunning()) {
-                foreach ($this->readEvents() as $event) {
-                    $events[] = $event;
-                }
-                break;
-            }
-
-            usleep(10_000);
-        }
-
-        return $events;
-    }
-
-    /**
      * @param array<string, mixed> $event
      */
     protected function noteParentRunIdFromEvent(array $event): void
@@ -978,6 +925,59 @@ YAML;
             ." tracked PIDs still alive after teardown:\n"
             .implode("\n", $names)."\n",
         );
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function collectEventsUntilNamedToolCompleted(string $toolName, float $timeout, bool $stopOnParentTerminal): array
+    {
+        $events = [];
+        $targetToolCallIds = [];
+        $deadline = microtime(true) + $timeout;
+        $this->parentRunIdForCollection = '' !== $this->runId ? $this->runId : null;
+
+        while (microtime(true) < $deadline) {
+            foreach ($this->readEvents() as $event) {
+                $events[] = $event;
+                $this->noteParentRunIdFromEvent($event);
+
+                $type = $event['type'] ?? '';
+                $payload = $event['payload'] ?? [];
+                if (!\is_array($payload)) {
+                    $payload = [];
+                }
+
+                if ('tool_execution.started' === $type
+                    && $toolName === ($payload['tool_name'] ?? null)
+                    && isset($payload['tool_call_id'])
+                ) {
+                    $targetToolCallIds[(string) $payload['tool_call_id']] = true;
+                }
+
+                if ('tool_execution.completed' === $type
+                    && isset($payload['tool_call_id'])
+                    && isset($targetToolCallIds[(string) $payload['tool_call_id']])
+                ) {
+                    return $events;
+                }
+
+                if ($stopOnParentTerminal && $this->isParentRunTerminalEvent($event)) {
+                    return $events;
+                }
+            }
+
+            if (!$this->isRunning()) {
+                foreach ($this->readEvents() as $event) {
+                    $events[] = $event;
+                }
+                break;
+            }
+
+            usleep(10_000);
+        }
+
+        return $events;
     }
 
     /**
