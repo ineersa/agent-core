@@ -10,9 +10,8 @@ use Ineersa\CodingAgent\Compaction\VirtualCompactionOrchestratorInterface;
 /**
  * Fork virtual-compaction adapter.
  *
- * Delegates to {@see VirtualCompactionOrchestrator} using canonical compaction
- * prepare() semantics. Under-threshold contexts pass through unchanged; the
- * parent run is never mutated.
+ * Delegates to {@see VirtualCompactionOrchestrator} with force=true so every
+ * fork launch receives compacted child context without mutating the parent run.
  */
 final readonly class ForkSnapshotCompactor
 {
@@ -26,7 +25,7 @@ final readonly class ForkSnapshotCompactor
      */
     public function compact(array $sanitized, string $parentRunId): ForkCompactionResult
     {
-        $result = $this->virtualCompactionOrchestrator->compactForRun($parentRunId, $sanitized, force: false);
+        $result = $this->virtualCompactionOrchestrator->compactForRun($parentRunId, $sanitized, force: true);
 
         return new ForkCompactionResult(
             messages: $result->compactedMessages,
