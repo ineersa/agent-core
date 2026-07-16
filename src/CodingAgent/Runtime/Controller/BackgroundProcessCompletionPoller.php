@@ -189,7 +189,8 @@ final class BackgroundProcessCompletionPoller
             // Unscopped process — cannot send follow-up without a run.
             // Mark notified to avoid re-polling.
             $now = new \DateTimeImmutable();
-            $this->processStore->markCompletionNotifiedForRecord($process->id, $now);
+            $process->markCompletionNotified($now);
+            $this->processStore->flush();
 
             $this->logger->info('bg_process_completion.skipped_no_session', [
                 'component' => 'bg_process_completion.poller',
@@ -259,7 +260,8 @@ final class BackgroundProcessCompletionPoller
 
         // Only mark notified after successful send.
         $now = new \DateTimeImmutable();
-        $this->processStore->markCompletionNotifiedForRecord($process->id, $now);
+        $process->markCompletionNotified($now);
+        $this->processStore->flush();
 
         $this->logger->info('bg_process_completion.notification_sent', [
             'component' => 'bg_process_completion.poller',

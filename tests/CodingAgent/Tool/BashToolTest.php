@@ -12,6 +12,7 @@ use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
 use Ineersa\CodingAgent\Config\BashToolConfig;
 use Ineersa\CodingAgent\Config\OutputCapConfig;
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessLifecycle;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessStore;
@@ -61,8 +62,7 @@ final class BashToolTest extends IsolatedKernelTestCase
     {
         parent::setUp();
 
-        $this->tmpDir = sys_get_temp_dir().'/hatfield_bashtool_test_'.bin2hex(random_bytes(8));
-        mkdir($this->tmpDir, 0750, recursive: true);
+        $this->tmpDir = TestDirectoryIsolation::createOsTempDir('hatfield_bashtool_test');
 
         $this->bgConfig = new BackgroundProcessConfig(
             storageDir: $this->tmpDir,
@@ -84,7 +84,7 @@ final class BashToolTest extends IsolatedKernelTestCase
     protected function tearDown(): void
     {
         $this->cleanupProcesses();
-        $this->rmDir($this->tmpDir);
+        TestDirectoryIsolation::removeDirectory($this->tmpDir);
 
         parent::tearDown();
     }
@@ -431,7 +431,7 @@ final class BashToolTest extends IsolatedKernelTestCase
         $this->assertSame($pid, $entities[0]->pid, 'The background process should have the same PID');
 
         // Verify the process is marked as backgrounded (backgroundAt is set)
-        // This confirms the markBackgrounded() call was made in BashTool.
+        // This confirms markBackgroundedForRecord() was made in BashTool.
         $this->assertNotNull($entities[0]->backgroundedAt, 'Background process should have backgroundedAt set');
 
         // Verify the log contains our unique marker
@@ -850,28 +850,6 @@ final class BashToolTest extends IsolatedKernelTestCase
                 }
             }
         }
-    }
-
-    private function rmDir(string $path): void
-    {
-        if (!is_dir($path)) {
-            return;
-        }
-
-        $items = new \RecursiveIteratorIterator(
-            new \RecursiveDirectoryIterator($path, \RecursiveDirectoryIterator::SKIP_DOTS),
-            \RecursiveIteratorIterator::CHILD_FIRST,
-        );
-
-        foreach ($items as $item) {
-            if ($item->isDir()) {
-                @rmdir((string) $item);
-            } else {
-                @unlink((string) $item);
-            }
-        }
-
-        @rmdir($path);
     }
 }
 
