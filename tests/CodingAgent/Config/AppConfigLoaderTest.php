@@ -628,6 +628,9 @@ YAML
         $missing = $resolution->getValue("tui.theme\x00evil");
 
         $this->assertFalse($missing->exists);
+
+        $bracketSegment = $resolution->getValue('tui.the]me');
+        $this->assertFalse($bracketSegment->exists);
     }
 
     public function testGetValueMissingPath(): void
