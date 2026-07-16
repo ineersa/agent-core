@@ -14,6 +14,7 @@ use Ineersa\AgentCore\Domain\Model\PlatformInvocationResult;
 use Ineersa\AgentCore\Domain\Tool\ToolResult;
 use Ineersa\AgentCore\Tests\Support\Fake\FakePlatform;
 use Ineersa\AgentCore\Tests\Support\Fake\FakeToolExecutor;
+use Ineersa\AgentCore\Tests\Support\InMemoryDeferredToolCompletionRepository;
 use Ineersa\AgentCore\Tests\Support\SymfonyAiTestMessages;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use PHPUnit\Framework\TestCase;
@@ -105,6 +106,7 @@ final class ExecutionFailureDrillTest extends TestCase
         $failingWorker = new ExecuteToolCallWorker(
             toolExecutor: $toolExecutor,
             commandBus: new FailingOnceMessageBus(new TransportException('simulated dispatch crash')),
+            deferredToolCompletionRepository: new InMemoryDeferredToolCompletionRepository(),
         );
 
         try {
@@ -115,7 +117,7 @@ final class ExecutionFailureDrillTest extends TestCase
         }
 
         $collectingBus = new TestMessageBus();
-        $retryWorker = new ExecuteToolCallWorker($toolExecutor, $collectingBus);
+        $retryWorker = new ExecuteToolCallWorker($toolExecutor, $collectingBus, new InMemoryDeferredToolCompletionRepository());
         $retryWorker($message);
 
         $this->assertCount(1, $collectingBus->messages);

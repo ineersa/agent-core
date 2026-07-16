@@ -130,6 +130,34 @@ final class AgentChildRunEventStore implements EventStoreInterface
     }
 
     /**
+     * Recovery-only tail read of durable child events.jsonl (not for steady-state supervision).
+     *
+     * @return list<RunEvent> Events with seq > $cursor, sorted ascending. Sequence holes are preserved.
+     */
+    public function readAfterSeq(int $cursor): array
+    {
+        $path = $this->eventsPath();
+        $lock = $this->lockFactory->createLock("hatfield-run-{$this->agentRunId}");
+        $lock->acquire(true);
+
+        try {
+            $events = [];
+            foreach ($this->streamRunEventsFromPath($path) as $event) {
+                if ($event->seq <= $cursor) {
+                    continue;
+                }
+                $events[] = $event;
+            }
+
+            usort($events, static fn (RunEvent $left, RunEvent $right): int => $left->seq <=> $right->seq);
+
+            return $events;
+        } finally {
+            $lock->release();
+        }
+    }
+
+    /**
      * @return list<RunEvent>
      */
     public function allFor(string $runId): array
@@ -139,63 +167,78 @@ final class AgentChildRunEventStore implements EventStoreInterface
         }
 
         $path = $this->eventsPath();
-
         if (!is_readable($path)) {
             return [];
         }
 
-        $contents = file_get_contents($path);
-        if (false === $contents) {
-            return [];
-        }
-
-        $events = [];
-
-        foreach (explode("\n", $contents) as $line) {
-            $trimmedLine = trim($line);
-            if ('' === $trimmedLine) {
-                continue;
-            }
-
-            try {
-                $payload = json_decode($trimmedLine, true, 512, \JSON_THROW_ON_ERROR);
-            } catch (\JsonException $e) {
-                throw new \RuntimeException(\sprintf('Corrupt event JSONL line for child run "%s": %s', $this->agentRunId, $e->getMessage()), previous: $e);
-            }
-
-            if (!\is_array($payload)) {
-                $this->logger->warning('AgentChildRunEventStore skipped non-associative JSONL line', [
-                    'run_id' => $this->agentRunId,
-                    'line' => mb_substr($trimmedLine, 0, 200),
-                ]);
-
-                continue;
-            }
-
-            $event = $this->eventPayloadNormalizer->denormalizeRunEvent($payload);
-            if (null === $event) {
-                if (!$this->isIncompatibleSchemaVersion($payload)) {
-                    throw new \RuntimeException(\sprintf('Corrupt event JSONL for child run "%s": denormalization returned null for compatible or missing schema', $this->agentRunId));
-                }
-
-                $this->logger->debug('Skipping incompatible schema version in child event JSONL', [
-                    'run_id' => $this->agentRunId,
-                    'schema_version' => $payload['schema_version'],
-                ]);
-
-                continue;
-            }
-
-            if ($event->runId !== $this->agentRunId) {
-                throw new \RuntimeException(\sprintf('RunEvent integrity error at seq %d: embedded runId "%s" does not match bound agentRunId "%s".', $event->seq, $event->runId, $this->agentRunId));
-            }
-
-            $events[] = $event;
-        }
-
+        $events = iterator_to_array($this->streamRunEventsFromPath($path));
         usort($events, static fn (RunEvent $left, RunEvent $right): int => $left->seq <=> $right->seq);
 
         return $events;
+    }
+
+    /**
+     * @return \Generator<int, RunEvent>
+     */
+    private function streamRunEventsFromPath(string $path): \Generator
+    {
+        if (!is_readable($path)) {
+            return;
+        }
+
+        $handle = fopen($path, 'rb');
+        if (false === $handle) {
+            return;
+        }
+
+        try {
+            while (($line = fgets($handle)) !== false) {
+                $trimmedLine = trim($line);
+                if ('' === $trimmedLine) {
+                    continue;
+                }
+
+                try {
+                    $payload = json_decode($trimmedLine, true, 512, \JSON_THROW_ON_ERROR);
+                } catch (\JsonException $e) {
+                    throw new \RuntimeException(\sprintf('Corrupt event JSONL line for child run "%s": %s', $this->agentRunId, $e->getMessage()), previous: $e);
+                }
+
+                if (!\is_array($payload)) {
+                    $this->logger->warning('AgentChildRunEventStore skipped non-associative JSONL line', [
+                        'run_id' => $this->agentRunId,
+                        'component' => 'agent.artifact',
+                        'event_type' => 'child_event_store.non_associative_line',
+                    ]);
+
+                    continue;
+                }
+
+                $event = $this->eventPayloadNormalizer->denormalizeRunEvent($payload);
+                if (null === $event) {
+                    if (!$this->isIncompatibleSchemaVersion($payload)) {
+                        throw new \RuntimeException(\sprintf('Corrupt event JSONL for child run "%s": denormalization returned null for compatible or missing schema', $this->agentRunId));
+                    }
+
+                    $this->logger->debug('Skipping incompatible schema version in child event JSONL', [
+                        'run_id' => $this->agentRunId,
+                        'schema_version' => $payload['schema_version'] ?? null,
+                        'component' => 'agent.artifact',
+                        'event_type' => 'child_event_store.incompatible_schema',
+                    ]);
+
+                    continue;
+                }
+
+                if ($event->runId !== $this->agentRunId) {
+                    throw new \RuntimeException(\sprintf('RunEvent integrity error at seq %d: embedded runId "%s" does not match bound agentRunId "%s".', $event->seq, $event->runId, $this->agentRunId));
+                }
+
+                yield $event;
+            }
+        } finally {
+            fclose($handle);
+        }
     }
 
     private function writeEventLocked(string $path, RunEvent $event): void

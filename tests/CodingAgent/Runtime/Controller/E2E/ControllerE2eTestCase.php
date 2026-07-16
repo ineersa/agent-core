@@ -27,6 +27,9 @@ abstract class ControllerE2eTestCase extends TestCase
 
     /** @var array<int, resource> */
     protected array $pipes = [];
+
+    /** @var list<int> PIDs in this test's controller subprocess tree (proc child + descendants). */
+    protected array $trackedControllerPids = [];
     protected string $stdoutBuf = '';
     protected string $stderrBuf = '';
     protected string $runId = '';
@@ -62,6 +65,7 @@ abstract class ControllerE2eTestCase extends TestCase
 
         $this->process = null;
         $this->pipes = [];
+        $this->trackedControllerPids = [];
         $this->stdoutBuf = '';
         $this->stderrBuf = '';
         $this->runId = '';
@@ -228,6 +232,8 @@ abstract class ControllerE2eTestCase extends TestCase
         stream_set_blocking($pipes[0], true);
         stream_set_blocking($pipes[1], false);
         stream_set_blocking($pipes[2], false);
+
+        $this->trackControllerProcessTree($process);
     }
 
     protected function stopProcess(): void
@@ -243,19 +249,40 @@ abstract class ControllerE2eTestCase extends TestCase
             return;
         }
 
-        if ($this->isRunning()) {
-            @proc_terminate($this->process, \SIGTERM);
-            $deadline = microtime(true) + 3.0;
-            while ($this->isRunning() && microtime(true) < $deadline) {
+        $this->refreshTrackedControllerPids();
+
+        foreach ($this->trackedControllerPids as $pid) {
+            if ($this->isProcessOwnedForTeardown($pid)) {
+                @posix_kill($pid, \SIGTERM);
+            }
+        }
+
+        $deadline = microtime(true) + 1.0;
+        $stillAlive = true;
+        while ($stillAlive && microtime(true) < $deadline) {
+            $stillAlive = false;
+            foreach ($this->trackedControllerPids as $pid) {
+                if ($this->isProcessOwnedForTeardown($pid) && $this->isControllerPidAlive($pid)) {
+                    $stillAlive = true;
+                    break;
+                }
+            }
+            if ($stillAlive) {
                 usleep(50_000);
             }
-            if ($this->isRunning()) {
-                @proc_terminate($this->process, \SIGKILL);
+        }
+
+        foreach ($this->trackedControllerPids as $pid) {
+            if ($this->isProcessOwnedForTeardown($pid) && $this->isControllerPidAlive($pid)) {
+                @posix_kill($pid, \SIGKILL);
             }
         }
 
         @proc_close($this->process);
         $this->process = null;
+
+        $this->logControllerProcessSurvivors();
+        $this->trackedControllerPids = [];
     }
 
     /** @phpstan-impure */
@@ -721,6 +748,202 @@ YAML;
 
         file_put_contents($this->tempDir.'/.hatfield/settings.yaml', $settings);
         file_put_contents($this->tempDir.'/.hatfield/.gitignore', "*\n");
+    }
+
+    /**
+     * Record the controller proc child and any descendants for bounded teardown.
+     */
+    protected function trackControllerProcessTree(mixed $process): void
+    {
+        if (!\is_resource($process)) {
+            return;
+        }
+
+        $status = @proc_get_status($process);
+        if (!\is_array($status) || !isset($status['pid'])) {
+            return;
+        }
+
+        $rootPid = (int) $status['pid'];
+        $this->trackedControllerPids = array_values(array_unique(array_merge(
+            [$rootPid],
+            $this->discoverControllerChildPids($rootPid),
+        )));
+    }
+
+    /**
+     * Refresh descendant PIDs immediately before shutdown (Messenger consumers
+     * may spawn after the initial track at proc_open).
+     */
+    protected function refreshTrackedControllerPids(): void
+    {
+        if (null === $this->process) {
+            return;
+        }
+
+        $status = @proc_get_status($this->process);
+        if (!\is_array($status) || !isset($status['pid'])) {
+            return;
+        }
+
+        $rootPid = (int) $status['pid'];
+        $this->trackedControllerPids = array_values(array_unique(array_merge(
+            $this->trackedControllerPids,
+            [$rootPid],
+            $this->discoverControllerChildPids($rootPid),
+        )));
+    }
+
+    /**
+     * @return list<int>
+     */
+    protected function discoverControllerChildPids(int $parentPid): array
+    {
+        $pids = [];
+
+        $childrenPath = "/proc/{$parentPid}/task/{$parentPid}/children";
+        if (is_readable($childrenPath)) {
+            $content = (string) @file_get_contents($childrenPath);
+            foreach (explode(' ', trim($content)) as $token) {
+                $childPid = (int) $token;
+                if ($childPid <= 1 || !$this->isProcessOwnedForTeardown($childPid)) {
+                    continue;
+                }
+                $pids[] = $childPid;
+                $pids = array_merge($pids, $this->discoverControllerChildPids($childPid));
+            }
+
+            return $pids;
+        }
+
+        $procDir = '/proc';
+        if (!is_dir($procDir)) {
+            return $pids;
+        }
+
+        $entries = @scandir($procDir);
+        if (false === $entries) {
+            return $pids;
+        }
+
+        foreach ($entries as $entry) {
+            $candidatePid = (int) $entry;
+            if ($candidatePid <= 1 || (string) $candidatePid !== $entry) {
+                continue;
+            }
+
+            $statPath = "{$procDir}/{$entry}/stat";
+            if (!is_readable($statPath)) {
+                continue;
+            }
+
+            $stat = (string) @file_get_contents($statPath);
+            if ('' === $stat) {
+                continue;
+            }
+
+            if (preg_match('/^\d+\s+\(.*?\)\s+\w\s+(\d+)/', $stat, $m)
+                && (int) $m[1] === $parentPid
+            ) {
+                if (!$this->isProcessOwnedForTeardown($candidatePid)) {
+                    continue;
+                }
+                $pids[] = $candidatePid;
+                $pids = array_merge($pids, $this->discoverControllerChildPids($candidatePid));
+            }
+        }
+
+        return $pids;
+    }
+
+    protected function isProcessOwnedForTeardown(int $pid): bool
+    {
+        if ($pid <= 1) {
+            return false;
+        }
+
+        $stat = @file_get_contents("/proc/{$pid}/stat");
+        if (false === $stat) {
+            return false;
+        }
+
+        $closeParen = strrpos($stat, ')');
+        if (false === $closeParen) {
+            return false;
+        }
+
+        $rest = trim(substr($stat, $closeParen + 1));
+        $fields = preg_split('/\s+/', $rest) ?: [];
+        if ((int) ($fields[2] ?? -1) !== posix_getuid()) {
+            return false;
+        }
+
+        if ('' === $this->sessionId) {
+            return true;
+        }
+
+        $environ = @file_get_contents("/proc/{$pid}/environ");
+        if (false === $environ) {
+            return false;
+        }
+
+        $expected = 'HATFIELD_SESSION_ID='.$this->sessionId;
+        foreach (explode("\0", $environ) as $entry) {
+            if ($entry === $expected) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    protected function isControllerPidAlive(int $pid): bool
+    {
+        if (!@posix_kill($pid, 0)) {
+            return false;
+        }
+
+        $stat = @file_get_contents("/proc/{$pid}/stat");
+        if (false === $stat) {
+            return true;
+        }
+
+        $closeParen = strrpos($stat, ')');
+        if (false === $closeParen) {
+            return true;
+        }
+
+        $rest = trim(substr($stat, $closeParen + 1));
+        $fields = preg_split('/\s+/', $rest) ?: [];
+
+        return 'Z' !== ($fields[0] ?? '');
+    }
+
+    protected function logControllerProcessSurvivors(): void
+    {
+        $survivors = [];
+        foreach ($this->trackedControllerPids as $pid) {
+            if ($this->isProcessOwnedForTeardown($pid) && $this->isControllerPidAlive($pid)) {
+                $survivors[] = $pid;
+            }
+        }
+
+        if ([] === $survivors) {
+            return;
+        }
+
+        $names = [];
+        foreach ($survivors as $pid) {
+            $cmdline = (string) @file_get_contents("/proc/{$pid}/cmdline");
+            $names[] = "  PID {$pid}: ".str_replace("\0", ' ', $cmdline ?: '(unknown)');
+        }
+
+        fwrite(
+            \STDERR,
+            '[WARNING] Controller E2E process ownership: '.\count($survivors)
+            ." tracked PIDs still alive after teardown:\n"
+            .implode("\n", $names)."\n",
+        );
     }
 
     /**

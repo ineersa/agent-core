@@ -10,7 +10,10 @@
   `RunEvent::$runId`.
 - **`provider_cache_key`.** Each persisted session row also stores an immutable
   UUIDv7 (`hatfield_session.provider_cache_key`) generated once at creation (and
-  backfilled for existing rows). Model resolution exposes it as an internal
+  backfilled for existing rows; SQLite keeps the column nullable at DDL while
+  repair migration `Version20260715120000` assigns distinct UUIDv7 values for any
+  NULL or empty rows left after earlier backfill). Model resolution exposes it as
+  an internal
   invocation option for provider adapters. Codex uses it for `prompt_cache_key`
   and correlation headers. DeepSeek, Z.AI, and generic OpenAI-compatible
   providers do not receive this field on the wire today.
@@ -65,8 +68,20 @@ Parent sessions that launch child subagents store child run data under
 - **Child events and state** use the same Canonical JSONL and CAS patterns as
   parent runs, stored under the parent directory via `AgentChildRunEventStore`
   and `AgentChildRunStore`.
-- All child stores use per-instance binding (`parentRunId` + `agentRunId` +
-  `artifactId`) and resolve paths through `AgentArtifactPathResolver`.
+
+### Deferred subagent supervision (Single and Parallel)
+
+Parent subagent tool calls (single or parallel) use the normalized deferred batch model:
+
+- Durable tables `deferred_subagent_batch` and `deferred_subagent_child` store one batch per parent tool call. `execution_mode` distinguishes explicit Single vs Parallel. Parent tool correlation (`parent_turn_no`, `parent_tool_call_id`, `parent_order_index`) is stored durably on the batch row.
+- `SubagentExecutionService` delegates both `execute()` and `executeParallel()` to `DeferredSubagentBatchLaunchService`, which reserves the batch, starts children in `batch_index` order, and returns `DeferredToolCompletionOutcome` with deterministic `lifecycle_id` (batch UUID v5 from parent run + tool call).
+- Child `events.jsonl` and `state.json` under the parent artifact remain **durable replay, recovery, and diagnostics only**. Steady-state supervision does **not** poll these files or parent/child `RunStore`.
+- After each child `RunCommit`, `AfterTurnCommitHookContext` carries persisted committed event summaries (allocated `seq`). `DeferredSubagentBatchChildTurnHookSubscriber` dispatches `ObserveDeferredSubagentBatchChildTurnMessage` to `run_control` for tracked Launched children only.
+- The run_control observe handler incrementally reduces summaries into a compact per-child JSON projection (`child_lifecycle_projection`, `child_event_cursor`) with batch-level `aggregate_progress_revision` and delivery markers. Parent `subagent_progress` uses mode-aware payloads (flat single vs aggregate parallel) and stored parent correlation via `SubagentProgressEventAppender` (not `StackToolExecutionContextAccessor`).
+- `DeferredToolCompletionRegisteredEvent` wakes batch lifecycle delivery after generic deferred registration. Natural terminal completion and interruption completion are mode-aware on the normalized batch stack.
+- Timeout uses `InterruptDeferredSubagentBatchMessage` on `run_control` with `DelayStamp` from persisted `deadline_at`. Parent cancellation uses `DeferredSubagentBatchParentCancelHookSubscriber` on parent `AfterTurnCommit` when status is `cancelling` or `cancelled`. First-wins interruption intent is durable under optimistic locking; `AgentRunner::cancel` runs before delivery when appropriate.
+- Gap observation enqueues `RecoverDeferredSubagentBatchLifecycleMessage` without advancing the cursor from the gap batch. Recovery tails each child `events.jsonl` only via `AgentChildRunEventStore::readAfterSeq(cursor)`, reconciles all child rows in `batch_index` order, then enqueues `DeliverDeferredSubagentBatchLifecycleMessage` (even when tails are empty).
+- `run_control` `WorkerStartedEvent` recovery is scoped to `%env(HATFIELD_SESSION_ID)%` and reconciles unfinished `Reserved` or `Launched` batch rows for that parent session; persisted interruption intents and pending timeouts are re-enqueued from durable markers.
 
 ### Session metadata (database)
 
@@ -95,7 +110,7 @@ Typed fields on `HatfieldSession` (Doctrine entity):
 | `modelName` | `?string` | Denormalized model name |
 | `reasoning` | `?string` | off/minimal/low/medium/high/xhigh/max when set |
 | `name` | `string` | Non-empty display name (default from first message) |
-| `providerCacheKey` | `string` | Immutable UUIDv7 for provider cache/correlation |
+| `providerCacheKey` | `?string` | UUIDv7 for provider cache/correlation; healthy persisted rows are non-null (assigned at creation or repaired at agent startup) |
 | `createdAt` | `\DateTimeImmutable` | Row creation time |
 | `updatedAt` | `\DateTimeImmutable` | Last metadata update |
 
