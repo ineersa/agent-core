@@ -14,8 +14,6 @@ use Ineersa\AgentCore\Domain\Model\ModelInvocationRequest;
 use Ineersa\CodingAgent\Agent\Fork\ForkCompactionFailureReasonEnum;
 use Ineersa\CodingAgent\Agent\Fork\ForkCompactionSummarizationException;
 use Ineersa\CodingAgent\Config\CompactionConfig;
-use Ineersa\CodingAgent\Compaction\CompactionBoundarySelector;
-use Ineersa\CodingAgent\Compaction\CompactionTokenEstimator;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 
@@ -68,7 +66,7 @@ final readonly class VirtualCompactionOrchestrator implements VirtualCompactionO
         try {
             $summaryText = $this->summarizePreparation($preparation, $resolvedModel, $modelOptions);
         } catch (ForkCompactionSummarizationException $exception) {
-            throw new ForkCompactionSummarizationException('Fork launch requires compacted parent context but summarization failed: '.$exception->getMessage(), $exception->reason(), hint: $exception->hint() ?? 'Check compaction.model, parent session model, and LLM availability, then retry fork.', previous: $exception);
+            throw new ForkCompactionSummarizationException('Fork launch requires compacted parent context but summarization failed: '.$exception->getMessage(), $exception->reason(), hint: $exception->hint() ?? 'Fork compaction summarization failed. Check compaction.model, parent session model, and retry fork.', previous: $exception);
         }
 
         $prepareResult = $this->toPrepareResult($preparation);
@@ -193,11 +191,6 @@ final readonly class VirtualCompactionOrchestrator implements VirtualCompactionO
     /**
      * @param array<string, mixed> $modelOptions
      */
-    private const INEFFECTIVE_RETRY_INSTRUCTION = 'Your previous summary was too long and did not reduce context size. Produce a materially shorter, denser summary. Omit repetition and keep only decisions, constraints, file paths, and unresolved work.';
-
-    /**
-     * @param array<string, mixed> $modelOptions
-     */
     private function summarizePreparation(
         CompactionPreparationDTO $preparation,
         string $resolvedModel,
@@ -221,12 +214,20 @@ final readonly class VirtualCompactionOrchestrator implements VirtualCompactionO
             }
         }
 
+        $retryBudget = $this->computeRetryMaxOutputTokens($preparation);
+        if ($retryBudget <= 0) {
+            throw new ForkCompactionSummarizationException('Fork compaction summarization was ineffective (no output token budget remains after retained context).', ForkCompactionFailureReasonEnum::IneffectiveSummary, hint: 'The retained tail and compact-summary wrapper already consume the full estimated context budget, so a shorter summary cannot shrink further. Shorten retained parent context or adjust compaction settings, then retry fork.');
+        }
+
+        $retryInstruction = $this->buildIneffectiveRetryInstruction($retryBudget);
+
         return $this->invokeSummarizationAttempt(
             $preparation,
             $resolvedModel,
             $modelOptions,
-            self::INEFFECTIVE_RETRY_INSTRUCTION,
+            $retryInstruction,
             2,
+            $retryBudget,
         );
     }
 
@@ -239,17 +240,28 @@ final readonly class VirtualCompactionOrchestrator implements VirtualCompactionO
         array $modelOptions,
         ?string $customInstructions,
         int $attempt,
+        ?int $maxOutputTokens = null,
     ): string {
         $prepareResult = $this->toPrepareResult($preparation);
         $summarizationMessages = $this->compactionService->buildSummarizationMessages($prepareResult, $customInstructions);
 
-        $this->logger->info('Fork virtual compaction summarization started.', [
+        $startedContext = [
             'event_type' => 'fork.compaction.summarize.started',
             'model' => $resolvedModel,
             'attempt' => $attempt,
             'messages_to_summarize' => $preparation->messagesCompacted,
             'messages_retained' => $preparation->messagesRetained,
-        ]);
+        ];
+        if (null !== $maxOutputTokens) {
+            $startedContext['max_output_tokens'] = $maxOutputTokens;
+        }
+
+        $this->logger->info('Fork virtual compaction summarization started.', $startedContext);
+
+        $invokeOptions = $modelOptions;
+        if (null !== $maxOutputTokens) {
+            $invokeOptions = [...$modelOptions, 'max_tokens' => $maxOutputTokens];
+        }
 
         $response = $this->platform->invoke(new ModelInvocationRequest(
             model: $resolvedModel,
@@ -261,7 +273,7 @@ final readonly class VirtualCompactionOrchestrator implements VirtualCompactionO
             ),
             options: new ModelInvocationOptions(
                 toolsEnabled: false,
-                extraOptions: $modelOptions,
+                extraOptions: $invokeOptions,
                 streamObserverEnabled: false,
             ),
         ));
@@ -281,7 +293,11 @@ final readonly class VirtualCompactionOrchestrator implements VirtualCompactionO
 
         if ($preparation->messagesCompacted >= 2
             && $compactResult->tokenEstimateAfter >= $compactResult->tokenEstimateBefore) {
-            throw new ForkCompactionSummarizationException('Fork compaction summarization was ineffective (context did not shrink).', ForkCompactionFailureReasonEnum::IneffectiveSummary);
+            $hint = 2 === $attempt
+                ? 'The summarizer output still exceeded the available shrink budget after the capped retry. Shorten retained parent context or adjust compaction settings, then retry fork.'
+                : null;
+
+            throw new ForkCompactionSummarizationException('Fork compaction summarization was ineffective (summary exceeded the available shrink budget).', ForkCompactionFailureReasonEnum::IneffectiveSummary, hint: $hint);
         }
 
         $this->logger->info('Fork virtual compaction summarization completed.', [
@@ -293,6 +309,23 @@ final readonly class VirtualCompactionOrchestrator implements VirtualCompactionO
         ]);
 
         return $summaryText;
+    }
+
+    private function computeRetryMaxOutputTokens(CompactionPreparationDTO $preparation): int
+    {
+        $prepareResult = $this->toPrepareResult($preparation);
+        $emptySummaryResult = $this->compactionService->buildCompactedMessages('', $prepareResult);
+
+        return $emptySummaryResult->tokenEstimateBefore - $emptySummaryResult->tokenEstimateAfter - 1;
+    }
+
+    private function buildIneffectiveRetryInstruction(int $maxOutputTokens): string
+    {
+        return \sprintf(
+            'Your previous summary was too long and did not reduce context size. Produce a fresh, materially shorter summary with at most %d output tokens (max_tokens=%d). You may omit headings and repetition. Keep only durable decisions, constraints, file paths, errors, and unresolved work.',
+            $maxOutputTokens,
+            $maxOutputTokens,
+        );
     }
 
     private function toPrepareResult(CompactionPreparationDTO $preparation): CompactionPrepareResult
