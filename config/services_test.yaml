@@ -33,6 +33,11 @@ services:
   Ineersa\CodingAgent\Tests\Extension\InMemoryExtensionApiBridge:
     public: true
 
+  Ineersa\CodingAgent\Session\Fork\ForkSessionCopyService:
+    public: true
+    autowire: true
+    autoconfigure: true
+
   # Test HTTP client for LLM requests.  Two modes:
   #
   #  1. Replay  (HATFIELD_LLM_REPLAY_FIXTURE_PATH set):
