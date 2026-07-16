@@ -20,9 +20,11 @@ use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
+use Ineersa\CodingAgent\Agent\Execution\ChildRun\AgentChildRunBatchLifecycleListener;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchExecutionModeEnum;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunIdentityDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Lifecycle\ChildRunArtifactLifecycleService;
+use Ineersa\CodingAgent\Agent\Execution\ChildRun\Result\AgentChildRunHandoffRenderer;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Completion\DeferredSubagentBatchChildOutcomeFactory;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Completion\DeferredSubagentBatchCompletionDispatcher;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Completion\DeferredSubagentBatchTerminalCompletionService;
@@ -41,8 +43,6 @@ use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Progress\Deferre
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredChildRunEventProjector;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredSubagentInterruptionKindEnum;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Progress\SubagentProgressEventAppender;
-use Ineersa\CodingAgent\Agent\Execution\ChildRun\Result\AgentChildRunHandoffRenderer;
-use Ineersa\CodingAgent\Agent\Execution\ChildRun\AgentChildRunBatchLifecycleListener;
 use Ineersa\CodingAgent\Agent\Execution\SubagentChildProgressSummaryBuilder;
 use Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
@@ -55,7 +55,6 @@ use Symfony\Component\Clock\MockClock;
 #[Group('db')]
 final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
 {
-
     public function testDurableReservedForkChildKindSurvivesProjectionAndTerminalIdentity(): void
     {
         $repo = self::getContainer()->get(DeferredSubagentBatchRepository::class);
@@ -463,7 +462,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
             $lifecycleDelivery,
             $agentRunner,
             self::getContainer()->get(DeferredToolCompletionRepositoryInterface::class),
-            self::getContainer()->get(\Ineersa\CodingAgent\Agent\Execution\Subagent\SubagentChildRunBatchLifecyclePolicyFactory::class),
+            self::getContainer()->get(\Ineersa\CodingAgent\Agent\Execution\ChildRun\AgentChildRunBatchLifecyclePolicyFactory::class),
             $commandBus,
             new TestLogger(),
             $mockClock,
@@ -971,7 +970,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
             $lifecycleDelivery,
             $agentRunner,
             self::getContainer()->get(DeferredToolCompletionRepositoryInterface::class),
-            self::getContainer()->get(\Ineersa\CodingAgent\Agent\Execution\Subagent\SubagentChildRunBatchLifecyclePolicyFactory::class),
+            self::getContainer()->get(\Ineersa\CodingAgent\Agent\Execution\ChildRun\AgentChildRunBatchLifecyclePolicyFactory::class),
             $commandBus,
             new TestLogger(),
             $mockClock,

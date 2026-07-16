@@ -6,7 +6,8 @@ namespace Ineersa\CodingAgent\Agent\Tool;
 
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
-use Ineersa\CodingAgent\Agent\Execution\ForkExecutionService;
+use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
+use Ineersa\CodingAgent\Agent\Execution\ForkExecutionServiceInterface;
 use Ineersa\CodingAgent\Config\ModelResolver;
 use Ineersa\CodingAgent\Tool\ToolHandlerInterface;
 use Ineersa\CodingAgent\Tool\ToolRuntime;
@@ -26,9 +27,9 @@ final class ForkToolHandler implements ToolHandlerInterface
     /**
      * @param array<string, mixed> $arguments
      */
-    public function __invoke(array $arguments): string
+    public function __invoke(array $arguments): DeferredToolCompletionOutcome
     {
-        return $this->toolRuntime->run(function () use ($arguments): string {
+        return $this->toolRuntime->run(function () use ($arguments): DeferredToolCompletionOutcome {
             $context = $this->contextAccessor->current();
             if (null === $context) {
                 throw new ToolCallException('The fork tool requires an active parent run context.', retryable: false);
@@ -96,15 +97,15 @@ final class ForkToolHandler implements ToolHandlerInterface
         return $trimmed;
     }
 
-    private function executionService(): ForkExecutionService
+    private function executionService(): ForkExecutionServiceInterface
     {
         if (!$this->executionServiceLocator->has(self::EXECUTION_SERVICE_LOCATOR_KEY)) {
             throw new \LogicException('Fork execution service is not registered in the fork tool locator.');
         }
 
         $service = $this->executionServiceLocator->get(self::EXECUTION_SERVICE_LOCATOR_KEY);
-        if (!$service instanceof ForkExecutionService) {
-            throw new \LogicException(\sprintf('Fork tool locator entry must be ForkExecutionService, got %s.', get_debug_type($service)));
+        if (!$service instanceof ForkExecutionServiceInterface) {
+            throw new \LogicException(\sprintf('Fork tool locator entry must implement ForkExecutionServiceInterface, got %s.', get_debug_type($service)));
         }
 
         return $service;

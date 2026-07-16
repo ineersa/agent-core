@@ -689,7 +689,7 @@ services:
   Ineersa\CodingAgent\Agent\Tool\ForkToolHandler:
     arguments:
       $executionServiceLocator: !service_locator
-        execution: '@Ineersa\CodingAgent\Agent\Execution\ForkExecutionService'
+        execution: '@Ineersa\CodingAgent\Agent\Execution\ForkExecutionServiceInterface'
 
 
   # CodingAgent ToolSetResolver — bridges ToolRegistry to AgentCore resolver seam.
@@ -976,9 +976,14 @@ services:
 
 
 
-  Ineersa\CodingAgent\Agent\Execution\ForkExecutionService:
+  Ineersa\CodingAgent\Agent\Execution\Fork\ChildRun\Preparation\ForkChildLaunchInputFactory:
     arguments:
       $parentRunStore: '@Ineersa\CodingAgent\Session\SessionRunStore'
+
+  Ineersa\CodingAgent\Agent\Execution\ForkExecutionService: ~
+
+  Ineersa\CodingAgent\Agent\Execution\ForkExecutionServiceInterface:
+    alias: Ineersa\CodingAgent\Agent\Execution\ForkExecutionService
 
   # ─── AGENT-05 Subagent tool storage routing ─────────────────────────
 

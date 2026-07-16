@@ -2,11 +2,10 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch;
+namespace Ineersa\CodingAgent\Agent\Execution\Fork\Batch\Deferred\Launch;
 
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
-use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchExecutionModeEnum;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunIdentityDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\PreparedAgentChildRunDTO;
@@ -16,20 +15,18 @@ use Ineersa\CodingAgent\Agent\Execution\ChildRun\Deferred\Launch\DeferredAgentCh
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Deferred\Launch\DeferredAgentChildBatchPreparationFailure;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Deferred\Launch\DeferredAgentChildBatchPreparationInterface;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Lifecycle\ChildRunArtifactLifecycleService;
+use Ineersa\CodingAgent\Agent\Execution\Fork\ChildRun\Preparation\ForkChildLaunchInputFactory;
+use Ineersa\CodingAgent\Agent\Execution\Fork\ForkLaunchTaskDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentBatchProjectionDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentChildLaunchStatusEnum;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentChildProjectionDTO;
-use Ineersa\CodingAgent\Agent\Execution\SubagentLaunchPreparationService;
 
-/**
- * Builds the deferred batch launch plan and prepares still-pending children (Piece 4A).
- */
-final class DeferredSubagentBatchPreparationService implements DeferredAgentChildBatchPreparationInterface
+final class DeferredForkBatchPreparationService implements DeferredAgentChildBatchPreparationInterface
 {
     public function __construct(
-        private readonly SubagentLaunchPreparationService $launchPreparation,
-        private readonly DeferredSubagentBatchIdentityFactory $identityFactory,
+        private readonly DeferredForkBatchIdentityFactory $identityFactory,
         private readonly ChildRunArtifactLifecycleService $artifactLifecycle,
+        private readonly ForkChildLaunchInputFactory $launchInputFactory,
     ) {
     }
 
@@ -42,44 +39,47 @@ final class DeferredSubagentBatchPreparationService implements DeferredAgentChil
         array $tasks,
         ChildRunBatchExecutionModeEnum $executionMode,
     ): DeferredAgentChildBatchLaunchPlanDTO {
-        $this->launchPreparation->assertDepthAllowed($parentRunId);
+        if (ChildRunBatchExecutionModeEnum::Single !== $executionMode || 1 !== \count($tasks)) {
+            throw new \LogicException('Fork deferred batch supports exactly one single child task.');
+        }
+
+        $task = $tasks[0];
+        if (!$task instanceof ForkLaunchTaskDTO) {
+            throw new \LogicException('Fork batch preparation requires ForkLaunchTaskDTO.');
+        }
 
         $lifecycleId = $this->identityFactory->batchLifecycleId($parentRunId, $toolCallId);
-        $childIntents = [];
-        $identities = [];
-
-        foreach ($tasks as $index => $taskDto) {
-            $batchIndex = $index + 1;
-            $agentName = $taskDto->displayName();
-            $taskText = $taskDto->taskSummary();
-            $definition = $this->resolveDefinition($agentName, $executionMode);
-            $ids = $this->identityFactory->childIdentity($parentRunId, $toolCallId, $batchIndex);
-            $childIntents[] = new DeferredAgentChildBatchChildIntentDTO(
-                batchIndex: $batchIndex,
+        $ids = $this->identityFactory->childIdentity($parentRunId, $toolCallId, 1);
+        $taskText = $task->taskSummary();
+        $childIntents = [
+            new DeferredAgentChildBatchChildIntentDTO(
+                batchIndex: 1,
                 childRunId: $ids['childRunId'],
                 artifactId: $ids['artifactId'],
-                agentName: $agentName,
+                agentName: 'fork',
                 task: $taskText,
-                definitionModel: $taskDto->definitionModel() ?? $definition->model,
-                artifactKind: AgentArtifactKindEnum::Subagent,
-                definitionReasoning: null,
-            );
-            $identities[] = new ChildRunIdentityDTO(
+                definitionModel: $task->definitionModel(),
+                artifactKind: AgentArtifactKindEnum::Fork,
+                definitionReasoning: $task->reasoningOverride(),
+            ),
+        ];
+        $identities = [
+            new ChildRunIdentityDTO(
                 parentRunId: $parentRunId,
                 childRunId: $ids['childRunId'],
                 artifactId: $ids['artifactId'],
-                displayName: $agentName,
+                displayName: 'fork',
                 taskSummary: $taskText,
-                definitionModel: $taskDto->definitionModel() ?? $definition->model,
-                artifactKind: AgentArtifactKindEnum::Subagent,
-                batchIndex: $batchIndex,
-            );
-        }
+                definitionModel: $task->definitionModel(),
+                artifactKind: AgentArtifactKindEnum::Fork,
+                batchIndex: 1,
+            ),
+        ];
 
         return new DeferredAgentChildBatchLaunchPlanDTO(
             lifecycleId: $lifecycleId,
             executionMode: $executionMode,
-            totalChildCount: \count($tasks),
+            totalChildCount: 1,
             childIntents: $childIntents,
             identities: $identities,
         );
@@ -113,19 +113,14 @@ final class DeferredSubagentBatchPreparationService implements DeferredAgentChil
             }
 
             $identity = $this->identityForIndex($plan->identities, $intent->batchIndex);
-            $definition = $this->resolveDefinition($intent->agentName, $plan->executionMode);
+            $forkTask = new ForkLaunchTaskDTO(
+                task: $intent->task,
+                modelOverride: $intent->definitionModel,
+                reasoningOverride: $intent->definitionReasoning,
+            );
             try {
-                $this->launchPreparation->reserveIdentity($identity);
-                $prepared = $this->launchPreparation->prepareFromDefinition(
-                    $parentRunId,
-                    $definition,
-                    $intent->agentName,
-                    $intent->task,
-                    $intent->artifactId,
-                    $intent->childRunId,
-                    skipReservation: true,
-                    identityTemplate: $identity,
-                );
+                $this->artifactLifecycle->reservePending($identity);
+                $prepared = $this->launchInputFactory->buildPrepared($identity, $forkTask);
                 $this->artifactLifecycle->ensureReservedPending($identity);
                 $preparedChildren[] = $prepared;
             } catch (\Throwable $e) {
@@ -176,13 +171,6 @@ final class DeferredSubagentBatchPreparationService implements DeferredAgentChil
         return $launched;
     }
 
-    private function resolveDefinition(string $agentName, ChildRunBatchExecutionModeEnum $executionMode): AgentDefinitionDTO
-    {
-        return ChildRunBatchExecutionModeEnum::Single === $executionMode
-            ? $this->launchPreparation->requireForegroundDefinition($agentName)
-            : $this->launchPreparation->requireParallelDefinition($agentName);
-    }
-
     /**
      * @param list<DeferredSubagentChildProjectionDTO> $children
      */
@@ -208,7 +196,7 @@ final class DeferredSubagentBatchPreparationService implements DeferredAgentChil
             }
         }
 
-        throw new \LogicException('Deferred subagent batch launch identity missing for prepared child.');
+        throw new \LogicException('Deferred fork batch launch identity missing for prepared child.');
     }
 
     private function isArtifactBeyondPending(?AgentArtifactStatusEnum $status): bool

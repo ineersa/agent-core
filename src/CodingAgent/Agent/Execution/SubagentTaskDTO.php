@@ -35,6 +35,11 @@ final class SubagentTaskDTO implements AgentChildLaunchTaskInterface
         return null;
     }
 
+    public function reasoningOverride(): ?string
+    {
+        return null;
+    }
+
     public function trimmedAgent(): string
     {
         return trim($this->agent);

@@ -46,7 +46,7 @@ final class ForkToolHandlerTest extends TestCase
         );
 
         $outcome = $accessor->with($context, static function () use ($handler): DeferredToolCompletionOutcome {
-            /** @var DeferredToolCompletionOutcome */
+            /* @var DeferredToolCompletionOutcome */
             return $handler->__invoke([
                 'task' => '  Investigate sequence allocator  ',
                 'model' => 'test/model',

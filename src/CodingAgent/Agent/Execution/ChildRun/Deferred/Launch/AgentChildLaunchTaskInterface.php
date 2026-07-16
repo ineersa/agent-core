@@ -17,4 +17,9 @@ interface AgentChildLaunchTaskInterface
      * Optional model hint for durable reservation metadata (null when resolved elsewhere).
      */
     public function definitionModel(): ?string;
+
+    /**
+     * Optional reasoning/thinking hint from the parent tool call (in-memory only; not persisted on reserve rows).
+     */
+    public function reasoningOverride(): ?string;
 }

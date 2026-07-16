@@ -2,29 +2,30 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch;
+namespace Ineersa\CodingAgent\Agent\Execution\ChildRun\Deferred\Launch;
 
 use Ineersa\AgentCore\Contract\AgentRunnerInterface;
+use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
+use Ineersa\CodingAgent\Agent\Execution\ChildRun\AgentChildRunBatchLifecyclePolicyFactory;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchLaunchAbortContextDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchLifecyclePolicyDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunIdentityDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\PreparedAgentChildRunDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Lifecycle\ChildRunArtifactLifecycleService;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Lifecycle\ChildRunBatchLaunchService;
-use Ineersa\CodingAgent\Agent\Execution\Subagent\SubagentChildRunBatchLifecyclePolicyFactory;
 use Psr\Log\LoggerInterface;
 
 /**
- * Ordered runtime child starts and canonical launch-abort for deferred batch launch (Piece 4A).
+ * Ordered runtime child starts and canonical launch-abort for deferred agent child batch launch.
  */
-final class DeferredSubagentBatchRuntimeStartService
+final class DeferredAgentChildBatchRuntimeStartService
 {
     public function __construct(
         private readonly AgentRunnerInterface $agentRunner,
         private readonly ChildRunArtifactLifecycleService $artifactLifecycle,
         private readonly ChildRunBatchLaunchService $batchLaunchService,
-        private readonly SubagentChildRunBatchLifecyclePolicyFactory $lifecyclePolicyFactory,
+        private readonly AgentChildRunBatchLifecyclePolicyFactory $lifecyclePolicyFactory,
         private readonly LoggerInterface $logger,
     ) {
     }
@@ -33,7 +34,7 @@ final class DeferredSubagentBatchRuntimeStartService
      * @param list<ChildRunIdentityDTO>      $identities
      * @param list<PreparedAgentChildRunDTO> $preparedChildren
      *
-     * @throws DeferredSubagentBatchRuntimeStartFailure when a runtime start fails (after abort cleanup)
+     * @throws DeferredAgentChildBatchRuntimeStartFailure when a runtime start fails (after abort cleanup)
      */
     public function startPreparedInOrder(
         string $parentRunId,
@@ -41,7 +42,7 @@ final class DeferredSubagentBatchRuntimeStartService
         array $identities,
         array $preparedChildren,
     ): void {
-        $policy = $this->lifecyclePolicyFactory->create();
+        $policy = $this->lifecyclePolicyFactory->forKind($this->resolveBatchArtifactKind($preparedChildren));
         /** @var list<string> $knownStartedChildRunIds */
         $knownStartedChildRunIds = [];
 
@@ -64,7 +65,7 @@ final class DeferredSubagentBatchRuntimeStartService
                     $knownStartedChildRunIds,
                 );
 
-                throw new DeferredSubagentBatchRuntimeStartFailure($prepared->identity->batchIndex, $e);
+                throw new DeferredAgentChildBatchRuntimeStartFailure($prepared->identity->batchIndex, $e);
             }
 
             try {
@@ -93,7 +94,7 @@ final class DeferredSubagentBatchRuntimeStartService
         \Throwable $cause,
         int $failureBatchIndex,
     ): void {
-        $policy = $this->lifecyclePolicyFactory->create();
+        $policy = $this->lifecyclePolicyFactory->forKind($this->resolveBatchArtifactKindFromIdentities($identities));
         try {
             $this->batchLaunchService->abort(
                 $parentRunId,
@@ -155,5 +156,31 @@ final class DeferredSubagentBatchRuntimeStartService
         }
 
         return AgentArtifactStatusEnum::Pending !== $status;
+    }
+
+    /**
+     * @param list<PreparedAgentChildRunDTO> $preparedChildren
+     */
+    private function resolveBatchArtifactKind(array $preparedChildren): AgentArtifactKindEnum
+    {
+        $first = $preparedChildren[0] ?? null;
+        if (null === $first) {
+            return AgentArtifactKindEnum::Subagent;
+        }
+
+        return $first->identity->artifactKind;
+    }
+
+    /**
+     * @param list<ChildRunIdentityDTO> $identities
+     */
+    private function resolveBatchArtifactKindFromIdentities(array $identities): AgentArtifactKindEnum
+    {
+        $first = $identities[0] ?? null;
+        if (null === $first) {
+            return AgentArtifactKindEnum::Subagent;
+        }
+
+        return $first->artifactKind;
     }
 }

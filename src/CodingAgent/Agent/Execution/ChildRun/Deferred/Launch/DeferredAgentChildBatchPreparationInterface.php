@@ -6,7 +6,7 @@ namespace Ineersa\CodingAgent\Agent\Execution\ChildRun\Deferred\Launch;
 
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchExecutionModeEnum;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\PreparedAgentChildRunDTO;
-use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchPreparationFailure;
+use Ineersa\CodingAgent\Agent\Execution\ChildRun\Deferred\Launch\DeferredAgentChildBatchPreparationFailure;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentBatchProjectionDTO;
 
 /**
@@ -27,7 +27,7 @@ interface DeferredAgentChildBatchPreparationInterface
     /**
      * @return list<PreparedAgentChildRunDTO>
      *
-     * @throws DeferredSubagentBatchPreparationFailure
+     * @throws DeferredAgentChildBatchPreparationFailure
      */
     public function preparePendingChildren(
         string $parentRunId,

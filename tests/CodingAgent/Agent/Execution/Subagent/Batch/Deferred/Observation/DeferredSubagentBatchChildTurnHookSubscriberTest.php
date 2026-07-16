@@ -4,13 +4,13 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Agent\Execution\Subagent\Batch\Deferred\Observation;
 
-use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitEventSummary;
 use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitHookContext;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
+use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchExecutionModeEnum;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchIdentityFactory;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Observation\DeferredSubagentBatchChildTurnHookSubscriber;
@@ -63,7 +63,7 @@ final class DeferredSubagentBatchChildTurnHookSubscriberTest extends IsolatedKer
                 deadlineAt: new \DateTimeImmutable('+600 seconds'),
                 childIntents: [
                     ['batchIndex' => 1, 'childRunId' => $onlyFailed['childRunId'], 'artifactId' => $onlyFailed['artifactId'], 'agentName' => 'worker', 'task' => 'T2', 'definitionModel' => null,
-                    'artifactKind' => AgentArtifactKindEnum::Subagent->value],
+                        'artifactKind' => AgentArtifactKindEnum::Subagent->value],
                 ],
             );
             $childRepo->markChildFailed($lifecycle, 1);
@@ -80,7 +80,7 @@ final class DeferredSubagentBatchChildTurnHookSubscriberTest extends IsolatedKer
                 deadlineAt: new \DateTimeImmutable('+600 seconds'),
                 childIntents: [
                     ['batchIndex' => 1, 'childRunId' => $tracked['childRunId'], 'artifactId' => $tracked['artifactId'], 'agentName' => 'worker', 'task' => 'T1', 'definitionModel' => null,
-                    'artifactKind' => AgentArtifactKindEnum::Subagent->value],
+                        'artifactKind' => AgentArtifactKindEnum::Subagent->value],
                 ],
             );
             $batchRepo->applyLaunchSuccessState($parent, $tool, $lifecycle, new \DateTimeImmutable(), [1]);

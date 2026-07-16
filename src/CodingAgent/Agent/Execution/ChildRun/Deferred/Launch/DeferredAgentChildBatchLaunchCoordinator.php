@@ -8,9 +8,6 @@ use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchExecutionModeEnum;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchLaunchStatusEnum;
-use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchPreparationFailure;
-use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchRuntimeStartFailure;
-use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchRuntimeStartService;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentBatchProjectionDTO;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
 use Psr\Log\LoggerInterface;
@@ -25,7 +22,7 @@ final class DeferredAgentChildBatchLaunchCoordinator
 {
     public function __construct(
         private readonly DeferredSubagentBatchRepository $batchRepository,
-        private readonly DeferredSubagentBatchRuntimeStartService $runtimeStart,
+        private readonly DeferredAgentChildBatchRuntimeStartService $runtimeStart,
         private readonly StackToolExecutionContextAccessor $contextAccessor,
         private readonly LoggerInterface $logger,
     ) {
@@ -91,7 +88,7 @@ final class DeferredAgentChildBatchLaunchCoordinator
 
         try {
             $preparedChildren = $batchPreparation->preparePendingChildren($parentRunId, $projection, $plan);
-        } catch (DeferredSubagentBatchPreparationFailure $e) {
+        } catch (DeferredAgentChildBatchPreparationFailure $e) {
             $this->runtimeStart->abortAfterPreparationFailure(
                 $parentRunId,
                 $toolCallId,
@@ -113,11 +110,7 @@ final class DeferredAgentChildBatchLaunchCoordinator
                 ]);
             }
 
-            throw new DeferredAgentChildBatchLaunchException(
-                DeferredAgentChildBatchLaunchFailureReasonEnum::PreparationFailed,
-                $e->getPrevious() ?? $e,
-                $e->failureBatchIndex,
-            );
+            throw new DeferredAgentChildBatchLaunchException(DeferredAgentChildBatchLaunchFailureReasonEnum::PreparationFailed, $e->getPrevious() ?? $e, $e->failureBatchIndex);
         }
 
         if ([] === $preparedChildren) {
@@ -134,7 +127,7 @@ final class DeferredAgentChildBatchLaunchCoordinator
                 $plan->identities,
                 $preparedChildren,
             );
-        } catch (DeferredSubagentBatchRuntimeStartFailure $e) {
+        } catch (DeferredAgentChildBatchRuntimeStartFailure $e) {
             $failureIndex = $e->failureBatchIndex;
             $launchedBeforeFailure = [];
             foreach ($preparedChildren as $prepared) {
@@ -162,11 +155,7 @@ final class DeferredAgentChildBatchLaunchCoordinator
                 ]);
             }
 
-            throw new DeferredAgentChildBatchLaunchException(
-                DeferredAgentChildBatchLaunchFailureReasonEnum::RuntimeStartFailed,
-                $e->getPrevious() ?? $e,
-                $failureIndex,
-            );
+            throw new DeferredAgentChildBatchLaunchException(DeferredAgentChildBatchLaunchFailureReasonEnum::RuntimeStartFailed, $e->getPrevious() ?? $e, $failureIndex);
         }
 
         $launchedIndices = $batchPreparation->collectLaunchedBatchIndices(

@@ -19,6 +19,7 @@ final readonly class DeferredAgentChildBatchChildIntentDTO
         public string $task,
         public ?string $definitionModel,
         public AgentArtifactKindEnum $artifactKind,
+        public ?string $definitionReasoning = null,
     ) {
     }
 
