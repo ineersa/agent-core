@@ -631,6 +631,9 @@ YAML
 
         $bracketSegment = $resolution->getValue('tui.the]me');
         $this->assertFalse($bracketSegment->exists);
+
+        $backslashSegment = $resolution->getValue('tui.the\\me');
+        $this->assertFalse($backslashSegment->exists);
     }
 
     public function testGetValueMissingPath(): void

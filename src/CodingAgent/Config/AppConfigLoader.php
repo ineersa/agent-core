@@ -172,6 +172,7 @@ final class AppConfigLoader
             try {
                 $value = $accessor->getValue($data, $path);
             } catch (\Exception) {
+                // PropertyAccessor throws for keys absent from this config — skip.
                 continue;
             }
 

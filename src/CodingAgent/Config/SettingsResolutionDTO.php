@@ -95,7 +95,7 @@ final readonly class SettingsResolutionDTO
             }
             // Reject control chars and PropertyPath-significant [, ], \, ? so PropertyPathBuilder
             // cannot produce malformed paths or throw from strict PropertyAccessor.
-            if (preg_match('/[\x00-\x1F\x7F\[\]\\?]/', $segment)) {
+            if (preg_match('/[\x00-\x1F\x7F\[\]\\\\?]/', $segment)) {
                 return null;
             }
             $builder->appendIndex($segment);
