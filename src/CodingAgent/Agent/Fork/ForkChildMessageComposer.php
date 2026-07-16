@@ -19,7 +19,7 @@ final readonly class ForkChildMessageComposer
      * @param list<AgentMessage> $inheritedMessages
      * @param list<string>       $allowedToolNames
      *
-     * @return array{messages: list<AgentMessage>}
+     * @return array{systemPrompt: string, messages: list<AgentMessage>}
      */
     public function compose(
         array $inheritedMessages,
@@ -68,7 +68,10 @@ final readonly class ForkChildMessageComposer
             content: [['type' => 'text', 'text' => $this->taskPromptBuilder->buildTaskUserMessage($task)]],
         );
 
-        return ['messages' => $messages];
+        return [
+            'systemPrompt' => $systemMessageText,
+            'messages' => $messages,
+        ];
     }
 
     /**

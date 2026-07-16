@@ -9,6 +9,7 @@ use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchExecutionModeEnum;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Preparation\DeferredSubagentChildPreparationStrategyInterface;
+use Ineersa\CodingAgent\Agent\Execution\ChildRun\Preparation\DeferredSubagentSingleChildLaunchProfileDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentBatchProjectionDTO;
 use Ineersa\CodingAgent\Agent\Execution\SubagentTaskDTO;
 use Ineersa\CodingAgent\Config\AgentsConfig;
@@ -38,6 +39,7 @@ final class DeferredSubagentBatchLaunchService
         string $parentRunId,
         array $tasks,
         ChildRunBatchExecutionModeEnum $executionMode,
+        ?DeferredSubagentSingleChildLaunchProfileDTO $singleChildProfile = null,
         ?DeferredSubagentChildPreparationStrategyInterface $preparationStrategy = null,
     ): DeferredToolCompletionOutcome {
         if (ChildRunBatchExecutionModeEnum::Single === $executionMode && 1 !== \count($tasks)) {
@@ -60,7 +62,7 @@ final class DeferredSubagentBatchLaunchService
         }
 
         $toolCallId = $toolContext->toolCallId();
-        $plan = $this->batchPreparation->buildLaunchPlan($parentRunId, $toolCallId, $tasks, $executionMode);
+        $plan = $this->batchPreparation->buildLaunchPlan($parentRunId, $toolCallId, $tasks, $executionMode, $singleChildProfile);
         $lifecycleId = $plan->lifecycleId;
         $deadlineAt = Clock::get()->now()->modify(\sprintf('+%d seconds', $this->agentsConfig->subagentToolTimeoutSeconds));
 
@@ -98,7 +100,7 @@ final class DeferredSubagentBatchLaunchService
         );
 
         try {
-            $preparedChildren = $this->batchPreparation->preparePendingChildren($parentRunId, $projection, $plan, $preparationStrategy);
+            $preparedChildren = $this->batchPreparation->preparePendingChildren($parentRunId, $projection, $plan, $singleChildProfile, $preparationStrategy);
         } catch (DeferredSubagentBatchPreparationFailure $e) {
             $this->runtimeStart->abortAfterPreparationFailure(
                 $parentRunId,

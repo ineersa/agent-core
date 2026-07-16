@@ -17,6 +17,7 @@ use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\Defer
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentChildLaunchStatusEnum;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentChildProjectionDTO;
 use Ineersa\CodingAgent\Agent\Execution\SubagentLaunchPreparationService;
+use Ineersa\CodingAgent\Agent\Execution\ChildRun\Preparation\DeferredSubagentSingleChildLaunchProfileDTO;
 use Ineersa\CodingAgent\Agent\Execution\SubagentTaskDTO;
 
 /**
@@ -39,6 +40,7 @@ final class DeferredSubagentBatchPreparationService
         string $toolCallId,
         array $tasks,
         ChildRunBatchExecutionModeEnum $executionMode,
+        ?DeferredSubagentSingleChildLaunchProfileDTO $singleChildProfile = null,
     ): DeferredSubagentBatchLaunchPlanDTO {
         $this->launchPreparation->assertDepthAllowed($parentRunId);
 
@@ -49,9 +51,16 @@ final class DeferredSubagentBatchPreparationService
 
         foreach ($tasks as $index => $taskDto) {
             $batchIndex = $index + 1;
-            $agentName = $taskDto->trimmedAgent();
             $taskText = $taskDto->trimmedTask();
-            $definition = $this->resolveDefinition($agentName, $executionMode);
+            if (null !== $singleChildProfile && ChildRunBatchExecutionModeEnum::Single === $executionMode && 1 === \count($tasks)) {
+                $agentName = $singleChildProfile->displayAgentName;
+                $definition = $singleChildProfile->definition;
+                $artifactKind = $singleChildProfile->artifactKind;
+            } else {
+                $agentName = $taskDto->trimmedAgent();
+                $definition = $this->resolveDefinition($agentName, $executionMode);
+                $artifactKind = AgentArtifactKindEnum::Subagent;
+            }
             $definitionsByBatchIndex[$batchIndex] = $definition;
             $ids = $this->identityFactory->childIdentity($parentRunId, $toolCallId, $batchIndex);
             $childIntents[] = new DeferredSubagentBatchChildIntentDTO(
@@ -69,7 +78,7 @@ final class DeferredSubagentBatchPreparationService
                 displayName: $agentName,
                 taskSummary: $taskText,
                 definitionModel: $definition->model,
-                artifactKind: 'fork' === $agentName ? AgentArtifactKindEnum::Fork : AgentArtifactKindEnum::Subagent,
+                artifactKind: $artifactKind,
                 batchIndex: $batchIndex,
             );
         }
@@ -93,6 +102,7 @@ final class DeferredSubagentBatchPreparationService
         string $parentRunId,
         DeferredSubagentBatchProjectionDTO $projection,
         DeferredSubagentBatchLaunchPlanDTO $plan,
+        ?DeferredSubagentSingleChildLaunchProfileDTO $singleChildProfile = null,
         ?DeferredSubagentChildPreparationStrategyInterface $preparationStrategy = null,
     ): array {
         $preparedChildren = [];
@@ -116,7 +126,9 @@ final class DeferredSubagentBatchPreparationService
             $definition = $plan->definitionsByBatchIndex[$intent->batchIndex];
             try {
                 $this->launchPreparation->reserveIdentity($identity);
-                $strategy = $preparationStrategy ?? new DefaultDeferredSubagentChildPreparationStrategy($this->launchPreparation);
+                $strategy = null !== $singleChildProfile
+                    ? $singleChildProfile->preparationStrategy
+                    : ($preparationStrategy ?? new DefaultDeferredSubagentChildPreparationStrategy($this->launchPreparation));
                 $prepared = $strategy->prepare(
                     $parentRunId,
                     $identity,
@@ -176,10 +188,6 @@ final class DeferredSubagentBatchPreparationService
 
     private function resolveDefinition(string $agentName, ChildRunBatchExecutionModeEnum $executionMode): AgentDefinitionDTO
     {
-        if ('fork' === $agentName) {
-            return $this->launchPreparation->requireForkDefinition();
-        }
-
         return ChildRunBatchExecutionModeEnum::Single === $executionMode
             ? $this->launchPreparation->requireForegroundDefinition($agentName)
             : $this->launchPreparation->requireParallelDefinition($agentName);

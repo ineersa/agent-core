@@ -57,8 +57,8 @@ final class ForkChildLaunchInputBuilder
             task: $task->task,
             artifactId: $identity->artifactId,
             allowedToolNames: $policy['tools'],
-            agentsMd: $this->extractUserContextBySource($parentRunId, 'agents_context'),
-            skillsContext: $this->skillsContextBuilder->build(),
+            agentsMd: $this->extractUserContextFromMessages(null !== $parentState ? $parentState->messages : [], 'agents_context'),
+            skillsContext: $this->extractSkillsContext(null !== $parentState ? $parentState->messages : []),
         );
 
         $childMetadata = new RunMetadata(
@@ -82,7 +82,7 @@ final class ForkChildLaunchInputBuilder
         return new PreparedAgentChildRunDTO(
             identity: $identity,
             startRunInput: new StartRunInput(
-                systemPrompt: '',
+                systemPrompt: $composed['systemPrompt'],
                 messages: $composed['messages'],
                 runId: $identity->childRunId,
                 metadata: $childMetadata,
@@ -137,14 +137,12 @@ final class ForkChildLaunchInputBuilder
         return $window > 0 ? $window : null;
     }
 
-    private function extractUserContextBySource(string $parentRunId, string $source): string
+    /**
+     * @param list<\Ineersa\AgentCore\Domain\Message\AgentMessage> $messages
+     */
+    private function extractUserContextFromMessages(array $messages, string $source): string
     {
-        $state = $this->parentRunStore->get($parentRunId);
-        if (null === $state) {
-            return '';
-        }
-
-        foreach ($state->messages as $message) {
+        foreach ($messages as $message) {
             if ('user-context' !== $message->role) {
                 continue;
             }
@@ -159,5 +157,18 @@ final class ForkChildLaunchInputBuilder
         }
 
         return '';
+    }
+
+    /**
+     * @param list<\Ineersa\AgentCore\Domain\Message\AgentMessage> $messages
+     */
+    private function extractSkillsContext(array $messages): string
+    {
+        $fromParent = $this->extractUserContextFromMessages($messages, 'skills_context');
+        if ('' !== trim($fromParent)) {
+            return $fromParent;
+        }
+
+        return $this->skillsContextBuilder->build();
     }
 }

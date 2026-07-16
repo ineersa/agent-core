@@ -6,7 +6,9 @@ namespace Ineersa\CodingAgent\Agent\Execution;
 
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
+use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchExecutionModeEnum;
+use Ineersa\CodingAgent\Agent\Execution\ChildRun\Preparation\DeferredSubagentSingleChildLaunchProfileDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchLaunchService;
 
 final class ForkExecutionService implements ForkExecutionServiceInterface
@@ -14,7 +16,7 @@ final class ForkExecutionService implements ForkExecutionServiceInterface
     public function __construct(
         private readonly DeferredSubagentBatchLaunchService $deferredBatchLaunch,
         private readonly SubagentRunMetadataReader $metadataReader,
-        private readonly ForkDeferredChildPreparationStrategy $forkPreparation,
+        private readonly ForkDeferredChildPreparationStrategyFactory $forkStrategyFactory,
     ) {
     }
 
@@ -28,13 +30,19 @@ final class ForkExecutionService implements ForkExecutionServiceInterface
             throw new ToolCallException('Nested fork launches are not supported.', retryable: false);
         }
 
-        $this->forkPreparation->configureLaunch($task, $modelOverride, $reasoningOverride);
+        $launchTask = new ForkLaunchTaskDTO($task, $modelOverride, $reasoningOverride);
+        $profile = new DeferredSubagentSingleChildLaunchProfileDTO(
+            definition: ForkInternalAgentDefinition::create(),
+            artifactKind: AgentArtifactKindEnum::Fork,
+            preparationStrategy: $this->forkStrategyFactory->create($launchTask),
+            displayAgentName: 'fork',
+        );
 
         return $this->deferredBatchLaunch->launch(
             $parentRunId,
             [new SubagentTaskDTO(agent: 'fork', task: $task)],
             ChildRunBatchExecutionModeEnum::Single,
-            $this->forkPreparation,
+            $profile,
         );
     }
 }

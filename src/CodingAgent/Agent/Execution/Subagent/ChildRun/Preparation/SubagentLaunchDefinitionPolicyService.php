@@ -42,28 +42,7 @@ final class SubagentLaunchDefinitionPolicyService
         return $definition;
     }
 
-    public function requireForkDefinition(): AgentDefinitionDTO
-    {
-        $definition = $this->catalog->get('fork');
-        if (null !== $definition) {
-            return $definition;
-        }
-
-        return new AgentDefinitionDTO(
-            name: 'fork',
-            description: 'Internal fork child',
-            tools: null,
-            mcp: new McpPolicyDTO(mode: McpAgentModeEnum::All),
-            instructions: '',
-            inheritProjectContext: true,
-            inheritAgentsMd: true,
-            foregroundAllowed: true,
-            parallelAllowed: false,
-            disabled: true,
-        );
-    }
-
-    public function requireForegroundDefinition(string $agentName): AgentDefinitionDTO
+public function requireForegroundDefinition(string $agentName): AgentDefinitionDTO
     {
         try {
             $definition = $this->catalog->requireEnabled($agentName);

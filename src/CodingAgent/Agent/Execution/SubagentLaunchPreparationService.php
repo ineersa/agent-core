@@ -40,12 +40,7 @@ final class SubagentLaunchPreparationService
         return $this->definitionPolicy->requireParallelDefinition($agentName);
     }
 
-    public function requireForkDefinition(): AgentDefinitionDTO
-    {
-        return $this->definitionPolicy->requireForkDefinition();
-    }
-
-    public function requireForegroundDefinition(string $agentName): AgentDefinitionDTO
+public function requireForegroundDefinition(string $agentName): AgentDefinitionDTO
     {
         return $this->definitionPolicy->requireForegroundDefinition($agentName);
     }

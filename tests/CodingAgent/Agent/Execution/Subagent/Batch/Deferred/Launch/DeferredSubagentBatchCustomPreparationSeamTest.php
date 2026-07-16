@@ -72,6 +72,7 @@ final class DeferredSubagentBatchCustomPreparationSeamTest extends IsolatedKerne
             $parentRunId,
             [new SubagentTaskDTO(agent: 'scout', task: 'Custom seam task')],
             ChildRunBatchExecutionModeEnum::Single,
+            null,
             $strategy,
         ));
 
