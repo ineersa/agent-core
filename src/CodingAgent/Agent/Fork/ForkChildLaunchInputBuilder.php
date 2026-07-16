@@ -7,16 +7,14 @@ namespace Ineersa\CodingAgent\Agent\Fork;
 use Ineersa\AgentCore\Contract\RunStoreInterface;
 use Ineersa\AgentCore\Domain\Run\RunMetadata;
 use Ineersa\AgentCore\Domain\Run\StartRunInput;
-use Ineersa\CodingAgent\Agent\Context\AgentsContextBuilder;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunIdentityDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\PreparedAgentChildRunDTO;
 use Ineersa\CodingAgent\Agent\Execution\ForkLaunchTaskDTO;
 use Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader;
-use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\Ai\AiModelReference;
+use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\ModelResolver;
 use Ineersa\CodingAgent\Skills\SkillsContextBuilder;
-use Ineersa\CodingAgent\SystemPrompt\SystemPromptBuilder;
 
 final class ForkChildLaunchInputBuilder
 {
@@ -28,8 +26,6 @@ final class ForkChildLaunchInputBuilder
         private readonly SubagentRunMetadataReader $metadataReader,
         private readonly ModelResolver $modelResolver,
         private readonly SkillsContextBuilder $skillsContextBuilder,
-        private readonly AgentsContextBuilder $agentsContextBuilder,
-        private readonly SystemPromptBuilder $systemPromptBuilder,
         private readonly AppConfig $appConfig,
     ) {
     }

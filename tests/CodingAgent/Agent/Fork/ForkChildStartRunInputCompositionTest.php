@@ -61,7 +61,7 @@ final class ForkChildStartRunInputCompositionTest extends IsolatedKernelTestCase
 
         $inheritedUser = array_values(array_filter($messages, static fn (AgentMessage $m): bool => 'user' === $m->role && 'prior user' === ($m->content[0]['text'] ?? '')));
         $this->assertCount(1, $inheritedUser);
-        $this->assertSame([], array_filter($messages, static fn (AgentMessage $m): bool => 'assistant' === $m->role && str_contains(json_encode($m->metadata, JSON_THROW_ON_ERROR), 'fork')));
+        $this->assertSame([], array_filter($messages, static fn (AgentMessage $m): bool => 'assistant' === $m->role && str_contains(json_encode($m->metadata, \JSON_THROW_ON_ERROR), 'fork')));
 
         $metadata = $prepared->startRunInput->metadata;
         $this->assertSame('agent_child', $metadata->session['kind']);

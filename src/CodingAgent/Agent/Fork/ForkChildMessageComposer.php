@@ -39,7 +39,7 @@ final readonly class ForkChildMessageComposer
             ['text' => $agentsMd, 'source' => 'agents_context'],
             ['text' => $skillsContext, 'source' => 'skills_context'],
         ] as $channel) {
-            $body = trim((string) $channel['text']);
+            $body = trim($channel['text']);
             if ('' === $body) {
                 continue;
             }

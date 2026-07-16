@@ -4,9 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Agent\Execution;
 
-use Ineersa\CodingAgent\Agent\Execution\ForkExecutionService;
-use Ineersa\CodingAgent\Agent\Execution\ForkToolPolicyResolver;
-
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\AgentRunnerInterface;
@@ -14,11 +11,7 @@ use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Run\StartRunInput;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
-use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionCatalog;
-use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionDTO;
-use Ineersa\CodingAgent\Agent\Definition\McpAgentModeEnum;
-use Ineersa\CodingAgent\Agent\Definition\McpPolicyDTO;
-use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchLaunchService;
+use Ineersa\CodingAgent\Agent\Execution\ForkExecutionService;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use PHPUnit\Framework\Attributes\Group;
 
@@ -84,7 +77,9 @@ final class ForkExecutionServiceTest extends IsolatedKernelTestCase
 
     /**
      * @template T
+     *
      * @param callable(): T $callback
+     *
      * @return T
      */
     private function withToolContext(string $parentRunId, string $toolCallId, callable $callback): mixed

@@ -9,8 +9,6 @@ use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\AgentRunnerInterface;
 use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
 use Ineersa\AgentCore\Contract\RunStoreInterface;
-use Ineersa\AgentCore\Domain\Run\RunState;
-use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Domain\Run\StartRunInput;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
@@ -39,7 +37,7 @@ final class DeferredSubagentBatchCustomPreparationSeamTest extends IsolatedKerne
         $toolCallId = 'call-custom-seam-1';
         $customMarker = 'custom-prepared-marker';
 
-        $strategy = new class ($customMarker) implements DeferredSubagentChildPreparationStrategyInterface {
+        $strategy = new class($customMarker) implements DeferredSubagentChildPreparationStrategyInterface {
             public function __construct(private readonly string $marker)
             {
             }
