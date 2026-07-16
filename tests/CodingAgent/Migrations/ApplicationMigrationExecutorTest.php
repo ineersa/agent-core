@@ -323,6 +323,8 @@ SQL);
         $validKey = UuidV7::v7()->toRfc4122();
         $connection->insert('hatfield_session', ['cwd' => '/c', 'name' => 'valid', 'created_at' => $now, 'updated_at' => $now, 'provider_cache_key' => $validKey]);
 
+        $this->materializeDeferredSubagentBatchSchemaThrough14140000($connection);
+
         $this->recordAppliedMigrationsThrough($connection, 'Version20260714140000');
 
         $executor = new ApplicationMigrationExecutor($connection, new NullLogger());
@@ -364,6 +366,22 @@ SQL);
         $this->expectExceptionMessage('5000');
 
         $executor();
+    }
+
+    /**
+     * Materialize deferred_subagent_batch/deferred_subagent_child as Version20260713160000 would.
+     * Use when a fixture records migrations through Version20260714140000 without running them.
+     */
+    private function materializeDeferredSubagentBatchSchemaThrough14140000(Connection $connection): void
+    {
+        $connection->executeStatement('CREATE TABLE deferred_subagent_batch (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, lifecycle_id VARCHAR(36) NOT NULL, parent_run_id VARCHAR(255) NOT NULL, parent_turn_no INTEGER NOT NULL, parent_tool_call_id VARCHAR(255) NOT NULL, parent_order_index INTEGER NOT NULL, execution_mode VARCHAR(16) NOT NULL, total_child_count INTEGER NOT NULL, launch_status VARCHAR(32) NOT NULL, aggregate_progress_revision INTEGER NOT NULL, delivered_progress_revision INTEGER NOT NULL, terminal_completion_enqueued_at DATETIME DEFAULT NULL, projection_version INTEGER NOT NULL, started_at DATETIME DEFAULT NULL, deadline_at DATETIME DEFAULT NULL, interruption_kind VARCHAR(32) DEFAULT NULL, interruption_requested_at DATETIME DEFAULT NULL, interruption_progress_enqueued_at DATETIME DEFAULT NULL, created_at DATETIME NOT NULL, updated_at DATETIME NOT NULL)');
+        $connection->executeStatement('CREATE UNIQUE INDEX uniq_deferred_subagent_batch_lifecycle ON deferred_subagent_batch (lifecycle_id)');
+        $connection->executeStatement('CREATE UNIQUE INDEX uniq_deferred_subagent_batch_parent_tool ON deferred_subagent_batch (parent_run_id, parent_tool_call_id)');
+
+        $connection->executeStatement('CREATE TABLE deferred_subagent_child (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, batch_lifecycle_id VARCHAR(36) NOT NULL, batch_index INTEGER NOT NULL, child_run_id VARCHAR(36) NOT NULL, artifact_id VARCHAR(64) NOT NULL, agent_name VARCHAR(255) NOT NULL, task CLOB NOT NULL, definition_model VARCHAR(255) DEFAULT NULL, launch_status VARCHAR(32) NOT NULL, child_event_cursor INTEGER NOT NULL, child_lifecycle_projection CLOB DEFAULT NULL, projection_version INTEGER NOT NULL, started_at DATETIME DEFAULT NULL, terminal_completed_at DATETIME DEFAULT NULL, terminal_status VARCHAR(32) DEFAULT NULL, created_at DATETIME NOT NULL, updated_at DATETIME NOT NULL)');
+        $connection->executeStatement('CREATE UNIQUE INDEX uniq_deferred_subagent_child_run ON deferred_subagent_child (child_run_id)');
+        $connection->executeStatement('CREATE UNIQUE INDEX uniq_deferred_subagent_child_batch_index ON deferred_subagent_child (batch_lifecycle_id, batch_index)');
+        $connection->executeStatement('CREATE INDEX idx_deferred_subagent_child_batch ON deferred_subagent_child (batch_lifecycle_id)');
     }
 
     /**
