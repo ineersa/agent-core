@@ -33,12 +33,18 @@ use Castor\Attribute\AsTask;
 use function CastorTasks\acquire_castor_check_lock;
 use function CastorTasks\castor_check_lock_is_busy;
 use function CastorTasks\collect_qa_check_run_leaked_processes;
+use function CastorTasks\collect_qa_check_run_leaked_tmux_sessions;
+use function CastorTasks\finalize_qa_run_tui_tmux_sessions;
+use function CastorTasks\inventory_qa_run_owned_tmux_sessions;
+use function CastorTasks\qa_tmux_session_ownership_option;
 use function CastorTasks\release_castor_check_lock;
 use function CastorTasks\report_path;
+use function CastorTasks\run_tmux_command_bounded;
 
 require_once __DIR__.'/../vendor/autoload.php';
 require_once __DIR__.'/helpers.php';
 require_once __DIR__.'/shared.php';
+require_once __DIR__.'/qa_tmux.php';
 
 // ── Shared proc_open parallel runner ──────────────────────────
 
@@ -428,7 +434,7 @@ function _reap_session(?int $sid): void
  *    create their own session) are NOT supported once reparented to
  *    init/systemd after the parent exits — see the NOTE below.
  */
-#[AsTask(name: 'test:timeout-hardstop', description: 'Verify Castor hard timeout + normal-exit session cleanup (7 smoke proofs: A–E incl. PHAR + source + optional worker cleanup) without hangs')]
+#[AsTask(name: 'test:timeout-hardstop', description: 'Verify Castor hard timeout + normal-exit session cleanup (smoke proofs A–H incl. PHAR + source + QA tmux ownership) without hangs')]
 function test_timeout_hardstop(string $cmdOverride = ''): void
 {
     echo "=== Castor timeout hard-stop + normal-exit cleanup smoke proof ===\n\n";
@@ -1075,11 +1081,70 @@ PHPCODE;
         }
     }
 
+    // ── Test H: QA-run tmux ownership survives lane timeout; exact-run finalizer ──
+    echo "\n── Test H: QA-run tmux finalizer after external lane timeout ──\n\n";
+
+    $qaRunIdH = 'qa-tmux-h-'.getmypid();
+    $ownedSessionH = 'hatfield-timeout-h-owned-'.getmypid();
+    $controlSessionH = 'hatfield-timeout-h-control-'.getmypid();
+    $optH = qa_tmux_session_ownership_option();
+
+    run_tmux_command_bounded('kill-session -t '.escapeshellarg($ownedSessionH), 2.0);
+    run_tmux_command_bounded('kill-session -t '.escapeshellarg($controlSessionH), 2.0);
+
+    run_tmux_command_bounded('new-session -d -s '.escapeshellarg($controlSessionH).' sleep 300', 5.0);
+    run_tmux_command_bounded('new-session -d -s '.escapeshellarg($ownedSessionH).' sleep 300', 5.0);
+    run_tmux_command_bounded(
+        'set-option -t '.escapeshellarg($ownedSessionH).' '.escapeshellarg($optH).' '.escapeshellarg($qaRunIdH),
+        5.0,
+    );
+
+    $tmuxLeaksBeforeH = collect_qa_check_run_leaked_tmux_sessions($qaRunIdH);
+    if (1 !== count($tmuxLeaksBeforeH) || $tmuxLeaksBeforeH[0] !== $ownedSessionH) {
+        echo 'FAIL: expected exactly owned session before finalizer, got: '.json_encode($tmuxLeaksBeforeH)."\n";
+        $ok = false;
+    } else {
+        echo "PASS: tmux leak inventory found owned session without relying on pane /proc environ\n";
+    }
+
+    // Simulate castor check after test:tui lane timeout: PHPUnit tearDown did not run.
+    finalize_qa_run_tui_tmux_sessions($qaRunIdH);
+
+    $ownedAfterH = inventory_qa_run_owned_tmux_sessions($qaRunIdH);
+    if ([] !== $ownedAfterH) {
+        echo 'FAIL: owned tmux session(s) remain after finalizer: '.implode(', ', $ownedAfterH)."\n";
+        $ok = false;
+    } else {
+        echo "PASS: exact-run finalizer removed owned tmux session\n";
+    }
+
+    $listedH = run_tmux_command_bounded('list-sessions -F '.escapeshellarg('#{session_name}'), 5.0);
+    $controlAliveH = false;
+    $splitLinesH = preg_split('/\r\n|\r|\n/', $listedH);
+    if (false === $splitLinesH) {
+        $splitLinesH = [];
+    }
+    foreach ($splitLinesH as $lineH) {
+        if (trim($lineH) === $controlSessionH) {
+            $controlAliveH = true;
+            break;
+        }
+    }
+    if (!$controlAliveH) {
+        echo "FAIL: unrelated control tmux session was removed\n";
+        $ok = false;
+    } else {
+        echo "PASS: unrelated control tmux session survived exact-run cleanup\n";
+    }
+
+    run_tmux_command_bounded('kill-session -t '.escapeshellarg($controlSessionH), 5.0);
+    run_tmux_command_bounded('kill-session -t '.escapeshellarg($ownedSessionH), 5.0);
+
     putenv('HATFIELD_QA_RUN_ID');
     unset($_ENV['HATFIELD_QA_RUN_ID']);
 
     if ($ok) {
-        echo "\n✅ All timeout + normal-exit + PHAR/source startup-cleanup (C/C2) + session + separate-PGID + PHPUnit-leak + castor-check-lock + lock-acquire-timeout + QA-run-leak assertions passed.\n";
+        echo "\n✅ All timeout + normal-exit + PHAR/source startup-cleanup (C/C2) + session + separate-PGID + PHPUnit-leak + castor-check-lock + lock-acquire-timeout + QA-run-leak + QA-run-tmux assertions passed.\n";
     } else {
         echo "\n❌ Some assertions FAILED.\n";
         exit(1);
