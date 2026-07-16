@@ -63,6 +63,13 @@ final readonly class VirtualCompactionOrchestrator implements VirtualCompactionO
 
         $preparation = $this->resolvePreparation($messages, $force);
 
+        if ($preparation instanceof CanonicalCompactionNoOp) {
+            return new VirtualCompactionResult(
+                compactedMessages: $messages,
+                compacted: false,
+            );
+        }
+
         try {
             $summaryText = $this->summarizePreparation($preparation, $resolvedModel, $modelOptions);
         } catch (ForkCompactionSummarizationException $exception) {
@@ -83,7 +90,7 @@ final readonly class VirtualCompactionOrchestrator implements VirtualCompactionO
     /**
      * @param list<AgentMessage> $messages
      */
-    private function resolvePreparation(array $messages, bool $force): CompactionPreparationDTO
+    private function resolvePreparation(array $messages, bool $force): CompactionPreparationDTO|CanonicalCompactionNoOp
     {
         $result = $this->sessionCompactor->prepare($messages, $this->compactionConfig);
 
@@ -92,7 +99,7 @@ final readonly class VirtualCompactionOrchestrator implements VirtualCompactionO
         }
 
         if (!$force) {
-            throw new ForkCompactionSummarizationException('Compaction preparation failed: '.($result->skipReason->value ?? 'unknown'), ForkCompactionFailureReasonEnum::PreparationFailed);
+            return new CanonicalCompactionNoOp();
         }
 
         return $this->buildForcedPreparation($messages, $result->skipReason);
