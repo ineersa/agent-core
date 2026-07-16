@@ -16,6 +16,9 @@ use Ineersa\CodingAgent\Agent\Execution\ChildRun\Deferred\Launch\DeferredAgentCh
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Deferred\Launch\DeferredAgentChildBatchPreparationInterface;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Lifecycle\ChildRunArtifactLifecycleService;
 use Ineersa\CodingAgent\Agent\Execution\Fork\ChildRun\Preparation\ForkChildLaunchInputFactory;
+use Ineersa\AgentCore\Contract\RunStoreInterface;
+use Ineersa\CodingAgent\Agent\Execution\Fork\Batch\Deferred\Prelaunch\ForkDeferredPrelaunchPendingException;
+use Ineersa\CodingAgent\Agent\Execution\Fork\Batch\Deferred\Prelaunch\ForkDeferredPrelaunchStagingService;
 use Ineersa\CodingAgent\Agent\Execution\Fork\ForkLaunchTaskDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentBatchProjectionDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentChildLaunchStatusEnum;
@@ -27,6 +30,8 @@ final class DeferredForkBatchPreparationService implements DeferredAgentChildBat
         private readonly DeferredForkBatchIdentityFactory $identityFactory,
         private readonly ChildRunArtifactLifecycleService $artifactLifecycle,
         private readonly ForkChildLaunchInputFactory $launchInputFactory,
+        private readonly ForkDeferredPrelaunchStagingService $prelaunchStaging,
+        private readonly RunStoreInterface $parentRunStore,
     ) {
     }
 
@@ -92,6 +97,36 @@ final class DeferredForkBatchPreparationService implements DeferredAgentChildBat
         DeferredSubagentBatchProjectionDTO $projection,
         DeferredAgentChildBatchLaunchPlanDTO $plan,
     ): array {
+        $parentState = $this->parentRunStore->get($parentRunId);
+        if (null === $parentState) {
+            throw new DeferredAgentChildBatchPreparationFailure(1, new \RuntimeException('Parent run state missing for fork pre-launch.'));
+        }
+
+        try {
+            $this->prelaunchStaging->beginOrResume(
+                parentRunId: $parentRunId,
+                parentToolCallId: $projection->parentToolCallId,
+                batchLifecycleId: $plan->lifecycleId,
+                parentMessages: $parentState->messages,
+            );
+        } catch (ForkDeferredPrelaunchPendingException $e) {
+            throw $e;
+        }
+
+        $forkLocalRunId = $this->prelaunchStagingForkLocalRunId($parentRunId, $projection->parentToolCallId);
+
+        return $this->preparePendingChildrenAfterPrelaunch($parentRunId, $projection, $plan, $forkLocalRunId);
+    }
+
+    /**
+     * @return list<PreparedAgentChildRunDTO>
+     */
+    public function preparePendingChildrenAfterPrelaunch(
+        string $parentRunId,
+        DeferredSubagentBatchProjectionDTO $projection,
+        DeferredAgentChildBatchLaunchPlanDTO $plan,
+        string $forkLocalRunId,
+    ): array {
         $preparedChildren = [];
 
         foreach ($plan->childIntents as $intent) {
@@ -117,7 +152,7 @@ final class DeferredForkBatchPreparationService implements DeferredAgentChildBat
             );
             try {
                 $this->artifactLifecycle->reservePending($identity);
-                $prepared = $this->launchInputFactory->buildPrepared($identity, $forkTask);
+                $prepared = $this->launchInputFactory->buildPreparedFromForkLocal($identity, $forkTask, $forkLocalRunId);
                 $this->artifactLifecycle->ensureReservedPending($identity);
                 $preparedChildren[] = $prepared;
             } catch (\Throwable $e) {
@@ -203,5 +238,15 @@ final class DeferredForkBatchPreparationService implements DeferredAgentChildBat
         }
 
         return AgentArtifactStatusEnum::Pending !== $status;
+    }
+
+    private function prelaunchStagingForkLocalRunId(string $parentRunId, string $parentToolCallId): string
+    {
+        $batch = $this->prelaunchStaging->findForkLocalRunId($parentRunId, $parentToolCallId);
+        if (null === $batch || '' === $batch) {
+            throw new \LogicException('Fork pre-launch staging run id missing.');
+        }
+
+        return $batch;
     }
 }

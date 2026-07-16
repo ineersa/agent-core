@@ -32,6 +32,81 @@ final readonly class ForkChildMessageComposer
      *
      * @return array{systemPrompt: string, messages: list<AgentMessage>}
      */
+    public function composeFromMessages(
+        array $inheritedMessages,
+        string $task,
+        string $artifactId,
+        array $allowedToolNames,
+        ?string $agentsMd,
+        ?string $skillsContext,
+        ?string $agentsContext,
+    ): array {
+        $forkPromptBuilder = new ForkTaskPromptBuilder();
+        $systemMessageText = $this->buildSystemMessageTextFromTools(
+            $allowedToolNames,
+            $forkPromptBuilder->forkChildSystemPromptAppend(),
+        );
+        $messages = [];
+        if ('' !== trim($systemMessageText)) {
+            $messages[] = new AgentMessage(role: 'system', content: [['type' => 'text', 'text' => $systemMessageText]]);
+        }
+        foreach ([
+            ['text' => $agentsMd, 'source' => 'agents_context'],
+            ['text' => $skillsContext, 'source' => 'skills_context'],
+            ['text' => $agentsContext, 'source' => 'agents_definitions_context'],
+        ] as $channel) {
+            $body = is_string($channel['text']) ? trim($channel['text']) : '';
+            if ('' === $body) {
+                continue;
+            }
+            $messages[] = new AgentMessage(
+                role: 'user-context',
+                content: [['type' => 'text', 'text' => $body]],
+                metadata: ['source' => $channel['source']],
+            );
+        }
+        foreach ($inheritedMessages as $message) {
+            if ('system' === $message->role || 'user-context' === $message->role) {
+                continue;
+            }
+            $messages[] = $message;
+        }
+        $messages[] = new AgentMessage(
+            role: 'user-context',
+            content: [['type' => 'text', 'text' => $this->buildForkChildContract($artifactId)]],
+            metadata: ['source' => 'agent_child_contract'],
+        );
+        $messages[] = new AgentMessage(
+            role: 'user',
+            content: [['type' => 'text', 'text' => $forkPromptBuilder->buildTaskUserMessage($task)]],
+        );
+
+        return ['messages' => $messages];
+    }
+
+    /**
+     * @param list<string> $allowedToolNames
+     */
+    private function buildSystemMessageTextFromTools(array $allowedToolNames, string $forkAppend): string
+    {
+        $parts = [];
+        $base = $this->systemPromptBuilder->buildChildHarnessFragment($allowedToolNames);
+        if ('' !== trim($base)) {
+            $parts[] = $base;
+        }
+        if ('' !== trim($forkAppend)) {
+            $parts[] = trim($forkAppend);
+        }
+        $appends = $this->systemPromptBuilder->buildChildAppendsFragment($allowedToolNames);
+        if ('' !== trim($appends)) {
+            $parts[] = trim($appends);
+        }
+
+        return implode("
+
+", $parts);
+    }
+
     public function compose(
         ForkSessionSnapshotDTO $snapshot,
         string $artifactId,

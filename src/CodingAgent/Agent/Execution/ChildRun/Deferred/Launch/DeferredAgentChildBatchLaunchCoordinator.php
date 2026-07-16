@@ -9,6 +9,7 @@ use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchExecutionModeEnum;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchLaunchStatusEnum;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentBatchProjectionDTO;
+use Ineersa\CodingAgent\Agent\Execution\Fork\Batch\Deferred\Prelaunch\ForkDeferredPrelaunchPendingException;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Clock\Clock;
@@ -88,6 +89,8 @@ final class DeferredAgentChildBatchLaunchCoordinator
 
         try {
             $preparedChildren = $batchPreparation->preparePendingChildren($parentRunId, $projection, $plan);
+        } catch (ForkDeferredPrelaunchPendingException) {
+            return new DeferredToolCompletionOutcome($lifecycleId);
         } catch (DeferredAgentChildBatchPreparationFailure $e) {
             $this->runtimeStart->abortAfterPreparationFailure(
                 $parentRunId,

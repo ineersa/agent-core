@@ -74,6 +74,12 @@ class DeferredSubagentBatch
     #[ORM\Column(name: 'interruption_progress_enqueued_at', type: 'datetime_immutable', nullable: true)]
     public ?\DateTimeImmutable $interruptionProgressEnqueuedAt = null;
 
+    #[ORM\Column(name: 'fork_local_run_id', type: 'string', length: 255, nullable: true)]
+    public ?string $forkLocalRunId = null;
+
+    #[ORM\Column(name: 'prelaunch_phase', type: 'string', length: 64, nullable: true)]
+    public ?string $prelaunchPhase = null;
+
     #[ORM\Column(name: 'created_at', type: 'datetime_immutable')]
     public \DateTimeImmutable $createdAt;
 

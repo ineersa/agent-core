@@ -12,6 +12,7 @@ use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchExecutionModeEnum;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchLaunchStatusEnum;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentBatchProjectionDTO;
+use Ineersa\CodingAgent\Agent\Execution\Fork\Batch\Deferred\Prelaunch\ForkDeferredPrelaunchPhaseEnum;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentChildLaunchStatusEnum;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredChildRunLifecycleProjectionDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredSubagentInterruptionKindEnum;
@@ -29,14 +30,54 @@ final class DeferredSubagentBatchRepository extends ServiceEntityRepository
         parent::__construct($registry, DeferredSubagentBatch::class);
     }
 
-    public function findByParentRunAndToolCall(string $parentRunId, string $parentToolCallId): ?DeferredSubagentBatchProjectionDTO
+
+    public function findByForkLocalRunId(string $forkLocalRunId): ?DeferredSubagentBatch
+    {
+        $row = $this->findOneBy(['forkLocalRunId' => $forkLocalRunId]);
+
+        return $row instanceof DeferredSubagentBatch ? $row : null;
+    }
+
+    public function applyForkPrelaunchStaging(
+        string $parentRunId,
+        string $parentToolCallId,
+        string $forkLocalRunId,
+        ForkDeferredPrelaunchPhaseEnum $phase,
+    ): void {
+        $row = $this->requireBatch($parentRunId, $parentToolCallId);
+        $row->forkLocalRunId = $forkLocalRunId;
+        $row->prelaunchPhase = $phase->value;
+        $this->getEntityManager()->flush();
+    }
+
+    public function applyForkPrelaunchPhase(
+        string $parentRunId,
+        string $parentToolCallId,
+        ForkDeferredPrelaunchPhaseEnum $phase,
+    ): void {
+        $row = $this->requireBatch($parentRunId, $parentToolCallId);
+        $row->prelaunchPhase = $phase->value;
+        $this->getEntityManager()->flush();
+    }
+
+    private function requireBatch(string $parentRunId, string $parentToolCallId): DeferredSubagentBatch
+    {
+        $row = $this->findByParentRunAndToolCall($parentRunId, $parentToolCallId);
+        if (!$row instanceof DeferredSubagentBatch) {
+            throw new \RuntimeException(\sprintf('Deferred batch missing for parent "%s" tool "%s".', $parentRunId, $parentToolCallId));
+        }
+
+        return $row;
+    }
+
+    public function findByParentRunAndToolCall(string $parentRunId, string $parentToolCallId): ?DeferredSubagentBatch
     {
         $row = $this->findOneBy([
             'parentRunId' => $parentRunId,
             'parentToolCallId' => $parentToolCallId,
         ]);
 
-        return $row instanceof DeferredSubagentBatch ? $this->toDto($row) : null;
+        return $row instanceof DeferredSubagentBatch ? $row : null;
     }
 
     public function findEntityByLifecycleId(string $lifecycleId): ?DeferredSubagentBatch
@@ -616,6 +657,13 @@ final class DeferredSubagentBatchRepository extends ServiceEntityRepository
         }
 
         return $row;
+    }
+
+    public function findProjectionByLifecycleId(string $lifecycleId): ?DeferredSubagentBatchProjectionDTO
+    {
+        $row = $this->findOneBy(['lifecycleId' => $lifecycleId]);
+
+        return $row instanceof DeferredSubagentBatch ? $this->toDto($row) : null;
     }
 
     private function toDto(DeferredSubagentBatch $row): DeferredSubagentBatchProjectionDTO

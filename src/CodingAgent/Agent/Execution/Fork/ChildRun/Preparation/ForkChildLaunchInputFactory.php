@@ -38,6 +38,55 @@ final class ForkChildLaunchInputFactory
     ) {
     }
 
+
+    public function buildPreparedFromForkLocal(ChildRunIdentityDTO $identity, ForkLaunchTaskDTO $task, string $forkLocalRunId): PreparedAgentChildRunDTO
+    {
+        $forkLocalState = $this->parentRunStore->get($forkLocalRunId);
+        if (null === $forkLocalState) {
+            throw new ToolCallException('Fork pre-launch copy is missing persisted state.', retryable: false);
+        }
+
+        $parentRunId = $identity->parentRunId;
+        $policy = $this->resolveForkToolPolicy($parentRunId);
+        $composed = $this->messageComposer->composeFromMessages(
+            inheritedMessages: $forkLocalState->messages,
+            task: $task->taskSummary(),
+            artifactId: $identity->artifactId,
+            allowedToolNames: $policy['tools'],
+            agentsMd: $this->extractUserContextBySource($parentRunId, 'agents_context'),
+            skillsContext: $this->skillsContextBuilder->build(),
+            agentsContext: $this->agentsContextBuilder->build(),
+        );
+
+        $resolvedModel = $this->resolveChildModel($task->modelOverride, null, $parentRunId);
+        $resolvedReasoning = $this->resolveChildReasoning($task->reasoningOverride, null, $parentRunId);
+
+        return new PreparedAgentChildRunDTO(
+            identity: $identity,
+            startRunInput: new StartRunInput(
+                systemPrompt: '',
+                messages: $composed['messages'],
+                runId: $identity->childRunId,
+                metadata: new RunMetadata(
+                    session: [
+                        'kind' => 'agent_child',
+                        'child_kind' => 'fork',
+                        'parent_run_id' => $parentRunId,
+                        'agent_name' => $identity->displayName,
+                        'artifact_id' => $identity->artifactId,
+                        'interactive' => true,
+                    ],
+                    model: $resolvedModel,
+                    reasoning: $resolvedReasoning,
+                    toolsScope: [
+                        'allowed_tools' => $policy['tools'],
+                        'mcp' => $policy['mcp'],
+                    ],
+                ),
+            ),
+        );
+    }
+
     public function buildPrepared(ChildRunIdentityDTO $identity, ForkLaunchTaskDTO $task): PreparedAgentChildRunDTO
     {
         $parentRunId = $identity->parentRunId;
