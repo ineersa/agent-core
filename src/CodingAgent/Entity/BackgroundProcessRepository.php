@@ -37,6 +37,25 @@ final class BackgroundProcessRepository extends ServiceEntityRepository
     }
 
     /**
+     * Fetch the newest retained row for an OS PID (globally, not session-scoped).
+     *
+     * OS PIDs are reused while historical rows are retained. Public
+     * PID-addressed tools (bg_status) resolve the latest row by id DESC;
+     * callers enforce session ownership after resolution. Foreground BashTool
+     * must use immutable record IDs instead of this lookup.
+     */
+    public function findLatestByPid(int $pid): ?BackgroundProcess
+    {
+        return $this->createQueryBuilder('bp')
+            ->where('bp.pid = :pid')
+            ->setParameter('pid', $pid)
+            ->orderBy('bp.id', 'DESC')
+            ->setMaxResults(1)
+            ->getQuery()
+            ->getOneOrNullResult();
+    }
+
+    /**
      * Check whether a row exists for the given auto-increment record ID.
      *
      * Uses an ORM COUNT query that always hits the database, bypassing the

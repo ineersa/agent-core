@@ -71,53 +71,6 @@ final class ProcessStore
     }
 
     /**
-     * Mark a process as stopped by user with finished timestamp.
-     */
-    public function markStoppedByUser(int $pid, \DateTimeImmutable $finishedAt): void
-    {
-        $entity = $this->repository
-            ->findOneBy(['pid' => $pid]);
-
-        if (null === $entity) {
-            throw new \RuntimeException(\sprintf('Background process with PID %d not found.', $pid));
-        }
-
-        $entity->markStopped($finishedAt);
-
-        $this->entityManager->flush();
-    }
-
-    /**
-     * Mark a process as explicitly backgrounded (user accepted via prompt).
-     */
-    public function markBackgrounded(int $pid, \DateTimeImmutable $now): void
-    {
-        $entity = $this->fetchByPid($pid);
-
-        if (null === $entity) {
-            throw new \RuntimeException(\sprintf('Background process with PID %d not found.', $pid));
-        }
-
-        $entity->markBackgrounded($now);
-        $this->entityManager->flush();
-    }
-
-    /**
-     * Mark a process as notified of completion.
-     */
-    public function markCompletionNotified(int $pid, \DateTimeImmutable $now): void
-    {
-        $entity = $this->fetchByPid($pid);
-
-        if (null === $entity) {
-            throw new \RuntimeException(\sprintf('Background process with PID %d not found.', $pid));
-        }
-
-        $entity->markCompletionNotified($now);
-        $this->entityManager->flush();
-    }
-
-    /**
      * Find background processes that finished and should notify on completion.
      *
      * Query conditions: finishedAt IS NOT NULL, backgroundedAt IS NOT NULL,
@@ -133,25 +86,21 @@ final class ProcessStore
     }
 
     /**
-     * Fetch a single entity by PID.
+     * Fetch the newest retained entity for an OS PID (globally by id DESC).
      *
-     * Returns null when no matching row is found.  Callers that need to
-     * distinguish "row absent" from ORM/connection inconsistency should
-     * call existsByPid() separately.
-     *
-     * Note: OS PIDs can be reused while old records are retained, so this
-     * is a non-unique lookup.  Prefer fetchByRecordId() with the immutable
-     * auto-increment primary key when the DB id is available.
+     * Used for public PID-addressed operations (bg_status). Session ownership
+     * is enforced by callers after resolution. Foreground BashTool must use
+     * fetchByRecordId() with the immutable primary key.
      */
-    public function fetchByPid(int $pid): ?BackgroundProcess
+    public function fetchLatestByPid(int $pid): ?BackgroundProcess
     {
-        return $this->repository->findOneBy(['pid' => $pid]);
+        return $this->repository->findLatestByPid($pid);
     }
 
     /**
      * Fetch a single entity by auto-increment record ID.
      *
-     * Unlike fetchByPid() which queries by OS PID (which can be reused),
+     * Unlike PID-based lookups (OS PIDs can be reused while rows are retained),
      * this queries by the immutable auto-increment primary key.  Prefer
      * this when the DB id is available (e.g. from StartResult::$id).
      */
