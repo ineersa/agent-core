@@ -11,7 +11,8 @@ use Ineersa\CodingAgent\Agent\Execution\ChildRun\Lifecycle\ChildRunBatchLaunchSe
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchIdentityFactory;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchLaunchService;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchPreparationService;
-use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchRuntimeStartService;
+use Ineersa\CodingAgent\Agent\Execution\ChildRun\Deferred\Launch\DeferredAgentChildBatchLaunchCoordinator;
+use Ineersa\CodingAgent\Agent\Execution\ChildRun\Deferred\Launch\DeferredAgentChildBatchRuntimeStartService;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Preparation\SubagentChildLaunchInputFactory;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Preparation\SubagentLaunchDefinitionPolicyService;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\SubagentChildRunBatchLifecyclePolicyFactory;
@@ -69,7 +70,7 @@ final class SubagentExecutionServiceFactory
         );
 
         $identityFactory = new DeferredSubagentBatchIdentityFactory();
-        $runtimeStart = new DeferredSubagentBatchRuntimeStartService(
+        $runtimeStart = new DeferredAgentChildBatchRuntimeStartService(
             $args['agentRunner'],
             $artifactLifecycle,
             $batchLaunchService,
@@ -82,13 +83,17 @@ final class SubagentExecutionServiceFactory
             $artifactLifecycle,
         );
 
-        $deferredBatchLaunch = new DeferredSubagentBatchLaunchService(
-            $batchPreparation,
+        $coordinator = new DeferredAgentChildBatchLaunchCoordinator(
             $args['batchRepository'],
             $runtimeStart,
             $args['contextAccessor'],
-            $args['agentsConfig'],
             $args['logger'],
+        );
+
+        $deferredBatchLaunch = new DeferredSubagentBatchLaunchService(
+            $batchPreparation,
+            $coordinator,
+            $args['agentsConfig'],
         );
 
         return new SubagentExecutionService($deferredBatchLaunch);

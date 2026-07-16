@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch;
+namespace Ineersa\CodingAgent\Agent\Execution\ChildRun\Deferred\Launch;
 
 use Ineersa\AgentCore\Contract\AgentRunnerInterface;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
@@ -18,7 +18,7 @@ use Psr\Log\LoggerInterface;
 /**
  * Ordered runtime child starts and canonical launch-abort for deferred batch launch (Piece 4A).
  */
-final class DeferredSubagentBatchRuntimeStartService
+final class DeferredAgentChildBatchRuntimeStartService
 {
     public function __construct(
         private readonly AgentRunnerInterface $agentRunner,
@@ -33,7 +33,7 @@ final class DeferredSubagentBatchRuntimeStartService
      * @param list<ChildRunIdentityDTO>      $identities
      * @param list<PreparedAgentChildRunDTO> $preparedChildren
      *
-     * @throws DeferredSubagentBatchRuntimeStartFailure when a runtime start fails (after abort cleanup)
+     * @throws DeferredAgentChildBatchRuntimeStartFailure when a runtime start fails (after abort cleanup)
      */
     public function startPreparedInOrder(
         string $parentRunId,
@@ -64,7 +64,7 @@ final class DeferredSubagentBatchRuntimeStartService
                     $knownStartedChildRunIds,
                 );
 
-                throw new DeferredSubagentBatchRuntimeStartFailure($prepared->identity->batchIndex, $e);
+                throw new DeferredAgentChildBatchRuntimeStartFailure($prepared->identity->batchIndex, $e);
             }
 
             try {

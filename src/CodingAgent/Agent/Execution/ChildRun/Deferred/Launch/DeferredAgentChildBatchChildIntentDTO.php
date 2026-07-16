@@ -2,12 +2,12 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch;
+namespace Ineersa\CodingAgent\Agent\Execution\ChildRun\Deferred\Launch;
 
 /**
- * Ordered durable child reservation intent for deferred batch launch (Piece 4A).
+ * Ordered durable child reservation intent for deferred batch launch.
  */
-final readonly class DeferredSubagentBatchChildIntentDTO
+final readonly class DeferredAgentChildBatchChildIntentDTO
 {
     public function __construct(
         public int $batchIndex,

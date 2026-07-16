@@ -2,28 +2,25 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch;
+namespace Ineersa\CodingAgent\Agent\Execution\ChildRun\Deferred\Launch;
 
-use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchExecutionModeEnum;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunIdentityDTO;
 
 /**
- * Immutable ordered launch plan: identities, intents, and definitions resolved once (Piece 4A).
+ * Generic immutable launch plan: identities and reservation intents.
  */
-final readonly class DeferredSubagentBatchLaunchPlanDTO
+final readonly class DeferredAgentChildBatchLaunchPlanDTO
 {
     /**
-     * @param list<DeferredSubagentBatchChildIntentDTO> $childIntents
-     * @param array<int, AgentDefinitionDTO>            $definitionsByBatchIndex
-     * @param list<ChildRunIdentityDTO>                 $identities
+     * @param list<DeferredAgentChildBatchChildIntentDTO> $childIntents
+     * @param list<ChildRunIdentityDTO>                   $identities
      */
     public function __construct(
         public string $lifecycleId,
         public ChildRunBatchExecutionModeEnum $executionMode,
         public int $totalChildCount,
         public array $childIntents,
-        public array $definitionsByBatchIndex,
         public array $identities,
     ) {
     }
@@ -33,6 +30,9 @@ final readonly class DeferredSubagentBatchLaunchPlanDTO
      */
     public function reserveChildIntents(): array
     {
-        return array_map(static fn (DeferredSubagentBatchChildIntentDTO $intent): array => $intent->toReserveArray(), $this->childIntents);
+        return array_map(
+            static fn (DeferredAgentChildBatchChildIntentDTO $intent): array => $intent->toReserveArray(),
+            $this->childIntents,
+        );
     }
 }
