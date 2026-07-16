@@ -349,7 +349,7 @@ final class SubagentPromptUserContextContractTest extends IsolatedKernelTestCase
             'childProgressSummaryBuilder' => new SubagentChildProgressSummaryBuilder(self::getContainer()->get(AgentChildRunEventStoreFactory::class)),
             'appConfig' => self::getContainer()->get(\Ineersa\CodingAgent\Config\AppConfig::class),
             'batchRepository' => self::getContainer()->get(\Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository::class),
-            'lifecycleListener' => self::getContainer()->get(\Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\SubagentChildRunBatchLifecycleListener::class),
+            'lifecycleListener' => self::getContainer()->get(\Ineersa\CodingAgent\Agent\Execution\ChildRun\AgentChildRunBatchLifecycleListener::class),
         ]);
     }
 

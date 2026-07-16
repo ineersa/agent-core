@@ -21,7 +21,7 @@ use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Progress\Deferre
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentBatchProjectionDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentChildProjectionDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredSubagentInterruptionKindEnum;
-use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Result\SubagentChildRunHandoffRenderer;
+use Ineersa\CodingAgent\Agent\Execution\ChildRun\Result\AgentChildRunHandoffRenderer;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\SubagentParallelAggregateResultFormatter;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
 
@@ -34,7 +34,7 @@ final readonly class DeferredSubagentBatchInterruptionCompletionService
         private DeferredSubagentBatchRepository $batchRepository,
         private ChildRunBatchLifecycleListenerInterface $lifecycleListener,
         private SubagentParallelAggregateResultFormatter $parallelFormatter,
-        private SubagentChildRunHandoffRenderer $handoffRenderer,
+        private AgentChildRunHandoffRenderer $handoffRenderer,
         private DeferredSubagentBatchProgressDeliveryService $progressDelivery,
         private DeferredSubagentBatchCompletionDispatcher $completionDispatcher,
         private DeferredSubagentBatchChildOutcomeFactory $outcomeFactory,
@@ -106,12 +106,7 @@ final readonly class DeferredSubagentBatchInterruptionCompletionService
         );
 
         if (DeferredSubagentInterruptionKindEnum::Timeout === $kind) {
-            $presentation = $this->handoffRenderer->formatTimeoutResult(
-                $identity->displayName,
-                $timeoutSecs,
-                $identity->taskSummary,
-                $identity->artifactId,
-            );
+            $presentation = $this->handoffRenderer->formatTimeoutResult($identity, $timeoutSecs);
             $this->completionDispatcher->dispatchCompletion(
                 lifecycleId: $batch->lifecycleId,
                 parentRunId: $batch->parentRunId,
@@ -125,7 +120,7 @@ final readonly class DeferredSubagentBatchInterruptionCompletionService
             return;
         }
 
-        $presentation = $this->handoffRenderer->formatParentCancelledSingleMessage($identity->displayName, $identity->artifactId);
+        $presentation = $this->handoffRenderer->formatParentCancelledSingleMessage($identity);
         $errorEnvelope = $this->buildErrorEnvelope($presentation, true);
         $this->completionDispatcher->dispatchCompletion(
             lifecycleId: $batch->lifecycleId,

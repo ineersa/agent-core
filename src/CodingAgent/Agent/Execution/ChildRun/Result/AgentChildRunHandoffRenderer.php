@@ -2,15 +2,17 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Result;
+namespace Ineersa\CodingAgent\Agent\Execution\ChildRun\Result;
 
 use Ineersa\AgentCore\Domain\Run\RunState;
+use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
+use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunIdentityDTO;
 
 /**
  * Builds handoff markdown and user-visible result strings for foreground child runs.
  */
-final class SubagentChildRunHandoffRenderer
+final class AgentChildRunHandoffRenderer
 {
     public function buildHandoffMarkdown(
         AgentArtifactStatusEnum $status,
@@ -21,7 +23,9 @@ final class SubagentChildRunHandoffRenderer
         ?string $agentName = null,
         ?string $agentRunId = null,
         ?RunState $childState = null,
+        ?ChildRunIdentityDTO $identity = null,
     ): string {
+        $kind = $identity?->artifactKind ?? AgentArtifactKindEnum::Subagent;
         if (AgentArtifactStatusEnum::Cancelled === $status) {
             return $this->buildCancelledHandoffMarkdown(
                 artifactId: $artifactId,
@@ -29,11 +33,12 @@ final class SubagentChildRunHandoffRenderer
                 agentRunId: $agentRunId,
                 summary: $summary,
                 childState: $childState,
+                kind: $kind,
             );
         }
 
         $lines = [
-            '# Subagent handoff',
+            '# '.$this->handoffHeading($kind),
             '',
             'Status: '.$status->value,
         ];
@@ -62,7 +67,7 @@ final class SubagentChildRunHandoffRenderer
         return implode("\n", $lines)."\n";
     }
 
-    public function formatParentCancelledSingleMessage(string $displayName, string $artifactId): string
+    public function formatParentCancelledSingleMessage(ChildRunIdentityDTO $identity): string
     {
         $template = <<<'TXT'
 {headline}
@@ -72,12 +77,12 @@ Use agent_retrieve (metadata/events/history) for partial child details.
 TXT;
 
         return strtr($template, [
-            '{headline}' => \sprintf('Subagent %s cancelled by parent run.', $displayName),
-            '{artifact_id}' => $artifactId,
+            '{headline}' => \sprintf('%s %s cancelled by parent run.', $this->kindLabel($identity->artifactKind), $identity->displayName),
+            '{artifact_id}' => $identity->artifactId,
         ]);
     }
 
-    public function formatChildCancelledMessage(string $displayName, string $artifactId): string
+    public function formatChildCancelledMessage(ChildRunIdentityDTO $identity): string
     {
         $template = <<<'TXT'
 {headline}
@@ -87,31 +92,39 @@ Use agent_retrieve (metadata/events/history) for partial child details.
 TXT;
 
         return strtr($template, [
-            '{headline}' => \sprintf('Subagent %s was cancelled.', $displayName),
-            '{artifact_id}' => $artifactId,
+            '{headline}' => \sprintf('%s %s was cancelled.', $this->kindLabel($identity->artifactKind), $identity->displayName),
+            '{artifact_id}' => $identity->artifactId,
         ]);
     }
 
-    public function formatCompletedResult(string $displayName, string $artifactId, string $finalMessages): string
+    public function formatCompletedResult(ChildRunIdentityDTO $identity, string $finalMessages): string
     {
         return \sprintf(
-            "Subagent %s completed.\nArtifact: %s\n\nFull handoff is included below (agent_retrieve is optional for single-mode success; use it only for metadata/history/debug or if you need to re-read this artifact).\n\n%s",
-            $displayName,
-            $artifactId,
+            "%s %s completed.\nArtifact: %s\n\nFull handoff is included below (agent_retrieve is optional for single-mode success; use it only for metadata/history/debug or if you need to re-read this artifact).\n\n%s",
+            $this->kindLabel($identity->artifactKind),
+            $identity->displayName,
+            $identity->artifactId,
             $finalMessages,
         );
     }
 
-    public function formatFailedResult(string $displayName, string $artifactId, string $errorMsg): string
+    public function formatFailedResult(ChildRunIdentityDTO $identity, string $errorMsg): string
     {
-        return \sprintf("Subagent %s failed: %s\nArtifact: %s",
-            $displayName, $errorMsg, $artifactId);
+        return \sprintf("%s %s failed: %s\nArtifact: %s",
+            $this->kindLabel($identity->artifactKind),
+            $identity->displayName,
+            $errorMsg,
+            $identity->artifactId);
     }
 
-    public function formatTimeoutResult(string $displayName, int $timeoutSeconds, string $taskSummary, string $artifactId): string
+    public function formatTimeoutResult(ChildRunIdentityDTO $identity, int $timeoutSeconds): string
     {
-        return \sprintf("Subagent %s timed out after %d seconds. Task: %s\nArtifact: %s",
-            $displayName, $timeoutSeconds, $taskSummary, $artifactId);
+        return \sprintf("%s %s timed out after %d seconds. Task: %s\nArtifact: %s",
+            $this->kindLabel($identity->artifactKind),
+            $identity->displayName,
+            $timeoutSeconds,
+            $identity->taskSummary,
+            $identity->artifactId);
     }
 
     public function extractLastMessage(RunState $state): string
@@ -142,9 +155,10 @@ TXT;
         ?string $agentRunId,
         ?string $summary,
         ?RunState $childState,
+        AgentArtifactKindEnum $kind = AgentArtifactKindEnum::Subagent,
     ): string {
         $template = <<<'MD'
-# Subagent handoff
+# {handoff_heading}
 
 Status: cancelled
 {artifact_line}{agent_line}{agent_run_line}
@@ -209,12 +223,29 @@ Use agent_retrieve (metadata/events/history) for more child details.'.'
 
         $markdown = strtr($template, $replacements);
         $valueMap = [
+            '{handoff_heading}' => $this->handoffHeading($kind),
             '{artifact_id}' => $artifactId ?? '',
             '{agent_name}' => $agentName ?? '',
             '{agent_run_id}' => $agentRunId ?? '',
         ];
 
         return strtr($markdown, $valueMap);
+    }
+
+    private function kindLabel(AgentArtifactKindEnum $kind): string
+    {
+        return match ($kind) {
+            AgentArtifactKindEnum::Fork => 'Fork',
+            AgentArtifactKindEnum::Subagent => 'Subagent',
+        };
+    }
+
+    private function handoffHeading(AgentArtifactKindEnum $kind): string
+    {
+        return match ($kind) {
+            AgentArtifactKindEnum::Fork => 'Fork handoff',
+            AgentArtifactKindEnum::Subagent => 'Subagent handoff',
+        };
     }
 
     private function summarizeLastKnownActivity(RunState $state): string

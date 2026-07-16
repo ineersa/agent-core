@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Agent\Execution\Subagent\Batch\Deferred\Launch;
 
+use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\AgentRunnerInterface;
@@ -152,6 +153,7 @@ final class DeferredSubagentBatchLaunchTest extends IsolatedKernelTestCase
                     'agentName' => 'batch-retry',
                     'task' => 'Partial one',
                     'definitionModel' => null,
+                    'artifactKind' => AgentArtifactKindEnum::Subagent->value,
                 ],
                 [
                     'batchIndex' => 2,
@@ -160,6 +162,7 @@ final class DeferredSubagentBatchLaunchTest extends IsolatedKernelTestCase
                     'agentName' => 'batch-retry',
                     'task' => 'Partial two',
                     'definitionModel' => null,
+                    'artifactKind' => AgentArtifactKindEnum::Subagent->value,
                 ],
             ],
         );
@@ -460,7 +463,7 @@ final class DeferredSubagentBatchLaunchTest extends IsolatedKernelTestCase
         $batchLaunchService = new \Ineersa\CodingAgent\Agent\Execution\ChildRun\Lifecycle\ChildRunBatchLaunchService(
             $agentRunner,
             $artifactLifecycle,
-            self::getContainer()->get(\Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\SubagentChildRunBatchLifecycleListener::class),
+            self::getContainer()->get(\Ineersa\CodingAgent\Agent\Execution\ChildRun\AgentChildRunBatchLifecycleListener::class),
             $logger,
         );
         $identityFactory = new DeferredSubagentBatchIdentityFactory();

@@ -41,8 +41,8 @@ use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Progress\Deferre
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredChildRunEventProjector;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredSubagentInterruptionKindEnum;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Progress\SubagentProgressEventAppender;
-use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Result\SubagentChildRunHandoffRenderer;
-use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\SubagentChildRunBatchLifecycleListener;
+use Ineersa\CodingAgent\Agent\Execution\ChildRun\Result\AgentChildRunHandoffRenderer;
+use Ineersa\CodingAgent\Agent\Execution\ChildRun\AgentChildRunBatchLifecycleListener;
 use Ineersa\CodingAgent\Agent\Execution\SubagentChildProgressSummaryBuilder;
 use Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
@@ -55,6 +55,47 @@ use Symfony\Component\Clock\MockClock;
 #[Group('db')]
 final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
 {
+
+    public function testDurableReservedForkChildKindSurvivesProjectionAndTerminalIdentity(): void
+    {
+        $repo = self::getContainer()->get(DeferredSubagentBatchRepository::class);
+        $factory = new DeferredSubagentBatchIdentityFactory();
+        $parent = 'parent-batch-fork-kind';
+        $tool = 'tool-batch-fork-kind';
+        $lifecycle = $factory->batchLifecycleId($parent, $tool);
+        $c1 = $factory->childIdentity($parent, $tool, 1);
+        $repo->reserveBatch(
+            lifecycleId: $lifecycle,
+            parentRunId: $parent,
+            parentTurnNo: 2,
+            parentToolCallId: $tool,
+            parentOrderIndex: 0,
+            executionMode: ChildRunBatchExecutionModeEnum::Single,
+            totalChildCount: 1,
+            deadlineAt: new \DateTimeImmutable('+600 seconds'),
+            childIntents: [
+                [
+                    'batchIndex' => 1,
+                    'childRunId' => $c1['childRunId'],
+                    'artifactId' => $c1['artifactId'],
+                    'agentName' => 'fork',
+                    'task' => 'Fork task',
+                    'definitionModel' => null,
+                    'artifactKind' => AgentArtifactKindEnum::Fork->value,
+                ],
+            ],
+        );
+
+        $projection = $repo->findByLifecycleId($lifecycle);
+        $this->assertNotNull($projection);
+        $child = $projection->children[0];
+        $this->assertSame(AgentArtifactKindEnum::Fork, $child->artifactKind);
+
+        $outcomeFactory = new DeferredSubagentBatchChildOutcomeFactory();
+        $identity = $outcomeFactory->identityFromChild($projection, $child);
+        $this->assertSame(AgentArtifactKindEnum::Fork, $identity->artifactKind);
+    }
+
     public function testObservationProjectsChildCursorAndAggregateRevisionWithGapAndDuplicateSemantics(): void
     {
         $repo = self::getContainer()->get(DeferredSubagentBatchRepository::class);
@@ -73,7 +114,8 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
             totalChildCount: 1,
             deadlineAt: new \DateTimeImmutable('+600 seconds'),
             childIntents: [
-                ['batchIndex' => 1, 'childRunId' => $c1['childRunId'], 'artifactId' => $c1['artifactId'], 'agentName' => 'o-one', 'task' => 'O1', 'definitionModel' => null],
+                ['batchIndex' => 1, 'childRunId' => $c1['childRunId'], 'artifactId' => $c1['artifactId'], 'agentName' => 'o-one', 'task' => 'O1', 'definitionModel' => null,
+                    'artifactKind' => AgentArtifactKindEnum::Subagent->value],
             ],
         );
         $repo->applyLaunchSuccessState($parent, $tool, $lifecycle, new \DateTimeImmutable(), [1]);
@@ -133,8 +175,10 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
             totalChildCount: 2,
             deadlineAt: new \DateTimeImmutable('+600 seconds'),
             childIntents: [
-                ['batchIndex' => 1, 'childRunId' => $c1['childRunId'], 'artifactId' => $c1['artifactId'], 'agentName' => 'p-one', 'task' => 'P1', 'definitionModel' => null],
-                ['batchIndex' => 2, 'childRunId' => $c2['childRunId'], 'artifactId' => $c2['artifactId'], 'agentName' => 'p-two', 'task' => 'P2', 'definitionModel' => null],
+                ['batchIndex' => 1, 'childRunId' => $c1['childRunId'], 'artifactId' => $c1['artifactId'], 'agentName' => 'p-one', 'task' => 'P1', 'definitionModel' => null,
+                    'artifactKind' => AgentArtifactKindEnum::Subagent->value],
+                ['batchIndex' => 2, 'childRunId' => $c2['childRunId'], 'artifactId' => $c2['artifactId'], 'agentName' => 'p-two', 'task' => 'P2', 'definitionModel' => null,
+                    'artifactKind' => AgentArtifactKindEnum::Subagent->value],
             ],
         );
         $repo->applyLaunchSuccessState($parent, $tool, $lifecycle, new \DateTimeImmutable(), [1, 2]);
@@ -206,8 +250,10 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
             totalChildCount: 2,
             deadlineAt: new \DateTimeImmutable('+600 seconds'),
             childIntents: [
-                ['batchIndex' => 1, 'childRunId' => $c1['childRunId'], 'artifactId' => $c1['artifactId'], 'agentName' => \sprintf('t%s-one', $scenario), 'task' => \sprintf('T%s-1', $scenario), 'definitionModel' => null],
-                ['batchIndex' => 2, 'childRunId' => $c2['childRunId'], 'artifactId' => $c2['artifactId'], 'agentName' => \sprintf('t%s-two', $scenario), 'task' => \sprintf('T%s-2', $scenario), 'definitionModel' => null],
+                ['batchIndex' => 1, 'childRunId' => $c1['childRunId'], 'artifactId' => $c1['artifactId'], 'agentName' => \sprintf('t%s-one', $scenario), 'task' => \sprintf('T%s-1', $scenario), 'definitionModel' => null,
+                    'artifactKind' => AgentArtifactKindEnum::Subagent->value],
+                ['batchIndex' => 2, 'childRunId' => $c2['childRunId'], 'artifactId' => $c2['artifactId'], 'agentName' => \sprintf('t%s-two', $scenario), 'task' => \sprintf('T%s-2', $scenario), 'definitionModel' => null,
+                    'artifactKind' => AgentArtifactKindEnum::Subagent->value],
             ],
         );
         $repo->applyLaunchSuccessState($parent, $tool, $lifecycle, new \DateTimeImmutable(), [1, 2]);
@@ -306,8 +352,10 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
             totalChildCount: 2,
             deadlineAt: $deadline,
             childIntents: [
-                ['batchIndex' => 1, 'childRunId' => $c1['childRunId'], 'artifactId' => $c1['artifactId'], 'agentName' => 'i-one', 'task' => 'I1', 'definitionModel' => null],
-                ['batchIndex' => 2, 'childRunId' => $c2['childRunId'], 'artifactId' => $c2['artifactId'], 'agentName' => 'i-two', 'task' => 'I2', 'definitionModel' => null],
+                ['batchIndex' => 1, 'childRunId' => $c1['childRunId'], 'artifactId' => $c1['artifactId'], 'agentName' => 'i-one', 'task' => 'I1', 'definitionModel' => null,
+                    'artifactKind' => AgentArtifactKindEnum::Subagent->value],
+                ['batchIndex' => 2, 'childRunId' => $c2['childRunId'], 'artifactId' => $c2['artifactId'], 'agentName' => 'i-two', 'task' => 'I2', 'definitionModel' => null,
+                    'artifactKind' => AgentArtifactKindEnum::Subagent->value],
             ],
         );
         $repo->applyLaunchSuccessState($parent, $tool, $lifecycle, $startedAt, [1, 2]);
@@ -588,7 +636,8 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
             totalChildCount: 1,
             deadlineAt: new \DateTimeImmutable('+600 seconds'),
             childIntents: [
-                ['batchIndex' => 1, 'childRunId' => $c1['childRunId'], 'artifactId' => $c1['artifactId'], 'agentName' => 'h-one', 'task' => 'H1', 'definitionModel' => null],
+                ['batchIndex' => 1, 'childRunId' => $c1['childRunId'], 'artifactId' => $c1['artifactId'], 'agentName' => 'h-one', 'task' => 'H1', 'definitionModel' => null,
+                    'artifactKind' => AgentArtifactKindEnum::Subagent->value],
             ],
         );
         $repo->applyLaunchSuccessState($parent, $tool, $lifecycle, new \DateTimeImmutable(), [1]);
@@ -687,7 +736,8 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
             totalChildCount: 1,
             deadlineAt: new \DateTimeImmutable('+600 seconds'),
             childIntents: [
-                ['batchIndex' => 1, 'childRunId' => $c1['childRunId'], 'artifactId' => $c1['artifactId'], 'agentName' => 's-nat', 'task' => 'Do work', 'definitionModel' => null],
+                ['batchIndex' => 1, 'childRunId' => $c1['childRunId'], 'artifactId' => $c1['artifactId'], 'agentName' => 's-nat', 'task' => 'Do work', 'definitionModel' => null,
+                    'artifactKind' => AgentArtifactKindEnum::Subagent->value],
             ],
         );
         $repo->applyLaunchSuccessState($parent, $tool, $lifecycle, new \DateTimeImmutable(), [1]);
@@ -832,7 +882,8 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
             totalChildCount: 1,
             deadlineAt: $deadline,
             childIntents: [
-                ['batchIndex' => 1, 'childRunId' => $c1['childRunId'], 'artifactId' => $c1['artifactId'], 'agentName' => 's-int', 'task' => 'Interrupt me', 'definitionModel' => null],
+                ['batchIndex' => 1, 'childRunId' => $c1['childRunId'], 'artifactId' => $c1['artifactId'], 'agentName' => 's-int', 'task' => 'Interrupt me', 'definitionModel' => null,
+                    'artifactKind' => AgentArtifactKindEnum::Subagent->value],
             ],
         );
         $repo->applyLaunchSuccessState($parent, $tool, $lifecycle, $startedAt, [1]);
@@ -1138,9 +1189,9 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
             new TestLogger(),
         );
         $outcomeFactory = new DeferredSubagentBatchChildOutcomeFactory();
-        $handoffRenderer = self::getContainer()->get(SubagentChildRunHandoffRenderer::class);
+        $handoffRenderer = self::getContainer()->get(AgentChildRunHandoffRenderer::class);
         $naturalCompletion = new DeferredSubagentBatchTerminalCompletionService(
-            self::getContainer()->get(SubagentChildRunBatchLifecycleListener::class),
+            self::getContainer()->get(AgentChildRunBatchLifecycleListener::class),
             self::getContainer()->get(\Ineersa\CodingAgent\Agent\Execution\Subagent\SubagentParallelAggregateResultFormatter::class),
             $handoffRenderer,
             $completionDispatcher,
@@ -1148,7 +1199,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         );
         $interruptionCompletion = new DeferredSubagentBatchInterruptionCompletionService(
             $repo,
-            self::getContainer()->get(SubagentChildRunBatchLifecycleListener::class),
+            self::getContainer()->get(AgentChildRunBatchLifecycleListener::class),
             self::getContainer()->get(\Ineersa\CodingAgent\Agent\Execution\Subagent\SubagentParallelAggregateResultFormatter::class),
             $handoffRenderer,
             $progress,

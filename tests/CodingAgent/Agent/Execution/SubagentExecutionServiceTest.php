@@ -323,7 +323,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
             'appConfig' => self::getContainer()->get(AppConfig::class),
             'clock' => new NativeClock(),
             'batchRepository' => self::getContainer()->get(\Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository::class),
-            'lifecycleListener' => self::getContainer()->get(\Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\SubagentChildRunBatchLifecycleListener::class),
+            'lifecycleListener' => self::getContainer()->get(\Ineersa\CodingAgent\Agent\Execution\ChildRun\AgentChildRunBatchLifecycleListener::class),
         ];
 
         return SubagentExecutionServiceFactory::build(array_merge($defaults, $overrides));

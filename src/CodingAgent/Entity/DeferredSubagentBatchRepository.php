@@ -9,6 +9,7 @@ use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Doctrine\ORM\OptimisticLockException;
 use Doctrine\Persistence\ManagerRegistry;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
+use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchExecutionModeEnum;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchLaunchStatusEnum;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentBatchProjectionDTO;
@@ -170,7 +171,7 @@ final class DeferredSubagentBatchRepository extends ServiceEntityRepository
     }
 
     /**
-     * @param list<array{batchIndex: int, childRunId: string, artifactId: string, agentName: string, task: string, definitionModel: ?string}> $childIntents
+     * @param list<array{batchIndex: int, childRunId: string, artifactId: string, agentName: string, task: string, definitionModel: ?string, artifactKind: string}> $childIntents
      */
     public function reserveBatch(
         string $lifecycleId,
@@ -556,7 +557,7 @@ final class DeferredSubagentBatchRepository extends ServiceEntityRepository
     }
 
     /**
-     * @param list<array{batchIndex: int, childRunId: string, artifactId: string, agentName: string, task: string, definitionModel: ?string}> $childIntents
+     * @param list<array{batchIndex: int, childRunId: string, artifactId: string, agentName: string, task: string, definitionModel: ?string, artifactKind: string}> $childIntents
      */
     private function assertBatchMatchesIntent(
         DeferredSubagentBatch $row,

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Entity;
 
 use Doctrine\ORM\Mapping as ORM;
+use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentChildLaunchStatusEnum;
 
 #[ORM\Entity]
@@ -42,6 +43,9 @@ class DeferredSubagentChild
 
     #[ORM\Column(name: 'definition_model', type: 'string', length: 255, nullable: true)]
     public ?string $definitionModel = null;
+
+    #[ORM\Column(name: 'artifact_kind', type: 'string', length: 32, enumType: AgentArtifactKindEnum::class)]
+    public AgentArtifactKindEnum $artifactKind = AgentArtifactKindEnum::Subagent;
 
     #[ORM\Column(name: 'launch_status', type: 'string', length: 32, enumType: DeferredSubagentChildLaunchStatusEnum::class)]
     public DeferredSubagentChildLaunchStatusEnum $launchStatus = DeferredSubagentChildLaunchStatusEnum::Reserved;

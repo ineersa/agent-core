@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun;
+namespace Ineersa\CodingAgent\Agent\Execution\ChildRun;
 
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunTerminalFinalizationKindEnum;
@@ -10,14 +10,14 @@ use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunTerminalFinali
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunTerminalFinalizationResultDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunTerminalOutcomeDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Lifecycle\ChildRunBatchLifecycleListenerInterface;
-use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Result\SubagentChildRunArtifactFinalizer;
-use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Result\SubagentChildRunHandoffRenderer;
+use Ineersa\CodingAgent\Agent\Execution\ChildRun\Result\AgentChildRunArtifactFinalizer;
+use Ineersa\CodingAgent\Agent\Execution\ChildRun\Result\AgentChildRunHandoffRenderer;
 
-final class SubagentChildRunBatchLifecycleListener implements ChildRunBatchLifecycleListenerInterface
+final class AgentChildRunBatchLifecycleListener implements ChildRunBatchLifecycleListenerInterface
 {
     public function __construct(
-        private readonly SubagentChildRunArtifactFinalizer $artifactFinalizer,
-        private readonly SubagentChildRunHandoffRenderer $handoffRenderer,
+        private readonly AgentChildRunArtifactFinalizer $artifactFinalizer,
+        private readonly AgentChildRunHandoffRenderer $handoffRenderer,
     ) {
     }
 
@@ -68,7 +68,7 @@ final class SubagentChildRunBatchLifecycleListener implements ChildRunBatchLifec
         $this->persistArtifactOutcome($outcome);
 
         return ChildRunTerminalFinalizationResultDTO::withPresentation(
-            $this->handoffRenderer->formatCompletedResult($identity->displayName, $identity->artifactId, $finalMessages),
+            $this->handoffRenderer->formatCompletedResult($identity, $finalMessages),
         );
     }
 
@@ -79,7 +79,7 @@ final class SubagentChildRunBatchLifecycleListener implements ChildRunBatchLifec
         $errorMsg = $outcome->failureReason ?? $outcome->summary ?? 'Run failed without error message.';
 
         return ChildRunTerminalFinalizationResultDTO::withPresentation(
-            $this->handoffRenderer->formatFailedResult($outcome->identity->displayName, $outcome->identity->artifactId, $errorMsg),
+            $this->handoffRenderer->formatFailedResult($outcome->identity, $errorMsg),
         );
     }
 
@@ -89,7 +89,7 @@ final class SubagentChildRunBatchLifecycleListener implements ChildRunBatchLifec
         $this->persistArtifactOutcome($outcome);
 
         return ChildRunTerminalFinalizationResultDTO::withPresentation(
-            $this->handoffRenderer->formatChildCancelledMessage($outcome->identity->displayName, $outcome->identity->artifactId),
+            $this->handoffRenderer->formatChildCancelledMessage($outcome->identity),
         );
     }
 
@@ -100,12 +100,7 @@ final class SubagentChildRunBatchLifecycleListener implements ChildRunBatchLifec
         $this->persistArtifactOutcome($request->artifactOutcome);
 
         return ChildRunTerminalFinalizationResultDTO::withPresentation(
-            $this->handoffRenderer->formatTimeoutResult(
-                $identity->displayName,
-                $timeoutSeconds,
-                $identity->taskSummary,
-                $identity->artifactId,
-            ),
+            $this->handoffRenderer->formatTimeoutResult($identity, $timeoutSeconds),
         );
     }
 

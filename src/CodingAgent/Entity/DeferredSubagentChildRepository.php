@@ -9,6 +9,7 @@ use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Doctrine\Persistence\ManagerRegistry;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
+use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentChildLaunchStatusEnum;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentChildProjectionDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredChildRunLifecycleProjectionDTO;
@@ -54,7 +55,7 @@ final class DeferredSubagentChildRepository extends ServiceEntityRepository
     }
 
     /**
-     * @param list<array{batchIndex: int, childRunId: string, artifactId: string, agentName: string, task: string, definitionModel: ?string}> $childIntents
+     * @param list<array{batchIndex: int, childRunId: string, artifactId: string, agentName: string, task: string, definitionModel: ?string, artifactKind: string}> $childIntents
      */
     public function insertReservedChildren(string $batchLifecycleId, array $childIntents, ?Connection $conn = null): void
     {
@@ -71,6 +72,7 @@ final class DeferredSubagentChildRepository extends ServiceEntityRepository
                     'agent_name' => $intent['agentName'],
                     'task' => $intent['task'],
                     'definition_model' => $intent['definitionModel'],
+                    'artifact_kind' => $intent['artifactKind'],
                     'launch_status' => DeferredSubagentChildLaunchStatusEnum::Reserved->value,
                     'child_event_cursor' => 0,
                     'projection_version' => 1,
@@ -94,7 +96,7 @@ final class DeferredSubagentChildRepository extends ServiceEntityRepository
     }
 
     /**
-     * @param array{batchIndex: int, childRunId: string, artifactId: string, agentName: string, task: string, definitionModel: ?string} $intent
+     * @param array{batchIndex: int, childRunId: string, artifactId: string, agentName: string, task: string, definitionModel: ?string, artifactKind: string} $intent
      */
     public function assertChildMatchesIntent(DeferredSubagentChild $row, array $intent): void
     {
@@ -110,6 +112,10 @@ final class DeferredSubagentChildRepository extends ServiceEntityRepository
 
         if (null !== $intent['definitionModel'] && $row->definitionModel !== $intent['definitionModel']) {
             throw new ToolCallException('Deferred subagent batch child was reserved with a different model.', retryable: false);
+        }
+
+        if ($row->artifactKind->value !== $intent['artifactKind']) {
+            throw new ToolCallException('Deferred subagent batch child was reserved with a different artifact kind.', retryable: false);
         }
     }
 
@@ -180,6 +186,7 @@ final class DeferredSubagentChildRepository extends ServiceEntityRepository
             agentName: $row->agentName,
             task: $row->task,
             definitionModel: $row->definitionModel,
+            artifactKind: $row->artifactKind,
             launchStatus: $row->launchStatus,
             childEventCursor: $row->childEventCursor,
             childLifecycleProjection: $this->decodeChildLifecycleProjection($row->childLifecycleProjection),

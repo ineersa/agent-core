@@ -18,7 +18,7 @@ use Ineersa\CodingAgent\Agent\Execution\ChildRun\Lifecycle\ChildRunBatchLifecycl
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentBatchProjectionDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentChildProjectionDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredChildRunLifecycleProjectionDTO;
-use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Result\SubagentChildRunHandoffRenderer;
+use Ineersa\CodingAgent\Agent\Execution\ChildRun\Result\AgentChildRunHandoffRenderer;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\SubagentParallelAggregateResultFormatter;
 
 /**
@@ -29,7 +29,7 @@ final readonly class DeferredSubagentBatchTerminalCompletionService
     public function __construct(
         private ChildRunBatchLifecycleListenerInterface $lifecycleListener,
         private SubagentParallelAggregateResultFormatter $parallelFormatter,
-        private SubagentChildRunHandoffRenderer $handoffRenderer,
+        private AgentChildRunHandoffRenderer $handoffRenderer,
         private DeferredSubagentBatchCompletionDispatcher $completionDispatcher,
         private DeferredSubagentBatchChildOutcomeFactory $outcomeFactory,
     ) {
@@ -169,18 +169,15 @@ final readonly class DeferredSubagentBatchTerminalCompletionService
     ): string {
         return match ($childProjection->childStatus) {
             RunStatus::Completed => $this->handoffRenderer->formatCompletedResult(
-                $identity->displayName,
-                $identity->artifactId,
+                $identity,
                 $this->outcomeFactory->completedSummaryText($childProjection),
             ),
             RunStatus::Failed => $this->handoffRenderer->formatFailedResult(
-                $identity->displayName,
-                $identity->artifactId,
+                $identity,
                 $artifactOutcome->failureReason ?? 'Run failed without error message.',
             ),
             RunStatus::Cancelled, RunStatus::Cancelling => $this->handoffRenderer->formatChildCancelledMessage(
-                $identity->displayName,
-                $identity->artifactId,
+                $identity,
             ),
             default => throw new \RuntimeException('Deferred single batch delivery cannot build presentation for non-terminal child status.'),
         };

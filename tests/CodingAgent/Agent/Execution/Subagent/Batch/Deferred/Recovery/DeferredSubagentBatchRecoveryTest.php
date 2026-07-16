@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Agent\Execution\Subagent\Batch\Deferred\Recovery;
 
+use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitEventSummary;
@@ -75,8 +76,10 @@ final class DeferredSubagentBatchRecoveryTest extends IsolatedKernelTestCase
             totalChildCount: 2,
             deadlineAt: new \DateTimeImmutable('+600 seconds'),
             childIntents: [
-                ['batchIndex' => 1, 'childRunId' => $c1['childRunId'], 'artifactId' => $c1['artifactId'], 'agentName' => 'g-one', 'task' => 'G1', 'definitionModel' => null],
-                ['batchIndex' => 2, 'childRunId' => $c2['childRunId'], 'artifactId' => $c2['artifactId'], 'agentName' => 'g-two', 'task' => 'G2', 'definitionModel' => null],
+                ['batchIndex' => 1, 'childRunId' => $c1['childRunId'], 'artifactId' => $c1['artifactId'], 'agentName' => 'g-one', 'task' => 'G1', 'definitionModel' => null,
+                    'artifactKind' => AgentArtifactKindEnum::Subagent->value],
+                ['batchIndex' => 2, 'childRunId' => $c2['childRunId'], 'artifactId' => $c2['artifactId'], 'agentName' => 'g-two', 'task' => 'G2', 'definitionModel' => null,
+                    'artifactKind' => AgentArtifactKindEnum::Subagent->value],
             ],
         );
         $batchRepo->applyLaunchSuccessState($parent, $tool, $lifecycle, new \DateTimeImmutable(), [1, 2]);
@@ -181,7 +184,8 @@ final class DeferredSubagentBatchRecoveryTest extends IsolatedKernelTestCase
             totalChildCount: 1,
             deadlineAt: $deadline,
             childIntents: [
-                ['batchIndex' => 1, 'childRunId' => $u1['childRunId'], 'artifactId' => $u1['artifactId'], 'agentName' => 'w-one', 'task' => 'W1', 'definitionModel' => null],
+                ['batchIndex' => 1, 'childRunId' => $u1['childRunId'], 'artifactId' => $u1['artifactId'], 'agentName' => 'w-one', 'task' => 'W1', 'definitionModel' => null,
+                    'artifactKind' => AgentArtifactKindEnum::Subagent->value],
             ],
         );
         $batchRepo->applyLaunchSuccessState($sessionId, $unfinishedTool, $unfinishedLifecycle, new \DateTimeImmutable(), [1]);
@@ -199,7 +203,8 @@ final class DeferredSubagentBatchRecoveryTest extends IsolatedKernelTestCase
             totalChildCount: 1,
             deadlineAt: $deadline,
             childIntents: [
-                ['batchIndex' => 1, 'childRunId' => $r1['childRunId'], 'artifactId' => $r1['artifactId'], 'agentName' => 'w-res', 'task' => 'WR', 'definitionModel' => null],
+                ['batchIndex' => 1, 'childRunId' => $r1['childRunId'], 'artifactId' => $r1['artifactId'], 'agentName' => 'w-res', 'task' => 'WR', 'definitionModel' => null,
+                    'artifactKind' => AgentArtifactKindEnum::Subagent->value],
             ],
         );
 
@@ -216,7 +221,8 @@ final class DeferredSubagentBatchRecoveryTest extends IsolatedKernelTestCase
             totalChildCount: 1,
             deadlineAt: $deadline,
             childIntents: [
-                ['batchIndex' => 1, 'childRunId' => $i1['childRunId'], 'artifactId' => $i1['artifactId'], 'agentName' => 'w-int', 'task' => 'WI', 'definitionModel' => null],
+                ['batchIndex' => 1, 'childRunId' => $i1['childRunId'], 'artifactId' => $i1['artifactId'], 'agentName' => 'w-int', 'task' => 'WI', 'definitionModel' => null,
+                    'artifactKind' => AgentArtifactKindEnum::Subagent->value],
             ],
         );
         $batchRepo->applyLaunchSuccessState($sessionId, $interruptTool, $interruptLifecycle, new \DateTimeImmutable(), [1]);
@@ -241,7 +247,8 @@ final class DeferredSubagentBatchRecoveryTest extends IsolatedKernelTestCase
             totalChildCount: 1,
             deadlineAt: $deadline,
             childIntents: [
-                ['batchIndex' => 1, 'childRunId' => $o1['childRunId'], 'artifactId' => $o1['artifactId'], 'agentName' => 'w-oth', 'task' => 'WO', 'definitionModel' => null],
+                ['batchIndex' => 1, 'childRunId' => $o1['childRunId'], 'artifactId' => $o1['artifactId'], 'agentName' => 'w-oth', 'task' => 'WO', 'definitionModel' => null,
+                    'artifactKind' => AgentArtifactKindEnum::Subagent->value],
             ],
         );
         $batchRepo->applyLaunchSuccessState($otherParent, $otherTool, $otherLifecycle, new \DateTimeImmutable(), [1]);

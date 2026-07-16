@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection;
 
+use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredChildRunLifecycleProjectionDTO;
 
 /**
@@ -19,6 +20,7 @@ final readonly class DeferredSubagentChildProjectionDTO
         public string $agentName,
         public string $task,
         public ?string $definitionModel,
+        public AgentArtifactKindEnum $artifactKind,
         public DeferredSubagentChildLaunchStatusEnum $launchStatus,
         public int $childEventCursor,
         public ?DeferredChildRunLifecycleProjectionDTO $childLifecycleProjection,

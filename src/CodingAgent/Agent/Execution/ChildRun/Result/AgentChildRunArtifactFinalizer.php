@@ -2,18 +2,18 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Result;
+namespace Ineersa\CodingAgent\Agent\Execution\ChildRun\Result;
 
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunIdentityDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunTerminalOutcomeDTO;
 use Psr\Log\LoggerInterface;
 
-final class SubagentChildRunArtifactFinalizer
+final class AgentChildRunArtifactFinalizer
 {
     public function __construct(
         private readonly AgentArtifactRegistry $artifactRegistry,
-        private readonly SubagentChildRunHandoffRenderer $handoffRenderer,
+        private readonly AgentChildRunHandoffRenderer $handoffRenderer,
         private readonly LoggerInterface $logger,
     ) {
     }
@@ -42,6 +42,7 @@ final class SubagentChildRunArtifactFinalizer
             agentName: $identity->displayName,
             agentRunId: $identity->childRunId,
             childState: $outcome->childState,
+            identity: $identity,
         );
 
         $this->artifactRegistry->writeHandoff($identity->parentRunId, $identity->artifactId, $handoff);
@@ -49,11 +50,13 @@ final class SubagentChildRunArtifactFinalizer
 
     public function logChildCancelled(ChildRunIdentityDTO $identity): void
     {
-        $this->logger->info('subagent_execution.cancelled', [
+        $this->logger->info('child_agent_execution.cancelled', [
             'component' => 'agent.execution',
-            'event_type' => 'subagent_execution.cancelled',
+            'event_type' => 'child_agent_execution.cancelled',
+            'artifact_kind' => $identity->artifactKind->value,
             'agent_name' => $identity->displayName,
             'artifact_id' => $identity->artifactId,
+            'run_id' => $identity->childRunId,
         ]);
     }
 }
