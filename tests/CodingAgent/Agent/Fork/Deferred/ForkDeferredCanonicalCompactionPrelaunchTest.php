@@ -5,14 +5,16 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Agent\Fork\Deferred;
 
 use Ineersa\AgentCore\Contract\AgentRunnerInterface;
+use Ineersa\AgentCore\Contract\RunStoreInterface;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
-use Ineersa\CodingAgent\Agent\Execution\Fork\Batch\Deferred\Prelaunch\ForkDeferredPrelaunchPendingException;
 use Ineersa\CodingAgent\Agent\Execution\Fork\Batch\Deferred\Prelaunch\ForkDeferredPrelaunchPhaseEnum;
+use Ineersa\CodingAgent\Agent\Execution\Fork\Batch\Deferred\Prelaunch\ForkDeferredPrelaunchPendingException;
 use Ineersa\CodingAgent\Agent\Execution\Fork\Batch\Deferred\Prelaunch\ForkDeferredPrelaunchStagingService;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+use Ineersa\CodingAgent\Session\SessionRunEventStore;
 use Ineersa\CodingAgent\Session\SessionRunStore;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use PHPUnit\Framework\Attributes\CoversNothing;
@@ -115,29 +117,17 @@ final class RecordingCompactAgentRunner implements AgentRunnerInterface
         throw new \LogicException('Not expected in fork prelaunch contract test.');
     }
 
-    public function continue(string $runId): void
-    {
-    }
+    public function continue(string $runId): void {}
 
-    public function steer(string $runId, AgentMessage $message): void
-    {
-    }
+    public function steer(string $runId, AgentMessage $message): void {}
 
-    public function followUp(string $runId, AgentMessage $message): void
-    {
-    }
+    public function followUp(string $runId, AgentMessage $message): void {}
 
-    public function appendMessage(string $runId, AgentMessage $message): void
-    {
-    }
+    public function appendMessage(string $runId, AgentMessage $message): void {}
 
-    public function cancel(string $runId, ?string $reason = null): void
-    {
-    }
+    public function cancel(string $runId, ?string $reason = null): void {}
 
-    public function answerHuman(string $runId, string $questionId, mixed $answer): void
-    {
-    }
+    public function answerHuman(string $runId, string $questionId, mixed $answer): void {}
 
     public function compact(string $runId, ?string $customInstructions = null): void
     {
