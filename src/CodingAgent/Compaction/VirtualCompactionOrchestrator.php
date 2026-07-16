@@ -14,6 +14,8 @@ use Ineersa\AgentCore\Domain\Model\ModelInvocationRequest;
 use Ineersa\CodingAgent\Agent\Fork\ForkCompactionFailureReasonEnum;
 use Ineersa\CodingAgent\Agent\Fork\ForkCompactionSummarizationException;
 use Ineersa\CodingAgent\Config\CompactionConfig;
+use Ineersa\CodingAgent\Compaction\CompactionBoundarySelector;
+use Ineersa\CodingAgent\Compaction\CompactionTokenEstimator;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 
@@ -27,11 +29,6 @@ use Psr\Log\NullLogger;
  */
 final readonly class VirtualCompactionOrchestrator implements VirtualCompactionOrchestratorInterface
 {
-    /**
-     * @param array<string, mixed> $modelOptions
-     */
-    private const INEFFECTIVE_RETRY_INSTRUCTION = 'Your previous summary was too long and did not reduce context size. Produce a materially shorter, denser summary. Omit repetition and keep only decisions, constraints, file paths, and unresolved work.';
-
     public function __construct(
         private CompactionServiceInterface $compactionService,
         private SessionCompactor $sessionCompactor,
@@ -192,6 +189,11 @@ final readonly class VirtualCompactionOrchestrator implements VirtualCompactionO
 
         return false;
     }
+
+    /**
+     * @param array<string, mixed> $modelOptions
+     */
+    private const INEFFECTIVE_RETRY_INSTRUCTION = 'Your previous summary was too long and did not reduce context size. Produce a materially shorter, denser summary. Omit repetition and keep only decisions, constraints, file paths, and unresolved work.';
 
     /**
      * @param array<string, mixed> $modelOptions

@@ -15,10 +15,7 @@ use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\PreparedAgentChildRunD
 use Ineersa\CodingAgent\Agent\Execution\Fork\ForkLaunchTaskDTO;
 use Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader;
 use Ineersa\CodingAgent\Agent\Fork\ForkChildMessageComposer;
-use Ineersa\CodingAgent\Agent\Fork\ForkConfigResolver;
 use Ineersa\CodingAgent\Agent\Fork\ForkContextBuilder;
-use Ineersa\CodingAgent\Config\Ai\AiModelReference;
-use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\ModelResolver;
 use Ineersa\CodingAgent\Skills\SkillsContextBuilder;
 use Ineersa\CodingAgent\Tool\ToolRegistryInterface;
@@ -31,7 +28,6 @@ final class ForkChildLaunchInputFactory
     public function __construct(
         private readonly ForkContextBuilder $forkContextBuilder,
         private readonly ForkChildMessageComposer $messageComposer,
-        private readonly ForkConfigResolver $forkConfigResolver,
         private readonly RunStoreInterface $parentRunStore,
         private readonly SubagentRunMetadataReader $metadataReader,
         private readonly ToolRegistryInterface $toolRegistry,
@@ -39,7 +35,6 @@ final class ForkChildLaunchInputFactory
         private readonly AgentsContextBuilder $agentsContextBuilder,
         private readonly SkillsContextBuilder $skillsContextBuilder,
         private readonly ModelResolver $modelResolver,
-        private readonly AppConfig $appConfig,
     ) {
     }
 
@@ -74,15 +69,14 @@ final class ForkChildLaunchInputFactory
             agentsContext: $agentsContext,
         );
 
-        $forkConfig = $this->forkConfigResolver->resolve();
         $resolvedModel = $this->resolveChildModel(
             explicitModel: $task->modelOverride,
-            snapshotModel: $forkConfig->resolvedModel ?? $snapshot->resolvedModel,
+            snapshotModel: $snapshot->resolvedModel,
             parentRunId: $parentRunId,
         );
         $resolvedReasoning = $this->resolveChildReasoning(
             explicitReasoning: $task->reasoningOverride,
-            snapshotThinkingLevel: $forkConfig->resolvedThinkingLevel ?? $snapshot->resolvedThinkingLevel,
+            snapshotThinkingLevel: $snapshot->resolvedThinkingLevel,
             parentRunId: $parentRunId,
         );
 
@@ -101,7 +95,6 @@ final class ForkChildLaunchInputFactory
                 'allowed_tools' => $allowedTools,
                 'mcp' => $policy['mcp'],
             ],
-            contextWindow: ($cw = $this->resolveContextWindowForModel($resolvedModel)) > 0 ? $cw : null,
         );
 
         return new PreparedAgentChildRunDTO(
@@ -197,27 +190,6 @@ final class ForkChildLaunchInputFactory
         $reasoning = $metadata['reasoning'] ?? null;
 
         return \is_string($reasoning) && '' !== trim($reasoning) ? $reasoning : null;
-    }
-
-    private function resolveContextWindowForModel(?string $model): int
-    {
-        if (null === $model || '' === trim($model)) {
-            return 0;
-        }
-
-        $catalog = $this->appConfig->catalog;
-        if (null === $catalog) {
-            return 0;
-        }
-
-        $ref = AiModelReference::tryParse($model);
-        if (null === $ref) {
-            return 0;
-        }
-
-        $definition = $catalog->getModel($ref);
-
-        return null !== $definition ? ($definition->contextWindow ?? 0) : 0;
     }
 
     private function extractUserContextBySource(string $parentRunId, string $source): string

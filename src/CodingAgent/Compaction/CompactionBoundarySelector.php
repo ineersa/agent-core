@@ -170,7 +170,7 @@ final class CompactionBoundarySelector
         return null;
     }
 
-    /**
+        /**
      * Check whether cutting at the given boundary is safe.
      *
      * Two-layer safety: cross-boundary invariants + partition validity.

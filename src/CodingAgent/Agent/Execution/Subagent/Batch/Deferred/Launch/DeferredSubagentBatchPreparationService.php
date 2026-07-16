@@ -62,7 +62,7 @@ final class DeferredSubagentBatchPreparationService implements DeferredAgentChil
                 task: $taskText,
                 definitionModel: $taskDto->definitionModel() ?? $definition->model,
                 artifactKind: AgentArtifactKindEnum::Subagent,
-                definitionReasoning: null,
+                reasoningOverride: null,
             );
             $identities[] = new ChildRunIdentityDTO(
                 parentRunId: $parentRunId,

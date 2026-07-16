@@ -26,7 +26,7 @@ final readonly class DeferredAgentChildBatchLaunchPlanDTO
     }
 
     /**
-     * @return list<array{batchIndex: int, childRunId: string, artifactId: string, agentName: string, task: string, definitionModel: ?string}>
+     * @return list<array{batchIndex: int, childRunId: string, artifactId: string, agentName: string, task: string, definitionModel: ?string, artifactKind: string}>
      */
     public function reserveChildIntents(): array
     {

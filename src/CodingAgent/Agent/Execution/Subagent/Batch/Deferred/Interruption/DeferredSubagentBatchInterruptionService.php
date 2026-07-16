@@ -136,6 +136,10 @@ final readonly class DeferredSubagentBatchInterruptionService
             return;
         }
 
+        if ([] === $projection->children) {
+            throw new \LogicException('Deferred subagent batch interruption requires at least one durable child row.');
+        }
+
         $policy = $this->lifecyclePolicyFactory->forKind($projection->children[0]->artifactKind);
         $isSingle = ChildRunBatchExecutionModeEnum::Single === $projection->executionMode;
         $cancelReason = match ($effectiveKind) {

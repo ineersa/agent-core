@@ -44,9 +44,6 @@ final class DeferredForkBatchPreparationService implements DeferredAgentChildBat
         }
 
         $task = $tasks[0];
-        if (!$task instanceof ForkLaunchTaskDTO) {
-            throw new \LogicException('Fork batch preparation requires ForkLaunchTaskDTO.');
-        }
 
         $lifecycleId = $this->identityFactory->batchLifecycleId($parentRunId, $toolCallId);
         $ids = $this->identityFactory->childIdentity($parentRunId, $toolCallId, 1);
@@ -60,7 +57,7 @@ final class DeferredForkBatchPreparationService implements DeferredAgentChildBat
                 task: $taskText,
                 definitionModel: $task->definitionModel(),
                 artifactKind: AgentArtifactKindEnum::Fork,
-                definitionReasoning: $task->reasoningOverride(),
+                reasoningOverride: $task->reasoningOverride(),
             ),
         ];
         $identities = [
@@ -116,7 +113,7 @@ final class DeferredForkBatchPreparationService implements DeferredAgentChildBat
             $forkTask = new ForkLaunchTaskDTO(
                 task: $intent->task,
                 modelOverride: $intent->definitionModel,
-                reasoningOverride: $intent->definitionReasoning,
+                reasoningOverride: $intent->reasoningOverride,
             );
             try {
                 $this->artifactLifecycle->reservePending($identity);

@@ -19,7 +19,12 @@ final readonly class DeferredAgentChildBatchChildIntentDTO
         public string $task,
         public ?string $definitionModel,
         public AgentArtifactKindEnum $artifactKind,
-        public ?string $definitionReasoning = null,
+        /**
+         * In-memory only: tool-call model/thinking overrides for prepare. Not persisted on reserve rows.
+         * On Messenger redelivery the original ExecuteToolCall is replayed; buildLaunchPlan() rebuilds this
+         * from AgentChildLaunchTaskInterface before preparePendingChildren() runs again.
+         */
+        public ?string $reasoningOverride = null,
     ) {
     }
 

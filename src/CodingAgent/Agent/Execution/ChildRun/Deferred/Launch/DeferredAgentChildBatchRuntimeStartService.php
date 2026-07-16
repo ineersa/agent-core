@@ -163,12 +163,11 @@ final class DeferredAgentChildBatchRuntimeStartService
      */
     private function resolveBatchArtifactKind(array $preparedChildren): AgentArtifactKindEnum
     {
-        $first = $preparedChildren[0] ?? null;
-        if (null === $first) {
-            return AgentArtifactKindEnum::Subagent;
+        if ([] === $preparedChildren) {
+            throw new \LogicException('Deferred agent child batch runtime start requires at least one prepared child.');
         }
 
-        return $first->identity->artifactKind;
+        return $preparedChildren[0]->identity->artifactKind;
     }
 
     /**
@@ -176,11 +175,10 @@ final class DeferredAgentChildBatchRuntimeStartService
      */
     private function resolveBatchArtifactKindFromIdentities(array $identities): AgentArtifactKindEnum
     {
-        $first = $identities[0] ?? null;
-        if (null === $first) {
-            return AgentArtifactKindEnum::Subagent;
+        if ([] === $identities) {
+            throw new \LogicException('Deferred agent child batch runtime start requires at least one child identity.');
         }
 
-        return $first->artifactKind;
+        return $identities[0]->artifactKind;
     }
 }
