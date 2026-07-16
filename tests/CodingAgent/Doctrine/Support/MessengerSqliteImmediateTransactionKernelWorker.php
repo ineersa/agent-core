@@ -58,7 +58,6 @@ $transport = MessengerSqliteImmediateTransactionKernelTestKernel::getContainerFo
 
 try {
     match ($mode) {
-        'ensure-schema' => ensureSchema($transport),
         'seed-message' => seedMessage($transport, $argv[2] ?? '', $argv[3] ?? ''),
         'hold-writer' => holdWriter($transport, $argv[2] ?? '', $argv[3] ?? '', (int) ($argv[4] ?? '200')),
         'claim-message' => claimMessage($transport, $argv[2] ?? '', $argv[3] ?? '', $argv[4] ?? ''),

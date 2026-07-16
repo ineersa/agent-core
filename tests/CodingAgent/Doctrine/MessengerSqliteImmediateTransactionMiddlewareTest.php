@@ -141,7 +141,17 @@ final class MessengerSqliteImmediateTransactionMiddlewareTest extends IsolatedKe
                 @proc_terminate($holderProc);
                 @proc_close($holderProc);
             }
-            $this->runKernelWorker(['delete-queue', $queueName]);
+            try {
+                $this->runKernelWorker(['delete-queue', $queueName]);
+            } catch (\Throwable $cleanupFailure) {
+                // Intentional test cleanup degradation: queue delete is best-effort so barrier
+                // removal and the primary assertion outcome are not masked.
+                fwrite(
+                    \STDERR,
+                    'MessengerSqliteImmediateTransactionMiddlewareTest cleanup degradation: '
+                    .$cleanupFailure::class."\n",
+                );
+            }
             TestDirectoryIsolation::removeDirectory($barrierDir);
         }
     }
@@ -205,6 +215,7 @@ final class MessengerSqliteImmediateTransactionMiddlewareTest extends IsolatedKe
         );
         $this->assertIsResource($proc, 'kernel worker subprocess must start');
         fclose($pipes[0]);
+        stream_set_blocking($pipes[1], false);
         stream_set_blocking($pipes[2], false);
 
         return $proc;
@@ -223,6 +234,7 @@ final class MessengerSqliteImmediateTransactionMiddlewareTest extends IsolatedKe
         while (microtime(true) < $deadline) {
             $status = proc_get_status($proc);
             if (!$status['running']) {
+                stream_get_contents($pipes[1]);
                 $stderr .= stream_get_contents($pipes[2]) ?: '';
                 fclose($pipes[1]);
                 fclose($pipes[2]);
@@ -230,11 +242,13 @@ final class MessengerSqliteImmediateTransactionMiddlewareTest extends IsolatedKe
 
                 return ['exit' => $exit, 'stderr' => $stderr];
             }
+            stream_get_contents($pipes[1]);
             $stderr .= stream_get_contents($pipes[2]) ?: '';
             usleep(5000);
         }
 
         proc_terminate($proc);
+        stream_get_contents($pipes[1]);
         $stderr .= stream_get_contents($pipes[2]) ?: '';
         fclose($pipes[1]);
         fclose($pipes[2]);
