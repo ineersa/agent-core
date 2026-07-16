@@ -12,7 +12,7 @@ you add a sparse override.
 
 Create `~/.hatfield/settings.yaml` when you first change a setting (for example
 via model picker persistence) or when you add overrides manually. The file
-should contain only keys you differ from defaults — not a full snapshot of the
+should contain only keys whose values differ from defaults — not a full snapshot of the
 defaults file.
 
 Project overrides in `<project>/.hatfield/settings.yaml` follow the same sparse

@@ -87,6 +87,9 @@ final class HomeSettingsWriter
 
         $line = \sprintf('    %s: %s', $key, $this->yamlScalar($value));
 
+        // Only match active (non-commented) keys with 4-space indent.
+        // This prevents accidentally uncommenting a key the user
+        // intentionally disabled.
         $activePattern = '/^    '.preg_quote($key, '/').'\s*:.*$/m';
 
         if (preg_match($activePattern, $content)) {
