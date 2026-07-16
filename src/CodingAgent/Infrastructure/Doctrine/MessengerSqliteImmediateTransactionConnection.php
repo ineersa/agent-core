@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Infrastructure\Doctrine;
 
-use Doctrine\DBAL\Driver\Connection;
 use Doctrine\DBAL\Driver\Middleware\AbstractConnectionMiddleware;
 
 /**
@@ -17,11 +16,6 @@ use Doctrine\DBAL\Driver\Middleware\AbstractConnectionMiddleware;
  */
 final class MessengerSqliteImmediateTransactionConnection extends AbstractConnectionMiddleware
 {
-    public function __construct(Connection $wrappedConnection)
-    {
-        parent::__construct($wrappedConnection);
-    }
-
     public function beginTransaction(): void
     {
         $this->exec('BEGIN IMMEDIATE');

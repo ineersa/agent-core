@@ -11,6 +11,8 @@ declare(strict_types=1);
 require dirname(__DIR__, 4).'/vendor/autoload.php';
 
 use DAMA\DoctrineTestBundle\Doctrine\DBAL\StaticDriver;
+use DateTimeImmutable;
+use DateTimeZone;
 use Doctrine\DBAL\Connection;
 use Ineersa\CodingAgent\Migrations\MessengerTransportSchemaEnsurer;
 use Ineersa\CodingAgent\Tests\Doctrine\Support\MessengerSqliteImmediateTransactionKernelTestKernel;
@@ -85,7 +87,7 @@ function seedMessage(Connection $transport, string $queueName, string $messageId
         throw new InvalidArgumentException('seed-message requires queue and message-id path');
     }
     ensureSchema($transport);
-    $now = (new DateTimeImmutable('UTC'))->format('Y-m-d H:i:s');
+    $now = (new DateTimeImmutable('now', new DateTimeZone('UTC')))->format('Y-m-d H:i:s');
     $transport->executeStatement(
         'INSERT INTO messenger_messages (body, headers, queue_name, created_at, available_at, delivered_at)
          VALUES (?, ?, ?, ?, ?, NULL)',
@@ -139,7 +141,7 @@ function claimMessage(Connection $transport, string $queueName, string $expected
         }
         $transport->executeStatement(
             'UPDATE messenger_messages SET delivered_at = ? WHERE id = ?',
-            [(new DateTimeImmutable('UTC'))->format('Y-m-d H:i:s'), (string) $messageId],
+            [(new DateTimeImmutable('now', new DateTimeZone('UTC')))->format('Y-m-d H:i:s'), (string) $messageId],
         );
         $transport->commit();
     } catch (Throwable $e) {

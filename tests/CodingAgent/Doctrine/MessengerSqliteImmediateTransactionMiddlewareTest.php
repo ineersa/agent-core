@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Doctrine;
 
-use Doctrine\DBAL\Connection;
 use Ineersa\CodingAgent\Tests\Support\ProjectDir;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
@@ -26,15 +25,12 @@ use Symfony\Component\DependencyInjection\Container;
  */
 final class MessengerSqliteImmediateTransactionMiddlewareTest extends IsolatedKernelTestCase
 {
-    private Connection $defaultConnection;
-
     private string $workerScript;
 
     protected function setUp(): void
     {
         parent::setUp();
 
-        $this->defaultConnection = static::getContainer()->get('doctrine.dbal.default_connection');
         $this->workerScript = ProjectDir::get().'/tests/CodingAgent/Doctrine/Support/MessengerSqliteImmediateTransactionKernelWorker.php';
     }
 
@@ -43,6 +39,7 @@ final class MessengerSqliteImmediateTransactionMiddlewareTest extends IsolatedKe
         /** @var Container $container */
         $container = static::getContainer();
 
+        // Container child service ids prove DoctrineBundle scoped the middleware tag to messenger_transport only.
         $this->assertTrue(
             $container->has('Ineersa\\CodingAgent\\Infrastructure\\Doctrine\\MessengerSqliteImmediateTransactionMiddleware.messenger_transport'),
             'BEGIN IMMEDIATE middleware must be wired for messenger_transport only',
@@ -51,25 +48,6 @@ final class MessengerSqliteImmediateTransactionMiddlewareTest extends IsolatedKe
             $container->has('Ineersa\\CodingAgent\\Infrastructure\\Doctrine\\MessengerSqliteImmediateTransactionMiddleware.default'),
             'default state.sqlite connection must not use BEGIN IMMEDIATE middleware',
         );
-    }
-
-    public function testDefaultConnectionUsesDeferredBeginNotImmediateMiddleware(): void
-    {
-        $this->defaultConnection->beginTransaction();
-        try {
-            $this->defaultConnection->executeStatement(
-                'CREATE TABLE IF NOT EXISTS default_tx_probe (id INTEGER PRIMARY KEY)',
-            );
-            $this->defaultConnection->executeStatement('INSERT INTO default_tx_probe (id) VALUES (1)');
-            $this->defaultConnection->commit();
-        } catch (\Throwable $e) {
-            $this->defaultConnection->rollBack();
-            throw $e;
-        }
-
-        $count = (int) $this->defaultConnection->fetchOne('SELECT COUNT(*) FROM default_tx_probe');
-        $this->assertSame(1, $count);
-        $this->defaultConnection->executeStatement('DROP TABLE default_tx_probe');
     }
 
     public function testTransportConnectionSupportsNestedTransactionsViaSavepoints(): void
@@ -172,21 +150,7 @@ final class MessengerSqliteImmediateTransactionMiddlewareTest extends IsolatedKe
      */
     private function runKernelWorkerProcess(array $args): array
     {
-        $spec = [
-            0 => ['pipe', 'r'],
-            1 => ['pipe', 'w'],
-            2 => ['pipe', 'w'],
-        ];
-        $proc = proc_open(
-            array_merge([\PHP_BINARY, $this->workerScript], $args),
-            $spec,
-            $pipes,
-            ProjectDir::get(),
-            $this->kernelWorkerEnv(),
-        );
-        $this->assertIsResource($proc, 'kernel worker must start');
-
-        fclose($pipes[0]);
+        $proc = $this->openKernelWorkerProcess($args, $pipes, 'kernel worker must start');
         stream_set_blocking($pipes[1], false);
         stream_set_blocking($pipes[2], false);
 
@@ -201,6 +165,21 @@ final class MessengerSqliteImmediateTransactionMiddlewareTest extends IsolatedKe
      */
     private function startKernelWorkerProcess(array $args, ?array &$pipes)
     {
+        $proc = $this->openKernelWorkerProcess($args, $pipes, 'kernel worker subprocess must start');
+        stream_set_blocking($pipes[1], false);
+        stream_set_blocking($pipes[2], false);
+
+        return $proc;
+    }
+
+    /**
+     * @param list<string>              $args
+     * @param array<int, resource>|null $pipes
+     *
+     * @return resource
+     */
+    private function openKernelWorkerProcess(array $args, ?array &$pipes, string $startFailureMessage)
+    {
         $spec = [
             0 => ['pipe', 'r'],
             1 => ['pipe', 'w'],
@@ -213,10 +192,8 @@ final class MessengerSqliteImmediateTransactionMiddlewareTest extends IsolatedKe
             ProjectDir::get(),
             $this->kernelWorkerEnv(),
         );
-        $this->assertIsResource($proc, 'kernel worker subprocess must start');
+        $this->assertIsResource($proc, $startFailureMessage);
         fclose($pipes[0]);
-        stream_set_blocking($pipes[1], false);
-        stream_set_blocking($pipes[2], false);
 
         return $proc;
     }
