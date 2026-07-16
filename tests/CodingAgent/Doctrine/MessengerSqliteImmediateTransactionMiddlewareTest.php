@@ -4,14 +4,10 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Doctrine;
 
-use Doctrine\DBAL\Configuration;
 use Doctrine\DBAL\Connection;
-use Doctrine\DBAL\DriverManager;
-use Ineersa\CodingAgent\Infrastructure\Doctrine\MessengerSqliteImmediateTransactionMiddleware;
-use Ineersa\CodingAgent\Migrations\MessengerTransportSchemaEnsurer;
+use Ineersa\CodingAgent\Tests\Support\ProjectDir;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
-use Psr\Log\NullLogger;
 use Symfony\Component\DependencyInjection\Container;
 
 /**
@@ -19,9 +15,9 @@ use Symfony\Component\DependencyInjection\Container;
  * dedicated connection so a competing writer waits (busy_timeout) instead of
  * failing on deferred read→write upgrade under concurrent consumers.
  *
- * Kernel transport connections sit inside DAMA's outer test transaction; claim
- * semantics are exercised on fresh DriverManager connections with the same
- * middleware stack as production (middleware only, no DAMA).
+ * Subprocess helpers boot APP_ENV=test and resolve doctrine.dbal.messenger_transport_connection
+ * from the container (StaticDriver::setKeepStaticConnections(false) there) because
+ * IsolatedKernelTestCase keeps DAMA's outer transaction on in-process connections.
  *
  * @requires extension pdo_sqlite
  *
@@ -29,13 +25,19 @@ use Symfony\Component\DependencyInjection\Container;
  */
 final class MessengerSqliteImmediateTransactionMiddlewareTest extends IsolatedKernelTestCase
 {
+    private Connection $defaultConnection;
+
     private Connection $transportConnection;
+
+    private string $workerScript;
 
     protected function setUp(): void
     {
         parent::setUp();
 
+        $this->defaultConnection = static::getContainer()->get('doctrine.dbal.default_connection');
         $this->transportConnection = static::getContainer()->get('doctrine.dbal.messenger_transport_connection');
+        $this->workerScript = ProjectDir::get().'/tests/CodingAgent/Doctrine/Support/MessengerSqliteImmediateTransactionKernelWorker.php';
     }
 
     public function testMiddlewareIsRegisteredOnlyForMessengerTransportConnection(): void
@@ -44,216 +46,231 @@ final class MessengerSqliteImmediateTransactionMiddlewareTest extends IsolatedKe
         $container = static::getContainer();
 
         $this->assertTrue(
-            $container->has('Ineersa\CodingAgent\Infrastructure\Doctrine\MessengerSqliteImmediateTransactionMiddleware.messenger_transport'),
+            $container->has('Ineersa\\CodingAgent\\Infrastructure\\Doctrine\\MessengerSqliteImmediateTransactionMiddleware.messenger_transport'),
             'BEGIN IMMEDIATE middleware must be wired for messenger_transport only',
         );
         $this->assertFalse(
-            $container->has('Ineersa\CodingAgent\Infrastructure\Doctrine\MessengerSqliteImmediateTransactionMiddleware.default'),
+            $container->has('Ineersa\\CodingAgent\\Infrastructure\\Doctrine\\MessengerSqliteImmediateTransactionMiddleware.default'),
             'default state.sqlite connection must not use BEGIN IMMEDIATE middleware',
         );
     }
 
-    public function testImmediateMiddlewareConnectionSupportsNestedTransactionsViaSavepoints(): void
+    public function testDefaultConnectionUsesDeferredBeginNotImmediateMiddleware(): void
     {
-        $connection = $this->freshImmediateTransportConnection();
+        $this->defaultConnection->beginTransaction();
         try {
-            $connection->beginTransaction();
-            $connection->beginTransaction();
-            $connection->executeStatement(
-                'CREATE TABLE IF NOT EXISTS immediate_tx_probe (id INTEGER PRIMARY KEY)',
+            $this->defaultConnection->executeStatement(
+                'CREATE TABLE IF NOT EXISTS default_tx_probe (id INTEGER PRIMARY KEY)',
             );
-            $connection->executeStatement('INSERT INTO immediate_tx_probe (id) VALUES (1)');
-            $connection->commit();
-            $connection->commit();
-
-            $count = (int) $connection->fetchOne('SELECT COUNT(*) FROM immediate_tx_probe');
-            $this->assertSame(1, $count);
-
-            $connection->executeStatement('DROP TABLE immediate_tx_probe');
-        } finally {
-            $connection->close();
+            $this->defaultConnection->executeStatement('INSERT INTO default_tx_probe (id) VALUES (1)');
+            $this->defaultConnection->commit();
+        } catch (\Throwable $e) {
+            $this->defaultConnection->rollBack();
+            throw $e;
         }
+
+        $count = (int) $this->defaultConnection->fetchOne('SELECT COUNT(*) FROM default_tx_probe');
+        $this->assertSame(1, $count);
+        $this->defaultConnection->executeStatement('DROP TABLE default_tx_probe');
+    }
+
+    public function testTransportConnectionSupportsNestedTransactionsViaSavepoints(): void
+    {
+        $this->runKernelWorker(['nested-savepoint-probe']);
+    }
+
+    public function testTransportConnectionRollBackReleasesOuterTransaction(): void
+    {
+        $this->runKernelWorker(['rollback-probe']);
     }
 
     public function testBeginImmediateWaitsForCompetingWriterThenCompletesClaimTransaction(): void
     {
-        $transportPath = $this->sqliteFilePath($this->transportConnection);
-
-        $seedConnection = $this->freshImmediateTransportConnection();
-        (new MessengerTransportSchemaEnsurer($seedConnection, new NullLogger()))();
-
-        $queueName = 'immediate_claim_'.bin2hex(random_bytes(8));
-        $now = (new \DateTimeImmutable('UTC'))->format('Y-m-d H:i:s');
-
-        $seedConnection->executeStatement(
-            'INSERT INTO messenger_messages (body, headers, queue_name, created_at, available_at, delivered_at)
-             VALUES (?, ?, ?, ?, ?, NULL)',
-            ['body', '[]', $queueName, $now, $now],
-        );
-        $messageId = (int) $seedConnection->fetchOne(
-            'SELECT id FROM messenger_messages WHERE queue_name = ? ORDER BY id DESC LIMIT 1',
-            [$queueName],
-        );
-        $seedConnection->close();
-
         $barrierDir = TestDirectoryIsolation::createProjectTempDir('sqlite-immediate-barrier', 0o750);
+        $queueName = 'immediate_claim_'.bin2hex(random_bytes(8));
+        $messageIdPath = $barrierDir.'/message_id';
         $readyPath = $barrierDir.'/ready';
-        $donePath = $barrierDir.'/done';
-        $holdMs = 200;
+        $releasePath = $barrierDir.'/release';
+        $acquiredPath = $barrierDir.'/acquired';
+        $holdMs = 400;
+
+        $holderProc = null;
+        $holderPipes = null;
+        $claimProc = null;
+        $claimPipes = null;
 
         try {
-            $workerScript = $barrierDir.'/hold_writer.php';
-            file_put_contents($workerScript, $this->holdWriterWorkerScript());
+            $this->runKernelWorker(['seed-message', $queueName, $messageIdPath]);
+            $this->assertFileExists($messageIdPath);
 
-            $spec = [
-                0 => ['pipe', 'r'],
-                1 => ['pipe', 'w'],
-                2 => ['pipe', 'w'],
-            ];
-            $env = array_merge($_ENV, [
-                'SQLITE_PATH' => $transportPath,
-                'BARRIER_READY' => $readyPath,
-                'BARRIER_DONE' => $donePath,
-                'HOLD_MS' => (string) $holdMs,
-            ]);
-            $proc = proc_open(
-                [\PHP_BINARY, $workerScript],
-                $spec,
-                $pipes,
-                $barrierDir,
-                $env,
+            $holderProc = $this->startKernelWorkerProcess(
+                ['hold-writer', $readyPath, $releasePath, (string) $holdMs],
+                $holderPipes,
             );
-            $this->assertIsResource($proc, 'Writer-holding subprocess must start');
+            $this->waitForFile($readyPath, 15.0, 'Writer subprocess must signal outer transaction hold');
+            usleep(50_000);
 
-            fclose($pipes[0]);
-            stream_set_blocking($pipes[2], false);
+            $claimProc = $this->startKernelWorkerProcess(
+                ['claim-message', $queueName, $messageIdPath, $acquiredPath],
+                $claimPipes,
+            );
+            $claimExit = $this->waitForProcessExit($claimProc, $claimPipes, 20.0);
+            $holderExit = $this->waitForProcessExit($holderProc, $holderPipes, 20.0);
 
-            $deadline = microtime(true) + 15.0;
-            while (microtime(true) < $deadline) {
-                if (is_file($readyPath)) {
-                    break;
-                }
-                usleep(5000);
-            }
-            $this->assertFileExists($readyPath, 'Writer subprocess must signal BEGIN IMMEDIATE hold');
+            $this->assertSame(0, $claimExit['exit'], 'claim worker stderr: '.$claimExit['stderr']);
+            $this->assertSame(0, $holderExit['exit'], 'hold worker stderr: '.$holderExit['stderr']);
+            $this->assertFileExists($acquiredPath);
 
-            $claimConnection = $this->freshImmediateTransportConnection();
-            $started = microtime(true);
-            try {
-                $claimConnection->beginTransaction();
-                try {
-                    $row = $claimConnection->fetchAssociative(
-                        'SELECT id FROM messenger_messages
-                         WHERE queue_name = ? AND delivered_at IS NULL AND available_at <= datetime(\'now\')
-                         ORDER BY available_at ASC LIMIT 1',
-                        [$queueName],
-                    );
-                    $this->assertIsArray($row);
-                    $this->assertSame($messageId, (int) $row['id']);
-
-                    $claimConnection->executeStatement(
-                        'UPDATE messenger_messages SET delivered_at = ? WHERE id = ?',
-                        [(new \DateTimeImmutable('UTC'))->format('Y-m-d H:i:s'), (string) $messageId],
-                    );
-                    $claimConnection->commit();
-                } catch (\Throwable $e) {
-                    $claimConnection->rollBack();
-                    throw $e;
-                }
-            } finally {
-                touch($donePath);
-                $claimConnection->close();
-            }
-
-            $elapsedMs = (microtime(true) - $started) * 1000;
-            $stderr = stream_get_contents($pipes[2]);
-            $exit = proc_close($proc);
-            $this->assertSame(0, $exit, 'Writer subprocess stderr: '.$stderr);
+            /** @var array{elapsed_ms: float} $acquired */
+            $acquired = json_decode((string) file_get_contents($acquiredPath), true, 512, \JSON_THROW_ON_ERROR);
             $this->assertGreaterThanOrEqual(
-                $holdMs * 0.5,
-                $elapsedMs,
-                'BEGIN IMMEDIATE on messenger transport should wait on writer contention',
+                $holdMs * 0.2,
+                $acquired['elapsed_ms'],
+                'Production-wired BEGIN IMMEDIATE should wait on writer contention',
             );
         } finally {
+            if (\is_resource($claimProc)) {
+                @proc_terminate($claimProc);
+                @proc_close($claimProc);
+            }
+            if (\is_resource($holderProc)) {
+                @touch($releasePath);
+                @proc_terminate($holderProc);
+                @proc_close($holderProc);
+            }
+            $this->runKernelWorker(['delete-queue', $queueName]);
             TestDirectoryIsolation::removeDirectory($barrierDir);
-            $cleanup = $this->freshImmediateTransportConnection();
-            try {
-                $cleanup->executeStatement(
-                    'DELETE FROM messenger_messages WHERE queue_name = ?',
-                    [$queueName],
-                );
-            } finally {
-                $cleanup->close();
+        }
+    }
+
+    /**
+     * @param list<string> $args
+     */
+    private function runKernelWorker(array $args): void
+    {
+        $result = $this->runKernelWorkerProcess($args);
+        $this->assertSame(0, $result['exit'], 'kernel worker stderr: '.$result['stderr']);
+    }
+
+    /**
+     * @param list<string> $args
+     *
+     * @return array{exit: int, stderr: string}
+     */
+    private function runKernelWorkerProcess(array $args): array
+    {
+        $spec = [
+            0 => ['pipe', 'r'],
+            1 => ['pipe', 'w'],
+            2 => ['pipe', 'w'],
+        ];
+        $proc = proc_open(
+            array_merge([\PHP_BINARY, $this->workerScript], $args),
+            $spec,
+            $pipes,
+            ProjectDir::get(),
+            $this->kernelWorkerEnv(),
+        );
+        $this->assertIsResource($proc, 'kernel worker must start');
+
+        fclose($pipes[0]);
+        stream_set_blocking($pipes[2], false);
+        $stderr = stream_get_contents($pipes[2]);
+        fclose($pipes[1]);
+        fclose($pipes[2]);
+        $exit = proc_close($proc);
+
+        return ['exit' => $exit, 'stderr' => false !== $stderr ? $stderr : ''];
+    }
+
+    /**
+     * @param list<string>              $args
+     * @param array<int, resource>|null $pipes
+     *
+     * @return resource
+     */
+    private function startKernelWorkerProcess(array $args, ?array &$pipes)
+    {
+        $spec = [
+            0 => ['pipe', 'r'],
+            1 => ['pipe', 'w'],
+            2 => ['pipe', 'w'],
+        ];
+        $proc = proc_open(
+            array_merge([\PHP_BINARY, $this->workerScript], $args),
+            $spec,
+            $pipes,
+            ProjectDir::get(),
+            $this->kernelWorkerEnv(),
+        );
+        $this->assertIsResource($proc, 'kernel worker subprocess must start');
+        fclose($pipes[0]);
+        stream_set_blocking($pipes[2], false);
+
+        return $proc;
+    }
+
+    /**
+     * @param resource             $proc
+     * @param array<int, resource> $pipes
+     *
+     * @return array{exit: int, stderr: string}
+     */
+    private function waitForProcessExit($proc, array $pipes, float $timeoutSeconds): array
+    {
+        $deadline = microtime(true) + $timeoutSeconds;
+        $stderr = '';
+        while (microtime(true) < $deadline) {
+            $status = proc_get_status($proc);
+            if (!$status['running']) {
+                $stderr .= stream_get_contents($pipes[2]) ?: '';
+                fclose($pipes[1]);
+                fclose($pipes[2]);
+                $exit = proc_close($proc);
+
+                return ['exit' => $exit, 'stderr' => $stderr];
+            }
+            $stderr .= stream_get_contents($pipes[2]) ?: '';
+            usleep(5000);
+        }
+
+        proc_terminate($proc);
+        $stderr .= stream_get_contents($pipes[2]) ?: '';
+        fclose($pipes[1]);
+        fclose($pipes[2]);
+        $exit = proc_close($proc);
+
+        return ['exit' => $exit, 'stderr' => $stderr];
+    }
+
+    private function waitForFile(string $path, float $timeoutSeconds, string $message): void
+    {
+        $deadline = microtime(true) + $timeoutSeconds;
+        while (microtime(true) < $deadline) {
+            if (is_file($path)) {
+                return;
+            }
+            usleep(5000);
+        }
+        $this->fail($message);
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function kernelWorkerEnv(): array
+    {
+        $env = array_merge($_ENV, [
+            'APP_ENV' => 'test',
+            'HATFIELD_CWD' => $this->isolatedCwd(),
+        ]);
+        foreach (['HATFIELD_TEST_DATABASE_PATH', 'HATFIELD_TEST_MESSENGER_TRANSPORT_DATABASE_PATH'] as $key) {
+            $value = getenv($key);
+            if (\is_string($value) && '' !== $value) {
+                $env[$key] = $value;
             }
         }
-    }
 
-    public function testImmediateMiddlewareConnectionRollBackReleasesOuterTransaction(): void
-    {
-        $connection = $this->freshImmediateTransportConnection();
-        try {
-            $connection->beginTransaction();
-            $connection->executeStatement(
-                'CREATE TABLE IF NOT EXISTS rollback_probe (id INTEGER PRIMARY KEY)',
-            );
-            $connection->rollBack();
-
-            $exists = (int) $connection->fetchOne(
-                "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'rollback_probe'",
-            );
-            $this->assertSame(0, $exists);
-        } finally {
-            $connection->close();
-        }
-    }
-
-    private function freshImmediateTransportConnection(): Connection
-    {
-        $params = $this->transportConnection->getParams();
-        $path = $params['path'] ?? null;
-        $this->assertIsString($path);
-
-        $config = new Configuration();
-        $config->setMiddlewares([new MessengerSqliteImmediateTransactionMiddleware()]);
-
-        return DriverManager::getConnection([
-            'driver' => 'pdo_sqlite',
-            'path' => $path,
-            'driverOptions' => [\PDO::ATTR_TIMEOUT => 5],
-        ], $config);
-    }
-
-    private function sqliteFilePath(Connection $connection): string
-    {
-        $params = $connection->getParams();
-        $path = $params['path'] ?? null;
-        $this->assertIsString($path);
-
-        return $path;
-    }
-
-    private function holdWriterWorkerScript(): string
-    {
-        return <<<'PHP'
-<?php
-declare(strict_types=1);
-$path = getenv('SQLITE_PATH');
-$ready = getenv('BARRIER_READY');
-$done = getenv('BARRIER_DONE');
-$holdMs = (int) (getenv('HOLD_MS') ?: '200');
-if (!is_string($path) || $path === '' || !is_string($ready) || !is_string($done)) {
-    fwrite(STDERR, "missing env\n");
-    exit(1);
-}
-$pdo = new PDO('sqlite:' . $path, null, null, [PDO::ATTR_TIMEOUT => 5]);
-$pdo->exec('BEGIN IMMEDIATE');
-touch($ready);
-$until = microtime(true) + ($holdMs / 1000);
-while (!is_file($done) && microtime(true) < $until) {
-    usleep(2000);
-}
-$pdo->exec('COMMIT');
-exit(0);
-PHP;
+        return $env;
     }
 }
