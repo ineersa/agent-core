@@ -12,7 +12,7 @@ use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunIdentityDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\PreparedAgentChildRunDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Deferred\Launch\AgentChildLaunchTaskInterface;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Deferred\Launch\DeferredAgentChildBatchChildIntentDTO;
-use Ineersa\CodingAgent\Agent\Execution\ChildRun\Deferred\Launch\DeferredAgentChildBatchLaunchPlanInterface;
+use Ineersa\CodingAgent\Agent\Execution\ChildRun\Deferred\Launch\DeferredAgentChildBatchLaunchPlanDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Deferred\Launch\DeferredAgentChildBatchPreparationInterface;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Lifecycle\ChildRunArtifactLifecycleService;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentBatchProjectionDTO;
@@ -40,12 +40,11 @@ final class DeferredSubagentBatchPreparationService implements DeferredAgentChil
         string $toolCallId,
         array $tasks,
         ChildRunBatchExecutionModeEnum $executionMode,
-    ): DeferredAgentChildBatchLaunchPlanInterface {
+    ): DeferredAgentChildBatchLaunchPlanDTO {
         $this->launchPreparation->assertDepthAllowed($parentRunId);
 
         $lifecycleId = $this->identityFactory->batchLifecycleId($parentRunId, $toolCallId);
         $childIntents = [];
-        $definitionsByBatchIndex = [];
         $identities = [];
 
         foreach ($tasks as $index => $taskDto) {
@@ -53,7 +52,6 @@ final class DeferredSubagentBatchPreparationService implements DeferredAgentChil
             $agentName = $taskDto->displayName();
             $taskText = $taskDto->taskSummary();
             $definition = $this->resolveDefinition($agentName, $executionMode);
-            $definitionsByBatchIndex[$batchIndex] = $definition;
             $ids = $this->identityFactory->childIdentity($parentRunId, $toolCallId, $batchIndex);
             $childIntents[] = new DeferredAgentChildBatchChildIntentDTO(
                 batchIndex: $batchIndex,
@@ -75,12 +73,11 @@ final class DeferredSubagentBatchPreparationService implements DeferredAgentChil
             );
         }
 
-        return new DeferredSubagentBatchLaunchPlanDTO(
+        return new DeferredAgentChildBatchLaunchPlanDTO(
             lifecycleId: $lifecycleId,
             executionMode: $executionMode,
             totalChildCount: \count($tasks),
             childIntents: $childIntents,
-            definitionsByBatchIndex: $definitionsByBatchIndex,
             identities: $identities,
         );
     }
@@ -93,12 +90,8 @@ final class DeferredSubagentBatchPreparationService implements DeferredAgentChil
     public function preparePendingChildren(
         string $parentRunId,
         DeferredSubagentBatchProjectionDTO $projection,
-        DeferredAgentChildBatchLaunchPlanInterface $plan,
+        DeferredAgentChildBatchLaunchPlanDTO $plan,
     ): array {
-        if (!$plan instanceof DeferredSubagentBatchLaunchPlanDTO) {
-            throw new \LogicException('Deferred subagent batch preparation requires a subagent launch plan.');
-        }
-
         $preparedChildren = [];
 
         foreach ($plan->childIntents as $intent) {
@@ -116,8 +109,8 @@ final class DeferredSubagentBatchPreparationService implements DeferredAgentChil
                 continue;
             }
 
-            $identity = $this->identityForIndex($plan->identities(), $intent->batchIndex);
-            $definition = $plan->definitionsByBatchIndex[$intent->batchIndex];
+            $identity = $this->identityForIndex($plan->identities, $intent->batchIndex);
+            $definition = $this->resolveDefinition($intent->agentName, $plan->executionMode);
             try {
                 $this->launchPreparation->reserveIdentity($identity);
                 $prepared = $this->launchPreparation->prepareFromDefinition(
@@ -148,13 +141,9 @@ final class DeferredSubagentBatchPreparationService implements DeferredAgentChil
     public function collectLaunchedBatchIndices(
         string $parentRunId,
         DeferredSubagentBatchProjectionDTO $projection,
-        DeferredAgentChildBatchLaunchPlanInterface $plan,
+        DeferredAgentChildBatchLaunchPlanDTO $plan,
         array $preparedChildren,
     ): array {
-        if (!$plan instanceof DeferredSubagentBatchLaunchPlanDTO) {
-            throw new \LogicException('Deferred subagent batch preparation requires a subagent launch plan.');
-        }
-
         $preparedIndexes = [];
         foreach ($preparedChildren as $prepared) {
             $preparedIndexes[$prepared->identity->batchIndex] = true;

@@ -22,7 +22,7 @@ interface DeferredAgentChildBatchPreparationInterface
         string $toolCallId,
         array $tasks,
         ChildRunBatchExecutionModeEnum $executionMode,
-    ): DeferredAgentChildBatchLaunchPlanInterface;
+    ): DeferredAgentChildBatchLaunchPlanDTO;
 
     /**
      * @return list<PreparedAgentChildRunDTO>
@@ -32,7 +32,7 @@ interface DeferredAgentChildBatchPreparationInterface
     public function preparePendingChildren(
         string $parentRunId,
         DeferredSubagentBatchProjectionDTO $projection,
-        DeferredAgentChildBatchLaunchPlanInterface $plan,
+        DeferredAgentChildBatchLaunchPlanDTO $plan,
     ): array;
 
     /**
@@ -43,7 +43,7 @@ interface DeferredAgentChildBatchPreparationInterface
     public function collectLaunchedBatchIndices(
         string $parentRunId,
         DeferredSubagentBatchProjectionDTO $projection,
-        DeferredAgentChildBatchLaunchPlanInterface $plan,
+        DeferredAgentChildBatchLaunchPlanDTO $plan,
         array $preparedChildren,
     ): array;
 }

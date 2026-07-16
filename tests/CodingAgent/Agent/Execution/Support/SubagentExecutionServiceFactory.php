@@ -87,7 +87,6 @@ final class SubagentExecutionServiceFactory
             $args['batchRepository'],
             $runtimeStart,
             $args['contextAccessor'],
-            $args['agentsConfig'],
             $args['logger'],
         );
 

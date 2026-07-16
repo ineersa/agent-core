@@ -9,6 +9,8 @@ use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchExecutionModeEnum;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Deferred\Launch\AgentChildLaunchTaskInterface;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Deferred\Launch\DeferredAgentChildBatchLaunchCoordinator;
+use Ineersa\CodingAgent\Agent\Execution\ChildRun\Deferred\Launch\DeferredAgentChildBatchLaunchException;
+use Ineersa\CodingAgent\Agent\Execution\ChildRun\Deferred\Launch\DeferredAgentChildBatchLaunchFailureReasonEnum;
 use Ineersa\CodingAgent\Agent\Execution\SubagentTaskDTO;
 use Ineersa\CodingAgent\Config\AgentsConfig;
 
@@ -49,13 +51,40 @@ final class DeferredSubagentBatchLaunchService
         /** @var list<AgentChildLaunchTaskInterface> $launchTasks */
         $launchTasks = $tasks;
 
-        return $this->batchLaunchCoordinator->launch(
-            $parentRunId,
-            $launchTasks,
-            $executionMode,
-            $this->batchPreparation,
-            'Subagent batch launch failed.',
-            'Subagent batch launch previously failed for this tool call.',
-        );
+        try {
+            return $this->batchLaunchCoordinator->launch(
+                $parentRunId,
+                $launchTasks,
+                $executionMode,
+                $this->batchPreparation,
+                $this->agentsConfig->subagentToolTimeoutSeconds,
+            );
+        } catch (DeferredAgentChildBatchLaunchException $e) {
+            throw $this->mapLaunchException($e);
+        }
+    }
+
+    private function mapLaunchException(DeferredAgentChildBatchLaunchException $e): ToolCallException
+    {
+        return match ($e->reason) {
+            DeferredAgentChildBatchLaunchFailureReasonEnum::EmptyTasks => new ToolCallException(
+                'Deferred subagent batch launch requires at least one task.',
+                retryable: false,
+            ),
+            DeferredAgentChildBatchLaunchFailureReasonEnum::ParentContextMismatch => new ToolCallException(
+                'Parent run id does not match active tool context.',
+                retryable: false,
+            ),
+            DeferredAgentChildBatchLaunchFailureReasonEnum::PreviouslyFailed => new ToolCallException(
+                'Subagent batch launch previously failed for this tool call.',
+                retryable: false,
+            ),
+            DeferredAgentChildBatchLaunchFailureReasonEnum::PreparationFailed,
+            DeferredAgentChildBatchLaunchFailureReasonEnum::RuntimeStartFailed => new ToolCallException(
+                'Subagent batch launch failed.',
+                retryable: false,
+                previous: $e->getPrevious(),
+            ),
+        };
     }
 }

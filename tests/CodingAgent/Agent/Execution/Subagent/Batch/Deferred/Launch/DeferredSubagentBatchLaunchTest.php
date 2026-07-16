@@ -477,18 +477,18 @@ final class DeferredSubagentBatchLaunchTest extends IsolatedKernelTestCase
             $artifactLifecycle,
         );
 
+        $agentsConfigResolved = $agentsConfig ?? self::getContainer()->get(AgentsConfig::class);
         $batchLaunchCoordinator = new DeferredAgentChildBatchLaunchCoordinator(
             self::getContainer()->get(DeferredSubagentBatchRepository::class),
             $runtimeStart,
             self::getContainer()->get(StackToolExecutionContextAccessor::class),
-            $agentsConfig ?? self::getContainer()->get(AgentsConfig::class),
             $logger,
         );
 
         return new DeferredSubagentBatchLaunchService(
             $batchPreparation,
             $batchLaunchCoordinator,
-            $agentsConfig ?? self::getContainer()->get(AgentsConfig::class),
+            $agentsConfigResolved,
         );
     }
 

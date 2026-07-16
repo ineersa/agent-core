@@ -10,7 +10,7 @@ use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunIdentityDTO;
 /**
  * Generic immutable launch plan: identities and reservation intents (no kind-specific preparation state).
  */
-final readonly class DeferredAgentChildBatchLaunchPlanDTO implements DeferredAgentChildBatchLaunchPlanInterface
+final readonly class DeferredAgentChildBatchLaunchPlanDTO
 {
     /**
      * @param list<DeferredAgentChildBatchChildIntentDTO> $childIntents
@@ -25,26 +25,9 @@ final readonly class DeferredAgentChildBatchLaunchPlanDTO implements DeferredAge
     ) {
     }
 
-    public function lifecycleId(): string
-    {
-        return $this->lifecycleId;
-    }
-
-    public function executionMode(): ChildRunBatchExecutionModeEnum
-    {
-        return $this->executionMode;
-    }
-
-    public function totalChildCount(): int
-    {
-        return $this->totalChildCount;
-    }
-
-    public function identities(): array
-    {
-        return $this->identities;
-    }
-
+    /**
+     * @return list<array{batchIndex: int, childRunId: string, artifactId: string, agentName: string, task: string, definitionModel: ?string}>
+     */
     public function reserveChildIntents(): array
     {
         return array_map(
