@@ -27,12 +27,11 @@ final class ForkDeferredLiveE2eTest extends ControllerE2eTestCase
             'id' => $startCmdId,
             'type' => 'start_run',
             'payload' => [
-                'prompt' => '[llm-real:fork-deferred] Call tool fork exactly once with JSON arguments {"task":"Reply with exactly '.self::CHILD_REPLY.' only. No other tools."}. '
-                    .'Do not call read, write, bash, subagent, or any tool except fork.',
+                'prompt' => '[llm-real:fork-deferred-v2] Call tool fork exactly once with JSON arguments {"task":"Reply with exactly '.self::CHILD_REPLY.' only. No other tools."}. Do not call any tool except fork.',
             ],
         ]);
 
-        $events = $this->collectEventsUntilToolCompleted('fork', $this->liveLlmRunWaitTimeout());
+        $events = $this->collectEventsUntilToolCompleted('fork', $this->liveLlmToolWaitTimeout());
         $byType = $this->indexByType($events);
 
         $this->assertStartRunAcked($events, $startCmdId);
@@ -56,6 +55,18 @@ final class ForkDeferredLiveE2eTest extends ControllerE2eTestCase
         ));
         $this->assertCount(1, $completed, 'Exactly one matching fork tool completion expected. '.$this->collectDiagnostics($events));
         $this->assertFalse($completed[0]['payload']['is_error'] ?? true, $this->collectDiagnostics($events));
+
+        $completedPayload = $completed[0]['payload'] ?? [];
+        $resultText = (string) ($completedPayload['result'] ?? '');
+        if ('' === $resultText) {
+            $resultText = json_encode($completedPayload, \JSON_THROW_ON_ERROR);
+        }
+        $this->assertStringContainsString(self::CHILD_REPLY, $resultText, 'Fork completion must include child reply token. '.$this->collectDiagnostics($events));
+    }
+
+    protected function controllerExtraArgs(): array
+    {
+        return ['--tools=fork'];
     }
 
     protected function tempDirPrefix(): string

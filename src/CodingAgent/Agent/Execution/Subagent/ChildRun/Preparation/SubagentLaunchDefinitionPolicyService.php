@@ -7,8 +7,6 @@ namespace Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Preparation;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionCatalog;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionDTO;
-use Ineersa\CodingAgent\Agent\Definition\McpAgentModeEnum;
-use Ineersa\CodingAgent\Agent\Definition\McpPolicyDTO;
 use Ineersa\CodingAgent\Agent\Execution\AgentDepthGuard;
 use Ineersa\CodingAgent\Agent\Execution\AgentToolPolicyResolver;
 use Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader;
@@ -42,7 +40,7 @@ final class SubagentLaunchDefinitionPolicyService
         return $definition;
     }
 
-public function requireForegroundDefinition(string $agentName): AgentDefinitionDTO
+    public function requireForegroundDefinition(string $agentName): AgentDefinitionDTO
     {
         try {
             $definition = $this->catalog->requireEnabled($agentName);

@@ -145,4 +145,102 @@ final class ForkChildStartRunInputCompositionTest extends IsolatedKernelTestCase
         $this->assertSame($summaryText, $parentAfter->messages[0]->content[0]['text'] ?? null);
         $this->assertTrue($parentAfter->messages[0]->metadata['compact_summary'] ?? false);
     }
+
+    public function testPreparedForkChildMessagesExcludeAgentsDefinitionsContext(): void
+    {
+        $parentRunId = 'parent-fork-no-agent-defs';
+        $parentMessages = [
+            new AgentMessage(
+                role: 'user-context',
+                content: [['type' => 'text', 'text' => 'AGENT_DEFS_SHOULD_NOT_APPEAR']],
+                metadata: ['source' => 'agents_definitions_context'],
+            ),
+            new AgentMessage(role: 'user', content: [['type' => 'text', 'text' => 'go']]),
+            new AgentMessage(
+                role: 'assistant',
+                content: [['type' => 'text', 'text' => 'fork']],
+                metadata: ['tool_calls' => [['name' => 'fork', 'id' => 'tc-fork-defs']]],
+            ),
+        ];
+        $runStore = self::getContainer()->get(\Ineersa\AgentCore\Contract\RunStoreInterface::class);
+        $runStore->compareAndSwap(new RunState(runId: $parentRunId, status: RunStatus::Running, version: 0, messages: $parentMessages, turnNo: 1), 0);
+
+        $builder = self::getContainer()->get(ForkChildLaunchInputBuilder::class);
+        $identity = new ChildRunIdentityDTO(
+            parentRunId: $parentRunId,
+            childRunId: 'child-fork-defs',
+            artifactId: 'artifact-fork-defs',
+            displayName: 'fork',
+            taskSummary: 'Task',
+            definitionModel: null,
+            artifactKind: AgentArtifactKindEnum::Fork,
+        );
+        $policy = ['tools' => ['read'], 'mcp' => ['mode' => 'inherit', 'tools' => []]];
+        $prepared = $builder->buildPrepared($identity, new ForkLaunchTaskDTO(task: 'Task'), $policy);
+
+        foreach ($prepared->startRunInput->messages as $message) {
+            $this->assertNotSame(
+                'agents_definitions_context',
+                $message->metadata['source'] ?? null,
+                'Fork child must not include agents_definitions_context',
+            );
+        }
+    }
+
+    public function testPreparedForkChildSystemPromptOmitsForkAndSubagentToolGuidance(): void
+    {
+        $parentRunId = 'parent-fork-sys-tools';
+        $runStore = self::getContainer()->get(\Ineersa\AgentCore\Contract\RunStoreInterface::class);
+        $runStore->compareAndSwap(new RunState(runId: $parentRunId, status: RunStatus::Running, version: 0, messages: [], turnNo: 1), 0);
+
+        $builder = self::getContainer()->get(ForkChildLaunchInputBuilder::class);
+        $identity = new ChildRunIdentityDTO(
+            parentRunId: $parentRunId,
+            childRunId: 'child-fork-sys-tools',
+            artifactId: 'artifact-fork-sys-tools',
+            displayName: 'fork',
+            taskSummary: 'Task',
+            definitionModel: null,
+            artifactKind: AgentArtifactKindEnum::Fork,
+        );
+        $policy = ['tools' => ['read', 'bash'], 'mcp' => ['mode' => 'inherit', 'tools' => []]];
+        $prepared = $builder->buildPrepared($identity, new ForkLaunchTaskDTO(task: 'Task'), $policy);
+
+        $allowed = $prepared->startRunInput->metadata->toolsScope['allowed_tools'] ?? [];
+        $this->assertNotContains('fork', $allowed);
+        $this->assertNotContains('subagent', $allowed);
+
+        $toolSetResolver = self::getContainer()->get(\Ineersa\AgentCore\Contract\Tool\ToolSetResolverInterface::class);
+        $eventStore = self::getContainer()->get(\Ineersa\AgentCore\Contract\EventStoreInterface::class);
+        $eventStore->append(new \Ineersa\AgentCore\Domain\Event\RunEvent(
+            runId: $identity->childRunId,
+            seq: 1,
+            turnNo: 0,
+            type: \Ineersa\AgentCore\Domain\Event\RunEventTypeEnum::RunStarted->value,
+            payload: [
+                'step_id' => 'start-1',
+                'payload' => [
+                    'system_prompt' => 'fork child',
+                    'messages' => [],
+                    'metadata' => [
+                        'session' => [
+                            'kind' => 'agent_child',
+                            'child_kind' => 'fork',
+                            'parent_run_id' => $parentRunId,
+                            'agent_name' => 'fork',
+                            'artifact_id' => $identity->artifactId,
+                            'interactive' => true,
+                        ],
+                        'tools_scope' => [
+                            'allowed_tools' => $allowed,
+                            'mcp' => ['mode' => 'inherit', 'tools' => []],
+                        ],
+                    ],
+                ],
+            ],
+        ));
+        $active = $toolSetResolver->resolve('default', runId: $identity->childRunId);
+        $this->assertNotContains('fork', $active->toolNames);
+        $this->assertNotContains('subagent', $active->toolNames);
+    }
 }
