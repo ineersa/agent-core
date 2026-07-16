@@ -13,6 +13,8 @@ final readonly class ContinueForkDeferredPrelaunchMessage
         public string $batchLifecycleId,
         public string $forkLocalRunId,
         public string $terminalEventType,
+        /** @var array<string, mixed> */
+        public array $terminalPayload = [],
     ) {
     }
 }

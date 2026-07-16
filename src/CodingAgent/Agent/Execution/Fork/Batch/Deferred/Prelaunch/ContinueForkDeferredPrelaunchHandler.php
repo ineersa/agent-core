@@ -6,7 +6,11 @@ namespace Ineersa\CodingAgent\Agent\Execution\Fork\Batch\Deferred\Prelaunch;
 
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Deferred\Launch\DeferredAgentChildBatchRuntimeStartService;
 use Ineersa\CodingAgent\Agent\Execution\Fork\Batch\Deferred\Launch\DeferredForkBatchPreparationService;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentBatchLaunchStatusEnum;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
+use Ineersa\CodingAgent\Agent\Execution\Fork\Batch\Deferred\Prelaunch\ForkDeferredPrelaunchFailureService;
+use Ineersa\CodingAgent\Compaction\CompactionSkipReasonEnum;
+use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\CodingAgent\Session\Fork\ForkSessionCopyService;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
@@ -19,6 +23,7 @@ final readonly class ContinueForkDeferredPrelaunchHandler
         private DeferredForkBatchPreparationService $forkPreparation,
         private DeferredAgentChildBatchRuntimeStartService $runtimeStart,
         private ForkSessionCopyService $sessionCopyService,
+        private ForkDeferredPrelaunchFailureService $prelaunchFailure,
         private LoggerInterface $logger,
     ) {
     }
@@ -34,8 +39,27 @@ final readonly class ContinueForkDeferredPrelaunchHandler
             return;
         }
 
+        if (DeferredSubagentBatchLaunchStatusEnum::Launched === $batch->launchStatus) {
+            $this->sessionCopyService->removeForkLocalSession($message->forkLocalRunId);
+
+            return;
+        }
+
         $projection = $this->batchRepository->findProjectionByLifecycleId($message->batchLifecycleId);
         if (null === $projection) {
+            return;
+        }
+
+        if ($this->isHardCompactionFailure($message->terminalEventType, $message->terminalPayload)) {
+            $this->prelaunchFailure->failDeferredForkTool(
+                lifecycleId: $batch->lifecycleId,
+                parentRunId: $batch->parentRunId,
+                parentToolCallId: $batch->parentToolCallId,
+                projectionVersion: $batch->projectionVersion,
+                forkLocalRunId: $message->forkLocalRunId,
+                reason: (string) ($message->terminalPayload['reason'] ?? 'compaction_failed'),
+            );
+
             return;
         }
 
@@ -50,7 +74,7 @@ final readonly class ContinueForkDeferredPrelaunchHandler
             [new \Ineersa\CodingAgent\Agent\Execution\Fork\ForkLaunchTaskDTO(
                 task: $child->task,
                 modelOverride: $child->definitionModel,
-                reasoningOverride: null,
+                reasoningOverride: $child->reasoningOverride,
             )],
             $batch->executionMode,
         );
@@ -63,19 +87,15 @@ final readonly class ContinueForkDeferredPrelaunchHandler
                 $message->forkLocalRunId,
             );
         } catch (\Throwable $e) {
-            $this->batchRepository->applyForkPrelaunchPhase(
-                $batch->parentRunId,
-                $batch->parentToolCallId,
-                ForkDeferredPrelaunchPhaseEnum::Failed,
+            $this->prelaunchFailure->failDeferredForkTool(
+                lifecycleId: $batch->lifecycleId,
+                parentRunId: $batch->parentRunId,
+                parentToolCallId: $batch->parentToolCallId,
+                projectionVersion: $batch->projectionVersion,
+                forkLocalRunId: $message->forkLocalRunId,
+                reason: 'child_prepare_failed',
+                previous: $e,
             );
-            $this->sessionCopyService->removeForkLocalSession($message->forkLocalRunId);
-            $this->logger->warning('fork_deferred_prelaunch.child_prepare_failed', [
-                'batch_lifecycle_id' => $message->batchLifecycleId,
-                'fork_local_run_id' => $message->forkLocalRunId,
-                'component' => 'agent.execution.fork',
-                'event_type' => 'fork_deferred_prelaunch.child_prepare_failed',
-                'exception_class' => $e::class,
-            ]);
 
             return;
         }
@@ -100,5 +120,26 @@ final readonly class ContinueForkDeferredPrelaunchHandler
         );
 
         $this->sessionCopyService->removeForkLocalSession($message->forkLocalRunId);
+    }
+
+    /**
+     * @param array<string, mixed> $terminalPayload
+     */
+    private function isHardCompactionFailure(string $eventType, array $terminalPayload): bool
+    {
+        if (RunEventTypeEnum::ContextCompactionFailed->value !== $eventType) {
+            return false;
+        }
+
+        if (true === ($terminalPayload['messages_replaced'] ?? null)) {
+            return true;
+        }
+
+        $reason = $terminalPayload['reason'] ?? null;
+        if (!\is_string($reason)) {
+            return true;
+        }
+
+        return null === CompactionSkipReasonEnum::tryFrom($reason);
     }
 }

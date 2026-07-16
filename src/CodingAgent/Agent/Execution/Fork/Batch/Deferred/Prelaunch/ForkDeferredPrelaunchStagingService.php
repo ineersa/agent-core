@@ -6,12 +6,15 @@ namespace Ineersa\CodingAgent\Agent\Execution\Fork\Batch\Deferred\Prelaunch;
 
 use Ineersa\AgentCore\Contract\AgentRunnerInterface;
 use Ineersa\AgentCore\Contract\RunStoreInterface;
+use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\CodingAgent\Agent\Fork\ForkSnapshotSanitizer;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
+use Ineersa\CodingAgent\Compaction\CompactionSkipReasonEnum;
+use Ineersa\CodingAgent\Session\CommittedRunEventAppender;
 use Ineersa\CodingAgent\Session\Fork\ForkSessionCopyService;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Psr\Log\LoggerInterface;
@@ -32,6 +35,8 @@ final readonly class ForkDeferredPrelaunchStagingService
         private AgentRunnerInterface $agentRunner,
         private DeferredSubagentBatchRepository $batchRepository,
         private MessageBusInterface $commandBus,
+        private EventFactory $eventFactory,
+        private CommittedRunEventAppender $committedEventAppender,
         private LoggerInterface $logger,
     ) {
     }
@@ -98,7 +103,10 @@ final readonly class ForkDeferredPrelaunchStagingService
         return $row?->forkLocalRunId;
     }
 
-    public function handleForkLocalCompactionTerminal(string $forkLocalRunId, string $eventType): void
+    /**
+     * @param array<string, mixed> $terminalPayload
+     */
+    public function handleForkLocalCompactionTerminal(string $forkLocalRunId, string $eventType, array $terminalPayload = []): void
     {
         $batch = $this->batchRepository->findByForkLocalRunId($forkLocalRunId);
         if (null === $batch) {
@@ -114,17 +122,16 @@ final readonly class ForkDeferredPrelaunchStagingService
             return;
         }
 
-        $this->batchRepository->applyForkPrelaunchPhase(
-            $batch->parentRunId,
-            $batch->parentToolCallId,
-            ForkDeferredPrelaunchPhaseEnum::ReadyForChildLaunch,
-        );
+        if ($this->isStructuralCompactionNoOp($eventType, $terminalPayload)) {
+            $this->persistForkLocalSanitizedSnapshot($forkLocalRunId);
+        }
 
         try {
             $this->commandBus->dispatch(new ContinueForkDeferredPrelaunchMessage(
                 batchLifecycleId: $batch->lifecycleId,
                 forkLocalRunId: $forkLocalRunId,
                 terminalEventType: $eventType,
+                terminalPayload: $terminalPayload,
             ));
         } catch (\Throwable $e) {
             $this->logger->warning('fork_deferred_prelaunch.continue_dispatch_failed', [
@@ -134,6 +141,92 @@ final readonly class ForkDeferredPrelaunchStagingService
                 'event_type' => 'fork_deferred_prelaunch.continue_dispatch_failed',
                 'exception_class' => $e::class,
             ]);
+
+            throw $e;
+        }
+
+        $this->batchRepository->applyForkPrelaunchPhase(
+            $batch->parentRunId,
+            $batch->parentToolCallId,
+            ForkDeferredPrelaunchPhaseEnum::ReadyForChildLaunch,
+        );
+    }
+
+    /**
+     * @param array<string, mixed> $terminalPayload
+     */
+    private function isStructuralCompactionNoOp(string $eventType, array $terminalPayload): bool
+    {
+        if (RunEventTypeEnum::ContextCompactionFailed->value !== $eventType) {
+            return false;
+        }
+
+        if (true === ($terminalPayload['messages_replaced'] ?? null)) {
+            return false;
+        }
+
+        $reason = $terminalPayload['reason'] ?? null;
+        if (!\is_string($reason)) {
+            return false;
+        }
+
+        return null !== CompactionSkipReasonEnum::tryFrom($reason);
+    }
+
+    /**
+     * Durable fork-local checkpoint: sanitized provider-valid messages survive canonical replay.
+     *
+     * @param list<AgentMessage> $messages
+     */
+    private function persistForkLocalSanitizedSnapshot(string $forkLocalRunId): void
+    {
+        $state = $this->runStore->get($forkLocalRunId);
+        if (null === $state) {
+            throw new \RuntimeException(\sprintf('Fork-local run state missing for "%s".', $forkLocalRunId));
+        }
+
+        $sanitized = $this->snapshotSanitizer->sanitize($state->messages);
+        $serialized = array_map(static fn (AgentMessage $message): array => $message->toArray(), $sanitized);
+
+        $events = $this->eventFactory->eventsFromSpecs($forkLocalRunId, $state->turnNo, $state->lastSeq + 1, [[
+            'type' => RunEventTypeEnum::ContextCompacted->value,
+            'payload' => [
+                'summary_text' => '',
+                'messages' => $serialized,
+                'estimated_tokens_before' => 0,
+                'estimated_tokens_after' => 0,
+                'messages_compacted' => 0,
+                'messages_retained' => \count($sanitized),
+                'first_retained_index' => 0,
+                'trigger' => 'fork_prelaunch_sanitize',
+                'continue_after_compaction' => false,
+            ],
+        ]]);
+
+        $this->committedEventAppender->appendMany($events);
+
+        $state = $this->runStore->get($forkLocalRunId);
+        if (null === $state) {
+            throw new \RuntimeException(\sprintf('Fork-local run state missing after checkpoint for "%s".', $forkLocalRunId));
+        }
+
+        $next = new RunState(
+            runId: $forkLocalRunId,
+            status: RunStatus::Completed,
+            version: $state->version,
+            turnNo: $state->turnNo,
+            lastSeq: $state->lastSeq,
+            isStreaming: false,
+            streamingMessage: null,
+            pendingToolCalls: [],
+            errorMessage: null,
+            messages: $sanitized,
+            activeStepId: null,
+            retryableFailure: false,
+        );
+
+        if (!$this->runStore->compareAndSwap($next, $state->version)) {
+            throw new \RuntimeException(\sprintf('Failed to persist fork-local sanitized checkpoint for "%s".', $forkLocalRunId));
         }
     }
 

@@ -32,13 +32,13 @@ final readonly class ForkDeferredPrelaunchCompactionHookSubscriber implements Ho
 
         foreach ($context->events as $summary) {
             if (RunEventTypeEnum::ContextCompacted->value === $summary->type) {
-                $this->stagingService->handleForkLocalCompactionTerminal($context->runId, $summary->type);
+                $this->stagingService->handleForkLocalCompactionTerminal($context->runId, $summary->type, $summary->payload);
 
                 return $context;
             }
 
             if (RunEventTypeEnum::ContextCompactionFailed->value === $summary->type) {
-                $this->stagingService->handleForkLocalCompactionTerminal($context->runId, $summary->type);
+                $this->stagingService->handleForkLocalCompactionTerminal($context->runId, $summary->type, $summary->payload);
 
                 return $context;
             }

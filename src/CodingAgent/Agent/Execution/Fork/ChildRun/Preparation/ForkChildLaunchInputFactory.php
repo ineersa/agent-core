@@ -15,7 +15,6 @@ use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\PreparedAgentChildRunD
 use Ineersa\CodingAgent\Agent\Execution\Fork\ForkLaunchTaskDTO;
 use Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader;
 use Ineersa\CodingAgent\Agent\Fork\ForkChildMessageComposer;
-use Ineersa\CodingAgent\Agent\Fork\ForkContextBuilder;
 use Ineersa\CodingAgent\Config\ModelResolver;
 use Ineersa\CodingAgent\Skills\SkillsContextBuilder;
 use Ineersa\CodingAgent\Tool\ToolRegistryInterface;
@@ -26,7 +25,6 @@ use Ineersa\CodingAgent\Tool\ToolRegistryInterface;
 final class ForkChildLaunchInputFactory
 {
     public function __construct(
-        private readonly ForkContextBuilder $forkContextBuilder,
         private readonly ForkChildMessageComposer $messageComposer,
         private readonly RunStoreInterface $parentRunStore,
         private readonly SubagentRunMetadataReader $metadataReader,
@@ -87,75 +85,6 @@ final class ForkChildLaunchInputFactory
         );
     }
 
-    public function buildPrepared(ChildRunIdentityDTO $identity, ForkLaunchTaskDTO $task): PreparedAgentChildRunDTO
-    {
-        $parentRunId = $identity->parentRunId;
-        $parentState = $this->parentRunStore->get($parentRunId);
-        if (null === $parentState) {
-            throw new ToolCallException('Fork tool requires an active parent run with persisted state.', retryable: false);
-        }
-
-        $taskText = $task->taskSummary();
-        $snapshot = $this->forkContextBuilder->build(
-            parentMessages: $parentState->messages,
-            task: $taskText,
-            parentRunId: $parentRunId,
-        );
-
-        $policy = $this->resolveForkToolPolicy($parentRunId);
-        $allowedTools = $policy['tools'];
-
-        $agentsMd = $this->extractUserContextBySource($parentRunId, 'agents_context');
-        $skillsContext = $this->skillsContextBuilder->build();
-        $agentsContext = $this->agentsContextBuilder->build();
-
-        $composed = $this->messageComposer->compose(
-            snapshot: $snapshot,
-            artifactId: $identity->artifactId,
-            allowedToolNames: $allowedTools,
-            agentsMd: $agentsMd,
-            skillsContext: $skillsContext,
-            agentsContext: $agentsContext,
-        );
-
-        $resolvedModel = $this->resolveChildModel(
-            explicitModel: $task->modelOverride,
-            snapshotModel: $snapshot->resolvedModel,
-            parentRunId: $parentRunId,
-        );
-        $resolvedReasoning = $this->resolveChildReasoning(
-            explicitReasoning: $task->reasoningOverride,
-            snapshotThinkingLevel: $snapshot->resolvedThinkingLevel,
-            parentRunId: $parentRunId,
-        );
-
-        $childMetadata = new RunMetadata(
-            session: [
-                'kind' => 'agent_child',
-                'child_kind' => 'fork',
-                'parent_run_id' => $parentRunId,
-                'agent_name' => $identity->displayName,
-                'artifact_id' => $identity->artifactId,
-                'interactive' => true,
-            ],
-            model: $resolvedModel,
-            reasoning: $resolvedReasoning,
-            toolsScope: [
-                'allowed_tools' => $allowedTools,
-                'mcp' => $policy['mcp'],
-            ],
-        );
-
-        return new PreparedAgentChildRunDTO(
-            identity: $identity,
-            startRunInput: new StartRunInput(
-                systemPrompt: '',
-                messages: $composed['messages'],
-                runId: $identity->childRunId,
-                metadata: $childMetadata,
-            ),
-        );
-    }
 
     /**
      * @return array{tools: list<string>, mcp: array{mode: string, tools: list<string>}}

@@ -12,8 +12,8 @@ use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchExecutionModeEnum;
 use Ineersa\CodingAgent\Agent\Execution\Fork\Batch\Deferred\Prelaunch\ContinueForkDeferredPrelaunchMessage;
-use Ineersa\CodingAgent\Agent\Execution\Fork\Batch\Deferred\Prelaunch\ForkDeferredPrelaunchPhaseEnum;
 use Ineersa\CodingAgent\Agent\Execution\Fork\Batch\Deferred\Prelaunch\ForkDeferredPrelaunchPendingException;
+use Ineersa\CodingAgent\Agent\Execution\Fork\Batch\Deferred\Prelaunch\ForkDeferredPrelaunchPhaseEnum;
 use Ineersa\CodingAgent\Agent\Execution\Fork\Batch\Deferred\Prelaunch\ForkDeferredPrelaunchStagingService;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
 use Ineersa\CodingAgent\Session\Fork\ForkSessionCopyService;
@@ -235,19 +235,33 @@ final class DurabilityNoOpCompactRunner implements AgentRunnerInterface
         throw new \LogicException('Not expected.');
     }
 
-    public function continue(string $runId): void {}
+    public function continue(string $runId): void
+    {
+    }
 
-    public function steer(string $runId, AgentMessage $message): void {}
+    public function steer(string $runId, AgentMessage $message): void
+    {
+    }
 
-    public function followUp(string $runId, AgentMessage $message): void {}
+    public function followUp(string $runId, AgentMessage $message): void
+    {
+    }
 
-    public function appendMessage(string $runId, AgentMessage $message): void {}
+    public function appendMessage(string $runId, AgentMessage $message): void
+    {
+    }
 
-    public function cancel(string $runId, ?string $reason = null): void {}
+    public function cancel(string $runId, ?string $reason = null): void
+    {
+    }
 
-    public function answerHuman(string $runId, string $questionId, mixed $answer): void {}
+    public function answerHuman(string $runId, string $questionId, mixed $answer): void
+    {
+    }
 
-    public function compact(string $runId, ?string $customInstructions = null): void {}
+    public function compact(string $runId, ?string $customInstructions = null): void
+    {
+    }
 }
 
 final class DurabilityFailingOnceContinueBus implements MessageBusInterface
