@@ -55,6 +55,11 @@ final class TmuxHarness
      * be slightly slower due to shell startup inside the pane.
      */
     private const float TMUX_SESSION_TIMEOUT = 10.0;
+
+    /**
+     * Must match CastorTasks::qa_tmux_session_ownership_option() for castor check teardown.
+     */
+    private const string QA_TMUX_OWNERSHIP_OPTION = '@hatfield_qa_run_id';
     private readonly string $root;
     private readonly int $pid;
 
@@ -112,13 +117,24 @@ final class TmuxHarness
             ? (preg_replace('/[^a-zA-Z0-9._-]/', '', $qaRunId) ?? 'qa-run')
             : '';
         if ('' !== $qaRunSegment) {
+            // Session name embeds the run id for human inspection; castor check teardown
+            // matches the exact id via the @hatfield_qa_run_id session option below.
             $prefix = $prefix.'-'.$qaRunSegment;
         }
         $session = \sprintf('%s-%d-%d', $prefix, $this->pid, \count($this->sessionNames));
         $this->sessionNames[] = $session;
 
+        // Propagate HATFIELD_QA_RUN_ID into the pane shell and descendants. The global
+        // tmux server may not inherit the ParaTest worker environ on abnormal lane timeout
+        // (SIGKILL before tearDown), so explicit export keeps /proc leak scans attributable.
+        $paneEnvPrefix = '';
+        if ('' !== $qaRunId) {
+            $paneEnvPrefix = 'export HATFIELD_QA_RUN_ID='.escapeshellarg($qaRunId).'; ';
+        }
+
         $innerCmd = \sprintf(
-            'cd %s && %s',
+            '%scd %s && %s',
+            $paneEnvPrefix,
             escapeshellarg($cwd ?? $this->root),
             $command,
         );
@@ -139,6 +155,19 @@ final class TmuxHarness
         $paneId = $output;
         if (!str_starts_with($paneId, '%')) {
             throw new \RuntimeException(\sprintf('Failed to create tmux session "%s". Output: %s', $session, $output));
+        }
+
+        if ('' !== $qaRunId) {
+            $this->runTmux(
+                \sprintf(
+                    'tmux set-option -t %s %s %s 2>/dev/null',
+                    escapeshellarg($session),
+                    escapeshellarg(self::QA_TMUX_OWNERSHIP_OPTION),
+                    escapeshellarg($qaRunId),
+                ),
+                self::TMUX_CMD_TIMEOUT,
+                throwOnTimeout: false,
+            );
         }
 
         // Some tmux servers ignore new-session -x/-y and keep the global

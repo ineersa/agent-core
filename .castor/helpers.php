@@ -1693,29 +1693,44 @@ function collect_qa_check_run_leaked_processes(string $runId): array
  */
 function assert_castor_check_run_no_process_leaks(string $runId): void
 {
-    $leaks = collect_qa_check_run_leaked_processes($runId);
-    if ([] === $leaks) {
-        echo "QA run leak check: ok (no processes with HATFIELD_QA_RUN_ID={$runId})\n";
+    $processLeaks = collect_qa_check_run_leaked_processes($runId);
+    $tmuxLeaks = collect_qa_check_run_leaked_tmux_sessions($runId);
+
+    if ([] === $processLeaks && [] === $tmuxLeaks) {
+        echo "QA run leak check: ok (no processes or tmux sessions owned by HATFIELD_QA_RUN_ID={$runId})\n";
 
         return;
     }
 
     $lines = [
-        'QA run leak check FAILED: processes still carry HATFIELD_QA_RUN_ID='.$runId,
+        'QA run leak check FAILED: resources still owned by HATFIELD_QA_RUN_ID='.$runId,
         'Investigate lifecycle teardown (do not auto-kill). Manual cleanup only when safe:',
         '  castor clean:cleanup:workers:list',
         '  castor clean:cleanup:workers',
+        '  tmux list-sessions (see @hatfield_qa_run_id session option)',
         '',
     ];
-    foreach ($leaks as $row) {
-        $lines[] = \sprintf(
-            '  pid=%d ppid=%d sid=%d cwd=%s cmd=%s',
-            $row['pid'],
-            $row['ppid'],
-            $row['sid'],
-            '' !== $row['cwd'] ? $row['cwd'] : '?',
-            '' !== $row['cmd'] ? $row['cmd'] : '?',
-        );
+
+    if ([] !== $processLeaks) {
+        $lines[] = 'Processes:';
+        foreach ($processLeaks as $row) {
+            $lines[] = \sprintf(
+                '  pid=%d ppid=%d sid=%d cwd=%s cmd=%s',
+                $row['pid'],
+                $row['ppid'],
+                $row['sid'],
+                '' !== $row['cwd'] ? $row['cwd'] : '?',
+                '' !== $row['cmd'] ? $row['cmd'] : '?',
+            );
+        }
+        $lines[] = '';
+    }
+
+    if ([] !== $tmuxLeaks) {
+        $lines[] = 'Tmux sessions (exact @hatfield_qa_run_id match):';
+        foreach ($tmuxLeaks as $session) {
+            $lines[] = '  '.$session.'  (tmux kill-session -t '.escapeshellarg($session).')';
+        }
     }
 
     fail_quality(implode("\n", $lines));

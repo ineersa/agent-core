@@ -57,6 +57,7 @@ use function CastorTasks\assert_castor_check_run_no_process_leaks;
 use function CastorTasks\begin_castor_check_llama_proxy_cache_guard;
 use function CastorTasks\castor_check_lock_enabled;
 use function CastorTasks\check_llm_generation_ready;
+use function CastorTasks\finalize_qa_run_tui_tmux_sessions;
 use function CastorTasks\initialize_qa_check_run;
 use function CastorTasks\is_llm_mode;
 use function CastorTasks\release_castor_check_lock;
@@ -218,6 +219,10 @@ function _run_castor_check_body(string $root, string $qaRunId): void
     } finally {
         unset($GLOBALS['CASTOR_CHECK_AGGREGATING']);
         unset($GLOBALS['CASTOR_PHAR_READY']);
+        // Detached tmux panes live outside the lane setsid tree; finalize exact-run
+        // sessions here so external lane timeouts still release QA-owned resources
+        // before cache-guard or leak assertions can abort the check body.
+        finalize_qa_run_tui_tmux_sessions($qaRunId);
     }
 
     assert_castor_check_llama_proxy_cache_unchanged($llamaProxyCacheBaseline);
