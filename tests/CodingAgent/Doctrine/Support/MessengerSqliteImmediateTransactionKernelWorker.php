@@ -48,7 +48,8 @@ if (is_string($transportDb) && '' !== $transportDb) {
 
 chdir($hatfieldCwd);
 
-// Fresh kernel connection per subprocess: no DAMA outer transaction on this process.
+// Subprocess kernels disable DAMA static connections so each worker gets a fresh
+// messenger_transport connection and real outer BEGIN IMMEDIATE transactions.
 StaticDriver::setKeepStaticConnections(false);
 
 MessengerSqliteImmediateTransactionKernelTestKernel::bootForSqliteWorker();
@@ -103,11 +104,8 @@ function holdWriter(Connection $transport, string $readyPath, string $releasePat
     if ('' === $readyPath || '' === $releasePath) {
         throw new InvalidArgumentException('hold-writer requires ready and release paths');
     }
-    ensureSchema($transport);
+    // BEGIN IMMEDIATE reserves the SQLite writer slot; no durable DDL needed for the barrier.
     $transport->beginTransaction();
-    $transport->executeStatement(
-        'CREATE TABLE IF NOT EXISTS immediate_writer_hold (id INTEGER PRIMARY KEY)',
-    );
     touch($readyPath);
     $deadline = microtime(true) + max(1, $holdMs) / 1000;
     while (!is_file($releasePath) && microtime(true) < $deadline) {
@@ -122,8 +120,10 @@ function claimMessage(Connection $transport, string $queueName, string $expected
         throw new InvalidArgumentException('claim-message requires queue, expected-id path, acquired path');
     }
     $expectedId = (int) trim((string) file_get_contents($expectedIdPath));
-    $started = microtime(true);
+    $claimStarted = microtime(true);
+    $beginStarted = microtime(true);
     $transport->beginTransaction();
+    $beginElapsedMs = (microtime(true) - $beginStarted) * 1000;
     try {
         $row = $transport->fetchAssociative(
             'SELECT id FROM messenger_messages
@@ -147,8 +147,14 @@ function claimMessage(Connection $transport, string $queueName, string $expected
         $transport->rollBack();
         throw $e;
     }
-    $elapsedMs = (microtime(true) - $started) * 1000;
-    file_put_contents($acquiredPath, json_encode(['elapsed_ms' => $elapsedMs], \JSON_THROW_ON_ERROR));
+    $claimElapsedMs = (microtime(true) - $claimStarted) * 1000;
+    file_put_contents(
+        $acquiredPath,
+        json_encode(
+            ['begin_elapsed_ms' => $beginElapsedMs, 'claim_elapsed_ms' => $claimElapsedMs],
+            \JSON_THROW_ON_ERROR,
+        ),
+    );
 }
 
 function nestedSavepointProbe(Connection $transport): void
@@ -164,7 +170,9 @@ function nestedSavepointProbe(Connection $transport): void
         $transport->commit();
         $transport->commit();
     } catch (Throwable $e) {
-        $transport->rollBack();
+        while ($transport->isTransactionActive()) {
+            $transport->rollBack();
+        }
         throw $e;
     }
 

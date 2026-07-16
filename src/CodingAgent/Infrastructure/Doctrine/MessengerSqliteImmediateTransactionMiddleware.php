@@ -10,8 +10,8 @@ use Doctrine\DBAL\Driver\Middleware;
 /**
  * DBAL driver middleware for the dedicated Messenger transport SQLite connection.
  *
- * Registered only on connection name messenger_transport (see services.yaml).
- * The default state.sqlite connection keeps PDO deferred BEGIN semantics.
+ * Intentionally attached only to the dedicated messenger_transport SQLite connection
+ * (see services.yaml connection tag). The default state.sqlite connection keeps deferred BEGIN.
  */
 final class MessengerSqliteImmediateTransactionMiddleware implements Middleware
 {

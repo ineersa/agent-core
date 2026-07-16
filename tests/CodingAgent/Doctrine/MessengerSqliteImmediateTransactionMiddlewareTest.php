@@ -12,12 +12,13 @@ use Symfony\Component\DependencyInjection\Container;
 
 /**
  * Regression: Messenger transport SQLite claims use BEGIN IMMEDIATE on the
- * dedicated connection so a competing writer waits (busy_timeout) instead of
- * failing on deferred read→write upgrade under concurrent consumers.
+ * dedicated messenger_transport connection so a competing writer waits at
+ * beginTransaction() (busy_timeout) instead of failing on deferred read→write upgrade.
  *
  * Subprocess helpers boot APP_ENV=test and resolve doctrine.dbal.messenger_transport_connection
- * from the container (StaticDriver::setKeepStaticConnections(false) there) because
- * IsolatedKernelTestCase keeps DAMA's outer transaction on in-process connections.
+ * from the container. StaticDriver::setKeepStaticConnections(false) in those subprocesses
+ * avoids DAMA's static outer transaction so production outer BEGIN IMMEDIATE semantics
+ * can be exercised (in-process kernel connections stay under DAMA in the parent test).
  *
  * @requires extension pdo_sqlite
  *
@@ -27,8 +28,6 @@ final class MessengerSqliteImmediateTransactionMiddlewareTest extends IsolatedKe
 {
     private Connection $defaultConnection;
 
-    private Connection $transportConnection;
-
     private string $workerScript;
 
     protected function setUp(): void
@@ -36,7 +35,6 @@ final class MessengerSqliteImmediateTransactionMiddlewareTest extends IsolatedKe
         parent::setUp();
 
         $this->defaultConnection = static::getContainer()->get('doctrine.dbal.default_connection');
-        $this->transportConnection = static::getContainer()->get('doctrine.dbal.messenger_transport_connection');
         $this->workerScript = ProjectDir::get().'/tests/CodingAgent/Doctrine/Support/MessengerSqliteImmediateTransactionKernelWorker.php';
     }
 
@@ -121,12 +119,17 @@ final class MessengerSqliteImmediateTransactionMiddlewareTest extends IsolatedKe
             $this->assertSame(0, $holderExit['exit'], 'hold worker stderr: '.$holderExit['stderr']);
             $this->assertFileExists($acquiredPath);
 
-            /** @var array{elapsed_ms: float} $acquired */
+            /** @var array{begin_elapsed_ms: float, claim_elapsed_ms: float} $acquired */
             $acquired = json_decode((string) file_get_contents($acquiredPath), true, 512, \JSON_THROW_ON_ERROR);
             $this->assertGreaterThanOrEqual(
-                $holdMs * 0.2,
-                $acquired['elapsed_ms'],
-                'Production-wired BEGIN IMMEDIATE should wait on writer contention',
+                $holdMs * 0.35,
+                $acquired['begin_elapsed_ms'],
+                'Writer contention must block at beginTransaction()/BEGIN IMMEDIATE, not only at later UPDATE',
+            );
+            $this->assertLessThan(
+                $acquired['begin_elapsed_ms'] + 50.0,
+                $acquired['claim_elapsed_ms'],
+                'Post-begin claim work should be fast relative to begin wait',
             );
         } finally {
             if (\is_resource($claimProc)) {
@@ -174,13 +177,10 @@ final class MessengerSqliteImmediateTransactionMiddlewareTest extends IsolatedKe
         $this->assertIsResource($proc, 'kernel worker must start');
 
         fclose($pipes[0]);
+        stream_set_blocking($pipes[1], false);
         stream_set_blocking($pipes[2], false);
-        $stderr = stream_get_contents($pipes[2]);
-        fclose($pipes[1]);
-        fclose($pipes[2]);
-        $exit = proc_close($proc);
 
-        return ['exit' => $exit, 'stderr' => false !== $stderr ? $stderr : ''];
+        return $this->waitForProcessExit($proc, $pipes, 60.0);
     }
 
     /**

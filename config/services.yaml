@@ -302,7 +302,7 @@ services:
       $connection: '@doctrine.dbal.default_connection'
 
   # Outer transactions on messenger_transport use BEGIN IMMEDIATE (see doctrine.yaml).
-  # Autoconfigure is off so DoctrineBundle does not tag this for every connection.
+  # autoconfigure: false defensively prevents an unscoped auto-tagged duplicate on all connections.
   Ineersa\CodingAgent\Infrastructure\Doctrine\MessengerSqliteImmediateTransactionMiddleware:
     autoconfigure: false
     tags:
