@@ -2,22 +2,18 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch;
+namespace Ineersa\CodingAgent\Agent\Execution\ChildRun\Deferred\Launch;
 
-use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchExecutionModeEnum;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunIdentityDTO;
-use Ineersa\CodingAgent\Agent\Execution\ChildRun\Deferred\Launch\DeferredAgentChildBatchChildIntentDTO;
-use Ineersa\CodingAgent\Agent\Execution\ChildRun\Deferred\Launch\DeferredAgentChildBatchLaunchPlanInterface;
 
 /**
- * Immutable ordered launch plan: identities, intents, and definitions resolved once (Piece 4A).
+ * Generic immutable launch plan: identities and reservation intents (no kind-specific preparation state).
  */
-final readonly class DeferredSubagentBatchLaunchPlanDTO implements DeferredAgentChildBatchLaunchPlanInterface
+final readonly class DeferredAgentChildBatchLaunchPlanDTO implements DeferredAgentChildBatchLaunchPlanInterface
 {
     /**
      * @param list<DeferredAgentChildBatchChildIntentDTO> $childIntents
-     * @param array<int, AgentDefinitionDTO>              $definitionsByBatchIndex
      * @param list<ChildRunIdentityDTO>                   $identities
      */
     public function __construct(
@@ -25,14 +21,10 @@ final readonly class DeferredSubagentBatchLaunchPlanDTO implements DeferredAgent
         public ChildRunBatchExecutionModeEnum $executionMode,
         public int $totalChildCount,
         public array $childIntents,
-        public array $definitionsByBatchIndex,
         public array $identities,
     ) {
     }
 
-    /**
-     * @return list<array{batchIndex: int, childRunId: string, artifactId: string, agentName: string, task: string, definitionModel: ?string}>
-     */
     public function lifecycleId(): string
     {
         return $this->lifecycleId;
@@ -55,6 +47,9 @@ final readonly class DeferredSubagentBatchLaunchPlanDTO implements DeferredAgent
 
     public function reserveChildIntents(): array
     {
-        return array_map(static fn (DeferredAgentChildBatchChildIntentDTO $intent): array => $intent->toReserveArray(), $this->childIntents);
+        return array_map(
+            static fn (DeferredAgentChildBatchChildIntentDTO $intent): array => $intent->toReserveArray(),
+            $this->childIntents,
+        );
     }
 }

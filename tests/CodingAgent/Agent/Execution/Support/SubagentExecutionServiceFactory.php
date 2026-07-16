@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Tests\Agent\Execution\Support;
 
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionCatalog;
 use Ineersa\CodingAgent\Agent\Execution\AgentDepthGuard;
+use Ineersa\CodingAgent\Agent\Execution\ChildRun\Deferred\Launch\DeferredAgentChildBatchLaunchCoordinator;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Lifecycle\ChildRunArtifactLifecycleService;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Lifecycle\ChildRunBatchLaunchService;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchIdentityFactory;
@@ -82,13 +83,18 @@ final class SubagentExecutionServiceFactory
             $artifactLifecycle,
         );
 
-        $deferredBatchLaunch = new DeferredSubagentBatchLaunchService(
-            $batchPreparation,
+        $batchLaunchCoordinator = new DeferredAgentChildBatchLaunchCoordinator(
             $args['batchRepository'],
             $runtimeStart,
             $args['contextAccessor'],
             $args['agentsConfig'],
             $args['logger'],
+        );
+
+        $deferredBatchLaunch = new DeferredSubagentBatchLaunchService(
+            $batchPreparation,
+            $batchLaunchCoordinator,
+            $args['agentsConfig'],
         );
 
         return new SubagentExecutionService($deferredBatchLaunch);

@@ -22,6 +22,7 @@ use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionDTO;
 use Ineersa\CodingAgent\Agent\Definition\McpAgentModeEnum;
 use Ineersa\CodingAgent\Agent\Definition\McpPolicyDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchExecutionModeEnum;
+use Ineersa\CodingAgent\Agent\Execution\ChildRun\Deferred\Launch\DeferredAgentChildBatchLaunchCoordinator;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchIdentityFactory;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchLaunchService;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchLaunchStatusEnum;
@@ -476,13 +477,18 @@ final class DeferredSubagentBatchLaunchTest extends IsolatedKernelTestCase
             $artifactLifecycle,
         );
 
-        return new DeferredSubagentBatchLaunchService(
-            $batchPreparation,
+        $batchLaunchCoordinator = new DeferredAgentChildBatchLaunchCoordinator(
             self::getContainer()->get(DeferredSubagentBatchRepository::class),
             $runtimeStart,
             self::getContainer()->get(StackToolExecutionContextAccessor::class),
             $agentsConfig ?? self::getContainer()->get(AgentsConfig::class),
             $logger,
+        );
+
+        return new DeferredSubagentBatchLaunchService(
+            $batchPreparation,
+            $batchLaunchCoordinator,
+            $agentsConfig ?? self::getContainer()->get(AgentsConfig::class),
         );
     }
 
