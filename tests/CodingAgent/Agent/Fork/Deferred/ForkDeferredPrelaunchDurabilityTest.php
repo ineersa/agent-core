@@ -19,12 +19,12 @@ use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
 use Ineersa\CodingAgent\Session\Fork\ForkSessionCopyService;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\SessionRunStore;
-use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
+use Ineersa\CodingAgent\Tests\TestCase\PerMethodIsolatedKernelTestCase;
 use PHPUnit\Framework\Attributes\CoversNothing;
 use Symfony\Component\Messenger\MessageBusInterface;
 
 #[CoversNothing]
-final class ForkDeferredPrelaunchDurabilityTest extends IsolatedKernelTestCase
+final class ForkDeferredPrelaunchDurabilityTest extends PerMethodIsolatedKernelTestCase
 {
     public function testStructuralCompactionNoOpAfterReplayStillSanitizesForkLaunch(): void
     {
@@ -49,8 +49,9 @@ final class ForkDeferredPrelaunchDurabilityTest extends IsolatedKernelTestCase
             messages: $parentMessages,
         ), 0));
 
-        $toolCallId = 'fork-durability-call-1';
-        $lifecycleId = '33333333-3333-4333-8333-333333333333';
+        $ids = $this->uniqueForkDurabilityIds('call-1');
+        $toolCallId = $ids['toolCallId'];
+        $lifecycleId = $ids['lifecycleId'];
         $batchRepository->reserveBatch(
             lifecycleId: $lifecycleId,
             parentRunId: $parentRunId,
@@ -62,8 +63,8 @@ final class ForkDeferredPrelaunchDurabilityTest extends IsolatedKernelTestCase
             deadlineAt: new \DateTimeImmutable('+1 hour'),
             childIntents: [[
                 'batchIndex' => 1,
-                'childRunId' => '44444444-4444-4444-8444-444444444444',
-                'artifactId' => 'agent_forkdurability',
+                'childRunId' => $ids['childRunId'],
+                'artifactId' => $ids['artifactId'],
                 'agentName' => 'fork',
                 'task' => 'Explore layout',
                 'definitionModel' => null,
@@ -139,8 +140,9 @@ final class ForkDeferredPrelaunchDurabilityTest extends IsolatedKernelTestCase
             messages: $parentMessages,
         ), 0));
 
-        $toolCallId = 'fork-durability-call-2';
-        $lifecycleId = '55555555-5555-4555-8555-555555555555';
+        $ids = $this->uniqueForkDurabilityIds('call-2');
+        $toolCallId = $ids['toolCallId'];
+        $lifecycleId = $ids['lifecycleId'];
         $batchRepository->reserveBatch(
             lifecycleId: $lifecycleId,
             parentRunId: $parentRunId,
@@ -152,8 +154,8 @@ final class ForkDeferredPrelaunchDurabilityTest extends IsolatedKernelTestCase
             deadlineAt: new \DateTimeImmutable('+1 hour'),
             childIntents: [[
                 'batchIndex' => 1,
-                'childRunId' => '66666666-6666-4666-8666-666666666666',
-                'artifactId' => 'agent_forkretry',
+                'childRunId' => $ids['childRunId'],
+                'artifactId' => $ids['artifactId'],
                 'agentName' => 'fork',
                 'task' => 'Task',
                 'definitionModel' => 'openai/gpt-test',
@@ -189,6 +191,19 @@ final class ForkDeferredPrelaunchDurabilityTest extends IsolatedKernelTestCase
         );
 
         $container->get(ForkSessionCopyService::class)->removeForkLocalSession($forkLocalRunId);
+    }
+
+    /**
+     * @return array{toolCallId: string, lifecycleId: string, childRunId: string, artifactId: string}
+     */
+    private function uniqueForkDurabilityIds(string $suffix): array
+    {
+        return [
+            'toolCallId' => 'fork-durability-' . $suffix . '-' . bin2hex(random_bytes(4)),
+            'lifecycleId' => (string) \Symfony\Component\Uid\Uuid::v4(),
+            'childRunId' => (string) \Symfony\Component\Uid\Uuid::v4(),
+            'artifactId' => 'agent_forkdur_' . bin2hex(random_bytes(4)),
+        ];
     }
 
     /** @return list<AgentMessage> */
