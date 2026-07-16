@@ -131,7 +131,7 @@ final class BashTool implements HatfieldToolProviderInterface, ToolHandlerInterf
                 // return value only serves local control flow and is never
                 // user-visible.
                 if (null !== $cancelToken && $cancelToken->isCancellationRequested()) {
-                    $this->manager->stop($pid, $sessionId);
+                    $this->manager->stopByRecordId($dbId, $sessionId);
 
                     $this->logger->info('bash_tool.cancelled', [
                         'component' => 'tool.bash',
@@ -144,8 +144,8 @@ final class BashTool implements HatfieldToolProviderInterface, ToolHandlerInterf
 
                 // 2. Monotonic timeout deadline
                 if (hrtime(true) > $deadline) {
-                    $this->manager->stop($pid, $sessionId);
-                    $partialOutput = $this->readOutput($pid, $sessionId);
+                    $this->manager->stopByRecordId($dbId, $sessionId);
+                    $partialOutput = $this->readOutput($dbId, $sessionId);
                     $this->logger->info('bash_tool.timed_out', [
                         'component' => 'tool.bash',
                         'event_type' => 'bash_tool.timed_out',
@@ -190,7 +190,7 @@ final class BashTool implements HatfieldToolProviderInterface, ToolHandlerInterf
 
                 if (BackgroundProcessStatusEnum::Running !== $record->status) {
                     // Process finished (or stopped/finished uncleanly)
-                    return $this->handleFinished($record, $pid, $sessionId);
+                    return $this->handleFinished($record, $sessionId);
                 }
 
                 // 4. Background prompt threshold check (once per invocation)
@@ -215,12 +215,12 @@ final class BashTool implements HatfieldToolProviderInterface, ToolHandlerInterf
                                     'process_pid' => $pid,
                                 ]);
 
-                                return $this->handleFinished($recheck, $pid, $sessionId);
+                                return $this->handleFinished($recheck, $sessionId);
                             }
 
                             // Mark the process as backgrounded so the
                             // BackgroundProcessCompletionPoller can notify on completion.
-                            $this->manager->markBackgrounded($pid, $sessionId);
+                            $this->manager->markBackgroundedForRecord($dbId, $sessionId);
 
                             $this->logger->info('bash_tool.backgrounded', [
                                 'component' => 'tool.bash',
@@ -346,26 +346,26 @@ final class BashTool implements HatfieldToolProviderInterface, ToolHandlerInterf
     /**
      * Read the log tail output from a background process.
      *
-     * @param int         $pid       Process PID
      * @param string|null $sessionId Session ownership filter
      *
      * @return string The log content, or empty string on failure
      */
-    private function readOutput(int $pid, ?string $sessionId): string
+    private function readOutput(int $recordId, ?string $sessionId): string
     {
         try {
             // Read full log content for completed foreground commands so the
             // central OutputCapToolResultProcessor sees the actual command output
             // and produces the primary cap / compact ToolResult.  Tail-only reads
             // hide the true output size and force late-hook double-capping.
-            $result = $this->manager->readLogFull($pid, $sessionId);
+            // Use the immutable DB record ID — never re-resolve by OS PID.
+            $result = $this->manager->readLogFullForRecord($recordId, $sessionId);
 
             return $result->content;
         } catch (\RuntimeException $e) {
             $this->logger->warning('bash_tool.read_output_failed', [
                 'component' => 'tool.bash',
                 'event_type' => 'bash_tool.read_output_failed',
-                'process_pid' => $pid,
+                'record_id' => $recordId,
                 'error' => $e->getMessage(),
             ]);
 
@@ -377,14 +377,15 @@ final class BashTool implements HatfieldToolProviderInterface, ToolHandlerInterf
      * Handle a finished/stopped process entity.
      *
      * @param BackgroundProcess $entity    The finished process entity
-     * @param int               $pid       Process PID
      * @param string|null       $sessionId Session ownership filter
      *
      * @return string Formatted result text
      */
-    private function handleFinished(BackgroundProcess $entity, int $pid, ?string $sessionId): string
+    private function handleFinished(BackgroundProcess $entity, ?string $sessionId): string
     {
-        $output = $this->readOutput($pid, $sessionId);
+        $output = $this->readOutput($entity->id, $sessionId);
+
+        $pid = $entity->pid;
 
         $exitCode = $entity->exitCode;
         $status = $entity->status->value;

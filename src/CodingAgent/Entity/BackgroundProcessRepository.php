@@ -42,6 +42,30 @@ final class BackgroundProcessRepository extends ServiceEntityRepository
      * Uses an ORM COUNT query that always hits the database, bypassing the
      * identity map for diagnostic purposes.
      */
+    /**
+     * Fetch the newest retained row for an OS PID.
+     *
+     * OS PIDs are reused while historical rows are retained. Public
+     * PID-addressed tools (bg_status) resolve the latest matching row
+     * within the optional session scope. Foreground BashTool must use
+     * immutable record IDs instead of this lookup.
+     */
+    public function findLatestByPid(int $pid, ?string $sessionId = null): ?BackgroundProcess
+    {
+        $qb = $this->createQueryBuilder('bp')
+            ->where('bp.pid = :pid')
+            ->setParameter('pid', $pid)
+            ->orderBy('bp.id', 'DESC')
+            ->setMaxResults(1);
+
+        if (null !== $sessionId) {
+            $qb->andWhere('bp.sessionId = :sessionId')
+                ->setParameter('sessionId', $sessionId);
+        }
+
+        return $qb->getQuery()->getOneOrNullResult();
+    }
+
     public function existsByRecordId(int $id): bool
     {
         return (bool) $this->createQueryBuilder('bp')

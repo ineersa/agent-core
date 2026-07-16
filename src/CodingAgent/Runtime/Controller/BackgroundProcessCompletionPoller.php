@@ -189,7 +189,7 @@ final class BackgroundProcessCompletionPoller
             // Unscopped process — cannot send follow-up without a run.
             // Mark notified to avoid re-polling.
             $now = new \DateTimeImmutable();
-            $this->processStore->markCompletionNotified($pid, $now);
+            $this->processStore->markCompletionNotifiedForRecord($process->id, $now);
 
             $this->logger->info('bg_process_completion.skipped_no_session', [
                 'component' => 'bg_process_completion.poller',
@@ -203,7 +203,7 @@ final class BackgroundProcessCompletionPoller
         // Read log tail, matching pi's 3000 char cap.
         $output = '';
         try {
-            $tailResult = $this->processManager->readLogTail($pid, self::NOTIFICATION_TAIL_CHARS, $sessionId);
+            $tailResult = $this->processManager->readLogTailForRecord($process->id, self::NOTIFICATION_TAIL_CHARS, $sessionId);
             $output = $tailResult->content;
         } catch (\Throwable $e) {
             $output = \sprintf('[Could not read log: %s]', $e->getMessage());
@@ -259,7 +259,7 @@ final class BackgroundProcessCompletionPoller
 
         // Only mark notified after successful send.
         $now = new \DateTimeImmutable();
-        $this->processStore->markCompletionNotified($pid, $now);
+        $this->processStore->markCompletionNotifiedForRecord($process->id, $now);
 
         $this->logger->info('bg_process_completion.notification_sent', [
             'component' => 'bg_process_completion.poller',

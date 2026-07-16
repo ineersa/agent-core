@@ -88,14 +88,45 @@ final class ProcessStore
     }
 
     /**
+     * Mark a process as stopped by user, addressed by immutable record ID.
+     */
+    public function markStoppedByUserForRecord(int $id, \DateTimeImmutable $finishedAt): void
+    {
+        $entity = $this->fetchByRecordId($id);
+
+        if (null === $entity) {
+            throw new \RuntimeException(\sprintf('Background process record with ID %d not found.', $id));
+        }
+
+        $entity->markStopped($finishedAt);
+
+        $this->entityManager->flush();
+    }
+
+    /**
      * Mark a process as explicitly backgrounded (user accepted via prompt).
      */
     public function markBackgrounded(int $pid, \DateTimeImmutable $now): void
     {
-        $entity = $this->fetchByPid($pid);
+        $entity = $this->fetchLatestByPid($pid);
 
         if (null === $entity) {
             throw new \RuntimeException(\sprintf('Background process with PID %d not found.', $pid));
+        }
+
+        $entity->markBackgrounded($now);
+        $this->entityManager->flush();
+    }
+
+    /**
+     * Mark a process as explicitly backgrounded, addressed by immutable record ID.
+     */
+    public function markBackgroundedForRecord(int $id, \DateTimeImmutable $now): void
+    {
+        $entity = $this->fetchByRecordId($id);
+
+        if (null === $entity) {
+            throw new \RuntimeException(\sprintf('Background process record with ID %d not found.', $id));
         }
 
         $entity->markBackgrounded($now);
@@ -107,10 +138,25 @@ final class ProcessStore
      */
     public function markCompletionNotified(int $pid, \DateTimeImmutable $now): void
     {
-        $entity = $this->fetchByPid($pid);
+        $entity = $this->fetchLatestByPid($pid);
 
         if (null === $entity) {
             throw new \RuntimeException(\sprintf('Background process with PID %d not found.', $pid));
+        }
+
+        $entity->markCompletionNotified($now);
+        $this->entityManager->flush();
+    }
+
+    /**
+     * Mark completion notified, addressed by immutable record ID.
+     */
+    public function markCompletionNotifiedForRecord(int $id, \DateTimeImmutable $now): void
+    {
+        $entity = $this->fetchByRecordId($id);
+
+        if (null === $entity) {
+            throw new \RuntimeException(\sprintf('Background process record with ID %d not found.', $id));
         }
 
         $entity->markCompletionNotified($now);
@@ -146,6 +192,17 @@ final class ProcessStore
     public function fetchByPid(int $pid): ?BackgroundProcess
     {
         return $this->repository->findOneBy(['pid' => $pid]);
+    }
+
+    /**
+     * Fetch the newest retained entity for an OS PID.
+     *
+     * Used for public PID-addressed operations (bg_status). Foreground
+     * BashTool must use fetchByRecordId() with the immutable primary key.
+     */
+    public function fetchLatestByPid(int $pid, ?string $sessionId = null): ?BackgroundProcess
+    {
+        return $this->repository->findLatestByPid($pid, $sessionId);
     }
 
     /**

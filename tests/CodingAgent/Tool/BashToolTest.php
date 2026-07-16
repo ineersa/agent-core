@@ -45,6 +45,9 @@ final class BashToolTest extends IsolatedKernelTestCase
 {
     private const string TEST_SESSION = 'bash-test-session';
 
+    private const string COMPOSER_MARKER = 'COMPOSER_MARKER_PID_REUSE_REGRESSION';
+    private const string DATETIME_MARKER = 'DATETIME_MARKER_PID_REUSE_REGRESSION';
+
     private BackgroundProcessManager $manager;
     private BackgroundProcessConfig $bgConfig;
     private BashToolConfig $bashConfig;
@@ -648,6 +651,121 @@ final class BashToolTest extends IsolatedKernelTestCase
 
         $otherEntities = $this->manager->list('other-session');
         $this->assertCount(0, $otherEntities);
+    }
+
+    /**
+     * Foreground completion must read the log for the immutable DB record,
+     * not the first retained row that shares the same OS PID.
+     */
+    public function testForegroundCompletionReturnsCurrentRecordLogWhenPidIsReused(): void
+    {
+        $this->createManager();
+
+        $store = self::getContainer()->get(ProcessStore::class);
+        $em = self::getContainer()->get(\Doctrine\ORM\EntityManagerInterface::class);
+
+        $staleLogPath = $this->tmpDir.'/stale-composer.log';
+        file_put_contents($staleLogPath, self::COMPOSER_MARKER."\n");
+
+        $staleId = $store->insertRecord([
+            'pid' => 424242,
+            'session_id' => self::TEST_SESSION,
+            'command' => 'composer info --direct',
+            'log_path' => $staleLogPath,
+            'status_path' => $this->tmpDir.'/stale.status',
+            'started_at' => new \DateTimeImmutable('-1 hour'),
+        ]);
+
+        $staleEntity = $store->fetchByRecordId($staleId);
+        $this->assertNotNull($staleEntity);
+        $staleEntity->finish(0, new \DateTimeImmutable('-1 hour'));
+        $store->flush();
+
+        $releaseFile = $this->tmpDir.'/pid-reuse-release-'.bin2hex(random_bytes(4));
+        $releaseArg = escapeshellarg($releaseFile);
+
+        $this->bashConfig = new BashToolConfig(
+            defaultTimeoutSeconds: 30,
+            backgroundPromptThresholdSeconds: 0,
+            pollIntervalMicros: 50_000,
+            logTailChars: 20000,
+        );
+
+        $promptAdapter = new class($store, $em, $staleId, $releaseFile) implements BashBackgroundPromptAdapterInterface {
+            public function __construct(
+                private readonly ProcessStore $store,
+                private readonly \Doctrine\ORM\EntityManagerInterface $em,
+                private readonly int $staleRecordId,
+                private readonly string $releaseFile,
+            ) {
+            }
+
+            public function shouldBackground(string $command, int $pid, string $logPath, float $elapsedSeconds): bool
+            {
+                $stale = $this->store->fetchByRecordId($this->staleRecordId);
+                if (null !== $stale) {
+                    $stale->pid = $pid;
+                    $this->em->flush();
+                }
+
+                touch($this->releaseFile);
+
+                return false;
+            }
+        };
+
+        $result = $this->withContext(self::TEST_SESSION, function () use ($promptAdapter, $releaseArg): string {
+            return ($this->makeBashTool($promptAdapter))([
+                'command' => 'while [ ! -f '.$releaseArg.' ]; do :; done; echo '.escapeshellarg(self::DATETIME_MARKER),
+            ]);
+        });
+
+        $this->assertStringContainsString(self::DATETIME_MARKER, $result);
+        $this->assertStringNotContainsString(self::COMPOSER_MARKER, $result);
+
+        $entities = $this->manager->list(self::TEST_SESSION);
+        $this->assertGreaterThanOrEqual(2, \count($entities));
+
+        $byId = [];
+        foreach ($entities as $entity) {
+            $byId[$entity->id] = $entity;
+        }
+
+        $this->assertArrayHasKey($staleId, $byId);
+        $current = null;
+        foreach ($entities as $entity) {
+            if ($entity->id !== $staleId) {
+                $current = $entity;
+                break;
+            }
+        }
+        $this->assertNotNull($current);
+        $this->assertSame($byId[$staleId]->pid, $current->pid, 'Stale and current records must share the OS PID');
+        $this->assertNotSame($byId[$staleId]->logPath, $current->logPath);
+    }
+
+    public function testReadLogFullForRecordEnforcesSessionOwnership(): void
+    {
+        $this->createManager();
+
+        $store = self::getContainer()->get(ProcessStore::class);
+        $logPath = $this->tmpDir.'/session-owned.log';
+        file_put_contents($logPath, 'session-owned-output');
+
+        $recordId = $store->insertRecord([
+            'pid' => 515151,
+            'session_id' => self::TEST_SESSION,
+            'command' => 'echo owned',
+            'log_path' => $logPath,
+            'status_path' => $this->tmpDir.'/owned.status',
+            'started_at' => new \DateTimeImmutable(),
+        ]);
+
+        $owned = $this->manager->readLogFullForRecord($recordId, self::TEST_SESSION);
+        $this->assertStringContainsString('session-owned-output', $owned->content);
+
+        $this->expectException(\RuntimeException::class);
+        $this->manager->readLogFullForRecord($recordId, 'other-session');
     }
 
     /* ── Helpers ── */
