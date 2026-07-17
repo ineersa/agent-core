@@ -7,8 +7,10 @@ namespace Ineersa\CodingAgent\Tests\Config;
 use Ineersa\CodingAgent\Config\AppConfigLoader;
 use Ineersa\CodingAgent\Config\SettingsLayerEnum;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
+use Ineersa\CodingAgent\Config\SettingsValueResolver;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\PropertyAccess\PropertyAccess;
 
 class AppConfigLoaderTest extends TestCase
 {
@@ -16,6 +18,7 @@ class AppConfigLoaderTest extends TestCase
     private string $homeDir;
     private AppConfigLoader $loader;
     private SettingsPathResolver $pathResolver;
+    private SettingsValueResolver $settingsValueResolver;
     private string $defaultsPath;
 
     protected function setUp(): void
@@ -31,6 +34,12 @@ class AppConfigLoaderTest extends TestCase
             homeDir: $this->homeDir,
         );
         $this->loader = new AppConfigLoader($this->pathResolver);
+        // One shared accessor for the whole test case — never allocate per assertion.
+        $this->settingsValueResolver = new SettingsValueResolver(
+            PropertyAccess::createPropertyAccessorBuilder()
+                ->enableExceptionOnInvalidIndex()
+                ->getPropertyAccessor(),
+        );
 
         // Create a defaults file
         $this->defaultsPath = $this->tmpDir.'/defaults.yaml';
@@ -536,7 +545,7 @@ YAML
 
         $resolution = $this->loader->load($this->defaultsPath, $cwd);
 
-        $defaultsTheme = $resolution->getValue('tui.theme');
+        $defaultsTheme = $this->settingsValueResolver->resolve($resolution, 'tui.theme');
         $this->assertTrue($defaultsTheme->exists);
         $this->assertSame('project-theme', $defaultsTheme->value);
         $this->assertSame(SettingsLayerEnum::Project, $defaultsTheme->layer);
@@ -545,13 +554,13 @@ YAML
     level: debug
 ');
         $resolution2 = $this->loader->load($this->defaultsPath, $cwd);
-        $homeOnly = $resolution2->getValue('tui.theme');
+        $homeOnly = $this->settingsValueResolver->resolve($resolution2, 'tui.theme');
         $this->assertSame(SettingsLayerEnum::User, $homeOnly->layer);
 
         @unlink($this->homeDir.'/.hatfield/settings.yaml');
         @unlink($cwd.'/.hatfield/settings.yaml');
         $resolution3 = $this->loader->load($this->defaultsPath, $cwd);
-        $fromDefaults = $resolution3->getValue('tui.theme');
+        $fromDefaults = $this->settingsValueResolver->resolve($resolution3, 'tui.theme');
         $this->assertSame(SettingsLayerEnum::Defaults, $fromDefaults->layer);
     }
 
@@ -565,7 +574,7 @@ YAML
 ");
 
         $resolution = $this->loader->load($this->defaultsPath, $cwd);
-        $paths = $resolution->getValue('tui.theme_paths');
+        $paths = $this->settingsValueResolver->resolve($resolution, 'tui.theme_paths');
 
         $this->assertTrue($paths->exists);
         $this->assertSame(SettingsLayerEnum::Project, $paths->layer);
@@ -581,7 +590,7 @@ YAML
 ');
 
         $resolution = $this->loader->load($this->defaultsPath, $cwd);
-        $theme = $resolution->getValue('tui.theme');
+        $theme = $this->settingsValueResolver->resolve($resolution, 'tui.theme');
 
         $this->assertTrue($theme->exists);
         $this->assertNull($theme->value);
@@ -601,19 +610,19 @@ YAML
 
         $resolution = $this->loader->load($this->defaultsPath, $cwd);
 
-        $group = $resolution->getValue('tui');
+        $group = $this->settingsValueResolver->resolve($resolution, 'tui');
         $this->assertTrue($group->exists);
         $this->assertTrue($group->composite);
         $this->assertNull($group->layer);
         $this->assertIsArray($group->value);
         $this->assertSame('project-only-theme', $group->value['theme']);
 
-        $theme = $resolution->getValue('tui.theme');
+        $theme = $this->settingsValueResolver->resolve($resolution, 'tui.theme');
         $this->assertFalse($theme->composite);
         $this->assertSame(SettingsLayerEnum::Project, $theme->layer);
         $this->assertSame('project-only-theme', $theme->value);
 
-        $paths = $resolution->getValue('tui.theme_paths');
+        $paths = $this->settingsValueResolver->resolve($resolution, 'tui.theme_paths');
         $this->assertFalse($paths->composite);
         $this->assertSame(SettingsLayerEnum::Defaults, $paths->layer);
         $this->assertNotEmpty($paths->value);
@@ -625,14 +634,14 @@ YAML
         TestDirectoryIsolation::ensureDirectory($cwd);
 
         $resolution = $this->loader->load($this->defaultsPath, $cwd);
-        $missing = $resolution->getValue("tui.theme\x00evil");
+        $missing = $this->settingsValueResolver->resolve($resolution, "tui.theme\x00evil");
 
         $this->assertFalse($missing->exists);
 
-        $bracketSegment = $resolution->getValue('tui.the]me');
+        $bracketSegment = $this->settingsValueResolver->resolve($resolution, 'tui.the]me');
         $this->assertFalse($bracketSegment->exists);
 
-        $backslashSegment = $resolution->getValue('tui.the\\me');
+        $backslashSegment = $this->settingsValueResolver->resolve($resolution, 'tui.the\\me');
         $this->assertFalse($backslashSegment->exists);
     }
 
@@ -642,7 +651,7 @@ YAML
         TestDirectoryIsolation::ensureDirectory($cwd);
 
         $resolution = $this->loader->load($this->defaultsPath, $cwd);
-        $missing = $resolution->getValue('no.such.path');
+        $missing = $this->settingsValueResolver->resolve($resolution, 'no.such.path');
 
         $this->assertFalse($missing->exists);
         $this->assertNull($missing->layer);
@@ -657,7 +666,7 @@ YAML
 ');
 
         $resolution = $this->loader->load($this->defaultsPath, $cwd);
-        $value = $resolution->getValue('future_feature.enabled');
+        $value = $this->settingsValueResolver->resolve($resolution, 'future_feature.enabled');
 
         $this->assertTrue($value->exists);
         $this->assertTrue($value->value);

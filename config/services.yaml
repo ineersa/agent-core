@@ -114,6 +114,12 @@ services:
     arguments:
       $appRoot: '%kernel.project_dir%'
 
+  # Shared FrameworkBundle property_accessor (interface is already aliased, but pin
+  # the id so provenance queries never allocate a private PropertyAccessor instance).
+  Ineersa\CodingAgent\Config\SettingsValueResolver:
+    arguments:
+      $propertyAccessor: '@property_accessor'
+
   # CodexAuthStorage is a service, not just a value object — it needs
   # the home directory resolved from SettingsPathResolver and a LockFactory.
   # Autowiring fails for the string $homeDir parameter.
