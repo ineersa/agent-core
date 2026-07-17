@@ -31,7 +31,7 @@ final class ForkDeferredLiveE2eTest extends ControllerE2eTestCase
             ],
         ]);
 
-        $events = $this->collectEventsUntilDeferredToolCompleted('fork', $this->liveLlmDeferredForkToolWaitTimeout());
+        $events = $this->collectEventsUntilDeferredForkCompleted($this->liveLlmDeferredForkToolWaitTimeout());
         $byType = $this->indexByType($events);
 
         $this->assertStartRunAcked($events, $startCmdId);
@@ -91,5 +91,58 @@ final class ForkDeferredLiveE2eTest extends ControllerE2eTestCase
     protected function tempDirPrefix(): string
     {
         return 'fork-deferred-live';
+    }
+
+    /**
+     * Deferred fork can complete after parent run.completed; wait by tool_call_id only.
+     *
+     * Local to this live smoke — does not change shared ControllerE2eTestCase collectors.
+     *
+     * @return list<array<string, mixed>>
+     */
+    private function collectEventsUntilDeferredForkCompleted(float $timeout): array
+    {
+        $events = [];
+        $targetToolCallIds = [];
+        $deadline = microtime(true) + $timeout;
+        $this->parentRunIdForCollection = '' !== $this->runId ? $this->runId : null;
+
+        while (microtime(true) < $deadline) {
+            foreach ($this->readEvents() as $event) {
+                $events[] = $event;
+                $this->noteParentRunIdFromEvent($event);
+
+                $type = $event['type'] ?? '';
+                $payload = $event['payload'] ?? [];
+                if (!\is_array($payload)) {
+                    $payload = [];
+                }
+
+                if ('tool_execution.started' === $type
+                    && 'fork' === ($payload['tool_name'] ?? null)
+                    && isset($payload['tool_call_id'])
+                ) {
+                    $targetToolCallIds[(string) $payload['tool_call_id']] = true;
+                }
+
+                if ('tool_execution.completed' === $type
+                    && isset($payload['tool_call_id'])
+                    && isset($targetToolCallIds[(string) $payload['tool_call_id']])
+                ) {
+                    return $events;
+                }
+            }
+
+            if (!$this->isRunning()) {
+                foreach ($this->readEvents() as $event) {
+                    $events[] = $event;
+                }
+                break;
+            }
+
+            usleep(10_000);
+        }
+
+        return $events;
     }
 }

@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\CodingAgent\Agent\Execution;
+namespace Ineersa\CodingAgent\Agent\Fork;
 
 use Ineersa\AgentCore\Contract\Compaction\CompactionServiceInterface;
 use Ineersa\AgentCore\Contract\RunStoreInterface;
@@ -12,7 +12,8 @@ use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchExecutionModeEnum;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Preparation\DeferredSubagentSingleChildLaunchProfileDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchLaunchService;
-use Ineersa\CodingAgent\Agent\Fork\ForkSnapshotSanitizer;
+use Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader;
+use Ineersa\CodingAgent\Agent\Execution\SubagentTaskDTO;
 
 /**
  * Thin fork adapter: snapshot/sanitize/sync-compact parent messages, then the
@@ -23,7 +24,6 @@ final class ForkExecutionService implements ForkExecutionServiceInterface
     public function __construct(
         private readonly DeferredSubagentBatchLaunchService $deferredBatchLaunch,
         private readonly SubagentRunMetadataReader $metadataReader,
-        private readonly ForkDeferredChildPreparationStrategyFactory $forkStrategyFactory,
         private readonly RunStoreInterface $parentRunStore,
         private readonly ForkSnapshotSanitizer $snapshotSanitizer,
         private readonly CompactionServiceInterface $compactionService,
@@ -63,22 +63,16 @@ final class ForkExecutionService implements ForkExecutionServiceInterface
             throw new ToolCallException(\sprintf('Fork compaction failed before child launch: %s', $detail), retryable: false);
         }
 
-        $inherited = $compactResult->messages;
-
-        $launchTask = new ForkLaunchTaskDTO(
-            task: $task,
-            modelOverride: $modelOverride,
-            reasoningOverride: $reasoningOverride,
-            inheritedMessages: $inherited,
-        );
+        // 4) Ordinary deferred single-child launch with typed profile data (no strategy/factory)
         $profile = new DeferredSubagentSingleChildLaunchProfileDTO(
             definition: ForkInternalAgentDefinition::create(),
             artifactKind: AgentArtifactKindEnum::Fork,
-            preparationStrategy: $this->forkStrategyFactory->create($launchTask),
             displayAgentName: 'fork',
+            inheritedMessages: $compactResult->messages,
+            modelOverride: $modelOverride,
+            reasoningOverride: $reasoningOverride,
         );
 
-        // 4) Unchanged ordinary deferred subagent lifecycle
         return $this->deferredBatchLaunch->launch(
             $parentRunId,
             [new SubagentTaskDTO(agent: 'fork', task: $task)],

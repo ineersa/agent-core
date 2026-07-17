@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Tests\Application\Handler;
 
-use Ineersa\AgentCore\Application\Compaction\CompactionSummarizationInvoker;
 use Ineersa\AgentCore\Application\Handler\ExecuteCompactionStepWorker;
 use Ineersa\AgentCore\Contract\Model\PlatformInterface;
 use Ineersa\AgentCore\Domain\Message\CompactionStepResult;
@@ -38,7 +37,7 @@ final class ExecuteCompactionStepWorkerTest extends TestCase
         $fakePlatform = $this->createFakePlatform($responseText, model: 'openai/gpt-4.1-mini', captureRequest: true);
         $testBus = new TestMessageBus();
 
-        $worker = new ExecuteCompactionStepWorker(new CompactionSummarizationInvoker($fakePlatform), $testBus);
+        $worker = new ExecuteCompactionStepWorker($fakePlatform, $testBus);
         $worker(new ExecuteCompactionStep(
             runId: 'run-1',
             turnNo: 5,
@@ -84,7 +83,7 @@ final class ExecuteCompactionStepWorkerTest extends TestCase
         $fakePlatform = $this->createFakePlatform('ok', model: 'llama_cpp/flash');
         $testBus = new TestMessageBus();
 
-        $worker = new ExecuteCompactionStepWorker(new CompactionSummarizationInvoker($fakePlatform), $testBus);
+        $worker = new ExecuteCompactionStepWorker($fakePlatform, $testBus);
         $worker(new ExecuteCompactionStep(
             runId: 'run-1',
             turnNo: 5,
@@ -116,7 +115,7 @@ final class ExecuteCompactionStepWorkerTest extends TestCase
         $fakePlatform = $this->createFakePlatformWithError($errorPayload);
         $testBus = new TestMessageBus();
 
-        $worker = new ExecuteCompactionStepWorker(new CompactionSummarizationInvoker($fakePlatform), $testBus);
+        $worker = new ExecuteCompactionStepWorker($fakePlatform, $testBus);
         $worker(new ExecuteCompactionStep(
             runId: 'run-1',
             turnNo: 5,
@@ -149,7 +148,7 @@ final class ExecuteCompactionStepWorkerTest extends TestCase
         $fakePlatform = $this->createFakePlatformThatThrows(new \RuntimeException('Boom'));
         $testBus = new TestMessageBus();
 
-        $worker = new ExecuteCompactionStepWorker(new CompactionSummarizationInvoker($fakePlatform), $testBus);
+        $worker = new ExecuteCompactionStepWorker($fakePlatform, $testBus);
         $worker(new ExecuteCompactionStep(
             runId: 'run-1',
             turnNo: 5,

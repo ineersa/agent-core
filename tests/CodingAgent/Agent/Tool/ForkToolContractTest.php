@@ -9,7 +9,7 @@ use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
-use Ineersa\CodingAgent\Agent\Execution\ForkExecutionServiceInterface;
+use Ineersa\CodingAgent\Agent\Fork\ForkExecutionServiceInterface;
 use Ineersa\CodingAgent\Agent\Fork\ForkRuntimeConfigResolver;
 use Ineersa\CodingAgent\Agent\Tool\ForkToolDefinitionBuilder;
 use Ineersa\CodingAgent\Agent\Tool\ForkToolHandler;

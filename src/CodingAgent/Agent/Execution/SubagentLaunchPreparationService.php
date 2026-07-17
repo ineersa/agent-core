@@ -9,8 +9,12 @@ use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunIdentityDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\PreparedAgentChildRunDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Lifecycle\ChildRunArtifactLifecycleService;
+use Ineersa\CodingAgent\Agent\Execution\ChildRun\Preparation\DeferredSubagentSingleChildLaunchProfileDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Preparation\SubagentChildLaunchInputFactory;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Preparation\SubagentLaunchDefinitionPolicyService;
+use Ineersa\CodingAgent\Agent\Fork\ForkChildLaunchInputBuilder;
+use Ineersa\CodingAgent\Agent\Fork\ForkLaunchTaskDTO;
+use Ineersa\CodingAgent\Agent\Fork\ForkToolPolicyResolver;
 use Symfony\Component\Uid\Uuid;
 
 /**
@@ -22,6 +26,8 @@ final class SubagentLaunchPreparationService
         private readonly SubagentLaunchDefinitionPolicyService $definitionPolicy,
         private readonly ChildRunArtifactLifecycleService $artifactLifecycle,
         private readonly SubagentChildLaunchInputFactory $launchInputFactory,
+        private readonly ForkChildLaunchInputBuilder $forkLaunchInputBuilder,
+        private readonly ForkToolPolicyResolver $forkToolPolicyResolver,
     ) {
     }
 
@@ -65,12 +71,10 @@ final class SubagentLaunchPreparationService
         ?string $childRunId = null,
         bool $skipReservation = false,
         ?ChildRunIdentityDTO $identityTemplate = null,
+        ?DeferredSubagentSingleChildLaunchProfileDTO $singleChildProfile = null,
     ): PreparedAgentChildRunDTO {
         $artifactId ??= 'agent_'.bin2hex(random_bytes(8));
         $childRunId ??= Uuid::v4()->toRfc4122();
-
-        $allowSubagentLaunch = null !== $definition->tools && \in_array('subagent', $definition->tools, true);
-        $policy = $this->definitionPolicy->resolveToolPolicy($definition, $parentRunId, $allowSubagentLaunch);
 
         $identity = $identityTemplate ?? new ChildRunIdentityDTO(
             parentRunId: $parentRunId,
@@ -79,12 +83,30 @@ final class SubagentLaunchPreparationService
             displayName: $agentName,
             taskSummary: $task,
             definitionModel: $definition->model,
-            artifactKind: AgentArtifactKindEnum::Subagent,
+            artifactKind: null !== $singleChildProfile ? $singleChildProfile->artifactKind : AgentArtifactKindEnum::Subagent,
         );
 
         if (!$skipReservation) {
             $this->artifactLifecycle->reservePending($identity);
         }
+
+        // Typed single-child profile data (fork): already-compacted messages + overrides.
+        // Branch is on artifact kind, not agent-name string checks.
+        if (null !== $singleChildProfile && AgentArtifactKindEnum::Fork === $singleChildProfile->artifactKind) {
+            return $this->forkLaunchInputBuilder->buildPrepared(
+                $identity,
+                new ForkLaunchTaskDTO(
+                    task: $task,
+                    modelOverride: $singleChildProfile->modelOverride,
+                    reasoningOverride: $singleChildProfile->reasoningOverride,
+                    inheritedMessages: $singleChildProfile->inheritedMessages,
+                ),
+                $this->forkToolPolicyResolver->resolve($parentRunId),
+            );
+        }
+
+        $allowSubagentLaunch = null !== $definition->tools && \in_array('subagent', $definition->tools, true);
+        $policy = $this->definitionPolicy->resolveToolPolicy($definition, $parentRunId, $allowSubagentLaunch);
 
         return $this->launchInputFactory->buildPrepared(
             $identity,

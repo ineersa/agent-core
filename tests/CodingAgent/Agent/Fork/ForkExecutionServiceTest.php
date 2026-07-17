@@ -2,21 +2,23 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\CodingAgent\Tests\Agent\Execution;
+namespace Ineersa\CodingAgent\Tests\Agent\Fork;
 
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\AgentRunnerInterface;
+use Ineersa\AgentCore\Contract\Compaction\CompactionServiceInterface;
+use Ineersa\AgentCore\Contract\Compaction\MessageSnapshotCompactionResult;
 use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Run\StartRunInput;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
-use Ineersa\CodingAgent\Agent\Execution\ForkExecutionService;
-use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
+use Ineersa\CodingAgent\Agent\Fork\ForkExecutionService;
+use Ineersa\CodingAgent\Tests\TestCase\PerMethodIsolatedKernelTestCase;
 use PHPUnit\Framework\Attributes\Group;
 
 #[Group('db')]
-final class ForkExecutionServiceTest extends IsolatedKernelTestCase
+final class ForkExecutionServiceTest extends PerMethodIsolatedKernelTestCase
 {
     public function testForkExecutionEntersDeferredSingleChildLifecycleOnce(): void
     {
@@ -28,8 +30,14 @@ final class ForkExecutionServiceTest extends IsolatedKernelTestCase
             static fn (StartRunInput $input): string => $input->runId,
         );
 
+        $compaction = $this->createStub(CompactionServiceInterface::class);
+        $compaction->method('compactMessages')->willReturnCallback(
+            static fn (string $runId, int $turnNo, array $messages): MessageSnapshotCompactionResult => MessageSnapshotCompactionResult::structuralNoOp($messages, 'too_few_messages'),
+        );
+
         $container = self::getContainer();
         $container->set(AgentRunnerInterface::class, $agentRunner);
+        $container->set(CompactionServiceInterface::class, $compaction);
 
         $forkExecution = $container->get(ForkExecutionService::class);
 
@@ -64,6 +72,11 @@ final class ForkExecutionServiceTest extends IsolatedKernelTestCase
                 ],
             ],
         ));
+
+        // Stub compaction so ForkExecutionService can resolve without PlatformInterface providers.
+        $compaction = $this->createStub(CompactionServiceInterface::class);
+        $compaction->method('compactMessages')->willThrowException(new \LogicException('compactMessages must not run for nested fork'));
+        self::getContainer()->set(CompactionServiceInterface::class, $compaction);
 
         $forkExecution = self::getContainer()->get(ForkExecutionService::class);
 

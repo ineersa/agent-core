@@ -4,12 +4,15 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Compaction;
 
-use Ineersa\AgentCore\Application\Compaction\CompactionSummarizationInvoker;
 use Ineersa\AgentCore\Contract\Compaction\CompactionPrepareResult;
 use Ineersa\AgentCore\Contract\Compaction\CompactionServiceInterface;
 use Ineersa\AgentCore\Contract\Compaction\CompactResult;
 use Ineersa\AgentCore\Contract\Compaction\MessageSnapshotCompactionResult;
+use Ineersa\AgentCore\Contract\Model\PlatformInterface;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
+use Ineersa\AgentCore\Domain\Model\ModelInvocationInput;
+use Ineersa\AgentCore\Domain\Model\ModelInvocationOptions;
+use Ineersa\AgentCore\Domain\Model\ModelInvocationRequest;
 use Ineersa\AgentCore\Infrastructure\RunLogContext;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\ModelSelectionService;
@@ -30,7 +33,7 @@ final readonly class CompactionService implements CompactionServiceInterface
         private AppConfig $appConfig,
         private ModelSelectionService $modelSelectionService,
         private CompactionHookDispatcher $hookDispatcher,
-        private CompactionSummarizationInvoker $summarizationInvoker,
+        private PlatformInterface $platform,
         private LoggerInterface $logger = new NullLogger(),
     ) {
     }
@@ -221,18 +224,41 @@ final readonly class CompactionService implements CompactionServiceInterface
         $stepId = \sprintf('snapshot-compact-%s', bin2hex(random_bytes(8)));
         $model = $resolvedModel ?? '';
 
-        $outcome = $this->summarizationInvoker->invoke(
-            runId: $runId,
-            turnNo: $turnNo,
-            stepId: $stepId,
-            model: $model,
-            summarizationMessages: $summarizationMessages,
-            modelOptions: $modelOptions,
-            trigger: $trigger,
-        );
+        try {
+            $response = $this->platform->invoke(new ModelInvocationRequest(
+                model: $model,
+                input: new ModelInvocationInput(
+                    runId: $runId,
+                    turnNo: $turnNo,
+                    stepId: $stepId,
+                    messages: $summarizationMessages,
+                ),
+                options: new ModelInvocationOptions(
+                    toolsEnabled: false,
+                    extraOptions: $modelOptions,
+                    streamObserverEnabled: false,
+                ),
+            ));
+        } catch (\Throwable $exception) {
+            $rawMessage = $exception->getMessage();
+            $cappedMessage = mb_substr($rawMessage, 0, 200);
+            $this->logger->error('Compaction snapshot model invocation failed.', [
+                'event_type' => 'compaction.snapshot.failed',
+                'run_id' => $runId,
+                'error_type' => $exception::class,
+            ]);
 
-        if ($outcome->isError()) {
-            $error = $outcome->error ?? [];
+            return MessageSnapshotCompactionResult::failed(
+                'model_error',
+                \sprintf(
+                    'Compaction failed: The summarization model call could not be completed. %s',
+                    '' !== $cappedMessage ? '(Detail: '.$cappedMessage.')' : '',
+                ),
+            );
+        }
+
+        if (null !== $response->error) {
+            $error = $response->error;
             $userMessage = \is_string($error['user_message'] ?? null) && '' !== $error['user_message']
                 ? $error['user_message']
                 : (\is_string($error['message'] ?? null) && '' !== $error['message']
@@ -248,7 +274,9 @@ final readonly class CompactionService implements CompactionServiceInterface
             return MessageSnapshotCompactionResult::failed('model_error', $userMessage);
         }
 
-        $summaryText = \is_string($outcome->summaryText) ? trim($outcome->summaryText) : '';
+        $summaryText = null !== $response->assistantMessage
+            ? trim((string) $response->assistantMessage->asText())
+            : '';
         if ('' === $summaryText) {
             $this->logger->info('Compaction snapshot produced empty summary.', [
                 'event_type' => 'compaction.snapshot.empty_summary',

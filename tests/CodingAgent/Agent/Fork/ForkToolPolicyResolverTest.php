@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\CodingAgent\Tests\Agent\Execution;
+namespace Ineersa\CodingAgent\Tests\Agent\Fork;
 
-use Ineersa\CodingAgent\Agent\Execution\ForkToolPolicyResolver;
+use Ineersa\CodingAgent\Agent\Fork\ForkToolPolicyResolver;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 
 final class ForkToolPolicyResolverTest extends IsolatedKernelTestCase

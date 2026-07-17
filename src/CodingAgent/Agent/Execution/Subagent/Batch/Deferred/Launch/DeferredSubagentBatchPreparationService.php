@@ -11,8 +11,6 @@ use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchExecution
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunIdentityDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\PreparedAgentChildRunDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Lifecycle\ChildRunArtifactLifecycleService;
-use Ineersa\CodingAgent\Agent\Execution\ChildRun\Preparation\DefaultDeferredSubagentChildPreparationStrategy;
-use Ineersa\CodingAgent\Agent\Execution\ChildRun\Preparation\DeferredSubagentChildPreparationStrategyInterface;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Preparation\DeferredSubagentSingleChildLaunchProfileDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentBatchProjectionDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentChildLaunchStatusEnum;
@@ -103,7 +101,6 @@ final class DeferredSubagentBatchPreparationService
         DeferredSubagentBatchProjectionDTO $projection,
         DeferredSubagentBatchLaunchPlanDTO $plan,
         ?DeferredSubagentSingleChildLaunchProfileDTO $singleChildProfile = null,
-        ?DeferredSubagentChildPreparationStrategyInterface $preparationStrategy = null,
     ): array {
         $preparedChildren = [];
 
@@ -126,15 +123,16 @@ final class DeferredSubagentBatchPreparationService
             $definition = $plan->definitionsByBatchIndex[$intent->batchIndex];
             try {
                 $this->launchPreparation->reserveIdentity($identity);
-                $strategy = null !== $singleChildProfile
-                    ? $singleChildProfile->preparationStrategy
-                    : ($preparationStrategy ?? new DefaultDeferredSubagentChildPreparationStrategy($this->launchPreparation));
-                $prepared = $strategy->prepare(
+                $prepared = $this->launchPreparation->prepareFromDefinition(
                     $parentRunId,
-                    $identity,
                     $definition,
                     $intent->agentName,
                     $intent->task,
+                    $identity->artifactId,
+                    $identity->childRunId,
+                    skipReservation: true,
+                    identityTemplate: $identity,
+                    singleChildProfile: $singleChildProfile,
                 );
                 $this->artifactLifecycle->ensureReservedPending($identity);
                 $preparedChildren[] = $prepared;

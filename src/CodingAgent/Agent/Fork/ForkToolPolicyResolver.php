@@ -2,11 +2,12 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\CodingAgent\Agent\Execution;
+namespace Ineersa\CodingAgent\Agent\Fork;
 
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionDTO;
 use Ineersa\CodingAgent\Agent\Definition\McpAgentModeEnum;
 use Ineersa\CodingAgent\Agent\Definition\McpPolicyDTO;
+use Ineersa\CodingAgent\Agent\Execution\AgentToolPolicyResolver;
 
 final class ForkToolPolicyResolver
 {

@@ -9,8 +9,8 @@ use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunIdentityDTO;
-use Ineersa\CodingAgent\Agent\Execution\ForkLaunchTaskDTO;
 use Ineersa\CodingAgent\Agent\Fork\ForkChildLaunchInputBuilder;
+use Ineersa\CodingAgent\Agent\Fork\ForkLaunchTaskDTO;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use PHPUnit\Framework\Attributes\Group;
 

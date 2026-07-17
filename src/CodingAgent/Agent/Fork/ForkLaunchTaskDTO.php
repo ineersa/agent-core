@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\CodingAgent\Agent\Execution;
+namespace Ineersa\CodingAgent\Agent\Fork;
 
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 
