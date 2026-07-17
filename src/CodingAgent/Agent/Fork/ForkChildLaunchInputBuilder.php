@@ -19,7 +19,7 @@ use Ineersa\CodingAgent\Skills\SkillsContextBuilder;
 final class ForkChildLaunchInputBuilder
 {
     public function __construct(
-        private readonly RunStoreInterface $runStore,
+        private readonly RunStoreInterface $parentRunStore,
         private readonly ForkSnapshotSanitizer $snapshotSanitizer,
         private readonly ForkChildMessageComposer $messageComposer,
         private readonly ForkRuntimeConfigResolver $configResolver,
@@ -39,18 +39,9 @@ final class ForkChildLaunchInputBuilder
         array $policy,
     ): PreparedAgentChildRunDTO {
         $parentRunId = $identity->parentRunId;
-
-        // Prefer fork-local compacted messages when present; never re-read parent for context after snapshot.
-        $sourceRunId = (null !== $task->forkLocalRunId && '' !== trim($task->forkLocalRunId))
-            ? $task->forkLocalRunId
-            : $parentRunId;
-        $sourceState = $this->runStore->get($sourceRunId);
-        $inherited = null !== $sourceState
-            ? (
-                $sourceRunId === $parentRunId
-                    ? $this->snapshotSanitizer->sanitize($sourceState->messages)
-                    : $sourceState->messages
-            )
+        $parentState = $this->parentRunStore->get($parentRunId);
+        $inherited = null !== $parentState
+            ? $this->snapshotSanitizer->sanitize($parentState->messages)
             : [];
 
         $parentMetadata = $this->metadataReader->readRunStartedMetadata($parentRunId) ?? [];
@@ -61,14 +52,13 @@ final class ForkChildLaunchInputBuilder
             parentReasoning: $this->readParentReasoning($parentRunId, $parentMetadata),
         );
 
-        $sourceMessages = null !== $sourceState ? $sourceState->messages : [];
         $composed = $this->messageComposer->compose(
             inheritedMessages: $inherited,
             task: $task->task,
             artifactId: $identity->artifactId,
             allowedToolNames: $policy['tools'],
-            agentsMd: $this->extractUserContextFromMessages($sourceMessages, 'agents_context'),
-            skillsContext: $this->extractSkillsContext($sourceMessages),
+            agentsMd: $this->extractUserContextFromMessages(null !== $parentState ? $parentState->messages : [], 'agents_context'),
+            skillsContext: $this->extractSkillsContext(null !== $parentState ? $parentState->messages : []),
         );
 
         $childMetadata = new RunMetadata(

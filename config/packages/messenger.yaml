@@ -92,9 +92,6 @@ framework:
             Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Recovery\RecoverDeferredSubagentBatchLifecycleMessage: run_control
 
             Ineersa\AgentCore\Domain\Message\CompleteDeferredToolCall: run_control
-            # ContinueForkAfterCompactionMessage is intentionally NOT routed to a transport.
-            # Handled synchronously on agent.command.bus after fork-local AfterTurnCommit
-            # (same process as compaction terminal commit).
             # AdvanceRun is intentionally NOT routed to a transport.
             # It is handled synchronously by AdvanceRunHandler (registered on
             # agent.command.bus AND agent.execution.bus via RunMessageHandler
