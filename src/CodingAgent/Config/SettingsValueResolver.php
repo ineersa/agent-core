@@ -27,7 +27,7 @@ final class SettingsValueResolver
 
     public function resolve(SettingsResolutionDTO $settings, string $dottedPath): SettingsValueDTO
     {
-        $propertyPath = self::dottedPathToPropertyPath($dottedPath);
+        $propertyPath = self::propertyPath($dottedPath);
         if (null === $propertyPath) {
             return new SettingsValueDTO(exists: false);
         }
@@ -67,8 +67,11 @@ final class SettingsValueResolver
 
     /**
      * Converts "tui.theme" to "[tui][theme]" via PropertyPathBuilder.
+     *
+     * Returns null for empty/malformed paths so callers can reject without
+     * inventing a separate path parser.
      */
-    private static function dottedPathToPropertyPath(string $dottedPath): ?string
+    public static function propertyPath(string $dottedPath): ?string
     {
         $dottedPath = trim($dottedPath);
         if ('' === $dottedPath) {

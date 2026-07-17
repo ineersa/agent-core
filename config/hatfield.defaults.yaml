@@ -262,6 +262,7 @@ extensions:
                 write: write
                 edit: edit
                 read: read
+                settings: settings
 
             # Command substrings that bypass destructive/dangerous checks.
             allow_command_patterns: []
@@ -354,6 +355,12 @@ agents:
     # Not the generic ToolExecutor timeout (the subagent tool has no ToolExecutor cap).
     # Default: 1800 (30 minutes). Minimum 60; values below 60 are rejected at load.
     # subagent_tool_timeout_seconds: 2400
+
+    # Tool names always excluded from child/subagent runs (inherit-all and explicit lists).
+    # Empty list disables the denylist. Parent agent tools are unaffected.
+    subagent_excluded_tools:
+        - settings
+        - documentation
 
     # Bounded output limits for agent_retrieve (optional overrides).
     # retrieve:

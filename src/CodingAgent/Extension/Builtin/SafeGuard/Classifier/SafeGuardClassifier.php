@@ -24,16 +24,18 @@ use Ineersa\CodingAgent\Extension\Builtin\SafeGuard\SafeGuardConfig;
 final class SafeGuardClassifier
 {
     /**
-     * @param string $bashToolName  Tool name that triggers bash classification (from config)
-     * @param string $writeToolName Tool name that triggers write classification (from config)
-     * @param string $editToolName  Tool name that triggers write classification (from config)
-     * @param string $readToolName  Tool name that triggers read classification (from config)
+     * @param string $bashToolName     Tool name that triggers bash classification (from config)
+     * @param string $writeToolName    Tool name that triggers write classification (from config)
+     * @param string $editToolName     Tool name that triggers write classification (from config)
+     * @param string $readToolName     Tool name that triggers read classification (from config)
+     * @param string $settingsToolName Tool name that triggers settings classification (from config)
      */
     public function __construct(
         private readonly string $bashToolName,
         private readonly string $writeToolName,
         private readonly string $editToolName,
         private readonly string $readToolName,
+        private readonly string $settingsToolName = 'settings',
         private readonly SafeGuardCommandMatcher $commandMatcher = new SafeGuardCommandMatcher(),
         private readonly SafeGuardPathMatcher $pathMatcher = new SafeGuardPathMatcher(),
     ) {
@@ -49,6 +51,7 @@ final class SafeGuardClassifier
             writeToolName: $config->writeToolName,
             editToolName: $config->editToolName,
             readToolName: $config->readToolName,
+            settingsToolName: $config->settingsToolName,
         );
     }
 
@@ -78,7 +81,34 @@ final class SafeGuardClassifier
             return $this->classifyRead($arguments, $cwd, $policy);
         }
 
+        if ($toolName === $this->settingsToolName) {
+            return $this->classifySettings($arguments);
+        }
+
         return SafeGuardDecision::allow($toolName);
+    }
+
+    /**
+     * settings(read) is allowed; set/remove require confirmation.
+     * Malformed ops have no side effect in SettingsTool validation, so Allow.
+     *
+     * @param array<string, mixed> $arguments
+     */
+    private function classifySettings(array $arguments): SafeGuardDecision
+    {
+        $operation = $arguments['operation'] ?? null;
+        if (!\is_string($operation) || !\in_array($operation, ['set', 'remove'], true)) {
+            return SafeGuardDecision::allow($this->settingsToolName);
+        }
+
+        $scope = \is_string($arguments['scope'] ?? null) ? $arguments['scope'] : '(missing)';
+        $path = \is_string($arguments['path'] ?? null) ? $arguments['path'] : '(missing)';
+
+        return SafeGuardDecision::block(
+            kind: SafeGuardDecisionKind::CustomDangerous,
+            reason: \sprintf('settings %s scope=%s path=%s', $operation, $scope, $path),
+            toolName: $this->settingsToolName,
+        );
     }
 
     /**

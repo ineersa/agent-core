@@ -73,6 +73,7 @@ final readonly class SafeGuardToolCallHook implements ToolCallHookInterface, App
         private ?SafeGuardPolicyWriter $policyWriter,
         private string $cwd,
         private bool $autoDenyInNoninteractive = true,
+        private string $settingsToolName = 'settings',
     ) {
     }
 
@@ -116,6 +117,8 @@ final readonly class SafeGuardToolCallHook implements ToolCallHookInterface, App
         //   can display the question and relay answers.
         // - Headless/worker contexts without the env var auto-block (fail-closed),
         //   unless the operator has explicitly set auto_deny_in_noninteractive=false.
+        // - Settings set/remove always fail closed without an approval channel,
+        //   regardless of auto_deny_in_noninteractive (no silent config writes).
         if ($this->isRelaxable($decision->kind)) {
             if ($this->shouldAutoDenyRelaxable($context)) {
                 return ToolCallDecisionDTO::block(
@@ -136,6 +139,7 @@ final readonly class SafeGuardToolCallHook implements ToolCallHookInterface, App
 
             // Determine the operation spec for the approval context
             $spec = $this->resolveOperationSpec($context);
+            $nonPersistent = $this->isSettingsMutation($context);
 
             $questionId = \sprintf(
                 'sg_%s',
@@ -147,12 +151,19 @@ final readonly class SafeGuardToolCallHook implements ToolCallHookInterface, App
                 $this->approvalTracker->markPending($questionId, $operationKey);
             }
 
+            $options = $nonPersistent
+                ? [
+                    self::APPROVAL_OPTIONS['allow_once'],
+                    self::APPROVAL_OPTIONS['deny'],
+                ]
+                : array_values(self::APPROVAL_OPTIONS);
+
             return ToolCallDecisionDTO::requireApproval(
                 prompt: \sprintf('Allow %s: %s?', $this->friendlyCategory($decision->kind), $decision->reason),
                 questionId: $questionId,
                 schema: [
                     'type' => 'string',
-                    'enum' => array_values(self::APPROVAL_OPTIONS),
+                    'enum' => $options,
                 ],
                 details: [
                     'category' => $decision->kind->value,
@@ -161,6 +172,7 @@ final readonly class SafeGuardToolCallHook implements ToolCallHookInterface, App
                     'tool_name' => $decision->toolName,
                     'operation_key' => $operationKey,
                     'intercepted' => true,
+                    'non_persistent' => $nonPersistent,
                 ],
             );
         }
@@ -200,6 +212,13 @@ final readonly class SafeGuardToolCallHook implements ToolCallHookInterface, App
         }
 
         if ('always_allow' === $canonical) {
+            // Settings mutations never persist Always allow — clean pending only.
+            if (true === ($context->approvalContext['non_persistent'] ?? false)) {
+                $this->approvalTracker->removeByQuestionId($context->questionId);
+
+                return;
+            }
+
             $this->approvalTracker->approveByQuestionId($context->questionId);
 
             // Persist to policy file for future sessions.
@@ -236,6 +255,23 @@ final readonly class SafeGuardToolCallHook implements ToolCallHookInterface, App
         // The TUI sends labels with emoji icons (e.g. '✅ Allow once');
         // we map back to the canonical action for the decision.
         $canonical = array_search($answer, self::APPROVAL_OPTIONS, true);
+
+        if ('always_allow' === $canonical && true === ($context->approvalContext['non_persistent'] ?? false)) {
+            // Forged Always allow on non-persistent settings approvals fails closed.
+            $this->approvalTracker->removeByQuestionId($context->questionId);
+
+            return ToolCallDecisionDTO::block(
+                reason: 'safeguard_denied',
+                details: [
+                    'category' => $context->approvalContext['category'] ?? '',
+                    'intercepted' => true,
+                    'message' => \sprintf(
+                        'Tool "%s" was denied by SafeGuard: Always allow is not permitted for this approval.',
+                        $context->toolName,
+                    ),
+                ],
+            );
+        }
 
         if ('allow_once' === $canonical || 'always_allow' === $canonical) {
             return ToolCallDecisionDTO::allow();
@@ -292,6 +328,14 @@ final readonly class SafeGuardToolCallHook implements ToolCallHookInterface, App
      */
     private function resolveOperationKey(ToolCallContextDTO $context): ?string
     {
+        if ($this->isSettingsMutation($context)) {
+            $operation = $context->arguments['operation'];
+            $scope = \is_string($context->arguments['scope'] ?? null) ? $context->arguments['scope'] : '';
+            $path = \is_string($context->arguments['path'] ?? null) ? $context->arguments['path'] : '';
+
+            return \sprintf('%s:%s:%s:%s', $this->settingsToolName, $operation, $scope, $path);
+        }
+
         $command = $this->extractCommand($context);
         if (null !== $command) {
             return \sprintf('%s:%s', $this->toolPrefix($context->toolName), $command);
@@ -358,6 +402,11 @@ final readonly class SafeGuardToolCallHook implements ToolCallHookInterface, App
      */
     private function shouldAutoDenyRelaxable(ToolCallContextDTO $context): bool
     {
+        // Settings mutations always require a live approval channel.
+        if ($this->isSettingsMutation($context)) {
+            return !$this->hasApprovalChannel();
+        }
+
         if (!$this->autoDenyInNoninteractive) {
             return false;
         }
@@ -367,6 +416,17 @@ final readonly class SafeGuardToolCallHook implements ToolCallHookInterface, App
         }
 
         return !$this->hasApprovalChannel();
+    }
+
+    private function isSettingsMutation(ToolCallContextDTO $context): bool
+    {
+        if ($context->toolName !== $this->settingsToolName) {
+            return false;
+        }
+
+        $operation = $context->arguments['operation'] ?? null;
+
+        return \is_string($operation) && \in_array($operation, ['set', 'remove'], true);
     }
 
     /**

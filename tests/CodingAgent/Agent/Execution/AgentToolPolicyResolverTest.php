@@ -9,6 +9,7 @@ use Ineersa\CodingAgent\Agent\Definition\McpAgentModeEnum;
 use Ineersa\CodingAgent\Agent\Definition\McpPolicyDTO;
 use Ineersa\CodingAgent\Agent\Execution\AgentMcpToolsResolver;
 use Ineersa\CodingAgent\Agent\Execution\AgentToolPolicyResolver;
+use Ineersa\CodingAgent\Config\AgentsConfig;
 use Ineersa\CodingAgent\Mcp\Catalog\McpServerCatalogEntryDTO;
 use Ineersa\CodingAgent\Mcp\Catalog\McpServerCatalogStatusEnum;
 use Ineersa\CodingAgent\Mcp\Catalog\McpToolCatalogDTO;
@@ -50,6 +51,35 @@ final class AgentToolPolicyResolverTest extends TestCase
         $resolver = new AgentToolPolicyResolver($this->registry(['read']), $this->mcpResolver(['context7_resolve', 'websearch_search'], allServers: true));
         $policy = $resolver->resolve($this->definition(['read', 'mcp:websearch_search']), 'run-1');
         $this->assertSame(['read', 'websearch_search'], $policy['tools']);
+    }
+
+    /**
+     * @return iterable<string, array{0: list<string>|null}>
+     */
+    public static function childToolListCases(): iterable
+    {
+        yield 'omitted inherit-all' => [null];
+        yield 'explicit list' => [['read', 'settings', 'documentation', 'bash']];
+    }
+
+    /**
+     * @param list<string>|null $tools
+     */
+    #[\PHPUnit\Framework\Attributes\DataProvider('childToolListCases')]
+    public function testDefaultExcludedToolsRemovedForChildren(?array $tools): void
+    {
+        $resolver = new AgentToolPolicyResolver(
+            $this->registry(['read', 'settings', 'documentation', 'bash', 'subagent']),
+            $this->mcpResolver([]),
+            new AgentsConfig(),
+        );
+        $policy = $resolver->resolve($this->definition($tools), 'run-1');
+
+        $this->assertContains('read', $policy['tools']);
+        $this->assertContains('bash', $policy['tools']);
+        $this->assertNotContains('settings', $policy['tools']);
+        $this->assertNotContains('documentation', $policy['tools']);
+        $this->assertNotContains('subagent', $policy['tools']);
     }
 
     /** @param list<string> $globalTools */
