@@ -22,7 +22,7 @@ final class SettingsValueResolverTest extends IsolatedKernelTestCase
     public function testContainerResolverUsesStrictMissingIndexSemantics(): void
     {
         /** @var SettingsValueResolver $resolver */
-        $resolver = self::getContainer()->get(SettingsValueResolver::class);
+        $resolver = self::getContainer()->get('test.settings_value_resolver');
 
         $settings = new SettingsResolutionDTO(
             defaultsRaw: [

@@ -127,11 +127,8 @@ services:
     class: Symfony\Component\PropertyAccess\PropertyAccessor
     factory: ['@coding_agent.settings.property_accessor_builder', 'getPropertyAccessor']
 
-  # Public: no production consumers yet (SETTINGS-02/03), and private unused
-  # services are removed from the compiled container. Public keeps the strict
-  # accessor wiring live and allows the container regression test to fetch it.
+  # Dedicated strict accessor: provenance needs missing-index detection.
   Ineersa\CodingAgent\Config\SettingsValueResolver:
-    public: true
     arguments:
       $propertyAccessor: '@coding_agent.settings.property_accessor'
 
