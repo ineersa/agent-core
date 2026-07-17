@@ -847,6 +847,10 @@ services:
     tags:
       - { name: 'app.completion_provider', priority: 95 }
 
+  Ineersa\Tui\Completion\SettingsPathCompletionProvider:
+    tags:
+      - { name: 'app.completion_provider', priority: 93 }
+
   Ineersa\Tui\Completion\FileMentionCompletionProvider:
     tags:
       - { name: 'app.completion_provider', priority: 90 }
