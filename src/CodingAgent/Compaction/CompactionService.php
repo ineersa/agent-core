@@ -4,10 +4,17 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Compaction;
 
+use Ineersa\AgentCore\Application\Compaction\CompactionSummarizationInvoker;
 use Ineersa\AgentCore\Contract\Compaction\CompactionPrepareResult;
 use Ineersa\AgentCore\Contract\Compaction\CompactionServiceInterface;
 use Ineersa\AgentCore\Contract\Compaction\CompactResult;
+use Ineersa\AgentCore\Contract\Compaction\MessageSnapshotCompactionResult;
+use Ineersa\AgentCore\Domain\Message\AgentMessage;
+use Ineersa\AgentCore\Infrastructure\RunLogContext;
 use Ineersa\CodingAgent\Config\AppConfig;
+use Ineersa\CodingAgent\Config\ModelSelectionService;
+use Psr\Log\LoggerInterface;
+use Psr\Log\NullLogger;
 
 /**
  * CodingAgent adapter that implements the AgentCore compaction contract.
@@ -21,6 +28,10 @@ final readonly class CompactionService implements CompactionServiceInterface
     public function __construct(
         private SessionCompactor $sessionCompactor,
         private AppConfig $appConfig,
+        private ModelSelectionService $modelSelectionService,
+        private CompactionHookDispatcher $hookDispatcher,
+        private CompactionSummarizationInvoker $summarizationInvoker,
+        private LoggerInterface $logger = new NullLogger(),
     ) {
     }
 
@@ -97,5 +108,193 @@ final readonly class CompactionService implements CompactionServiceInterface
             messagesRetained: $compacted->messagesRetained,
             firstRetainedIndex: $compacted->firstRetainedIndex,
         );
+    }
+
+    public function compactMessages(
+        string $runId,
+        int $turnNo,
+        array $messages,
+        string $trigger = 'manual',
+        ?string $customInstructions = null,
+    ): MessageSnapshotCompactionResult {
+        RunLogContext::enter([
+            'run_id' => $runId,
+            'session_id' => $runId,
+            'component' => 'compaction',
+            'event_type' => 'compaction.snapshot.started',
+            'trigger' => $trigger,
+        ]);
+
+        try {
+            return $this->doCompactMessages($runId, $turnNo, $messages, $trigger, $customInstructions);
+        } finally {
+            RunLogContext::leave();
+        }
+    }
+
+    /**
+     * @param list<AgentMessage> $messages
+     */
+    private function doCompactMessages(
+        string $runId,
+        int $turnNo,
+        array $messages,
+        string $trigger,
+        ?string $customInstructions,
+    ): MessageSnapshotCompactionResult {
+        $activeModel = $this->modelSelectionService->getCurrentModel($runId);
+        $activeModelStr = $activeModel?->toString();
+        $runtimeSettings = $this->appConfig->compaction->resolveRuntimeSettings($activeModelStr);
+        $thinkingLevel = $runtimeSettings->thinkingLevel;
+        $modelOptions = null !== $thinkingLevel && '' !== $thinkingLevel
+            ? ['thinking_level' => $thinkingLevel]
+            : [];
+
+        $this->logger->info('Compaction snapshot preparation started.', [
+            'event_type' => 'compaction.snapshot.prepare.started',
+            'run_id' => $runId,
+            'turn_no' => $turnNo,
+            'messages_total' => \count($messages),
+            'trigger' => $trigger,
+        ]);
+
+        $preparation = $this->prepare($messages);
+        if (!$preparation->isReady()) {
+            $skipReason = $preparation->failureReason ?? 'unknown';
+            $this->logger->info('Compaction snapshot structural no-op.', [
+                'event_type' => 'compaction.snapshot.structural_noop',
+                'run_id' => $runId,
+                'reason' => $skipReason,
+                'trigger' => $trigger,
+            ]);
+
+            return MessageSnapshotCompactionResult::structuralNoOp($messages, $skipReason);
+        }
+
+        $resolvedModel = $runtimeSettings->model ?? $activeModelStr;
+        $hookContext = new CompactionHookContextDTO(
+            runId: $runId,
+            turnNo: $turnNo,
+            trigger: $trigger,
+            tokenEstimateBefore: $preparation->tokenEstimateBefore,
+            messagesCompacted: $preparation->messagesCompacted,
+            messagesRetained: $preparation->messagesRetained,
+            firstRetainedIndex: $preparation->firstRetainedIndex,
+            priorSummaryPresent: $preparation->priorSummaryPresent,
+            customInstructions: $customInstructions,
+            resolvedModel: $resolvedModel,
+            thinkingLevel: $thinkingLevel,
+        );
+        $hookResult = $this->hookDispatcher->dispatch($hookContext);
+
+        if ($hookResult->cancels()) {
+            $reason = 'hook_cancelled: '.$hookResult->cancelReason;
+            $this->logger->info('Compaction snapshot cancelled by before-compaction hook.', [
+                'event_type' => 'compaction.snapshot.hook.cancelled',
+                'run_id' => $runId,
+                'hook_reason' => $hookResult->cancelReason,
+            ]);
+
+            return MessageSnapshotCompactionResult::failed(
+                $reason,
+                'Compaction cancelled: '.$hookResult->cancelReason,
+            );
+        }
+
+        $effectiveInstructions = $customInstructions;
+        if ($hookResult->hasAdditionalInstructions()) {
+            $effectiveInstructions = null !== $effectiveInstructions
+                ? $effectiveInstructions."\n".$hookResult->additionalInstructions
+                : $hookResult->additionalInstructions;
+        }
+
+        if ($hookResult->hasReplacementSummary()) {
+            return $this->finalizeFromSummary(
+                $hookResult->replacementSummary,
+                $preparation,
+                $runId,
+                $trigger,
+            );
+        }
+
+        $summarizationMessages = $this->buildSummarizationMessages($preparation, $effectiveInstructions);
+        $stepId = \sprintf('snapshot-compact-%s', bin2hex(random_bytes(8)));
+        $model = $resolvedModel ?? '';
+
+        $outcome = $this->summarizationInvoker->invoke(
+            runId: $runId,
+            turnNo: $turnNo,
+            stepId: $stepId,
+            model: $model,
+            summarizationMessages: $summarizationMessages,
+            modelOptions: $modelOptions,
+            trigger: $trigger,
+        );
+
+        if ($outcome->isError()) {
+            $error = $outcome->error ?? [];
+            $userMessage = \is_string($error['user_message'] ?? null) && '' !== $error['user_message']
+                ? $error['user_message']
+                : (\is_string($error['message'] ?? null) && '' !== $error['message']
+                    ? $error['message']
+                    : 'Summarization model call failed.');
+
+            $this->logger->error('Compaction snapshot model invocation failed.', [
+                'event_type' => 'compaction.snapshot.failed',
+                'run_id' => $runId,
+                'error_type' => $error['type'] ?? 'unknown',
+            ]);
+
+            return MessageSnapshotCompactionResult::failed('model_error', $userMessage);
+        }
+
+        $summaryText = \is_string($outcome->summaryText) ? trim($outcome->summaryText) : '';
+        if ('' === $summaryText) {
+            $this->logger->info('Compaction snapshot produced empty summary.', [
+                'event_type' => 'compaction.snapshot.empty_summary',
+                'run_id' => $runId,
+            ]);
+
+            return MessageSnapshotCompactionResult::failed(
+                'empty_summary',
+                'Compaction failed: summarization model returned an empty summary.',
+            );
+        }
+
+        return $this->finalizeFromSummary($summaryText, $preparation, $runId, $trigger);
+    }
+
+    private function finalizeFromSummary(
+        string $summaryText,
+        CompactionPrepareResult $preparation,
+        string $runId,
+        string $trigger,
+    ): MessageSnapshotCompactionResult {
+        $compactResult = $this->buildCompactedMessages($summaryText, $preparation);
+
+        if ($compactResult->tokenEstimateAfter >= $compactResult->tokenEstimateBefore) {
+            $this->logger->info('Compaction snapshot was ineffective.', [
+                'event_type' => 'compaction.snapshot.ineffective',
+                'run_id' => $runId,
+                'estimated_tokens_before' => $compactResult->tokenEstimateBefore,
+                'estimated_tokens_after' => $compactResult->tokenEstimateAfter,
+                'trigger' => $trigger,
+            ]);
+
+            return MessageSnapshotCompactionResult::failed(
+                'ineffective_compaction',
+                'Compaction failed: token estimate did not decrease after summarization.',
+            );
+        }
+
+        $this->logger->info('Compaction snapshot applied.', [
+            'event_type' => 'compaction.snapshot.applied',
+            'run_id' => $runId,
+            'messages_compacted' => $compactResult->messagesCompacted,
+            'messages_retained' => $compactResult->messagesRetained,
+            'trigger' => $trigger,
+        ]);
+
+        return MessageSnapshotCompactionResult::compacted($compactResult->compactedMessages);
     }
 }

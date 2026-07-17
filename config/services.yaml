@@ -608,12 +608,20 @@ services:
   # ─── Compaction pipeline (COMP-02) ───
 
   # Compaction service: CodingAgent adapter implementing the AgentCore contract.
-  # Autowiring resolves SessionCompactor and CompactionConfig; the interface
-  # alias lets AgentCore pipeline code depend on the contract.
+  # Autowiring resolves SessionCompactor, hooks, model selection, and the shared
+  # CompactionSummarizationInvoker; the interface alias lets AgentCore pipeline
+  # code depend on the contract (including synchronous compactMessages).
   Ineersa\CodingAgent\Compaction\CompactionService: ~
 
   Ineersa\AgentCore\Contract\Compaction\CompactionServiceInterface:
     alias: Ineersa\CodingAgent\Compaction\CompactionService
+
+  # Shared no-tools compaction model invocation (async worker + snapshot path).
+  # Lazy: PlatformInterface construction requires configured AI providers; fork
+  # tests and non-LLM paths must be able to resolve CompactionService without
+  # eagerly booting the platform.
+  Ineersa\AgentCore\Application\Compaction\CompactionSummarizationInvoker:
+    lazy: true
 
   # Compaction worker: async model invocation for summarization.
   # @see ExecuteLlmStepWorker for the parallel LLM-step pattern.

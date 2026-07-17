@@ -485,6 +485,16 @@ final class CompactRunHandlerTest extends TestCase
             {
                 throw new \LogicException('Not expected in this test.');
             }
+
+            public function compactMessages(
+                string $runId,
+                int $turnNo,
+                array $messages,
+                string $trigger = 'manual',
+                ?string $customInstructions = null,
+            ): \Ineersa\AgentCore\Contract\Compaction\MessageSnapshotCompactionResult {
+                throw new \LogicException('compactMessages not expected in this test path.');
+            }
         };
 
         $hook = new class implements BeforeCompactionHookInterface {
@@ -918,6 +928,16 @@ final class CompactRunHandlerTest extends TestCase
             {
                 throw new \LogicException('Not expected in this test.');
             }
+
+            public function compactMessages(
+                string $runId,
+                int $turnNo,
+                array $messages,
+                string $trigger = 'manual',
+                ?string $customInstructions = null,
+            ): \Ineersa\AgentCore\Contract\Compaction\MessageSnapshotCompactionResult {
+                throw new \LogicException('compactMessages not expected in this test path.');
+            }
         };
     }
 
@@ -941,6 +961,16 @@ final class CompactRunHandlerTest extends TestCase
             public function buildCompactedMessages(string $summaryText, CompactionPrepareResult $result): CompactResult
             {
                 throw new \LogicException('Not expected in this test.');
+            }
+
+            public function compactMessages(
+                string $runId,
+                int $turnNo,
+                array $messages,
+                string $trigger = 'manual',
+                ?string $customInstructions = null,
+            ): \Ineersa\AgentCore\Contract\Compaction\MessageSnapshotCompactionResult {
+                throw new \LogicException('compactMessages not expected in this test path.');
             }
         };
     }
@@ -1006,6 +1036,16 @@ final class CompactRunHandlerTest extends TestCase
             {
                 // For test simplicity: count summarize messages as the offset.
                 return \count($this->summarizeMessages);
+            }
+
+            public function compactMessages(
+                string $runId,
+                int $turnNo,
+                array $messages,
+                string $trigger = 'manual',
+                ?string $customInstructions = null,
+            ): \Ineersa\AgentCore\Contract\Compaction\MessageSnapshotCompactionResult {
+                throw new \LogicException('compactMessages not expected in this test path.');
             }
         };
     }

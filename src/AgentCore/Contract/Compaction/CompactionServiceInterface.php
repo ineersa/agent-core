@@ -55,4 +55,26 @@ interface CompactionServiceInterface
         string $summaryText,
         CompactionPrepareResult $result,
     ): CompactResult;
+
+    /**
+     * Synchronously compact an in-memory message snapshot without mutating
+     * RunStore/EventStore.
+     *
+     * Uses the same prepare → hooks → summarization prompt → no-tools model
+     * invocation → empty/ineffective validation → buildCompactedMessages path
+     * as the async CompactRun pipeline, but returns the result directly.
+     *
+     * Structural prepare skips are returned as structural no-ops with the
+     * original messages. Hard failures (model error, empty summary, ineffective
+     * compaction, hook cancel) are returned as failures.
+     *
+     * @param list<AgentMessage> $messages
+     */
+    public function compactMessages(
+        string $runId,
+        int $turnNo,
+        array $messages,
+        string $trigger = 'manual',
+        ?string $customInstructions = null,
+    ): MessageSnapshotCompactionResult;
 }
