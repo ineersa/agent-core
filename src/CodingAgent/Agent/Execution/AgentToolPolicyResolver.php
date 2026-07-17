@@ -16,7 +16,7 @@ final readonly class AgentToolPolicyResolver
     public function __construct(
         private ToolRegistryInterface $toolRegistry,
         private AgentMcpToolsResolver $mcpToolsResolver,
-        private AgentsConfig $agentsConfig = new AgentsConfig(),
+        private AgentsConfig $agentsConfig,
     ) {
     }
 

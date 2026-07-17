@@ -187,7 +187,7 @@ final class SettingsTool implements HatfieldToolProviderInterface, ToolHandlerIn
             'scope' => $scope ?? 'effective',
             'exists' => $resolved->exists,
             'value' => $resolved->exists ? $resolved->value : null,
-            'source' => $resolved->exists ? ($resolved->composite ? 'composite' : (null !== $resolved->layer ? $resolved->layer->value : null)) : null,
+            'source' => $resolved->exists ? ($resolved->composite ? 'mixed' : (null !== $resolved->layer ? $resolved->layer->value : null)) : null,
         ];
         if (null !== $changed) {
             $result['changed'] = $changed;

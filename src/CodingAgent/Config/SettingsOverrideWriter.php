@@ -61,9 +61,10 @@ final class SettingsOverrideWriter
             return false;
         }
 
-        // Empty parent maps become YAML {} / PHP [] and AppConfigLoader treats
-        // empty arrays as lists, replacing entire default branches. Prune empties.
-        $this->removeNestedKey($settings, $segments);
+        // Empty parent maps become PHP [] which AppConfigLoader treats as lists,
+        // replacing entire default branches. Prune empty parents bottom-up via
+        // PropertyAccessor (no recursive walker).
+        $settings = $this->removeWithEmptyParentPrune($settings, $segments);
         $this->writeSettings($filePath, $settings);
 
         return true;
@@ -72,31 +73,45 @@ final class SettingsOverrideWriter
     /**
      * @param array<string, mixed> $settings
      * @param list<string>         $segments
+     *
+     * @return array<string, mixed>
      */
-    private function removeNestedKey(array &$settings, array $segments): void
+    private function removeWithEmptyParentPrune(array $settings, array $segments): array
     {
-        $key = array_shift($segments);
-        if (null === $key) {
-            return;
+        for ($depth = \count($segments); $depth >= 1; --$depth) {
+            $key = $segments[$depth - 1];
+            $parentSegments = \array_slice($segments, 0, $depth - 1);
+
+            if ([] === $parentSegments) {
+                unset($settings[$key]);
+
+                // Root-level keys leave the document mapping; no parent prune needed.
+                return $settings;
+            }
+
+            $parentPath = SettingsValueResolver::propertyPath(implode('.', $parentSegments));
+            if (null === $parentPath || !$this->propertyAccessor->isReadable($settings, $parentPath)) {
+                return $settings;
+            }
+
+            $parent = $this->propertyAccessor->getValue($settings, $parentPath);
+            if (!\is_array($parent) || !\array_key_exists($key, $parent)) {
+                return $settings;
+            }
+
+            // Always write the mutated parent back (PropertyAccess returns a copy).
+            unset($parent[$key]);
+            $this->propertyAccessor->setValue($settings, $parentPath, $parent);
+            /* @var array<string, mixed> $settings */
+            if ([] !== $parent) {
+                return $settings;
+            }
+
+            // Parent is now empty — continue upward so the empty map does not
+            // survive as a list-shaped override that wipes defaults.
         }
 
-        if ([] === $segments) {
-            unset($settings[$key]);
-
-            return;
-        }
-
-        if (!\array_key_exists($key, $settings) || !\is_array($settings[$key])) {
-            return;
-        }
-
-        $child = $settings[$key];
-        $this->removeNestedKey($child, $segments);
-        if ([] === $child) {
-            unset($settings[$key]);
-        } else {
-            $settings[$key] = $child;
-        }
+        return $settings;
     }
 
     private function assertWritableLayer(SettingsLayerEnum $layer): void

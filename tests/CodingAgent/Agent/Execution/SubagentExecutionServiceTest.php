@@ -236,7 +236,7 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
         $registry = $this->createStub(ToolRegistryInterface::class);
         $registry->method('activeToolNames')->willReturn(['read']);
 
-        return new AgentToolPolicyResolver($registry, $this->emptyMcpToolsResolver());
+        return new AgentToolPolicyResolver($registry, $this->emptyMcpToolsResolver(), new AgentsConfig());
     }
 
     private function emptyMcpToolsResolver(): AgentMcpToolsResolver

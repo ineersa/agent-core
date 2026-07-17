@@ -158,8 +158,10 @@ final readonly class SafeGuardToolCallHook implements ToolCallHookInterface, App
                 ]
                 : array_values(self::APPROVAL_OPTIONS);
 
+            $categoryLabel = $nonPersistent ? 'settings mutation' : $this->friendlyCategory($decision->kind);
+
             return ToolCallDecisionDTO::requireApproval(
-                prompt: \sprintf('Allow %s: %s?', $this->friendlyCategory($decision->kind), $decision->reason),
+                prompt: \sprintf('Allow %s: %s?', $categoryLabel, $decision->reason),
                 questionId: $questionId,
                 schema: [
                     'type' => 'string',
@@ -354,6 +356,14 @@ final readonly class SafeGuardToolCallHook implements ToolCallHookInterface, App
      */
     private function resolveOperationSpec(ToolCallContextDTO $context): string
     {
+        if ($this->isSettingsMutation($context)) {
+            $operation = $context->arguments['operation'];
+            $scope = \is_string($context->arguments['scope'] ?? null) ? $context->arguments['scope'] : '';
+            $path = \is_string($context->arguments['path'] ?? null) ? $context->arguments['path'] : '';
+
+            return \sprintf('%s:%s:%s:%s', $this->settingsToolName, $operation, $scope, $path);
+        }
+
         return $this->extractCommand($context) ?? $this->extractPath($context) ?? $context->toolName;
     }
 

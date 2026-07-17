@@ -10,15 +10,19 @@ use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\AppConfigLoader;
 use Ineersa\CodingAgent\Config\AppResourceLocator;
+use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\SettingsOverrideWriter;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Config\SettingsValueResolver;
+use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tool\SettingsTool;
 use Ineersa\CodingAgent\Tool\ToolRuntime;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\PropertyAccess\PropertyAccess;
+use Symfony\Component\Yaml\Yaml;
 
 /**
  * Thesis: settings tool performs singular read/set/remove with explicit
@@ -28,7 +32,6 @@ final class SettingsToolTest extends TestCase
 {
     private string $homeDir;
     private string $projectDir;
-    private string $defaultsPath;
     private SettingsTool $tool;
 
     protected function setUp(): void
@@ -36,18 +39,17 @@ final class SettingsToolTest extends TestCase
         $root = TestDirectoryIsolation::createProjectTempDir('settings-tool');
         $this->homeDir = $root.'/home';
         $this->projectDir = $root.'/project';
-        mkdir($this->homeDir, 0o755, true);
-        mkdir($this->projectDir, 0o755, true);
+        TestDirectoryIsolation::ensureDirectory($this->homeDir);
+        TestDirectoryIsolation::createHatfieldTree($this->projectDir);
 
         $appRoot = \dirname(__DIR__, 3);
-        $this->defaultsPath = $appRoot.'/config/hatfield.defaults.yaml';
         $pathResolver = new SettingsPathResolver($appRoot, $this->homeDir);
         $loader = new AppConfigLoader($pathResolver);
         $resources = new AppResourceLocator($appRoot);
         // Only cwd is used by SettingsTool; keep AppConfig construction minimal.
         $active = new AppConfig(
-            tui: new \Ineersa\CodingAgent\Config\TuiConfig('cyberpunk'),
-            logging: new \Ineersa\CodingAgent\Config\LoggingConfig(),
+            tui: new TuiConfig('cyberpunk'),
+            logging: new LoggingConfig(),
             cwd: $this->projectDir,
         );
         $accessor = PropertyAccess::createPropertyAccessorBuilder()
@@ -143,34 +145,29 @@ final class SettingsToolTest extends TestCase
         $this->assertTrue($missing['restart_required']);
     }
 
-    public function testValidationRejectsMalformedPathMissingScopeAndMissingValue(): void
+    /**
+     * @return iterable<string, array{0: array<string, mixed>, 1: string}>
+     */
+    public static function invalidCallCases(): iterable
+    {
+        yield 'malformed path' => [['operation' => 'read', 'path' => 'tui.the]me'], 'path'];
+        yield 'missing mutation scope' => [['operation' => 'set', 'path' => 'tui.theme', 'value' => 'x'], 'scope'];
+        yield 'effective mutation scope' => [['operation' => 'set', 'path' => 'tui.theme', 'scope' => 'effective', 'value' => 'x'], 'user or project'];
+        yield 'missing value' => [['operation' => 'set', 'path' => 'tui.theme', 'scope' => 'project'], 'value'];
+    }
+
+    /**
+     * @param array<string, mixed> $arguments
+     */
+    #[DataProvider('invalidCallCases')]
+    public function testValidationRejectsMalformedPathMissingScopeAndMissingValue(array $arguments, string $messageFragment): void
     {
         try {
-            ($this->tool)(['operation' => 'read', 'path' => 'tui.the]me']);
-            $this->fail('Expected invalid path');
+            ($this->tool)($arguments);
+            $this->fail('Expected ToolCallException');
         } catch (ToolCallException $e) {
             $this->assertFalse($e->retryable());
-        }
-
-        try {
-            ($this->tool)(['operation' => 'set', 'path' => 'tui.theme', 'value' => 'x']);
-            $this->fail('Expected missing scope');
-        } catch (ToolCallException $e) {
-            $this->assertStringContainsString('scope', $e->getMessage());
-        }
-
-        try {
-            ($this->tool)(['operation' => 'set', 'path' => 'tui.theme', 'scope' => 'effective', 'value' => 'x']);
-            $this->fail('Expected invalid mutation scope');
-        } catch (ToolCallException $e) {
-            $this->assertStringContainsString('user or project', $e->getMessage());
-        }
-
-        try {
-            ($this->tool)(['operation' => 'set', 'path' => 'tui.theme', 'scope' => 'project']);
-            $this->fail('Expected missing value');
-        } catch (ToolCallException $e) {
-            $this->assertStringContainsString('value', $e->getMessage());
+            $this->assertStringContainsString($messageFragment, $e->getMessage());
         }
     }
 
@@ -179,8 +176,7 @@ final class SettingsToolTest extends TestCase
      */
     private function writeProject(array $data): void
     {
-        $dir = $this->projectDir.'/.hatfield';
-        mkdir($dir, 0o755, true);
-        file_put_contents($dir.'/settings.yaml', \Symfony\Component\Yaml\Yaml::dump($data, 4, 4));
+        // createHatfieldTree already made .hatfield/; overwrite settings for the case.
+        file_put_contents($this->projectDir.'/.hatfield/settings.yaml', Yaml::dump($data, 4, 4));
     }
 }

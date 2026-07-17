@@ -184,11 +184,21 @@ final class AgentsConfigTest extends TestCase
         $this->assertSame([], $empty->subagentExcludedTools);
     }
 
-    public function testFromRawRejectsMalformedSubagentExcludedTools(): void
+    /**
+     * @return iterable<string, array{0: mixed}>
+     */
+    public static function malformedSubagentExcludedToolsCases(): iterable
+    {
+        yield 'scalar string' => ['settings'];
+        yield 'associative map' => [['settings' => true]];
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('malformedSubagentExcludedToolsCases')]
+    public function testFromRawRejectsMalformedSubagentExcludedTools(mixed $value): void
     {
         $this->expectException(\InvalidArgumentException::class);
         $this->expectExceptionMessage('agents.subagent_excluded_tools');
 
-        AgentsConfig::fromRaw(['subagent_excluded_tools' => 'settings']);
+        AgentsConfig::fromRaw(['subagent_excluded_tools' => $value]);
     }
 }

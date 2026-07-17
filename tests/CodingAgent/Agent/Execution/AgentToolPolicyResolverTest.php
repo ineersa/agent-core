@@ -29,7 +29,7 @@ final class AgentToolPolicyResolverTest extends TestCase
 {
     public function testResolveExcludesSubagentByDefault(): void
     {
-        $resolver = new AgentToolPolicyResolver($this->registry(['read']), $this->mcpResolver([]));
+        $resolver = new AgentToolPolicyResolver($this->registry(['read']), $this->mcpResolver([]), new AgentsConfig());
         $policy = $resolver->resolve($this->definition(['read', 'subagent']), 'run-1');
         $this->assertNotContains('subagent', $policy['tools']);
     }
@@ -39,6 +39,7 @@ final class AgentToolPolicyResolverTest extends TestCase
         $resolver = new AgentToolPolicyResolver(
             $this->registry(['read', 'subagent']),
             $this->mcpResolver(['context7_resolve']),
+            new AgentsConfig(),
         );
         $policy = $resolver->resolve($this->definition(null), 'run-1');
         $this->assertContains('read', $policy['tools']);
@@ -48,7 +49,7 @@ final class AgentToolPolicyResolverTest extends TestCase
 
     public function testExplicitToolsMergeMcpSelectors(): void
     {
-        $resolver = new AgentToolPolicyResolver($this->registry(['read']), $this->mcpResolver(['context7_resolve', 'websearch_search'], allServers: true));
+        $resolver = new AgentToolPolicyResolver($this->registry(['read']), $this->mcpResolver(['context7_resolve', 'websearch_search'], allServers: true), new AgentsConfig());
         $policy = $resolver->resolve($this->definition(['read', 'mcp:websearch_search']), 'run-1');
         $this->assertSame(['read', 'websearch_search'], $policy['tools']);
     }

@@ -25,7 +25,7 @@ final readonly class AgentsConfig
      * @param bool         $enabled               Whether agent discovery is enabled
      * @param list<string> $paths                 Additional agent definition file or directory paths
      * @param int          $maxAgents             Maximum parallel subagents per `subagent` tool call
-     * @param list<string> $subagentExcludedTools Tool names always removed from child agents
+     * @param list<string> $subagentExcludedTools Tool names removed from child agents by default/configuration
      */
     public function __construct(
         public bool $enabled = true,
@@ -131,7 +131,7 @@ final readonly class AgentsConfig
         }
 
         $value = $raw['subagent_excluded_tools'];
-        if (!\is_array($value)) {
+        if (!\is_array($value) || !array_is_list($value)) {
             throw new \InvalidArgumentException(\sprintf('Invalid value for agents.subagent_excluded_tools: expected list of strings, got %s.', get_debug_type($value)));
         }
 
@@ -143,6 +143,6 @@ final readonly class AgentsConfig
             $tools[] = $item;
         }
 
-        return $tools;
+        return array_values(array_unique($tools));
     }
 }
