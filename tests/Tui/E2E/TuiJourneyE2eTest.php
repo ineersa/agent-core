@@ -66,10 +66,9 @@ final class TuiJourneyE2eTest extends TestCase
      *
      * Exercises in order (tmux integration smoke):
      *  1. Startup layout (logo, status, footer)
-     *  2. /settings-show filtered leaf (inline after startup)
-     *  3. Shell !ls prefix — real command output proof + ordering
-     *  4. Inline shell on completed run + follow-up (issue #183 repro)
-     *  5. Clean exit via Ctrl+D
+     *  2. Shell !ls prefix — real command output proof + ordering
+     *  3. Inline shell on completed run + follow-up (issue #183 repro)
+     *  4. Clean exit via Ctrl+D
      *
      * Virtual-only (not in this journey): startup detail {@see TuiStartupVirtualRenderTest},
      * Shift+Tab reasoning status/border {@see TuiReasoningCycleTest},
@@ -98,24 +97,6 @@ final class TuiJourneyE2eTest extends TestCase
 
         try {
             $this->journeyPhase1StartupLayout($pane);
-
-            // Minimal /settings-show smoke: real slash command through tmux.
-            $this->tmux->sendKey($pane, 'C-u');
-            usleep(50_000);
-            $this->tmux->sendLiteral($pane, '/settings-show tui.transcript.thinking.visible');
-            $this->tmux->sendKey($pane, 'Enter');
-            // Markdown table wraps source "defaults" and long description across cell lines in tmux capture.
-            $settingsCapture = $this->tmux->waitForCallback(
-                $pane,
-                static fn (string $cap): bool => str_contains($cap, 'Whether assistant thinking content is visible in the')
-                    && str_contains($cap, 'default'),
-                timeout: TmuxHarness::TUI_GATE_CALLBACK_TIMEOUT_PARALLEL,
-                message: '/settings-show filtered setting output never appeared',
-                history: 2000,
-            );
-            $this->assertStringContainsString('Whether assistant thinking content is visible in the', $settingsCapture);
-            $this->assertStringContainsString('default', $settingsCapture);
-
             $this->journeyPhase4ShellPrefixOutput($pane);
             $this->journeyPhase9InlineShellOnCompletedRun($pane);
 

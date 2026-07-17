@@ -14,12 +14,9 @@ use Ineersa\Tui\Command\SlashCommand;
 use Ineersa\Tui\Command\SlashCommandHandler;
 use Ineersa\Tui\Command\TranscriptMessage;
 
-/** @internal Local /settings-show: fresh disk settings as Markdown tables. */
+/** @internal Local /settings-show: fresh disk settings as nested Markdown lists. */
 final class SettingsShowCommandHandler implements SlashCommandHandler
 {
-    private const int MAX_ROWS = 100;
-    private const int MAX_CELL = 160;
-
     public function __construct(
         private readonly AppConfigLoader $loader,
         private readonly AppResourceLocator $resources,
@@ -48,21 +45,21 @@ final class SettingsShowCommandHandler implements SlashCommandHandler
     {
         $groups = array_keys($resolution->effective);
         sort($groups);
-        $rows = ['## Settings groups', '', '| Group | Description |', '| --- | --- |'];
+        $lines = ['## Settings groups', ''];
         foreach ($groups as $group) {
             if (!\is_string($group) || '' === $group) {
                 continue;
             }
-            $rows[] = \sprintf(
-                '| %s | %s |',
-                $this->cell($group),
-                $this->cell($descriptions[$group] ?? ucwords(str_replace(['_', '-'], ' ', $group)).' settings.'),
-            );
+            $description = $descriptions[$group] ?? ucwords(str_replace(['_', '-'], ' ', $group)).' settings.';
+            $lines[] = \sprintf('- `%s` — %s', $group, $description);
         }
-        $rows[] = '';
-        $rows[] = $this->restartNote($resolution);
+        $warning = $this->restartWarning($resolution);
+        if (null !== $warning) {
+            $lines[] = '';
+            $lines[] = $warning;
+        }
 
-        return implode("\n", $rows);
+        return implode("\n", $lines);
     }
 
     /** @param array<string, string> $descriptions */
@@ -70,10 +67,16 @@ final class SettingsShowCommandHandler implements SlashCommandHandler
     {
         $resolved = $this->valueResolver->resolve($resolution, $path);
         if (!$resolved->exists) {
-            return \sprintf("## Settings\n\nSetting `%s` was not found.\n\n%s", $path, $this->restartNote($resolution));
+            $lines = ['## Settings', '', \sprintf('Setting `%s` was not found.', $path)];
+            $warning = $this->restartWarning($resolution);
+            if (null !== $warning) {
+                $lines[] = '';
+                $lines[] = $warning;
+            }
+
+            return implode("\n", $lines);
         }
 
-        $paths = $resolved->composite ? $this->terminalPaths($path, $resolved->value) : [$path];
         $lines = [\sprintf('## `%s`', $path), ''];
         // Groups/top-level use their own section docs as prose; nested leaves keep parent prose only.
         $prose = $this->nearestDescription(
@@ -85,57 +88,106 @@ final class SettingsShowCommandHandler implements SlashCommandHandler
             $lines[] = $prose;
             $lines[] = '';
         }
-        $lines[] = '| Setting | Value | Source | Description |';
-        $lines[] = '| --- | --- | --- | --- |';
 
-        $rows = 0;
-        foreach ($paths as $leafPath) {
-            if ($rows >= self::MAX_ROWS) {
-                $lines[] = '';
-                $lines[] = \sprintf('_Showing first %d settings._', self::MAX_ROWS);
-                break;
-            }
-            $leaf = $this->valueResolver->resolve($resolution, $leafPath);
-            if (!$leaf->exists || $leaf->composite) {
-                continue;
-            }
-            $lines[] = \sprintf(
-                '| %s | %s | %s | %s |',
-                $this->cell($leafPath),
-                $this->cell($this->formatValue($leaf->value)),
-                $this->cell(null !== $leaf->layer ? $leaf->layer->value : 'mixed'),
-                $this->cell($this->nearestDescription($leafPath, $descriptions)),
+        if ($resolved->composite && \is_array($resolved->value)) {
+            array_push($lines, ...$this->renderTree($resolution, $descriptions, $path, $resolved->value, 0));
+        } else {
+            $lines[] = $this->renderLeafBullet(
+                $path,
+                $resolved->value,
+                null === $resolved->layer ? 'mixed' : $resolved->layer->value,
+                $descriptions,
+                0,
+                basenamePath: true,
             );
-            ++$rows;
         }
 
-        $lines[] = '';
-        $lines[] = $this->restartNote($resolution);
+        $warning = $this->restartWarning($resolution);
+        if (null !== $warning) {
+            $lines[] = '';
+            $lines[] = $warning;
+        }
 
         return implode("\n", $lines);
     }
 
-    private function restartNote(SettingsResolutionDTO $resolution): string
-    {
-        return $resolution->effective !== $this->activeConfig->raw
-            ? 'Restart required: disk settings differ from the active session.'
-            : 'Disk setting changes require a Hatfield restart to affect this session.';
+    /**
+     * @param array<string, string> $descriptions
+     * @param array<string, mixed>  $map
+     *
+     * @return list<string>
+     */
+    private function renderTree(
+        SettingsResolutionDTO $resolution,
+        array $descriptions,
+        string $prefix,
+        array $map,
+        int $depth,
+    ): array {
+        $keys = array_keys($map);
+        sort($keys);
+        $lines = [];
+        $indent = str_repeat('  ', $depth);
+
+        foreach ($keys as $key) {
+            $childPath = '' === $prefix ? (string) $key : $prefix.'.'.$key;
+            $child = $this->valueResolver->resolve($resolution, $childPath);
+            if (!$child->exists) {
+                continue;
+            }
+
+            if ($child->composite && \is_array($child->value)) {
+                $lines[] = \sprintf('%s- `%s`', $indent, $key);
+                array_push($lines, ...$this->renderTree($resolution, $descriptions, $childPath, $child->value, $depth + 1));
+                continue;
+            }
+
+            $lines[] = $this->renderLeafBullet(
+                $childPath,
+                $child->value,
+                null === $child->layer ? 'mixed' : $child->layer->value,
+                $descriptions,
+                $depth,
+                basenamePath: true,
+            );
+        }
+
+        return $lines;
     }
 
-    /** @return list<string> */
-    private function terminalPaths(string $prefix, mixed $value): array
+    /** @param array<string, string> $descriptions */
+    private function renderLeafBullet(
+        string $path,
+        mixed $value,
+        string $source,
+        array $descriptions,
+        int $depth,
+        bool $basenamePath,
+    ): string {
+        $label = $basenamePath ? $this->pathSegment($path) : $path;
+        $indent = str_repeat('  ', $depth);
+        $line = \sprintf(
+            '%s- `%s`: %s — **%s**',
+            $indent,
+            $label,
+            $this->inlineCode($this->formatValue($value)),
+            $source,
+        );
+        $description = $this->nearestDescription($path, $descriptions);
+        if ('' !== $description) {
+            $line .= "\n".$indent.'  '.$description;
+        }
+
+        return $line;
+    }
+
+    private function restartWarning(SettingsResolutionDTO $resolution): ?string
     {
-        if (!\is_array($value) || [] === $value || array_is_list($value)) {
-            return [$prefix];
+        if ($resolution->effective === $this->activeConfig->raw) {
+            return null;
         }
 
-        $paths = [];
-        foreach ($value as $key => $child) {
-            $childPath = '' === $prefix ? (string) $key : $prefix.'.'.$key;
-            array_push($paths, ...$this->terminalPaths($childPath, $child));
-        }
-
-        return $paths;
+        return '> ⚠ **Restart required:** disk settings differ from the active session.';
     }
 
     private function formatValue(mixed $value): string
@@ -156,14 +208,25 @@ final class SettingsShowCommandHandler implements SlashCommandHandler
         return false === $encoded ? '[unserializable]' : $encoded;
     }
 
-    private function cell(string $text): string
+    private function inlineCode(string $text): string
     {
-        $text = str_replace(["\r\n", "\r", "\n", '|'], [' ', ' ', ' ', '\\|'], $text);
-        if (mb_strlen($text) > self::MAX_CELL) {
-            $text = mb_substr($text, 0, self::MAX_CELL - 1).'…';
+        if (!str_contains($text, '`')) {
+            return '`'.$text.'`';
         }
 
-        return $text;
+        $fence = '``';
+        while (str_contains($text, $fence)) {
+            $fence .= '`';
+        }
+
+        return $fence.' '.$text.' '.$fence;
+    }
+
+    private function pathSegment(string $path): string
+    {
+        $pos = strrpos($path, '.');
+
+        return false === $pos ? $path : substr($path, $pos + 1);
     }
 
     /** @param array<string, string> $descriptions */
