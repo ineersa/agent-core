@@ -104,14 +104,17 @@ final class TuiJourneyE2eTest extends TestCase
             usleep(50_000);
             $this->tmux->sendLiteral($pane, '/settings-show tui.transcript.thinking.visible');
             $this->tmux->sendKey($pane, 'Enter');
+            // Markdown table wraps source "defaults" and long description across cell lines in tmux capture.
             $settingsCapture = $this->tmux->waitForCallback(
                 $pane,
-                static fn (string $cap): bool => str_contains($cap, 'tui.transcript.thinking.visible'),
+                static fn (string $cap): bool => str_contains($cap, 'Whether assistant thinking content is visible in the')
+                    && str_contains($cap, 'default'),
                 timeout: TmuxHarness::TUI_GATE_CALLBACK_TIMEOUT_PARALLEL,
                 message: '/settings-show filtered setting output never appeared',
                 history: 2000,
             );
-            $this->assertStringContainsString('tui.transcript.thinking.visible', $settingsCapture);
+            $this->assertStringContainsString('Whether assistant thinking content is visible in the', $settingsCapture);
+            $this->assertStringContainsString('default', $settingsCapture);
 
             $this->journeyPhase4ShellPrefixOutput($pane);
             $this->journeyPhase9InlineShellOnCompletedRun($pane);

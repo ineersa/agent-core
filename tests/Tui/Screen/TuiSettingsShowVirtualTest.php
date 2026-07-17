@@ -16,6 +16,7 @@ use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\Tui\Command\CommandParser;
 use Ineersa\Tui\Command\SlashCommandRegistry;
 use Ineersa\Tui\Command\SubmissionRouter;
+use Ineersa\Tui\Command\TranscriptMessage;
 use Ineersa\Tui\Listener\SettingsShowCommandHandler;
 use Ineersa\Tui\Listener\SettingsShowCommandRegistrar;
 use Ineersa\Tui\Runtime\TuiSessionState;
@@ -65,6 +66,7 @@ final class TuiSettingsShowVirtualTest extends TestCase
             $router = new SubmissionRouter(new CommandParser(), $registry);
 
             $groups = $router->route('/settings-show');
+            $this->assertInstanceOf(TranscriptMessage::class, $groups);
             $this->assertSame('markdown', $groups->style);
             $this->assertStringContainsString('| Group | Description |', $groups->text);
 

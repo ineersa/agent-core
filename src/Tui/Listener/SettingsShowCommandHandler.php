@@ -184,6 +184,7 @@ final class SettingsShowCommandHandler implements SlashCommandHandler
     /**
      * Docs from raw defaults lines only; Symfony YAML remains the parser.
      * Paths are constrained to defaultsRaw so commented-out examples never match.
+     * Only immediately adjacent comment blocks describe a key; blank lines reset pending prose.
      *
      * @param array<string, mixed> $defaultsRaw
      *
@@ -204,8 +205,9 @@ final class SettingsShowCommandHandler implements SlashCommandHandler
         foreach (false === $lines ? [] : $lines as $line) {
             if (preg_match('/^\s*#/', $line)) {
                 $content = ltrim(substr(ltrim($line), 1));
+                // Controlled defaults keys are lowercase/snake/kebab; keep capitalized prose (e.g. Precedence: ...).
                 if (str_contains($content, '---') || str_starts_with($content, '===')
-                    || preg_match('/^[A-Za-z_][\w-]*\s*:/', $content) || preg_match('/^-\s+\S/', $content)) {
+                    || preg_match('/^[a-z_][\w-]*\s*:/', $content) || preg_match('/^-\s+\S/', $content)) {
                     $pending = [];
                     continue;
                 }
