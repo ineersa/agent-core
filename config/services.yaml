@@ -114,6 +114,24 @@ services:
     arguments:
       $appRoot: '%kernel.project_dir%'
 
+  # Provenance path queries need THROW_ON_INVALID_INDEX so isReadable()
+  # distinguishes missing keys from explicit null. FrameworkBundle's shared
+  # @property_accessor is non-strict by default and would report missing array
+  # indices as readable, falsely attributing every path to Project.
+  coding_agent.settings.property_accessor_builder:
+    class: Symfony\Component\PropertyAccess\PropertyAccessorBuilder
+    calls:
+      - enableExceptionOnInvalidIndex: []
+
+  coding_agent.settings.property_accessor:
+    class: Symfony\Component\PropertyAccess\PropertyAccessor
+    factory: ['@coding_agent.settings.property_accessor_builder', 'getPropertyAccessor']
+
+  # Dedicated strict accessor: provenance needs missing-index detection.
+  Ineersa\CodingAgent\Config\SettingsValueResolver:
+    arguments:
+      $propertyAccessor: '@coding_agent.settings.property_accessor'
+
   # CodexAuthStorage is a service, not just a value object — it needs
   # the home directory resolved from SettingsPathResolver and a LockFactory.
   # Autowiring fails for the string $homeDir parameter.

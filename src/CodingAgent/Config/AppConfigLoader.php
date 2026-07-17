@@ -11,8 +11,11 @@ use Symfony\Component\Yaml\Yaml;
  * Loads and overlays Hatfield settings layers from YAML files.
  *
  * Precedence order (last wins):
- *   built-in defaults  <  home settings (~/.hatfield/settings.yaml)
+ *   built-in defaults  <  user settings (~/.hatfield/settings.yaml)
  *   <  project settings (<cwd>/.hatfield/settings.yaml)
+ *
+ * Each {@see load()} call rereads YAML from disk. Missing user/project files
+ * contribute an empty overlay; load never creates ~/.hatfield/settings.yaml.
  *
  * Overlay semantics (implemented in {@see overlayConfig}):
  *  - Associative arrays: recursive deep overlay — keys present in the higher-
@@ -41,17 +44,20 @@ use Symfony\Component\Yaml\Yaml;
  *  - Relative paths resolve against the canonical runtime cwd passed to
  *    {@see load()}, which comes from the %app.cwd% container parameter
  *    (resolved from HATFIELD_CWD or kernel.project_dir).
+ *  - Raw layer snapshots in {@see SettingsResolutionDTO} keep unresolved path
+ *    strings; only {@see SettingsResolutionDTO::$effective} receives resolved paths.
  */
 final class AppConfigLoader
 {
     /**
      * Path-bearing config keys resolved at load time.
      *
+     * Register new path-bearing settings here instead of adding one-off
+     * conditionals in {@see resolveConfigPaths()}.
+     *
      * Keys use Symfony PropertyAccess bracket notation for array access.
      * The value indicates whether the resolved value is a list (each element
      * resolved individually) or a string (resolved as a single path).
-     *
-     * Add new path-bearing config keys here — no more hardcoded if-blocks.
      */
     private const PATH_CONFIG = [
         '[tui][theme_paths]' => 'list',
@@ -68,47 +74,39 @@ final class AppConfigLoader
     ) {
     }
 
-    /**
-     * Load and merge all settings layers into a single resolved config.
-     *
-     * @param string $defaultsPath Path to built-in defaults YAML
-     * @param string $cwd          Canonical runtime working directory
-     *                             (from %app.cwd% / HATFIELD_CWD)
-     *
-     * @return array<string, mixed>
-     */
-    public function load(string $defaultsPath, string $cwd): array
+    public function load(string $defaultsPath, string $cwd): SettingsResolutionDTO
     {
         if ('' === $cwd) {
             throw new \InvalidArgumentException(\sprintf('%s::load() requires a non-empty $cwd. Pass %s from the container or an explicit absolute path.', self::class, '%app.cwd%'));
         }
 
         // Layer 1: Built-in defaults (shipped with the app)
-        $merged = $this->loadYamlFile($defaultsPath);
+        $defaultsRaw = $this->loadYamlFile($defaultsPath);
 
-        // Layer 2: Home settings (~/.hatfield/settings.yaml)
-        $homeSettingsPath = $this->pathResolver->getHomeDir().'/.hatfield/settings.yaml';
-
-        // Bootstrap the home settings file by copying the built-in defaults
-        // if it does not exist yet (first-launch behaviour). Do not overwrite
-        // an existing home file.
-        if (!is_readable($homeSettingsPath) && is_readable($defaultsPath)) {
-            $this->bootstrapHomeSettings($defaultsPath, $homeSettingsPath);
-        }
-
-        $homeSettings = $this->loadYamlFile($homeSettingsPath);
-        if ([] !== $homeSettings) {
-            $merged = $this->overlayConfig($merged, $homeSettings);
-        }
+        // Layer 2: User settings (~/.hatfield/settings.yaml), sparse overrides only
+        $userSettingsPath = $this->pathResolver->getHomeDir().'/.hatfield/settings.yaml';
+        $userRaw = $this->loadYamlFile($userSettingsPath);
 
         // Layer 3: Project settings (<cwd>/.hatfield/settings.yaml)
         $projectSettingsPath = rtrim($cwd, '/').'/.hatfield/settings.yaml';
-        $projectSettings = $this->loadYamlFile($projectSettingsPath);
-        if ([] !== $projectSettings) {
-            $merged = $this->overlayConfig($merged, $projectSettings);
+        $projectRaw = $this->loadYamlFile($projectSettingsPath);
+
+        $merged = $defaultsRaw;
+        if ([] !== $userRaw) {
+            $merged = $this->overlayConfig($merged, $userRaw);
+        }
+        if ([] !== $projectRaw) {
+            $merged = $this->overlayConfig($merged, $projectRaw);
         }
 
-        return $this->resolveConfigPaths($merged, $cwd);
+        $effective = $this->resolveConfigPaths($merged, $cwd);
+
+        return new SettingsResolutionDTO(
+            defaultsRaw: $defaultsRaw,
+            userRaw: $userRaw,
+            projectRaw: $projectRaw,
+            effective: $effective,
+        );
     }
 
     /**
@@ -120,12 +118,8 @@ final class AppConfigLoader
      *     replaces the lower-priority list entirely. Lists never append.
      *  3. One or both sides are scalar/null → higher-priority value wins.
      *
-     * These rules produce the natural read of a YAML config override:
-     * writing a key at any level in a higher-priority file replaces
-     * whatever was there; writing a partial associative subtree overlays.
-     *
      * @param array<string, mixed> $base Lower-priority layer (defaults)
-     * @param array<string, mixed> $over Higher-priority layer (home or project)
+     * @param array<string, mixed> $over Higher-priority layer (user or project)
      *
      * @return array<string, mixed>
      */
@@ -133,15 +127,12 @@ final class AppConfigLoader
     {
         foreach ($over as $key => $value) {
             if (\is_array($value) && isset($base[$key]) && \is_array($base[$key])) {
-                // Both sides are arrays: deep overlay for associative maps;
-                // whole-list replacement for sequential lists.
                 if ($this->isAssoc($value) && $this->isAssoc($base[$key])) {
                     $base[$key] = $this->overlayConfig($base[$key], $value);
                 } else {
                     $base[$key] = $value;
                 }
             } else {
-                // Scalar, null, or type mismatch → higher-priority wins.
                 $base[$key] = $value;
             }
         }
@@ -150,12 +141,25 @@ final class AppConfigLoader
     }
 
     /**
-     * Resolve path placeholders in the merged config.
-     *
-     * Uses a declarative PATH_CONFIG constant instead of hardcoded if-blocks.
-     * Each path entry is resolved through SettingsPathResolver which handles
-     * %kernel.project_dir%, ~, and relative path normalization.
-     *
+     * @return array<string, mixed>
+     */
+    private function loadYamlFile(string $path): array
+    {
+        if (!is_readable($path)) {
+            return [];
+        }
+
+        $content = file_get_contents($path);
+        if (false === $content) {
+            return [];
+        }
+
+        $data = Yaml::parse($content);
+
+        return \is_array($data) ? $data : [];
+    }
+
+    /**
      * @param array<string, mixed> $data
      *
      * @return array<string, mixed>
@@ -168,7 +172,7 @@ final class AppConfigLoader
             try {
                 $value = $accessor->getValue($data, $path);
             } catch (\Exception) {
-                // Path does not exist in config — skip.
+                // PropertyAccessor throws for keys absent from this config — skip.
                 continue;
             }
 
@@ -190,29 +194,6 @@ final class AppConfigLoader
     }
 
     /**
-     * Load a YAML file, returning an associative array or [] on failure.
-     *
-     * @return array<string, mixed>
-     */
-    private function loadYamlFile(string $path): array
-    {
-        if (!is_readable($path)) {
-            return [];
-        }
-
-        $content = file_get_contents($path);
-        if (false === $content) {
-            return [];
-        }
-
-        $data = Yaml::parse($content);
-
-        return \is_array($data) ? $data : [];
-    }
-
-    /**
-     * Check whether an array is associative (has non-sequential string keys).
-     *
      * @param array<mixed> $arr
      */
     private function isAssoc(array $arr): bool
@@ -222,26 +203,5 @@ final class AppConfigLoader
         }
 
         return array_keys($arr) !== range(0, \count($arr) - 1);
-    }
-
-    /**
-     * Create the home settings file by copying the built-in defaults
-     * on first launch.
-     *
-     * Users edit the copied file to set personal API keys, default model,
-     * reasoning level, and other overrides. The file is never auto-overwritten.
-     *
-     * The {@see config/hatfield.defaults.yaml} file is designed with comments
-     * that double as documentation, so the copied home file is self-documenting.
-     */
-    private function bootstrapHomeSettings(string $defaultsPath, string $homeSettingsPath): void
-    {
-        $dir = \dirname($homeSettingsPath);
-
-        if (!is_dir($dir)) {
-            mkdir($dir, 0755, true);
-        }
-
-        copy($defaultsPath, $homeSettingsPath);
     }
 }

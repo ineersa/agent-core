@@ -25,17 +25,16 @@ use Ineersa\AgentCore\Tests\Application\Handler\InMemoryIdempotencyStore;
 use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use Ineersa\AgentCore\Tests\Support\TestSerializerFactory;
-use Ineersa\CodingAgent\Kernel;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient;
 use Ineersa\CodingAgent\Session\Replay\SessionHotPromptReplayService;
 use Ineersa\CodingAgent\Tests\Agent\Execution\Support\PromptContractTestSupport;
 use Ineersa\CodingAgent\Tests\Agent\Execution\Support\ProviderBoundaryCaptureSupport;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
+use Ineersa\CodingAgent\Tests\TestCase\PerMethodIsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tool\ToolRegistryInterface;
 use PHPUnit\Framework\Attributes\Group;
 use Psr\Log\NullLogger;
-use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\InMemoryStore;
 use Symfony\Component\Uid\Uuid;
@@ -43,53 +42,17 @@ use Symfony\Component\Uid\Uuid;
 /**
  * GF-05 parent-run regression: freeze parent message order and tool surface.
  *
+ * Extends {@see PerMethodIsolatedKernelTestCase} because the test mutates the
+ * live container via Container::set(AgentRunnerInterface). That base captures
+ * and restores the exact exception-handler stack so ParaTest does not mark
+ * these methods risky.
+ *
  * @group gf-05-prompt-contract
  */
 #[Group('gf-05-prompt-contract')]
-final class ParentPromptUserContextRegressionTest extends KernelTestCase
+final class ParentPromptUserContextRegressionTest extends PerMethodIsolatedKernelTestCase
 {
-    private string $isolatedCwd;
-    private string|false $originalCwd;
     private ParentRegressionCapturingRunner $pipelineRunner;
-
-    protected function setUp(): void
-    {
-        $this->isolatedCwd = TestDirectoryIsolation::createOsTempDir('hatfield-test', 0o750);
-        TestDirectoryIsolation::createHatfieldTree($this->isolatedCwd);
-        $this->provisionDeterministicParentContextResources($this->isolatedCwd);
-
-        $this->originalCwd = getcwd();
-        chdir($this->isolatedCwd);
-
-        $_ENV['APP_ENV'] = 'test';
-        $_ENV['APP_DEBUG'] = '0';
-        $_ENV['APP_SECRET'] = 'test-secret';
-        $_ENV['HATFIELD_CWD'] = $this->isolatedCwd;
-        putenv('HATFIELD_CWD='.$this->isolatedCwd);
-
-        self::bootKernel(['environment' => 'test', 'debug' => false]);
-
-        $this->pipelineRunner = ParentRegressionCapturingRunner::create();
-        self::getContainer()->set(AgentRunnerInterface::class, $this->pipelineRunner);
-    }
-
-    protected function tearDown(): void
-    {
-        if (false !== $this->originalCwd) {
-            @chdir($this->originalCwd);
-        }
-
-        if (self::$booted) {
-            self::$kernel->shutdown();
-            self::$booted = false;
-        }
-
-        if (isset($this->isolatedCwd) && is_dir($this->isolatedCwd)) {
-            TestDirectoryIsolation::removeDirectory($this->isolatedCwd);
-        }
-
-        restore_exception_handler();
-    }
 
     public function testParentStartRunPreservesMessageOrderAndProviderRepresentation(): void
     {
@@ -143,7 +106,7 @@ final class ParentPromptUserContextRegressionTest extends KernelTestCase
     public function testParentStartInjectsBareRootAgentsMdIntoEffectiveContext(): void
     {
         $sentinel = 'GF05_BARE_ROOT_AGENTS_SENTINEL_'.bin2hex(random_bytes(4));
-        file_put_contents($this->isolatedCwd.'/AGENTS.md', $sentinel."\n");
+        file_put_contents($this->isolatedCwd().'/AGENTS.md', $sentinel."\n");
 
         $sessionId = Uuid::v4()->toRfc4122();
         self::getContainer()->get(InProcessAgentSessionClient::class)->start(new StartRunRequest(
@@ -174,12 +137,21 @@ final class ParentPromptUserContextRegressionTest extends KernelTestCase
         PromptContractTestSupport::assertProviderUserMessagesContainSentinelOnce($capture->capturedProviderMessages(), $sentinel);
     }
 
-    protected static function createKernel(array $options = []): Kernel
+    /**
+     * OS temp (not project var/tmp): AgentsContextDiscovery walks ancestors to
+     * filesystem root. A project-tree cwd would always inject monorepo AGENTS.md
+     * and break the "without bare AGENTS.md" freeze contract.
+     */
+    protected function createIsolatedWorkingDirectory(): string
     {
-        $env = $options['environment'] ?? $_ENV['APP_ENV'] ?? $_SERVER['APP_ENV'] ?? 'test';
-        $debug = (bool) ($options['debug'] ?? $_ENV['APP_DEBUG'] ?? $_SERVER['APP_DEBUG'] ?? false);
+        return TestDirectoryIsolation::createOsTempDir('hatfield-test', 0o750);
+    }
 
-        return new Kernel($env, $debug);
+    protected function afterKernelBoot(): void
+    {
+        $this->provisionDeterministicParentContextResources($this->isolatedCwd());
+        $this->pipelineRunner = ParentRegressionCapturingRunner::create();
+        self::getContainer()->set(AgentRunnerInterface::class, $this->pipelineRunner);
     }
 
     private function provisionDeterministicParentContextResources(string $cwd): void

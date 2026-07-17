@@ -119,9 +119,10 @@ final class AgentsConfigTest extends TestCase
         mkdir($cwd, 0755, true);
 
         $pathResolver = new SettingsPathResolver($appRoot);
-        $loader = new AppConfigLoader($pathResolver);
+        $resolver = new AppConfigLoader($pathResolver);
 
-        $merged = $loader->load($defaultsPath, $cwd);
+        $resolution = $resolver->load($defaultsPath, $cwd);
+        $merged = $resolution->effective;
 
         $this->assertArrayHasKey('agents', $merged);
         $this->assertArrayHasKey('paths', $merged['agents']);
