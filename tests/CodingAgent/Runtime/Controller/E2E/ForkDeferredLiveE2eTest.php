@@ -64,11 +64,23 @@ final class ForkDeferredLiveE2eTest extends ControllerE2eTestCase
     }
 
     /**
-     * Deferred fork completion must stay within the live smoke per-test budget (<=15s).
+     * Deferred fork is two sequential LLM calls plus multi-hop Messenger delivery.
+     * Align with SubagentParallelLiveE2eTest multi-LLM budget (25s); early-exit collector
+     * returns as soon as completion arrives.
      */
     protected function liveLlmDeferredForkToolWaitTimeout(): float
     {
-        return min($this->liveLlmToolWaitTimeout(), 15.0);
+        return 25.0;
+    }
+
+    /**
+     * Live HttpClient defaults to 5s under APP_ENV=test; multi-LLM deferred paths need more.
+     *
+     * @return array<string, string>
+     */
+    protected function controllerSubprocessEnv(): array
+    {
+        return ['HATFIELD_TEST_LLM_HTTP_TIMEOUT' => '60'];
     }
 
     protected function controllerExtraArgs(): array
