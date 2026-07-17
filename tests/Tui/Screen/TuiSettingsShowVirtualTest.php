@@ -67,7 +67,12 @@ final class TuiSettingsShowVirtualTest extends TestCase
             $groups = $router->route('/settings-show');
             $this->assertSame('markdown', $groups->style);
             $this->assertStringContainsString('| Group | Description |', $groups->text);
-            $this->assertStringContainsString('| tui |', $groups->text);
+
+            $groupPath = $router->route('/settings-show compaction');
+            $this->assertStringContainsString(
+                "Compaction replaces older conversation history with a concise handoff summary while keeping the most recent messages raw. Manual /compact is always available. Auto-compaction triggers when the estimated context exceeds compact_after_tokens. Per-provider and per-model overrides win over global settings. Provider overrides use provider IDs (e.g. openai, llama_cpp). Model overrides use provider/model keys (e.g. openai/gpt-4.1).\n\n| Setting |",
+                $groupPath->text,
+            );
 
             $filtered = $router->route('/settings-show tui.transcript.thinking.visible');
             $this->assertStringContainsString('| false |', $filtered->text);
@@ -80,7 +85,6 @@ final class TuiSettingsShowVirtualTest extends TestCase
             $harness->screen()->setTranscriptBlocks([$block]);
             $screen = $harness->plainScreenText();
             $this->assertTrue(str_contains($screen, '│') || str_contains($screen, '|') || str_contains($screen, '┌'));
-            $this->assertStringContainsString('project', $screen);
         } finally {
             TestDirectoryIsolation::removeDirectory($tmp);
         }

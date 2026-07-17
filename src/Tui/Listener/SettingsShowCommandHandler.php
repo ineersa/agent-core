@@ -75,7 +75,12 @@ final class SettingsShowCommandHandler implements SlashCommandHandler
 
         $paths = $resolved->composite ? $this->terminalPaths($path, $resolved->value) : [$path];
         $lines = [\sprintf('## `%s`', $path), ''];
-        $prose = $this->nearestDescription($path, $descriptions, excludeExact: true);
+        // Groups/top-level use their own section docs as prose; nested leaves keep parent prose only.
+        $prose = $this->nearestDescription(
+            $path,
+            $descriptions,
+            excludeExact: !($resolved->composite || !str_contains($path, '.')),
+        );
         if ('' !== $prose) {
             $lines[] = $prose;
             $lines[] = '';
