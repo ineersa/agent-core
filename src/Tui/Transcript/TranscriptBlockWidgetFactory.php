@@ -91,6 +91,19 @@ final readonly class TranscriptBlockWidgetFactory
             return $this->buildQuestionWidget($block, $theme);
         }
 
+        // Local slash-command Markdown (e.g. /settings-show) reuses MarkdownWidget.
+        // Avoid prefixFor()/colorFor() which intentionally do not handle System.
+        if (TranscriptBlockKindEnum::System === $block->kind && 'markdown' === ($block->meta['style'] ?? null)) {
+            $mdWidget = new MarkdownWidget($block->text);
+            $colorSpec = $theme->getPalette()->get(ThemeColorEnum::SystemMessage);
+            $style = '' !== $colorSpec
+                ? new Style(color: $colorSpec, padding: Padding::from([0, 0, 0, 2]))
+                : new Style(padding: Padding::from([0, 0, 0, 2]));
+            $mdWidget->setStyle($style);
+
+            return $mdWidget;
+        }
+
         // RENDER-04: ToolCall → compact card (glyph header, YAML-like args, arg preview).
         if (TranscriptBlockKindEnum::ToolCall === $block->kind) {
             return $this->buildToolCallWidget($block, $theme);
