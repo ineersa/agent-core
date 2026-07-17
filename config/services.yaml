@@ -114,11 +114,26 @@ services:
     arguments:
       $appRoot: '%kernel.project_dir%'
 
-  # Shared FrameworkBundle property_accessor (interface is already aliased, but pin
-  # the id so provenance queries never allocate a private PropertyAccessor instance).
+  # Provenance path queries need THROW_ON_INVALID_INDEX so isReadable()
+  # distinguishes missing keys from explicit null. FrameworkBundle's shared
+  # @property_accessor is non-strict by default and would report missing array
+  # indices as readable, falsely attributing every path to Project.
+  coding_agent.settings.property_accessor_builder:
+    class: Symfony\Component\PropertyAccess\PropertyAccessorBuilder
+    calls:
+      - enableExceptionOnInvalidIndex: []
+
+  coding_agent.settings.property_accessor:
+    class: Symfony\Component\PropertyAccess\PropertyAccessor
+    factory: ['@coding_agent.settings.property_accessor_builder', 'getPropertyAccessor']
+
+  # Public: no production consumers yet (SETTINGS-02/03), and private unused
+  # services are removed from the compiled container. Public keeps the strict
+  # accessor wiring live and allows the container regression test to fetch it.
   Ineersa\CodingAgent\Config\SettingsValueResolver:
+    public: true
     arguments:
-      $propertyAccessor: '@property_accessor'
+      $propertyAccessor: '@coding_agent.settings.property_accessor'
 
   # CodexAuthStorage is a service, not just a value object — it needs
   # the home directory resolved from SettingsPathResolver and a LockFactory.

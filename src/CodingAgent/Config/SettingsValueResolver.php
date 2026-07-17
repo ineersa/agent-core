@@ -14,7 +14,9 @@ use Symfony\Component\PropertyAccess\PropertyPathBuilder;
  * Literal dots inside a YAML key name cannot be addressed; current Hatfield keys
  * do not contain dots.
  *
- * Uses one injected PropertyAccessor instance — never constructs one per query.
+ * Uses one injected strict PropertyAccessor instance (shared DI service) — never
+ * constructs one per query. Strict invalid-index mode is required so missing
+ * keys are not treated as readable nulls when ranking source layers.
  */
 final class SettingsValueResolver
 {
@@ -78,8 +80,8 @@ final class SettingsValueResolver
             if ('' === $segment) {
                 continue;
             }
-            // Reject control chars and PropertyPath-significant [, ], \, ? so PropertyPathBuilder
-            // cannot produce malformed paths or throw from strict PropertyAccessor.
+            // Reject control chars and PropertyPath-significant [, ], \, ? so
+            // PropertyPathBuilder never emits a malformed PropertyPath string.
             if (preg_match('/[\x00-\x1F\x7F\[\]\\\\?]/', $segment)) {
                 return null;
             }
