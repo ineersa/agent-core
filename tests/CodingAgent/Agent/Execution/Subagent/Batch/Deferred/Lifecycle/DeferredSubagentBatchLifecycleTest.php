@@ -790,6 +790,9 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         if ('completed' === $scenario) {
             $this->assertSame(AgentArtifactStatusEnum::Completed, $art->status);
             $this->assertStringStartsWith('Subagent s-nat completed.', $presentation);
+            $this->assertStringContainsString('Artifact: '.$c1['artifactId'], $presentation);
+            $this->assertStringContainsString("Complete handoff:\n\nall done", $presentation);
+            $this->assertStringNotContainsString('agent_retrieve', $presentation);
             $this->assertStringContainsString('all done', $presentation);
         } elseif ('failed' === $scenario) {
             $this->assertSame(AgentArtifactStatusEnum::Failed, $art->status);
