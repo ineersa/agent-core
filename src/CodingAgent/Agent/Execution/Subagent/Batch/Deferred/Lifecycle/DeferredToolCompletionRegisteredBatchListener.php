@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Lifecycle;
 
+use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Event\DeferredToolCompletionRegisteredEvent;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Completion\DeferredSubagentBatchCompletionDispatcher;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Interruption\InterruptDeferredSubagentBatchMessage;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchLaunchStatusEnum;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredSubagentInterruptionKindEnum;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
 use Symfony\Component\Clock\ClockInterface;
@@ -21,6 +24,7 @@ final readonly class DeferredToolCompletionRegisteredBatchListener
     public function __construct(
         private DeferredSubagentBatchRepository $batchRepository,
         private MessageBusInterface $commandBus,
+        private DeferredSubagentBatchCompletionDispatcher $completionDispatcher,
         private ClockInterface $clock = new MonotonicClock(),
     ) {
     }
@@ -34,6 +38,37 @@ final readonly class DeferredToolCompletionRegisteredBatchListener
         }
 
         if ($batch->lifecycleId !== $correlation->deferredId) {
+            return;
+        }
+
+        // Launch failed before any child started (e.g. fork compaction hard failure):
+        // natural Deliver path has no terminal child projection — complete the deferred tool now.
+        if (DeferredSubagentBatchLaunchStatusEnum::Failed === $batch->launchStatus
+            && null === $batch->terminalCompletionEnqueuedAt
+            && null === $batch->interruptionKind) {
+            $presentation = 'Deferred child launch failed before runtime start.';
+            $this->completionDispatcher->dispatchCompletion(
+                lifecycleId: $batch->lifecycleId,
+                parentRunId: $batch->parentRunId,
+                parentToolCallId: $batch->parentToolCallId,
+                expectedProjectionVersion: $batch->projectionVersion,
+                presentation: $presentation,
+                isError: true,
+                errorEnvelope: [
+                    'error' => [
+                        'type' => ToolCallException::class,
+                        'message' => $presentation,
+                        'retryable' => false,
+                        'hint' => null,
+                    ],
+                    'details' => [
+                        'error_type' => ToolCallException::class,
+                        'retryable' => false,
+                        'hint' => null,
+                    ],
+                ],
+            );
+
             return;
         }
 

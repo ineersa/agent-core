@@ -595,7 +595,8 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
 
         // Registration listener dispatches delivery + schedules timeout
         $regBus = new TestMessageBus();
-        $listener = new DeferredToolCompletionRegisteredBatchListener($repo, $regBus);
+        $completionDispatcher = self::getContainer()->get(DeferredSubagentBatchCompletionDispatcher::class);
+        $listener = new DeferredToolCompletionRegisteredBatchListener($repo, $regBus, $completionDispatcher);
         $listener->__invoke(new DeferredToolCompletionRegisteredEvent(new DeferredToolCompletionCorrelation(
             deferredId: $lifecycle,
             runId: $parent,
@@ -619,7 +620,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         $repo->persistInterruptionIntent($lifecycle, DeferredSubagentInterruptionKindEnum::ParentCancelled, new \DateTimeImmutable(), $row->projectionVersion);
 
         $regBus2 = new TestMessageBus();
-        $listener2 = new DeferredToolCompletionRegisteredBatchListener($repo, $regBus2);
+        $listener2 = new DeferredToolCompletionRegisteredBatchListener($repo, $regBus2, $completionDispatcher);
         $listener2->__invoke(new DeferredToolCompletionRegisteredEvent(new DeferredToolCompletionCorrelation(
             deferredId: $lifecycle,
             runId: $parent,

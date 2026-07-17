@@ -654,6 +654,11 @@ services:
     arguments:
       $commandBus: '@agent.command.bus'
 
+  # Fork-local compaction terminal → one ContinueForkAfterCompactionMessage.
+  Ineersa\CodingAgent\Agent\Execution\ForkLocalCompactionTerminalHookSubscriber:
+    arguments:
+      $commandBus: '@agent.command.bus'
+
   # ToolRegistry — concrete CodingAgent registry for permanent/dynamic tools.
   # Tagged built-in providers are seeded during registry construction.
   Ineersa\CodingAgent\Tool\ToolRegistry:
