@@ -4,19 +4,29 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Agent\Execution;
 
+use Ineersa\AgentCore\Contract\Compaction\CompactionServiceInterface;
+use Ineersa\AgentCore\Contract\RunStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchExecutionModeEnum;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Preparation\DeferredSubagentSingleChildLaunchProfileDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchLaunchService;
+use Ineersa\CodingAgent\Agent\Fork\ForkSnapshotSanitizer;
 
+/**
+ * Thin fork adapter: snapshot/sanitize/sync-compact parent messages, then the
+ * ordinary deferred single-child subagent launcher.
+ */
 final class ForkExecutionService implements ForkExecutionServiceInterface
 {
     public function __construct(
         private readonly DeferredSubagentBatchLaunchService $deferredBatchLaunch,
         private readonly SubagentRunMetadataReader $metadataReader,
         private readonly ForkDeferredChildPreparationStrategyFactory $forkStrategyFactory,
+        private readonly RunStoreInterface $parentRunStore,
+        private readonly ForkSnapshotSanitizer $snapshotSanitizer,
+        private readonly CompactionServiceInterface $compactionService,
     ) {
     }
 
@@ -30,7 +40,37 @@ final class ForkExecutionService implements ForkExecutionServiceInterface
             throw new ToolCallException('Nested fork launches are not supported.', retryable: false);
         }
 
-        $launchTask = new ForkLaunchTaskDTO($task, $modelOverride, $reasoningOverride);
+        // 1) One parent RunStore read → immutable snapshot
+        $parentState = $this->parentRunStore->get($parentRunId);
+        $parentMessages = null !== $parentState ? $parentState->messages : [];
+        $turnNo = null !== $parentState ? $parentState->turnNo : 0;
+
+        // 2) Sanitize in-flight fork invocation / provider-invalid tail
+        $sanitized = $this->snapshotSanitizer->sanitize($parentMessages);
+
+        // 3) Synchronously compact sanitized snapshot via existing compaction service
+        //    BEFORE any deferred batch reservation. Child model/thinking overrides
+        //    are intentionally applied only after this step (in preparation).
+        $compactResult = $this->compactionService->compactMessages(
+            runId: $parentRunId,
+            turnNo: $turnNo,
+            messages: $sanitized,
+            trigger: 'fork',
+        );
+
+        if ($compactResult->isFailure()) {
+            $detail = $compactResult->failureMessage ?? $compactResult->failureReason ?? 'unknown';
+            throw new ToolCallException(\sprintf('Fork compaction failed before child launch: %s', $detail), retryable: false);
+        }
+
+        $inherited = $compactResult->messages;
+
+        $launchTask = new ForkLaunchTaskDTO(
+            task: $task,
+            modelOverride: $modelOverride,
+            reasoningOverride: $reasoningOverride,
+            inheritedMessages: $inherited,
+        );
         $profile = new DeferredSubagentSingleChildLaunchProfileDTO(
             definition: ForkInternalAgentDefinition::create(),
             artifactKind: AgentArtifactKindEnum::Fork,
@@ -38,6 +78,7 @@ final class ForkExecutionService implements ForkExecutionServiceInterface
             displayAgentName: 'fork',
         );
 
+        // 4) Unchanged ordinary deferred subagent lifecycle
         return $this->deferredBatchLaunch->launch(
             $parentRunId,
             [new SubagentTaskDTO(agent: 'fork', task: $task)],

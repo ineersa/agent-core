@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Agent\Fork;
 
 use Ineersa\AgentCore\Contract\RunStoreInterface;
+use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Run\RunMetadata;
 use Ineersa\AgentCore\Domain\Run\StartRunInput;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunIdentityDTO;
@@ -39,10 +40,24 @@ final class ForkChildLaunchInputBuilder
         array $policy,
     ): PreparedAgentChildRunDTO {
         $parentRunId = $identity->parentRunId;
-        $parentState = $this->parentRunStore->get($parentRunId);
-        $inherited = null !== $parentState
-            ? $this->snapshotSanitizer->sanitize($parentState->messages)
-            : [];
+
+        // Prefer pre-compacted inherited messages supplied by ForkExecutionService
+        // (one parent RunStore read + sanitize + compact before launch). Fall back
+        // only when callers construct a task without inherited messages (legacy tests).
+        if (null !== $task->inheritedMessages) {
+            $inherited = $task->inheritedMessages;
+            $contextSourceMessages = $inherited;
+            // Still need parent metadata/model resolution; one optional get for metadata channels
+            // is avoided by extracting agents/skills from the inherited snapshot itself.
+            $parentStateMessages = $inherited;
+        } else {
+            $parentState = $this->parentRunStore->get($parentRunId);
+            $inherited = null !== $parentState
+                ? $this->snapshotSanitizer->sanitize($parentState->messages)
+                : [];
+            $parentStateMessages = null !== $parentState ? $parentState->messages : [];
+            $contextSourceMessages = $parentStateMessages;
+        }
 
         $parentMetadata = $this->metadataReader->readRunStartedMetadata($parentRunId) ?? [];
         $resolved = $this->configResolver->resolve(
@@ -57,8 +72,8 @@ final class ForkChildLaunchInputBuilder
             task: $task->task,
             artifactId: $identity->artifactId,
             allowedToolNames: $policy['tools'],
-            agentsMd: $this->extractUserContextFromMessages(null !== $parentState ? $parentState->messages : [], 'agents_context'),
-            skillsContext: $this->extractSkillsContext(null !== $parentState ? $parentState->messages : []),
+            agentsMd: $this->extractUserContextFromMessages($contextSourceMessages, 'agents_context'),
+            skillsContext: $this->extractSkillsContext($contextSourceMessages),
         );
 
         $childMetadata = new RunMetadata(
@@ -138,7 +153,7 @@ final class ForkChildLaunchInputBuilder
     }
 
     /**
-     * @param list<\Ineersa\AgentCore\Domain\Message\AgentMessage> $messages
+     * @param list<AgentMessage> $messages
      */
     private function extractUserContextFromMessages(array $messages, string $source): string
     {
@@ -160,7 +175,7 @@ final class ForkChildLaunchInputBuilder
     }
 
     /**
-     * @param list<\Ineersa\AgentCore\Domain\Message\AgentMessage> $messages
+     * @param list<AgentMessage> $messages
      */
     private function extractSkillsContext(array $messages): string
     {
