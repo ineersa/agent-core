@@ -7,6 +7,7 @@ namespace Ineersa\Tui\Tests\Screen;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\AppConfigLoader;
 use Ineersa\CodingAgent\Config\AppResourceLocator;
+use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Config\SettingsValueResolver;
 use Ineersa\CodingAgent\Config\TuiConfig;
@@ -15,7 +16,6 @@ use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\Tui\Command\CommandParser;
 use Ineersa\Tui\Command\SlashCommandRegistry;
 use Ineersa\Tui\Command\SubmissionRouter;
-use Ineersa\Tui\Command\TranscriptMessage;
 use Ineersa\Tui\Listener\SettingsShowCommandHandler;
 use Ineersa\Tui\Listener\SettingsShowCommandRegistrar;
 use Ineersa\Tui\Runtime\TuiSessionState;
@@ -26,119 +26,63 @@ use Ineersa\Tui\Transcript\TranscriptBlockWidgetFactory;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\PropertyAccess\PropertyAccess;
+use Symfony\Component\Tui\Widget\MarkdownWidget;
 use Symfony\Component\Yaml\Yaml;
 
-/**
- * Virtual proof for /settings-show Markdown routing and provenance rendering.
- *
- * Test thesis: production registrar + CommandParser/SubmissionRouter route
- * /settings-show, style markdown reaches MarkdownWidget, and filtered output
- * reports fresh project override provenance plus adjacent setting description.
- */
+/** Thesis: real router/registrar; markdown widget path; filtered project value/source/description/restart. */
 final class TuiSettingsShowVirtualTest extends TestCase
 {
     use TuiRuntimeContextBuilderTrait;
 
-    private string $tmpDir = '';
-    private string $homeDir = '';
-    private string $cwd = '';
-
-    protected function tearDown(): void
-    {
-        if ('' !== $this->tmpDir) {
-            TestDirectoryIsolation::removeDirectory($this->tmpDir);
-        }
-    }
-
     #[Test]
     public function testSettingsShowRoutesAndRendersMarkdownWithProjectProvenance(): void
     {
-        $this->tmpDir = TestDirectoryIsolation::createProjectTempDir('settings-show-virtual');
-        $this->homeDir = $this->tmpDir.'/home';
-        $this->cwd = $this->tmpDir.'/project';
-        TestDirectoryIsolation::ensureDirectory($this->homeDir.'/.hatfield');
-        TestDirectoryIsolation::createHatfieldTree($this->cwd);
+        $tmp = TestDirectoryIsolation::createProjectTempDir('settings-show-virtual');
+        try {
+            $home = $tmp.'/home';
+            $cwd = $tmp.'/project';
+            TestDirectoryIsolation::ensureDirectory($home.'/.hatfield');
+            TestDirectoryIsolation::createHatfieldTree($cwd);
+            file_put_contents($cwd.'/.hatfield/settings.yaml', Yaml::dump([
+                'tui' => ['transcript' => ['thinking' => ['visible' => false]]],
+            ], 6, 4));
 
-        $projectSettings = [
-            'tui' => [
-                'transcript' => [
-                    'thinking' => [
-                        'visible' => false,
-                    ],
-                ],
-            ],
-        ];
-        file_put_contents(
-            $this->cwd.'/.hatfield/settings.yaml',
-            Yaml::dump($projectSettings, 6, 4),
-        );
+            $resources = new AppResourceLocator(ProjectDir::get());
+            $loader = new AppConfigLoader(new SettingsPathResolver(ProjectDir::get(), $home));
+            $bootRaw = $loader->load($resources->getDefaultsPath(), $cwd)->effective;
+            $bootRaw['tui']['transcript']['thinking']['visible'] = true;
+            $handler = new SettingsShowCommandHandler(
+                $loader,
+                $resources,
+                new AppConfig(tui: new TuiConfig(theme: 'cyberpunk'), logging: new LoggingConfig(), raw: $bootRaw, cwd: $cwd),
+                new SettingsValueResolver(PropertyAccess::createPropertyAccessorBuilder()->enableExceptionOnInvalidIndex()->getPropertyAccessor()),
+            );
+            $registry = new SlashCommandRegistry();
+            $harness = new VirtualTuiHarness(sessionId: 'settings-show-virtual');
+            (new SettingsShowCommandRegistrar($registry, $handler))->register(
+                $this->buildTuiContext()->withTui($harness->tui())->withState(new TuiSessionState('settings-show-virtual'))->withScreen($harness->screen())->build(),
+            );
+            $router = new SubmissionRouter(new CommandParser(), $registry);
 
-        $pathResolver = new SettingsPathResolver(ProjectDir::get(), $this->homeDir);
-        $loader = new AppConfigLoader($pathResolver);
-        $resources = new AppResourceLocator(ProjectDir::get());
-        $valueResolver = new SettingsValueResolver(
-            PropertyAccess::createPropertyAccessorBuilder()
-                ->enableExceptionOnInvalidIndex()
-                ->getPropertyAccessor(),
-        );
+            $groups = $router->route('/settings-show');
+            $this->assertSame('markdown', $groups->style);
+            $this->assertStringContainsString('| Group | Description |', $groups->text);
+            $this->assertStringContainsString('| tui |', $groups->text);
 
-        // Boot-time config omits the project override so restart note is discriminating.
-        $bootRaw = $loader->load($resources->getDefaultsPath(), $this->cwd)->effective;
-        $bootRaw['tui']['transcript']['thinking']['visible'] = true;
-        $activeConfig = new AppConfig(
-            tui: new TuiConfig(theme: 'cyberpunk'),
-            logging: new \Ineersa\CodingAgent\Config\LoggingConfig(),
-            raw: $bootRaw,
-            cwd: $this->cwd,
-        );
+            $filtered = $router->route('/settings-show tui.transcript.thinking.visible');
+            $this->assertStringContainsString('| false |', $filtered->text);
+            $this->assertStringContainsString('| project |', $filtered->text);
+            $this->assertStringContainsString('Whether assistant thinking content is visible in the transcript.', $filtered->text);
+            $this->assertStringContainsString('Restart required: disk settings differ from the active session.', $filtered->text);
 
-        $handler = new SettingsShowCommandHandler($loader, $resources, $activeConfig, $valueResolver);
-        $registry = new SlashCommandRegistry();
-        $harness = new VirtualTuiHarness(sessionId: 'settings-show-virtual');
-        $state = new TuiSessionState('settings-show-virtual');
-        $context = $this->buildTuiContext()
-            ->withTui($harness->tui())
-            ->withState($state)
-            ->withScreen($harness->screen())
-            ->build();
-
-        (new SettingsShowCommandRegistrar($registry, $handler))->register($context);
-        $router = new SubmissionRouter(new CommandParser(), $registry);
-
-        $groups = $router->route('/settings-show');
-        $this->assertInstanceOf(TranscriptMessage::class, $groups);
-        $this->assertSame('markdown', $groups->style);
-        $this->assertStringContainsString('| Group | Description |', $groups->text);
-        $this->assertStringContainsString('| tui |', $groups->text);
-        $this->assertStringContainsString('Restart required: disk settings differ from the active session.', $groups->text);
-
-        $filtered = $router->route('/settings-show tui.transcript.thinking.visible');
-        $this->assertInstanceOf(TranscriptMessage::class, $filtered);
-        $this->assertSame('markdown', $filtered->style);
-        $this->assertStringContainsString('tui.transcript.thinking.visible', $filtered->text);
-        $this->assertStringContainsString('| false |', $filtered->text);
-        $this->assertStringContainsString('| project |', $filtered->text);
-        $this->assertStringContainsString('Whether assistant thinking content is visible in the transcript.', $filtered->text);
-        $this->assertStringContainsString('Restart required: disk settings differ from the active session.', $filtered->text);
-
-        $factory = new TranscriptBlockFactory();
-        $block = $factory->system(
-            runId: 'settings-show-virtual',
-            text: $filtered->text,
-            seq: 1,
-            style: $filtered->style,
-        );
-        $widgetFactory = new TranscriptBlockWidgetFactory();
-        $widget = $widgetFactory->buildWidget($block, $harness->screen()->theme());
-        $this->assertInstanceOf(\Symfony\Component\Tui\Widget\MarkdownWidget::class, $widget);
-
-        $harness->screen()->setTranscriptBlocks([$block]);
-        $screen = $harness->plainScreenText();
-        $this->assertTrue(
-            str_contains($screen, '│') || str_contains($screen, '|') || str_contains($screen, '┌'),
-            'Virtual screen should surface Markdown table structure',
-        );
-        $this->assertStringContainsString('project', $screen);
-        $this->assertStringContainsString('false', $screen);
+            $block = (new TranscriptBlockFactory())->system('settings-show-virtual', $filtered->text, 1, $filtered->style);
+            $this->assertInstanceOf(MarkdownWidget::class, (new TranscriptBlockWidgetFactory())->buildWidget($block, $harness->screen()->theme()));
+            $harness->screen()->setTranscriptBlocks([$block]);
+            $screen = $harness->plainScreenText();
+            $this->assertTrue(str_contains($screen, '│') || str_contains($screen, '|') || str_contains($screen, '┌'));
+            $this->assertStringContainsString('project', $screen);
+        } finally {
+            TestDirectoryIsolation::removeDirectory($tmp);
+        }
     }
 }

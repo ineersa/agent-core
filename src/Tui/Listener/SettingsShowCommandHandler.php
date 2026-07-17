@@ -14,11 +14,7 @@ use Ineersa\Tui\Command\SlashCommand;
 use Ineersa\Tui\Command\SlashCommandHandler;
 use Ineersa\Tui\Command\TranscriptMessage;
 
-/**
- * Local /settings-show command: fresh disk settings as Markdown tables.
- *
- * @internal Registered by SettingsShowCommandRegistrar
- */
+/** @internal Local /settings-show: fresh disk settings as Markdown tables. */
 final class SettingsShowCommandHandler implements SlashCommandHandler
 {
     private const int MAX_ROWS = 100;
@@ -34,117 +30,78 @@ final class SettingsShowCommandHandler implements SlashCommandHandler
 
     public function handle(SlashCommand $command): CommandResult
     {
-        $resolution = $this->loader->load(
-            $this->resources->getDefaultsPath(),
-            $this->activeConfig->cwd,
-        );
+        $resolution = $this->loader->load($this->resources->getDefaultsPath(), $this->activeConfig->cwd);
         $descriptions = $this->extractDescriptions($this->resources->getDefaultsPath(), $resolution->defaultsRaw);
         $filter = trim($command->args);
-        $markdown = '' === $filter
-            ? $this->renderGroups($resolution, $descriptions)
-            : $this->renderPath($resolution, $descriptions, $filter);
 
-        return new TranscriptMessage($markdown, 'system', 'markdown');
+        return new TranscriptMessage(
+            '' === $filter
+                ? $this->renderGroups($resolution, $descriptions)
+                : $this->renderPath($resolution, $descriptions, $filter),
+            'system',
+            'markdown',
+        );
     }
 
-    /**
-     * @param array<string, string> $descriptions
-     */
+    /** @param array<string, string> $descriptions */
     private function renderGroups(SettingsResolutionDTO $resolution, array $descriptions): string
     {
-        $lines = [
-            '## Settings groups',
-            '',
-            '| Group | Description |',
-            '| --- | --- |',
-        ];
-
         $groups = array_keys($resolution->effective);
         sort($groups);
-        $rows = 0;
+        $rows = ['## Settings groups', '', '| Group | Description |', '| --- | --- |'];
         foreach ($groups as $group) {
             if (!\is_string($group) || '' === $group) {
                 continue;
             }
-            if ($rows >= self::MAX_ROWS) {
-                $lines[] = '';
-                $lines[] = \sprintf('_Showing first %d groups._', self::MAX_ROWS);
-                break;
-            }
-            $description = $descriptions[$group]
-                ?? \sprintf('%s settings.', $this->humanize($group));
-            $lines[] = \sprintf(
+            $rows[] = \sprintf(
                 '| %s | %s |',
                 $this->cell($group),
-                $this->cell($description),
+                $this->cell($descriptions[$group] ?? ucwords(str_replace(['_', '-'], ' ', $group)).' settings.'),
             );
-            ++$rows;
         }
+        $rows[] = '';
+        $rows[] = $this->restartNote($resolution);
 
-        $lines[] = '';
-        $lines[] = $this->restartNote($resolution);
-
-        return implode("\n", $lines);
+        return implode("\n", $rows);
     }
 
-    /**
-     * @param array<string, string> $descriptions
-     */
+    /** @param array<string, string> $descriptions */
     private function renderPath(SettingsResolutionDTO $resolution, array $descriptions, string $path): string
     {
         $resolved = $this->valueResolver->resolve($resolution, $path);
         if (!$resolved->exists) {
-            return \sprintf(
-                "## Settings\n\nSetting `%s` was not found.\n\n%s",
-                $path,
-                $this->restartNote($resolution),
-            );
+            return \sprintf("## Settings\n\nSetting `%s` was not found.\n\n%s", $path, $this->restartNote($resolution));
         }
 
-        $paths = $resolved->composite
-            ? $this->terminalPaths($path, $resolved->value)
-            : [$path];
-
-        $groupProse = $this->groupProse($path, $descriptions);
-        $lines = [
-            \sprintf('## `%s`', $path),
-            '',
-        ];
-        if ('' !== $groupProse) {
-            $lines[] = $groupProse;
+        $paths = $resolved->composite ? $this->terminalPaths($path, $resolved->value) : [$path];
+        $lines = [\sprintf('## `%s`', $path), ''];
+        $prose = $this->nearestDescription($path, $descriptions, excludeExact: true);
+        if ('' !== $prose) {
+            $lines[] = $prose;
             $lines[] = '';
         }
         $lines[] = '| Setting | Value | Source | Description |';
         $lines[] = '| --- | --- | --- | --- |';
 
         $rows = 0;
-        $omitted = false;
         foreach ($paths as $leafPath) {
             if ($rows >= self::MAX_ROWS) {
-                $omitted = true;
+                $lines[] = '';
+                $lines[] = \sprintf('_Showing first %d settings._', self::MAX_ROWS);
                 break;
             }
             $leaf = $this->valueResolver->resolve($resolution, $leafPath);
             if (!$leaf->exists || $leaf->composite) {
                 continue;
             }
-            $source = null !== $leaf->layer ? $leaf->layer->value : 'mixed';
-            $description = $descriptions[$leafPath]
-                ?? $descriptions[$this->parentPath($leafPath)]
-                ?? '';
             $lines[] = \sprintf(
                 '| %s | %s | %s | %s |',
                 $this->cell($leafPath),
                 $this->cell($this->formatValue($leaf->value)),
-                $this->cell($source),
-                $this->cell($description),
+                $this->cell(null !== $leaf->layer ? $leaf->layer->value : 'mixed'),
+                $this->cell($this->nearestDescription($leafPath, $descriptions)),
             );
             ++$rows;
-        }
-
-        if ($omitted) {
-            $lines[] = '';
-            $lines[] = \sprintf('_Showing first %d settings._', self::MAX_ROWS);
         }
 
         $lines[] = '';
@@ -155,16 +112,12 @@ final class SettingsShowCommandHandler implements SlashCommandHandler
 
     private function restartNote(SettingsResolutionDTO $resolution): string
     {
-        if ($resolution->effective !== $this->activeConfig->raw) {
-            return 'Restart required: disk settings differ from the active session.';
-        }
-
-        return 'Disk setting changes require a Hatfield restart to affect this session.';
+        return $resolution->effective !== $this->activeConfig->raw
+            ? 'Restart required: disk settings differ from the active session.'
+            : 'Disk setting changes require a Hatfield restart to affect this session.';
     }
 
-    /**
-     * @return list<string>
-     */
+    /** @return list<string> */
     private function terminalPaths(string $prefix, mixed $value): array
     {
         if (!\is_array($value) || [] === $value || array_is_list($value)) {
@@ -174,9 +127,7 @@ final class SettingsShowCommandHandler implements SlashCommandHandler
         $paths = [];
         foreach ($value as $key => $child) {
             $childPath = '' === $prefix ? (string) $key : $prefix.'.'.$key;
-            foreach ($this->terminalPaths($childPath, $child) as $path) {
-                $paths[] = $path;
-            }
+            array_push($paths, ...$this->terminalPaths($childPath, $child));
         }
 
         return $paths;
@@ -190,15 +141,11 @@ final class SettingsShowCommandHandler implements SlashCommandHandler
         if (\is_bool($value)) {
             return $value ? 'true' : 'false';
         }
-        if (\is_int($value) || \is_float($value)) {
+        if (\is_int($value) || \is_float($value) || \is_string($value)) {
             return (string) $value;
         }
-        if (\is_string($value)) {
-            return $value;
-        }
 
-        // TuiListener may not depend on Symfony Yaml (deptrac). JSON is a compact
-        // readable dump for list/map leaves without a new serializer service.
+        // Deptrac: TuiListener cannot use Symfony Yaml; JSON is the compact dump for list/map leaves.
         $encoded = json_encode($value, \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE);
 
         return false === $encoded ? '[unserializable]' : $encoded;
@@ -206,8 +153,7 @@ final class SettingsShowCommandHandler implements SlashCommandHandler
 
     private function cell(string $text): string
     {
-        $text = str_replace(["\r\n", "\r", "\n"], ' ', $text);
-        $text = str_replace('|', '\\|', $text);
+        $text = str_replace(["\r\n", "\r", "\n", '|'], [' ', ' ', ' ', '\\|'], $text);
         if (mb_strlen($text) > self::MAX_CELL) {
             $text = mb_substr($text, 0, self::MAX_CELL - 1).'…';
         }
@@ -215,49 +161,24 @@ final class SettingsShowCommandHandler implements SlashCommandHandler
         return $text;
     }
 
-    private function humanize(string $key): string
+    /** @param array<string, string> $descriptions */
+    private function nearestDescription(string $path, array $descriptions, bool $excludeExact = false): string
     {
-        $label = str_replace(['_', '-'], ' ', $key);
-
-        return ucwords($label);
-    }
-
-    private function parentPath(string $path): string
-    {
-        $pos = strrpos($path, '.');
-
-        return false === $pos ? '' : substr($path, 0, $pos);
-    }
-
-    /**
-     * @param array<string, string> $descriptions
-     */
-    private function groupProse(string $path, array $descriptions): string
-    {
-        $segments = explode('.', $path);
-        $candidates = [];
-        $current = '';
-        foreach ($segments as $segment) {
-            $current = '' === $current ? $segment : $current.'.'.$segment;
-            $candidates[] = $current;
-        }
-        for ($i = \count($candidates) - 1; $i >= 0; --$i) {
-            $candidate = $candidates[$i];
-            if (isset($descriptions[$candidate]) && $candidate !== $path) {
-                return $descriptions[$candidate];
+        $current = $path;
+        while ('' !== $current) {
+            if ((!$excludeExact || $current !== $path) && isset($descriptions[$current])) {
+                return $descriptions[$current];
             }
-        }
-
-        $root = $segments[0] ?? '';
-        if ('' !== $root && isset($descriptions[$root])) {
-            return $descriptions[$root];
+            $pos = strrpos($current, '.');
+            $current = false === $pos ? '' : substr($current, 0, $pos);
         }
 
         return '';
     }
 
     /**
-     * Associate adjacent `#` docs with real mapping keys present in defaultsRaw.
+     * Docs from raw defaults lines only; Symfony YAML remains the parser.
+     * Paths are constrained to defaultsRaw so commented-out examples never match.
      *
      * @param array<string, mixed> $defaultsRaw
      *
@@ -271,16 +192,15 @@ final class SettingsShowCommandHandler implements SlashCommandHandler
         }
 
         $known = $this->knownPaths($defaultsRaw);
-        $split = preg_split("/\R/", $raw);
-        $lines = false === $split ? [] : $split;
         $descriptions = [];
         $stack = [];
         $pending = [];
-
-        foreach ($lines as $line) {
+        $lines = preg_split("/\R/", $raw);
+        foreach (false === $lines ? [] : $lines as $line) {
             if (preg_match('/^\s*#/', $line)) {
                 $content = ltrim(substr(ltrim($line), 1));
-                if ($this->isBannerComment($content) || $this->isCommentedYamlExample($content)) {
+                if (str_contains($content, '---') || str_starts_with($content, '===')
+                    || preg_match('/^[A-Za-z_][\w-]*\s*:/', $content) || preg_match('/^-\s+\S/', $content)) {
                     $pending = [];
                     continue;
                 }
@@ -289,25 +209,17 @@ final class SettingsShowCommandHandler implements SlashCommandHandler
                 }
                 continue;
             }
-
-            if ('' === trim($line)) {
-                $pending = [];
-                continue;
-            }
-
-            if (!preg_match('/^( *)([A-Za-z_][\w-]*)\s*:/', $line, $match)) {
+            if ('' === trim($line) || !preg_match('/^( *)([A-Za-z_][\w-]*)\s*:/', $line, $match)) {
                 $pending = [];
                 continue;
             }
 
             $indent = \strlen($match[1]);
-            $key = $match[2];
             while ([] !== $stack && $stack[array_key_last($stack)]['indent'] >= $indent) {
                 array_pop($stack);
             }
-            $stack[] = ['indent' => $indent, 'key' => $key];
+            $stack[] = ['indent' => $indent, 'key' => $match[2]];
             $path = implode('.', array_column($stack, 'key'));
-
             if (isset($known[$path]) && [] !== $pending) {
                 $descriptions[$path] = implode(' ', $pending);
             }
@@ -315,17 +227,6 @@ final class SettingsShowCommandHandler implements SlashCommandHandler
         }
 
         return $descriptions;
-    }
-
-    private function isBannerComment(string $content): bool
-    {
-        return str_contains($content, '---') || str_starts_with($content, '===');
-    }
-
-    private function isCommentedYamlExample(string $content): bool
-    {
-        return (bool) preg_match('/^[A-Za-z_][\w-]*\s*:/', $content)
-            || (bool) preg_match('/^-\s+\S/', $content);
     }
 
     /**

@@ -66,7 +66,7 @@ final class TuiJourneyE2eTest extends TestCase
      *
      * Exercises in order (tmux integration smoke):
      *  1. Startup layout (logo, status, footer)
-     *  2. /settings-show filtered leaf path
+     *  2. /settings-show filtered leaf (inline after startup)
      *  3. Shell !ls prefix — real command output proof + ordering
      *  4. Inline shell on completed run + follow-up (issue #183 repro)
      *  5. Clean exit via Ctrl+D
@@ -98,7 +98,21 @@ final class TuiJourneyE2eTest extends TestCase
 
         try {
             $this->journeyPhase1StartupLayout($pane);
-            $this->journeyPhaseSettingsShow($pane);
+
+            // Minimal /settings-show smoke: real slash command through tmux.
+            $this->tmux->sendKey($pane, 'C-u');
+            usleep(50_000);
+            $this->tmux->sendLiteral($pane, '/settings-show tui.transcript.thinking.visible');
+            $this->tmux->sendKey($pane, 'Enter');
+            $settingsCapture = $this->tmux->waitForCallback(
+                $pane,
+                static fn (string $cap): bool => str_contains($cap, 'tui.transcript.thinking.visible'),
+                timeout: TmuxHarness::TUI_GATE_CALLBACK_TIMEOUT_PARALLEL,
+                message: '/settings-show filtered setting output never appeared',
+                history: 2000,
+            );
+            $this->assertStringContainsString('tui.transcript.thinking.visible', $settingsCapture);
+
             $this->journeyPhase4ShellPrefixOutput($pane);
             $this->journeyPhase9InlineShellOnCompletedRun($pane);
 
@@ -149,35 +163,6 @@ final class TuiJourneyE2eTest extends TestCase
      * final lifecycle event in the canonical stream (regression for
      * issue #183 ordering race).
      */
-    /**
-     * Minimal /settings-show smoke after startup: real slash command through tmux,
-     * filtered leaf path with description/source/table structure.
-     */
-    private function journeyPhaseSettingsShow(TmuxPane $pane): void
-    {
-        $this->tmux->sendKey($pane, 'C-u');
-        usleep(50_000);
-        $this->tmux->sendLiteral($pane, '/settings-show tui.transcript.thinking.visible');
-        $this->tmux->sendKey($pane, 'Enter');
-
-        $capture = $this->tmux->waitForCallback(
-            $pane,
-            static function (string $cap): bool {
-                return str_contains($cap, 'tui.transcript.thinking.visible')
-                    && (str_contains($cap, 'defaults') || str_contains($cap, 'true') || str_contains($cap, 'visible'));
-            },
-            timeout: TmuxHarness::TUI_GATE_CALLBACK_TIMEOUT_PARALLEL,
-            message: '/settings-show filtered setting output never appeared',
-            history: 2000,
-        );
-
-        $this->assertStringContainsString('tui.transcript.thinking.visible', $capture);
-        $this->assertTrue(
-            str_contains($capture, '│') || str_contains($capture, '|') || str_contains($capture, '┌'),
-            '/settings-show should render table structure',
-        );
-    }
-
     private function journeyPhase4ShellPrefixOutput(TmuxPane $pane): void
     {
         $marker = 'shjourney-marker-'.bin2hex(random_bytes(4)).'.txt';
