@@ -33,6 +33,13 @@ services:
   Ineersa\CodingAgent\Tests\Extension\InMemoryExtensionApiBridge:
     public: true
 
+  # TEST-ONLY public alias. Production SettingsValueResolver stays private;
+  # this exposes the real service (with dedicated strict accessor wiring) for
+  # container regression tests without redefining it.
+  test.settings_value_resolver:
+    alias: Ineersa\CodingAgent\Config\SettingsValueResolver
+    public: true
+
   # Test HTTP client for LLM requests.  Two modes:
   #
   #  1. Replay  (HATFIELD_LLM_REPLAY_FIXTURE_PATH set):
