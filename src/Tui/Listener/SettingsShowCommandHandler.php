@@ -53,13 +53,8 @@ final class SettingsShowCommandHandler implements SlashCommandHandler
             $description = $descriptions[$group] ?? ucwords(str_replace(['_', '-'], ' ', $group)).' settings.';
             $lines[] = \sprintf('- `%s` — %s', $group, $description);
         }
-        $warning = $this->restartWarning($resolution);
-        if (null !== $warning) {
-            $lines[] = '';
-            $lines[] = $warning;
-        }
 
-        return implode("\n", $lines);
+        return $this->withWarning($lines, $resolution);
     }
 
     /** @param array<string, string> $descriptions */
@@ -67,14 +62,7 @@ final class SettingsShowCommandHandler implements SlashCommandHandler
     {
         $resolved = $this->valueResolver->resolve($resolution, $path);
         if (!$resolved->exists) {
-            $lines = ['## Settings', '', \sprintf('Setting `%s` was not found.', $path)];
-            $warning = $this->restartWarning($resolution);
-            if (null !== $warning) {
-                $lines[] = '';
-                $lines[] = $warning;
-            }
-
-            return implode("\n", $lines);
+            return $this->withWarning(['## Settings', '', \sprintf('Setting `%s` was not found.', $path)], $resolution);
         }
 
         $lines = [\sprintf('## `%s`', $path), ''];
@@ -98,17 +86,10 @@ final class SettingsShowCommandHandler implements SlashCommandHandler
                 null === $resolved->layer ? 'mixed' : $resolved->layer->value,
                 $descriptions,
                 0,
-                basenamePath: true,
             );
         }
 
-        $warning = $this->restartWarning($resolution);
-        if (null !== $warning) {
-            $lines[] = '';
-            $lines[] = $warning;
-        }
-
-        return implode("\n", $lines);
+        return $this->withWarning($lines, $resolution);
     }
 
     /**
@@ -148,7 +129,6 @@ final class SettingsShowCommandHandler implements SlashCommandHandler
                 null === $child->layer ? 'mixed' : $child->layer->value,
                 $descriptions,
                 $depth,
-                basenamePath: true,
             );
         }
 
@@ -162,9 +142,9 @@ final class SettingsShowCommandHandler implements SlashCommandHandler
         string $source,
         array $descriptions,
         int $depth,
-        bool $basenamePath,
     ): string {
-        $label = $basenamePath ? $this->pathSegment($path) : $path;
+        $pos = strrpos($path, '.');
+        $label = false === $pos ? $path : substr($path, $pos + 1);
         $indent = str_repeat('  ', $depth);
         $line = \sprintf(
             '%s- `%s`: %s — **%s**',
@@ -181,13 +161,15 @@ final class SettingsShowCommandHandler implements SlashCommandHandler
         return $line;
     }
 
-    private function restartWarning(SettingsResolutionDTO $resolution): ?string
+    /** @param list<string> $lines */
+    private function withWarning(array $lines, SettingsResolutionDTO $resolution): string
     {
-        if ($resolution->effective === $this->activeConfig->raw) {
-            return null;
+        if ($resolution->effective !== $this->activeConfig->raw) {
+            $lines[] = '';
+            $lines[] = '> ⚠ **Restart required:** disk settings differ from the active session.';
         }
 
-        return '> ⚠ **Restart required:** disk settings differ from the active session.';
+        return implode("\n", $lines);
     }
 
     private function formatValue(mixed $value): string
@@ -220,13 +202,6 @@ final class SettingsShowCommandHandler implements SlashCommandHandler
         }
 
         return $fence.' '.$text.' '.$fence;
-    }
-
-    private function pathSegment(string $path): string
-    {
-        $pos = strrpos($path, '.');
-
-        return false === $pos ? $path : substr($path, $pos + 1);
     }
 
     /** @param array<string, string> $descriptions */

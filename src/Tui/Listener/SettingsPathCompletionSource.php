@@ -9,12 +9,7 @@ use Ineersa\CodingAgent\Config\AppConfigLoader;
 use Ineersa\CodingAgent\Config\AppResourceLocator;
 use Ineersa\Tui\Completion\SettingsPathCompletionSourceInterface;
 
-/**
- * Adapter from AppConfigLoader to SettingsPathCompletionSourceInterface.
- *
- * Lives in TuiListener because TuiListener may depend on AppConfig while
- * TuiCompletion must not (mirrors {@see SessionCompletionSource}).
- */
+/** AppConfig stays in TuiListener (same Deptrac pattern as SessionCompletionSource). */
 final readonly class SettingsPathCompletionSource implements SettingsPathCompletionSourceInterface
 {
     public function __construct(
