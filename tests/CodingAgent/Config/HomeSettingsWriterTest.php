@@ -15,7 +15,8 @@ use Symfony\Component\Yaml\Yaml;
  *
  * Thesis: writers replace or insert one ai.* override, preserve unrelated
  * parsed keys, create a sparse document on first write, and fail clearly on
- * unreadable files, uncreatable directories, or malformed root/ai structure.
+ * unreadable files, uncreatable directories, or malformed root/ai structure
+ * (including non-empty YAML lists, which are not mappings).
  */
 class HomeSettingsWriterTest extends TestCase
 {
@@ -120,9 +121,30 @@ class HomeSettingsWriterTest extends TestCase
         $this->writer->writeDefaultModel('x');
     }
 
+    public function testThrowsWhenRootDocumentIsAList(): void
+    {
+        TestDirectoryIsolation::ensureDirectory(\dirname($this->file));
+        file_put_contents($this->file, "- foo\n- bar\n");
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('root document must be a mapping');
+
+        $this->writer->writeDefaultModel('x');
+    }
+
     public function testThrowsWhenAiValueIsNotAMapping(): void
     {
         $this->write(['ai' => 'broken']);
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('key "ai" must be a mapping');
+
+        $this->writer->writeDefaultModel('x');
+    }
+
+    public function testThrowsWhenAiValueIsAList(): void
+    {
+        $this->write(['ai' => ['one', 'two']]);
 
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('key "ai" must be a mapping');

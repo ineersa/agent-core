@@ -52,7 +52,7 @@ final class HomeSettingsWriter
 
         if (!\array_key_exists('ai', $settings)) {
             $settings['ai'] = [];
-        } elseif (!\is_array($settings['ai'])) {
+        } elseif (!$this->isMapping($settings['ai'])) {
             throw new \RuntimeException(\sprintf('Home settings key "ai" must be a mapping in %s; got %s', $filePath, get_debug_type($settings['ai'])));
         }
 
@@ -73,11 +73,6 @@ final class HomeSettingsWriter
     private function readHomeSettings(string $filePath): array
     {
         if (!file_exists($filePath)) {
-            $dir = \dirname($filePath);
-            if (!is_dir($dir) && !@mkdir($dir, 0o755, true) && !is_dir($dir)) {
-                throw new \RuntimeException(\sprintf('Cannot create home settings directory: %s', $dir));
-            }
-
             return [];
         }
 
@@ -104,7 +99,7 @@ final class HomeSettingsWriter
             return [];
         }
 
-        if (!\is_array($parsed)) {
+        if (!$this->isMapping($parsed)) {
             throw new \RuntimeException(\sprintf('Home settings root document must be a mapping in %s; got %s', $filePath, get_debug_type($parsed)));
         }
 
@@ -118,9 +113,27 @@ final class HomeSettingsWriter
      */
     private function writeHomeSettings(string $filePath, array $settings): void
     {
+        $dir = \dirname($filePath);
+        if (!is_dir($dir) && !@mkdir($dir, 0o755, true) && !is_dir($dir)) {
+            throw new \RuntimeException(\sprintf('Cannot create home settings directory: %s', $dir));
+        }
+
         $yaml = Yaml::dump($settings, 4, 4);
         if (false === @file_put_contents($filePath, $yaml)) {
             throw new \RuntimeException(\sprintf('Cannot write home settings file: %s', $filePath));
         }
+    }
+
+    /**
+     * Empty [] is treated as an acceptable empty mapping (YAML map/list ambiguity).
+     * Non-empty sequential lists are rejected so we never mutate list roots into mixed maps.
+     */
+    private function isMapping(mixed $value): bool
+    {
+        if (!\is_array($value)) {
+            return false;
+        }
+
+        return [] === $value || !array_is_list($value);
     }
 }
