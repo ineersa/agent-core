@@ -63,13 +63,13 @@ final class ForkExecutionService implements ForkExecutionServiceInterface
             throw new ToolCallException(\sprintf('Fork compaction failed before child launch: %s', $detail), retryable: false);
         }
 
-        // 4) Ordinary deferred single-child launch with typed profile data (no strategy/factory)
+        // 4) Ordinary deferred single-child launch with typed profile data (no strategy/factory).
+        // Explicit model override rides on the definition; reasoning stays on the profile.
         $profile = new DeferredSubagentSingleChildLaunchProfileDTO(
-            definition: ForkInternalAgentDefinition::create(),
+            definition: ForkInternalAgentDefinition::create($modelOverride),
             artifactKind: AgentArtifactKindEnum::Fork,
             displayAgentName: 'fork',
             inheritedMessages: $compactResult->messages,
-            modelOverride: $modelOverride,
             reasoningOverride: $reasoningOverride,
         );
 

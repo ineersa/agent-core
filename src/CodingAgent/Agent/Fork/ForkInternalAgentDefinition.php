@@ -10,13 +10,14 @@ use Ineersa\CodingAgent\Agent\Definition\McpPolicyDTO;
 
 final class ForkInternalAgentDefinition
 {
-    public static function create(): AgentDefinitionDTO
+    public static function create(?string $model = null): AgentDefinitionDTO
     {
         return new AgentDefinitionDTO(
             name: 'fork',
             description: 'Internal fork child (tool specialization, not catalog-selectable)',
             tools: null,
             mcp: new McpPolicyDTO(mode: McpAgentModeEnum::All),
+            model: $model,
             instructions: '',
             inheritProjectContext: true,
             inheritAgentsMd: true,

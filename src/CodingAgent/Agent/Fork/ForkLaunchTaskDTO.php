@@ -9,13 +9,13 @@ use Ineersa\AgentCore\Domain\Message\AgentMessage;
 final readonly class ForkLaunchTaskDTO
 {
     /**
-     * @param list<AgentMessage>|null $inheritedMessages Already sanitized (and optionally compacted) parent messages
+     * @param list<AgentMessage> $inheritedMessages Already sanitized (and optionally compacted) parent messages
      */
     public function __construct(
         public string $task,
+        public array $inheritedMessages,
         public ?string $modelOverride = null,
         public ?string $reasoningOverride = null,
-        public ?array $inheritedMessages = null,
     ) {
     }
 }

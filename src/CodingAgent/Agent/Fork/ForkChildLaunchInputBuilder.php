@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Agent\Fork;
 
-use Ineersa\AgentCore\Contract\RunStoreInterface;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Run\RunMetadata;
 use Ineersa\AgentCore\Domain\Run\StartRunInput;
@@ -19,8 +18,6 @@ use Ineersa\CodingAgent\Skills\SkillsContextBuilder;
 final class ForkChildLaunchInputBuilder
 {
     public function __construct(
-        private readonly RunStoreInterface $parentRunStore,
-        private readonly ForkSnapshotSanitizer $snapshotSanitizer,
         private readonly ForkChildMessageComposer $messageComposer,
         private readonly ForkRuntimeConfigResolver $configResolver,
         private readonly SubagentRunMetadataReader $metadataReader,
@@ -39,24 +36,7 @@ final class ForkChildLaunchInputBuilder
         array $policy,
     ): PreparedAgentChildRunDTO {
         $parentRunId = $identity->parentRunId;
-
-        // Prefer pre-compacted inherited messages supplied by ForkExecutionService
-        // (one parent RunStore read + sanitize + compact before launch). Fall back
-        // only when callers construct a task without inherited messages (legacy tests).
-        if (null !== $task->inheritedMessages) {
-            $inherited = $task->inheritedMessages;
-            $contextSourceMessages = $inherited;
-            // Still need parent metadata/model resolution; one optional get for metadata channels
-            // is avoided by extracting agents/skills from the inherited snapshot itself.
-            $parentStateMessages = $inherited;
-        } else {
-            $parentState = $this->parentRunStore->get($parentRunId);
-            $inherited = null !== $parentState
-                ? $this->snapshotSanitizer->sanitize($parentState->messages)
-                : [];
-            $parentStateMessages = null !== $parentState ? $parentState->messages : [];
-            $contextSourceMessages = $parentStateMessages;
-        }
+        $inherited = $task->inheritedMessages;
 
         $parentMetadata = $this->metadataReader->readRunStartedMetadata($parentRunId) ?? [];
         $resolved = $this->configResolver->resolve(
@@ -71,8 +51,8 @@ final class ForkChildLaunchInputBuilder
             task: $task->task,
             artifactId: $identity->artifactId,
             allowedToolNames: $policy['tools'],
-            agentsMd: $this->extractUserContextFromMessages($contextSourceMessages, 'agents_context'),
-            skillsContext: $this->extractSkillsContext($contextSourceMessages),
+            agentsMd: $this->extractUserContextFromMessages($inherited, 'agents_context'),
+            skillsContext: $this->extractSkillsContext($inherited),
         );
 
         $childMetadata = new RunMetadata(

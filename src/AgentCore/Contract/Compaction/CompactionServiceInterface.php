@@ -66,7 +66,9 @@ interface CompactionServiceInterface
      *
      * Structural prepare skips are returned as structural no-ops with the
      * original messages. Hard failures (model error, empty summary, ineffective
-     * compaction, hook cancel) are returned as failures.
+     * compaction after model summary, hook cancel) are returned as failures.
+     * Hook-provided replacement summaries match CompactRunHandler and skip the
+     * ordinary ineffective-compaction rejection.
      *
      * @param list<AgentMessage> $messages
      */

@@ -17,7 +17,7 @@ final class ForkToolPolicyResolver
     }
 
     /**
-     * @return array{tools: list<string>, mcp: array{mode: string, tools: list<string>}}
+     * @return array{tools: list<string>, mcp: array<string, mixed>}
      */
     public function resolve(string $parentRunId): array
     {

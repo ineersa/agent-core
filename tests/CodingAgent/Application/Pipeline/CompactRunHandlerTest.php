@@ -7,18 +7,29 @@ namespace Ineersa\CodingAgent\Tests\Application\Pipeline;
 use Ineersa\AgentCore\Contract\Compaction\CompactionPrepareResult;
 use Ineersa\AgentCore\Contract\Compaction\CompactionServiceInterface;
 use Ineersa\AgentCore\Contract\Compaction\CompactResult;
+use Ineersa\AgentCore\Contract\Compaction\MessageSnapshotCompactionResult;
+use Ineersa\AgentCore\Contract\Model\PlatformInterface;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\CompactRun;
 use Ineersa\AgentCore\Domain\Message\ExecuteCompactionStep;
+use Ineersa\AgentCore\Domain\Model\ModelInvocationRequest;
+use Ineersa\AgentCore\Domain\Model\PlatformInvocationResult;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
+use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageToolCallSequenceValidator;
 use Ineersa\CodingAgent\Application\Pipeline\CompactRunHandler;
 use Ineersa\CodingAgent\Compaction\BeforeCompactionHookInterface;
+use Ineersa\CodingAgent\Compaction\CompactionBoundarySelector;
 use Ineersa\CodingAgent\Compaction\CompactionHookContextDTO;
 use Ineersa\CodingAgent\Compaction\CompactionHookDispatcher;
 use Ineersa\CodingAgent\Compaction\CompactionHookResultDTO;
+use Ineersa\CodingAgent\Compaction\CompactionPromptBuilder;
+use Ineersa\CodingAgent\Compaction\CompactionService;
+use Ineersa\CodingAgent\Compaction\CompactionTokenEstimator;
+use Ineersa\CodingAgent\Compaction\SessionCompactor;
+use Ineersa\CodingAgent\Compaction\ToolResultDigestService;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\CompactionConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
@@ -26,8 +37,11 @@ use Ineersa\CodingAgent\Config\ModelResolver;
 use Ineersa\CodingAgent\Config\ModelSelectionService;
 use Ineersa\CodingAgent\Config\ModelSettingsPersister;
 use Ineersa\CodingAgent\Config\SessionMetadataStore;
+use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Config\TuiConfig;
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
+use Symfony\AI\Platform\Message\TemplateRenderer\StringTemplateRenderer;
 
 /**
  * Contract tests for {@see CompactRunHandler}.
@@ -445,6 +459,108 @@ final class CompactRunHandlerTest extends TestCase
     }
 
     /**
+     * Thesis: synchronous compactMessages matches CompactRunHandler replacement-summary
+     * parity — a hook-provided replacement is applied even when the resulting token
+     * estimate would fail ordinary ineffective-compaction rejection after model summary.
+     */
+    public function testCompactMessagesAcceptsHookReplacementWithoutIneffectiveRejection(): void
+    {
+        $projectDir = TestDirectoryIsolation::createOsTempDir('compact-msg');
+        $homeDir = TestDirectoryIsolation::createOsTempDir('compact-msg-home');
+        TestDirectoryIsolation::ensureDirectory($projectDir.'/config');
+        file_put_contents($projectDir.'/config/COMPACTION.md', "Test compaction prompt.\n\n{date}\n{cwd}{custom_instructions_part}");
+
+        try {
+            $appConfig = new AppConfig(
+                tui: new TuiConfig(theme: 'test'),
+                logging: new LoggingConfig(),
+                cwd: $projectDir,
+                compaction: new CompactionConfig(
+                    autoEnabled: true,
+                    keepRecentTokens: 50,
+                ),
+            );
+
+            $pathResolver = new SettingsPathResolver($projectDir, $homeDir);
+            $promptBuilder = new CompactionPromptBuilder(
+                $pathResolver,
+                new StringTemplateRenderer(),
+                $appConfig,
+                $projectDir,
+            );
+            $tokenEstimator = new CompactionTokenEstimator();
+            $sessionCompactor = new SessionCompactor(
+                $tokenEstimator,
+                new ToolResultDigestService($tokenEstimator),
+                new CompactionBoundarySelector(
+                    $tokenEstimator,
+                    new AgentMessageToolCallSequenceValidator(),
+                ),
+                $promptBuilder,
+            );
+
+            $replacementText = 'hook replacement that intentionally does not reduce tokens';
+            $hook = new class($replacementText) implements BeforeCompactionHookInterface {
+                public function __construct(private string $text)
+                {
+                }
+
+                public function beforeCompaction(CompactionHookContextDTO $context): CompactionHookResultDTO
+                {
+                    return CompactionHookResultDTO::replaceSummary($this->text);
+                }
+            };
+
+            $platform = new class implements PlatformInterface {
+                public function invoke(ModelInvocationRequest $request): PlatformInvocationResult
+                {
+                    throw new \LogicException('Model invocation must not run for hook replacement summaries.');
+                }
+            };
+
+            $service = new CompactionService(
+                $sessionCompactor,
+                $appConfig,
+                $this->createModelSelectionStub(),
+                new CompactionHookDispatcher([$hook]),
+                $platform,
+            );
+
+            // Enough body text for prepare() to be ready under keepRecentTokens=50.
+            $messages = [];
+            for ($i = 0; $i < 12; ++$i) {
+                $messages[] = $this->userMsg(str_repeat('token-heavy body message '.$i.' ', 20));
+            }
+
+            $result = $service->compactMessages(
+                runId: 'run-replacement-parity',
+                turnNo: 1,
+                messages: $messages,
+                trigger: 'fork',
+            );
+
+            $this->assertFalse($result->isFailure(), $result->failureReason ?? $result->failureMessage ?? 'expected success');
+            $this->assertTrue($result->compacted);
+            $this->assertNotEmpty($result->messages);
+            $found = false;
+            foreach ($result->messages as $message) {
+                if (true !== ($message->metadata['compact_summary'] ?? false)) {
+                    continue;
+                }
+                foreach ($message->content as $block) {
+                    if (('text' === ($block['type'] ?? '')) && str_contains((string) ($block['text'] ?? ''), $replacementText)) {
+                        $found = true;
+                    }
+                }
+            }
+            $this->assertTrue($found, 'hook replacement summary text must be present in compacted messages');
+        } finally {
+            TestDirectoryIsolation::removeDirectory($projectDir);
+            TestDirectoryIsolation::removeDirectory($homeDir);
+        }
+    }
+
+    /**
      * Thesis: when a hook appends additional instructions, they reach
      * buildSummarizationMessages alongside the original custom instructions.
      */
@@ -492,7 +608,7 @@ final class CompactRunHandlerTest extends TestCase
                 array $messages,
                 string $trigger = 'manual',
                 ?string $customInstructions = null,
-            ): \Ineersa\AgentCore\Contract\Compaction\MessageSnapshotCompactionResult {
+            ): MessageSnapshotCompactionResult {
                 throw new \LogicException('compactMessages not expected in this test path.');
             }
         };
@@ -935,7 +1051,7 @@ final class CompactRunHandlerTest extends TestCase
                 array $messages,
                 string $trigger = 'manual',
                 ?string $customInstructions = null,
-            ): \Ineersa\AgentCore\Contract\Compaction\MessageSnapshotCompactionResult {
+            ): MessageSnapshotCompactionResult {
                 throw new \LogicException('compactMessages not expected in this test path.');
             }
         };
@@ -969,7 +1085,7 @@ final class CompactRunHandlerTest extends TestCase
                 array $messages,
                 string $trigger = 'manual',
                 ?string $customInstructions = null,
-            ): \Ineersa\AgentCore\Contract\Compaction\MessageSnapshotCompactionResult {
+            ): MessageSnapshotCompactionResult {
                 throw new \LogicException('compactMessages not expected in this test path.');
             }
         };
@@ -1044,7 +1160,7 @@ final class CompactRunHandlerTest extends TestCase
                 array $messages,
                 string $trigger = 'manual',
                 ?string $customInstructions = null,
-            ): \Ineersa\AgentCore\Contract\Compaction\MessageSnapshotCompactionResult {
+            ): MessageSnapshotCompactionResult {
                 throw new \LogicException('compactMessages not expected in this test path.');
             }
         };

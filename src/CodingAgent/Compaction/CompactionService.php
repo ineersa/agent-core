@@ -212,11 +212,14 @@ final readonly class CompactionService implements CompactionServiceInterface
         }
 
         if ($hookResult->hasReplacementSummary()) {
+            // Match CompactRunHandler::handleReplacementSummary: hook-provided
+            // replacement summaries skip the ordinary ineffective-compaction rejection.
             return $this->finalizeFromSummary(
                 $hookResult->replacementSummary,
                 $preparation,
                 $runId,
                 $trigger,
+                rejectIneffective: false,
             );
         }
 
@@ -289,7 +292,7 @@ final readonly class CompactionService implements CompactionServiceInterface
             );
         }
 
-        return $this->finalizeFromSummary($summaryText, $preparation, $runId, $trigger);
+        return $this->finalizeFromSummary($summaryText, $preparation, $runId, $trigger, rejectIneffective: true);
     }
 
     private function finalizeFromSummary(
@@ -297,10 +300,11 @@ final readonly class CompactionService implements CompactionServiceInterface
         CompactionPrepareResult $preparation,
         string $runId,
         string $trigger,
+        bool $rejectIneffective,
     ): MessageSnapshotCompactionResult {
         $compactResult = $this->buildCompactedMessages($summaryText, $preparation);
 
-        if ($compactResult->tokenEstimateAfter >= $compactResult->tokenEstimateBefore) {
+        if ($rejectIneffective && $compactResult->tokenEstimateAfter >= $compactResult->tokenEstimateBefore) {
             $this->logger->info('Compaction snapshot was ineffective.', [
                 'event_type' => 'compaction.snapshot.ineffective',
                 'run_id' => $runId,
@@ -321,6 +325,7 @@ final readonly class CompactionService implements CompactionServiceInterface
             'messages_compacted' => $compactResult->messagesCompacted,
             'messages_retained' => $compactResult->messagesRetained,
             'trigger' => $trigger,
+            'replacement_summary' => !$rejectIneffective,
         ]);
 
         return MessageSnapshotCompactionResult::compacted($compactResult->compactedMessages);

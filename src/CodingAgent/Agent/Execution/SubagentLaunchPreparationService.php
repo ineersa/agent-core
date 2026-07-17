@@ -97,9 +97,9 @@ final class SubagentLaunchPreparationService
                 $identity,
                 new ForkLaunchTaskDTO(
                     task: $task,
-                    modelOverride: $singleChildProfile->modelOverride,
-                    reasoningOverride: $singleChildProfile->reasoningOverride,
                     inheritedMessages: $singleChildProfile->inheritedMessages,
+                    modelOverride: $definition->model,
+                    reasoningOverride: $singleChildProfile->reasoningOverride,
                 ),
                 $this->forkToolPolicyResolver->resolve($parentRunId),
             );

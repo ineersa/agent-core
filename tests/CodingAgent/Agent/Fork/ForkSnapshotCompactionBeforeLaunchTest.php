@@ -17,7 +17,10 @@ use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Domain\Run\StartRunInput;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchLaunchService;
+use Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader;
 use Ineersa\CodingAgent\Agent\Fork\ForkExecutionService;
+use Ineersa\CodingAgent\Agent\Fork\ForkSnapshotSanitizer;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
 use Ineersa\CodingAgent\Tests\TestCase\PerMethodIsolatedKernelTestCase;
 use PHPUnit\Framework\Attributes\Group;
@@ -66,6 +69,8 @@ final class ForkSnapshotCompactionBeforeLaunchTest extends PerMethodIsolatedKern
         $parentBefore = $runStore->get($parentRunId);
         $this->assertNotNull($parentBefore);
         $parentHashBefore = $this->hashMessages($parentBefore->messages);
+
+        $countingStore = new CountingRunStoreDecorator($runStore);
 
         $compactCalls = 0;
         $compactedMessages = [
@@ -134,8 +139,15 @@ final class ForkSnapshotCompactionBeforeLaunchTest extends PerMethodIsolatedKern
         $container->set(CompactionServiceInterface::class, $compaction);
         $container->set(AgentRunnerInterface::class, $agentRunner);
 
-        /** @var ForkExecutionService $forkExecution */
-        $forkExecution = $container->get(ForkExecutionService::class);
+        // Construct with the counting store so the one-parent-read contract is real,
+        // not an accidental pre-built container graph binding.
+        $forkExecution = new ForkExecutionService(
+            $container->get(DeferredSubagentBatchLaunchService::class),
+            $container->get(SubagentRunMetadataReader::class),
+            $countingStore,
+            $container->get(ForkSnapshotSanitizer::class),
+            $compaction,
+        );
 
         $outcome = $this->withToolContext($parentRunId, $toolCallId, static fn () => $forkExecution->execute(
             $parentRunId,
@@ -144,6 +156,7 @@ final class ForkSnapshotCompactionBeforeLaunchTest extends PerMethodIsolatedKern
 
         $this->assertInstanceOf(DeferredToolCompletionOutcome::class, $outcome);
         $this->assertSame(1, $compactCalls);
+        $this->assertSame(1, $countingStore->getCount, 'ForkExecutionService must read parent RunStore exactly once before launch');
 
         $parentAfter = $runStore->get($parentRunId);
         $this->assertNotNull($parentAfter);
@@ -285,5 +298,34 @@ final class ForkSnapshotCompactionBeforeLaunchTest extends PerMethodIsolatedKern
         );
 
         return $accessor->with($context, $callback);
+    }
+}
+
+/**
+ * Test-local parent RunStore decorator to prove ForkExecutionService reads parent once.
+ */
+final class CountingRunStoreDecorator implements RunStoreInterface
+{
+    public int $getCount = 0;
+
+    public function __construct(private readonly RunStoreInterface $inner)
+    {
+    }
+
+    public function get(string $runId): ?RunState
+    {
+        ++$this->getCount;
+
+        return $this->inner->get($runId);
+    }
+
+    public function compareAndSwap(RunState $state, int $expectedVersion): bool
+    {
+        return $this->inner->compareAndSwap($state, $expectedVersion);
+    }
+
+    public function findRunningStaleBefore(\DateTimeImmutable $updatedBefore): array
+    {
+        return $this->inner->findRunningStaleBefore($updatedBefore);
     }
 }
