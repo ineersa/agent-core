@@ -14,8 +14,8 @@ use Symfony\Component\Yaml\Yaml;
  *   built-in defaults  <  user settings (~/.hatfield/settings.yaml)
  *   <  project settings (<cwd>/.hatfield/settings.yaml)
  *
- * Each {@see resolve()} call rereads YAML from disk. Missing user/project files
- * contribute an empty overlay; resolve never creates ~/.hatfield/settings.yaml.
+ * Each {@see load()} call rereads YAML from disk. Missing user/project files
+ * contribute an empty overlay; load never creates ~/.hatfield/settings.yaml.
  *
  * Overlay semantics (implemented in {@see overlayConfig}):
  *  - Associative arrays: recursive deep overlay — keys present in the higher-
@@ -42,7 +42,7 @@ use Symfony\Component\Yaml\Yaml;
  *  - %kernel.project_dir% → app install directory (via SettingsPathResolver::$appRoot)
  *  - ~ → home directory
  *  - Relative paths resolve against the canonical runtime cwd passed to
- *    {@see resolve()}, which comes from the %app.cwd% container parameter
+ *    {@see load()}, which comes from the %app.cwd% container parameter
  *    (resolved from HATFIELD_CWD or kernel.project_dir).
  *  - Raw layer snapshots in {@see SettingsResolutionDTO} keep unresolved path
  *    strings; only {@see SettingsResolutionDTO::$effective} receives resolved paths.
@@ -74,10 +74,10 @@ final class AppConfigLoader
     ) {
     }
 
-    public function resolve(string $defaultsPath, string $cwd): SettingsResolutionDTO
+    public function load(string $defaultsPath, string $cwd): SettingsResolutionDTO
     {
         if ('' === $cwd) {
-            throw new \InvalidArgumentException(\sprintf('%s::resolve() requires a non-empty $cwd. Pass %s from the container or an explicit absolute path.', self::class, '%app.cwd%'));
+            throw new \InvalidArgumentException(\sprintf('%s::load() requires a non-empty $cwd. Pass %s from the container or an explicit absolute path.', self::class, '%app.cwd%'));
         }
 
         // Layer 1: Built-in defaults (shipped with the app)

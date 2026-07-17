@@ -4,13 +4,16 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Config;
 
+use Symfony\Component\Yaml\Exception\ParseException;
+use Symfony\Component\Yaml\Yaml;
+
 /**
- * Persists ai.* keys into the home settings YAML file without destroying
- * hand-written comments on existing files.
+ * Persists ai.* keys into the home settings YAML file as sparse overrides.
  *
- * Uses regex line replacement so comments survive — a Yaml::parse/dump
- * round-trip would strip them. The home file is created on first mutation as
- * a minimal sparse YAML document (no full defaults snapshot).
+ * Uses Symfony YAML parse → mutate array → dump. Comment and formatting
+ * preservation is intentionally not attempted; defaults already document
+ * every setting. The home file is created on first mutation as a minimal
+ * sparse document (no full defaults snapshot).
  */
 final class HomeSettingsWriter
 {
@@ -21,12 +24,12 @@ final class HomeSettingsWriter
 
     public function writeDefaultModel(string $model): void
     {
-        $this->writeAiKey($this->homeSettingsPath(), 'default_model', $model);
+        $this->writeAiValue('default_model', $model);
     }
 
     public function writeDefaultReasoning(string $reasoning): void
     {
-        $this->writeAiKey($this->homeSettingsPath(), 'default_reasoning', $reasoning);
+        $this->writeAiValue('default_reasoning', $reasoning);
     }
 
     /**
@@ -36,7 +39,25 @@ final class HomeSettingsWriter
      */
     public function writeFavoriteModels(array $models): void
     {
-        $this->writeAiListKey($this->homeSettingsPath(), 'favorite_models', $models);
+        $this->writeAiValue('favorite_models', $models);
+    }
+
+    /**
+     * @throws \RuntimeException when the file cannot be read/written or structure is malformed
+     */
+    private function writeAiValue(string $key, mixed $value): void
+    {
+        $filePath = $this->homeSettingsPath();
+        $settings = $this->readHomeSettings($filePath);
+
+        if (!\array_key_exists('ai', $settings)) {
+            $settings['ai'] = [];
+        } elseif (!\is_array($settings['ai'])) {
+            throw new \RuntimeException(\sprintf('Home settings key "ai" must be a mapping in %s; got %s', $filePath, get_debug_type($settings['ai'])));
+        }
+
+        $settings['ai'][$key] = $value;
+        $this->writeHomeSettings($filePath, $settings);
     }
 
     private function homeSettingsPath(): string
@@ -45,69 +66,11 @@ final class HomeSettingsWriter
     }
 
     /**
-     * Write a list value under the ai section, preserving comments.
+     * @return array<string, mixed>
      *
-     * Only replaces an *active* (non-commented) key. Commented-out lines with
-     * the same key are left untouched — if the user commented out a key to
-     * disable it, the writer inserts a fresh active key instead of silently
-     * uncommenting the old one.
-     *
-     * @param list<string> $values List of strings
+     * @throws \RuntimeException when the file exists but cannot be read, parsed, or is not a mapping
      */
-    private function writeAiListKey(string $filePath, string $key, array $values): void
-    {
-        $content = $this->readOrCreateHomeSettings($filePath);
-
-        if ([] === $values) {
-            $line = \sprintf('    %s: []', $key);
-        } else {
-            $quoted = array_map(fn (string $v): string => $this->yamlScalar($v), $values);
-            $line = \sprintf('    %s: [%s]', $key, implode(', ', $quoted));
-        }
-
-        $activePattern = '/^    '.preg_quote($key, '/').'\s*:.*$/m';
-
-        if (preg_match($activePattern, $content)) {
-            $content = preg_replace($activePattern, $line, $content, 1);
-        } elseif (preg_match('/^ai:\s*$/m', $content)) {
-            $content = preg_replace('/^ai:\s*$/m', "ai:\n".$line, $content, 1);
-        } elseif ('' === $content) {
-            $content = "ai:\n".$line."\n";
-        } else {
-            $content = rtrim($content)."\n\nai:\n".$line."\n";
-        }
-
-        $this->writeHomeSettings($filePath, $content);
-    }
-
-    /**
-     * @throws \RuntimeException when the file cannot be read or written
-     */
-    private function writeAiKey(string $filePath, string $key, string $value): void
-    {
-        $content = $this->readOrCreateHomeSettings($filePath);
-
-        $line = \sprintf('    %s: %s', $key, $this->yamlScalar($value));
-
-        // Only match active (non-commented) keys with 4-space indent.
-        // This prevents accidentally uncommenting a key the user
-        // intentionally disabled.
-        $activePattern = '/^    '.preg_quote($key, '/').'\s*:.*$/m';
-
-        if (preg_match($activePattern, $content)) {
-            $content = preg_replace($activePattern, $line, $content, 1);
-        } elseif (preg_match('/^ai:\s*$/m', $content)) {
-            $content = preg_replace('/^ai:\s*$/m', "ai:\n".$line, $content, 1);
-        } elseif ('' === $content) {
-            $content = "ai:\n".$line."\n";
-        } else {
-            $content = rtrim($content)."\n\nai:\n".$line."\n";
-        }
-
-        $this->writeHomeSettings($filePath, $content);
-    }
-
-    private function readOrCreateHomeSettings(string $filePath): string
+    private function readHomeSettings(string $filePath): array
     {
         if (!file_exists($filePath)) {
             $dir = \dirname($filePath);
@@ -115,7 +78,7 @@ final class HomeSettingsWriter
                 throw new \RuntimeException(\sprintf('Cannot create home settings directory: %s', $dir));
             }
 
-            return '';
+            return [];
         }
 
         if (!is_readable($filePath)) {
@@ -127,33 +90,37 @@ final class HomeSettingsWriter
             throw new \RuntimeException(\sprintf('Cannot read home settings file: %s', $filePath));
         }
 
-        return $content;
-    }
-
-    private function writeHomeSettings(string $filePath, string $content): void
-    {
-        if (false === @file_put_contents($filePath, $content)) {
-            throw new \RuntimeException(\sprintf('Cannot write home settings file: %s', $filePath));
+        if ('' === trim($content)) {
+            return [];
         }
+
+        try {
+            $parsed = Yaml::parse($content);
+        } catch (ParseException $e) {
+            throw new \RuntimeException(\sprintf('Cannot parse home settings file: %s (%s)', $filePath, $e->getMessage()), 0, $e);
+        }
+
+        if (null === $parsed) {
+            return [];
+        }
+
+        if (!\is_array($parsed)) {
+            throw new \RuntimeException(\sprintf('Home settings root document must be a mapping in %s; got %s', $filePath, get_debug_type($parsed)));
+        }
+
+        return $parsed;
     }
 
     /**
-     * Quote strings that contain YAML-significant characters.
-     * Plain-safe values (e.g. "zai/glm-5.1", "high", "off") stay unquoted.
+     * @param array<string, mixed> $settings
+     *
+     * @throws \RuntimeException when the file cannot be written
      */
-    private function yamlScalar(string $value): string
+    private function writeHomeSettings(string $filePath, array $settings): void
     {
-        if ('' === $value) {
-            return "''";
+        $yaml = Yaml::dump($settings, 4, 4);
+        if (false === @file_put_contents($filePath, $yaml)) {
+            throw new \RuntimeException(\sprintf('Cannot write home settings file: %s', $filePath));
         }
-
-        if (preg_match('/[:#{}[\]\,&*!|>\'"@%`]/', $value)
-            || str_starts_with($value, '- ')
-            || str_ends_with($value, ':')
-        ) {
-            return "'".str_replace("'", "''", $value)."'";
-        }
-
-        return $value;
     }
 }

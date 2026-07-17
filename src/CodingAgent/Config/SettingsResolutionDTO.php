@@ -11,6 +11,11 @@ use Symfony\Component\PropertyAccess\PropertyPathBuilder;
 /**
  * Fresh settings resolution from disk: raw layers and merged effective config.
  *
+ * Effective known sections are denormalized through Symfony Serializer in
+ * {@see AppConfig::fromContainer}. Raw sparse layers intentionally remain arrays:
+ * Serializer DTO defaults cannot distinguish an absent key from an explicit null
+ * or override and would discard dynamic/unknown keys needed for provenance.
+ *
  * Dotted paths (e.g. "tui.theme") use Symfony PropertyAccess bracket notation.
  * Literal dots inside a YAML key name cannot be addressed; current Hatfield keys
  * do not contain dots.

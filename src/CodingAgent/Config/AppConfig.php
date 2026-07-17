@@ -75,7 +75,7 @@ final class AppConfig
         DenormalizerInterface $denormalizer,
         string $cwd,
     ): self {
-        $data = $loader->resolve($resources->getDefaultsPath(), $cwd)->effective;
+        $data = $loader->load($resources->getDefaultsPath(), $cwd)->effective;
         $ai = AiConfig::optionalFromArray($data);
 
         $catalog = null !== $ai ? new HatfieldModelCatalog($ai) : null;

@@ -87,7 +87,7 @@ final class PromptsConfigTest extends TestCase
 
             $pathResolver = new SettingsPathResolver('/app', $homeDir);
             $resolver = new AppConfigLoader($pathResolver);
-            $resolution = $resolver->resolve($defaultsDir.'/hatfield.defaults.yaml', $cwd);
+            $resolution = $resolver->load($defaultsDir.'/hatfield.defaults.yaml', $cwd);
             $data = $resolution->effective;
 
             $this->assertArrayHasKey('prompts', $data);
@@ -125,7 +125,7 @@ final class PromptsConfigTest extends TestCase
 
             $pathResolver = new SettingsPathResolver('/app', $homeDir);
             $resolver = new AppConfigLoader($pathResolver);
-            $resolution = $resolver->resolve($defaultsDir.'/hatfield.defaults.yaml', $cwd);
+            $resolution = $resolver->load($defaultsDir.'/hatfield.defaults.yaml', $cwd);
             $data = $resolution->effective;
 
             // Project list replaces home list — only proj-prompts should be present.
