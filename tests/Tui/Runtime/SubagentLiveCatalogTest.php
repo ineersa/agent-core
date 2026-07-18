@@ -205,6 +205,105 @@ final class SubagentLiveCatalogTest extends TestCase
         $this->assertSame(\Ineersa\Tui\Tests\Support\ChildContextStatisticsFixture::CONTEXT_WINDOW, $this->childContextInt($child, 'contextWindow'));
     }
 
+    public function testNeedsInputLatchSurvivesStaleRunningProgress(): void
+    {
+        $catalog = new SubagentLiveCatalog();
+        $catalog->ingestRuntimeEvent($this->progressEvent('parent-1', [
+            'mode' => 'single', 'status' => 'running', 'agent_name' => 'scout',
+            'artifact_id' => 'agent_a', 'agent_run_id' => 'child-run-1', 'task_summary' => 'Task',
+        ]));
+
+        $catalog->markNeedsInputForRun('child-run-1');
+        $this->assertTrue($catalog->isNeedsInputLatched('child-run-1'));
+        $this->assertSame(SubagentLiveStatusEnum::WaitingHuman, $catalog->findByArtifactId('agent_a')?->status);
+
+        $catalog->ingestRuntimeEvent($this->progressEvent('parent-1', [
+            'mode' => 'single', 'status' => 'running', 'agent_name' => 'scout',
+            'artifact_id' => 'agent_a', 'agent_run_id' => 'child-run-1', 'task_summary' => 'Stale running',
+        ]));
+
+        $child = $catalog->findByArtifactId('agent_a');
+        $this->assertNotNull($child);
+        $this->assertSame(SubagentLiveStatusEnum::WaitingHuman, $child->status);
+        $this->assertTrue($catalog->isNeedsInputLatched('child-run-1'));
+        $this->assertNotNull($catalog->firstChildNeedingAttention());
+    }
+
+    public function testMarkNeedsInputLatchesBeforeCatalogRowArrives(): void
+    {
+        $catalog = new SubagentLiveCatalog();
+        $catalog->markNeedsInputForRun('child-run-early');
+        $this->assertTrue($catalog->isNeedsInputLatched('child-run-early'));
+        $this->assertNull($catalog->findByAgentRunId('child-run-early'));
+
+        $catalog->ingestRuntimeEvent($this->progressEvent('parent-1', [
+            'mode' => 'single', 'status' => 'running', 'agent_name' => 'scout',
+            'artifact_id' => 'agent_early', 'agent_run_id' => 'child-run-early', 'task_summary' => 'Late row',
+        ]));
+
+        $child = $catalog->findByArtifactId('agent_early');
+        $this->assertNotNull($child);
+        $this->assertSame(SubagentLiveStatusEnum::WaitingHuman, $child->status);
+        $this->assertTrue($catalog->isNeedsInputLatched('child-run-early'));
+    }
+
+    public function testTerminalProgressClearsNeedsInputLatch(): void
+    {
+        $catalog = new SubagentLiveCatalog();
+        $catalog->ingestRuntimeEvent($this->progressEvent('parent-1', [
+            'mode' => 'single', 'status' => 'running', 'agent_name' => 'scout',
+            'artifact_id' => 'agent_a', 'agent_run_id' => 'child-run-1', 'task_summary' => 'Task',
+        ]));
+        $catalog->markNeedsInputForRun('child-run-1');
+
+        $catalog->ingestRuntimeEvent($this->progressEvent('parent-1', [
+            'mode' => 'single', 'status' => 'completed', 'agent_name' => 'scout',
+            'artifact_id' => 'agent_a', 'agent_run_id' => 'child-run-1', 'task_summary' => 'Done',
+        ]));
+
+        $this->assertFalse($catalog->isNeedsInputLatched('child-run-1'));
+        $this->assertSame(SubagentLiveStatusEnum::Completed, $catalog->findByArtifactId('agent_a')?->status);
+        $this->assertNull($catalog->firstChildNeedingAttention());
+    }
+
+    public function testClearNeedsInputRemovesLatchEvenAfterRowOverwritten(): void
+    {
+        $catalog = new SubagentLiveCatalog();
+        $catalog->ingestRuntimeEvent($this->progressEvent('parent-1', [
+            'mode' => 'single', 'status' => 'running', 'agent_name' => 'scout',
+            'artifact_id' => 'agent_a', 'agent_run_id' => 'child-run-1', 'task_summary' => 'Task',
+        ]));
+        $catalog->markNeedsInputForRun('child-run-1');
+
+        // Simulate a race that already rewrote the DTO status while the latch remains.
+        $catalog->applyChildStatus('agent_a', SubagentLiveStatusEnum::Running);
+        $this->assertTrue($catalog->isNeedsInputLatched('child-run-1'));
+
+        $catalog->clearNeedsInputForRun('child-run-1');
+        $this->assertFalse($catalog->isNeedsInputLatched('child-run-1'));
+        $this->assertSame(SubagentLiveStatusEnum::Running, $catalog->findByArtifactId('agent_a')?->status);
+
+        $catalog->ingestRuntimeEvent($this->progressEvent('parent-1', [
+            'mode' => 'single', 'status' => 'running', 'agent_name' => 'scout',
+            'artifact_id' => 'agent_a', 'agent_run_id' => 'child-run-1', 'task_summary' => 'After clear',
+        ]));
+        $this->assertSame(SubagentLiveStatusEnum::Running, $catalog->findByArtifactId('agent_a')?->status);
+    }
+
+    public function testDismissClearsNeedsInputLatch(): void
+    {
+        $catalog = new SubagentLiveCatalog();
+        $catalog->ingestRuntimeEvent($this->progressEvent('parent-1', [
+            'mode' => 'single', 'status' => 'running', 'agent_name' => 'scout',
+            'artifact_id' => 'agent_a', 'agent_run_id' => 'child-run-1', 'task_summary' => 'Task',
+        ]));
+        $catalog->markNeedsInputForRun('child-run-1');
+
+        $catalog->dismissArtifactId('agent_a');
+        $this->assertFalse($catalog->isNeedsInputLatched('child-run-1'));
+        $this->assertNull($catalog->findByArtifactId('agent_a'));
+    }
+
     /** @param array<string, mixed> $progress */
     private function progressEvent(string $runId, array $progress): RuntimeEvent
     {

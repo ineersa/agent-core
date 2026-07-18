@@ -185,6 +185,8 @@ final class RuntimeQuestionEventHandler
 
         // Only cancel if the active question is a local Tui-source question
         // (tool-local prompt, not AgentCore HITL) and the toolCallId matches.
+        // Run-id match prevents cross-clearing a parent or sibling child that
+        // happens to share a tool_call_id.
         if (QuestionSource::Tui !== $active->source) {
             return;
         }
@@ -197,6 +199,8 @@ final class RuntimeQuestionEventHandler
             return;
         }
 
+        // cancel() invokes the registered onCancel callback, which clears the
+        // needs-input latch for this run (choice/confirm paths are symmetric).
         $questionCoordinator->cancel();
 
         // Close the visual overlay so the stale prompt is not visible.
@@ -451,7 +455,7 @@ final class RuntimeQuestionEventHandler
                     SubagentLiveAttention::clearWaitingHumanForRun($sessionState, $screen, $runId);
                 }
             },
-            onCancel: static function () use ($client, $runId, $requestIdFromPayload): void {
+            onCancel: static function () use ($client, $runId, $requestIdFromPayload, $sessionState, $screen): void {
                 $client->send($runId, new UserCommand(
                     type: 'answer_tool_question',
                     payload: [
@@ -460,6 +464,12 @@ final class RuntimeQuestionEventHandler
                         'kind' => 'approval',
                     ],
                 ));
+
+                // Choice/enum cancel must clear child needs-input the same way
+                // confirm cancel and answer paths do (symmetric attention lifecycle).
+                if (null !== $sessionState && null !== $screen) {
+                    SubagentLiveAttention::clearWaitingHumanForRun($sessionState, $screen, $runId);
+                }
             },
         );
     }

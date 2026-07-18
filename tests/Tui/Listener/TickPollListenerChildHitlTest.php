@@ -184,6 +184,170 @@ final class TickPollListenerChildHitlTest extends TestCase
         $this->assertTrue($coordinator->actionRequired(), 'Parent question must remain when child terminal event run id differs');
     }
 
+    public function testChoiceToolQuestionCancelClearsChildNeedsInputLatch(): void
+    {
+        $childRunId = 'child-run-choice-cancel';
+        $client = $this->createMock(AgentSessionClient::class);
+        $client->expects($this->once())->method('send');
+
+        $coordinator = new QuestionCoordinator();
+        $state = new \Ineersa\Tui\Runtime\TuiSessionState('parent-1');
+        $state->subagentLiveCatalog->ingestRuntimeEvent(new RuntimeEvent(
+            type: RuntimeEventTypeEnum::ToolExecutionOutputDelta->value,
+            runId: 'parent-1',
+            seq: 1,
+            payload: [
+                'tool_call_id' => 'tc1',
+                'tool_name' => 'subagent',
+                'delta' => '',
+                'subagent_progress' => [
+                    'mode' => 'single',
+                    'status' => 'running',
+                    'agent_name' => 'scout',
+                    'artifact_id' => 'agent_a',
+                    'agent_run_id' => $childRunId,
+                    'task_summary' => 'Task',
+                ],
+            ],
+        ));
+        $state->subagentLiveView->enter(new SubagentLiveChildDTO(
+            $childRunId,
+            'agent_a',
+            'scout',
+            SubagentLiveStatusEnum::Running,
+            'Task',
+            1,
+        ));
+        $state->subagentLiveView->childActivity = RunActivityStateEnum::Running;
+
+        $screen = new ChatScreen(
+            new DefaultTheme(new ThemePalette('test')),
+            'parent-1',
+            new PromptEditor(),
+        );
+
+        $ref = new \ReflectionMethod(RuntimeQuestionEventHandler::class, 'handleToolQuestionRequested');
+        $event = new RuntimeEvent(
+            type: RuntimeEventTypeEnum::ToolQuestionRequested->value,
+            runId: $childRunId,
+            seq: 0,
+            payload: [
+                'request_id' => 'rq_choice_cancel',
+                'prompt' => 'Allow write outside CWD?',
+                'kind' => 'approval',
+                'schema' => [
+                    'type' => 'string',
+                    'enum' => ['✅ Allow once', '📌 Always allow', '❌ Block'],
+                ],
+                'tool_call_id' => 'tc_write',
+                'tool_name' => 'write',
+            ],
+        );
+        $ref->invoke($this->runtimeQuestionHandler(), $event, $client, $coordinator, $state, $screen);
+
+        $this->assertSame(SubagentLiveStatusEnum::WaitingHuman, $state->subagentLiveCatalog->findByArtifactId('agent_a')?->status);
+        $this->assertTrue($state->subagentLiveCatalog->isNeedsInputLatched($childRunId));
+
+        // Stale running progress must not erase the latched needs-input state.
+        $state->subagentLiveCatalog->ingestRuntimeEvent(new RuntimeEvent(
+            type: RuntimeEventTypeEnum::ToolExecutionOutputDelta->value,
+            runId: 'parent-1',
+            seq: 2,
+            payload: [
+                'tool_call_id' => 'tc1',
+                'tool_name' => 'subagent',
+                'delta' => '',
+                'subagent_progress' => [
+                    'mode' => 'single',
+                    'status' => 'running',
+                    'agent_name' => 'scout',
+                    'artifact_id' => 'agent_a',
+                    'agent_run_id' => $childRunId,
+                    'task_summary' => 'Stale running',
+                ],
+            ],
+        ));
+        $this->assertSame(SubagentLiveStatusEnum::WaitingHuman, $state->subagentLiveCatalog->findByArtifactId('agent_a')?->status);
+
+        $coordinator->cancel();
+        $this->assertFalse($state->subagentLiveCatalog->isNeedsInputLatched($childRunId));
+        $this->assertSame(SubagentLiveStatusEnum::Running, $state->subagentLiveCatalog->findByArtifactId('agent_a')?->status);
+    }
+
+    public function testMatchingToolTerminalClearsOnlyMatchingChildLatch(): void
+    {
+        $childRunId = 'child-run-terminal-clear';
+        $otherRunId = 'child-run-other';
+        $client = $this->createMock(AgentSessionClient::class);
+        $client->expects($this->once())->method('send');
+
+        $coordinator = new QuestionCoordinator();
+        $state = new \Ineersa\Tui\Runtime\TuiSessionState('parent-1');
+        foreach ([
+            ['agent_a', $childRunId],
+            ['agent_b', $otherRunId],
+        ] as [$artifactId, $runId]) {
+            $state->subagentLiveCatalog->ingestRuntimeEvent(new RuntimeEvent(
+                type: RuntimeEventTypeEnum::ToolExecutionOutputDelta->value,
+                runId: 'parent-1',
+                seq: 1,
+                payload: [
+                    'tool_call_id' => 'tc_batch',
+                    'tool_name' => 'subagent',
+                    'delta' => '',
+                    'subagent_progress' => [
+                        'mode' => 'single',
+                        'status' => 'running',
+                        'agent_name' => 'scout',
+                        'artifact_id' => $artifactId,
+                        'agent_run_id' => $runId,
+                        'task_summary' => 'Task',
+                    ],
+                ],
+            ));
+            $state->subagentLiveCatalog->markNeedsInputForRun($runId);
+        }
+
+        $screen = new ChatScreen(
+            new DefaultTheme(new ThemePalette('test')),
+            'parent-1',
+            new PromptEditor(),
+        );
+
+        $ref = new \ReflectionMethod(RuntimeQuestionEventHandler::class, 'handleToolQuestionRequested');
+        $ref->invoke($this->runtimeQuestionHandler(), new RuntimeEvent(
+            type: RuntimeEventTypeEnum::ToolQuestionRequested->value,
+            runId: $childRunId,
+            seq: 0,
+            payload: [
+                'request_id' => 'rq_term_clear',
+                'prompt' => 'Allow?',
+                'kind' => 'confirm',
+                'schema' => ['type' => 'boolean'],
+                'tool_call_id' => 'tc_write',
+                'tool_name' => 'write',
+            ],
+        ), $client, $coordinator, $state, $screen);
+
+        $controller = (new \ReflectionClass(\Ineersa\Tui\Question\QuestionController::class))->newInstanceWithoutConstructor();
+        $termRef = new \ReflectionMethod(RuntimeQuestionEventHandler::class, 'handleToolTerminal');
+        $termRef->invoke(
+            $this->runtimeQuestionHandler(),
+            new RuntimeEvent(
+                type: RuntimeEventTypeEnum::ToolExecutionCompleted->value,
+                runId: $childRunId,
+                seq: 1,
+                payload: ['tool_call_id' => 'tc_write'],
+            ),
+            $coordinator,
+            $controller,
+        );
+
+        $this->assertFalse($state->subagentLiveCatalog->isNeedsInputLatched($childRunId));
+        $this->assertTrue($state->subagentLiveCatalog->isNeedsInputLatched($otherRunId), 'Sibling child latch must remain');
+        $this->assertFalse($coordinator->actionRequired());
+    }
+
     private function runtimeQuestionHandler(): RuntimeQuestionEventHandler
     {
         return new RuntimeQuestionEventHandler();

@@ -8,6 +8,11 @@ use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 
 /**
  * Indexes subagent child runs from parent runtime subagent_progress payloads.
+ *
+ * Owns the durable-in-session needs-input latch for tool-local questions
+ * (SafeGuard and similar). Latch is keyed by child agentRunId so stale
+ * nonterminal parent progress cannot erase a pending tool question, while
+ * terminal progress always clears and wins.
  */
 final class SubagentLiveCatalog
 {
@@ -16,6 +21,16 @@ final class SubagentLiveCatalog
 
     /** @var array<string, true> */
     private array $dismissedArtifactIds = [];
+
+    /**
+     * Pending needs-input latches keyed by child agentRunId.
+     *
+     * A latch may exist before the catalog row arrives (tool_question before
+     * the first subagent_progress upsert). Nonterminal progress cannot clear it.
+     *
+     * @var array<string, true>
+     */
+    private array $needsInputLatchesByRunId = [];
 
     public function dismissArtifactId(string $artifactId): ?SubagentLiveChildDTO
     {
@@ -27,6 +42,11 @@ final class SubagentLiveCatalog
         $existing = $this->byArtifactId[$artifactId] ?? null;
         $this->dismissedArtifactIds[$artifactId] = true;
         unset($this->byArtifactId[$artifactId]);
+
+        // Dismiss must not leave an orphan latch for a removed row.
+        if (null !== $existing) {
+            $this->clearNeedsInputLatch($existing->agentRunId);
+        }
 
         return $existing;
     }
@@ -69,6 +89,82 @@ final class SubagentLiveCatalog
         return $this->byArtifactId[$artifactId] ?? null;
     }
 
+    public function findByAgentRunId(string $agentRunId): ?SubagentLiveChildDTO
+    {
+        $agentRunId = trim($agentRunId);
+        if ('' === $agentRunId) {
+            return null;
+        }
+
+        foreach ($this->byArtifactId as $child) {
+            if ($child->agentRunId === $agentRunId) {
+                return $child;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * True while a tool-local needs-input latch is held for this child run.
+     */
+    public function isNeedsInputLatched(string $agentRunId): bool
+    {
+        $agentRunId = trim($agentRunId);
+
+        return '' !== $agentRunId && isset($this->needsInputLatchesByRunId[$agentRunId]);
+    }
+
+    /**
+     * Latch needs-input for a child run. Works even if the catalog row has not
+     * arrived yet; when the row later upserts, nonterminal progress keeps WaitingHuman.
+     */
+    public function markNeedsInputForRun(string $agentRunId): void
+    {
+        $agentRunId = trim($agentRunId);
+        if ('' === $agentRunId) {
+            return;
+        }
+
+        $this->needsInputLatchesByRunId[$agentRunId] = true;
+
+        $existing = $this->findByAgentRunId($agentRunId);
+        if (null === $existing) {
+            return;
+        }
+
+        if (SubagentLiveStatusEnum::WaitingHuman !== $existing->status) {
+            $this->applyChildStatus($existing->artifactId, SubagentLiveStatusEnum::WaitingHuman);
+        }
+    }
+
+    /**
+     * Clear the needs-input latch. Safe when the row was already overwritten or
+     * never existed; optionally restores Running only when still WaitingHuman.
+     */
+    public function clearNeedsInputForRun(string $agentRunId, bool $restoreRunningIfWaiting = true): void
+    {
+        $agentRunId = trim($agentRunId);
+        if ('' === $agentRunId) {
+            return;
+        }
+
+        $this->clearNeedsInputLatch($agentRunId);
+
+        if (!$restoreRunningIfWaiting) {
+            return;
+        }
+
+        $existing = $this->findByAgentRunId($agentRunId);
+        if (null === $existing) {
+            return;
+        }
+
+        if (SubagentLiveStatusEnum::WaitingHuman === $existing->status) {
+            $this->applyChildStatus($existing->artifactId, SubagentLiveStatusEnum::Running);
+        }
+    }
+
     /**
      * Optimistic catalog update when the TUI knows a child left waiting_human
      * before the next parent subagent_progress event (answer, dismiss, cancel).
@@ -78,6 +174,12 @@ final class SubagentLiveCatalog
         $existing = $this->byArtifactId[$artifactId] ?? null;
         if (null === $existing) {
             return;
+        }
+
+        // Terminal optimistic updates must drop the latch so future nonterminal
+        // progress cannot re-promote a cancelled/completed child to needs-input.
+        if ($status->isTerminal()) {
+            $this->clearNeedsInputLatch($existing->agentRunId);
         }
 
         $this->byArtifactId[$artifactId] = new SubagentLiveChildDTO(
@@ -159,6 +261,16 @@ final class SubagentLiveCatalog
             return;
         }
 
+        // Terminal progress always clears the latch and wins over needs-input.
+        if ($status->isTerminal()) {
+            $this->clearNeedsInputLatch($agentRunId);
+        } elseif ($this->isNeedsInputLatched($agentRunId) && !$status->needsAttention()) {
+            // Nonterminal progress (running/pending/unknown) cannot erase a pending
+            // tool-question latch. Keep the catalog row as WaitingHuman until answer,
+            // cancel, matching tool terminal, or true terminal progress.
+            $status = SubagentLiveStatusEnum::WaitingHuman;
+        }
+
         if (null === $model && null !== $existing) {
             $model = $existing->model;
         }
@@ -180,6 +292,11 @@ final class SubagentLiveCatalog
             latestInputTokens: $latestInputTokens,
             contextWindow: $contextWindow,
         );
+    }
+
+    private function clearNeedsInputLatch(string $agentRunId): void
+    {
+        unset($this->needsInputLatchesByRunId[$agentRunId]);
     }
 
     private function optionalString(mixed $value): ?string

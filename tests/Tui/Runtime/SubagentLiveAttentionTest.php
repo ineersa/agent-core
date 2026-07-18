@@ -144,9 +144,53 @@ final class SubagentLiveAttentionTest extends TestCase
         $child = $state->subagentLiveCatalog->findByArtifactId('agent_a');
         $this->assertNotNull($child);
         $this->assertSame(SubagentLiveStatusEnum::WaitingHuman, $child->status);
+        $this->assertTrue($state->subagentLiveCatalog->isNeedsInputLatched('child-run-1'));
         $this->assertSame(RunActivityStateEnum::WaitingHuman, $state->subagentLiveView->childActivity);
         $this->assertNull($this->statusText($screen, 'subagent_live'));
         $this->assertNull($this->statusText($screen, 'agents-live'));
+    }
+
+    public function testMarkNeedsInputSurvivesStaleRunningProgressIngest(): void
+    {
+        $state = new TuiSessionState('parent-session');
+        $state->subagentLiveCatalog->ingestRuntimeEvent($this->progressEvent([
+            'mode' => 'single', 'status' => 'running', 'agent_name' => 'scout',
+            'artifact_id' => 'agent_a', 'agent_run_id' => 'child-run-1', 'task_summary' => 'Task',
+        ]));
+        $state->subagentLiveView->enter(new SubagentLiveChildDTO(
+            agentRunId: 'child-run-1',
+            artifactId: 'agent_a',
+            agentName: 'scout',
+            status: SubagentLiveStatusEnum::Running,
+            taskSummary: 'Task',
+            lastActivityAtMs: 1,
+        ));
+        $state->subagentLiveView->childActivity = RunActivityStateEnum::Running;
+
+        $screen = new ChatScreen(
+            new DefaultTheme(new ThemePalette('test')),
+            'parent-session',
+            new PromptEditor(),
+            new TranscriptDisplayConfig(),
+            new TranscriptDisplayState(),
+        );
+
+        SubagentLiveAttention::markChildNeedsInputForRun($state, $screen, 'child-run-1');
+        $state->subagentLiveCatalog->ingestRuntimeEvent($this->progressEvent([
+            'mode' => 'single', 'status' => 'running', 'agent_name' => 'scout',
+            'artifact_id' => 'agent_a', 'agent_run_id' => 'child-run-1', 'task_summary' => 'Stale',
+        ]));
+
+        $refreshed = $state->subagentLiveCatalog->findByArtifactId('agent_a');
+        $this->assertNotNull($refreshed);
+        $this->assertSame(SubagentLiveStatusEnum::WaitingHuman, $refreshed->status);
+        $state->subagentLiveView->selected = $refreshed;
+        if (SubagentLiveStatusEnum::WaitingHuman === $refreshed->status) {
+            $state->subagentLiveView->childActivity = RunActivityStateEnum::WaitingHuman;
+        }
+
+        $this->assertSame(RunActivityStateEnum::WaitingHuman, $state->subagentLiveView->childActivity);
+        $this->assertTrue($state->subagentLiveCatalog->isNeedsInputLatched('child-run-1'));
     }
 
     public function testRefreshAttentionFooterClearsStaleAgentsLiveWhenLiveViewInactive(): void
