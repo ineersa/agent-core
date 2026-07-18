@@ -24,7 +24,6 @@ final readonly class ForkChildMessageComposer
     public function compose(
         array $inheritedMessages,
         string $task,
-        string $artifactId,
         array $allowedToolNames,
         string $agentsMd,
         string $skillsContext,
@@ -57,11 +56,8 @@ final readonly class ForkChildMessageComposer
             $messages[] = $message;
         }
 
-        $messages[] = new AgentMessage(
-            role: 'user-context',
-            content: [['type' => 'text', 'text' => $this->buildForkChildContract($artifactId, $allowedToolNames)]],
-            metadata: ['source' => 'agent_child_contract'],
-        );
+        // Artifact ID stays parent-only (SubagentChildRunHandoffRenderer). The child
+        // receives FORK MODE + task handoff instructions; no separate agent_child_contract.
 
         $messages[] = new AgentMessage(
             role: 'user',
@@ -94,24 +90,5 @@ final readonly class ForkChildMessageComposer
         }
 
         return implode("\n\n", $parts);
-    }
-
-    /**
-     * @param list<string> $allowedToolNames
-     */
-    private function buildForkChildContract(string $artifactId, array $allowedToolNames): string
-    {
-        $toolList = [] === $allowedToolNames ? 'none' : implode(', ', $allowedToolNames);
-
-        return <<<EOT
-You are an isolated delegated fork child, not the parent session.
-
-Artifact ID: {$artifactId}
-
-- Solve only the delegated task in the final user message.
-- You cannot launch fork or subagent; your active tools are: {$toolList}.
-- Return a dense handoff with status, evidence, files/symbols touched, validation, risks, and recommended continuation.
-- Do not claim tools or capabilities you do not have.
-EOT;
     }
 }

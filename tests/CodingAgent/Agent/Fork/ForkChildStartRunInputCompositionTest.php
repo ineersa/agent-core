@@ -58,8 +58,14 @@ final class ForkChildStartRunInputCompositionTest extends IsolatedKernelTestCase
         $roles = array_map(static fn (AgentMessage $m): string => $m->role, $messages);
 
         $this->assertSame('system', $roles[0]);
-        $this->assertContains('user-context', $roles);
+        // user-context is only present when agents/skills context is non-empty;
+        // agent_child_contract is intentionally absent for fork children.
+        $this->assertNotContains('agent_child_contract', array_map(
+            static fn (AgentMessage $m): string => (string) ($m->metadata['source'] ?? ''),
+            $messages,
+        ));
         $this->assertSame('user', $roles[array_key_last($roles)]);
+        $this->assertStringContainsString('FORK MODE IS ENABLED', $prepared->startRunInput->systemPrompt);
 
         $inheritedUser = array_values(array_filter($messages, static fn (AgentMessage $m): bool => 'user' === $m->role && 'prior user' === ($m->content[0]['text'] ?? '')));
         $this->assertCount(1, $inheritedUser);
@@ -250,23 +256,23 @@ final class ForkChildStartRunInputCompositionTest extends IsolatedKernelTestCase
         $this->assertNotContains('subagent', $active->toolNames);
     }
 
-    public function testForkChildContractListsNoneWhenAllowedToolsEmpty(): void
+    public function testForkChildOmitsAgentChildContractAndKeepsFinalityPlusElevenSections(): void
     {
-        $parentRunId = 'parent-fork-empty-tools';
+        $parentRunId = 'parent-fork-no-contract';
         $runStore = self::getContainer()->get(\Ineersa\AgentCore\Contract\RunStoreInterface::class);
         $runStore->compareAndSwap(new RunState(runId: $parentRunId, status: RunStatus::Running, version: 0, messages: [], turnNo: 1), 0);
 
         $builder = self::getContainer()->get(ForkChildLaunchInputBuilder::class);
         $identity = new ChildRunIdentityDTO(
             parentRunId: $parentRunId,
-            childRunId: 'child-fork-empty-tools',
-            artifactId: 'artifact-fork-empty-tools',
+            childRunId: 'child-fork-no-contract',
+            artifactId: 'artifact-fork-no-contract',
             displayName: 'fork',
             taskSummary: 'Task',
             definitionModel: null,
             artifactKind: AgentArtifactKindEnum::Fork,
         );
-        $policy = ['tools' => [], 'mcp' => ['mode' => 'inherit', 'tools' => []]];
+        $policy = ['tools' => ['read'], 'mcp' => ['mode' => 'inherit', 'tools' => []]];
         $prepared = $builder->buildPrepared($identity, new ForkLaunchTaskDTO(task: 'Task', inheritedMessages: []), $policy);
 
         $contractMessages = array_values(array_filter(
@@ -274,9 +280,23 @@ final class ForkChildStartRunInputCompositionTest extends IsolatedKernelTestCase
             static fn (AgentMessage $m): bool => 'user-context' === $m->role
                 && 'agent_child_contract' === ($m->metadata['source'] ?? null),
         ));
-        $this->assertCount(1, $contractMessages);
-        $contractText = (string) ($contractMessages[0]->content[0]['text'] ?? '');
-        $this->assertStringContainsString('your active tools are: none', $contractText);
-        $this->assertStringNotContainsString('your active tools are: .', $contractText);
+        $this->assertCount(0, $contractMessages, 'Fork child must not receive agent_child_contract user-context');
+
+        $joined = '';
+        foreach ($prepared->startRunInput->messages as $message) {
+            foreach ($message->content as $block) {
+                if ('text' === ($block['type'] ?? '') && isset($block['text'])) {
+                    $joined .= (string) $block['text']."\n";
+                }
+            }
+        }
+
+        $this->assertStringNotContainsString('Artifact ID: artifact-fork-no-contract', $joined);
+        $this->assertStringNotContainsString('agent_child_contract', $joined);
+        $this->assertStringContainsString('FORK MODE IS ENABLED', $prepared->startRunInput->systemPrompt);
+        $this->assertStringContainsString('Never emit the handoff in a message that also requests tools', $prepared->startRunInput->systemPrompt);
+        $this->assertStringContainsString('## 1. Result / status', $joined);
+        $this->assertStringContainsString('## 11. Final handoff', $joined);
+        $this->assertSame('user', $prepared->startRunInput->messages[array_key_last($prepared->startRunInput->messages)]->role);
     }
 }

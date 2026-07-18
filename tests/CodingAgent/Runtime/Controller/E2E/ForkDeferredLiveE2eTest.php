@@ -16,6 +16,8 @@ final class ForkDeferredLiveE2eTest extends ControllerE2eTestCase
 {
     private const CHILD_REPLY = 'FORK_CHILD_DONE';
 
+    private const CHILD_TASK = 'Call tool read exactly once with path ./probe.txt. After the tool succeeds, produce the dense handoff report required by your instructions. In section 1 include the exact token '.self::CHILD_REPLY.'. Do not call tools in the same message as the handoff.';
+
     public function testForkToolDeferredCompletionViaLiveController(): void
     {
         $this->spawnController();
@@ -27,7 +29,9 @@ final class ForkDeferredLiveE2eTest extends ControllerE2eTestCase
             'id' => $startCmdId,
             'type' => 'start_run',
             'payload' => [
-                'prompt' => '[llm-real:fork-deferred-v2] Call tool fork exactly once with JSON arguments {"task":"Reply with exactly '.self::CHILD_REPLY.' only. No other tools."}. Do not call any tool except fork.',
+                // Unique first-user tag for llama-proxy cache isolation.
+                // Child task forces one tool then a final post-tool handoff (prompt finality regression).
+                'prompt' => '[llm-real:fork-deferred-v3] Call tool fork exactly once with JSON arguments {"task":'.json_encode(self::CHILD_TASK, \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_SLASHES).'}. Do not call any tool except fork.',
             ],
         ]);
 
@@ -61,6 +65,13 @@ final class ForkDeferredLiveE2eTest extends ControllerE2eTestCase
             $resultText = json_encode($completedPayload, \JSON_THROW_ON_ERROR);
         }
         $this->assertStringContainsString(self::CHILD_REPLY, $resultText, 'Fork completion must include child reply token. '.$this->collectDiagnostics($events));
+        $this->assertStringContainsString('Complete handoff:', $resultText, 'Parent wrapper must keep artifact handoff header. '.$this->collectDiagnostics($events));
+    }
+
+    protected function createIsolatedProjectDir(): void
+    {
+        parent::createIsolatedProjectDir();
+        file_put_contents($this->tempDir.'/probe.txt', "probe-ok\n");
     }
 
     /**
@@ -85,7 +96,8 @@ final class ForkDeferredLiveE2eTest extends ControllerE2eTestCase
 
     protected function controllerExtraArgs(): array
     {
-        return ['--tools=fork'];
+        // Parent allowlist includes read so the fork child can inherit it after fork/subagent are stripped.
+        return ['--tools=fork,read'];
     }
 
     protected function tempDirPrefix(): string
