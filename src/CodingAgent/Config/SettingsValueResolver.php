@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Config;
 
 use Symfony\Component\PropertyAccess\PropertyAccessorInterface;
-use Symfony\Component\PropertyAccess\PropertyPathBuilder;
 
 /**
  * Resolves a dotted settings path against a fresh {@see SettingsResolutionDTO}.
@@ -27,7 +26,7 @@ final class SettingsValueResolver
 
     public function resolve(SettingsResolutionDTO $settings, string $dottedPath): SettingsValueDTO
     {
-        $propertyPath = self::dottedPathToPropertyPath($dottedPath);
+        $propertyPath = self::propertyPath($dottedPath);
         if (null === $propertyPath) {
             return new SettingsValueDTO(exists: false);
         }
@@ -66,32 +65,35 @@ final class SettingsValueResolver
     }
 
     /**
-     * Converts "tui.theme" to "[tui][theme]" via PropertyPathBuilder.
+     * Converts "tui.theme" to the Symfony PropertyAccess bracket path "[tui][theme]".
+     *
+     * Returns null for empty/malformed paths so callers can reject without
+     * inventing a separate path parser. PropertyAccessor performs traversal.
      */
-    private static function dottedPathToPropertyPath(string $dottedPath): ?string
+    public static function propertyPath(string $dottedPath): ?string
     {
         $dottedPath = trim($dottedPath);
         if ('' === $dottedPath) {
             return null;
         }
 
-        $builder = new PropertyPathBuilder();
+        $segments = [];
         foreach (explode('.', $dottedPath) as $segment) {
             if ('' === $segment) {
                 continue;
             }
             // Reject control chars and PropertyPath-significant [, ], \, ? so
-            // PropertyPathBuilder never emits a malformed PropertyPath string.
+            // the bracket path never contains unescaped path syntax.
             if (preg_match('/[\x00-\x1F\x7F\[\]\\\\?]/', $segment)) {
                 return null;
             }
-            $builder->appendIndex($segment);
+            $segments[] = $segment;
         }
 
-        if (0 === $builder->getLength()) {
+        if ([] === $segments) {
             return null;
         }
 
-        return (string) $builder;
+        return '['.implode('][', $segments).']';
     }
 }

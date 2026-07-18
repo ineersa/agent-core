@@ -79,6 +79,7 @@ final readonly class SafeGuardConfig
      * @param string       $writeToolName            Tool name used for write (default: 'write')
      * @param string       $editToolName             Tool name used for edit (default: 'edit')
      * @param string       $readToolName             Tool name used for read (default: 'read')
+     * @param string       $settingsToolName         Tool name used for settings (default: 'settings')
      * @param bool         $autoDenyInNoninteractive When true and running without a TUI/controller,
      *                                               return Block instead of RequireApproval (default: true)
      */
@@ -92,6 +93,7 @@ final readonly class SafeGuardConfig
         public string $writeToolName = 'write',
         public string $editToolName = 'edit',
         public string $readToolName = 'read',
+        public string $settingsToolName = 'settings',
         public bool $autoDenyInNoninteractive = true,
     ) {
     }
@@ -120,6 +122,7 @@ final readonly class SafeGuardConfig
             writeToolName: (string) ($toolNames['write'] ?? 'write'),
             editToolName: (string) ($toolNames['edit'] ?? 'edit'),
             readToolName: (string) ($toolNames['read'] ?? 'read'),
+            settingsToolName: (string) ($toolNames['settings'] ?? 'settings'),
             autoDenyInNoninteractive: (bool) ($data['auto_deny_in_noninteractive'] ?? true),
         );
     }

@@ -909,6 +909,88 @@ final class SafeGuardToolCallHookTest extends TestCase
         }
     }
 
+    public function testSettingsMutationWithChannelOffersAllowOnceAndBlockOnly(): void
+    {
+        putenv('HATFIELD_APPROVAL_CHANNEL=controller');
+        try {
+            $tracker = new ApprovalSessionTracker();
+            $config = new SafeGuardConfig(autoDenyInNoninteractive: false);
+            $hook = new SafeGuardToolCallHook(
+                classifier: SafeGuardClassifier::fromConfig($config),
+                policy: new SafeGuardPolicy(),
+                approvalTracker: $tracker,
+                policyWriter: null,
+                cwd: $this->cwd,
+                autoDenyInNoninteractive: false,
+            );
+            $dto = $hook->onToolCall(new ToolCallContextDTO(
+                toolCallId: 'call_settings_set',
+                toolName: 'settings',
+                arguments: ['operation' => 'set', 'path' => 'tui.theme', 'scope' => 'project', 'value' => 'nord'],
+                orderIndex: 0,
+            ));
+
+            $this->assertSame(ToolCallDecisionKindEnum::RequireApproval, $dto->kind);
+            $this->assertSame(
+                ['✅ Allow once', '❌ Block'],
+                $dto->details['schema']['enum'] ?? null,
+            );
+            $this->assertArrayNotHasKey('non_persistent', $dto->details);
+            $operationKey = (string) ($dto->details['operation_key'] ?? '');
+            $this->assertSame('settings:set:project:tui.theme', $operationKey);
+            $questionId = (string) ($dto->details['question_id'] ?? '');
+
+            $allowed = $hook->resolveApprovalAnswer(new ApprovalAnswerContextDTO(
+                questionId: $questionId,
+                answer: '✅ Allow once',
+                toolName: 'settings',
+                approvalContext: [
+                    'operation_key' => $operationKey,
+                    'category' => 'custom_dangerous',
+                ],
+            ));
+            $this->assertSame(ToolCallDecisionKindEnum::Allow, $allowed->kind);
+
+            $hook->onApprovalAnswered(new ApprovalAnswerContextDTO(
+                questionId: $questionId,
+                answer: '✅ Allow once',
+                toolName: 'settings',
+                approvalContext: [
+                    'operation_key' => $operationKey,
+                    'category' => 'custom_dangerous',
+                ],
+            ));
+            $this->assertTrue($tracker->isApproved($operationKey));
+
+            $blocked = $hook->resolveApprovalAnswer(new ApprovalAnswerContextDTO(
+                questionId: $questionId,
+                answer: '❌ Block',
+                toolName: 'settings',
+                approvalContext: [
+                    'operation_key' => $operationKey,
+                    'category' => 'custom_dangerous',
+                ],
+            ));
+            $this->assertSame(ToolCallDecisionKindEnum::Block, $blocked->kind);
+        } finally {
+            putenv('HATFIELD_APPROVAL_CHANNEL');
+        }
+    }
+
+    public function testSettingsMutationWithoutChannelFailsClosedEvenWhenAutoDenyFalse(): void
+    {
+        $hook = $this->createHook(autoDeny: false);
+        $dto = $hook->onToolCall(new ToolCallContextDTO(
+            toolCallId: 'call_settings_no_channel',
+            toolName: 'settings',
+            arguments: ['operation' => 'remove', 'path' => 'tui.theme', 'scope' => 'user'],
+            orderIndex: 0,
+        ));
+
+        $this->assertSame(ToolCallDecisionKindEnum::Block, $dto->kind);
+        $this->assertTrue((bool) ($dto->details['auto_denied'] ?? false));
+    }
+
     private function backupAndClearApprovalChannelEnv(): void
     {
         $value = getenv('HATFIELD_APPROVAL_CHANNEL');
