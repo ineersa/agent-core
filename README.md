@@ -22,7 +22,6 @@ Monorepo for Hatfield, a coding assistant built with PHP.
 │       ├── config/
 │       └── composer.json
 ├── docs/
-│   └── archive/implementation/  # Archived stage plans
 ├── .pi/plans/                 # Active plans
 ├── castor.php                 # Root orchestrator
 └── composer.json              # Root: orchestration only

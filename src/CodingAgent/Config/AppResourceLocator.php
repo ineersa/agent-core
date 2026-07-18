@@ -40,6 +40,14 @@ final readonly class AppResourceLocator
     }
 
     /**
+     * Absolute path to the curated internal documentation directory.
+     */
+    public function getInternalDocsPath(): string
+    {
+        return $this->appRoot.'/internal-docs';
+    }
+
+    /**
      * The application installation root directory.
      */
     public function getAppRoot(): string

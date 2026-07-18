@@ -668,6 +668,8 @@ parameters:
       - AppExtensionApi
       - AgentCore
       - AppConfig
+      - AppMarkdown
+      - SymfonyYaml
       - SymfonyAiPlatform
       - SymfonyEventDispatcher
 

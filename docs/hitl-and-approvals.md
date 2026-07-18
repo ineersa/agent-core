@@ -1,3 +1,7 @@
+---
+description: Human-in-the-loop questions, approval flows, and SafeGuard modes.
+---
+
 # HITL and Approval Architecture
 
 Human-in-the-loop (HITL) covers two distinct flows where the agent runtime
