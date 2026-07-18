@@ -912,6 +912,16 @@ final class AutoCompactionHookSubscriberTest extends TestCase
             {
                 throw new \RuntimeException('not called');
             }
+
+            public function compactMessages(
+                string $runId,
+                int $turnNo,
+                array $messages,
+                string $trigger = 'manual',
+                ?string $customInstructions = null,
+            ): \Ineersa\AgentCore\Contract\Compaction\MessageSnapshotCompactionResult {
+                throw new \LogicException('compactMessages not expected in this test path.');
+            }
         };
 
         $summaryOnlySubscriber = new AutoCompactionHookSubscriber(
@@ -991,6 +1001,16 @@ final class AutoCompactionHookSubscriberTest extends TestCase
             {
                 throw new \RuntimeException('not called');
             }
+
+            public function compactMessages(
+                string $runId,
+                int $turnNo,
+                array $messages,
+                string $trigger = 'manual',
+                ?string $customInstructions = null,
+            ): \Ineersa\AgentCore\Contract\Compaction\MessageSnapshotCompactionResult {
+                throw new \LogicException('compactMessages not expected in this test path.');
+            }
         };
 
         $summaryPlusFreshSubscriber = new AutoCompactionHookSubscriber(
@@ -1047,6 +1067,16 @@ final class AutoCompactionHookSubscriberTest extends TestCase
             public function buildCompactedMessages(string $summaryText, CompactionPrepareResult $result): CompactResult
             {
                 throw new \RuntimeException('not called');
+            }
+
+            public function compactMessages(
+                string $runId,
+                int $turnNo,
+                array $messages,
+                string $trigger = 'manual',
+                ?string $customInstructions = null,
+            ): \Ineersa\AgentCore\Contract\Compaction\MessageSnapshotCompactionResult {
+                throw new \LogicException('compactMessages not expected in this test path.');
             }
         };
 

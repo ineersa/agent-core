@@ -640,8 +640,9 @@ services:
   # ─── Compaction pipeline (COMP-02) ───
 
   # Compaction service: CodingAgent adapter implementing the AgentCore contract.
-  # Autowiring resolves SessionCompactor and CompactionConfig; the interface
-  # alias lets AgentCore pipeline code depend on the contract.
+  # Autowiring resolves SessionCompactor, hooks, model selection, and PlatformInterface
+  # for synchronous compactMessages; the interface alias lets AgentCore pipeline
+  # code depend on the contract.
   Ineersa\CodingAgent\Compaction\CompactionService: ~
 
   Ineersa\AgentCore\Contract\Compaction\CompactionServiceInterface:
@@ -702,6 +703,13 @@ services:
         execution: '@Ineersa\CodingAgent\Agent\Execution\SubagentExecutionService'
 
   Ineersa\CodingAgent\Agent\Tool\SubagentToolDefinitionProvider:
+    tags: ['hatfield.tool_provider']
+  Ineersa\CodingAgent\Agent\Tool\ForkToolHandler:
+    arguments:
+      $executionServiceLocator: !service_locator
+        execution: '@Ineersa\CodingAgent\Agent\Fork\ForkExecutionService'
+
+  Ineersa\CodingAgent\Agent\Tool\ForkToolDefinitionProvider:
     tags: ['hatfield.tool_provider']
 
   # CodingAgent ToolSetResolver — bridges ToolRegistry to AgentCore resolver seam.

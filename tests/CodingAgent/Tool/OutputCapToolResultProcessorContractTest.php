@@ -12,6 +12,8 @@ use Ineersa\CodingAgent\Tool\OutputCap;
 use Ineersa\CodingAgent\Tool\OutputCapToolResultProcessor;
 use PHPUnit\Framework\TestCase;
 
+use function Symfony\Component\String\u;
+
 /**
  * Integration contract proof: a large tool result passing through the generic
  * OutputCapToolResultProcessor produces a ModelNotification, compact ToolResult
@@ -235,5 +237,98 @@ final class OutputCapToolResultProcessorContractTest extends TestCase
         // Returns unchanged.
         $this->assertSame([], $processed->content);
         $this->assertArrayHasKey('raw_result', \is_array($processed->details) ? $processed->details : []);
+    }
+
+    public function testSuccessfulForkHandoffBetweenDefaultAndDocCapStaysInline(): void
+    {
+        // Thesis: successful fork/subagent handoff reports use docCap (50k),
+        // not defaultCap (20k), even though the tool call has no path argument.
+        $cfg = new OutputCapConfig(storageDir: $this->tmpDir, defaultCap: 20000, docCap: 50000);
+        $outputCap = new OutputCap($cfg);
+        $processor = new OutputCapToolResultProcessor($outputCap);
+
+        $handoff = str_repeat('H', 25000)."\n## 1. Result / status\n";
+        $this->assertGreaterThan(20000, u($handoff)->length());
+        $this->assertLessThan(50000, u($handoff)->length());
+
+        $result = new ToolResult(
+            toolCallId: 'call-fork-1',
+            toolName: 'fork',
+            content: [['type' => 'text', 'text' => $handoff]],
+            details: ['raw_result' => $handoff],
+            isError: false,
+        );
+        $toolCall = new ToolCall(
+            toolCallId: 'call-fork-1',
+            toolName: 'fork',
+            arguments: ['task' => 'do work'],
+            orderIndex: 0,
+        );
+
+        $processed = $processor->process($result, $toolCall);
+
+        $this->assertSame($handoff, $processed->content[0]['text'] ?? null);
+        $details = \is_array($processed->details) ? $processed->details : [];
+        $this->assertArrayNotHasKey('model_notifications', $details);
+        $this->assertArrayNotHasKey('output_cap', $details);
+    }
+
+    public function testSuccessfulSubagentHandoffBetweenDefaultAndDocCapStaysInline(): void
+    {
+        $cfg = new OutputCapConfig(storageDir: $this->tmpDir, defaultCap: 20000, docCap: 50000);
+        $outputCap = new OutputCap($cfg);
+        $processor = new OutputCapToolResultProcessor($outputCap);
+
+        $handoff = str_repeat('S', 30000);
+        $result = new ToolResult(
+            toolCallId: 'call-sub-1',
+            toolName: 'subagent',
+            content: [['type' => 'text', 'text' => $handoff]],
+            details: ['raw_result' => $handoff],
+            isError: false,
+        );
+        $toolCall = new ToolCall(
+            toolCallId: 'call-sub-1',
+            toolName: 'subagent',
+            arguments: ['prompt' => 'review'],
+            orderIndex: 1,
+        );
+
+        $processed = $processor->process($result, $toolCall);
+
+        $this->assertSame($handoff, $processed->content[0]['text'] ?? null);
+        $details = \is_array($processed->details) ? $processed->details : [];
+        $this->assertArrayNotHasKey('model_notifications', $details);
+    }
+
+    public function testOrdinaryNoPathToolStillUsesDefaultCap(): void
+    {
+        // Thesis: non-report tools without a path still cap at defaultCap.
+        $cfg = new OutputCapConfig(storageDir: $this->tmpDir, defaultCap: 20000, docCap: 50000);
+        $outputCap = new OutputCap($cfg);
+        $processor = new OutputCapToolResultProcessor($outputCap);
+
+        $large = str_repeat('B', 25000);
+        $result = new ToolResult(
+            toolCallId: 'call-bash-cap',
+            toolName: 'bash',
+            content: [['type' => 'text', 'text' => $large]],
+            details: ['raw_result' => $large],
+            isError: false,
+        );
+        $toolCall = new ToolCall(
+            toolCallId: 'call-bash-cap',
+            toolName: 'bash',
+            arguments: ['command' => 'cat big.log'],
+            orderIndex: 2,
+        );
+
+        $processed = $processor->process($result, $toolCall);
+
+        $this->assertStringContainsString('bash completed', (string) ($processed->content[0]['text'] ?? ''));
+        $details = \is_array($processed->details) ? $processed->details : [];
+        $this->assertArrayHasKey('output_cap', $details);
+        $this->assertSame(20000, $details['output_cap']['cap']);
+        $this->assertTrue($details['output_cap']['capped']);
     }
 }

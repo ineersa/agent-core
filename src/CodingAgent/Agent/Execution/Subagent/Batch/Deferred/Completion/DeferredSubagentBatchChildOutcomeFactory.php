@@ -23,6 +23,8 @@ final readonly class DeferredSubagentBatchChildOutcomeFactory
         DeferredSubagentBatchProjectionDTO $batch,
         DeferredSubagentChildProjectionDTO $child,
     ): ChildRunIdentityDTO {
+        // Authoritative artifact kind lives in AgentArtifactRegistry; this reconstructed identity
+        // is keyed by parentRunId + artifactId for lookup/finalization only (batch projection placeholder).
         return new ChildRunIdentityDTO(
             parentRunId: $batch->parentRunId,
             childRunId: $child->childRunId,

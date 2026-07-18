@@ -95,7 +95,7 @@ TXT;
     public function formatCompletedResult(string $displayName, string $artifactId, string $finalMessages): string
     {
         return \sprintf(
-            "Subagent %s completed.\nArtifact: %s\n\nFull handoff is included below (agent_retrieve is optional for single-mode success; use it only for metadata/history/debug or if you need to re-read this artifact).\n\n%s",
+            "Subagent %s completed.\nArtifact: %s\n\nComplete handoff:\n\n%s",
             $displayName,
             $artifactId,
             $finalMessages,

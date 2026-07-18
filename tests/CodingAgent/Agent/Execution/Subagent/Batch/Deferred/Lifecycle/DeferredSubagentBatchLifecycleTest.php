@@ -790,6 +790,9 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         if ('completed' === $scenario) {
             $this->assertSame(AgentArtifactStatusEnum::Completed, $art->status);
             $this->assertStringStartsWith('Subagent s-nat completed.', $presentation);
+            $this->assertStringContainsString('Artifact: '.$c1['artifactId'], $presentation);
+            $this->assertStringContainsString("Complete handoff:\n\nall done", $presentation);
+            $this->assertStringNotContainsString('agent_retrieve', $presentation);
             $this->assertStringContainsString('all done', $presentation);
         } elseif ('failed' === $scenario) {
             $this->assertSame(AgentArtifactStatusEnum::Failed, $art->status);
@@ -1093,6 +1096,72 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         ];
     }
 
+    public function testForkArtifactKindDeferredLifecycleDeliversExactlyOneCompleteDeferredToolCall(): void
+    {
+        $repo = self::getContainer()->get(DeferredSubagentBatchRepository::class);
+        $factory = new DeferredSubagentBatchIdentityFactory();
+        $parent = 'parent-batch-fork-once';
+        $tool = 'tool-batch-fork-once';
+        $lifecycle = $factory->batchLifecycleId($parent, $tool);
+        $c1 = $factory->childIdentity($parent, $tool, 1);
+        $repo->reserveBatch(
+            lifecycleId: $lifecycle,
+            parentRunId: $parent,
+            parentTurnNo: 2,
+            parentToolCallId: $tool,
+            parentOrderIndex: 0,
+            executionMode: ChildRunBatchExecutionModeEnum::Single,
+            totalChildCount: 1,
+            deadlineAt: new \DateTimeImmutable('+600 seconds'),
+            childIntents: [
+                ['batchIndex' => 1, 'childRunId' => $c1['childRunId'], 'artifactId' => $c1['artifactId'], 'agentName' => 'fork', 'task' => 'Fork task', 'definitionModel' => null],
+            ],
+        );
+        $repo->applyLaunchSuccessState($parent, $tool, $lifecycle, new \DateTimeImmutable(), [1]);
+        $this->ensureArtifactReserved($parent, $c1['childRunId'], $c1['artifactId'], 'fork', 'Fork task', AgentArtifactKindEnum::Fork);
+
+        $handler = new ObserveDeferredSubagentBatchChildTurnHandler(
+            $repo,
+            self::getContainer()->get(\Ineersa\CodingAgent\Entity\DeferredSubagentChildRepository::class),
+            new DeferredChildRunEventProjector(),
+            new TestLogger(),
+            new TestMessageBus(),
+        );
+        $handler(new ObserveDeferredSubagentBatchChildTurnMessage($lifecycle, 1, $c1['childRunId'], RunStatus::Completed, 2, [
+            new AfterTurnCommitEventSummary(1, RunEventTypeEnum::LlmStepCompleted->value, [
+                'assistant_message' => ['role' => 'assistant', 'content' => [['type' => 'text', 'text' => 'fork child done']]],
+            ]),
+            new AfterTurnCommitEventSummary(2, RunEventTypeEnum::AgentEnd->value, ['reason' => 'completed']),
+        ]));
+
+        $deferred = self::getContainer()->get(DeferredToolCompletionRepositoryInterface::class);
+        $deferred->registerPending(new DeferredToolCompletionCorrelation(
+            deferredId: $lifecycle,
+            runId: $parent,
+            turnNo: 2,
+            stepId: 'turn-2-tools-1',
+            attempt: 1,
+            idempotencyKey: 'idem-fork-once',
+            toolCallId: $tool,
+            toolName: 'fork',
+            arguments: [],
+            orderIndex: 0,
+        ));
+
+        $commandBus = new TestMessageBus();
+        $delivery = $this->buildLifecycleDelivery($commandBus);
+        $delivery->deliver($lifecycle);
+        $this->assertCount(1, $commandBus->messages);
+        $complete = $commandBus->messages[0];
+        $this->assertInstanceOf(CompleteDeferredToolCall::class, $complete);
+        $this->assertSame($lifecycle, $complete->deferredId);
+        $this->assertFalse($complete->isError);
+
+        $commandBus->messages = [];
+        $delivery->deliver($lifecycle);
+        $this->assertCount(0, $commandBus->messages, 'Redelivered lifecycle observation must not complete parent tool twice');
+    }
+
     /**
      * @param array<int, array<string, mixed>> $appended
      */
@@ -1159,8 +1228,14 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         return new DeferredSubagentBatchLifecycleDeliveryService($repo, $progress, $naturalCompletion, $interruptionCompletion);
     }
 
-    private function ensureArtifactReserved(string $parentRunId, string $childRunId, string $artifactId, string $agentName, string $task): void
-    {
+    private function ensureArtifactReserved(
+        string $parentRunId,
+        string $childRunId,
+        string $artifactId,
+        string $agentName,
+        string $task,
+        AgentArtifactKindEnum $artifactKind = AgentArtifactKindEnum::Subagent,
+    ): void {
         $lifecycle = self::getContainer()->get(ChildRunArtifactLifecycleService::class);
         $lifecycle->ensureReservedPending(new ChildRunIdentityDTO(
             parentRunId: $parentRunId,
@@ -1169,7 +1244,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
             displayName: $agentName,
             taskSummary: $task,
             definitionModel: null,
-            artifactKind: AgentArtifactKindEnum::Subagent,
+            artifactKind: $artifactKind,
             batchIndex: 1,
         ));
     }

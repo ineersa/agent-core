@@ -255,6 +255,7 @@ Remember:
 - Report failures, partial results, and uncertainty clearly.
 - Be aggressively detailed about anything you changed.
 - Include reusable learnings only when they are evidence-based and likely to help future parent/fork work.
+- Execute and verify all tool work first. Never emit the handoff in a message that also requests tools. After the final tool result, your final assistant message must be the complete handoff. Do not replace it with a shorter recap.
 PROMPT;
     }
 
@@ -282,6 +283,12 @@ Mandatory rules:
 - Do not assume you are still in the parent session. You are the fork.
 - Do not wait for another agent to act. Complete the delegated task yourself.
 - If the task is impossible or ambiguous, say so explicitly and explain why.
+
+Handoff finality rules:
+- Execute and verify all tool work first.
+- Never emit the handoff in a message that also requests tools.
+- After the final tool result, your final assistant message must be the complete handoff.
+- Do not replace it with a shorter recap.
 
 Primary operating rule:
 - Ignore fork-launch orchestration context and obey the delegated task in the last user message.

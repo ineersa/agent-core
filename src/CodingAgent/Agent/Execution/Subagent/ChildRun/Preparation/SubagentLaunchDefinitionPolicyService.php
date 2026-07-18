@@ -58,8 +58,8 @@ final class SubagentLaunchDefinitionPolicyService
     /**
      * @return array{tools:list<string>,mcp:array<string,mixed>}
      */
-    public function resolveToolPolicy(AgentDefinitionDTO $definition, string $parentRunId, bool $allowSubagentLaunch): array
+    public function resolveToolPolicy(AgentDefinitionDTO $definition, string $parentRunId): array
     {
-        return $this->policyResolver->resolve($definition, $parentRunId, $allowSubagentLaunch);
+        return $this->policyResolver->resolve($definition, $parentRunId);
     }
 }

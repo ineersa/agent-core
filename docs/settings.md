@@ -696,8 +696,10 @@ agents:
 Tool names always removed from child/subagent runs, for both omitted (inherit-all)
 and explicit frontmatter tool lists. Parent agent tool registry is unaffected.
 
-**Default:** `[settings, hatfield_docs]`. An explicit empty list disables the denylist.
-Non-list or non-string values are rejected at config load.
+**Default:** `[settings, hatfield_docs]`. An explicit empty list disables the configurable denylist.
+Non-list or non-string values are rejected at config load. Nested children still cannot
+launch `fork`/`subagent` because the structural recursion strip always removes both tools
+from every child policy, even when this denylist is emptied.
 
 **Example:**
 ```yaml
@@ -1487,3 +1489,20 @@ Project extension class: `Ineersa\HatfieldExt\FileRewind\FileRewindExtension` (e
 - `max_retained_turns` (default `100`)
 - `max_file_bytes` (default `2097152`)
 - `git_timeout_seconds` (default `30`)
+
+## Fork tool defaults
+
+The `fork` tool launches an isolated child with inherited parent conversation context. These settings apply only to fork launches (not the parent session):
+
+```yaml
+forks:
+    model: null
+    thinking_level: null
+```
+
+Precedence:
+
+- **model**: explicit `fork` tool argument → `forks.model` → parent session model → runtime default
+- **thinking**: explicit `fork` tool argument → `forks.thinking_level` → parent session reasoning → null
+
+Fork children cannot launch `fork` or `subagent`.

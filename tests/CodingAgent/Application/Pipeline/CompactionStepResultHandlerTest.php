@@ -1307,6 +1307,16 @@ final class CompactionStepResultHandlerTest extends TestCase
                     firstRetainedIndex: 0,
                 );
             }
+
+            public function compactMessages(
+                string $runId,
+                int $turnNo,
+                array $messages,
+                string $trigger = 'manual',
+                ?string $customInstructions = null,
+            ): \Ineersa\AgentCore\Contract\Compaction\MessageSnapshotCompactionResult {
+                throw new \LogicException('compactMessages not expected in this test path.');
+            }
         };
     }
 
@@ -1326,6 +1336,16 @@ final class CompactionStepResultHandlerTest extends TestCase
             public function buildCompactedMessages(string $summaryText, CompactionPrepareResult $result): CompactResult
             {
                 throw new \LogicException('Not expected in this test path.');
+            }
+
+            public function compactMessages(
+                string $runId,
+                int $turnNo,
+                array $messages,
+                string $trigger = 'manual',
+                ?string $customInstructions = null,
+            ): \Ineersa\AgentCore\Contract\Compaction\MessageSnapshotCompactionResult {
+                throw new \LogicException('compactMessages not expected in this test path.');
             }
         };
     }
@@ -1373,6 +1393,16 @@ final class CompactionStepResultHandlerTest extends TestCase
                     messagesRetained: \count($this->compacted) - 1,
                     firstRetainedIndex: 0,
                 );
+            }
+
+            public function compactMessages(
+                string $runId,
+                int $turnNo,
+                array $messages,
+                string $trigger = 'manual',
+                ?string $customInstructions = null,
+            ): \Ineersa\AgentCore\Contract\Compaction\MessageSnapshotCompactionResult {
+                throw new \LogicException('compactMessages not expected in this test path.');
             }
         };
     }
