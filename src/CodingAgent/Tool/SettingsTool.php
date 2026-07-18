@@ -166,7 +166,7 @@ final class SettingsTool implements HatfieldToolProviderInterface, ToolHandlerIn
             throw new ToolCallException($e->getMessage(), retryable: false, previous: $e);
         }
 
-        return $this->effectiveSnapshot('remove', $path, $this->loadResolution(), restartRequired: true, scope: $layer->value, changed: $changed);
+        return $this->effectiveSnapshot('remove', $path, $this->loadResolution(), restartRequired: $changed, scope: $layer->value, changed: $changed);
     }
 
     /**

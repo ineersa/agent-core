@@ -142,7 +142,7 @@ final class SettingsToolTest extends TestCase
             'scope' => 'project',
         ]);
         $this->assertFalse($missing['changed']);
-        $this->assertTrue($missing['restart_required']);
+        $this->assertArrayNotHasKey('restart_required', $missing);
     }
 
     /**
