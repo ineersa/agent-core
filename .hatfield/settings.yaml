@@ -232,6 +232,7 @@ logging:
 #     # subagent_excluded_tools:
 #     #     - settings
 #     #     - documentation
+#     #     - fork
 #     paths:
 #         - ~/shared/agents/custom-reviewer.md
 #         - .hatfield/team-agents

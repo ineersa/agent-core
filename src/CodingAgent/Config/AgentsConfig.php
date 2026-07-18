@@ -39,7 +39,7 @@ final readonly class AgentsConfig
         public int $subagentToolTimeoutSeconds = 1800,
 
         #[SerializedName('subagent_excluded_tools')]
-        public array $subagentExcludedTools = ['settings', 'documentation'],
+        public array $subagentExcludedTools = ['settings', 'documentation', 'fork'],
     ) {
     }
 
@@ -127,7 +127,7 @@ final readonly class AgentsConfig
     private static function resolveSubagentExcludedTools(array $raw): array
     {
         if (!\array_key_exists('subagent_excluded_tools', $raw)) {
-            return ['settings', 'documentation'];
+            return ['settings', 'documentation', 'fork'];
         }
 
         $value = $raw['subagent_excluded_tools'];

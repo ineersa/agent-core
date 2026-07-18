@@ -692,8 +692,11 @@ agents:
 Tool names always removed from child/subagent runs, for both omitted (inherit-all)
 and explicit frontmatter tool lists. Parent agent tool registry is unaffected.
 
-**Default:** `[settings, documentation]`. An explicit empty list disables the denylist.
-Non-list or non-string values are rejected at config load.
+**Default:** `[settings, documentation, fork]`. An explicit empty list disables the denylist.
+Non-list or non-string values are rejected at config load. Nested fork children still
+cannot launch `fork`/`subagent` via the structural recursion strip even when this denylist
+is emptied; the default entry only keeps ordinary subagents (including those allowed to
+launch subagents) from advertising `fork` unless configuration explicitly allows it.
 
 **Example:**
 ```yaml
@@ -701,6 +704,7 @@ agents:
     subagent_excluded_tools:
         - settings
         - documentation
+        - fork
 ```
 
 See [Agent Definitions](agents.md) for the full definition format,

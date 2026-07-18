@@ -49,15 +49,20 @@ final class AgentToolPolicyResolverTest extends TestCase
         $this->assertNotContains('fork', $policy['tools']);
     }
 
-    public function testAllowSubagentTrueKeepsLaunchToolsWhenExplicitlyListed(): void
+    public function testAllowSubagentTrueKeepsSubagentButDefaultDenylistRemovesFork(): void
     {
+        // Thesis: default agents.subagent_excluded_tools includes fork, so even when
+        // allowSubagent=true keeps nested subagent launch, fork is still stripped by denylist.
         $resolver = new AgentToolPolicyResolver(
             $this->registry(['read', 'subagent', 'fork']),
             $this->mcpResolver([]),
             new AgentsConfig(),
         );
         $policy = $resolver->resolve($this->definition(['read', 'subagent', 'fork']), 'run-1', allowSubagent: true);
-        $this->assertSame(['read', 'subagent', 'fork'], $policy['tools']);
+
+        $this->assertContains('read', $policy['tools']);
+        $this->assertContains('subagent', $policy['tools']);
+        $this->assertNotContains('fork', $policy['tools']);
     }
 
     public function testExplicitToolsMergeMcpSelectors(): void
