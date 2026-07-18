@@ -220,6 +220,7 @@ final readonly class CompactionService implements CompactionServiceInterface
                 $runId,
                 $trigger,
                 rejectIneffective: false,
+                originalMessages: $messages,
             );
         }
 
@@ -292,15 +293,19 @@ final readonly class CompactionService implements CompactionServiceInterface
             );
         }
 
-        return $this->finalizeFromSummary($summaryText, $preparation, $runId, $trigger, rejectIneffective: true);
+        return $this->finalizeFromSummary($summaryText, $preparation, $runId, $trigger, rejectIneffective: true, originalMessages: $messages);
     }
 
+    /**
+     * @param list<AgentMessage> $originalMessages
+     */
     private function finalizeFromSummary(
         string $summaryText,
         CompactionPrepareResult $preparation,
         string $runId,
         string $trigger,
         bool $rejectIneffective,
+        array $originalMessages,
     ): MessageSnapshotCompactionResult {
         $compactResult = $this->buildCompactedMessages($summaryText, $preparation);
 
@@ -313,9 +318,13 @@ final readonly class CompactionService implements CompactionServiceInterface
                 'trigger' => $trigger,
             ]);
 
-            return MessageSnapshotCompactionResult::failed(
+            // Snapshot API only: an ineffective summary must not hard-fail callers.
+            // Reject the larger summary and continue with the exact original messages
+            // (same semantics as prepare structural skips). Async /compact still emits
+            // context_compaction_failed via CompactionStepResultHandler.
+            return MessageSnapshotCompactionResult::structuralNoOp(
+                $originalMessages,
                 'ineffective_compaction',
-                'Compaction failed: token estimate did not decrease after summarization.',
             );
         }
 

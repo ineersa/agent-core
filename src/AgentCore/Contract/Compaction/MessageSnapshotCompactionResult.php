@@ -11,6 +11,10 @@ use Ineersa\AgentCore\Domain\Message\AgentMessage;
  *
  * Does not mutate RunStore/EventStore. Callers decide how to apply
  * {@see $messages} (e.g. fork child preparation).
+ *
+ * Structural no-ops ({@see structuralNoOp()}) include prepare skips and
+ * `ineffective_compaction` after a model summary that did not shrink the
+ * estimate — both return the original messages with {@see isFailure()} false.
  */
 final readonly class MessageSnapshotCompactionResult
 {

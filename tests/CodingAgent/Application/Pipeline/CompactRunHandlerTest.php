@@ -561,6 +561,107 @@ final class CompactRunHandlerTest extends TestCase
     }
 
     /**
+     * Thesis: when a model-produced snapshot summary is not smaller than the
+     * input, compactMessages rejects the larger summary as a structural no-op
+     * with reason ineffective_compaction and returns the exact original message
+     * objects/order/content unchanged (isFailure=false). Snapshot callers such
+     * as fork must then continue with ordinary launch rather than hard-failing.
+     */
+    public function testCompactMessagesIneffectiveModelSummaryIsStructuralNoOpWithOriginalMessages(): void
+    {
+        $projectDir = TestDirectoryIsolation::createOsTempDir('compact-msg-ineffective');
+        $homeDir = TestDirectoryIsolation::createOsTempDir('compact-msg-ineffective-home');
+        TestDirectoryIsolation::ensureDirectory($projectDir.'/config');
+        file_put_contents($projectDir.'/config/COMPACTION.md', "Test compaction prompt.\n\n{date}\n{cwd}{custom_instructions_part}");
+
+        try {
+            $appConfig = new AppConfig(
+                tui: new TuiConfig(theme: 'test'),
+                logging: new LoggingConfig(),
+                cwd: $projectDir,
+                compaction: new CompactionConfig(
+                    autoEnabled: true,
+                    keepRecentTokens: 50,
+                ),
+            );
+
+            $pathResolver = new SettingsPathResolver($projectDir, $homeDir);
+            $promptBuilder = new CompactionPromptBuilder(
+                $pathResolver,
+                new StringTemplateRenderer(),
+                $appConfig,
+                $projectDir,
+            );
+            $tokenEstimator = new CompactionTokenEstimator();
+            $sessionCompactor = new SessionCompactor(
+                $tokenEstimator,
+                new ToolResultDigestService($tokenEstimator),
+                new CompactionBoundarySelector(
+                    $tokenEstimator,
+                    new AgentMessageToolCallSequenceValidator(),
+                ),
+                $promptBuilder,
+            );
+
+            // Intentionally oversized model summary: after SUMMARY_PREFIX/SUFFIX wrapping
+            // the token estimate will not decrease, so finalizeFromSummary must
+            // reject the summary and return the original messages as a no-op.
+            $ineffectiveSummary = str_repeat('INEFFECTIVE SUMMARY PAD ', 400);
+            $platform = new class($ineffectiveSummary) implements PlatformInterface {
+                public function __construct(private string $summaryText)
+                {
+                }
+
+                public function invoke(ModelInvocationRequest $request): PlatformInvocationResult
+                {
+                    return new PlatformInvocationResult(
+                        assistantMessage: new \Symfony\AI\Platform\Message\AssistantMessage(
+                            new \Symfony\AI\Platform\Message\Content\Text($this->summaryText),
+                        ),
+                    );
+                }
+            };
+
+            $service = new CompactionService(
+                $sessionCompactor,
+                $appConfig,
+                $this->createModelSelectionStub(),
+                new CompactionHookDispatcher([]),
+                $platform,
+            );
+
+            // Enough body text for prepare() to be ready under keepRecentTokens=50.
+            $messages = [];
+            for ($i = 0; $i < 12; ++$i) {
+                $messages[] = $this->userMsg(str_repeat('token-heavy body message '.$i.' ', 20));
+            }
+
+            $result = $service->compactMessages(
+                runId: 'run-ineffective-snapshot',
+                turnNo: 1,
+                messages: $messages,
+                trigger: 'fork',
+            );
+
+            $this->assertFalse($result->isFailure(), 'ineffective snapshot compaction must not be a hard failure');
+            $this->assertFalse($result->compacted);
+            $this->assertTrue($result->structuralNoOp);
+            $this->assertSame('ineffective_compaction', $result->skipReason);
+            $this->assertNull($result->failureReason);
+            $this->assertNull($result->failureMessage);
+            $this->assertSame($messages, $result->messages, 'original message objects/order must be returned unchanged');
+            $this->assertSame(
+                array_map(static fn (AgentMessage $m): array => $m->toArray(), $messages),
+                array_map(static fn (AgentMessage $m): array => $m->toArray(), $result->messages),
+                'original message content must be byte-stable',
+            );
+        } finally {
+            TestDirectoryIsolation::removeDirectory($projectDir);
+            TestDirectoryIsolation::removeDirectory($homeDir);
+        }
+    }
+
+    /**
      * Thesis: when a hook appends additional instructions, they reach
      * buildSummarizationMessages alongside the original custom instructions.
      */
