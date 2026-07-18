@@ -49,7 +49,7 @@ abstract class PerMethodIsolatedKernelTestCase extends KernelTestCase
         // Do NOT call parent::setUp() — KernelTestCase::setUp() is an
         // empty hook, and kernel boot is handled here.
 
-        $this->isolatedCwd = TestDirectoryIsolation::createProjectTempDir('hatfield-test', 0o750);
+        $this->isolatedCwd = $this->createIsolatedWorkingDirectory();
         TestDirectoryIsolation::createHatfieldTree($this->isolatedCwd);
 
         $this->originalCwd = getcwd();
@@ -110,6 +110,19 @@ abstract class PerMethodIsolatedKernelTestCase extends KernelTestCase
     protected function afterKernelBoot(): void
     {
         // Default: no-op.
+    }
+
+    /**
+     * Create the per-method isolated working directory used as HATFIELD_CWD.
+     *
+     * Default is project var/tmp. Override to createOsTempDir() when the
+     * contract requires an ancestor walk that must not discover monorepo
+     * AGENTS.md / skills under the project tree (AgentsContextDiscovery
+     * walks from cwd to filesystem root).
+     */
+    protected function createIsolatedWorkingDirectory(): string
+    {
+        return TestDirectoryIsolation::createProjectTempDir('hatfield-test', 0o750);
     }
 
     // ── Kernel factory ───────────────────────────────────────────

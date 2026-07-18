@@ -41,13 +41,9 @@ final readonly class SafeGuardExtension implements HatfieldExtensionInterface
         $cwd = $api->getCwd();
         $tracker = new ApprovalSessionTracker();
 
-        $policyWriter = null;
-
-        // Policy writer writes to .hatfield/settings.yaml for "Always allow" persistence
+        // Policy writer creates sparse .hatfield/settings.yaml on first mutation when needed.
         $settingsPath = $cwd.'/.hatfield/settings.yaml';
-        if (is_dir(\dirname($settingsPath))) {
-            $policyWriter = new SafeGuardPolicyWriter($settingsPath);
-        }
+        $policyWriter = new SafeGuardPolicyWriter($settingsPath);
 
         $api->registerToolCallHook(new SafeGuardToolCallHook(
             classifier: $classifier,
@@ -56,6 +52,7 @@ final readonly class SafeGuardExtension implements HatfieldExtensionInterface
             policyWriter: $policyWriter,
             cwd: $cwd,
             autoDenyInNoninteractive: $config->autoDenyInNoninteractive,
+            settingsToolName: $config->settingsToolName,
         ));
     }
 }

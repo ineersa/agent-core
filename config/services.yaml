@@ -114,6 +114,31 @@ services:
     arguments:
       $appRoot: '%kernel.project_dir%'
 
+  # Provenance path queries need THROW_ON_INVALID_INDEX so isReadable()
+  # distinguishes missing keys from explicit null. FrameworkBundle's shared
+  # @property_accessor is non-strict by default and would report missing array
+  # indices as readable, falsely attributing every path to Project.
+  coding_agent.settings.property_accessor_builder:
+    class: Symfony\Component\PropertyAccess\PropertyAccessorBuilder
+    calls:
+      - enableExceptionOnInvalidIndex: []
+
+  coding_agent.settings.property_accessor:
+    class: Symfony\Component\PropertyAccess\PropertyAccessor
+    factory: ['@coding_agent.settings.property_accessor_builder', 'getPropertyAccessor']
+
+  # Dedicated strict accessor: provenance needs missing-index detection.
+  Ineersa\CodingAgent\Config\SettingsValueResolver:
+    arguments:
+      $propertyAccessor: '@coding_agent.settings.property_accessor'
+
+  Symfony\Component\Filesystem\Filesystem: ~
+
+  Ineersa\CodingAgent\Config\SettingsOverrideWriter:
+    arguments:
+      $propertyAccessor: '@coding_agent.settings.property_accessor'
+      $filesystem: '@Symfony\Component\Filesystem\Filesystem'
+
   # CodexAuthStorage is a service, not just a value object — it needs
   # the home directory resolved from SettingsPathResolver and a LockFactory.
   # Autowiring fails for the string $homeDir parameter.
@@ -300,6 +325,13 @@ services:
   Ineersa\CodingAgent\Migrations\ApplicationMigrationExecutor:
     arguments:
       $connection: '@doctrine.dbal.default_connection'
+
+  # Outer transactions on messenger_transport use BEGIN IMMEDIATE (see doctrine.yaml).
+  # autoconfigure: false keeps middleware registration explicit and connection-scoped.
+  Ineersa\CodingAgent\Infrastructure\Doctrine\MessengerSqliteImmediateTransactionMiddleware:
+    autoconfigure: false
+    tags:
+      - { name: doctrine.middleware, connection: messenger_transport }
 
   Ineersa\CodingAgent\Migrations\MessengerTransportSchemaEnsurer:
     arguments:
@@ -830,6 +862,10 @@ services:
     tags:
       - { name: 'app.completion_provider', priority: 95 }
 
+  Ineersa\Tui\Completion\SettingsPathCompletionProvider:
+    tags:
+      - { name: 'app.completion_provider', priority: 93 }
+
   Ineersa\Tui\Completion\FileMentionCompletionProvider:
     tags:
       - { name: 'app.completion_provider', priority: 90 }
@@ -1000,4 +1036,5 @@ services:
     arguments:
       $toolRegistry: '@Ineersa\CodingAgent\Tool\ToolRegistryInterface'
       $mcpToolsResolver: '@Ineersa\CodingAgent\Agent\Execution\AgentMcpToolsResolver'
+      $agentsConfig: '@Ineersa\CodingAgent\Config\AgentsConfig'
 

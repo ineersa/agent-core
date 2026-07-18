@@ -73,6 +73,7 @@ final readonly class SafeGuardToolCallHook implements ToolCallHookInterface, App
         private ?SafeGuardPolicyWriter $policyWriter,
         private string $cwd,
         private bool $autoDenyInNoninteractive = true,
+        private string $settingsToolName = 'settings',
     ) {
     }
 
@@ -116,6 +117,8 @@ final readonly class SafeGuardToolCallHook implements ToolCallHookInterface, App
         //   can display the question and relay answers.
         // - Headless/worker contexts without the env var auto-block (fail-closed),
         //   unless the operator has explicitly set auto_deny_in_noninteractive=false.
+        // - Settings set/remove always fail closed without an approval channel,
+        //   regardless of auto_deny_in_noninteractive (no silent config writes).
         if ($this->isRelaxable($decision->kind)) {
             if ($this->shouldAutoDenyRelaxable($context)) {
                 return ToolCallDecisionDTO::block(
@@ -136,6 +139,7 @@ final readonly class SafeGuardToolCallHook implements ToolCallHookInterface, App
 
             // Determine the operation spec for the approval context
             $spec = $this->resolveOperationSpec($context);
+            $settingsMutation = $this->isSettingsMutation($context);
 
             $questionId = \sprintf(
                 'sg_%s',
@@ -147,12 +151,22 @@ final readonly class SafeGuardToolCallHook implements ToolCallHookInterface, App
                 $this->approvalTracker->markPending($questionId, $operationKey);
             }
 
+            // Settings mutations are one-shot only — never offer Always allow.
+            $options = $settingsMutation
+                ? [
+                    self::APPROVAL_OPTIONS['allow_once'],
+                    self::APPROVAL_OPTIONS['deny'],
+                ]
+                : array_values(self::APPROVAL_OPTIONS);
+
+            $categoryLabel = $settingsMutation ? 'settings mutation' : $this->friendlyCategory($decision->kind);
+
             return ToolCallDecisionDTO::requireApproval(
-                prompt: \sprintf('Allow %s: %s?', $this->friendlyCategory($decision->kind), $decision->reason),
+                prompt: \sprintf('Allow %s: %s?', $categoryLabel, $decision->reason),
                 questionId: $questionId,
                 schema: [
                     'type' => 'string',
-                    'enum' => array_values(self::APPROVAL_OPTIONS),
+                    'enum' => $options,
                 ],
                 details: [
                     'category' => $decision->kind->value,
@@ -292,6 +306,14 @@ final readonly class SafeGuardToolCallHook implements ToolCallHookInterface, App
      */
     private function resolveOperationKey(ToolCallContextDTO $context): ?string
     {
+        if ($this->isSettingsMutation($context)) {
+            $operation = $context->arguments['operation'];
+            $scope = \is_string($context->arguments['scope'] ?? null) ? $context->arguments['scope'] : '';
+            $path = \is_string($context->arguments['path'] ?? null) ? $context->arguments['path'] : '';
+
+            return \sprintf('%s:%s:%s:%s', $this->settingsToolName, $operation, $scope, $path);
+        }
+
         $command = $this->extractCommand($context);
         if (null !== $command) {
             return \sprintf('%s:%s', $this->toolPrefix($context->toolName), $command);
@@ -310,6 +332,14 @@ final readonly class SafeGuardToolCallHook implements ToolCallHookInterface, App
      */
     private function resolveOperationSpec(ToolCallContextDTO $context): string
     {
+        if ($this->isSettingsMutation($context)) {
+            $operation = $context->arguments['operation'];
+            $scope = \is_string($context->arguments['scope'] ?? null) ? $context->arguments['scope'] : '';
+            $path = \is_string($context->arguments['path'] ?? null) ? $context->arguments['path'] : '';
+
+            return \sprintf('%s:%s:%s:%s', $this->settingsToolName, $operation, $scope, $path);
+        }
+
         return $this->extractCommand($context) ?? $this->extractPath($context) ?? $context->toolName;
     }
 
@@ -358,6 +388,11 @@ final readonly class SafeGuardToolCallHook implements ToolCallHookInterface, App
      */
     private function shouldAutoDenyRelaxable(ToolCallContextDTO $context): bool
     {
+        // Settings mutations always require a live approval channel.
+        if ($this->isSettingsMutation($context)) {
+            return !$this->hasApprovalChannel();
+        }
+
         if (!$this->autoDenyInNoninteractive) {
             return false;
         }
@@ -367,6 +402,17 @@ final readonly class SafeGuardToolCallHook implements ToolCallHookInterface, App
         }
 
         return !$this->hasApprovalChannel();
+    }
+
+    private function isSettingsMutation(ToolCallContextDTO $context): bool
+    {
+        if ($context->toolName !== $this->settingsToolName) {
+            return false;
+        }
+
+        $operation = $context->arguments['operation'] ?? null;
+
+        return \is_string($operation) && \in_array($operation, ['set', 'remove'], true);
     }
 
     /**

@@ -201,7 +201,7 @@ final class CompactionConfigTest extends TestCase
             file_put_contents($configDir.'/hatfield.defaults.yaml', Yaml::dump($defaults));
 
             $pathResolver = new SettingsPathResolver('/app', $homeDir);
-            $loader = new AppConfigLoader($pathResolver);
+            $resolver = new AppConfigLoader($pathResolver);
             $resources = new AppResourceLocator($projectDir);
 
             // Serializer setup mirrors the production FrameworkBundle wiring:
@@ -222,7 +222,7 @@ final class CompactionConfigTest extends TestCase
                 encoders: [],
             );
 
-            $appConfig = AppConfig::fromContainer($loader, $resources, $serializer, $projectDir);
+            $appConfig = AppConfig::fromContainer($resolver, $resources, $serializer, $projectDir);
             $compaction = $appConfig->compaction;
 
             // Global settings survived denormalization.

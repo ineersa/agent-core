@@ -6,19 +6,23 @@ settings in the home directory, overridden by project-local settings.
 
 ## First launch
 
-On first launch the global home settings file (`~/.hatfield/settings.yaml`)
-is created by copying `config/hatfield.defaults.yaml`. The defaults file is
-designed with comments that double as documentation, so the copied home file
-is self-documenting.
+Hatfield does **not** copy `config/hatfield.defaults.yaml` into your home
+directory on first launch. Built-in defaults are inherited automatically until
+you add a sparse override.
 
-Edit the home copy to set personal API keys, default model, reasoning level,
-and other overrides. The file is **never auto-overwritten**; it remains yours
-to maintain across application upgrades.
+Create `~/.hatfield/settings.yaml` when you first change a setting (for example
+via model picker persistence) or when you add overrides manually. The file
+should contain only keys whose values differ from defaults — not a full snapshot of the
+defaults file.
+
+Project overrides in `<project>/.hatfield/settings.yaml` follow the same sparse
+override model. Existing full home or project files remain valid overlays; Hatfield
+does not rewrite or prune them automatically.
 
 ## Directory layout
 
 ```text
-~/.hatfield/settings.yaml       # Global user settings (copied from defaults on first launch)
+~/.hatfield/settings.yaml       # Global user settings (sparse overrides; created on first mutation)
 <project>/.hatfield/settings.yaml  # Project-local overrides
 .hatfield/sessions/    # Session/run storage (session_id === run_id)
 <project>/.hatfield/themes/      # Custom project themes
@@ -683,6 +687,22 @@ agents:
     subagent_tool_timeout_seconds: 1200
 ```
 
+### `agents.subagent_excluded_tools`
+
+Tool names always removed from child/subagent runs, for both omitted (inherit-all)
+and explicit frontmatter tool lists. Parent agent tool registry is unaffected.
+
+**Default:** `[settings, documentation]`. An explicit empty list disables the denylist.
+Non-list or non-string values are rejected at config load.
+
+**Example:**
+```yaml
+agents:
+    subagent_excluded_tools:
+        - settings
+        - documentation
+```
+
 See [Agent Definitions](agents.md) for the full definition format,
 discovery precedence, foreground execution (including timeout), and catalog API.
 
@@ -801,7 +821,7 @@ Settings are read at extension load time through
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| `tool_names` | map | `{bash: bash, write: write, edit: edit, read: read}` | Maps internal tool labels to tool call names. Change if you register custom aliases. |
+| `tool_names` | map | `{bash: bash, write: write, edit: edit, read: read, settings: settings}` | Maps internal tool labels to tool call names. Change if you register custom aliases. |
 | `allow_command_patterns` | list | `[]` | Command substrings that bypass destructive/dangerous checks (case-insensitive substring match). |
 | `allow_write_outside_cwd` | list | `[]` | Absolute paths where writes/edits outside the project CWD are always allowed. |
 | `allow_destructive_in_paths` | list | `[]` | Reserved for serialization compatibility. Not currently wired to classification logic. |
@@ -820,6 +840,7 @@ extensions:
                 write: write
                 edit: edit
                 read: read
+                settings: settings
             allow_command_patterns: []
             allow_write_outside_cwd:
                 - /home/user/shared-tmp

@@ -48,7 +48,7 @@ class BackgroundProcess
      * The @ORM\Index on 'pid' is intentionally non-unique.  Prefer the
      * auto-increment $id for immutable record lookups.
      *
-     * @see ProcessStore::fetchByPid() for PID-based lookup semantics
+     * @see ProcessStore::fetchLatestByPid() for public PID-based lookup semantics
      * @see BackgroundProcessManager::findByRecordId() for immutable lookup
      */
     #[ORM\Column(type: 'integer')]
