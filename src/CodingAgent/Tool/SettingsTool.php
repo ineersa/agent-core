@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tool;
 
+use HelgeSverre\Toon\Toon;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\CodingAgent\Config\AppConfig;
@@ -36,20 +37,22 @@ final class SettingsTool implements HatfieldToolProviderInterface, ToolHandlerIn
     /**
      * @param array<string, mixed> $arguments
      *
-     * @return array<string, mixed>
+     * @return string TOON-encoded operation result
      */
-    public function __invoke(array $arguments): array
+    public function __invoke(array $arguments): string
     {
-        return $this->toolRuntime->run(function () use ($arguments): array {
+        return $this->toolRuntime->run(function () use ($arguments): string {
             $operation = $this->requireOperation($arguments);
             $path = $this->requirePath($arguments);
 
-            return match ($operation) {
+            $result = match ($operation) {
                 'read' => $this->read($path, $arguments),
                 'set' => $this->set($path, $arguments),
                 'remove' => $this->remove($path, $arguments),
                 default => throw new ToolCallException('The "operation" argument must be one of: read, set, remove.', retryable: false),
             };
+
+            return Toon::encode($result);
         });
     }
 

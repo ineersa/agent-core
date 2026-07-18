@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Tool;
 
+use HelgeSverre\Toon\Toon;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
@@ -86,15 +87,15 @@ final class SettingsToolTest extends TestCase
     {
         $this->writeProject(['tui' => ['theme' => 'nord']]);
 
-        $effective = ($this->tool)(['operation' => 'read', 'path' => 'tui.theme']);
+        $effective = $this->invoke(['operation' => 'read', 'path' => 'tui.theme']);
         $this->assertTrue($effective['exists']);
         $this->assertSame('nord', $effective['value']);
         $this->assertSame('project', $effective['source']);
 
-        $user = ($this->tool)(['operation' => 'read', 'path' => 'tui.theme', 'scope' => 'user']);
+        $user = $this->invoke(['operation' => 'read', 'path' => 'tui.theme', 'scope' => 'user']);
         $this->assertFalse($user['exists']);
 
-        $project = ($this->tool)(['operation' => 'read', 'path' => 'tui.theme', 'scope' => 'project']);
+        $project = $this->invoke(['operation' => 'read', 'path' => 'tui.theme', 'scope' => 'project']);
         $this->assertTrue($project['exists']);
         $this->assertSame('nord', $project['value']);
         $this->assertSame('project', $project['source']);
@@ -102,7 +103,7 @@ final class SettingsToolTest extends TestCase
 
     public function testSetWritesSparseOverrideIncludingExplicitNull(): void
     {
-        $set = ($this->tool)([
+        $set = $this->invoke([
             'operation' => 'set',
             'path' => 'tui.theme',
             'scope' => 'project',
@@ -113,7 +114,7 @@ final class SettingsToolTest extends TestCase
         $this->assertSame('monokai', $set['value']);
         $this->assertSame('project', $set['source']);
 
-        $nullSet = ($this->tool)([
+        $nullSet = $this->invoke([
             'operation' => 'set',
             'path' => 'logging.level',
             'scope' => 'user',
@@ -127,7 +128,7 @@ final class SettingsToolTest extends TestCase
     public function testRemoveResumesInheritanceAndMissingIsNoOp(): void
     {
         $this->writeProject(['tui' => ['theme' => 'nord']]);
-        $removed = ($this->tool)([
+        $removed = $this->invoke([
             'operation' => 'remove',
             'path' => 'tui.theme',
             'scope' => 'project',
@@ -136,7 +137,7 @@ final class SettingsToolTest extends TestCase
         $this->assertTrue($removed['restart_required']);
         $this->assertSame('defaults', $removed['source']);
 
-        $missing = ($this->tool)([
+        $missing = $this->invoke([
             'operation' => 'remove',
             'path' => 'tui.theme',
             'scope' => 'project',
@@ -169,6 +170,20 @@ final class SettingsToolTest extends TestCase
             $this->assertFalse($e->retryable());
             $this->assertStringContainsString($messageFragment, $e->getMessage());
         }
+    }
+
+    /**
+     * @param array<string, mixed> $arguments
+     *
+     * @return array<string, mixed>
+     */
+    private function invoke(array $arguments): array
+    {
+        $decoded = Toon::decode(($this->tool)($arguments));
+        $this->assertIsArray($decoded);
+
+        /* @var array<string, mixed> $decoded */
+        return $decoded;
     }
 
     /**
