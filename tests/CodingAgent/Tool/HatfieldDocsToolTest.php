@@ -17,40 +17,30 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Thesis: hatfield_docs exposes only the eight curated IDs as TOON list/read
- * results with frontmatter metadata, bounded body chunks, and hard path safety.
+ * Thesis: hatfield_docs discovers .md files under internal-docs, caches
+ * metadata+body on first use, returns TOON list metadata and raw Markdown
+ * read bodies, and rejects IDs absent from the cached catalog.
  */
 final class HatfieldDocsToolTest extends TestCase
 {
-    /** @var list<string> */
-    private const EXPECTED_IDS = [
-        'agents',
-        'background-processes',
-        'compaction',
-        'hitl-and-approvals',
-        'mcp',
-        'prompt-templates',
-        'session-storage',
-        'settings',
-    ];
-
     private string $appRoot;
+    private string $docsDir;
+    private string $internalDir;
     private HatfieldDocsTool $tool;
 
     protected function setUp(): void
     {
         $this->appRoot = TestDirectoryIsolation::createProjectTempDir('hatfield-docs-tool');
-        $docsDir = $this->appRoot.'/docs';
-        $internal = $this->appRoot.'/internal-docs';
-        TestDirectoryIsolation::ensureDirectory($docsDir);
-        TestDirectoryIsolation::ensureDirectory($internal);
+        $this->docsDir = $this->appRoot.'/docs';
+        $this->internalDir = $this->appRoot.'/internal-docs';
+        TestDirectoryIsolation::ensureDirectory($this->docsDir);
+        TestDirectoryIsolation::ensureDirectory($this->internalDir);
 
-        foreach (self::EXPECTED_IDS as $id) {
-            $body = "# Title for {$id}\n\nLine one of {$id}.\nLine two of {$id}.\nLine three of {$id}.\n";
-            $raw = "---\ndescription: Description for {$id}.\n---\n\n".$body;
-            file_put_contents($docsDir.'/'.$id.'.md', $raw);
-            symlink('../docs/'.$id.'.md', $internal.'/'.$id.'.md');
-        }
+        // Arbitrary fixture catalog — proves discovery, not a fixed production list.
+        $this->writeDoc('zeta', 'Zeta Title', 'Zeta description.', "Body of zeta.\nSecond zeta line.\n");
+        $this->writeDoc('alpha', 'Alpha Title', 'Alpha description.', "Body of alpha.\n");
+        file_put_contents($this->internalDir.'/notes.txt', 'ignored non-md');
+        file_put_contents($this->internalDir.'/README', 'ignored extensionless');
 
         $this->tool = new HatfieldDocsTool(
             new ToolRuntime(new StackToolExecutionContextAccessor()),
@@ -64,7 +54,7 @@ final class HatfieldDocsToolTest extends TestCase
         TestDirectoryIsolation::removeDirectory($this->appRoot);
     }
 
-    public function testDefinitionAndListExposeExactCatalog(): void
+    public function testDefinitionAndListDiscoverSortedCatalog(): void
     {
         $def = $this->tool->definition();
         $this->assertSame('hatfield_docs', $def->name);
@@ -72,112 +62,114 @@ final class HatfieldDocsToolTest extends TestCase
         $this->assertSame(['operation'], $def->parametersJsonSchema['required']);
         $this->assertFalse($def->parametersJsonSchema['additionalProperties']);
         $this->assertSame(['list', 'read'], $def->parametersJsonSchema['properties']['operation']['enum']);
-        $this->assertSame(self::EXPECTED_IDS, $def->parametersJsonSchema['properties']['id']['enum']);
+        $this->assertArrayNotHasKey('enum', $def->parametersJsonSchema['properties']['id']);
+        $this->assertArrayNotHasKey('offset', $def->parametersJsonSchema['properties']);
+        $this->assertArrayNotHasKey('limit', $def->parametersJsonSchema['properties']);
 
-        $list = $this->invoke(['operation' => 'list']);
-        $this->assertArrayHasKey('documents', $list);
-        $this->assertCount(8, $list['documents']);
-        $ids = array_column($list['documents'], 'id');
-        $this->assertSame(self::EXPECTED_IDS, $ids);
-        $this->assertSame('Title for agents', $list['documents'][0]['title']);
-        $this->assertSame('Description for agents.', $list['documents'][0]['description']);
+        $list = $this->invokeList();
+        $this->assertSame(
+            [
+                [
+                    'id' => 'alpha',
+                    'title' => 'Alpha Title',
+                    'description' => 'Alpha description.',
+                ],
+                [
+                    'id' => 'zeta',
+                    'title' => 'Zeta Title',
+                    'description' => 'Zeta description.',
+                ],
+            ],
+            $list['documents'],
+        );
     }
 
-    public function testReadReturnsBoundedBodyWithoutFrontmatter(): void
+    public function testReadReturnsFullMarkdownBodyAndCachesWithoutReread(): void
     {
-        $first = $this->invoke([
-            'operation' => 'read',
-            'id' => 'settings',
-            'offset' => 1,
-            'limit' => 2,
-        ]);
-        $this->assertSame('settings', $first['id']);
-        $this->assertSame('Title for settings', $first['title']);
-        $this->assertSame('Description for settings.', $first['description']);
-        $this->assertSame(1, $first['offset']);
-        $this->assertSame(2, $first['limit']);
-        $this->assertSame(5, $first['total_lines']);
-        $this->assertTrue($first['has_more']);
-        $this->assertSame(3, $first['next_offset']);
-        // limit counts physical lines, including blank lines after H1.
-        $this->assertSame("# Title for settings\n", $first['content']);
-        $this->assertStringNotContainsString('description:', $first['content']);
-        $this->assertStringNotContainsString('---', $first['content']);
+        $body = ($this->tool)(['operation' => 'read', 'id' => 'zeta']);
+        $this->assertIsString($body);
+        $this->assertSame("# Zeta Title\n\nBody of zeta.\nSecond zeta line.", $body);
+        $this->assertStringNotContainsString('description:', $body);
+        $this->assertStringNotContainsString('---', $body);
+        $this->assertFalse(str_starts_with(ltrim($body), '{'));
+        $this->assertStringNotContainsString('documents:', $body);
 
-        $rest = $this->invoke([
-            'operation' => 'read',
-            'id' => 'settings',
-            'offset' => 3,
-            'limit' => 10,
-        ]);
-        $this->assertFalse($rest['has_more']);
-        $this->assertArrayNotHasKey('next_offset', $rest);
-        $this->assertSame("Line one of settings.\nLine two of settings.\nLine three of settings.", $rest['content']);
+        // Mutate and delete backing files after first catalog load.
+        file_put_contents(
+            $this->docsDir.'/zeta.md',
+            "---\ndescription: mutated\n---\n\n# Mutated\n\nshould not appear\n",
+        );
+        unlink($this->internalDir.'/alpha.md');
+        unlink($this->docsDir.'/alpha.md');
+
+        $again = ($this->tool)(['operation' => 'read', 'id' => 'zeta']);
+        $this->assertSame($body, $again);
+
+        $list = $this->invokeList();
+        $this->assertSame(
+            [
+                [
+                    'id' => 'alpha',
+                    'title' => 'Alpha Title',
+                    'description' => 'Alpha description.',
+                ],
+                [
+                    'id' => 'zeta',
+                    'title' => 'Zeta Title',
+                    'description' => 'Zeta description.',
+                ],
+            ],
+            $list['documents'],
+        );
+        $alphaBody = ($this->tool)(['operation' => 'read', 'id' => 'alpha']);
+        $this->assertSame("# Alpha Title\n\nBody of alpha.", $alphaBody);
     }
 
-    #[DataProvider('invalidArgumentProvider')]
-    public function testValidationRejectsUnsafeAndMalformedInput(array $arguments, string $messageFragment): void
+    #[DataProvider('unknownIdProvider')]
+    public function testUnknownIdsRejectedFromCatalog(array $arguments): void
     {
-        $this->expectException(ToolCallException::class);
-        $this->expectExceptionMessage($messageFragment);
-        ($this->tool)($arguments);
-    }
+        // Warm the catalog so rejections are pure key lookups.
+        $this->invokeList();
 
-    /**
-     * @return iterable<string, array{0: array<string, mixed>, 1: string}>
-     */
-    public static function invalidArgumentProvider(): iterable
-    {
-        yield 'missing id on read' => [
-            ['operation' => 'read'],
-            'id',
-        ];
-        yield 'unknown id' => [
-            ['operation' => 'read', 'id' => 'datadog'],
-            'Unknown document id',
-        ];
-        yield 'traversal id' => [
-            ['operation' => 'read', 'id' => '../settings'],
-            'Unknown document id',
-        ];
-        yield 'path id' => [
-            ['operation' => 'read', 'id' => 'settings.md'],
-            'Unknown document id',
-        ];
-        yield 'offset past eof' => [
-            ['operation' => 'read', 'id' => 'settings', 'offset' => 99],
-            'past end of document',
-        ];
-        yield 'limit too large' => [
-            ['operation' => 'read', 'id' => 'settings', 'limit' => 501],
-            'limit',
-        ];
-        yield 'non-int offset' => [
-            ['operation' => 'read', 'id' => 'settings', 'offset' => '1'],
-            'offset',
-        ];
-    }
-
-    public function testMissingResourceFails(): void
-    {
-        unlink($this->appRoot.'/internal-docs/settings.md');
-        $this->expectException(ToolCallException::class);
-        $this->expectExceptionMessage('Unable to read bundled document "settings"');
-        ($this->tool)(['operation' => 'read', 'id' => 'settings']);
+        try {
+            ($this->tool)($arguments);
+            $this->fail('Expected ToolCallException');
+        } catch (ToolCallException $e) {
+            $this->assertStringContainsString('Unknown document id', $e->getMessage());
+            $this->assertFalse($e->retryable());
+            $this->assertSame('Use operation=list to see approved IDs.', $e->hint());
+        }
     }
 
     /**
-     * @param array<string, mixed> $arguments
-     *
-     * @return array<string, mixed>
+     * @return iterable<string, array{0: array<string, mixed>}>
      */
-    private function invoke(array $arguments): array
+    public static function unknownIdProvider(): iterable
     {
-        $encoded = ($this->tool)($arguments);
+        yield 'missing id' => [['operation' => 'read']];
+        yield 'unknown id' => [['operation' => 'read', 'id' => 'datadog']];
+        yield 'traversal id' => [['operation' => 'read', 'id' => '../settings']];
+        yield 'filename-like id' => [['operation' => 'read', 'id' => 'zeta.md']];
+    }
+
+    /**
+     * @return array{documents: list<array{id: string, title: string, description: string}>}
+     */
+    private function invokeList(): array
+    {
+        $encoded = ($this->tool)(['operation' => 'list']);
         $this->assertIsString($encoded);
         $decoded = Toon::decode($encoded);
         $this->assertIsArray($decoded);
+        $this->assertArrayHasKey('documents', $decoded);
 
         return $decoded;
+    }
+
+    private function writeDoc(string $id, string $title, string $description, string $bodyAfterH1): void
+    {
+        $raw = "---\ndescription: {$description}\n---\n\n# {$title}\n\n{$bodyAfterH1}";
+        file_put_contents($this->docsDir.'/'.$id.'.md', $raw);
+        symlink('../docs/'.$id.'.md', $this->internalDir.'/'.$id.'.md');
     }
 }

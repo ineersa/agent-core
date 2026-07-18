@@ -15,30 +15,18 @@ use Symfony\Component\Yaml\Yaml;
 /**
  * Read-only parent-agent catalog for curated Hatfield documentation.
  *
- * Documents are loaded only by approved logical IDs under the bundled
- * internal-docs root. Arbitrary filesystem paths are never accepted.
+ * Documents are discovered once from the bundled internal-docs root and
+ * cached for the process lifetime. Lookup is by logical ID only; arbitrary
+ * filesystem paths are never accepted.
  */
 final class HatfieldDocsTool implements HatfieldToolProviderInterface, ToolHandlerInterface
 {
-    private const DEFAULT_LIMIT = 200;
-
-    private const MAX_LIMIT = 500;
-
     /**
-     * Approved logical document IDs (filename stem under internal-docs/).
+     * Lazy catalog keyed by logical document ID (filename stem).
      *
-     * @var list<string>
+     * @var array<string, array{id: string, title: string, description: string, body: string}>|null
      */
-    private const DOCUMENT_IDS = [
-        'agents',
-        'background-processes',
-        'compaction',
-        'hitl-and-approvals',
-        'mcp',
-        'prompt-templates',
-        'session-storage',
-        'settings',
-    ];
+    private ?array $catalog = null;
 
     public function __construct(
         private readonly ToolRuntime $toolRuntime,
@@ -50,20 +38,18 @@ final class HatfieldDocsTool implements HatfieldToolProviderInterface, ToolHandl
     /**
      * @param array<string, mixed> $arguments
      *
-     * @return string TOON-encoded list or read result
+     * @return string TOON-encoded list metadata, or raw Markdown body for read
      */
     public function __invoke(array $arguments): string
     {
         return $this->toolRuntime->run(function () use ($arguments): string {
-            $operation = $this->requireOperation($arguments);
+            $operation = $arguments['operation'] ?? null;
 
-            $result = match ($operation) {
-                'list' => $this->listDocuments(),
+            return match ($operation) {
+                'list' => Toon::encode($this->listDocuments()),
                 'read' => $this->readDocument($arguments),
                 default => throw new ToolCallException('The "operation" argument must be one of: list, read.', retryable: false),
             };
-
-            return Toon::encode($result);
         });
     }
 
@@ -82,19 +68,7 @@ final class HatfieldDocsTool implements HatfieldToolProviderInterface, ToolHandl
                     ],
                     'id' => [
                         'type' => 'string',
-                        'enum' => self::DOCUMENT_IDS,
                         'description' => 'Logical document ID (required for read).',
-                    ],
-                    'offset' => [
-                        'type' => 'integer',
-                        'minimum' => 1,
-                        'description' => '1-indexed body line offset for read (default 1).',
-                    ],
-                    'limit' => [
-                        'type' => 'integer',
-                        'minimum' => 1,
-                        'maximum' => self::MAX_LIMIT,
-                        'description' => 'Maximum body lines for read (default 200, max 500).',
                     ],
                 ],
                 'required' => ['operation'],
@@ -102,7 +76,7 @@ final class HatfieldDocsTool implements HatfieldToolProviderInterface, ToolHandl
             ],
             handler: $this,
             executionMode: ToolExecutionMode::Parallel,
-            promptLine: 'hatfield_docs list|read [id] [offset] [limit] — list or read bundled Hatfield docs',
+            promptLine: 'hatfield_docs list|read [id] — list or read bundled Hatfield docs',
         );
     }
 
@@ -112,12 +86,11 @@ final class HatfieldDocsTool implements HatfieldToolProviderInterface, ToolHandl
     private function listDocuments(): array
     {
         $documents = [];
-        foreach (self::DOCUMENT_IDS as $id) {
-            $meta = $this->loadDocument($id);
+        foreach ($this->catalog() as $entry) {
             $documents[] = [
-                'id' => $id,
-                'title' => $meta['title'],
-                'description' => $meta['description'],
+                'id' => $entry['id'],
+                'title' => $entry['title'],
+                'description' => $entry['description'],
             ];
         }
 
@@ -126,56 +99,67 @@ final class HatfieldDocsTool implements HatfieldToolProviderInterface, ToolHandl
 
     /**
      * @param array<string, mixed> $arguments
-     *
-     * @return array<string, mixed>
      */
-    private function readDocument(array $arguments): array
+    private function readDocument(array $arguments): string
     {
-        $id = $this->requireId($arguments);
-        $offset = $this->optionalPositiveInt($arguments, 'offset', 1);
-        $limit = $this->optionalPositiveInt($arguments, 'limit', self::DEFAULT_LIMIT);
-        if ($limit > self::MAX_LIMIT) {
-            throw new ToolCallException(\sprintf('The "limit" argument must be <= %d.', self::MAX_LIMIT), retryable: false);
+        $id = $arguments['id'] ?? null;
+        if (!\is_string($id) || '' === $id) {
+            throw new ToolCallException('Unknown document id.', retryable: false, hint: 'Use operation=list to see approved IDs.');
         }
 
-        $meta = $this->loadDocument($id);
-        $lines = preg_split("/\n/", $meta['body']);
-        if (false === $lines) {
-            $lines = [];
-        }
-        $totalLines = \count($lines);
-
-        if ($totalLines > 0 && $offset > $totalLines) {
-            throw new ToolCallException(\sprintf('offset %d is past end of document (%d lines).', $offset, $totalLines), retryable: false);
+        $catalog = $this->catalog();
+        if (!isset($catalog[$id])) {
+            throw new ToolCallException('Unknown document id.', retryable: false, hint: 'Use operation=list to see approved IDs.');
         }
 
-        $slice = \array_slice($lines, $offset - 1, $limit);
-        $end = $offset - 1 + \count($slice);
-        $hasMore = $end < $totalLines;
-
-        $result = [
-            'id' => $id,
-            'title' => $meta['title'],
-            'description' => $meta['description'],
-            'offset' => $offset,
-            'limit' => $limit,
-            'total_lines' => $totalLines,
-            'has_more' => $hasMore,
-            'content' => implode("\n", $slice),
-        ];
-        if ($hasMore) {
-            $result['next_offset'] = $end + 1;
-        }
-
-        return $result;
+        return $catalog[$id]['body'];
     }
 
     /**
-     * @return array{title: string, description: string, body: string}
+     * @return array<string, array{id: string, title: string, description: string, body: string}>
      */
-    private function loadDocument(string $id): array
+    private function catalog(): array
     {
-        $path = $this->documentPath($id);
+        if (null !== $this->catalog) {
+            return $this->catalog;
+        }
+
+        $root = $this->resources->getInternalDocsPath();
+
+        try {
+            $iterator = new \FilesystemIterator(
+                $root,
+                \FilesystemIterator::SKIP_DOTS | \FilesystemIterator::CURRENT_AS_PATHNAME,
+            );
+        } catch (\UnexpectedValueException $e) {
+            throw new ToolCallException('Unable to open bundled internal-docs directory.', retryable: false, previous: $e);
+        }
+
+        $catalog = [];
+        foreach ($iterator as $path) {
+            if (!\is_string($path) || !is_file($path) || !str_ends_with($path, '.md')) {
+                continue;
+            }
+
+            $id = pathinfo($path, \PATHINFO_FILENAME);
+            if (!\is_string($id) || '' === $id) {
+                continue;
+            }
+
+            $catalog[$id] = $this->parseDocument($path, $id);
+        }
+
+        ksort($catalog);
+        $this->catalog = $catalog;
+
+        return $this->catalog;
+    }
+
+    /**
+     * @return array{id: string, title: string, description: string, body: string}
+     */
+    private function parseDocument(string $path, string $id): array
+    {
         $raw = @file_get_contents($path);
         if (false === $raw) {
             throw new ToolCallException(\sprintf('Unable to read bundled document "%s".', $id), retryable: false);
@@ -202,64 +186,10 @@ final class HatfieldDocsTool implements HatfieldToolProviderInterface, ToolHandl
         }
 
         return [
+            'id' => $id,
             'title' => trim($matches[1]),
             'description' => trim($parsed['description']),
             'body' => $body,
         ];
-    }
-
-    private function documentPath(string $id): string
-    {
-        // IDs are fixed allow-list members; never accept path separators.
-        return $this->resources->getInternalDocsPath().'/'.$id.'.md';
-    }
-
-    /**
-     * @param array<string, mixed> $arguments
-     */
-    private function requireOperation(array $arguments): string
-    {
-        $operation = $arguments['operation'] ?? null;
-        if (!\is_string($operation) || !\in_array($operation, ['list', 'read'], true)) {
-            throw new ToolCallException('The "operation" argument must be one of: list, read.', retryable: false);
-        }
-
-        return $operation;
-    }
-
-    /**
-     * @param array<string, mixed> $arguments
-     */
-    private function requireId(array $arguments): string
-    {
-        $id = $arguments['id'] ?? null;
-        if (!\is_string($id) || '' === $id) {
-            throw new ToolCallException('The "id" argument is required for read and must be a known document ID.', retryable: false);
-        }
-        if (!\in_array($id, self::DOCUMENT_IDS, true)) {
-            throw new ToolCallException(\sprintf('Unknown document id "%s".', $id), retryable: false, hint: 'Use operation=list to see approved IDs.');
-        }
-
-        return $id;
-    }
-
-    /**
-     * @param array<string, mixed> $arguments
-     */
-    private function optionalPositiveInt(array $arguments, string $key, int $default): int
-    {
-        if (!\array_key_exists($key, $arguments) || null === $arguments[$key]) {
-            return $default;
-        }
-
-        $value = $arguments[$key];
-        if (!\is_int($value)) {
-            throw new ToolCallException(\sprintf('The "%s" argument must be an integer.', $key), retryable: false);
-        }
-        if ($value < 1) {
-            throw new ToolCallException(\sprintf('The "%s" argument must be a positive integer.', $key), retryable: false);
-        }
-
-        return $value;
     }
 }
