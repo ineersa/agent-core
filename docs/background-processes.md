@@ -1,3 +1,7 @@
+---
+description: Background process tracking, logs, stop behavior, and related settings.
+---
+
 # Background Processes
 
 Background processes let the agent run long-running shell commands without

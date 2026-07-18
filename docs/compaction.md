@@ -1,3 +1,7 @@
+---
+description: Context compaction settings, /compact command behavior, events, and validation.
+---
+
 # Context Compaction
 
 Context compaction replaces older conversation history with a concise handoff summary while keeping the most recent messages raw. This prevents sessions from exceeding the model context window without losing the accumulated knowledge and decisions.

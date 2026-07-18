@@ -360,7 +360,7 @@ agents:
     # Empty list disables the denylist. Parent agent tools are unaffected.
     subagent_excluded_tools:
         - settings
-        - documentation
+        - hatfield_docs
 
     # Bounded output limits for agent_retrieve (optional overrides).
     # retrieve:

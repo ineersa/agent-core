@@ -1,3 +1,7 @@
+---
+description: Session identity, storage layout, replay, locking, and resume/fork design.
+---
+
 # Hatfield Session Storage
 
 **One directory = one session = one agent run = one future fork tree node.**
