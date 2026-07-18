@@ -40,6 +40,18 @@ final readonly class OutputCapToolResultProcessor implements ToolResultProcessor
      */
     private const array PATH_ARGUMENT_KEYS = ['path', 'file_path', 'file'];
 
+    /**
+     * Tools whose successful result is a dense document-style report/handoff.
+     *
+     * These tools have no path argument, so path-based cap selection would
+     * otherwise fall back to defaultCap (20k). Classify them as doc-like so
+     * they use docCap (50k) without raising the global default for code/tool
+     * output. Keep this list narrow: handoff/report tools only.
+     *
+     * @var list<string>
+     */
+    private const array DOCUMENT_REPORT_TOOL_NAMES = ['fork', 'subagent'];
+
     public function __construct(
         private OutputCap $outputCap,
     ) {
@@ -52,7 +64,7 @@ final readonly class OutputCapToolResultProcessor implements ToolResultProcessor
             return $result;
         }
 
-        $path = $this->extractPathFromArguments($toolCall->arguments);
+        $path = $this->resolveCapPath($toolCall, $result);
         $cap = $this->outputCap->capForPath($path);
         $charCount = u($text)->length();
 
@@ -196,6 +208,33 @@ STRING;
         }
 
         return implode("\n", $parts);
+    }
+
+    /**
+     * Resolve the path used for cap selection.
+     *
+     * Preference order:
+     * 1. Explicit path-like tool argument (read/bash file context).
+     * 2. Synthetic .md path for successful document-report tools (fork/subagent)
+     *    so OutputCap::capForPath applies docCap without changing defaultCap.
+     * 3. null → defaultCap.
+     *
+     * Error results from report tools keep defaultCap (null path): failed
+     * envelopes are short status text, not handoff documents.
+     */
+    private function resolveCapPath(ToolCall $toolCall, ToolResult $result): ?string
+    {
+        $path = $this->extractPathFromArguments($toolCall->arguments);
+        if (null !== $path) {
+            return $path;
+        }
+
+        if (!$result->isError && \in_array($toolCall->toolName, self::DOCUMENT_REPORT_TOOL_NAMES, true)) {
+            // Virtual doc path: only used for extension-based docCap selection.
+            return 'handoff-report.md';
+        }
+
+        return null;
     }
 
     /**

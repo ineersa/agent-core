@@ -325,6 +325,29 @@ final class DeferredSubagentBatchLaunchTest extends IsolatedKernelTestCase
         $this->assertNull($batchRepo->findByParentRunAndToolCall($parentRunId, $otherTool));
     }
 
+    public function testOrdinaryLaunchApiHasNoNullableProfileAndProfiledPathIsRequiredSingleChild(): void
+    {
+        // Thesis B: ordinary deferred batch launch API has no nullable fork profile;
+        // explicit profiled path launches exactly one deferred child and does not accept multi-task misuse.
+        $launch = new \ReflectionMethod(DeferredSubagentBatchLaunchService::class, 'launch');
+        $this->assertCount(3, $launch->getParameters());
+        foreach ($launch->getParameters() as $parameter) {
+            $this->assertStringNotContainsStringIgnoringCase('profile', $parameter->getName());
+        }
+
+        $profiled = new \ReflectionMethod(DeferredSubagentBatchLaunchService::class, 'launchSingleChildProfile');
+        $this->assertTrue($profiled->isPublic());
+        $this->assertCount(3, $profiled->getParameters());
+
+        $prepareFromDefinition = new \ReflectionMethod(SubagentLaunchPreparationService::class, 'prepareFromDefinition');
+        foreach ($prepareFromDefinition->getParameters() as $parameter) {
+            $this->assertStringNotContainsStringIgnoringCase('profile', $parameter->getName());
+        }
+        $this->assertTrue(
+            (new \ReflectionMethod(SubagentLaunchPreparationService::class, 'prepareForkFromProfile'))->isPublic(),
+        );
+    }
+
     public function testExecuteParallelHardCapRejectsBeforeReservation(): void
     {
         $parentRunId = 'parent-batch-cap';
@@ -454,7 +477,13 @@ final class DeferredSubagentBatchLaunchTest extends IsolatedKernelTestCase
             $parentRunStore ?? self::getContainer()->get(RunStoreInterface::class),
             self::getContainer()->get(\Ineersa\CodingAgent\Config\AppConfig::class),
         );
-        $launchPreparation = new SubagentLaunchPreparationService($definitionPolicy, $artifactLifecycle, $launchInputFactory);
+        $launchPreparation = new SubagentLaunchPreparationService(
+            $definitionPolicy,
+            $artifactLifecycle,
+            $launchInputFactory,
+            self::getContainer()->get(\Ineersa\CodingAgent\Agent\Fork\ForkChildLaunchInputBuilder::class),
+            self::getContainer()->get(\Ineersa\CodingAgent\Agent\Fork\ForkToolPolicyResolver::class),
+        );
         $lifecyclePolicyFactory = self::getContainer()->get(\Ineersa\CodingAgent\Agent\Execution\Subagent\SubagentChildRunBatchLifecyclePolicyFactory::class);
         $batchLaunchService = new \Ineersa\CodingAgent\Agent\Execution\ChildRun\Lifecycle\ChildRunBatchLaunchService(
             $agentRunner,

@@ -76,6 +76,26 @@ final class ForkTaskPromptBuilderTest extends TestCase
         $this->assertStringContainsString('last user message', $append);
         $this->assertStringContainsString('Do not suggest launching a fork', $append);
         $this->assertStringContainsString('obey the delegated task', $append);
+        $this->assertStringContainsString('Execute and verify all tool work first', $append);
+        $this->assertStringContainsString('Never emit the handoff in a message that also requests tools', $append);
+        $this->assertStringContainsString('final assistant message must be the complete handoff', $append);
+        $this->assertStringContainsString('Do not replace it with a shorter recap', $append);
+    }
+
+    public function testBuildTaskUserMessageReinforcesHandoffFinalityWithoutRewritingSections(): void
+    {
+        $message = $this->builder->buildTaskUserMessage('Test task');
+
+        $this->assertStringContainsString('## 1. Result / status', $message);
+        $this->assertStringContainsString('## 11. Final handoff', $message);
+        $this->assertStringContainsString(
+            'Execute and verify all tool work first. Never emit the handoff in a message that also requests tools.',
+            $message,
+        );
+        $this->assertStringContainsString(
+            'After the final tool result, your final assistant message must be the complete handoff. Do not replace it with a shorter recap.',
+            $message,
+        );
     }
 
     public function testBuildTaskUserMessageWithEmptyTask(): void
