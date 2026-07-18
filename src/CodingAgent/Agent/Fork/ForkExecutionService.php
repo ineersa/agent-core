@@ -9,15 +9,13 @@ use Ineersa\AgentCore\Contract\RunStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
-use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchExecutionModeEnum;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Preparation\DeferredSubagentSingleChildLaunchProfileDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Launch\DeferredSubagentBatchLaunchService;
 use Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader;
-use Ineersa\CodingAgent\Agent\Execution\SubagentTaskDTO;
 
 /**
  * Thin fork adapter: snapshot/sanitize/sync-compact parent messages, then the
- * ordinary deferred single-child subagent launcher.
+ * ordinary deferred single-child subagent launcher via an explicit profiled path.
  */
 final class ForkExecutionService implements ForkExecutionServiceInterface
 {
@@ -63,8 +61,7 @@ final class ForkExecutionService implements ForkExecutionServiceInterface
             throw new ToolCallException(\sprintf('Fork compaction failed before child launch: %s', $detail), retryable: false);
         }
 
-        // 4) Ordinary deferred single-child launch with typed profile data (no strategy/factory).
-        // Explicit model override rides on the definition; reasoning stays on the profile.
+        // 4) Explicit required single-child profiled deferred launch (no optional generic profile).
         $profile = new DeferredSubagentSingleChildLaunchProfileDTO(
             definition: ForkInternalAgentDefinition::create($modelOverride),
             artifactKind: AgentArtifactKindEnum::Fork,
@@ -73,10 +70,9 @@ final class ForkExecutionService implements ForkExecutionServiceInterface
             reasoningOverride: $reasoningOverride,
         );
 
-        return $this->deferredBatchLaunch->launch(
+        return $this->deferredBatchLaunch->launchSingleChildProfile(
             $parentRunId,
-            [new SubagentTaskDTO(agent: 'fork', task: $task)],
-            ChildRunBatchExecutionModeEnum::Single,
+            $task,
             $profile,
         );
     }

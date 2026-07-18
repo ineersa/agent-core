@@ -31,12 +31,8 @@ final class ForkToolPolicyResolver
             inheritAgentsMd: true,
         );
 
-        $policy = $this->toolPolicyResolver->resolve($definition, $parentRunId, allowSubagent: false);
-        $policy['tools'] = array_values(array_filter(
-            $policy['tools'],
-            static fn (string $name): bool => 'fork' !== $name && 'subagent' !== $name,
-        ));
-
-        return $policy;
+        // Canonical child policy already structurally omits fork/subagent and applies
+        // agents.subagent_excluded_tools; no second recursion filter is needed here.
+        return $this->toolPolicyResolver->resolve($definition, $parentRunId);
     }
 }

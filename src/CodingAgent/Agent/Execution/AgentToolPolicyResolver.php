@@ -23,7 +23,7 @@ final readonly class AgentToolPolicyResolver
     /**
      * @return array{tools: list<string>, mcp: array{mode: string, tools: list<string>}}
      */
-    public function resolve(AgentDefinitionDTO $definition, string $catalogRunId, bool $allowSubagent = false): array
+    public function resolve(AgentDefinitionDTO $definition, string $catalogRunId): array
     {
         $mcpResolved = $this->mcpToolsResolver->resolve($definition->tools, $catalogRunId);
 
@@ -33,19 +33,18 @@ final readonly class AgentToolPolicyResolver
             $tools = $mcpResolved['non_mcp_tools'];
         }
 
-        if (!$allowSubagent) {
-            // Child runs cannot launch fork or subagent; omit both from the advertised toolset.
-            $tools = array_values(array_filter(
-                $tools,
-                static fn (string $name): bool => 'subagent' !== $name && 'fork' !== $name,
-            ));
-        }
-
         foreach ($mcpResolved['mcp_runtime_tools'] as $mcpTool) {
             if (!\in_array($mcpTool, $tools, true)) {
                 $tools[] = $mcpTool;
             }
         }
+
+        // Nested child launches are forbidden for every child run: always omit recursion tools
+        // after MCP merge so neither inherit-all nor explicit lists can reintroduce them.
+        $tools = array_values(array_filter(
+            $tools,
+            static fn (string $name): bool => 'subagent' !== $name && 'fork' !== $name,
+        ));
 
         // Parent-only tools (settings, documentation, …) are stripped for every child,
         // whether the definition omitted tools (inherit-all) or requested them explicitly.

@@ -9,6 +9,7 @@ use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
+use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\CodingAgent\Agent\Fork\ForkExecutionServiceInterface;
 use Ineersa\CodingAgent\Agent\Fork\ForkRuntimeConfigResolver;
 use Ineersa\CodingAgent\Agent\Tool\ForkToolDefinitionBuilder;
@@ -109,8 +110,10 @@ final class ForkToolContractTest extends TestCase
         $this->assertSame('low', $resolved2->thinking);
     }
 
-    public function testPromptGuidelinesExcludeForkAndSubagent(): void
+    public function testPromptGuidelinesAndParallelModeExposeSafetyGuidance(): void
     {
+        // Thesis C: fork definition is Parallel and exposes implementation-delegation,
+        // no-same-worktree, and max-3 concurrent safety/load guidelines.
         $handler = new ForkToolHandler(
             new StackToolExecutionContextAccessor(),
             new ToolRuntime(new StackToolExecutionContextAccessor()),
@@ -118,7 +121,13 @@ final class ForkToolContractTest extends TestCase
         );
         $definition = ForkToolDefinitionBuilder::build($handler);
         $joined = implode("\n", $definition->promptGuidelines);
+
+        $this->assertSame(ToolExecutionMode::Parallel, $definition->executionMode);
+        $this->assertStringContainsString('implementation delegation', strtolower($joined));
         $this->assertStringContainsString('cannot launch fork or subagent', strtolower($joined));
+        $this->assertStringContainsString('never target the same worktree/directory', strtolower($joined));
+        $this->assertStringContainsString('never launch more than 3 forks concurrently', strtolower($joined));
+        $this->assertStringContainsString('do not set model or thinking', strtolower($joined));
     }
 }
 

@@ -39,7 +39,7 @@ final class AgentsConfigTest extends TestCase
         $this->assertCount(0, $config->paths);
         $this->assertSame(8, $config->maxAgents);
         $this->assertSame(1800, $config->subagentToolTimeoutSeconds);
-        $this->assertSame(['settings', 'documentation', 'fork'], $config->subagentExcludedTools);
+        $this->assertSame(['settings', 'documentation'], $config->subagentExcludedTools);
     }
 
     public function testFromRawWithMaxAgents(): void

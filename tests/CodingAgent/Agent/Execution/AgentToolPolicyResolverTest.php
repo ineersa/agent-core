@@ -49,19 +49,19 @@ final class AgentToolPolicyResolverTest extends TestCase
         $this->assertNotContains('fork', $policy['tools']);
     }
 
-    public function testAllowSubagentTrueKeepsSubagentButDefaultDenylistRemovesFork(): void
+    public function testStructuralRecursionToolsAlwaysRemovedEvenWhenConfiguredExclusionsEmpty(): void
     {
-        // Thesis: default agents.subagent_excluded_tools includes fork, so even when
-        // allowSubagent=true keeps nested subagent launch, fork is still stripped by denylist.
+        // Thesis A: child policy always removes fork and subagent even when
+        // agents.subagent_excluded_tools is [] and the definition names both tools.
         $resolver = new AgentToolPolicyResolver(
             $this->registry(['read', 'subagent', 'fork']),
             $this->mcpResolver([]),
-            new AgentsConfig(),
+            new AgentsConfig(subagentExcludedTools: []),
         );
-        $policy = $resolver->resolve($this->definition(['read', 'subagent', 'fork']), 'run-1', allowSubagent: true);
+        $policy = $resolver->resolve($this->definition(['read', 'subagent', 'fork']), 'run-1');
 
         $this->assertContains('read', $policy['tools']);
-        $this->assertContains('subagent', $policy['tools']);
+        $this->assertNotContains('subagent', $policy['tools']);
         $this->assertNotContains('fork', $policy['tools']);
     }
 

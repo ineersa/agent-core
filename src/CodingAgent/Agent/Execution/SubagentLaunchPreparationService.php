@@ -71,7 +71,6 @@ final class SubagentLaunchPreparationService
         ?string $childRunId = null,
         bool $skipReservation = false,
         ?ChildRunIdentityDTO $identityTemplate = null,
-        ?DeferredSubagentSingleChildLaunchProfileDTO $singleChildProfile = null,
     ): PreparedAgentChildRunDTO {
         $artifactId ??= 'agent_'.bin2hex(random_bytes(8));
         $childRunId ??= Uuid::v4()->toRfc4122();
@@ -83,36 +82,65 @@ final class SubagentLaunchPreparationService
             displayName: $agentName,
             taskSummary: $task,
             definitionModel: $definition->model,
-            artifactKind: null !== $singleChildProfile ? $singleChildProfile->artifactKind : AgentArtifactKindEnum::Subagent,
+            artifactKind: AgentArtifactKindEnum::Subagent,
         );
 
         if (!$skipReservation) {
             $this->artifactLifecycle->reservePending($identity);
         }
 
-        // Typed single-child profile data (fork): already-compacted messages + overrides.
-        // Branch is on artifact kind, not agent-name string checks.
-        if (null !== $singleChildProfile && AgentArtifactKindEnum::Fork === $singleChildProfile->artifactKind) {
-            return $this->forkLaunchInputBuilder->buildPrepared(
-                $identity,
-                new ForkLaunchTaskDTO(
-                    task: $task,
-                    inheritedMessages: $singleChildProfile->inheritedMessages,
-                    modelOverride: $definition->model,
-                    reasoningOverride: $singleChildProfile->reasoningOverride,
-                ),
-                $this->forkToolPolicyResolver->resolve($parentRunId),
-            );
-        }
-
-        $allowSubagentLaunch = null !== $definition->tools && \in_array('subagent', $definition->tools, true);
-        $policy = $this->definitionPolicy->resolveToolPolicy($definition, $parentRunId, $allowSubagentLaunch);
+        $policy = $this->definitionPolicy->resolveToolPolicy($definition, $parentRunId);
 
         return $this->launchInputFactory->buildPrepared(
             $identity,
             $definition,
             $policy['tools'],
             $policy['mcp'],
+        );
+    }
+
+    /**
+     * Explicit fork child preparation from a required profile (no catalog/name fallback).
+     */
+    public function prepareForkFromProfile(
+        string $parentRunId,
+        DeferredSubagentSingleChildLaunchProfileDTO $profile,
+        string $task,
+        ?string $artifactId = null,
+        ?string $childRunId = null,
+        bool $skipReservation = false,
+        ?ChildRunIdentityDTO $identityTemplate = null,
+    ): PreparedAgentChildRunDTO {
+        if (AgentArtifactKindEnum::Fork !== $profile->artifactKind) {
+            throw new \InvalidArgumentException('prepareForkFromProfile requires artifact kind Fork.');
+        }
+
+        $artifactId ??= 'agent_'.bin2hex(random_bytes(8));
+        $childRunId ??= Uuid::v4()->toRfc4122();
+
+        $identity = $identityTemplate ?? new ChildRunIdentityDTO(
+            parentRunId: $parentRunId,
+            childRunId: $childRunId,
+            artifactId: $artifactId,
+            displayName: $profile->displayAgentName,
+            taskSummary: $task,
+            definitionModel: $profile->definition->model,
+            artifactKind: $profile->artifactKind,
+        );
+
+        if (!$skipReservation) {
+            $this->artifactLifecycle->reservePending($identity);
+        }
+
+        return $this->forkLaunchInputBuilder->buildPrepared(
+            $identity,
+            new ForkLaunchTaskDTO(
+                task: $task,
+                inheritedMessages: $profile->inheritedMessages,
+                modelOverride: $profile->definition->model,
+                reasoningOverride: $profile->reasoningOverride,
+            ),
+            $this->forkToolPolicyResolver->resolve($parentRunId),
         );
     }
 }

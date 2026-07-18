@@ -37,12 +37,14 @@ final class ForkToolDefinitionBuilder
                 'additionalProperties' => false,
             ],
             handler: $handler,
-            executionMode: ToolExecutionMode::Sequential,
+            executionMode: ToolExecutionMode::Parallel,
             timeoutSeconds: null,
             promptLine: 'fork task="..." — delegate work to an isolated child with inherited context',
             promptGuidelines: [
-                'Use fork for focused implementation or investigation delegated to an isolated child.',
+                'Use fork for implementation delegation to an isolated child with inherited parent context.',
                 'Fork children cannot launch fork or subagent; do not instruct them to spawn child agents.',
+                'Parallel forks must NEVER target the same worktree/directory because concurrent edits can corrupt it.',
+                'Never launch more than 3 forks concurrently because forks impose high load.',
                 'Do not set model or thinking unless the user explicitly requested overrides.',
             ],
         );

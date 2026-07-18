@@ -361,7 +361,6 @@ agents:
     subagent_excluded_tools:
         - settings
         - documentation
-        - fork
 
     # Bounded output limits for agent_retrieve (optional overrides).
     # retrieve:
