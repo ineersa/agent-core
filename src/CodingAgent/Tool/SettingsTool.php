@@ -88,7 +88,7 @@ final class SettingsTool implements HatfieldToolProviderInterface, ToolHandlerIn
             executionMode: ToolExecutionMode::Sequential,
             promptLine: 'settings operation path [scope] [value] — read, set, or remove one Hatfield setting',
             promptGuidelines: [
-                'Use the `settings` tool, not generic file tools, to read or change Hatfield settings.',
+                'MUST use the `settings` tool for every Hatfield runtime-setting read, set, or removal. NEVER inspect or modify `~/.hatfield/settings.yaml` or `.hatfield/settings.yaml` using `read`, `edit`, `write`, or `bash` commands such as `cat`, `grep`, or `sed`.',
             ],
         );
     }
