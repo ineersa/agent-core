@@ -1,3 +1,7 @@
+---
+description: Prompt templates, slash invocation, expansion, and discovery.
+---
+
 # Prompt Templates
 
 Prompt templates are Markdown files that expand into full user prompts. A

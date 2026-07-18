@@ -1,3 +1,7 @@
+---
+description: MCP client configuration for external tool servers.
+---
+
 # MCP Client Configuration
 
 Hatfield can use tools exposed by external MCP (Model Context Protocol) servers.

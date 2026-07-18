@@ -1,3 +1,7 @@
+---
+description: Hatfield settings precedence, keys, sparse overrides, and runtime behavior.
+---
+
 # Hatfield Settings
 
 Hatfield is the application name for the local coding agent configuration system.
@@ -692,7 +696,7 @@ agents:
 Tool names always removed from child/subagent runs, for both omitted (inherit-all)
 and explicit frontmatter tool lists. Parent agent tool registry is unaffected.
 
-**Default:** `[settings, documentation]`. An explicit empty list disables the denylist.
+**Default:** `[settings, hatfield_docs]`. An explicit empty list disables the denylist.
 Non-list or non-string values are rejected at config load.
 
 **Example:**
@@ -700,7 +704,7 @@ Non-list or non-string values are rejected at config load.
 agents:
     subagent_excluded_tools:
         - settings
-        - documentation
+        - hatfield_docs
 ```
 
 See [Agent Definitions](agents.md) for the full definition format,
