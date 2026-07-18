@@ -34,7 +34,7 @@ final class ForkToolPolicyResolverTest extends IsolatedKernelTestCase
             'read',
             'bash',
             'settings',
-            'documentation',
+            'hatfield_docs',
             'custom_excluded',
             'fork',
             'subagent',
@@ -58,8 +58,8 @@ final class ForkToolPolicyResolverTest extends IsolatedKernelTestCase
         $this->assertContains('bash', $policy['tools']);
         $this->assertNotContains('settings', $policy['tools']);
         $this->assertNotContains('custom_excluded', $policy['tools']);
-        // documentation is not in this configured denylist → remains.
-        $this->assertContains('documentation', $policy['tools']);
+        // hatfield_docs is not in this configured denylist → remains.
+        $this->assertContains('hatfield_docs', $policy['tools']);
         $this->assertNotContains('fork', $policy['tools']);
         $this->assertNotContains('subagent', $policy['tools']);
     }

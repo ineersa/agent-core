@@ -1270,6 +1270,15 @@ function phar_build(): string
         }
     }
 
+    // Curated internal docs use source-tree symlinks; Box rejects links, so
+    // materialize regular files into the staging tree before compilation.
+    $internalDocsPath = $root.'/internal-docs';
+    if (is_dir($internalDocsPath)) {
+        shell_exec(
+            'cp -aL '.escapeshellarg($internalDocsPath).' '.escapeshellarg($stagingDir.'/')
+        );
+    }
+
     // Copy individual root files needed by Box and Composer.
     foreach (['composer.json', 'composer.lock', 'box.json'] as $file) {
         $srcPath = $root.'/'.$file;

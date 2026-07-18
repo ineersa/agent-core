@@ -221,6 +221,51 @@ final class PharSmokeTest extends TestCase
         }
     }
 
+    public function testPharContainsMaterializedInternalDocs(): void
+    {
+        [$php, $pharPath] = AgentTestExecutable::command();
+        $isPhar = str_ends_with($pharPath, '.phar');
+
+        if (!$isPhar) {
+            $this->markTestSkipped(\sprintf(
+                'HATFIELD_BINARY_PATH not set or not a PHAR. Resolved to %s.',
+                $pharPath,
+            ));
+        }
+
+        $this->assertFileExists($pharPath);
+        $phar = new \Phar($pharPath);
+        $expected = [
+            'agents',
+            'background-processes',
+            'compaction',
+            'hitl-and-approvals',
+            'mcp',
+            'prompt-templates',
+            'session-storage',
+            'settings',
+        ];
+
+        foreach ($expected as $id) {
+            $entry = 'internal-docs/'.$id.'.md';
+            $this->assertTrue(isset($phar[$entry]), 'Missing PHAR entry '.$entry);
+            $this->assertFalse($phar[$entry]->isLink(), $entry.' must be a regular file, not a symlink');
+            $uri = 'phar://'.$pharPath.'/'.$entry;
+            $raw = file_get_contents($uri);
+            $this->assertNotFalse($raw, 'Unable to read '.$uri);
+            $this->assertStringContainsString('description:', $raw);
+            $this->assertStringContainsString('# ', $raw);
+        }
+
+        $this->assertFalse(isset($phar['docs/settings.md']), 'PHAR must not bundle docs/');
+        $this->assertFalse(isset($phar['docs/archive']), 'PHAR must not bundle docs/archive');
+
+        $locator = new \Ineersa\CodingAgent\Config\AppResourceLocator('phar://'.$pharPath);
+        $settingsPath = $locator->getInternalDocsPath().'/settings.md';
+        $this->assertFileExists($settingsPath);
+        $this->assertStringContainsString('Hatfield Settings', (string) file_get_contents($settingsPath));
+    }
+
     /**
      * Create an isolated HOME directory with no user config.
      *

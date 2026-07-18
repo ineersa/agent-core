@@ -1,3 +1,7 @@
+---
+description: Agent definitions, discovery, catalog, and foreground subagent tool behavior.
+---
+
 # Agent Definitions
 
 Agent definitions configure named child-agent roles for your project or user environment. For example, you can define agents named `scout`, `reviewer`, `researcher`, `worker`, or any custom name. Each definition lives in a Markdown file with YAML frontmatter.

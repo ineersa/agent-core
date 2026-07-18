@@ -3,6 +3,7 @@
         "bin",
         "src",
         "config",
+        "internal-docs",
         "vendor",
         "migrations"
     ],

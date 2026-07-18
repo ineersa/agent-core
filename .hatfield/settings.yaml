@@ -231,7 +231,7 @@ logging:
 #     # Parent-only tools stripped from every child (inherit-all and explicit).
 #     # subagent_excluded_tools:
 #     #     - settings
-#     #     - documentation
+#     #     - hatfield_docs
 #     paths:
 #         - ~/shared/agents/custom-reviewer.md
 #         - .hatfield/team-agents

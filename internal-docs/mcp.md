@@ -1,0 +1,1 @@
+../docs/mcp.md
