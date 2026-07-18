@@ -57,7 +57,7 @@ final class SettingsTool implements HatfieldToolProviderInterface, ToolHandlerIn
     {
         return new ToolDefinitionDTO(
             name: 'settings',
-            description: 'Read or mutate one Hatfield setting by dotted path. set/remove require explicit scope user|project; never edit settings YAML with file tools; changes need restart.',
+            description: 'Read, set, or remove one Hatfield setting by dotted path.',
             parametersJsonSchema: [
                 'type' => 'object',
                 'properties' => [
@@ -86,12 +86,9 @@ final class SettingsTool implements HatfieldToolProviderInterface, ToolHandlerIn
             ],
             handler: $this,
             executionMode: ToolExecutionMode::Sequential,
-            promptLine: 'settings operation path [scope] [value] — read/set/remove one setting; set/remove need user|project; restart required after mutations',
+            promptLine: 'settings operation path [scope] [value] — read, set, or remove one Hatfield setting',
             promptGuidelines: [
-                'Use settings for configuration only. Never read or edit ~/.hatfield/settings.yaml or .hatfield/settings.yaml with generic file tools.',
-                'set and remove require explicit scope user or project. Do not omit scope and do not use effective/defaults for writes.',
-                'Mutations write sparse overrides. remove deletes only that override so inheritance resumes.',
-                'Disk changes require a Hatfield restart; restart_required is true after set/remove.',
+                'Use the `settings` tool, not generic file tools, to read or change Hatfield settings.',
             ],
         );
     }

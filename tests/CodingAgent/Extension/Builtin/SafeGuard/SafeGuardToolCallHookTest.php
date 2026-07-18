@@ -931,37 +931,47 @@ final class SafeGuardToolCallHookTest extends TestCase
             ));
 
             $this->assertSame(ToolCallDecisionKindEnum::RequireApproval, $dto->kind);
-            $this->assertTrue((bool) ($dto->details['non_persistent'] ?? false));
             $this->assertSame(
                 ['✅ Allow once', '❌ Block'],
                 $dto->details['schema']['enum'] ?? null,
             );
+            $this->assertArrayNotHasKey('non_persistent', $dto->details);
             $operationKey = (string) ($dto->details['operation_key'] ?? '');
             $this->assertSame('settings:set:project:tui.theme', $operationKey);
+            $questionId = (string) ($dto->details['question_id'] ?? '');
 
-            $forged = $hook->resolveApprovalAnswer(new ApprovalAnswerContextDTO(
-                questionId: (string) ($dto->details['question_id'] ?? ''),
-                answer: '📌 Always allow',
+            $allowed = $hook->resolveApprovalAnswer(new ApprovalAnswerContextDTO(
+                questionId: $questionId,
+                answer: '✅ Allow once',
                 toolName: 'settings',
                 approvalContext: [
                     'operation_key' => $operationKey,
                     'category' => 'custom_dangerous',
-                    'non_persistent' => true,
                 ],
             ));
-            $this->assertSame(ToolCallDecisionKindEnum::Block, $forged->kind);
+            $this->assertSame(ToolCallDecisionKindEnum::Allow, $allowed->kind);
 
             $hook->onApprovalAnswered(new ApprovalAnswerContextDTO(
-                questionId: (string) ($dto->details['question_id'] ?? ''),
-                answer: '📌 Always allow',
+                questionId: $questionId,
+                answer: '✅ Allow once',
                 toolName: 'settings',
                 approvalContext: [
                     'operation_key' => $operationKey,
                     'category' => 'custom_dangerous',
-                    'non_persistent' => true,
                 ],
             ));
-            $this->assertFalse($tracker->isApproved($operationKey));
+            $this->assertTrue($tracker->isApproved($operationKey));
+
+            $blocked = $hook->resolveApprovalAnswer(new ApprovalAnswerContextDTO(
+                questionId: $questionId,
+                answer: '❌ Block',
+                toolName: 'settings',
+                approvalContext: [
+                    'operation_key' => $operationKey,
+                    'category' => 'custom_dangerous',
+                ],
+            ));
+            $this->assertSame(ToolCallDecisionKindEnum::Block, $blocked->kind);
         } finally {
             putenv('HATFIELD_APPROVAL_CHANNEL');
         }

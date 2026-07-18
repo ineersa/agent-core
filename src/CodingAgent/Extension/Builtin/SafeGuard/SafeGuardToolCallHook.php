@@ -139,7 +139,7 @@ final readonly class SafeGuardToolCallHook implements ToolCallHookInterface, App
 
             // Determine the operation spec for the approval context
             $spec = $this->resolveOperationSpec($context);
-            $nonPersistent = $this->isSettingsMutation($context);
+            $settingsMutation = $this->isSettingsMutation($context);
 
             $questionId = \sprintf(
                 'sg_%s',
@@ -151,14 +151,15 @@ final readonly class SafeGuardToolCallHook implements ToolCallHookInterface, App
                 $this->approvalTracker->markPending($questionId, $operationKey);
             }
 
-            $options = $nonPersistent
+            // Settings mutations are one-shot only — never offer Always allow.
+            $options = $settingsMutation
                 ? [
                     self::APPROVAL_OPTIONS['allow_once'],
                     self::APPROVAL_OPTIONS['deny'],
                 ]
                 : array_values(self::APPROVAL_OPTIONS);
 
-            $categoryLabel = $nonPersistent ? 'settings mutation' : $this->friendlyCategory($decision->kind);
+            $categoryLabel = $settingsMutation ? 'settings mutation' : $this->friendlyCategory($decision->kind);
 
             return ToolCallDecisionDTO::requireApproval(
                 prompt: \sprintf('Allow %s: %s?', $categoryLabel, $decision->reason),
@@ -174,7 +175,6 @@ final readonly class SafeGuardToolCallHook implements ToolCallHookInterface, App
                     'tool_name' => $decision->toolName,
                     'operation_key' => $operationKey,
                     'intercepted' => true,
-                    'non_persistent' => $nonPersistent,
                 ],
             );
         }
@@ -214,13 +214,6 @@ final readonly class SafeGuardToolCallHook implements ToolCallHookInterface, App
         }
 
         if ('always_allow' === $canonical) {
-            // Settings mutations never persist Always allow — clean pending only.
-            if (true === ($context->approvalContext['non_persistent'] ?? false)) {
-                $this->approvalTracker->removeByQuestionId($context->questionId);
-
-                return;
-            }
-
             $this->approvalTracker->approveByQuestionId($context->questionId);
 
             // Persist to policy file for future sessions.
@@ -257,23 +250,6 @@ final readonly class SafeGuardToolCallHook implements ToolCallHookInterface, App
         // The TUI sends labels with emoji icons (e.g. '✅ Allow once');
         // we map back to the canonical action for the decision.
         $canonical = array_search($answer, self::APPROVAL_OPTIONS, true);
-
-        if ('always_allow' === $canonical && true === ($context->approvalContext['non_persistent'] ?? false)) {
-            // Forged Always allow on non-persistent settings approvals fails closed.
-            $this->approvalTracker->removeByQuestionId($context->questionId);
-
-            return ToolCallDecisionDTO::block(
-                reason: 'safeguard_denied',
-                details: [
-                    'category' => $context->approvalContext['category'] ?? '',
-                    'intercepted' => true,
-                    'message' => \sprintf(
-                        'Tool "%s" was denied by SafeGuard: Always allow is not permitted for this approval.',
-                        $context->toolName,
-                    ),
-                ],
-            );
-        }
 
         if ('allow_once' === $canonical || 'always_allow' === $canonical) {
             return ToolCallDecisionDTO::allow();
