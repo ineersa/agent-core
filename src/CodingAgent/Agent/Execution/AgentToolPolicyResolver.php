@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Agent\Execution;
 
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionDTO;
+use Ineersa\CodingAgent\Config\AgentsConfig;
 use Ineersa\CodingAgent\Tool\ToolRegistryInterface;
 
 /**
@@ -15,6 +16,7 @@ final readonly class AgentToolPolicyResolver
     public function __construct(
         private ToolRegistryInterface $toolRegistry,
         private AgentMcpToolsResolver $mcpToolsResolver,
+        private AgentsConfig $agentsConfig,
     ) {
     }
 
@@ -42,6 +44,16 @@ final readonly class AgentToolPolicyResolver
             if (!\in_array($mcpTool, $tools, true)) {
                 $tools[] = $mcpTool;
             }
+        }
+
+        // Parent-only tools (settings, documentation, …) are stripped for every child,
+        // whether the definition omitted tools (inherit-all) or requested them explicitly.
+        $excluded = $this->agentsConfig->subagentExcludedTools;
+        if ([] !== $excluded) {
+            $tools = array_values(array_filter(
+                $tools,
+                static fn (string $name): bool => !\in_array($name, $excluded, true),
+            ));
         }
 
         return [

@@ -132,6 +132,13 @@ services:
     arguments:
       $propertyAccessor: '@coding_agent.settings.property_accessor'
 
+  Symfony\Component\Filesystem\Filesystem: ~
+
+  Ineersa\CodingAgent\Config\SettingsOverrideWriter:
+    arguments:
+      $propertyAccessor: '@coding_agent.settings.property_accessor'
+      $filesystem: '@Symfony\Component\Filesystem\Filesystem'
+
   # CodexAuthStorage is a service, not just a value object — it needs
   # the home directory resolved from SettingsPathResolver and a LockFactory.
   # Autowiring fails for the string $homeDir parameter.
@@ -1021,4 +1028,5 @@ services:
     arguments:
       $toolRegistry: '@Ineersa\CodingAgent\Tool\ToolRegistryInterface'
       $mcpToolsResolver: '@Ineersa\CodingAgent\Agent\Execution\AgentMcpToolsResolver'
+      $agentsConfig: '@Ineersa\CodingAgent\Config\AgentsConfig'
 

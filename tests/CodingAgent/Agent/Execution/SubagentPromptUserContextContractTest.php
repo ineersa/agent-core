@@ -327,7 +327,7 @@ final class SubagentPromptUserContextContractTest extends IsolatedKernelTestCase
         ?ToolRegistryInterface $registry = null,
     ): SubagentExecutionService {
         $registry ??= self::getContainer()->get(ToolRegistryInterface::class);
-        $policy = new AgentToolPolicyResolver($registry, $this->emptyMcpToolsResolver());
+        $policy = new AgentToolPolicyResolver($registry, $this->emptyMcpToolsResolver(), new AgentsConfig());
 
         return Support\SubagentExecutionServiceFactory::build([
             'catalog' => $catalog,

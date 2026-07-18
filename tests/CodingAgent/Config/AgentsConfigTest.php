@@ -39,6 +39,7 @@ final class AgentsConfigTest extends TestCase
         $this->assertCount(0, $config->paths);
         $this->assertSame(8, $config->maxAgents);
         $this->assertSame(1800, $config->subagentToolTimeoutSeconds);
+        $this->assertSame(['settings', 'documentation'], $config->subagentExcludedTools);
     }
 
     public function testFromRawWithMaxAgents(): void
@@ -172,5 +173,32 @@ final class AgentsConfigTest extends TestCase
         $config = AgentsConfig::fromRaw(['subagent_tool_timeout_seconds' => 600]);
 
         $this->assertSame(600, $config->subagentToolTimeoutSeconds);
+    }
+
+    public function testFromRawAcceptsCustomAndEmptySubagentExcludedTools(): void
+    {
+        $custom = AgentsConfig::fromRaw(['subagent_excluded_tools' => ['settings']]);
+        $this->assertSame(['settings'], $custom->subagentExcludedTools);
+
+        $empty = AgentsConfig::fromRaw(['subagent_excluded_tools' => []]);
+        $this->assertSame([], $empty->subagentExcludedTools);
+    }
+
+    /**
+     * @return iterable<string, array{0: mixed}>
+     */
+    public static function malformedSubagentExcludedToolsCases(): iterable
+    {
+        yield 'scalar string' => ['settings'];
+        yield 'associative map' => [['settings' => true]];
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('malformedSubagentExcludedToolsCases')]
+    public function testFromRawRejectsMalformedSubagentExcludedTools(mixed $value): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('agents.subagent_excluded_tools');
+
+        AgentsConfig::fromRaw(['subagent_excluded_tools' => $value]);
     }
 }
