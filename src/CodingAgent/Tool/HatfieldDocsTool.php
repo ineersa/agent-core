@@ -9,6 +9,7 @@ use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\CodingAgent\Config\AppResourceLocator;
 use Ineersa\CodingAgent\Markdown\MarkdownFrontmatterExtractor;
+use Symfony\Component\Finder\Finder;
 use Symfony\Component\Yaml\Exception\ParseException;
 use Symfony\Component\Yaml\Yaml;
 
@@ -124,29 +125,21 @@ final class HatfieldDocsTool implements HatfieldToolProviderInterface, ToolHandl
             return $this->catalog;
         }
 
-        $root = $this->resources->getInternalDocsPath();
-
-        try {
-            $iterator = new \FilesystemIterator(
-                $root,
-                \FilesystemIterator::SKIP_DOTS | \FilesystemIterator::CURRENT_AS_PATHNAME,
-            );
-        } catch (\UnexpectedValueException $e) {
-            throw new ToolCallException('Unable to open bundled internal-docs directory.', retryable: false, previous: $e);
-        }
-
         $catalog = [];
-        foreach ($iterator as $path) {
-            if (!\is_string($path) || !is_file($path) || !str_ends_with($path, '.md')) {
+        $files = Finder::create()
+            ->files()
+            ->in($this->resources->getInternalDocsPath())
+            ->depth('== 0')
+            ->name('*.md')
+            ->sortByName();
+
+        foreach ($files as $file) {
+            $id = $file->getBasename('.md');
+            if ('' === $id) {
                 continue;
             }
 
-            $id = pathinfo($path, \PATHINFO_FILENAME);
-            if (!\is_string($id) || '' === $id) {
-                continue;
-            }
-
-            $catalog[$id] = $this->parseDocument($path, $id);
+            $catalog[$id] = $this->parseDocument($file->getPathname(), $id);
         }
 
         ksort($catalog);

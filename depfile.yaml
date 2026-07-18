@@ -669,6 +669,7 @@ parameters:
       - AgentCore
       - AppConfig
       - AppMarkdown
+      - SymfonyFinder
       - SymfonyYaml
       - SymfonyAiPlatform
       - SymfonyEventDispatcher
