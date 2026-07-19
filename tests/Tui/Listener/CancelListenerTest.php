@@ -485,15 +485,35 @@ class CancelListenerTest extends TestCase
         $this->client->expects($this->never())
             ->method('cancel');
 
-        // Create a QuestionController with awaitingFreeForm=true
-        $qc = new QuestionController(new QuestionCoordinator());
+        // Free-form restore only runs when the active question is visible in the current view.
+        // Share one coordinator with a parent-owned request matching run-freeform.
+        $coordinator = new QuestionCoordinator();
+        $coordinator->enqueue(
+            new QuestionRequest(
+                requestId: 'freeform_choice',
+                source: QuestionSource::AgentCore,
+                kind: QuestionKind::Choice,
+                prompt: 'Pick an option or type free-form',
+                schema: ['type' => 'string', 'enum' => ['A', 'B']],
+                runId: 'run-freeform',
+                questionId: 'q_freeform',
+                allowOther: true,
+            ),
+        );
+
+        // Create a QuestionController with awaitingFreeForm=true on that same coordinator
+        $qc = new QuestionController($coordinator);
         $qcRef = new \ReflectionClass($qc);
         $awaitProp = $qcRef->getProperty('awaitingFreeForm');
         $awaitProp->setValue($qc, true);
         $this->assertTrue($qc->isAwaitingFreeForm());
 
-        // Pass the pre-configured controller to dispatchCancelEvent
-        $this->dispatchCancelEvent(captureErrorEnv: '1', questionController: $qc);
+        // Pass the pre-configured controller and shared coordinator to dispatchCancelEvent
+        $this->dispatchCancelEvent(
+            captureErrorEnv: '1',
+            questionController: $qc,
+            questionCoordinator: $coordinator,
+        );
 
         // After dispatch, restoreFromFreeForm() should have reset the flag
         // (regardless of whether it could re-open — no screen in this path)
