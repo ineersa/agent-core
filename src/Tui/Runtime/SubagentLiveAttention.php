@@ -124,7 +124,7 @@ final class SubagentLiveAttention
     {
         // Overlay catalog attention onto projected parent subagent cards so main
         // still shows ⚠ needs input while progress meta stays running.
-        self::reconcileMainTranscriptStatuses($state, $screen);
+        self::reconcileMainTranscriptFromCatalog($state, $screen);
         self::refreshAttentionFooter($state, $screen);
     }
 
@@ -139,29 +139,86 @@ final class SubagentLiveAttention
     }
 
     /**
-     * Reconcile projected subagent_progress statuses from the live catalog latch.
+     * Overlay catalog running/waiting_human onto projected subagent_progress rows.
      *
      * Parent projection may keep status=running while SafeGuard holds the child;
-     * the catalog latch is authoritative for nonterminal running/waiting_human.
-     * Only mutates transcript + screen when a status actually changes.
+     * the catalog latch is authoritative for nonterminal running/waiting_human only.
+     * Parallel mode updates children[] rows, not the wrapper. Mutates transcript +
+     * screen only when a status actually changes.
      */
-    private static function reconcileMainTranscriptStatuses(TuiSessionState $state, ChatScreen $screen): void
+    private static function reconcileMainTranscriptFromCatalog(TuiSessionState $state, ChatScreen $screen): void
     {
-        $changed = false;
+        $catalog = $state->subagentLiveCatalog;
         $blocks = $state->transcript;
+        $changed = false;
+
         foreach ($blocks as $i => $block) {
             $progress = $block->meta['subagent_progress'] ?? null;
             if (!\is_array($progress)) {
                 continue;
             }
 
-            $reconciled = self::reconcileProgressStatus($progress, $state->subagentLiveCatalog);
-            if ($reconciled === $progress) {
+            $progressChanged = false;
+            $children = $progress['children'] ?? null;
+            // Parallel: reconcile each child row only (wrapper has no agent_run_id).
+            // Single: reconcile the top-level progress row itself.
+            $rows = \is_array($children) ? $children : [$progress];
+            $nextRows = [];
+            foreach ($rows as $row) {
+                if (!\is_array($row)) {
+                    $nextRows[] = $row;
+                    continue;
+                }
+
+                $runId = $row['agent_run_id'] ?? null;
+                if (!\is_string($runId) || '' === trim($runId)) {
+                    $nextRows[] = $row;
+                    continue;
+                }
+
+                $child = $catalog->findByAgentRunId(trim($runId));
+                // Catalog only overlays Running/WaitingHuman; projected terminal wins.
+                if (null === $child || !\in_array($child->status, [SubagentLiveStatusEnum::Running, SubagentLiveStatusEnum::WaitingHuman], true)) {
+                    $nextRows[] = $row;
+                    continue;
+                }
+
+                $statusRaw = $row['status'] ?? null;
+                $current = \is_string($statusRaw) ? $statusRaw : 'running';
+                $normalized = match ($current) {
+                    'needs_clarification' => 'waiting_human',
+                    'starting' => 'running',
+                    default => $current,
+                };
+                // Terminal/unknown projected statuses are left alone.
+                if (!\in_array($normalized, ['running', 'waiting_human'], true)) {
+                    $nextRows[] = $row;
+                    continue;
+                }
+
+                $desired = $child->status->value;
+                if ($normalized === $desired) {
+                    $nextRows[] = $row;
+                    continue;
+                }
+
+                $row['status'] = $desired;
+                $nextRows[] = $row;
+                $progressChanged = true;
+            }
+
+            if (!$progressChanged) {
                 continue;
             }
 
+            if (\is_array($children)) {
+                $progress['children'] = $nextRows;
+            } else {
+                $progress = $nextRows[0] ?? $progress;
+            }
+
             $meta = $block->meta;
-            $meta['subagent_progress'] = $reconciled;
+            $meta['subagent_progress'] = $progress;
             $blocks[$i] = $block->with(meta: $meta);
             $changed = true;
         }
@@ -172,79 +229,5 @@ final class SubagentLiveAttention
 
         $state->transcript = $blocks;
         $screen->setTranscriptBlocks($blocks);
-    }
-
-    /**
-     * @param array<string, mixed> $progress
-     *
-     * @return array<string, mixed>
-     */
-    private static function reconcileProgressStatus(array $progress, SubagentLiveCatalog $catalog): array
-    {
-        $children = $progress['children'] ?? null;
-        if (\is_array($children)) {
-            $nextChildren = [];
-            $childrenChanged = false;
-            foreach ($children as $child) {
-                if (!\is_array($child)) {
-                    $nextChildren[] = $child;
-                    continue;
-                }
-                $reconciledChild = self::reconcileSingleProgressStatus($child, $catalog);
-                if ($reconciledChild !== $child) {
-                    $childrenChanged = true;
-                }
-                $nextChildren[] = $reconciledChild;
-            }
-            if ($childrenChanged) {
-                $progress['children'] = $nextChildren;
-            }
-        }
-
-        return self::reconcileSingleProgressStatus($progress, $catalog);
-    }
-
-    /**
-     * @param array<string, mixed> $progress
-     *
-     * @return array<string, mixed>
-     */
-    private static function reconcileSingleProgressStatus(array $progress, SubagentLiveCatalog $catalog): array
-    {
-        $runId = $progress['agent_run_id'] ?? null;
-        if (!\is_string($runId) || '' === trim($runId)) {
-            return $progress;
-        }
-
-        $child = $catalog->findByAgentRunId(trim($runId));
-        if (null === $child) {
-            return $progress;
-        }
-
-        // Only overlay catalog running/waiting_human onto nonterminal projected rows.
-        // Terminal projection (completed/failed/cancelled) must win over the latch.
-        if (!\in_array($child->status, [SubagentLiveStatusEnum::Running, SubagentLiveStatusEnum::WaitingHuman], true)) {
-            return $progress;
-        }
-
-        $statusRaw = $progress['status'] ?? null;
-        $current = \is_string($statusRaw) ? $statusRaw : 'running';
-        $normalized = match ($current) {
-            'needs_clarification' => 'waiting_human',
-            'starting' => 'running',
-            default => $current,
-        };
-        if (!\in_array($normalized, ['running', 'waiting_human'], true)) {
-            return $progress;
-        }
-
-        $desired = $child->status->value;
-        if ($normalized === $desired) {
-            return $progress;
-        }
-
-        $progress['status'] = $desired;
-
-        return $progress;
     }
 }

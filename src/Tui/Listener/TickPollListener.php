@@ -248,10 +248,13 @@ final class TickPollListener implements TuiListenerRegistrar
             };
 
             // Catalog latch is authoritative for child SafeGuard needs-input on main:
-            // prefer a concrete child attention line over generic Working... / idle null.
-            $attentionChild = $state->subagentLiveCatalog->firstChildNeedingAttention();
-            if (null !== $attentionChild) {
-                $msg = \sprintf('Child %s waiting for your input...', $attentionChild->agentName);
+            // prefer a concrete child attention line over generic Working... / idle null,
+            // but never hide an in-flight parent Cancelling... message.
+            if (RunActivityStateEnum::Cancelling !== $state->activity) {
+                $attentionChild = $state->subagentLiveCatalog->firstChildNeedingAttention();
+                if (null !== $attentionChild) {
+                    $msg = \sprintf('Child %s waiting for your input...', $attentionChild->agentName);
+                }
             }
 
             SubagentLiveAttention::syncMainAttention($state, $screen);
