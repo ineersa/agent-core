@@ -93,7 +93,11 @@ final class SubmitListener implements TuiListenerRegistrar
             }
 
             // ── Question interception: route editor text to active question ──
-            if ($questionCoordinator->actionRequired()) {
+            // Hidden child-owned questions stay pending but must not consume main input.
+            if (
+                $questionCoordinator->actionRequired()
+                && RuntimeQuestionEventHandler::isQuestionVisibleInCurrentView($state, $questionCoordinator->activeRequest())
+            ) {
                 if ($state->subagentLiveView->active && $subagentLiveInputPolicy->isAllowedLiveViewNavigationSlash($text)) {
                     $commandResult = $router->route($text);
                     if (null !== $commandResult && !($commandResult instanceof DispatchRuntime) && !($commandResult instanceof DispatchShellCommand)) {

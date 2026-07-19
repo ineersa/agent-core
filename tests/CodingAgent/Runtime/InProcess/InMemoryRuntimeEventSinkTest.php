@@ -73,6 +73,23 @@ final class InMemoryRuntimeEventSinkTest extends TestCase
     }
 
     #[Test]
+    public function drainConsumesCrossRunToolQuestionRequestedOnce(): void
+    {
+        $sink = new InMemoryRuntimeEventSink();
+        $sink->emit(new RuntimeEvent('turn.started', 'parent-run', 1));
+        $sink->emit(new RuntimeEvent('tool_question.requested', 'child-run', 0));
+
+        $parentDrain = iterator_to_array($sink->drain('parent-run'));
+        $this->assertCount(2, $parentDrain);
+        $this->assertSame('parent-run', $parentDrain[0]->runId);
+        $this->assertSame('child-run', $parentDrain[1]->runId);
+        $this->assertSame('tool_question.requested', $parentDrain[1]->type);
+
+        $childDrain = iterator_to_array($sink->drain('child-run'));
+        $this->assertSame([], $childDrain);
+    }
+
+    #[Test]
     public function drainWithEmptyRunIdReturnsAll(): void
     {
         $sink = new InMemoryRuntimeEventSink();

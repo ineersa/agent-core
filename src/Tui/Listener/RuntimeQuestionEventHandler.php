@@ -291,6 +291,32 @@ final class RuntimeQuestionEventHandler
         $this->handleChoiceToolQuestion($p, $schema, $requestId, $runId, $requestIdFromPayload, $client, $questionCoordinator, $sessionState, $screen);
     }
 
+    /**
+     * Whether the active question overlay may render / intercept input in the current view.
+     *
+     * null runId remains global (visible in every view). Otherwise the active view run
+     * must match: parent/main when live view is inactive, selected child when live.
+     */
+    public static function isQuestionVisibleInCurrentView(TuiSessionState $state, ?QuestionRequest $request): bool
+    {
+        if (null === $request) {
+            return false;
+        }
+
+        if (null === $request->runId || '' === $request->runId) {
+            return true;
+        }
+
+        $live = $state->subagentLiveView;
+        if ($live->active) {
+            return null !== $live->selected && $request->runId === $live->selected->agentRunId;
+        }
+
+        $parentRunId = null !== $state->handle ? $state->handle->runId : $state->sessionId;
+
+        return $request->runId === $parentRunId;
+    }
+
     public function shouldRejectOrphanedQuestion(TuiSessionState $state, QuestionRequest $activeRequest): bool
     {
         $parentRunId = null !== $state->handle ? $state->handle->runId : $state->sessionId;
@@ -307,6 +333,15 @@ final class RuntimeQuestionEventHandler
         $live = $state->subagentLiveView;
         if ($live->active && null !== $live->selected && $activeRequest->runId === $live->selected->agentRunId) {
             return $live->childActivity->isTerminal();
+        }
+
+        // Hidden child-owned request: reject when the catalog child is gone/terminal so
+        // a completed child cannot block the coordinator indefinitely after return-to-main.
+        if (null !== $activeRequest->runId && '' !== $activeRequest->runId) {
+            $catalogChild = $state->subagentLiveCatalog->findByAgentRunId($activeRequest->runId);
+            if (null === $catalogChild || $catalogChild->isTerminal()) {
+                return true;
+            }
         }
 
         return false;

@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Runtime\InProcess;
 
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeEventSinkInterface;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
+use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 
 /**
  * In-memory buffering sink for transient runtime events.
@@ -48,7 +49,14 @@ final class InMemoryRuntimeEventSink implements RuntimeEventSinkInterface
         while (!$this->buffer->isEmpty()) {
             $event = $this->buffer->dequeue();
 
-            if ($event->runId === $runId || '' === $runId) {
+            // tool_question.requested is session-global interactive control:
+            // consume once on whichever run poll drains the sink so parent/main
+            // can latch child needs-input without entering the child view.
+            if (
+                $event->runId === $runId
+                || '' === $runId
+                || RuntimeEventTypeEnum::ToolQuestionRequested->value === $event->type
+            ) {
                 yield $event;
             } else {
                 $remaining->enqueue($event);

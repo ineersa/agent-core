@@ -393,6 +393,7 @@ final class SubagentLivePickerController
         if ($state->subagentLiveView->active
             && null !== $state->subagentLiveView->selected
             && $state->subagentLiveView->selected->artifactId === $artifactId) {
+            // Overlay close is handled by Tick view-scope guard after exit.
             SubagentLiveMainReturn::returnToMain($state, $screen, $this->client, requestRender: false);
         }
 

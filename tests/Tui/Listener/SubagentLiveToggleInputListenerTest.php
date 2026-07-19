@@ -11,6 +11,8 @@ use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
 use Ineersa\Tui\Export\SessionEventsExportService;
 use Ineersa\Tui\Listener\SubagentLiveToggleInputListener;
 use Ineersa\Tui\Picker\SubagentLivePickerController;
+use Ineersa\Tui\Question\QuestionController;
+use Ineersa\Tui\Question\QuestionCoordinator;
 use Ineersa\Tui\Runtime\SubagentLiveChildViewPoller;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Tests\Support\TuiRuntimeContextBuilderTrait;
@@ -48,7 +50,7 @@ final class SubagentLiveToggleInputListenerTest extends TestCase
             ->withScreen($harness->screen())
             ->build();
 
-        (new SubagentLiveToggleInputListener($picker))->register($context);
+        (new SubagentLiveToggleInputListener($picker, new QuestionController(new QuestionCoordinator())))->register($context);
         $harness->startInputLoop();
         $harness->sendInput("\x1c");
 

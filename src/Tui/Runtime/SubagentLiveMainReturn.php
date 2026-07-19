@@ -9,6 +9,9 @@ use Ineersa\Tui\Screen\ChatScreen;
 
 /**
  * Shared return-to-main behavior for /agents-main and Ctrl+\ toggle.
+ *
+ * Callers that own a QuestionController must close the visual overlay after this
+ * returns (coordinator request stays pending for the owning child view).
  */
 final class SubagentLiveMainReturn
 {

@@ -9,6 +9,7 @@ use Ineersa\Tui\Command\CommandResult;
 use Ineersa\Tui\Command\NoOp;
 use Ineersa\Tui\Command\SlashCommand;
 use Ineersa\Tui\Command\SlashCommandHandler;
+use Ineersa\Tui\Question\QuestionController;
 use Ineersa\Tui\Runtime\SubagentLiveMainReturn;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Screen\ChatScreen;
@@ -19,6 +20,7 @@ final class AgentsMainCommandHandler implements SlashCommandHandler
         private readonly TuiSessionState $state,
         private readonly ChatScreen $screen,
         private readonly ?AgentSessionClient $client = null,
+        private readonly ?QuestionController $questionController = null,
     ) {
     }
 
@@ -29,6 +31,8 @@ final class AgentsMainCommandHandler implements SlashCommandHandler
         }
 
         SubagentLiveMainReturn::returnToMain($this->state, $this->screen, $this->client);
+        // Visual only: keep coordinator request pending for re-enter child.
+        $this->questionController?->close();
 
         return new NoOp();
     }

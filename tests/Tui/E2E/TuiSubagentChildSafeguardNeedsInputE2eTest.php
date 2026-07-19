@@ -11,11 +11,12 @@ use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Replay-backed TmuxHarness proof for child SafeGuard needs-input attention latch.
+ * Replay-backed TmuxHarness proof for child SafeGuard needs-input visibility.
  *
- * Thesis: selected child receives transient tool_question.requested (SafeGuard enum
- * approval) while parent subagent_progress remains/returns running; real TUI must
- * show needs-input / WaitingHuman and the approval overlay, then clear after answer.
+ * Exact live ordering that previously failed on a6e51ceaa:
+ * main active → child tool_question.requested → needs-input without entering child
+ * → enter child → overlay → Ctrl+\ return main → overlay gone, needs-input remains
+ * → re-enter child → same overlay → answer → needs-input clears.
  *
  * @group tui-e2e-replay
  */
@@ -68,7 +69,7 @@ final class TuiSubagentChildSafeguardNeedsInputE2eTest extends TestCase
         }
     }
 
-    public function testSelectedChildToolQuestionNeedsInputSurvivesStaleRunningAndClearsOnAnswer(): void
+    public function testMainSeededChildToolQuestionShowsNeedsInputOverlayOnlyInChildView(): void
     {
         $pane = $this->tmux->startDetached(
             command: $this->agentCommand(),
@@ -90,8 +91,18 @@ final class TuiSubagentChildSafeguardNeedsInputE2eTest extends TestCase
             $this->tmux->waitForCaptureContains($pane, '█', TmuxHarness::TUI_STARTUP_LOGO_TIMEOUT_PARALLEL);
             usleep(300_000);
 
-            // Open live picker and enter the running child before the tool question
-            // so child observation is active when ToolQuestionPoller emits.
+            // Live order: remain on main, then seed SafeGuard tool_question for child.
+            // Wait briefly so resume attach/catalog settle and active-tick drain is running
+            // while catalog still lists the nonterminal child.
+            usleep(500_000);
+            SubagentChildSafeguardNeedsInputFixture::seedPendingToolQuestion(
+                $this->appDbAbsolutePath,
+                $childRunId,
+            );
+            // Give ToolQuestionPoller (0.5s) + parent events() drain time before opening picker.
+            usleep(1_200_000);
+
+            // Open picker and prove needs-input before entering child.
             $this->tmux->sendKey($pane, 'C-u');
             usleep(50_000);
             $this->tmux->sendLiteral($pane, '/agents-live');
@@ -102,30 +113,25 @@ final class TuiSubagentChildSafeguardNeedsInputE2eTest extends TestCase
                 10.0,
                 'Picker must list SafeGuard fixture child',
             );
-
-            $this->tmux->sendKey($pane, 'Enter');
-            $this->tmux->waitForCaptureContains($pane, 'Child agent', 10.0, 'Live view working line must appear');
-
-            // Seed pending tool_question only after controller is live so startup
-            // cleanup cannot cancel it. Wait for overlay + waiting evidence BEFORE
-            // any answer so the latch is proven active while parent progress rows
-            // in the fixture remain nonterminal running (never waiting_human).
-            //
-            // Note: live TUI does not re-tail events.jsonl after resume (controller
-            // stdout is the live bus). Post-latch stale progress re-ingest is proven
-            // by SubagentLiveCatalogTest::testNeedsInputLatchSurvivesStaleRunningProgress
-            // with a unique agent_name probe; this E2E proves the user-visible latch
-            // path over nonterminal running progress + answer clear.
-            SubagentChildSafeguardNeedsInputFixture::seedPendingToolQuestion(
-                $this->appDbAbsolutePath,
-                $childRunId,
+            $this->tmux->waitForCallback(
+                $pane,
+                static function (string $cap): bool {
+                    return str_contains($cap, '⚠ needs input')
+                        && str_contains($cap, SubagentChildSafeguardNeedsInputFixture::ARTIFACT_ID)
+                        && !str_contains($cap, '✅ Allow once');
+                },
+                timeout: 20.0,
+                message: 'Main/picker must show needs-input for child without opening the overlay',
+                history: 2500,
             );
 
+            // Enter child and prove overlay appears only in child view.
+            $this->tmux->sendKey($pane, 'Enter');
             $approvalCapture = $this->tmux->waitForCaptureContains(
                 $pane,
                 '✅ Allow once',
                 20.0,
-                'Child SafeGuard enum approval overlay must appear',
+                'Child SafeGuard enum approval overlay must appear in child view',
             );
             $this->assertStringContainsString('📌 Always allow', $approvalCapture);
             $this->assertStringContainsString('❌ Block', $approvalCapture);
@@ -137,18 +143,60 @@ final class TuiSubagentChildSafeguardNeedsInputE2eTest extends TestCase
             $this->tmux->waitForCallback(
                 $pane,
                 static function (string $cap): bool {
-                    $overlayOpen = str_contains($cap, '✅ Allow once');
-                    $waitingLine = str_contains($cap, 'Child waiting for your input');
-                    $footerWaiting = str_contains($cap, '[waiting_human]');
-
-                    return $overlayOpen && $waitingLine && $footerWaiting;
+                    return str_contains($cap, '✅ Allow once')
+                        && str_contains($cap, 'Child waiting for your input')
+                        && str_contains($cap, '[waiting_human]');
                 },
                 timeout: 12.0,
-                message: 'Latch must show overlay + waiting line + [waiting_human] while parent progress was nonterminal running',
+                message: 'Child view must show overlay + waiting line + [waiting_human]',
                 history: 2500,
             );
 
-            // Answer Allow once (default selection) and require a full non-waiting frame.
+            // Ctrl+\ return to main: overlay must disappear immediately (coordinator keeps request).
+            $this->tmux->sendKey($pane, 'C-\\');
+            $this->tmux->waitForCallback(
+                $pane,
+                static function (string $cap): bool {
+                    $overlayGone = !str_contains($cap, '✅ Allow once')
+                        && !str_contains($cap, '📌 Always allow')
+                        && !str_contains($cap, '❌ Block')
+                        && !str_contains($cap, SubagentChildSafeguardNeedsInputFixture::PROMPT);
+                    // Main transcript evidence (not live-view chrome).
+                    $onMain = str_contains($cap, '● idle')
+                        || str_contains($cap, 'Resumed run')
+                        || str_contains($cap, 'Returned to main session');
+
+                    return $overlayGone && $onMain;
+                },
+                timeout: 12.0,
+                message: 'Return to main must close child overlay without answering/cancelling',
+                history: 2500,
+            );
+
+            $this->tmux->sendKey($pane, 'C-u');
+            usleep(50_000);
+            $this->tmux->sendLiteral($pane, '/agents-live');
+            $this->tmux->sendKey($pane, 'Enter');
+            $this->tmux->waitForCallback(
+                $pane,
+                static function (string $cap): bool {
+                    return str_contains($cap, '⚠ needs input')
+                        && str_contains($cap, SubagentChildSafeguardNeedsInputFixture::ARTIFACT_ID)
+                        && !str_contains($cap, '✅ Allow once');
+                },
+                timeout: 12.0,
+                message: 'After return-to-main, picker must still show needs-input without overlay',
+                history: 2500,
+            );
+
+            // Re-enter same child: same overlay must reopen, then answer clears needs-input.
+            $this->tmux->sendKey($pane, 'Enter');
+            $this->tmux->waitForCaptureContains(
+                $pane,
+                '✅ Allow once',
+                20.0,
+                'Re-entering child must reopen the same SafeGuard overlay',
+            );
             $this->tmux->sendKey($pane, 'Enter');
 
             $this->tmux->waitForCallback(
@@ -167,7 +215,7 @@ final class TuiSubagentChildSafeguardNeedsInputE2eTest extends TestCase
                     return $overlayGone && $waitingGone && $nonWaitingEvidence;
                 },
                 timeout: 15.0,
-                message: 'Post-answer frame must drop overlay + waiting line and show non-waiting selected child',
+                message: 'Post-answer frame must drop overlay + waiting evidence',
                 history: 2500,
             );
 
@@ -181,17 +229,6 @@ final class TuiSubagentChildSafeguardNeedsInputE2eTest extends TestCase
                 '✅ Allow once',
                 $after,
                 'SafeGuard overlay must not remain after answer',
-            );
-            $this->assertStringNotContainsString(
-                '📌 Always allow',
-                $after,
-                'SafeGuard options must not remain after answer',
-            );
-            $this->assertTrue(
-                str_contains($after, 'Child agent working')
-                || str_contains($after, 'Child agent idle')
-                || (str_contains($after, 'scout') && str_contains($after, '[running]')),
-                'Selected child must show non-waiting evidence after answer',
             );
             $this->saveAnsiSnapshot($pane, 'sg-child-needs-input-success');
             $this->tmux->sendKey($pane, 'C-d');

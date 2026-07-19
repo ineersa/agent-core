@@ -56,14 +56,18 @@ final class CancelListener implements TuiListenerRegistrar
             // Free-form typing (__other__ escape hatch): ESC returns to the
             // select list instead of cancelling the run. The user can then ESC
             // again from the list to cancel the question (→ 'Cancelled by user').
-            if ($questionController->isAwaitingFreeForm()) {
+            // Free-form and cancel interception only apply to questions visible in the
+            // current view. Hidden child-owned requests must not steal main ESC.
+            $active = $questionCoordinator->activeRequest();
+            $questionVisible = RuntimeQuestionEventHandler::isQuestionVisibleInCurrentView($state, $active);
+
+            if ($questionController->isAwaitingFreeForm() && $questionVisible) {
                 $questionController->restoreFromFreeForm();
 
                 return;
             }
 
-            if ($questionCoordinator->actionRequired()) {
-                $active = $questionCoordinator->activeRequest();
+            if ($questionCoordinator->actionRequired() && $questionVisible) {
                 if (null !== $active && QuestionKind::Text === $active->kind) {
                     $questionCoordinator->cancel();
                     $questionController->close();

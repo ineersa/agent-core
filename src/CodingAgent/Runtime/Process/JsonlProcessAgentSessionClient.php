@@ -12,6 +12,7 @@ use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
 use Ineersa\CodingAgent\Runtime\Protocol\JsonlCodec;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeCommand;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
+use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -353,9 +354,22 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
             yield $event;
         }
 
+        // tool_question.requested is a session-global interactive control event:
+        // consume any previously buffered child-owned rows on this poll so the
+        // main-view parent poll can latch needs-input without entering the child.
+        foreach ($this->compactEventBuffer->drainToolQuestionRequested() as $event) {
+            yield $event;
+        }
+        $this->syncWatermarkStateAfterBufferMutation();
+
         // Read new events from the process.
         foreach ($this->readEvents() as $event) {
-            if ($event->runId === $runId) {
+            if (
+                $event->runId === $runId
+                || RuntimeEventTypeEnum::ToolQuestionRequested->value === $event->type
+            ) {
+                // Matching run events, or tool_question.requested for any run:
+                // yield once and do not re-buffer (consume-once cross-run demux).
                 yield $event;
             } else {
                 // Child live view polls a different runId on the same JSONL pipe.

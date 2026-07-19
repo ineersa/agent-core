@@ -752,6 +752,65 @@ final class TickPollListenerTest extends TestCase
         $this->assertFalse($reject, 'Parent WaitingHuman question must not be self-healed as orphaned');
     }
 
+    public function testChildQuestionVisibilityAndOrphanCleanupOnTerminalCatalogRow(): void
+    {
+        $parentRunId = 'parent-main';
+        $childRunId = 'child-sg';
+        $childRequest = new QuestionRequest(
+            requestId: 'child_sg_req',
+            source: QuestionSource::Tui,
+            kind: QuestionKind::Choice,
+            prompt: 'Allow?',
+            schema: ['type' => 'string', 'enum' => ['yes', 'no']],
+            runId: $childRunId,
+        );
+
+        $state = new TuiSessionState($parentRunId);
+        $state->handle = new RunHandle($parentRunId);
+        $state->activity = RunActivityStateEnum::Running;
+
+        $this->assertFalse(
+            RuntimeQuestionEventHandler::isQuestionVisibleInCurrentView($state, $childRequest),
+            'Child-owned question must be hidden on main',
+        );
+
+        $state->subagentLiveView->enter(new \Ineersa\Tui\Runtime\SubagentLiveChildDTO(
+            $childRunId,
+            'agent_sg',
+            'scout',
+            \Ineersa\Tui\Runtime\SubagentLiveStatusEnum::WaitingHuman,
+            'task',
+            1,
+        ));
+        $this->assertTrue(
+            RuntimeQuestionEventHandler::isQuestionVisibleInCurrentView($state, $childRequest),
+            'Child-owned question must be visible in its live view',
+        );
+
+        $state->subagentLiveView->exit();
+        $state->subagentLiveCatalog->ingestRuntimeEvent(new RuntimeEvent(
+            type: 'tool_execution.progress',
+            runId: $parentRunId,
+            seq: 1,
+            payload: [
+                'subagent_progress' => [
+                    'artifact_id' => 'agent_sg',
+                    'agent_run_id' => $childRunId,
+                    'agent_name' => 'scout',
+                    'status' => 'completed',
+                    'task_summary' => 'done',
+                    'mode' => 'single',
+                ],
+            ],
+        ));
+
+        $handler = $this->runtimeQuestionHandler();
+        $this->assertTrue(
+            $handler->shouldRejectOrphanedQuestion($state, $childRequest),
+            'Hidden child question must be rejected when catalog child is terminal',
+        );
+    }
+
     public function testParentWaitingHumanTickHidesWorkingRowAndClearsQuestionPendingStatus(): void
     {
         $parentRunId = 'parent-hitl-chrome';

@@ -91,6 +91,36 @@ final class RuntimeEventPerRunCompactBuffer
     }
 
     /**
+     * Consume buffered tool_question.requested events for every run id once.
+     *
+     * SafeGuard tool questions are session-global interactive control events:
+     * whichever active poll drains the shared JSONL pipe must receive them even
+     * when the event's runId is a non-selected child. Events are removed so a
+     * later child poll cannot double-deliver the same request.
+     *
+     * @return iterable<RuntimeEvent>
+     */
+    public function drainToolQuestionRequested(): iterable
+    {
+        foreach ($this->tailByRunId as $runId => $events) {
+            $kept = [];
+            foreach ($events as $event) {
+                if (RuntimeEventTypeEnum::ToolQuestionRequested->value === $event->type) {
+                    yield $event;
+                } else {
+                    $kept[] = $event;
+                }
+            }
+
+            if ([] === $kept) {
+                unset($this->tailByRunId[$runId]);
+            } else {
+                $this->tailByRunId[$runId] = $kept;
+            }
+        }
+    }
+
+    /**
      * Drop replayable durable backlog after live-view observation ends.
      *
      * Retains seq = 0 compact stream tail and protected interactive events only.

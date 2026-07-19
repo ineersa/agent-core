@@ -58,12 +58,12 @@ final class TickPollListener implements TuiListenerRegistrar
         $questionController->setRuntimeRefs($context, $screen);
 
         $context->ticks->add(static function () use ($poller, $state, $client, $screen, $questionCoordinator, $questionController, $subagentLiveChildPoller, $runtimeQuestionEventHandler, $subagentLivePickerController): ?bool {
-            $onHitl = static function (RuntimeEvent $event) use ($client, $questionCoordinator, $runtimeQuestionEventHandler): void {
-                $runtimeQuestionEventHandler->handleHumanInputRequested($event, $client, $questionCoordinator);
+            $onHitl = static function (RuntimeEvent $event) use ($client, $questionCoordinator, $runtimeQuestionEventHandler, $state, $screen): void {
+                $runtimeQuestionEventHandler->handleHumanInputRequested($event, $client, $questionCoordinator, $state, $screen);
             };
 
-            $onToolQuestion = static function (RuntimeEvent $event) use ($client, $questionCoordinator, $runtimeQuestionEventHandler): void {
-                $runtimeQuestionEventHandler->handleToolQuestionRequested($event, $client, $questionCoordinator);
+            $onToolQuestion = static function (RuntimeEvent $event) use ($client, $questionCoordinator, $runtimeQuestionEventHandler, $state, $screen): void {
+                $runtimeQuestionEventHandler->handleToolQuestionRequested($event, $client, $questionCoordinator, $state, $screen);
             };
 
             $onToolTerminal = static function (RuntimeEvent $event) use ($questionCoordinator, $questionController, $runtimeQuestionEventHandler): void {
@@ -135,19 +135,22 @@ final class TickPollListener implements TuiListenerRegistrar
                 $screen->syncQueuedUserMessages($state->queuedUserMessages);
             }
 
-            // Open the question overlay whenever the coordinator has an
-            // active request and the controller is not already showing it
-            // AND is not awaiting free-form editor input (__other__ escape
-            // hatch). This handles: (a) new questions becoming active after
-            // polling uncovers a human_input.requested event, and (b) queued
-            // questions advancing into the active slot on later ticks. The
-            // isAwaitingFreeForm() check prevents rebuilding the select
-            // overlay while the user types a custom answer in the editor.
-            if ($questionCoordinator->actionRequired() && !$questionController->isOpen() && !$questionController->isAwaitingFreeForm()) {
-                $activeRequest = $questionCoordinator->activeRequest();
+            // Open the question overlay only when the active request is visible in the
+            // current view (parent/main or selected child). Hidden child-owned
+            // requests stay pending in the coordinator without intercepting main input.
+            // isAwaitingFreeForm() prevents rebuilding the select overlay while the
+            // user types a custom answer in the editor.
+            $activeRequest = $questionCoordinator->activeRequest();
+            $questionVisible = RuntimeQuestionEventHandler::isQuestionVisibleInCurrentView($state, $activeRequest);
+
+            if ($questionCoordinator->actionRequired() && $questionVisible && !$questionController->isOpen() && !$questionController->isAwaitingFreeForm()) {
                 if (null !== $activeRequest) {
                     $questionController->open($activeRequest);
                 }
+            } elseif ($questionController->isOpen() && !$questionVisible) {
+                // Visual only: keep the coordinator request pending so re-entering the
+                // owning child view reopens the same overlay without re-emitting events.
+                $questionController->close();
             }
 
             // Self-heal: if the run left the active states (cancelled/terminal via ESC
@@ -167,6 +170,7 @@ final class TickPollListener implements TuiListenerRegistrar
 
             $mainViewPendingQuestion = !$liveActive
                 && $questionCoordinator->actionRequired()
+                && RuntimeQuestionEventHandler::isQuestionVisibleInCurrentView($state, $questionCoordinator->activeRequest())
                 && !$questionController->isAwaitingFreeForm();
 
             if ($mainViewPendingQuestion) {
@@ -269,6 +273,23 @@ final class TickPollListener implements TuiListenerRegistrar
             return $state->activity->isActive() && null !== $state->handle;
         }
 
-        return $state->activity->isActive() && null !== $state->handle;
+        if ($state->activity->isActive() && null !== $state->handle) {
+            return true;
+        }
+
+        // Parent may be Idle after resume while children still run. Keep draining the
+        // shared JSONL pipe so child tool_question.requested can latch needs-input on main
+        // without requiring the user to open the child live view first.
+        if (null === $state->handle) {
+            return false;
+        }
+
+        foreach ($state->subagentLiveCatalog->all() as $child) {
+            if ($child->isRunning() || $child->needsAttention()) {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

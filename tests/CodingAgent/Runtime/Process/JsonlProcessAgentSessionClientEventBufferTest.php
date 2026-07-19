@@ -97,6 +97,31 @@ final class JsonlProcessAgentSessionClientEventBufferTest extends TestCase
         $this->assertSame(2, $childDrain[0]->seq);
     }
 
+    public function testParentPollConsumesChildToolQuestionRequestedOnce(): void
+    {
+        $parentRunId = 'parent-run';
+        $childRunId = 'child-agent-run-sg';
+        $client = $this->createIdleClient();
+        $this->injectStdoutJsonlLines($client, [
+            $this->jsonlEvent(RuntimeEventTypeEnum::TurnStarted->value, $parentRunId, 1),
+            $this->jsonlEvent(RuntimeEventTypeEnum::ToolQuestionRequested->value, $childRunId, 0),
+        ]);
+
+        $parentDrain = iterator_to_array($client->events($parentRunId));
+        $this->assertCount(2, $parentDrain);
+        $this->assertSame($parentRunId, $parentDrain[0]->runId);
+        $this->assertSame(RuntimeEventTypeEnum::TurnStarted->value, $parentDrain[0]->type);
+        $this->assertSame($childRunId, $parentDrain[1]->runId);
+        $this->assertSame(RuntimeEventTypeEnum::ToolQuestionRequested->value, $parentDrain[1]->type);
+
+        $childDrain = iterator_to_array($client->events($childRunId));
+        $this->assertSame(
+            [],
+            $childDrain,
+            'Child tool_question.requested must be consumed once by the first poller, not re-buffered',
+        );
+    }
+
     public function testMultipleChildRunIdsStayIsolatedWhenParentPollsSharedStreamFirst(): void
     {
         $parentRunId = 'parent-run';
