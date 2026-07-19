@@ -25,6 +25,7 @@ final class TuiSubagentChildSafeguardNeedsInputE2eTest extends TestCase
     private TmuxHarness $tmux;
     private string $testProjectDir;
     private string $projectRoot;
+    private string $snapshotDir;
     private string $appDbPath;
     private string $transportDbPath;
     private string $appDbEnvPath;
@@ -40,6 +41,8 @@ final class TuiSubagentChildSafeguardNeedsInputE2eTest extends TestCase
         $this->tmux = new TmuxHarness();
         $this->projectRoot = ProjectDir::get();
         $this->testProjectDir = $this->createIsolatedProjectDir();
+        $this->snapshotDir = $this->testProjectDir.'/.hatfield/tmp/tui/smoke';
+        @mkdir($this->snapshotDir, 0o777, true);
 
         $paths = TuiE2eDatabaseEnv::allocateIsolatedPaths(
             $this->projectRoot,
@@ -103,15 +106,19 @@ final class TuiSubagentChildSafeguardNeedsInputE2eTest extends TestCase
             $this->tmux->sendKey($pane, 'Enter');
             $this->tmux->waitForCaptureContains($pane, 'Child agent', 10.0, 'Live view working line must appear');
 
-            // Seed pending tool_question after controller is live so startup cleanup
-            // cannot cancel it, then append late parent running progress for the race.
+            // Seed pending tool_question only after controller is live so startup
+            // cleanup cannot cancel it. Wait for overlay + waiting evidence BEFORE
+            // any answer so the latch is proven active while parent progress rows
+            // in the fixture remain nonterminal running (never waiting_human).
+            //
+            // Note: live TUI does not re-tail events.jsonl after resume (controller
+            // stdout is the live bus). Post-latch stale progress re-ingest is proven
+            // by SubagentLiveCatalogTest::testNeedsInputLatchSurvivesStaleRunningProgress
+            // with a unique agent_name probe; this E2E proves the user-visible latch
+            // path over nonterminal running progress + answer clear.
             SubagentChildSafeguardNeedsInputFixture::seedPendingToolQuestion(
                 $this->appDbAbsolutePath,
                 $childRunId,
-            );
-            SubagentChildSafeguardNeedsInputFixture::appendStaleRunningProgress(
-                $this->testProjectDir,
-                $sessionId,
             );
 
             $approvalCapture = $this->tmux->waitForCaptureContains(
@@ -127,31 +134,35 @@ final class TuiSubagentChildSafeguardNeedsInputE2eTest extends TestCase
                 $approvalCapture,
                 'Overlay must show SafeGuard-like prompt',
             );
-
-            // Needs-input evidence despite parent progress remaining nonterminal running.
-            $this->tmux->waitForCaptureContains(
+            $this->tmux->waitForCallback(
                 $pane,
-                'Child waiting for your input',
-                12.0,
-                'Live view working line must show child waiting while tool question is pending',
+                static function (string $cap): bool {
+                    $overlayOpen = str_contains($cap, '✅ Allow once');
+                    $waitingLine = str_contains($cap, 'Child waiting for your input');
+                    $footerWaiting = str_contains($cap, '[waiting_human]');
+
+                    return $overlayOpen && $waitingLine && $footerWaiting;
+                },
+                timeout: 12.0,
+                message: 'Latch must show overlay + waiting line + [waiting_human] while parent progress was nonterminal running',
+                history: 2500,
             );
 
-            // Answer Allow once (default selection).
+            // Answer Allow once (default selection) and require a full non-waiting frame.
             $this->tmux->sendKey($pane, 'Enter');
 
-            // Full-render predicate: do not accept partial frames where footer already
-            // shows running while the working line still says "Child waiting...".
             $this->tmux->waitForCallback(
                 $pane,
                 static function (string $cap): bool {
                     $overlayGone = !str_contains($cap, '✅ Allow once')
                         && !str_contains($cap, '📌 Always allow')
                         && !str_contains($cap, '❌ Block');
-                    $waitingGone = !str_contains($cap, 'Child waiting for your input');
+                    $waitingGone = !str_contains($cap, 'Child waiting for your input')
+                        && !str_contains($cap, '[waiting_human]');
                     $nonWaitingEvidence = str_contains($cap, 'Child agent working')
                         || str_contains($cap, 'Child agent idle')
-                        || (str_contains($cap, 'agents-live') && str_contains($cap, '[running]'))
-                        || (str_contains($cap, 'scout') && str_contains($cap, '[running]'));
+                        || (str_contains($cap, 'scout') && str_contains($cap, '[running]'))
+                        || (str_contains($cap, 'agents-live') && str_contains($cap, '[running]'));
 
                     return $overlayGone && $waitingGone && $nonWaitingEvidence;
                 },
@@ -182,7 +193,10 @@ final class TuiSubagentChildSafeguardNeedsInputE2eTest extends TestCase
                 || (str_contains($after, 'scout') && str_contains($after, '[running]')),
                 'Selected child must show non-waiting evidence after answer',
             );
+            $this->saveAnsiSnapshot($pane, 'sg-child-needs-input-success');
+            $this->tmux->sendKey($pane, 'C-d');
         } catch (\Throwable $e) {
+            $this->saveAnsiSnapshot($pane, 'sg-child-needs-input-FAILURE');
             try {
                 $this->tmux->sendKey($pane, 'C-d');
             } catch (\Throwable) {
@@ -293,5 +307,12 @@ final class TuiSubagentChildSafeguardNeedsInputE2eTest extends TestCase
         file_put_contents($dir.'/home/.hatfield/settings.yaml', $yaml);
 
         return $dir;
+    }
+
+    private function saveAnsiSnapshot(TmuxPane $pane, string $tag): void
+    {
+        $ansi = $this->tmux->captureAnsi($pane);
+        $ts = date('Ymd-His');
+        file_put_contents(\sprintf('%s/%s-%s.ansi', $this->snapshotDir, $tag, $ts), $ansi);
     }
 }

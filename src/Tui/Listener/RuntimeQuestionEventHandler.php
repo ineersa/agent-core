@@ -199,8 +199,10 @@ final class RuntimeQuestionEventHandler
             return;
         }
 
-        // cancel() invokes the registered onCancel callback, which clears the
-        // needs-input latch for this run (choice/confirm paths are symmetric).
+        // cancel() invokes the registered onCancel callback for this request:
+        // confirm sends answer=false; choice/approval sends answer='cancel'.
+        // Both paths clear the needs-input latch for this run when session/screen
+        // were wired at enqueue time.
         $questionCoordinator->cancel();
 
         // Close the visual overlay so the stale prompt is not visible.

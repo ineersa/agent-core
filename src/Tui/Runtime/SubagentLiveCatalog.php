@@ -43,7 +43,10 @@ final class SubagentLiveCatalog
         $this->dismissedArtifactIds[$artifactId] = true;
         unset($this->byArtifactId[$artifactId]);
 
-        // Dismiss must not leave an orphan latch for a removed row.
+        // Picker dismiss only targets a currently visible row. A pre-row latch
+        // (tool_question before first progress) cannot be dismissed by artifact
+        // id because no artifact mapping exists yet — answer/cancel/terminal paths
+        // clear that latch by agentRunId instead.
         if (null !== $existing) {
             $this->clearNeedsInputLatch($existing->agentRunId);
         }
@@ -103,16 +106,6 @@ final class SubagentLiveCatalog
         }
 
         return null;
-    }
-
-    /**
-     * True while a tool-local needs-input latch is held for this child run.
-     */
-    public function isNeedsInputLatched(string $agentRunId): bool
-    {
-        $agentRunId = trim($agentRunId);
-
-        return '' !== $agentRunId && isset($this->needsInputLatchesByRunId[$agentRunId]);
     }
 
     /**
@@ -264,7 +257,7 @@ final class SubagentLiveCatalog
         // Terminal progress always clears the latch and wins over needs-input.
         if ($status->isTerminal()) {
             $this->clearNeedsInputLatch($agentRunId);
-        } elseif ($this->isNeedsInputLatched($agentRunId) && !$status->needsAttention()) {
+        } elseif ($this->hasNeedsInputLatch($agentRunId) && !$status->needsAttention()) {
             // Nonterminal progress (running/pending/unknown) cannot erase a pending
             // tool-question latch. Keep the catalog row as WaitingHuman until answer,
             // cancel, matching tool terminal, or true terminal progress.
@@ -292,6 +285,11 @@ final class SubagentLiveCatalog
             latestInputTokens: $latestInputTokens,
             contextWindow: $contextWindow,
         );
+    }
+
+    private function hasNeedsInputLatch(string $agentRunId): bool
+    {
+        return '' !== $agentRunId && isset($this->needsInputLatchesByRunId[$agentRunId]);
     }
 
     private function clearNeedsInputLatch(string $agentRunId): void

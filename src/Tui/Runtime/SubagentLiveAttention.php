@@ -24,8 +24,8 @@ final class SubagentLiveAttention
 
         $live = $state->subagentLiveView;
         if ($live->active && null !== $live->selected && $live->selected->agentRunId === $agentRunId) {
-            $refreshed = $state->subagentLiveCatalog->findByArtifactId($live->selected->artifactId)
-                ?? $state->subagentLiveCatalog->findByAgentRunId($agentRunId);
+            // Selected children always carry a stable artifactId catalog key.
+            $refreshed = $state->subagentLiveCatalog->findByArtifactId($live->selected->artifactId);
             if (null !== $refreshed) {
                 $live->selected = $refreshed;
             }
@@ -43,8 +43,7 @@ final class SubagentLiveAttention
 
         $live = $state->subagentLiveView;
         if ($live->active && null !== $live->selected && $live->selected->agentRunId === $agentRunId) {
-            $refreshed = $state->subagentLiveCatalog->findByArtifactId($live->selected->artifactId)
-                ?? $state->subagentLiveCatalog->findByAgentRunId($agentRunId);
+            $refreshed = $state->subagentLiveCatalog->findByArtifactId($live->selected->artifactId);
             if (null !== $refreshed) {
                 $live->selected = $refreshed;
             }
@@ -58,7 +57,8 @@ final class SubagentLiveAttention
 
     public static function markCancelledForRun(TuiSessionState $state, ChatScreen $screen, string $agentRunId): void
     {
-        // Cancel clears the latch without restoring Running; terminal Cancelled wins.
+        // Row may be absent (pre-progress cancel): still drop the run-id latch.
+        // When a row exists, applyChildStatus(Cancelled) also clears the latch.
         $state->subagentLiveCatalog->clearNeedsInputForRun($agentRunId, restoreRunningIfWaiting: false);
 
         $existing = $state->subagentLiveCatalog->findByAgentRunId($agentRunId);
@@ -68,8 +68,7 @@ final class SubagentLiveAttention
 
         $live = $state->subagentLiveView;
         if ($live->active && null !== $live->selected && $live->selected->agentRunId === $agentRunId) {
-            $refreshed = $state->subagentLiveCatalog->findByArtifactId($live->selected->artifactId)
-                ?? $state->subagentLiveCatalog->findByAgentRunId($agentRunId);
+            $refreshed = $state->subagentLiveCatalog->findByArtifactId($live->selected->artifactId);
             if (null !== $refreshed) {
                 $live->selected = $refreshed;
             }
@@ -96,7 +95,7 @@ final class SubagentLiveAttention
                 continue;
             }
 
-            $state->subagentLiveCatalog->clearNeedsInputForRun($catalogChild->agentRunId, restoreRunningIfWaiting: false);
+            // applyChildStatus(Cancelled) clears the latch for this existing row.
             $state->subagentLiveCatalog->applyChildStatus($catalogChild->artifactId, SubagentLiveStatusEnum::Cancelled);
             $touched = true;
         }

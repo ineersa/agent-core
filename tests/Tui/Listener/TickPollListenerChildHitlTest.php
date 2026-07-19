@@ -211,12 +211,12 @@ final class TickPollListenerChildHitlTest extends TestCase
             ],
         ));
         $state->subagentLiveView->enter(new SubagentLiveChildDTO(
-            $childRunId,
-            'agent_a',
-            'scout',
-            SubagentLiveStatusEnum::Running,
-            'Task',
-            1,
+            agentRunId: $childRunId,
+            artifactId: 'agent_a',
+            agentName: 'scout',
+            status: SubagentLiveStatusEnum::Running,
+            taskSummary: 'Task',
+            lastActivityAtMs: 1,
         ));
         $state->subagentLiveView->childActivity = RunActivityStateEnum::Running;
 
@@ -246,7 +246,7 @@ final class TickPollListenerChildHitlTest extends TestCase
         $ref->invoke($this->runtimeQuestionHandler(), $event, $client, $coordinator, $state, $screen);
 
         $this->assertSame(SubagentLiveStatusEnum::WaitingHuman, $state->subagentLiveCatalog->findByArtifactId('agent_a')?->status);
-        $this->assertTrue($state->subagentLiveCatalog->isNeedsInputLatched($childRunId));
+        $this->assertSame(RunActivityStateEnum::WaitingHuman, $state->subagentLiveView->childActivity);
 
         // Stale running progress must not erase the latched needs-input state.
         $state->subagentLiveCatalog->ingestRuntimeEvent(new RuntimeEvent(
@@ -270,8 +270,9 @@ final class TickPollListenerChildHitlTest extends TestCase
         $this->assertSame(SubagentLiveStatusEnum::WaitingHuman, $state->subagentLiveCatalog->findByArtifactId('agent_a')?->status);
 
         $coordinator->cancel();
-        $this->assertFalse($state->subagentLiveCatalog->isNeedsInputLatched($childRunId));
         $this->assertSame(SubagentLiveStatusEnum::Running, $state->subagentLiveCatalog->findByArtifactId('agent_a')?->status);
+        $this->assertSame(RunActivityStateEnum::Running, $state->subagentLiveView->childActivity);
+        $this->assertNull($state->subagentLiveCatalog->firstChildNeedingAttention());
     }
 
     public function testMatchingToolTerminalClearsOnlyMatchingChildLatch(): void
@@ -343,8 +344,12 @@ final class TickPollListenerChildHitlTest extends TestCase
             $controller,
         );
 
-        $this->assertFalse($state->subagentLiveCatalog->isNeedsInputLatched($childRunId));
-        $this->assertTrue($state->subagentLiveCatalog->isNeedsInputLatched($otherRunId), 'Sibling child latch must remain');
+        $this->assertSame(SubagentLiveStatusEnum::Running, $state->subagentLiveCatalog->findByArtifactId('agent_a')?->status);
+        $this->assertSame(
+            SubagentLiveStatusEnum::WaitingHuman,
+            $state->subagentLiveCatalog->findByArtifactId('agent_b')?->status,
+            'Sibling child latch must remain',
+        );
         $this->assertFalse($coordinator->actionRequired());
     }
 

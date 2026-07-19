@@ -112,6 +112,9 @@ final class SubagentChildSafeguardNeedsInputFixture
         $pdo = new \PDO('sqlite:'.$appDbAbsolutePath);
         $pdo->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
 
+        // Schema source of truth: Ineersa\CodingAgent\Entity\ToolQuestion plus
+        // migrations Version20260606140000 (create) and Version20260617141002
+        // (answer_text + schema). Keep this DDL aligned when the entity changes.
         $pdo->exec(
             'CREATE TABLE IF NOT EXISTS tool_question (
                 id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
@@ -166,57 +169,6 @@ final class SubagentChildSafeguardNeedsInputFixture
             'created_at' => $now,
             'updated_at' => $now,
         ]);
-    }
-
-    /**
-     * Append a late parent tool_execution_update with status=running so live TUI
-     * ingests stale nonterminal progress after the tool question was latched.
-     */
-    public static function appendStaleRunningProgress(string $projectDir, string $sessionId): void
-    {
-        $parentEventsPath = $projectDir.'/.hatfield/sessions/'.$sessionId.'/events.jsonl';
-        if (!is_file($parentEventsPath)) {
-            throw new \RuntimeException('Missing parent events: '.$parentEventsPath);
-        }
-
-        $maxSeq = 0;
-        foreach (file($parentEventsPath, \FILE_IGNORE_NEW_LINES | \FILE_SKIP_EMPTY_LINES) ?: [] as $line) {
-            $row = json_decode($line, true, 512, \JSON_THROW_ON_ERROR);
-            $maxSeq = max($maxSeq, (int) ($row['seq'] ?? 0));
-        }
-
-        $now = (new \DateTimeImmutable())->format(\DATE_ATOM);
-        $childRunId = self::childRunId($sessionId);
-        $event = [
-            'schema_version' => '1.0',
-            'run_id' => $sessionId,
-            'seq' => $maxSeq + 1,
-            'turn_no' => 1,
-            'type' => 'tool_execution_update',
-            'payload' => [
-                'tool_call_id' => 'call_subagent_e2e_001',
-                'tool_name' => 'subagent',
-                'delta' => '',
-                'order_index' => 0,
-                'subagent_progress' => [
-                    'mode' => 'single',
-                    'status' => 'running',
-                    'agent_name' => 'scout',
-                    'artifact_id' => self::ARTIFACT_ID,
-                    'agent_run_id' => $childRunId,
-                    'task_summary' => 'Stale running after tool question',
-                    'elapsed_ms' => 20000,
-                    'tool_count' => 1,
-                ],
-            ],
-            'ts' => $now,
-        ];
-
-        file_put_contents(
-            $parentEventsPath,
-            json_encode($event, \JSON_THROW_ON_ERROR)."\n",
-            \FILE_APPEND,
-        );
     }
 
     /**
