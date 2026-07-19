@@ -122,6 +122,9 @@ final class SubagentLiveAttention
 
     public static function syncMainAttention(TuiSessionState $state, ChatScreen $screen): void
     {
+        // Overlay catalog attention onto projected parent subagent cards so main
+        // still shows ⚠ needs input while progress meta stays running.
+        self::reconcileMainTranscriptStatuses($state, $screen);
         self::refreshAttentionFooter($state, $screen);
     }
 
@@ -133,5 +136,115 @@ final class SubagentLiveAttention
         // Attention is shown on inline transcript cards, picker markers, and live view — not status panel rows.
         $screen->setStatus('subagent_live', null);
         $screen->setStatus('agents-live', null);
+    }
+
+    /**
+     * Reconcile projected subagent_progress statuses from the live catalog latch.
+     *
+     * Parent projection may keep status=running while SafeGuard holds the child;
+     * the catalog latch is authoritative for nonterminal running/waiting_human.
+     * Only mutates transcript + screen when a status actually changes.
+     */
+    private static function reconcileMainTranscriptStatuses(TuiSessionState $state, ChatScreen $screen): void
+    {
+        $changed = false;
+        $blocks = $state->transcript;
+        foreach ($blocks as $i => $block) {
+            $progress = $block->meta['subagent_progress'] ?? null;
+            if (!\is_array($progress)) {
+                continue;
+            }
+
+            $reconciled = self::reconcileProgressStatus($progress, $state->subagentLiveCatalog);
+            if ($reconciled === $progress) {
+                continue;
+            }
+
+            $meta = $block->meta;
+            $meta['subagent_progress'] = $reconciled;
+            $blocks[$i] = $block->with(meta: $meta);
+            $changed = true;
+        }
+
+        if (!$changed) {
+            return;
+        }
+
+        $state->transcript = $blocks;
+        $screen->setTranscriptBlocks($blocks);
+    }
+
+    /**
+     * @param array<string, mixed> $progress
+     *
+     * @return array<string, mixed>
+     */
+    private static function reconcileProgressStatus(array $progress, SubagentLiveCatalog $catalog): array
+    {
+        $children = $progress['children'] ?? null;
+        if (\is_array($children)) {
+            $nextChildren = [];
+            $childrenChanged = false;
+            foreach ($children as $child) {
+                if (!\is_array($child)) {
+                    $nextChildren[] = $child;
+                    continue;
+                }
+                $reconciledChild = self::reconcileSingleProgressStatus($child, $catalog);
+                if ($reconciledChild !== $child) {
+                    $childrenChanged = true;
+                }
+                $nextChildren[] = $reconciledChild;
+            }
+            if ($childrenChanged) {
+                $progress['children'] = $nextChildren;
+            }
+        }
+
+        return self::reconcileSingleProgressStatus($progress, $catalog);
+    }
+
+    /**
+     * @param array<string, mixed> $progress
+     *
+     * @return array<string, mixed>
+     */
+    private static function reconcileSingleProgressStatus(array $progress, SubagentLiveCatalog $catalog): array
+    {
+        $runId = $progress['agent_run_id'] ?? null;
+        if (!\is_string($runId) || '' === trim($runId)) {
+            return $progress;
+        }
+
+        $child = $catalog->findByAgentRunId(trim($runId));
+        if (null === $child) {
+            return $progress;
+        }
+
+        // Only overlay catalog running/waiting_human onto nonterminal projected rows.
+        // Terminal projection (completed/failed/cancelled) must win over the latch.
+        if (!\in_array($child->status, [SubagentLiveStatusEnum::Running, SubagentLiveStatusEnum::WaitingHuman], true)) {
+            return $progress;
+        }
+
+        $statusRaw = $progress['status'] ?? null;
+        $current = \is_string($statusRaw) ? $statusRaw : 'running';
+        $normalized = match ($current) {
+            'needs_clarification' => 'waiting_human',
+            'starting' => 'running',
+            default => $current,
+        };
+        if (!\in_array($normalized, ['running', 'waiting_human'], true)) {
+            return $progress;
+        }
+
+        $desired = $child->status->value;
+        if ($normalized === $desired) {
+            return $progress;
+        }
+
+        $progress['status'] = $desired;
+
+        return $progress;
     }
 }

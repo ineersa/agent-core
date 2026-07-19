@@ -102,6 +102,19 @@ final class TuiSubagentChildSafeguardNeedsInputE2eTest extends TestCase
             // Give ToolQuestionPoller (0.5s) + parent events() drain time before opening picker.
             usleep(1_200_000);
 
+            // Main presentation must reflect catalog latch without opening /agents-live:
+            // transcript card ⚠ scout [needs input] + working line (not generic Working...).
+            $this->tmux->waitForCallback(
+                $pane,
+                static function (string $cap): bool {
+                    return str_contains($cap, '⚠ scout [needs input]')
+                        && str_contains($cap, 'Child scout waiting for your input...');
+                },
+                timeout: 20.0,
+                message: 'Main must show needs-input card + child waiting working line before /agents-live',
+                history: 2500,
+            );
+
             // Open picker and prove needs-input before entering child.
             $this->tmux->sendKey($pane, 'C-u');
             usleep(50_000);
@@ -230,6 +243,25 @@ final class TuiSubagentChildSafeguardNeedsInputE2eTest extends TestCase
                 $after,
                 'SafeGuard overlay must not remain after answer',
             );
+
+            // Return to main and prove the transcript card restored from needs-input.
+            $this->tmux->sendKey($pane, 'C-\\');
+            $this->tmux->waitForCallback(
+                $pane,
+                static function (string $cap): bool {
+                    $needsGone = !str_contains($cap, '⚠ scout [needs input]')
+                        && !str_contains($cap, 'Child scout waiting for your input');
+                    $runningOrMain = str_contains($cap, '● scout [running]')
+                        || str_contains($cap, 'Returned to main session')
+                        || str_contains($cap, '● idle');
+
+                    return $needsGone && $runningOrMain;
+                },
+                timeout: 12.0,
+                message: 'After answer + return-to-main, card must leave needs-input',
+                history: 2500,
+            );
+
             $this->saveAnsiSnapshot($pane, 'sg-child-needs-input-success');
             $this->tmux->sendKey($pane, 'C-d');
         } catch (\Throwable $e) {
