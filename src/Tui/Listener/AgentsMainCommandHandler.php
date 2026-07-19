@@ -19,8 +19,8 @@ final class AgentsMainCommandHandler implements SlashCommandHandler
     public function __construct(
         private readonly TuiSessionState $state,
         private readonly ChatScreen $screen,
+        private readonly QuestionController $questionController,
         private readonly ?AgentSessionClient $client = null,
-        private readonly ?QuestionController $questionController = null,
     ) {
     }
 
@@ -32,7 +32,7 @@ final class AgentsMainCommandHandler implements SlashCommandHandler
 
         SubagentLiveMainReturn::returnToMain($this->state, $this->screen, $this->client);
         // Visual only: keep coordinator request pending for re-enter child.
-        $this->questionController?->close();
+        $this->questionController->close();
 
         return new NoOp();
     }

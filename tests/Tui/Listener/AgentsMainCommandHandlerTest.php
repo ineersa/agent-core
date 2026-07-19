@@ -7,6 +7,8 @@ namespace Ineersa\Tui\Tests\Listener;
 use Ineersa\Tui\Command\SlashCommand;
 use Ineersa\Tui\Editor\PromptEditor;
 use Ineersa\Tui\Listener\AgentsMainCommandHandler;
+use Ineersa\Tui\Question\QuestionController;
+use Ineersa\Tui\Question\QuestionCoordinator;
 use Ineersa\Tui\Runtime\SubagentLiveChildDTO;
 use Ineersa\Tui\Runtime\SubagentLiveStatusEnum;
 use Ineersa\Tui\Runtime\TuiSessionState;
@@ -34,7 +36,7 @@ final class AgentsMainCommandHandlerTest extends TestCase
         $screen->setStatus('agents-live', 'stale live text');
         $screen->setWorkingMessage('Child agent working...');
 
-        $handler = new AgentsMainCommandHandler($state, $screen);
+        $handler = new AgentsMainCommandHandler($state, $screen, new QuestionController(new QuestionCoordinator()));
         $handler->handle(new SlashCommand('agents-main', '', '/agents-main'));
 
         $this->assertFalse($state->subagentLiveView->active);
@@ -48,7 +50,7 @@ final class AgentsMainCommandHandlerTest extends TestCase
         $screen = $this->screen();
         $screen->setStatus('agents-live', 'stale live text');
 
-        $handler = new AgentsMainCommandHandler($state, $screen);
+        $handler = new AgentsMainCommandHandler($state, $screen, new QuestionController(new QuestionCoordinator()));
         $handler->handle(new SlashCommand('agents-main', '', '/agents-main'));
 
         $this->assertFalse($state->subagentLiveView->active);
