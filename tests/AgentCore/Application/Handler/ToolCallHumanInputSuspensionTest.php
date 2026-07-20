@@ -317,6 +317,107 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
         $this->assertStringContainsString('continuation_ref', (string) $result->nextState?->errorMessage);
     }
 
+    public function testSuspensionThenTerminalToolCallResultsBothCommitDespiteSharedExecuteKey(): void
+    {
+        $runStore = new \Ineersa\AgentCore\Infrastructure\Storage\InMemoryRunStore();
+        $eventStore = new \Ineersa\AgentCore\Tests\Support\InMemoryEventStore();
+        $commandStore = new \Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore();
+        $collector = new ToolBatchCollector();
+        $execute = $this->call('run-seq', 'step-seq', 'call-seq', 0);
+        $collector->registerExpectedBatch('run-seq', 1, 'step-seq', [$execute]);
+
+        $running = RunStateBuilder::running('run-seq')
+            ->withVersion(1)
+            ->withTurnNo(1)
+            ->withLastSeq(1)
+            ->withActiveStepId('step-seq')
+            ->withPendingToolCalls(['call-seq' => false])
+            ->build();
+        $this->assertTrue($runStore->compareAndSwap($running, 0));
+
+        $handler = new ToolCallResultHandler($collector, new EventFactory(), new ToolCallExtractor(), new AgentMessageNormalizer());
+        $processor = new \Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor(
+            runStore: $runStore,
+            idempotency: new \Ineersa\AgentCore\Application\Handler\MessageIdempotencyService(new InMemoryIdempotencyStore()),
+            runLockManager: new \Ineersa\AgentCore\Application\Handler\RunLockManager(new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\InMemoryStore())),
+            runCommit: new \Ineersa\AgentCore\Application\Pipeline\RunCommit(
+                runStore: $runStore,
+                eventStore: $eventStore,
+                commandStore: $commandStore,
+                hotPromptStateRebuilder: new class implements \Ineersa\AgentCore\Contract\Replay\HotPromptStateRebuilderInterface {
+                    public function rebuildHotPromptState(string $runId): \Ineersa\AgentCore\Domain\Run\PromptState
+                    {
+                        return new \Ineersa\AgentCore\Domain\Run\PromptState(
+                            runId: $runId,
+                            source: 'test',
+                            eventCount: 0,
+                            lastSeq: 0,
+                            missingSequences: [],
+                            isContiguous: true,
+                            tokenEstimate: 0,
+                            messages: [],
+                        );
+                    }
+                },
+                stepDispatcher: new \Ineersa\AgentCore\Application\Handler\StepDispatcher(new TestMessageBus()),
+                logger: new \Psr\Log\NullLogger(),
+            ),
+            stepDispatcher: new \Ineersa\AgentCore\Application\Handler\StepDispatcher(new TestMessageBus()),
+            handlers: [$handler],
+            logger: new \Psr\Log\NullLogger(),
+        );
+
+        $request = PendingHumanInputRequestDTO::toolCallFromPayload(
+            ['question_id' => 'q-seq', 'prompt' => 'Allow?'],
+            ['run_id' => 'run-seq', 'turn_no' => 1, 'step_id' => 'step-seq', 'tool_call_id' => 'call-seq'],
+        );
+        $suspension = ToolCallResultFactory::fromExecuteToolCallAndHumanInputSuspension(
+            $execute,
+            new ToolExecutionHumanInputSuspension($request),
+        );
+        $terminal = ToolCallResultFactory::fromExecuteToolCallAndToolResult(
+            $execute,
+            new \Ineersa\AgentCore\Domain\Tool\ToolResult('call-seq', 'write', [['type' => 'text', 'text' => 'ok']], isError: false),
+        );
+
+        $this->assertNotSame($suspension->idempotencyKey(), $terminal->idempotencyKey());
+
+        $processor->process('result.tool', $suspension);
+        $afterSuspension = $runStore->get('run-seq');
+        $this->assertNotNull($afterSuspension);
+        $this->assertSame(RunStatus::WaitingHuman, $afterSuspension->status);
+        $this->assertSame(['call-seq' => false], $afterSuspension->pendingToolCalls);
+
+        // Duplicate suspension must dedup without state change.
+        $processor->process('result.tool', $suspension);
+        $this->assertSame($afterSuspension->version, $runStore->get('run-seq')?->version);
+
+        // Answer path clears WaitingHuman before the resumed terminal ToolCallResult arrives.
+        $resumed = RunStateBuilder::running('run-seq')
+            ->withVersion($afterSuspension->version)
+            ->withTurnNo(1)
+            ->withLastSeq($afterSuspension->lastSeq)
+            ->withActiveStepId('step-seq')
+            ->withPendingToolCalls(['call-seq' => false])
+            ->withPendingHumanInputRequests([])
+            ->withStatus(RunStatus::Running)
+            ->build();
+        $this->assertTrue($runStore->compareAndSwap($resumed, $afterSuspension->version));
+
+        // Resume requeues the exact call; re-register to put it in-flight for collect().
+        $collector->registerExpectedBatch('run-seq', 1, 'step-seq', [$execute]);
+
+        $processor->process('result.tool', $terminal);
+        $afterTerminal = $runStore->get('run-seq');
+        $this->assertNotNull($afterTerminal);
+        $this->assertSame(['call-seq' => true], $afterTerminal->pendingToolCalls);
+
+        // Duplicate terminal must dedup.
+        $versionAfterTerminal = $afterTerminal->version;
+        $processor->process('result.tool', $terminal);
+        $this->assertSame($versionAfterTerminal, $runStore->get('run-seq')?->version);
+    }
+
     public function testPostCommitEffectDispatchFailureRedrivesExactCallWithoutMarkingApplied(): void
     {
         $runStore = new \Ineersa\AgentCore\Infrastructure\Storage\InMemoryRunStore();
