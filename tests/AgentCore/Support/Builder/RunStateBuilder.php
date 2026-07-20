@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Tests\Support\Builder;
 
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
+use Ineersa\AgentCore\Domain\Run\PendingHumanInputRequestDTO;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 
@@ -13,11 +14,13 @@ use Ineersa\AgentCore\Domain\Run\RunStatus;
  *
  * Defaults: runId="run-test", status=Queued, version=0, turnNo=0, lastSeq=0,
  * isStreaming=false, streamingMessage=null, pendingToolCalls=[],
- * errorMessage=null, messages=[], activeStepId=null, retryableFailure=false.
+ * errorMessage=null, messages=[], activeStepId=null, retryableFailure=false,
+ * pendingHumanInputRequests=[].
  *
  * @phpstan-type StreamingMessage array<string, mixed>|null
  * @phpstan-type PendingToolCalls array<string, bool>
  * @phpstan-type MessagesList list<AgentMessage>
+ * @phpstan-type PendingHumanInputRequests list<PendingHumanInputRequestDTO>
  */
 final class RunStateBuilder
 {
@@ -41,6 +44,9 @@ final class RunStateBuilder
 
     private ?string $activeStepId = null;
     private bool $retryableFailure = false;
+
+    /** @var PendingHumanInputRequests */
+    private array $pendingHumanInputRequests = [];
 
     private function __construct(string $runId, RunStatus $status)
     {
@@ -172,6 +178,16 @@ final class RunStateBuilder
         return $this;
     }
 
+    /**
+     * @param PendingHumanInputRequests $pendingHumanInputRequests
+     */
+    public function withPendingHumanInputRequests(array $pendingHumanInputRequests): self
+    {
+        $this->pendingHumanInputRequests = $pendingHumanInputRequests;
+
+        return $this;
+    }
+
     public function build(): RunState
     {
         return new RunState(
@@ -187,6 +203,7 @@ final class RunStateBuilder
             messages: $this->messages,
             activeStepId: $this->activeStepId,
             retryableFailure: $this->retryableFailure,
+            pendingHumanInputRequests: $this->pendingHumanInputRequests,
         );
     }
 }
