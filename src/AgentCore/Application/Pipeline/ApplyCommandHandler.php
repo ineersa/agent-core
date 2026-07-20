@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Application\Pipeline;
 
 use Ineersa\AgentCore\Application\Handler\CommandRouter;
+use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
 use Ineersa\AgentCore\Contract\CommandStoreInterface;
 use Ineersa\AgentCore\Domain\Command\CoreCommandKind;
 use Ineersa\AgentCore\Domain\Command\PendingCommand;
@@ -15,8 +16,11 @@ use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
 use Ineersa\AgentCore\Domain\Message\ApplyCommand;
 use Ineersa\AgentCore\Domain\Message\CompactRun;
+use Ineersa\AgentCore\Domain\Run\HumanInputContinuationKindEnum;
+use Ineersa\AgentCore\Domain\Run\PendingHumanInputRequestDTO;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
+use Ineersa\AgentCore\Domain\Tool\ToolCallHumanInputAnswerDTO;
 use Symfony\Component\Messenger\Exception\ExceptionInterface;
 use Symfony\Component\Messenger\MessageBusInterface;
 
@@ -37,6 +41,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
         private AgentMessageNormalizer $messageNormalizer,
         private int $maxPendingCommands = 100,
         private ?MessageBusInterface $commandBus = null,
+        private ?ToolBatchCollector $toolBatchCollector = null,
     ) {
     }
 
@@ -153,6 +158,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
             messages: $state->messages,
             activeStepId: $state->activeStepId,
             retryableFailure: $state->retryableFailure,
+            pendingHumanInputRequests: $state->pendingHumanInputRequests,
         );
 
         $queuedEvent = $this->eventFactory->event(
@@ -217,6 +223,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
             messages: $state->messages,
             activeStepId: $state->activeStepId,
             retryableFailure: $state->retryableFailure,
+            pendingHumanInputRequests: $state->pendingHumanInputRequests,
         );
 
         $event = $this->eventFactory->event(
@@ -329,6 +336,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
                         messages: $state->messages,
                         activeStepId: null,
                         retryableFailure: false,
+                        pendingHumanInputRequests: $state->pendingHumanInputRequests,
                     ),
                     events: $events,
                     postCommit: $postCommit,
@@ -357,6 +365,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
                 messages: $state->messages,
                 activeStepId: $state->activeStepId,
                 retryableFailure: $state->retryableFailure,
+                pendingHumanInputRequests: $state->pendingHumanInputRequests,
             );
 
             return new HandlerResult(
@@ -397,6 +406,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
                 messages: $state->messages,
                 activeStepId: null,
                 retryableFailure: false,
+                pendingHumanInputRequests: $state->pendingHumanInputRequests,
             );
 
             $postCommit = [];
@@ -427,6 +437,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
             messages: $state->messages,
             activeStepId: $state->activeStepId,
             retryableFailure: false,
+            pendingHumanInputRequests: $state->pendingHumanInputRequests,
         );
 
         return new HandlerResult(
@@ -488,6 +499,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
             messages: $state->messages,
             activeStepId: $state->activeStepId,
             retryableFailure: $state->retryableFailure,
+            pendingHumanInputRequests: $state->pendingHumanInputRequests,
         );
 
         $queuedEvent = $this->eventFactory->event(
@@ -539,6 +551,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
             activeStepId: $state->activeStepId,
             retryableFailure: false,
             retryAttempts: $retryAttempts,
+            pendingHumanInputRequests: $state->pendingHumanInputRequests,
         );
 
         $event = $this->eventFactory->event(
@@ -572,11 +585,73 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
      */
     private function applyHumanResponseCommand(RunState $state, ApplyCommand $message, array $options): HandlerResult
     {
+        $questionId = \is_string($message->payload['question_id'] ?? null) ? $message->payload['question_id'] : null;
+
+        // Durable post-commit redrive: if RunState already advanced past WaitingHuman
+        // for this human_response (commit succeeded, effect dispatch failed), re-emit
+        // the exact ExecuteToolCall effect from durable batch answer metadata without
+        // mutating RunState again. markApplied runs only after effects succeed.
+        if (RunStatus::WaitingHuman !== $state->status
+            && null !== $this->toolBatchCollector
+            && null !== $questionId
+            && \array_key_exists('answer', $message->payload)
+        ) {
+            $redrive = $this->tryRedriveToolCallHumanResponse($state, $message, $questionId);
+            if (null !== $redrive) {
+                return $redrive;
+            }
+        }
+
         if (RunStatus::WaitingHuman !== $state->status) {
             return $this->rejectCommand(
                 $state,
                 $message,
                 'human_response command is only allowed while run is waiting for human input.',
+            );
+        }
+
+        $activeRequest = $state->pendingHumanInputRequests[0] ?? null;
+        if (null === $activeRequest) {
+            return $this->rejectCommand(
+                $state,
+                $message,
+                'human_response rejected: no pending human-input request.',
+            );
+        }
+        if (null === $questionId || $questionId !== $activeRequest->questionId) {
+            // Multi-request post-commit redrive gap: q1 answer may already have been
+            // applied (batch durable, status still WaitingHuman because q2 remains).
+            // If Messenger redelivers q1's human_response, do not reject against active
+            // q2 — redrive the exact stored call when the durable answer is equivalent.
+            // Conflicts / missing stored answer still fail closed below.
+            if (null !== $this->toolBatchCollector
+                && null !== $questionId
+                && \array_key_exists('answer', $message->payload)
+            ) {
+                $redrive = $this->tryRedriveToolCallHumanResponse($state, $message, $questionId);
+                if (null !== $redrive) {
+                    return $redrive;
+                }
+            }
+
+            return $this->rejectCommand(
+                $state,
+                $message,
+                \sprintf(
+                    'human_response rejected: question_id does not match the active pending request (expected "%s").',
+                    $activeRequest->questionId,
+                ),
+            );
+        }
+        if (HumanInputContinuationKindEnum::ToolCall === $activeRequest->continuationKind) {
+            return $this->applyToolCallHumanResponse($state, $message, $options, $activeRequest, $questionId);
+        }
+
+        if (HumanInputContinuationKindEnum::ModelTurn !== $activeRequest->continuationKind) {
+            return $this->rejectCommand(
+                $state,
+                $message,
+                'human_response rejected: unsupported human-input continuation kind.',
             );
         }
 
@@ -591,9 +666,11 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
         $messages = $state->messages;
         $messages[] = $humanResponseMessage;
 
+        $remainingRequests = array_values(\array_slice($state->pendingHumanInputRequests, 1));
+
         $nextState = new RunState(
             runId: $state->runId,
-            status: RunStatus::Running,
+            status: [] !== $remainingRequests ? RunStatus::WaitingHuman : RunStatus::Running,
             version: $state->version + 1,
             turnNo: $state->turnNo,
             lastSeq: $state->lastSeq + 1,
@@ -604,6 +681,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
             messages: $messages,
             activeStepId: $state->activeStepId,
             retryableFailure: false,
+            pendingHumanInputRequests: $remainingRequests,
         );
 
         $humanResponseMessageArray = $humanResponseMessage->toArray();
@@ -624,9 +702,12 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
         );
 
         $postCommit = [];
-        $followUpAdvance = $this->followUpAdvanceCallback($runId, 'human-response');
-        if (null !== $followUpAdvance) {
-            $postCommit[] = $followUpAdvance;
+        // Model-turn answers schedule AdvanceRun only when no further human requests remain.
+        if ([] === $remainingRequests) {
+            $followUpAdvance = $this->followUpAdvanceCallback($runId, 'human-response');
+            if (null !== $followUpAdvance) {
+                $postCommit[] = $followUpAdvance;
+            }
         }
 
         return new HandlerResult(
@@ -634,6 +715,208 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
             events: [$event],
             postCommit: $postCommit,
         );
+    }
+
+    /**
+     * Resume the exact suspended tool call after human answer.
+     *
+     * No model-visible human_response message. The typed answer is attached to the
+     * stored ExecuteToolCall and requeued through ToolBatchCollector (capacity-aware).
+     * Status stays WaitingHuman while more pending requests remain.
+     *
+     * @param array<string, mixed> $options
+     */
+    private function applyToolCallHumanResponse(
+        RunState $state,
+        ApplyCommand $message,
+        array $options,
+        PendingHumanInputRequestDTO $activeRequest,
+        string $questionId,
+    ): HandlerResult {
+        if (null === $this->toolBatchCollector) {
+            return $this->rejectCommand(
+                $state,
+                $message,
+                'human_response rejected: tool-call continuation requires ToolBatchCollector.',
+            );
+        }
+
+        if (!\array_key_exists('answer', $message->payload)) {
+            return $this->rejectCommand($state, $message, 'Invalid human_response payload: missing answer.');
+        }
+
+        $resolved = $this->resolveToolCallContinuationRef($activeRequest, $state, $message->runId());
+        if (null === $resolved) {
+            return $this->rejectCommand(
+                $state,
+                $message,
+                'human_response rejected: tool-call continuation_ref is incomplete or mismatched.',
+            );
+        }
+
+        [$toolCallId, $stepId, $turnNo, $ref] = $resolved;
+
+        $answer = new ToolCallHumanInputAnswerDTO(
+            questionId: $questionId,
+            answer: $message->payload['answer'],
+            continuationRef: $ref,
+            requestPayload: $activeRequest->payload,
+        );
+
+        try {
+            $effects = $this->toolBatchCollector->resumeHumanInputAnswer(
+                $message->runId(),
+                $turnNo,
+                $stepId,
+                $toolCallId,
+                $questionId,
+                $answer,
+            );
+        } catch (\LogicException $exception) {
+            return $this->rejectCommand(
+                $state,
+                $message,
+                'human_response rejected: tool-call resume failed ('.$exception::class.').',
+            );
+        }
+
+        $runId = $message->runId();
+        $remainingRequests = array_values(\array_slice($state->pendingHumanInputRequests, 1));
+
+        $nextState = new RunState(
+            runId: $state->runId,
+            status: [] !== $remainingRequests ? RunStatus::WaitingHuman : RunStatus::Running,
+            version: $state->version + 1,
+            turnNo: $state->turnNo,
+            lastSeq: $state->lastSeq + 1,
+            isStreaming: $state->isStreaming,
+            streamingMessage: $state->streamingMessage,
+            pendingToolCalls: $state->pendingToolCalls,
+            errorMessage: null,
+            messages: $state->messages,
+            activeStepId: $state->activeStepId,
+            retryableFailure: false,
+            pendingHumanInputRequests: $remainingRequests,
+        );
+
+        // Replay-complete AgentCommandApplied without model-visible message payload.
+        $event = $this->eventFactory->event(
+            runId: $runId,
+            seq: $nextState->lastSeq,
+            turnNo: $nextState->turnNo,
+            type: RunEventTypeEnum::AgentCommandApplied->value,
+            payload: [
+                'kind' => $message->kind,
+                'idempotency_key' => $message->idempotencyKey(),
+                'question_id' => $questionId,
+                'answer' => $message->payload['answer'],
+                'continuation_kind' => HumanInputContinuationKindEnum::ToolCall->value,
+                'tool_call_id' => $toolCallId,
+                'options' => $options,
+            ],
+        );
+
+        // markApplied only after postCommitEffects succeed so Messenger redelivery can
+        // redrive the exact ExecuteToolCall from durable batch answer metadata.
+        return new HandlerResult(
+            nextState: $nextState,
+            events: [$event],
+            postCommitEffects: $effects,
+            postCommit: [
+                function () use ($runId, $message): void {
+                    $this->commandStore->markApplied($runId, $message->idempotencyKey());
+                },
+            ],
+        );
+    }
+
+    /**
+     * No-state redrive path used when human_response is retried after RunState commit
+     * but before commandStore markApplied / effect dispatch completed.
+     */
+    private function tryRedriveToolCallHumanResponse(
+        RunState $state,
+        ApplyCommand $message,
+        string $questionId,
+    ): ?HandlerResult {
+        if (null === $this->toolBatchCollector) {
+            return null;
+        }
+
+        $turnNo = $state->turnNo;
+        $stepId = $state->activeStepId;
+        if (null === $stepId || '' === $stepId) {
+            return null;
+        }
+
+        try {
+            $effects = $this->toolBatchCollector->redriveHumanInputAnswer(
+                $message->runId(),
+                $turnNo,
+                $stepId,
+                $questionId,
+                $message->payload['answer'],
+            );
+        } catch (\LogicException) {
+            return null;
+        }
+
+        $runId = $message->runId();
+
+        return new HandlerResult(
+            nextState: null,
+            events: [],
+            postCommitEffects: $effects,
+            postCommit: [
+                function () use ($runId, $message): void {
+                    $this->commandStore->markApplied($runId, $message->idempotencyKey());
+                },
+            ],
+        );
+    }
+
+    /**
+     * @return array{0: string, 1: string, 2: int, 3: array<string, mixed>}|null
+     */
+    private function resolveToolCallContinuationRef(
+        PendingHumanInputRequestDTO $activeRequest,
+        RunState $state,
+        string $runId,
+    ): ?array {
+        $ref = $activeRequest->continuationRef;
+        if (!\is_array($ref)) {
+            return null;
+        }
+
+        try {
+            PendingHumanInputRequestDTO::assertToolCallContinuationRef($ref);
+        } catch (\InvalidArgumentException) {
+            return null;
+        }
+
+        $toolCallId = $ref['tool_call_id'];
+        $stepId = $ref['step_id'];
+        $turnNo = $ref['turn_no'];
+        $refRunId = $ref['run_id'];
+
+        if (!\is_string($toolCallId) || !\is_string($stepId) || !\is_int($turnNo) || !\is_string($refRunId)) {
+            return null;
+        }
+
+        if ($refRunId !== $runId || $refRunId !== $state->runId) {
+            return null;
+        }
+        if ($turnNo !== $state->turnNo) {
+            return null;
+        }
+        if (null !== $state->activeStepId && $stepId !== $state->activeStepId) {
+            return null;
+        }
+        if (!\array_key_exists($toolCallId, $state->pendingToolCalls)) {
+            return null;
+        }
+
+        return [$toolCallId, $stepId, $turnNo, $ref];
     }
 
     /**
@@ -672,6 +955,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
                 messages: $state->messages,
                 activeStepId: $state->activeStepId,
                 retryableFailure: $state->retryableFailure,
+                pendingHumanInputRequests: $state->pendingHumanInputRequests,
             );
 
             $appliedEvent = $this->eventFactory->event(
@@ -724,6 +1008,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
             messages: $state->messages,
             activeStepId: $state->activeStepId,
             retryableFailure: $state->retryableFailure,
+            pendingHumanInputRequests: $state->pendingHumanInputRequests,
         );
 
         $queuedEvent = $this->eventFactory->event(

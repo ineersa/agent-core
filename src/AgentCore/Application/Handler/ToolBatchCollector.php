@@ -9,6 +9,7 @@ use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreMutation;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Tool\ToolBatchStateDTO;
+use Ineersa\AgentCore\Domain\Tool\ToolCallHumanInputAnswerDTO;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 
 /**
@@ -73,6 +74,7 @@ final class ToolBatchCollector
             results: [],
             finalized: false,
             maxParallelism: max(1, $maxParallelism),
+            awaitingHumanInput: [],
         );
 
         $initialDispatch = $this->dispatchableCalls($batch);
@@ -88,6 +90,304 @@ final class ToolBatchCollector
         }
 
         return $this->collectInMemory($result);
+    }
+
+    /**
+     * Move an in-flight call into awaiting_human_input without creating a tool result.
+     *
+     * Duplicate same question_id is idempotent. Conflicting question_id fails.
+     * May return ordinary later ExecuteToolCall effects when removing the call
+     * from inFlight frees dispatch capacity under current mode/maxParallelism.
+     *
+     * @return list<ExecuteToolCall>
+     */
+    public function admitHumanInputSuspension(
+        string $runId,
+        int $turnNo,
+        string $stepId,
+        string $toolCallId,
+        string $questionId,
+    ): array {
+        if (null !== $this->store) {
+            /* @var list<ExecuteToolCall> */
+            return $this->store->mutate(
+                $runId,
+                $turnNo,
+                $stepId,
+                function (?ToolBatchStateDTO $stored) use ($runId, $turnNo, $stepId, $toolCallId, $questionId): ToolBatchStoreMutation {
+                    if (null === $stored) {
+                        throw new \LogicException(\sprintf('Cannot admit tool-execution suspension for unknown batch run=%s turn=%d step=%s.', $runId, $turnNo, $stepId));
+                    }
+
+                    return new ToolBatchStoreMutation($this->applyHumanInputSuspensionToBatch($stored, $toolCallId, $questionId), $stored);
+                },
+            );
+        }
+
+        $batch = $this->loadBatch($runId, $turnNo, $stepId);
+        if (null === $batch) {
+            throw new \LogicException(\sprintf('Cannot admit tool-execution suspension for unknown batch run=%s turn=%d step=%s.', $runId, $turnNo, $stepId));
+        }
+
+        $effects = $this->applyHumanInputSuspensionToBatch($batch, $toolCallId, $questionId);
+        $this->saveBatch($runId, $turnNo, $stepId, $batch);
+
+        return $effects;
+    }
+
+    /**
+     * Inverse of {@see admitHumanInputSuspension}: attach the typed human answer to the
+     * exact stored call, clear the awaiting marker, and requeue through the existing
+     * pendingQueue + dispatchableCalls/maxParallelism path.
+     *
+     * Idempotent when the call is already inFlight/queued with an identical answer:
+     * returns the same ExecuteToolCall effect so post-commit redispatch survives CAS
+     * retries and failed-once dispatch without a second lifecycle.
+     * Conflicting answer or missing awaiting marker fails closed.
+     *
+     * @return list<ExecuteToolCall>
+     */
+    public function resumeHumanInputAnswer(
+        string $runId,
+        int $turnNo,
+        string $stepId,
+        string $toolCallId,
+        string $questionId,
+        ToolCallHumanInputAnswerDTO $answer,
+    ): array {
+        if (null !== $this->store) {
+            /* @var list<ExecuteToolCall> */
+            return $this->store->mutate(
+                $runId,
+                $turnNo,
+                $stepId,
+                function (?ToolBatchStateDTO $stored) use ($runId, $turnNo, $stepId, $toolCallId, $questionId, $answer): ToolBatchStoreMutation {
+                    if (null === $stored) {
+                        throw new \LogicException(\sprintf('Cannot resume tool-execution human input for unknown batch run=%s turn=%d step=%s.', $runId, $turnNo, $stepId));
+                    }
+
+                    return new ToolBatchStoreMutation($this->applyHumanInputResumeToBatch($stored, $toolCallId, $questionId, $answer), $stored);
+                },
+            );
+        }
+
+        $batch = $this->loadBatch($runId, $turnNo, $stepId);
+        if (null === $batch) {
+            throw new \LogicException(\sprintf('Cannot resume tool-execution human input for unknown batch run=%s turn=%d step=%s.', $runId, $turnNo, $stepId));
+        }
+
+        $effects = $this->applyHumanInputResumeToBatch($batch, $toolCallId, $questionId, $answer);
+        $this->saveBatch($runId, $turnNo, $stepId, $batch);
+
+        return $effects;
+    }
+
+    /**
+     * Post-commit redrive after human_response already mutated durable batch state.
+     *
+     * Locates exactly one call for the current run/turn/step whose stored answer
+     * matches `$questionId` and `$answerValue`. Returns:
+     * - the exact in-flight ExecuteToolCall when already dispatched
+     * - dispatchableCalls when still queued
+     * - empty list when already completed (recognized no-op)
+     *
+     * Ambiguous matches or answer conflicts fail closed.
+     *
+     * @return list<ExecuteToolCall>
+     */
+    public function redriveHumanInputAnswer(
+        string $runId,
+        int $turnNo,
+        string $stepId,
+        string $questionId,
+        mixed $answerValue,
+    ): array {
+        if (null !== $this->store) {
+            /* @var list<ExecuteToolCall> */
+            return $this->store->mutate(
+                $runId,
+                $turnNo,
+                $stepId,
+                function (?ToolBatchStateDTO $stored) use ($runId, $turnNo, $stepId, $questionId, $answerValue): ToolBatchStoreMutation {
+                    if (null === $stored) {
+                        throw new \LogicException(\sprintf('Cannot redrive tool-execution human input for unknown batch run=%s turn=%d step=%s.', $runId, $turnNo, $stepId));
+                    }
+
+                    return new ToolBatchStoreMutation($this->applyHumanInputRedriveToBatch($stored, $questionId, $answerValue), $stored);
+                },
+            );
+        }
+
+        $batch = $this->loadBatch($runId, $turnNo, $stepId);
+        if (null === $batch) {
+            throw new \LogicException(\sprintf('Cannot redrive tool-execution human input for unknown batch run=%s turn=%d step=%s.', $runId, $turnNo, $stepId));
+        }
+
+        $effects = $this->applyHumanInputRedriveToBatch($batch, $questionId, $answerValue);
+        $this->saveBatch($runId, $turnNo, $stepId, $batch);
+
+        return $effects;
+    }
+
+    /**
+     * @return list<ExecuteToolCall>
+     */
+    private function applyHumanInputSuspensionToBatch(
+        ToolBatchStateDTO $batch,
+        string $toolCallId,
+        string $questionId,
+    ): array {
+        if (!\array_key_exists($toolCallId, $batch->expectedOrder)) {
+            throw new \LogicException(\sprintf('Cannot admit tool-execution suspension for unexpected tool call "%s".', $toolCallId));
+        }
+
+        if (isset($batch->results[$toolCallId])) {
+            throw new \LogicException(\sprintf('Cannot admit tool-execution suspension for already completed tool call "%s".', $toolCallId));
+        }
+
+        $existingQuestionId = $batch->awaitingHumanInput[$toolCallId] ?? null;
+        if (null !== $existingQuestionId) {
+            if ($existingQuestionId === $questionId) {
+                // Exact duplicate admission is idempotent even after capacity free.
+                return [];
+            }
+
+            throw new \LogicException(\sprintf('Conflicting tool-execution suspension for call "%s": existing request "%s", new request "%s".', $toolCallId, $existingQuestionId, $questionId));
+        }
+
+        // First admission must free a currently in-flight worker slot.
+        if (!isset($batch->inFlight[$toolCallId])) {
+            throw new \LogicException(\sprintf('Cannot admit tool-execution suspension for call "%s": call is not in flight.', $toolCallId));
+        }
+
+        unset($batch->inFlight[$toolCallId]);
+        // A new suspension must drop any previously consumed answer metadata so a later
+        // answer is distinct (e.g. a different hook suspending the same resumed call).
+        $existingCall = $batch->calls[$toolCallId] ?? null;
+        if ($existingCall instanceof ExecuteToolCall && null !== $existingCall->humanInputAnswer) {
+            $batch->calls[$toolCallId] = $existingCall->withHumanInputAnswer(null);
+        }
+        $batch->awaitingHumanInput[$toolCallId] = $questionId;
+
+        return $this->dispatchableCalls($batch);
+    }
+
+    /**
+     * @return list<ExecuteToolCall>
+     */
+    private function applyHumanInputResumeToBatch(
+        ToolBatchStateDTO $batch,
+        string $toolCallId,
+        string $questionId,
+        ToolCallHumanInputAnswerDTO $answer,
+    ): array {
+        if (!\array_key_exists($toolCallId, $batch->expectedOrder)) {
+            throw new \LogicException(\sprintf('Cannot resume tool-execution human input for unexpected tool call "%s".', $toolCallId));
+        }
+
+        if (isset($batch->results[$toolCallId])) {
+            throw new \LogicException(\sprintf('Cannot resume tool-execution human input for already completed tool call "%s".', $toolCallId));
+        }
+
+        $existingCall = $batch->calls[$toolCallId] ?? null;
+        if (!$existingCall instanceof ExecuteToolCall) {
+            throw new \LogicException(\sprintf('Cannot resume tool-execution human input for missing stored call "%s".', $toolCallId));
+        }
+
+        $awaitingQuestionId = $batch->awaitingHumanInput[$toolCallId] ?? null;
+        $existingAnswer = $existingCall->humanInputAnswer;
+
+        // Idempotent CAS / post-commit retry: already requeued or in-flight with identical
+        // answer → return the exact ExecuteToolCall so the undispatched effect is not lost.
+        if (null === $awaitingQuestionId) {
+            if ($existingAnswer instanceof ToolCallHumanInputAnswerDTO && $existingAnswer->isEquivalent($answer)) {
+                if (isset($batch->inFlight[$toolCallId])) {
+                    return [$existingCall];
+                }
+                if (\in_array($toolCallId, $batch->pendingQueue, true)) {
+                    return $this->dispatchableCalls($batch);
+                }
+            }
+
+            throw new \LogicException(\sprintf('Cannot resume tool-execution human input for call "%s": not awaiting human input.', $toolCallId));
+        }
+
+        if ($awaitingQuestionId !== $questionId || $answer->questionId !== $questionId) {
+            throw new \LogicException(\sprintf('Cannot resume tool-execution human input for call "%s": question_id mismatch (awaiting="%s", answer="%s", expected="%s").', $toolCallId, $awaitingQuestionId, $answer->questionId, $questionId));
+        }
+
+        $batch->calls[$toolCallId] = $existingCall->withHumanInputAnswer($answer);
+        unset($batch->awaitingHumanInput[$toolCallId]);
+
+        // Requeue at the front so capacity-aware dispatch picks this exact call next.
+        $batch->pendingQueue = array_values(array_filter(
+            $batch->pendingQueue,
+            static fn (string $id): bool => $id !== $toolCallId,
+        ));
+        array_unshift($batch->pendingQueue, $toolCallId);
+
+        return $this->dispatchableCalls($batch);
+    }
+
+    /**
+     * @return list<ExecuteToolCall>
+     */
+    private function applyHumanInputRedriveToBatch(
+        ToolBatchStateDTO $batch,
+        string $questionId,
+        mixed $answerValue,
+    ): array {
+        $matches = [];
+        foreach ($batch->calls as $toolCallId => $call) {
+            if (!$call instanceof ExecuteToolCall) {
+                continue;
+            }
+            $storedAnswer = $call->humanInputAnswer;
+            if (!$storedAnswer instanceof ToolCallHumanInputAnswerDTO) {
+                continue;
+            }
+            if ($storedAnswer->questionId !== $questionId) {
+                continue;
+            }
+            $matches[$toolCallId] = $call;
+        }
+
+        if ([] === $matches) {
+            throw new \LogicException(\sprintf('Cannot redrive tool-execution human input for question "%s": no stored answered call.', $questionId));
+        }
+        if (\count($matches) > 1) {
+            throw new \LogicException(\sprintf('Cannot redrive tool-execution human input for question "%s": ambiguous answered call match.', $questionId));
+        }
+
+        $toolCallId = array_key_first($matches);
+        $existingCall = $matches[$toolCallId];
+        $existingAnswer = $existingCall->humanInputAnswer;
+        if (!$existingAnswer instanceof ToolCallHumanInputAnswerDTO || $existingAnswer->answer !== $answerValue) {
+            throw new \LogicException(\sprintf('Cannot redrive tool-execution human input for call "%s": stored answer conflicts with redrive answer.', $toolCallId));
+        }
+
+        // Recognized completed no-op: answer already applied and tool finished.
+        if (isset($batch->results[$toolCallId])) {
+            return [];
+        }
+
+        if (isset($batch->inFlight[$toolCallId])) {
+            return [$existingCall];
+        }
+
+        if (\in_array($toolCallId, $batch->pendingQueue, true)) {
+            return $this->dispatchableCalls($batch);
+        }
+
+        // Answer is durable but call is neither completed, in-flight, nor queued:
+        // requeue through the normal capacity-aware path.
+        $batch->pendingQueue = array_values(array_filter(
+            $batch->pendingQueue,
+            static fn (string $id): bool => $id !== $toolCallId,
+        ));
+        array_unshift($batch->pendingQueue, $toolCallId);
+
+        return $this->dispatchableCalls($batch);
     }
 
     private function collectWithDurableStore(ToolCallResult $result): ToolBatchCollectOutcome
@@ -150,7 +450,9 @@ final class ToolBatchCollector
             return $this->outcomeForStoredResult($batch, $result);
         }
 
-        unset($batch->inFlight[$result->toolCallId]);
+        // Ordinary results continue collecting while a sibling call may be
+        // awaiting human input; clear any awaiting marker for this call id.
+        unset($batch->inFlight[$result->toolCallId], $batch->awaitingHumanInput[$result->toolCallId]);
         $batch->results[$result->toolCallId] = $result;
 
         $effectsToDispatch = $this->dispatchableCalls($batch);
@@ -216,7 +518,7 @@ final class ToolBatchCollector
 
         while ([] !== $batch->pendingQueue) {
             $nextCallId = $batch->pendingQueue[0];
-            if (isset($batch->results[$nextCallId])) {
+            if (isset($batch->results[$nextCallId]) || isset($batch->awaitingHumanInput[$nextCallId])) {
                 array_shift($batch->pendingQueue);
 
                 continue;

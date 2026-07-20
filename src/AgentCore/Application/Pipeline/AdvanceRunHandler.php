@@ -90,6 +90,7 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
                 messages: $state->messages,
                 activeStepId: $state->activeStepId,
                 retryableFailure: false,
+                pendingHumanInputRequests: $state->pendingHumanInputRequests,
             );
 
             $postCommit = [];
@@ -165,6 +166,7 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
                     activeStepId: $preparedState->activeStepId,
                     retryableFailure: false,
                     retryAttempts: $preparedState->retryAttempts,
+                    pendingHumanInputRequests: $preparedState->pendingHumanInputRequests,
                 );
             // Fall through to the turn-advance code below.
             } else {
@@ -186,6 +188,7 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
                     messages: $preparedState->messages,
                     activeStepId: $preparedState->activeStepId,
                     retryableFailure: $preparedState->retryableFailure,
+                    pendingHumanInputRequests: $preparedState->pendingHumanInputRequests,
                 );
 
                 return new HandlerResult(
@@ -216,6 +219,7 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
                 messages: $preparedState->messages,
                 activeStepId: $preparedState->activeStepId,
                 retryableFailure: $preparedState->retryableFailure,
+                pendingHumanInputRequests: $preparedState->pendingHumanInputRequests,
             );
 
             return new HandlerResult(
@@ -252,6 +256,7 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
                     messages: $preparedState->messages,
                     activeStepId: $preparedState->activeStepId,
                     retryableFailure: $preparedState->retryableFailure,
+                    pendingHumanInputRequests: $preparedState->pendingHumanInputRequests,
                 ),
                 events: $events,
             );
@@ -372,6 +377,7 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
                     messages: $preparedState->messages,
                     activeStepId: $preparedState->activeStepId,
                     retryableFailure: $preparedState->retryableFailure,
+                    pendingHumanInputRequests: $preparedState->pendingHumanInputRequests,
                 );
 
                 return new HandlerResult(
@@ -438,6 +444,7 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
             activeStepId: $nextStepId,
             retryableFailure: false,
             retryAttempts: $preparedState->retryAttempts,
+            pendingHumanInputRequests: $preparedState->pendingHumanInputRequests,
         );
 
         $postCommit = [];

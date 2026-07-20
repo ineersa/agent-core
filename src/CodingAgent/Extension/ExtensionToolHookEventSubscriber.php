@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Extension;
 
+use HelgeSverre\Toon\Toon;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
-use Ineersa\CodingAgent\Entity\ToolQuestion;
-use Ineersa\CodingAgent\Tool\ToolQuestion\ToolQuestionStoreInterface;
+use Ineersa\AgentCore\Domain\Run\PendingHumanInputRequestDTO;
+use Ineersa\AgentCore\Domain\Tool\ToolCallHumanInputAnswerDTO;
+use Ineersa\AgentCore\Domain\Tool\ToolExecutionHumanInputSuspension;
 use Ineersa\Hatfield\ExtensionApi\Approval\ApprovalAnswerContextDTO;
 use Ineersa\Hatfield\ExtensionApi\Approval\ApprovalAnswerHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallContextDTO;
@@ -28,43 +30,24 @@ use Symfony\Component\EventDispatcher\EventSubscriberInterface;
  * Tool-call hooks are wired to ToolCallRequested, whose native deny/setResult
  * controls can stop registry-backed tool execution before the handler runs.
  *
- * For RequireApproval decisions, this subscriber BLOCKS the tool-worker
- * thread in a polling loop against the ToolQuestion DB table (via
- * ToolQuestionStoreInterface) until the human answers via the TUI. No
- * interrupt result is committed, no WaitingHuman, no extra LLM turn.
+ * For RequireApproval decisions this subscriber returns a typed
+ * {@see ToolExecutionHumanInputSuspension} (non-terminal). The tool worker exits;
+ * AgentCore admits WaitingHuman + human_input.requested. When the human answers via
+ * answer_human, ApplyCommandHandler requeues the exact ExecuteToolCall with a typed
+ * internal answer. On resume, this subscriber validates correlation, invokes
+ * ApprovalAnswerHookInterface for ONLY the originating hook, then continues remaining
+ * hooks. Allow means the real handler runs for the original call — no extra LLM turn.
  *
- * The blocking poll is generic — ANY extension hook returning RequireApproval
- * triggers this pause. The extension owns its vocabulary, schema, answer
- * outcome mapping, and side-effects via ApprovalAnswerHookInterface:
- * onApprovalAnswered() (side-effects) and resolveApprovalAnswer() (outcome).
- *
- * The ToolQuestion is created with a deterministic requestId derived from
- * the hook identity (class name), runId, and toolCallId — no extension-
- * specific namespace. Message redelivery or crash recovery re-attaches to
- * the existing pending question for idempotency.
- *
- * This subscriber contains ZERO extension-specific knowledge. Adding a new
- * approval-granting extension requires only implementing the ExtensionApi
- * contracts — no changes to this subscriber, the handler, or the TUI.
+ * This subscriber contains ZERO SafeGuard-specific knowledge. Any extension implementing
+ * ApprovalAnswerHookInterface can drive its own vocabulary/outcome mapping.
  *
  * Tool-result hooks are currently observational because Symfony AI's
  * ToolCallSucceeded/ToolCallFailed events expose readonly result/exception data.
- * Replacement decisions are folded into the local context seen by later hooks,
- * but cannot mutate the already-created Symfony AI event result.
  */
 final readonly class ExtensionToolHookEventSubscriber implements EventSubscriberInterface
 {
-    /**
-     * Poll interval in microseconds (200ms).
-     * Chosen as a balance between prompt responsiveness and DB query load.
-     * 200ms is fast enough that the TUI feels responsive when the user answers,
-     * while keeping DB polling low enough for a single-controller SQLite setup.
-     */
-    private const int POLL_INTERVAL_MICROS = 200_000;
-
     public function __construct(
         private ExtensionHookRegistry $hookRegistry,
-        private ToolQuestionStoreInterface $toolQuestionStore,
         private string $cwd,
         private ?StackToolExecutionContextAccessor $contextAccessor = null,
         private ?LoggerInterface $logger = null,
@@ -85,8 +68,48 @@ final readonly class ExtensionToolHookEventSubscriber implements EventSubscriber
     {
         $toolCall = $event->getToolCall();
         $context = $this->toolCallContext($toolCall);
+        $humanInputAnswer = $this->contextAccessor?->current()?->humanInputAnswer();
 
         foreach ($this->hookRegistry->toolCallHooks() as $hook) {
+            // Resumed exact-call path: consume the typed answer for the originating hook only.
+            if ($humanInputAnswer instanceof ToolCallHumanInputAnswerDTO
+                && $this->isAnswerForHook($humanInputAnswer, $hook::class, $context)
+            ) {
+                try {
+                    $this->applyResumedAnswer($event, $toolCall, $hook, $humanInputAnswer, $context);
+                } catch (\Throwable $exception) {
+                    $event->setResult(new ToolResult($toolCall, [
+                        'denied' => true,
+                        'reason' => 'approval_resume_failed',
+                        'message' => \sprintf(
+                            'Tool "%s" was denied: approval resume failed.',
+                            $toolCall->getName(),
+                        ),
+                        'error_type' => $exception::class,
+                    ]));
+
+                    $this->logger?->error('tool.approval_resume_failed', [
+                        'component' => 'extension.tool_hook_subscriber',
+                        'event_type' => 'tool.approval_resume_failed',
+                        'tool_name' => $toolCall->getName(),
+                        'tool_call_id' => $toolCall->getId(),
+                        'run_id' => $context->runId ?? '',
+                        'error_type' => $exception::class,
+                    ]);
+                }
+
+                // Allow falls through so remaining hooks (and the real handler) run.
+                // Block/ReplaceResult already set a result — stop.
+                if (null !== $event->getResult()) {
+                    return;
+                }
+
+                // Consumed answer applies to only this originating hook.
+                $humanInputAnswer = null;
+
+                continue;
+            }
+
             try {
                 $decision = $hook->onToolCall($context);
             } catch (\Throwable $exception) {
@@ -130,18 +153,12 @@ final readonly class ExtensionToolHookEventSubscriber implements EventSubscriber
 
                     return;
                 } catch (\Throwable $exception) {
-                    // If the blocking-poll handler fails (e.g., missing context
-                    // in tests, DB error), produce a denied result instead of
-                    // letting the exception crash the tool execution pipeline.
-                    // In production, this should never happen — runId and
-                    // toolCallId are always set by the ToolExecutor.
                     $event->setResult(new ToolResult($toolCall, [
                         'denied' => true,
                         'reason' => 'approval_handler_failed',
                         'message' => \sprintf(
-                            'Tool "%s" was denied: the approval handler failed (%s).',
+                            'Tool "%s" was denied: the approval handler failed.',
                             $toolCall->getName(),
-                            $exception->getMessage(),
                         ),
                         'error_type' => $exception::class,
                     ]));
@@ -151,12 +168,39 @@ final readonly class ExtensionToolHookEventSubscriber implements EventSubscriber
                         'event_type' => 'tool.approval_handler_failed',
                         'tool_name' => $toolCall->getName(),
                         'tool_call_id' => $toolCall->getId(),
-                        'error' => $exception->getMessage(),
+                        'run_id' => $context->runId ?? '',
+                        'error_type' => $exception::class,
                     ]);
 
                     return;
                 }
             }
+        }
+
+        // Resumed answer must be consumed by its originating hook. If no registered hook
+        // matched (hook unloaded/disabled), fail closed — never fall through to the real handler.
+        if ($humanInputAnswer instanceof ToolCallHumanInputAnswerDTO) {
+            $event->setResult(new ToolResult($toolCall, Toon::encode([
+                'denied' => true,
+                'reason' => 'approval_origin_hook_unavailable',
+                'message' => \sprintf(
+                    'Tool "%s" was denied: the originating approval hook is unavailable.',
+                    $toolCall->getName(),
+                ),
+            ])));
+
+            $payloadHookId = $humanInputAnswer->requestPayload['hook_id'] ?? null;
+            $payloadHookClass = $humanInputAnswer->requestPayload['hook_class'] ?? null;
+            $this->logger?->error('tool.approval_origin_hook_unavailable', [
+                'component' => 'extension.tool_hook_subscriber',
+                'event_type' => 'tool.approval_origin_hook_unavailable',
+                'tool_name' => $toolCall->getName(),
+                'tool_call_id' => $toolCall->getId(),
+                'run_id' => $context->runId ?? '',
+                'question_id' => $humanInputAnswer->questionId,
+                'hook_id' => \is_string($payloadHookId) ? $payloadHookId : null,
+                'hook_class' => \is_string($payloadHookClass) ? $payloadHookClass : null,
+            ]);
         }
     }
 
@@ -188,20 +232,7 @@ final readonly class ExtensionToolHookEventSubscriber implements EventSubscriber
     }
 
     /**
-     * Handle a RequireApproval decision by blocking-polling the ToolQuestion DB
-     * for a human answer. The tool-worker thread suspends here until the answer
-     * arrives via answer_tool_question from the controller/TUI.
-     *
-     * The poll creates or re-attaches to a ToolQuestion keyed by a deterministic
-     * requestId derived from the hook identity, runId, and toolCallId — no
-     * extension-specific namespace. The hook's onApprovalAnswered (side-effects)
-     * and resolveApprovalAnswer (outcome) are called with the raw answer text.
-     * The returned ToolCallDecisionDTO is applied generically: Allow (handler
-     * runs), Block (denied result), or ReplaceResult (supplied result).
-     *
-     * This is fully OCP — any extension implementing ApprovalAnswerHookInterface
-     * can drive its own approval vocabulary and outcome mapping with zero changes
-     * to this subscriber.
+     * Emit a typed non-terminal human-input suspension. No ToolQuestion row, no poll.
      */
     private function handleRequireApproval(
         ToolCallRequested $event,
@@ -244,209 +275,145 @@ final readonly class ExtensionToolHookEventSubscriber implements EventSubscriber
         $questionId = (string) ($details['question_id'] ?? '');
         $prompt = (string) ($details['prompt'] ?? 'Approval required.');
         $schema = $details['schema'] ?? ['type' => 'string'];
-
-        // Deterministic requestId for idempotent re-attach on crash recovery
-        // or message redelivery. Uses a hash of the hook identity + runId +
-        // toolCallId so every hook gets its own namespace without extension-
-        // specific literals.
-        $hookId = hash('crc32b', $hook::class);
-        $requestId = \sprintf('%s_%s_%s', $hookId, $runId, $toolCallId);
-
-        // Look for an existing pending ToolQuestion (crash recovery / redelivery).
-        $question = $this->toolQuestionStore->findByRequestId($requestId);
-
-        if (null === $question) {
-            // Create a new pending tool question for this approval.
-            // The kind is generic ('approval') — no extension is named.
-            $kind = 'approval';
-
-            $question = ToolQuestion::create(
-                requestId: $requestId,
-                runId: $runId,
-                toolCallId: $toolCallId,
-                toolName: $toolCall->getName(),
-                pid: 0,
-                logPath: '',
-                commandPreview: '',
-                prompt: $prompt,
-                kind: $kind,
-                schema: \is_array($schema) ? json_encode($schema, \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE) : null,
-            );
-
-            $this->toolQuestionStore->create($question);
-
-            $this->logger?->info('tool.approval_question_created', [
-                'run_id' => $runId,
-                'component' => 'extension.tool_hook_subscriber',
-                'event_type' => 'tool.approval_question_created',
-                'request_id' => $requestId,
-                'tool_call_id' => $toolCallId,
-                'hook_class' => $hook::class,
-            ]);
-        } else {
-            // Re-attach to existing pending question (crash recovery / redelivery).
-            if ($question->isResolved()) {
-                // The question was already answered in a previous delivery.
-                // Process the existing answer directly, no blocking.
-                $this->processResolvedAnswer($event, $toolCall, $hook, $question, $details);
-
-                return;
-            }
-
-            $this->logger?->info('tool.approval_question_reused', [
-                'run_id' => $runId,
-                'component' => 'extension.tool_hook_subscriber',
-                'event_type' => 'tool.approval_question_reused',
-                'request_id' => $requestId,
-                'tool_call_id' => $toolCallId,
-                'hook_class' => $hook::class,
-            ]);
+        if (!\is_array($schema)) {
+            $schema = ['type' => 'string'];
         }
 
-        // ── BLOCKING POLL ──
-        // The tool-worker thread blocks here until the TUI user answers
-        // via the answer_tool_question command (written by AnswerToolQuestionHandler
-        // in the controller process). The run lock (RunState CAS) serializes
-        // per-run, so no other tool worker is racing on the same question.
-        //
-        // No timeout, no TTL. The run stays halted at the tool-execution stage
-        // for as long as the poll blocks. The idempotent re-attach above handles
-        // crash recovery if this process is killed.
-        //
-        // With schema-driven routing in AnswerToolQuestionHandler, a string/enum-
-        // schema question is always answered via answerWithText, so answer_text
-        // can never be null for such questions. The old Layer-C shape-mismatch
-        // branch (answered-but-textless -> Deny) is therefore unreachable and
-        // removed.
-        $this->logger?->info('tool.approval_polling_start', [
-            'run_id' => $runId,
-            'component' => 'extension.tool_hook_subscriber',
-            'event_type' => 'tool.approval_polling_start',
-            'request_id' => $requestId,
+        if ('' === $runId || '' === $toolCallId || '' === $questionId) {
+            throw new \LogicException('RequireApproval suspension requires runId, toolCallId, and question_id.');
+        }
+
+        $hookId = $this->hookRegistryId($hook::class);
+        $turnNo = $context->turnNo ?? 0;
+        $stepId = $this->ambientStepId();
+        if (null === $stepId || '' === $stepId) {
+            // step_id is required for batch resume; ExecuteToolCallWorker always sets it.
+            throw new \LogicException('RequireApproval suspension requires step_id in tool execution context.');
+        }
+
+        $payload = array_replace($details, [
+            'kind' => 'interrupt',
+            'question_id' => $questionId,
+            'prompt' => $prompt,
+            'schema' => $schema,
             'tool_call_id' => $toolCallId,
+            'tool_name' => $toolCall->getName(),
+            'ui_kind' => 'choice',
+            'hook_id' => $hookId,
+            'hook_class' => $hook::class,
+            'approval_context' => $details,
         ]);
 
-        do {
-            usleep(self::POLL_INTERVAL_MICROS);
-            $answerText = $this->toolQuestionStore->pollAnswerText($requestId);
-        } while (null === $answerText);
+        $continuationRef = [
+            'run_id' => $runId,
+            'turn_no' => $turnNo,
+            'step_id' => $stepId,
+            'tool_call_id' => $toolCallId,
+        ];
 
-        $this->logger?->info('tool.approval_polling_complete', [
+        $request = PendingHumanInputRequestDTO::toolCallFromPayload($payload, $continuationRef);
+
+        $this->logger?->info('tool.approval_suspension_created', [
             'run_id' => $runId,
             'component' => 'extension.tool_hook_subscriber',
-            'event_type' => 'tool.approval_polling_complete',
-            'request_id' => $requestId,
-            'answer' => $answerText,
+            'event_type' => 'tool.approval_suspension_created',
+            'question_id' => $questionId,
+            'tool_call_id' => $toolCallId,
+            'hook_class' => $hook::class,
         ]);
 
-        // ── ANSWER ROUTING ──
-        // onApprovalAnswered for side-effects (e.g. Always-allow policy persistence).
-        if ($hook instanceof ApprovalAnswerHookInterface && '' !== $questionId) {
-            $hook->onApprovalAnswered(new ApprovalAnswerContextDTO(
-                questionId: $questionId,
-                answer: $answerText,
-                toolName: $toolCall->getName(),
-                approvalContext: $details,
-                runId: $context->runId,
-                toolCallId: $toolCall->getId(),
-            ));
-        }
-
-        // Let the extension resolve the answer into a tool-execution decision.
-        // The extension owns the complete answer vocabulary and outcome mapping
-        // (Allow → handler runs, Block → denied reason, ReplaceResult → supplied).
-        $this->applyApprovalOutcome($event, $toolCall, $hook, $answerText, $questionId, $details, $context->runId, $toolCall->getId());
+        $event->setResult(new ToolResult($toolCall, new ToolExecutionHumanInputSuspension($request)));
     }
 
     /**
-     * Process an already-resolved ToolQuestion (from crash recovery / redelivery).
-     * Calls onApprovalAnswered + resolveApprovalAnswer to determine the outcome
-     * without blocking.
-     *
-     * @param array<string, mixed> $details
+     * @param \Ineersa\Hatfield\ExtensionApi\Tool\ToolCallHookInterface $hook
      */
-    private function processResolvedAnswer(
+    private function applyResumedAnswer(
         ToolCallRequested $event,
         ToolCall $toolCall,
-        \Ineersa\Hatfield\ExtensionApi\Tool\ToolCallHookInterface $hook,
-        ToolQuestion $question,
-        array $details,
-    ): void {
-        $answerText = $question->answerText;
-        $questionId = (string) ($details['question_id'] ?? '');
-
-        if (null === $answerText || '' === $answerText) {
-            // Question was cancelled or has no text answer — treat as denied.
-            $event->setResult(new ToolResult($toolCall, [
-                'denied' => true,
-                'reason' => 'approval_cancelled',
-                'message' => \sprintf('Tool "%s" was denied: the pending approval was cancelled.', $toolCall->getName()),
-            ]));
-
-            return;
-        }
-
-        // Route to onApprovalAnswered for side-effects, then resolveApprovalAnswer for outcome.
-        $runId = '' !== $question->runId ? $question->runId : null;
-        $toolCallId = '' !== $question->toolCallId ? $question->toolCallId : null;
-
-        if ($hook instanceof ApprovalAnswerHookInterface && '' !== $questionId) {
-            $hook->onApprovalAnswered(new ApprovalAnswerContextDTO(
-                questionId: $questionId,
-                answer: $answerText,
-                toolName: $toolCall->getName(),
-                approvalContext: $details,
-                runId: $runId,
-                toolCallId: $toolCallId,
-            ));
-        }
-
-        $this->applyApprovalOutcome($event, $toolCall, $hook, $answerText, $questionId, $details, $runId, $toolCallId);
-    }
-
-    /**
-     * Call the hook's resolveApprovalAnswer and apply the returned decision
-     * generically to the tool call.
-     *
-     * @param array<string, mixed> $details
-     */
-    private function applyApprovalOutcome(
-        ToolCallRequested $event,
-        ToolCall $toolCall,
-        \Ineersa\Hatfield\ExtensionApi\Tool\ToolCallHookInterface $hook,
-        string $answerText,
-        string $questionId,
-        array $details,
-        ?string $runId = null,
-        ?string $toolCallId = null,
+        object $hook,
+        ToolCallHumanInputAnswerDTO $answer,
+        ToolCallContextDTO $context,
     ): void {
         if (!$hook instanceof ApprovalAnswerHookInterface) {
-            // No ApprovalAnswerHookInterface — no outcome mapping exists.
-            // Default: fall through so the real tool handler can run.
-            return;
+            throw new \LogicException(\sprintf('Resumed approval answer targets hook "%s" which does not implement ApprovalAnswerHookInterface.', $hook::class));
         }
 
-        $context = new ApprovalAnswerContextDTO(
-            questionId: $questionId,
+        $answerText = \is_string($answer->answer) ? $answer->answer : (string) json_encode($answer->answer);
+        $approvalContext = $answer->requestPayload['approval_context'] ?? $answer->requestPayload;
+        if (!\is_array($approvalContext)) {
+            $approvalContext = [];
+        }
+
+        $approvalAnswerContext = new ApprovalAnswerContextDTO(
+            questionId: $answer->questionId,
             answer: $answerText,
             toolName: $toolCall->getName(),
-            approvalContext: $details,
-            runId: $runId,
-            toolCallId: $toolCallId,
+            approvalContext: $approvalContext,
+            runId: $context->runId,
+            toolCallId: $toolCall->getId(),
         );
 
-        $outcome = $hook->resolveApprovalAnswer($context);
+        $hook->onApprovalAnswered($approvalAnswerContext);
+        $outcome = $hook->resolveApprovalAnswer($approvalAnswerContext);
 
         match ($outcome->kind) {
-            ToolCallDecisionKindEnum::Allow => null, // Fall through → handler runs
-            ToolCallDecisionKindEnum::Block => $event->setResult(new ToolResult($toolCall, [
+            ToolCallDecisionKindEnum::Allow => null,
+            // Encode denial as TOON so transcript/tool output is human-readable
+            // (raw PHP arrays become JSON via Symfony AI serialization).
+            ToolCallDecisionKindEnum::Block => $event->setResult(new ToolResult($toolCall, Toon::encode([
                 'denied' => true,
                 'reason' => $outcome->reason ?? 'denied',
                 'message' => $outcome->details['message'] ?? \sprintf('Tool "%s" was denied.', $toolCall->getName()),
-            ])),
+            ]))),
             ToolCallDecisionKindEnum::ReplaceResult => $event->setResult(new ToolResult($toolCall, $outcome->result)),
-            ToolCallDecisionKindEnum::RequireApproval => null, // Silently ignore — already answered.
+            ToolCallDecisionKindEnum::RequireApproval => throw new \LogicException('resolveApprovalAnswer must not return RequireApproval.'),
         };
+    }
+
+    private function isAnswerForHook(
+        ToolCallHumanInputAnswerDTO $answer,
+        string $hookClass,
+        ToolCallContextDTO $context,
+    ): bool {
+        $payloadHookId = $answer->requestPayload['hook_id'] ?? null;
+        $payloadHookClass = $answer->requestPayload['hook_class'] ?? null;
+        $expectedHookId = $this->hookRegistryId($hookClass);
+
+        // Both identities are required when the suspension payload includes them
+        // (canonical Path A always embeds both). Fail closed if either is missing
+        // or mismatched so a forged answer cannot target another hook.
+        if (!\is_string($payloadHookClass) || '' === $payloadHookClass
+            || !\is_string($payloadHookId) || '' === $payloadHookId
+        ) {
+            return false;
+        }
+        if ($payloadHookClass !== $hookClass || $payloadHookId !== $expectedHookId) {
+            return false;
+        }
+
+        $refToolCallId = $answer->continuationRef['tool_call_id'] ?? null;
+        if (!\is_string($refToolCallId) || $refToolCallId !== $context->toolCallId) {
+            return false;
+        }
+
+        $refRunId = $answer->continuationRef['run_id'] ?? null;
+        if (\is_string($refRunId) && '' !== $refRunId && null !== $context->runId && $refRunId !== $context->runId) {
+            return false;
+        }
+
+        if ($answer->questionId !== ($answer->requestPayload['question_id'] ?? null)) {
+            return false;
+        }
+
+        return true;
+    }
+
+    private function hookRegistryId(string $hookClass): string
+    {
+        // Stable registry identity (not process-local). crc32b matches prior
+        // deterministic ToolQuestion requestId namespace style.
+        return hash('crc32b', $hookClass);
     }
 
     /**
@@ -501,8 +468,32 @@ final readonly class ExtensionToolHookEventSubscriber implements EventSubscriber
                 'timeout_seconds' => $current?->timeoutSeconds(),
                 'noninteractive_child_run' => null !== $this->noninteractiveChildProbe
                     && $this->noninteractiveChildProbe->isNoninteractiveChildRun($current?->runId()),
+                'step_id' => $this->ambientStepId(),
             ],
         );
+    }
+
+    private function ambientStepId(): ?string
+    {
+        $current = $this->contextAccessor?->current();
+        if (null === $current) {
+            return null;
+        }
+
+        $stepId = $current->stepId();
+        if (null !== $stepId && '' !== $stepId) {
+            return $stepId;
+        }
+
+        $answer = $current->humanInputAnswer();
+        if ($answer instanceof ToolCallHumanInputAnswerDTO) {
+            $fromAnswer = $answer->continuationRef['step_id'] ?? null;
+            if (\is_string($fromAnswer) && '' !== $fromAnswer) {
+                return $fromAnswer;
+            }
+        }
+
+        return null;
     }
 
     /**

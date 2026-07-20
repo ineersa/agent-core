@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Application\Tool;
 
 use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
+use Ineersa\AgentCore\Domain\Tool\ToolCallHumanInputAnswerDTO;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 
 /**
@@ -22,6 +23,8 @@ final readonly class ToolContext
         private int $orderIndex = 0,
         private ?ToolExecutionMode $executionMode = null,
         private int $batchToolCallCount = 1,
+        private ?ToolCallHumanInputAnswerDTO $humanInputAnswer = null,
+        private ?string $stepId = null,
     ) {
     }
 
@@ -33,6 +36,11 @@ final readonly class ToolContext
     public function turnNo(): int
     {
         return $this->turnNo;
+    }
+
+    public function stepId(): ?string
+    {
+        return $this->stepId;
     }
 
     public function toolCallId(): string
@@ -71,5 +79,13 @@ final readonly class ToolContext
     public function batchToolCallCount(): int
     {
         return max(1, $this->batchToolCallCount);
+    }
+
+    /**
+     * Typed human-input answer for resumed tool-call continuation (internal only).
+     */
+    public function humanInputAnswer(): ?ToolCallHumanInputAnswerDTO
+    {
+        return $this->humanInputAnswer;
     }
 }

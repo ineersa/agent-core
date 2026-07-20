@@ -18,6 +18,7 @@ final class ToolBatchStateDTO
      * @param list<string>                   $pendingQueue
      * @param array<string, true>            $inFlight
      * @param array<string, ToolCallResult>  $results
+     * @param array<string, string>          $awaitingHumanInput tool_call_id => request question_id
      */
     public function __construct(
         public array $expectedOrder,
@@ -27,6 +28,7 @@ final class ToolBatchStateDTO
         public array $results,
         public bool $finalized,
         public int $maxParallelism,
+        public array $awaitingHumanInput = [],
     ) {
     }
 
@@ -119,6 +121,21 @@ final class ToolBatchStateDTO
             throw new \UnexpectedValueException('Tool batch max_parallelism must be a positive integer.');
         }
 
+        if (!\array_key_exists('awaiting_human_input', $data) || !\is_array($data['awaiting_human_input'])) {
+            throw new \UnexpectedValueException('Tool batch awaiting_human_input must be an array.');
+        }
+
+        $awaitingHumanInput = [];
+        foreach ($data['awaiting_human_input'] as $callId => $questionId) {
+            if (!\is_string($callId) || '' === $callId) {
+                throw new \UnexpectedValueException('Tool batch awaiting_human_input keys must be non-empty strings.');
+            }
+            if (!\is_string($questionId) || '' === $questionId) {
+                throw new \UnexpectedValueException(\sprintf('Tool batch awaiting_human_input[%s] must be a non-empty string question_id.', $callId));
+            }
+            $awaitingHumanInput[$callId] = $questionId;
+        }
+
         return new self(
             expectedOrder: $expectedOrder,
             calls: $calls,
@@ -127,6 +144,7 @@ final class ToolBatchStateDTO
             results: $results,
             finalized: $data['finalized'],
             maxParallelism: $data['max_parallelism'],
+            awaitingHumanInput: $awaitingHumanInput,
         );
     }
 
@@ -149,9 +167,12 @@ final class ToolBatchStateDTO
                 'toolIdempotencyKey' => $call->toolIdempotencyKey,
                 'assistantMessage' => $call->assistantMessage,
                 'argSchema' => $call->argSchema,
+                'humanInputAnswer' => $call->humanInputAnswer?->toPersistedArray(),
             ];
         }
 
+        // result_data stores only terminal outcomes. pendingHumanInput is a bus-only
+        // nonterminal field on ToolCallResult and must never be persisted here.
         $resultData = [];
         foreach ($this->results as $toolCallId => $result) {
             $resultData[$toolCallId] = [
@@ -171,6 +192,7 @@ final class ToolBatchStateDTO
             'result_data' => $resultData,
             'finalized' => $this->finalized,
             'max_parallelism' => $this->maxParallelism,
+            'awaiting_human_input' => $this->awaitingHumanInput,
         ];
     }
 
@@ -222,6 +244,10 @@ final class ToolBatchStateDTO
         if (\array_key_exists('argSchema', $data) && null !== $data['argSchema'] && !\is_array($data['argSchema'])) {
             throw new \UnexpectedValueException(\sprintf('Tool batch call_data[%s].argSchema must be an array or null when present.', $mapKey));
         }
+
+        if (\array_key_exists('humanInputAnswer', $data) && null !== $data['humanInputAnswer'] && !\is_array($data['humanInputAnswer'])) {
+            throw new \UnexpectedValueException(\sprintf('Tool batch call_data[%s].humanInputAnswer must be an object or null when present.', $mapKey));
+        }
     }
 
     /**
@@ -270,7 +296,24 @@ final class ToolBatchStateDTO
             assistantMessage: \array_key_exists('assistantMessage', $data) ? $data['assistantMessage'] : null,
             argSchema: \array_key_exists('argSchema', $data) ? $data['argSchema'] : null,
             toolsRef: \array_key_exists('toolsRef', $data) ? $data['toolsRef'] : null,
+            humanInputAnswer: self::reconstructHumanInputAnswer($data),
         );
+    }
+
+    /**
+     * @param array<string, mixed> $data
+     */
+    private static function reconstructHumanInputAnswer(array $data): ?ToolCallHumanInputAnswerDTO
+    {
+        if (!\array_key_exists('humanInputAnswer', $data) || null === $data['humanInputAnswer']) {
+            return null;
+        }
+
+        if (!\is_array($data['humanInputAnswer'])) {
+            throw new \UnexpectedValueException('Tool batch call_data humanInputAnswer must be an object or null.');
+        }
+
+        return ToolCallHumanInputAnswerDTO::fromPersistedArray($data['humanInputAnswer']);
     }
 
     /**

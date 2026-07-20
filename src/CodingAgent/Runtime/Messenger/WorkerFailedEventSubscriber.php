@@ -157,6 +157,7 @@ final readonly class WorkerFailedEventSubscriber implements EventSubscriberInter
                 messages: $current->messages,
                 activeStepId: $current->activeStepId,
                 retryableFailure: false,
+                pendingHumanInputRequests: $current->pendingHumanInputRequests,
             );
 
             $committed = $this->runStore->compareAndSwap($failedState, $current->version);

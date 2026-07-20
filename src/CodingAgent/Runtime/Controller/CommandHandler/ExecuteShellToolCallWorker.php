@@ -18,9 +18,8 @@ use Symfony\Component\Messenger\Attribute\AsMessageHandler;
  * Handles ExecuteShellToolCall messages on the agent.execution.bus.
  *
  * Executes bash tool calls in the tool consumer process (separate from the
- * controller), avoiding the controller event-loop freeze that occurs when
- * SafeGuard extension hooks require approval and enter a blocking poll
- * in the controller process (issue #183).
+ * controller) so the controller remains free to project runtime events and
+ * accept human answers while shell execution is in flight.
  *
  * Writes canonical tool_execution_start / tool_execution_end events to the
  * EventStore so the TUI poller surfaces shell output in the transcript.

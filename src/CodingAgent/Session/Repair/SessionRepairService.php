@@ -246,6 +246,7 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
             activeStepId: $finalReplay->activeStepId,
             retryableFailure: $finalReplay->retryableFailure,
             retryAttempts: $finalReplay->retryAttempts,
+            pendingHumanInputRequests: $finalReplay->pendingHumanInputRequests,
         );
 
         if (!$this->runStore->compareAndSwap($persisted, $storedState->version)) {

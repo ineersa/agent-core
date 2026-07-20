@@ -361,6 +361,7 @@ final readonly class CommandMailboxPolicy
                 : $state->activeStepId,
             retryableFailure: $overrides['retryableFailure'] ?? $state->retryableFailure,
             retryAttempts: $overrides['retryAttempts'] ?? $state->retryAttempts,
+            pendingHumanInputRequests: $overrides['pendingHumanInputRequests'] ?? $state->pendingHumanInputRequests,
         );
     }
 
