@@ -37,7 +37,7 @@ final class SessionRunStateReplayServiceTest extends TestCase
             new NullLogger(),
             $this->reducer,
             new ReplayEventPreparer(),
-            $this->treeFilter
+            $this->treeFilter,
         );
     }
 
@@ -346,12 +346,12 @@ final class SessionRunStateReplayServiceTest extends TestCase
         // and bails on any false (unresolved) call; all-true means no bail.
         $this->assertNotEmpty(
             $rebuilt->pendingToolCalls,
-            'Expected pendingToolCalls to contain the shell tool call.'
+            'Expected pendingToolCalls to contain the shell tool call.',
         );
         $this->assertNotContains(
             false,
             $rebuilt->pendingToolCalls,
-            'Shell-only tool calls must be fully resolved (all true) so AdvanceRun does not bail.'
+            'Shell-only tool calls must be fully resolved (all true) so AdvanceRun does not bail.',
         );
     }
 
@@ -516,7 +516,8 @@ final class SessionRunStateReplayServiceTest extends TestCase
             status: RunStatus::Running,
             version: 1,
             turnNo: 0,
-            lastSeq: 0);
+            lastSeq: 0,
+        );
 
         $result = $this->service->rebuildIfStale($state, $this->runId);
 
@@ -535,7 +536,8 @@ final class SessionRunStateReplayServiceTest extends TestCase
             status: RunStatus::Running,
             version: 5,
             turnNo: 0,
-            lastSeq: 0);
+            lastSeq: 0,
+        );
 
         $result = $this->service->rebuildIfStale($state, $this->runId);
 
@@ -689,7 +691,8 @@ final class SessionRunStateReplayServiceTest extends TestCase
             status: RunStatus::Running,
             version: 1,
             turnNo: 0,
-            lastSeq: 0);
+            lastSeq: 0,
+        );
 
         try {
             $this->service->rebuildIfStale($state, $this->runId);
@@ -1022,7 +1025,8 @@ final class SessionRunStateReplayServiceTest extends TestCase
             status: RunStatus::Completed,
             version: 10,
             turnNo: 2,
-            lastSeq: 11);
+            lastSeq: 11,
+        );
 
         $result = $this->service->rebuildForLeaf($state, $this->runId, 1);
 
@@ -1151,7 +1155,8 @@ final class SessionRunStateReplayServiceTest extends TestCase
             status: RunStatus::Completed,
             version: 10,
             turnNo: 3,
-            lastSeq: 18);
+            lastSeq: 18,
+        );
 
         $result = $this->service->rebuildForLeaf($state, $this->runId, 3);
 
@@ -1824,7 +1829,7 @@ final class SessionRunStateReplayServiceTest extends TestCase
         $this->assertCount(
             0,
             $messages,
-            'Thinking-only assistant message must not be replayed into state messages.'
+            'Thinking-only assistant message must not be replayed into state messages.',
         );
     }
 
@@ -1951,7 +1956,8 @@ final class SessionRunStateReplayServiceTest extends TestCase
             status: RunStatus::Queued,
             version: 0,
             turnNo: 0,
-            lastSeq: 0);
+            lastSeq: 0,
+        );
 
         $result = $this->service->rebuildIfStale($state, $this->runId);
 

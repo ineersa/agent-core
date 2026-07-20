@@ -50,7 +50,6 @@ final readonly class StartRunHandler implements RunMessageHandler
             messages: $messages,
             activeStepId: $message->stepId(),
             retryableFailure: false,
-            pendingHumanInputRequests: $state->pendingHumanInputRequests,
         );
 
         $event = $this->eventFactory->event(

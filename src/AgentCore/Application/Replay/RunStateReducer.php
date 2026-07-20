@@ -222,7 +222,7 @@ final readonly class RunStateReducer
             );
         }
 
-        // human_response: append message, clear matching pending request, transition to Running
+        // human_response: append message, clear only the active matching request, transition to Running
         if ('human_response' === $kind) {
             $messagePayload = \is_array($payload['message'] ?? null) ? $payload['message'] : null;
             if (null !== $messagePayload) {
@@ -233,21 +233,16 @@ final readonly class RunStateReducer
             }
 
             $questionId = \is_string($payload['question_id'] ?? null) ? $payload['question_id'] : null;
-            $remaining = $state->pendingHumanInputRequests;
-            if (null !== $questionId) {
-                $remaining = [];
-                $cleared = false;
-                foreach ($state->pendingHumanInputRequests as $request) {
-                    if (!$cleared && $request->questionId === $questionId) {
-                        $cleared = true;
-                        continue;
-                    }
-                    $remaining[] = $request;
-                }
-            } elseif ([] !== $state->pendingHumanInputRequests) {
-                // Legacy events without question_id: clear the active (first) request.
-                $remaining = array_values(\array_slice($state->pendingHumanInputRequests, 1));
+            if (null === $questionId || '' === $questionId) {
+                throw new \InvalidArgumentException('human_response event is missing non-empty question_id.');
             }
+
+            $active = $state->pendingHumanInputRequests[0] ?? null;
+            if (null === $active || $active->questionId !== $questionId) {
+                throw new \InvalidArgumentException(\sprintf('human_response event question_id "%s" does not match the active pending request.', $questionId));
+            }
+
+            $remaining = array_values(\array_slice($state->pendingHumanInputRequests, 1));
 
             return new RunState(
                 runId: $state->runId,
@@ -498,13 +493,9 @@ final readonly class RunStateReducer
      */
     private function applyWaitingHuman(array $payload, RunState $state): RunState
     {
-        $pending = $state->pendingHumanInputRequests;
-        // waiting_human status must still apply even if payload is incomplete.
-        // Incomplete payloads leave the request list unchanged; answer validation rejects later.
-        if ((\is_string($payload['question_id'] ?? null) && '' !== $payload['question_id'])
-            || (\is_string($payload['tool_call_id'] ?? null) && '' !== $payload['tool_call_id'])) {
-            $pending = [...$pending, PendingHumanInputRequestDTO::modelTurnFromInterruptPayload($payload)];
-        }
+        // Malformed waiting_human must fail at the reducer boundary — never enter
+        // WaitingHuman without a reconstructable typed pending request.
+        $request = PendingHumanInputRequestDTO::modelTurnFromInterruptPayload($payload);
 
         return new RunState(
             runId: $state->runId,
@@ -519,7 +510,7 @@ final readonly class RunStateReducer
             messages: $state->messages,
             activeStepId: $state->activeStepId,
             retryableFailure: $state->retryableFailure,
-            pendingHumanInputRequests: $pending,
+            pendingHumanInputRequests: [...$state->pendingHumanInputRequests, $request],
         );
     }
 
