@@ -18,7 +18,6 @@ final class ToolBatchStateDTO
      * @param list<string>                   $pendingQueue
      * @param array<string, true>            $inFlight
      * @param array<string, ToolCallResult>  $results
-     * @param array<string, string>          $awaitingHumanInput tool_call_id => request question_id
      */
     public function __construct(
         public array $expectedOrder,
@@ -28,7 +27,6 @@ final class ToolBatchStateDTO
         public array $results,
         public bool $finalized,
         public int $maxParallelism,
-        public array $awaitingHumanInput = [],
     ) {
     }
 
@@ -121,22 +119,6 @@ final class ToolBatchStateDTO
             throw new \UnexpectedValueException('Tool batch max_parallelism must be a positive integer.');
         }
 
-        $awaitingHumanInput = [];
-        if (\array_key_exists('awaiting_human_input', $data)) {
-            if (!\is_array($data['awaiting_human_input'])) {
-                throw new \UnexpectedValueException('Tool batch awaiting_human_input must be an array when present.');
-            }
-            foreach ($data['awaiting_human_input'] as $callId => $questionId) {
-                if (!\is_string($callId) || '' === $callId) {
-                    throw new \UnexpectedValueException('Tool batch awaiting_human_input keys must be non-empty strings.');
-                }
-                if (!\is_string($questionId) || '' === $questionId) {
-                    throw new \UnexpectedValueException(\sprintf('Tool batch awaiting_human_input[%s] must be a non-empty string question_id.', $callId));
-                }
-                $awaitingHumanInput[$callId] = $questionId;
-            }
-        }
-
         return new self(
             expectedOrder: $expectedOrder,
             calls: $calls,
@@ -145,7 +127,6 @@ final class ToolBatchStateDTO
             results: $results,
             finalized: $data['finalized'],
             maxParallelism: $data['max_parallelism'],
-            awaitingHumanInput: $awaitingHumanInput,
         );
     }
 
@@ -190,7 +171,6 @@ final class ToolBatchStateDTO
             'result_data' => $resultData,
             'finalized' => $this->finalized,
             'max_parallelism' => $this->maxParallelism,
-            'awaiting_human_input' => $this->awaitingHumanInput,
         ];
     }
 

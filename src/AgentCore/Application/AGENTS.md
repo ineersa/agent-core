@@ -9,7 +9,6 @@ This README is an architecture map (not an index).
 - `AdvanceRun` -> `RunOrchestrator::onAdvanceRun()` on `agent.command.bus`
 - `LlmStepResult` -> routed `run_control`; `RunOrchestrator::onLlmStepResult()` on `agent.command.bus`
 - `ToolCallResult` -> routed `run_control`; `RunOrchestrator::onToolCallResult()` on `agent.command.bus`
-- `ToolExecutionSuspension` -> routed `run_control`; `RunOrchestrator::onToolExecutionSuspension()` on `agent.command.bus`
 - `ExecuteLlmStep` -> `ExecuteLlmStepWorker::__invoke()` on `agent.execution.bus`
 - `ExecuteToolCall` -> `ExecuteToolCallWorker::__invoke()` on `agent.execution.bus`
 - `CompactRun` -> `RunOrchestrator::onCompactRun()` on `agent.command.bus`
@@ -41,10 +40,6 @@ Note: `CollectToolBatch` is routed to `agent.execution.bus` in `config/messenger
 - `ToolCallResult`
   - dispatched by: `ExecuteToolCallWorker::__invoke()` on `agent.command.bus` (routed to `run_control`)
   - handled by: `RunOrchestrator::onToolCallResult()` in the `run_control` consumer -> `RunMessageProcessor` -> `ToolCallResultHandler`
-- `ToolExecutionSuspension`
-  - dispatched by: `ExecuteToolCallWorker::__invoke()` when toolbox returns typed `ToolExecutionHumanInputSuspension` (routed to `run_control`)
-  - handled by: `RunOrchestrator::onToolExecutionSuspension()` -> `RunMessageProcessor` -> `ToolExecutionSuspensionHandler`
-  - admits pending human-input request + batch `awaiting_human_input`; does not dispatch `ToolCallResult` or remember a completed tool result
 - `CompactRun`
   - dispatched by: runtime/TUI compaction trigger (COMP-03)
   - handled by: `RunOrchestrator::onCompactRun()` -> `RunMessageProcessor` -> `CompactRunHandler`

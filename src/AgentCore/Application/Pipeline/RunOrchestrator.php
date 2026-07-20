@@ -12,7 +12,6 @@ use Ineersa\AgentCore\Domain\Message\CompactRun;
 use Ineersa\AgentCore\Domain\Message\LlmStepResult;
 use Ineersa\AgentCore\Domain\Message\StartRun;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
-use Ineersa\AgentCore\Domain\Message\ToolExecutionSuspension;
 use Ineersa\AgentCore\Infrastructure\RunLogContext;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
 
@@ -23,7 +22,6 @@ final readonly class RunOrchestrator
     private const string ScopeAdvanceRun = 'command.advance';
     private const string ScopeLlmResult = 'result.llm';
     private const string ScopeToolResult = 'result.tool';
-    private const string ScopeToolExecutionSuspension = 'result.tool_execution_suspension';
     private const string ScopeCompactRun = 'command.compact';
     private const string ScopeCompactionResult = 'result.compaction';
 
@@ -143,30 +141,6 @@ final readonly class RunOrchestrator
             }
 
             $this->tracer->inSpan('turn.orchestrator.tool_result', [
-                'run_id' => $message->runId(),
-                'turn_no' => $message->turnNo(),
-                'step_id' => $message->stepId(),
-                'tool_call_id' => $message->toolCallId,
-            ], $handle, root: true);
-        });
-    }
-
-    /**
-     * Handles ToolExecutionSuspension for non-blocking human-input admission.
-     */
-    #[AsMessageHandler(bus: 'agent.command.bus')]
-    public function onToolExecutionSuspension(ToolExecutionSuspension $message): void
-    {
-        $this->withLogContext($message->runId(), 'turn.orchestrator.tool_execution_suspension', function () use ($message): void {
-            $handle = fn () => $this->runMessageProcessor->process(self::ScopeToolExecutionSuspension, $message);
-
-            if (null === $this->tracer) {
-                $handle();
-
-                return;
-            }
-
-            $this->tracer->inSpan('turn.orchestrator.tool_execution_suspension', [
                 'run_id' => $message->runId(),
                 'turn_no' => $message->turnNo(),
                 'step_id' => $message->stepId(),

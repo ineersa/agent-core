@@ -90,92 +90,6 @@ final class ToolBatchCollector
         return $this->collectInMemory($result);
     }
 
-    /**
-     * Move an in-flight call into awaiting_human_input without creating a tool result.
-     *
-     * Duplicate same question_id is idempotent. Conflicting question_id fails.
-     * May return ordinary later ExecuteToolCall effects when removing the call
-     * from inFlight frees dispatch capacity under current mode/maxParallelism.
-     *
-     * @return list<ExecuteToolCall>
-     */
-    public function admitHumanInputSuspension(
-        string $runId,
-        int $turnNo,
-        string $stepId,
-        string $toolCallId,
-        string $questionId,
-    ): array {
-        if (null !== $this->store) {
-            /** @var list<ExecuteToolCall> $effects */
-            $effects = $this->store->mutate(
-                $runId,
-                $turnNo,
-                $stepId,
-                function (?ToolBatchStateDTO $stored) use ($runId, $turnNo, $stepId, $toolCallId, $questionId): ToolBatchStoreMutation {
-                    if (null === $stored) {
-                        throw new \LogicException(\sprintf('Cannot admit tool-execution suspension for unknown batch run=%s turn=%d step=%s.', $runId, $turnNo, $stepId));
-                    }
-
-                    $effects = $this->applyHumanInputSuspensionToBatch($stored, $toolCallId, $questionId);
-
-                    return new ToolBatchStoreMutation($effects, $stored);
-                },
-            );
-
-            return $effects;
-        }
-
-        $batch = $this->loadBatch($runId, $turnNo, $stepId);
-        if (null === $batch) {
-            throw new \LogicException(\sprintf('Cannot admit tool-execution suspension for unknown batch run=%s turn=%d step=%s.', $runId, $turnNo, $stepId));
-        }
-
-        $effects = $this->applyHumanInputSuspensionToBatch($batch, $toolCallId, $questionId);
-        $this->saveBatch($runId, $turnNo, $stepId, $batch);
-
-        return $effects;
-    }
-
-    /**
-     * In-memory/test snapshot of the current batch for the given key.
-     */
-    public function batchSnapshot(string $runId, int $turnNo, string $stepId): ?ToolBatchStateDTO
-    {
-        return $this->loadBatch($runId, $turnNo, $stepId);
-    }
-
-    /**
-     * @return list<ExecuteToolCall>
-     */
-    private function applyHumanInputSuspensionToBatch(
-        ToolBatchStateDTO $batch,
-        string $toolCallId,
-        string $questionId,
-    ): array {
-        if (!\array_key_exists($toolCallId, $batch->expectedOrder)) {
-            throw new \LogicException(\sprintf('Cannot admit tool-execution suspension for unexpected tool call "%s".', $toolCallId));
-        }
-
-        if (isset($batch->results[$toolCallId])) {
-            throw new \LogicException(\sprintf('Cannot admit tool-execution suspension for already completed tool call "%s".', $toolCallId));
-        }
-
-        $existingQuestionId = $batch->awaitingHumanInput[$toolCallId] ?? null;
-        if (null !== $existingQuestionId) {
-            if ($existingQuestionId === $questionId) {
-                return [];
-            }
-
-            throw new \LogicException(\sprintf('Conflicting tool-execution suspension for call "%s": existing request "%s", new request "%s".', $toolCallId, $existingQuestionId, $questionId));
-        }
-
-        unset($batch->inFlight[$toolCallId]);
-        $batch->awaitingHumanInput[$toolCallId] = $questionId;
-
-        return $this->dispatchableCalls($batch);
-    }
-
     private function collectWithDurableStore(ToolCallResult $result): ToolBatchCollectOutcome
     {
         $runId = $result->runId();
@@ -236,9 +150,7 @@ final class ToolBatchCollector
             return $this->outcomeForStoredResult($batch, $result);
         }
 
-        // Ordinary results continue collecting while a sibling call may be
-        // awaiting human input; clear any awaiting marker for this call id.
-        unset($batch->inFlight[$result->toolCallId], $batch->awaitingHumanInput[$result->toolCallId]);
+        unset($batch->inFlight[$result->toolCallId]);
         $batch->results[$result->toolCallId] = $result;
 
         $effectsToDispatch = $this->dispatchableCalls($batch);
@@ -304,7 +216,7 @@ final class ToolBatchCollector
 
         while ([] !== $batch->pendingQueue) {
             $nextCallId = $batch->pendingQueue[0];
-            if (isset($batch->results[$nextCallId]) || isset($batch->awaitingHumanInput[$nextCallId])) {
+            if (isset($batch->results[$nextCallId])) {
                 array_shift($batch->pendingQueue);
 
                 continue;

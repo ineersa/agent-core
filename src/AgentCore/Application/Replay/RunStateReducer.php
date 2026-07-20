@@ -495,17 +495,7 @@ final readonly class RunStateReducer
     {
         // Malformed waiting_human must fail at the reducer boundary — never enter
         // WaitingHuman without a reconstructable typed pending request.
-        // Tool-call suspensions carry continuation_kind=tool_call in the payload when
-        // present; otherwise reconstruct as model-turn (ask_human interrupt path).
-        $continuationKind = $payload['continuation_kind'] ?? null;
-        if ('tool_call' === $continuationKind) {
-            $continuationRef = \is_array($payload['continuation_ref'] ?? null)
-                ? $payload['continuation_ref']
-                : [];
-            $request = PendingHumanInputRequestDTO::toolCallFromPayload($payload, $continuationRef);
-        } else {
-            $request = PendingHumanInputRequestDTO::modelTurnFromInterruptPayload($payload);
-        }
+        $request = PendingHumanInputRequestDTO::modelTurnFromInterruptPayload($payload);
 
         return new RunState(
             runId: $state->runId,

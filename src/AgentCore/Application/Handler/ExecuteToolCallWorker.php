@@ -11,11 +11,9 @@ use Ineersa\AgentCore\Contract\Tool\ToolExecutorInterface;
 use Ineersa\AgentCore\Domain\Event\DeferredToolCompletionRegisteredEvent;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
-use Ineersa\AgentCore\Domain\Message\ToolExecutionSuspension;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionCorrelation;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
 use Ineersa\AgentCore\Domain\Tool\ToolCall;
-use Ineersa\AgentCore\Domain\Tool\ToolExecutionHumanInputSuspension;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\AgentCore\Domain\Tool\ToolResult;
 use Ineersa\AgentCore\Infrastructure\RunLogContext;
@@ -86,7 +84,7 @@ final readonly class ExecuteToolCallWorker
         }
     }
 
-    private function execute(ExecuteToolCall $message): ToolCallResult|ToolExecutionSuspension|null
+    private function execute(ExecuteToolCall $message): ?ToolCallResult
     {
         $existing = $this->deferredToolCompletionRepository->findPendingByRunAndToolCall($message->runId(), $message->toolCallId);
         if (null !== $existing) {
@@ -157,10 +155,6 @@ final readonly class ExecuteToolCallWorker
                 return null;
             }
 
-            if ($this->isHumanInputSuspension($toolResult)) {
-                return $this->suspensionFromToolResult($message, $toolResult);
-            }
-
             return ToolCallResultFactory::fromExecuteToolCallAndToolResult($message, $toolResult);
         } catch (\Throwable $exception) {
             $durationMs = (hrtime(true) - $startedAt) / 1_000_000;
@@ -182,35 +176,6 @@ final readonly class ExecuteToolCallWorker
         $raw = $details['raw_result'] ?? null;
 
         return $raw instanceof DeferredToolCompletionOutcome;
-    }
-
-    private function isHumanInputSuspension(ToolResult $toolResult): bool
-    {
-        $details = $toolResult->details;
-        if (!\is_array($details)) {
-            return false;
-        }
-
-        return ($details['raw_result'] ?? null) instanceof ToolExecutionHumanInputSuspension;
-    }
-
-    private function suspensionFromToolResult(ExecuteToolCall $message, ToolResult $toolResult): ToolExecutionSuspension
-    {
-        $raw = $toolResult->details['raw_result'] ?? null;
-        if (!$raw instanceof ToolExecutionHumanInputSuspension) {
-            throw new \RuntimeException('Tool-execution suspension missing typed raw_result marker.');
-        }
-
-        return new ToolExecutionSuspension(
-            runId: $message->runId(),
-            turnNo: $message->turnNo(),
-            stepId: $message->stepId(),
-            attempt: $message->attempt(),
-            idempotencyKey: $message->idempotencyKey(),
-            toolCallId: $message->toolCallId,
-            orderIndex: $message->orderIndex,
-            request: $raw->request,
-        );
     }
 
     private function registerDeferredExecution(ExecuteToolCall $message, ToolResult $toolResult): DeferredToolCompletionCorrelation
