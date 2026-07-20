@@ -107,8 +107,8 @@ final class ToolBatchCollector
         string $questionId,
     ): array {
         if (null !== $this->store) {
-            /** @var list<ExecuteToolCall> $effects */
-            $effects = $this->store->mutate(
+            /* @var list<ExecuteToolCall> */
+            return $this->store->mutate(
                 $runId,
                 $turnNo,
                 $stepId,
@@ -117,13 +117,9 @@ final class ToolBatchCollector
                         throw new \LogicException(\sprintf('Cannot admit tool-execution suspension for unknown batch run=%s turn=%d step=%s.', $runId, $turnNo, $stepId));
                     }
 
-                    $effects = $this->applyHumanInputSuspensionToBatch($stored, $toolCallId, $questionId);
-
-                    return new ToolBatchStoreMutation($effects, $stored);
+                    return new ToolBatchStoreMutation($this->applyHumanInputSuspensionToBatch($stored, $toolCallId, $questionId), $stored);
                 },
             );
-
-            return $effects;
         }
 
         $batch = $this->loadBatch($runId, $turnNo, $stepId);

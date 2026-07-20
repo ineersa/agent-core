@@ -372,10 +372,7 @@ final readonly class ToolCallResultHandler implements RunMessageHandler
             || !\array_key_exists($message->toolCallId, $state->pendingToolCalls)
             || true === $state->pendingToolCalls[$message->toolCallId]
         ) {
-            throw new \LogicException(\sprintf(
-                'Cannot admit tool-execution suspension for invalid or resolved call "%s".',
-                $message->toolCallId,
-            ));
+            throw new \LogicException(\sprintf('Cannot admit tool-execution suspension for invalid or resolved call "%s".', $message->toolCallId));
         }
 
         foreach ($state->pendingHumanInputRequests as $existing) {
@@ -393,12 +390,7 @@ final readonly class ToolCallResultHandler implements RunMessageHandler
                 return new HandlerResult(nextState: null, events: []);
             }
 
-            throw new \LogicException(\sprintf(
-                'Conflicting tool-execution suspension for call "%s": existing request "%s", new request "%s".',
-                $message->toolCallId,
-                $existing->questionId,
-                $request->questionId,
-            ));
+            throw new \LogicException(\sprintf('Conflicting tool-execution suspension for call "%s": existing request "%s", new request "%s".', $message->toolCallId, $existing->questionId, $request->questionId));
         }
 
         $effects = $this->toolBatchCollector->admitHumanInputSuspension(

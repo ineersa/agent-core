@@ -37,7 +37,11 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
     public function testWorkerDispatchesNonTerminalToolCallResultWithoutRemembering(): void
     {
         $toolbox = new class implements ToolboxInterface {
-            public function getTools(): array { return []; }
+            public function getTools(): array
+            {
+                return [];
+            }
+
             public function execute(SymfonyToolCall $toolCall): SymfonyToolResult
             {
                 return new SymfonyToolResult($toolCall, new ToolExecutionHumanInputSuspension(
