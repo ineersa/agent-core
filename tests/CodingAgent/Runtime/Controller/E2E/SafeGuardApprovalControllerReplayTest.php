@@ -27,7 +27,7 @@ final class SafeGuardApprovalControllerReplayTest extends ControllerReplayE2eTes
         parent::tearDown();
     }
 
-    public function testWriteOutsideCwdAllowOnceViaCanonicalHumanInput(): void
+    public function testWriteOutsideCwdAllowViaCanonicalHumanInput(): void
     {
         $this->spawnController();
         $this->waitForEvent('runtime.ready', $this->liveControllerReadyTimeout());
@@ -65,7 +65,7 @@ final class SafeGuardApprovalControllerReplayTest extends ControllerReplayE2eTes
             'runId' => $this->runId,
             'payload' => [
                 'question_id' => $questionId,
-                'answer' => '✅ Allow once',
+                'answer' => '✅ Allow',
             ],
         ]);
 
@@ -86,14 +86,14 @@ final class SafeGuardApprovalControllerReplayTest extends ControllerReplayE2eTes
 
         // Terminal completion must match the SAME tool_call_id that requested human input.
         // Pre-fix bug: suspension + terminal ToolCallResult shared ExecuteToolCall idempotency
-        // key so RunMessageProcessor dropped the terminal result after Allow once.
+        // key so RunMessageProcessor dropped the terminal result after Allow.
         $writeCompleted = array_values(array_filter(
             $byType['tool_execution.completed'] ?? [],
             static fn (array $e): bool => ($e['payload']['tool_call_id'] ?? null) === $toolCallId,
         ));
         $this->assertNotEmpty(
             $writeCompleted,
-            'Allow once must deliver terminal tool_execution.completed for the suspended write call. '
+            'Allow must deliver terminal tool_execution.completed for the suspended write call. '
             .$this->collectDiagnostics($all),
         );
         $this->assertArrayNotHasKey('tool_execution.failed', $byType, $this->collectDiagnostics($all));
@@ -133,7 +133,7 @@ final class SafeGuardApprovalControllerReplayTest extends ControllerReplayE2eTes
             'runId' => $this->runId,
             'payload' => [
                 'question_id' => $questionId,
-                'answer' => '❌ Block',
+                'answer' => '❌ Deny',
             ],
         ]);
 

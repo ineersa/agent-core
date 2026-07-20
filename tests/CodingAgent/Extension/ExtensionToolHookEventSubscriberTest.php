@@ -33,7 +33,7 @@ final class ExtensionToolHookEventSubscriberTest extends TestCase
                 return ToolCallDecisionDTO::requireApproval(
                     prompt: 'Allow rm?',
                     questionId: 'q-1',
-                    schema: ['type' => 'string', 'enum' => ['✅ Allow once', '❌ Block']],
+                    schema: ['type' => 'string', 'enum' => ['✅ Allow', '❌ Deny']],
                     details: ['operation_key' => 'bash:rm'],
                 );
             }
@@ -91,7 +91,7 @@ final class ExtensionToolHookEventSubscriberTest extends TestCase
                 return ToolCallDecisionDTO::requireApproval(
                     prompt: 'Allow?',
                     questionId: 'q-allow',
-                    schema: ['type' => 'string', 'enum' => ['✅ Allow once']],
+                    schema: ['type' => 'string', 'enum' => ['✅ Allow']],
                     details: [],
                 );
             }
@@ -115,7 +115,7 @@ final class ExtensionToolHookEventSubscriberTest extends TestCase
 
         $answer = new ToolCallHumanInputAnswerDTO(
             questionId: 'q-allow',
-            answer: '✅ Allow once',
+            answer: '✅ Allow',
             continuationRef: [
                 'run_id' => 'run-1',
                 'turn_no' => 1,

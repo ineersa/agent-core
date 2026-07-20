@@ -176,7 +176,7 @@ TUI RuntimeEventPoller::poll()                 (Tui)
   → calls TickPollListener::handleHumanInputRequested()
     → resolveQuestionKind() from ui_kind (text/confirm/choice/approval)
     → buildChoices() from payload choices (or schema.enum fallback)
-    → builds QuestionRequest with header, default, allowOther always-on
+    → builds QuestionRequest with header, default, allowOther (false for tool_call)
     → enqueues in QuestionCoordinator
     → TickPollListener tick callback opens QuestionController overlay
   │
@@ -211,8 +211,10 @@ AnswerHumanHandler → ApplyCommandHandler       (AgentCore)
   supplies raw JSON Schema — the `parametersJsonSchema` exposed to the model
   contains only simple string arrays for choices, never nested JSON Schema
   objects.
-- **`allowOther` is always-on for the HITL path.** The "Type your answer"
-  escape hatch is appended to Choice overlays automatically.
+- **`allowOther` is model-turn only.** Path B (`ask_human` / `continuation_kind=model_turn`)
+  keeps the "Type your answer" free-form escape hatch. Path A tool-call
+  approvals (`continuation_kind=tool_call`) set `allowOther=false` so the
+  schema enum is exhaustive.
 
 ## Path A: From RequireApproval to tool execution (generic flow)
 
@@ -242,7 +244,7 @@ AnswerHumanHandler → ApplyCommandHandler       (AgentCore)
 
 ### Answer outcome (extension-owned)
 
-1. **`onApprovalAnswered($context)`** — side-effects (e.g. SafeGuard policy write).
+1. **`onApprovalAnswered($context)`** — optional side-effects (SafeGuard: documented no-op).
 2. **`resolveApprovalAnswer($context)`** — `Allow` / `Block` / `ReplaceResult`.
 
 The extension owns the complete answer vocabulary and outcome mapping.
@@ -256,7 +258,7 @@ The extension owns the complete answer vocabulary and outcome mapping.
 | Answer location | Controller or worker process — writes to shared SQLite |
 | Polling seam | `ExtensionToolHookEventSubscriber::handleRequireApproval()` |
 | Crash/redelivery | Idempotent re-attach via `findByRequestId()` with deterministic requestId |
-| Extension-specific persistence | Handled by the extension's `onApprovalAnswered()` (e.g. SafeGuardPolicyWriter) |
+| Extension-specific persistence | Optional via `onApprovalAnswered()` (SafeGuard uses a documented no-op; static allowlists come from settings) |
 | No timeout / no TTL | Tool worker blocks indefinitely until answered; run stays halted
 
 ## Path B: Agent-driven questions (ask_human)
@@ -350,7 +352,7 @@ LLM calls ask_human (e.g.: kind=choice, choices=["React", "Vue", "Svelte"])
   │         - source: AgentCore
   │         - kind: from ui_kind (text/confirm/choice)
   │         - prompt, schema, header, default from payload
-  │         - allowOther: true (always-on for HITL path)
+  │         - allowOther: true for model_turn; false for tool_call
   │         - transcript: true (recorded in session transcript)
   │       → enqueues in QuestionCoordinator with answer and
   │         cancel callbacks dispatching answer_human commands
@@ -404,10 +406,11 @@ and routes the text to `QuestionCoordinator::answer()`.
 Confirm/approval questions do NOT get the escape hatch — yes/no is
 exhaustive for boolean questions.
 
-The escape hatch is always-on for the AgentCore HITL path (`allowOther`
-is hardcoded to `true` in `handleHumanInputRequested()`). The ToolQuestion
-path (`handleToolQuestionRequested()`) keeps `allowOther: false` — its
-enum or boolean schemas are exhaustive.
+The escape hatch is on for model-turn AgentCore HITL (`allowOther=true` when
+`continuation_kind` is not `tool_call`). Tool-call approvals
+(`continuation_kind=tool_call`, e.g. SafeGuard) set `allowOther=false` so the
+schema enum is exhaustive. The ToolQuestion path
+(`handleToolQuestionRequested()`) also keeps `allowOther: false`.
 
 ### Architecture boundary
 
@@ -449,7 +452,7 @@ listeners (`handleToolQuestionRequested` vs. `handleHumanInputRequested`).
 | `choices` | `list<QuestionOption>` | `[]` | Structured options for choice questions |
 | `default` | `mixed` | `null` | Default answer value. Pass-through only in v1 — the widget does NOT auto-select it. |
 | `header` | `?string` | `null` | Optional header text above the question overlay |
-| `allowOther` | `bool` | `true` | For AgentCore HITL questions: always-on (appends "Type your answer" to Choice overlays). For ToolQuestion/TUI path: `false` (enum/boolean schemas are exhaustive). |
+| `allowOther` | `bool` | `true` (model_turn) / `false` (tool_call) | Model-turn HITL keeps free-form. Tool-call approvals and ToolQuestion path keep exhaustive enums (`allowOther=false`). |
 | `runId` | `?string` | `null` | Associated run ID (AgentCore questions only) |
 | `questionId` | `?string` | `null` | Runtime question ID from the event (AgentCore only) |
 | `toolCallId` | `?string` | `null` | Tool call that triggered the question |
@@ -577,14 +580,15 @@ interface ApprovalAnswerHookInterface
 }
 ```
 
-`onApprovalAnswered()` is called first for side-effects (e.g., persisting "Always allow"
-to settings). `resolveApprovalAnswer()` is called after and returns the tool-execution
+`onApprovalAnswered()` is called first for optional side-effects. SafeGuard's
+implementation is a documented no-op (no interactive Always-allow persistence).
+`resolveApprovalAnswer()` is called after and returns the tool-execution
 decision: `Allow` (handler runs), `Block` (denied with extension-supplied reason), or
 `ReplaceResult`. The extension owns the complete answer→outcome mapping.
 
 The `ApprovalAnswerContextDTO` provides:
 - `questionId` — the question ID from the RequireApproval return
-- `answer` — the raw answer string (e.g. `"Allow once"`)
+- `answer` — the raw answer string (e.g. `"✅ Allow"`)
 - `toolName` — the tool that was intercepted
 - `approvalContext` — the full `details` array from the original RequireApproval
 
@@ -631,7 +635,6 @@ whether to allow, block, or require user approval.
 | `SafeGuardToolCallHook` | Core hook implementing both `ToolCallHookInterface` and `ApprovalAnswerHookInterface` |
 | `SafeGuardClassifier` | Classifies tool calls into decision kinds (WriteOutsideCwd, Destructive, etc.) |
 | `SafeGuardPolicy` | In-memory policy loaded from YAML config |
-| `SafeGuardPolicyWriter` | Persists "Always allow" patterns to `.hatfield/settings.yaml` |
 | `SafeGuardConfig` | Config DTO (`enabled`, `toolAlias`, `autoDenyInNoninteractive`) |
 
 ### Classification
@@ -667,7 +670,7 @@ castor run:agent
 - `hasApprovalChannel()` returns `true`
 - `auto_deny_in_noninteractive` is irrelevant (user is present)
 - SafeGuard returns `RequireApproval` for relaxable violations
-- The TUI shows the approval overlay with ✅ / 🔐 / ❌ options
+- The TUI shows the approval overlay with ✅ Allow / ❌ Deny (no free-form)
 - User selects → answer_human dispatched → hook receives answer
 
 #### 2. Headless approval-capable (controller + parent relay)
@@ -703,32 +706,20 @@ castor run:agent
 
 ### Answer values (Path A — SafeGuard)
 
-SafeGuard uses three canonical answer values (defined in the schema `enum`):
+SafeGuard uses exactly two answer values (schema `enum`):
 
-| Canonical value | Display label | Behavior |
-|----------------|--------------|----------|
-| `Allow once` | ✅ Allow once | Approves the exact suspended tool call. AgentCore re-dispatches the stored `ExecuteToolCall` with a typed internal answer; SafeGuard maps Allow and the real handler runs. One-shot — no process-local tracker. |
-| `Always allow` | 🔐 Always allow | Same as "Allow once" PLUS persists the pattern to `.hatfield/settings.yaml` via `SafeGuardPolicyWriter::addAllowPattern()`. Future matching tool calls across sessions are allowed. |
-| `Deny` | ❌ Deny | Denies the operation. The resumed call returns a blocked tool result to the model. |
+| Display label | Behavior |
+|--------------|----------|
+| ✅ Allow | Approves the exact suspended tool call. AgentCore re-dispatches the stored `ExecuteToolCall` with a typed internal answer; SafeGuard maps Allow and the real handler runs. One-shot. |
+| ❌ Deny | Denies the operation. The resumed call returns a blocked tool result to the model. |
+
+There is **no interactive Always-allow**. Future allowlisting is configured only via
+static settings (`allow_command_patterns`, `allow_write_outside_cwd`, etc.).
 
 **Fail-closed behavior**: cancel/ESC maps to cancelled (`Cancelled by user` /
-`cancel`) and blocks the tool. Unrecognized answers fail closed as
-`safeguard_unknown_answer` without echoing the raw answer.
-
-### Policy persistence
-
-When the user chooses "Always allow", `SafeGuardPolicyWriter` persists the pattern:
-
-| Category | Persists to | Settings key |
-|----------|-----------|-------------|
-| `destructive`, `dangerous_git`, `sensitive_info`, `custom_dangerous` | `extensions.settings.safe_guard.allow_command_patterns` | List of command strings |
-| `write_outside_cwd` | `extensions.settings.safe_guard.allow_write_outside_cwd` | List of absolute paths |
-
-Protected reads and hard-blocked operations are not persistable.
-
-The writer uses **atomic write** (write to `.tmp.<pid>`, then rename) to avoid
-partial writes. The settings file is loaded via Symfony YAML; the existing content
-is preserved and the pattern is appended only if not already present (idempotent).
+`cancel`) and blocks the tool. Unrecognized free-form answers fail closed as
+`safeguard_unknown_answer` without echoing the raw answer. The TUI does not offer
+"Type your answer" for `continuation_kind=tool_call`.
 
 ### Settings
 
@@ -761,8 +752,9 @@ SafeGuard is enabled by default via `extensions.enabled` in `config/hatfield.def
   `SelectListWidget` does not pre-select it. Follow-up work needed for
   widget-level default support.
 
-- **`allowOther` is always-on** for the AgentCore HITL path (hardcoded `true`
-  in `handleHumanInputRequested()`) and not model-controllable. The model sees
+- **`allowOther` is model-turn only** for AgentCore HITL: `true` unless
+  `continuation_kind=tool_call` (forces `false` in
+  `handleHumanInputRequested()`). Not model-controllable. The model sees
   no `allow_other` parameter in the tool definition.
 
 - **No secret/masking.** The `secret` field was briefly present in early HITL

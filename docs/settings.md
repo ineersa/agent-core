@@ -1468,12 +1468,13 @@ SafeGuard applies policy decisions and, for relaxable violations (e.g.
 write outside CWD, destructive commands), prompts the user for approval
 via the HITL question system when an approval channel is available.
 
-In interactive TUI mode the user sees an approval overlay with three options:
+In interactive TUI mode the user sees an approval overlay with two options:
 
-- **Allow once** — approve the current operation for this session only
-- **Always allow** — approve AND persist the pattern to `.hatfield/settings.yaml`
-  so the operation is allowed in future sessions
-- **Deny** — block the operation immediately
+- **✅ Allow** — approve the exact suspended tool call once (no extra LLM turn)
+- **❌ Deny** — block the operation immediately
+
+There is no interactive Always-allow. Persist allowlists only via static settings
+(`allow_command_patterns`, `allow_write_outside_cwd`, etc.).
 
 In headless/noninteractive contexts with `auto_deny_in_noninteractive: true`
 (the default), relaxable violations are auto-blocked without prompting.

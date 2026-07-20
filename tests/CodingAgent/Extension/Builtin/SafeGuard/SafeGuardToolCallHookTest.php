@@ -7,14 +7,13 @@ namespace Ineersa\CodingAgent\Tests\Extension\Builtin\SafeGuard;
 use Ineersa\CodingAgent\Extension\Builtin\SafeGuard\Classifier\SafeGuardClassifier;
 use Ineersa\CodingAgent\Extension\Builtin\SafeGuard\Policy\SafeGuardPolicy;
 use Ineersa\CodingAgent\Extension\Builtin\SafeGuard\SafeGuardConfig;
-use Ineersa\CodingAgent\Extension\Builtin\SafeGuard\SafeGuardPolicyWriter;
 use Ineersa\CodingAgent\Extension\Builtin\SafeGuard\SafeGuardToolCallHook;
 use Ineersa\Hatfield\ExtensionApi\Approval\ApprovalAnswerContextDTO;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallContextDTO;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallDecisionKindEnum;
 use PHPUnit\Framework\TestCase;
 
-/** SafeGuard classification + approval answer mapping (no process-local tracker). */
+/** SafeGuard classification + approval answer mapping (no interactive Always-allow). */
 final class SafeGuardToolCallHookTest extends TestCase
 {
     private SafeGuardToolCallHook $hook;
@@ -29,7 +28,6 @@ final class SafeGuardToolCallHookTest extends TestCase
         $this->hook = new SafeGuardToolCallHook(
             classifier: SafeGuardClassifier::fromConfig($config),
             policy: new SafeGuardPolicy(),
-            policyWriter: null,
             cwd: $this->cwd,
             autoDenyInNoninteractive: false,
         );
@@ -54,13 +52,13 @@ final class SafeGuardToolCallHookTest extends TestCase
         $this->assertSame(ToolCallDecisionKindEnum::RequireApproval, $dto->kind);
     }
 
-    public function testBashDestructiveRequiresApproval(): void
+    public function testBashDestructiveRequiresApprovalWithAllowDenyOnly(): void
     {
         putenv('HATFIELD_APPROVAL_CHANNEL=controller');
         $dto = $this->hook->onToolCall(new ToolCallContextDTO('c3', 'bash', ['command' => 'rm -rf /tmp/build'], 0));
         $this->assertSame(ToolCallDecisionKindEnum::RequireApproval, $dto->kind);
         $this->assertNotSame('', (string) ($dto->details['question_id'] ?? ''));
-        $this->assertSame(['✅ Allow once', '📌 Always allow', '❌ Block'], $dto->details['schema']['enum'] ?? null);
+        $this->assertSame(['✅ Allow', '❌ Deny'], $dto->details['schema']['enum'] ?? null);
     }
 
     public function testWriteOutsideCwdRequiresApproval(): void
@@ -70,15 +68,15 @@ final class SafeGuardToolCallHookTest extends TestCase
         $this->assertSame(ToolCallDecisionKindEnum::RequireApproval, $dto->kind);
     }
 
-    public function testResolveApprovalAnswerAllowOnceReturnsAllow(): void
+    public function testResolveApprovalAnswerAllowReturnsAllow(): void
     {
-        $decision = $this->hook->resolveApprovalAnswer(new ApprovalAnswerContextDTO('q', '✅ Allow once', 'bash', ['category' => 'destructive']));
+        $decision = $this->hook->resolveApprovalAnswer(new ApprovalAnswerContextDTO('q', '✅ Allow', 'bash', ['category' => 'destructive']));
         $this->assertSame(ToolCallDecisionKindEnum::Allow, $decision->kind);
     }
 
     public function testResolveApprovalAnswerDenyReturnsBlock(): void
     {
-        $decision = $this->hook->resolveApprovalAnswer(new ApprovalAnswerContextDTO('q', '❌ Block', 'bash', ['category' => 'destructive']));
+        $decision = $this->hook->resolveApprovalAnswer(new ApprovalAnswerContextDTO('q', '❌ Deny', 'bash', ['category' => 'destructive']));
         $this->assertSame(ToolCallDecisionKindEnum::Block, $decision->kind);
         $this->assertSame('safeguard_denied', $decision->reason);
     }
@@ -90,41 +88,16 @@ final class SafeGuardToolCallHookTest extends TestCase
         $this->assertSame('safeguard_cancelled', $decision->reason);
     }
 
-    public function testAlwaysAllowPersistsPatternWithoutTracker(): void
+    public function testOnApprovalAnsweredIsNoOp(): void
     {
-        $tmpDir = sys_get_temp_dir().'/sg_hook_'.uniqid();
-        mkdir($tmpDir, 0o755, true);
-        $settingsPath = $tmpDir.'/settings.yaml';
-        try {
-            putenv('HATFIELD_APPROVAL_CHANNEL=controller');
-            $config = new SafeGuardConfig(autoDenyInNoninteractive: false);
-            $hook = new SafeGuardToolCallHook(
-                classifier: SafeGuardClassifier::fromConfig($config),
-                policy: SafeGuardPolicy::fromConfig($config),
-                policyWriter: new SafeGuardPolicyWriter($settingsPath),
-                cwd: $this->cwd,
-                autoDenyInNoninteractive: false,
-            );
-            $dto = $hook->onToolCall(new ToolCallContextDTO('c5', 'bash', ['command' => 'rm -rf /tmp/build'], 0));
-            $this->assertSame(ToolCallDecisionKindEnum::RequireApproval, $dto->kind);
-            $this->assertArrayNotHasKey('operation_key', $dto->details);
-            $hook->onApprovalAnswered(new ApprovalAnswerContextDTO(
-                (string) $dto->details['question_id'],
-                '📌 Always allow',
-                'bash',
-                [
-                    'category' => 'destructive',
-                    'command' => 'rm -rf /tmp/build',
-                    'tool_name' => 'bash',
-                ],
-            ));
-            $this->assertFileExists($settingsPath);
-            $this->assertStringContainsString('rm -rf /tmp/build', (string) file_get_contents($settingsPath));
-        } finally {
-            @unlink($settingsPath);
-            @rmdir($tmpDir);
-            putenv('HATFIELD_APPROVAL_CHANNEL');
-        }
+        // Must not throw and must not mutate settings (writer removed).
+        $this->hook->onApprovalAnswered(new ApprovalAnswerContextDTO(
+            'q',
+            '✅ Allow',
+            'bash',
+            ['category' => 'destructive', 'command' => 'rm -rf /tmp/build'],
+        ));
+        $this->addToAssertionCount(1);
     }
 
     public function testAutoDenyBlocksWhenNoApprovalChannel(): void
@@ -154,7 +127,6 @@ final class SafeGuardToolCallHookTest extends TestCase
         return new SafeGuardToolCallHook(
             classifier: SafeGuardClassifier::fromConfig($config),
             policy: new SafeGuardPolicy(),
-            policyWriter: null,
             cwd: $this->cwd,
             autoDenyInNoninteractive: $autoDeny,
         );

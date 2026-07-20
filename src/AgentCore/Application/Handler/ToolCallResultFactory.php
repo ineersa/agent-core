@@ -17,7 +17,7 @@ use Ineersa\AgentCore\Domain\Tool\ToolResult;
  * they share the same ExecuteToolCall envelope. Suspension then terminal
  * completion for one tool call are two valid sequential run_control messages;
  * reusing ExecuteToolCall::idempotencyKey() marks the first handled and drops
- * the second (live stuck-run after Allow once).
+ * the second (live stuck-run after Allow).
  */
 final class ToolCallResultFactory
 {

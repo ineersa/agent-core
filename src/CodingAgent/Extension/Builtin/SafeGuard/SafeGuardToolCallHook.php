@@ -27,13 +27,16 @@ use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallHookInterface;
  *
  * Implements ApprovalAnswerHookInterface to receive the human's answer and
  * resolve it into a tool-execution decision. Answer labels carry icon glyphs
- * (e.g. '✅ Allow once') and are reverse-mapped to canonical actions:
- * - allow_once / always_allow → allow() — exact original tool handler runs
+ * (e.g. '✅ Allow') and are reverse-mapped to canonical actions:
+ * - allow → allow() — exact original tool handler runs
  * - deny → block('safeguard_denied', ...) — denied
  * - cancel (ESC / user cancel) → block('safeguard_cancelled', ...) — cancelled
- * - 'Always allow' also persists the pattern to policy file via onApprovalAnswered.
  *
- * Authorization for Allow once is durable on the resumed ExecuteToolCall
+ * onApprovalAnswered() is intentionally a no-op: interactive "Always allow"
+ * persistence was removed. Static settings allowlists still apply via
+ * SafeGuardPolicy/config.
+ *
+ * Authorization for Allow is durable on the resumed ExecuteToolCall
  * (typed ToolCallHumanInputAnswerDTO), not process-local tracker state.
  */
 final readonly class SafeGuardToolCallHook implements ToolCallHookInterface, ApprovalAnswerHookInterface
@@ -44,15 +47,12 @@ final readonly class SafeGuardToolCallHook implements ToolCallHookInterface, App
      * The display labels (values) go into the waiting_human schema enum so the
      * TUI renders icon-bearing buttons. resolveApprovalAnswer() reverse-maps
      * the label back to the canonical action for tool-execution decisions.
-     * onApprovalAnswered() also reverse-maps so side effects (persistence)
-     * use canonical values — icon glyphs never leak into settings.yaml or logs.
      *
      * @var array<string, string>
      */
     private const array APPROVAL_OPTIONS = [
-        'allow_once' => '✅ Allow once',
-        'always_allow' => '📌 Always allow',
-        'deny' => '❌ Block',
+        'allow' => '✅ Allow',
+        'deny' => '❌ Deny',
     ];
 
     /**
@@ -70,7 +70,6 @@ final readonly class SafeGuardToolCallHook implements ToolCallHookInterface, App
     public function __construct(
         private SafeGuardClassifier $classifier,
         private SafeGuardPolicy $policy,
-        private ?SafeGuardPolicyWriter $policyWriter,
         private string $cwd,
         private bool $autoDenyInNoninteractive = true,
         private string $settingsToolName = 'settings',
@@ -132,14 +131,6 @@ final readonly class SafeGuardToolCallHook implements ToolCallHookInterface, App
                 hash('sha256', \sprintf('%s|%s', $context->runId ?? '', $context->toolCallId)),
             );
 
-            // Settings mutations are one-shot only — never offer Always allow.
-            $options = $settingsMutation
-                ? [
-                    self::APPROVAL_OPTIONS['allow_once'],
-                    self::APPROVAL_OPTIONS['deny'],
-                ]
-                : array_values(self::APPROVAL_OPTIONS);
-
             $categoryLabel = $settingsMutation ? 'settings mutation' : $this->friendlyCategory($decision->kind);
 
             return ToolCallDecisionDTO::requireApproval(
@@ -147,7 +138,7 @@ final readonly class SafeGuardToolCallHook implements ToolCallHookInterface, App
                 questionId: $questionId,
                 schema: [
                     'type' => 'string',
-                    'enum' => $options,
+                    'enum' => array_values(self::APPROVAL_OPTIONS),
                 ],
                 details: [
                     'category' => $decision->kind->value,
@@ -165,23 +156,8 @@ final readonly class SafeGuardToolCallHook implements ToolCallHookInterface, App
 
     public function onApprovalAnswered(ApprovalAnswerContextDTO $context): void
     {
-        // Reverse-map the icon-bearing label to the canonical action so side
-        // effects (Always-allow persistence) use canonical values — icon glyphs
-        // never leak into settings.yaml or logs.
-        $canonical = array_search($context->answer, self::APPROVAL_OPTIONS, true);
-
-        if ('always_allow' !== $canonical) {
-            // Allow once / deny / cancel / unknown: no durable policy write.
-            // Exact-call authorization is owned by the resumed ExecuteToolCall.
-            return;
-        }
-
-        $category = (string) ($context->approvalContext['category'] ?? '');
-        $pattern = $this->resolvePatternFromAnswer($category, $context);
-
-        if (null !== $pattern && null !== $this->policyWriter) {
-            $this->policyWriter->addAllowPattern($category, $pattern);
-        }
+        // Documented no-op: interactive Always-allow persistence was removed.
+        // Static allowlists still apply through SafeGuardPolicy/config load.
     }
 
     public function resolveApprovalAnswer(ApprovalAnswerContextDTO $context): ToolCallDecisionDTO
@@ -189,11 +165,11 @@ final readonly class SafeGuardToolCallHook implements ToolCallHookInterface, App
         $answer = $context->answer;
 
         // Reverse-map icon-bearing label to canonical action.
-        // The TUI sends labels with emoji icons (e.g. '✅ Allow once');
+        // The TUI sends labels with emoji icons (e.g. '✅ Allow');
         // we map back to the canonical action for the decision.
         $canonical = array_search($answer, self::APPROVAL_OPTIONS, true);
 
-        if ('allow_once' === $canonical || 'always_allow' === $canonical) {
+        if ('allow' === $canonical) {
             return ToolCallDecisionDTO::allow();
         }
 
@@ -355,29 +331,5 @@ final readonly class SafeGuardToolCallHook implements ToolCallHookInterface, App
                 'denied' => true,
             ],
         );
-    }
-
-    /**
-     * Resolve the pattern to persist from the answer context.
-     *
-     * For command-based categories, uses the command text.
-     * For path-based categories, uses the path text.
-     *
-     * @return string|null null if the pattern cannot be determined
-     */
-    private function resolvePatternFromAnswer(string $category, ApprovalAnswerContextDTO $context): ?string
-    {
-        $command = $context->approvalContext['command'] ?? null;
-        $path = $context->approvalContext['path'] ?? null;
-
-        if (\is_string($command) && '' !== $command) {
-            return $command;
-        }
-
-        if (\is_string($path) && '' !== $path) {
-            return $path;
-        }
-
-        return null;
     }
 }

@@ -7,15 +7,15 @@ namespace Ineersa\CodingAgent\Tests\Runtime\Controller\E2E;
 use PHPUnit\Framework\Attributes\Group;
 
 /**
- * Live proof: SafeGuard Allow once must resume the exact write call and deliver
+ * Live proof: SafeGuard Allow must resume the exact write call and deliver
  * terminal tool_execution.completed for the same tool_call_id.
  *
  * Reproduces the stuck-run topology where suspension and terminal ToolCallResult
  * previously shared ExecuteToolCall::idempotencyKey(), so RunMessageProcessor
- * dropped the terminal result after human_input Allow once.
+ * dropped the terminal result after human_input Allow.
  */
 #[Group('llm-real')]
-final class SafeGuardAllowOnceLiveE2eTest extends ControllerE2eTestCase
+final class SafeGuardAllowLiveE2eTest extends ControllerE2eTestCase
 {
     private string $targetOutsidePath = '';
 
@@ -32,7 +32,7 @@ final class SafeGuardAllowOnceLiveE2eTest extends ControllerE2eTestCase
         parent::tearDown();
     }
 
-    public function testWriteOutsideCwdAllowOnceCompletesExactToolCall(): void
+    public function testWriteOutsideCwdAllowCompletesExactToolCall(): void
     {
         $this->spawnController();
         $this->waitForEvent('runtime.ready', $this->liveControllerReadyTimeout());
@@ -45,8 +45,8 @@ final class SafeGuardAllowOnceLiveE2eTest extends ControllerE2eTestCase
             'type' => 'start_run',
             'payload' => [
                 // Unique first-user prompt tag for llama-proxy cache key isolation.
-                'prompt' => '[llm-real:safeguard-allow-once-write] Use exactly one tool call: tool name `write` with arguments '
-                    .'`{ "path": "'.$relativePath.'", "content": "live-allow-once" }`. '
+                'prompt' => '[llm-real:safeguard-allow-write] Use exactly one tool call: tool name `write` with arguments '
+                    .'`{ "path": "'.$relativePath.'", "content": "live-allow" }`. '
                     .'Do not use any other tool. After the tool succeeds, answer exactly `done`.',
             ],
         ]);
@@ -75,7 +75,7 @@ final class SafeGuardAllowOnceLiveE2eTest extends ControllerE2eTestCase
             'runId' => $this->runId,
             'payload' => [
                 'question_id' => $questionId,
-                'answer' => '✅ Allow once',
+                'answer' => '✅ Allow',
             ],
         ]);
 
@@ -94,17 +94,17 @@ final class SafeGuardAllowOnceLiveE2eTest extends ControllerE2eTestCase
         ));
         $this->assertNotEmpty(
             $matchingCompleted,
-            'Allow once must complete the exact suspended write tool_call_id. '
+            'Allow must complete the exact suspended write tool_call_id. '
             .$this->collectDiagnostics($all),
         );
 
         $this->assertFileExists($this->targetOutsidePath, $this->collectDiagnostics($all));
-        $this->assertSame('live-allow-once', trim((string) file_get_contents($this->targetOutsidePath)));
+        $this->assertSame('live-allow', trim((string) file_get_contents($this->targetOutsidePath)));
     }
 
     protected function tempDirPrefix(): string
     {
-        return 'test-sg-allow-once-live';
+        return 'test-sg-allow-live';
     }
 
     protected function controllerSubprocessEnv(): array

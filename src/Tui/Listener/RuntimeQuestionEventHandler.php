@@ -77,6 +77,9 @@ final class RuntimeQuestionEventHandler
         $kind = $this->resolveQuestionKind($p);
         $choices = $this->buildChoices($p, $schema);
         $header = $this->resolveQuestionHeader($sessionState, $runId, $p, 'asks');
+        // Exhaustive tool-call approval enums (SafeGuard, etc.) must not expose
+        // free-form "Type your answer". Model-turn ask_human keeps free-form.
+        $allowOther = ($p['continuation_kind'] ?? null) !== 'tool_call';
 
         $request = new QuestionRequest(
             requestId: $requestId,
@@ -87,7 +90,7 @@ final class RuntimeQuestionEventHandler
             choices: $choices,
             header: $header,
             default: $p['default'] ?? null,
-            allowOther: true,
+            allowOther: $allowOther,
             runId: $runId,
             questionId: $questionId,
             toolCallId: (string) ($p['tool_call_id'] ?? ''),

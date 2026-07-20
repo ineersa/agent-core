@@ -35,7 +35,7 @@ use Symfony\Component\EventDispatcher\EventSubscriberInterface;
  * answer_human, ApplyCommandHandler requeues the exact ExecuteToolCall with a typed
  * internal answer. On resume, this subscriber validates correlation, invokes
  * ApprovalAnswerHookInterface for ONLY the originating hook, then continues remaining
- * hooks. Allow once means the real handler runs for the original call — no extra LLM turn.
+ * hooks. Allow means the real handler runs for the original call — no extra LLM turn.
  *
  * This subscriber contains ZERO SafeGuard-specific knowledge. Any extension implementing
  * ApprovalAnswerHookInterface can drive its own vocabulary/outcome mapping.

@@ -180,7 +180,7 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
 
         $answer = new \Ineersa\AgentCore\Domain\Tool\ToolCallHumanInputAnswerDTO(
             questionId: 'q-r',
-            answer: 'Allow once',
+            answer: '✅ Allow',
             continuationRef: ['run_id' => 'run-r', 'turn_no' => 1, 'step_id' => 'step-r', 'tool_call_id' => 'call-r'],
             requestPayload: ['question_id' => 'q-r', 'prompt' => 'Allow?'],
         );
@@ -224,7 +224,7 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
             attempt: 1,
             idempotencyKey: 'human-q-h2',
             kind: \Ineersa\AgentCore\Domain\Command\CoreCommandKind::HumanResponse,
-            payload: ['question_id' => 'q-h2', 'answer' => 'Allow once'],
+            payload: ['question_id' => 'q-h2', 'answer' => '✅ Allow'],
         ), $state);
 
         $this->assertSame(RunStatus::Running, $result->nextState?->status);
@@ -250,7 +250,7 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
             'q-h2',
             new \Ineersa\AgentCore\Domain\Tool\ToolCallHumanInputAnswerDTO(
                 questionId: 'q-h2',
-                answer: 'Allow once',
+                answer: '✅ Allow',
                 continuationRef: ['run_id' => 'run-h2', 'turn_no' => 2, 'step_id' => 'step-h2', 'tool_call_id' => 'call-h2'],
                 requestPayload: ['question_id' => 'q-h2', 'prompt' => 'Allow id?'],
             ),
@@ -259,7 +259,7 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
         $this->assertSame('call-h2', $same[0]->toolCallId);
 
         // Durable redrive by question_id + answer after state already advanced.
-        $redrive = $collector2->redriveHumanInputAnswer('run-h2', 2, 'step-h2', 'q-h2', 'Allow once');
+        $redrive = $collector2->redriveHumanInputAnswer('run-h2', 2, 'step-h2', 'q-h2', '✅ Allow');
         $this->assertCount(1, $redrive);
         $this->assertSame('call-h2', $redrive[0]->toolCallId);
     }
@@ -310,7 +310,7 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
             attempt: 1,
             idempotencyKey: 'human-q-x',
             kind: \Ineersa\AgentCore\Domain\Command\CoreCommandKind::HumanResponse,
-            payload: ['question_id' => 'q-x', 'answer' => 'Allow once'],
+            payload: ['question_id' => 'q-x', 'answer' => '✅ Allow'],
         ), $state);
         $this->assertSame(RunStatus::WaitingHuman, $result->nextState?->status);
         $this->assertSame(RunEventTypeEnum::AgentCommandRejected->value, $result->events[0]->type ?? null);
@@ -514,7 +514,7 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
             attempt: 1,
             idempotencyKey: 'human-q-pc',
             kind: \Ineersa\AgentCore\Domain\Command\CoreCommandKind::HumanResponse,
-            payload: ['question_id' => 'q-pc', 'answer' => 'Allow once'],
+            payload: ['question_id' => 'q-pc', 'answer' => '✅ Allow'],
         );
 
         try {
