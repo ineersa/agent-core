@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Runtime\Controller\E2E;
 
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\Attributes\Group;
 
 /**
@@ -13,23 +14,33 @@ use PHPUnit\Framework\Attributes\Group;
  * Reproduces the stuck-run topology where suspension and terminal ToolCallResult
  * previously shared ExecuteToolCall::idempotencyKey(), so RunMessageProcessor
  * dropped the terminal result after human_input Allow.
+ *
+ * Isolation layout keeps llama-proxy cache keys stable across runs:
+ * - parent creates unique isolation root under var/tmp/
+ * - controller cwd is nested fixed `$isolationRoot/cwd`
+ * - write target is constant relative path `../sg-live-allow.txt` → isolation root
+ * Prompt text therefore never embeds sessionId or random temp paths.
  */
 #[Group('llm-real')]
 final class SafeGuardAllowLiveE2eTest extends ControllerE2eTestCase
 {
-    private string $targetOutsidePath = '';
+    private string $isolationRoot = '';
 
-    protected function setUp(): void
-    {
-        parent::setUp();
-        $this->targetOutsidePath = \dirname($this->tempDir).'/sg-live-'.$this->sessionId.'.txt';
-        @unlink($this->targetOutsidePath);
-    }
+    private string $targetOutsidePath = '';
 
     protected function tearDown(): void
     {
-        @unlink($this->targetOutsidePath);
+        if ('' !== $this->targetOutsidePath) {
+            @unlink($this->targetOutsidePath);
+        }
+
+        // Parent removes nested controller cwd ($this->tempDir) and process trees.
         parent::tearDown();
+
+        if ('' !== $this->isolationRoot) {
+            TestDirectoryIsolation::removeDirectory($this->isolationRoot);
+            $this->isolationRoot = '';
+        }
     }
 
     public function testWriteOutsideCwdAllowCompletesExactToolCall(): void
@@ -37,7 +48,8 @@ final class SafeGuardAllowLiveE2eTest extends ControllerE2eTestCase
         $this->spawnController();
         $this->waitForEvent('runtime.ready', $this->liveControllerReadyTimeout());
 
-        $relativePath = '../sg-live-'.$this->sessionId.'.txt';
+        // Constant relative path: resolves to isolation root, never embeds session/uuid.
+        $relativePath = '../sg-live-allow.txt';
         $startCmdId = 'cmd_start_'.uniqid();
         $this->writeCommand([
             'v' => 1,
@@ -45,6 +57,7 @@ final class SafeGuardAllowLiveE2eTest extends ControllerE2eTestCase
             'type' => 'start_run',
             'payload' => [
                 // Unique first-user prompt tag for llama-proxy cache key isolation.
+                // Path and content are fixed so warm gate runs add zero cache entries.
                 'prompt' => '[llm-real:safeguard-allow-write] Use exactly one tool call: tool name `write` with arguments '
                     .'`{ "path": "'.$relativePath.'", "content": "live-allow" }`. '
                     .'Do not use any other tool. After the tool succeeds, answer exactly `done`.',
@@ -100,6 +113,23 @@ final class SafeGuardAllowLiveE2eTest extends ControllerE2eTestCase
 
         $this->assertFileExists($this->targetOutsidePath, $this->collectDiagnostics($all));
         $this->assertSame('live-allow', trim((string) file_get_contents($this->targetOutsidePath)));
+    }
+
+    protected function createIsolatedProjectDir(): void
+    {
+        // Parent setUp already assigned a unique project temp dir to $this->tempDir.
+        // Keep that as isolation root, then re-point tempDir at a nested fixed cwd so
+        // the controller's absolute cwd is unique while the user prompt path stays
+        // the constant relative string `../sg-live-allow.txt`.
+        $this->isolationRoot = $this->tempDir;
+        $nestedCwd = $this->isolationRoot.'/cwd';
+        TestDirectoryIsolation::ensureDirectory($nestedCwd, 0o777);
+        $this->tempDir = $nestedCwd;
+
+        parent::createIsolatedProjectDir();
+
+        $this->targetOutsidePath = $this->isolationRoot.'/sg-live-allow.txt';
+        @unlink($this->targetOutsidePath);
     }
 
     protected function tempDirPrefix(): string
