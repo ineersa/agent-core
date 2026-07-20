@@ -12,6 +12,7 @@ use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
+use Ineersa\AgentCore\Domain\Run\HumanInputContinuationKindEnum;
 use Ineersa\AgentCore\Domain\Run\PendingHumanInputRequestDTO;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
@@ -198,6 +199,10 @@ final readonly class ToolCallResultHandler implements RunMessageHandler
             );
         }
 
+        if ($message->isHumanInputSuspension()) {
+            return $this->handleHumanInputSuspension($message, $state);
+        }
+
         $outcome = $this->toolBatchCollector->collect($message);
         if ($outcome->duplicate) {
             return new HandlerResult(markHandled: true);
@@ -351,6 +356,81 @@ final readonly class ToolCallResultHandler implements RunMessageHandler
             events: $events,
             postCommitEffects: $effects,
             postCommit: $postCommit,
+        );
+    }
+
+    private function handleHumanInputSuspension(ToolCallResult $message, RunState $state): HandlerResult
+    {
+        $request = $message->pendingHumanInput;
+        if (null === $request || HumanInputContinuationKindEnum::ToolCall !== $request->continuationKind) {
+            throw new \LogicException('ToolCallResult human-input suspension requires a ToolCall pending request.');
+        }
+
+        $refToolCallId = $request->continuationRef['tool_call_id'] ?? null;
+        if ((\is_string($refToolCallId) && '' !== $refToolCallId && $refToolCallId !== $message->toolCallId)
+            || $request->questionId !== ($request->payload['question_id'] ?? null)
+            || !\array_key_exists($message->toolCallId, $state->pendingToolCalls)
+            || true === $state->pendingToolCalls[$message->toolCallId]
+        ) {
+            throw new \LogicException(\sprintf(
+                'Cannot admit tool-execution suspension for invalid or resolved call "%s".',
+                $message->toolCallId,
+            ));
+        }
+
+        foreach ($state->pendingHumanInputRequests as $existing) {
+            if (HumanInputContinuationKindEnum::ToolCall !== $existing->continuationKind) {
+                continue;
+            }
+            $existingCallId = $existing->continuationRef['tool_call_id'] ?? null;
+            if ($existingCallId !== $message->toolCallId && $existing->questionId !== $request->questionId) {
+                continue;
+            }
+            if ($existing->questionId === $request->questionId
+                && $existing->payload === $request->payload
+                && $existing->continuationRef === $request->continuationRef
+            ) {
+                return new HandlerResult(nextState: null, events: []);
+            }
+
+            throw new \LogicException(\sprintf(
+                'Conflicting tool-execution suspension for call "%s": existing request "%s", new request "%s".',
+                $message->toolCallId,
+                $existing->questionId,
+                $request->questionId,
+            ));
+        }
+
+        $effects = $this->toolBatchCollector->admitHumanInputSuspension(
+            $message->runId(),
+            $message->turnNo(),
+            $message->stepId(),
+            $message->toolCallId,
+            $request->questionId,
+        );
+        $events = $this->eventFactory->eventsFromSpecs($message->runId(), $state->turnNo, $state->lastSeq + 1, [[
+            'type' => RunEventTypeEnum::WaitingHuman->value,
+            'payload' => $request->payload,
+        ]]);
+
+        return new HandlerResult(
+            nextState: new RunState(
+                runId: $state->runId,
+                status: RunStatus::WaitingHuman,
+                version: $state->version + 1,
+                turnNo: $state->turnNo,
+                lastSeq: $state->lastSeq + \count($events),
+                isStreaming: false,
+                streamingMessage: null,
+                pendingToolCalls: $state->pendingToolCalls,
+                errorMessage: $state->errorMessage,
+                messages: $state->messages,
+                activeStepId: $state->activeStepId,
+                retryableFailure: false,
+                pendingHumanInputRequests: [...$state->pendingHumanInputRequests, $request],
+            ),
+            events: $events,
+            postCommitEffects: $effects,
         );
     }
 

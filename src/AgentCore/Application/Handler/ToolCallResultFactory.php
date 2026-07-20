@@ -7,6 +7,7 @@ namespace Ineersa\AgentCore\Application\Handler;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
+use Ineersa\AgentCore\Domain\Tool\ToolExecutionHumanInputSuspension;
 use Ineersa\AgentCore\Domain\Tool\ToolResult;
 
 /**
@@ -16,6 +17,11 @@ final class ToolCallResultFactory
 {
     public static function fromExecuteToolCallAndToolResult(ExecuteToolCall $message, ToolResult $toolResult): ToolCallResult
     {
+        $raw = \is_array($toolResult->details) ? ($toolResult->details['raw_result'] ?? null) : null;
+        if ($raw instanceof ToolExecutionHumanInputSuspension) {
+            return self::fromExecuteToolCallAndHumanInputSuspension($message, $raw);
+        }
+
         $toolIdempotencyKey = \is_array($toolResult->details)
             && \is_string($toolResult->details['tool_idempotency_key'] ?? null)
                 ? $toolResult->details['tool_idempotency_key']
@@ -39,6 +45,31 @@ final class ToolCallResultFactory
             ],
             isError: $toolResult->isError,
             error: null,
+        );
+    }
+
+    /**
+     * Map a typed non-terminal human-input suspension into the existing ToolCallResult envelope.
+     *
+     * Correlation (run/turn/step/toolCall) lives on the envelope; `$pendingHumanInput` marks
+     * the non-terminal variant without a string kind router.
+     */
+    public static function fromExecuteToolCallAndHumanInputSuspension(
+        ExecuteToolCall $message,
+        ToolExecutionHumanInputSuspension $suspension,
+    ): ToolCallResult {
+        return new ToolCallResult(
+            runId: $message->runId(),
+            turnNo: $message->turnNo(),
+            stepId: $message->stepId(),
+            attempt: $message->attempt(),
+            idempotencyKey: $message->idempotencyKey(),
+            toolCallId: $message->toolCallId,
+            orderIndex: $message->orderIndex,
+            result: null,
+            isError: false,
+            error: null,
+            pendingHumanInput: $suspension->request,
         );
     }
 
