@@ -58,14 +58,14 @@ The body after the closing `---` delimiter is stored as the agent's instructions
 
 ## Discovery
 
-Agent definitions are discovered from the following locations in deterministic order. Higher-numbered layers override lower-numbered layers by agent `name`.
+Agent definitions are discovered from the following locations in deterministic load order. Later layers override earlier layers by agent `name` (lowest to highest).
 
-### Precedence (highest wins)
+### Precedence (load order, lowest to highest)
 
-1. **User agents** — `~/.hatfield/agents/*.md`
-2. **User agents** — `~/.agents/*.md`
-3. **Project agents** — `.hatfield/agents/*.md`
-4. **Project agents** — `.agents/*.md`
+1. **User agents** — `~/.agents/*.md`
+2. **User agents** — `~/.hatfield/agents/*.md`
+3. **Project agents** — `.agents/*.md`
+4. **Project agents** — `.hatfield/agents/*.md`
 5. **Configured paths** — `agents.paths` settings (highest precedence)
 
 Each directory is scanned non-recursively for `*.md` files (sorted lexicographically). Configured paths may be a single `.md` file or a directory of `*.md` files.

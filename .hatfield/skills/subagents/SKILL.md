@@ -32,10 +32,10 @@ If a subagent was **cancelled**, the tool error still includes **`Artifact:`** a
 
 ## Where agents live
 
-Discovery precedence (higher wins on name collision):
+Discovery load order (lowest to highest; later layers override earlier on name collision):
 
-1. `~/.hatfield/agents/*.md` → `~/.agents/*.md`
-2. `.hatfield/agents/*.md` → `.agents/*.md`
+1. `~/.agents/*.md` → `~/.hatfield/agents/*.md`
+2. `.agents/*.md` → `.hatfield/agents/*.md`
 3. `agents.paths` in settings
 
 Parent sessions also get **`<available_agents>`** (name + description) in context when `agents.enabled` is true.
