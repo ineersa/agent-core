@@ -12,7 +12,8 @@ use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallDecisionDTO;
  *
  * A hook implementing this interface will be called back when the
  * human answers a RequireApproval decision that originated from
- * this hook. Two callbacks are invoked in order:
+ * this hook (via canonical answer_human resume of the exact tool call).
+ * Two callbacks are invoked in order:
  *
  * 1. onApprovalAnswered() — for side-effects (e.g., persisting "Always allow"
  *    policy to settings). Must not throw.

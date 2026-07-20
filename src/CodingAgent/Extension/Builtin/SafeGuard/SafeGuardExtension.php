@@ -27,7 +27,6 @@ use Ineersa\Hatfield\ExtensionApi\HatfieldExtensionInterface;
  * @see SafeGuardConfig
  * @see SafeGuardToolCallHook
  * @see SafeGuardClassifier
- * @see ApprovalSessionTracker
  * @see SafeGuardPolicyWriter
  */
 final readonly class SafeGuardExtension implements HatfieldExtensionInterface
@@ -39,7 +38,6 @@ final readonly class SafeGuardExtension implements HatfieldExtensionInterface
         $classifier = SafeGuardClassifier::fromConfig($config);
         $policy = SafeGuardPolicy::fromConfig($config);
         $cwd = $api->getCwd();
-        $tracker = new ApprovalSessionTracker();
 
         // Policy writer creates sparse .hatfield/settings.yaml on first mutation when needed.
         $settingsPath = $cwd.'/.hatfield/settings.yaml';
@@ -48,7 +46,6 @@ final readonly class SafeGuardExtension implements HatfieldExtensionInterface
         $api->registerToolCallHook(new SafeGuardToolCallHook(
             classifier: $classifier,
             policy: $policy,
-            approvalTracker: $tracker,
             policyWriter: $policyWriter,
             cwd: $cwd,
             autoDenyInNoninteractive: $config->autoDenyInNoninteractive,

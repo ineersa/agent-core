@@ -8,26 +8,35 @@ Human-in-the-loop (HITL) covers two distinct flows where the agent runtime
 pauses and asks the human for input before proceeding. Each serves a different
 purpose and follows a different data path:
 
-- **Path A — Extension approvals (SafeGuard / ToolQuestion):** A tool call
+- **Path A — Extension approvals (SafeGuard / RequireApproval):** A tool call
   hook (`ToolCallHookInterface`) returns `RequireApproval`. The
-  `ExtensionToolHookEventSubscriber` creates a generic `ToolQuestion` in shared
-  SQLite and **blocks the tool-worker thread** on a polling loop. The TUI
-  renders a schema-driven overlay. When the human answers, the poll returns and
-  the hook's `resolveApprovalAnswer()` maps the answer to Allow/Block. No
-  interrupt result, no `WaitingHuman`, no extra LLM turn.
+  `ExtensionToolHookEventSubscriber` returns a typed
+  `ToolExecutionHumanInputSuspension` (non-terminal). The tool worker exits;
+  AgentCore admits the call into `ToolBatchStateDTO.awaitingHumanInput`, appends
+  a FIFO `PendingHumanInputRequestDTO` with `continuation_kind=tool_call`, and
+  transitions to `WaitingHuman`. Runtime projects `human_input.requested`. The
+  TUI renders the schema-driven overlay. When the human answers via
+  `answer_human`, `ApplyCommandHandler` attaches a typed internal answer to the
+  exact stored `ExecuteToolCall`, requeues it through the existing batch
+  scheduler, and dispatches it post-commit. On resume the originating
+  `ApprovalAnswerHookInterface` maps Allow/Block/ReplaceResult. Allow runs the
+  original tool handler for that exact call — **no extra LLM turn**.
 
 - **Path B — Agent-driven questions (ask_human):** The LLM calls the
   model-facing `ask_human` tool. The tool returns an interrupt payload
   (`kind=interrupt`) through the normal Symfony AI Toolbox. AgentCore detects
-  `kind=interrupt` generically and transitions the run to `WaitingHuman`. The
-  runtime projects `human_input.requested` events. The TUI renders an
-  interactive overlay. When the human answers, `answer_human` routes through
-  `ApplyCommandHandler`, a human-response message is appended, and the run
-  resumes with a new LLM turn.
+  `kind=interrupt` generically and transitions the run to `WaitingHuman` with
+  `continuation_kind=model_turn`. The runtime projects `human_input.requested`.
+  When the human answers, `answer_human` appends a human-response message and
+  the run resumes with a new LLM turn.
 
-Both paths share the same TUI question infrastructure (`QuestionCoordinator`,
-`QuestionController`, `QuestionRequest` DTO, `QuestionKind` enum) but enter it
-through different listeners and send different answer commands.
+- **Local boolean ToolQuestion (bash background):** Unrelated to SafeGuard.
+  `RuntimeBashBackgroundPromptAdapter` still uses `ToolQuestion` + blocking
+  boolean poll + `answer_tool_question` for process-local bash prompts only.
+
+Paths A and B share the same TUI question infrastructure
+(`QuestionCoordinator`, `QuestionController`, `QuestionRequest`, `QuestionKind`)
+via `human_input.requested`. Bash local prompts use `tool_question.requested`.
 
 ## Architecture principles
 
@@ -36,24 +45,24 @@ layers.
 
 ### Path A (extension approvals)
 
-The CodingAgent infrastructure (subscribers, command handlers, TUI) contains
-ZERO knowledge of any specific extension. It exposes:
+The CodingAgent infrastructure contains ZERO knowledge of any specific extension.
+Approvals use canonical AgentCore WaitingHuman + `answer_human`, not ToolQuestion
+polling. It exposes:
 
-- A **ToolQuestion store** (shared SQLite) — cross-process persistent state
-- A **blocking-poll subscriber** — suspends the tool worker until the human answers
-- A **schema-driven handler** — routes answers by schema type, not by extension kind
-- A **schema-driven TUI overlay** — renders Choice/Confirm/Text based on the schema
+- A **typed non-terminal suspension** (`ToolExecutionHumanInputSuspension`)
+- A **FIFO pending-human-input queue** on `RunState` with `continuation_kind=tool_call`
+- Exact-call authority in **`ToolBatchStateDTO`** + capacity-aware requeue
+- A **schema-driven TUI overlay** via existing `human_input.requested`
 
-Extensions drive this entire mechanism through the [Extension API](#extension-approval-flow):
-`ToolCallHookInterface::onToolCall()` returns `RequireApproval` with a prompt,
-schema, and metadata. The subscriber creates a generic ToolQuestion, blocks the
-tool worker on a poll, renders a schema-driven overlay, routes the answer by
-schema, and calls `onApprovalAnswered()` (side-effects) + `resolveApprovalAnswer()`
-(outcome) on the hook.
+Extensions drive this through the [Extension API](#extension-approval-flow):
+`ToolCallHookInterface::onToolCall()` returns `RequireApproval` with prompt,
+schema, and metadata. The subscriber emits a typed suspension; on resume it
+validates answer correlation, then calls `onApprovalAnswered()` (side-effects)
++ `resolveApprovalAnswer()` (outcome) for the originating hook only.
 
-**Adding a new approval-granting extension requires zero changes to the
-CodingAgent infrastructure** — only implementing the Extension API contracts.
-The canonical reference is `SafeGuardToolCallHook`.
+**Adding a new approval-granting extension requires zero SafeGuard-specific
+changes** — only implementing the Extension API contracts. The canonical
+reference is `SafeGuardToolCallHook`.
 
 ### Path B (agent-driven questions)
 
@@ -84,67 +93,43 @@ raw answer value.
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │ ExtensionToolHookEventSubscriber::handleRequireApproval()                    │
 │                                                                             │
-│  1. Computes deterministic requestId = hash(hookId)_{runId}_{toolCallId}    │
-│  2. Creates ToolQuestion (kind=approval) in shared SQLite                   │
-│     (schema and prompt from the extension's requireApproval DTO)           │
-│  3. BLOCKS tool-worker thread polling pollAnswerText() — no interrupt       │
-│     result, no WaitingHuman, no AdvanceRun, no extra LLM turn              │
+│  1. Builds PendingHumanInputRequestDTO (continuation_kind=tool_call)        │
+│  2. Returns ToolExecutionHumanInputSuspension via ToolResult (non-terminal) │
+│  3. Worker exits — no ToolQuestion, no blocking poll                        │
 └────────────────────────────────┬────────────────────────────────────────────┘
                                  │
-                                 │  ToolQuestionPoller emits
-                                 │  tool_question.requested
-                                 │  (generic kind, schema from extension)
+                                 │  ToolCallResultHandler admits suspension
+                                 │  → WaitingHuman + human_input.requested
                                  ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│ TUI TickPollListener (schema-driven)                                        │
-│  → Inspects schema: has enum → Choice overlay (enum values = buttons)       │
-│                    boolean  → Confirm overlay                                │
-│                    else     → Text overlay                                   │
-│  → onAnswer closure sends answer_tool_question with generic kind             │
-│  → NO extension-specific knowledge — rendering is driven by schema          │
+│ TUI (canonical HITL)                                                        │
+│  → human_input.requested overlay from schema (choice/confirm/text)          │
+│  → answer_human with question_id + answer                                   │
 └────────────────────────────────┬────────────────────────────────────────────┘
                                  │
-                                 │  answer_tool_question
-                                 │  (kind=approval, answer=any string)
+                                 │  ApplyCommandHandler tool-call branch
+                                 │  → attach ToolCallHumanInputAnswerDTO
+                                 │  → requeue exact ExecuteToolCall
                                  ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│ AnswerToolQuestionHandler (schema-driven)                                   │
-│  → Looks up stored ToolQuestion by request_id                                │
-│  → Inspects schema: boolean → answer() (boolean), enum/string →             │
-│    answerWithText()                                                          │
-│  → Writes answer/answer_text column → pollAnswerText() returns → poll breaks │
-│  → NO kind-based routing — routing is driven by stored schema               │
-└────────────────────────────────┬────────────────────────────────────────────┘
-                                 │
-                                 ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│ ExtensionToolHookEventSubscriber answer routing (generic)                   │
+│ Resumed ExecuteToolCallWorker / ExtensionToolHookEventSubscriber            │
 │                                                                             │
-│  1. $hook->onApprovalAnswered($ctx)    // Side-effects (e.g. policy write)  │
-│  2. $hook->resolveApprovalAnswer($ctx) // Extension returns                │
-│                                          ToolCallDecisionDTO               │
-│  3. Apply Allow/Block/ReplaceResult generically                            │
-│                                                                             │
-│  The extension owns the complete answer vocabulary and outcome mapping.     │
-│  This subscriber contains ZERO extension-specific knowledge.                │
+│  1. Validate answer correlation (hook_id/class, run/tool_call ids)          │
+│  2. $hook->onApprovalAnswered($ctx)    // side-effects (e.g. policy write)  │
+│  3. $hook->resolveApprovalAnswer($ctx) // Allow / Block / ReplaceResult     │
+│  4. Allow → remaining hooks + real handler; Block/Replace → terminal result │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Key properties (Path A)
 
-- **No interrupt result.** The subscriber does NOT set a ToolResult. The tool call
-  remains active on the event, waiting for the poll to return. The Symfony AI
-  toolbox's `RegistryBackedToolbox::execute()` blocks inside the subscriber
-  because the subscriber runs synchronously in the event listener chain.
-- **No WaitingHuman, no human_input.requested.** Approval questions flow through
-  the ToolQuestion system (`tool_question.requested`), not the AgentCore HITL
-  pipeline.
-- **No extra LLM turn.** The LLM never sees a tool result from the interrupted
-  call. After the poll returns, the real handler runs, and only the REAL result
-  reaches the LLM.
-- **Cross-process safe.** The ToolQuestion row lives in the shared SQLite DB
-  (`state.sqlite`), accessible from all consumer processes. The tool worker
-  blocks on the poll; the controller process writes the answer; the poll breaks.
+- **Typed non-terminal suspension.** Worker returns suspension envelope and exits;
+  no blocked poll thread.
+- **Canonical WaitingHuman + human_input.requested.** Approvals share Path B TUI.
+- **No extra LLM turn on Allow.** Exact stored `ExecuteToolCall` is re-dispatched;
+  only the real handler result reaches the model.
+- **Durable exact-call authority.** Batch state + typed internal answer metadata;
+  no process-local approval tracker.
 - **OCP-correct.** Any extension implementing `ToolCallHookInterface` +
   `ApprovalAnswerHookInterface` can drive the approval flow with its OWN
   vocabulary, schema, and outcome mapping — zero changes to any infra file.

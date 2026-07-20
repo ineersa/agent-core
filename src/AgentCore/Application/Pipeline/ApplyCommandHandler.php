@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Application\Pipeline;
 
 use Ineersa\AgentCore\Application\Handler\CommandRouter;
+use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
 use Ineersa\AgentCore\Contract\CommandStoreInterface;
 use Ineersa\AgentCore\Domain\Command\CoreCommandKind;
 use Ineersa\AgentCore\Domain\Command\PendingCommand;
@@ -16,8 +17,10 @@ use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
 use Ineersa\AgentCore\Domain\Message\ApplyCommand;
 use Ineersa\AgentCore\Domain\Message\CompactRun;
 use Ineersa\AgentCore\Domain\Run\HumanInputContinuationKindEnum;
+use Ineersa\AgentCore\Domain\Run\PendingHumanInputRequestDTO;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
+use Ineersa\AgentCore\Domain\Tool\ToolCallHumanInputAnswerDTO;
 use Symfony\Component\Messenger\Exception\ExceptionInterface;
 use Symfony\Component\Messenger\MessageBusInterface;
 
@@ -38,6 +41,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
         private AgentMessageNormalizer $messageNormalizer,
         private int $maxPendingCommands = 100,
         private ?MessageBusInterface $commandBus = null,
+        private ?ToolBatchCollector $toolBatchCollector = null,
     ) {
     }
 
@@ -608,12 +612,15 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
                 ),
             );
         }
-        // Slice A: only model-turn continuation is implemented.
+        if (HumanInputContinuationKindEnum::ToolCall === $activeRequest->continuationKind) {
+            return $this->applyToolCallHumanResponse($state, $message, $options, $activeRequest, $questionId);
+        }
+
         if (HumanInputContinuationKindEnum::ModelTurn !== $activeRequest->continuationKind) {
             return $this->rejectCommand(
                 $state,
                 $message,
-                'human_response rejected: tool-call continuation is not implemented yet.',
+                'human_response rejected: unsupported human-input continuation kind.',
             );
         }
 
@@ -632,7 +639,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
 
         $nextState = new RunState(
             runId: $state->runId,
-            status: RunStatus::Running,
+            status: [] !== $remainingRequests ? RunStatus::WaitingHuman : RunStatus::Running,
             version: $state->version + 1,
             turnNo: $state->turnNo,
             lastSeq: $state->lastSeq + 1,
@@ -664,9 +671,12 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
         );
 
         $postCommit = [];
-        $followUpAdvance = $this->followUpAdvanceCallback($runId, 'human-response');
-        if (null !== $followUpAdvance) {
-            $postCommit[] = $followUpAdvance;
+        // Model-turn answers schedule AdvanceRun only when no further human requests remain.
+        if ([] === $remainingRequests) {
+            $followUpAdvance = $this->followUpAdvanceCallback($runId, 'human-response');
+            if (null !== $followUpAdvance) {
+                $postCommit[] = $followUpAdvance;
+            }
         }
 
         return new HandlerResult(
@@ -674,6 +684,137 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
             events: [$event],
             postCommit: $postCommit,
         );
+    }
+
+    /**
+     * Resume the exact suspended tool call after human answer.
+     *
+     * No model-visible human_response message. The typed answer is attached to the
+     * stored ExecuteToolCall and requeued through ToolBatchCollector (capacity-aware).
+     * Status stays WaitingHuman while more pending requests remain.
+     *
+     * @param array<string, mixed> $options
+     */
+    private function applyToolCallHumanResponse(
+        RunState $state,
+        ApplyCommand $message,
+        array $options,
+        PendingHumanInputRequestDTO $activeRequest,
+        string $questionId,
+    ): HandlerResult {
+        if (null === $this->toolBatchCollector) {
+            return $this->rejectCommand(
+                $state,
+                $message,
+                'human_response rejected: tool-call continuation requires ToolBatchCollector.',
+            );
+        }
+
+        if (!\array_key_exists('answer', $message->payload)) {
+            return $this->rejectCommand($state, $message, 'Invalid human_response payload: missing answer.');
+        }
+
+        $resolved = $this->resolveToolCallContinuationRef($activeRequest, $message->runId());
+        if (null === $resolved) {
+            return $this->rejectCommand(
+                $state,
+                $message,
+                'human_response rejected: tool-call continuation_ref is incomplete or mismatched.',
+            );
+        }
+
+        [$toolCallId, $stepId, $turnNo, $ref] = $resolved;
+
+        $answer = new ToolCallHumanInputAnswerDTO(
+            questionId: $questionId,
+            answer: $message->payload['answer'],
+            continuationRef: $ref,
+            requestPayload: $activeRequest->payload,
+        );
+
+        try {
+            $effects = $this->toolBatchCollector->resumeHumanInputAnswer(
+                $message->runId(),
+                $turnNo,
+                $stepId,
+                $toolCallId,
+                $questionId,
+                $answer,
+            );
+        } catch (\LogicException $exception) {
+            return $this->rejectCommand(
+                $state,
+                $message,
+                'human_response rejected: '.$exception->getMessage(),
+            );
+        }
+
+        $runId = $message->runId();
+        $this->commandStore->markApplied($runId, $message->idempotencyKey());
+
+        $remainingRequests = array_values(\array_slice($state->pendingHumanInputRequests, 1));
+
+        $nextState = new RunState(
+            runId: $state->runId,
+            status: [] !== $remainingRequests ? RunStatus::WaitingHuman : RunStatus::Running,
+            version: $state->version + 1,
+            turnNo: $state->turnNo,
+            lastSeq: $state->lastSeq + 1,
+            isStreaming: $state->isStreaming,
+            streamingMessage: $state->streamingMessage,
+            pendingToolCalls: $state->pendingToolCalls,
+            errorMessage: null,
+            messages: $state->messages,
+            activeStepId: $state->activeStepId,
+            retryableFailure: false,
+            pendingHumanInputRequests: $remainingRequests,
+        );
+
+        // Replay-complete AgentCommandApplied without model-visible message payload.
+        $event = $this->eventFactory->event(
+            runId: $runId,
+            seq: $nextState->lastSeq,
+            turnNo: $nextState->turnNo,
+            type: RunEventTypeEnum::AgentCommandApplied->value,
+            payload: [
+                'kind' => $message->kind,
+                'idempotency_key' => $message->idempotencyKey(),
+                'question_id' => $questionId,
+                'answer' => $message->payload['answer'],
+                'continuation_kind' => HumanInputContinuationKindEnum::ToolCall->value,
+                'tool_call_id' => $toolCallId,
+                'options' => $options,
+            ],
+        );
+
+        return new HandlerResult(
+            nextState: $nextState,
+            events: [$event],
+            postCommitEffects: $effects,
+        );
+    }
+
+    /**
+     * @return array{0: string, 1: string, 2: int, 3: array<string, mixed>}|null
+     */
+    private function resolveToolCallContinuationRef(PendingHumanInputRequestDTO $activeRequest, string $runId): ?array
+    {
+        $ref = $activeRequest->continuationRef ?? [];
+        $toolCallId = $ref['tool_call_id'] ?? null;
+        $stepId = $ref['step_id'] ?? null;
+        $turnNo = $ref['turn_no'] ?? null;
+        $refRunId = $ref['run_id'] ?? null;
+
+        if (!\is_string($toolCallId) || '' === $toolCallId
+            || !\is_string($stepId) || '' === $stepId
+            || !\is_int($turnNo)
+            || !\is_string($refRunId) || '' === $refRunId
+            || $refRunId !== $runId
+        ) {
+            return null;
+        }
+
+        return [$toolCallId, $stepId, $turnNo, $ref];
     }
 
     /**

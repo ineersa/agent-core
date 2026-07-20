@@ -167,6 +167,7 @@ final class ToolBatchStateDTO
                 'toolIdempotencyKey' => $call->toolIdempotencyKey,
                 'assistantMessage' => $call->assistantMessage,
                 'argSchema' => $call->argSchema,
+                'humanInputAnswer' => $call->humanInputAnswer?->toPersistedArray(),
             ];
         }
 
@@ -243,6 +244,10 @@ final class ToolBatchStateDTO
         if (\array_key_exists('argSchema', $data) && null !== $data['argSchema'] && !\is_array($data['argSchema'])) {
             throw new \UnexpectedValueException(\sprintf('Tool batch call_data[%s].argSchema must be an array or null when present.', $mapKey));
         }
+
+        if (\array_key_exists('humanInputAnswer', $data) && null !== $data['humanInputAnswer'] && !\is_array($data['humanInputAnswer'])) {
+            throw new \UnexpectedValueException(\sprintf('Tool batch call_data[%s].humanInputAnswer must be an object or null when present.', $mapKey));
+        }
     }
 
     /**
@@ -291,7 +296,24 @@ final class ToolBatchStateDTO
             assistantMessage: \array_key_exists('assistantMessage', $data) ? $data['assistantMessage'] : null,
             argSchema: \array_key_exists('argSchema', $data) ? $data['argSchema'] : null,
             toolsRef: \array_key_exists('toolsRef', $data) ? $data['toolsRef'] : null,
+            humanInputAnswer: self::reconstructHumanInputAnswer($data),
         );
+    }
+
+    /**
+     * @param array<string, mixed> $data
+     */
+    private static function reconstructHumanInputAnswer(array $data): ?ToolCallHumanInputAnswerDTO
+    {
+        if (!\array_key_exists('humanInputAnswer', $data) || null === $data['humanInputAnswer']) {
+            return null;
+        }
+
+        if (!\is_array($data['humanInputAnswer'])) {
+            throw new \UnexpectedValueException('Tool batch call_data humanInputAnswer must be an object or null.');
+        }
+
+        return ToolCallHumanInputAnswerDTO::fromPersistedArray($data['humanInputAnswer']);
     }
 
     /**

@@ -82,18 +82,11 @@ class ToolQuestion
     public ?bool $answer = null;
 
     /**
-     * The string answer, set when status becomes Answered (used by Approval-kind).
-     * Holds values like 'Allow once', 'Always allow', 'Deny' for SafeGuard approvals.
-     */
-    #[ORM\Column(name: 'answer_text', type: 'string', length: 255, nullable: true)]
-    public ?string $answerText = null;
-
-    /**
-     * JSON schema for the question (e.g. {'type':'string','enum':['Allow once','Always allow','Deny']}).
+     * JSON schema for the question (e.g. {"type":"boolean"} for bash background prompts).
      * Stored as serialized JSON text. Confirm questions should supply an explicit
-     * {"type":"boolean"} schema (e.g. bash background prompt); null or invalid JSON
-     * may still be stored when a producer omits schema — TUI and AnswerToolQuestionHandler
-     * then fall back to kind=confirm for boolean routing.
+     * {"type":"boolean"} schema; null or invalid JSON may still be stored when a
+     * producer omits schema — TUI and AnswerToolQuestionHandler then fall back to
+     * kind=confirm for boolean routing.
      */
     #[ORM\Column(type: 'text', nullable: true)]
     public ?string $schema = null;
@@ -196,22 +189,6 @@ class ToolQuestion
         }
 
         $this->answer = $answer;
-        $this->status = ToolQuestionStatusEnum::Answered;
-        $this->answeredAt = new \DateTimeImmutable();
-    }
-
-    /**
-     * Set the string answer for Approval-kind questions.
-     *
-     * Idempotent: does nothing if the question is already resolved.
-     */
-    public function setAnswerText(string $answer): void
-    {
-        if ($this->isResolved()) {
-            return;
-        }
-
-        $this->answerText = $answer;
         $this->status = ToolQuestionStatusEnum::Answered;
         $this->answeredAt = new \DateTimeImmutable();
     }

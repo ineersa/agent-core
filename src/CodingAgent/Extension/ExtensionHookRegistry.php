@@ -20,7 +20,7 @@ use Ineersa\Hatfield\ExtensionApi\Tool\ToolResultHookInterface;
  *
  * Pending/approved decision tracking is handled by the blocking-poll
  * mechanism in ExtensionToolHookEventSubscriber (for RequireApproval)
- * and by SafeGuard's in-memory ApprovalSessionTracker (for same-process
+ * and by extension approval answer hooks (for same-process
  * approve-once within a single tool worker invocation).
  *
  * Cross-process approval state is NOT needed here because the blocking

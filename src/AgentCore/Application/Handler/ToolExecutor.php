@@ -16,6 +16,7 @@ use Ineersa\AgentCore\Contract\Tool\ToolResultProcessorInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolSetResolverInterface;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
 use Ineersa\AgentCore\Domain\Tool\ToolCall;
+use Ineersa\AgentCore\Domain\Tool\ToolCallHumanInputAnswerDTO;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionHumanInputSuspension;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionPolicy;
 use Ineersa\AgentCore\Domain\Tool\ToolResult;
@@ -278,6 +279,8 @@ final class ToolExecutor implements ToolExecutorInterface
 
         $batchToolCallCount = max(1, (int) ($toolCall->context['assistant_batch_tool_call_count'] ?? 1));
 
+        $humanInputAnswer = $toolCall->context['human_input_answer'] ?? null;
+        $stepId = $toolCall->context['step_id'] ?? null;
         $context = new ToolContext(
             runId: $this->runId($toolCall) ?? '',
             turnNo: (int) ($toolCall->context['turn_no'] ?? 0),
@@ -288,6 +291,8 @@ final class ToolExecutor implements ToolExecutorInterface
             orderIndex: $toolCall->orderIndex,
             executionMode: $policy->mode,
             batchToolCallCount: $batchToolCallCount,
+            humanInputAnswer: $humanInputAnswer instanceof ToolCallHumanInputAnswerDTO ? $humanInputAnswer : null,
+            stepId: \is_string($stepId) && '' !== $stepId ? $stepId : null,
         );
 
         /** @var SymfonyToolResult $result */

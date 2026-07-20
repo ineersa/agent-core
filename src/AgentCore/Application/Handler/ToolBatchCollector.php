@@ -9,6 +9,7 @@ use Ineersa\AgentCore\Contract\Tool\ToolBatchStoreMutation;
 use Ineersa\AgentCore\Domain\Message\ExecuteToolCall;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
 use Ineersa\AgentCore\Domain\Tool\ToolBatchStateDTO;
+use Ineersa\AgentCore\Domain\Tool\ToolCallHumanInputAnswerDTO;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 
 /**
@@ -135,6 +136,51 @@ final class ToolBatchCollector
     }
 
     /**
+     * Inverse of {@see admitHumanInputSuspension}: attach the typed human answer to the
+     * exact stored call, clear the awaiting marker, and requeue through the existing
+     * pendingQueue + dispatchableCalls/maxParallelism path.
+     *
+     * Idempotent when the call is already inFlight with an identical answer.
+     * Conflicting answer or missing awaiting marker fails closed.
+     *
+     * @return list<ExecuteToolCall>
+     */
+    public function resumeHumanInputAnswer(
+        string $runId,
+        int $turnNo,
+        string $stepId,
+        string $toolCallId,
+        string $questionId,
+        ToolCallHumanInputAnswerDTO $answer,
+    ): array {
+        if (null !== $this->store) {
+            /* @var list<ExecuteToolCall> */
+            return $this->store->mutate(
+                $runId,
+                $turnNo,
+                $stepId,
+                function (?ToolBatchStateDTO $stored) use ($runId, $turnNo, $stepId, $toolCallId, $questionId, $answer): ToolBatchStoreMutation {
+                    if (null === $stored) {
+                        throw new \LogicException(\sprintf('Cannot resume tool-execution human input for unknown batch run=%s turn=%d step=%s.', $runId, $turnNo, $stepId));
+                    }
+
+                    return new ToolBatchStoreMutation($this->applyHumanInputResumeToBatch($stored, $toolCallId, $questionId, $answer), $stored);
+                },
+            );
+        }
+
+        $batch = $this->loadBatch($runId, $turnNo, $stepId);
+        if (null === $batch) {
+            throw new \LogicException(\sprintf('Cannot resume tool-execution human input for unknown batch run=%s turn=%d step=%s.', $runId, $turnNo, $stepId));
+        }
+
+        $effects = $this->applyHumanInputResumeToBatch($batch, $toolCallId, $questionId, $answer);
+        $this->saveBatch($runId, $turnNo, $stepId, $batch);
+
+        return $effects;
+    }
+
+    /**
      * @return list<ExecuteToolCall>
      */
     private function applyHumanInputSuspensionToBatch(
@@ -160,7 +206,69 @@ final class ToolBatchCollector
         }
 
         unset($batch->inFlight[$toolCallId]);
+        // A new suspension must drop any previously consumed answer metadata so a later
+        // answer is distinct (e.g. a different hook suspending the same resumed call).
+        $existingCall = $batch->calls[$toolCallId] ?? null;
+        if ($existingCall instanceof ExecuteToolCall && null !== $existingCall->humanInputAnswer) {
+            $batch->calls[$toolCallId] = $existingCall->withHumanInputAnswer(null);
+        }
         $batch->awaitingHumanInput[$toolCallId] = $questionId;
+
+        return $this->dispatchableCalls($batch);
+    }
+
+    /**
+     * @return list<ExecuteToolCall>
+     */
+    private function applyHumanInputResumeToBatch(
+        ToolBatchStateDTO $batch,
+        string $toolCallId,
+        string $questionId,
+        ToolCallHumanInputAnswerDTO $answer,
+    ): array {
+        if (!\array_key_exists($toolCallId, $batch->expectedOrder)) {
+            throw new \LogicException(\sprintf('Cannot resume tool-execution human input for unexpected tool call "%s".', $toolCallId));
+        }
+
+        if (isset($batch->results[$toolCallId])) {
+            throw new \LogicException(\sprintf('Cannot resume tool-execution human input for already completed tool call "%s".', $toolCallId));
+        }
+
+        $existingCall = $batch->calls[$toolCallId] ?? null;
+        if (!$existingCall instanceof ExecuteToolCall) {
+            throw new \LogicException(\sprintf('Cannot resume tool-execution human input for missing stored call "%s".', $toolCallId));
+        }
+
+        $awaitingQuestionId = $batch->awaitingHumanInput[$toolCallId] ?? null;
+        $existingAnswer = $existingCall->humanInputAnswer;
+
+        // Idempotent CAS retry: already requeued/in-flight with identical answer → same effect.
+        if (null === $awaitingQuestionId) {
+            if ($existingAnswer instanceof ToolCallHumanInputAnswerDTO && $existingAnswer->isEquivalent($answer)) {
+                if (isset($batch->inFlight[$toolCallId])) {
+                    return [];
+                }
+                if (\in_array($toolCallId, $batch->pendingQueue, true)) {
+                    return $this->dispatchableCalls($batch);
+                }
+            }
+
+            throw new \LogicException(\sprintf('Cannot resume tool-execution human input for call "%s": not awaiting human input.', $toolCallId));
+        }
+
+        if ($awaitingQuestionId !== $questionId || $answer->questionId !== $questionId) {
+            throw new \LogicException(\sprintf('Cannot resume tool-execution human input for call "%s": question_id mismatch (awaiting="%s", answer="%s", expected="%s").', $toolCallId, $awaitingQuestionId, $answer->questionId, $questionId));
+        }
+
+        $batch->calls[$toolCallId] = $existingCall->withHumanInputAnswer($answer);
+        unset($batch->awaitingHumanInput[$toolCallId]);
+
+        // Requeue at the front so capacity-aware dispatch picks this exact call next.
+        $batch->pendingQueue = array_values(array_filter(
+            $batch->pendingQueue,
+            static fn (string $id): bool => $id !== $toolCallId,
+        ));
+        array_unshift($batch->pendingQueue, $toolCallId);
 
         return $this->dispatchableCalls($batch);
     }

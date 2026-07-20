@@ -171,6 +171,71 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
         $this->assertNotContains(RunEventTypeEnum::MessageEnd->value, $eventTypes);
     }
 
+    public function testResumeRequeuesExactCallWithoutModelMessage(): void
+    {
+        $collector = new ToolBatchCollector(defaultMaxParallelism: 1);
+        $call = $this->call('run-r', 'step-r', 'call-r', 0, 1);
+        $collector->registerExpectedBatch('run-r', 1, 'step-r', [$call]);
+        $collector->admitHumanInputSuspension('run-r', 1, 'step-r', 'call-r', 'q-r');
+
+        $answer = new \Ineersa\AgentCore\Domain\Tool\ToolCallHumanInputAnswerDTO(
+            questionId: 'q-r',
+            answer: 'Allow once',
+            continuationRef: ['run_id' => 'run-r', 'turn_no' => 1, 'step_id' => 'step-r', 'tool_call_id' => 'call-r'],
+            requestPayload: ['question_id' => 'q-r', 'prompt' => 'Allow?'],
+        );
+        $effects = $collector->resumeHumanInputAnswer('run-r', 1, 'step-r', 'call-r', 'q-r', $answer);
+        $this->assertCount(1, $effects);
+        $this->assertSame('call-r', $effects[0]->toolCallId);
+        $this->assertSame($call->args, $effects[0]->args);
+        $this->assertNotNull($effects[0]->humanInputAnswer);
+
+        $store = new \Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore();
+        $router = new \Ineersa\AgentCore\Application\Handler\CommandRouter(new \Ineersa\AgentCore\Application\Handler\CommandHandlerRegistry([]));
+        $collector2 = new ToolBatchCollector();
+        $collector2->registerExpectedBatch('run-h2', 2, 'step-h2', [$this->call('run-h2', 'step-h2', 'call-h2', 0, 2)]);
+        $collector2->admitHumanInputSuspension('run-h2', 2, 'step-h2', 'call-h2', 'q-h2');
+        $handler2 = new \Ineersa\AgentCore\Application\Pipeline\ApplyCommandHandler(
+            commandStore: $store,
+            commandRouter: $router,
+            commandMailboxPolicy: new \Ineersa\AgentCore\Application\Pipeline\CommandMailboxPolicy($store, $router),
+            eventFactory: new EventFactory(),
+            messageNormalizer: new AgentMessageNormalizer(),
+            maxPendingCommands: 10,
+            commandBus: new TestMessageBus(),
+            toolBatchCollector: $collector2,
+        );
+        $state = RunStateBuilder::running('run-h2')
+            ->withStatus(RunStatus::WaitingHuman)
+            ->withTurnNo(2)
+            ->withActiveStepId('step-h2')
+            ->withPendingToolCalls(['call-h2' => false])
+            ->withPendingHumanInputRequests([
+                PendingHumanInputRequestDTO::toolCallFromPayload(
+                    ['question_id' => 'q-h2', 'prompt' => 'Allow id?'],
+                    ['run_id' => 'run-h2', 'turn_no' => 2, 'step_id' => 'step-h2', 'tool_call_id' => 'call-h2'],
+                ),
+            ])
+            ->build();
+        $result = $handler2->handle(new \Ineersa\AgentCore\Domain\Message\ApplyCommand(
+            runId: 'run-h2',
+            turnNo: 2,
+            stepId: 'human-step',
+            attempt: 1,
+            idempotencyKey: 'human-q-h2',
+            kind: \Ineersa\AgentCore\Domain\Command\CoreCommandKind::HumanResponse,
+            payload: ['question_id' => 'q-h2', 'answer' => 'Allow once'],
+        ), $state);
+
+        $this->assertSame(RunStatus::Running, $result->nextState?->status);
+        $this->assertSame([], $result->nextState?->pendingHumanInputRequests);
+        $this->assertSame($state->messages, $result->nextState?->messages);
+        $this->assertCount(1, $result->postCommitEffects);
+        $this->assertInstanceOf(ExecuteToolCall::class, $result->postCommitEffects[0]);
+        $this->assertSame('call-h2', $result->postCommitEffects[0]->toolCallId);
+        $this->assertArrayNotHasKey('message', $result->events[0]->payload);
+    }
+
     private function call(
         string $runId,
         string $stepId,

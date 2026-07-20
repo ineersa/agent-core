@@ -222,7 +222,9 @@ final readonly class RunStateReducer
             );
         }
 
-        // human_response: append message, clear only the active matching request, transition to Running
+        // human_response: clear only the active matching request.
+        // ModelTurn may append a human message; ToolCall has no model-visible message.
+        // Status stays WaitingHuman while more pending requests remain.
         if ('human_response' === $kind) {
             $messagePayload = \is_array($payload['message'] ?? null) ? $payload['message'] : null;
             if (null !== $messagePayload) {
@@ -244,9 +246,11 @@ final readonly class RunStateReducer
 
             $remaining = array_values(\array_slice($state->pendingHumanInputRequests, 1));
 
+            // Intermediate RunState.messages stay stale; final replay() copies the
+            // by-ref $messages accumulator (ModelTurn may have appended above).
             return new RunState(
                 runId: $state->runId,
-                status: RunStatus::Running,
+                status: [] !== $remaining ? RunStatus::WaitingHuman : RunStatus::Running,
                 version: $state->version,
                 turnNo: $state->turnNo,
                 lastSeq: $state->lastSeq,

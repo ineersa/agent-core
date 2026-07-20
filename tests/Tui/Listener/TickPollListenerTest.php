@@ -39,14 +39,10 @@ use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\Tui\Tui;
 
 /**
- * Regression tests for TickPollListener cancellation behavior.
+ * Regression tests for TickPollListener / local tool-question cancellation.
  *
- * The cancel wedge bug (Issue 1 from PR #162 smoke test):
- * handleChoiceToolQuestion's onCancel sent 'answer' => '' (empty string),
- * which AnswerToolQuestionHandler rejected with ProtocolError without writing
- * to the store → poll loop wedged forever (null === pollAnswerText).
- *
- * Fix: 'answer' => 'cancel' (non-empty generic cancel sentinel).
+ * Local tool questions are boolean/confirm only (bash background prompts).
+ * Extension approvals use canonical human_input.requested, not tool_question.
  */
 final class TickPollListenerTest extends TestCase
 {
@@ -55,15 +51,10 @@ final class TickPollListenerTest extends TestCase
     private ?TuiTickDispatcher $contextTicks = null;
 
     /**
-     * Test thesis: when the Choice overlay onCancel fires, the TUI sends
-     * answer_tool_question with 'answer' => 'cancel' (non-empty), so
-     * AnswerToolQuestionHandler accepts it, writes to the shared store,
-     * and the blocking poll in the tool consumer breaks — no hang.
-     *
-     * If the answer were '' (empty string), this test would fail because
-     * the handler rejects empty answers and the poll wedges forever.
+     * Confirm cancel must send a boolean false answer so the bash background
+     * poller receives a resolved decision instead of hanging on null.
      */
-    public function testChoiceOnCancelSendsNonEmptyCancelAnswer(): void
+    public function testConfirmOnCancelSendsBooleanFalse(): void
     {
         $sentCommand = null;
 
@@ -81,31 +72,31 @@ final class TickPollListenerTest extends TestCase
 
         $coordinator = new QuestionCoordinator();
 
-        // Use reflection to invoke the private static handleChoiceToolQuestion
-        $ref = new \ReflectionMethod(RuntimeQuestionEventHandler::class, 'handleChoiceToolQuestion');
+        $ref = new \ReflectionMethod(RuntimeQuestionEventHandler::class, 'handleConfirmToolQuestion');
+        $ref->invoke(
+            $this->runtimeQuestionHandler(),
+            [
+                'prompt' => 'Move it to the background?',
+                'request_id' => 'rq_test',
+                'tool_call_id' => 'tc_test',
+                'tool_name' => 'bash',
+            ],
+            'tool_rq_test',
+            'run-1',
+            'rq_test',
+            $client,
+            $coordinator,
+        );
 
-        $ref->invoke($this->runtimeQuestionHandler(), [
-            'prompt' => 'Approve write outside CWD?',
-            'request_id' => 'rq_test',
-            'tool_call_id' => 'tc_test',
-            'tool_name' => 'write',
-        ], [
-            'type' => 'string',
-            'enum' => ['Proceed', 'Abort'],
-        ], 'tool_rq_test', 'run-1', 'rq_test', $client, $coordinator);
-
-        // The QuestionCoordinator should now have an active request
         $this->assertTrue($coordinator->actionRequired(), 'Coordinator must have active request after enqueue');
 
-        // Cancel it — this fires the onCancel closure set up by handleChoiceToolQuestion
         $coordinator->cancel();
 
-        // Assert the sent UserCommand has the non-empty cancel answer
         $this->assertNotNull($sentCommand, 'Expected UserCommand to be sent on cancel');
         $this->assertSame('answer_tool_question', $sentCommand->type);
         $this->assertSame('rq_test', $sentCommand->payload['request_id'] ?? null);
-        $this->assertSame('cancel', $sentCommand->payload['answer'] ?? null);
-        $this->assertNotEmpty($sentCommand->payload['answer'] ?? '', 'Cancel answer must be non-empty to prevent poll wedge');
+        $this->assertFalse($sentCommand->payload['answer'] ?? true);
+        $this->assertSame('confirm', $sentCommand->payload['kind'] ?? null);
     }
 
     public function testConfirmToolQuestionWithNullSchemaEnqueuesConfirmWithoutWarning(): void
