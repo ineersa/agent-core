@@ -393,6 +393,7 @@ final class SessionRunStateReplayServiceTest extends TestCase
         $this->assertSame(RunStatus::Running, $rebuiltState->status);
         $this->assertCount(1, $rebuiltState->messages);
         $this->assertSame('user', $rebuiltState->messages[0]->role);
+        $this->assertSame([], $rebuiltState->pendingHumanInputRequests);
     }
 
     // ── Cancellation replay ─────────────────────────────────────────────────

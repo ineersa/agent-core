@@ -65,6 +65,7 @@ final class PendingHumanInputAnswerValidationTest extends TestCase
 
         $this->assertSame(RunStatus::WaitingHuman, $result->nextState?->status);
         $this->assertSame('ah_expected', $result->nextState?->pendingHumanInputRequests[0]->questionId);
+        $this->assertCount(1, $result->events);
         $this->assertSame(RunEventTypeEnum::AgentCommandRejected->value, $result->events[0]->type);
         $this->assertStringContainsString('question_id', (string) $result->nextState?->errorMessage);
         $this->assertSame([], $result->postCommit);
@@ -82,6 +83,8 @@ final class PendingHumanInputAnswerValidationTest extends TestCase
         $this->assertSame([], $result->nextState?->pendingHumanInputRequests);
         $this->assertSame('user', $result->nextState?->messages[0]->role);
         $this->assertStringContainsString('yes proceed', (string) ($result->nextState?->messages[0]->content[0]['text'] ?? ''));
+        $this->assertCount(1, $result->events);
+        $this->assertSame(RunEventTypeEnum::AgentCommandApplied->value, $result->events[0]->type);
         $this->assertSame('ah_ok', $result->events[0]->payload['question_id'] ?? null);
         foreach ($result->postCommit as $callback) {
             $callback();

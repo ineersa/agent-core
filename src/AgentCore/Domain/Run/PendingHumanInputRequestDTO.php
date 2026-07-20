@@ -12,12 +12,19 @@ use Symfony\Component\Serializer\Attribute\SerializedName;
  * Canonical waiting_human event payload remains the runtime/TUI surface.
  * This DTO is the AgentCore-owned reconstruction for answer validation and
  * continuation routing. Continuation references stay opaque to AgentCore.
+ *
+ * Payload invariant: `$payload` is the complete waiting_human / interrupt
+ * map stored as-is (no field extraction or backfill). It must include a
+ * non-empty `question_id`; prompt/schema/tool identity fields are optional
+ * and are read from `$payload` when present rather than mirrored as DTO
+ * properties. `continuationRef` is reserved for future ToolCall routing and
+ * is null for ModelTurn.
  */
 final readonly class PendingHumanInputRequestDTO
 {
     /**
-     * @param array<string, mixed>      $payload         canonical waiting_human / interrupt payload
-     * @param array<string, mixed>|null $continuationRef reserved for future ToolCall continuation
+     * @param array<string, mixed>      $payload         complete waiting_human / interrupt map (includes question_id)
+     * @param array<string, mixed>|null $continuationRef reserved for future ToolCall continuation; null for ModelTurn
      */
     public function __construct(
         #[SerializedName('question_id')]
@@ -34,7 +41,8 @@ final readonly class PendingHumanInputRequestDTO
     /**
      * Build a model-turn request from a canonical waiting_human / interrupt payload.
      *
-     * Requires a non-empty question_id. Does not invent prompt/schema/identity fallbacks.
+     * Requires a non-empty question_id. Stores `$payload` unchanged; does not
+     * invent prompt/schema/identity fallbacks or split fields out of the map.
      *
      * @param array<string, mixed> $payload
      */
