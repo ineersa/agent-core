@@ -31,6 +31,7 @@ final class AgentMcpToolsResolverTest extends TestCase
 
         $this->assertSame([], $result['non_mcp_tools']);
         $this->assertSame(['context7_resolve'], $result['mcp_runtime_tools']);
+        $this->assertSame(['context7_resolve', 'websearch_search'], $result['catalog_mcp_runtime_tools']);
         $this->assertSame('inherited_global', $result['mcp_policy']['mode']);
     }
 

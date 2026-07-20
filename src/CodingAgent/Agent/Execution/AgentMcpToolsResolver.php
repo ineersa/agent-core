@@ -30,6 +30,7 @@ final readonly class AgentMcpToolsResolver
      * @return array{
      *     non_mcp_tools: list<string>,
      *     mcp_runtime_tools: list<string>,
+     *     catalog_mcp_runtime_tools: list<string>,
      *     mcp_policy: array{mode: string, tools: list<string>}
      * }
      */
@@ -38,6 +39,10 @@ final readonly class AgentMcpToolsResolver
         $config = $this->configLoader->load();
         $catalog = $this->catalogStore->read($catalogRunId);
         $exposedByServer = $this->indexExposedToolsByServer($catalog, $config);
+        // Catalog-advertised Hatfield runtime names from connected servers with config.
+        // Child inheritance strips these before re-adding only the selected MCP set. If MCP
+        // registration was skipped because a permanent/unrelated dynamic tool already owns the
+        // name, that name is still treated as MCP here so it cannot leak via omitted-tools inherit.
         $allExposed = $this->flattenExposed($exposedByServer);
         $globalExposed = $this->flattenExposed(
             $this->filterServersByAvailability($exposedByServer, $config, McpServerAvailabilityEnum::All),
@@ -47,6 +52,7 @@ final readonly class AgentMcpToolsResolver
             return [
                 'non_mcp_tools' => [],
                 'mcp_runtime_tools' => $globalExposed,
+                'catalog_mcp_runtime_tools' => $allExposed,
                 'mcp_policy' => [
                     'mode' => 'inherited_global',
                     'tools' => $globalExposed,
@@ -68,6 +74,7 @@ final readonly class AgentMcpToolsResolver
             return [
                 'non_mcp_tools' => $nonMcp,
                 'mcp_runtime_tools' => [],
+                'catalog_mcp_runtime_tools' => $allExposed,
                 'mcp_policy' => [
                     'mode' => 'none',
                     'tools' => [],
@@ -80,6 +87,7 @@ final readonly class AgentMcpToolsResolver
         return [
             'non_mcp_tools' => $nonMcp,
             'mcp_runtime_tools' => $mcpTools,
+            'catalog_mcp_runtime_tools' => $allExposed,
             'mcp_policy' => [
                 'mode' => $this->policyModeFromSelectors($selectors),
                 'tools' => $mcpTools,
@@ -167,6 +175,9 @@ final readonly class AgentMcpToolsResolver
     }
 
     /**
+     * Flatten per-server Hatfield names into a single list, deduplicating by runtime name
+     * while preserving first-seen order across servers.
+     *
      * @param array<string, list<string>> $byServer
      *
      * @return list<string>
