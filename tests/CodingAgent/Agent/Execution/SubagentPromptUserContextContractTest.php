@@ -379,6 +379,7 @@ final class SubagentPromptUserContextContractTest extends IsolatedKernelTestCase
                         messages: $state->messages,
                         activeStepId: $state->activeStepId,
                         retryableFailure: false,
+                        pendingHumanInputRequests: $state->pendingHumanInputRequests,
                     );
                 }
 

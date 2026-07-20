@@ -71,6 +71,7 @@ final readonly class RunCommit
                             messages: $resolvedNextState->messages,
                             activeStepId: $resolvedNextState->activeStepId,
                             retryableFailure: $resolvedNextState->retryableFailure,
+                            pendingHumanInputRequests: $resolvedNextState->pendingHumanInputRequests,
                         );
                         if (!$this->runStore->compareAndSwap($bumpedState, $resolvedNextState->version)) {
                             $this->logger->warning('persistence.last_seq_cas_conflict', [
@@ -126,6 +127,7 @@ final readonly class RunCommit
                         messages: $state->messages,
                         activeStepId: $state->activeStepId,
                         retryableFailure: false,
+                        pendingHumanInputRequests: $state->pendingHumanInputRequests,
                     );
                     $this->runStore->compareAndSwap($failedState, $state->version);
                 } catch (\Throwable $markFailedException) {

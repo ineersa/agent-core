@@ -169,6 +169,7 @@ final class LlmStepResultHandler implements RunMessageHandler
                 activeStepId: $state->activeStepId,
                 retryableFailure: false,
                 retryAttempts: 0,
+                pendingHumanInputRequests: $state->pendingHumanInputRequests,
             );
 
             return new HandlerResult(
@@ -250,6 +251,7 @@ final class LlmStepResultHandler implements RunMessageHandler
                 activeStepId: $state->activeStepId,
                 retryableFailure: $canAutoRetry,
                 retryAttempts: $canAutoRetry ? $nextRetryAttempt : ($retriesExhausted ? $nextRetryAttempt : $currentAttempts),
+                pendingHumanInputRequests: $state->pendingHumanInputRequests,
             );
 
             $events = $this->eventFactory->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, $eventSpecs);
@@ -357,6 +359,7 @@ final class LlmStepResultHandler implements RunMessageHandler
                 activeStepId: $state->activeStepId,
                 retryableFailure: false,
                 retryAttempts: 0,
+                pendingHumanInputRequests: $state->pendingHumanInputRequests,
             );
 
             $mailboxResult = null === $this->tracer
@@ -403,6 +406,7 @@ final class LlmStepResultHandler implements RunMessageHandler
                 activeStepId: $stateAfterBoundary->activeStepId,
                 retryableFailure: false,
                 retryAttempts: 0,
+                pendingHumanInputRequests: $stateAfterBoundary->pendingHumanInputRequests,
             );
 
             $postCommit = [
@@ -450,6 +454,7 @@ final class LlmStepResultHandler implements RunMessageHandler
             activeStepId: $state->activeStepId,
             retryableFailure: false,
             retryAttempts: 0,
+            pendingHumanInputRequests: $state->pendingHumanInputRequests,
         );
 
         $postCommit = [function () use ($runId, $state, $message, $effects): void {

@@ -410,6 +410,7 @@ final readonly class CompactRunHandler implements RunMessageHandler
             messages: $compactResult->compactedMessages,
             activeStepId: null,
             retryableFailure: $afterStartState->retryableFailure,
+            pendingHumanInputRequests: $afterStartState->pendingHumanInputRequests,
         );
 
         // Pre-LLM guard replacement must continue the LLM turn.
@@ -487,6 +488,7 @@ final readonly class CompactRunHandler implements RunMessageHandler
             messages: $state->messages,
             activeStepId: $activeStepId ?? $state->activeStepId,
             retryableFailure: $state->retryableFailure,
+            pendingHumanInputRequests: $state->pendingHumanInputRequests,
         );
     }
 

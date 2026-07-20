@@ -7,6 +7,7 @@ namespace Ineersa\AgentCore\Application\Replay;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
+use Ineersa\AgentCore\Domain\Run\PendingHumanInputRequestDTO;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 
@@ -23,6 +24,7 @@ final readonly class RunStateReducer
             version: $existingState->version,
             turnNo: 0,
             lastSeq: 0,
+            pendingHumanInputRequests: $existingState->pendingHumanInputRequests,
         );
 
         // By-ref accumulators: reducers append to these arrays; intermediate
@@ -48,6 +50,7 @@ final readonly class RunStateReducer
                 activeStepId: $state->activeStepId,
                 retryableFailure: $state->retryableFailure,
                 retryAttempts: $state->retryAttempts,
+                pendingHumanInputRequests: $state->pendingHumanInputRequests,
             );
         }
 
@@ -66,6 +69,7 @@ final readonly class RunStateReducer
             activeStepId: $state->activeStepId,
             retryableFailure: $state->retryableFailure,
             retryAttempts: $state->retryAttempts,
+            pendingHumanInputRequests: $state->pendingHumanInputRequests,
         );
     }
 
@@ -95,7 +99,7 @@ final readonly class RunStateReducer
             RunEventTypeEnum::MessageStart->value => $this->applyNoMutation($event, $state),
             RunEventTypeEnum::MessageEnd->value => $this->applyMessageEnd($payload, $state, $messages),
             RunEventTypeEnum::ToolBatchCommitted->value => $this->applyToolBatchCommitted($state, $pendingToolCalls),
-            RunEventTypeEnum::WaitingHuman->value => $this->applyWaitingHuman($state),
+            RunEventTypeEnum::WaitingHuman->value => $this->applyWaitingHuman($event->payload, $state),
             RunEventTypeEnum::AgentEnd->value => $this->applyAgentEnd($payload, $state),
             RunEventTypeEnum::AgentStart->value,
             RunEventTypeEnum::TurnStart->value,
@@ -153,6 +157,7 @@ final readonly class RunStateReducer
             messages: $state->messages, // placeholder; actual messages in $messages by-ref
             activeStepId: $stepId,
             retryableFailure: false,
+            pendingHumanInputRequests: $state->pendingHumanInputRequests,
         );
     }
 
@@ -178,6 +183,7 @@ final readonly class RunStateReducer
             activeStepId: $stepId,
             retryableFailure: false,
             retryAttempts: $state->retryAttempts,
+            pendingHumanInputRequests: $state->pendingHumanInputRequests,
         );
     }
 
@@ -212,10 +218,11 @@ final readonly class RunStateReducer
                 messages: $state->messages,
                 activeStepId: $state->activeStepId,
                 retryableFailure: false,
+                pendingHumanInputRequests: $state->pendingHumanInputRequests,
             );
         }
 
-        // human_response: append message and transition to Running
+        // human_response: append message, clear matching pending request, transition to Running
         if ('human_response' === $kind) {
             $messagePayload = \is_array($payload['message'] ?? null) ? $payload['message'] : null;
             if (null !== $messagePayload) {
@@ -223,6 +230,23 @@ final readonly class RunStateReducer
                 if (null !== $msg) {
                     $messages[] = $msg;
                 }
+            }
+
+            $questionId = \is_string($payload['question_id'] ?? null) ? $payload['question_id'] : null;
+            $remaining = $state->pendingHumanInputRequests;
+            if (null !== $questionId) {
+                $remaining = [];
+                $cleared = false;
+                foreach ($state->pendingHumanInputRequests as $request) {
+                    if (!$cleared && $request->questionId === $questionId) {
+                        $cleared = true;
+                        continue;
+                    }
+                    $remaining[] = $request;
+                }
+            } elseif ([] !== $state->pendingHumanInputRequests) {
+                // Legacy events without question_id: clear the active (first) request.
+                $remaining = array_values(\array_slice($state->pendingHumanInputRequests, 1));
             }
 
             return new RunState(
@@ -238,6 +262,7 @@ final readonly class RunStateReducer
                 messages: $state->messages,
                 activeStepId: $state->activeStepId,
                 retryableFailure: false,
+                pendingHumanInputRequests: $remaining,
             );
         }
 
@@ -258,6 +283,7 @@ final readonly class RunStateReducer
                 messages: $state->messages,
                 activeStepId: $state->activeStepId,
                 retryableFailure: false,
+                pendingHumanInputRequests: $state->pendingHumanInputRequests,
             );
         }
 
@@ -281,6 +307,7 @@ final readonly class RunStateReducer
                 activeStepId: $state->activeStepId,
                 retryableFailure: false,
                 retryAttempts: $retryAttempts,
+                pendingHumanInputRequests: $state->pendingHumanInputRequests,
             );
         }
 
@@ -307,6 +334,7 @@ final readonly class RunStateReducer
             messages: $state->messages,
             activeStepId: $state->activeStepId,
             retryableFailure: $state->retryableFailure,
+            pendingHumanInputRequests: $state->pendingHumanInputRequests,
         );
     }
 
@@ -359,6 +387,7 @@ final readonly class RunStateReducer
             activeStepId: $state->activeStepId,
             retryableFailure: false,
             retryAttempts: 0,
+            pendingHumanInputRequests: $state->pendingHumanInputRequests,
         );
     }
 
@@ -388,6 +417,7 @@ final readonly class RunStateReducer
             activeStepId: $state->activeStepId,
             retryableFailure: $retryable,
             retryAttempts: $retryAttempt,
+            pendingHumanInputRequests: $state->pendingHumanInputRequests,
         );
     }
 
@@ -463,8 +493,19 @@ final readonly class RunStateReducer
         return $state;
     }
 
-    private function applyWaitingHuman(RunState $state): RunState
+    /**
+     * @param array<string, mixed> $payload
+     */
+    private function applyWaitingHuman(array $payload, RunState $state): RunState
     {
+        $pending = $state->pendingHumanInputRequests;
+        // waiting_human status must still apply even if payload is incomplete.
+        // Incomplete payloads leave the request list unchanged; answer validation rejects later.
+        if ((\is_string($payload['question_id'] ?? null) && '' !== $payload['question_id'])
+            || (\is_string($payload['tool_call_id'] ?? null) && '' !== $payload['tool_call_id'])) {
+            $pending = [...$pending, PendingHumanInputRequestDTO::modelTurnFromInterruptPayload($payload)];
+        }
+
         return new RunState(
             runId: $state->runId,
             status: RunStatus::WaitingHuman,
@@ -478,6 +519,7 @@ final readonly class RunStateReducer
             messages: $state->messages,
             activeStepId: $state->activeStepId,
             retryableFailure: $state->retryableFailure,
+            pendingHumanInputRequests: $pending,
         );
     }
 
@@ -507,6 +549,7 @@ final readonly class RunStateReducer
             messages: $state->messages,
             activeStepId: null,
             retryableFailure: false,
+            pendingHumanInputRequests: $state->pendingHumanInputRequests,
         );
     }
 
@@ -542,6 +585,7 @@ final readonly class RunStateReducer
             messages: $state->messages,
             activeStepId: $stepId,
             retryableFailure: $state->retryableFailure,
+            pendingHumanInputRequests: $state->pendingHumanInputRequests,
         );
     }
 
@@ -599,6 +643,7 @@ final readonly class RunStateReducer
             messages: $state->messages,
             activeStepId: null,
             retryableFailure: $state->retryableFailure,
+            pendingHumanInputRequests: $state->pendingHumanInputRequests,
         );
     }
 
@@ -648,6 +693,7 @@ final readonly class RunStateReducer
                 messages: $state->messages,
                 activeStepId: $state->activeStepId,
                 retryableFailure: $state->retryableFailure,
+                pendingHumanInputRequests: $state->pendingHumanInputRequests,
             );
         }
 
@@ -682,6 +728,7 @@ final readonly class RunStateReducer
                 messages: $state->messages,
                 activeStepId: null,
                 retryableFailure: $state->retryableFailure,
+                pendingHumanInputRequests: $state->pendingHumanInputRequests,
             );
         }
 
@@ -702,6 +749,7 @@ final readonly class RunStateReducer
             messages: $state->messages,
             activeStepId: $state->activeStepId,
             retryableFailure: $state->retryableFailure,
+            pendingHumanInputRequests: $state->pendingHumanInputRequests,
         );
     }
 

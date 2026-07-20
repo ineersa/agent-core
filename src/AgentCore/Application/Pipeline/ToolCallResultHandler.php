@@ -12,6 +12,7 @@ use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
+use Ineersa\AgentCore\Domain\Run\PendingHumanInputRequestDTO;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Symfony\Component\Messenger\Exception\ExceptionInterface;
@@ -181,6 +182,7 @@ final readonly class ToolCallResultHandler implements RunMessageHandler
                 messages: $messages,
                 activeStepId: $state->activeStepId,
                 retryableFailure: false,
+                pendingHumanInputRequests: $state->pendingHumanInputRequests,
             );
 
             $postCommit = $this->turnCompletedCallbacks($runId, $state->turnNo);
@@ -301,11 +303,16 @@ final readonly class ToolCallResultHandler implements RunMessageHandler
 
             $pendingToolCalls = [];
 
+            $pendingHumanInputRequests = $state->pendingHumanInputRequests;
             if (null !== $interruptPayload) {
                 $status = RunStatus::WaitingHuman;
                 $eventSpecs[] = [
                     'type' => RunEventTypeEnum::WaitingHuman->value,
                     'payload' => $interruptPayload,
+                ];
+                // ask_human path: exactly one model-turn pending request for this interrupt.
+                $pendingHumanInputRequests = [
+                    PendingHumanInputRequestDTO::modelTurnFromInterruptPayload($interruptPayload),
                 ];
             }
 
@@ -317,6 +324,8 @@ final readonly class ToolCallResultHandler implements RunMessageHandler
                     $postCommit[] = $followUpAdvance;
                 }
             }
+        } else {
+            $pendingHumanInputRequests = $state->pendingHumanInputRequests;
         }
 
         $events = $this->eventFactory->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, $eventSpecs);
@@ -334,6 +343,7 @@ final readonly class ToolCallResultHandler implements RunMessageHandler
             messages: $messages,
             activeStepId: $state->activeStepId,
             retryableFailure: false,
+            pendingHumanInputRequests: $pendingHumanInputRequests,
         );
 
         return new HandlerResult(

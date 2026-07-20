@@ -15,6 +15,7 @@ use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
 use Ineersa\AgentCore\Domain\Message\ApplyCommand;
 use Ineersa\AgentCore\Domain\Message\CompactRun;
+use Ineersa\AgentCore\Domain\Run\HumanInputContinuationKindEnum;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Symfony\Component\Messenger\Exception\ExceptionInterface;
@@ -153,6 +154,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
             messages: $state->messages,
             activeStepId: $state->activeStepId,
             retryableFailure: $state->retryableFailure,
+            pendingHumanInputRequests: $state->pendingHumanInputRequests,
         );
 
         $queuedEvent = $this->eventFactory->event(
@@ -217,6 +219,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
             messages: $state->messages,
             activeStepId: $state->activeStepId,
             retryableFailure: $state->retryableFailure,
+            pendingHumanInputRequests: $state->pendingHumanInputRequests,
         );
 
         $event = $this->eventFactory->event(
@@ -329,6 +332,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
                         messages: $state->messages,
                         activeStepId: null,
                         retryableFailure: false,
+                        pendingHumanInputRequests: $state->pendingHumanInputRequests,
                     ),
                     events: $events,
                     postCommit: $postCommit,
@@ -357,6 +361,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
                 messages: $state->messages,
                 activeStepId: $state->activeStepId,
                 retryableFailure: $state->retryableFailure,
+                pendingHumanInputRequests: $state->pendingHumanInputRequests,
             );
 
             return new HandlerResult(
@@ -397,6 +402,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
                 messages: $state->messages,
                 activeStepId: null,
                 retryableFailure: false,
+                pendingHumanInputRequests: $state->pendingHumanInputRequests,
             );
 
             $postCommit = [];
@@ -427,6 +433,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
             messages: $state->messages,
             activeStepId: $state->activeStepId,
             retryableFailure: false,
+            pendingHumanInputRequests: $state->pendingHumanInputRequests,
         );
 
         return new HandlerResult(
@@ -488,6 +495,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
             messages: $state->messages,
             activeStepId: $state->activeStepId,
             retryableFailure: $state->retryableFailure,
+            pendingHumanInputRequests: $state->pendingHumanInputRequests,
         );
 
         $queuedEvent = $this->eventFactory->event(
@@ -539,6 +547,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
             activeStepId: $state->activeStepId,
             retryableFailure: false,
             retryAttempts: $retryAttempts,
+            pendingHumanInputRequests: $state->pendingHumanInputRequests,
         );
 
         $event = $this->eventFactory->event(
@@ -580,6 +589,34 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
             );
         }
 
+        $questionId = \is_string($message->payload['question_id'] ?? null) ? $message->payload['question_id'] : null;
+        $activeRequest = $state->pendingHumanInputRequests[0] ?? null;
+        if (null === $activeRequest) {
+            return $this->rejectCommand(
+                $state,
+                $message,
+                'human_response rejected: no pending human-input request.',
+            );
+        }
+        if (null === $questionId || $questionId !== $activeRequest->questionId) {
+            return $this->rejectCommand(
+                $state,
+                $message,
+                \sprintf(
+                    'human_response rejected: question_id does not match the active pending request (expected "%s").',
+                    $activeRequest->questionId,
+                ),
+            );
+        }
+        // Slice A: only model-turn continuation is implemented.
+        if (HumanInputContinuationKindEnum::ModelTurn !== $activeRequest->continuationKind) {
+            return $this->rejectCommand(
+                $state,
+                $message,
+                'human_response rejected: tool-call continuation is not implemented yet.',
+            );
+        }
+
         $humanResponseMessage = $this->messageNormalizer->humanResponseMessage($message->payload);
         if (null === $humanResponseMessage) {
             return $this->rejectCommand($state, $message, 'Invalid human_response payload: missing answer.');
@@ -590,6 +627,8 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
 
         $messages = $state->messages;
         $messages[] = $humanResponseMessage;
+
+        $remainingRequests = array_values(\array_slice($state->pendingHumanInputRequests, 1));
 
         $nextState = new RunState(
             runId: $state->runId,
@@ -604,6 +643,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
             messages: $messages,
             activeStepId: $state->activeStepId,
             retryableFailure: false,
+            pendingHumanInputRequests: $remainingRequests,
         );
 
         $humanResponseMessageArray = $humanResponseMessage->toArray();
@@ -672,6 +712,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
                 messages: $state->messages,
                 activeStepId: $state->activeStepId,
                 retryableFailure: $state->retryableFailure,
+                pendingHumanInputRequests: $state->pendingHumanInputRequests,
             );
 
             $appliedEvent = $this->eventFactory->event(
@@ -724,6 +765,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
             messages: $state->messages,
             activeStepId: $state->activeStepId,
             retryableFailure: $state->retryableFailure,
+            pendingHumanInputRequests: $state->pendingHumanInputRequests,
         );
 
         $queuedEvent = $this->eventFactory->event(

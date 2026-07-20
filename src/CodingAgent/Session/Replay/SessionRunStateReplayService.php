@@ -106,6 +106,7 @@ final readonly class SessionRunStateReplayService implements RunStateRebuilderIn
                 activeStepId: $rebuiltState->activeStepId,
                 retryableFailure: $rebuiltState->retryableFailure,
                 retryAttempts: $rebuiltState->retryAttempts,
+                pendingHumanInputRequests: $rebuiltState->pendingHumanInputRequests,
             );
 
             $this->logger->info('run_state_replay.rebuilt', [
@@ -201,6 +202,7 @@ final readonly class SessionRunStateReplayService implements RunStateRebuilderIn
                 activeStepId: $rebuiltState->activeStepId,
                 retryableFailure: $rebuiltState->retryableFailure,
                 retryAttempts: $rebuiltState->retryAttempts,
+                pendingHumanInputRequests: $rebuiltState->pendingHumanInputRequests,
             );
 
             $this->logger->info('run_state_replay.rebuilt_for_leaf', [

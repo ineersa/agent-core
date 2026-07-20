@@ -206,8 +206,8 @@ final class PendingHumanInputAnswerValidationTest extends TestCase
         foreach ($result->postCommit as $callback) {
             $callback();
         }
-        $this->assertNotEmpty($commandBus->dispatched);
-        $advance = $commandBus->dispatched[0];
+        $this->assertNotEmpty($commandBus->messages);
+        $advance = $commandBus->messages[0];
         $this->assertInstanceOf(\Ineersa\AgentCore\Domain\Message\AdvanceRun::class, $advance);
         $this->assertSame('run-hitl-ok', $advance->runId());
     }
