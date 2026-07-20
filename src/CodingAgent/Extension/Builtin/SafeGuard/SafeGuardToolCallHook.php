@@ -79,8 +79,6 @@ final readonly class SafeGuardToolCallHook implements ToolCallHookInterface, App
 
     public function onToolCall(ToolCallContextDTO $context): ToolCallDecisionDTO
     {
-        $operationKey = $this->resolveOperationKey($context);
-
         $decision = $this->classifier->classify(
             toolName: $context->toolName,
             arguments: $context->arguments,
@@ -126,14 +124,12 @@ final readonly class SafeGuardToolCallHook implements ToolCallHookInterface, App
                 );
             }
 
-            // Determine the operation spec for the approval context
-            $spec = $this->resolveOperationSpec($context);
             $settingsMutation = $this->isSettingsMutation($context);
 
-            // Deterministic per call so redelivery reuses the same identity.
+            // Stable per exact call: run_id + tool_call_id (no tracker operation key).
             $questionId = \sprintf(
                 'sg_%s',
-                hash('sha256', \sprintf('%s|%s|%s', $operationKey ?? $spec, $context->runId ?? '', $context->toolCallId)),
+                hash('sha256', \sprintf('%s|%s', $context->runId ?? '', $context->toolCallId)),
             );
 
             // Settings mutations are one-shot only — never offer Always allow.
@@ -158,7 +154,6 @@ final readonly class SafeGuardToolCallHook implements ToolCallHookInterface, App
                     'command' => $this->extractCommand($context),
                     'path' => $this->extractPath($context),
                     'tool_name' => $decision->toolName,
-                    'operation_key' => $operationKey,
                     'intercepted' => true,
                 ],
             );
@@ -216,7 +211,8 @@ final readonly class SafeGuardToolCallHook implements ToolCallHookInterface, App
             );
         }
 
-        if ('cancel' === $answer) {
+        // Canonical HITL cancel vocabulary (and explicit cancel labels).
+        if ('cancel' === $answer || 'Cancelled by user' === $answer) {
             return ToolCallDecisionDTO::block(
                 reason: 'safeguard_cancelled',
                 details: [
@@ -230,64 +226,18 @@ final readonly class SafeGuardToolCallHook implements ToolCallHookInterface, App
             );
         }
 
-        // Unrecognized answer — fail closed
+        // Unrecognized answer — fail closed without echoing the raw answer.
         return ToolCallDecisionDTO::block(
             reason: 'safeguard_unknown_answer',
             details: [
                 'category' => $context->approvalContext['category'] ?? '',
                 'intercepted' => true,
                 'message' => \sprintf(
-                    'Tool "%s" was denied by SafeGuard: unknown answer "%s".',
+                    'Tool "%s" was denied by SafeGuard: unrecognized approval answer.',
                     $context->toolName,
-                    $answer,
                 ),
             ],
         );
-    }
-
-    /**
-     * Determine the tracker operation key from the tool call context.
-     *
-     * Format: {category}:{normalized_command_or_path}
-     * null if the operation cannot be identified uniquely.
-     */
-    private function resolveOperationKey(ToolCallContextDTO $context): ?string
-    {
-        if ($this->isSettingsMutation($context)) {
-            $operation = $context->arguments['operation'];
-            $scope = \is_string($context->arguments['scope'] ?? null) ? $context->arguments['scope'] : '';
-            $path = \is_string($context->arguments['path'] ?? null) ? $context->arguments['path'] : '';
-
-            return \sprintf('%s:%s:%s:%s', $this->settingsToolName, $operation, $scope, $path);
-        }
-
-        $command = $this->extractCommand($context);
-        if (null !== $command) {
-            return \sprintf('%s:%s', $this->toolPrefix($context->toolName), $command);
-        }
-
-        $path = $this->extractPath($context);
-        if (null !== $path) {
-            return \sprintf('%s:%s', $this->toolPrefix($context->toolName), $path);
-        }
-
-        return null;
-    }
-
-    /**
-     * Get a human-readable operation spec for the approval context.
-     */
-    private function resolveOperationSpec(ToolCallContextDTO $context): string
-    {
-        if ($this->isSettingsMutation($context)) {
-            $operation = $context->arguments['operation'];
-            $scope = \is_string($context->arguments['scope'] ?? null) ? $context->arguments['scope'] : '';
-            $path = \is_string($context->arguments['path'] ?? null) ? $context->arguments['path'] : '';
-
-            return \sprintf('%s:%s:%s:%s', $this->settingsToolName, $operation, $scope, $path);
-        }
-
-        return $this->extractCommand($context) ?? $this->extractPath($context) ?? $context->toolName;
     }
 
     /**
@@ -312,22 +262,6 @@ final readonly class SafeGuardToolCallHook implements ToolCallHookInterface, App
         $path = $context->arguments['path'] ?? null;
 
         return \is_string($path) && '' !== $path ? $path : null;
-    }
-
-    /**
-     * Get the tracker key prefix for a tool name.
-     */
-    private function toolPrefix(string $toolName): string
-    {
-        // bash tools use command-based classification
-        // write/edit/read tools use path-based classification
-        // For the tracker key, we use the tool name itself as a prefix
-        // since the actual category (destructive, write_outside, etc.)
-        // is unknown until after classification.
-        //
-        // The onApprovalAnswered() receives the actual category in the
-        // approval context, so the tracker key prefix is informational.
-        return $toolName;
     }
 
     /**

@@ -73,6 +73,8 @@ final readonly class PendingHumanInputRequestDTO
             throw new \InvalidArgumentException('waiting_human payload is missing non-empty question_id.');
         }
 
+        self::assertToolCallContinuationRef($continuationRef);
+
         // Canonical owner of correlation is $continuationRef (DTO property).
         // Do not also stash a second authoritative copy inside $payload at construction;
         // waitingHumanEventPayload() derives the self-describing event map for live/replay.
@@ -84,6 +86,27 @@ final readonly class PendingHumanInputRequestDTO
             payload: $payload,
             continuationRef: $continuationRef,
         );
+    }
+
+    /**
+     * Fail closed when ToolCall correlation is incomplete/malformed.
+     *
+     * @param array<string, mixed> $continuationRef
+     */
+    public static function assertToolCallContinuationRef(array $continuationRef): void
+    {
+        $runId = $continuationRef['run_id'] ?? null;
+        $turnNo = $continuationRef['turn_no'] ?? null;
+        $stepId = $continuationRef['step_id'] ?? null;
+        $toolCallId = $continuationRef['tool_call_id'] ?? null;
+
+        if (!\is_string($runId) || '' === $runId
+            || !\is_int($turnNo)
+            || !\is_string($stepId) || '' === $stepId
+            || !\is_string($toolCallId) || '' === $toolCallId
+        ) {
+            throw new \InvalidArgumentException('tool_call continuation_ref must include non-empty run_id, step_id, tool_call_id and integer turn_no.');
+        }
     }
 
     /**

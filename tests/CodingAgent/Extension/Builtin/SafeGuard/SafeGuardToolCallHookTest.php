@@ -83,6 +83,13 @@ final class SafeGuardToolCallHookTest extends TestCase
         $this->assertSame('safeguard_denied', $decision->reason);
     }
 
+    public function testResolveApprovalAnswerCancelledByUserIsFailClosedCancel(): void
+    {
+        $decision = $this->hook->resolveApprovalAnswer(new ApprovalAnswerContextDTO('q', 'Cancelled by user', 'bash', ['category' => 'destructive']));
+        $this->assertSame(ToolCallDecisionKindEnum::Block, $decision->kind);
+        $this->assertSame('safeguard_cancelled', $decision->reason);
+    }
+
     public function testAlwaysAllowPersistsPatternWithoutTracker(): void
     {
         $tmpDir = sys_get_temp_dir().'/sg_hook_'.uniqid();
@@ -100,12 +107,12 @@ final class SafeGuardToolCallHookTest extends TestCase
             );
             $dto = $hook->onToolCall(new ToolCallContextDTO('c5', 'bash', ['command' => 'rm -rf /tmp/build'], 0));
             $this->assertSame(ToolCallDecisionKindEnum::RequireApproval, $dto->kind);
+            $this->assertArrayNotHasKey('operation_key', $dto->details);
             $hook->onApprovalAnswered(new ApprovalAnswerContextDTO(
                 (string) $dto->details['question_id'],
                 '📌 Always allow',
                 'bash',
                 [
-                    'operation_key' => $dto->details['operation_key'],
                     'category' => 'destructive',
                     'command' => 'rm -rf /tmp/build',
                     'tool_name' => 'bash',

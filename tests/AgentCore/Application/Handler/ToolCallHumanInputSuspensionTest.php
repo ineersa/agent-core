@@ -234,6 +234,205 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
         $this->assertInstanceOf(ExecuteToolCall::class, $result->postCommitEffects[0]);
         $this->assertSame('call-h2', $result->postCommitEffects[0]->toolCallId);
         $this->assertArrayNotHasKey('message', $result->events[0]->payload);
+        $this->assertNotEmpty($result->postCommit, 'markApplied must wait for post-commit after effects');
+        $this->assertFalse($store->has('run-h2', 'human-q-h2'));
+        foreach ($result->postCommit as $callback) {
+            $callback();
+        }
+        $this->assertTrue($store->has('run-h2', 'human-q-h2'));
+
+        // Identical resume while already inFlight returns the same effect (CAS retry safety).
+        $same = $collector2->resumeHumanInputAnswer(
+            'run-h2',
+            2,
+            'step-h2',
+            'call-h2',
+            'q-h2',
+            new \Ineersa\AgentCore\Domain\Tool\ToolCallHumanInputAnswerDTO(
+                questionId: 'q-h2',
+                answer: 'Allow once',
+                continuationRef: ['run_id' => 'run-h2', 'turn_no' => 2, 'step_id' => 'step-h2', 'tool_call_id' => 'call-h2'],
+                requestPayload: ['question_id' => 'q-h2', 'prompt' => 'Allow id?'],
+            ),
+        );
+        $this->assertCount(1, $same);
+        $this->assertSame('call-h2', $same[0]->toolCallId);
+
+        // Durable redrive by question_id + answer after state already advanced.
+        $redrive = $collector2->redriveHumanInputAnswer('run-h2', 2, 'step-h2', 'q-h2', 'Allow once');
+        $this->assertCount(1, $redrive);
+        $this->assertSame('call-h2', $redrive[0]->toolCallId);
+    }
+
+    public function testMalformedToolCallContinuationRefIsRejectedAtConstructionAndAnswer(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        PendingHumanInputRequestDTO::toolCallFromPayload(
+            ['question_id' => 'q-bad'],
+            ['run_id' => 'run-bad'], // missing turn/step/tool_call
+        );
+    }
+
+    public function testCrossCorrelatedToolCallAnswerIsRejected(): void
+    {
+        $store = new \Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore();
+        $router = new \Ineersa\AgentCore\Application\Handler\CommandRouter(new \Ineersa\AgentCore\Application\Handler\CommandHandlerRegistry([]));
+        $collector = new ToolBatchCollector();
+        $collector->registerExpectedBatch('run-x', 1, 'step-x', [$this->call('run-x', 'step-x', 'call-x', 0)]);
+        $collector->admitHumanInputSuspension('run-x', 1, 'step-x', 'call-x', 'q-x');
+        $handler = new \Ineersa\AgentCore\Application\Pipeline\ApplyCommandHandler(
+            commandStore: $store,
+            commandRouter: $router,
+            commandMailboxPolicy: new \Ineersa\AgentCore\Application\Pipeline\CommandMailboxPolicy($store, $router),
+            eventFactory: new EventFactory(),
+            messageNormalizer: new AgentMessageNormalizer(),
+            maxPendingCommands: 10,
+            commandBus: new TestMessageBus(),
+            toolBatchCollector: $collector,
+        );
+        $state = RunStateBuilder::running('run-x')
+            ->withStatus(RunStatus::WaitingHuman)
+            ->withTurnNo(1)
+            ->withActiveStepId('step-x')
+            ->withPendingToolCalls(['call-x' => false])
+            ->withPendingHumanInputRequests([
+                PendingHumanInputRequestDTO::toolCallFromPayload(
+                    ['question_id' => 'q-x', 'prompt' => 'Allow?'],
+                    // wrong tool_call_id vs pendingToolCalls keys / batch
+                    ['run_id' => 'run-x', 'turn_no' => 1, 'step_id' => 'step-x', 'tool_call_id' => 'call-other'],
+                ),
+            ])
+            ->build();
+        $result = $handler->handle(new \Ineersa\AgentCore\Domain\Message\ApplyCommand(
+            runId: 'run-x',
+            turnNo: 1,
+            stepId: 'human-step',
+            attempt: 1,
+            idempotencyKey: 'human-q-x',
+            kind: \Ineersa\AgentCore\Domain\Command\CoreCommandKind::HumanResponse,
+            payload: ['question_id' => 'q-x', 'answer' => 'Allow once'],
+        ), $state);
+        $this->assertSame(RunStatus::WaitingHuman, $result->nextState?->status);
+        $this->assertSame(RunEventTypeEnum::AgentCommandRejected->value, $result->events[0]->type ?? null);
+        $this->assertStringContainsString('continuation_ref', (string) $result->nextState?->errorMessage);
+    }
+
+    public function testPostCommitEffectDispatchFailureRedrivesExactCallWithoutMarkingApplied(): void
+    {
+        $runStore = new \Ineersa\AgentCore\Infrastructure\Storage\InMemoryRunStore();
+        $eventStore = new \Ineersa\AgentCore\Tests\Support\InMemoryEventStore();
+        $commandStore = new \Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore();
+        $collector = new ToolBatchCollector();
+        $collector->registerExpectedBatch('run-pc', 1, 'step-pc', [$this->call('run-pc', 'step-pc', 'call-pc', 0)]);
+        $collector->admitHumanInputSuspension('run-pc', 1, 'step-pc', 'call-pc', 'q-pc');
+
+        $waiting = RunStateBuilder::running('run-pc')
+            ->withStatus(RunStatus::WaitingHuman)
+            ->withVersion(1)
+            ->withTurnNo(1)
+            ->withLastSeq(1)
+            ->withActiveStepId('step-pc')
+            ->withPendingToolCalls(['call-pc' => false])
+            ->withPendingHumanInputRequests([
+                PendingHumanInputRequestDTO::toolCallFromPayload(
+                    ['question_id' => 'q-pc', 'prompt' => 'Allow?'],
+                    ['run_id' => 'run-pc', 'turn_no' => 1, 'step_id' => 'step-pc', 'tool_call_id' => 'call-pc'],
+                ),
+            ])
+            ->build();
+        $this->assertTrue($runStore->compareAndSwap($waiting, 0));
+
+        $executionBus = new class implements \Symfony\Component\Messenger\MessageBusInterface {
+            public int $attempts = 0;
+
+            /** @var list<object> */
+            public array $dispatched = [];
+
+            public function dispatch(object $message, array $stamps = []): \Symfony\Component\Messenger\Envelope
+            {
+                ++$this->attempts;
+                if (1 === $this->attempts) {
+                    throw new \Symfony\Component\Messenger\Exception\TransportException('simulated post-commit dispatch crash');
+                }
+                $this->dispatched[] = $message;
+
+                return new \Symfony\Component\Messenger\Envelope($message, $stamps);
+            }
+        };
+
+        $router = new \Ineersa\AgentCore\Application\Handler\CommandRouter(new \Ineersa\AgentCore\Application\Handler\CommandHandlerRegistry([]));
+        $handler = new \Ineersa\AgentCore\Application\Pipeline\ApplyCommandHandler(
+            commandStore: $commandStore,
+            commandRouter: $router,
+            commandMailboxPolicy: new \Ineersa\AgentCore\Application\Pipeline\CommandMailboxPolicy($commandStore, $router),
+            eventFactory: new EventFactory(),
+            messageNormalizer: new AgentMessageNormalizer(),
+            maxPendingCommands: 10,
+            commandBus: new TestMessageBus(),
+            toolBatchCollector: $collector,
+        );
+
+        $processor = new \Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor(
+            runStore: $runStore,
+            idempotency: new \Ineersa\AgentCore\Application\Handler\MessageIdempotencyService(new InMemoryIdempotencyStore()),
+            runLockManager: new \Ineersa\AgentCore\Application\Handler\RunLockManager(new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\InMemoryStore())),
+            runCommit: new \Ineersa\AgentCore\Application\Pipeline\RunCommit(
+                runStore: $runStore,
+                eventStore: $eventStore,
+                commandStore: $commandStore,
+                hotPromptStateRebuilder: new class implements \Ineersa\AgentCore\Contract\Replay\HotPromptStateRebuilderInterface {
+                    public function rebuildHotPromptState(string $runId): \Ineersa\AgentCore\Domain\Run\PromptState
+                    {
+                        return new \Ineersa\AgentCore\Domain\Run\PromptState(
+                            runId: $runId,
+                            source: 'test',
+                            eventCount: 0,
+                            lastSeq: 0,
+                            missingSequences: [],
+                            isContiguous: true,
+                            tokenEstimate: 0,
+                            messages: [],
+                        );
+                    }
+                },
+                stepDispatcher: new \Ineersa\AgentCore\Application\Handler\StepDispatcher($executionBus),
+                logger: new \Psr\Log\NullLogger(),
+            ),
+            stepDispatcher: new \Ineersa\AgentCore\Application\Handler\StepDispatcher($executionBus),
+            handlers: [$handler],
+            logger: new \Psr\Log\NullLogger(),
+        );
+
+        $command = new \Ineersa\AgentCore\Domain\Message\ApplyCommand(
+            runId: 'run-pc',
+            turnNo: 1,
+            stepId: 'human-step',
+            attempt: 1,
+            idempotencyKey: 'human-q-pc',
+            kind: \Ineersa\AgentCore\Domain\Command\CoreCommandKind::HumanResponse,
+            payload: ['question_id' => 'q-pc', 'answer' => 'Allow once'],
+        );
+
+        try {
+            $processor->process('command', $command);
+            $this->fail('first process must throw when effect dispatch fails');
+        } catch (\RuntimeException $exception) {
+            $this->assertStringContainsString('Failed to dispatch execution effect', $exception->getMessage());
+        }
+
+        $afterFail = $runStore->get('run-pc');
+        $this->assertNotNull($afterFail);
+        $this->assertSame(RunStatus::Running, $afterFail->status);
+        $this->assertSame([], $afterFail->pendingHumanInputRequests);
+        $this->assertFalse($commandStore->has('run-pc', 'human-q-pc'));
+
+        $processor->process('command', $command);
+
+        $this->assertTrue($commandStore->has('run-pc', 'human-q-pc'));
+        $this->assertCount(1, $executionBus->dispatched);
+        $this->assertInstanceOf(ExecuteToolCall::class, $executionBus->dispatched[0]);
+        $this->assertSame('call-pc', $executionBus->dispatched[0]->toolCallId);
+        $this->assertNotNull($executionBus->dispatched[0]->humanInputAnswer);
     }
 
     private function call(

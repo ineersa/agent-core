@@ -140,7 +140,9 @@ final class ToolBatchCollector
      * exact stored call, clear the awaiting marker, and requeue through the existing
      * pendingQueue + dispatchableCalls/maxParallelism path.
      *
-     * Idempotent when the call is already inFlight with an identical answer.
+     * Idempotent when the call is already inFlight/queued with an identical answer:
+     * returns the same ExecuteToolCall effect so post-commit redispatch survives CAS
+     * retries and failed-once dispatch without a second lifecycle.
      * Conflicting answer or missing awaiting marker fails closed.
      *
      * @return list<ExecuteToolCall>
@@ -181,6 +183,53 @@ final class ToolBatchCollector
     }
 
     /**
+     * Post-commit redrive after human_response already mutated durable batch state.
+     *
+     * Locates exactly one call for the current run/turn/step whose stored answer
+     * matches `$questionId` and `$answerValue`. Returns:
+     * - the exact in-flight ExecuteToolCall when already dispatched
+     * - dispatchableCalls when still queued
+     * - empty list when already completed (recognized no-op)
+     *
+     * Ambiguous matches or answer conflicts fail closed.
+     *
+     * @return list<ExecuteToolCall>
+     */
+    public function redriveHumanInputAnswer(
+        string $runId,
+        int $turnNo,
+        string $stepId,
+        string $questionId,
+        mixed $answerValue,
+    ): array {
+        if (null !== $this->store) {
+            /* @var list<ExecuteToolCall> */
+            return $this->store->mutate(
+                $runId,
+                $turnNo,
+                $stepId,
+                function (?ToolBatchStateDTO $stored) use ($runId, $turnNo, $stepId, $questionId, $answerValue): ToolBatchStoreMutation {
+                    if (null === $stored) {
+                        throw new \LogicException(\sprintf('Cannot redrive tool-execution human input for unknown batch run=%s turn=%d step=%s.', $runId, $turnNo, $stepId));
+                    }
+
+                    return new ToolBatchStoreMutation($this->applyHumanInputRedriveToBatch($stored, $questionId, $answerValue), $stored);
+                },
+            );
+        }
+
+        $batch = $this->loadBatch($runId, $turnNo, $stepId);
+        if (null === $batch) {
+            throw new \LogicException(\sprintf('Cannot redrive tool-execution human input for unknown batch run=%s turn=%d step=%s.', $runId, $turnNo, $stepId));
+        }
+
+        $effects = $this->applyHumanInputRedriveToBatch($batch, $questionId, $answerValue);
+        $this->saveBatch($runId, $turnNo, $stepId, $batch);
+
+        return $effects;
+    }
+
+    /**
      * @return list<ExecuteToolCall>
      */
     private function applyHumanInputSuspensionToBatch(
@@ -199,10 +248,16 @@ final class ToolBatchCollector
         $existingQuestionId = $batch->awaitingHumanInput[$toolCallId] ?? null;
         if (null !== $existingQuestionId) {
             if ($existingQuestionId === $questionId) {
+                // Exact duplicate admission is idempotent even after capacity free.
                 return [];
             }
 
             throw new \LogicException(\sprintf('Conflicting tool-execution suspension for call "%s": existing request "%s", new request "%s".', $toolCallId, $existingQuestionId, $questionId));
+        }
+
+        // First admission must free a currently in-flight worker slot.
+        if (!isset($batch->inFlight[$toolCallId])) {
+            throw new \LogicException(\sprintf('Cannot admit tool-execution suspension for call "%s": call is not in flight.', $toolCallId));
         }
 
         unset($batch->inFlight[$toolCallId]);
@@ -242,11 +297,12 @@ final class ToolBatchCollector
         $awaitingQuestionId = $batch->awaitingHumanInput[$toolCallId] ?? null;
         $existingAnswer = $existingCall->humanInputAnswer;
 
-        // Idempotent CAS retry: already requeued/in-flight with identical answer → same effect.
+        // Idempotent CAS / post-commit retry: already requeued or in-flight with identical
+        // answer → return the exact ExecuteToolCall so the undispatched effect is not lost.
         if (null === $awaitingQuestionId) {
             if ($existingAnswer instanceof ToolCallHumanInputAnswerDTO && $existingAnswer->isEquivalent($answer)) {
                 if (isset($batch->inFlight[$toolCallId])) {
-                    return [];
+                    return [$existingCall];
                 }
                 if (\in_array($toolCallId, $batch->pendingQueue, true)) {
                     return $this->dispatchableCalls($batch);
@@ -264,6 +320,67 @@ final class ToolBatchCollector
         unset($batch->awaitingHumanInput[$toolCallId]);
 
         // Requeue at the front so capacity-aware dispatch picks this exact call next.
+        $batch->pendingQueue = array_values(array_filter(
+            $batch->pendingQueue,
+            static fn (string $id): bool => $id !== $toolCallId,
+        ));
+        array_unshift($batch->pendingQueue, $toolCallId);
+
+        return $this->dispatchableCalls($batch);
+    }
+
+    /**
+     * @return list<ExecuteToolCall>
+     */
+    private function applyHumanInputRedriveToBatch(
+        ToolBatchStateDTO $batch,
+        string $questionId,
+        mixed $answerValue,
+    ): array {
+        $matches = [];
+        foreach ($batch->calls as $toolCallId => $call) {
+            if (!$call instanceof ExecuteToolCall) {
+                continue;
+            }
+            $storedAnswer = $call->humanInputAnswer;
+            if (!$storedAnswer instanceof ToolCallHumanInputAnswerDTO) {
+                continue;
+            }
+            if ($storedAnswer->questionId !== $questionId) {
+                continue;
+            }
+            $matches[$toolCallId] = $call;
+        }
+
+        if ([] === $matches) {
+            throw new \LogicException(\sprintf('Cannot redrive tool-execution human input for question "%s": no stored answered call.', $questionId));
+        }
+        if (\count($matches) > 1) {
+            throw new \LogicException(\sprintf('Cannot redrive tool-execution human input for question "%s": ambiguous answered call match.', $questionId));
+        }
+
+        $toolCallId = array_key_first($matches);
+        $existingCall = $matches[$toolCallId];
+        $existingAnswer = $existingCall->humanInputAnswer;
+        if (!$existingAnswer instanceof ToolCallHumanInputAnswerDTO || $existingAnswer->answer !== $answerValue) {
+            throw new \LogicException(\sprintf('Cannot redrive tool-execution human input for call "%s": stored answer conflicts with redrive answer.', $toolCallId));
+        }
+
+        // Recognized completed no-op: answer already applied and tool finished.
+        if (isset($batch->results[$toolCallId])) {
+            return [];
+        }
+
+        if (isset($batch->inFlight[$toolCallId])) {
+            return [$existingCall];
+        }
+
+        if (\in_array($toolCallId, $batch->pendingQueue, true)) {
+            return $this->dispatchableCalls($batch);
+        }
+
+        // Answer is durable but call is neither completed, in-flight, nor queued:
+        // requeue through the normal capacity-aware path.
         $batch->pendingQueue = array_values(array_filter(
             $batch->pendingQueue,
             static fn (string $id): bool => $id !== $toolCallId,

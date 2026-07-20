@@ -81,9 +81,8 @@ final readonly class ExtensionToolHookEventSubscriber implements EventSubscriber
                         'denied' => true,
                         'reason' => 'approval_resume_failed',
                         'message' => \sprintf(
-                            'Tool "%s" was denied: approval resume failed (%s).',
+                            'Tool "%s" was denied: approval resume failed.',
                             $toolCall->getName(),
-                            $exception->getMessage(),
                         ),
                         'error_type' => $exception::class,
                     ]));
@@ -93,7 +92,8 @@ final readonly class ExtensionToolHookEventSubscriber implements EventSubscriber
                         'event_type' => 'tool.approval_resume_failed',
                         'tool_name' => $toolCall->getName(),
                         'tool_call_id' => $toolCall->getId(),
-                        'error' => $exception->getMessage(),
+                        'run_id' => $context->runId ?? '',
+                        'error_type' => $exception::class,
                     ]);
                 }
 
@@ -156,9 +156,8 @@ final readonly class ExtensionToolHookEventSubscriber implements EventSubscriber
                         'denied' => true,
                         'reason' => 'approval_handler_failed',
                         'message' => \sprintf(
-                            'Tool "%s" was denied: the approval handler failed (%s).',
+                            'Tool "%s" was denied: the approval handler failed.',
                             $toolCall->getName(),
-                            $exception->getMessage(),
                         ),
                         'error_type' => $exception::class,
                     ]));
@@ -168,7 +167,8 @@ final readonly class ExtensionToolHookEventSubscriber implements EventSubscriber
                         'event_type' => 'tool.approval_handler_failed',
                         'tool_name' => $toolCall->getName(),
                         'tool_call_id' => $toolCall->getId(),
-                        'error' => $exception->getMessage(),
+                        'run_id' => $context->runId ?? '',
+                        'error_type' => $exception::class,
                     ]);
 
                     return;
@@ -351,15 +351,15 @@ final readonly class ExtensionToolHookEventSubscriber implements EventSubscriber
         $payloadHookClass = $answer->requestPayload['hook_class'] ?? null;
         $expectedHookId = $this->hookRegistryId($hookClass);
 
-        if (\is_string($payloadHookClass) && '' !== $payloadHookClass) {
-            if ($payloadHookClass !== $hookClass) {
-                return false;
-            }
-        } elseif (\is_string($payloadHookId) && '' !== $payloadHookId) {
-            if ($payloadHookId !== $expectedHookId) {
-                return false;
-            }
-        } else {
+        // Both identities are required when the suspension payload includes them
+        // (canonical Path A always embeds both). Fail closed if either is missing
+        // or mismatched so a forged answer cannot target another hook.
+        if (!\is_string($payloadHookClass) || '' === $payloadHookClass
+            || !\is_string($payloadHookId) || '' === $payloadHookId
+        ) {
+            return false;
+        }
+        if ($payloadHookClass !== $hookClass || $payloadHookId !== $expectedHookId) {
             return false;
         }
 

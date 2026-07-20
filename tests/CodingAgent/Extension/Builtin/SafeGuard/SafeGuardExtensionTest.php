@@ -114,8 +114,7 @@ final class SafeGuardExtensionTest extends TestCase
             ));
 
             $this->assertSame(ToolCallDecisionKindEnum::RequireApproval, $dto->kind);
-            $operationKey = $dto->details['operation_key'] ?? null;
-            $this->assertNotNull($operationKey);
+            $this->assertArrayNotHasKey('operation_key', $dto->details);
             $questionId = (string) ($dto->details['question_id'] ?? '');
 
             $capturedHook->onApprovalAnswered(new ApprovalAnswerContextDTO(
@@ -123,7 +122,6 @@ final class SafeGuardExtensionTest extends TestCase
                 answer: '📌 Always allow',
                 toolName: 'bash',
                 approvalContext: [
-                    'operation_key' => $operationKey,
                     'category' => 'destructive',
                     'command' => $command,
                     'tool_name' => 'bash',

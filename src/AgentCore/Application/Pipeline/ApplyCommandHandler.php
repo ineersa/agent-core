@@ -585,6 +585,23 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
      */
     private function applyHumanResponseCommand(RunState $state, ApplyCommand $message, array $options): HandlerResult
     {
+        $questionId = \is_string($message->payload['question_id'] ?? null) ? $message->payload['question_id'] : null;
+
+        // Durable post-commit redrive: if RunState already advanced past WaitingHuman
+        // for this human_response (commit succeeded, effect dispatch failed), re-emit
+        // the exact ExecuteToolCall effect from durable batch answer metadata without
+        // mutating RunState again. markApplied runs only after effects succeed.
+        if (RunStatus::WaitingHuman !== $state->status
+            && null !== $this->toolBatchCollector
+            && null !== $questionId
+            && \array_key_exists('answer', $message->payload)
+        ) {
+            $redrive = $this->tryRedriveToolCallHumanResponse($state, $message, $questionId);
+            if (null !== $redrive) {
+                return $redrive;
+            }
+        }
+
         if (RunStatus::WaitingHuman !== $state->status) {
             return $this->rejectCommand(
                 $state,
@@ -593,7 +610,6 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
             );
         }
 
-        $questionId = \is_string($message->payload['question_id'] ?? null) ? $message->payload['question_id'] : null;
         $activeRequest = $state->pendingHumanInputRequests[0] ?? null;
         if (null === $activeRequest) {
             return $this->rejectCommand(
@@ -714,7 +730,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
             return $this->rejectCommand($state, $message, 'Invalid human_response payload: missing answer.');
         }
 
-        $resolved = $this->resolveToolCallContinuationRef($activeRequest, $message->runId());
+        $resolved = $this->resolveToolCallContinuationRef($activeRequest, $state, $message->runId());
         if (null === $resolved) {
             return $this->rejectCommand(
                 $state,
@@ -745,13 +761,11 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
             return $this->rejectCommand(
                 $state,
                 $message,
-                'human_response rejected: '.$exception->getMessage(),
+                'human_response rejected: tool-call resume failed ('.$exception::class.').',
             );
         }
 
         $runId = $message->runId();
-        $this->commandStore->markApplied($runId, $message->idempotencyKey());
-
         $remainingRequests = array_values(\array_slice($state->pendingHumanInputRequests, 1));
 
         $nextState = new RunState(
@@ -787,30 +801,103 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
             ],
         );
 
+        // markApplied only after postCommitEffects succeed so Messenger redelivery can
+        // redrive the exact ExecuteToolCall from durable batch answer metadata.
         return new HandlerResult(
             nextState: $nextState,
             events: [$event],
             postCommitEffects: $effects,
+            postCommit: [
+                function () use ($runId, $message): void {
+                    $this->commandStore->markApplied($runId, $message->idempotencyKey());
+                },
+            ],
+        );
+    }
+
+    /**
+     * No-state redrive path used when human_response is retried after RunState commit
+     * but before commandStore markApplied / effect dispatch completed.
+     */
+    private function tryRedriveToolCallHumanResponse(
+        RunState $state,
+        ApplyCommand $message,
+        string $questionId,
+    ): ?HandlerResult {
+        if (null === $this->toolBatchCollector) {
+            return null;
+        }
+
+        $turnNo = $state->turnNo;
+        $stepId = $state->activeStepId;
+        if (null === $stepId || '' === $stepId) {
+            return null;
+        }
+
+        try {
+            $effects = $this->toolBatchCollector->redriveHumanInputAnswer(
+                $message->runId(),
+                $turnNo,
+                $stepId,
+                $questionId,
+                $message->payload['answer'],
+            );
+        } catch (\LogicException) {
+            return null;
+        }
+
+        $runId = $message->runId();
+
+        return new HandlerResult(
+            nextState: null,
+            events: [],
+            postCommitEffects: $effects,
+            postCommit: [
+                function () use ($runId, $message): void {
+                    $this->commandStore->markApplied($runId, $message->idempotencyKey());
+                },
+            ],
         );
     }
 
     /**
      * @return array{0: string, 1: string, 2: int, 3: array<string, mixed>}|null
      */
-    private function resolveToolCallContinuationRef(PendingHumanInputRequestDTO $activeRequest, string $runId): ?array
-    {
-        $ref = $activeRequest->continuationRef ?? [];
-        $toolCallId = $ref['tool_call_id'] ?? null;
-        $stepId = $ref['step_id'] ?? null;
-        $turnNo = $ref['turn_no'] ?? null;
-        $refRunId = $ref['run_id'] ?? null;
+    private function resolveToolCallContinuationRef(
+        PendingHumanInputRequestDTO $activeRequest,
+        RunState $state,
+        string $runId,
+    ): ?array {
+        $ref = $activeRequest->continuationRef;
+        if (!\is_array($ref)) {
+            return null;
+        }
 
-        if (!\is_string($toolCallId) || '' === $toolCallId
-            || !\is_string($stepId) || '' === $stepId
-            || !\is_int($turnNo)
-            || !\is_string($refRunId) || '' === $refRunId
-            || $refRunId !== $runId
-        ) {
+        try {
+            PendingHumanInputRequestDTO::assertToolCallContinuationRef($ref);
+        } catch (\InvalidArgumentException) {
+            return null;
+        }
+
+        $toolCallId = $ref['tool_call_id'];
+        $stepId = $ref['step_id'];
+        $turnNo = $ref['turn_no'];
+        $refRunId = $ref['run_id'];
+
+        if (!\is_string($toolCallId) || !\is_string($stepId) || !\is_int($turnNo) || !\is_string($refRunId)) {
+            return null;
+        }
+
+        if ($refRunId !== $runId || $refRunId !== $state->runId) {
+            return null;
+        }
+        if ($turnNo !== $state->turnNo) {
+            return null;
+        }
+        if (null !== $state->activeStepId && $stepId !== $state->activeStepId) {
+            return null;
+        }
+        if (!\array_key_exists($toolCallId, $state->pendingToolCalls)) {
             return null;
         }
 
