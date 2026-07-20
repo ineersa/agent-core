@@ -85,6 +85,7 @@ framework:
             Ineersa\AgentCore\Domain\Message\ApplyCommand: run_control
             Ineersa\AgentCore\Domain\Message\LlmStepResult: run_control
             Ineersa\AgentCore\Domain\Message\ToolCallResult: run_control
+            Ineersa\AgentCore\Domain\Message\ToolExecutionSuspension: run_control
             Ineersa\AgentCore\Domain\Message\CompactionStepResult: run_control
             Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Observation\ObserveDeferredSubagentBatchChildTurnMessage: run_control
             Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Lifecycle\DeliverDeferredSubagentBatchLifecycleMessage: run_control

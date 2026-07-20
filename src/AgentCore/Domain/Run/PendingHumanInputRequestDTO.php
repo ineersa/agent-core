@@ -17,14 +17,14 @@ use Symfony\Component\Serializer\Attribute\SerializedName;
  * map stored as-is (no field extraction or backfill). It must include a
  * non-empty `question_id`; prompt/schema/tool identity fields are optional
  * and are read from `$payload` when present rather than mirrored as DTO
- * properties. `continuationRef` is reserved for future ToolCall routing and
- * is null for ModelTurn.
+ * properties. `continuationRef` is null for ModelTurn and holds opaque
+ * run/turn/step/tool_call correlation for ToolCall continuation.
  */
 final readonly class PendingHumanInputRequestDTO
 {
     /**
      * @param array<string, mixed>      $payload         complete waiting_human / interrupt map (includes question_id)
-     * @param array<string, mixed>|null $continuationRef reserved for future ToolCall continuation; null for ModelTurn
+     * @param array<string, mixed>|null $continuationRef ToolCall correlation (run_id/turn_no/step_id/tool_call_id); null for ModelTurn
      */
     public function __construct(
         #[SerializedName('question_id')]
@@ -58,6 +58,30 @@ final readonly class PendingHumanInputRequestDTO
             continuationKind: HumanInputContinuationKindEnum::ModelTurn,
             payload: $payload,
             continuationRef: null,
+        );
+    }
+
+    /**
+     * Build a tool-call continuation request from a complete waiting_human payload.
+     *
+     * Requires a non-empty question_id. Stores `$payload` unchanged for runtime/TUI
+     * projection. `$continuationRef` is opaque correlation only (no ExecuteToolCall args).
+     *
+     * @param array<string, mixed> $payload
+     * @param array<string, mixed> $continuationRef
+     */
+    public static function toolCallFromPayload(array $payload, array $continuationRef): self
+    {
+        $questionId = $payload['question_id'] ?? null;
+        if (!\is_string($questionId) || '' === $questionId) {
+            throw new \InvalidArgumentException('waiting_human payload is missing non-empty question_id.');
+        }
+
+        return new self(
+            questionId: $questionId,
+            continuationKind: HumanInputContinuationKindEnum::ToolCall,
+            payload: $payload,
+            continuationRef: $continuationRef,
         );
     }
 }

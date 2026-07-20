@@ -8,7 +8,7 @@ namespace Ineersa\AgentCore\Domain\Run;
  * Continuation semantics after a human answers a pending request.
  *
  * ModelTurn: append the answer to transcript and AdvanceRun (ask_human).
- * ToolCall: reserved for exact original tool-call resume (future slice).
+ * ToolCall: exact original tool-call resume after non-blocking suspension admission.
  */
 enum HumanInputContinuationKindEnum: string
 {

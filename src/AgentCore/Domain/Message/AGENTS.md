@@ -4,7 +4,7 @@
 
 ## Role in runtime topology
 
-- Command-bus payloads: `StartRun`, `ApplyCommand`, `AdvanceRun`, `LlmStepResult`, `ToolCallResult`, `CompactionStepResult` (first five routed to `run_control` except `AdvanceRun`)
+- Command-bus payloads: `StartRun`, `ApplyCommand`, `AdvanceRun`, `LlmStepResult`, `ToolCallResult`, `ToolExecutionSuspension`, `CompactionStepResult` (routed to `run_control` except `AdvanceRun`)
 - Execution-bus payloads: `ExecuteLlmStep`, `ExecuteToolCall`, `CollectToolBatch`
 
 For concrete producers/consumers, see `src/Application/AGENTS.md`.
