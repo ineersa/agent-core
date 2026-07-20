@@ -51,8 +51,10 @@ final class ToolCallResultFactory
     /**
      * Map a typed non-terminal human-input suspension into the existing ToolCallResult envelope.
      *
-     * Correlation (run/turn/step/toolCall) lives on the envelope; `$pendingHumanInput` marks
-     * the non-terminal variant without a string kind router.
+     * Invariant: the PendingHumanInputRequestDTO produced by ToolExecutor/toolbox is preserved
+     * raw — no payload rewrite, no continuation_ref backfill, no string kind router. Correlation
+     * (run/turn/step/toolCall) lives on the envelope; `$pendingHumanInput` alone marks the
+     * non-terminal variant for ToolCallResultHandler admission.
      */
     public static function fromExecuteToolCallAndHumanInputSuspension(
         ExecuteToolCall $message,

@@ -73,6 +73,7 @@ final class ToolBatchCollector
             results: [],
             finalized: false,
             maxParallelism: max(1, $maxParallelism),
+            awaitingHumanInput: [],
         );
 
         $initialDispatch = $this->dispatchableCalls($batch);

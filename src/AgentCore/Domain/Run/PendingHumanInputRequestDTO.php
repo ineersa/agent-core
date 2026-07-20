@@ -17,14 +17,15 @@ use Symfony\Component\Serializer\Attribute\SerializedName;
  * map stored as-is (no field extraction or backfill). It must include a
  * non-empty `question_id`; prompt/schema/tool identity fields are optional
  * and are read from `$payload` when present rather than mirrored as DTO
- * properties. `continuationRef` is null for ModelTurn and holds opaque
- * run/turn/step/tool_call correlation for ToolCall continuation.
+ * properties. `continuationRef` is the canonical ToolCall correlation property
+ * (null for ModelTurn). The event/payload surface embeds the same ref via
+ * {@see waitingHumanEventPayload()} so live emission and reducer replay stay identical.
  */
 final readonly class PendingHumanInputRequestDTO
 {
     /**
      * @param array<string, mixed>      $payload         complete waiting_human / interrupt map (includes question_id)
-     * @param array<string, mixed>|null $continuationRef ToolCall correlation (run_id/turn_no/step_id/tool_call_id); null for ModelTurn
+     * @param array<string, mixed>|null $continuationRef canonical ToolCall correlation (run_id/turn_no/step_id/tool_call_id); null for ModelTurn
      */
     public function __construct(
         #[SerializedName('question_id')]
@@ -63,7 +64,7 @@ final readonly class PendingHumanInputRequestDTO
 
     /**
      * @param array<string, mixed> $payload
-     * @param array<string, mixed> $continuationRef
+     * @param array<string, mixed> $continuationRef canonical ToolCall correlation; embedded into event payload via waitingHumanEventPayload()
      */
     public static function toolCallFromPayload(array $payload, array $continuationRef): self
     {
@@ -72,9 +73,10 @@ final readonly class PendingHumanInputRequestDTO
             throw new \InvalidArgumentException('waiting_human payload is missing non-empty question_id.');
         }
 
-        // Ensure event/payload surface is self-describing for replay reconstruction.
-        $payload['continuation_kind'] = HumanInputContinuationKindEnum::ToolCall->value;
-        $payload['continuation_ref'] = $continuationRef;
+        // Canonical owner of correlation is $continuationRef (DTO property).
+        // Do not also stash a second authoritative copy inside $payload at construction;
+        // waitingHumanEventPayload() derives the self-describing event map for live/replay.
+        unset($payload['continuation_kind'], $payload['continuation_ref']);
 
         return new self(
             questionId: $questionId,
@@ -82,5 +84,26 @@ final readonly class PendingHumanInputRequestDTO
             payload: $payload,
             continuationRef: $continuationRef,
         );
+    }
+
+    /**
+     * Canonical waiting_human event payload for live emission and reducer reconstruction.
+     *
+     * For ToolCall, embeds continuation_kind + continuation_ref from the typed DTO properties
+     * so the event surface stays self-describing without dual-owning correlation in $payload.
+     *
+     * @return array<string, mixed>
+     */
+    public function waitingHumanEventPayload(): array
+    {
+        if (HumanInputContinuationKindEnum::ToolCall !== $this->continuationKind) {
+            return $this->payload;
+        }
+
+        return [
+            ...$this->payload,
+            'continuation_kind' => HumanInputContinuationKindEnum::ToolCall->value,
+            'continuation_ref' => $this->continuationRef ?? [],
+        ];
     }
 }

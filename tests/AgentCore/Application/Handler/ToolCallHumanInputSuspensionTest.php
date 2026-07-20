@@ -101,7 +101,8 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
         $this->assertSame(['call-h' => false], $result->nextState?->pendingToolCalls);
         $this->assertSame([], $result->nextState?->messages);
         $this->assertSame(HumanInputContinuationKindEnum::ToolCall, $result->nextState->pendingHumanInputRequests[0]->continuationKind);
-        $this->assertSame('tool_call', $result->nextState->pendingHumanInputRequests[0]->payload['continuation_kind'] ?? null);
+        $this->assertArrayNotHasKey('continuation_kind', $result->nextState->pendingHumanInputRequests[0]->payload);
+        $this->assertArrayNotHasKey('continuation_ref', $result->nextState->pendingHumanInputRequests[0]->payload);
 
         $payload = null;
         foreach ($result->events as $event) {
@@ -109,13 +110,76 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
                 $payload = $event->payload;
             }
         }
+        $this->assertSame('tool_call', $payload['continuation_kind'] ?? null);
+        $this->assertSame('call-h', $payload['continuation_ref']['tool_call_id'] ?? null);
         $replayed = (new RunStateReducer())->replay(RunState::queued('run-h'), [new RunEvent('run-h', 1, 3, RunEventTypeEnum::WaitingHuman->value, $payload ?? [])]);
         $this->assertSame(HumanInputContinuationKindEnum::ToolCall, $replayed->pendingHumanInputRequests[0]->continuationKind);
         $this->assertSame('q-h', $replayed->pendingHumanInputRequests[0]->questionId);
     }
 
-    private function call(string $runId, string $stepId, string $toolCallId, int $orderIndex, int $turnNo = 1): ExecuteToolCall
+    public function testOrdinarySiblingResultWhileSuspendedPreservesWaitingHumanWithoutBatchCommit(): void
     {
-        return new ExecuteToolCall($runId, $turnNo, $stepId, 1, 'exec-'.$toolCallId, $toolCallId, 'bash', [], $orderIndex, mode: 'sequential', maxParallelism: 1);
+        $collector = new ToolBatchCollector(defaultMaxParallelism: 2);
+        $collector->registerExpectedBatch('run-par', 1, 'step-par', [
+            $this->call('run-par', 'step-par', 'call-1', 0, mode: 'parallel', maxParallelism: 2),
+            $this->call('run-par', 'step-par', 'call-2', 1, mode: 'parallel', maxParallelism: 2),
+        ]);
+
+        $handler = new ToolCallResultHandler($collector, new EventFactory(), new ToolCallExtractor(), new AgentMessageNormalizer());
+        $state = RunStateBuilder::running('run-par')
+            ->withTurnNo(1)
+            ->withLastSeq(3)
+            ->withActiveStepId('step-par')
+            ->withPendingToolCalls(['call-1' => false, 'call-2' => false])
+            ->build();
+
+        $suspend = $handler->handle(
+            ToolCallResultFactory::fromExecuteToolCallAndHumanInputSuspension(
+                $this->call('run-par', 'step-par', 'call-1', 0, mode: 'parallel', maxParallelism: 2),
+                new ToolExecutionHumanInputSuspension(PendingHumanInputRequestDTO::toolCallFromPayload(
+                    ['question_id' => 'q-shared', 'prompt' => 'Allow call-1?'],
+                    ['run_id' => 'run-par', 'turn_no' => 1, 'step_id' => 'step-par', 'tool_call_id' => 'call-1'],
+                )),
+            ),
+            $state,
+        );
+        $this->assertSame(RunStatus::WaitingHuman, $suspend->nextState?->status);
+        $this->assertSame(['call-1' => false, 'call-2' => false], $suspend->nextState?->pendingToolCalls);
+
+        $sibling = $handler->handle(
+            new ToolCallResult(
+                runId: 'run-par',
+                turnNo: 1,
+                stepId: 'step-par',
+                attempt: 1,
+                idempotencyKey: 'res-call-2',
+                toolCallId: 'call-2',
+                orderIndex: 1,
+                result: ['tool_name' => 'bash', 'content' => [['type' => 'text', 'text' => 'ok-2']]],
+            ),
+            $suspend->nextState,
+        );
+
+        $this->assertSame(RunStatus::WaitingHuman, $sibling->nextState?->status);
+        $this->assertSame(['call-1' => false, 'call-2' => true], $sibling->nextState?->pendingToolCalls);
+        $this->assertCount(1, $sibling->nextState?->pendingHumanInputRequests ?? []);
+        $this->assertSame('q-shared', $sibling->nextState?->pendingHumanInputRequests[0]->questionId);
+        $this->assertSame([], $sibling->nextState?->messages);
+        $eventTypes = array_map(static fn (RunEvent $e): string => $e->type, $sibling->events);
+        $this->assertSame(['tool_call_result_received', 'tool_execution_end'], $eventTypes);
+        $this->assertNotContains(RunEventTypeEnum::ToolBatchCommitted->value, $eventTypes);
+        $this->assertNotContains(RunEventTypeEnum::MessageEnd->value, $eventTypes);
+    }
+
+    private function call(
+        string $runId,
+        string $stepId,
+        string $toolCallId,
+        int $orderIndex,
+        int $turnNo = 1,
+        string $mode = 'sequential',
+        int $maxParallelism = 1,
+    ): ExecuteToolCall {
+        return new ExecuteToolCall($runId, $turnNo, $stepId, 1, 'exec-'.$toolCallId, $toolCallId, 'bash', [], $orderIndex, mode: $mode, maxParallelism: $maxParallelism);
     }
 }

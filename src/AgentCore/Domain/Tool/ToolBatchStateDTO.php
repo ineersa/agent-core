@@ -121,20 +121,19 @@ final class ToolBatchStateDTO
             throw new \UnexpectedValueException('Tool batch max_parallelism must be a positive integer.');
         }
 
+        if (!\array_key_exists('awaiting_human_input', $data) || !\is_array($data['awaiting_human_input'])) {
+            throw new \UnexpectedValueException('Tool batch awaiting_human_input must be an array.');
+        }
+
         $awaitingHumanInput = [];
-        if (\array_key_exists('awaiting_human_input', $data)) {
-            if (!\is_array($data['awaiting_human_input'])) {
-                throw new \UnexpectedValueException('Tool batch awaiting_human_input must be an array when present.');
+        foreach ($data['awaiting_human_input'] as $callId => $questionId) {
+            if (!\is_string($callId) || '' === $callId) {
+                throw new \UnexpectedValueException('Tool batch awaiting_human_input keys must be non-empty strings.');
             }
-            foreach ($data['awaiting_human_input'] as $callId => $questionId) {
-                if (!\is_string($callId) || '' === $callId) {
-                    throw new \UnexpectedValueException('Tool batch awaiting_human_input keys must be non-empty strings.');
-                }
-                if (!\is_string($questionId) || '' === $questionId) {
-                    throw new \UnexpectedValueException(\sprintf('Tool batch awaiting_human_input[%s] must be a non-empty string question_id.', $callId));
-                }
-                $awaitingHumanInput[$callId] = $questionId;
+            if (!\is_string($questionId) || '' === $questionId) {
+                throw new \UnexpectedValueException(\sprintf('Tool batch awaiting_human_input[%s] must be a non-empty string question_id.', $callId));
             }
+            $awaitingHumanInput[$callId] = $questionId;
         }
 
         return new self(
@@ -171,6 +170,8 @@ final class ToolBatchStateDTO
             ];
         }
 
+        // result_data stores only terminal outcomes. pendingHumanInput is a bus-only
+        // nonterminal field on ToolCallResult and must never be persisted here.
         $resultData = [];
         foreach ($this->results as $toolCallId => $result) {
             $resultData[$toolCallId] = [
