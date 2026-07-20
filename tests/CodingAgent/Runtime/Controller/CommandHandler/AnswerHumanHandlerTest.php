@@ -36,7 +36,7 @@ final class AnswerHumanHandlerTest extends TestCase
             runId: 'run-123',
             payload: [
                 'question_id' => 'sg_abc',
-                'answer' => 'Allow once',
+                'answer' => '✅ Allow',
             ],
         );
 
@@ -46,7 +46,7 @@ final class AnswerHumanHandlerTest extends TestCase
         $this->assertNotNull($this->spyClient->lastCommand);
         $this->assertSame('answer_human', $this->spyClient->lastCommand->type);
         $this->assertSame('sg_abc', $this->spyClient->lastCommand->payload['question_id'] ?? null);
-        $this->assertSame('Allow once', $this->spyClient->lastCommand->payload['answer'] ?? null);
+        $this->assertSame('✅ Allow', $this->spyClient->lastCommand->payload['answer'] ?? null);
     }
 
     public function testEmitsProtocolErrorWhenRunIdMissing(): void

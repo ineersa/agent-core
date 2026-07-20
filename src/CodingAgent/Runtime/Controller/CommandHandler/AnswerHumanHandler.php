@@ -14,13 +14,11 @@ use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
 /**
  * Handles answer_human JSONL commands from the parent TUI process.
  *
- * When the TUI user answers a SafeGuard approval question, the parent
- * sends an answer_human JSONL command with the question_id and answer.
- * This handler dispatches it to the InProcessAgentSessionClient so the
- * answer is routed through the run_control transport, processed by
- * ApplyCommandHandler (human_response), committed via RunCommit, and
- * delivered to SafeGuardToolCallHook::onApprovalAnswered() synchronously
- * via the blocking-poll mechanism in ExtensionToolHookEventSubscriber.
+ * Used for both Path A (extension approvals / ToolCall continuation) and
+ * Path B (ask_human / ModelTurn). The parent sends question_id + answer;
+ * this handler routes through AgentSessionClient → ApplyCommand
+ * (human_response). Path A resumes the exact stored ExecuteToolCall; Path B
+ * appends a human-response message and schedules AdvanceRun.
  */
 #[AsEventListener(event: ControllerCommandEvent::class)]
 final readonly class AnswerHumanHandler

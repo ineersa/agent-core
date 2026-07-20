@@ -39,14 +39,10 @@ use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\Tui\Tui;
 
 /**
- * Regression tests for TickPollListener cancellation behavior.
+ * Regression tests for TickPollListener / local tool-question cancellation.
  *
- * The cancel wedge bug (Issue 1 from PR #162 smoke test):
- * handleChoiceToolQuestion's onCancel sent 'answer' => '' (empty string),
- * which AnswerToolQuestionHandler rejected with ProtocolError without writing
- * to the store → poll loop wedged forever (null === pollAnswerText).
- *
- * Fix: 'answer' => 'cancel' (non-empty generic cancel sentinel).
+ * Local tool questions are boolean/confirm only (bash background prompts).
+ * Extension approvals use canonical human_input.requested, not tool_question.
  */
 final class TickPollListenerTest extends TestCase
 {
@@ -55,15 +51,10 @@ final class TickPollListenerTest extends TestCase
     private ?TuiTickDispatcher $contextTicks = null;
 
     /**
-     * Test thesis: when the Choice overlay onCancel fires, the TUI sends
-     * answer_tool_question with 'answer' => 'cancel' (non-empty), so
-     * AnswerToolQuestionHandler accepts it, writes to the shared store,
-     * and the blocking poll in the tool consumer breaks — no hang.
-     *
-     * If the answer were '' (empty string), this test would fail because
-     * the handler rejects empty answers and the poll wedges forever.
+     * Confirm cancel must send a boolean false answer so the bash background
+     * poller receives a resolved decision instead of hanging on null.
      */
-    public function testChoiceOnCancelSendsNonEmptyCancelAnswer(): void
+    public function testConfirmOnCancelSendsBooleanFalse(): void
     {
         $sentCommand = null;
 
@@ -81,31 +72,31 @@ final class TickPollListenerTest extends TestCase
 
         $coordinator = new QuestionCoordinator();
 
-        // Use reflection to invoke the private static handleChoiceToolQuestion
-        $ref = new \ReflectionMethod(RuntimeQuestionEventHandler::class, 'handleChoiceToolQuestion');
+        $ref = new \ReflectionMethod(RuntimeQuestionEventHandler::class, 'handleConfirmToolQuestion');
+        $ref->invoke(
+            $this->runtimeQuestionHandler(),
+            [
+                'prompt' => 'Move it to the background?',
+                'request_id' => 'rq_test',
+                'tool_call_id' => 'tc_test',
+                'tool_name' => 'bash',
+            ],
+            'tool_rq_test',
+            'run-1',
+            'rq_test',
+            $client,
+            $coordinator,
+        );
 
-        $ref->invoke($this->runtimeQuestionHandler(), [
-            'prompt' => 'Approve write outside CWD?',
-            'request_id' => 'rq_test',
-            'tool_call_id' => 'tc_test',
-            'tool_name' => 'write',
-        ], [
-            'type' => 'string',
-            'enum' => ['Proceed', 'Abort'],
-        ], 'tool_rq_test', 'run-1', 'rq_test', $client, $coordinator);
-
-        // The QuestionCoordinator should now have an active request
         $this->assertTrue($coordinator->actionRequired(), 'Coordinator must have active request after enqueue');
 
-        // Cancel it — this fires the onCancel closure set up by handleChoiceToolQuestion
         $coordinator->cancel();
 
-        // Assert the sent UserCommand has the non-empty cancel answer
         $this->assertNotNull($sentCommand, 'Expected UserCommand to be sent on cancel');
         $this->assertSame('answer_tool_question', $sentCommand->type);
         $this->assertSame('rq_test', $sentCommand->payload['request_id'] ?? null);
-        $this->assertSame('cancel', $sentCommand->payload['answer'] ?? null);
-        $this->assertNotEmpty($sentCommand->payload['answer'] ?? '', 'Cancel answer must be non-empty to prevent poll wedge');
+        $this->assertFalse($sentCommand->payload['answer'] ?? true);
+        $this->assertSame('confirm', $sentCommand->payload['kind'] ?? null);
     }
 
     public function testConfirmToolQuestionWithNullSchemaEnqueuesConfirmWithoutWarning(): void
@@ -299,7 +290,7 @@ final class TickPollListenerTest extends TestCase
         $this->assertSame(QuestionKind::Text, $active->kind);
         $this->assertSame('Custom Rich Header', $active->header);
         $this->assertSame('default text', $active->default);
-        $this->assertTrue($active->allowOther, 'HITL questions must always allow free-form input');
+        $this->assertTrue($active->allowOther, 'Model-turn HITL free-form remains available');
         $this->assertSame('hitl_'.substr(hash('sha256', 'run-rich|q_rich'), 0, 16), $active->requestId);
         $this->assertSame('q_rich', $active->questionId);
         $this->assertTrue($active->transcript);
@@ -464,12 +455,11 @@ final class TickPollListenerTest extends TestCase
         $this->assertSame('Cancelled by user', $capturedPayload['answer'] ?? null);
     }
 
-    public function testHandleHumanInputRequestedAllowOtherDefaultsTrue(): void
+    public function testHandleHumanInputRequestedAllowOtherDefaultsTrueForModelTurn(): void
     {
-        // When no allow_other field is present in the payload, the
-        // QuestionRequest must still have allowOther=true (the allowOther
-        // capability flag — actual __other__ escape hatch rendering is gated
-        // on QuestionKind::Choice in QuestionController::buildItems()).
+        // Model-turn HITL (no continuation_kind=tool_call) keeps free-form.
+        // Actual __other__ rendering is gated on QuestionKind::Choice in
+        // QuestionController::buildItems().
         $client = $this->createStub(AgentSessionClient::class);
         $coordinator = new QuestionCoordinator();
         $ref = new \ReflectionMethod(RuntimeQuestionEventHandler::class, 'handleHumanInputRequested');
@@ -490,7 +480,36 @@ final class TickPollListenerTest extends TestCase
 
         $active = $coordinator->activeRequest();
         $this->assertNotNull($active);
-        $this->assertTrue($active->allowOther, 'HITL must always allow free-form input (allowOther=true)');
+        $this->assertTrue($active->allowOther, 'Model-turn HITL keeps allowOther=true');
+    }
+
+    public function testHandleHumanInputRequestedToolCallDisablesAllowOther(): void
+    {
+        // Exact tool-call approvals (SafeGuard, etc.) must not offer free-form.
+        $client = $this->createStub(AgentSessionClient::class);
+        $coordinator = new QuestionCoordinator();
+        $ref = new \ReflectionMethod(RuntimeQuestionEventHandler::class, 'handleHumanInputRequested');
+
+        $event = new RuntimeEvent(
+            type: RuntimeEventTypeEnum::HumanInputRequested->value,
+            runId: 'run-tc',
+            seq: 0,
+            payload: [
+                'question_id' => 'q_tc',
+                'ui_kind' => 'choice',
+                'prompt' => 'Allow write outside working directory?',
+                'schema' => ['type' => 'string', 'enum' => ['✅ Allow', '❌ Deny']],
+                'continuation_kind' => 'tool_call',
+                'tool_call_id' => 'call_1',
+            ],
+        );
+
+        $ref->invoke($this->runtimeQuestionHandler(), $event, $client, $coordinator);
+
+        $active = $coordinator->activeRequest();
+        $this->assertNotNull($active);
+        $this->assertFalse($active->allowOther, 'tool_call continuation must set allowOther=false');
+        $this->assertSame(QuestionKind::Choice, $active->kind);
     }
 
     // ── QH-06 follow-up: interrupt transport marker and bare-string choices ──

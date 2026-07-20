@@ -11,9 +11,10 @@ final readonly class RunState
     /**
      * Initializes run state with identifier, status, and progression counters.
      *
-     * @param list<AgentMessage>        $messages
-     * @param array<string, bool>       $pendingToolCalls
-     * @param array<string, mixed>|null $streamingMessage
+     * @param list<AgentMessage>                $messages
+     * @param array<string, bool>               $pendingToolCalls
+     * @param array<string, mixed>|null         $streamingMessage
+     * @param list<PendingHumanInputRequestDTO> $pendingHumanInputRequests ordered FIFO of outstanding human-input requests
      */
     public function __construct(
         public string $runId,
@@ -30,6 +31,7 @@ final readonly class RunState
         public bool $retryableFailure = false,
         /** Count of completed auto-retry attempts in the active retryable-failure episode; manual continue resets to 0. May be one past max when retries are exhausted. */
         public int $retryAttempts = 0,
+        public array $pendingHumanInputRequests = [],
     ) {
     }
 

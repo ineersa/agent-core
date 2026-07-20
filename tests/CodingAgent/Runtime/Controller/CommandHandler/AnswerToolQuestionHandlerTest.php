@@ -212,7 +212,6 @@ final class AnswerToolQuestionHandlerTest extends TestCase
         $this->assertSame([], $emittedEvents);
         $this->assertSame('bash_bg_run-confirm-null', $this->spyStore->lastRequestId);
         $this->assertFalse($this->spyStore->lastAnswer);
-        $this->assertNull($this->spyStore->lastAnswerText);
     }
 
     public function testEmitsProtocolErrorOnStoreFailure(): void
@@ -262,8 +261,6 @@ final class SpyToolQuestionStore implements ToolQuestionStoreInterface
     /** @var array<string, ToolQuestion> */
     public array $storedByRequestId = [];
 
-    public ?string $lastAnswerText = null;
-
     /**
      * When set, answer() throws this exception instead of recording.
      */
@@ -307,19 +304,6 @@ final class SpyToolQuestionStore implements ToolQuestionStoreInterface
     public function cancelPendingQuestionsCreatedBefore(\DateTimeImmutable $cutoff): int
     {
         return 0;
-    }
-
-    public function answerWithText(string $requestId, string $answer): bool
-    {
-        $this->lastRequestId = $requestId;
-        $this->lastAnswerText = $answer;
-
-        return true;
-    }
-
-    public function pollAnswerText(string $requestId): ?string
-    {
-        return null;
     }
 
     public function create(ToolQuestion $question): ToolQuestion

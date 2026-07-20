@@ -444,6 +444,7 @@ final class CompactionStepResultHandler implements RunMessageHandler
             messages: $compactResult->compactedMessages,
             activeStepId: null,
             retryableFailure: $state->retryableFailure,
+            pendingHumanInputRequests: $state->pendingHumanInputRequests,
         );
 
         // Continue the LLM turn ONLY when the compaction was holding a
@@ -498,6 +499,7 @@ final class CompactionStepResultHandler implements RunMessageHandler
             messages: $state->messages,
             activeStepId: $clearActiveStepId ? null : $state->activeStepId,
             retryableFailure: $state->retryableFailure,
+            pendingHumanInputRequests: $state->pendingHumanInputRequests,
         );
     }
 }

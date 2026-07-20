@@ -123,6 +123,9 @@ final readonly class ExecuteToolCallWorker
                 'cancel_token' => $cancelToken,
                 'tools_ref' => $message->toolsRef,
                 'assistant_batch_tool_call_count' => $batchToolCallCount,
+                // Internal only — never model args. Used by ExtensionToolHookEventSubscriber
+                // to resume an exact approved call without re-prompting the originating hook.
+                'human_input_answer' => $message->humanInputAnswer,
             ],
         );
 

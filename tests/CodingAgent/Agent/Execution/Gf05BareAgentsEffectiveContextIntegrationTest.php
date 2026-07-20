@@ -193,6 +193,7 @@ final class Gf05BareAgentsEffectiveContextIntegrationTest extends PerMethodIsola
                     messages: $state->messages,
                     activeStepId: $state->activeStepId,
                     retryableFailure: false,
+                    pendingHumanInputRequests: $state->pendingHumanInputRequests,
                 );
             }
 

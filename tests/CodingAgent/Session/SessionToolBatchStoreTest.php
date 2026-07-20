@@ -252,6 +252,7 @@ final class SessionToolBatchStoreTest extends TestCase
                 'result_data' => [],
                 'finalized' => false,
                 'max_parallelism' => 2,
+                'awaiting_human_input' => [],
             ],
         ];
         file_put_contents($dir.'/'.$filename, json_encode($envelope, \JSON_THROW_ON_ERROR));
@@ -294,6 +295,7 @@ final class SessionToolBatchStoreTest extends TestCase
                 'result_data' => [],
                 'finalized' => false,
                 'max_parallelism' => 2,
+                'awaiting_human_input' => [],
             ],
         ];
         file_put_contents($dir.'/'.$filename, json_encode($envelope, \JSON_THROW_ON_ERROR));
@@ -396,6 +398,7 @@ final class SessionToolBatchStoreTest extends TestCase
             results: [],
             finalized: false,
             maxParallelism: 2,
+            awaitingHumanInput: [],
         );
     }
 

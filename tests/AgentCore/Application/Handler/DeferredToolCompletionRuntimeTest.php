@@ -139,7 +139,10 @@ final class DeferredToolCompletionRuntimeTest extends IsolatedKernelTestCase
         $this->assertSame(3, $result->turnNo());
         $this->assertSame('turn-3-tools-1', $result->stepId());
         $this->assertSame(2, $result->attempt());
-        $this->assertSame('tool-idemp-immediate', $result->idempotencyKey());
+        // Terminal ToolCallResult must not reuse ExecuteToolCall::idempotencyKey() —
+        // suspension and terminal outcomes need distinct deterministic result keys.
+        $this->assertNotSame($message->idempotencyKey(), $result->idempotencyKey());
+        $this->assertNotSame('', $result->idempotencyKey());
         $this->assertSame('call-immediate', $result->toolCallId);
         $this->assertSame(1, $result->orderIndex);
         $this->assertSame('parallel', $result->result['mode']);
@@ -275,7 +278,10 @@ final class DeferredToolCompletionRuntimeTest extends IsolatedKernelTestCase
         $this->assertSame(3, $result->turnNo());
         $this->assertSame('turn-3-tools-1', $result->stepId());
         $this->assertSame(2, $result->attempt());
-        $this->assertSame('tool-idemp-immediate', $result->idempotencyKey());
+        // Terminal ToolCallResult identity is distinct from the stored ExecuteToolCall key
+        // (and from any earlier suspension result for the same call).
+        $this->assertNotSame($message->idempotencyKey(), $result->idempotencyKey());
+        $this->assertNotSame('', $result->idempotencyKey());
         $this->assertSame('call-complete', $result->toolCallId);
         $this->assertSame('web_search', $result->result['tool_name']);
         $this->assertSame(1, $result->orderIndex);

@@ -140,8 +140,17 @@ final readonly class RunMessageProcessor
                 RunLogContext::leave(); // retry_count
             }
 
-            // No state change — nothing to commit.
+            // No state change — still honor post-commit effects/callbacks (e.g. durable
+            // tool-call human-answer redrive after RunState already advanced).
             if (null === $result->nextState) {
+                if ([] !== $result->postCommitEffects) {
+                    $this->stepDispatcher->dispatchEffects($result->postCommitEffects);
+                }
+
+                foreach ($result->postCommit as $callback) {
+                    $callback();
+                }
+
                 if ($result->markHandled) {
                     $this->idempotency->markHandled($scope, $runId, $idempotencyKey);
                 }

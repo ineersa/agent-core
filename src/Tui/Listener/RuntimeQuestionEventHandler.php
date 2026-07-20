@@ -77,6 +77,9 @@ final class RuntimeQuestionEventHandler
         $kind = $this->resolveQuestionKind($p);
         $choices = $this->buildChoices($p, $schema);
         $header = $this->resolveQuestionHeader($sessionState, $runId, $p, 'asks');
+        // Exhaustive tool-call approval enums (SafeGuard, etc.) must not expose
+        // free-form "Type your answer". Model-turn ask_human keeps free-form.
+        $allowOther = ($p['continuation_kind'] ?? null) !== 'tool_call';
 
         $request = new QuestionRequest(
             requestId: $requestId,
@@ -87,7 +90,7 @@ final class RuntimeQuestionEventHandler
             choices: $choices,
             header: $header,
             default: $p['default'] ?? null,
-            allowOther: true,
+            allowOther: $allowOther,
             runId: $runId,
             questionId: $questionId,
             toolCallId: (string) ($p['tool_call_id'] ?? ''),
@@ -214,20 +217,14 @@ final class RuntimeQuestionEventHandler
      * The event carries a request_id, prompt, kind, schema, and metadata
      * from the tool that needs user interaction.
      *
-     * The question overlay is determined by the schema:
-     *   - schema has 'enum' -> Choice overlay (enum values as buttons)
-     *   - schema type=boolean -> Confirm overlay
-     *   - else -> Text overlay
+     * Local tool questions are boolean/confirm only (e.g. bash background prompts).
+     * Extension/SafeGuard approvals use human_input.requested (canonical HITL).
      *
      * All tool_question.requested events are LOCAL tool questions:
      * - source is Tui (not AgentCore)
      * - transcript is false (no transcript block)
      * - answer sends answer_tool_question (not answer_human)
      * - no WaitingHuman state transition in AgentCore
-     *
-     * This contains ZERO extension-specific knowledge. The extension's
-     * schema (from requireApproval) drives both the TUI rendering and
-     * the server-side answer routing.
      *
      * A guard against duplicate request IDs prevents enqueueing the
      * same question twice if the event stream replays.
@@ -257,32 +254,8 @@ final class RuntimeQuestionEventHandler
             SubagentLiveAttention::markChildNeedsInputForRun($sessionState, $screen, $runId);
         }
 
-        // Parse schema to determine the overlay type.
-        $kind = (string) ($p['kind'] ?? '');
-        $rawSchema = $p['schema'] ?? null;
-        $schema = \is_string($rawSchema)
-            ? (json_decode($rawSchema, true) ?? [])
-            : (\is_array($rawSchema) ? $rawSchema : []);
-
-        $hasEnum = isset($schema['enum']) && \is_array($schema['enum']) && [] !== $schema['enum'];
-        $isBoolean = ($schema['type'] ?? '') === 'boolean';
-
-        if ($hasEnum) {
-            $this->handleChoiceToolQuestion($p, $schema, $requestId, $runId, $requestIdFromPayload, $client, $questionCoordinator, $sessionState, $screen);
-
-            return;
-        }
-
-        if ($isBoolean || 'confirm' === $kind) {
-            $this->handleConfirmToolQuestion($p, $requestId, $runId, $requestIdFromPayload, $client, $questionCoordinator, $sessionState, $screen);
-
-            return;
-        }
-
-        // Degenerate fallback: unknown non-confirm schemas degrade to the generic choice
-        // overlay instead of throwing (which would drop later poll-batch events). Producers
-        // should supply enum or string schemas so choices are usable; this path is best-effort.
-        $this->handleChoiceToolQuestion($p, $schema, $requestId, $runId, $requestIdFromPayload, $client, $questionCoordinator, $sessionState, $screen);
+        // Boolean/confirm only — enum/approval choice overlays were SafeGuard-specific.
+        $this->handleConfirmToolQuestion($p, $requestId, $runId, $requestIdFromPayload, $client, $questionCoordinator, $sessionState, $screen);
     }
 
     public function shouldRejectOrphanedQuestion(TuiSessionState $state, QuestionRequest $activeRequest): bool
@@ -389,79 +362,6 @@ final class RuntimeQuestionEventHandler
         }
 
         return [];
-    }
-
-    /**
-     * Handle a tool_question.requested with an enum schema.
-     *
-     * Renders a Choice overlay with the schema's enum values as buttons.
-     * The answer is sent as a raw string through answer_tool_question.
-     *
-     * @param array<string, mixed> $p
-     * @param array<string, mixed> $schema
-     */
-    private function handleChoiceToolQuestion(
-        array $p,
-        array $schema,
-        string $requestId,
-        string $runId,
-        string $requestIdFromPayload,
-        AgentSessionClient $client,
-        QuestionCoordinator $questionCoordinator,
-        ?TuiSessionState $sessionState = null,
-        ?ChatScreen $screen = null,
-    ): void {
-        $enum = $schema['enum'] ?? [];
-        $choices = array_map(
-            static fn (string $label): QuestionOption => new QuestionOption($label),
-            array_values($enum),
-        );
-
-        $request = new QuestionRequest(
-            requestId: $requestId,
-            source: QuestionSource::Tui,
-            kind: QuestionKind::Choice,
-            prompt: (string) ($p['prompt'] ?? 'Approval required.'),
-            schema: $schema,
-            choices: $choices,
-            header: $this->resolveQuestionHeader($sessionState, $runId, $p, 'tool question'),
-            allowOther: false,
-            runId: $runId,
-            questionId: $requestIdFromPayload,
-            toolCallId: (string) ($p['tool_call_id'] ?? ''),
-            toolName: (string) ($p['tool_name'] ?? ''),
-            transcript: false,
-        );
-
-        $questionCoordinator->enqueue(
-            $request,
-            onAnswer: static function (mixed $answer) use ($client, $runId, $requestIdFromPayload, $sessionState, $screen): void {
-                $answerStr = \is_scalar($answer) ? (string) $answer : '';
-
-                $client->send($runId, new UserCommand(
-                    type: 'answer_tool_question',
-                    payload: [
-                        'request_id' => $requestIdFromPayload,
-                        'answer' => $answerStr,
-                        'kind' => 'approval',
-                    ],
-                ));
-
-                if (null !== $sessionState && null !== $screen) {
-                    SubagentLiveAttention::clearWaitingHumanForRun($sessionState, $screen, $runId);
-                }
-            },
-            onCancel: static function () use ($client, $runId, $requestIdFromPayload): void {
-                $client->send($runId, new UserCommand(
-                    type: 'answer_tool_question',
-                    payload: [
-                        'request_id' => $requestIdFromPayload,
-                        'answer' => 'cancel',
-                        'kind' => 'approval',
-                    ],
-                ));
-            },
-        );
     }
 
     /**

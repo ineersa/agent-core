@@ -16,6 +16,8 @@ use Ineersa\AgentCore\Contract\Tool\ToolResultProcessorInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolSetResolverInterface;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
 use Ineersa\AgentCore\Domain\Tool\ToolCall;
+use Ineersa\AgentCore\Domain\Tool\ToolCallHumanInputAnswerDTO;
+use Ineersa\AgentCore\Domain\Tool\ToolExecutionHumanInputSuspension;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionPolicy;
 use Ineersa\AgentCore\Domain\Tool\ToolResult;
 use Symfony\AI\Agent\Toolbox\FaultTolerantToolbox;
@@ -176,6 +178,12 @@ final class ToolExecutor implements ToolExecutorInterface
 
         $durationMs = ($this->nowMicros() - $startedAt) / 1000;
 
+        // Typed human-input suspension is not a completed tool result: skip timeout
+        // rewrite, cancel overwrite, and result-store remember.
+        if ($this->isHumanInputSuspension($result)) {
+            return $this->withExecutionMetadata($result, $policy, $toolIdempotencyKey, $durationMs);
+        }
+
         if (null !== $policy->timeoutSeconds && $durationMs > $policy->timeoutSeconds * 1000) {
             $result = $this->errorResult(
                 toolCallId: $toolCall->toolCallId,
@@ -271,6 +279,8 @@ final class ToolExecutor implements ToolExecutorInterface
 
         $batchToolCallCount = max(1, (int) ($toolCall->context['assistant_batch_tool_call_count'] ?? 1));
 
+        $humanInputAnswer = $toolCall->context['human_input_answer'] ?? null;
+        $stepId = $toolCall->context['step_id'] ?? null;
         $context = new ToolContext(
             runId: $this->runId($toolCall) ?? '',
             turnNo: (int) ($toolCall->context['turn_no'] ?? 0),
@@ -281,6 +291,8 @@ final class ToolExecutor implements ToolExecutorInterface
             orderIndex: $toolCall->orderIndex,
             executionMode: $policy->mode,
             batchToolCallCount: $batchToolCallCount,
+            humanInputAnswer: $humanInputAnswer instanceof ToolCallHumanInputAnswerDTO ? $humanInputAnswer : null,
+            stepId: \is_string($stepId) && '' !== $stepId ? $stepId : null,
         );
 
         /** @var SymfonyToolResult $result */
@@ -403,6 +415,21 @@ final class ToolExecutor implements ToolExecutorInterface
                 content: [[
                     'type' => 'text',
                     'text' => 'Tool execution deferred.',
+                ]],
+                details: [
+                    'raw_result' => $rawResult,
+                ],
+                isError: false,
+            );
+        }
+
+        if ($rawResult instanceof ToolExecutionHumanInputSuspension) {
+            return new ToolResult(
+                toolCallId: $toolCall->toolCallId,
+                toolName: $toolCall->toolName,
+                content: [[
+                    'type' => 'text',
+                    'text' => 'Tool execution suspended for human input.',
                 ]],
                 details: [
                     'raw_result' => $rawResult,
@@ -564,6 +591,16 @@ final class ToolExecutor implements ToolExecutorInterface
         $encoded = json_encode($result, \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE);
 
         return false === $encoded ? '{}' : $encoded;
+    }
+
+    private function isHumanInputSuspension(ToolResult $result): bool
+    {
+        $details = $result->details;
+        if (!\is_array($details)) {
+            return false;
+        }
+
+        return ($details['raw_result'] ?? null) instanceof ToolExecutionHumanInputSuspension;
     }
 
     private function nowMicros(): int

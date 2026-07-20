@@ -9,11 +9,9 @@ namespace Ineersa\AgentCore\Domain\Message;
  * a user-initiated shell command (! prefix) in the tool consumer process
  * rather than synchronously in the controller.
  *
- * This avoids the controller event-loop freeze caused by the blocking poll
- * in ExtensionToolHookEventSubscriber::handleRequireApproval() when SafeGuard
- * guard mode requires approval — the approval question must reach the TUI and
- * the answer must flow back, which is impossible when the controller is stuck
- * spinning in a usleep() loop.
+ * Executes shell work in the tool consumer so the controller event loop stays
+ * free to project runtime events (including Path A human_input.requested) and
+ * accept answer_human while tool execution is in flight.
  *
  * Routing: agent.execution.bus → tool transport (messenger:consume tool).
  * The worker (ExecuteShellToolCallWorker) executes bash via the shared

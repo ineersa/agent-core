@@ -354,23 +354,20 @@ class QuestionControllerTest extends TestCase
             kind: QuestionKind::Choice,
             prompt: 'Pick one:',
             choices: [
-                new QuestionOption('Allow once'),
-                new QuestionOption('Always allow'),
-                new QuestionOption('Deny'),
+                new QuestionOption('✅ Allow'),
+                new QuestionOption('❌ Deny'),
             ],
             allowOther: false,
         );
 
         $items = $this->invokeBuildItems($request);
 
-        // Choice without allowOther = choices only
-        $this->assertCount(3, $items);
-        $this->assertSame('Allow once', $items[0]['value']);
-        $this->assertSame('Allow once', $items[0]['label']);
-        $this->assertSame('Always allow', $items[1]['value']);
-        $this->assertSame('Always allow', $items[1]['label']);
-        $this->assertSame('Deny', $items[2]['value']);
-        $this->assertSame('Deny', $items[2]['label']);
+        // Choice without allowOther = choices only (no Type your answer)
+        $this->assertCount(2, $items);
+        $this->assertSame('✅ Allow', $items[0]['value']);
+        $this->assertSame('✅ Allow', $items[0]['label']);
+        $this->assertSame('❌ Deny', $items[1]['value']);
+        $this->assertSame('❌ Deny', $items[1]['label']);
     }
 
     #[Test]
@@ -382,8 +379,8 @@ class QuestionControllerTest extends TestCase
             kind: QuestionKind::Choice,
             prompt: 'Allow destructive command?',
             choices: [
-                new QuestionOption('Allow once', 'Approves one-time'),
-                new QuestionOption('Allow always', 'Persists to policy'),
+                new QuestionOption('✅ Allow', 'Approves the exact call'),
+                new QuestionOption('❌ Deny', 'Blocks the call'),
             ],
             allowOther: false,
         );
@@ -391,12 +388,12 @@ class QuestionControllerTest extends TestCase
         $items = $this->invokeBuildItems($request);
 
         $this->assertCount(2, $items);
-        $this->assertSame('Allow once', $items[0]['value']);
-        $this->assertSame('Allow once', $items[0]['label']);
-        $this->assertSame('Approves one-time', $items[0]['description']);
-        $this->assertSame('Allow always', $items[1]['value']);
-        $this->assertSame('Allow always', $items[1]['label']);
-        $this->assertSame('Persists to policy', $items[1]['description']);
+        $this->assertSame('✅ Allow', $items[0]['value']);
+        $this->assertSame('✅ Allow', $items[0]['label']);
+        $this->assertSame('Approves the exact call', $items[0]['description']);
+        $this->assertSame('❌ Deny', $items[1]['value']);
+        $this->assertSame('❌ Deny', $items[1]['label']);
+        $this->assertSame('Blocks the call', $items[1]['description']);
     }
 
     #[Test]
