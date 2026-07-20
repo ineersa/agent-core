@@ -284,13 +284,13 @@ Body
         $this->assertNotNull($definition);
         $this->assertSame('Higher precedence', $definition->description);
 
-        // And a collision diagnostic
+        // And a collision diagnostic with exact directional winner/loser paths
         $hasCollision = false;
         foreach ($catalog->diagnostics() as $d) {
             if ('collision' === $d->type && 'collide' === $d->name) {
                 $hasCollision = true;
-                $this->assertNotEmpty($d->winnerPath);
-                $this->assertNotEmpty($d->loserPath);
+                $this->assertSame($this->cwd.'/.agents/collide.md', $d->winnerPath);
+                $this->assertSame($this->homeDir.'/.hatfield/agents/collide.md', $d->loserPath);
                 break;
             }
         }
