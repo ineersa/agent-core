@@ -28,7 +28,15 @@ final readonly class AgentToolPolicyResolver
         $mcpResolved = $this->mcpToolsResolver->resolve($definition->tools, $catalogRunId);
 
         if (null === $definition->tools) {
-            $tools = $this->toolRegistry->activeToolNames();
+            // activeToolNames() already includes every dynamically registered MCP tool
+            // (availability=all and availability=specific). Strip the complete catalog MCP
+            // runtime-name set first, then re-add only resolver-selected MCP tools (global by
+            // default; explicit mcp: selectors when tools is non-null).
+            $catalogMcp = array_fill_keys($mcpResolved['catalog_mcp_runtime_tools'], true);
+            $tools = array_values(array_filter(
+                $this->toolRegistry->activeToolNames(),
+                static fn (string $name): bool => !isset($catalogMcp[$name]),
+            ));
         } else {
             $tools = $mcpResolved['non_mcp_tools'];
         }

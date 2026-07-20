@@ -30,6 +30,7 @@ final readonly class AgentMcpToolsResolver
      * @return array{
      *     non_mcp_tools: list<string>,
      *     mcp_runtime_tools: list<string>,
+     *     catalog_mcp_runtime_tools: list<string>,
      *     mcp_policy: array{mode: string, tools: list<string>}
      * }
      */
@@ -38,6 +39,10 @@ final readonly class AgentMcpToolsResolver
         $config = $this->configLoader->load();
         $catalog = $this->catalogStore->read($catalogRunId);
         $exposedByServer = $this->indexExposedToolsByServer($catalog, $config);
+        // Complete catalog-backed MCP runtime names (all connected servers with config).
+        // Used by child policy to strip inherited registry MCP entries before re-adding only
+        // the selected set. Name collisions with permanent tools that win registration still
+        // appear here; catalog ownership is the inheritance filter invariant.
         $allExposed = $this->flattenExposed($exposedByServer);
         $globalExposed = $this->flattenExposed(
             $this->filterServersByAvailability($exposedByServer, $config, McpServerAvailabilityEnum::All),
@@ -47,6 +52,7 @@ final readonly class AgentMcpToolsResolver
             return [
                 'non_mcp_tools' => [],
                 'mcp_runtime_tools' => $globalExposed,
+                'catalog_mcp_runtime_tools' => $allExposed,
                 'mcp_policy' => [
                     'mode' => 'inherited_global',
                     'tools' => $globalExposed,
@@ -68,6 +74,7 @@ final readonly class AgentMcpToolsResolver
             return [
                 'non_mcp_tools' => $nonMcp,
                 'mcp_runtime_tools' => [],
+                'catalog_mcp_runtime_tools' => $allExposed,
                 'mcp_policy' => [
                     'mode' => 'none',
                     'tools' => [],
@@ -80,6 +87,7 @@ final readonly class AgentMcpToolsResolver
         return [
             'non_mcp_tools' => $nonMcp,
             'mcp_runtime_tools' => $mcpTools,
+            'catalog_mcp_runtime_tools' => $allExposed,
             'mcp_policy' => [
                 'mode' => $this->policyModeFromSelectors($selectors),
                 'tools' => $mcpTools,

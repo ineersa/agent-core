@@ -35,18 +35,21 @@ final class AgentToolPolicyResolverTest extends TestCase
         $this->assertNotContains('fork', $policy['tools']);
     }
 
-    public function testOmittedToolsInheritsRegistryAndGlobalMcp(): void
+    public function testOmittedToolsInheritsRegistryAndGlobalMcpOnly(): void
     {
+        // Thesis: active registry already contains every catalog-registered MCP tool
+        // (global + availability-specific). Omitted tools must strip the full catalog MCP
+        // set and re-add only globally available MCP tools — not leak specific servers.
         $resolver = new AgentToolPolicyResolver(
-            $this->registry(['read', 'subagent', 'fork']),
-            $this->mcpResolver(['context7_resolve']),
+            $this->registry(['read', 'context7_resolve', 'websearch_search', 'subagent', 'fork']),
+            $this->mcpResolver(['context7_resolve', 'websearch_search'], allServers: true),
             new AgentsConfig(),
         );
         $policy = $resolver->resolve($this->definition(null), 'run-1');
-        $this->assertContains('read', $policy['tools']);
-        $this->assertContains('context7_resolve', $policy['tools']);
-        $this->assertNotContains('subagent', $policy['tools']);
-        $this->assertNotContains('fork', $policy['tools']);
+
+        $this->assertSame(['read', 'context7_resolve'], $policy['tools']);
+        $this->assertSame('inherited_global', $policy['mcp']['mode']);
+        $this->assertSame(['context7_resolve'], $policy['mcp']['tools']);
     }
 
     public function testStructuralRecursionToolsAlwaysRemovedEvenWhenConfiguredExclusionsEmpty(): void
@@ -67,9 +70,17 @@ final class AgentToolPolicyResolverTest extends TestCase
 
     public function testExplicitToolsMergeMcpSelectors(): void
     {
-        $resolver = new AgentToolPolicyResolver($this->registry(['read']), $this->mcpResolver(['context7_resolve', 'websearch_search'], allServers: true), new AgentsConfig());
+        // Explicit mcp: selectors may still include availability-specific tools even when
+        // the active registry snapshot already lists both global and specific MCP names.
+        $resolver = new AgentToolPolicyResolver(
+            $this->registry(['read', 'context7_resolve', 'websearch_search']),
+            $this->mcpResolver(['context7_resolve', 'websearch_search'], allServers: true),
+            new AgentsConfig(),
+        );
         $policy = $resolver->resolve($this->definition(['read', 'mcp:websearch_search']), 'run-1');
         $this->assertSame(['read', 'websearch_search'], $policy['tools']);
+        $this->assertSame('specific', $policy['mcp']['mode']);
+        $this->assertSame(['websearch_search'], $policy['mcp']['tools']);
     }
 
     /**
