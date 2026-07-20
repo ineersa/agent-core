@@ -42,7 +42,7 @@ final class AgentToolPolicyResolverTest extends TestCase
         // set and re-add only globally available MCP tools — not leak specific servers.
         $resolver = new AgentToolPolicyResolver(
             $this->registry(['read', 'context7_resolve', 'websearch_search', 'subagent', 'fork']),
-            $this->mcpResolver(['context7_resolve', 'websearch_search'], allServers: true),
+            $this->mcpResolver(['context7_resolve', 'websearch_search']),
             new AgentsConfig(),
         );
         $policy = $resolver->resolve($this->definition(null), 'run-1');
@@ -74,7 +74,7 @@ final class AgentToolPolicyResolverTest extends TestCase
         // the active registry snapshot already lists both global and specific MCP names.
         $resolver = new AgentToolPolicyResolver(
             $this->registry(['read', 'context7_resolve', 'websearch_search']),
-            $this->mcpResolver(['context7_resolve', 'websearch_search'], allServers: true),
+            $this->mcpResolver(['context7_resolve', 'websearch_search']),
             new AgentsConfig(),
         );
         $policy = $resolver->resolve($this->definition(['read', 'mcp:websearch_search']), 'run-1');
@@ -112,17 +112,16 @@ final class AgentToolPolicyResolverTest extends TestCase
         $this->assertNotContains('subagent', $policy['tools']);
     }
 
-    /** @param list<string> $globalTools */
-    private function mcpResolver(array $globalTools, bool $allServers = false): AgentMcpToolsResolver
+    /** @param list<string> $catalogTools Catalog Hatfield runtime names present for this fixture. */
+    private function mcpResolver(array $catalogTools): AgentMcpToolsResolver
     {
-        $catalogTools = $allServers ? ['context7_resolve', 'websearch_search'] : $globalTools;
         $servers = [];
-        if ($allServers || \in_array('context7_resolve', $catalogTools, true)) {
+        if (\in_array('context7_resolve', $catalogTools, true)) {
             $servers['context7'] = new McpServerCatalogEntryDTO('context7', 'http', McpServerCatalogStatusEnum::CONNECTED, tools: [
                 new McpToolDefinitionDTO('context7_resolve', 'context7', 'resolve', 'd', ['type' => 'object']),
             ]);
         }
-        if ($allServers || \in_array('websearch_search', $catalogTools, true)) {
+        if (\in_array('websearch_search', $catalogTools, true)) {
             $servers['websearch'] = new McpServerCatalogEntryDTO('websearch', 'http', McpServerCatalogStatusEnum::CONNECTED, tools: [
                 new McpToolDefinitionDTO('websearch_search', 'websearch', 'search', 'd', ['type' => 'object']),
             ]);

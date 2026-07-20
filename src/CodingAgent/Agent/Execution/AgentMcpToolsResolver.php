@@ -39,10 +39,10 @@ final readonly class AgentMcpToolsResolver
         $config = $this->configLoader->load();
         $catalog = $this->catalogStore->read($catalogRunId);
         $exposedByServer = $this->indexExposedToolsByServer($catalog, $config);
-        // Complete catalog-backed MCP runtime names (all connected servers with config).
-        // Used by child policy to strip inherited registry MCP entries before re-adding only
-        // the selected set. Name collisions with permanent tools that win registration still
-        // appear here; catalog ownership is the inheritance filter invariant.
+        // Catalog-advertised Hatfield runtime names from connected servers with config.
+        // Child inheritance strips these before re-adding only the selected MCP set. If MCP
+        // registration was skipped because a permanent/unrelated dynamic tool already owns the
+        // name, that name is still treated as MCP here so it cannot leak via omitted-tools inherit.
         $allExposed = $this->flattenExposed($exposedByServer);
         $globalExposed = $this->flattenExposed(
             $this->filterServersByAvailability($exposedByServer, $config, McpServerAvailabilityEnum::All),
@@ -175,6 +175,9 @@ final readonly class AgentMcpToolsResolver
     }
 
     /**
+     * Flatten per-server Hatfield names into a single list, deduplicating by runtime name
+     * while preserving first-seen order across servers.
+     *
      * @param array<string, list<string>> $byServer
      *
      * @return list<string>
