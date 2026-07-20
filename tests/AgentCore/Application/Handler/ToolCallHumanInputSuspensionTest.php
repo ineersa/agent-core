@@ -404,15 +404,18 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
             ->build();
         $this->assertTrue($runStore->compareAndSwap($resumed, $afterSuspension->version));
 
-        // Resume requeues the exact call; re-register to put it in-flight for collect().
+        // Resume requeues the exact call into a fresh batch (as resumeHumanInputAnswer does).
         $collector->registerExpectedBatch('run-seq', 1, 'step-seq', [$execute]);
 
         $processor->process('result.tool', $terminal);
         $afterTerminal = $runStore->get('run-seq');
         $this->assertNotNull($afterTerminal);
-        $this->assertSame(['call-seq' => true], $afterTerminal->pendingToolCalls);
+        // Single-call batch finalizes to empty pendingToolCalls (complete path).
+        $this->assertSame([], $afterTerminal->pendingToolCalls);
+        $this->assertSame(RunStatus::Running, $afterTerminal->status);
+        $this->assertGreaterThan($resumed->lastSeq, $afterTerminal->lastSeq);
 
-        // Duplicate terminal must dedup.
+        // Duplicate terminal must dedup (no further commit).
         $versionAfterTerminal = $afterTerminal->version;
         $processor->process('result.tool', $terminal);
         $this->assertSame($versionAfterTerminal, $runStore->get('run-seq')?->version);

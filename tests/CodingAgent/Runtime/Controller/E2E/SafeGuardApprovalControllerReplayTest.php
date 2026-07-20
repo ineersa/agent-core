@@ -83,6 +83,21 @@ final class SafeGuardApprovalControllerReplayTest extends ControllerReplayE2eTes
         ));
         $this->assertCount(1, $writeStarts, $this->collectDiagnostics($all));
         $this->assertSame($toolCallId, $writeStarts[0]['payload']['tool_call_id'] ?? null);
+
+        // Terminal completion must match the SAME tool_call_id that requested human input.
+        // Pre-fix bug: suspension + terminal ToolCallResult shared ExecuteToolCall idempotency
+        // key so RunMessageProcessor dropped the terminal result after Allow once.
+        $writeCompleted = array_values(array_filter(
+            $byType['tool_execution.completed'] ?? [],
+            static fn (array $e): bool => ($e['payload']['tool_call_id'] ?? null) === $toolCallId,
+        ));
+        $this->assertNotEmpty(
+            $writeCompleted,
+            'Allow once must deliver terminal tool_execution.completed for the suspended write call. '
+            .$this->collectDiagnostics($all),
+        );
+        $this->assertArrayNotHasKey('tool_execution.failed', $byType, $this->collectDiagnostics($all));
+        $this->assertArrayNotHasKey('run.failed', $byType, $this->collectDiagnostics($all));
     }
 
     public function testWriteOutsideCwdBlockHasNoFilesystemSideEffect(): void

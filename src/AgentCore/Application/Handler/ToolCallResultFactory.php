@@ -12,6 +12,12 @@ use Ineersa\AgentCore\Domain\Tool\ToolResult;
 
 /**
  * Maps tool execution outcomes to the canonical ToolCallResult envelope.
+ *
+ * Outcome variants must use DISTINCT deterministic idempotency keys even when
+ * they share the same ExecuteToolCall envelope. Suspension then terminal
+ * completion for one tool call are two valid sequential run_control messages;
+ * reusing ExecuteToolCall::idempotencyKey() marks the first handled and drops
+ * the second (live stuck-run after Allow once).
  */
 final class ToolCallResultFactory
 {
@@ -32,7 +38,7 @@ final class ToolCallResultFactory
             turnNo: $message->turnNo(),
             stepId: $message->stepId(),
             attempt: $message->attempt(),
-            idempotencyKey: $message->idempotencyKey(),
+            idempotencyKey: self::terminalResultIdempotencyKey($message->runId(), $message->stepId(), $message->toolCallId),
             toolCallId: $message->toolCallId,
             orderIndex: $message->orderIndex,
             result: [
@@ -55,6 +61,9 @@ final class ToolCallResultFactory
      * raw — no payload rewrite, no continuation_ref backfill, no string kind router. Correlation
      * (run/turn/step/toolCall) lives on the envelope; `$pendingHumanInput` alone marks the
      * non-terminal variant for ToolCallResultHandler admission.
+     *
+     * Idempotency includes questionId so a later different-hook suspension on the same tool call
+     * is not suppressed by a prior suspension markHandled entry.
      */
     public static function fromExecuteToolCallAndHumanInputSuspension(
         ExecuteToolCall $message,
@@ -65,7 +74,12 @@ final class ToolCallResultFactory
             turnNo: $message->turnNo(),
             stepId: $message->stepId(),
             attempt: $message->attempt(),
-            idempotencyKey: $message->idempotencyKey(),
+            idempotencyKey: self::suspensionIdempotencyKey(
+                $message->runId(),
+                $message->stepId(),
+                $message->toolCallId,
+                $suspension->request->questionId,
+            ),
             toolCallId: $message->toolCallId,
             orderIndex: $message->orderIndex,
             result: null,
@@ -101,7 +115,9 @@ final class ToolCallResultFactory
             turnNo: $message->turnNo(),
             stepId: $message->stepId(),
             attempt: $message->attempt(),
-            idempotencyKey: $message->idempotencyKey(),
+            // Throwable is a terminal tool outcome; share terminal result identity so
+            // duplicate terminal delivery (result vs throwable race) still dedups.
+            idempotencyKey: self::terminalResultIdempotencyKey($message->runId(), $message->stepId(), $message->toolCallId),
             toolCallId: $message->toolCallId,
             orderIndex: $message->orderIndex,
             result: [
@@ -142,7 +158,8 @@ final class ToolCallResultFactory
             turnNo: $correlation->turnNo,
             stepId: $correlation->stepId,
             attempt: $correlation->attempt,
-            idempotencyKey: $correlation->idempotencyKey,
+            // Deferred completion is a terminal tool outcome for the original call.
+            idempotencyKey: self::terminalResultIdempotencyKey($correlation->runId, $correlation->stepId, $correlation->toolCallId),
             toolCallId: $correlation->toolCallId,
             orderIndex: $correlation->orderIndex,
             result: [
@@ -156,5 +173,25 @@ final class ToolCallResultFactory
             isError: $isError,
             error: $error,
         );
+    }
+
+    private static function terminalResultIdempotencyKey(string $runId, string $stepId, string $toolCallId): string
+    {
+        return hash('sha256', \sprintf('tool_call_result|terminal|%s|%s|%s', $runId, $stepId, $toolCallId));
+    }
+
+    private static function suspensionIdempotencyKey(
+        string $runId,
+        string $stepId,
+        string $toolCallId,
+        string $questionId,
+    ): string {
+        return hash('sha256', \sprintf(
+            'tool_call_result|suspension|%s|%s|%s|%s',
+            $runId,
+            $stepId,
+            $toolCallId,
+            $questionId,
+        ));
     }
 }
