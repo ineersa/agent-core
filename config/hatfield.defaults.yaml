@@ -331,13 +331,13 @@ prompts: []
 # environment. For example, you can define agents named scout, reviewer,
 # researcher, worker, or any custom name. Each definition is a Markdown file
 # with YAML frontmatter discovered from the locations below in deterministic
-# order (higher-numbered layers override lower-numbered by name).
+# order (load order is lowest to highest; later layers override earlier by name).
 #
-# Discovery precedence:
-#   1. User agents under ~/.hatfield/agents/*.md
-#   2. User agents under ~/.agents/*.md
-#   3. Project agents under .hatfield/agents/*.md
-#   4. Project agents under .agents/*.md
+# Discovery load order (lowest to highest):
+#   1. User agents under ~/.agents/*.md
+#   2. User agents under ~/.hatfield/agents/*.md
+#   3. Project agents under .agents/*.md
+#   4. Project agents under .hatfield/agents/*.md
 #   5. Configured agents.paths (highest precedence)
 #
 # Directories are scanned non-recursively for *.md files. Configured paths

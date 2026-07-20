@@ -11,11 +11,11 @@ use Psr\Log\LoggerInterface;
 /**
  * Discovers agent definitions from all configured locations.
  *
- * Discovery precedence (highest wins — later layers override earlier):
- *   1. User agents under ~/.hatfield/agents/*.md
- *   2. User agents under ~/.agents/*.md
- *   3. Project agents under .hatfield/agents/*.md
- *   4. Project agents under .agents/*.md
+ * Discovery load order (lowest to highest — later layers override earlier):
+ *   1. User agents under ~/.agents/*.md
+ *   2. User agents under ~/.hatfield/agents/*.md
+ *   3. Project agents under .agents/*.md
+ *   4. Project agents under .hatfield/agents/*.md
  *   5. Configured agents.paths (additional explicit paths, highest precedence)
  *
  * Each directory is scanned non-recursively for *.md files (sorted
@@ -72,15 +72,7 @@ final class AgentDefinitionDiscovery
         /** @var list<AgentDefinitionDiagnosticDTO> $diagnostics */
         $diagnostics = [];
 
-        // 1. User ~/.hatfield/agents
-        $this->loadDirectory(
-            $homeDir.'/.hatfield/agents',
-            $definitionsByName,
-            $diagnostics,
-            isAutoDiscovery: true,
-        );
-
-        // 2. User ~/.agents
+        // 1. User ~/.agents (lowest auto-discovery precedence)
         $this->loadDirectory(
             $homeDir.'/.agents',
             $definitionsByName,
@@ -88,17 +80,25 @@ final class AgentDefinitionDiscovery
             isAutoDiscovery: true,
         );
 
-        // 3. Project .hatfield/agents
+        // 2. User ~/.hatfield/agents (overrides same-scope ~/.agents)
         $this->loadDirectory(
-            $cwd.'/.hatfield/agents',
+            $homeDir.'/.hatfield/agents',
             $definitionsByName,
             $diagnostics,
             isAutoDiscovery: true,
         );
 
-        // 4. Project .agents
+        // 3. Project .agents
         $this->loadDirectory(
             $cwd.'/.agents',
+            $definitionsByName,
+            $diagnostics,
+            isAutoDiscovery: true,
+        );
+
+        // 4. Project .hatfield/agents (overrides same-scope project .agents)
+        $this->loadDirectory(
+            $cwd.'/.hatfield/agents',
             $definitionsByName,
             $diagnostics,
             isAutoDiscovery: true,

@@ -122,7 +122,7 @@ Body
         $this->assertStringContainsString('Test body.', $definition->instructions);
     }
 
-    public function testUserAgentsOverridesUserHatfield(): void
+    public function testUserHatfieldOverridesUserAgents(): void
     {
         $this->createValidDefinition(
             $this->homeDir.'/.hatfield/agents/dupe.md',
@@ -140,7 +140,7 @@ Body
 
         $definition = $catalog->get('dupe');
         $this->assertNotNull($definition);
-        $this->assertSame('User-agents version', $definition->description);
+        $this->assertSame('User-hatfield version', $definition->description);
     }
 
     public function testProjectHatfieldOverridesUser(): void
@@ -164,7 +164,7 @@ Body
         $this->assertSame('Project version', $definition->description);
     }
 
-    public function testProjectAgentsOverridesProjectHatfield(): void
+    public function testProjectHatfieldOverridesProjectAgents(): void
     {
         $this->createValidDefinition(
             $this->cwd.'/.hatfield/agents/override.md',
@@ -182,7 +182,7 @@ Body
 
         $definition = $catalog->get('override');
         $this->assertNotNull($definition);
-        $this->assertSame('Project-agents version', $definition->description);
+        $this->assertSame('Project-hatfield version', $definition->description);
     }
 
     public function testConfiguredPathsHaveHighestPrecedence(): void
@@ -284,13 +284,13 @@ Body
         $this->assertNotNull($definition);
         $this->assertSame('Higher precedence', $definition->description);
 
-        // And a collision diagnostic
+        // And a collision diagnostic with exact directional winner/loser paths
         $hasCollision = false;
         foreach ($catalog->diagnostics() as $d) {
             if ('collision' === $d->type && 'collide' === $d->name) {
                 $hasCollision = true;
-                $this->assertNotEmpty($d->winnerPath);
-                $this->assertNotEmpty($d->loserPath);
+                $this->assertSame($this->cwd.'/.agents/collide.md', $d->winnerPath);
+                $this->assertSame($this->homeDir.'/.hatfield/agents/collide.md', $d->loserPath);
                 break;
             }
         }
