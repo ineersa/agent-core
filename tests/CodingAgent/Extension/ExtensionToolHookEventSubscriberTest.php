@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Extension;
 
+use HelgeSverre\Toon\Toon;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
@@ -148,6 +149,84 @@ final class ExtensionToolHookEventSubscriberTest extends TestCase
 
         $this->assertTrue($answered);
         $this->assertNull($event->getResult()); // Allow → real handler may run
+    }
+
+    public function testResumedBlockEncodesDeniedPayloadAsToon(): void
+    {
+        $hook = new class implements ToolCallHookInterface, ApprovalAnswerHookInterface {
+            public function onToolCall(ToolCallContextDTO $context): ToolCallDecisionDTO
+            {
+                return ToolCallDecisionDTO::requireApproval(
+                    prompt: 'Allow write?',
+                    questionId: 'q-block',
+                    schema: ['type' => 'string', 'enum' => ['✅ Allow', '❌ Deny']],
+                    details: [],
+                );
+            }
+
+            public function onApprovalAnswered(ApprovalAnswerContextDTO $context): void
+            {
+            }
+
+            public function resolveApprovalAnswer(ApprovalAnswerContextDTO $context): ToolCallDecisionDTO
+            {
+                return ToolCallDecisionDTO::block(
+                    reason: 'safeguard_cancelled',
+                    details: [
+                        'message' => 'Tool "write" was cancelled by the user.',
+                    ],
+                );
+            }
+        };
+
+        $registry = new ExtensionHookRegistry();
+        $registry->addToolCallHook($hook);
+        $accessor = new StackToolExecutionContextAccessor();
+        $subscriber = new ExtensionToolHookEventSubscriber($registry, '/tmp', $accessor);
+        $hookId = hash('crc32b', $hook::class);
+
+        $answer = new ToolCallHumanInputAnswerDTO(
+            questionId: 'q-block',
+            answer: 'Cancelled by user',
+            continuationRef: [
+                'run_id' => 'run-1',
+                'turn_no' => 1,
+                'step_id' => 'step-1',
+                'tool_call_id' => 'call-1',
+            ],
+            requestPayload: [
+                'question_id' => 'q-block',
+                'hook_id' => $hookId,
+                'hook_class' => $hook::class,
+                'approval_context' => ['category' => 'write_outside_cwd'],
+            ],
+        );
+
+        $toolCall = new ToolCall('call-1', 'write', ['path' => '/tmp/x']);
+        $event = $this->requested($toolCall);
+
+        $accessor->with(new ToolContext(
+            runId: 'run-1',
+            turnNo: 1,
+            toolCallId: 'call-1',
+            toolName: 'write',
+            cancellationToken: new NullCancellationToken(),
+            timeoutSeconds: 30,
+            humanInputAnswer: $answer,
+            stepId: 'step-1',
+        ), static function () use ($subscriber, $event): void {
+            $subscriber->onToolCallRequested($event);
+        });
+
+        $result = $event->getResult();
+        $this->assertNotNull($result);
+        $raw = $result->getResult();
+        $this->assertIsString($raw);
+        $decoded = Toon::decode($raw);
+        $this->assertIsArray($decoded);
+        $this->assertTrue($decoded['denied'] ?? null);
+        $this->assertSame('safeguard_cancelled', $decoded['reason'] ?? null);
+        $this->assertSame('Tool "write" was cancelled by the user.', $decoded['message'] ?? null);
     }
 
     private function requested(ToolCall $toolCall): ToolCallRequested

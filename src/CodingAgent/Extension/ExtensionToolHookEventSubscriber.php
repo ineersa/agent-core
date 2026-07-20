@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Extension;
 
+use HelgeSverre\Toon\Toon;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Domain\Run\PendingHumanInputRequestDTO;
 use Ineersa\AgentCore\Domain\Tool\ToolCallHumanInputAnswerDTO;
@@ -332,11 +333,13 @@ final readonly class ExtensionToolHookEventSubscriber implements EventSubscriber
 
         match ($outcome->kind) {
             ToolCallDecisionKindEnum::Allow => null,
-            ToolCallDecisionKindEnum::Block => $event->setResult(new ToolResult($toolCall, [
+            // Encode denial as TOON so transcript/tool output is human-readable
+            // (raw PHP arrays become JSON via Symfony AI serialization).
+            ToolCallDecisionKindEnum::Block => $event->setResult(new ToolResult($toolCall, Toon::encode([
                 'denied' => true,
                 'reason' => $outcome->reason ?? 'denied',
                 'message' => $outcome->details['message'] ?? \sprintf('Tool "%s" was denied.', $toolCall->getName()),
-            ])),
+            ]))),
             ToolCallDecisionKindEnum::ReplaceResult => $event->setResult(new ToolResult($toolCall, $outcome->result)),
             ToolCallDecisionKindEnum::RequireApproval => throw new \LogicException('resolveApprovalAnswer must not return RequireApproval.'),
         };
