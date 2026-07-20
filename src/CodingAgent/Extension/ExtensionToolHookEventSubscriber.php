@@ -176,6 +176,32 @@ final readonly class ExtensionToolHookEventSubscriber implements EventSubscriber
                 }
             }
         }
+
+        // Resumed answer must be consumed by its originating hook. If no registered hook
+        // matched (hook unloaded/disabled), fail closed — never fall through to the real handler.
+        if ($humanInputAnswer instanceof ToolCallHumanInputAnswerDTO) {
+            $event->setResult(new ToolResult($toolCall, Toon::encode([
+                'denied' => true,
+                'reason' => 'approval_origin_hook_unavailable',
+                'message' => \sprintf(
+                    'Tool "%s" was denied: the originating approval hook is unavailable.',
+                    $toolCall->getName(),
+                ),
+            ])));
+
+            $payloadHookId = $humanInputAnswer->requestPayload['hook_id'] ?? null;
+            $payloadHookClass = $humanInputAnswer->requestPayload['hook_class'] ?? null;
+            $this->logger?->error('tool.approval_origin_hook_unavailable', [
+                'component' => 'extension.tool_hook_subscriber',
+                'event_type' => 'tool.approval_origin_hook_unavailable',
+                'tool_name' => $toolCall->getName(),
+                'tool_call_id' => $toolCall->getId(),
+                'run_id' => $context->runId ?? '',
+                'question_id' => $humanInputAnswer->questionId,
+                'hook_id' => \is_string($payloadHookId) ? $payloadHookId : null,
+                'hook_class' => \is_string($payloadHookClass) ? $payloadHookClass : null,
+            ]);
+        }
     }
 
     public function onToolCallSucceeded(ToolCallSucceeded $event): void

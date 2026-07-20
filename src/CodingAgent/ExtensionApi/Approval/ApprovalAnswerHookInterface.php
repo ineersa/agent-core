@@ -15,7 +15,7 @@ use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallDecisionDTO;
  * this hook (via canonical answer_human resume of the exact tool call).
  * Two callbacks are invoked in order:
  *
- * 1. onApprovalAnswered() — for side-effects (e.g., optional side-effects (policy writes, metrics, etc.)). Must not throw.
+ * 1. onApprovalAnswered() — optional side-effects (policy writes, metrics, etc.). Must not throw.
  * 2. resolveApprovalAnswer() — determines the tool-execution outcome
  *    (Allow, Block, or ReplaceResult) from the human's answer.
  *

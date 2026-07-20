@@ -539,6 +539,144 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
         $this->assertNotNull($executionBus->dispatched[0]->humanInputAnswer);
     }
 
+    public function testMultiRequestPostCommitRedriveWhileSiblingStillWaiting(): void
+    {
+        $runStore = new \Ineersa\AgentCore\Infrastructure\Storage\InMemoryRunStore();
+        $eventStore = new \Ineersa\AgentCore\Tests\Support\InMemoryEventStore();
+        $commandStore = new \Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore();
+        $collector = new ToolBatchCollector(defaultMaxParallelism: 2);
+        $collector->registerExpectedBatch('run-fifo', 1, 'step-fifo', [
+            $this->call('run-fifo', 'step-fifo', 'call-q1', 0, 1, 'parallel', 2),
+            $this->call('run-fifo', 'step-fifo', 'call-q2', 1, 1, 'parallel', 2),
+        ]);
+        $collector->admitHumanInputSuspension('run-fifo', 1, 'step-fifo', 'call-q1', 'q1');
+        $collector->admitHumanInputSuspension('run-fifo', 1, 'step-fifo', 'call-q2', 'q2');
+
+        $waiting = RunStateBuilder::running('run-fifo')
+            ->withStatus(RunStatus::WaitingHuman)
+            ->withVersion(1)
+            ->withTurnNo(1)
+            ->withLastSeq(1)
+            ->withActiveStepId('step-fifo')
+            ->withPendingToolCalls(['call-q1' => false, 'call-q2' => false])
+            ->withPendingHumanInputRequests([
+                PendingHumanInputRequestDTO::toolCallFromPayload(
+                    ['question_id' => 'q1', 'prompt' => 'Allow q1?'],
+                    ['run_id' => 'run-fifo', 'turn_no' => 1, 'step_id' => 'step-fifo', 'tool_call_id' => 'call-q1'],
+                ),
+                PendingHumanInputRequestDTO::toolCallFromPayload(
+                    ['question_id' => 'q2', 'prompt' => 'Allow q2?'],
+                    ['run_id' => 'run-fifo', 'turn_no' => 1, 'step_id' => 'step-fifo', 'tool_call_id' => 'call-q2'],
+                ),
+            ])
+            ->build();
+        $this->assertTrue($runStore->compareAndSwap($waiting, 0));
+
+        $executionBus = new class implements \Symfony\Component\Messenger\MessageBusInterface {
+            public int $attempts = 0;
+
+            /** @var list<object> */
+            public array $dispatched = [];
+
+            public function dispatch(object $message, array $stamps = []): \Symfony\Component\Messenger\Envelope
+            {
+                ++$this->attempts;
+                if (1 === $this->attempts) {
+                    throw new \Symfony\Component\Messenger\Exception\TransportException('simulated post-commit dispatch crash');
+                }
+                $this->dispatched[] = $message;
+
+                return new \Symfony\Component\Messenger\Envelope($message, $stamps);
+            }
+        };
+
+        $router = new \Ineersa\AgentCore\Application\Handler\CommandRouter(new \Ineersa\AgentCore\Application\Handler\CommandHandlerRegistry([]));
+        $handler = new \Ineersa\AgentCore\Application\Pipeline\ApplyCommandHandler(
+            commandStore: $commandStore,
+            commandRouter: $router,
+            commandMailboxPolicy: new \Ineersa\AgentCore\Application\Pipeline\CommandMailboxPolicy($commandStore, $router),
+            eventFactory: new EventFactory(),
+            messageNormalizer: new AgentMessageNormalizer(),
+            maxPendingCommands: 10,
+            commandBus: new TestMessageBus(),
+            toolBatchCollector: $collector,
+        );
+
+        $processor = new \Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor(
+            runStore: $runStore,
+            idempotency: new \Ineersa\AgentCore\Application\Handler\MessageIdempotencyService(new InMemoryIdempotencyStore()),
+            runLockManager: new \Ineersa\AgentCore\Application\Handler\RunLockManager(new \Symfony\Component\Lock\LockFactory(new \Symfony\Component\Lock\Store\InMemoryStore())),
+            runCommit: new \Ineersa\AgentCore\Application\Pipeline\RunCommit(
+                runStore: $runStore,
+                eventStore: $eventStore,
+                commandStore: $commandStore,
+                hotPromptStateRebuilder: new class implements \Ineersa\AgentCore\Contract\Replay\HotPromptStateRebuilderInterface {
+                    public function rebuildHotPromptState(string $runId): \Ineersa\AgentCore\Domain\Run\PromptState
+                    {
+                        return new \Ineersa\AgentCore\Domain\Run\PromptState(
+                            runId: $runId,
+                            source: 'test',
+                            eventCount: 0,
+                            lastSeq: 0,
+                            missingSequences: [],
+                            isContiguous: true,
+                            tokenEstimate: 0,
+                            messages: [],
+                        );
+                    }
+                },
+                stepDispatcher: new \Ineersa\AgentCore\Application\Handler\StepDispatcher($executionBus),
+                logger: new \Psr\Log\NullLogger(),
+            ),
+            stepDispatcher: new \Ineersa\AgentCore\Application\Handler\StepDispatcher($executionBus),
+            handlers: [$handler],
+            logger: new \Psr\Log\NullLogger(),
+        );
+
+        $command = new \Ineersa\AgentCore\Domain\Message\ApplyCommand(
+            runId: 'run-fifo',
+            turnNo: 1,
+            stepId: 'human-step',
+            attempt: 1,
+            idempotencyKey: 'human-q1',
+            kind: \Ineersa\AgentCore\Domain\Command\CoreCommandKind::HumanResponse,
+            payload: ['question_id' => 'q1', 'answer' => '✅ Allow'],
+        );
+
+        try {
+            $processor->process('command', $command);
+            $this->fail('first process must throw when effect dispatch fails');
+        } catch (\RuntimeException $exception) {
+            $this->assertStringContainsString('Failed to dispatch execution effect', $exception->getMessage());
+        }
+
+        $afterFail = $runStore->get('run-fifo');
+        $this->assertNotNull($afterFail);
+        // q1 applied; q2 still pending → status remains WaitingHuman (the multi-request gap).
+        $this->assertSame(RunStatus::WaitingHuman, $afterFail->status);
+        $this->assertCount(1, $afterFail->pendingHumanInputRequests);
+        $this->assertSame('q2', $afterFail->pendingHumanInputRequests[0]->questionId);
+        $this->assertFalse($commandStore->has('run-fifo', 'human-q1'));
+
+        $eventsBeforeRetry = \count($eventStore->allFor('run-fifo'));
+
+        // Redelivery of q1 while active FIFO head is q2 must redrive q1 without re-answering q2.
+        $processor->process('command', $command);
+
+        $afterRetry = $runStore->get('run-fifo');
+        $this->assertNotNull($afterRetry);
+        $this->assertSame(RunStatus::WaitingHuman, $afterRetry->status);
+        $this->assertCount(1, $afterRetry->pendingHumanInputRequests);
+        $this->assertSame('q2', $afterRetry->pendingHumanInputRequests[0]->questionId);
+        $this->assertSame($eventsBeforeRetry, \count($eventStore->allFor('run-fifo')), 'redrive must not emit duplicate state events');
+        $this->assertTrue($commandStore->has('run-fifo', 'human-q1'));
+        $this->assertCount(1, $executionBus->dispatched);
+        $this->assertInstanceOf(ExecuteToolCall::class, $executionBus->dispatched[0]);
+        $this->assertSame('call-q1', $executionBus->dispatched[0]->toolCallId);
+        $this->assertNotNull($executionBus->dispatched[0]->humanInputAnswer);
+        $this->assertSame('q1', $executionBus->dispatched[0]->humanInputAnswer?->questionId);
+    }
+
     private function call(
         string $runId,
         string $stepId,

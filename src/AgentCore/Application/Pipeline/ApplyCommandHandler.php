@@ -619,6 +619,21 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
             );
         }
         if (null === $questionId || $questionId !== $activeRequest->questionId) {
+            // Multi-request post-commit redrive gap: q1 answer may already have been
+            // applied (batch durable, status still WaitingHuman because q2 remains).
+            // If Messenger redelivers q1's human_response, do not reject against active
+            // q2 — redrive the exact stored call when the durable answer is equivalent.
+            // Conflicts / missing stored answer still fail closed below.
+            if (null !== $this->toolBatchCollector
+                && null !== $questionId
+                && \array_key_exists('answer', $message->payload)
+            ) {
+                $redrive = $this->tryRedriveToolCallHumanResponse($state, $message, $questionId);
+                if (null !== $redrive) {
+                    return $redrive;
+                }
+            }
+
             return $this->rejectCommand(
                 $state,
                 $message,

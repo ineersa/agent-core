@@ -115,7 +115,7 @@ raw answer value.
 │ Resumed ExecuteToolCallWorker / ExtensionToolHookEventSubscriber            │
 │                                                                             │
 │  1. Validate answer correlation (hook_id/class, run/tool_call ids)          │
-│  2. $hook->onApprovalAnswered($ctx)    // side-effects (e.g. policy write)  │
+│  2. $hook->onApprovalAnswered($ctx)    // optional side-effects (SafeGuard no-op) │
 │  3. $hook->resolveApprovalAnswer($ctx) // Allow / Block / ReplaceResult     │
 │  4. Allow → remaining hooks + real handler; Block/Replace → terminal result │
 └─────────────────────────────────────────────────────────────────────────────┘
@@ -259,7 +259,7 @@ The extension owns the complete answer vocabulary and outcome mapping.
 | Polling seam | `ExtensionToolHookEventSubscriber::handleRequireApproval()` |
 | Crash/redelivery | Idempotent re-attach via `findByRequestId()` with deterministic requestId |
 | Extension-specific persistence | Optional via `onApprovalAnswered()` (SafeGuard uses a documented no-op; static allowlists come from settings) |
-| No timeout / no TTL | Tool worker blocks indefinitely until answered; run stays halted
+| No timeout / no TTL | Tool worker exits after non-blocking suspension; run stays WaitingHuman until answered
 
 ## Path B: Agent-driven questions (ask_human)
 

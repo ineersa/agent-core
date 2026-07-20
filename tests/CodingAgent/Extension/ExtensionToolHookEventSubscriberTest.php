@@ -229,6 +229,91 @@ final class ExtensionToolHookEventSubscriberTest extends TestCase
         $this->assertSame('Tool "write" was cancelled by the user.', $decoded['message'] ?? null);
     }
 
+    public function testUnconsumedResumedAnswerFailsClosedWhenOriginHookUnavailable(): void
+    {
+        $realHandlerWouldRun = false;
+        $allowOnlyHook = new class($realHandlerWouldRun) implements ToolCallHookInterface {
+            public function __construct(private bool &$realHandlerWouldRun)
+            {
+            }
+
+            public function onToolCall(ToolCallContextDTO $context): ToolCallDecisionDTO
+            {
+                // Unrelated allow hook — not the origin of the resumed answer.
+                $this->realHandlerWouldRun = true;
+
+                return ToolCallDecisionDTO::allow();
+            }
+        };
+
+        $registry = new ExtensionHookRegistry();
+        $registry->addToolCallHook($allowOnlyHook);
+        $accessor = new StackToolExecutionContextAccessor();
+        $logger = new \Ineersa\AgentCore\Tests\Support\TestLogger();
+        $subscriber = new ExtensionToolHookEventSubscriber($registry, '/tmp', $accessor, logger: $logger);
+
+        $missingHookClass = 'Ineersa\\CodingAgent\\Extension\\Builtin\\SafeGuard\\SafeGuardToolCallHook';
+        $answer = new ToolCallHumanInputAnswerDTO(
+            questionId: 'q-missing',
+            answer: '✅ Allow',
+            continuationRef: [
+                'run_id' => 'run-1',
+                'turn_no' => 1,
+                'step_id' => 'step-1',
+                'tool_call_id' => 'call-1',
+            ],
+            requestPayload: [
+                'question_id' => 'q-missing',
+                'hook_id' => hash('crc32b', $missingHookClass),
+                'hook_class' => $missingHookClass,
+                'approval_context' => ['category' => 'write_outside_cwd'],
+            ],
+        );
+
+        $toolCall = new ToolCall('call-1', 'write', ['path' => '/tmp/x']);
+        $event = $this->requested($toolCall);
+
+        $accessor->with(new ToolContext(
+            runId: 'run-1',
+            turnNo: 1,
+            toolCallId: 'call-1',
+            toolName: 'write',
+            cancellationToken: new NullCancellationToken(),
+            timeoutSeconds: 30,
+            humanInputAnswer: $answer,
+            stepId: 'step-1',
+        ), static function () use ($subscriber, $event): void {
+            $subscriber->onToolCallRequested($event);
+        });
+
+        $result = $event->getResult();
+        $this->assertNotNull($result, 'must deny when origin hook is unloaded');
+        $raw = $result->getResult();
+        $this->assertIsString($raw);
+        $decoded = Toon::decode($raw);
+        $this->assertIsArray($decoded);
+        $this->assertTrue($decoded['denied'] ?? null);
+        $this->assertSame('approval_origin_hook_unavailable', $decoded['reason'] ?? null);
+        $this->assertStringContainsString('originating approval hook is unavailable', (string) ($decoded['message'] ?? ''));
+        $this->assertStringNotContainsString('✅ Allow', (string) ($decoded['message'] ?? ''));
+
+        // Real handler must not fall through: result is set, so toolbox stops.
+        // The allow-only hook still ran (unrelated), but unconsumed answer forces denial after the loop.
+        $this->assertTrue($realHandlerWouldRun);
+
+        $errorLogs = array_values(array_filter(
+            $logger->records,
+            static fn (array $r): bool => 'error' === $r['level'] && str_contains((string) $r['message'], 'approval_origin_hook_unavailable'),
+        ));
+        $this->assertNotEmpty($errorLogs);
+        $context = $errorLogs[0]['context'] ?? [];
+        $this->assertSame('run-1', $context['run_id'] ?? null);
+        $this->assertSame('call-1', $context['tool_call_id'] ?? null);
+        $this->assertSame('q-missing', $context['question_id'] ?? null);
+        $this->assertSame($missingHookClass, $context['hook_class'] ?? null);
+        $this->assertArrayNotHasKey('answer', $context);
+    }
+
     private function requested(ToolCall $toolCall): ToolCallRequested
     {
         return new ToolCallRequested(
