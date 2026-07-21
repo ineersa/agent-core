@@ -28,13 +28,17 @@ Hatfield exposes **`subagent`** (launch) and **`agent_retrieve`** (read artifact
 }
 ```
 
-**Anti-pattern for independent work** (valid syntax, but serializes):
+**Anti-pattern for independent work** (valid syntax, but two separate outer calls serialize):
 
 ```json
 { "agent": "scout", "task": "Inspect routing." }
 ```
 
-…followed by another separate single-mode call for a second independent scout. Prefer one `tasks` batch instead.
+```json
+{ "agent": "scout", "task": "Inspect auth." }
+```
+
+Prefer one `tasks` batch instead of two single-mode calls.
 
 Split across multiple `subagent` calls only for **cap overflow** (`max_agents`) or **true dependencies**, not for routine independent reconnaissance.
 
