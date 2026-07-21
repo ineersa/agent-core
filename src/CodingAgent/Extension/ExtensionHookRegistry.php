@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Extension;
 
+use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterConversationBoundaryHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterTurnCommitHookInterface;
+use Ineersa\Hatfield\ExtensionApi\Lifecycle\RuntimeLifecycleHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Prompt\PromptContributorInterface;
 use Ineersa\Hatfield\ExtensionApi\Prompt\PromptContributorProviderInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallHookInterface;
@@ -53,6 +55,12 @@ final class ExtensionHookRegistry implements PromptContributorProviderInterface,
 
     /** @var list<AfterTurnCommitHookInterface> */
     private array $afterTurnCommitHooks = [];
+
+    /** @var list<AfterConversationBoundaryHookInterface> */
+    private array $afterConversationBoundaryHooks = [];
+
+    /** @var list<RuntimeLifecycleHookInterface> */
+    private array $runtimeLifecycleHooks = [];
 
     public function addToolCallHook(ToolCallHookInterface $hook): void
     {
@@ -132,5 +140,27 @@ final class ExtensionHookRegistry implements PromptContributorProviderInterface,
     public function afterTurnCommitHooks(): array
     {
         return $this->afterTurnCommitHooks;
+    }
+
+    public function addAfterConversationBoundaryHook(AfterConversationBoundaryHookInterface $hook): void
+    {
+        $this->afterConversationBoundaryHooks[] = $hook;
+    }
+
+    /** @return list<AfterConversationBoundaryHookInterface> */
+    public function afterConversationBoundaryHooks(): array
+    {
+        return $this->afterConversationBoundaryHooks;
+    }
+
+    public function addRuntimeLifecycleHook(RuntimeLifecycleHookInterface $hook): void
+    {
+        $this->runtimeLifecycleHooks[] = $hook;
+    }
+
+    /** @return list<RuntimeLifecycleHookInterface> */
+    public function runtimeLifecycleHooks(): array
+    {
+        return $this->runtimeLifecycleHooks;
     }
 }

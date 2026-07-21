@@ -43,7 +43,7 @@ use function Symfony\Component\String\u;
  * transactional guarantees. State and event files are locked independently
  * by their respective stores (SessionRunStore, SessionRunEventStore).
  */
-final class HatfieldSessionStore
+final class HatfieldSessionStore implements SessionExistenceCheckerInterface
 {
     public function __construct(
         private readonly AppConfig $appConfig,

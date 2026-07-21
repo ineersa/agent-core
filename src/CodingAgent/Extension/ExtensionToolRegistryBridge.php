@@ -5,15 +5,19 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Extension;
 
 use Ineersa\CodingAgent\Config\AppConfig;
+use Ineersa\CodingAgent\Extension\Model\ExtensionModelCallInterface;
 use Ineersa\CodingAgent\Tool\ToolRegistryInterface;
 use Ineersa\Hatfield\ExtensionApi\Command\CommandDefinitionDTO;
 use Ineersa\Hatfield\ExtensionApi\Command\CommandRegistryInterface;
 use Ineersa\Hatfield\ExtensionApi\Command\ExtensionCommandHandlerInterface;
 use Ineersa\Hatfield\ExtensionApi\Exec\ExecInterface;
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
+use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterConversationBoundaryHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterTurnCommitHookInterface;
+use Ineersa\Hatfield\ExtensionApi\Lifecycle\RuntimeLifecycleHookInterface;
+use Ineersa\Hatfield\ExtensionApi\Model\ModelCallResultDTO;
 use Ineersa\Hatfield\ExtensionApi\Prompt\PromptContributorInterface;
-use Ineersa\Hatfield\ExtensionApi\Tool\ExtensionToolHandlerInterface;
+use Ineersa\Hatfield\ExtensionApi\Session\SessionEventReaderInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallRewriteHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolRegistrationDTO;
@@ -42,6 +46,8 @@ final readonly class ExtensionToolRegistryBridge implements ExtensionApiInterfac
         private AppConfig $appConfig,
         private ExecInterface $execBridge,
         private CommandRegistryInterface $commandRegistry,
+        private SessionEventReaderInterface $sessionEventReader,
+        private ExtensionModelCallInterface $modelCaller,
     ) {
     }
 
@@ -111,6 +117,20 @@ final readonly class ExtensionToolRegistryBridge implements ExtensionApiInterfac
         return $this->execBridge;
     }
 
+    public function sessionEvents(): SessionEventReaderInterface
+    {
+        return $this->sessionEventReader;
+    }
+
+    public function callModel(
+        string $model,
+        array $messages,
+        array $tools = [],
+        ?array $structuredContent = null,
+    ): ModelCallResultDTO {
+        return $this->modelCaller->call($model, $messages, $tools, $structuredContent);
+    }
+
     public function registerPromptContributor(PromptContributorInterface $contributor): void
     {
         $this->hookRegistry->addPromptContributor($contributor);
@@ -129,5 +149,15 @@ final readonly class ExtensionToolRegistryBridge implements ExtensionApiInterfac
     public function registerAfterTurnCommitHook(AfterTurnCommitHookInterface $hook): void
     {
         $this->hookRegistry->addAfterTurnCommitHook($hook);
+    }
+
+    public function registerAfterConversationBoundaryHook(AfterConversationBoundaryHookInterface $hook): void
+    {
+        $this->hookRegistry->addAfterConversationBoundaryHook($hook);
+    }
+
+    public function registerRuntimeLifecycleHook(RuntimeLifecycleHookInterface $hook): void
+    {
+        $this->hookRegistry->addRuntimeLifecycleHook($hook);
     }
 }

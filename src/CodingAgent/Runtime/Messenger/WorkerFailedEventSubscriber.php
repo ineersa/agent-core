@@ -11,6 +11,7 @@ use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Message\AbstractAgentBusMessage;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
+use Ineersa\CodingAgent\Extension\Boundary\ConversationBoundaryNotifier;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 use Symfony\Component\Messenger\Event\WorkerMessageFailedEvent;
@@ -49,6 +50,7 @@ final readonly class WorkerFailedEventSubscriber implements EventSubscriberInter
         private RunStoreInterface $runStore,
         private EventStoreInterface $eventStore,
         private LoggerInterface $logger,
+        private ?ConversationBoundaryNotifier $conversationBoundaryNotifier = null,
     ) {
     }
 
@@ -176,6 +178,10 @@ final readonly class WorkerFailedEventSubscriber implements EventSubscriberInter
 
                 return;
             }
+
+            // Permanent failure appends outside RunCommit; still notify the shared
+            // post-commit conversation-boundary seam so failed outcomes are not omitted.
+            $this->conversationBoundaryNotifier?->notifyPersistedBatch($runId, [$persisted]);
 
             $this->logger->info('agent_loop.worker_failed_written', [
                 'run_id' => $runId,

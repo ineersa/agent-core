@@ -687,3 +687,14 @@ reusable without destructive truncation or separate tree files.
 - [Hatfield Settings](settings.md) — configuring session path and theme
 - [TUI Architecture](tui-architecture.md) — TUI widget layout and extension system
 - [Architecture Rollout Plan](../.pi/plans/architecture_rollout_plan.md) — overall project architecture history
+
+## Extension API access to canonical events
+
+Extensions can observe and read the canonical append-only session stream through public Extension API contracts under `Ineersa\Hatfield\ExtensionApi`:
+
+- **Conversation boundary hooks** (`AfterConversationBoundaryHookInterface`) fire best-effort after a terminal `agent_end` (`completed` / `failed` / `cancelled`) is persisted with allocated seq. They receive a public `ConversationBoundaryDTO` with run/session identity, opaque boundary id, inclusive source range, latest committed seq, and outcome. They must not mutate run state or perform model work. Delivery is an acceleration path, not a durability guarantee.
+- **Canonical event reader** (`ExtensionApiInterface::sessionEvents()`) returns immutable `SessionEventDTO` values for an inclusive `(startSeq, endSeq)` range. Source identity is `(run_id, seq)`. Reads are intentionally non-branch-aware and may include abandoned rewind activity present in the journal. Missing sessions raise a stable `SessionEventReaderException` distinct from an empty range on an existing session.
+- **Blocking model call** (`ExtensionApiInterface::callModel(model, messages, tools, structuredContent)`) resolves an exact configured `provider/model` string, performs one non-streaming call with only extension-supplied tools, and returns `ModelCallResultDTO`. Ambient Hatfield tools are never injected or executed. Failures use `ModelCallException` with sanitized messages.
+- **Runtime lifecycle hooks** (`RuntimeLifecycleHookInterface`) notify owning headless controller start/stop once per process so extensions can start/stop their own resources. Hatfield does not register or supervise extension workers.
+
+These contracts never expose `RunEvent`, `EventStoreInterface`, session filesystem paths, Symfony AI objects, credentials, or run-state mutation APIs.

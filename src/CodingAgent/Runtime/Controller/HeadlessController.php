@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Runtime\Controller;
 
 use Ineersa\AgentCore\Contract\Tool\ToolExecutionSettingsInterface;
+use Ineersa\CodingAgent\Extension\Lifecycle\RuntimeLifecycleNotifier;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeExceptionBoundary;
 use Ineersa\CodingAgent\Runtime\Controller\Event\ControllerCommandEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\JsonlCodec;
@@ -83,6 +84,7 @@ final class HeadlessController
          * and sends append_message UserCommands to the agent session.
          */
         private readonly ?BackgroundProcessCompletionPoller $bgProcessCompletionPoller = null,
+        private readonly ?RuntimeLifecycleNotifier $runtimeLifecycleNotifier = null,
     ) {
         $this->sessionId = $_SERVER['HATFIELD_SESSION_ID'] ?? $_ENV['HATFIELD_SESSION_ID'] ?? 'unknown';
     }
@@ -122,6 +124,12 @@ final class HeadlessController
                 ],
             ));
         });
+
+        // Notify extensions after controller initialization is far enough for
+        // them to start their own resources. Not emitted from Messenger workers.
+        $this->runtimeLifecycleNotifier?->notifyStarted('headless_controller', [
+            'session_id' => $this->sessionId,
+        ]);
 
         $this->emitter->emit(new RuntimeEvent(
             type: RuntimeEventTypeEnum::RuntimeReady->value,
@@ -414,6 +422,13 @@ final class HeadlessController
         }
 
         $this->shuttingDown = true;
+
+        // Notify extensions early so they can stop extension-owned resources
+        // before Hatfield tears down consumers. Hook failures are isolated.
+        $this->runtimeLifecycleNotifier?->notifyStopping('headless_controller', [
+            'session_id' => $this->sessionId,
+        ]);
+
         $this->emitter->shutdown();
 
         $this->logger->info('Controller shutting down gracefully');
