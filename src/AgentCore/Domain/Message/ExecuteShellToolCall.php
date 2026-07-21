@@ -30,16 +30,22 @@ final readonly class ExecuteShellToolCall extends AbstractAgentBusMessage
      *                            avoids the ordering race where AgentEnd appeared
      *                            before tool_exec events (issue #183).  Set by
      *                            the standalone (first-input) shellExecute() path.
+     * @param int    $turnNo      Branch turn that owns this direct shell interaction
+     *                            (current leaf at submission). Must match the
+     *                            agent_command_applied(kind=shell_command) turn so
+     *                            rewind can drop abandoned bangs without filtering
+     *                            model-generated bash tool calls.
      */
     public function __construct(
         string $runId,
         public string $toolCallId,
         public string $commandText,
         public bool $standalone = false,
+        int $turnNo = 0,
     ) {
         parent::__construct(
             runId: $runId,
-            turnNo: 0,
+            turnNo: $turnNo,
             stepId: '',
             attempt: 1,
             idempotencyKey: hash('sha256', $runId.'|'.$toolCallId),

@@ -340,7 +340,7 @@ final class FlakySeqDrainAgentSessionClient implements AgentSessionClient
     {
     }
 
-    public function shellExecute(string $command, string $sessionId, string $cwd): RunHandle
+    public function shellExecute(string $command, string $sessionId, string $cwd, string $originalText = ''): RunHandle
     {
         throw new \BadMethodCallException('not used');
     }

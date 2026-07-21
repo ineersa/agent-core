@@ -36,6 +36,7 @@ services:
     autoconfigure: true
 
   Ineersa\Tui\ImagePaste\ClipboardImageReaderInterface: '@Ineersa\Tui\ImagePaste\ClipboardImageReader'
+  Ineersa\Tui\Runtime\PromptHistoryInterface: '@Ineersa\Tui\Listener\PromptHistory'
 
   _instanceof:
     Ineersa\Tui\Listener\TuiListenerRegistrar:

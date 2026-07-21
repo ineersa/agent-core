@@ -143,6 +143,11 @@ final class SubmitListener implements TuiListenerRegistrar
             if (null !== $commandResult) {
                 // ── Shell command — dispatch to runtime for execution ──
                 if ($commandResult instanceof DispatchShellCommand) {
+                    // Prompt history is seeded from projected UserMessage blocks
+                    // (including canonical shell_command) on session start/resume
+                    // and after rewind. Append here for live Up/Down until the
+                    // next seedFrom; do not local-echo the transcript block —
+                    // agent_command_applied(kind=shell_command) projects it.
                     $history->append($commandResult->originalText);
                     self::handleShellCommand(
                         $commandResult, $state, $screen, $sessionStore,
@@ -561,14 +566,9 @@ final class SubmitListener implements TuiListenerRegistrar
                 ]);
             }
 
-            // Add a user-message block so prompt history (Up/Down)
-            // can recall the shell command after submission.
-            $userSeq = \count($state->transcript) + 1;
-            $state->transcript[] = $blockFactory->user(
-                runId: $state->sessionId,
-                text: $shellCommand->originalText,
-                seq: $userSeq,
-            );
+            // No local transcript echo: canonical agent_command_applied
+            // (kind=shell_command) projects the bang user line via the poller
+            // so rewind/transcript rebuild stay single-source-of-truth.
 
             if (null === $state->handle) {
                 // First input — execute shell without starting an LLM run.
@@ -583,6 +583,7 @@ final class SubmitListener implements TuiListenerRegistrar
                     $shellCommand->command,
                     $state->sessionId,
                     $state->request->cwd ?? '',
+                    $shellCommand->originalText,
                 );
                 $state->activity = RunActivityStateEnum::Completed;
                 $state->isShellRun = true; // track for normal-submit-after-shell restart
@@ -603,8 +604,8 @@ final class SubmitListener implements TuiListenerRegistrar
                 // standalone shell so ExecuteShellToolCallWorker emits agent_end
                 // and the poller clears Working/Running (issue #183 / journey phase 9).
                 $shellPayload = $state->activity->isTerminal()
-                    ? ['standalone' => true]
-                    : [];
+                    ? ['standalone' => true, 'original_text' => $shellCommand->originalText]
+                    : ['original_text' => $shellCommand->originalText];
 
                 $client->send(
                     $state->handle->runId,

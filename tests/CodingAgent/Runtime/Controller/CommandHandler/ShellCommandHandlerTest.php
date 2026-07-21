@@ -4,7 +4,13 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Runtime\Controller\CommandHandler;
 
+use Ineersa\AgentCore\Contract\EventStoreInterface;
+use Ineersa\AgentCore\Contract\RunStoreInterface;
+use Ineersa\AgentCore\Domain\Event\RunEvent;
+use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\ExecuteShellToolCall;
+use Ineersa\AgentCore\Domain\Run\RunState;
+use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
@@ -24,16 +30,22 @@ final class ShellCommandHandlerTest extends TestCase
 {
     private ShellCommandSpyClient $spyClient;
     private ShellCommandSpyBus $spyBus;
+    /** @var list<RunEvent> */
+    private array $appendedEvents = [];
+    private ShellCommandSpyRunStore $runStore;
 
     protected function setUp(): void
     {
         $this->spyClient = new ShellCommandSpyClient();
         $this->spyBus = new ShellCommandSpyBus();
+        $this->appendedEvents = [];
+        $this->runStore = new ShellCommandSpyRunStore();
     }
 
     public function testDispatchesShellCommandViaExecutionBus(): void
     {
-        $handler = new ShellCommandHandler($this->spyBus);
+        $this->runStore->state = new RunState(runId: 'run-123', status: RunStatus::Completed, turnNo: 2, lastSeq: 5);
+        $handler = $this->createHandler();
 
         $command = new RuntimeCommand(
             id: 'cmd_1',
@@ -41,6 +53,7 @@ final class ShellCommandHandlerTest extends TestCase
             runId: 'run-123',
             payload: [
                 'text' => 'echo hello',
+                'original_text' => '!echo hello',
             ],
         );
 
@@ -55,11 +68,19 @@ final class ShellCommandHandlerTest extends TestCase
         $this->assertSame('run-123', $this->spyBus->lastMessage->runId());
         $this->assertSame('echo hello', $this->spyBus->lastMessage->commandText);
         $this->assertFalse($this->spyBus->lastMessage->standalone, 'Payload without standalone flag defaults to false');
+        $this->assertSame(2, $this->spyBus->lastMessage->turnNo(), 'Worker must receive current leaf turn');
+
+        $this->assertCount(1, $this->appendedEvents);
+        $this->assertSame(RunEventTypeEnum::AgentCommandApplied->value, $this->appendedEvents[0]->type);
+        $this->assertSame(2, $this->appendedEvents[0]->turnNo);
+        $this->assertSame('shell_command', $this->appendedEvents[0]->payload['kind'] ?? null);
+        $this->assertSame('!echo hello', $this->appendedEvents[0]->payload['text'] ?? null);
+        $this->assertSame($this->spyBus->lastMessage->toolCallId, $this->appendedEvents[0]->payload['tool_call_id'] ?? null);
     }
 
     public function testEmitsProtocolErrorWhenRunIdMissing(): void
     {
-        $handler = new ShellCommandHandler($this->spyBus);
+        $handler = $this->createHandler();
 
         $emittedEvents = [];
         $emit = static function (RuntimeEvent $event) use (&$emittedEvents): void {
@@ -84,7 +105,7 @@ final class ShellCommandHandlerTest extends TestCase
 
     public function testIgnoresNonShellCommands(): void
     {
-        $handler = new ShellCommandHandler($this->spyBus);
+        $handler = $this->createHandler();
 
         // complete_run is NOT handled here — the controller must never
         // synchronously write AgentEnd for async shell work (issue #183).
@@ -116,7 +137,7 @@ final class ShellCommandHandlerTest extends TestCase
 
     public function testEmptyCommandTextDoesNotDispatchToBus(): void
     {
-        $handler = new ShellCommandHandler($this->spyBus);
+        $handler = $this->createHandler();
 
         $command = new RuntimeCommand(
             id: 'cmd_4',
@@ -138,7 +159,7 @@ final class ShellCommandHandlerTest extends TestCase
 
     public function testStandaloneShellCommandPassesFlagToWorker(): void
     {
-        $handler = new ShellCommandHandler($this->spyBus);
+        $handler = $this->createHandler();
 
         $command = new RuntimeCommand(
             id: 'cmd_standalone',
@@ -166,10 +187,9 @@ final class ShellCommandHandlerTest extends TestCase
 
     public function testInlineShellCommandDoesNotCompleteRun(): void
     {
-        $handler = new ShellCommandHandler($this->spyBus);
+        $handler = $this->createHandler();
+        $this->runStore->state = new RunState(runId: 'run-inline-1', status: RunStatus::Running, turnNo: 2, lastSeq: 5);
 
-        // Non-standalone: dispatched via bus for subsequent shell commands
-        // during an agent run. No completeRun() call.
         $command = new RuntimeCommand(
             id: 'cmd_inline',
             type: 'shell_command',
@@ -180,10 +200,59 @@ final class ShellCommandHandlerTest extends TestCase
         $event = new ControllerCommandEvent($command, static function (): void {});
         $handler($event);
 
+        // Non-standalone shell commands are completed by the worker without a
+        // terminal event owned by the controller.
         $this->assertNotNull($this->spyBus->lastMessage);
         $this->assertInstanceOf(ExecuteShellToolCall::class, $this->spyBus->lastMessage);
         $this->assertFalse($this->spyBus->lastMessage->standalone);
+        $this->assertSame(2, $this->spyBus->lastMessage->turnNo());
         $this->assertSame(0, $this->spyClient->completeRunCalls);
+    }
+
+    private function createHandler(): ShellCommandHandler
+    {
+        return new ShellCommandHandler($this->spyBus, $this->createEventStore(), $this->runStore);
+    }
+
+    private function createEventStore(): EventStoreInterface
+    {
+        return new class($this->appendedEvents) implements EventStoreInterface {
+            /** @var list<RunEvent> */
+            private array $collector;
+
+            /** @param list<RunEvent> &$collector */
+            public function __construct(array &$collector)
+            {
+                $this->collector = &$collector;
+            }
+
+            public function append(RunEvent $event): RunEvent
+            {
+                $seq = \count(array_filter($this->collector, static fn (RunEvent $e): bool => $e->runId === $event->runId)) + 1;
+                $persisted = new RunEvent($event->runId, $seq, $event->turnNo, $event->type, $event->payload, $event->createdAt);
+                $this->collector[] = $persisted;
+
+                return $persisted;
+            }
+
+            public function appendMany(array $events): array
+            {
+                $out = [];
+                foreach ($events as $event) {
+                    $out[] = $this->append($event);
+                }
+
+                return $out;
+            }
+
+            public function allFor(string $runId): array
+            {
+                return array_values(array_filter(
+                    $this->collector,
+                    static fn (RunEvent $e): bool => $e->runId === $runId,
+                ));
+            }
+        };
     }
 }
 
@@ -207,6 +276,33 @@ final class ShellCommandSpyBus implements MessageBusInterface
         $this->dispatched[] = $envelope;
 
         return $envelope;
+    }
+}
+
+/**
+ * Test run store for current-leaf turn assertions.
+ *
+ * @internal test helper
+ */
+final class ShellCommandSpyRunStore implements RunStoreInterface
+{
+    public ?RunState $state = null;
+
+    public function get(string $runId): ?RunState
+    {
+        return $this->state?->runId === $runId ? $this->state : null;
+    }
+
+    public function compareAndSwap(RunState $state, int $expectedVersion): bool
+    {
+        $this->state = $state;
+
+        return true;
+    }
+
+    public function findRunningStaleBefore(\DateTimeImmutable $updatedBefore): array
+    {
+        return [];
     }
 }
 
@@ -254,7 +350,7 @@ final class ShellCommandSpyClient implements AgentSessionClient
         throw new \RuntimeException('Unexpected cancel()');
     }
 
-    public function shellExecute(string $command, string $sessionId, string $cwd): RunHandle
+    public function shellExecute(string $command, string $sessionId, string $cwd, string $originalText = ''): RunHandle
     {
         throw new \RuntimeException('Unexpected shellExecute()');
     }

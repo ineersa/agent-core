@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Runtime\InProcess;
 use Ineersa\AgentCore\Contract\AgentRunnerInterface;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\Rewind\RunRewindServiceInterface;
+use Ineersa\AgentCore\Contract\RunStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolExecutorInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
@@ -60,6 +61,7 @@ final class InProcessAgentSessionClient implements AgentSessionClient
         private readonly PromptTemplateService $promptTemplateService,
         private readonly SessionMetadataStore $sessionMetaStore,
         private readonly ModelResolver $modelResolver,
+        private readonly RunStoreInterface $runStore,
         private readonly ?RuntimeEventSinkInterface $transientSink = null,
         private readonly ?ToolQuestionStoreInterface $toolQuestionStore = null,
         private readonly ToolQuestionAnswerResolver $answerResolver = new ToolQuestionAnswerResolver(),
@@ -292,7 +294,7 @@ final class InProcessAgentSessionClient implements AgentSessionClient
         $this->runner->cancel($runId);
     }
 
-    public function shellExecute(string $command, string $sessionId, string $cwd): RunHandle
+    public function shellExecute(string $command, string $sessionId, string $cwd, string $originalText = ''): RunHandle
     {
         $runId = $sessionId;
 
@@ -302,6 +304,10 @@ final class InProcessAgentSessionClient implements AgentSessionClient
         $this->executeShellCommand($runId, new UserCommand(
             type: 'shell_command',
             text: $command,
+            payload: array_filter([
+                'original_text' => '' !== $originalText ? $originalText : null,
+                'standalone' => true,
+            ], static fn (mixed $v): bool => null !== $v),
         ));
 
         // Emit a terminal AgentEnd event so the TUI poller transitions
@@ -395,16 +401,41 @@ final class InProcessAgentSessionClient implements AgentSessionClient
         }
 
         $toolCallId = uniqid('sh_', true);
+        $originalText = (string) ($command->payload['original_text'] ?? '');
+        if ('' === $originalText) {
+            $originalText = '!'.$commandText;
+        }
+
+        // Same branch-ownership contract as ShellCommandHandler / worker:
+        // current leaf turn + direct_shell correlation on tool lifecycle events.
+        $runState = $this->runStore->get($runId);
+        $turnNo = null !== $runState ? $runState->turnNo : 0;
 
         $this->eventStore->append(new RunEvent(
             runId: $runId,
             seq: 0,
-            turnNo: 0,
+            turnNo: $turnNo,
+            type: RunEventTypeEnum::AgentCommandApplied->value,
+            payload: [
+                'kind' => 'shell_command',
+                'text' => $originalText,
+                'command' => $commandText,
+                'tool_call_id' => $toolCallId,
+                'standalone' => (bool) ($command->payload['standalone'] ?? false),
+                'idempotency_key' => hash('sha256', $runId.'|'.$toolCallId.'|shell_command'),
+            ],
+        ));
+
+        $this->eventStore->append(new RunEvent(
+            runId: $runId,
+            seq: 0,
+            turnNo: $turnNo,
             type: RunEventTypeEnum::ToolExecutionStart->value,
             payload: [
                 'tool_call_id' => $toolCallId,
                 'tool_name' => 'bash',
                 'order_index' => 0,
+                'direct_shell' => true,
             ],
         ));
 
@@ -413,12 +444,13 @@ final class InProcessAgentSessionClient implements AgentSessionClient
             $this->eventStore->append(new RunEvent(
                 runId: $runId,
                 seq: 0,
-                turnNo: 0,
+                turnNo: $turnNo,
                 type: RunEventTypeEnum::ToolExecutionEnd->value,
                 payload: [
                     'tool_call_id' => $toolCallId,
                     'is_error' => true,
                     'result' => 'Shell command execution unavailable: ToolExecutor not configured.',
+                    'direct_shell' => true,
                 ],
             ));
 
@@ -450,12 +482,13 @@ final class InProcessAgentSessionClient implements AgentSessionClient
         $this->eventStore->append(new RunEvent(
             runId: $runId,
             seq: 0,
-            turnNo: 0,
+            turnNo: $turnNo,
             type: RunEventTypeEnum::ToolExecutionEnd->value,
             payload: [
                 'tool_call_id' => $toolCallId,
                 'is_error' => $result->isError,
                 'result' => $resultText,
+                'direct_shell' => true,
             ],
         ));
     }

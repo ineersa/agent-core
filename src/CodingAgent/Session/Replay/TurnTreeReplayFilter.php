@@ -17,8 +17,10 @@ use Ineersa\CodingAgent\Session\TurnTree\TurnTreeProjector;
  *  - Tree metadata events (leaf_set, turn_branched)
  *
  * Abandoned sibling branch events (message, tool, assistant content for turns
- * not on the active path) are excluded. The canonical stream remains intact;
- * only the replay view is filtered.
+ * not on the active path) are excluded. Direct bang shell interactions are
+ * branch-owned by an explicit tool_call_id, rather than inferred from
+ * tool_name=bash, so model-generated bash calls remain unaffected.
+ * The canonical stream remains intact; only the replay view is filtered.
  */
 final class TurnTreeReplayFilter
 {
@@ -40,9 +42,8 @@ final class TurnTreeReplayFilter
     public function filter(string $runId, array $events): TurnBranchReplayDTO
     {
         $tree = $this->projector->build($runId, $events);
-        $targetLeaf = $tree->currentLeafTurnNo;
 
-        return $this->filterForLeaf($runId, $events, $targetLeaf);
+        return $this->filterForLeaf($runId, $events, $tree->currentLeafTurnNo);
     }
 
     /**
@@ -72,14 +73,30 @@ final class TurnTreeReplayFilter
             ? TurnTreeProjector::activePathTo($targetLeafTurnNo, $tree->nodesByTurnNo)
             : [];
 
-        $canonicalEventCount = \count($events);
-        $canonicalLastSeq = $this->maxSeq($events);
-
         $commandSeqToCreatedTurn = $this->buildCommandSeqToCreatedTurnMap($events);
+        $rewindBoundary = $this->rewindBoundaryForTarget($events, $targetLeafTurnNo);
+        $activeDirectShellToolCallIds = $this->activeDirectShellToolCallIds(
+            $events,
+            $activePathTurnNos,
+            $targetLeafTurnNo,
+            $rewindBoundary,
+        );
 
         $filtered = [];
         foreach ($events as $event) {
-            // Include run-level events (turn 0, e.g. run_started).
+            if ($this->isAbandonedDirectShellEvent(
+                $event,
+                $activePathTurnNos,
+                $targetLeafTurnNo,
+                $rewindBoundary,
+                $activeDirectShellToolCallIds,
+            )) {
+                continue;
+            }
+
+            // Include run-level events (turn 0, e.g. run_started). This is
+            // deliberately after the direct-shell check: correlated direct shell
+            // lifecycle events may also be stamped run-level for a root shell run.
             if (0 === $event->turnNo) {
                 $filtered[] = $event;
                 continue;
@@ -105,13 +122,12 @@ final class TurnTreeReplayFilter
             }
         }
 
-        // Re-sort filtered events by seq for replay.
         usort($filtered, static fn (RunEvent $left, RunEvent $right): int => $left->seq <=> $right->seq);
 
         return new TurnBranchReplayDTO(
             events: $filtered,
-            canonicalEventCount: $canonicalEventCount,
-            canonicalLastSeq: $canonicalLastSeq,
+            canonicalEventCount: \count($events),
+            canonicalLastSeq: $this->maxSeq($events),
             activePathTurnNos: $activePathTurnNos,
             currentLeafTurnNo: $targetLeafTurnNo,
         );
@@ -162,10 +178,170 @@ final class TurnTreeReplayFilter
 
     private function isTurnSeedingCommandEvent(RunEvent $event): bool
     {
+        // shell_command is not turn-seeding: bangs attach to the current leaf
+        // without creating a child turn via turn_advanced.
+        if (RunEventTypeEnum::AgentCommandApplied->value === $event->type
+            && 'shell_command' === ($event->payload['kind'] ?? null)) {
+            return false;
+        }
+
         return \in_array($event->type, [
             RunEventTypeEnum::AgentCommandQueued->value,
             RunEventTypeEnum::AgentCommandApplied->value,
         ], true);
+    }
+
+    /**
+     * Find the boundary used when replaying a target immediately after rewind.
+     *
+     * Commands submitted on the target turn after its last completion but before
+     * the rewind leaf_set are abandoned input, not part of the target turn's
+     * conversational transcript. This is the same boundary used by run-state
+     * replay for normal follow-up commands.
+     *
+     * @param list<RunEvent> $events
+     *
+     * @return array{rewindSeq:int, completionSeq:int}
+     */
+    private function rewindBoundaryForTarget(array $events, ?int $targetTurnNo): array
+    {
+        if (null === $targetTurnNo || $targetTurnNo <= 0) {
+            return ['rewindSeq' => 0, 'completionSeq' => 0];
+        }
+
+        $rewindSeq = 0;
+        foreach ($events as $event) {
+            if (RunEventTypeEnum::LeafSet->value !== $event->type) {
+                continue;
+            }
+
+            if ('rewind' !== ($event->payload['reason'] ?? null)
+                || (int) ($event->payload['turn_no'] ?? 0) !== $targetTurnNo) {
+                continue;
+            }
+
+            $rewindSeq = max($rewindSeq, $event->seq);
+        }
+
+        if (0 === $rewindSeq) {
+            return ['rewindSeq' => 0, 'completionSeq' => 0];
+        }
+
+        $completionSeq = 0;
+        foreach ($events as $event) {
+            if ($event->turnNo !== $targetTurnNo || $event->seq >= $rewindSeq) {
+                continue;
+            }
+
+            if (\in_array($event->type, [
+                RunEventTypeEnum::AgentEnd->value,
+                RunEventTypeEnum::LlmStepCompleted->value,
+            ], true)) {
+                $completionSeq = max($completionSeq, $event->seq);
+            }
+        }
+
+        return ['rewindSeq' => $rewindSeq, 'completionSeq' => $completionSeq];
+    }
+
+    /**
+     * @param list<RunEvent>                          $events
+     * @param list<int>                               $activePathTurnNos
+     * @param array{rewindSeq:int, completionSeq:int} $rewindBoundary
+     *
+     * @return array<string, true>
+     */
+    private function activeDirectShellToolCallIds(
+        array $events,
+        array $activePathTurnNos,
+        ?int $targetTurnNo,
+        array $rewindBoundary,
+    ): array {
+        $ids = [];
+
+        foreach ($events as $event) {
+            if (RunEventTypeEnum::AgentCommandApplied->value !== $event->type
+                || 'shell_command' !== ($event->payload['kind'] ?? null)) {
+                continue;
+            }
+
+            if (!$this->isActiveDirectShellCommand($event, $activePathTurnNos, $targetTurnNo, $rewindBoundary)) {
+                continue;
+            }
+
+            $toolCallId = $event->payload['tool_call_id'] ?? null;
+            if (\is_string($toolCallId) && '' !== $toolCallId) {
+                $ids[$toolCallId] = true;
+            }
+        }
+
+        return $ids;
+    }
+
+    /**
+     * @param list<int>                               $activePathTurnNos
+     * @param array{rewindSeq:int, completionSeq:int} $rewindBoundary
+     */
+    private function isActiveDirectShellCommand(
+        RunEvent $event,
+        array $activePathTurnNos,
+        ?int $targetTurnNo,
+        array $rewindBoundary,
+    ): bool {
+        // Root shell-only input has no conversational turn to rewind before.
+        if (0 === $event->turnNo) {
+            return true;
+        }
+
+        if (!\in_array($event->turnNo, $activePathTurnNos, true)) {
+            return false;
+        }
+
+        // A rewind to this exact turn means the target is the state at its last
+        // completed model step. Direct shell input after that step is abandoned,
+        // even though it shares the target turn number.
+        if ($event->turnNo === $targetTurnNo
+            && $rewindBoundary['completionSeq'] > 0
+            && $event->seq > $rewindBoundary['completionSeq']
+            && $event->seq < $rewindBoundary['rewindSeq']) {
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * @param list<int>                               $activePathTurnNos
+     * @param array{rewindSeq:int, completionSeq:int} $rewindBoundary
+     * @param array<string, true>                     $activeDirectShellToolCallIds
+     */
+    private function isAbandonedDirectShellEvent(
+        RunEvent $event,
+        array $activePathTurnNos,
+        ?int $targetTurnNo,
+        array $rewindBoundary,
+        array $activeDirectShellToolCallIds,
+    ): bool {
+        $isCommand = RunEventTypeEnum::AgentCommandApplied->value === $event->type
+            && 'shell_command' === ($event->payload['kind'] ?? null);
+        $isLifecycle = \in_array($event->type, [
+            RunEventTypeEnum::ToolExecutionStart->value,
+            RunEventTypeEnum::ToolExecutionUpdate->value,
+            RunEventTypeEnum::ToolExecutionEnd->value,
+        ], true) && true === ($event->payload['direct_shell'] ?? false);
+
+        if (!$isCommand && !$isLifecycle) {
+            return false;
+        }
+
+        $toolCallId = $event->payload['tool_call_id'] ?? null;
+        if (\is_string($toolCallId) && '' !== $toolCallId) {
+            return !isset($activeDirectShellToolCallIds[$toolCallId]);
+        }
+
+        // New direct-shell events are correlated. Keep old/unusual uncorrelated
+        // root events as run-level content; otherwise use explicit turn membership.
+        return !$this->isActiveDirectShellCommand($event, $activePathTurnNos, $targetTurnNo, $rewindBoundary);
     }
 
     /**

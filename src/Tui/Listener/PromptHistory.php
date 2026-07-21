@@ -16,14 +16,15 @@ use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
  *   {@see PromptHistoryListener::register()}).
  * - {@see append()} grows the list when the user submits a real prompt or bang
  *   command ({@see SubmitListener}).
- * - Rewind is intentionally a no-op: no rewind-specific rebuild; the list may
- *   stay ahead of a rewound transcript until the next {@see seedFrom()}.
+ * - After conversation rewind, {@see RuntimeEventPoller} reseeds via
+ *   {@see seedFrom()} from the active projected transcript so Up/Down cannot
+ *   recall abandoned bang or prompt lines.
  *
  * Navigation uses O(1) indexing into {@see prompts()} — no transcript scan per
  * keypress. {@see previous()} walks toward older prompts; {@see next()} toward
  * newer; past newest returns null (caller clears editor and exits navigation).
  */
-final class PromptHistory
+final class PromptHistory implements \Ineersa\Tui\Runtime\PromptHistoryInterface
 {
     /** @var list<string> */
     private array $prompts = [];

@@ -52,7 +52,7 @@ final class RecordingAgentSessionClient implements AgentSessionClient
         $this->ops[] = ['op' => 'cancel', 'runId' => $runId, 'command' => null];
     }
 
-    public function shellExecute(string $command, string $sessionId, string $cwd): RunHandle
+    public function shellExecute(string $command, string $sessionId, string $cwd, string $originalText = ''): RunHandle
     {
         $this->ops[] = ['op' => 'shellExecute', 'runId' => $sessionId, 'command' => null];
 

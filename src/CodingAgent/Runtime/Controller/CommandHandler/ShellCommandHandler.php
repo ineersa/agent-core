@@ -4,6 +4,10 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Runtime\Controller\CommandHandler;
 
+use Ineersa\AgentCore\Contract\EventStoreInterface;
+use Ineersa\AgentCore\Contract\RunStoreInterface;
+use Ineersa\AgentCore\Domain\Event\RunEvent;
+use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\ExecuteShellToolCall;
 use Ineersa\CodingAgent\Runtime\Controller\Event\ControllerCommandEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
@@ -39,6 +43,8 @@ final readonly class ShellCommandHandler
 {
     public function __construct(
         private readonly MessageBusInterface $executionBus,
+        private readonly EventStoreInterface $eventStore,
+        private readonly RunStoreInterface $runStore,
     ) {
     }
 
@@ -64,6 +70,12 @@ final readonly class ShellCommandHandler
 
         $commandText = (string) ($command->payload['text'] ?? '');
         $standalone = (bool) ($command->payload['standalone'] ?? false);
+        $originalText = (string) ($command->payload['original_text'] ?? '');
+        if ('' === $originalText && '' !== $commandText) {
+            // Process clients that only send the bare command still need a
+            // bang-prefixed display line for transcript/history projection.
+            $originalText = '!'.$commandText;
+        }
 
         // Shell-only runs do not emit RunStarted (they bypass start()),
         // so the RuntimeEventEmitter drain loop never registers a cursor
@@ -82,6 +94,32 @@ final readonly class ShellCommandHandler
             payload: ['kind' => 'shell'],
         ));
 
+        // Branch ownership for direct shell: stamp events with the current
+        // RunState leaf turn (0 when no conversational turn exists yet).
+        // Correlated tool_exec events reuse the same turn + tool_call_id so
+        // TurnTreeReplayFilter can drop abandoned bang interactions without
+        // filtering model-generated bash or legitimate run-level events.
+        $runState = $this->runStore->get($runId);
+        $turnNo = null !== $runState ? $runState->turnNo : 0;
+        $toolCallId = uniqid('sh_', true);
+
+        if ('' !== $commandText || '' !== $originalText) {
+            $this->eventStore->append(new RunEvent(
+                runId: $runId,
+                seq: 0,
+                turnNo: $turnNo,
+                type: RunEventTypeEnum::AgentCommandApplied->value,
+                payload: [
+                    'kind' => 'shell_command',
+                    'text' => $originalText,
+                    'command' => $commandText,
+                    'tool_call_id' => $toolCallId,
+                    'standalone' => $standalone,
+                    'idempotency_key' => hash('sha256', $runId.'|'.$toolCallId.'|shell_command'),
+                ],
+            ));
+        }
+
         // Dispatch bash execution to the tool consumer via the async
         // Messenger tool bus (issue #183).  The ExecuteShellToolCallWorker
         // in the tool consumer executes bash through the shared tool
@@ -98,14 +136,13 @@ final readonly class ShellCommandHandler
         // final lifecycle event.  Synchronously calling completeRun() from
         // the controller would race with the async worker and produce
         // [AgentEnd, tool_exec_start, tool_exec_end] ordering (issue #183).
-        $toolCallId = uniqid('sh_', true);
-
         try {
             $this->executionBus->dispatch(new ExecuteShellToolCall(
                 runId: $runId,
                 toolCallId: $toolCallId,
                 commandText: $commandText,
                 standalone: $standalone,
+                turnNo: $turnNo,
             ));
         } catch (ExceptionInterface $exception) {
             // Messenger transport unavailable — emit a diagnostic error

@@ -57,7 +57,7 @@ interface AgentSessionClient
      *
      * @return RunHandle handle for polling events
      */
-    public function shellExecute(string $command, string $sessionId, string $cwd): RunHandle;
+    public function shellExecute(string $command, string $sessionId, string $cwd, string $originalText = ''): RunHandle;
 
     /**
      * Mark a run as completed by emitting a terminal AgentEnd event.

@@ -404,10 +404,14 @@ final class RuntimeEventTranslator
 
     /**
      * Resolve agent_command_applied with explicit priority:
-     * steer / follow_up / append_message → user.message_submitted,
+     * steer / follow_up / append_message / shell_command → user.message_submitted,
      * human_response → human_input.answered,
      * cancel → cancellation.requested,
      * everything else → status.updated.
+     *
+     * shell_command is the canonical direct-bang representation: projects the
+     * original `!…` text as a user message so transcript + prompt history can
+     * rebuild without a local-only TUI echo.
      */
     private function onAgentCommandApplied(RunEvent $runEvent): RuntimeEvent
     {
@@ -435,9 +439,10 @@ final class RuntimeEventTranslator
             );
         }
 
-        if (\in_array($kind, ['steer', 'follow_up', 'append_message'], true)) {
+        if (\in_array($kind, ['steer', 'follow_up', 'append_message', 'shell_command'], true)) {
             // Extract message text from the serialized message payload
-            // included by CommandMailboxPolicy.
+            // included by CommandMailboxPolicy (steer/follow_up/append_message),
+            // or the explicit text field for direct shell_command.
             $messagePayload = $p['message'] ?? [];
             $text = \is_string($p['text'] ?? null) ? $p['text'] : '';
             if ('' === $text && \is_array($messagePayload)) {

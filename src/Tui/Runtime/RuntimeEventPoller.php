@@ -32,6 +32,7 @@ final class RuntimeEventPoller
         private readonly LoggerInterface $logger,
         private readonly RuntimeExceptionBoundary $boundary,
         private readonly SessionTranscriptProviderInterface $sessionTranscriptProvider,
+        private readonly ?PromptHistoryInterface $promptHistory = null,
     ) {
     }
 
@@ -110,6 +111,9 @@ final class RuntimeEventPoller
                                 $leafTurnNo,
                             );
                             $state->transcript = $snapshot->transcriptBlocks;
+                            // Reseed prompt history from the active projected transcript so
+                            // Up/Down cannot recall abandoned bangs/prompts after rewind.
+                            $this->promptHistory?->seedFrom($state->transcript);
                         } catch (\Throwable $e) {
                             $this->logger->warning('runtime_event_poller.leaf_changed_rebuild_failed', [
                                 'run_id' => $state->handle->runId,
@@ -119,6 +123,7 @@ final class RuntimeEventPoller
                             // Intentional degradation: clear transcript rather than show stale
                             // abandoned-branch content when leaf projection fails.
                             $state->transcript = [];
+                            $this->promptHistory?->seedFrom([]);
                         }
                     } else {
                         // Malformed RunLeafChanged: missing or zero turn_no, or no handle.
@@ -129,6 +134,7 @@ final class RuntimeEventPoller
                             'leaf_turn_no' => $leafTurnNo,
                         ]);
                         $state->transcript = [];
+                        $this->promptHistory?->seedFrom([]);
                     }
 
                     // Skip queued follow-up dispatch, callback handlers, and processing

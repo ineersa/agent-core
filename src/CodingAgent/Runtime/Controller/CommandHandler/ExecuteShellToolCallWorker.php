@@ -64,6 +64,10 @@ final readonly class ExecuteShellToolCallWorker
         $runId = $message->runId();
         $toolCallId = $message->toolCallId;
         $commandText = $message->commandText;
+        // Direct bang shell is branch-owned: use the submission turn and mark
+        // lifecycle events as direct_shell so rewind can drop abandoned bangs
+        // without removing model-generated bash (which lacks this flag).
+        $turnNo = $message->turnNo();
 
         if ('' === $commandText) {
             return;
@@ -72,12 +76,13 @@ final readonly class ExecuteShellToolCallWorker
         $this->eventStore->append(new RunEvent(
             runId: $runId,
             seq: 0,
-            turnNo: 0,
+            turnNo: $turnNo,
             type: RunEventTypeEnum::ToolExecutionStart->value,
             payload: [
                 'tool_call_id' => $toolCallId,
                 'tool_name' => 'bash',
                 'order_index' => 0,
+                'direct_shell' => true,
             ],
         ));
 
@@ -86,7 +91,6 @@ final readonly class ExecuteShellToolCallWorker
             'component' => 'tool.shell',
             'event_type' => 'shell.tool_execution_started',
             'tool_call_id' => $toolCallId,
-            'command' => $commandText,
         ]);
 
         // Execute bash through the shared tool executor.
@@ -114,12 +118,13 @@ final readonly class ExecuteShellToolCallWorker
         $this->eventStore->append(new RunEvent(
             runId: $runId,
             seq: 0,
-            turnNo: 0,
+            turnNo: $turnNo,
             type: RunEventTypeEnum::ToolExecutionEnd->value,
             payload: [
                 'tool_call_id' => $toolCallId,
                 'is_error' => $result->isError,
                 'result' => $resultText,
+                'direct_shell' => true,
             ],
         ));
 
@@ -140,6 +145,8 @@ final readonly class ExecuteShellToolCallWorker
         // controller calls completeRun() synchronously before the async
         // worker has written tool_exec events (issue #183).
         if ($message->standalone) {
+            // AgentEnd remains run-level (turn 0): it is a lifecycle marker for
+            // the TUI activity machine, not branch content to filter on rewind.
             $this->eventStore->append(new RunEvent(
                 runId: $runId,
                 seq: 0,

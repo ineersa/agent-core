@@ -15,6 +15,7 @@ use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
+use Ineersa\Tui\Listener\PromptHistory;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
 use Ineersa\Tui\Runtime\RuntimeEventPoller;
 use Ineersa\Tui\Runtime\TuiRuntimeEventApplier;
@@ -763,6 +764,52 @@ final class RuntimeEventPollerTest extends TestCase
 
         // lastSeq advanced to RunLeafChanged seq (not moved backward by rebuild)
         $this->assertSame(20, $this->state->lastSeq);
+    }
+
+    public function testPollReseedsPromptHistoryFromActiveTranscriptAfterLeafChange(): void
+    {
+        // Thesis: prompt history must be rebuilt from the same active transcript
+        // used after rewind; otherwise Up recalls an abandoned bang command.
+        $history = new PromptHistory();
+        $history->append('!abandoned-bang');
+
+        $activePrompt = new TranscriptBlock(
+            id: 'active-user-block',
+            kind: TranscriptBlockKindEnum::UserMessage,
+            runId: 'test-run',
+            seq: 35,
+            text: 'active-prompt',
+        );
+        $provider = $this->createMock(SessionTranscriptProviderInterface::class);
+        $provider->expects($this->once())
+            ->method('transcriptForLeaf')
+            ->with('test-run', 1)
+            ->willReturn(new SessionTranscriptSnapshotDTO([$activePrompt], []));
+
+        $poller = new RuntimeEventPoller(
+            new TuiRuntimeEventApplier($this->projector),
+            $this->logger,
+            new RuntimeExceptionBoundary($this->createStub(EventDispatcherInterface::class)),
+            $provider,
+            $history,
+        );
+
+        $this->client->expects($this->once())
+            ->method('events')
+            ->with('test-run')
+            ->willReturn([
+                new RuntimeEvent(
+                    type: RuntimeEventTypeEnum::RunLeafChanged->value,
+                    runId: 'test-run',
+                    seq: 20,
+                    payload: ['turn_no' => 1],
+                ),
+            ]);
+
+        $poller->poll($this->state, $this->client);
+
+        $this->assertSame(['active-prompt'], $history->prompts());
+        $this->assertSame('active-prompt', $history->previous());
     }
 
     public function testPollGracefullyDegradesOnLeafChangeRebuildFailure(): void
