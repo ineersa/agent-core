@@ -13,10 +13,11 @@ use Ineersa\CodingAgent\Tool\ToolHandlerInterface;
  * Builds the permanent `subagent` tool definition metadata shared by the
  * definition provider and tests.
  *
- * Keep description/schema/guidelines compact: this text is duplicated into
- * every parent system prompt and every provider tools schema. Detailed
- * examples live in skills/docs/prompts, not here (llama-proxy normalizes
- * leading messages but not tools, so verbose tool metadata creates cold keys).
+ * Provider-facing description and parametersJsonSchema stay stable with
+ * origin/main so live-provider tool schemas reuse proven llama-proxy
+ * cassettes. Decision-rule guidance belongs in promptGuidelines (and
+ * skills/docs/prompts); llama-proxy normalizes leading messages but not
+ * tools, so schema text changes create cold cache keys.
  */
 final class SubagentToolDefinitionBuilder
 {
@@ -27,7 +28,7 @@ final class SubagentToolDefinitionBuilder
         return new ToolDefinitionDTO(
             name: 'subagent',
             description: \sprintf(
-                'Launch interactive foreground subagent(s). Batch independent work in one {"tasks":[{"agent":"...","task":"..."}]} call (up to %d; agents.max_agents); use single {"agent":"...","task":"..."} for one child or dependent/serialized work. Tasks in one call run concurrently; separate outer subagent calls serialize. Blocks until children finish. Single-mode results include the full handoff inline; parallel results are bounded summaries — use agent_retrieve with Artifact: IDs for complete parallel handoffs.',
+                'Launch interactive foreground subagent(s). Single mode uses "agent" and "task". Parallel mode uses "tasks" with up to %d agents per call (agents.max_agents). The tool blocks until all children finish. Single-mode results include the full child handoff inline; parallel results are bounded summaries — use agent_retrieve for complete parallel handoffs or extra detail.',
                 $maxAgents,
             ),
             parametersJsonSchema: [
@@ -35,11 +36,11 @@ final class SubagentToolDefinitionBuilder
                 'properties' => [
                     'agent' => [
                         'type' => 'string',
-                        'description' => 'Agent name (single mode).',
+                        'description' => 'Agent definition name for single mode.',
                     ],
                     'task' => [
                         'type' => 'string',
-                        'description' => 'Task text (single mode).',
+                        'description' => 'Task text for single mode.',
                     ],
                     'tasks' => [
                         'type' => 'array',
@@ -54,10 +55,7 @@ final class SubagentToolDefinitionBuilder
                             'required' => ['agent', 'task'],
                             'additionalProperties' => false,
                         ],
-                        'description' => \sprintf(
-                            'Parallel tasks (max %d). Prefer for independent work; mutually exclusive with agent/task.',
-                            $maxAgents,
-                        ),
+                        'description' => \sprintf('Parallel tasks (max %d per call). Use instead of agent/task for parallel mode.', $maxAgents),
                     ],
                 ],
                 'additionalProperties' => false,
@@ -65,11 +63,11 @@ final class SubagentToolDefinitionBuilder
             handler: $handler,
             executionMode: ToolExecutionMode::Sequential,
             timeoutSeconds: null,
-            promptLine: 'subagent — batch independent work in tasks; single mode for one child or dependent work; full handoff inline in single mode',
+            promptLine: 'subagent — launch one or more interactive foreground subagents; single mode returns full handoff inline',
             promptGuidelines: [
-                'Batch independent scouts/reviewers in one {"tasks":[{"agent":"...","task":"..."}]} call within agents.max_agents; use {"agent":"...","task":"..."} only for one child or dependent/serialized work.',
+                'Batch independent scouts/reviewers in one {"tasks":[{"agent":"...","task":"..."}]} call; use {"agent":"...","task":"..."} for one child or dependent/serialized work.',
                 \sprintf(
-                    'Tasks in one call run concurrently (max %d); separate outer subagent calls serialize. Split calls only for cap overflow or true dependencies.',
+                    'Tasks in one call run concurrently (max %d); separate outer subagent calls serialize. Split only for cap overflow or true dependencies.',
                     $maxAgents,
                 ),
                 'Single-mode success includes full handoff inline (agent_retrieve optional). Parallel results are bounded summaries — use agent_retrieve with each Artifact: ID for complete handoffs, failures, metadata, or history.',
