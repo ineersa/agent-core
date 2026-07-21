@@ -307,9 +307,10 @@ definition `tools` list (including `mcp:` selectors) plus hard safety rules:
   servers unless `mcp:-` is present. An explicit list without selectors therefore
   has mode `inherited_global`; selected `availability: specific` tools are merged
   with those globals when `mcp:` selectors are used.
-- Raw catalog runtime names without the `mcp:` prefix are removed from the
-  non-MCP allowlist, so naming a specific MCP runtime tool directly cannot bypass
-  its availability policy. Unrelated non-MCP names remain unchanged.
+- Raw catalog runtime names without the `mcp:` prefix are stripped from the
+  non-MCP allowlist. Tools from `availability: all` servers remain available
+  through global MCP inheritance, while tools from `availability: specific`
+  servers are not opted in by raw names. Unrelated non-MCP names remain unchanged.
 - `mcp:-` wins over every other selector and suppresses all MCP tools. `mcp:*`
   selects the full connected catalog when deny is absent. Other selectors resolve
   to runtime names `{server}_{tool}` and add their matches to inherited globals

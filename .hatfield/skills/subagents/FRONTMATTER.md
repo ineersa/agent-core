@@ -32,7 +32,7 @@ tools:
 
 Omitted `tools`: inherit parent non-MCP tools + MCP from servers marked `availability: all` in `.hatfield/mcp.json`.
 Parent/main runs only see MCP tools from `availability: all` servers in the active toolset; `availability: specific` servers are hidden until a child agent opts in via `mcp:` selectors in its `tools` list.
-Explicit `tools` lists also inherit `availability: all` MCP tools by default, even without an `mcp:` entry. `mcp:-` suppresses all MCP inheritance; specific servers require an explicit `mcp:` selector. Raw catalog runtime names without `mcp:` are ignored as MCP entries and cannot opt into specific tools.
+Explicit `tools` lists also inherit `availability: all` MCP tools by default, even without an `mcp:` entry. `mcp:-` suppresses all MCP inheritance; specific servers require an explicit `mcp:` selector. Raw catalog runtime names without `mcp:` are stripped from the explicit non-MCP allowlist. Tools from `availability: all` servers remain available through global inheritance, while tools from `availability: specific` servers are not opted in by raw names.
 
 - **`subagent`** is never available inside child runs.
 - **Child MCP policy** is declared in `tools` using `mcp:` selectors (for example `mcp:websearch_search`, `mcp:websearch_*`, `mcp:*`, `mcp:-`). Exact and prefix selectors may be combined; `mcp:-` wins if present and suppresses all MCP tools. `mcp:*` alone is enough for every MCP tool and makes other exact/prefix selectors redundant.

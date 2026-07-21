@@ -65,9 +65,10 @@ Parent sessions also get **`<available_agents>`** (name + description) in contex
 - `availability: specific` tools are opt-in through `mcp:` selectors. Selectors
   add their catalog matches to inherited globals; `mcp:-` wins over every other
   selector and suppresses all MCP tools.
-- Raw catalog runtime names without the `mcp:` prefix are removed from explicit
-  non-MCP lists, so they cannot bypass specific-server policy. Unrelated
-  non-MCP names remain available.
+- Raw catalog runtime names without the `mcp:` prefix are stripped from explicit
+  non-MCP lists. Tools from `availability: all` servers remain available through
+  global inheritance, while tools from `availability: specific` servers are not
+  opted in by raw names. Unrelated non-MCP names remain available.
 - Selector grammar is terminal-star-only: exact names have no `*`, exactly one
   terminal `*` is a prefix wildcard, and embedded or multiple stars are not
   general globs.

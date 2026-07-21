@@ -90,12 +90,14 @@ final readonly class AgentMcpToolsResolver
             ];
         }
 
-        if (\in_array('mcp:-', $selectors, true)) {
-            $mcpTools = [];
-        } elseif (\in_array('mcp:*', $selectors, true)) {
-            $mcpTools = $allExposed;
-        } else {
-            $mcpTools = $globalExposed;
+        $policyMode = $this->policyModeFromSelectors($selectors);
+        $mcpTools = match ($policyMode) {
+            'none' => [],
+            // `all` means the full catalog: global and specific MCP tools.
+            'all' => $allExposed,
+            'specific' => $globalExposed,
+        };
+        if ('specific' === $policyMode) {
             foreach ($this->expandSelectors($selectors, $allExposed) as $selectedTool) {
                 if (!\in_array($selectedTool, $mcpTools, true)) {
                     $mcpTools[] = $selectedTool;
@@ -108,18 +110,19 @@ final readonly class AgentMcpToolsResolver
             'mcp_runtime_tools' => $mcpTools,
             'catalog_mcp_runtime_tools' => $allExposed,
             'mcp_policy' => [
-                'mode' => $this->policyModeFromSelectors($selectors),
+                'mode' => $policyMode,
                 'tools' => $mcpTools,
             ],
         ];
     }
 
     /**
-     * Expand `mcp:` selectors against catalog-exposed Hatfield runtime names.
+     * Expand specific `mcp:` selectors against catalog-exposed Hatfield runtime names.
+     *
+     * The caller must invoke this only for `specific` policy mode; `mcp:-` and `mcp:*`
+     * are resolved before this method is called.
      *
      * Grammar invariants:
-     *  - `mcp:-` is none (checked first; wins over every other selector).
-     *  - `mcp:*` is all catalog-exposed MCP tools.
      *  - Exactly one terminal `*` is the only prefix wildcard (`mcp:websearch_*` → names starting with `websearch_`).
      *  - A selector with no `*` is always exact, including names that end with `_`.
      *  - Embedded or multiple `*` characters are not globs; they fall through to exact match (normally no catalog hit).
@@ -131,13 +134,6 @@ final readonly class AgentMcpToolsResolver
      */
     private function expandSelectors(array $selectors, array $allExposed): array
     {
-        if (\in_array('mcp:-', $selectors, true)) {
-            return [];
-        }
-        if (\in_array('mcp:*', $selectors, true)) {
-            return $allExposed;
-        }
-
         $allowed = [];
         foreach ($selectors as $selector) {
             $value = substr($selector, \strlen(self::MCP_SELECTOR_PREFIX));
@@ -164,6 +160,8 @@ final readonly class AgentMcpToolsResolver
 
     /**
      * @param list<string> $selectors
+     *
+     * @return 'none'|'all'|'specific'
      */
     private function policyModeFromSelectors(array $selectors): string
     {
