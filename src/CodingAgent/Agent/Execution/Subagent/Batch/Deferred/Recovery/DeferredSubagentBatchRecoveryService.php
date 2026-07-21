@@ -83,6 +83,8 @@ final readonly class DeferredSubagentBatchRecoveryService
                     seq: $event->seq,
                     type: $event->type,
                     payload: $event->payload,
+                    turnNo: $event->turnNo,
+                    createdAt: $event->createdAt->format(\DateTimeInterface::ATOM),
                 ),
                 $tailEvents,
             );

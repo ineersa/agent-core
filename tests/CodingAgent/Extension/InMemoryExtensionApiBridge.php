@@ -13,8 +13,7 @@ use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
 use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterConversationBoundaryHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterTurnCommitHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Lifecycle\RuntimeLifecycleHookInterface;
-use Ineersa\Hatfield\ExtensionApi\Model\ModelCallException;
-use Ineersa\Hatfield\ExtensionApi\Model\ModelCallResultDTO;
+use Ineersa\Hatfield\ExtensionApi\Model\AiModelReference;
 use Ineersa\Hatfield\ExtensionApi\Prompt\PromptContributorInterface;
 use Ineersa\Hatfield\ExtensionApi\Session\SessionEventReaderException;
 use Ineersa\Hatfield\ExtensionApi\Session\SessionEventReaderInterface;
@@ -22,6 +21,9 @@ use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallRewriteHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolRegistrationDTO;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolResultHookInterface;
+use Symfony\AI\Agent\Toolbox\ToolboxInterface;
+use Symfony\AI\Platform\Message\MessageBag;
+use Symfony\AI\Platform\Result\ResultInterface;
 
 /**
  * In-memory test-double for ExtensionApiInterface.
@@ -179,12 +181,11 @@ final class InMemoryExtensionApiBridge implements ExtensionApiInterface
     }
 
     public function callModel(
-        string $model,
-        array $messages,
-        array $tools = [],
-        ?array $structuredContent = null,
-    ): ModelCallResultDTO {
-        throw ModelCallException::unsupported($model, 'callModel is not supported on the InMemoryExtensionApiBridge.');
+        AiModelReference $model,
+        MessageBag $messages,
+        ?ToolboxInterface $toolbox = null,
+    ): ResultInterface {
+        throw new \LogicException('callModel is not supported on the InMemoryExtensionApiBridge. Use the production ExtensionToolRegistryBridge.');
     }
 
     public function registerAfterConversationBoundaryHook(AfterConversationBoundaryHookInterface $hook): void

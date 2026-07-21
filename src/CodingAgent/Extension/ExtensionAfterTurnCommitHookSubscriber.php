@@ -6,11 +6,14 @@ namespace Ineersa\CodingAgent\Extension;
 
 use Ineersa\AgentCore\Contract\Extension\HookSubscriberInterface;
 use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitHookContext;
-use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterTurnCommitEventSummaryDTO;
 use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterTurnCommitHookContextDTO;
+use Ineersa\Hatfield\ExtensionApi\Session\SessionEventDTO;
 
 /**
  * Bridges AgentCore after-turn hook dispatch to ExtensionApi hooks.
+ *
+ * Maps the just-persisted batch into full public SessionEventDTO values
+ * (payload, turnNo, createdAt) without rereading events.jsonl.
  */
 final readonly class ExtensionAfterTurnCommitHookSubscriber implements HookSubscriberInterface
 {
@@ -27,7 +30,18 @@ final readonly class ExtensionAfterTurnCommitHookSubscriber implements HookSubsc
             turnNo: $context->turnNo,
             status: $context->status,
             events: array_map(
-                static fn ($e): AfterTurnCommitEventSummaryDTO => new AfterTurnCommitEventSummaryDTO($e->seq, $e->type),
+                static function ($e) use ($context): SessionEventDTO {
+                    return new SessionEventDTO(
+                        runId: $context->runId,
+                        seq: $e->seq,
+                        turnNo: $e->turnNo > 0 ? $e->turnNo : $context->turnNo,
+                        type: $e->type,
+                        payload: $e->payload,
+                        createdAt: null !== $e->createdAt
+                            ? new \DateTimeImmutable($e->createdAt)
+                            : new \DateTimeImmutable(),
+                    );
+                },
                 $context->events,
             ),
             effectsCount: $context->effectsCount,

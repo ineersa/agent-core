@@ -24,11 +24,12 @@ use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Messenger\Event\WorkerMessageFailedEvent;
 
 /**
- * Thesis: permanent worker-failure appends route through the shared boundary notifier.
+ * Thesis: permanent worker-failure appends route through the shared boundary
+ * notifier with the just-persisted terminal event only (no history scan).
  */
 final class WorkerFailedConversationBoundaryTest extends TestCase
 {
-    public function testPermanentFailureNotifiesConversationBoundary(): void
+    public function testPermanentFailureNotifiesConversationBoundaryWithTerminalEvent(): void
     {
         $runId = 'fail-run-1';
         $runStore = $this->createMock(RunStoreInterface::class);
@@ -42,7 +43,6 @@ final class WorkerFailedConversationBoundaryTest extends TestCase
         $runStore->expects($this->once())->method('compareAndSwap')->willReturn(true);
 
         $eventStore = new InMemoryEventStore();
-        // Seed prior history so the projector can derive a range; the subscriber appends agent_end.
         $eventStore->append(new RunEvent($runId, 1, 1, 'run_started', []));
         $eventStore->append(new RunEvent($runId, 2, 1, 'llm_step_completed', []));
 
@@ -61,7 +61,7 @@ final class WorkerFailedConversationBoundaryTest extends TestCase
         });
 
         $notifier = new ConversationBoundaryNotifier(
-            new ConversationBoundaryProjector($eventStore),
+            new ConversationBoundaryProjector(),
             $registry,
             new TestLogger(),
         );
@@ -82,8 +82,10 @@ final class WorkerFailedConversationBoundaryTest extends TestCase
         $this->assertCount(1, $seen);
         $this->assertSame($runId, $seen[0]->runId);
         $this->assertSame(ConversationBoundaryOutcomeEnum::Failed, $seen[0]->outcome);
-        $this->assertSame(1, $seen[0]->sourceStartSeq);
         $this->assertSame(3, $seen[0]->sourceEndSeq);
         $this->assertSame(3, $seen[0]->latestCommittedSeq);
+        $this->assertCount(1, $seen[0]->events);
+        $this->assertSame('agent_end', $seen[0]->events[0]->type);
+        $this->assertSame('failed', $seen[0]->events[0]->payload['reason'] ?? null);
     }
 }

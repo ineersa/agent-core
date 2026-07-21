@@ -276,7 +276,7 @@ final class TraceReplayTest extends KernelTestCase
 
         // Change model and reasoning
         $selectionService->changeModel(
-            \Ineersa\CodingAgent\Config\Ai\AiModelReference::parse('deepseek/deepseek-v4-flash'),
+            \Ineersa\Hatfield\ExtensionApi\Model\AiModelReference::parse('deepseek/deepseek-v4-flash'),
             $persistSessId,
         );
         $selectionService->changeReasoning('low', $persistSessId);

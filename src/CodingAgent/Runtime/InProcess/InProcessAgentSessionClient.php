@@ -15,7 +15,6 @@ use Ineersa\AgentCore\Domain\Run\RunMetadata;
 use Ineersa\AgentCore\Domain\Run\StartRunInput;
 use Ineersa\AgentCore\Domain\Tool\ToolCall;
 use Ineersa\CodingAgent\Agent\Context\AgentsContextBuilder;
-use Ineersa\CodingAgent\Config\Ai\AiModelReference;
 use Ineersa\CodingAgent\Config\ModelResolver;
 use Ineersa\CodingAgent\Config\SessionMetadataStore;
 use Ineersa\CodingAgent\Mcp\McpSessionLifecycleDispatcher;
@@ -34,6 +33,7 @@ use Ineersa\CodingAgent\SystemPrompt\AgentsContextRenderer;
 use Ineersa\CodingAgent\SystemPrompt\SystemPromptBuilder;
 use Ineersa\CodingAgent\Tool\ToolQuestion\ToolQuestionAnswerResolver;
 use Ineersa\CodingAgent\Tool\ToolQuestion\ToolQuestionStoreInterface;
+use Ineersa\Hatfield\ExtensionApi\Model\AiModelReference;
 
 /**
  * In-process implementation of AgentSessionClient.

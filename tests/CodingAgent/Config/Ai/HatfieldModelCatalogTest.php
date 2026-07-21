@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Config\Ai;
 
 use Ineersa\CodingAgent\Config\Ai\AiConfig;
-use Ineersa\CodingAgent\Config\Ai\AiModelReference;
 use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
+use Ineersa\Hatfield\ExtensionApi\Model\AiModelReference;
 use PHPUnit\Framework\TestCase;
 
 class HatfieldModelCatalogTest extends TestCase

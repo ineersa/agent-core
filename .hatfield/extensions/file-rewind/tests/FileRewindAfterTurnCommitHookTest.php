@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace Ineersa\HatfieldExt\FileRewind\Tests;
 
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
-use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterTurnCommitEventSummaryDTO;
 use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterTurnCommitHookContextDTO;
+use Ineersa\Hatfield\ExtensionApi\Session\SessionEventDTO;
 use Ineersa\HatfieldExt\FileRewind\FileRewindAfterTurnCommitHook;
 use Ineersa\HatfieldExt\FileRewind\FileRewindConfig;
 use Ineersa\HatfieldExt\FileRewind\FileRewindLedgerProjector;
@@ -63,8 +63,22 @@ final class FileRewindAfterTurnCommitHookTest extends TestCase
             turnNo: 2,
             status: 'running',
             events: [
-                new AfterTurnCommitEventSummaryDTO(1, 'tool_batch_committed'),
-                new AfterTurnCommitEventSummaryDTO(2, 'turn_end'),
+                new SessionEventDTO(
+                    runId: 'run-test',
+                    seq: 1,
+                    turnNo: 1,
+                    type: 'tool_batch_committed',
+                    payload: [],
+                    createdAt: new \DateTimeImmutable('2026-01-01T00:00:00+00:00'),
+                ),
+                new SessionEventDTO(
+                    runId: 'run-test',
+                    seq: 2,
+                    turnNo: 1,
+                    type: 'turn_end',
+                    payload: [],
+                    createdAt: new \DateTimeImmutable('2026-01-01T00:00:00+00:00'),
+                ),
             ],
             effectsCount: 0,
         ));
@@ -83,7 +97,14 @@ final class FileRewindAfterTurnCommitHookTest extends TestCase
             runId: 'run-hook',
             turnNo: 1,
             status: 'running',
-            events: [new AfterTurnCommitEventSummaryDTO(5, 'turn_end')],
+            events: [new SessionEventDTO(
+                runId: 'run-test',
+                seq: 5,
+                turnNo: 1,
+                type: 'turn_end',
+                payload: [],
+                createdAt: new \DateTimeImmutable('2026-01-01T00:00:00+00:00'),
+            )],
             effectsCount: 0,
         ));
 
@@ -104,7 +125,14 @@ final class FileRewindAfterTurnCommitHookTest extends TestCase
             turnNo: 1,
             status: 'running',
             events: [
-                new AfterTurnCommitEventSummaryDTO(11, 'tool_batch_committed'),
+                new SessionEventDTO(
+                    runId: 'run-test',
+                    seq: 11,
+                    turnNo: 1,
+                    type: 'tool_batch_committed',
+                    payload: [],
+                    createdAt: new \DateTimeImmutable('2026-01-01T00:00:00+00:00'),
+                ),
             ],
             effectsCount: 0,
         ));
@@ -124,7 +152,14 @@ final class FileRewindAfterTurnCommitHookTest extends TestCase
             turnNo: 2,
             status: 'running',
             events: [
-                new AfterTurnCommitEventSummaryDTO(1, 'tool_batch_committed'),
+                new SessionEventDTO(
+                    runId: 'run-test',
+                    seq: 1,
+                    turnNo: 1,
+                    type: 'tool_batch_committed',
+                    payload: [],
+                    createdAt: new \DateTimeImmutable('2026-01-01T00:00:00+00:00'),
+                ),
             ],
             effectsCount: 1,
         ));
@@ -146,7 +181,14 @@ final class FileRewindAfterTurnCommitHookTest extends TestCase
             turnNo: 2,
             status: 'running',
             events: [
-                new AfterTurnCommitEventSummaryDTO(9, 'llm_step_completed'),
+                new SessionEventDTO(
+                    runId: 'run-test',
+                    seq: 9,
+                    turnNo: 1,
+                    type: 'llm_step_completed',
+                    payload: [],
+                    createdAt: new \DateTimeImmutable('2026-01-01T00:00:00+00:00'),
+                ),
             ],
             effectsCount: 0,
         ));
@@ -168,8 +210,22 @@ final class FileRewindAfterTurnCommitHookTest extends TestCase
             turnNo: 2,
             status: 'running',
             events: [
-                new AfterTurnCommitEventSummaryDTO(1, 'tool_batch_committed'),
-                new AfterTurnCommitEventSummaryDTO(2, 'llm_step_completed'),
+                new SessionEventDTO(
+                    runId: 'run-test',
+                    seq: 1,
+                    turnNo: 1,
+                    type: 'tool_batch_committed',
+                    payload: [],
+                    createdAt: new \DateTimeImmutable('2026-01-01T00:00:00+00:00'),
+                ),
+                new SessionEventDTO(
+                    runId: 'run-test',
+                    seq: 2,
+                    turnNo: 1,
+                    type: 'llm_step_completed',
+                    payload: [],
+                    createdAt: new \DateTimeImmutable('2026-01-01T00:00:00+00:00'),
+                ),
             ],
             effectsCount: 0,
         ));
@@ -190,11 +246,46 @@ final class FileRewindAfterTurnCommitHookTest extends TestCase
             turnNo: 1,
             status: 'running',
             events: [
-                new AfterTurnCommitEventSummaryDTO(7, 'tool_call_result_received'),
-                new AfterTurnCommitEventSummaryDTO(8, 'tool_execution_end'),
-                new AfterTurnCommitEventSummaryDTO(10, 'message_end'),
-                new AfterTurnCommitEventSummaryDTO(11, 'tool_batch_committed'),
-                new AfterTurnCommitEventSummaryDTO(12, 'agent_command_applied'),
+                new SessionEventDTO(
+                    runId: 'run-test',
+                    seq: 7,
+                    turnNo: 1,
+                    type: 'tool_call_result_received',
+                    payload: [],
+                    createdAt: new \DateTimeImmutable('2026-01-01T00:00:00+00:00'),
+                ),
+                new SessionEventDTO(
+                    runId: 'run-test',
+                    seq: 8,
+                    turnNo: 1,
+                    type: 'tool_execution_end',
+                    payload: [],
+                    createdAt: new \DateTimeImmutable('2026-01-01T00:00:00+00:00'),
+                ),
+                new SessionEventDTO(
+                    runId: 'run-test',
+                    seq: 10,
+                    turnNo: 1,
+                    type: 'message_end',
+                    payload: [],
+                    createdAt: new \DateTimeImmutable('2026-01-01T00:00:00+00:00'),
+                ),
+                new SessionEventDTO(
+                    runId: 'run-test',
+                    seq: 11,
+                    turnNo: 1,
+                    type: 'tool_batch_committed',
+                    payload: [],
+                    createdAt: new \DateTimeImmutable('2026-01-01T00:00:00+00:00'),
+                ),
+                new SessionEventDTO(
+                    runId: 'run-test',
+                    seq: 12,
+                    turnNo: 1,
+                    type: 'agent_command_applied',
+                    payload: [],
+                    createdAt: new \DateTimeImmutable('2026-01-01T00:00:00+00:00'),
+                ),
             ],
             effectsCount: 0,
         ));
@@ -215,8 +306,22 @@ final class FileRewindAfterTurnCommitHookTest extends TestCase
             turnNo: 1,
             status: 'running',
             events: [
-                new AfterTurnCommitEventSummaryDTO(11, 'tool_batch_committed'),
-                new AfterTurnCommitEventSummaryDTO(12, 'agent_command_applied'),
+                new SessionEventDTO(
+                    runId: 'run-test',
+                    seq: 11,
+                    turnNo: 1,
+                    type: 'tool_batch_committed',
+                    payload: [],
+                    createdAt: new \DateTimeImmutable('2026-01-01T00:00:00+00:00'),
+                ),
+                new SessionEventDTO(
+                    runId: 'run-test',
+                    seq: 12,
+                    turnNo: 1,
+                    type: 'agent_command_applied',
+                    payload: [],
+                    createdAt: new \DateTimeImmutable('2026-01-01T00:00:00+00:00'),
+                ),
             ],
             effectsCount: 0,
         ));
@@ -235,7 +340,14 @@ final class FileRewindAfterTurnCommitHookTest extends TestCase
             runId: 'run-hook',
             turnNo: 1,
             status: 'running',
-            events: [new AfterTurnCommitEventSummaryDTO(1, 'turn_end')],
+            events: [new SessionEventDTO(
+                runId: 'run-test',
+                seq: 1,
+                turnNo: 1,
+                type: 'turn_end',
+                payload: [],
+                createdAt: new \DateTimeImmutable('2026-01-01T00:00:00+00:00'),
+            )],
             effectsCount: 0,
         ));
 

@@ -6,21 +6,24 @@ namespace Ineersa\CodingAgent\Tests\Extension\Model;
 
 use Ineersa\CodingAgent\Extension\Model\ExtensionModelCaller;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
-use Ineersa\Hatfield\ExtensionApi\Model\ModelCallException;
+use Ineersa\Hatfield\ExtensionApi\Model\AiModelReference;
 use PHPUnit\Framework\Attributes\Group;
+use Symfony\AI\Platform\Message\Message;
+use Symfony\AI\Platform\Message\MessageBag;
+use Symfony\AI\Platform\Result\TextResult;
 use Symfony\Component\Yaml\Yaml;
 
 /**
- * Live smoke for the extension blocking model-call path.
+ * Live smoke for the extension native Symfony Agent model bridge.
  *
- * Thesis: ExtensionModelCaller can resolve llama_cpp_test/test through the
- * production catalog + lazy platform factory and return one completed response
- * without ambient tools. Unique first prompt avoids llama-proxy cache collisions.
+ * Thesis: ExtensionModelCaller uses the container-configured lazy Platform and
+ * returns a native ResultInterface for llama_cpp_test/test. Unique first prompt
+ * avoids llama-proxy cache collisions.
  */
 #[Group('llm-real')]
 final class ExtensionModelCallLiveTest extends IsolatedKernelTestCase
 {
-    public function testBlockingCallModelReturnsCompletedResponse(): void
+    public function testBlockingCallModelReturnsNativeCompletedResponse(): void
     {
         if (false === getenv('LLAMA_CPP_SMOKE_TEST') || '' === getenv('LLAMA_CPP_SMOKE_TEST')) {
             $this->markTestSkipped(
@@ -32,26 +35,15 @@ final class ExtensionModelCallLiveTest extends IsolatedKernelTestCase
         /** @var ExtensionModelCaller $caller */
         $caller = self::getContainer()->get(ExtensionModelCaller::class);
 
-        try {
-            $result = $caller->call(
-                'llama_cpp_test/test',
-                [[
-                    'role' => 'user',
-                    'content' => '[llm-real:extension-call-model-v1] Respond with exactly one word: hello.',
-                ]],
-            );
-        } catch (ModelCallException $e) {
-            $this->fail(\sprintf(
-                'callModel failed with public error %s for model %s: %s',
-                $e->errorCode,
-                (string) $e->model,
-                $e->getMessage(),
-            ));
-        }
+        $result = $caller->call(
+            new AiModelReference('llama_cpp_test', 'test'),
+            new MessageBag(Message::ofUser(
+                '[llm-real:extension-call-model-v2] Respond with exactly one word: hello.'
+            )),
+        );
 
-        $this->assertSame('llama_cpp_test/test', $result->model);
-        $this->assertNotSame('', trim($result->content));
-        $this->assertIsArray($result->toolCalls);
+        $this->assertInstanceOf(TextResult::class, $result);
+        $this->assertNotSame('', trim((string) $result->getContent()));
     }
 
     protected static function configureIsolatedProjectBeforeKernelBoot(string $classCwd): void

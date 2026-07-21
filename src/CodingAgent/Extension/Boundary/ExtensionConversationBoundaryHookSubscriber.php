@@ -12,7 +12,8 @@ use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitHookContext;
  * Bridges AgentCore after-turn commit dispatch to conversation-boundary hooks.
  *
  * AfterTurnCommit remains available for file-rewind and other observers.
- * This subscriber only projects terminal conversation boundaries.
+ * This subscriber only projects terminal conversation boundaries from the
+ * just-persisted batch (no events.jsonl history scan).
  *
  * @internal
  */
@@ -30,11 +31,12 @@ final readonly class ExtensionConversationBoundaryHookSubscriber implements Hook
             $events[] = new RunEvent(
                 runId: $context->runId,
                 seq: $summary->seq,
-                turnNo: $context->turnNo,
+                turnNo: $summary->turnNo > 0 ? $summary->turnNo : $context->turnNo,
                 type: $summary->type,
-                // Preserve allocated-seq summaries' payloads when present.
-                // AfterTurnCommitHookContext::fromRunState stores them.
                 payload: $summary->payload,
+                createdAt: null !== $summary->createdAt
+                    ? new \DateTimeImmutable($summary->createdAt)
+                    : new \DateTimeImmutable(),
             );
         }
 

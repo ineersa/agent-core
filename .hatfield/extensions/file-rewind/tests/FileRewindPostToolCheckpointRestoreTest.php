@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace Ineersa\HatfieldExt\FileRewind\Tests;
 
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
-use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterTurnCommitEventSummaryDTO;
 use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterTurnCommitHookContextDTO;
+use Ineersa\Hatfield\ExtensionApi\Session\SessionEventDTO;
 use Ineersa\HatfieldExt\FileRewind\FileRewindAfterTurnCommitHook;
 use Ineersa\HatfieldExt\FileRewind\FileRewindConfig;
 use Ineersa\HatfieldExt\FileRewind\FileRewindLedgerProjector;
@@ -62,7 +62,14 @@ final class FileRewindPostToolCheckpointRestoreTest extends TestCase
             runId: $runId,
             turnNo: 2,
             status: 'running',
-            events: [new AfterTurnCommitEventSummaryDTO(12, 'llm_step_completed')],
+            events: [new SessionEventDTO(
+                runId: 'run-test',
+                seq: 12,
+                turnNo: 1,
+                type: 'llm_step_completed',
+                payload: [],
+                createdAt: new \DateTimeImmutable('2026-01-01T00:00:00+00:00'),
+            )],
             effectsCount: 0,
         ));
 
@@ -85,7 +92,14 @@ final class FileRewindPostToolCheckpointRestoreTest extends TestCase
             runId: $runId,
             turnNo: 1,
             status: 'running',
-            events: [new AfterTurnCommitEventSummaryDTO(11, 'tool_batch_committed')],
+            events: [new SessionEventDTO(
+                runId: 'run-test',
+                seq: 11,
+                turnNo: 1,
+                type: 'tool_batch_committed',
+                payload: [],
+                createdAt: new \DateTimeImmutable('2026-01-01T00:00:00+00:00'),
+            )],
             effectsCount: 0,
         ));
 
@@ -95,7 +109,14 @@ final class FileRewindPostToolCheckpointRestoreTest extends TestCase
             runId: $runId,
             turnNo: 2,
             status: 'running',
-            events: [new AfterTurnCommitEventSummaryDTO(21, 'tool_batch_committed')],
+            events: [new SessionEventDTO(
+                runId: 'run-test',
+                seq: 21,
+                turnNo: 1,
+                type: 'tool_batch_committed',
+                payload: [],
+                createdAt: new \DateTimeImmutable('2026-01-01T00:00:00+00:00'),
+            )],
             effectsCount: 0,
         ));
 
@@ -103,7 +124,14 @@ final class FileRewindPostToolCheckpointRestoreTest extends TestCase
             runId: $runId,
             turnNo: 3,
             status: 'completed',
-            events: [new AfterTurnCommitEventSummaryDTO(25, 'agent_end')],
+            events: [new SessionEventDTO(
+                runId: 'run-test',
+                seq: 25,
+                turnNo: 1,
+                type: 'agent_end',
+                payload: [],
+                createdAt: new \DateTimeImmutable('2026-01-01T00:00:00+00:00'),
+            )],
             effectsCount: 0,
         ));
 

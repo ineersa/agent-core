@@ -11,7 +11,7 @@ use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Extension\ExtensionHookRegistry;
 use Ineersa\CodingAgent\Extension\ExtensionToolHandlerAdapter;
 use Ineersa\CodingAgent\Extension\ExtensionToolRegistryBridge;
-use Ineersa\CodingAgent\Extension\Model\ExtensionModelCallInterface;
+use Ineersa\CodingAgent\Extension\Model\ExtensionModelCaller;
 use Ineersa\CodingAgent\Tests\Extension\Support\NoOpExtensionToolHandler;
 use Ineersa\CodingAgent\Tests\Extension\Support\RecordingExtensionToolHandler;
 use Ineersa\CodingAgent\Tool\ToolRegistry;
@@ -591,7 +591,7 @@ final class ExtensionToolRegistryBridgeTest extends TestCase
         ?ExecInterface $execBridge = null,
         ?CommandRegistryInterface $commandRegistry = null,
         ?SessionEventReaderInterface $sessionEventReader = null,
-        ?ExtensionModelCallInterface $modelCaller = null,
+        ?ExtensionModelCaller $modelCaller = null,
     ): ExtensionToolRegistryBridge {
         return new ExtensionToolRegistryBridge(
             $toolRegistry,
@@ -600,7 +600,10 @@ final class ExtensionToolRegistryBridgeTest extends TestCase
             $execBridge ?? $this->dummyExecBridge(),
             $commandRegistry ?? $this->dummyCommandRegistry(),
             $sessionEventReader ?? $this->createStub(SessionEventReaderInterface::class),
-            $modelCaller ?? $this->createStub(ExtensionModelCallInterface::class),
+            $modelCaller ?? new ExtensionModelCaller(
+                $this->createStub(\Symfony\AI\Platform\PlatformInterface::class),
+                new \Psr\Log\NullLogger(),
+            ),
         );
     }
 

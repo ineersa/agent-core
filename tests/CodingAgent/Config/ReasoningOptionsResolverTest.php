@@ -7,10 +7,10 @@ namespace Ineersa\CodingAgent\Tests\Config;
 use Ineersa\CodingAgent\Config\Ai\AiCompatibility;
 use Ineersa\CodingAgent\Config\Ai\AiConfig;
 use Ineersa\CodingAgent\Config\Ai\AiModelDefinition;
-use Ineersa\CodingAgent\Config\Ai\AiModelReference;
 use Ineersa\CodingAgent\Config\Ai\AiProviderConfig;
 use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
 use Ineersa\CodingAgent\Config\ReasoningOptionsResolver;
+use Ineersa\Hatfield\ExtensionApi\Model\AiModelReference;
 use PHPUnit\Framework\TestCase;
 
 class ReasoningOptionsResolverTest extends TestCase

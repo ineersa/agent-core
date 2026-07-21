@@ -266,6 +266,11 @@ parameters:
         - type: classNameRegex
           value: '#^Symfony\\\\AI\\\\Platform\\\\#i'
 
+    - name: SymfonyAiAgent
+      collectors:
+        - type: classNameRegex
+          value: '#^Symfony\\\\AI\\\\Agent\\\\#i'
+
     - name: SymfonyHttpClient
       collectors:
         - type: classNameRegex
@@ -461,6 +466,7 @@ parameters:
       - TuiCommand
 
     TuiPicker:
+      - AppExtensionApi
       - TuiExport
       - AppConfig
       - AppRuntimeContract
@@ -565,6 +571,7 @@ parameters:
       - SymfonyYaml
 
     AppConfig:
+      - AppExtensionApi
       - AppSession
       - SymfonyTui
       - SymfonyConsole
@@ -636,10 +643,12 @@ parameters:
       - AppInfrastructureSymfonyAi
       - AgentCore
       - SymfonyAiPlatform
+      - SymfonyAiAgent
       - SymfonyEventDispatcher
       - SymfonyProcess
 
     AppAgent:
+      - AppExtensionApi
       - AppConfig
       - AppSystemPrompt
       - AppMarkdown
@@ -709,9 +718,13 @@ parameters:
 
     McpSdk: ~
 
-    # ExtensionApi generic TUI contracts (Symfony\Component\Tui\*) — intentional public UI API.
+    # ExtensionApi public contracts:
+    # - Symfony TUI widget types for generic TUI extension overlays
+    # - Symfony AI public MessageBag / ToolboxInterface / ResultInterface for callModel()
     AppExtensionApi:
       - SymfonyTui
+      - SymfonyAiPlatform
+      - SymfonyAiAgent
     HatfieldExtTaskWorkflow:
       - AppExtensionApi
       - HatfieldExtTaskWorkflow
@@ -731,6 +744,8 @@ parameters:
     SymfonyAiPlatform:
       - SymfonyEventDispatcher
       - SymfonyHttpClient
+    SymfonyAiAgent:
+      - SymfonyAiPlatform
     SymfonyEventDispatcher: ~
     SymfonyConsole: ~
     SymfonyMessenger: ~

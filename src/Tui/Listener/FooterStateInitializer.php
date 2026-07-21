@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Listener;
 
-use Ineersa\CodingAgent\Config\Ai\AiModelReference;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+use Ineersa\Hatfield\ExtensionApi\Model\AiModelReference;
 use Ineersa\Tui\Runtime\TuiSessionState;
 
 /**
