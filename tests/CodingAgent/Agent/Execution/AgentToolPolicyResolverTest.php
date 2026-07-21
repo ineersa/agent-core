@@ -97,6 +97,21 @@ final class AgentToolPolicyResolverTest extends TestCase
         $this->assertSame(['context7_resolve'], $policy['mcp']['tools']);
     }
 
+    public function testExplicitMcpStarCannotExposeSpecificMcpTool(): void
+    {
+        $resolver = new AgentToolPolicyResolver(
+            $this->registry(['read', 'context7_resolve', 'websearch_search']),
+            $this->mcpResolver(['context7_resolve', 'websearch_search']),
+            new AgentsConfig(),
+        );
+        $policy = $resolver->resolve($this->definition(['read', 'mcp:*']), 'run-1');
+
+        $this->assertSame(['read', 'context7_resolve'], $policy['tools']);
+        $this->assertNotContains('websearch_search', $policy['tools']);
+        $this->assertSame('all', $policy['mcp']['mode']);
+        $this->assertSame(['context7_resolve'], $policy['mcp']['tools']);
+    }
+
     /**
      * @return iterable<string, array{0: list<string>|null}>
      */

@@ -67,13 +67,27 @@ final class AgentMcpToolsResolverTest extends TestCase
         $this->assertSame([], $result['mcp_policy']['tools']);
     }
 
-    public function testMcpStarAllowsAllCatalogTools(): void
+    public function testMcpStarKeepsOnlyGlobalAvailabilityTools(): void
     {
         $resolver = $this->createResolver();
         $result = $resolver->resolve(['mcp:*'], 'parent-run');
 
-        $this->assertSame(['context7_resolve', 'websearch_search'], $result['mcp_runtime_tools']);
+        $this->assertSame(['context7_resolve'], $result['mcp_runtime_tools']);
+        $this->assertNotContains('websearch_search', $result['mcp_runtime_tools']);
         $this->assertSame('all', $result['mcp_policy']['mode']);
+        $this->assertSame(['context7_resolve'], $result['mcp_policy']['tools']);
+    }
+
+    public function testMcpStarCombinedWithSpecificSelectorAddsOnlySelectedTools(): void
+    {
+        $resolver = $this->createResolver([
+            'websearch' => ['websearch_search', 'websearch_open'],
+        ]);
+        $result = $resolver->resolve(['mcp:*', 'mcp:websearch_search'], 'parent-run');
+
+        $this->assertSame(['context7_resolve', 'websearch_search'], $result['mcp_runtime_tools']);
+        $this->assertNotContains('websearch_open', $result['mcp_runtime_tools']);
+        $this->assertSame('specific', $result['mcp_policy']['mode']);
     }
 
     public function testConcreteAndTerminalStarPrefixSelectorsIncludeGlobalTools(): void

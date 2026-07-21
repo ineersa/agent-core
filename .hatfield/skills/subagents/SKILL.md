@@ -54,7 +54,7 @@ Parent sessions also get **`<available_agents>`** (name + description) in contex
 | `tools` | Optional in frontmatter; if omitted, child inherits all parent-available tools (except `subagent`). Explicit non-empty allowlist recommended for restricted agents. YAML lists **or** comma-separated strings; `tools: []` or empty entries fail validation. |
 | `parallelAllowed` | Defaults to **`true`**. Set `parallelAllowed: false` to block use in parallel `tasks`. |
 | `skills` / `skill` | `skill:` merges into `skills`; comma-separated strings are split. |
-| MCP availability | Servers marked `availability: all` are inherited by every child, including explicit `tools` lists. `availability: specific` tools require `mcp:` selectors. `mcp:-` suppresses all MCP tools; `mcp:*` selects the full catalog. |
+| MCP availability | Servers marked `availability: all` are inherited by every child, including explicit `tools` lists. `availability: specific` tools require exact/prefix `mcp:` selectors. `mcp:-` suppresses all MCP tools; `mcp:*` selects globally available MCP tools only. |
 | Parallel cap | More than `max_agents` tasks → fail fast; split across multiple `subagent` calls. |
 | Subagent wait timeout | `agents.subagent_tool_timeout_seconds` (default **1800** s, min **60**; below min fails config load) — internal poll deadline for foreground child runs; not ToolExecutor generic timeout. |
 

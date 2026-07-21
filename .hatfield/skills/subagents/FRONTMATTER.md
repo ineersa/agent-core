@@ -26,7 +26,7 @@ tools:
   - read
   - mcp:context7_resolve   # exact: one exposed MCP tool (runtime name)
   - mcp:websearch_*        # prefix: all tools whose exposed names start with websearch_
-  - mcp:*                  # all MCP tools including specific servers (makes exact/prefix selectors redundant)
+  - mcp:*                  # all globally available MCP tools; specific tools still require exact/prefix selectors
   - mcp:-                  # none: if present, suppresses every MCP tool and wins over other mcp: selectors
 ```
 
@@ -35,7 +35,7 @@ Parent/main runs only see MCP tools from `availability: all` servers in the acti
 Explicit `tools` lists also inherit `availability: all` MCP tools by default, even without an `mcp:` entry. `mcp:-` suppresses all MCP inheritance; specific servers require an explicit `mcp:` selector. Raw catalog runtime names without `mcp:` are stripped from the explicit non-MCP allowlist. Tools from `availability: all` servers remain available through global inheritance, while tools from `availability: specific` servers are not opted in by raw names.
 
 - **`subagent`** is never available inside child runs.
-- **Child MCP policy** is declared in `tools` using `mcp:` selectors (for example `mcp:websearch_search`, `mcp:websearch_*`, `mcp:*`, `mcp:-`). Exact and prefix selectors may be combined; `mcp:-` wins if present and suppresses all MCP tools. `mcp:*` alone is enough for every MCP tool and makes other exact/prefix selectors redundant.
+- **Child MCP policy** is declared in `tools` using `mcp:` selectors (for example `mcp:websearch_search`, `mcp:websearch_*`, `mcp:*`, `mcp:-`). Exact and prefix selectors may be combined; `mcp:-` wins if present and suppresses all MCP tools. `mcp:*` selects globally available MCP tools; exact/prefix selectors remain necessary for specific tools, including when combined with `mcp:*`.
 - Exactly one terminal `*` is a prefix wildcard (`mcp:websearch_*`). A selector with no `*` is always exact, even if it ends with `_`. Embedded or multiple `*` characters are not globs.
 - The legacy top-level `mcp:` frontmatter block (`mcp.mode` / `mcp.tools`) is not used for child tool exposure; declare MCP in `tools` with `mcp:` selectors instead.
 

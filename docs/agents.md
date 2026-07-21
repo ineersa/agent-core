@@ -312,9 +312,11 @@ definition `tools` list (including `mcp:` selectors) plus hard safety rules:
   through global MCP inheritance, while tools from `availability: specific`
   servers are not opted in by raw names. Unrelated non-MCP names remain unchanged.
 - `mcp:-` wins over every other selector and suppresses all MCP tools. `mcp:*`
-  selects the full connected catalog when deny is absent. Other selectors resolve
-  to runtime names `{server}_{tool}` and add their matches to inherited globals
-  (e.g. `mcp:websearch_search`, `mcp:websearch_*`). Exactly one terminal `*` is
+  selects all globally available MCP tools when deny is absent; specific tools
+  require an exact or terminal-star selector. When combined with those selectors,
+  only their specific matches are added to the globals. Selectors resolve to
+  runtime names `{server}_{tool}` (e.g. `mcp:websearch_search`, `mcp:websearch_*`).
+  Exactly one terminal `*` is
   a prefix wildcard; a selector with no `*` is always exact, even if it ends with
   `_`. Embedded or multiple `*` characters are not globs.
 - The `subagent` tool is **always excluded** from child tool lists in v1.

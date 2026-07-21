@@ -93,12 +93,16 @@ final readonly class AgentMcpToolsResolver
         $policyMode = $this->policyModeFromSelectors($selectors);
         $mcpTools = match ($policyMode) {
             'none' => [],
-            // `all` means the full catalog: global and specific MCP tools.
-            'all' => $allExposed,
+            // `all` means all globally available MCP tools; specific tools require selectors.
+            'all' => $globalExposed,
             'specific' => $globalExposed,
         };
         if ('specific' === $policyMode) {
-            foreach ($this->expandSelectors($selectors, $allExposed) as $selectedTool) {
+            $specificSelectors = array_values(array_filter(
+                $selectors,
+                static fn (string $selector): bool => 'mcp:*' !== $selector && 'mcp:-' !== $selector,
+            ));
+            foreach ($this->expandSelectors($specificSelectors, $allExposed) as $selectedTool) {
                 if (!\in_array($selectedTool, $mcpTools, true)) {
                     $mcpTools[] = $selectedTool;
                 }
@@ -120,7 +124,7 @@ final readonly class AgentMcpToolsResolver
      * Expand specific `mcp:` selectors against catalog-exposed Hatfield runtime names.
      *
      * The caller must invoke this only for `specific` policy mode; `mcp:-` and `mcp:*`
-     * are resolved before this method is called.
+     * are filtered before this method is called.
      *
      * Grammar invariants:
      *  - Exactly one terminal `*` is the only prefix wildcard (`mcp:websearch_*` → names starting with `websearch_`).
@@ -168,11 +172,14 @@ final readonly class AgentMcpToolsResolver
         if (\in_array('mcp:-', $selectors, true)) {
             return 'none';
         }
-        if (\in_array('mcp:*', $selectors, true)) {
-            return 'all';
+
+        foreach ($selectors as $selector) {
+            if ('mcp:*' !== $selector) {
+                return 'specific';
+            }
         }
 
-        return 'specific';
+        return 'all';
     }
 
     /**
