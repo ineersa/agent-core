@@ -16,30 +16,16 @@ use Ineersa\CodingAgent\Tests\Support\ProjectDir;
 use PHPUnit\Framework\Attributes\Group;
 
 /**
- * Live LLM E2E test proving the /tree rewind feature is broken in the real transport.
+ * Live LLM E2E: /tree rewind must restore branch-specific model context.
  *
  * Drives the REAL controller subprocess through JsonlProcessAgentSessionClient::send()
- * which reproduces the user's exact exception:
+ * — the production TUI transport path. Originally written to catch the issue #183
+ * anti-pattern (replay green while live transport lacked rewind_to_turn); that arm
+ * now exists, so this test protects the semantic branch-context contract.
  *
- *     InvalidArgumentException: Unknown command type: "rewind_to_turn"
- *
- * thrown at JsonlProcessAgentSessionClient.php:273 because the match statement
- * in send() has no arm for 'rewind_to_turn'.
- *
- * Every existing rewind test uses either InProcessAgentSessionClient (which DOES
- * have the arm) or writes JSONL directly with writeCommand() — neither catches this.
- * This is the issue #183 anti-pattern from AGENTS.md: replay/mocked tests green while
- * the real transport is dead.
- *
- *     "Trust the live reproduction over the fixture. When a user-reported bug survives
- *     replay tests, the replay is exercising the wrong path. Reach for a live LLM
- *     controller E2E (#[Group('llm-real')], real controller subprocess via
- *     JsonlProcessAgentSessionClient) that reproduces the exact user scenario."
- *
- * This test WILL FAIL until the missing 'rewind_to_turn' arm is added to
- * JsonlProcessAgentSessionClient::send(). Once the arm is added, the test
- * proceeds to verify the full semantic scenario and proves rewind changes
- * the model's context.
+ * Canonical turn IDs are opaque and may be sparse under max(lastSeq, turnNo)+1
+ * allocation. Rewind targets are taken from turn.started payloads for the
+ * conversational turns under test — never assumed ordinal 1/2.
  *
  * @see JsonlProcessAgentSessionClient::send()
  *
@@ -68,15 +54,10 @@ final class RewindBranchLiveE2eTest extends ControllerE2eTestCase
     /**
      * Full semantic scenario: rewind must restore per-branch message context.
      *
-     * The test drives the REAL controller subprocess through the REAL
-     * JsonlProcessAgentSessionClient::send() — the exact code path the TUI
-     * uses in production.
-     *
-     * It WILL FAIL at the first send('rewind_to_turn') with:
-     *     InvalidArgumentException: Unknown command type: "rewind_to_turn"
-     *
-     * The failure IS the proof: the real transport is broken even though every
-     * replay-based test is green.
+     * Flow: start conversational turn → teach "pineapple" on a child turn →
+     * rewind to the first conversational turn identity → teach "apple" →
+     * prove apple context (no pineapple) → rewind to pineapple turn identity →
+     * prove pineapple context.
      */
     public function testRewindChangesContextWithRealLlm(): void
     {
@@ -105,7 +86,7 @@ final class RewindBranchLiveE2eTest extends ControllerE2eTestCase
 
             $runId = $this->sessionId;
 
-            // ── Turn 1: start_run ────────────────────────────────────────
+            // ── First conversational turn: start_run ─────────────────────
             $this->client->start(new StartRunRequest(
                 prompt: $this->marker.' I will share secret words, remember them.',
                 runId: $runId,
@@ -114,11 +95,15 @@ final class RewindBranchLiveE2eTest extends ControllerE2eTestCase
             $events1 = $this->collectEventsFromClient($runId, 30.0);
             $byType1 = $this->indexClientEvents($events1);
             $this->assertArrayHasKey('run.completed', $byType1,
-                'Turn 1: expected run.completed. '
+                'First conversational turn: expected run.completed. '
                 .$this->diagnosticClientInfo()
             );
+            $firstTurnNo = $this->requireLatestTurnStartedNo(
+                $byType1,
+                'first conversational turn after start_run',
+            );
 
-            // ── Turn 2: follow_up "The secret word is pineapple." ────────
+            // ── Follow-up: teach "pineapple" on a child turn ─────────────
             $this->client->send($runId, new UserCommand(
                 type: 'follow_up',
                 text: $this->marker.' The secret word is pineapple.',
@@ -127,24 +112,27 @@ final class RewindBranchLiveE2eTest extends ControllerE2eTestCase
             $events2 = $this->collectEventsFromClient($runId, 30.0);
             $byType2 = $this->indexClientEvents($events2);
             $this->assertArrayHasKey('run.completed', $byType2,
-                'Turn 2: expected run.completed. '
+                'Pineapple turn: expected run.completed. '
+                .$this->diagnosticClientInfo()
+            );
+            $pineappleTurnNo = $this->requireLatestTurnStartedNo(
+                $byType2,
+                'pineapple follow-up turn',
+            );
+            $this->assertNotSame(
+                $firstTurnNo,
+                $pineappleTurnNo,
+                'Pineapple child turn must receive a distinct opaque identity from the first conversational turn. '
                 .$this->diagnosticClientInfo()
             );
 
-            // ── REWIND to turn 1 — THIS IS THE USER'S EXACT BUG ──────────
-            // JsonlProcessAgentSessionClient::send() has no 'rewind_to_turn' arm
-            // in its match statement (line ~273). This throws:
-            //
-            //   InvalidArgumentException: Unknown command type: "rewind_to_turn"
-            //
-            // The test MUST fail here with this specific exception.
+            // ── REWIND to first conversational turn (opaque identity) ────
             $this->client->send($runId, new UserCommand(
                 type: 'rewind_to_turn',
                 text: null,
-                payload: ['turn_no' => 1],
+                payload: ['turn_no' => $firstTurnNo],
             ));
 
-            // ── If we reach here, the bug is fixed — verify semantics ────
             $events3 = $this->collectEventsFromClient($runId, 30.0);
             $byType3 = $this->indexClientEvents($events3);
 
@@ -154,12 +142,12 @@ final class RewindBranchLiveE2eTest extends ControllerE2eTestCase
             );
 
             $leafChanged = $byType3['run.leaf_changed'][0];
-            $this->assertSame(1, (int) ($leafChanged->payload['turn_no'] ?? 0),
-                'RunLeafChanged must reference target turn (1). '
+            $this->assertSame($firstTurnNo, (int) ($leafChanged->payload['turn_no'] ?? 0),
+                'RunLeafChanged must reference the first conversational turn identity ('.$firstTurnNo.'). '
                 .$this->diagnosticClientInfo()
             );
 
-            // ── Turn 3: follow_up "apple" (branched from turn 1) ─────────
+            // ── Follow-up: teach "apple" branched from first turn ────────
             $this->client->send($runId, new UserCommand(
                 type: 'follow_up',
                 text: $this->marker.' The secret word is apple.',
@@ -168,11 +156,11 @@ final class RewindBranchLiveE2eTest extends ControllerE2eTestCase
             $events4 = $this->collectEventsFromClient($runId, 30.0);
             $byType4 = $this->indexClientEvents($events4);
             $this->assertArrayHasKey('run.completed', $byType4,
-                'Turn 3: expected run.completed. '
+                'Apple turn: expected run.completed. '
                 .$this->diagnosticClientInfo()
             );
 
-            // ── Turn 4: ask what the secret word is ──────────────────────
+            // ── Ask what the secret word is (apple branch) ───────────────
             $this->client->send($runId, new UserCommand(
                 type: 'follow_up',
                 text: $this->marker.' What is the secret word? Reply with exactly one word.',
@@ -182,18 +170,19 @@ final class RewindBranchLiveE2eTest extends ControllerE2eTestCase
             $byType5 = $this->indexClientEvents($events5);
 
             $this->assertAssistantResponseContains('apple', $byType5,
-                'After rewind to turn 1 and learning "apple" as turn 3, '
-                .'the model should answer "apple" (turn 2 "pineapple" is abandoned). '
+                'After rewind to first conversational turn '.$firstTurnNo
+                .' and learning "apple" on the new branch, '
+                .'the model should answer "apple" (pineapple turn '.$pineappleTurnNo.' is abandoned). '
                 .'If the answer is "pineapple", rewind is broken — abandoned-branch '
                 .'context is leaking.',
                 'pineapple'
             );
 
-            // ── Rewind to turn 2 (the pineapple turn) ────────────────────
+            // ── Rewind to pineapple turn (opaque identity) ───────────────
             $this->client->send($runId, new UserCommand(
                 type: 'rewind_to_turn',
                 text: null,
-                payload: ['turn_no' => 2],
+                payload: ['turn_no' => $pineappleTurnNo],
             ));
 
             $events6 = $this->collectEventsFromClient($runId, 30.0);
@@ -202,8 +191,13 @@ final class RewindBranchLiveE2eTest extends ControllerE2eTestCase
                 'Second rewind must emit run.leaf_changed. '
                 .$this->diagnosticClientInfo()
             );
+            $leafChangedPineapple = $byType6['run.leaf_changed'][0];
+            $this->assertSame($pineappleTurnNo, (int) ($leafChangedPineapple->payload['turn_no'] ?? 0),
+                'Second RunLeafChanged must reference the pineapple turn identity ('.$pineappleTurnNo.'). '
+                .$this->diagnosticClientInfo()
+            );
 
-            // ── Turn 5: ask what the secret word is (pineapple branch) ───
+            // ── Ask what the secret word is (pineapple branch) ───────────
             $this->client->send($runId, new UserCommand(
                 type: 'follow_up',
                 text: $this->marker.' What is the secret word? Reply with exactly one word.',
@@ -213,7 +207,7 @@ final class RewindBranchLiveE2eTest extends ControllerE2eTestCase
             $byType7 = $this->indexClientEvents($events7);
 
             $this->assertAssistantResponseContains('pineapple', $byType7,
-                'After rewind to turn 2, the model should answer "pineapple" '
+                'After rewind to pineapple turn '.$pineappleTurnNo.', the model should answer "pineapple" '
                 .'(the apple branch is now the abandoned one).'
             );
         } finally {
@@ -227,6 +221,34 @@ final class RewindBranchLiveE2eTest extends ControllerE2eTestCase
     }
 
     // ── Helpers ─────────────────────────────────────────────────────────────────
+
+    /**
+     * Extract the opaque turn identity from the latest turn.started runtime event.
+     *
+     * Sparse allocation (max(lastSeq, turnNo)+1) means these are not ordinal 1/2.
+     *
+     * @param array<string, list<RuntimeEvent>> $byType
+     */
+    private function requireLatestTurnStartedNo(array $byType, string $context): int
+    {
+        $started = $byType['turn.started'] ?? [];
+        $this->assertNotEmpty(
+            $started,
+            'Expected turn.started for '.$context.'. Available: '.implode(', ', array_keys($byType)).'. '
+            .$this->diagnosticClientInfo()
+        );
+
+        $last = end($started);
+        $turnNo = (int) ($last->payload['turn_no'] ?? 0);
+        $this->assertGreaterThan(
+            0,
+            $turnNo,
+            'turn.started for '.$context.' must carry a positive turn_no payload. '
+            .$this->diagnosticClientInfo()
+        );
+
+        return $turnNo;
+    }
 
     /**
      * Poll $client->events($runId) until a terminal event or timeout.
