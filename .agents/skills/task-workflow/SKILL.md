@@ -31,6 +31,13 @@ The main agent is an **orchestrator**, not an implementor. Work is dispatched to
 
 **Never edit files directly in the main agent.** If you catch yourself about to open an editor, write a file, or run a code change — launch a fork instead.
 
+### Subagent dispatch (parallel vs sequential)
+
+- **Independent** scouts/reviewers/researchers: batch them in **one** parallel `subagent` call with a `tasks` array whenever within `agents.max_agents`. Separate single-mode calls for independent work are valid syntax but serialize and waste wall time.
+- **Single child** or **dependent** work: use `{"agent":"...","task":"..."}` only for exactly one child, or when a later task cannot be formed until an earlier result returns (follow-up investigation, re-review after a fix, deliberate serialization).
+- Outer separate `subagent` tool calls are sequential; children inside one `tasks` array run concurrently. Split across multiple calls only for **cap overflow** or **true dependencies**.
+- Parallel results are bounded summaries — use `agent_retrieve` with each `Artifact:` ID for complete handoffs when needed.
+
 ## Workflow phases
 
 ```
@@ -46,8 +53,8 @@ task-explain → task-start → task-to-pr → task-done
 Read-only planning. No status changes, no file edits, no forks.
 
 1. Read task file and referenced docs.
-2. Scout codebase for affected areas, dependencies, existing patterns.
-3. Researcher for external info when needed.
+2. Scout codebase for affected areas, dependencies, existing patterns. When multiple independent scouts are useful, launch them in **one** parallel `tasks` call (not separate single-mode calls).
+3. Researcher for external info when needed (batch independent research with scouts in the same `tasks` call when useful).
 4. Present structured plan: summary, affected areas, implementation steps, risks/open questions, suggested validation.
 5. Discuss with user. Highlight decision points — do not silently resolve them.
 6. When ready to implement, user runs `task-start`.
@@ -59,7 +66,7 @@ Read-only planning. No status changes, no file edits, no forks.
 
 1. `move_task(to="IN-PROGRESS")` — creates worktree branch.
    - Worktree creation copies `vendor/` and `.vera/` into the worktree, and updates the parent worktree IDEA module exclusions when present.
-2. Scout codebase for context, researcher for external info.
+2. Scout codebase for context, researcher for external info. Batch independent scouts/researchers in one parallel `tasks` call; use sequential single-mode only when a later probe depends on an earlier result.
 3. Prepare exact fork instructions: files to touch, old/new patterns, validation commands, boundaries.
 4. Launch fork on worktree (`cwd=worktree`). Fork implements, you don't.
 5. When fork report arrives:

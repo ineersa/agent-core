@@ -9,13 +9,15 @@ Hatfield exposes **`subagent`** (launch) and **`agent_retrieve`** (read artifact
 
 ## Quick start
 
-**Single child:**
+**Decision rule:** batch independent scouts/reviewers in **one** `tasks` call whenever within `agents.max_agents`. Use single mode only for exactly one child or work that must be serialized. Separate outer `subagent` calls are sequential; children inside one `tasks` array run concurrently. Multiple separate single-mode calls for independent work are valid syntax but an orchestration anti-pattern.
+
+**Single child** (or serialized/dependent work — e.g. scout B needs scout A’s findings, re-review after a fix):
 
 ```json
 { "agent": "scout", "task": "Map how skills are discovered and injected." }
 ```
 
-**Parallel children** (up to `agents.max_agents`, default 8 — use either single or `tasks`, not both):
+**Independent parallel children** (preferred for multi-scout/reviewer work; up to `agents.max_agents`, default 8 — use either single or `tasks`, not both):
 
 ```json
 {
@@ -26,7 +28,21 @@ Hatfield exposes **`subagent`** (launch) and **`agent_retrieve`** (read artifact
 }
 ```
 
-After a run, copy **`Artifact: agent_<hex>`** from the tool result and call **`agent_retrieve`** when you need the full handoff, metadata, or bounded events/history.
+**Anti-pattern for independent work** (valid syntax, but two separate outer calls serialize):
+
+```json
+{ "agent": "scout", "task": "Inspect routing." }
+```
+
+```json
+{ "agent": "scout", "task": "Inspect auth." }
+```
+
+Prefer one `tasks` batch instead of two single-mode calls.
+
+Split across multiple `subagent` calls only for **cap overflow** (`max_agents`) or **true dependencies**, not for routine independent reconnaissance.
+
+After a run, copy **`Artifact: agent_<hex>`** from the tool result and call **`agent_retrieve`** when you need the full handoff, metadata, or bounded events/history. Parallel results are bounded summaries; retrieve complete handoffs by artifact ID when needed.
 
 If a subagent was **cancelled**, the tool error still includes **`Artifact:`** and **`Status: cancelled`** when available. Retrieve with **`agent_retrieve`** (`metadata` / `events` / `history`); cancelled handoffs include bounded partial context only (no raw tool output).
 
@@ -55,7 +71,7 @@ Parent sessions also get **`<available_agents>`** (name + description) in contex
 | `parallelAllowed` | Defaults to **`true`**. Set `parallelAllowed: false` to block use in parallel `tasks`. |
 | `skills` / `skill` | `skill:` merges into `skills`; comma-separated strings are split. |
 | MCP availability | Servers marked `availability: all` are inherited by every child, including explicit `tools` lists. `availability: specific` tools require exact/prefix `mcp:` selectors. `mcp:-` suppresses all MCP tools; `mcp:*` selects globally available MCP tools only. |
-| Parallel cap | More than `max_agents` tasks → fail fast; split across multiple `subagent` calls. |
+| Parallel cap | More than `max_agents` tasks → fail fast; split across calls only for cap overflow or true dependencies (not routine independent work). |
 | Subagent wait timeout | `agents.subagent_tool_timeout_seconds` (default **1800** s, min **60**; below min fails config load) — internal poll deadline for foreground child runs; not ToolExecutor generic timeout. |
 
 ## Child MCP policy

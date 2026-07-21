@@ -57,7 +57,7 @@ If you catch yourself about to open an editor, write a file, or run a code chang
    - Verify no unintended changes (only the advertised files changed).
 
 7. **Re-review**
-   - Run the reviewer subagent again on the worktree at the new HEAD.
+   - Run the reviewer subagent again on the worktree at the new HEAD. Re-review after a fix is **sequential** by design (it depends on the new HEAD). Batch only if you need multiple independent reviewers at the same HEAD in one parallel `tasks` call.
    - **For TUI tasks: instruct the reviewer to verify a real `TmuxHarness` E2E proof (replay-backed, no live LLM required) exists and covers the user-visible feature path.** Reject the iteration if it lacks this proof or substitutes mocks.
    - If REQUEST CHANGES again, repeat from step 4 with the new feedback.
 
