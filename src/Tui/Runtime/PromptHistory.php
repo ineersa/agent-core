@@ -2,11 +2,10 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\Tui\Listener;
+namespace Ineersa\Tui\Runtime;
 
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
-use Ineersa\Tui\Runtime\PromptHistoryInterface;
 
 /**
  * Session-scoped prompt list and Up/Down navigation cursor for history recall.
@@ -14,9 +13,9 @@ use Ineersa\Tui\Runtime\PromptHistoryInterface;
  * Lifecycle:
  * - {@see seedFrom()} resets the list and navigation cursor, rebuilding from the
  *   projected transcript on each session start, resume, or switch (called from
- *   {@see PromptHistoryListener::register()}).
+ *   {@see \Ineersa\Tui\Listener\PromptHistoryListener::register()}).
  * - {@see append()} grows the list when the user submits a real prompt or bang
- *   command ({@see SubmitListener}).
+ *   command ({@see \Ineersa\Tui\Listener\SubmitListener}).
  * - After conversation rewind, {@see RuntimeEventPoller} reseeds via
  *   {@see seedFrom()} from the active projected transcript so Up/Down cannot
  *   recall abandoned bang or prompt lines.
@@ -25,7 +24,7 @@ use Ineersa\Tui\Runtime\PromptHistoryInterface;
  * keypress. {@see previous()} walks toward older prompts; {@see next()} toward
  * newer; past newest returns null (caller clears editor and exits navigation).
  */
-final class PromptHistory implements PromptHistoryInterface
+final class PromptHistory
 {
     /** @var list<string> */
     private array $prompts = [];

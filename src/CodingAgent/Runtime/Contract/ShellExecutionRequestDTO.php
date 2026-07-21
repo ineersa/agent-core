@@ -32,14 +32,6 @@ final readonly class ShellExecutionRequestDTO
         return new self($command, $sessionId, $cwd, true);
     }
 
-    public static function inline(
-        ShellCommandDTO $command,
-        string $runId,
-        bool $standalone,
-    ): self {
-        return new self($command, $runId, '', $standalone);
-    }
-
     public static function fromUserCommand(string $runId, UserCommand $command): self
     {
         if ('shell_command' !== $command->type || !\is_string($command->text)) {
@@ -83,6 +75,14 @@ final readonly class ShellExecutionRequestDTO
     public function toRuntimePayload(): array
     {
         return $this->command->toPayload($this->standalone) + ['cwd' => $this->cwd];
+    }
+
+    private static function inline(
+        ShellCommandDTO $command,
+        string $runId,
+        bool $standalone,
+    ): self {
+        return new self($command, $runId, '', $standalone);
     }
 
     /**

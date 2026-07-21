@@ -8,8 +8,9 @@ use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 
 /**
- * Defines which post-completion input is abandoned when replay starts at a
- * rewound leaf. Both state and transcript replay must apply this same window.
+ * Defines the post-completion rewind boundary used by TurnTreeReplayFilter.
+ *
+ * State and transcript replay share this policy transitively through the filter.
  */
 final readonly class RewindBoundaryPolicy
 {

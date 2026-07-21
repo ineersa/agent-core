@@ -25,6 +25,7 @@ use Ineersa\Tui\ImagePaste\PastedImagePlaceholderFormatter;
 use Ineersa\Tui\ImagePaste\PastedImageSubmissionService;
 use Ineersa\Tui\Question\QuestionController;
 use Ineersa\Tui\Question\QuestionCoordinator;
+use Ineersa\Tui\Runtime\PromptHistory;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
 use Ineersa\Tui\Runtime\SubagentLiveAttention;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;

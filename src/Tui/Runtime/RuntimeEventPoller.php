@@ -32,7 +32,7 @@ final class RuntimeEventPoller
         private readonly LoggerInterface $logger,
         private readonly RuntimeExceptionBoundary $boundary,
         private readonly SessionTranscriptProviderInterface $sessionTranscriptProvider,
-        private readonly PromptHistoryInterface $promptHistory,
+        private readonly PromptHistory $promptHistory,
     ) {
     }
 

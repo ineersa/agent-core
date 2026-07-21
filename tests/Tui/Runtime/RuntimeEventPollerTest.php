@@ -15,7 +15,7 @@ use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
-use Ineersa\Tui\Listener\PromptHistory;
+use Ineersa\Tui\Runtime\PromptHistory;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
 use Ineersa\Tui\Runtime\RuntimeEventPoller;
 use Ineersa\Tui\Runtime\TuiRuntimeEventApplier;

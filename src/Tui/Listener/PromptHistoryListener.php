@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Listener;
 
+use Ineersa\Tui\Runtime\PromptHistory;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
 
 /**
