@@ -9,141 +9,135 @@ use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\CodingAgent\Session\TurnTree\TurnTreeProjector;
 
 /**
- * Projects the canonical event stream onto the selected turn branch.
+ * Filters a canonical event stream to only the events on the active turn branch path.
  *
- * Direct shell commands are identified by their canonical shell-command anchor
- * and tool_call_id. This keeps model-generated bash and run-level lifecycle
- * events in the normal branch projection while removing an abandoned shell's
- * command and any lifecycle event carrying its ID.
+ * Uses {@see TurnTreeProjector} to determine the active branch, then includes:
+ *  - Run-level events (turnNo === 0, e.g. run_started)
+ *  - Events whose turnNo is in the active branch path
+ *  - Tree metadata events (leaf_set, turn_branched)
+ *
+ * Abandoned sibling branch events (message, tool, assistant content for turns
+ * not on the active path) are excluded. The canonical stream remains intact;
+ * only the replay view is filtered.
  */
 final class TurnTreeReplayFilter
 {
     public function __construct(
         private readonly TurnTreeProjector $projector,
-        private readonly RewindBoundaryPolicy $rewindBoundaryPolicy,
     ) {
     }
 
     /**
-     * @param list<RunEvent> $events
+     * Filter an unsorted event list to only active-branch events
+     * (uses the project's current leaf from the event stream).
+     *
+     * Delegates to {@see filterForLeaf()} with the current leaf.
+     *
+     * @param list<RunEvent> $events Unsorted canonical events
+     *
+     * @return TurnBranchReplayDTO Filtered result with full-stream diagnostics
      */
     public function filter(string $runId, array $events): TurnBranchReplayDTO
     {
         $tree = $this->projector->build($runId, $events);
+        $targetLeaf = $tree->currentLeafTurnNo;
 
-        return $this->filterForLeaf($runId, $events, $tree->currentLeafTurnNo);
+        return $this->filterForLeaf($runId, $events, $targetLeaf);
     }
 
     /**
-     * @param list<RunEvent> $events
+     * Filter an unsorted event list to only events on a specific branch path.
+     *
+     * Uses {@see TurnTreeProjector::activePathTo()} to compute the root-to-target
+     * turn path, then includes:
+     *  - Run-level events (turnNo === 0, e.g. run_started)
+     *  - Events whose turnNo is in the active branch path
+     *  - Tree metadata events (leaf_set, turn_branched)
+     *
+     * @param list<RunEvent> $events           Unsorted canonical events
+     * @param int|null       $targetLeafTurnNo Target leaf turn number (null = use current leaf)
+     *
+     * @return TurnBranchReplayDTO Filtered result with full-stream diagnostics
      */
     public function filterForLeaf(string $runId, array $events, ?int $targetLeafTurnNo = null): TurnBranchReplayDTO
     {
         $tree = $this->projector->build($runId, $events);
-        $targetLeafTurnNo ??= $tree->currentLeafTurnNo;
+
+        if (null === $targetLeafTurnNo) {
+            $targetLeafTurnNo = $tree->currentLeafTurnNo;
+        }
+
+        // Use activePathTo for the target leaf (not the current leaf's path).
         $activePathTurnNos = null !== $targetLeafTurnNo && [] !== $tree->nodesByTurnNo
             ? TurnTreeProjector::activePathTo($targetLeafTurnNo, $tree->nodesByTurnNo)
             : [];
-        $boundary = $this->rewindBoundaryPolicy->forTarget($events, $targetLeafTurnNo ?? 0);
-        [$shellIds, $activeShellIds] = $this->shellIds($events, $activePathTurnNos, $targetLeafTurnNo, $boundary);
-        $abandonedShellIds = array_diff_key($shellIds, $activeShellIds);
+
+        $canonicalEventCount = \count($events);
+        $canonicalLastSeq = $this->maxSeq($events);
+
         $commandSeqToCreatedTurn = $this->buildCommandSeqToCreatedTurnMap($events);
 
         $filtered = [];
         foreach ($events as $event) {
-            $toolCallId = $event->payload['tool_call_id'] ?? null;
-            if (\is_string($toolCallId) && isset($abandonedShellIds[$toolCallId])) {
-                continue;
-            }
-
-            if ($this->rewindBoundaryPolicy->isAbandonedTargetCommand($event, $targetLeafTurnNo ?? 0, $boundary)) {
-                continue;
-            }
-
+            // Include run-level events (turn 0, e.g. run_started).
             if (0 === $event->turnNo) {
                 $filtered[] = $event;
-
                 continue;
             }
 
+            // Include events on the target leaf's path.
             if (\in_array($event->turnNo, $activePathTurnNos, true)) {
                 if ($this->shouldExcludeTurnSeedingCommand($event, $commandSeqToCreatedTurn, $activePathTurnNos)) {
                     continue;
                 }
 
                 $filtered[] = $event;
-
                 continue;
             }
 
+            // Include tree metadata events (leaf_set, turn_branched) even
+            // if their turnNo is not in the active path (defensive safety net).
+            // These are no-op reducers during replay — they exist only for
+            // future navigation/audit metadata and do not affect prompt
+            // context or RunState reconstruction.
             if ($this->isTreeMetadataEvent($event)) {
                 $filtered[] = $event;
             }
         }
 
+        // Re-sort filtered events by seq for replay.
         usort($filtered, static fn (RunEvent $left, RunEvent $right): int => $left->seq <=> $right->seq);
 
         return new TurnBranchReplayDTO(
             events: $filtered,
-            canonicalEventCount: \count($events),
-            canonicalLastSeq: $this->maxSeq($events),
+            canonicalEventCount: $canonicalEventCount,
+            canonicalLastSeq: $canonicalLastSeq,
             activePathTurnNos: $activePathTurnNos,
             currentLeafTurnNo: $targetLeafTurnNo,
         );
     }
 
     /**
-     * @param list<RunEvent>                            $events
-     * @param list<int>                                 $activePathTurnNos
-     * @param array{rewindSeq: int, completionSeq: int} $boundary
+     * Maps turn-seeding agent_command_* seq to the turn_advanced turn they create.
      *
-     * @return array{0: array<string, true>, 1: array<string, true>}
-     */
-    private function shellIds(
-        array $events,
-        array $activePathTurnNos,
-        ?int $targetTurnNo,
-        array $boundary,
-    ): array {
-        $all = [];
-        $active = [];
-
-        foreach ($events as $event) {
-            if (!$this->isShellAnchor($event)) {
-                continue;
-            }
-
-            $toolCallId = $event->payload['tool_call_id'] ?? null;
-            if (!\is_string($toolCallId) || '' === $toolCallId) {
-                continue;
-            }
-
-            $all[$toolCallId] = true;
-            if ((0 === $event->turnNo || \in_array($event->turnNo, $activePathTurnNos, true))
-                && !$this->rewindBoundaryPolicy->isAbandonedTargetCommand($event, $targetTurnNo ?? 0, $boundary)) {
-                $active[$toolCallId] = true;
-            }
-        }
-
-        return [$all, $active];
-    }
-
-    /**
+     * Follow-up commands are stamped with the originating turn's turnNo while the
+     * run is still on that turn; the subsequent turn_advanced creates the new turn.
+     *
      * @param list<RunEvent> $events
      *
-     * @return array<int, int>
+     * @return array<int, int> command event seq => created turn number
      */
     private function buildCommandSeqToCreatedTurnMap(array $events): array
     {
         $sorted = $events;
         usort($sorted, static fn (RunEvent $left, RunEvent $right): int => $left->seq <=> $right->seq);
 
-        $pending = [];
-        $created = [];
+        $pendingCommandSeqs = [];
+        $commandSeqToCreatedTurn = [];
+
         foreach ($sorted as $event) {
             if ($this->isTurnSeedingCommandEvent($event)) {
-                $pending[] = $event->seq;
-
+                $pendingCommandSeqs[] = $event->seq;
                 continue;
             }
 
@@ -151,33 +145,27 @@ final class TurnTreeReplayFilter
                 continue;
             }
 
-            $turnNo = (int) ($event->payload['turn_no'] ?? $event->turnNo);
-            if ($turnNo <= 0) {
+            $createdTurnNo = (int) ($event->payload['turn_no'] ?? $event->turnNo);
+            if ($createdTurnNo <= 0) {
                 continue;
             }
 
-            foreach ($pending as $seq) {
-                $created[$seq] = $turnNo;
+            foreach ($pendingCommandSeqs as $commandSeq) {
+                $commandSeqToCreatedTurn[$commandSeq] = $createdTurnNo;
             }
-            $pending = [];
+
+            $pendingCommandSeqs = [];
         }
 
-        return $created;
-    }
-
-    private function isShellAnchor(RunEvent $event): bool
-    {
-        return RunEventTypeEnum::AgentCommandApplied->value === $event->type
-            && 'shell_command' === ($event->payload['kind'] ?? null);
+        return $commandSeqToCreatedTurn;
     }
 
     private function isTurnSeedingCommandEvent(RunEvent $event): bool
     {
-        return !$this->isShellAnchor($event)
-            && \in_array($event->type, [
-                RunEventTypeEnum::AgentCommandQueued->value,
-                RunEventTypeEnum::AgentCommandApplied->value,
-            ], true);
+        return \in_array($event->type, [
+            RunEventTypeEnum::AgentCommandQueued->value,
+            RunEventTypeEnum::AgentCommandApplied->value,
+        ], true);
     }
 
     /**
@@ -189,9 +177,17 @@ final class TurnTreeReplayFilter
         array $commandSeqToCreatedTurn,
         array $activePathTurnNos,
     ): bool {
-        $createdTurnNo = $commandSeqToCreatedTurn[$event->seq] ?? null;
+        if (!$this->isTurnSeedingCommandEvent($event)) {
+            return false;
+        }
 
-        return null !== $createdTurnNo && !\in_array($createdTurnNo, $activePathTurnNos, true);
+        $createdTurnNo = $commandSeqToCreatedTurn[$event->seq] ?? null;
+        if (null === $createdTurnNo) {
+            // Command has not yet created a new turn (e.g. active leaf input).
+            return false;
+        }
+
+        return !\in_array($createdTurnNo, $activePathTurnNos, true);
     }
 
     private function isTreeMetadataEvent(RunEvent $event): bool
@@ -202,7 +198,9 @@ final class TurnTreeReplayFilter
         ], true);
     }
 
-    /** @param list<RunEvent> $events */
+    /**
+     * @param list<RunEvent> $events
+     */
     private function maxSeq(array $events): int
     {
         if ([] === $events) {

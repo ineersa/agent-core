@@ -89,13 +89,9 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
             {
             }
 
-            public function shellExecute(\Ineersa\CodingAgent\Runtime\Contract\ShellExecutionRequestDTO $request): \Ineersa\CodingAgent\Runtime\Contract\RunHandle
+            public function shellExecute(string $command, string $sessionId, string $cwd): \Ineersa\CodingAgent\Runtime\Contract\RunHandle
             {
                 throw new \RuntimeException('Not expected in test');
-            }
-
-            public function completeRun(string $runId): void
-            {
             }
 
             public function compact(string $runId, ?string $customInstructions = null): void

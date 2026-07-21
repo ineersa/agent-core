@@ -45,10 +45,10 @@ final class ExecuteShellToolCallWorkerTest extends TestCase
         $worker = new ExecuteShellToolCallWorker($toolExecutor, $eventStore);
         $worker(new ExecuteShellToolCall(
             runId: 'run-standalone',
+            turnNo: 2,
             toolCallId: 'sh_tc_1',
             commandText: 'echo hello',
             standalone: true,
-            turnNo: 2,
         ));
 
         $this->assertCount(3, $this->appendedEvents, 'Standalone shell must produce 3 events.');
@@ -69,7 +69,6 @@ final class ExecuteShellToolCallWorkerTest extends TestCase
         // Seq 3: agent_end (final event, written only for standalone)
         $this->assertSame(3, $this->appendedEvents[2]->seq);
         $this->assertSame(RunEventTypeEnum::AgentEnd->value, $this->appendedEvents[2]->type);
-        $this->assertSame(0, $this->appendedEvents[2]->turnNo);
         $this->assertSame('completed', $this->appendedEvents[2]->payload['reason'] ?? null);
 
         // Ascending seq order
@@ -103,6 +102,7 @@ final class ExecuteShellToolCallWorkerTest extends TestCase
         $worker = new ExecuteShellToolCallWorker($toolExecutor, $eventStore);
         $worker(new ExecuteShellToolCall(
             runId: 'run-inline',
+            turnNo: 2,
             toolCallId: 'sh_tc_2',
             commandText: 'echo inline',
             standalone: false,

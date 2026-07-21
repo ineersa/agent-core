@@ -8,6 +8,7 @@ use Ineersa\AgentCore\Contract\AgentRunnerInterface;
 use Ineersa\AgentCore\Domain\Command\CoreCommandKind;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\ApplyCommand;
+use Ineersa\AgentCore\Domain\Message\ApplyShellCommand;
 use Ineersa\AgentCore\Domain\Message\StartRun;
 use Ineersa\AgentCore\Domain\Message\StartRunPayload;
 use Ineersa\AgentCore\Domain\Run\RunMetadata;
@@ -58,6 +59,24 @@ final readonly class AgentRunner implements AgentRunnerInterface
     public function continue(string $runId): void
     {
         $this->applyCoreCommand($runId, CoreCommandKind::Continue, []);
+    }
+
+    public function shell(string $runId, string $rawInput): void
+    {
+        $stepId = $this->nextStepId('shell');
+
+        try {
+            $this->commandBus->dispatch(new ApplyShellCommand(
+                runId: $runId,
+                turnNo: 0,
+                stepId: $stepId,
+                attempt: 1,
+                idempotencyKey: $this->idempotencyKey($runId, $stepId),
+                rawInput: $rawInput,
+            ));
+        } catch (ExceptionInterface $exception) {
+            throw new \RuntimeException('Failed to dispatch shell command message.', previous: $exception);
+        }
     }
 
     /**

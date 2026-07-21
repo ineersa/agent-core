@@ -21,13 +21,13 @@ use Ineersa\Tui\Command\SlashCommandRegistry;
 use Ineersa\Tui\Command\SubagentLiveInputPolicy;
 use Ineersa\Tui\Command\SubmissionRouter;
 use Ineersa\Tui\Editor\PromptEditor;
+use Ineersa\Tui\Listener\PromptHistory;
 use Ineersa\Tui\Listener\SubmitListener;
 use Ineersa\Tui\Question\QuestionController;
 use Ineersa\Tui\Question\QuestionCoordinator;
 use Ineersa\Tui\Question\QuestionKind;
 use Ineersa\Tui\Question\QuestionRequest;
 use Ineersa\Tui\Question\QuestionSource;
-use Ineersa\Tui\Runtime\PromptHistory;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Screen\ChatScreen;
@@ -396,7 +396,7 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
     // ── Subsequent shell on terminal run ───────────────────────────
 
     #[Test]
-    public function testSubsequentShellOnCompletedRunSendsStandaloneShellCommand(): void
+    public function testSubsequentShellOnCompletedRunSendsRawBangShellCommand(): void
     {
         $this->state->sessionId = 'test-session';
         $this->state->handle = new RunHandle('run-completed');
@@ -409,8 +409,8 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
                 'run-completed',
                 $this->callback(static function (UserCommand $cmd): bool {
                     return 'shell_command' === $cmd->type
-                        && 'ls -1' === $cmd->text
-                        && true === ($cmd->payload['standalone'] ?? false);
+                        && '!ls -1' === $cmd->text
+                        && [] === $cmd->payload;
                 }),
             );
 
@@ -418,7 +418,7 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
     }
 
     #[Test]
-    public function testSubsequentShellWhileRunningSendsNonStandaloneShellRequest(): void
+    public function testSubsequentShellWhileRunningOmitsStandaloneFlag(): void
     {
         $this->state->sessionId = 'test-session';
         $this->state->handle = new RunHandle('run-active');
@@ -430,12 +430,8 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
                 'run-active',
                 $this->callback(static function (UserCommand $cmd): bool {
                     return 'shell_command' === $cmd->type
-                        && 'pwd' === $cmd->text
-                        && [
-                            'text' => 'pwd',
-                            'original_text' => '!pwd',
-                            'standalone' => false,
-                        ] === $cmd->payload;
+                        && '!pwd' === $cmd->text
+                        && [] === $cmd->payload;
                 }),
             );
 

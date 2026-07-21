@@ -65,7 +65,7 @@ final class SessionTranscriptProviderTest extends TestCase
         $store->method('allFor')->willReturn($events);
 
         $projector = new TurnTreeProjector();
-        $replayFilter = new TurnTreeReplayFilter($projector, new \Ineersa\CodingAgent\Session\Replay\RewindBoundaryPolicy());
+        $replayFilter = new TurnTreeReplayFilter($projector);
         $eventDispatcher = $this->createStub(EventDispatcherInterface::class);
         $translator = new RuntimeEventTranslator($eventDispatcher);
         $eventMapper = new RuntimeEventMapper($translator);

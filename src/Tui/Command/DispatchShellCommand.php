@@ -7,10 +7,9 @@ namespace Ineersa\Tui\Command;
 /**
  * Dispatch a shell command to the runtime for execution.
  *
- * Carries the parsed shell command text and the original submitted
- * text (including the `!` prefix) for prompt history and transcript
- * display. The runtime/app layer executes the command through the
- * shared bash tool path and projects the output into the transcript.
+ * Carries the exact submitted text (including the `!` prefix). The runtime
+ * boundary keeps this raw value as the single command representation; the
+ * pipeline derives executable text only for the bash tool effect.
  *
  * Output is NOT included in model context and must not trigger
  * an LLM turn.
@@ -18,8 +17,7 @@ namespace Ineersa\Tui\Command;
 final readonly class DispatchShellCommand implements CommandResult
 {
     public function __construct(
-        public string $command,
-        public string $originalText,
+        public string $rawInput,
     ) {
     }
 }

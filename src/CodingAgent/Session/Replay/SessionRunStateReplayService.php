@@ -11,6 +11,8 @@ use Ineersa\AgentCore\Application\Replay\RunStateReducer;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
 use Ineersa\AgentCore\Contract\TurnTree\BranchReplayFilterInterface;
+use Ineersa\AgentCore\Domain\Event\RunEvent;
+use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Infrastructure\RunLogContext;
 use Psr\Log\LoggerInterface;
@@ -169,6 +171,17 @@ final readonly class SessionRunStateReplayService implements RunStateRebuilderIn
                     'filtered_event_count' => \count($filteredEvents),
                     'active_branch_turns' => $branchReplay->activePathTurnNos,
                 ]);
+
+                // Rewind replay must not resurrect post-completion follow_up commands
+                // that were queued on the target turn to launch an abandoned child
+                // branch (e.g. pineapple at seq 6–7 after turn-1 agent_end). Those
+                // leave status=Running and suppress ApplyCommandHandler's immediate
+                // AdvanceRun for the next follow_up on the new branch.
+                $filteredEvents = $this->filterAbandonedChildLaunchCommandsOnTargetLeaf(
+                    $sortedEvents,
+                    $targetLeafTurnNo,
+                    $filteredEvents,
+                );
             }
 
             $rebuiltState = $this->runStateReducer->replay($state, $filteredEvents);
@@ -209,5 +222,82 @@ final readonly class SessionRunStateReplayService implements RunStateRebuilderIn
         } finally {
             RunLogContext::leave();
         }
+    }
+
+    /**
+     * @param list<RunEvent> $sortedEvents
+     * @param list<RunEvent> $filteredEvents
+     *
+     * @return list<RunEvent>
+     */
+    private function filterAbandonedChildLaunchCommandsOnTargetLeaf(
+        array $sortedEvents,
+        int $targetLeafTurnNo,
+        array $filteredEvents,
+    ): array {
+        // Only relevant when rebuilding immediately after a rewind leaf_set
+        // (RunRewindService::rewind → rebuildForLeaf). Strip follow_up commands
+        // that were queued on the target turn after its last completion but
+        // before the rewind leaf_set — those launched an abandoned child branch.
+        $rewindLeafSetSeq = 0;
+        foreach ($sortedEvents as $event) {
+            if (RunEventTypeEnum::LeafSet->value !== $event->type) {
+                continue;
+            }
+
+            $payload = $event->payload;
+            $leafTurnNo = (int) ($payload['turn_no'] ?? 0);
+            $reason = \is_string($payload['reason'] ?? null) ? $payload['reason'] : '';
+
+            if ($leafTurnNo !== $targetLeafTurnNo || 'rewind' !== $reason) {
+                continue;
+            }
+
+            $rewindLeafSetSeq = max($rewindLeafSetSeq, $event->seq);
+        }
+
+        if (0 === $rewindLeafSetSeq) {
+            return $filteredEvents;
+        }
+
+        $turnCompletionSeq = 0;
+        foreach ($sortedEvents as $event) {
+            if ($event->turnNo !== $targetLeafTurnNo || $event->seq >= $rewindLeafSetSeq) {
+                continue;
+            }
+
+            if (\in_array($event->type, [
+                RunEventTypeEnum::AgentEnd->value,
+                RunEventTypeEnum::LlmStepCompleted->value,
+            ], true)) {
+                $turnCompletionSeq = max($turnCompletionSeq, $event->seq);
+            }
+        }
+
+        if (0 === $turnCompletionSeq) {
+            return $filteredEvents;
+        }
+
+        return array_values(array_filter(
+            $filteredEvents,
+            static function (RunEvent $event) use ($targetLeafTurnNo, $turnCompletionSeq, $rewindLeafSetSeq): bool {
+                if ($event->turnNo !== $targetLeafTurnNo) {
+                    return true;
+                }
+
+                if (!\in_array($event->type, [
+                    RunEventTypeEnum::AgentCommandQueued->value,
+                    RunEventTypeEnum::AgentCommandApplied->value,
+                ], true)) {
+                    return true;
+                }
+
+                if ($event->seq <= $turnCompletionSeq) {
+                    return true;
+                }
+
+                return $event->seq >= $rewindLeafSetSeq;
+            },
+        ));
     }
 }

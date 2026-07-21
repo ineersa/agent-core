@@ -408,10 +408,6 @@ final class RuntimeEventTranslator
      * human_response → human_input.answered,
      * cancel → cancellation.requested,
      * everything else → status.updated.
-     *
-     * shell_command is the canonical direct-bang representation: projects the
-     * original `!…` text as a user message so transcript + prompt history can
-     * rebuild without a local-only TUI echo.
      */
     private function onAgentCommandApplied(RunEvent $runEvent): RuntimeEvent
     {
@@ -439,10 +435,24 @@ final class RuntimeEventTranslator
             );
         }
 
-        if (\in_array($kind, ['steer', 'follow_up', 'append_message', 'shell_command'], true)) {
+        if ('shell_command' === $kind) {
+            $idempotencyKey = (string) ($p['idempotency_key'] ?? '');
+
+            return new RuntimeEvent(
+                type: RuntimeEventTypeEnum::UserMessageSubmitted->value,
+                runId: $runEvent->runId,
+                seq: $runEvent->seq,
+                payload: [
+                    'message_id' => \sprintf('user_%s_%d_%s', $runEvent->runId, $runEvent->seq, $idempotencyKey),
+                    'text' => (string) ($p['text'] ?? ''),
+                    'idempotency_key' => $idempotencyKey,
+                ],
+            );
+        }
+
+        if (\in_array($kind, ['steer', 'follow_up', 'append_message'], true)) {
             // Extract message text from the serialized message payload
-            // included by CommandMailboxPolicy (steer/follow_up/append_message),
-            // or the explicit text field for direct shell_command.
+            // included by CommandMailboxPolicy.
             $messagePayload = $p['message'] ?? [];
             $text = \is_string($p['text'] ?? null) ? $p['text'] : '';
             if ('' === $text && \is_array($messagePayload)) {

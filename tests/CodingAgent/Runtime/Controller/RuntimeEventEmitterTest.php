@@ -340,13 +340,9 @@ final class FlakySeqDrainAgentSessionClient implements AgentSessionClient
     {
     }
 
-    public function shellExecute(\Ineersa\CodingAgent\Runtime\Contract\ShellExecutionRequestDTO $request): RunHandle
+    public function shellExecute(string $command, string $sessionId, string $cwd): RunHandle
     {
         throw new \BadMethodCallException('not used');
-    }
-
-    public function completeRun(string $runId): void
-    {
     }
 
     public function compact(string $runId, ?string $customInstructions = null): void

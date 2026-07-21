@@ -22,7 +22,6 @@ use Ineersa\Tui\Listener\RuntimeQuestionEventHandler;
 use Ineersa\Tui\Listener\TickPollListener;
 use Ineersa\Tui\Question\QuestionController;
 use Ineersa\Tui\Question\QuestionCoordinator;
-use Ineersa\Tui\Runtime\PromptHistory;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
 use Ineersa\Tui\Runtime\RuntimeEventPoller;
 use Ineersa\Tui\Runtime\SubagentLiveChildDTO;
@@ -62,7 +61,6 @@ final class TickPollListenerSubagentLiveTest extends TestCase
             new TestLogger(),
             new RuntimeExceptionBoundary(new EventDispatcher()),
             $this->createStub(SessionTranscriptProviderInterface::class),
-            new PromptHistory(),
         );
 
         $state = new TuiSessionState($parentRun);
@@ -127,7 +125,6 @@ final class TickPollListenerSubagentLiveTest extends TestCase
             new TestLogger(),
             new RuntimeExceptionBoundary(new EventDispatcher()),
             $this->createStub(SessionTranscriptProviderInterface::class),
-            new PromptHistory(),
         );
 
         $state = new TuiSessionState($parentRun);
@@ -245,13 +242,9 @@ final class ParentEventClient implements AgentSessionClient
     {
     }
 
-    public function shellExecute(\Ineersa\CodingAgent\Runtime\Contract\ShellExecutionRequestDTO $request): RunHandle
+    public function shellExecute(string $command, string $sessionId, string $cwd): RunHandle
     {
         throw new \BadMethodCallException();
-    }
-
-    public function completeRun(string $runId): void
-    {
     }
 
     public function compact(string $runId, ?string $customInstructions = null): void

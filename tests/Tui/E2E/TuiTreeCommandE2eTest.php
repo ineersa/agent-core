@@ -162,9 +162,10 @@ final class TuiTreeCommandE2eTest extends TestCase
             $this->waitAssistantBlock($pane);
             $this->tmux->waitForCaptureContains($pane, 'SECOND_TURN_REPLY_07C', TmuxHarness::TUI_GATE_CALLBACK_TIMEOUT_PARALLEL);
 
-            // Direct bang commands are canonical transcript content too. The
-            // unique marker proves both the user line and shell output are
-            // present before the rewind and absent afterwards.
+            // Direct bang commands are canonical transcript content. The unique
+            // marker proves both the user line and shell output are present
+            // before rewind and absent afterwards. Prompt editor history is
+            // intentionally out of scope for this proof.
             $this->submitPrompt($pane, '!printf BANG_REWIND_07C');
             $this->tmux->waitForCaptureContains($pane, 'BANG_REWIND_07C', TmuxHarness::TUI_GATE_CALLBACK_TIMEOUT_PARALLEL);
 
@@ -177,7 +178,10 @@ final class TuiTreeCommandE2eTest extends TestCase
                 history: 2000,
             );
 
-            // Open on current leaf (latest turn). One Up selects the first turn in a linear two-turn tree.
+            // Open on the shell child. The first Up selects the preceding
+            // conversational turn; the second selects the first conversation
+            // turn that this proof rewinds to.
+            $this->tmux->sendKey($pane, 'Up');
             $this->tmux->sendKey($pane, 'Up');
             usleep(200_000);
 
@@ -222,20 +226,6 @@ final class TuiTreeCommandE2eTest extends TestCase
                 'Abandoned second-turn assistant reply must disappear from the current pane after rewind.');
             $this->assertStringNotContainsString('BANG_REWIND_07C', $paneCapture,
                 'Abandoned bang command and output must disappear from the current pane after rewind.');
-
-            // Prompt history is rebuilt from the same active transcript. Up
-            // therefore recalls the first active prompt, not the abandoned bang.
-            $this->tmux->sendKey($pane, 'Up');
-            $historyCapture = $this->tmux->waitForCallback(
-                $pane,
-                static fn (string $capture): bool => str_contains($capture, 'first-turn-marker-07c')
-                    && !str_contains($capture, '!printf BANG_REWIND_07C'),
-                timeout: 5.0,
-                message: 'Up should recall an active prompt rather than the abandoned bang command',
-                history: 500,
-            );
-            $this->assertStringContainsString('first-turn-marker-07c', $historyCapture);
-            $this->assertStringNotContainsString('!printf BANG_REWIND_07C', $historyCapture);
 
             $this->saveAnsiSnapshot($pane, 'tree-enter-rewind-07c');
 

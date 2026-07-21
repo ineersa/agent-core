@@ -66,6 +66,10 @@ final class ContinueCountingAgentRunner implements AgentRunnerInterface
         ++$this->continueCount;
     }
 
+    public function shell(string $runId, string $rawInput): void
+    {
+    }
+
     public function steer(string $runId, AgentMessage $message): void
     {
     }

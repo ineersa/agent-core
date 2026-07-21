@@ -6,7 +6,6 @@ namespace Ineersa\CodingAgent\Tests\Session\Replay;
 
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
-use Ineersa\CodingAgent\Session\Replay\RewindBoundaryPolicy;
 use Ineersa\CodingAgent\Session\Replay\TurnTreeReplayFilter;
 use Ineersa\CodingAgent\Session\TurnTree\TurnTreeProjector;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -21,7 +20,7 @@ final class TurnTreeReplayFilterTest extends TestCase
 
     protected function setUp(): void
     {
-        $this->filter = new TurnTreeReplayFilter(new TurnTreeProjector(), new RewindBoundaryPolicy());
+        $this->filter = new TurnTreeReplayFilter(new TurnTreeProjector());
     }
 
     /**
@@ -97,42 +96,69 @@ final class TurnTreeReplayFilterTest extends TestCase
     }
 
     #[Test]
-    public function testFilterForLeafKeepsActiveDirectShellsButDropsAbandonedCommandsAndOutputAfterRewind(): void
+    public function testFilterForLeafRewindsTerminalShellChildAndKeepsModelBash(): void
     {
-        $events = $this->directShellRewindFixture();
+        // Thesis: terminal bang shells seed a child turn (command anchor on parent,
+        // tool lifecycle on child). Generic command-to-next-TurnAdvanced exclusion
+        // drops the abandoned shell command+output on rewind while model bash on
+        // the active parent path remains.
+        $events = [
+            $this->event(1, 0, RunEventTypeEnum::RunStarted->value, []),
+            $this->event(2, 1, RunEventTypeEnum::TurnAdvanced->value, ['turn_no' => 1, 'parent_turn_no' => null]),
+            $this->event(3, 1, RunEventTypeEnum::LeafSet->value, ['turn_no' => 1, 'reason' => 'continue']),
+            $this->event(4, 1, RunEventTypeEnum::LlmStepCompleted->value, []),
+            $this->event(5, 1, RunEventTypeEnum::AgentEnd->value, []),
+            // Model-generated bash on the parent conversational turn.
+            $this->event(6, 1, RunEventTypeEnum::ToolExecutionStart->value, [
+                'tool_call_id' => 'model-bash',
+                'tool_name' => 'bash',
+            ]),
+            $this->event(7, 1, RunEventTypeEnum::ToolExecutionEnd->value, [
+                'tool_call_id' => 'model-bash',
+                'tool_name' => 'bash',
+                'result' => 'model output',
+            ]),
+            // Terminal bang shell: parent command anchor then child turn ownership.
+            $this->event(8, 1, RunEventTypeEnum::AgentCommandApplied->value, [
+                'kind' => 'shell_command',
+                'text' => '!printf BANG_CHILD',
+            ]),
+            $this->event(9, 2, RunEventTypeEnum::TurnAdvanced->value, ['turn_no' => 2, 'parent_turn_no' => 1]),
+            $this->event(10, 2, RunEventTypeEnum::LeafSet->value, [
+                'turn_no' => 2,
+                'previous_turn_no' => 1,
+                'parent_turn_no' => 1,
+                'reason' => 'shell_command',
+            ]),
+            $this->event(11, 2, RunEventTypeEnum::ToolExecutionStart->value, [
+                'tool_call_id' => 'shell-child',
+                'tool_name' => 'bash',
+            ]),
+            $this->event(12, 2, RunEventTypeEnum::ToolExecutionEnd->value, [
+                'tool_call_id' => 'shell-child',
+                'tool_name' => 'bash',
+                'result' => 'BANG_CHILD',
+            ]),
+            $this->event(13, 0, RunEventTypeEnum::AgentEnd->value, ['reason' => 'completed']),
+            $this->event(14, 1, RunEventTypeEnum::LeafSet->value, ['turn_no' => 1, 'reason' => 'rewind']),
+        ];
 
-        $activeResult = $this->filter->filterForLeaf($this->runId, $events, 2);
-        $activeSeqs = array_map(static fn (RunEvent $event): int => $event->seq, $activeResult->events);
+        $active = $this->filter->filterForLeaf($this->runId, $events, 2);
+        $activeSeqs = array_map(static fn (RunEvent $e): int => $e->seq, $active->events);
+        $this->assertContains(8, $activeSeqs, 'shell command anchor remains on active child path');
+        $this->assertContains(11, $activeSeqs, 'shell tool start on child remains');
+        $this->assertContains(12, $activeSeqs, 'shell tool end on child remains');
+        $this->assertContains(6, $activeSeqs, 'model bash remains on parent path');
 
-        // Both bangs on turn 1 and the bang on turn 2 are active on the turn-2 path.
-        $this->assertContains(6, $activeSeqs);
-        $this->assertContains(7, $activeSeqs);
-        $this->assertContains(9, $activeSeqs);
-        $this->assertContains(10, $activeSeqs);
-        $this->assertContains(15, $activeSeqs);
-        $this->assertContains(16, $activeSeqs);
-        $this->assertContains(17, $activeSeqs);
-        // A model-generated bash lifecycle event has no shell-command anchor and
-        // must not be filtered by the direct-shell replay rule.
-        $this->assertContains(18, $activeSeqs);
-        $this->assertContains(19, $activeSeqs);
-
-        $rewoundResult = $this->filter->filterForLeaf($this->runId, $events, 1);
-        $rewoundSeqs = array_map(static fn (RunEvent $event): int => $event->seq, $rewoundResult->events);
-
-        // Bangs submitted after turn 1 completed are abandoned even though their
-        // command events carry turnNo=1, and all correlated output disappears too.
-        $this->assertNotContains(6, $rewoundSeqs);
-        $this->assertNotContains(7, $rewoundSeqs);
-        $this->assertNotContains(8, $rewoundSeqs);
-        $this->assertNotContains(9, $rewoundSeqs);
-        $this->assertNotContains(10, $rewoundSeqs);
-        $this->assertNotContains(15, $rewoundSeqs);
-        $this->assertNotContains(16, $rewoundSeqs);
-        $this->assertNotContains(19, $rewoundSeqs);
-        $this->assertContains(17, $rewoundSeqs, 'model-generated bash remains replayable');
-        $this->assertContains(18, $rewoundSeqs, 'model-generated bash output remains replayable');
-        $this->assertContains(21, $rewoundSeqs, 'run-level terminal events remain replayable');
+        $rewound = $this->filter->filterForLeaf($this->runId, $events, 1);
+        $rewoundSeqs = array_map(static fn (RunEvent $e): int => $e->seq, $rewound->events);
+        $this->assertNotContains(8, $rewoundSeqs, 'abandoned shell command anchor excluded');
+        $this->assertNotContains(9, $rewoundSeqs, 'abandoned shell child turn excluded');
+        $this->assertNotContains(11, $rewoundSeqs, 'abandoned shell tool start excluded');
+        $this->assertNotContains(12, $rewoundSeqs, 'abandoned shell tool end excluded');
+        $this->assertContains(6, $rewoundSeqs, 'model bash on parent retained');
+        $this->assertContains(7, $rewoundSeqs, 'model bash output on parent retained');
+        $this->assertContains(13, $rewoundSeqs, 'run-level agent_end retained');
     }
 
     #[Test]
@@ -152,61 +178,6 @@ final class TurnTreeReplayFilterTest extends TestCase
 
         $this->assertContains(4, $seqs);
         $this->assertContains(5, $seqs);
-    }
-
-    /** @return list<RunEvent> */
-    private function directShellRewindFixture(): array
-    {
-        return [
-            $this->event(1, 0, RunEventTypeEnum::RunStarted->value, []),
-            $this->event(2, 1, RunEventTypeEnum::TurnAdvanced->value, ['turn_no' => 1, 'parent_turn_no' => null]),
-            $this->event(3, 1, RunEventTypeEnum::LeafSet->value, ['turn_no' => 1, 'reason' => 'continue']),
-            $this->event(4, 1, RunEventTypeEnum::LlmStepCompleted->value, []),
-            $this->event(5, 1, RunEventTypeEnum::AgentEnd->value, []),
-            $this->event(6, 1, RunEventTypeEnum::AgentCommandApplied->value, $this->shellPayload('A', 'shell-a')),
-            $this->event(7, 1, RunEventTypeEnum::ToolExecutionStart->value, $this->shellLifecyclePayload('shell-a')),
-            $this->event(8, 1, RunEventTypeEnum::ToolExecutionEnd->value, $this->shellLifecyclePayload('shell-a') + ['result' => 'A']),
-            $this->event(9, 1, RunEventTypeEnum::AgentCommandApplied->value, $this->shellPayload('B', 'shell-b')),
-            $this->event(10, 1, RunEventTypeEnum::ToolExecutionEnd->value, $this->shellLifecyclePayload('shell-b') + ['result' => 'B']),
-            $this->event(11, 1, RunEventTypeEnum::AgentCommandApplied->value, ['kind' => 'follow_up', 'text' => 'next']),
-            $this->event(12, 2, RunEventTypeEnum::TurnAdvanced->value, ['turn_no' => 2, 'parent_turn_no' => 1]),
-            $this->event(13, 2, RunEventTypeEnum::LeafSet->value, ['turn_no' => 2, 'reason' => 'continue']),
-            $this->event(14, 2, RunEventTypeEnum::AgentEnd->value, []),
-            $this->event(15, 2, RunEventTypeEnum::AgentCommandApplied->value, $this->shellPayload('C', 'shell-c')),
-            $this->event(16, 2, RunEventTypeEnum::ToolExecutionStart->value, $this->shellLifecyclePayload('shell-c')),
-            $this->event(17, 0, RunEventTypeEnum::ToolExecutionStart->value, [
-                'tool_call_id' => 'model-bash',
-                'tool_name' => 'bash',
-            ]),
-            $this->event(18, 0, RunEventTypeEnum::ToolExecutionEnd->value, [
-                'tool_call_id' => 'model-bash',
-                'tool_name' => 'bash',
-                'result' => 'model output',
-            ]),
-            $this->event(19, 2, RunEventTypeEnum::ToolExecutionEnd->value, $this->shellLifecyclePayload('shell-c') + ['result' => 'C']),
-            $this->event(20, 1, RunEventTypeEnum::LeafSet->value, ['turn_no' => 1, 'reason' => 'rewind']),
-            $this->event(21, 0, RunEventTypeEnum::AgentEnd->value, ['reason' => 'completed']),
-        ];
-    }
-
-    /** @return array<string, mixed> */
-    private function shellPayload(string $command, string $toolCallId): array
-    {
-        return [
-            'kind' => 'shell_command',
-            'text' => '!printf '.$command,
-            'command' => 'printf '.$command,
-            'tool_call_id' => $toolCallId,
-        ];
-    }
-
-    /** @return array<string, mixed> */
-    private function shellLifecyclePayload(string $toolCallId): array
-    {
-        return [
-            'tool_call_id' => $toolCallId,
-            'tool_name' => 'bash',
-        ];
     }
 
     /** @return list<RunEvent> */

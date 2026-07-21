@@ -11,7 +11,6 @@ use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\ExecuteShellToolCall;
 use Ineersa\AgentCore\Domain\Tool\ToolCall;
 use Ineersa\AgentCore\Infrastructure\RunLogContext;
-use Ineersa\CodingAgent\Runtime\Shell\ShellCommandEventFactory;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
 
@@ -25,10 +24,10 @@ use Symfony\Component\Messenger\Attribute\AsMessageHandler;
  * Writes canonical tool_execution_start / tool_execution_end events to the
  * EventStore so the TUI poller surfaces shell output in the transcript.
  *
- * For standalone shell commands (first-input !cmd), also writes a terminal
- * AgentEnd event after tool_exec events, ensuring the EventStore ordering
- * guarantee (tool_exec_start → tool_exec_end → agent_end) is maintained by
- * a single writer — no cross-process race with the controller.
+ * For standalone shell commands, also writes a terminal AgentEnd event after
+ * tool_exec events, ensuring the EventStore ordering guarantee
+ * (tool_exec_start → tool_exec_end → agent_end) is maintained by a single
+ * writer — no cross-process race with the controller.
  */
 #[AsMessageHandler(bus: 'agent.execution.bus')]
 final readonly class ExecuteShellToolCallWorker
@@ -65,18 +64,22 @@ final readonly class ExecuteShellToolCallWorker
         $runId = $message->runId();
         $toolCallId = $message->toolCallId;
         $commandText = $message->commandText;
-        // Direct bang shell is branch-owned: use the submission turn. The
-        // canonical command anchor supplies correlation for replay filtering.
         $turnNo = $message->turnNo();
 
         if ('' === $commandText) {
             return;
         }
 
-        $this->eventStore->append(ShellCommandEventFactory::executionStarted(
+        $this->eventStore->append(new RunEvent(
             runId: $runId,
+            seq: 0,
             turnNo: $turnNo,
-            toolCallId: $toolCallId,
+            type: RunEventTypeEnum::ToolExecutionStart->value,
+            payload: [
+                'tool_call_id' => $toolCallId,
+                'tool_name' => 'bash',
+                'order_index' => 0,
+            ],
         ));
 
         $this->logger?->info('shell.tool_execution_started', [
@@ -84,6 +87,7 @@ final readonly class ExecuteShellToolCallWorker
             'component' => 'tool.shell',
             'event_type' => 'shell.tool_execution_started',
             'tool_call_id' => $toolCallId,
+            'command' => $commandText,
         ]);
 
         // Execute bash through the shared tool executor.
@@ -108,12 +112,16 @@ final readonly class ExecuteShellToolCallWorker
         }
 
         // Emit tool_execution_end event with result text.
-        $this->eventStore->append(ShellCommandEventFactory::executionCompleted(
+        $this->eventStore->append(new RunEvent(
             runId: $runId,
+            seq: 0,
             turnNo: $turnNo,
-            toolCallId: $toolCallId,
-            isError: $result->isError,
-            result: $resultText,
+            type: RunEventTypeEnum::ToolExecutionEnd->value,
+            payload: [
+                'tool_call_id' => $toolCallId,
+                'is_error' => $result->isError,
+                'result' => $resultText,
+            ],
         ));
 
         $this->logger?->info('shell.tool_execution_completed', [
@@ -124,17 +132,15 @@ final readonly class ExecuteShellToolCallWorker
             'is_error' => $result->isError,
         ]);
 
-        // Standalone shell commands (first-input !cmd) need a terminal
+        // Standalone shell commands need a terminal
         // AgentEnd event so the TUI poller transitions from Running to
         // Completed and clears the working indicator.  Writing it here,
         // in the same process as tool_exec events, guarantees the
         // EventStore ordering: tool_exec_start → tool_exec_end →
         // agent_end.  This avoids the ordering race that occurs when the
-        // controller calls completeRun() synchronously before the async
+        // controller writes AgentEnd synchronously before the async
         // worker has written tool_exec events (issue #183).
         if ($message->standalone) {
-            // AgentEnd remains run-level (turn 0): it is a lifecycle marker for
-            // the TUI activity machine, not branch content to filter on rewind.
             $this->eventStore->append(new RunEvent(
                 runId: $runId,
                 seq: 0,

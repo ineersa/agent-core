@@ -30,7 +30,7 @@ final class SessionRunStateReplayServiceTest extends TestCase
     protected function setUp(): void
     {
         $this->eventStore = new InMemoryEventStore();
-        $this->treeFilter = new BranchReplayFilterContractAdapter(new TurnTreeReplayFilter(new TurnTreeProjector(), new \Ineersa\CodingAgent\Session\Replay\RewindBoundaryPolicy()));
+        $this->treeFilter = new BranchReplayFilterContractAdapter(new TurnTreeReplayFilter(new TurnTreeProjector()));
         $this->reducer = new RunStateReducer();
         $this->service = new SessionRunStateReplayService(
             $this->eventStore,

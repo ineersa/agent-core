@@ -6,7 +6,6 @@ namespace Ineersa\CodingAgent\Tests\Runtime\Process;
 
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\PromptTemplate\PromptTemplatesRuntimeConfig;
-use Ineersa\CodingAgent\Runtime\Contract\ShellCommandDTO;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
 use Ineersa\CodingAgent\Runtime\Process\AppExecutableLocator;
 use Ineersa\CodingAgent\Runtime\Process\JsonlProcessAgentSessionClient;
@@ -77,7 +76,7 @@ PHP);
         TestDirectoryIsolation::removeDirectory($this->tmpDir);
     }
 
-    public function testSendShellCommandForwardsStandalonePayload(): void
+    public function testSendShellCommandForwardsRawBangTextWithoutStandaloneFlag(): void
     {
         $commandsFile = $this->tmpDir.'/commands.json';
         $dumpFlag = '--commands-dump='.$commandsFile;
@@ -115,9 +114,9 @@ PHP);
             runId: $runId,
         ));
 
-        $client->send($runId, UserCommand::shell(
-            new ShellCommandDTO('ls -1', '!ls -1'),
-            standalone: true,
+        $client->send($runId, new UserCommand(
+            type: 'shell_command',
+            text: '!ls -1',
         ));
 
         $deadline = time() + 5;
@@ -138,8 +137,7 @@ PHP);
         }
 
         $this->assertNotNull($shell, 'shell_command JSONL line must be written');
-        $this->assertSame('ls -1', $shell['payload']['text'] ?? null);
-        $this->assertTrue($shell['payload']['standalone'] ?? false);
-        $this->assertSame('!ls -1', $shell['payload']['original_text'] ?? null);
+        $this->assertSame('!ls -1', $shell['payload']['text'] ?? null);
+        $this->assertArrayNotHasKey('standalone', $shell['payload'] ?? []);
     }
 }

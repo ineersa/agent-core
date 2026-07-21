@@ -7,14 +7,9 @@ namespace Ineersa\CodingAgent\Runtime\InProcess;
 use Ineersa\AgentCore\Contract\AgentRunnerInterface;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\Rewind\RunRewindServiceInterface;
-use Ineersa\AgentCore\Contract\RunStoreInterface;
-use Ineersa\AgentCore\Contract\Tool\ToolExecutorInterface;
-use Ineersa\AgentCore\Domain\Event\RunEvent;
-use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Run\RunMetadata;
 use Ineersa\AgentCore\Domain\Run\StartRunInput;
-use Ineersa\AgentCore\Domain\Tool\ToolCall;
 use Ineersa\CodingAgent\Agent\Context\AgentsContextBuilder;
 use Ineersa\CodingAgent\Config\Ai\AiModelReference;
 use Ineersa\CodingAgent\Config\ModelResolver;
@@ -24,13 +19,11 @@ use Ineersa\CodingAgent\PromptTemplate\PromptTemplateService;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeEventSinkInterface;
-use Ineersa\CodingAgent\Runtime\Contract\ShellExecutionRequestDTO;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
 use Ineersa\CodingAgent\Runtime\Protocol\RunLeafChangedEventFactory;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
-use Ineersa\CodingAgent\Runtime\Shell\ShellCommandEventFactory;
 use Ineersa\CodingAgent\Skills\SkillsContextBuilder;
 use Ineersa\CodingAgent\SystemPrompt\AgentsContextDiscovery;
 use Ineersa\CodingAgent\SystemPrompt\AgentsContextRenderer;
@@ -63,11 +56,9 @@ final class InProcessAgentSessionClient implements AgentSessionClient
         private readonly PromptTemplateService $promptTemplateService,
         private readonly SessionMetadataStore $sessionMetaStore,
         private readonly ModelResolver $modelResolver,
-        private readonly RunStoreInterface $runStore,
         private readonly ?RuntimeEventSinkInterface $transientSink = null,
         private readonly ?ToolQuestionStoreInterface $toolQuestionStore = null,
         private readonly ToolQuestionAnswerResolver $answerResolver = new ToolQuestionAnswerResolver(),
-        private readonly ?ToolExecutorInterface $toolExecutor = null,
         private readonly ?McpSessionLifecycleDispatcher $mcpDispatcher = null,
     ) {
     }
@@ -296,32 +287,14 @@ final class InProcessAgentSessionClient implements AgentSessionClient
         $this->runner->cancel($runId);
     }
 
-    public function shellExecute(ShellExecutionRequestDTO $request): RunHandle
+    public function shellExecute(string $command, string $sessionId, string $cwd): RunHandle
     {
-        // Shell commands write tool_execution events directly to the
-        // event store. Execute bash now so the events are available
-        // when the TUI polls events().
-        $this->executeShellCommand($request);
+        // In-process and controller transports both enter the same
+        // ApplyShellCommand pipeline. The configured in-process bus is
+        // synchronous, so the worker has completed before this returns.
+        $this->runner->shell($sessionId, $command);
 
-        // Emit a terminal AgentEnd event so the TUI poller transitions
-        // from Running to Completed and clears the working indicator.
-        // Without this, the ActivityStateMachine never leaves Running
-        // because standalone shell commands only emit tool_execution
-        // events (no RunCompleted / AgentEnd).
-        $this->completeRun($request->sessionId);
-
-        return new RunHandle(runId: $request->sessionId, status: 'completed');
-    }
-
-    public function completeRun(string $runId): void
-    {
-        $this->eventStore->append(new RunEvent(
-            runId: $runId,
-            seq: 0,
-            turnNo: 0,
-            type: RunEventTypeEnum::AgentEnd->value,
-            payload: ['reason' => 'completed'],
-        ));
+        return new RunHandle(runId: $sessionId, status: 'completed');
     }
 
     public function compact(string $runId, ?string $customInstructions = null): void
@@ -366,91 +339,11 @@ final class InProcessAgentSessionClient implements AgentSessionClient
     }
 
     /**
-     * Execute a shell command submitted via the ! prefix.
-     *
-     * Executes bash through the shared tool executor path, persists
-     * tool_execution_start / tool_execution_end events into the canonical
-     * event store, and does NOT add output to model context or trigger
-     * an LLM turn.
-     *
-     * When no ToolExecutor is configured (null), a diagnostic error
-     * event is emitted instead so the user sees a clear message.
+     * Forward a shell command submitted while a run already exists through
+     * the same locked pipeline used by first-input shellExecute().
      */
     private function handleShellCommandSend(string $runId, UserCommand $command): void
     {
-        $request = ShellExecutionRequestDTO::fromUserCommand($runId, $command);
-        $this->executeShellCommand($request);
-
-        if ($request->standalone) {
-            $this->completeRun($runId);
-        }
-    }
-
-    private function executeShellCommand(ShellExecutionRequestDTO $request): void
-    {
-        $runId = $request->sessionId;
-        $command = $request->command;
-        $toolCallId = uniqid('sh_', true);
-
-        // Same branch-ownership contract as the controller path: the command
-        // anchor and its lifecycle events share the active leaf turn and ID.
-        $runState = $this->runStore->get($runId);
-        $turnNo = null !== $runState ? $runState->turnNo : 0;
-
-        $this->eventStore->append(ShellCommandEventFactory::commandApplied(
-            runId: $runId,
-            turnNo: $turnNo,
-            command: $command,
-            toolCallId: $toolCallId,
-            standalone: $request->standalone,
-        ));
-
-        $this->eventStore->append(ShellCommandEventFactory::executionStarted(
-            runId: $runId,
-            turnNo: $turnNo,
-            toolCallId: $toolCallId,
-        ));
-        if (null === $this->toolExecutor) {
-            // No ToolExecutor configured — emit a diagnostic error event.
-            $this->eventStore->append(ShellCommandEventFactory::executionCompleted(
-                runId: $runId,
-                turnNo: $turnNo,
-                toolCallId: $toolCallId,
-                isError: true,
-                result: 'Shell command execution unavailable: ToolExecutor not configured.',
-            ));
-
-            return;
-        }
-
-        // Execute bash through the shared tool executor.
-        // Uses a synthetic ToolCall so cancellation/timeout/approval hooks
-        // from the existing tool infrastructure apply.
-        $result = $this->toolExecutor->execute(new ToolCall(
-            toolCallId: $toolCallId,
-            toolName: 'bash',
-            arguments: ['command' => $command->commandText],
-            orderIndex: 0,
-            runId: $runId,
-        ));
-
-        // Extract the result text from the ToolResult's content blocks.
-        $resultText = '';
-        foreach ($result->content as $contentBlock) {
-            if (\is_array($contentBlock) && 'text' === ($contentBlock['type'] ?? '')) {
-                $resultText .= (string) ($contentBlock['text'] ?? '');
-            } elseif (\is_string($contentBlock)) {
-                $resultText .= $contentBlock;
-            }
-        }
-
-        // Emit tool_execution_end event with result text.
-        $this->eventStore->append(ShellCommandEventFactory::executionCompleted(
-            runId: $runId,
-            turnNo: $turnNo,
-            toolCallId: $toolCallId,
-            isError: $result->isError,
-            result: $resultText,
-        ));
+        $this->runner->shell($runId, $command->text ?? '');
     }
 }

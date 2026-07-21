@@ -478,7 +478,7 @@ final class SessionHotPromptReplayServiceTest extends TestCase
     {
         $eventStore = new InMemoryEventStore();
         $hotPromptStore = new HotPromptStateStore();
-        $treeFilter = new BranchReplayFilterContractAdapter(new TurnTreeReplayFilter(new TurnTreeProjector(), new \Ineersa\CodingAgent\Session\Replay\RewindBoundaryPolicy()));
+        $treeFilter = new BranchReplayFilterContractAdapter(new TurnTreeReplayFilter(new TurnTreeProjector()));
         $replayService = new SessionHotPromptReplayService($eventStore, $hotPromptStore, new PromptStateReplayService(), new ReplayEventPreparer(), null, null, $treeFilter);
 
         $runId = 'run-branch-replay';
