@@ -54,9 +54,24 @@ Parent sessions also get **`<available_agents>`** (name + description) in contex
 | `tools` | Optional in frontmatter; if omitted, child inherits all parent-available tools (except `subagent`). Explicit non-empty allowlist recommended for restricted agents. YAML lists **or** comma-separated strings; `tools: []` or empty entries fail validation. |
 | `parallelAllowed` | Defaults to **`true`**. Set `parallelAllowed: false` to block use in parallel `tasks`. |
 | `skills` / `skill` | `skill:` merges into `skills`; comma-separated strings are split. |
-| MCP `mode: none` | Default. Child MCP sessions are parent-scoped; `all` does not add MCP tools to the child allowlist the way `specific` does. |
+| MCP availability | Servers marked `availability: all` are inherited by every child, including explicit `tools` lists. `availability: specific` tools require exact/prefix `mcp:` selectors. `mcp:-` suppresses all MCP tools; `mcp:*` selects globally available MCP tools only. |
 | Parallel cap | More than `max_agents` tasks → fail fast; split across multiple `subagent` calls. |
 | Subagent wait timeout | `agents.subagent_tool_timeout_seconds` (default **1800** s, min **60**; below min fails config load) — internal poll deadline for foreground child runs; not ToolExecutor generic timeout. |
+
+## Child MCP policy
+
+- Omitted or explicit `tools` lists inherit MCP tools from servers marked
+  `availability: all` in `.hatfield/mcp.json`.
+- `availability: specific` tools are opt-in through `mcp:` selectors. Selectors
+  add their catalog matches to inherited globals; `mcp:-` wins over every other
+  selector and suppresses all MCP tools.
+- Raw catalog runtime names without the `mcp:` prefix are stripped from explicit
+  non-MCP lists. Tools from `availability: all` servers remain available through
+  global inheritance, while tools from `availability: specific` servers are not
+  opted in by raw names. Unrelated non-MCP names remain available.
+- Selector grammar is terminal-star-only: exact names have no `*`, exactly one
+  terminal `*` is a prefix wildcard, and embedded or multiple stars are not
+  general globs.
 
 ## Workflows
 

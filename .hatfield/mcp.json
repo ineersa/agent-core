@@ -12,6 +12,10 @@
       "url": "http://192.168.2.38:9001/sse",
       "timeoutMs": 60000,
       "availability": "specific"
+    },
+    "jetbrains-index": {
+      "url": "http://127.0.0.1:29175/index-mcp/streamable-http",
+      "availability": "all"
     }
   }
 }

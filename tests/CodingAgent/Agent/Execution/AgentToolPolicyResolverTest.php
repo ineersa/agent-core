@@ -68,19 +68,48 @@ final class AgentToolPolicyResolverTest extends TestCase
         $this->assertNotContains('fork', $policy['tools']);
     }
 
-    public function testExplicitToolsMergeMcpSelectors(): void
+    public function testExplicitToolsMergeGlobalAndSelectedSpecificMcpTools(): void
     {
-        // Explicit mcp: selectors may still include availability-specific tools even when
-        // the active registry snapshot already lists both global and specific MCP names.
+        // Explicit mcp: selectors include inherited globals and selected availability-specific
+        // tools even when the active registry snapshot already lists both MCP names.
         $resolver = new AgentToolPolicyResolver(
             $this->registry(['read', 'context7_resolve', 'websearch_search']),
             $this->mcpResolver(['context7_resolve', 'websearch_search']),
             new AgentsConfig(),
         );
         $policy = $resolver->resolve($this->definition(['read', 'mcp:websearch_search']), 'run-1');
-        $this->assertSame(['read', 'websearch_search'], $policy['tools']);
+        $this->assertSame(['read', 'context7_resolve', 'websearch_search'], $policy['tools']);
         $this->assertSame('specific', $policy['mcp']['mode']);
-        $this->assertSame(['websearch_search'], $policy['mcp']['tools']);
+        $this->assertSame(['context7_resolve', 'websearch_search'], $policy['mcp']['tools']);
+    }
+
+    public function testExplicitRawCatalogRuntimeNameCannotExposeSpecificMcpTool(): void
+    {
+        $resolver = new AgentToolPolicyResolver(
+            $this->registry(['read', 'context7_resolve', 'websearch_search']),
+            $this->mcpResolver(['context7_resolve', 'websearch_search']),
+            new AgentsConfig(),
+        );
+        $policy = $resolver->resolve($this->definition(['read', 'websearch_search']), 'run-1');
+
+        $this->assertSame(['read', 'context7_resolve'], $policy['tools']);
+        $this->assertSame('inherited_global', $policy['mcp']['mode']);
+        $this->assertSame(['context7_resolve'], $policy['mcp']['tools']);
+    }
+
+    public function testExplicitMcpStarCannotExposeSpecificMcpTool(): void
+    {
+        $resolver = new AgentToolPolicyResolver(
+            $this->registry(['read', 'context7_resolve', 'websearch_search']),
+            $this->mcpResolver(['context7_resolve', 'websearch_search']),
+            new AgentsConfig(),
+        );
+        $policy = $resolver->resolve($this->definition(['read', 'mcp:*']), 'run-1');
+
+        $this->assertSame(['read', 'context7_resolve'], $policy['tools']);
+        $this->assertNotContains('websearch_search', $policy['tools']);
+        $this->assertSame('all', $policy['mcp']['mode']);
+        $this->assertSame(['context7_resolve'], $policy['mcp']['tools']);
     }
 
     /**
