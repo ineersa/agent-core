@@ -103,10 +103,14 @@ interface ExtensionApiInterface
     /**
      * Perform one blocking, non-streaming model call.
      *
-     * Model must be an exact configured provider/model reference. Only the
-     * tools array supplied by the extension is exposed; Hatfield ambient tools
-     * are never injected or executed. structuredContent is an optional
-     * provider-neutral JSON Schema object for structured responses.
+     * Model must be an exact configured provider/model reference (no aliases).
+     * Only the tools array supplied by the extension is exposed; Hatfield ambient
+     * tools are never injected or executed.
+     *
+     * structuredContent is an optional JSON Schema object. Hatfield currently
+     * requests structured output via OpenAI-compatible `response_format`
+     * `json_schema` semantics (not a provider-neutral capability claim). Providers
+     * that do not support that shape fail through ModelCallException.
      *
      * Message array schema (list of maps):
      * - role: system|user|assistant|tool (required)

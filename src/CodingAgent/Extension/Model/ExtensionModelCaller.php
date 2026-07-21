@@ -11,7 +11,6 @@ use Ineersa\Hatfield\ExtensionApi\Model\ModelCallException;
 use Ineersa\Hatfield\ExtensionApi\Model\ModelCallResultDTO;
 use Ineersa\Hatfield\ExtensionApi\Model\ModelToolCallDTO;
 use Psr\Log\LoggerInterface;
-use Symfony\AI\Platform\Exception\UnexpectedResultTypeException;
 use Symfony\AI\Platform\Message\Message;
 use Symfony\AI\Platform\Message\MessageBag;
 use Symfony\AI\Platform\Message\Role;
@@ -70,9 +69,9 @@ final readonly class ExtensionModelCaller implements ExtensionModelCallInterface
             if (!$this->isJsonSchemaObject($structuredContent)) {
                 throw ModelCallException::invalidInput('structuredContent must be a JSON Schema object map.');
             }
-            // Provider-neutral schema request. Symfony AI structured-output
-            // class mapping is intentionally not used; extensions receive
-            // parsed JSON when the provider returns object-like content.
+            // OpenAI-compatible json_schema response_format semantics. Not all
+            // providers honor this shape; unsupported providers fail through the
+            // normal ModelCallException contract.
             $options['response_format'] = [
                 'type' => 'json_schema',
                 'json_schema' => [
@@ -90,21 +89,31 @@ final readonly class ExtensionModelCaller implements ExtensionModelCallInterface
         } catch (ModelCallException $e) {
             throw $e;
         } catch (\Throwable $e) {
-            $category = $this->classifyFailure($e);
+            // Decide the public error first so logs and thrown ModelCallException agree.
+            if ($this->isUnsupportedNonStreaming($e)) {
+                $errorCode = ModelCallException::CODE_UNSUPPORTED;
+                $errorCategory = 'unsupported';
+                $exception = ModelCallException::unsupported(
+                    $modelRef->toString(),
+                    'Provider does not support the requested non-streaming model call semantics.',
+                );
+            } else {
+                $errorCode = ModelCallException::CODE_PROVIDER_FAILED;
+                $errorCategory = $this->classifyFailure($e);
+                $exception = ModelCallException::providerFailed($modelRef->toString(), $errorCategory);
+            }
+
             $this->logger->warning('extension.model_call_failed', [
                 'component' => 'extension_model_caller',
                 'event_type' => 'model_call_failed',
                 'model' => $modelRef->toString(),
                 'provider' => $modelRef->providerId,
-                'error_category' => $category,
+                'error_code' => $errorCode,
+                'error_category' => $errorCategory,
                 'exception_class' => $e::class,
             ]);
 
-            if ($this->isUnsupportedNonStreaming($e) || str_contains(mb_strtolower($e->getMessage()), 'stream')) {
-                throw ModelCallException::unsupported($modelRef->toString(), 'Provider does not support the requested non-streaming model call semantics.');
-            }
-
-            throw ModelCallException::providerFailed($modelRef->toString(), $category);
+            throw $exception;
         }
 
         return $this->mapResult($modelRef->toString(), $result, null !== $structuredContent);
@@ -297,11 +306,11 @@ final readonly class ExtensionModelCaller implements ExtensionModelCallInterface
 
     private function mapResult(string $model, mixed $result, bool $structuredRequested): ModelCallResultDTO
     {
-        $content = '';
-        $toolCalls = [];
-        $structured = null;
-
         try {
+            $content = '';
+            $toolCalls = [];
+            $structured = null;
+
             if ($result instanceof TextResult) {
                 $content = $result->getContent();
             } elseif ($result instanceof ToolCallResult) {
@@ -330,29 +339,35 @@ final readonly class ExtensionModelCaller implements ExtensionModelCallInterface
             } else {
                 throw ModelCallException::providerFailed($model, 'unexpected_result_type');
             }
-        } catch (UnexpectedResultTypeException $e) {
-            $this->logger->warning('extension.model_call_unexpected_result', [
+
+            if ($structuredRequested && null === $structured && '' !== $content) {
+                $decoded = json_decode($content, true);
+                if (\JSON_ERROR_NONE === json_last_error() && (\is_array($decoded) || \is_object($decoded))) {
+                    $structured = $this->normalizeStructured($decoded);
+                }
+            }
+
+            return new ModelCallResultDTO(
+                model: $model,
+                content: $content,
+                toolCalls: $toolCalls,
+                structuredContent: $structured,
+            );
+        } catch (ModelCallException $e) {
+            throw $e;
+        } catch (\Throwable $e) {
+            // Never leak JsonException/ValueError/provider result internals across callModel().
+            $this->logger->warning('extension.model_call_failed', [
                 'component' => 'extension_model_caller',
-                'event_type' => 'model_call_unexpected_result',
+                'event_type' => 'model_call_result_mapping_failed',
                 'model' => $model,
+                'error_code' => ModelCallException::CODE_PROVIDER_FAILED,
+                'error_category' => 'result_mapping_failed',
                 'exception_class' => $e::class,
             ]);
-            throw ModelCallException::providerFailed($model, 'unexpected_result_type');
-        }
 
-        if ($structuredRequested && null === $structured && '' !== $content) {
-            $decoded = json_decode($content, true);
-            if (\JSON_ERROR_NONE === json_last_error() && (\is_array($decoded) || \is_object($decoded))) {
-                $structured = $this->normalizeStructured($decoded);
-            }
+            throw ModelCallException::providerFailed($model, 'result_mapping_failed');
         }
-
-        return new ModelCallResultDTO(
-            model: $model,
-            content: $content,
-            toolCalls: $toolCalls,
-            structuredContent: $structured,
-        );
     }
 
     /**
@@ -410,12 +425,19 @@ final readonly class ExtensionModelCaller implements ExtensionModelCallInterface
         return 'provider_error';
     }
 
+    /**
+     * Only explicit non-streaming unsupport phrases. Do not match generic
+     * "stream" substrings (e.g. "upstream connect timeout").
+     */
     private function isUnsupportedNonStreaming(\Throwable $e): bool
     {
         $message = mb_strtolower($e->getMessage());
 
         return str_contains($message, 'non-stream')
+            || str_contains($message, 'non streaming')
             || str_contains($message, 'streaming required')
-            || str_contains($message, 'stream only');
+            || str_contains($message, 'stream only')
+            || str_contains($message, 'streaming-only')
+            || str_contains($message, 'does not support non-streaming');
     }
 }

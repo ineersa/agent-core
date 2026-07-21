@@ -190,6 +190,98 @@ final class ExtensionModelCallerTest extends TestCase
         }
 
         $this->assertSame('extension.model_call_failed', $logger->records[0]['message'] ?? null);
+        $this->assertSame(ModelCallException::CODE_PROVIDER_FAILED, $logger->records[0]['context']['error_code'] ?? null);
+        $this->assertSame('provider_error', $logger->records[0]['context']['error_category'] ?? null);
+        $this->assertArrayNotHasKey('exception_message', $logger->records[0]['context'] ?? []);
+    }
+
+    public function testUpstreamConnectTimeoutIsProviderTimeoutNotUnsupported(): void
+    {
+        $platform = $this->createMock(SymfonyPlatformInterface::class);
+        $platform->expects($this->once())
+            ->method('invoke')
+            ->willThrowException(new \RuntimeException('upstream connect timeout'));
+
+        $factory = $this->createMock(SymfonyPlatformFactoryInterface::class);
+        $factory->expects($this->once())->method('createPlatform')->willReturn($platform);
+
+        $logger = new TestLogger();
+        $caller = $this->caller($factory, $logger);
+
+        try {
+            $caller->call('llama.cpp/test', [['role' => 'user', 'content' => 'hi']]);
+            $this->fail('Expected ModelCallException');
+        } catch (ModelCallException $e) {
+            $this->assertSame(ModelCallException::CODE_PROVIDER_FAILED, $e->errorCode);
+            $this->assertNotSame(ModelCallException::CODE_UNSUPPORTED, $e->errorCode);
+            $this->assertStringContainsString('(timeout)', $e->getMessage());
+            $this->assertStringNotContainsString('upstream connect timeout', $e->getMessage());
+        }
+
+        $this->assertSame(ModelCallException::CODE_PROVIDER_FAILED, $logger->records[0]['context']['error_code'] ?? null);
+        $this->assertSame('timeout', $logger->records[0]['context']['error_category'] ?? null);
+    }
+
+    public function testExplicitStreamingOnlyPhraseIsUnsupportedAndLoggedConsistently(): void
+    {
+        $platform = $this->createMock(SymfonyPlatformInterface::class);
+        $platform->expects($this->once())
+            ->method('invoke')
+            ->willThrowException(new \RuntimeException('provider is stream only'));
+
+        $factory = $this->createMock(SymfonyPlatformFactoryInterface::class);
+        $factory->expects($this->once())->method('createPlatform')->willReturn($platform);
+
+        $logger = new TestLogger();
+        $caller = $this->caller($factory, $logger);
+
+        try {
+            $caller->call('llama.cpp/test', [['role' => 'user', 'content' => 'hi']]);
+            $this->fail('Expected ModelCallException');
+        } catch (ModelCallException $e) {
+            $this->assertSame(ModelCallException::CODE_UNSUPPORTED, $e->errorCode);
+        }
+
+        $this->assertSame(ModelCallException::CODE_UNSUPPORTED, $logger->records[0]['context']['error_code'] ?? null);
+        $this->assertSame('unsupported', $logger->records[0]['context']['error_category'] ?? null);
+    }
+
+    public function testResultMappingJsonFailureBecomesSanitizedProviderFailed(): void
+    {
+        $cyclic = new \stdClass();
+        $cyclic->self = $cyclic;
+
+        $platform = $this->createMock(SymfonyPlatformInterface::class);
+        $platform->expects($this->once())
+            ->method('invoke')
+            ->willReturn($this->deferredObject($cyclic));
+
+        $factory = $this->createMock(SymfonyPlatformFactoryInterface::class);
+        $factory->expects($this->once())->method('createPlatform')->willReturn($platform);
+
+        $logger = new TestLogger();
+        $caller = $this->caller($factory, $logger);
+
+        try {
+            $caller->call(
+                'llama.cpp/test',
+                [['role' => 'user', 'content' => 'observe']],
+                structuredContent: [
+                    'type' => 'object',
+                    'properties' => ['ok' => ['type' => 'boolean']],
+                ],
+            );
+            $this->fail('Expected ModelCallException');
+        } catch (ModelCallException $e) {
+            $this->assertSame(ModelCallException::CODE_PROVIDER_FAILED, $e->errorCode);
+            $this->assertStringContainsString('(result_mapping_failed)', $e->getMessage());
+            $this->assertStringNotContainsString('Recursion', $e->getMessage());
+        }
+
+        $this->assertSame('extension.model_call_failed', $logger->records[0]['message'] ?? null);
+        $this->assertSame('model_call_result_mapping_failed', $logger->records[0]['context']['event_type'] ?? null);
+        $this->assertSame(ModelCallException::CODE_PROVIDER_FAILED, $logger->records[0]['context']['error_code'] ?? null);
+        $this->assertSame('result_mapping_failed', $logger->records[0]['context']['error_category'] ?? null);
         $this->assertArrayNotHasKey('exception_message', $logger->records[0]['context'] ?? []);
     }
 
@@ -283,14 +375,14 @@ final class ExtensionModelCallerTest extends TestCase
     }
 
     /**
-     * @param array<string, mixed> $object
+     * @param object|array<string, mixed> $object
      */
-    private function deferredObject(array $object): DeferredResult
+    private function deferredObject(object|array $object): DeferredResult
     {
         $raw = $this->createStub(RawResultInterface::class);
         $converter = new class($object) implements ResultConverterInterface {
-            /** @param array<string, mixed> $object */
-            public function __construct(private array $object)
+            /** @param object|array<string, mixed> $object */
+            public function __construct(private object|array $object)
             {
             }
 

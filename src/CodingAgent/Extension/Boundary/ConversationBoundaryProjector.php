@@ -110,13 +110,9 @@ final readonly class ConversationBoundaryProjector
 
     private function resolveSourceStartSeq(string $runId, int $sourceEndSeq): int
     {
-        try {
-            $history = $this->eventStore->allFor($runId);
-        } catch (\Throwable) {
-            // Best-effort projection: if history cannot be read, use a
-            // defensible single-event range around the terminal marker.
-            return $sourceEndSeq;
-        }
+        // Propagate event-store failures so ConversationBoundaryNotifier can
+        // isolate/log them and skip delivering an inaccurate boundary DTO.
+        $history = $this->eventStore->allFor($runId);
 
         $previousTerminalSeq = 0;
         foreach ($history as $event) {

@@ -165,4 +165,56 @@ final class ConversationBoundaryNotifierTest extends TestCase
         $this->assertSame(3, $seen[0]->sourceEndSeq);
         $this->assertSame(ConversationBoundaryOutcomeEnum::Cancelled, $seen[0]->outcome);
     }
+
+    public function testEventStoreHistoryReadFailureIsIsolatedAndSkipsHooks(): void
+    {
+        $eventStore = new class implements \Ineersa\AgentCore\Contract\EventStoreInterface {
+            public function append(RunEvent $event): RunEvent
+            {
+                return $event;
+            }
+
+            public function appendMany(array $events): array
+            {
+                return $events;
+            }
+
+            public function allFor(string $runId): array
+            {
+                throw new \RuntimeException('events.jsonl unreadable for '.$runId);
+            }
+        };
+
+        $registry = new ExtensionHookRegistry();
+        $called = false;
+        $registry->addAfterConversationBoundaryHook(new class($called) implements AfterConversationBoundaryHookInterface {
+            public function __construct(private bool &$called)
+            {
+            }
+
+            public function afterConversationBoundary(ConversationBoundaryDTO $boundary): void
+            {
+                $this->called = true;
+            }
+        });
+
+        $logger = new TestLogger();
+        $notifier = new ConversationBoundaryNotifier(
+            new ConversationBoundaryProjector($eventStore),
+            $registry,
+            $logger,
+        );
+
+        $terminal = new RunEvent('run-5', 7, 3, 'agent_end', ['reason' => 'completed']);
+        $notifier->notifyPersistedBatch('run-5', [$terminal]);
+
+        $this->assertFalse($called);
+        $this->assertSame('warning', $logger->records[0]['level'] ?? null);
+        $this->assertSame('extension.conversation_boundary_project_failed', $logger->records[0]['message'] ?? null);
+        $this->assertSame('extension_conversation_boundary', $logger->records[0]['context']['component'] ?? null);
+        $this->assertSame('conversation_boundary_project_failed', $logger->records[0]['context']['event_type'] ?? null);
+        $this->assertSame('run-5', $logger->records[0]['context']['run_id'] ?? null);
+        $this->assertArrayNotHasKey('exception_message', $logger->records[0]['context'] ?? []);
+        $this->assertArrayNotHasKey('payload', $logger->records[0]['context'] ?? []);
+    }
 }
