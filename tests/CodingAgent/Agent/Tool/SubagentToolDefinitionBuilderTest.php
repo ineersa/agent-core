@@ -38,6 +38,8 @@ final class SubagentToolDefinitionBuilderTest extends IsolatedKernelTestCase
         $guidelines = implode("\n", $def->promptGuidelines);
         $this->assertStringContainsString('Decision rule', $guidelines);
         $this->assertStringContainsString('{"tasks":', $guidelines);
+        // Canonical single-mode shape (not invalid pseudo-JSON like {"agent","task"}).
+        $this->assertStringContainsString('{"agent":"...","task":"..."}', $guidelines);
         $this->assertStringContainsString('Anti-pattern', $guidelines);
         $this->assertStringContainsString('serialize', $guidelines);
         $this->assertStringContainsString('depends', $guidelines);

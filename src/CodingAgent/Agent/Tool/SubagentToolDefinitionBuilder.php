@@ -63,7 +63,7 @@ final class SubagentToolDefinitionBuilder
             promptLine: 'subagent — launch one or more interactive foreground subagents; batch independent work in tasks; single mode returns full handoff inline',
             promptGuidelines: [
                 'Use subagent to delegate focused work to specialized child agents.',
-                'Decision rule: batch independent scouts/reviewers in ONE {"tasks":[...]} call whenever within agents.max_agents; use {"agent","task"} only for exactly one child or work that must be serialized.',
+                'Decision rule: batch independent scouts/reviewers in ONE {"tasks":[...]} call whenever within agents.max_agents; use {"agent":"...","task":"..."} only for exactly one child or work that must be serialized.',
                 'Correct independent batch (runs concurrently): {"tasks":[{"agent":"scout","task":"A"},{"agent":"scout","task":"B"}]}.',
                 'Anti-pattern for independent work: multiple separate single-mode subagent calls — they are valid syntax but serialize, so independent reconnaissance waits unnecessarily.',
                 'Correct sequential: launch scout B only after scout A returns when B depends on A\'s findings; re-review after a fix is sequential.',
