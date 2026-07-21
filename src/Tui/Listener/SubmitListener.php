@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Listener;
 
+use Ineersa\CodingAgent\Runtime\Contract\ShellCommandDTO;
+use Ineersa\CodingAgent\Runtime\Contract\ShellExecutionRequestDTO;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
@@ -548,6 +550,11 @@ final class SubmitListener implements TuiListenerRegistrar
         TuiSessionLifecycleDispatcher $lifecycle,
     ): void {
         try {
+            $command = new ShellCommandDTO(
+                commandText: $shellCommand->command,
+                originalText: $shellCommand->originalText,
+            );
+
             // Shell commands do not promote [Image #N] placeholders — image paste is chat-submit only.
             // Create a session if this is the first input.
             if ('' === $state->sessionId) {
@@ -579,19 +586,18 @@ final class SubmitListener implements TuiListenerRegistrar
                 // relying on the tick/poller cycle, so the working indicator
                 // clears promptly. The poller will still pick up tool_exec
                 // events on the next tick and project them as transcript blocks.
-                $state->handle = $client->shellExecute(
-                    $shellCommand->command,
-                    $state->sessionId,
-                    $state->request->cwd ?? '',
-                    $shellCommand->originalText,
-                );
+                $state->handle = $client->shellExecute(ShellExecutionRequestDTO::first(
+                    command: $command,
+                    sessionId: $state->sessionId,
+                    cwd: $state->request->cwd ?? '',
+                ));
                 $state->activity = RunActivityStateEnum::Completed;
                 $state->isShellRun = true; // track for normal-submit-after-shell restart
                 $sessionStore->updateMetadata(
                     $state->sessionId,
                     [
                         'run_id' => $state->sessionId,
-                        'prompt' => '!'.$shellCommand->command,
+                        'prompt' => $command->originalText,
                     ],
                 );
                 $state->lastSeq = 0;
@@ -603,17 +609,9 @@ final class SubmitListener implements TuiListenerRegistrar
                 // in-flight LLM turn to attach tool_exec events to.  Request a
                 // standalone shell so ExecuteShellToolCallWorker emits agent_end
                 // and the poller clears Working/Running (issue #183 / journey phase 9).
-                $shellPayload = $state->activity->isTerminal()
-                    ? ['standalone' => true, 'original_text' => $shellCommand->originalText]
-                    : ['original_text' => $shellCommand->originalText];
-
                 $client->send(
                     $state->handle->runId,
-                    new UserCommand(
-                        type: 'shell_command',
-                        text: $shellCommand->command,
-                        payload: $shellPayload,
-                    ),
+                    UserCommand::shell($command, $state->activity->isTerminal()),
                 );
 
                 // The controller must NEVER synchronously call completeRun()

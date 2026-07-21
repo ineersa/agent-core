@@ -57,20 +57,19 @@ final class ExecuteShellToolCallWorkerTest extends TestCase
         $this->assertSame(1, $this->appendedEvents[0]->seq);
         $this->assertSame(RunEventTypeEnum::ToolExecutionStart->value, $this->appendedEvents[0]->type);
         $this->assertSame(2, $this->appendedEvents[0]->turnNo);
-        $this->assertTrue($this->appendedEvents[0]->payload['direct_shell'] ?? false);
         $this->assertSame('sh_tc_1', $this->appendedEvents[0]->payload['tool_call_id'] ?? null);
 
         // Seq 2: tool_execution_end
         $this->assertSame(2, $this->appendedEvents[1]->seq);
         $this->assertSame(RunEventTypeEnum::ToolExecutionEnd->value, $this->appendedEvents[1]->type);
         $this->assertSame(2, $this->appendedEvents[1]->turnNo);
-        $this->assertTrue($this->appendedEvents[1]->payload['direct_shell'] ?? false);
         $this->assertSame('sh_tc_1', $this->appendedEvents[1]->payload['tool_call_id'] ?? null);
         $this->assertStringContainsString('hello', (string) ($this->appendedEvents[1]->payload['result'] ?? ''));
 
         // Seq 3: agent_end (final event, written only for standalone)
         $this->assertSame(3, $this->appendedEvents[2]->seq);
         $this->assertSame(RunEventTypeEnum::AgentEnd->value, $this->appendedEvents[2]->type);
+        $this->assertSame(0, $this->appendedEvents[2]->turnNo);
         $this->assertSame('completed', $this->appendedEvents[2]->payload['reason'] ?? null);
 
         // Ascending seq order

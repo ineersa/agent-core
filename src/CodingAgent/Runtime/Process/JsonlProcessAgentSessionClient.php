@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Runtime\Process;
 use Ineersa\CodingAgent\PromptTemplate\PromptTemplatesRuntimeConfig;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
+use Ineersa\CodingAgent\Runtime\Contract\ShellExecutionRequestDTO;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
 use Ineersa\CodingAgent\Runtime\Protocol\JsonlCodec;
@@ -317,13 +318,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
                 'request_id' => $command->payload['request_id'] ?? '',
                 'answer' => $command->payload['answer'] ?? null,
             ], static fn (mixed $v): bool => null !== $v),
-            'shell_command' => array_filter([
-                'text' => $command->text,
-                'standalone' => true === ($command->payload['standalone'] ?? false) ? true : null,
-                'original_text' => \is_string($command->payload['original_text'] ?? null) && '' !== $command->payload['original_text']
-                    ? $command->payload['original_text']
-                    : null,
-            ], static fn (mixed $v): bool => null !== $v),
+            'shell_command' => ShellExecutionRequestDTO::fromUserCommand($runId, $command)->toRuntimePayload(),
             'rewind_to_turn' => array_filter([
                 'turn_no' => $command->payload['turn_no'] ?? null,
             ], static fn (mixed $v): bool => null !== $v),
@@ -423,29 +418,24 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
         $this->writeCommandWithRetry($cmd);
     }
 
-    public function shellExecute(string $command, string $sessionId, string $cwd, string $originalText = ''): RunHandle
+    public function shellExecute(ShellExecutionRequestDTO $request): RunHandle
     {
-        $this->activeRunId = $sessionId;
-        $this->sessionId = $sessionId;
-        $this->primaryRunId = $sessionId;
+        $this->activeRunId = $request->sessionId;
+        $this->sessionId = $request->sessionId;
+        $this->primaryRunId = $request->sessionId;
         $this->ensureProcessRunning();
         $this->waitForRuntimeReady();
 
         $cmd = new RuntimeCommand(
             id: uniqid('cmd_', true),
             type: 'shell_command',
-            runId: $sessionId,
-            payload: array_filter([
-                'text' => $command,
-                'cwd' => $cwd,
-                'standalone' => true,
-                'original_text' => '' !== $originalText ? $originalText : null,
-            ], static fn (mixed $v): bool => null !== $v),
+            runId: $request->sessionId,
+            payload: $request->toRuntimePayload(),
         );
 
         $this->writeCommandWithRetry($cmd);
 
-        return new RunHandle(runId: $sessionId, status: 'running');
+        return new RunHandle(runId: $request->sessionId, status: 'running');
     }
 
     public function completeRun(string $runId): void

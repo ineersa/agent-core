@@ -68,6 +68,7 @@ final class RuntimeEventPollerTest extends TestCase
                 $this->createStub(EventDispatcherInterface::class),
             ),
             $this->sessionTranscriptProvider,
+            new PromptHistory(),
         );
     }
 
@@ -731,6 +732,7 @@ final class RuntimeEventPollerTest extends TestCase
                 $this->createStub(EventDispatcherInterface::class),
             ),
             $sessionTranscriptProvider,
+            new PromptHistory(),
         );
 
         $this->client->expects($this->once())
@@ -857,6 +859,7 @@ final class RuntimeEventPollerTest extends TestCase
                 $this->createStub(EventDispatcherInterface::class),
             ),
             $sessionTranscriptProvider,
+            new PromptHistory(),
         );
 
         $result = $poller->poll($this->state, $this->client);
@@ -916,6 +919,7 @@ final class RuntimeEventPollerTest extends TestCase
                 $this->createStub(EventDispatcherInterface::class),
             ),
             $this->sessionTranscriptProvider,
+            new PromptHistory(),
         );
 
         $result = $poller->poll($this->state, $this->client);
@@ -994,6 +998,7 @@ final class RuntimeEventPollerTest extends TestCase
                 $this->createStub(EventDispatcherInterface::class),
             ),
             $sessionTranscriptProvider,
+            new PromptHistory(),
         );
 
         $this->client->expects($this->once())

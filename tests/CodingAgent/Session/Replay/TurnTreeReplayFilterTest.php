@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Tests\Session\Replay;
 
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
+use Ineersa\CodingAgent\Session\Replay\RewindBoundaryPolicy;
 use Ineersa\CodingAgent\Session\Replay\TurnTreeReplayFilter;
 use Ineersa\CodingAgent\Session\TurnTree\TurnTreeProjector;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -20,7 +21,7 @@ final class TurnTreeReplayFilterTest extends TestCase
 
     protected function setUp(): void
     {
-        $this->filter = new TurnTreeReplayFilter(new TurnTreeProjector());
+        $this->filter = new TurnTreeReplayFilter(new TurnTreeProjector(), new RewindBoundaryPolicy());
     }
 
     /**
@@ -108,9 +109,10 @@ final class TurnTreeReplayFilterTest extends TestCase
         $this->assertContains(7, $activeSeqs);
         $this->assertContains(9, $activeSeqs);
         $this->assertContains(10, $activeSeqs);
+        $this->assertContains(15, $activeSeqs);
         $this->assertContains(16, $activeSeqs);
         $this->assertContains(17, $activeSeqs);
-        // A model-generated bash lifecycle event has no direct_shell marker and
+        // A model-generated bash lifecycle event has no shell-command anchor and
         // must not be filtered by the direct-shell replay rule.
         $this->assertContains(18, $activeSeqs);
         $this->assertContains(19, $activeSeqs);
@@ -204,7 +206,6 @@ final class TurnTreeReplayFilterTest extends TestCase
         return [
             'tool_call_id' => $toolCallId,
             'tool_name' => 'bash',
-            'direct_shell' => true,
         ];
     }
 

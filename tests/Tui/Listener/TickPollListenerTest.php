@@ -14,6 +14,7 @@ use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Ineersa\Tui\Editor\PromptEditor;
+use Ineersa\Tui\Listener\PromptHistory;
 use Ineersa\Tui\Listener\RuntimeQuestionEventHandler;
 use Ineersa\Tui\Listener\TickPollListener;
 use Ineersa\Tui\Question\QuestionController;
@@ -603,7 +604,7 @@ final class TickPollListenerTest extends TestCase
         $eventApplier = (new \ReflectionClass(TuiRuntimeEventApplier::class))->newInstanceWithoutConstructor();
         $logger = $this->createStub(LoggerInterface::class);
         $boundary = (new \ReflectionClass(RuntimeExceptionBoundary::class))->newInstanceWithoutConstructor();
-        $poller = new RuntimeEventPoller($eventApplier, $logger, $boundary, $this->createStub(SessionTranscriptProviderInterface::class));
+        $poller = new RuntimeEventPoller($eventApplier, $logger, $boundary, $this->createStub(SessionTranscriptProviderInterface::class), new PromptHistory());
 
         $coordinator = new QuestionCoordinator();
         $coordinator->enqueue(
@@ -679,7 +680,7 @@ final class TickPollListenerTest extends TestCase
         $eventApplier = (new \ReflectionClass(TuiRuntimeEventApplier::class))->newInstanceWithoutConstructor();
         $logger = $this->createStub(LoggerInterface::class);
         $boundary = (new \ReflectionClass(RuntimeExceptionBoundary::class))->newInstanceWithoutConstructor();
-        $poller = new RuntimeEventPoller($eventApplier, $logger, $boundary, $this->createStub(SessionTranscriptProviderInterface::class));
+        $poller = new RuntimeEventPoller($eventApplier, $logger, $boundary, $this->createStub(SessionTranscriptProviderInterface::class), new PromptHistory());
 
         $coordinator = new QuestionCoordinator();
         $coordinator->enqueue(
@@ -777,7 +778,7 @@ final class TickPollListenerTest extends TestCase
         $eventApplier = (new \ReflectionClass(TuiRuntimeEventApplier::class))->newInstanceWithoutConstructor();
         $logger = $this->createStub(LoggerInterface::class);
         $boundary = (new \ReflectionClass(RuntimeExceptionBoundary::class))->newInstanceWithoutConstructor();
-        $poller = new RuntimeEventPoller($eventApplier, $logger, $boundary, $this->createStub(SessionTranscriptProviderInterface::class));
+        $poller = new RuntimeEventPoller($eventApplier, $logger, $boundary, $this->createStub(SessionTranscriptProviderInterface::class), new PromptHistory());
 
         $coordinator = new QuestionCoordinator();
         $coordinator->enqueue(
@@ -918,6 +919,7 @@ final class TickPollListenerTest extends TestCase
             new NullLogger(),
             $boundary,
             $this->createStub(SessionTranscriptProviderInterface::class),
+            new PromptHistory(),
         );
     }
 

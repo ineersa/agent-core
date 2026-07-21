@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Tests\Runtime\Process;
 
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\PromptTemplate\PromptTemplatesRuntimeConfig;
+use Ineersa\CodingAgent\Runtime\Contract\ShellCommandDTO;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
 use Ineersa\CodingAgent\Runtime\Process\AppExecutableLocator;
 use Ineersa\CodingAgent\Runtime\Process\JsonlProcessAgentSessionClient;
@@ -114,10 +115,9 @@ PHP);
             runId: $runId,
         ));
 
-        $client->send($runId, new UserCommand(
-            type: 'shell_command',
-            text: 'ls -1',
-            payload: ['standalone' => true],
+        $client->send($runId, UserCommand::shell(
+            new ShellCommandDTO('ls -1', '!ls -1'),
+            standalone: true,
         ));
 
         $deadline = time() + 5;
@@ -140,5 +140,6 @@ PHP);
         $this->assertNotNull($shell, 'shell_command JSONL line must be written');
         $this->assertSame('ls -1', $shell['payload']['text'] ?? null);
         $this->assertTrue($shell['payload']['standalone'] ?? false);
+        $this->assertSame('!ls -1', $shell['payload']['original_text'] ?? null);
     }
 }

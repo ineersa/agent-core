@@ -11,6 +11,7 @@ use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\ExecuteShellToolCall;
 use Ineersa\AgentCore\Domain\Tool\ToolCall;
 use Ineersa\AgentCore\Infrastructure\RunLogContext;
+use Ineersa\CodingAgent\Runtime\Shell\ShellCommandEventFactory;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
 
@@ -64,26 +65,18 @@ final readonly class ExecuteShellToolCallWorker
         $runId = $message->runId();
         $toolCallId = $message->toolCallId;
         $commandText = $message->commandText;
-        // Direct bang shell is branch-owned: use the submission turn and mark
-        // lifecycle events as direct_shell so rewind can drop abandoned bangs
-        // without removing model-generated bash (which lacks this flag).
+        // Direct bang shell is branch-owned: use the submission turn. The
+        // canonical command anchor supplies correlation for replay filtering.
         $turnNo = $message->turnNo();
 
         if ('' === $commandText) {
             return;
         }
 
-        $this->eventStore->append(new RunEvent(
+        $this->eventStore->append(ShellCommandEventFactory::executionStarted(
             runId: $runId,
-            seq: 0,
             turnNo: $turnNo,
-            type: RunEventTypeEnum::ToolExecutionStart->value,
-            payload: [
-                'tool_call_id' => $toolCallId,
-                'tool_name' => 'bash',
-                'order_index' => 0,
-                'direct_shell' => true,
-            ],
+            toolCallId: $toolCallId,
         ));
 
         $this->logger?->info('shell.tool_execution_started', [
@@ -115,17 +108,12 @@ final readonly class ExecuteShellToolCallWorker
         }
 
         // Emit tool_execution_end event with result text.
-        $this->eventStore->append(new RunEvent(
+        $this->eventStore->append(ShellCommandEventFactory::executionCompleted(
             runId: $runId,
-            seq: 0,
             turnNo: $turnNo,
-            type: RunEventTypeEnum::ToolExecutionEnd->value,
-            payload: [
-                'tool_call_id' => $toolCallId,
-                'is_error' => $result->isError,
-                'result' => $resultText,
-                'direct_shell' => true,
-            ],
+            toolCallId: $toolCallId,
+            isError: $result->isError,
+            result: $resultText,
         ));
 
         $this->logger?->info('shell.tool_execution_completed', [

@@ -114,7 +114,7 @@ final class ObservingSpyClient implements AgentSessionClient
     {
     }
 
-    public function shellExecute(string $command, string $sessionId, string $cwd, string $originalText = ''): RunHandle
+    public function shellExecute(\Ineersa\CodingAgent\Runtime\Contract\ShellExecutionRequestDTO $request): RunHandle
     {
         throw new \RuntimeException('not used');
     }

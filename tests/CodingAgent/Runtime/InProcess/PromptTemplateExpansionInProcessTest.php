@@ -10,6 +10,7 @@ use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Run\StartRunInput;
 use Ineersa\AgentCore\Domain\Tool\ToolCall;
 use Ineersa\AgentCore\Domain\Tool\ToolResult;
+use Ineersa\CodingAgent\Runtime\Contract\ShellCommandDTO;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
 use Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient;
@@ -170,9 +171,9 @@ final class PromptTemplateExpansionInProcessTest extends PerMethodIsolatedKernel
 
         // shell_command text must NOT be expanded — the raw command
         // text is passed to the tool executor unchanged.
-        $this->client()->send('run-1', new UserCommand(
-            type: 'shell_command',
-            text: '/review rm -rf',
+        $this->client()->send('run-1', UserCommand::shell(
+            new ShellCommandDTO('/review rm -rf', '!/review rm -rf'),
+            standalone: false,
         ));
 
         $this->assertNotNull($this->spyToolExecutor->lastToolCall);

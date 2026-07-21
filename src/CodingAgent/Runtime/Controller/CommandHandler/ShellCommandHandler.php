@@ -6,12 +6,12 @@ namespace Ineersa\CodingAgent\Runtime\Controller\CommandHandler;
 
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\RunStoreInterface;
-use Ineersa\AgentCore\Domain\Event\RunEvent;
-use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\ExecuteShellToolCall;
+use Ineersa\CodingAgent\Runtime\Contract\ShellExecutionRequestDTO;
 use Ineersa\CodingAgent\Runtime\Controller\Event\ControllerCommandEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
+use Ineersa\CodingAgent\Runtime\Shell\ShellCommandEventFactory;
 use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
 use Symfony\Component\Messenger\Exception\ExceptionInterface;
 use Symfony\Component\Messenger\MessageBusInterface;
@@ -68,13 +68,17 @@ final readonly class ShellCommandHandler
             return;
         }
 
-        $commandText = (string) ($command->payload['text'] ?? '');
-        $standalone = (bool) ($command->payload['standalone'] ?? false);
-        $originalText = (string) ($command->payload['original_text'] ?? '');
-        if ('' === $originalText && '' !== $commandText) {
-            // Process clients that only send the bare command still need a
-            // bang-prefixed display line for transcript/history projection.
-            $originalText = '!'.$commandText;
+        try {
+            $request = ShellExecutionRequestDTO::fromRuntimePayload($runId, $command->payload);
+        } catch (\InvalidArgumentException $exception) {
+            $event->emit(new RuntimeEvent(
+                type: RuntimeEventTypeEnum::ProtocolError->value,
+                runId: $runId,
+                seq: 0,
+                payload: ['error' => $exception->getMessage()],
+            ));
+
+            return;
         }
 
         // Shell-only runs do not emit RunStarted (they bypass start()),
@@ -103,22 +107,13 @@ final readonly class ShellCommandHandler
         $turnNo = null !== $runState ? $runState->turnNo : 0;
         $toolCallId = uniqid('sh_', true);
 
-        if ('' !== $commandText || '' !== $originalText) {
-            $this->eventStore->append(new RunEvent(
-                runId: $runId,
-                seq: 0,
-                turnNo: $turnNo,
-                type: RunEventTypeEnum::AgentCommandApplied->value,
-                payload: [
-                    'kind' => 'shell_command',
-                    'text' => $originalText,
-                    'command' => $commandText,
-                    'tool_call_id' => $toolCallId,
-                    'standalone' => $standalone,
-                    'idempotency_key' => hash('sha256', $runId.'|'.$toolCallId.'|shell_command'),
-                ],
-            ));
-        }
+        $this->eventStore->append(ShellCommandEventFactory::commandApplied(
+            runId: $runId,
+            turnNo: $turnNo,
+            command: $request->command,
+            toolCallId: $toolCallId,
+            standalone: $request->standalone,
+        ));
 
         // Dispatch bash execution to the tool consumer via the async
         // Messenger tool bus (issue #183).  The ExecuteShellToolCallWorker
@@ -140,8 +135,8 @@ final readonly class ShellCommandHandler
             $this->executionBus->dispatch(new ExecuteShellToolCall(
                 runId: $runId,
                 toolCallId: $toolCallId,
-                commandText: $commandText,
-                standalone: $standalone,
+                commandText: $request->command->commandText,
+                standalone: $request->standalone,
                 turnNo: $turnNo,
             ));
         } catch (ExceptionInterface $exception) {

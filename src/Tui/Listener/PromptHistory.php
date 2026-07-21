@@ -6,6 +6,7 @@ namespace Ineersa\Tui\Listener;
 
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
+use Ineersa\Tui\Runtime\PromptHistoryInterface;
 
 /**
  * Session-scoped prompt list and Up/Down navigation cursor for history recall.
@@ -24,7 +25,7 @@ use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
  * keypress. {@see previous()} walks toward older prompts; {@see next()} toward
  * newer; past newest returns null (caller clears editor and exits navigation).
  */
-final class PromptHistory implements \Ineersa\Tui\Runtime\PromptHistoryInterface
+final class PromptHistory implements PromptHistoryInterface
 {
     /** @var list<string> */
     private array $prompts = [];

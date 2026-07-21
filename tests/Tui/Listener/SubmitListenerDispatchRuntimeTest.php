@@ -418,7 +418,7 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
     }
 
     #[Test]
-    public function testSubsequentShellWhileRunningOmitsStandaloneFlag(): void
+    public function testSubsequentShellWhileRunningSendsNonStandaloneShellRequest(): void
     {
         $this->state->sessionId = 'test-session';
         $this->state->handle = new RunHandle('run-active');
@@ -431,8 +431,11 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
                 $this->callback(static function (UserCommand $cmd): bool {
                     return 'shell_command' === $cmd->type
                         && 'pwd' === $cmd->text
-                        && ['original_text' => '!pwd'] === $cmd->payload
-                        && !isset($cmd->payload['standalone']);
+                        && [
+                            'text' => 'pwd',
+                            'original_text' => '!pwd',
+                            'standalone' => false,
+                        ] === $cmd->payload;
                 }),
             );
 

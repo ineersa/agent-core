@@ -54,6 +54,7 @@ final class ShellCommandHandlerTest extends TestCase
             payload: [
                 'text' => 'echo hello',
                 'original_text' => '!echo hello',
+                'standalone' => false,
             ],
         );
 
@@ -135,9 +136,10 @@ final class ShellCommandHandlerTest extends TestCase
         $this->assertNull($this->spyBus->lastMessage);
     }
 
-    public function testEmptyCommandTextDoesNotDispatchToBus(): void
+    public function testMalformedShellPayloadEmitsProtocolError(): void
     {
         $handler = $this->createHandler();
+        $emittedEvents = [];
 
         $command = new RuntimeCommand(
             id: 'cmd_4',
@@ -146,15 +148,13 @@ final class ShellCommandHandlerTest extends TestCase
             payload: [],
         );
 
-        $event = new ControllerCommandEvent($command, static function (): void {});
-        $handler($event);
+        $handler(new ControllerCommandEvent($command, static function (RuntimeEvent $event) use (&$emittedEvents): void {
+            $emittedEvents[] = $event;
+        }));
 
-        // Empty command text: the worker returns early (no-op),
-        // but the dispatch still happens — ExecuteShellToolCallWorker
-        // handles the empty-command case.
-        $this->assertNotNull($this->spyBus->lastMessage);
-        $this->assertInstanceOf(ExecuteShellToolCall::class, $this->spyBus->lastMessage);
-        $this->assertSame('', $this->spyBus->lastMessage->commandText);
+        $this->assertNull($this->spyBus->lastMessage);
+        $this->assertCount(1, $emittedEvents);
+        $this->assertSame(RuntimeEventTypeEnum::ProtocolError->value, $emittedEvents[0]->type);
     }
 
     public function testStandaloneShellCommandPassesFlagToWorker(): void
@@ -167,6 +167,7 @@ final class ShellCommandHandlerTest extends TestCase
             runId: 'run-standalone-1',
             payload: [
                 'text' => 'echo hello',
+                'original_text' => '!echo hello',
                 'standalone' => true,
             ],
         );
@@ -194,7 +195,11 @@ final class ShellCommandHandlerTest extends TestCase
             id: 'cmd_inline',
             type: 'shell_command',
             runId: 'run-inline-1',
-            payload: ['text' => 'echo done'],
+            payload: [
+                'text' => 'echo done',
+                'original_text' => '!echo done',
+                'standalone' => false,
+            ],
         );
 
         $event = new ControllerCommandEvent($command, static function (): void {});
@@ -350,7 +355,7 @@ final class ShellCommandSpyClient implements AgentSessionClient
         throw new \RuntimeException('Unexpected cancel()');
     }
 
-    public function shellExecute(string $command, string $sessionId, string $cwd, string $originalText = ''): RunHandle
+    public function shellExecute(\Ineersa\CodingAgent\Runtime\Contract\ShellExecutionRequestDTO $request): RunHandle
     {
         throw new \RuntimeException('Unexpected shellExecute()');
     }

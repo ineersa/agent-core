@@ -21,4 +21,13 @@ final readonly class UserCommand
         public array $payload = [],
     ) {
     }
+
+    public static function shell(ShellCommandDTO $command, bool $standalone): self
+    {
+        return new self(
+            type: 'shell_command',
+            text: $command->commandText,
+            payload: $command->toPayload($standalone),
+        );
+    }
 }

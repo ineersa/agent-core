@@ -24,11 +24,13 @@ use Ineersa\CodingAgent\PromptTemplate\PromptTemplateService;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeEventSinkInterface;
+use Ineersa\CodingAgent\Runtime\Contract\ShellExecutionRequestDTO;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
 use Ineersa\CodingAgent\Runtime\Protocol\RunLeafChangedEventFactory;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
+use Ineersa\CodingAgent\Runtime\Shell\ShellCommandEventFactory;
 use Ineersa\CodingAgent\Skills\SkillsContextBuilder;
 use Ineersa\CodingAgent\SystemPrompt\AgentsContextDiscovery;
 use Ineersa\CodingAgent\SystemPrompt\AgentsContextRenderer;
@@ -294,30 +296,21 @@ final class InProcessAgentSessionClient implements AgentSessionClient
         $this->runner->cancel($runId);
     }
 
-    public function shellExecute(string $command, string $sessionId, string $cwd, string $originalText = ''): RunHandle
+    public function shellExecute(ShellExecutionRequestDTO $request): RunHandle
     {
-        $runId = $sessionId;
-
         // Shell commands write tool_execution events directly to the
         // event store. Execute bash now so the events are available
         // when the TUI polls events().
-        $this->executeShellCommand($runId, new UserCommand(
-            type: 'shell_command',
-            text: $command,
-            payload: array_filter([
-                'original_text' => '' !== $originalText ? $originalText : null,
-                'standalone' => true,
-            ], static fn (mixed $v): bool => null !== $v),
-        ));
+        $this->executeShellCommand($request);
 
         // Emit a terminal AgentEnd event so the TUI poller transitions
         // from Running to Completed and clears the working indicator.
         // Without this, the ActivityStateMachine never leaves Running
         // because standalone shell commands only emit tool_execution
         // events (no RunCompleted / AgentEnd).
-        $this->completeRun($runId);
+        $this->completeRun($request->sessionId);
 
-        return new RunHandle(runId: $runId, status: 'completed');
+        return new RunHandle(runId: $request->sessionId, status: 'completed');
     }
 
     public function completeRun(string $runId): void
@@ -385,73 +378,46 @@ final class InProcessAgentSessionClient implements AgentSessionClient
      */
     private function handleShellCommandSend(string $runId, UserCommand $command): void
     {
-        $this->executeShellCommand($runId, $command);
+        $request = ShellExecutionRequestDTO::fromUserCommand($runId, $command);
+        $this->executeShellCommand($request);
 
-        if ((bool) ($command->payload['standalone'] ?? false)) {
+        if ($request->standalone) {
             $this->completeRun($runId);
         }
     }
 
-    private function executeShellCommand(string $runId, UserCommand $command): void
+    private function executeShellCommand(ShellExecutionRequestDTO $request): void
     {
-        $commandText = $command->text ?? '';
-
-        if ('' === $commandText) {
-            return;
-        }
-
+        $runId = $request->sessionId;
+        $command = $request->command;
         $toolCallId = uniqid('sh_', true);
-        $originalText = (string) ($command->payload['original_text'] ?? '');
-        if ('' === $originalText) {
-            $originalText = '!'.$commandText;
-        }
 
-        // Same branch-ownership contract as ShellCommandHandler / worker:
-        // current leaf turn + direct_shell correlation on tool lifecycle events.
+        // Same branch-ownership contract as the controller path: the command
+        // anchor and its lifecycle events share the active leaf turn and ID.
         $runState = $this->runStore->get($runId);
         $turnNo = null !== $runState ? $runState->turnNo : 0;
 
-        $this->eventStore->append(new RunEvent(
+        $this->eventStore->append(ShellCommandEventFactory::commandApplied(
             runId: $runId,
-            seq: 0,
             turnNo: $turnNo,
-            type: RunEventTypeEnum::AgentCommandApplied->value,
-            payload: [
-                'kind' => 'shell_command',
-                'text' => $originalText,
-                'command' => $commandText,
-                'tool_call_id' => $toolCallId,
-                'standalone' => (bool) ($command->payload['standalone'] ?? false),
-                'idempotency_key' => hash('sha256', $runId.'|'.$toolCallId.'|shell_command'),
-            ],
+            command: $command,
+            toolCallId: $toolCallId,
+            standalone: $request->standalone,
         ));
 
-        $this->eventStore->append(new RunEvent(
+        $this->eventStore->append(ShellCommandEventFactory::executionStarted(
             runId: $runId,
-            seq: 0,
             turnNo: $turnNo,
-            type: RunEventTypeEnum::ToolExecutionStart->value,
-            payload: [
-                'tool_call_id' => $toolCallId,
-                'tool_name' => 'bash',
-                'order_index' => 0,
-                'direct_shell' => true,
-            ],
+            toolCallId: $toolCallId,
         ));
-
         if (null === $this->toolExecutor) {
             // No ToolExecutor configured — emit a diagnostic error event.
-            $this->eventStore->append(new RunEvent(
+            $this->eventStore->append(ShellCommandEventFactory::executionCompleted(
                 runId: $runId,
-                seq: 0,
                 turnNo: $turnNo,
-                type: RunEventTypeEnum::ToolExecutionEnd->value,
-                payload: [
-                    'tool_call_id' => $toolCallId,
-                    'is_error' => true,
-                    'result' => 'Shell command execution unavailable: ToolExecutor not configured.',
-                    'direct_shell' => true,
-                ],
+                toolCallId: $toolCallId,
+                isError: true,
+                result: 'Shell command execution unavailable: ToolExecutor not configured.',
             ));
 
             return;
@@ -463,7 +429,7 @@ final class InProcessAgentSessionClient implements AgentSessionClient
         $result = $this->toolExecutor->execute(new ToolCall(
             toolCallId: $toolCallId,
             toolName: 'bash',
-            arguments: ['command' => $commandText],
+            arguments: ['command' => $command->commandText],
             orderIndex: 0,
             runId: $runId,
         ));
@@ -479,17 +445,12 @@ final class InProcessAgentSessionClient implements AgentSessionClient
         }
 
         // Emit tool_execution_end event with result text.
-        $this->eventStore->append(new RunEvent(
+        $this->eventStore->append(ShellCommandEventFactory::executionCompleted(
             runId: $runId,
-            seq: 0,
             turnNo: $turnNo,
-            type: RunEventTypeEnum::ToolExecutionEnd->value,
-            payload: [
-                'tool_call_id' => $toolCallId,
-                'is_error' => $result->isError,
-                'result' => $resultText,
-                'direct_shell' => true,
-            ],
+            toolCallId: $toolCallId,
+            isError: $result->isError,
+            result: $resultText,
         ));
     }
 }

@@ -18,6 +18,7 @@ use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Ineersa\Tui\Editor\PromptEditor;
+use Ineersa\Tui\Listener\PromptHistory;
 use Ineersa\Tui\Listener\RuntimeQuestionEventHandler;
 use Ineersa\Tui\Listener\TickPollListener;
 use Ineersa\Tui\Question\QuestionController;
@@ -61,6 +62,7 @@ final class TickPollListenerSubagentLiveTest extends TestCase
             new TestLogger(),
             new RuntimeExceptionBoundary(new EventDispatcher()),
             $this->createStub(SessionTranscriptProviderInterface::class),
+            new PromptHistory(),
         );
 
         $state = new TuiSessionState($parentRun);
@@ -125,6 +127,7 @@ final class TickPollListenerSubagentLiveTest extends TestCase
             new TestLogger(),
             new RuntimeExceptionBoundary(new EventDispatcher()),
             $this->createStub(SessionTranscriptProviderInterface::class),
+            new PromptHistory(),
         );
 
         $state = new TuiSessionState($parentRun);
@@ -242,7 +245,7 @@ final class ParentEventClient implements AgentSessionClient
     {
     }
 
-    public function shellExecute(string $command, string $sessionId, string $cwd, string $originalText = ''): RunHandle
+    public function shellExecute(\Ineersa\CodingAgent\Runtime\Contract\ShellExecutionRequestDTO $request): RunHandle
     {
         throw new \BadMethodCallException();
     }

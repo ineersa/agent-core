@@ -11,6 +11,7 @@ use Ineersa\CodingAgent\Runtime\Contract\SessionTranscriptProviderInterface;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
 use Ineersa\Tui\Editor\PromptEditor;
+use Ineersa\Tui\Listener\PromptHistory;
 use Ineersa\Tui\Listener\RuntimeQuestionEventHandler;
 use Ineersa\Tui\Listener\TickPollListener;
 use Ineersa\Tui\Picker\SubagentLivePickerController;
@@ -128,6 +129,7 @@ final class TickPollListenerSubagentLivePickerExportTest extends TestCase
             new NullLogger(),
             new RuntimeExceptionBoundary(new EventDispatcher()),
             $this->createStub(SessionTranscriptProviderInterface::class),
+            new PromptHistory(),
         );
 
         $listenerRef = new \ReflectionClass(TickPollListener::class);
