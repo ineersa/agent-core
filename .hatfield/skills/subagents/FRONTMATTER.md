@@ -19,15 +19,15 @@ Invalid explicit values are rejected: empty list `tools: []`, blank entries, or 
 
 ## Tools and MCP
 
-Alternative `mcp:` selector forms (examples only — do not combine these in one list):
+Alternative `mcp:` selector examples (exact and prefix selectors may be combined in one list):
 
 ```yaml
 tools:
   - read
   - mcp:context7_resolve   # exact: one exposed MCP tool (runtime name)
   - mcp:websearch_*        # prefix: all tools whose exposed names start with websearch_
-  - mcp:*                  # all MCP tools including specific servers
-  - mcp:-                  # none: suppresses every MCP tool; overrides any other mcp: selectors
+  - mcp:*                  # all MCP tools including specific servers (makes exact/prefix selectors redundant)
+  - mcp:-                  # none: if present, suppresses every MCP tool and wins over other mcp: selectors
 ```
 
 Omitted `tools`: inherit parent non-MCP tools + MCP from servers marked `availability: all` in `.hatfield/mcp.json`.
@@ -35,7 +35,7 @@ Parent/main runs only see MCP tools from `availability: all` servers in the acti
 Explicit `tools` without any `mcp:` entry: non-MCP allowlist only (no MCP).
 
 - **`subagent`** is never available inside child runs.
-- **Child MCP policy** is declared in `tools` using `mcp:` selectors (for example `mcp:websearch_search`, `mcp:websearch_*`, `mcp:*`, `mcp:-`). Choose one MCP form per agent; `mcp:-` wins and suppresses all MCP tools even if other `mcp:` selectors are also listed.
+- **Child MCP policy** is declared in `tools` using `mcp:` selectors (for example `mcp:websearch_search`, `mcp:websearch_*`, `mcp:*`, `mcp:-`). Exact and prefix selectors may be combined; `mcp:-` wins if present and suppresses all MCP tools. `mcp:*` alone is enough for every MCP tool and makes other exact/prefix selectors redundant.
 - Exactly one terminal `*` is a prefix wildcard (`mcp:websearch_*`). A selector with no `*` is always exact, even if it ends with `_`. Embedded or multiple `*` characters are not globs.
 - The legacy top-level `mcp:` frontmatter block (`mcp.mode` / `mcp.tools`) is not used for child tool exposure; declare MCP in `tools` with `mcp:` selectors instead.
 
