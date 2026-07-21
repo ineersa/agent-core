@@ -100,7 +100,7 @@ final class AgentMcpToolsResolverTest extends TestCase
     }
 
     /**
-     * @param array<string, list<string>>|null $extraServerTools Override/extend per-server catalog runtime names when non-null
+     * @param array<string, list<string>>|null $extraServerTools When non-null, provided server entries replace that server's default catalog runtime-name list (array_replace top-level semantics)
      */
     private function createResolver(?array $extraServerTools = null): AgentMcpToolsResolver
     {

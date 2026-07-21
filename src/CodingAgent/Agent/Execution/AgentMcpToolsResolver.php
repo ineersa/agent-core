@@ -122,9 +122,6 @@ final readonly class AgentMcpToolsResolver
         $allowed = [];
         foreach ($selectors as $selector) {
             $value = substr($selector, \strlen(self::MCP_SELECTOR_PREFIX));
-            if ('-' === $value || '*' === $value) {
-                continue;
-            }
 
             // Prefix wildcard: exactly one star, and it must be terminal (`mcp:<prefix*>`).
             if (str_ends_with($value, '*') && 1 === substr_count($value, '*')) {
