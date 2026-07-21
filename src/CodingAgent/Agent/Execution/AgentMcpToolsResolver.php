@@ -67,40 +67,66 @@ final readonly class AgentMcpToolsResolver
                 $selectors[] = $entry;
                 continue;
             }
-            $nonMcp[] = $entry;
+
+            // Treat every exact catalog runtime name as MCP-owned, even when it is listed
+            // without `mcp:`. This prevents raw global or specific names from bypassing policy.
+            // The name-based filtering has the same collision-safety trade-off as omitted-tool
+            // inheritance: a permanent/unrelated dynamic tool with a catalog name is classified
+            // as MCP for policy purposes.
+            if (!\in_array($entry, $allExposed, true)) {
+                $nonMcp[] = $entry;
+            }
         }
 
         if ([] === $selectors) {
             return [
                 'non_mcp_tools' => $nonMcp,
-                'mcp_runtime_tools' => [],
+                'mcp_runtime_tools' => $globalExposed,
                 'catalog_mcp_runtime_tools' => $allExposed,
                 'mcp_policy' => [
-                    'mode' => 'none',
-                    'tools' => [],
+                    'mode' => 'inherited_global',
+                    'tools' => $globalExposed,
                 ],
             ];
         }
 
-        $mcpTools = $this->expandSelectors($selectors, $allExposed);
+        $policyMode = $this->policyModeFromSelectors($selectors);
+        $mcpTools = match ($policyMode) {
+            'none' => [],
+            // `all` means all globally available MCP tools; specific tools require selectors.
+            'all' => $globalExposed,
+            'specific' => $globalExposed,
+        };
+        if ('specific' === $policyMode) {
+            $specificSelectors = array_values(array_filter(
+                $selectors,
+                static fn (string $selector): bool => 'mcp:*' !== $selector && 'mcp:-' !== $selector,
+            ));
+            foreach ($this->expandSelectors($specificSelectors, $allExposed) as $selectedTool) {
+                if (!\in_array($selectedTool, $mcpTools, true)) {
+                    $mcpTools[] = $selectedTool;
+                }
+            }
+        }
 
         return [
             'non_mcp_tools' => $nonMcp,
             'mcp_runtime_tools' => $mcpTools,
             'catalog_mcp_runtime_tools' => $allExposed,
             'mcp_policy' => [
-                'mode' => $this->policyModeFromSelectors($selectors),
+                'mode' => $policyMode,
                 'tools' => $mcpTools,
             ],
         ];
     }
 
     /**
-     * Expand `mcp:` selectors against catalog-exposed Hatfield runtime names.
+     * Expand specific `mcp:` selectors against catalog-exposed Hatfield runtime names.
+     *
+     * The caller must invoke this only for `specific` policy mode; `mcp:-` and `mcp:*`
+     * are filtered before this method is called.
      *
      * Grammar invariants:
-     *  - `mcp:-` is none (checked first; wins over every other selector).
-     *  - `mcp:*` is all catalog-exposed MCP tools.
      *  - Exactly one terminal `*` is the only prefix wildcard (`mcp:websearch_*` → names starting with `websearch_`).
      *  - A selector with no `*` is always exact, including names that end with `_`.
      *  - Embedded or multiple `*` characters are not globs; they fall through to exact match (normally no catalog hit).
@@ -112,13 +138,6 @@ final readonly class AgentMcpToolsResolver
      */
     private function expandSelectors(array $selectors, array $allExposed): array
     {
-        if (\in_array('mcp:-', $selectors, true)) {
-            return [];
-        }
-        if (\in_array('mcp:*', $selectors, true)) {
-            return $allExposed;
-        }
-
         $allowed = [];
         foreach ($selectors as $selector) {
             $value = substr($selector, \strlen(self::MCP_SELECTOR_PREFIX));
@@ -145,17 +164,22 @@ final readonly class AgentMcpToolsResolver
 
     /**
      * @param list<string> $selectors
+     *
+     * @return 'none'|'all'|'specific'
      */
     private function policyModeFromSelectors(array $selectors): string
     {
-        if (\in_array('mcp:*', $selectors, true)) {
-            return 'all';
-        }
         if (\in_array('mcp:-', $selectors, true)) {
             return 'none';
         }
 
-        return 'specific';
+        foreach ($selectors as $selector) {
+            if ('mcp:*' !== $selector) {
+                return 'specific';
+            }
+        }
+
+        return 'all';
     }
 
     /**

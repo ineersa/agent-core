@@ -18,8 +18,8 @@ name: scout
 description: Fast read-only codebase reconnaissance
 tools:
   - read
-  - ide_find_file
-  - ide_search_text
+  - bash
+  # availability: all MCP tools are inherited automatically
 inheritProjectContext: true
 inheritAgentsMd: true
 systemPromptMode: replace
@@ -38,7 +38,7 @@ You are a scout. Explore the codebase read-only and return dense findings...
 |---|---|---|---|---|
 | `name` | string | yes | — | Unique agent name. Lowercase `[a-z][a-z0-9-]{0,47}`. |
 | `description` | string | yes | — | Human-readable description. |
-| `tools` | list\<string\> | no | inherit all parent-available tools (+ global MCP when omitted) | Non-MCP tool allowlist and MCP selectors in one list. Omitted: inherit parent non-MCP tools and MCP from servers with `availability: all` in `.hatfield/mcp.json` (`subagent` always excluded). Explicit list without `mcp:` entries: non-MCP allowlist only (no MCP). MCP selectors: `mcp:*`, `mcp:-`, `mcp:<exposed_name>`, `mcp:<prefix*>` (exactly one terminal `*` is a prefix wildcard; runtime names `{server}_{tool}`). Legacy top-level `mcp.mode` / `mcp.tools` frontmatter is ignored for child policy. Invalid: `tools: []`, blank entries. |
+| `tools` | list\<string\> | no | inherit all parent-available tools (+ global MCP) | Non-MCP tool allowlist and MCP selectors in one list. Omitted: inherit parent non-MCP tools and MCP from servers with `availability: all` in `.hatfield/mcp.json` (`subagent` always excluded). Explicit lists also inherit all `availability: all` MCP tools unless `mcp:-` is present. Specific servers require explicit `mcp:` selectors. Raw catalog runtime names without `mcp:` are stripped from the explicit non-MCP allowlist; `availability: all` tools remain available through global inheritance, while `availability: specific` tools are not opted in by raw names. MCP selectors: `mcp:*`, `mcp:-`, `mcp:<exposed_name>`, `mcp:<prefix*>` (exactly one terminal `*` is a prefix wildcard; runtime names `{server}_{tool}`). Legacy top-level `mcp.mode` / `mcp.tools` frontmatter is ignored for child policy. Invalid: `tools: []`, blank entries. |
 | `model` | string\|null | no | `null` | Optional model override. |
 | `thinking` | string\|null | no | `null` | Reasoning/thinking override (`off`, `minimal`, `low`, `medium`, `high`, `xhigh`). |
 | `skills` | list\<string\> | no | `[]` | Setup skills loaded from start. |
@@ -98,7 +98,8 @@ name: my-custom-agent
 description: Custom agent for specialized analysis
 tools:
   - read
-  - ide_search_text
+  - bash
+  # availability: all MCP tools are inherited automatically
   - semantic-search
 maxDepth: 1
 ---
@@ -302,12 +303,22 @@ definition `tools` list (including `mcp:` selectors) plus hard safety rules:
 - Omitted `tools`: inherit parent/default non-MCP tools plus MCP tools from
   servers marked `availability: all` in `.hatfield/mcp.json` (exclude
   `availability: specific`).
-- Explicit `tools` without any `mcp:` selector: non-MCP allowlist only (no MCP).
-- `mcp:` selectors in `tools` resolve to runtime tool names `{server}_{tool}`
-  (e.g. `mcp:websearch_search`, `mcp:websearch_*`, `mcp:*`, `mcp:-`).
-  Exactly one terminal `*` is a prefix wildcard (`mcp:websearch_*` matches names
-  starting with `websearch_`). A selector with no `*` is always exact, even if it
-  ends with `_`. Embedded or multiple `*` characters are not globs.
+- Explicit `tools` lists also inherit all MCP tools from `availability: all`
+  servers unless `mcp:-` is present. An explicit list without selectors therefore
+  has mode `inherited_global`; selected `availability: specific` tools are merged
+  with those globals when `mcp:` selectors are used.
+- Raw catalog runtime names without the `mcp:` prefix are stripped from the
+  non-MCP allowlist. Tools from `availability: all` servers remain available
+  through global MCP inheritance, while tools from `availability: specific`
+  servers are not opted in by raw names. Unrelated non-MCP names remain unchanged.
+- `mcp:-` wins over every other selector and suppresses all MCP tools. `mcp:*`
+  selects all globally available MCP tools when deny is absent; specific tools
+  require an exact or terminal-star selector. When combined with those selectors,
+  only their specific matches are added to the globals. Selectors resolve to
+  runtime names `{server}_{tool}` (e.g. `mcp:websearch_search`, `mcp:websearch_*`).
+  Exactly one terminal `*` is
+  a prefix wildcard; a selector with no `*` is always exact, even if it ends with
+  `_`. Embedded or multiple `*` characters are not globs.
 - The `subagent` tool is **always excluded** from child tool lists in v1.
 - Parent/main runs only expose MCP tools from `availability: all` servers in
   the active toolset; `availability: specific` tools stay hidden until a child

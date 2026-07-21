@@ -57,6 +57,7 @@ Special case: a project server entry with only `{ "enabled": false }` disables a
       // ── Common ──
       "timeoutMs": 30000,          // Tool-call timeout in milliseconds (default: 30000)
       "startupTimeoutMs": 30000,   // STDIO startup timeout in milliseconds (default: 30000)
+      "availability": "all",      // Child default: "all" or opt-in "specific"
       "excludeTools": ["risky_tool"] // Tools to exclude from registration (optional)
     }
   }
@@ -69,6 +70,29 @@ Each server must define exactly ONE transport:
 - **HTTP:** `url` (required) + optional `headers`
 
 Defining both `command` and `url` in the same server is an error.
+
+## Availability and child-agent policy
+
+Each configured server uses `availability: "all"` (the default) or
+`availability: "specific"`:
+
+- `all` servers are visible on parent/main runs and are inherited by every child,
+  including children with an explicit `tools:` list.
+- `specific` servers remain hidden from parent/main runs and require an explicit
+  `mcp:` selector in a child `tools:` list.
+- Explicit selectors add their catalog matches to inherited global MCP tools.
+  `mcp:*` selects all globally available MCP tools; specific tools require an
+  exact or terminal-star selector. When combined with those selectors, only their
+  specific matches are added. `mcp:-` suppresses all MCP tools and wins over
+  every other selector.
+- Raw catalog runtime names (`{server}_{tool}`) without the `mcp:` prefix are
+  removed from explicit non-MCP lists. They cannot opt into a `specific` tool;
+  unrelated non-MCP names are preserved.
+
+Child selectors use the terminal-star grammar documented in
+[Agent Definitions](agents.md): a selector with exactly one terminal `*` is a
+prefix match, selectors without `*` are exact, and embedded or multiple stars
+are not general globs.
 
 ## Transport examples
 
