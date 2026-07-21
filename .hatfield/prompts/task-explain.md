@@ -27,7 +27,8 @@ If you catch yourself about to open an editor, write a file, or run a code chang
 
 2. **Explore the codebase**
    - Launch scout subagents to gather context: affected files, current architecture, dependencies, related code patterns, existing tests.
-   - Use the researcher subagent for web searches when external information is needed (e.g. library docs, migration guides, changelog entries).
+   - **Dispatch rule:** batch independent scouts/researchers in **one** parallel `subagent` call with a `tasks` array (within `agents.max_agents`). Use single-mode `{"agent","task"}` only for one child or work that must wait on a prior result. Separate single-mode calls for independent recon serialize — that is an anti-pattern, not parallel execution.
+   - Use the researcher subagent for web searches when external information is needed (e.g. library docs, migration guides, changelog entries); include independent research tasks in the same `tasks` batch when useful.
    - Identify the blast radius: which modules, services, config, and tests are affected.
    - Check for existing implementations or patterns that can be reused or extended.
 

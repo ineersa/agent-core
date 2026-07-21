@@ -30,7 +30,8 @@ If you catch yourself about to open an editor, write a file, or run a code chang
 3. **Prepare exact fork instructions**
    - Read the task file again if moved, then collect the required code, config, test, and docs context.
    - Launch scout subagents when useful to gather focused codebase context before implementation.
-   - Use the researcher subagent for web searches or web-based research when up-to-date external information is needed.
+   - **Dispatch rule:** batch independent scouts/researchers in **one** parallel `subagent` call with a `tasks` array (within `agents.max_agents`). Use single-mode only for one child or work that must wait on a prior result. Separate single-mode calls for independent recon serialize — that is an anti-pattern.
+   - Use the researcher subagent for web searches or web-based research when up-to-date external information is needed; include independent research in the same `tasks` batch when useful.
    - Create exact implementation instructions for the fork: files to touch, old/new patterns, validation commands, and boundaries.
    - **For TUI tasks: the implementation scope MUST include a real `TmuxHarness` E2E proof (replay-backed, no live LLM required) exercising the user-visible feature path.** Mocks, service-only DTO tests, custom PHP smoke scripts, and picker/footer visibility checks are NOT acceptable substitutes. The fork must add this as a required deliverable.
    - When the task touches provider/LLM-visible code (Symfony AI provider, model routing, tool schemas, LLM prompts, streaming conversion), the fork instructions should mention `castor test:llm-real` as opt-in focused validation. This is NOT required for every normal task — only when the change affects live provider compatibility.

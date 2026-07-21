@@ -159,15 +159,26 @@ subagent orchestration may block its worker while polling child runs; isolating 
 prevents starving child agents' `read`/`write`/`shell` calls on the `tool` queue.
 
 The `subagent` tool is registered as a permanent model-visible tool. It supports
-**single or parallel foreground mode** with the following JSON schema:
+**single or parallel foreground mode** with the following JSON schema.
 
-Single mode:
+**Decision rule:** batch independent scouts/reviewers in **one** parallel
+`tasks` call whenever within `agents.max_agents`. Use single mode only for
+exactly one child or work that must be serialized (a later investigation depends
+on an earlier result, a follow-up cannot be formed until prior output, or a
+deliberate re-review/implementation step after a fix). Separate outer `subagent`
+tool calls are serialized by the tool executor; children inside one `tasks`
+array run concurrently. Multiple separate single-mode calls for independent work
+are valid syntax but an orchestration anti-pattern (they run one after another).
+
+Single mode (one child, or serialized/dependent work):
 
 ```json
 { "agent": "scout", "task": "Inspect routing config" }
 ```
 
-Parallel mode (up to `agents.max_agents`, default **8** per tool call):
+Parallel mode for independent work (up to `agents.max_agents`, default **8**
+per tool call) — prefer this shape when launching multiple independent
+scouts/reviewers:
 
 ```json
 {
@@ -181,7 +192,8 @@ Parallel mode (up to `agents.max_agents`, default **8** per tool call):
 - Use **either** single mode or parallel `tasks`, never both.
 - All tasks in one call run concurrently (no `concurrency` argument).
 - If more than `agents.max_agents` tasks are requested, the tool fails fast
-  before creating artifacts — split work across multiple `subagent` calls.
+  before creating artifacts — split across multiple `subagent` calls only for
+  **cap overflow** or **true dependencies**, not for routine independent work.
 - Each child agent definition used in parallel mode must set
   `parallelAllowed: true`.
 - `background` remains unsupported.
