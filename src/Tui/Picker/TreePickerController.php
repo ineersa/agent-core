@@ -226,18 +226,63 @@ final class TreePickerController
         $items = [];
         $order = [];
         $visited = [];
+        $creationRankByTurnNo = self::creationRankByTurnNo($tree->nodesByTurnNo);
 
         foreach ($tree->rootTurnNos as $rootTurnNo) {
-            self::walkNode($rootTurnNo, $tree->nodesByTurnNo, [], $items, $order, $visited, $theme);
+            self::walkNode(
+                $rootTurnNo,
+                $tree->nodesByTurnNo,
+                $creationRankByTurnNo,
+                [],
+                $items,
+                $order,
+                $visited,
+                $theme,
+            );
         }
 
         return [$items, $order];
     }
 
     /**
+     * Rank every node by canonical creation order: ascending anchorSeq, then turnNo.
+     *
+     * Sparse turn identities (max(lastSeq, turnNo)+1) are not ordinal depths, so
+     * "flat continuation" cannot mean childTurnNo === parentTurnNo + 1. Creation-rank
+     * adjacency is the stable substitute: an only-child is flat iff nothing else in
+     * the whole tree was created between parent and child.
+     *
+     * @param array<int, TurnTreeNodeView> $nodesByTurnNo
+     *
+     * @return array<int, int> turnNo => 0-based creation rank
+     */
+    private static function creationRankByTurnNo(array $nodesByTurnNo): array
+    {
+        $nodes = array_values($nodesByTurnNo);
+        usort(
+            $nodes,
+            static function (TurnTreeNodeView $a, TurnTreeNodeView $b): int {
+                if ($a->anchorSeq !== $b->anchorSeq) {
+                    return $a->anchorSeq <=> $b->anchorSeq;
+                }
+
+                return $a->turnNo <=> $b->turnNo;
+            },
+        );
+
+        $ranks = [];
+        foreach ($nodes as $rank => $node) {
+            $ranks[$node->turnNo] = $rank;
+        }
+
+        return $ranks;
+    }
+
+    /**
      * @param array<int, TurnTreeNodeView>           $nodesByTurnNo
-     * @param list<bool>                             $branchStack    Each entry is true if that ancestor is the last child of its parent (guide column uses space vs │)
-     * @param bool                                   $isContinuation When true, this node is a single-child continuation: render guide only, no fork glyph
+     * @param array<int, int>                        $creationRankByTurnNo turnNo => 0-based creation rank
+     * @param list<bool>                             $branchStack          Each entry is true if that ancestor is the last child of its parent (guide column uses space vs │)
+     * @param bool                                   $isContinuation       When true, this node is a single-child continuation: render guide only, no fork glyph
      * @param list<array{value:string,label:string}> $items
      * @param list<int>                              $order
      * @param array<int, true>                       $visited
@@ -245,6 +290,7 @@ final class TreePickerController
     private static function walkNode(
         int $turnNo,
         array $nodesByTurnNo,
+        array $creationRankByTurnNo,
         array $branchStack,
         array &$items,
         array &$order,
@@ -300,14 +346,21 @@ final class TreePickerController
         $order[] = $node->turnNo;
 
         $childCount = \count($node->childTurnNos);
+        $parentRank = $creationRankByTurnNo[$turnNo] ?? null;
 
         foreach ($node->childTurnNos as $ci => $childTurnNo) {
-            // Flat continuation: the ONLY child AND a consecutive follow-up (turn_no = parent + 1).
-            // A rewind branch is non-consecutive (turn_no != parent + 1) and must fork — indent
-            // with ├─/└─ even when it is an only-child, so a lone branch is shown as a child,
-            // not a sibling. A fork point (2+ children) always indents every child.
-            $isConsecutiveFollowUp = $childTurnNo === $turnNo + 1;
-            $childIsContinuation = 1 === $childCount && $isConsecutiveFollowUp;
+            // Flat continuation: the ONLY child AND creation-order adjacent to the parent.
+            // Creation rank is derived from anchorSeq (tie-break turnNo), not turn identity
+            // arithmetic. Sparse linear parent→only child with no node created between them
+            // stays flat even when childTurnNo != parentTurnNo + 1. A lone rewind branch where
+            // another turn was created globally between parent and child must fork with ├─/└─
+            // even as an only-child, so it reads as a child rather than a sibling. A fork point
+            // (2+ children) always indents every child.
+            $childRank = $creationRankByTurnNo[$childTurnNo] ?? null;
+            $isCreationAdjacent = null !== $parentRank
+                && null !== $childRank
+                && $childRank === $parentRank + 1;
+            $childIsContinuation = 1 === $childCount && $isCreationAdjacent;
             $childPushesLevel = !$childIsContinuation;
 
             $childStack = $childPushesLevel
@@ -317,6 +370,7 @@ final class TreePickerController
             self::walkNode(
                 $childTurnNo,
                 $nodesByTurnNo,
+                $creationRankByTurnNo,
                 $childStack,
                 $items,
                 $order,

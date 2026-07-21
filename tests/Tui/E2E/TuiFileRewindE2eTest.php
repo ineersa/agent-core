@@ -63,14 +63,16 @@ final class TuiFileRewindE2eTest extends TestCase
             $this->submitPrompt($pane, 'hello');
             $this->waitAssistantBlock($pane);
             $this->assertNotStuckWorking($pane);
-            $this->waitForTurnCheckpointRecorded(1);
+            // Sparse turn identities make the first conversational checkpoint opaque;
+            // discover the actual turn_no from the ledger rather than hardcoding 1.
+            $checkpointTurn = $this->waitForFirstTurnCheckpointRecorded();
 
-            // Simulate post-checkpoint worktree mutation after turn-1 snapshot is persisted.
+            // Simulate post-checkpoint worktree mutation after the snapshot is persisted.
             file_put_contents($this->testProjectDir.'/target.txt', "after\n");
             $this->assertStringContainsString('after', (string) file_get_contents($this->testProjectDir.'/target.txt'));
 
             $this->openRewindTurnPicker($pane);
-            $this->selectRewindTurnWithCheckpoint($pane, 1);
+            $this->selectRewindTurnWithCheckpoint($pane, $checkpointTurn);
             $restoreCapture = $this->confirmRestoreFilesToSelectedTurn($pane);
             $this->assertStringNotContainsString('File rewind failed', $restoreCapture);
             $this->assertStringContainsString('before', (string) file_get_contents($this->testProjectDir.'/target.txt'));
@@ -126,7 +128,8 @@ final class TuiFileRewindE2eTest extends TestCase
             $this->submitPrompt($pane, 'hello');
             $this->waitAssistantBlock($pane);
             $this->assertNotStuckWorking($pane);
-            $this->waitForTurnCheckpointRecorded(1);
+            // Opaque first-prompt checkpoint identity (may be turn 2 under sparse allocation).
+            $checkpointTurn = $this->waitForFirstTurnCheckpointRecorded();
 
             $this->submitPrompt($pane, 'Edit target.txt');
             $this->waitAssistantBlock($pane);
@@ -138,7 +141,7 @@ final class TuiFileRewindE2eTest extends TestCase
             );
 
             $this->openRewindTurnPicker($pane);
-            $this->selectRewindTurnWithCheckpoint($pane, 1);
+            $this->selectRewindTurnWithCheckpoint($pane, $checkpointTurn);
             $restoreCapture = $this->confirmRestoreFilesToSelectedTurn($pane);
             $this->assertStringNotContainsString('File rewind failed', $restoreCapture);
             $this->assertStringContainsString('before', (string) file_get_contents($this->testProjectDir.'/target.txt'));
@@ -198,6 +201,37 @@ final class TuiFileRewindE2eTest extends TestCase
 
         $final = is_file($path) ? (string) file_get_contents($path) : '(missing)';
         $this->fail('' !== $message ? $message : 'Timed out waiting for target.txt to contain '.$needle.'; final='.$final);
+    }
+
+    /**
+     * Wait until the project ledger records at least one checkpoint and return its turn_no.
+     *
+     * Turn identities are sparse/opaque under max(lastSeq, turnNo)+1 allocation; the first
+     * conversational checkpoint is not necessarily turn 1. Callers thread the returned value
+     * into picker selection so assertions still confirm a real ledger checkpoint.
+     */
+    private function waitForFirstTurnCheckpointRecorded(float $timeoutSeconds = 20.0): int
+    {
+        $ledgerPath = $this->ledgerPath();
+        $deadline = microtime(true) + $timeoutSeconds;
+        while (microtime(true) < $deadline) {
+            if (is_file($ledgerPath)) {
+                $decoded = json_decode((string) file_get_contents($ledgerPath), true);
+                if (\is_array($decoded)) {
+                    foreach ($decoded['checkpoints'] ?? [] as $checkpoint) {
+                        if (!\is_array($checkpoint)) {
+                            continue;
+                        }
+                        $turnNo = (int) ($checkpoint['turn_no'] ?? 0);
+                        if ($turnNo > 0) {
+                            return $turnNo;
+                        }
+                    }
+                }
+            }
+            usleep(100_000);
+        }
+        $this->fail('Timed out waiting for any file rewind checkpoint at '.$ledgerPath);
     }
 
     private function waitForTurnCheckpointRecorded(int $turnNo, float $timeoutSeconds = 20.0): void

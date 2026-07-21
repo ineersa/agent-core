@@ -1133,6 +1133,187 @@ final class TreePickerControllerTest extends TestCase
         $this->assertStringNotContainsString('Turn 3', $items[0]['label']);
     }
 
+    // ── Sparse turn identity / creation-order adjacency ─────────────────
+
+    #[Test]
+    public function testBuildItemsSparseLinearOnlyChildStaysFlat(): void
+    {
+        // Thesis: sparse max(lastSeq, turnNo)+1 identities are not ordinal depths.
+        // Parent 4 → only child 12 with no node created between them must render flat
+        // (no ├─/└─), even though 12 !== 4 + 1.
+        $nodes = [
+            4 => new TurnTreeNodeView(
+                turnNo: 4,
+                parentTurnNo: null,
+                childTurnNos: [12],
+                anchorSeq: 3,
+                title: 'Sparse parent',
+                promptPreview: 'Sparse parent',
+                createdAt: null,
+                isCurrentLeaf: false,
+            ),
+            12 => new TurnTreeNodeView(
+                turnNo: 12,
+                parentTurnNo: 4,
+                childTurnNos: [],
+                anchorSeq: 11,
+                title: 'Sparse child',
+                promptPreview: 'Sparse child',
+                createdAt: null,
+                isCurrentLeaf: true,
+            ),
+        ];
+
+        $tree = new TurnTreeView(
+            runId: 'run',
+            nodesByTurnNo: $nodes,
+            rootTurnNos: [4],
+            currentLeafTurnNo: 12,
+            activePathTurnNos: [4, 12],
+        );
+
+        $theme = new DefaultTheme(new ThemePalette('test'));
+        $items = TreePickerController::buildItems($tree, $theme);
+
+        $this->assertCount(2, $items);
+        $this->assertSame('4', $items[0]['value']);
+        $this->assertSame('12', $items[1]['value']);
+        foreach ($items as $item) {
+            $this->assertStringNotContainsString('└─', $item['label']);
+            $this->assertStringNotContainsString('├─', $item['label']);
+            $this->assertStringNotContainsString('│', $item['label']);
+        }
+    }
+
+    #[Test]
+    public function testBuildItemsSparseOnlyChildWithInterveningCreationForks(): void
+    {
+        // Thesis: parent 5 has exactly one child (20), but turn 8 was created globally
+        // between them (sibling under root). Creation ranks are not adjacent, so the
+        // only-child must fork with └─ (not render as a flat continuation).
+        $nodes = [
+            4 => new TurnTreeNodeView(
+                turnNo: 4,
+                parentTurnNo: null,
+                childTurnNos: [5, 8],
+                anchorSeq: 3,
+                title: 'Root',
+                promptPreview: 'Root',
+                createdAt: null,
+                isCurrentLeaf: false,
+            ),
+            5 => new TurnTreeNodeView(
+                turnNo: 5,
+                parentTurnNo: 4,
+                childTurnNos: [20],
+                anchorSeq: 6,
+                title: 'Parent of sparse rewind child',
+                promptPreview: 'Parent of sparse rewind child',
+                createdAt: null,
+                isCurrentLeaf: false,
+            ),
+            8 => new TurnTreeNodeView(
+                turnNo: 8,
+                parentTurnNo: 4,
+                childTurnNos: [],
+                anchorSeq: 10,
+                title: 'Intervening sibling',
+                promptPreview: 'Intervening sibling',
+                createdAt: null,
+                isCurrentLeaf: false,
+            ),
+            20 => new TurnTreeNodeView(
+                turnNo: 20,
+                parentTurnNo: 5,
+                childTurnNos: [],
+                anchorSeq: 15,
+                title: 'Sparse only-child after gap',
+                promptPreview: 'Sparse only-child after gap',
+                createdAt: null,
+                isCurrentLeaf: true,
+            ),
+        ];
+
+        $tree = new TurnTreeView(
+            runId: 'run',
+            nodesByTurnNo: $nodes,
+            rootTurnNos: [4],
+            currentLeafTurnNo: 20,
+            activePathTurnNos: [4, 5, 20],
+        );
+
+        $theme = new DefaultTheme(new ThemePalette('test'));
+        $items = TreePickerController::buildItems($tree, $theme);
+
+        $this->assertCount(4, $items);
+        // DFS: root, parent 5, only-child 20 under 5, then sibling 8.
+        $this->assertSame('4', $items[0]['value']);
+        $this->assertSame('5', $items[1]['value']);
+        $this->assertSame('20', $items[2]['value']);
+        $this->assertSame('8', $items[3]['value']);
+        // Only-child 20 is not creation-adjacent to 5 (rank gap from turn 8) → fork under open branch.
+        $this->assertStringContainsString('│  └─ ◉ ', $items[2]['label']);
+        $this->assertStringContainsString('└─ ○ ', $items[3]['label']);
+    }
+
+    #[Test]
+    public function testBuildItemsSparseLinearChainWithGapStaysFlatWhenCreationAdjacent(): void
+    {
+        // Sparse 2 → 11 → 22 with strictly increasing anchorSeq and no intervening nodes
+        // remains a flat linear chain (creation ranks 0,1,2).
+        $nodes = [
+            2 => new TurnTreeNodeView(
+                turnNo: 2,
+                parentTurnNo: null,
+                childTurnNos: [11],
+                anchorSeq: 1,
+                title: 'A',
+                promptPreview: 'A',
+                createdAt: null,
+                isCurrentLeaf: false,
+            ),
+            11 => new TurnTreeNodeView(
+                turnNo: 11,
+                parentTurnNo: 2,
+                childTurnNos: [22],
+                anchorSeq: 10,
+                title: 'B',
+                promptPreview: 'B',
+                createdAt: null,
+                isCurrentLeaf: false,
+            ),
+            22 => new TurnTreeNodeView(
+                turnNo: 22,
+                parentTurnNo: 11,
+                childTurnNos: [],
+                anchorSeq: 21,
+                title: 'C',
+                promptPreview: 'C',
+                createdAt: null,
+                isCurrentLeaf: true,
+            ),
+        ];
+
+        $tree = new TurnTreeView(
+            runId: 'run',
+            nodesByTurnNo: $nodes,
+            rootTurnNos: [2],
+            currentLeafTurnNo: 22,
+            activePathTurnNos: [2, 11, 22],
+        );
+
+        $theme = new DefaultTheme(new ThemePalette('test'));
+        $items = TreePickerController::buildItems($tree, $theme);
+
+        $this->assertCount(3, $items);
+        foreach ($items as $item) {
+            $this->assertStringNotContainsString('└─', $item['label']);
+            $this->assertStringNotContainsString('├─', $item['label']);
+            $this->assertStringNotContainsString('│', $item['label']);
+        }
+        $this->assertStringContainsString('◉ ', $items[2]['label']);
+    }
+
     // ── Helpers ────────────────────────────────────────────────────────
 
     private function createLinearTree(): TurnTreeView
