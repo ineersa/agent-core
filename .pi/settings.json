@@ -19,7 +19,7 @@
         "reserveTokens": 16384
     },
     "pi-fork": {
-        "defaultModel": "grok-cli/grok-composer-2.5-fast",
+        "defaultModel": "openai-codex/gpt-5.6-luna",
         "defaultThinking": "xhigh"
     },
     "taskWorkflow": {
