@@ -431,7 +431,8 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
                 $this->callback(static function (UserCommand $cmd): bool {
                     return 'shell_command' === $cmd->type
                         && 'pwd' === $cmd->text
-                        && [] === $cmd->payload;
+                        && ['original_text' => '!pwd'] === $cmd->payload
+                        && !isset($cmd->payload['standalone']);
                 }),
             );
 
