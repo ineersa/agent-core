@@ -2,7 +2,8 @@
 #
 # Two buses:
 #   agent.command.bus    — orchestration for StartRun/ApplyCommand and run results.
-#                          Routed messages (StartRun, ApplyCommand, LlmStepResult,
+#                          Routed messages (StartRun, ApplyCommand,
+#                          ApplyShellCommand, LlmStepResult,
 #                          ToolCallResult, CompactionStepResult) are enqueued on
 #                          run_control and handled by the single run_control consumer.
 #                          Unrouted messages (AdvanceRun, CompactRun) are handled
@@ -19,6 +20,7 @@
 # After ASYNC-05:
 # - StartRun → run_control transport (messenger:consume run_control)
 # - ApplyCommand → run_control transport
+# - ApplyShellCommand → run_control transport
 # - AdvanceRun is intentionally NOT routed (sync on agent.command.bus / agent.execution.bus).
 # - ExecuteLlmStep → llm transport (messenger:consume llm)
 # - ExecuteToolCall → tool transport (messenger:consume tool)
@@ -83,6 +85,7 @@ framework:
         routing:
             Ineersa\AgentCore\Domain\Message\StartRun: run_control
             Ineersa\AgentCore\Domain\Message\ApplyCommand: run_control
+            Ineersa\AgentCore\Domain\Message\ApplyShellCommand: run_control
             Ineersa\AgentCore\Domain\Message\LlmStepResult: run_control
             Ineersa\AgentCore\Domain\Message\ToolCallResult: run_control
             Ineersa\AgentCore\Domain\Message\CompactionStepResult: run_control

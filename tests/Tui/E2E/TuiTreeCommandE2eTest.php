@@ -162,6 +162,13 @@ final class TuiTreeCommandE2eTest extends TestCase
             $this->waitAssistantBlock($pane);
             $this->tmux->waitForCaptureContains($pane, 'SECOND_TURN_REPLY_07C', TmuxHarness::TUI_GATE_CALLBACK_TIMEOUT_PARALLEL);
 
+            // Direct bang commands are canonical transcript content. The unique
+            // marker proves both the user line and shell output are present
+            // before rewind and absent afterwards. Prompt editor history is
+            // intentionally out of scope for this proof.
+            $this->submitPrompt($pane, '!printf BANG_REWIND_07C');
+            $this->tmux->waitForCaptureContains($pane, 'BANG_REWIND_07C', TmuxHarness::TUI_GATE_CALLBACK_TIMEOUT_PARALLEL);
+
             $this->runSlashCommand($pane, '/tree');
             $this->tmux->waitForCallback(
                 $pane,
@@ -171,7 +178,10 @@ final class TuiTreeCommandE2eTest extends TestCase
                 history: 2000,
             );
 
-            // Open on current leaf (latest turn). One Up selects the first turn in a linear two-turn tree.
+            // Open on the shell child. The first Up selects the preceding
+            // conversational turn; the second selects the first conversation
+            // turn that this proof rewinds to.
+            $this->tmux->sendKey($pane, 'Up');
             $this->tmux->sendKey($pane, 'Up');
             usleep(200_000);
 
@@ -214,6 +224,8 @@ final class TuiTreeCommandE2eTest extends TestCase
                 'Abandoned second-turn user marker must disappear from the current pane after rewind.');
             $this->assertStringNotContainsString('SECOND_TURN_REPLY_07C', $paneCapture,
                 'Abandoned second-turn assistant reply must disappear from the current pane after rewind.');
+            $this->assertStringNotContainsString('BANG_REWIND_07C', $paneCapture,
+                'Abandoned bang command and output must disappear from the current pane after rewind.');
 
             $this->saveAnsiSnapshot($pane, 'tree-enter-rewind-07c');
 

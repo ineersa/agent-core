@@ -119,10 +119,6 @@ final class ObservingSpyClient implements AgentSessionClient
         throw new \RuntimeException('not used');
     }
 
-    public function completeRun(string $runId): void
-    {
-    }
-
     public function compact(string $runId, ?string $customInstructions = null): void
     {
     }

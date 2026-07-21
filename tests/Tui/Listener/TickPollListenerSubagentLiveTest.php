@@ -247,10 +247,6 @@ final class ParentEventClient implements AgentSessionClient
         throw new \BadMethodCallException();
     }
 
-    public function completeRun(string $runId): void
-    {
-    }
-
     public function compact(string $runId, ?string $customInstructions = null): void
     {
     }

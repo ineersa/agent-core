@@ -161,8 +161,7 @@ final class SubmissionRouterTest extends TestCase
         $result = $this->router->route('!echo hello');
 
         $this->assertInstanceOf(DispatchShellCommand::class, $result);
-        $this->assertSame('echo hello', $result->command);
-        $this->assertSame('!echo hello', $result->originalText);
+        $this->assertSame('!echo hello', $result->rawInput);
     }
 
     #[Test]

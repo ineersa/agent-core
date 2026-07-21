@@ -370,6 +370,11 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
                 throw new \RuntimeException('not used');
             }
 
+            public function shell(string $runId, string $rawInput): void
+            {
+                throw new \RuntimeException('not used');
+            }
+
             public function steer(string $runId, AgentMessage $message): void
             {
                 throw new \RuntimeException('not used');
@@ -882,6 +887,11 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
             }
 
             public function continue(string $runId): void
+            {
+                throw new \RuntimeException('not used');
+            }
+
+            public function shell(string $runId, string $rawInput): void
             {
                 throw new \RuntimeException('not used');
             }

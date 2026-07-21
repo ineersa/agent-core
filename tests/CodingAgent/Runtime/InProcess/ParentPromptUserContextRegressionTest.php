@@ -242,6 +242,10 @@ final class ParentRegressionCapturingRunner implements AgentRunnerInterface
     {
     }
 
+    public function shell(string $runId, string $rawInput): void
+    {
+    }
+
     public function steer(string $runId, \Ineersa\AgentCore\Domain\Message\AgentMessage $message): void
     {
     }

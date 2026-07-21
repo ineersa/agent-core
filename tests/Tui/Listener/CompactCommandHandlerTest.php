@@ -124,11 +124,6 @@ final class CompactCommandSpyClient implements AgentSessionClient
         throw new \RuntimeException('Unexpected shellExecute()');
     }
 
-    public function completeRun(string $runId): void
-    {
-        throw new \RuntimeException('Unexpected completeRun()');
-    }
-
     public function compact(string $runId, ?string $customInstructions = null): void
     {
         if ($this->throwOnCompact) {

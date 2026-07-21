@@ -404,7 +404,7 @@ final class RuntimeEventTranslator
 
     /**
      * Resolve agent_command_applied with explicit priority:
-     * steer / follow_up / append_message → user.message_submitted,
+     * steer / follow_up / append_message / shell_command → user.message_submitted,
      * human_response → human_input.answered,
      * cancel → cancellation.requested,
      * everything else → status.updated.
@@ -432,6 +432,21 @@ final class RuntimeEventTranslator
                 runId: $runEvent->runId,
                 seq: $runEvent->seq,
                 payload: ['kind' => $kind, 'reason' => 'user_cancelled'],
+            );
+        }
+
+        if ('shell_command' === $kind) {
+            $idempotencyKey = (string) ($p['idempotency_key'] ?? '');
+
+            return new RuntimeEvent(
+                type: RuntimeEventTypeEnum::UserMessageSubmitted->value,
+                runId: $runEvent->runId,
+                seq: $runEvent->seq,
+                payload: [
+                    'message_id' => \sprintf('user_%s_%d_%s', $runEvent->runId, $runEvent->seq, $idempotencyKey),
+                    'text' => (string) ($p['text'] ?? ''),
+                    'idempotency_key' => $idempotencyKey,
+                ],
             );
         }
 
