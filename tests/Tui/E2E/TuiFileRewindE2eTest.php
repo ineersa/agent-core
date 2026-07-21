@@ -234,29 +234,6 @@ final class TuiFileRewindE2eTest extends TestCase
         $this->fail('Timed out waiting for any file rewind checkpoint at '.$ledgerPath);
     }
 
-    private function waitForTurnCheckpointRecorded(int $turnNo, float $timeoutSeconds = 20.0): void
-    {
-        $ledgerPath = $this->ledgerPath();
-        $deadline = microtime(true) + $timeoutSeconds;
-        while (microtime(true) < $deadline) {
-            if (is_file($ledgerPath)) {
-                $decoded = json_decode((string) file_get_contents($ledgerPath), true);
-                if (\is_array($decoded)) {
-                    foreach ($decoded['checkpoints'] ?? [] as $checkpoint) {
-                        if (!\is_array($checkpoint)) {
-                            continue;
-                        }
-                        if ((int) ($checkpoint['turn_no'] ?? 0) === $turnNo) {
-                            return;
-                        }
-                    }
-                }
-            }
-            usleep(100_000);
-        }
-        $this->fail('Timed out waiting for file rewind checkpoint for turn '.$turnNo.' at '.$ledgerPath);
-    }
-
     private function openRewindTurnPicker(TmuxPane $pane): void
     {
         $this->runSlashCommand($pane, '/rewind');
