@@ -94,10 +94,6 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
                 throw new \RuntimeException('Not expected in test');
             }
 
-            public function completeRun(string $runId): void
-            {
-            }
-
             public function compact(string $runId, ?string $customInstructions = null): void
             {
             }

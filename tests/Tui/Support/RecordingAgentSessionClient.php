@@ -59,11 +59,6 @@ final class RecordingAgentSessionClient implements AgentSessionClient
         return new RunHandle($sessionId);
     }
 
-    public function completeRun(string $runId): void
-    {
-        $this->ops[] = ['op' => 'completeRun', 'runId' => $runId, 'command' => null];
-    }
-
     public function compact(string $runId, ?string $customInstructions = null): void
     {
         $this->ops[] = ['op' => 'compact', 'runId' => $runId, 'command' => null];

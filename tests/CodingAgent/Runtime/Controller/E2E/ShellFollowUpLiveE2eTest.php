@@ -141,7 +141,7 @@ final class ShellFollowUpLiveE2eTest extends ControllerE2eTestCase
             'v' => 1, 'id' => $shellCmdId,
             'type' => 'shell_command',
             'runId' => $this->runId,
-            'payload' => ['text' => 'ls -1'],
+            'payload' => ['text' => '!ls -1'],
         ]);
 
         $shellEvents = $this->collectEventsUntilToolCompleted('bash', $this->liveLlmToolWaitTimeout());

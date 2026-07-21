@@ -396,7 +396,7 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
     // ── Subsequent shell on terminal run ───────────────────────────
 
     #[Test]
-    public function testSubsequentShellOnCompletedRunSendsStandaloneShellCommand(): void
+    public function testSubsequentShellOnCompletedRunSendsRawBangShellCommand(): void
     {
         $this->state->sessionId = 'test-session';
         $this->state->handle = new RunHandle('run-completed');
@@ -409,8 +409,8 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
                 'run-completed',
                 $this->callback(static function (UserCommand $cmd): bool {
                     return 'shell_command' === $cmd->type
-                        && 'ls -1' === $cmd->text
-                        && true === ($cmd->payload['standalone'] ?? false);
+                        && '!ls -1' === $cmd->text
+                        && [] === $cmd->payload;
                 }),
             );
 
@@ -430,7 +430,7 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
                 'run-active',
                 $this->callback(static function (UserCommand $cmd): bool {
                     return 'shell_command' === $cmd->type
-                        && 'pwd' === $cmd->text
+                        && '!pwd' === $cmd->text
                         && [] === $cmd->payload;
                 }),
             );

@@ -96,6 +96,72 @@ final class TurnTreeReplayFilterTest extends TestCase
     }
 
     #[Test]
+    public function testFilterForLeafRewindsTerminalShellChildAndKeepsModelBash(): void
+    {
+        // Thesis: terminal bang shells seed a child turn (command anchor on parent,
+        // tool lifecycle on child). Generic command-to-next-TurnAdvanced exclusion
+        // drops the abandoned shell command+output on rewind while model bash on
+        // the active parent path remains.
+        $events = [
+            $this->event(1, 0, RunEventTypeEnum::RunStarted->value, []),
+            $this->event(2, 1, RunEventTypeEnum::TurnAdvanced->value, ['turn_no' => 1, 'parent_turn_no' => null]),
+            $this->event(3, 1, RunEventTypeEnum::LeafSet->value, ['turn_no' => 1, 'reason' => 'continue']),
+            $this->event(4, 1, RunEventTypeEnum::LlmStepCompleted->value, []),
+            $this->event(5, 1, RunEventTypeEnum::AgentEnd->value, []),
+            // Model-generated bash on the parent conversational turn.
+            $this->event(6, 1, RunEventTypeEnum::ToolExecutionStart->value, [
+                'tool_call_id' => 'model-bash',
+                'tool_name' => 'bash',
+            ]),
+            $this->event(7, 1, RunEventTypeEnum::ToolExecutionEnd->value, [
+                'tool_call_id' => 'model-bash',
+                'tool_name' => 'bash',
+                'result' => 'model output',
+            ]),
+            // Terminal bang shell: parent command anchor then child turn ownership.
+            $this->event(8, 1, RunEventTypeEnum::AgentCommandApplied->value, [
+                'kind' => 'shell_command',
+                'text' => '!printf BANG_CHILD',
+            ]),
+            $this->event(9, 2, RunEventTypeEnum::TurnAdvanced->value, ['turn_no' => 2, 'parent_turn_no' => 1]),
+            $this->event(10, 2, RunEventTypeEnum::LeafSet->value, [
+                'turn_no' => 2,
+                'previous_turn_no' => 1,
+                'parent_turn_no' => 1,
+                'reason' => 'shell_command',
+            ]),
+            $this->event(11, 2, RunEventTypeEnum::ToolExecutionStart->value, [
+                'tool_call_id' => 'shell-child',
+                'tool_name' => 'bash',
+            ]),
+            $this->event(12, 2, RunEventTypeEnum::ToolExecutionEnd->value, [
+                'tool_call_id' => 'shell-child',
+                'tool_name' => 'bash',
+                'result' => 'BANG_CHILD',
+            ]),
+            $this->event(13, 0, RunEventTypeEnum::AgentEnd->value, ['reason' => 'completed']),
+            $this->event(14, 1, RunEventTypeEnum::LeafSet->value, ['turn_no' => 1, 'reason' => 'rewind']),
+        ];
+
+        $active = $this->filter->filterForLeaf($this->runId, $events, 2);
+        $activeSeqs = array_map(static fn (RunEvent $e): int => $e->seq, $active->events);
+        $this->assertContains(8, $activeSeqs, 'shell command anchor remains on active child path');
+        $this->assertContains(11, $activeSeqs, 'shell tool start on child remains');
+        $this->assertContains(12, $activeSeqs, 'shell tool end on child remains');
+        $this->assertContains(6, $activeSeqs, 'model bash remains on parent path');
+
+        $rewound = $this->filter->filterForLeaf($this->runId, $events, 1);
+        $rewoundSeqs = array_map(static fn (RunEvent $e): int => $e->seq, $rewound->events);
+        $this->assertNotContains(8, $rewoundSeqs, 'abandoned shell command anchor excluded');
+        $this->assertNotContains(9, $rewoundSeqs, 'abandoned shell child turn excluded');
+        $this->assertNotContains(11, $rewoundSeqs, 'abandoned shell tool start excluded');
+        $this->assertNotContains(12, $rewoundSeqs, 'abandoned shell tool end excluded');
+        $this->assertContains(6, $rewoundSeqs, 'model bash on parent retained');
+        $this->assertContains(7, $rewoundSeqs, 'model bash output on parent retained');
+        $this->assertContains(13, $rewoundSeqs, 'run-level agent_end retained');
+    }
+
+    #[Test]
     public function testFilterForLeafIncludesUnmappedActiveLeafCommand(): void
     {
         $events = [

@@ -143,7 +143,7 @@ final class SubmitListener implements TuiListenerRegistrar
             if (null !== $commandResult) {
                 // ── Shell command — dispatch to runtime for execution ──
                 if ($commandResult instanceof DispatchShellCommand) {
-                    $history->append($commandResult->originalText);
+                    $history->append($commandResult->rawInput);
                     self::handleShellCommand(
                         $commandResult, $state, $screen, $sessionStore,
                         $blockFactory, $client, $logger, $lifecycle,
@@ -449,9 +449,8 @@ final class SubmitListener implements TuiListenerRegistrar
      * input. Shell commands do not invoke the LLM — output is projected
      * through tool_execution events in the transcript.
      *
-     * Adds a user-message transcript block with the original submitted
-     * text (including the `!` prefix) so the prompt history
-     * can recall shell commands via Up/Down.
+     * The raw input is appended to editor history; the transcript line is
+     * projected from the canonical runtime command event.
      */
 
     /**
@@ -546,7 +545,7 @@ final class SubmitListener implements TuiListenerRegistrar
             // Shell commands do not promote [Image #N] placeholders — image paste is chat-submit only.
             // Create a session if this is the first input.
             if ('' === $state->sessionId) {
-                $state->sessionId = $sessionStore->createSession('!'.$shellCommand->command);
+                $state->sessionId = $sessionStore->createSession($shellCommand->rawInput);
                 $screen->updateSessionId($state->sessionId);
                 $lifecycle->dispatch(new \Ineersa\Tui\Runtime\TuiSessionLifecycleEventDTO(
                     type: \Ineersa\Tui\Runtime\TuiSessionLifecycleEventTypeEnum::SessionStarted,
@@ -561,26 +560,19 @@ final class SubmitListener implements TuiListenerRegistrar
                 ]);
             }
 
-            // Add a user-message block so prompt history (Up/Down)
-            // can recall the shell command after submission.
-            $userSeq = \count($state->transcript) + 1;
-            $state->transcript[] = $blockFactory->user(
-                runId: $state->sessionId,
-                text: $shellCommand->originalText,
-                seq: $userSeq,
-            );
+            // No local transcript echo: canonical agent_command_applied
+            // projects the raw bang input through the runtime event stream.
 
             if (null === $state->handle) {
                 // First input — execute shell without starting an LLM run.
-                // shellExecute() is synchronous in InProcess transport: the
-                // bash command executes, tool_exec events are persisted, and
-                // completeRun() writes the terminal AgentEnd event before we
-                // return. Transition to Completed immediately rather than
-                // relying on the tick/poller cycle, so the working indicator
-                // clears promptly. The poller will still pick up tool_exec
-                // events on the next tick and project them as transcript blocks.
+                // In-process transport is synchronous: ApplyShellCommand commits,
+                // then ExecuteShellToolCallWorker writes tool lifecycle (+ AgentEnd
+                // for standalone) before shellExecute() returns. Transition to
+                // Completed immediately so the working indicator clears without
+                // waiting for the next tick. The poller still projects tool_exec
+                // events on the next cycle.
                 $state->handle = $client->shellExecute(
-                    $shellCommand->command,
+                    $shellCommand->rawInput,
                     $state->sessionId,
                     $state->request->cwd ?? '',
                 );
@@ -590,35 +582,22 @@ final class SubmitListener implements TuiListenerRegistrar
                     $state->sessionId,
                     [
                         'run_id' => $state->sessionId,
-                        'prompt' => '!'.$shellCommand->command,
+                        'prompt' => $shellCommand->rawInput,
                     ],
                 );
                 $state->lastSeq = 0;
             } else {
-                // Subsequent input — send shell command to existing run.
-                // The worker in the tool consumer process executes bash
-                // and writes tool_exec events to the canonical event store.
-                // Inline ! on a terminal run (Completed/Cancelled/Failed) has no
-                // in-flight LLM turn to attach tool_exec events to.  Request a
-                // standalone shell so ExecuteShellToolCallWorker emits agent_end
-                // and the poller clears Working/Running (issue #183 / journey phase 9).
-                $shellPayload = $state->activity->isTerminal()
-                    ? ['standalone' => true]
-                    : [];
-
+                // Subsequent input — send the raw bang input to the existing run.
+                // Pipeline derives ownership/standalone from RunState; boundary
+                // payload must not carry standalone or dual text fields.
                 $client->send(
                     $state->handle->runId,
-                    new UserCommand(
-                        type: 'shell_command',
-                        text: $shellCommand->command,
-                        payload: $shellPayload,
-                    ),
+                    new UserCommand(type: 'shell_command', text: $shellCommand->rawInput),
                 );
 
-                // The controller must NEVER synchronously call completeRun()
-                // for shell commands because that races with the async worker
-                // and produces [AgentEnd, tool_exec_start, tool_exec_end]
-                // ordering — a LifecycleOrderValidator violation (issue #183).
+                // The controller must NEVER write AgentEnd for shell commands.
+                // ApplyShellCommandHandler + ExecuteShellToolCallWorker own
+                // terminalization so tool_exec ordering stays valid (issue #183).
                 //
                 // Activity transitions (Running → Completed) are handled by
                 // TickPollListener from the authoritative event drain — we do

@@ -76,7 +76,7 @@ PHP);
         TestDirectoryIsolation::removeDirectory($this->tmpDir);
     }
 
-    public function testSendShellCommandForwardsStandalonePayload(): void
+    public function testSendShellCommandForwardsRawBangTextWithoutStandaloneFlag(): void
     {
         $commandsFile = $this->tmpDir.'/commands.json';
         $dumpFlag = '--commands-dump='.$commandsFile;
@@ -116,8 +116,7 @@ PHP);
 
         $client->send($runId, new UserCommand(
             type: 'shell_command',
-            text: 'ls -1',
-            payload: ['standalone' => true],
+            text: '!ls -1',
         ));
 
         $deadline = time() + 5;
@@ -138,7 +137,7 @@ PHP);
         }
 
         $this->assertNotNull($shell, 'shell_command JSONL line must be written');
-        $this->assertSame('ls -1', $shell['payload']['text'] ?? null);
-        $this->assertTrue($shell['payload']['standalone'] ?? false);
+        $this->assertSame('!ls -1', $shell['payload']['text'] ?? null);
+        $this->assertArrayNotHasKey('standalone', $shell['payload'] ?? []);
     }
 }

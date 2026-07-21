@@ -151,7 +151,7 @@ final class CommandMailboxPolicyTest extends TestCase
 
         $fixture->orchestrator->onLlmStepResult(new LlmStepResult(
             runId: $runId,
-            turnNo: 1,
+            turnNo: $this->currentTurnNo($fixture, $runId),
             stepId: 'advance-1',
             attempt: 1,
             idempotencyKey: 'llm-failed-1',
@@ -163,7 +163,7 @@ final class CommandMailboxPolicyTest extends TestCase
 
         $fixture->orchestrator->onApplyCommand(new ApplyCommand(
             runId: $runId,
-            turnNo: 1,
+            turnNo: $this->currentTurnNo($fixture, $runId),
             stepId: 'cancel-1',
             attempt: 1,
             idempotencyKey: 'cancel-1',
@@ -173,7 +173,7 @@ final class CommandMailboxPolicyTest extends TestCase
 
         $fixture->orchestrator->onApplyCommand(new ApplyCommand(
             runId: $runId,
-            turnNo: 1,
+            turnNo: $this->currentTurnNo($fixture, $runId),
             stepId: 'continue-1',
             attempt: 1,
             idempotencyKey: 'continue-1',
@@ -222,7 +222,7 @@ final class CommandMailboxPolicyTest extends TestCase
 
         $fixture->orchestrator->onLlmStepResult(new LlmStepResult(
             runId: $runId,
-            turnNo: 1,
+            turnNo: $this->currentTurnNo($fixture, $runId),
             stepId: 'advance-1',
             attempt: 1,
             idempotencyKey: 'llm-failed-1',
@@ -234,7 +234,7 @@ final class CommandMailboxPolicyTest extends TestCase
 
         $fixture->orchestrator->onApplyCommand(new ApplyCommand(
             runId: $runId,
-            turnNo: 1,
+            turnNo: $this->currentTurnNo($fixture, $runId),
             stepId: 'continue-1',
             attempt: 1,
             idempotencyKey: 'continue-1',
@@ -272,7 +272,7 @@ final class CommandMailboxPolicyTest extends TestCase
         // Queue a follow-up command (stored in command store, pending)
         $fixture->orchestrator->onApplyCommand(new ApplyCommand(
             runId: $runId,
-            turnNo: 1,
+            turnNo: $this->currentTurnNo($fixture, $runId),
             stepId: 'follow-up-1',
             attempt: 1,
             idempotencyKey: 'follow-up-1',
@@ -287,7 +287,7 @@ final class CommandMailboxPolicyTest extends TestCase
         // This triggers the stop-boundary path in LlmStepResultHandler
         $fixture->orchestrator->onLlmStepResult(new LlmStepResult(
             runId: $runId,
-            turnNo: 1,
+            turnNo: $this->currentTurnNo($fixture, $runId),
             stepId: 'advance-1',
             attempt: 1,
             idempotencyKey: 'llm-stop-1',
@@ -341,7 +341,7 @@ final class CommandMailboxPolicyTest extends TestCase
         // Send LLM result with stop_reason='stop', no tool calls, no error
         $fixture->orchestrator->onLlmStepResult(new LlmStepResult(
             runId: $runId,
-            turnNo: 1,
+            turnNo: $this->currentTurnNo($fixture, $runId),
             stepId: 'advance-1',
             attempt: 1,
             idempotencyKey: 'llm-stop-2',
@@ -394,7 +394,7 @@ final class CommandMailboxPolicyTest extends TestCase
         // and NO pending commands -> shouldContinue=false
         $fixture->orchestrator->onLlmStepResult(new LlmStepResult(
             runId: $runId,
-            turnNo: 1,
+            turnNo: $this->currentTurnNo($fixture, $runId),
             stepId: 'advance-1',
             attempt: 1,
             idempotencyKey: 'llm-stop-3',
@@ -436,6 +436,14 @@ final class CommandMailboxPolicyTest extends TestCase
         $copied = $copyState->invoke($policy, $state, ['messages' => []]);
 
         $this->assertSame(2, $copied->retryAttempts);
+    }
+
+    private function currentTurnNo(CommandMailboxFixture $fixture, string $runId): int
+    {
+        $state = $fixture->runStore->get($runId);
+        $this->assertNotNull($state);
+
+        return $state->turnNo;
     }
 
     private function createFixture(int $maxPendingCommands = 100, string $steerDrainMode = 'one_at_a_time'): CommandMailboxFixture

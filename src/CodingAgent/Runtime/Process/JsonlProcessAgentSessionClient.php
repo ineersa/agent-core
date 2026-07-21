@@ -317,10 +317,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
                 'request_id' => $command->payload['request_id'] ?? '',
                 'answer' => $command->payload['answer'] ?? null,
             ], static fn (mixed $v): bool => null !== $v),
-            'shell_command' => array_filter([
-                'text' => $command->text,
-                'standalone' => true === ($command->payload['standalone'] ?? false) ? true : null,
-            ], static fn (mixed $v): bool => null !== $v),
+            'shell_command' => ['text' => $command->text],
             'rewind_to_turn' => array_filter([
                 'turn_no' => $command->payload['turn_no'] ?? null,
             ], static fn (mixed $v): bool => null !== $v),
@@ -435,26 +432,12 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
             payload: [
                 'text' => $command,
                 'cwd' => $cwd,
-                'standalone' => true,
             ],
         );
 
         $this->writeCommandWithRetry($cmd);
 
         return new RunHandle(runId: $sessionId, status: 'running');
-    }
-
-    public function completeRun(string $runId): void
-    {
-        $this->ensureProcessRunning();
-
-        $cmd = new RuntimeCommand(
-            id: uniqid('cmd_', true),
-            type: 'complete_run',
-            runId: $runId,
-        );
-
-        $this->writeCommandWithRetry($cmd);
     }
 
     private function ensureProcessRunning(): void
