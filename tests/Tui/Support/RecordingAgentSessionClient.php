@@ -54,9 +54,9 @@ final class RecordingAgentSessionClient implements AgentSessionClient
 
     public function shellExecute(\Ineersa\CodingAgent\Runtime\Contract\ShellExecutionRequestDTO $request): RunHandle
     {
-        $this->ops[] = ['op' => 'shellExecute', 'runId' => $sessionId, 'command' => null];
+        $this->ops[] = ['op' => 'shellExecute', 'runId' => $request->sessionId, 'command' => null];
 
-        return new RunHandle($sessionId);
+        return new RunHandle($request->sessionId);
     }
 
     public function completeRun(string $runId): void
