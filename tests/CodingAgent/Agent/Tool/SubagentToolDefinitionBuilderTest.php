@@ -16,13 +16,13 @@ final class SubagentToolDefinitionBuilderTest extends IsolatedKernelTestCase
         $def = SubagentToolDefinitionBuilder::build(new AgentsConfig(subagentToolTimeoutSeconds: 1800), $handler);
 
         $this->assertNull($def->timeoutSeconds);
-        $this->assertStringContainsString('full child handoff inline', $def->description);
+        $this->assertStringContainsString('full handoff inline', $def->description);
     }
 
     /**
-     * Thesis: model-visible subagent guidance must instruct independent-work
-     * batching in one tasks call and dependent-work serialization; syntax-only
-     * docs that omit the decision rule are a regression.
+     * Thesis: compact model-visible subagent metadata must still encode
+     * independent-work batching, dependent serialization, and Artifact/
+     * agent_retrieve retrieval — without requiring verbose example labels.
      */
     public function testBuildGuidanceRequiresIndependentBatchAndDependentSerialization(): void
     {
@@ -31,21 +31,25 @@ final class SubagentToolDefinitionBuilderTest extends IsolatedKernelTestCase
 
         $description = $def->description;
         $this->assertStringContainsString('Batch independent', $description);
-        $this->assertStringContainsString('"tasks"', $description);
-        $this->assertStringContainsString('serialized', $description);
+        $this->assertStringContainsString('{"tasks":[{"agent":"...","task":"..."}]}', $description);
+        $this->assertStringContainsString('{"agent":"...","task":"..."}', $description);
+        $this->assertStringContainsString('dependent', $description);
+        $this->assertStringContainsString('serialize', $description);
         $this->assertStringContainsString('agent_retrieve', $description);
+        $this->assertStringContainsString('Artifact:', $description);
 
         $guidelines = implode("\n", $def->promptGuidelines);
-        $this->assertStringContainsString('Decision rule', $guidelines);
-        $this->assertStringContainsString('{"tasks":', $guidelines);
-        // Canonical single-mode shape (not invalid pseudo-JSON like {"agent","task"}).
+        $this->assertLessThanOrEqual(5, \count($def->promptGuidelines));
+        $this->assertStringContainsString('{"tasks":[{"agent":"...","task":"..."}]}', $guidelines);
         $this->assertStringContainsString('{"agent":"...","task":"..."}', $guidelines);
-        $this->assertStringContainsString('Anti-pattern', $guidelines);
+        $this->assertStringContainsString('dependent', $guidelines);
+        $this->assertStringContainsString('concurrent', $guidelines);
         $this->assertStringContainsString('serialize', $guidelines);
-        $this->assertStringContainsString('depends', $guidelines);
         $this->assertStringContainsString('cap overflow', $guidelines);
         $this->assertStringContainsString('Artifact:', $guidelines);
         $this->assertStringContainsString('agent_retrieve', $guidelines);
+
+        $this->assertStringContainsString('batch independent', strtolower($def->promptLine));
 
         $tasksDescription = $def->parametersJsonSchema['properties']['tasks']['description'] ?? '';
         $this->assertIsString($tasksDescription);
