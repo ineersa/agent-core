@@ -63,51 +63,80 @@ final class AgentMcpToolsResolverTest extends TestCase
         $this->assertSame('all', $result['mcp_policy']['mode']);
     }
 
-    public function testConcreteAndPrefixSelectors(): void
+    public function testConcreteAndTerminalStarPrefixSelectors(): void
     {
         $resolver = $this->createResolver();
-        $result = $resolver->resolve(['mcp:websearch_search', 'mcp:context7_'], 'parent-run');
+        // Terminal-star is the only prefix wildcard; trailing `_` alone is no longer special.
+        $result = $resolver->resolve(['mcp:websearch_search', 'mcp:context7_*'], 'parent-run');
 
         $this->assertSame(['websearch_search', 'context7_resolve'], $result['mcp_runtime_tools']);
         $this->assertSame('specific', $result['mcp_policy']['mode']);
     }
 
-    private function createResolver(): AgentMcpToolsResolver
+    public function testTrailingUnderscoreSelectorIsExactNotPrefix(): void
     {
+        // Hand-built catalog name ending `_` proves the grammar: no terminal star => exact only.
+        // Old production code would expand `mcp:websearch_` as a prefix over every websearch_* tool.
+        $resolver = $this->createResolver([
+            'websearch' => ['websearch_', 'websearch_search'],
+        ]);
+
+        $result = $resolver->resolve(['mcp:websearch_'], 'parent-run');
+
+        $this->assertSame(['websearch_'], $result['mcp_runtime_tools']);
+        $this->assertNotContains('websearch_search', $result['mcp_runtime_tools']);
+        $this->assertSame('specific', $result['mcp_policy']['mode']);
+    }
+
+    public function testEmbeddedOrMultipleStarsAreNotGlobs(): void
+    {
+        $resolver = $this->createResolver();
+
+        $embedded = $resolver->resolve(['mcp:web*search_search'], 'parent-run');
+        $this->assertSame([], $embedded['mcp_runtime_tools']);
+
+        $multi = $resolver->resolve(['mcp:websearch**'], 'parent-run');
+        $this->assertSame([], $multi['mcp_runtime_tools']);
+    }
+
+    /**
+     * @param array<string, list<string>>|null $extraServerTools Override/extend per-server catalog runtime names when non-null
+     */
+    private function createResolver(?array $extraServerTools = null): AgentMcpToolsResolver
+    {
+        $defaultServerTools = [
+            'context7' => ['context7_resolve'],
+            'websearch' => ['websearch_search'],
+        ];
+        $serverTools = null === $extraServerTools
+            ? $defaultServerTools
+            : array_replace($defaultServerTools, $extraServerTools);
+
+        $servers = [];
+        foreach ($serverTools as $serverName => $hatfieldNames) {
+            $toolDefs = [];
+            foreach ($hatfieldNames as $hatfieldName) {
+                $toolDefs[] = new McpToolDefinitionDTO(
+                    hatfieldName: $hatfieldName,
+                    serverName: $serverName,
+                    mcpName: $hatfieldName,
+                    description: $hatfieldName,
+                    inputSchema: ['type' => 'object'],
+                );
+            }
+            $servers[$serverName] = new McpServerCatalogEntryDTO(
+                serverName: $serverName,
+                transport: 'http',
+                status: McpServerCatalogStatusEnum::CONNECTED,
+                tools: $toolDefs,
+            );
+        }
+
         $catalog = new McpToolCatalogDTO(
             runId: 'parent-run',
             generatedAt: '2026-01-01T00:00:00Z',
             configHash: 'hash',
-            servers: [
-                'context7' => new McpServerCatalogEntryDTO(
-                    serverName: 'context7',
-                    transport: 'http',
-                    status: McpServerCatalogStatusEnum::CONNECTED,
-                    tools: [
-                        new McpToolDefinitionDTO(
-                            hatfieldName: 'context7_resolve',
-                            serverName: 'context7',
-                            mcpName: 'resolve',
-                            description: 'ctx',
-                            inputSchema: ['type' => 'object'],
-                        ),
-                    ],
-                ),
-                'websearch' => new McpServerCatalogEntryDTO(
-                    serverName: 'websearch',
-                    transport: 'http',
-                    status: McpServerCatalogStatusEnum::CONNECTED,
-                    tools: [
-                        new McpToolDefinitionDTO(
-                            hatfieldName: 'websearch_search',
-                            serverName: 'websearch',
-                            mcpName: 'search',
-                            description: 'search',
-                            inputSchema: ['type' => 'object'],
-                        ),
-                    ],
-                ),
-            ],
+            servers: $servers,
         );
 
         $catalogStore = $this->createStub(McpToolCatalogStoreInterface::class);

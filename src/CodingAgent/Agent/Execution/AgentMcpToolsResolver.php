@@ -96,6 +96,15 @@ final readonly class AgentMcpToolsResolver
     }
 
     /**
+     * Expand `mcp:` selectors against catalog-exposed Hatfield runtime names.
+     *
+     * Grammar invariants:
+     *  - `mcp:-` is none (checked first; wins over every other selector).
+     *  - `mcp:*` is all catalog-exposed MCP tools.
+     *  - Exactly one terminal `*` is the only prefix wildcard (`mcp:websearch_*` → names starting with `websearch_`).
+     *  - A selector with no `*` is always exact, including names that end with `_`.
+     *  - Embedded or multiple `*` characters are not globs; they fall through to exact match (normally no catalog hit).
+     *
      * @param list<string> $selectors
      * @param list<string> $allExposed
      *
@@ -116,14 +125,19 @@ final readonly class AgentMcpToolsResolver
             if ('-' === $value || '*' === $value) {
                 continue;
             }
-            if (str_ends_with($value, '_')) {
+
+            // Prefix wildcard: exactly one star, and it must be terminal (`mcp:<prefix*>`).
+            if (str_ends_with($value, '*') && 1 === substr_count($value, '*')) {
+                $prefix = substr($value, 0, -1);
                 foreach ($allExposed as $name) {
-                    if (str_starts_with($name, $value)) {
+                    if (str_starts_with($name, $prefix)) {
                         $allowed[$name] = true;
                     }
                 }
                 continue;
             }
+
+            // Exact match only (including trailing `_`, embedded/multiple stars, etc.).
             if (\in_array($value, $allExposed, true)) {
                 $allowed[$value] = true;
             }

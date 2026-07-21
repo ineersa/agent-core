@@ -22,8 +22,8 @@ Invalid explicit values are rejected: empty list `tools: []`, blank entries, or 
 ```yaml
 tools:
   - read
-  - mcp:context7_resolve   # one exposed MCP tool (runtime name, no mcp prefix)
-  - mcp:websearch_         # all tools whose exposed names start with websearch_
+  - mcp:context7_resolve   # one exposed MCP tool (runtime name)
+  - mcp:websearch_*        # all tools whose exposed names start with websearch_
   - mcp:*                  # all MCP tools including specific servers
   - mcp:-                  # no MCP tools
 ```
@@ -33,7 +33,8 @@ Parent/main runs only see MCP tools from `availability: all` servers in the acti
 Explicit `tools` without any `mcp:` entry: non-MCP allowlist only (no MCP).
 
 - **`subagent`** is never available inside child runs.
-- **Child MCP policy** is declared in `tools` using `mcp:` selectors (for example `mcp:websearch_search`, `mcp:websearch_`, `mcp:*`, `mcp:-`).
+- **Child MCP policy** is declared in `tools` using `mcp:` selectors (for example `mcp:websearch_search`, `mcp:websearch_*`, `mcp:*`, `mcp:-`).
+- Exactly one terminal `*` is a prefix wildcard (`mcp:websearch_*`). A selector with no `*` is always exact, even if it ends with `_`. Embedded or multiple `*` characters are not globs.
 - The legacy top-level `mcp:` frontmatter block (`mcp.mode` / `mcp.tools`) is not used for child tool exposure; declare MCP in `tools` with `mcp:` selectors instead.
 
 ## Model and context
