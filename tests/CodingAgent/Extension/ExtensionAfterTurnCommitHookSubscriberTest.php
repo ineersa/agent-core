@@ -34,7 +34,13 @@ final class ExtensionAfterTurnCommitHookSubscriberTest extends TestCase
             'run-1',
             2,
             'running',
-            [new AfterTurnCommitEventSummary(1, 'turn_end', ['reason' => 'completed'])],
+            [new AfterTurnCommitEventSummary(
+                seq: 1,
+                type: 'turn_end',
+                payload: ['reason' => 'completed'],
+                turnNo: 7,
+                createdAt: '2026-07-22T12:00:00+00:00',
+            )],
             0,
         );
         $subscriber->handleAfterTurnCommit($ctx);
@@ -42,7 +48,10 @@ final class ExtensionAfterTurnCommitHookSubscriberTest extends TestCase
         $this->assertSame(1, $captured->events[0]->seq);
         $this->assertSame('turn_end', $captured->events[0]->type);
         $this->assertSame(['reason' => 'completed'], $captured->events[0]->payload);
-        $this->assertSame(2, $captured->events[0]->turnNo);
+        // Per-event provenance, not the surrounding context turnNo.
+        $this->assertSame(7, $captured->events[0]->turnNo);
+        $this->assertSame('2026-07-22T12:00:00+00:00', $captured->events[0]->createdAt);
+        $this->assertSame(2, $captured->turnNo);
     }
 
     public function testHookFailureIsLoggedAndDoesNotPropagate(): void

@@ -686,7 +686,7 @@ reusable without destructive truncation or separate tree files.
 
 Hatfield exposes three minimal Extension API capabilities for independently owned observational memory:
 
-1. **After-turn commit hook** — existing `AfterTurnCommitHookInterface` receives the already-committed hot event batch (`seq`, `type`, optional `payload`/`turnNo`/`createdAt`). Best-effort acceleration only; no EventStore historical reads on this path.
+1. **After-turn commit hook** — existing `AfterTurnCommitHookInterface` receives the already-committed hot event batch (`seq`, `type`, optional `payload`, and each event's own `turnNo`/`createdAt` ISO-8601 provenance when present). Best-effort acceleration only; no EventStore historical reads on this path.
 2. **Canonical session event reader** — `SessionEventReaderInterface::readRange()` for recovery/compaction catch-up only. Full-log scans are acceptable here; do not call on every turn/boundary.
 3. **Agent runner** — `$api->agent()->run(AgentCallRequestDTO)` is publicly blocking. Internally Hatfield streams (`stream=true`) via the configured Symfony AI Platform + Agent + AgentProcessor so Codex WebSocket and HTTP streaming providers complete. Isolated tools only; no ambient Hatfield tools; exact `provider/model` string.
 

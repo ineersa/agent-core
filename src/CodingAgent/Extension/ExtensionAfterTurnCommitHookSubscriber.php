@@ -31,13 +31,13 @@ final readonly class ExtensionAfterTurnCommitHookSubscriber implements HookSubsc
             turnNo: $context->turnNo,
             status: $context->status,
             events: array_map(
-                static function (AfterTurnCommitEventSummary $e) use ($context): AfterTurnCommitEventSummaryDTO {
+                static function (AfterTurnCommitEventSummary $e): AfterTurnCommitEventSummaryDTO {
                     return new AfterTurnCommitEventSummaryDTO(
                         seq: $e->seq,
                         type: $e->type,
                         payload: $e->payload,
-                        turnNo: $context->turnNo,
-                        createdAt: null,
+                        turnNo: $e->turnNo,
+                        createdAt: $e->createdAt,
                     );
                 },
                 $context->events,
@@ -55,8 +55,8 @@ final readonly class ExtensionAfterTurnCommitHookSubscriber implements HookSubsc
                     'run_id' => $context->runId,
                     'turn_no' => $context->turnNo,
                     'hook' => $hook::class,
+                    // Privacy: hook exceptions may include extension-owned/session content.
                     'exception_class' => $e::class,
-                    'exception_message' => $e->getMessage(),
                 ]);
             }
         }

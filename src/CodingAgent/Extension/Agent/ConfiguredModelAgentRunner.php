@@ -10,7 +10,6 @@ use Ineersa\AgentCore\Infrastructure\SymfonyAi\PlatformInvocationMetadata;
 use Ineersa\Hatfield\ExtensionApi\Agent\AgentCallRequestDTO;
 use Ineersa\Hatfield\ExtensionApi\Agent\AgentRunnerInterface;
 use Psr\Log\LoggerInterface;
-use Psr\Log\NullLogger;
 use Symfony\AI\Agent\Agent;
 use Symfony\AI\Agent\Toolbox\AgentProcessor;
 use Symfony\AI\Platform\Message\Message;
@@ -30,7 +29,7 @@ final readonly class ConfiguredModelAgentRunner implements AgentRunnerInterface
 {
     public function __construct(
         private PlatformInterface $platform,
-        private LoggerInterface $logger = new NullLogger(),
+        private LoggerInterface $logger,
     ) {
     }
 
@@ -92,8 +91,8 @@ final readonly class ConfiguredModelAgentRunner implements AgentRunnerInterface
                 'correlation_id' => $request->correlationId,
                 'model' => $request->model,
                 'step_id' => $stepId,
+                // Privacy: log exception class only; message may contain prompts/tool output.
                 'exception_class' => $e::class,
-                'exception_message' => $e->getMessage(),
             ]);
 
             throw $e;

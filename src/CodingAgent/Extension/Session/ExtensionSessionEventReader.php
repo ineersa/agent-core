@@ -9,7 +9,6 @@ use Ineersa\Hatfield\ExtensionApi\Session\SessionEventDTO;
 use Ineersa\Hatfield\ExtensionApi\Session\SessionEventReaderException;
 use Ineersa\Hatfield\ExtensionApi\Session\SessionEventReaderInterface;
 use Psr\Log\LoggerInterface;
-use Psr\Log\NullLogger;
 
 /**
  * Recovery/compaction-only adapter over the canonical EventStore.
@@ -21,7 +20,7 @@ final readonly class ExtensionSessionEventReader implements SessionEventReaderIn
 {
     public function __construct(
         private EventStoreInterface $eventStore,
-        private LoggerInterface $logger = new NullLogger(),
+        private LoggerInterface $logger,
     ) {
     }
 
@@ -49,8 +48,8 @@ final readonly class ExtensionSessionEventReader implements SessionEventReaderIn
                 'session_id' => $runId,
                 'start_seq' => $startSeq,
                 'end_seq' => $endSeq,
+                // Privacy: log exception class only; store errors may include path/content fragments.
                 'exception_class' => $e::class,
-                'exception_message' => $e->getMessage(),
             ]);
 
             throw SessionEventReaderException::readFailed($runId, 'event store read failed.');
