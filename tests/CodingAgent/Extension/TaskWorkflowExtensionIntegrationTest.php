@@ -72,6 +72,17 @@ final class TaskWorkflowExtensionIntegrationTest extends TestCase
             $appConfig,
             $execBridge,
             $commandAdapter,
+            new class implements \Ineersa\Hatfield\ExtensionApi\Agent\AgentRunnerInterface {
+                public function run(\Ineersa\Hatfield\ExtensionApi\Agent\AgentCallRequestDTO $request): void
+                {
+                }
+            },
+            new class implements \Ineersa\Hatfield\ExtensionApi\Session\SessionEventReaderInterface {
+                public function readRange(string $runId, int $startSeq, int $endSeq): iterable
+                {
+                    return [];
+                }
+            },
         );
 
         $manager = new ExtensionManager($appConfig, $bridge, new NullLogger());

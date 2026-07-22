@@ -41,7 +41,18 @@ final class FileRewindExtensionIntegrationTest extends TestCase
             new ExtensionHookRegistry(),
             $appConfig,
             new ExtensionExecBridge(),
-            new TuiCommandRegistryAdapter($slashRegistry)
+            new TuiCommandRegistryAdapter($slashRegistry),
+            new class implements \Ineersa\Hatfield\ExtensionApi\Agent\AgentRunnerInterface {
+                public function run(\Ineersa\Hatfield\ExtensionApi\Agent\AgentCallRequestDTO $request): void
+                {
+                }
+            },
+            new class implements \Ineersa\Hatfield\ExtensionApi\Session\SessionEventReaderInterface {
+                public function readRange(string $runId, int $startSeq, int $endSeq): iterable
+                {
+                    return [];
+                }
+            },
         );
 
         $diagnostics = (new ExtensionManager($appConfig, $bridge, new NullLogger()))->loadExtensions();

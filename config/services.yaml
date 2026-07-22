@@ -594,8 +594,17 @@ services:
   # service discovery — bare directory paths register 0 services).
   Ineersa\CodingAgent\Infrastructure\SymfonyAi\ConfiguredSymfonyAiPlatformFactory: ~
 
+  # Lazy so console/migration/extension boot does not construct OAuth providers.
   Symfony\AI\Platform\PlatformInterface:
+    lazy: true
     factory: ['@Ineersa\CodingAgent\Infrastructure\SymfonyAi\ConfiguredSymfonyAiPlatformFactory', 'createPlatform']
+
+  # Extension API agent/event capabilities (concrete classes autowired).
+  Ineersa\Hatfield\ExtensionApi\Agent\AgentRunnerInterface:
+    alias: Ineersa\CodingAgent\Extension\Agent\ConfiguredModelAgentRunner
+
+  Ineersa\Hatfield\ExtensionApi\Session\SessionEventReaderInterface:
+    alias: Ineersa\CodingAgent\Extension\Session\ExtensionSessionEventReader
 
   # Default model binding (fallback when no resolver or no session context).
   Ineersa\AgentCore\Application\Handler\ExecuteLlmStepWorker:
