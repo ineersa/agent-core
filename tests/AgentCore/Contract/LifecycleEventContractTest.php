@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Tests\Contract;
 
 use Ineersa\AgentCore\Domain\Event\Lifecycle\AgentEndEvent;
-use Ineersa\AgentCore\Domain\Event\LifecycleOrderValidator;
 use Ineersa\AgentCore\Domain\Event\Lifecycle\AgentStartEvent;
 use Ineersa\AgentCore\Domain\Event\Lifecycle\MessageEndEvent;
 use Ineersa\AgentCore\Domain\Event\Lifecycle\MessageStartEvent;
@@ -15,6 +14,7 @@ use Ineersa\AgentCore\Domain\Event\Lifecycle\ToolExecutionStartEvent;
 use Ineersa\AgentCore\Domain\Event\Lifecycle\ToolExecutionUpdateEvent;
 use Ineersa\AgentCore\Domain\Event\Lifecycle\TurnEndEvent;
 use Ineersa\AgentCore\Domain\Event\Lifecycle\TurnStartEvent;
+use Ineersa\AgentCore\Domain\Event\LifecycleOrderValidator;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
@@ -24,7 +24,7 @@ final class LifecycleEventContractTest extends TestCase
     #[DataProvider('validFlowProvider')]
     public function testLifecycleOrderForMainFlows(array $events): void
     {
-        self::assertSame([], LifecycleOrderValidator::validateOrder($events));
+        $this->assertSame([], LifecycleOrderValidator::validateOrder($events));
     }
 
     /**
@@ -128,7 +128,7 @@ final class LifecycleEventContractTest extends TestCase
             new AgentEndEvent($runId, 7, 1),
         ];
 
-        self::assertSame([], LifecycleOrderValidator::validateOrder($events));
+        $this->assertSame([], LifecycleOrderValidator::validateOrder($events));
     }
 
     public function testExtensionEventCannotCrossAssistantToolBarrier(): void
@@ -149,8 +149,8 @@ final class LifecycleEventContractTest extends TestCase
 
         $violations = LifecycleOrderValidator::validateOrder($events);
 
-        self::assertNotEmpty($violations);
-        self::assertStringContainsString(
+        $this->assertNotEmpty($violations);
+        $this->assertStringContainsString(
             'cannot be emitted between assistant "message_end" and tool preflight start',
             implode("\n", $violations),
         );
@@ -163,8 +163,8 @@ final class LifecycleEventContractTest extends TestCase
     {
         $violations = LifecycleOrderValidator::validateOrder($events);
 
-        self::assertNotEmpty($violations);
-        self::assertStringContainsString(
+        $this->assertNotEmpty($violations);
+        $this->assertStringContainsString(
             $expectedSubstring,
             implode("\n", $violations),
         );

@@ -8,6 +8,7 @@ use Psr\Log\LoggerInterface;
 use Symfony\AI\Platform\Bridge\OpenAICodex\Contract\CodexContract;
 use Symfony\AI\Platform\Contract;
 use Symfony\AI\Platform\ModelCatalog\ModelCatalogInterface;
+use Symfony\AI\Platform\ModelClientInterface;
 use Symfony\AI\Platform\ModelRouter\CatalogBasedModelRouter;
 use Symfony\AI\Platform\ModelRouterInterface;
 use Symfony\AI\Platform\Platform;
@@ -34,15 +35,35 @@ class Factory
         string $originator = 'hatfield',
         string $name = 'openai-codex',
         ?LoggerInterface $logger = null,
+        ?\Closure $accessTokenRefresher = null,
+        CodexTransportEnum $transport = CodexTransportEnum::Websocket,
+        ?CodexWebSocketConnectorInterface $websocketConnector = null,
+        ?CodexWebSocketConnectionCache $websocketConnectionCache = null,
+        CodexWebSocketCacheSettings $websocketCacheSettings = new CodexWebSocketCacheSettings(),
     ): ProviderInterface {
-        // Use the raw HttpClientInterface directly — no EventSourceHttpClient
-        // wrapping. The CodexSseStream (inside CodexModelClient) handles SSE
-        // parsing independently of content-type headers.
         $httpClient ??= HttpClient::create();
+        $requestBodyFactory = new CodexRequestBodyFactory();
+
+        $modelClient = self::createModelClient(
+            $transport,
+            $httpClient,
+            $baseUrl,
+            $accessToken,
+            $accountId,
+            $responsesPath,
+            $originator,
+            $logger,
+            $accessTokenRefresher,
+            $requestBodyFactory,
+            $websocketConnector,
+            $websocketConnectionCache,
+            $websocketCacheSettings,
+            $name,
+        );
 
         return new Provider(
             $name,
-            [new CodexModelClient($httpClient, $baseUrl, $accessToken, $accountId, $responsesPath, $originator, $logger)],
+            [$modelClient],
             [new ResultConverter()],
             $modelCatalog,
             $contract ?? CodexContract::create(),
@@ -66,11 +87,64 @@ class Factory
         string $name = 'openai-codex',
         ?ModelRouterInterface $modelRouter = null,
         ?LoggerInterface $logger = null,
+        ?\Closure $accessTokenRefresher = null,
+        CodexTransportEnum $transport = CodexTransportEnum::Websocket,
+        ?CodexWebSocketConnectorInterface $websocketConnector = null,
+        ?CodexWebSocketConnectionCache $websocketConnectionCache = null,
+        CodexWebSocketCacheSettings $websocketCacheSettings = new CodexWebSocketCacheSettings(),
     ): Platform {
         return new Platform(
-            [self::createProvider($baseUrl, $accessToken, $accountId, $httpClient, $modelCatalog, $contract, $eventDispatcher, $responsesPath, $originator, $name, $logger)],
+            [self::createProvider($baseUrl, $accessToken, $accountId, $httpClient, $modelCatalog, $contract, $eventDispatcher, $responsesPath, $originator, $name, $logger, $accessTokenRefresher, $transport, $websocketConnector, $websocketConnectionCache, $websocketCacheSettings)],
             $modelRouter ?? new CatalogBasedModelRouter(),
             $eventDispatcher,
         );
+    }
+
+    private static function createModelClient(
+        CodexTransportEnum $transport,
+        HttpClientInterface $httpClient,
+        string $baseUrl,
+        string $accessToken,
+        string $accountId,
+        string $responsesPath,
+        string $originator,
+        ?LoggerInterface $logger,
+        ?\Closure $accessTokenRefresher,
+        CodexRequestBodyFactory $requestBodyFactory,
+        ?CodexWebSocketConnectorInterface $websocketConnector,
+        ?CodexWebSocketConnectionCache $websocketConnectionCache,
+        CodexWebSocketCacheSettings $websocketCacheSettings,
+        string $providerId,
+    ): ModelClientInterface {
+        return match ($transport) {
+            CodexTransportEnum::Sse => new CodexModelClient(
+                $httpClient,
+                $baseUrl,
+                $accessToken,
+                $accountId,
+                $responsesPath,
+                $originator,
+                $logger,
+                $accessTokenRefresher,
+                $requestBodyFactory,
+            ),
+            CodexTransportEnum::Websocket, CodexTransportEnum::WebsocketCached => new CodexWebSocketModelClient(
+                $websocketConnector ?? new AmpCodexWebSocketConnector(),
+                new CodexWebSocketUrlResolver(),
+                new CodexWebSocketHandshakeHeadersFactory(),
+                $requestBodyFactory,
+                $baseUrl,
+                $accessToken,
+                $accountId,
+                $responsesPath,
+                $originator,
+                $providerId,
+                $logger,
+                $accessTokenRefresher,
+                transport: $transport,
+                connectionCache: CodexTransportEnum::WebsocketCached === $transport ? $websocketConnectionCache : null,
+                cacheSettings: $websocketCacheSettings,
+            ),
+        };
     }
 }

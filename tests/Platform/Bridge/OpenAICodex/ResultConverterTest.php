@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace Symfony\AI\Platform\Bridge\OpenAICodex\Tests;
 
+use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use PHPUnit\Framework\TestCase;
+use Symfony\AI\Platform\Bridge\OpenAICodex\CodexSseStream;
 use Symfony\AI\Platform\Bridge\OpenAICodex\ResultConverter;
 use Symfony\AI\Platform\Exception\AuthenticationException;
 use Symfony\AI\Platform\Exception\BadRequestException;
@@ -19,7 +21,6 @@ use Symfony\AI\Platform\Result\RawResultInterface;
 use Symfony\AI\Platform\Result\Stream\Delta\TextDelta;
 use Symfony\AI\Platform\Result\Stream\Delta\ThinkingComplete;
 use Symfony\AI\Platform\Result\Stream\Delta\ThinkingDelta;
-use Symfony\AI\Platform\Result\Stream\Delta\ThinkingSignature;
 use Symfony\AI\Platform\Result\Stream\Delta\ThinkingStart;
 use Symfony\AI\Platform\Result\Stream\Delta\ToolCallComplete;
 use Symfony\AI\Platform\Result\StreamResult;
@@ -29,7 +30,6 @@ use Symfony\AI\Platform\Result\ToolCallResult;
 use Symfony\AI\Platform\TokenUsage\TokenUsage;
 use Symfony\Contracts\HttpClient\Exception\ClientExceptionInterface;
 use Symfony\Contracts\HttpClient\ResponseInterface;
-use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 
 #[AllowMockObjectsWithoutExpectations]
 final class ResultConverterTest extends TestCase
@@ -38,6 +38,7 @@ final class ResultConverterTest extends TestCase
     {
         $converter = new ResultConverter();
         $httpResponse = $this->createMock(ResponseInterface::class);
+        $httpResponse->method('getStatusCode')->willReturn(200);
         $httpResponse->method('toArray')->willReturn([
             'output' => [
                 [
@@ -61,6 +62,7 @@ final class ResultConverterTest extends TestCase
     {
         $converter = new ResultConverter();
         $httpResponse = $this->createMock(ResponseInterface::class);
+        $httpResponse->method('getStatusCode')->willReturn(200);
         $httpResponse->method('toArray')->willReturn([
             'output' => [
                 [
@@ -86,6 +88,7 @@ final class ResultConverterTest extends TestCase
     {
         $converter = new ResultConverter();
         $httpResponse = $this->createMock(ResponseInterface::class);
+        $httpResponse->method('getStatusCode')->willReturn(200);
         $httpResponse->method('toArray')->willReturn([
             'output' => [
                 [
@@ -120,6 +123,7 @@ final class ResultConverterTest extends TestCase
     {
         $converter = new ResultConverter();
         $httpResponse = $this->createMock(ResponseInterface::class);
+        $httpResponse->method('getStatusCode')->willReturn(200);
         $httpResponse->method('toArray')->willReturn([
             'output' => [
                 [
@@ -156,6 +160,7 @@ final class ResultConverterTest extends TestCase
     {
         $converter = new ResultConverter();
         $httpResponse = $this->createMock(ResponseInterface::class);
+        $httpResponse->method('getStatusCode')->willReturn(200);
         $httpResponse->method('toArray')->willReturn([
             'output' => [
                 [
@@ -195,6 +200,7 @@ final class ResultConverterTest extends TestCase
     {
         $converter = new ResultConverter();
         $httpResponse = $this->createMock(ResponseInterface::class);
+        $httpResponse->method('getStatusCode')->willReturn(200);
         $httpResponse->method('toArray')->willReturn([
             'output' => [
                 [
@@ -224,6 +230,7 @@ final class ResultConverterTest extends TestCase
     {
         $converter = new ResultConverter();
         $httpResponse = $this->createMock(ResponseInterface::class);
+        $httpResponse->method('getStatusCode')->willReturn(200);
         $httpResponse->method('toArray')->willReturn([
             'output' => [
                 [
@@ -248,6 +255,7 @@ final class ResultConverterTest extends TestCase
     {
         $converter = new ResultConverter();
         $httpResponse = $this->createMock(ResponseInterface::class);
+        $httpResponse->method('getStatusCode')->willReturn(200);
 
         $httpResponse->expects($this->exactly(1))
             ->method('toArray')
@@ -296,6 +304,7 @@ final class ResultConverterTest extends TestCase
     {
         $converter = new ResultConverter();
         $httpResponse = $this->createMock(ResponseInterface::class);
+        $httpResponse->method('getStatusCode')->willReturn(200);
         $httpResponse->method('toArray')->willReturn([]);
 
         $this->expectException(RuntimeException::class);
@@ -350,6 +359,7 @@ final class ResultConverterTest extends TestCase
     {
         $converter = new ResultConverter();
         $httpResponse = $this->createMock(ResponseInterface::class);
+        $httpResponse->method('getStatusCode')->willReturn(200);
         $httpResponse->method('toArray')->willReturn([
             'error' => [
                 'code' => 'invalid_request_error',
@@ -360,7 +370,7 @@ final class ResultConverterTest extends TestCase
         ]);
 
         $this->expectException(RuntimeException::class);
-        $this->expectExceptionMessage('Error "invalid_request_error"-invalid_request (model): "The model `unknown` does not exist".');
+        $this->expectExceptionMessage('[invalid_request_error/invalid_request/model]');
 
         $converter->convert(new RawHttpResult($httpResponse));
     }
@@ -687,6 +697,68 @@ final class ResultConverterTest extends TestCase
         $converter->convert(new RawHttpResult($httpResponse));
     }
 
+    /**
+     * Regression: non-2xx HTTP responses must throw before SSE iteration instead of
+     * returning an empty StreamResult (observed HTTP 404 on Codex streaming path).
+     */
+    public function testStreamNon2xxHttp404ThrowsBeforeSseIteration(): void
+    {
+        $converter = new ResultConverter();
+        $secret = 'LEAKED_PROVIDER_SECRET_MARKER_9f3c2a1b';
+        $httpResponse = $this->createMock(ResponseInterface::class);
+        $httpResponse->method('getStatusCode')->willReturn(404);
+        $httpResponse->method('getContent')->willReturn(json_encode([
+            'error' => [
+                'code' => 'not_found',
+                'type' => 'resource_missing',
+                'message' => 'The requested resource was not found '.$secret,
+                'detail' => $secret,
+            ],
+            'error_description' => $secret,
+        ]));
+
+        $raw = new RawHttpResult($httpResponse, new CodexSseStream());
+
+        try {
+            $converter->convert($raw, ['stream' => true]);
+            $this->fail('Expected RuntimeException');
+        } catch (RuntimeException $e) {
+            $this->assertStringContainsString('HTTP 404', $e->getMessage());
+            $this->assertStringContainsString('[not_found/resource_missing]', $e->getMessage());
+            $this->assertStringNotContainsString($secret, $e->getMessage());
+            $this->assertStringNotContainsString('The requested resource was not found', $e->getMessage());
+            $this->assertDoesNotMatchRegularExpression('/HTTP 404: HTTP 404/', $e->getMessage());
+        }
+    }
+
+    public function testStreamErrorMessageDoesNotLeakProviderSecret(): void
+    {
+        $converter = new ResultConverter();
+        $httpResponse = $this->createStub(ResponseInterface::class);
+        $httpResponse->method('getStatusCode')->willReturn(200);
+
+        $secret = 'LEAKED_STREAM_SECRET_MARKER_7f3a91c2';
+        $events = [
+            ['type' => 'error', 'error' => [
+                'code' => 'invalid_request_error',
+                'type' => 'invalid_request',
+                'param' => 'model',
+                'message' => $secret,
+            ]],
+        ];
+
+        $raw = new InMemoryRawResult([], $events, $httpResponse);
+
+        try {
+            $streamResult = $converter->convert($raw, ['stream' => true]);
+            iterator_to_array($streamResult->getContent());
+            $this->fail('Expected stream error');
+        } catch (RuntimeException $e) {
+            $this->assertStringContainsString('[invalid_request_error/invalid_request/model]', $e->getMessage());
+            $this->assertStringNotContainsString($secret, $e->getMessage());
+        }
+    }
+
     // -- Stream error handling (regression: silent mid-turn death) --
 
     /**
@@ -708,7 +780,7 @@ final class ResultConverterTest extends TestCase
         $raw = new InMemoryRawResult([], $events, $httpResponse);
 
         $this->expectException(RuntimeException::class);
-        $this->expectExceptionMessageMatches('/server_error.*Internal error/');
+        $this->expectExceptionMessage('[server_error]');
 
         $streamResult = $converter->convert($raw, ['stream' => true]);
         iterator_to_array($streamResult->getContent());
@@ -735,7 +807,7 @@ final class ResultConverterTest extends TestCase
         $raw = new InMemoryRawResult([], $events, $httpResponse);
 
         $this->expectException(RuntimeException::class);
-        $this->expectExceptionMessageMatches('/rate_limited.*Rate limited/');
+        $this->expectExceptionMessage('[rate_limited]');
 
         $streamResult = $converter->convert($raw, ['stream' => true]);
         iterator_to_array($streamResult->getContent());

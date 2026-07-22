@@ -175,23 +175,6 @@ final class ToolQuestionStore implements ToolQuestionStoreInterface
     }
 
     /**
-     * Answer a pending question with a string answer (Approval-kind).
-     * Used by SafeGuard approvals — values: 'Allow once', 'Always allow', 'Deny'.
-     *
-     * Uses fresh DB read and idempotency guard, same as answer().
-     *
-     * @param string $answer the string answer (e.g. 'Allow once', 'Always allow', 'Deny')
-     *
-     * @return bool true if the question was found and answered
-     */
-    public function answerWithText(string $requestId, string $answer): bool
-    {
-        return $this->answerWithCallable($requestId, static function (ToolQuestion $q) use ($answer): void {
-            $q->setAnswerText($answer);
-        });
-    }
-
-    /**
      * Poll for an answer with a fresh DB read. Returns the answer if
      * the question has been answered, null if still pending, or false
      * if cancelled/rejected.
@@ -211,27 +194,6 @@ final class ToolQuestionStore implements ToolQuestionStoreInterface
             return false;
         }
 
-        return null;
-    }
-
-    /**
-     * Poll for a string answer (Approval-kind) with a fresh DB read.
-     *
-     * Returns the string answer (e.g. 'Allow once') if answered,
-     * null if still pending or cancelled.
-     */
-    public function pollAnswerText(string $requestId): ?string
-    {
-        $question = $this->findByRequestId($requestId);
-        if (null === $question) {
-            return null;
-        }
-
-        if (ToolQuestionStatusEnum::Answered === $question->status) {
-            return $question->answerText;
-        }
-
-        // Cancelled or pending → return null (caller treats this as unresolved)
         return null;
     }
 
@@ -322,7 +284,7 @@ final class ToolQuestionStore implements ToolQuestionStoreInterface
     }
 
     /**
-     * Shared logic for answer and answerWithText.
+     * Shared logic for answer().
      *
      * @param callable(ToolQuestion): void $mutator
      *

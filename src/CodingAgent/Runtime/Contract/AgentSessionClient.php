@@ -35,6 +35,19 @@ interface AgentSessionClient
      */
     public function events(string $runId): iterable;
 
+    /**
+     * Begin retaining cross-run JSONL events for a child run opened in subagent live view.
+     *
+     * Must be called before canonical child snapshot replay so parent-poll half-race events
+     * are not lost. Pair with {@see endObservingChildRun()} on live-view exit or child switch.
+     */
+    public function beginObservingChildRun(string $childRunId): void;
+
+    /**
+     * Stop full observation retention for a child run; replayable durable backlog is released.
+     */
+    public function endObservingChildRun(string $childRunId): void;
+
     public function cancel(string $runId): void;
 
     /**
@@ -45,15 +58,6 @@ interface AgentSessionClient
      * @return RunHandle handle for polling events
      */
     public function shellExecute(string $command, string $sessionId, string $cwd): RunHandle;
-
-    /**
-     * Mark a run as completed by emitting a terminal AgentEnd event.
-     *
-     * Used by standalone shell commands (first-input !cmd) to signal
-     * the TUI poller that the shell-only action is finished so the
-     * working status transitions from Running to Completed.
-     */
-    public function completeRun(string $runId): void;
 
     /**
      * Request compaction of the conversation for the given run.

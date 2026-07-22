@@ -19,6 +19,7 @@ use Symfony\AI\Agent\Toolbox\Toolbox;
 use Symfony\AI\Agent\Toolbox\ToolboxInterface;
 use Symfony\AI\Agent\Toolbox\ToolResult as SymfonyToolResult;
 use Symfony\AI\Platform\Result\ToolCall as SymfonyToolCall;
+use Symfony\Component\Clock\MockClock;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 
 final class ToolExecutorTest extends TestCase
@@ -425,15 +426,18 @@ final class ToolExecutorTest extends TestCase
         $this->assertFalse($result->isError);
         $this->assertNull($accessor->current());
     }
+
     public function testNoPostHocTimeoutWhenPolicyTimeoutIsNull(): void
     {
-        $toolbox = new SlowToolbox();
+        $clock = new MockClock();
+        $toolbox = new ClockAdvancingToolbox($clock, 301);
         $executor = new ToolExecutor(
             defaultMode: 'parallel',
             defaultTimeoutSeconds: null,
             maxParallelism: 2,
             toolbox: $toolbox,
             resultStore: new ToolExecutionResultStore(),
+            clock: $clock,
         );
 
         $result = $executor->execute(ToolCallBuilder::create('call-slow')
@@ -444,32 +448,102 @@ final class ToolExecutorTest extends TestCase
             ->build());
 
         $this->assertFalse($result->isError);
-        $this->assertSame('slow-ok', $result->content[0]['text']);
+        $this->assertSame('clock-ok', $result->content[0]['text']);
         $this->assertNull($result->details['timeout_seconds'] ?? null);
     }
 
-}
-
-
-    #[AsTool(name: 'human_gate', description: 'Ask for human input.')]
-    final class InterruptTool
+    public function testNullCallTimeoutIgnoresGlobalDefaultPostHocCap(): void
     {
-        /**
-         * @return array{kind: string, question_id: string, prompt: string, schema: array{type: string}}
-         */
-        public function __invoke(): array
-        {
-            return [
-                'kind' => 'interrupt',
-                'question_id' => 'test-q-1',
-                'prompt' => 'Approve deployment?',
-                'schema' => ['type' => 'boolean'],
-            ];
-        }
+        $clock = new MockClock();
+        $toolbox = new ClockAdvancingToolbox($clock, 301);
+        $executor = new ToolExecutor(
+            defaultMode: 'parallel',
+            defaultTimeoutSeconds: 300,
+            maxParallelism: 2,
+            toolbox: $toolbox,
+            resultStore: new ToolExecutionResultStore(),
+            clock: $clock,
+        );
+
+        $result = $executor->execute(ToolCallBuilder::create('call-subagent')
+            ->withToolName('subagent')
+            ->withArguments(['agent' => 'scout', 'task' => 'work'])
+            ->withOrderIndex(0)
+            ->withTimeoutSeconds(null)
+            ->build());
+
+        $this->assertFalse($result->isError);
+        $this->assertSame('clock-ok', $result->content[0]['text']);
+        $this->assertNull($result->details['timeout_seconds'] ?? null);
     }
 
+    public function testNullCallTimeoutUsesGlobalDefaultForNonSubagentTools(): void
+    {
+        $clock = new MockClock();
+        $toolbox = new ClockAdvancingToolbox($clock, 0);
+        $executor = new ToolExecutor(
+            defaultMode: 'parallel',
+            defaultTimeoutSeconds: 30,
+            maxParallelism: 2,
+            toolbox: $toolbox,
+            resultStore: new ToolExecutionResultStore(),
+            clock: $clock,
+        );
 
-    final class ContextCheckingToolbox implements ToolboxInterface
+        $result = $executor->execute(ToolCallBuilder::create('call-read')
+            ->withToolName('read')
+            ->withArguments(['path' => 'README.md'])
+            ->withOrderIndex(0)
+            ->withTimeoutSeconds(null)
+            ->build());
+
+        $this->assertFalse($result->isError);
+        $this->assertSame(30, $result->details['timeout_seconds'] ?? null);
+    }
+
+    public function testExplicitCallTimeoutStillEnforcesPostHocCap(): void
+    {
+        $clock = new MockClock();
+        $toolbox = new ClockAdvancingToolbox($clock, 2);
+        $executor = new ToolExecutor(
+            defaultMode: 'parallel',
+            defaultTimeoutSeconds: 300,
+            maxParallelism: 2,
+            toolbox: $toolbox,
+            resultStore: new ToolExecutionResultStore(),
+            clock: $clock,
+        );
+
+        $result = $executor->execute(ToolCallBuilder::create('call-read')
+            ->withToolName('read')
+            ->withArguments(['path' => 'README.md'])
+            ->withOrderIndex(0)
+            ->withTimeoutSeconds(1)
+            ->build());
+
+        $this->assertTrue($result->isError);
+        $this->assertStringContainsString('timed out after 1 second', $result->content[0]['text']);
+    }
+}
+
+#[AsTool(name: 'human_gate', description: 'Ask for human input.')]
+final class InterruptTool
+{
+    /**
+     * @return array{kind: string, question_id: string, prompt: string, schema: array{type: string}}
+     */
+    public function __invoke(): array
+    {
+        return [
+            'kind' => 'interrupt',
+            'question_id' => 'test-q-1',
+            'prompt' => 'Approve deployment?',
+            'schema' => ['type' => 'boolean'],
+        ];
+    }
+}
+
+final class ContextCheckingToolbox implements ToolboxInterface
 {
     public function __construct(
         private readonly StackToolExecutionContextAccessor $accessor,
@@ -553,14 +627,19 @@ final class SymfonySearchTool
     }
 }
 
-
-final class SlowToolbox implements ToolboxInterface
+final class ClockAdvancingToolbox implements ToolboxInterface
 {
+    public function __construct(
+        private readonly MockClock $clock,
+        private readonly int $advanceSeconds,
+    ) {
+    }
+
     public function execute(SymfonyToolCall $toolCall): SymfonyToolResult
     {
-        usleep(50_000);
+        $this->clock->sleep($this->advanceSeconds);
 
-        return new SymfonyToolResult($toolCall, 'slow-ok');
+        return new SymfonyToolResult($toolCall, 'clock-ok');
     }
 
     public function getTools(): array

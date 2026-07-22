@@ -79,7 +79,7 @@ final class AgentCommand
         #[Option(description: 'Model identifier (e.g. deepseek/deepseek-v4-pro)')]
         string $model = '',
 
-        #[Option(description: 'Reasoning/thinking level: off, minimal, low, medium, high, xhigh')]
+        #[Option(description: 'Reasoning/thinking level: off, minimal, low, medium, high, xhigh, max')]
         string $reasoning = '',
 
         #[Option(description: 'Working directory for session/storage resolution (defaults to current CWD)')]

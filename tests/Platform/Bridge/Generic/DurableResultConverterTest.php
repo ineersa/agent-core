@@ -5,12 +5,20 @@ declare(strict_types=1);
 namespace Ineersa\Platform\Tests\Bridge\Generic;
 
 use Ineersa\Platform\Bridge\Generic\DurableResultConverter;
-use Symfony\AI\Platform\Exception\IncompleteStreamException;
 use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use Symfony\AI\Platform\Exception\AuthenticationException;
+use Symfony\AI\Platform\Exception\BadRequestException;
+use Symfony\AI\Platform\Exception\IncompleteStreamException;
+use Symfony\AI\Platform\Exception\RateLimitExceededException;
+use Symfony\AI\Platform\Exception\RuntimeException as PlatformRuntimeException;
+use Symfony\AI\Platform\Exception\ServerException;
+use Symfony\AI\Platform\FinishReason\FinishReason;
+use Symfony\AI\Platform\FinishReason\FinishReasonCase;
 use Symfony\AI\Platform\Result\RawHttpResult;
+use Symfony\AI\Platform\Result\Stream\Delta\MetadataDelta;
 use Symfony\AI\Platform\Result\Stream\Delta\TextDelta;
 use Symfony\AI\Platform\Result\Stream\Delta\ToolCallComplete;
 use Symfony\AI\Platform\Result\Stream\Delta\ToolCallStart;
@@ -45,10 +53,10 @@ final class DurableResultConverterTest extends TestCase
 
         $options = ['stream' => true];
         // Verify the option is set correctly
-        self::assertTrue($options['stream'] ?? false);
+        $this->assertTrue($options['stream'] ?? false);
 
         $converted = $this->converter->convert($result, $options);
-        self::assertInstanceOf(StreamResult::class, $converted, 'Should return StreamResult for stream=true');
+        $this->assertInstanceOf(StreamResult::class, $converted, 'Should return StreamResult for stream=true');
     }
 
     #[Test]
@@ -71,21 +79,20 @@ final class DurableResultConverterTest extends TestCase
             $this->chunk(['choices' => [['finish_reason' => 'tool_calls']]]),
         ]));
 
+        $this->assertInstanceOf(ToolCallStart::class, $deltas[0]);
+        $this->assertSame('call_abc', $deltas[0]->getId());
+        $this->assertSame('bash', $deltas[0]->getName());
 
-        self::assertInstanceOf(ToolCallStart::class, $deltas[0]);
-        self::assertSame('call_abc', $deltas[0]->getId());
-        self::assertSame('bash', $deltas[0]->getName());
+        $this->assertInstanceOf(ToolInputDelta::class, $deltas[1]);
+        $this->assertSame('call_abc', $deltas[1]->getId());
+        $this->assertSame('{"command":"ls"}', $deltas[1]->getPartialJson());
 
-        self::assertInstanceOf(ToolInputDelta::class, $deltas[1]);
-        self::assertSame('call_abc', $deltas[1]->getId());
-        self::assertSame('{"command":"ls"}', $deltas[1]->getPartialJson());
-
-        self::assertInstanceOf(ToolCallComplete::class, $deltas[2]);
+        $this->assertInstanceOf(ToolCallComplete::class, $deltas[2]);
         $toolCalls = $deltas[2]->getToolCalls();
-        self::assertCount(1, $toolCalls);
-        self::assertSame('call_abc', $toolCalls[0]->getId());
-        self::assertSame('bash', $toolCalls[0]->getName());
-        self::assertSame(['command' => 'ls'], $toolCalls[0]->getArguments());
+        $this->assertCount(1, $toolCalls);
+        $this->assertSame('call_abc', $toolCalls[0]->getId());
+        $this->assertSame('bash', $toolCalls[0]->getName());
+        $this->assertSame(['command' => 'ls'], $toolCalls[0]->getArguments());
     }
 
     // ── Parallel tool calls (interleaved by index) ────────────────────────────
@@ -127,7 +134,6 @@ final class DurableResultConverterTest extends TestCase
             $this->chunk(['choices' => [['finish_reason' => 'tool_calls']]]),
         ]));
 
-
         // Collect the ToolCallComplete
         $complete = null;
         foreach ($deltas as $delta) {
@@ -136,10 +142,10 @@ final class DurableResultConverterTest extends TestCase
             }
         }
 
-        self::assertNotNull($complete, 'Expected ToolCallComplete in stream');
+        $this->assertNotNull($complete, 'Expected ToolCallComplete in stream');
 
         $toolCalls = $complete->getToolCalls();
-        self::assertCount(2, $toolCalls);
+        $this->assertCount(2, $toolCalls);
 
         // Find by ID
         $byId = [];
@@ -147,12 +153,12 @@ final class DurableResultConverterTest extends TestCase
             $byId[$tc->getId()] = $tc;
         }
 
-        self::assertArrayHasKey('call_aaa', $byId);
-        self::assertArrayHasKey('call_bbb', $byId);
-        self::assertSame('bash', $byId['call_aaa']->getName());
-        self::assertSame(['command' => 'ls'], $byId['call_aaa']->getArguments());
-        self::assertSame('read', $byId['call_bbb']->getName());
-        self::assertSame(['path' => '/tmp'], $byId['call_bbb']->getArguments());
+        $this->assertArrayHasKey('call_aaa', $byId);
+        $this->assertArrayHasKey('call_bbb', $byId);
+        $this->assertSame('bash', $byId['call_aaa']->getName());
+        $this->assertSame(['command' => 'ls'], $byId['call_aaa']->getArguments());
+        $this->assertSame('read', $byId['call_bbb']->getName());
+        $this->assertSame(['path' => '/tmp'], $byId['call_bbb']->getArguments());
     }
 
     // ── Empty-ID chunks are suppressed ────────────────────────────────────────
@@ -171,7 +177,6 @@ final class DurableResultConverterTest extends TestCase
             $this->chunk(['choices' => [['finish_reason' => 'stop']]]),
         ]));
 
-
         // No ToolCallStart or ToolCallComplete should appear for empty-ID starts
         $hasToolCallStart = false;
         $hasToolCallComplete = false;
@@ -184,8 +189,8 @@ final class DurableResultConverterTest extends TestCase
             }
         }
 
-        self::assertFalse($hasToolCallStart, 'Empty-ID ToolCallStart should be suppressed');
-        self::assertFalse($hasToolCallComplete, 'No ToolCallComplete for empty-ID-only blocks');
+        $this->assertFalse($hasToolCallStart, 'Empty-ID ToolCallStart should be suppressed');
+        $this->assertFalse($hasToolCallComplete, 'No ToolCallComplete for empty-ID-only blocks');
     }
 
     #[Test]
@@ -202,7 +207,6 @@ final class DurableResultConverterTest extends TestCase
             $this->chunk(['choices' => [['finish_reason' => 'stop']]]),
         ]));
 
-
         $toolInputDeltas = [];
         foreach ($deltas as $delta) {
             if ($delta instanceof ToolInputDelta) {
@@ -210,7 +214,7 @@ final class DurableResultConverterTest extends TestCase
             }
         }
 
-        self::assertCount(0, $toolInputDeltas, 'Orphan argument deltas without ID should be suppressed');
+        $this->assertCount(0, $toolInputDeltas, 'Orphan argument deltas without ID should be suppressed');
     }
 
     // ── Phantom started-but-never-completed ───────────────────────────────────
@@ -245,7 +249,6 @@ final class DurableResultConverterTest extends TestCase
             $this->chunk(['choices' => [['finish_reason' => 'tool_calls']]]),
         ]));
 
-
         $complete = null;
         foreach ($deltas as $delta) {
             if ($delta instanceof ToolCallComplete) {
@@ -253,14 +256,14 @@ final class DurableResultConverterTest extends TestCase
             }
         }
 
-        self::assertNotNull($complete);
+        $this->assertNotNull($complete);
 
         $ids = array_map(static fn (ToolCall $tc): string => $tc->getId(), $complete->getToolCalls());
 
         // Only the real call should appear; the empty-id phantom was never completed
-        self::assertContains('call_real', $ids);
-        self::assertNotContains('call_phantom', $ids);
-        self::assertCount(1, $ids, 'Only the call with a non-empty id should appear in ToolCallComplete');
+        $this->assertContains('call_real', $ids);
+        $this->assertNotContains('call_phantom', $ids);
+        $this->assertCount(1, $ids, 'Only the call with a non-empty id should appear in ToolCallComplete');
     }
 
     // ── Arguments before ID (buffered and replayed) ───────────────────────────
@@ -294,13 +297,12 @@ final class DurableResultConverterTest extends TestCase
             $this->chunk(['choices' => [['finish_reason' => 'tool_calls']]]),
         ]));
 
-
         // The first ToolCallStart should appear when the ID arrives
         $starts = array_filter($deltas, static fn ($d) => $d instanceof ToolCallStart);
-        self::assertCount(1, $starts);
+        $this->assertCount(1, $starts);
         $start = reset($starts);
-        self::assertSame('call_late', $start->getId());
-        self::assertSame('bash', $start->getName());
+        $this->assertSame('call_late', $start->getId());
+        $this->assertSame('bash', $start->getName());
 
         // The complete should have the accumulated arguments
         $complete = null;
@@ -309,12 +311,12 @@ final class DurableResultConverterTest extends TestCase
                 $complete = $delta;
             }
         }
-        self::assertNotNull($complete);
+        $this->assertNotNull($complete);
 
         $toolCalls = $complete->getToolCalls();
-        self::assertCount(1, $toolCalls);
-        self::assertSame('call_late', $toolCalls[0]->getId());
-        self::assertSame(['command' => 'ls'], $toolCalls[0]->getArguments());
+        $this->assertCount(1, $toolCalls);
+        $this->assertSame('call_late', $toolCalls[0]->getId());
+        $this->assertSame(['command' => 'ls'], $toolCalls[0]->getArguments());
     }
 
     // ── Text deltas pass through unchanged ────────────────────────────────────
@@ -332,12 +334,11 @@ final class DurableResultConverterTest extends TestCase
             $this->chunk(['choices' => [['finish_reason' => 'stop']]]),
         ]));
 
-
         $textDeltas = array_filter($deltas, static fn ($d) => $d instanceof TextDelta);
-        self::assertCount(2, $textDeltas);
+        $this->assertCount(2, $textDeltas);
 
         $texts = array_map(static fn (TextDelta $td): string => $td->getText(), array_values($textDeltas));
-        self::assertSame(['Hello', ' World'], $texts);
+        $this->assertSame(['Hello', ' World'], $texts);
     }
 
     // ── Empty-argument ToolCallComplete suppressed ─────────────────────────────
@@ -364,18 +365,17 @@ final class DurableResultConverterTest extends TestCase
             $this->chunk(['choices' => [['finish_reason' => 'tool_calls']]]),
         ]));
 
-
         $complete = null;
         foreach ($deltas as $delta) {
             if ($delta instanceof ToolCallComplete) {
                 $complete = $delta;
             }
         }
-        self::assertNotNull($complete);
+        $this->assertNotNull($complete);
 
         $toolCalls = $complete->getToolCalls();
-        self::assertCount(1, $toolCalls, 'Anonymous block without ID+name should be excluded');
-        self::assertSame('call_ok', $toolCalls[0]->getId());
+        $this->assertCount(1, $toolCalls, 'Anonymous block without ID+name should be excluded');
+        $this->assertSame('call_ok', $toolCalls[0]->getId());
     }
 
     // ── Cross-index ID re-association ─────────────────────────────────────────
@@ -404,20 +404,19 @@ final class DurableResultConverterTest extends TestCase
             $this->chunk(['choices' => [['finish_reason' => 'tool_calls']]]),
         ]));
 
-
         $complete = null;
         foreach ($deltas as $delta) {
             if ($delta instanceof ToolCallComplete) {
                 $complete = $delta;
             }
         }
-        self::assertNotNull($complete);
+        $this->assertNotNull($complete);
 
         $toolCalls = $complete->getToolCalls();
-        self::assertCount(1, $toolCalls);
-        self::assertSame('call_xyz', $toolCalls[0]->getId());
-        self::assertSame('bash', $toolCalls[0]->getName());
-        self::assertSame(['command' => 're'], $toolCalls[0]->getArguments());
+        $this->assertCount(1, $toolCalls);
+        $this->assertSame('call_xyz', $toolCalls[0]->getId());
+        $this->assertSame('bash', $toolCalls[0]->getName());
+        $this->assertSame(['command' => 're'], $toolCalls[0]->getArguments());
     }
 
     // ── Raw stream capture (optional onStreamEvent closure) ──────────────────
@@ -431,11 +430,11 @@ final class DurableResultConverterTest extends TestCase
             $this->chunk(['choices' => [['finish_reason' => 'stop']]]),
         ]);
 
-        // Default constructor: should produce zero deltas for a finish-only chunk
+        // Finish-only chunk still yields normalized finish_reason metadata (Symfony AI v0.11).
         $deltas = $this->collectStreamWithConverter($converter, $result);
-        self::assertCount(0, $deltas);
-        // No file written, no exception — no-op by default.
-        $this->addToAssertionCount(1);
+        $this->assertCount(1, $deltas);
+        $this->assertInstanceOf(MetadataDelta::class, $deltas[0]);
+        $this->assertSame('finish_reason', $deltas[0]->getKey());
     }
 
     #[Test]
@@ -463,23 +462,24 @@ final class DurableResultConverterTest extends TestCase
             static fn (array $e): bool => 'raw_chunk' === $e['event'],
         ));
 
-        self::assertCount(3, $rawChunks, 'Should record a raw_chunk for each SSE chunk');
-        self::assertSame(0, $rawChunks[0]['ordinal']);
-        self::assertSame(1, $rawChunks[1]['ordinal']);
-        self::assertSame(2, $rawChunks[2]['ordinal']);
-        self::assertArrayHasKey('data', $rawChunks[0]);
-        self::assertSame('Hello', $rawChunks[0]['data']['choices'][0]['delta']['content']);
+        $this->assertCount(3, $rawChunks, 'Should record a raw_chunk for each SSE chunk');
+        $this->assertSame(0, $rawChunks[0]['ordinal']);
+        $this->assertSame(1, $rawChunks[1]['ordinal']);
+        $this->assertSame(2, $rawChunks[2]['ordinal']);
+        $this->assertArrayHasKey('data', $rawChunks[0]);
+        $this->assertSame('Hello', $rawChunks[0]['data']['choices'][0]['delta']['content']);
 
         // Should have start and end markers
         $starts = array_filter($events, static fn (array $e): bool => 'capture_start' === $e['event']);
         $ends = array_filter($events, static fn (array $e): bool => 'capture_end' === $e['event']);
-        self::assertCount(1, $starts);
-        self::assertCount(1, $ends);
+        $this->assertCount(1, $starts);
+        $this->assertCount(1, $ends);
 
-        // Deltas should be unchanged
-        self::assertCount(2, $deltas);
-        self::assertInstanceOf(TextDelta::class, $deltas[0]);
-        self::assertSame('Hello', $deltas[0]->getText());
+        $this->assertCount(3, $deltas);
+        $this->assertInstanceOf(TextDelta::class, $deltas[0]);
+        $this->assertSame('Hello', $deltas[0]->getText());
+        $this->assertInstanceOf(TextDelta::class, $deltas[1]);
+        $this->assertInstanceOf(MetadataDelta::class, $deltas[2]);
     }
 
     #[Test]
@@ -518,20 +518,20 @@ final class DurableResultConverterTest extends TestCase
         // Chunk 1: (tool calls accumulated, no new yields from yieldDurableToolCallDeltas)
         //   Actually chunk 1 has no ID, and the block already has an ID, so it yields ToolInputDelta
         // Chunk 2: ToolCallComplete
-        self::assertGreaterThanOrEqual(2, \count($convDeltas), 'Should record converted deltas');
+        $this->assertGreaterThanOrEqual(2, \count($convDeltas), 'Should record converted deltas');
 
         // Find the ToolCallStart
         $starts = array_values(array_filter(
             $convDeltas,
             static fn (array $e): bool => 'ToolCallStart' === ($e['type'] ?? ''),
         ));
-        self::assertCount(1, $starts);
-        self::assertSame('call_1', $starts[0]['id']);
-        self::assertSame('read', $starts[0]['name']);
+        $this->assertCount(1, $starts);
+        $this->assertSame('call_1', $starts[0]['id']);
+        $this->assertSame('read', $starts[0]['name']);
 
         // Deltas should be unchanged
-        self::assertInstanceOf(ToolCallStart::class, $deltas[0]);
-        self::assertSame('call_1', $deltas[0]->getId());
+        $this->assertInstanceOf(ToolCallStart::class, $deltas[0]);
+        $this->assertSame('call_1', $deltas[0]->getId());
     }
 
     #[Test]
@@ -566,16 +566,16 @@ final class DurableResultConverterTest extends TestCase
         $defaultDeltas = $this->collectStreamWithConverter($defaultConverter, $defaultResult);
 
         // Same number of deltas
-        self::assertCount(\count($defaultDeltas), $captureDeltas);
+        $this->assertCount(\count($defaultDeltas), $captureDeltas);
 
         // Same types and key properties
         foreach ($defaultDeltas as $i => $expected) {
             $actual = $captureDeltas[$i];
-            self::assertInstanceOf($expected::class, $actual);
+            $this->assertInstanceOf($expected::class, $actual);
         }
 
         // Capture did fire events
-        self::assertGreaterThan(0, \count($events));
+        $this->assertGreaterThan(0, \count($events));
     }
 
     // ── Stream ended without finish reason ────────────────────────────────────
@@ -621,44 +621,13 @@ final class DurableResultConverterTest extends TestCase
         ]));
 
         // Last delta should be a TokenUsage with the cache fields populated.
-        $last = end($deltas);
-        self::assertInstanceOf(\Symfony\AI\Platform\TokenUsage\TokenUsage::class, $last);
-        self::assertSame(100, $last->getPromptTokens());
-        self::assertSame(50, $last->getCompletionTokens());
-        self::assertSame(78, $last->getCachedTokens());
-        self::assertSame(78, $last->getCacheReadTokens(), 'cache_read_tokens must match prompt_tokens_details.cached_tokens');
-        self::assertNull($last->getCacheCreationTokens(), 'cache_creation_tokens must not be inferred');
-        self::assertSame(150, $last->getTotalTokens());
-    }
-
-    #[Test]
-    public function extractsInputTokensDetailsCachedTokens(): void
-    {
-        // OpenAI Responses format:
-        // usage.input_tokens_details.cached_tokens
-        $deltas = $this->collectStream($this->streamResult([
-            $this->chunk(['choices' => [[
-                'delta' => ['content' => 'Hello'],
-            ]]]),
-            $this->chunk([
-                'choices' => [['finish_reason' => 'stop']],
-                'usage' => [
-                    'input_tokens' => 200,
-                    'output_tokens' => 80,
-                    'input_tokens_details' => [
-                        'cached_tokens' => 120,
-                    ],
-                    'total_tokens' => 280,
-                ],
-            ]),
-        ]));
-
-        $last = end($deltas);
-        self::assertInstanceOf(\Symfony\AI\Platform\TokenUsage\TokenUsage::class, $last);
-        self::assertSame(200, $last->getPromptTokens());
-        self::assertSame(80, $last->getCompletionTokens());
-        self::assertSame(120, $last->getCachedTokens());
-        self::assertSame(120, $last->getCacheReadTokens(), 'cache_read_tokens must match input_tokens_details.cached_tokens');
+        $last = $this->lastTokenUsageDelta($deltas);
+        $this->assertSame(100, $last->getPromptTokens());
+        $this->assertSame(50, $last->getCompletionTokens());
+        $this->assertSame(78, $last->getCachedTokens());
+        $this->assertSame(78, $last->getCacheReadTokens(), 'cache_read_tokens must match prompt_tokens_details.cached_tokens');
+        $this->assertNull($last->getCacheCreationTokens(), 'cache_creation_tokens must not be inferred');
+        $this->assertSame(150, $last->getTotalTokens());
     }
 
     #[Test]
@@ -681,14 +650,13 @@ final class DurableResultConverterTest extends TestCase
             ]),
         ]));
 
-        $last = end($deltas);
-        self::assertInstanceOf(\Symfony\AI\Platform\TokenUsage\TokenUsage::class, $last);
-        self::assertSame(100, $last->getPromptTokens());
-        self::assertSame(50, $last->getCompletionTokens());
-        self::assertSame(60, $last->getCacheReadTokens(), 'cache_read_tokens must match prompt_cache_hit_tokens');
+        $last = $this->lastTokenUsageDelta($deltas);
+        $this->assertSame(100, $last->getPromptTokens());
+        $this->assertSame(50, $last->getCompletionTokens());
+        $this->assertSame(60, $last->getCacheReadTokens(), 'cache_read_tokens must match prompt_cache_hit_tokens');
         // DeepSeek: prompt_cache_hit_tokens also populates cachedTokens
         // (aggregate) so cost calculation and footer fallbacks work.
-        self::assertSame(60, $last->getCachedTokens(), 'cached_tokens falls back to cache_read when no separate aggregate field');
+        $this->assertSame(60, $last->getCachedTokens(), 'cached_tokens falls back to cache_read when no separate aggregate field');
     }
 
     #[Test]
@@ -710,12 +678,11 @@ final class DurableResultConverterTest extends TestCase
             ]),
         ]));
 
-        $last = end($deltas);
-        self::assertInstanceOf(\Symfony\AI\Platform\TokenUsage\TokenUsage::class, $last);
-        self::assertSame(50, $last->getPromptTokens());
-        self::assertSame(25, $last->getCompletionTokens());
-        self::assertSame(30, $last->getCachedTokens());
-        self::assertSame(30, $last->getCacheReadTokens(), 'cache_read_tokens falls back to num_cached_tokens');
+        $last = $this->lastTokenUsageDelta($deltas);
+        $this->assertSame(50, $last->getPromptTokens());
+        $this->assertSame(25, $last->getCompletionTokens());
+        $this->assertSame(30, $last->getCachedTokens());
+        $this->assertNull($last->getCacheReadTokens(), 'upstream extractor maps num_cached_tokens to cachedTokens only');
     }
 
     #[Test]
@@ -738,18 +705,185 @@ final class DurableResultConverterTest extends TestCase
             ]),
         ]));
 
+        $last = $this->lastTokenUsageDelta($deltas);
+        $this->assertSame(20, $last->getThinkingTokens());
+    }
+
+    #[Test]
+    public function yieldsFinishReasonMetadataDelta(): void
+    {
+        $deltas = $this->collectStream($this->streamResult([
+            $this->chunk(['choices' => [[
+                'delta' => ['content' => 'Hello'],
+            ]]]),
+            $this->chunk(['choices' => [[
+                'finish_reason' => 'stop',
+            ]]]),
+        ]));
+
         $last = end($deltas);
-        self::assertInstanceOf(\Symfony\AI\Platform\TokenUsage\TokenUsage::class, $last);
-        self::assertSame(20, $last->getThinkingTokens());
+        $this->assertInstanceOf(MetadataDelta::class, $last);
+        $this->assertSame('finish_reason', $last->getKey());
+        $value = $last->getValue();
+        $this->assertInstanceOf(FinishReason::class, $value);
+        $this->assertSame(FinishReasonCase::STOP, $value->getCase());
+        $this->assertSame('stop', $value->getRaw());
+    }
+
+    // ── HTTP status conversion (streaming path) ─────────────────────────────
+
+    #[Test]
+    public function streamingConvertThrowsAuthenticationExceptionOn401(): void
+    {
+        $result = $this->streamResultWithStatus(401, '{"error":{"message":"Invalid API key"}}', []);
+
+        $this->expectException(AuthenticationException::class);
+        $this->expectExceptionMessage('Invalid API key');
+
+        $this->converter->convert($result, ['stream' => true]);
+    }
+
+    #[Test]
+    public function streamingConvertThrowsRateLimitExceededExceptionOn429(): void
+    {
+        $result = $this->streamResultWithStatus(429, '{"error":{"message":"rate limited"}}', []);
+
+        $this->expectException(RateLimitExceededException::class);
+
+        $this->converter->convert($result, ['stream' => true]);
+    }
+
+    #[Test]
+    public function streamingConvertThrowsServerExceptionOn500(): void
+    {
+        $result = $this->streamResultWithStatus(500, '{"error":{"message":"upstream down"}}', []);
+
+        $this->expectException(ServerException::class);
+
+        $this->converter->convert($result, ['stream' => true]);
+    }
+
+    #[Test]
+    public function streamingConvertThrowsRuntimeExceptionOnGeneric4xx(): void
+    {
+        $result = $this->streamResultWithStatus(403, '{"error":{"message":"forbidden"}}', []);
+
+        $this->expectException(PlatformRuntimeException::class);
+        $this->expectExceptionMessage('Unexpected response code 403');
+
+        $this->converter->convert($result, ['stream' => true]);
+    }
+
+    #[Test]
+    public function streamingConvertThrowsBadRequestExceptionOn400(): void
+    {
+        $result = $this->streamResultWithStatus(400, '{"error":{"message":"Bad Request: invalid"}}', []);
+
+        $this->expectException(BadRequestException::class);
+
+        $this->converter->convert($result, ['stream' => true]);
+    }
+
+    // ── Stream payload error classification ───────────────────────────────────
+
+    #[Test]
+    public function streamErrorChunkRateLimitRaisesRateLimitExceededException(): void
+    {
+        $this->expectException(RateLimitExceededException::class);
+
+        $this->collectStream($this->streamResult([
+            $this->chunk(['error' => ['message' => 'Too many requests', 'code' => 'rate_limit_exceeded']]),
+        ]));
+    }
+
+    #[Test]
+    public function streamErrorChunkServerErrorRaisesServerException(): void
+    {
+        $this->expectException(ServerException::class);
+
+        $this->collectStream($this->streamResult([
+            $this->chunk(['error' => ['message' => 'Internal error', 'type' => 'server_error']]),
+        ]));
+    }
+
+    #[Test]
+    public function streamErrorChunkGenericRaisesRuntimeException(): void
+    {
+        $this->expectException(PlatformRuntimeException::class);
+        $this->expectExceptionMessage('Stream error');
+
+        $this->collectStream($this->streamResult([
+            $this->chunk(['error' => ['message' => 'Something broke']]),
+        ]));
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     /**
+     * @param list<array<string, mixed>> $chunks
+     */
+    private function streamResultWithStatus(int $statusCode, string $body, array $chunks): RawHttpResult
+    {
+        $response = new class($statusCode, $body) implements ResponseInterface {
+            public function __construct(private int $statusCode, private string $body)
+            {
+            }
+
+            public function getStatusCode(): int
+            {
+                return $this->statusCode;
+            }
+
+            public function getHeaders(bool $throw = true): array
+            {
+                return [];
+            }
+
+            public function getContent(bool $throw = true): string
+            {
+                return $this->body;
+            }
+
+            public function toArray(bool $throw = true): array
+            {
+                $decoded = json_decode($this->body, true);
+
+                return \is_array($decoded) ? $decoded : [];
+            }
+
+            public function cancel(): void
+            {
+            }
+
+            public function getInfo(?string $type = null): mixed
+            {
+                return null;
+            }
+        };
+
+        return new RawHttpResult(
+            $response,
+            new class($chunks) implements \Symfony\AI\Platform\Result\Stream\HttpStreamInterface {
+                /** @param list<array<string, mixed>> $chunks */
+                public function __construct(private readonly array $chunks)
+                {
+                }
+
+                public function stream(ResponseInterface $response): iterable
+                {
+                    foreach ($this->chunks as $chunk) {
+                        yield $chunk;
+                    }
+                }
+            },
+        );
+    }
+
+    /**
      * Create a RawHttpResult configured for streaming mode, with a mock HTTP 200 response.
      *
      * @param list<array<string, mixed>> $chunks Raw SSE data chunks representing
-     *                                          individual SSE "data:" payloads
+     *                                           individual SSE "data:" payloads
      */
     private function streamResult(array $chunks): RawHttpResult
     {
@@ -757,12 +891,34 @@ final class DurableResultConverterTest extends TestCase
         // mocks for ResponseInterface add internal state that interferes
         // with the converter's error-handling path when status code is 200.
         $response = new class implements ResponseInterface {
-            public function getStatusCode(): int { return 200; }
-            public function getHeaders(bool $throw = true): array { return []; }
-            public function getContent(bool $throw = true): string { return ''; }
-            public function toArray(bool $throw = true): array { return ['choices' => []]; }
-            public function cancel(): void {}
-            public function getInfo(?string $type = null): mixed { return null; }
+            public function getStatusCode(): int
+            {
+                return 200;
+            }
+
+            public function getHeaders(bool $throw = true): array
+            {
+                return [];
+            }
+
+            public function getContent(bool $throw = true): string
+            {
+                return '';
+            }
+
+            public function toArray(bool $throw = true): array
+            {
+                return ['choices' => []];
+            }
+
+            public function cancel(): void
+            {
+            }
+
+            public function getInfo(?string $type = null): mixed
+            {
+                return null;
+            }
         };
 
         // Return chunked data simulating SSE -> getDataStream().
@@ -770,7 +926,9 @@ final class DurableResultConverterTest extends TestCase
             $response,
             new class($chunks) implements \Symfony\AI\Platform\Result\Stream\HttpStreamInterface {
                 /** @param list<array<string, mixed>> $chunks */
-                public function __construct(private readonly array $chunks) {}
+                public function __construct(private readonly array $chunks)
+                {
+                }
 
                 public function stream(ResponseInterface $response): iterable
                 {
@@ -795,14 +953,28 @@ final class DurableResultConverterTest extends TestCase
     }
 
     /**
-     * Collect all deltas from a stream result using the given converter.
+     * @param list<object> $deltas
+     */
+    private function lastTokenUsageDelta(array $deltas): \Symfony\AI\Platform\TokenUsage\TokenUsage
+    {
+        for ($i = \count($deltas) - 1; $i >= 0; --$i) {
+            if ($deltas[$i] instanceof \Symfony\AI\Platform\TokenUsage\TokenUsage) {
+                return $deltas[$i];
+            }
+        }
+
+        $this->fail('Expected a TokenUsage delta in stream output');
+    }
+
+    /**
+     * Drain a stream through the given converter and return yielded deltas.
      *
      * @return list<object>
      */
     private function collectStreamWithConverter(DurableResultConverter $converter, RawHttpResult $rawResult): array
     {
         $result = $converter->convert($rawResult, ['stream' => true]);
-        self::assertInstanceOf(StreamResult::class, $result);
+        $this->assertInstanceOf(StreamResult::class, $result);
 
         return iterator_to_array($result->getContent(), false);
     }

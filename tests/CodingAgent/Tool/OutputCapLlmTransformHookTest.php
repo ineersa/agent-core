@@ -67,8 +67,8 @@ final class OutputCapLlmTransformHookTest extends TestCase
         $toolMsg = reset($toolMessages);
         $this->assertInstanceOf(ToolCallMessage::class, $toolMsg);
 
-        $providerContent = $toolMsg->getContent();
-        $this->assertIsString($providerContent);
+        $providerContent = $toolMsg->asText();
+        $this->assertNotNull($providerContent);
 
         $this->assertStringContainsString('Output capped', $providerContent);
         $this->assertStringNotContainsString($sentinel, $providerContent);
@@ -125,8 +125,8 @@ final class OutputCapLlmTransformHookTest extends TestCase
         $this->assertCount(1, $toolMessages);
 
         $toolMsg = reset($toolMessages);
-        $providerContent = $toolMsg->getContent();
-        $this->assertIsString($providerContent);
+        $providerContent = $toolMsg->asText();
+        $this->assertNotNull($providerContent);
 
         $this->assertStringContainsString('Output capped', $providerContent);
         $this->assertStringNotContainsString($sentinel, $providerContent);
@@ -385,8 +385,7 @@ final class OutputCapLlmTransformHookTest extends TestCase
      * Test thesis: when the late defense-in-depth hook caps a read-tool
      * AgentMessage, the notice must guide follow-up reads to the ORIGINAL
      * file path (not the saved output-cap artifact).  Reading the saved
-     * artifact with the read tool adds presentation noise (double cat -n
-     * line numbers).
+     * artifact with the read tool adds presentation noise; guide follow-up reads to the original path.
      */
     public function testLateHookReadNoticeUsesOriginalPathNotSavedArtifact(): void
     {
@@ -414,13 +413,13 @@ final class OutputCapLlmTransformHookTest extends TestCase
 
         $toolMessages = array_filter(
             $messageBag->getMessages(),
-            static fn (object $m): bool => $m instanceof \Symfony\AI\Platform\Message\ToolCallMessage,
+            static fn (object $m): bool => $m instanceof ToolCallMessage,
         );
         $this->assertCount(1, $toolMessages);
 
         $toolMsg = reset($toolMessages);
-        $providerContent = $toolMsg->getContent();
-        $this->assertIsString($providerContent);
+        $providerContent = $toolMsg->asText();
+        $this->assertNotNull($providerContent);
 
         // Must cap.
         $this->assertStringContainsString('Output capped', $providerContent);

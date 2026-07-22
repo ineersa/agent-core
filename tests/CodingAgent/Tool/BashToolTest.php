@@ -5,13 +5,14 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Tool;
 
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
-use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\Hook\CancellationTokenInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
-use Ineersa\CodingAgent\Config\BashToolConfig;
+use Ineersa\AgentCore\Domain\Tool\ToolExecutionMode;
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
+use Ineersa\CodingAgent\Config\BashToolConfig;
 use Ineersa\CodingAgent\Config\OutputCapConfig;
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessLifecycle;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessStore;
@@ -43,13 +44,10 @@ use Psr\Log\NullLogger;
  */
 final class BashToolTest extends IsolatedKernelTestCase
 {
-    public function testBashToolConfigDefaultBackgroundPromptThresholdIsFifteenSeconds(): void
-    {
-        $config = new BashToolConfig();
-        self::assertSame(15, $config->backgroundPromptThresholdSeconds);
-    }
-
     private const string TEST_SESSION = 'bash-test-session';
+
+    private const string COMPOSER_MARKER = 'COMPOSER_MARKER_PID_REUSE_REGRESSION';
+    private const string DATETIME_MARKER = 'DATETIME_MARKER_PID_REUSE_REGRESSION';
 
     private BackgroundProcessManager $manager;
     private BackgroundProcessConfig $bgConfig;
@@ -64,8 +62,7 @@ final class BashToolTest extends IsolatedKernelTestCase
     {
         parent::setUp();
 
-        $this->tmpDir = sys_get_temp_dir().'/hatfield_bashtool_test_'.bin2hex(random_bytes(8));
-        mkdir($this->tmpDir, 0750, recursive: true);
+        $this->tmpDir = TestDirectoryIsolation::createOsTempDir('hatfield_bashtool_test');
 
         $this->bgConfig = new BackgroundProcessConfig(
             storageDir: $this->tmpDir,
@@ -87,9 +84,15 @@ final class BashToolTest extends IsolatedKernelTestCase
     protected function tearDown(): void
     {
         $this->cleanupProcesses();
-        $this->rmDir($this->tmpDir);
+        TestDirectoryIsolation::removeDirectory($this->tmpDir);
 
         parent::tearDown();
+    }
+
+    public function testBashToolConfigDefaultBackgroundPromptThresholdIsFifteenSeconds(): void
+    {
+        $config = new BashToolConfig();
+        $this->assertSame(15, $config->backgroundPromptThresholdSeconds);
     }
 
     /* ── Successful completion ── */
@@ -190,7 +193,7 @@ final class BashToolTest extends IsolatedKernelTestCase
         $cancellationToken = $this->createStub(CancellationTokenInterface::class);
         $cancellationToken
             ->method('isCancellationRequested')
-            ->willReturnCallback(function () use (&$callCount) {
+            ->willReturnCallback(static function () use (&$callCount) {
                 ++$callCount;
 
                 // First call is the pre-check in ToolRuntime::run() —
@@ -416,7 +419,7 @@ final class BashToolTest extends IsolatedKernelTestCase
         $this->assertStringContainsString('bg_status stop pid=', $result);
 
         // Extract PID from result
-        \preg_match('/PID: (\d+)/', $result, $matches);
+        preg_match('/PID: (\d+)/', $result, $matches);
         $this->assertNotEmpty($matches, 'PID should be present in result');
         $pid = (int) $matches[1];
 
@@ -428,12 +431,12 @@ final class BashToolTest extends IsolatedKernelTestCase
         $this->assertSame($pid, $entities[0]->pid, 'The background process should have the same PID');
 
         // Verify the process is marked as backgrounded (backgroundAt is set)
-        // This confirms the markBackgrounded() call was made in BashTool.
+        // This confirms markBackgroundedForRecord() was made in BashTool.
         $this->assertNotNull($entities[0]->backgroundedAt, 'Background process should have backgroundedAt set');
 
         // Verify the log contains our unique marker
-        \usleep(50_000); // Brief wait for log flush
-        $logContent = \file_get_contents($entities[0]->logPath);
+        usleep(50_000); // Brief wait for log flush
+        $logContent = file_get_contents($entities[0]->logPath);
         $this->assertStringContainsString('background-marker-12345', $logContent ?: '');
 
         // Clean up
@@ -457,8 +460,8 @@ final class BashToolTest extends IsolatedKernelTestCase
         $promptAdapter
             ->expects($this->once())
             ->method('shouldBackground')
-            ->willReturnCallback(function (): bool {
-                \usleep(200_000); // Block while the command finishes
+            ->willReturnCallback(static function (): bool {
+                usleep(200_000); // Block while the command finishes
 
                 return true;
             });
@@ -509,7 +512,6 @@ final class BashToolTest extends IsolatedKernelTestCase
         $this->assertStringContainsString('this is a very long output', $result);
         $this->assertStringNotContainsString('Output capped', $result);
     }
-
 
     public function testParallelBatchStillInvokesBackgroundPromptAdapter(): void
     {
@@ -597,7 +599,7 @@ final class BashToolTest extends IsolatedKernelTestCase
 
         $this->assertSame('bash', $def->name);
         $this->assertSame($tool, $def->handler);
-        self::assertSame(ToolExecutionMode::Parallel, $def->executionMode);
+        $this->assertSame(ToolExecutionMode::Parallel, $def->executionMode);
 
         // Schema must have 'command' required
         $this->assertContains('command', $def->parametersJsonSchema['required'] ?? []);
@@ -649,6 +651,121 @@ final class BashToolTest extends IsolatedKernelTestCase
 
         $otherEntities = $this->manager->list('other-session');
         $this->assertCount(0, $otherEntities);
+    }
+
+    /**
+     * Foreground completion must read the log for the immutable DB record,
+     * not the first retained row that shares the same OS PID.
+     */
+    public function testForegroundCompletionReturnsCurrentRecordLogWhenPidIsReused(): void
+    {
+        $this->createManager();
+
+        $store = self::getContainer()->get(ProcessStore::class);
+        $em = self::getContainer()->get(\Doctrine\ORM\EntityManagerInterface::class);
+
+        $staleLogPath = $this->tmpDir.'/stale-composer.log';
+        file_put_contents($staleLogPath, self::COMPOSER_MARKER."\n");
+
+        $staleId = $store->insertRecord([
+            'pid' => 424242,
+            'session_id' => self::TEST_SESSION,
+            'command' => 'composer info --direct',
+            'log_path' => $staleLogPath,
+            'status_path' => $this->tmpDir.'/stale.status',
+            'started_at' => new \DateTimeImmutable('-1 hour'),
+        ]);
+
+        $staleEntity = $store->fetchByRecordId($staleId);
+        $this->assertNotNull($staleEntity);
+        $staleEntity->finish(0, new \DateTimeImmutable('-1 hour'));
+        $store->flush();
+
+        $releaseFile = $this->tmpDir.'/pid-reuse-release-'.bin2hex(random_bytes(4));
+        $releaseArg = escapeshellarg($releaseFile);
+
+        $this->bashConfig = new BashToolConfig(
+            defaultTimeoutSeconds: 30,
+            backgroundPromptThresholdSeconds: 0,
+            pollIntervalMicros: 50_000,
+            logTailChars: 20000,
+        );
+
+        $promptAdapter = new class($store, $em, $staleId, $releaseFile) implements BashBackgroundPromptAdapterInterface {
+            public function __construct(
+                private readonly ProcessStore $store,
+                private readonly \Doctrine\ORM\EntityManagerInterface $em,
+                private readonly int $staleRecordId,
+                private readonly string $releaseFile,
+            ) {
+            }
+
+            public function shouldBackground(string $command, int $pid, string $logPath, float $elapsedSeconds): bool
+            {
+                $stale = $this->store->fetchByRecordId($this->staleRecordId);
+                if (null !== $stale) {
+                    $stale->pid = $pid;
+                    $this->em->flush();
+                }
+
+                touch($this->releaseFile);
+
+                return false;
+            }
+        };
+
+        $result = $this->withContext(self::TEST_SESSION, function () use ($promptAdapter, $releaseArg): string {
+            return ($this->makeBashTool($promptAdapter))([
+                'command' => 'while [ ! -f '.$releaseArg.' ]; do :; done; echo '.escapeshellarg(self::DATETIME_MARKER),
+            ]);
+        });
+
+        $this->assertStringContainsString(self::DATETIME_MARKER, $result);
+        $this->assertStringNotContainsString(self::COMPOSER_MARKER, $result);
+
+        $entities = $this->manager->list(self::TEST_SESSION);
+        $this->assertGreaterThanOrEqual(2, \count($entities));
+
+        $byId = [];
+        foreach ($entities as $entity) {
+            $byId[$entity->id] = $entity;
+        }
+
+        $this->assertArrayHasKey($staleId, $byId);
+        $current = null;
+        foreach ($entities as $entity) {
+            if ($entity->id !== $staleId) {
+                $current = $entity;
+                break;
+            }
+        }
+        $this->assertNotNull($current);
+        $this->assertSame($byId[$staleId]->pid, $current->pid, 'Stale and current records must share the OS PID');
+        $this->assertNotSame($byId[$staleId]->logPath, $current->logPath);
+    }
+
+    public function testReadLogFullForRecordEnforcesSessionOwnership(): void
+    {
+        $this->createManager();
+
+        $store = self::getContainer()->get(ProcessStore::class);
+        $logPath = $this->tmpDir.'/session-owned.log';
+        file_put_contents($logPath, 'session-owned-output');
+
+        $recordId = $store->insertRecord([
+            'pid' => 515151,
+            'session_id' => self::TEST_SESSION,
+            'command' => 'echo owned',
+            'log_path' => $logPath,
+            'status_path' => $this->tmpDir.'/owned.status',
+            'started_at' => new \DateTimeImmutable(),
+        ]);
+
+        $owned = $this->manager->readLogFullForRecord($recordId, self::TEST_SESSION);
+        $this->assertStringContainsString('session-owned-output', $owned->content);
+
+        $this->expectException(\RuntimeException::class);
+        $this->manager->readLogFullForRecord($recordId, 'other-session');
     }
 
     /* ── Helpers ── */
@@ -733,28 +850,6 @@ final class BashToolTest extends IsolatedKernelTestCase
                 }
             }
         }
-    }
-
-    private function rmDir(string $path): void
-    {
-        if (!is_dir($path)) {
-            return;
-        }
-
-        $items = new \RecursiveIteratorIterator(
-            new \RecursiveDirectoryIterator($path, \RecursiveDirectoryIterator::SKIP_DOTS),
-            \RecursiveIteratorIterator::CHILD_FIRST,
-        );
-
-        foreach ($items as $item) {
-            if ($item->isDir()) {
-                @rmdir((string) $item);
-            } else {
-                @unlink((string) $item);
-            }
-        }
-
-        @rmdir($path);
     }
 }
 

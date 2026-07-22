@@ -8,6 +8,7 @@ use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
 use Ineersa\AgentCore\Schema\SchemaVersion;
+use Ineersa\CodingAgent\Session\Contract\RunSequenceAllocatorInterface;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Lock\LockFactory;
 
@@ -17,14 +18,8 @@ use Symfony\Component\Lock\LockFactory;
  * Stores RunEvent entries as append-only JSONL at
  * .hatfield/sessions/<runId>/events.jsonl.
  *
- * Uses Symfony Lock (FlockStore) to protect concurrent appends.
- * Reuses EventPayloadNormalizer for canonical event serialization.
- *
- * Directory name is canonical; embedded runId in each event
- * must match. Mismatches throw on read.
- *
- * Uses HatfieldSessionStore::resolveSessionsBasePath() as the single
- * source of truth for the sessions directory.
+ * Sequence allocation uses a per-run {@see FileRunSequenceAllocator::COUNTER_BASENAME} file.
+ * events.jsonl is never scanned during normal append (only bootstrap when cursor is missing).
  */
 final class SessionRunEventStore implements EventStoreInterface
 {
@@ -35,35 +30,83 @@ final class SessionRunEventStore implements EventStoreInterface
         private readonly EventPayloadNormalizer $eventPayloadNormalizer,
         private readonly LockFactory $lockFactory,
         private readonly LoggerInterface $logger,
+        private readonly RunSequenceAllocatorInterface $sequenceAllocator,
+        private readonly EventLogMaxSeqBootstrapReader $bootstrapReader = new EventLogMaxSeqBootstrapReader(),
     ) {
         $this->sessionsBasePath = $hatfieldSessionStore->resolveSessionsBasePath();
     }
 
-    public function append(RunEvent $event): void
+    public function append(RunEvent $event): RunEvent
     {
         $path = $this->eventsPath($event->runId);
         $lock = $this->lockFactory->createLock('hatfield-run-'.$event->runId);
         $lock->acquire(true);
 
         try {
-            $dir = \dirname($path);
-            if (!is_dir($dir)) {
-                mkdir($dir, 0777, true);
-            }
+            $counterPath = FileRunSequenceAllocator::counterPathForEventsLog($path);
+            $nextSeq = $this->sequenceAllocator->allocateNext(
+                $counterPath,
+                fn (): int => $this->bootstrapReader->readMaxSeq($path),
+            );
+            $persisted = new RunEvent(
+                runId: $event->runId,
+                seq: $nextSeq,
+                turnNo: $event->turnNo,
+                type: $event->type,
+                payload: $event->payload,
+                createdAt: $event->createdAt,
+            );
 
-            $entry = $this->eventPayloadNormalizer->normalizeRunEvent($event);
-            $json = json_encode($entry, \JSON_THROW_ON_ERROR);
+            $this->writeEventLocked($path, $persisted);
 
-            file_put_contents($path, $json."\n", \FILE_APPEND | \LOCK_EX);
+            return $persisted;
         } finally {
             $lock->release();
         }
     }
 
-    public function appendMany(array $events): void
+    public function appendMany(array $events): array
     {
+        if ([] === $events) {
+            return [];
+        }
+
+        $runId = $events[0]->runId;
         foreach ($events as $event) {
-            $this->append($event);
+            if ($event->runId !== $runId) {
+                throw new \InvalidArgumentException('appendMany requires all events to share the same runId.');
+            }
+        }
+
+        $path = $this->eventsPath($runId);
+        $lock = $this->lockFactory->createLock('hatfield-run-'.$runId);
+        $lock->acquire(true);
+
+        try {
+            $counterPath = FileRunSequenceAllocator::counterPathForEventsLog($path);
+            $seqBlock = $this->sequenceAllocator->allocateBlock(
+                $counterPath,
+                \count($events),
+                fn (): int => $this->bootstrapReader->readMaxSeq($path),
+            );
+            $persisted = [];
+
+            foreach ($events as $index => $event) {
+                $persistedEvent = new RunEvent(
+                    runId: $event->runId,
+                    seq: $seqBlock[$index],
+                    turnNo: $event->turnNo,
+                    type: $event->type,
+                    payload: $event->payload,
+                    createdAt: $event->createdAt,
+                );
+                $this->writeEventLocked($path, $persistedEvent);
+                $persisted[] = $persistedEvent;
+            }
+
+            return $persisted;
+        } finally {
+            $lock->release();
         }
     }
 
@@ -112,9 +155,6 @@ final class SessionRunEventStore implements EventStoreInterface
                     throw new \RuntimeException(\sprintf('Corrupt event JSONL for run "%s": denormalization returned null for compatible or missing schema — line: %s', $runId, mb_substr($trimmedLine, 0, 200)));
                 }
 
-                // Schema version is present but incompatible. This is an
-                // intentional schema-version compatibility policy: events from
-                // unsupported major versions are ignored with diagnostics.
                 $this->logger->error('Skipping incompatible schema version in event JSONL', [
                     'run_id' => $runId,
                     'schema_version' => $payload['schema_version'] ?? null,
@@ -125,7 +165,6 @@ final class SessionRunEventStore implements EventStoreInterface
                 continue;
             }
 
-            // Validate embedded runId matches directory (canonical source)
             if ($event->runId !== $runId) {
                 throw new \RuntimeException(\sprintf('RunEvent integrity error at seq %d: embedded runId "%s" does not match directory "%s".', $event->seq, $event->runId, $runId));
             }
@@ -138,7 +177,25 @@ final class SessionRunEventStore implements EventStoreInterface
         return $events;
     }
 
+    private function writeEventLocked(string $path, RunEvent $event): void
+    {
+        $dir = \dirname($path);
+        if (!is_dir($dir)) {
+            mkdir(directory: $dir, recursive: true);
+        }
+
+        $entry = $this->eventPayloadNormalizer->normalizeRunEvent($event);
+        $json = json_encode($entry, \JSON_THROW_ON_ERROR);
+
+        $written = file_put_contents($path, $json."\n", \FILE_APPEND | \LOCK_EX);
+        if (false === $written) {
+            throw new \RuntimeException(\sprintf('Failed to append to events.jsonl for run "%s" at seq %d.', $event->runId, $event->seq));
+        }
+    }
+
     /**
+     * Major schema version mismatch: skip line with error log (forward-compat read policy).
+     *
      * @param array<string, mixed> $payload
      */
     private function isIncompatibleSchemaVersion(array $payload): bool
@@ -154,13 +211,8 @@ final class SessionRunEventStore implements EventStoreInterface
         return '' !== $candidateMajor && $candidateMajor !== $expectedMajor;
     }
 
-    private function sessionsDir(): string
-    {
-        return $this->sessionsBasePath;
-    }
-
     private function eventsPath(string $runId): string
     {
-        return $this->sessionsDir().'/'.$runId.'/events.jsonl';
+        return $this->sessionsBasePath.'/'.$runId.'/events.jsonl';
     }
 }

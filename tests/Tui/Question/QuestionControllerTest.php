@@ -17,6 +17,7 @@ use Ineersa\Tui\Theme\ThemeColorEnum;
 use Ineersa\Tui\Theme\ThemePalette;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Tui\Tui;
 use Symfony\Component\Tui\Widget\ContainerWidget;
 use Symfony\Component\Tui\Widget\EditorWidget;
 use Symfony\Component\Tui\Widget\MarkdownWidget;
@@ -174,6 +175,41 @@ class QuestionControllerTest extends TestCase
         $this->assertStringContainsString('[type answer and press Enter]', preg_replace('/\x1b\[[0-9;]*m/', '', $hint));
     }
 
+    #[Test]
+    public function testTextOverlayMountClearsActionStatusInsteadOfQuestionPending(): void
+    {
+        $request = new QuestionRequest(
+            requestId: 'text-status',
+            source: QuestionSource::AgentCore,
+            kind: QuestionKind::Text,
+            prompt: 'Which docs file?',
+        );
+
+        $tui = new Tui();
+        $palette = new ThemePalette(
+            name: 'test',
+            colors: [
+                ThemeColorEnum::Accent->value => 'cyan',
+                ThemeColorEnum::Muted->value => 'gray',
+            ],
+        );
+        $screen = new ChatScreen(new DefaultTheme($palette), 'text-status-session', new PromptEditor());
+        $screen->mount($tui);
+        $screen->setStatus('action', 'Type your answer and press Enter');
+
+        $this->controller->setRuntimeRefs(
+            (new \ReflectionClass(\Ineersa\Tui\Runtime\TuiRuntimeContext::class))->newInstanceWithoutConstructor(),
+            $screen,
+        );
+        $this->controller->open($request);
+
+        $chatRef = new \ReflectionClass(ChatScreen::class);
+        $footerProp = $chatRef->getProperty('footerDataProvider');
+        $entries = $footerProp->getValue($screen)->getStatusEntries();
+        $this->assertArrayNotHasKey('action', $entries);
+        $this->assertTrue($this->controller->isOpen());
+    }
+
     /**
      * Build items for a Confirm question.
      */
@@ -318,23 +354,20 @@ class QuestionControllerTest extends TestCase
             kind: QuestionKind::Choice,
             prompt: 'Pick one:',
             choices: [
-                new QuestionOption('Allow once'),
-                new QuestionOption('Always allow'),
-                new QuestionOption('Deny'),
+                new QuestionOption('✅ Allow'),
+                new QuestionOption('❌ Deny'),
             ],
             allowOther: false,
         );
 
         $items = $this->invokeBuildItems($request);
 
-        // Choice without allowOther = choices only
-        $this->assertCount(3, $items);
-        $this->assertSame('Allow once', $items[0]['value']);
-        $this->assertSame('Allow once', $items[0]['label']);
-        $this->assertSame('Always allow', $items[1]['value']);
-        $this->assertSame('Always allow', $items[1]['label']);
-        $this->assertSame('Deny', $items[2]['value']);
-        $this->assertSame('Deny', $items[2]['label']);
+        // Choice without allowOther = choices only (no Type your answer)
+        $this->assertCount(2, $items);
+        $this->assertSame('✅ Allow', $items[0]['value']);
+        $this->assertSame('✅ Allow', $items[0]['label']);
+        $this->assertSame('❌ Deny', $items[1]['value']);
+        $this->assertSame('❌ Deny', $items[1]['label']);
     }
 
     #[Test]
@@ -346,8 +379,8 @@ class QuestionControllerTest extends TestCase
             kind: QuestionKind::Choice,
             prompt: 'Allow destructive command?',
             choices: [
-                new QuestionOption('Allow once', 'Approves one-time'),
-                new QuestionOption('Allow always', 'Persists to policy'),
+                new QuestionOption('✅ Allow', 'Approves the exact call'),
+                new QuestionOption('❌ Deny', 'Blocks the call'),
             ],
             allowOther: false,
         );
@@ -355,12 +388,12 @@ class QuestionControllerTest extends TestCase
         $items = $this->invokeBuildItems($request);
 
         $this->assertCount(2, $items);
-        $this->assertSame('Allow once', $items[0]['value']);
-        $this->assertSame('Allow once', $items[0]['label']);
-        $this->assertSame('Approves one-time', $items[0]['description']);
-        $this->assertSame('Allow always', $items[1]['value']);
-        $this->assertSame('Allow always', $items[1]['label']);
-        $this->assertSame('Persists to policy', $items[1]['description']);
+        $this->assertSame('✅ Allow', $items[0]['value']);
+        $this->assertSame('✅ Allow', $items[0]['label']);
+        $this->assertSame('Approves the exact call', $items[0]['description']);
+        $this->assertSame('❌ Deny', $items[1]['value']);
+        $this->assertSame('❌ Deny', $items[1]['label']);
+        $this->assertSame('Blocks the call', $items[1]['description']);
     }
 
     #[Test]

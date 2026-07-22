@@ -59,8 +59,14 @@ final class ApplicationMigrationExecutor
      *   1. Generate via doctrine:migrations:diff in the source checkout.
      *   2. Make sure the class exists under migrations/ and has the
      *      DoctrineMigrations namespace.
-     *   3. Add its FQCN to the END of this list.
-     *   4. The runtime executor will apply it on next PHAR boot.
+     *   3. Add its FQCN to the END of this list (order matters: later
+     *      migrations may depend on earlier DDL in this list).
+     *   4. The runtime executor will apply it on next agent boot.
+     *
+     * Messenger run_control workers run StartupDatabaseMigrator in the same
+     * process before consuming messages; subscribers on WorkerStarted assume
+     * tables from KNOWN_MIGRATIONS already exist — do not query new tables
+     * without registering their migration here first.
      *
      * @var list<class-string<AbstractMigration>>
      */
@@ -74,6 +80,13 @@ final class ApplicationMigrationExecutor
         \DoctrineMigrations\Version20260617141001::class,
         \DoctrineMigrations\Version20260617141002::class,
         \DoctrineMigrations\Version20260628140000::class,
+        \DoctrineMigrations\Version20260710120000::class,
+        \DoctrineMigrations\Version20260713120000::class,
+        \DoctrineMigrations\Version20260713130000::class,
+        \DoctrineMigrations\Version20260713140000::class,
+        \DoctrineMigrations\Version20260713160000::class,
+        \DoctrineMigrations\Version20260714140000::class,
+        \DoctrineMigrations\Version20260715120000::class,
     ];
 
     private bool $ran = false;
@@ -205,8 +218,8 @@ final class ApplicationMigrationExecutor
     private function isApplied(string $versionId): bool
     {
         $row = $this->connection->fetchOne(
-            'SELECT 1 FROM doctrine_migration_versions WHERE version = ?',
-            [$versionId],
+            'SELECT 1 FROM doctrine_migration_versions WHERE version = ? OR version = ?',
+            [$versionId, 'DoctrineMigrations\\'.$versionId],
         );
 
         return false !== $row;
@@ -291,7 +304,11 @@ final class ApplicationMigrationExecutor
             $transactionActive = true;
 
             foreach ($plannedSql as $query) {
-                $this->connection->executeStatement($query->getStatement());
+                $this->connection->executeStatement(
+                    $query->getStatement(),
+                    $query->getParameters(),
+                    $query->getTypes(),
+                );
             }
 
             $executionTime = (int) ((microtime(true) - $startTime) * 1000);

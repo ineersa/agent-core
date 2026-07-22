@@ -49,6 +49,24 @@ final readonly class AppHotkeyRegistrar implements TuiListenerRegistrar
 
         $this->hotkeyRegistry->add(new HotkeyBindingDTO(
             context: 'Global',
+            keys: ['ctrl+\\'],
+            action: 'Toggle subagent live view',
+            description: 'Open /agents-live from main; return to main from live view',
+            source: 'core',
+            priority: 26,
+        ));
+
+        $this->hotkeyRegistry->add(new HotkeyBindingDTO(
+            context: 'Editor',
+            keys: ['ctrl+v'],
+            action: 'Paste image from clipboard',
+            description: 'Read OS clipboard image (wl-paste/xclip/pngpaste), insert [Image #N] placeholder; bracketed text paste unchanged',
+            source: 'core',
+            priority: 15,
+        ));
+
+        $this->hotkeyRegistry->add(new HotkeyBindingDTO(
+            context: 'Global',
             keys: ['ctrl+o'],
             action: 'Toggle transcript previews',
             description: 'Expand or collapse previewable tool result and diff previews for this session only (not saved to settings)',

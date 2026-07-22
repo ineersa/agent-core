@@ -6,13 +6,14 @@ This README is an architecture map (not an index).
 
 - `StartRun` -> `RunOrchestrator::onStartRun()` on `agent.command.bus`
 - `ApplyCommand` -> `RunOrchestrator::onApplyCommand()` on `agent.command.bus`
+- `ApplyShellCommand` -> `RunOrchestrator::onApplyShellCommand()` on `agent.command.bus`
 - `AdvanceRun` -> `RunOrchestrator::onAdvanceRun()` on `agent.command.bus`
-- `LlmStepResult` -> `RunOrchestrator::onLlmStepResult()` on `agent.command.bus`
-- `ToolCallResult` -> `RunOrchestrator::onToolCallResult()` on `agent.command.bus`
+- `LlmStepResult` -> routed `run_control`; `RunOrchestrator::onLlmStepResult()` on `agent.command.bus`
+- `ToolCallResult` -> routed `run_control`; `RunOrchestrator::onToolCallResult()` on `agent.command.bus`
 - `ExecuteLlmStep` -> `ExecuteLlmStepWorker::__invoke()` on `agent.execution.bus`
 - `ExecuteToolCall` -> `ExecuteToolCallWorker::__invoke()` on `agent.execution.bus`
 - `CompactRun` -> `RunOrchestrator::onCompactRun()` on `agent.command.bus`
-- `CompactionStepResult` -> `RunOrchestrator::onCompactionStepResult()` on `agent.command.bus`
+- `CompactionStepResult` -> routed `run_control`; `RunOrchestrator::onCompactionStepResult()` on `agent.command.bus`
 - `ExecuteCompactionStep` -> `ExecuteCompactionStepWorker::__invoke()` on `agent.execution.bus`
 
 Note: `CollectToolBatch` is routed to `agent.execution.bus` in `config/messenger.php`, but there is currently no `AsMessageHandler` consumer for this message in `src/`.
@@ -25,6 +26,10 @@ Note: `CollectToolBatch` is routed to `agent.execution.bus` in `config/messenger
 - `ApplyCommand`
   - dispatched by: `AgentRunner::continue()/steer()/followUp()/cancel()/answerHuman()` via `applyCoreCommand()`
   - handled by: `RunOrchestrator::onApplyCommand()` -> `RunMessageProcessor` -> `ApplyCommandHandler`
+- `ApplyShellCommand`
+  - dispatched by: `AgentRunner::shell()`, controller `ShellCommandHandler`, and in-process shell send path
+  - handled by: `RunOrchestrator::onApplyShellCommand()` -> `RunMessageProcessor` -> `ApplyShellCommandHandler`
+  - effect: `ExecuteShellToolCall` on `agent.execution.bus` (tool consumer writes tool lifecycle / optional AgentEnd)
 - `AdvanceRun`
   - dispatched by: `StartRunHandler` (initial post-commit kickoff), `ApplyCommandHandler` and `LlmStepResultHandler` follow-up callbacks, plus `AgentLoopResumeStaleRunsCommand::execute()`
   - handled by: `RunOrchestrator::onAdvanceRun()` -> `RunMessageProcessor` -> `AdvanceRunHandler`
@@ -35,11 +40,11 @@ Note: `CollectToolBatch` is routed to `agent.execution.bus` in `config/messenger
   - dispatched by: `LlmStepResultHandler` through `RunMessageProcessor`/`RunCommit` effect dispatch
   - handled by: `ExecuteToolCallWorker::__invoke()`
 - `LlmStepResult`
-  - dispatched by: `ExecuteLlmStepWorker::__invoke()`
-  - handled by: `RunOrchestrator::onLlmStepResult()` -> `RunMessageProcessor` -> `LlmStepResultHandler`
+  - dispatched by: `ExecuteLlmStepWorker::__invoke()` on `agent.command.bus` (routed to `run_control`)
+  - handled by: `RunOrchestrator::onLlmStepResult()` in the `run_control` consumer -> `RunMessageProcessor` -> `LlmStepResultHandler`
 - `ToolCallResult`
-  - dispatched by: `ExecuteToolCallWorker::__invoke()`
-  - handled by: `RunOrchestrator::onToolCallResult()` -> `RunMessageProcessor` -> `ToolCallResultHandler`
+  - dispatched by: `ExecuteToolCallWorker::__invoke()` on `agent.command.bus` (routed to `run_control`)
+  - handled by: `RunOrchestrator::onToolCallResult()` in the `run_control` consumer -> `RunMessageProcessor` -> `ToolCallResultHandler`
 - `CompactRun`
   - dispatched by: runtime/TUI compaction trigger (COMP-03)
   - handled by: `RunOrchestrator::onCompactRun()` -> `RunMessageProcessor` -> `CompactRunHandler`
@@ -47,8 +52,8 @@ Note: `CollectToolBatch` is routed to `agent.execution.bus` in `config/messenger
   - dispatched by: `CompactRunHandler` through `RunMessageProcessor`/`RunCommit` effect dispatch
   - handled by: `ExecuteCompactionStepWorker::__invoke()`
 - `CompactionStepResult`
-  - dispatched by: `ExecuteCompactionStepWorker::__invoke()`
-  - handled by: `RunOrchestrator::onCompactionStepResult()` -> `RunMessageProcessor` -> `CompactionStepResultHandler`
+  - dispatched by: `ExecuteCompactionStepWorker::__invoke()` on `agent.command.bus` (routed to `run_control`)
+  - handled by: `RunOrchestrator::onCompactionStepResult()` in the `run_control` consumer -> `RunMessageProcessor` -> `CompactionStepResultHandler`
 
 ## Event -> listener (application side)
 
@@ -62,22 +67,22 @@ Note: `CollectToolBatch` is routed to `agent.execution.bus` in `config/messenger
 - Commit persistence failures are surfaced through structured warnings (`agent_loop.commit.*`) and state rollback is attempted when event persistence fails before commit finalization.
 - `ExecuteLlmStepWorker` and `ExecuteToolCallWorker` emit execution spans (`llm.call`, `tool.call`) and feed latency/error metrics.
 - `RunMetrics` tracks active runs by status, turn-duration histogram, LLM/tool latency/error rates, command queue lag, stale-result count, and replay rebuild counters.
-- `ReplayService` increments rebuild counters and contributes replay tracing for hot-state rebuild operations.
+- `HotPromptStateRebuilderInterface (SessionHotPromptReplayService in App)` increments rebuild counters and contributes replay tracing for hot-state rebuild operations.
 - `RunDebugService` exposes the current metrics snapshot for `agent-loop:run-inspect` output.
 
 ## Turn tree replay
 
-Before RunState or hot-prompt replay, `TurnTreeReplayFilter` filters the canonical
-event stream to only events on the active branch path. See `docs/session-storage.md`
-"Turn tree model" for semantics.
+Branch turn-tree projection and active-path filtering live in **CodingAgent session**
+(`CodingAgent\Session\TurnTree`, `CodingAgent\Session\Replay`). AgentCore emits
+canonical events (`turn_advanced`, `leaf_set`, `parent_turn_no`, etc.) and replays
+through narrow contracts (`BranchReplayFilterInterface`, `TurnTreeProjectorInterface`
+under `AgentCore\Contract\TurnTree`). See `docs/session-storage.md` "Turn tree model".
 
-Key replay services and their tree integration:
-- `TurnTreeProjector` (Domain) — builds `TurnTreeDTO` from canonical events (pure domain service).
-- `TurnTreeReplayFilter` (Application\Replay) — uses the projector to filter events to the active branch.
-- `RunStateReplayService` — filters events before replaying into `RunState`; runs
-  integrity checks on the full canonical stream, not the filtered stream.
-- `ReplayService` — filters events before replaying prompt messages; reports
-  integrity (eventCount, lastSeq, contiguity) from the full canonical stream.
+Core replay integration:
+- `RunStateRebuilderInterface` (`SessionRunStateReplayService` in App) — optional `BranchReplayFilterInterface` before reducing into `RunState`;
+  integrity checks use the full canonical stream, not the filtered stream.
+- `HotPromptStateRebuilderInterface (SessionHotPromptReplayService in App)` — optional branch filter before replaying prompt messages; integrity from full stream.
+- `RunRewindServiceInterface` (`SessionRewindService` in App) — uses `TurnTreeProjectorInterface` to validate rewind targets.
 
 ## Maintenance rule
 

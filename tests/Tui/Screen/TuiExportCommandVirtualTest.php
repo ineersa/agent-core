@@ -16,6 +16,7 @@ use Ineersa\Tui\Command\DispatchRuntime;
 use Ineersa\Tui\Command\SlashCommandRegistry;
 use Ineersa\Tui\Command\SubmissionRouter;
 use Ineersa\Tui\Command\TranscriptMessage;
+use Ineersa\Tui\Export\SessionEventsExportService;
 use Ineersa\Tui\Listener\ExportCommandRegistrar;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Tests\Support\TuiRuntimeContextBuilderTrait;
@@ -72,24 +73,24 @@ final class TuiExportCommandVirtualTest extends TestCase
             ->build();
 
         $registry = new SlashCommandRegistry();
-        (new ExportCommandRegistrar($registry))->register($context);
+        (new ExportCommandRegistrar($registry, new SessionEventsExportService()))->register($context);
 
         $router = new SubmissionRouter(new CommandParser(), $registry);
         $result = $router->route('/export');
 
-        self::assertInstanceOf(TranscriptMessage::class, $result);
-        self::assertNotInstanceOf(DispatchRuntime::class, $result);
-        self::assertStringContainsString('Session exported to:', $result->text);
+        $this->assertInstanceOf(TranscriptMessage::class, $result);
+        $this->assertNotInstanceOf(DispatchRuntime::class, $result);
+        $this->assertStringContainsString('Session exported to:', $result->text);
 
         $expectedPath = $this->projectDir.'/hatfield-session-'.self::SESSION_ID.'.html';
-        self::assertStringContainsString($expectedPath, $result->text);
-        self::assertFileExists($expectedPath);
+        $this->assertStringContainsString($expectedPath, $result->text);
+        $this->assertFileExists($expectedPath);
 
         $html = file_get_contents($expectedPath);
-        self::assertIsString($html);
-        self::assertStringContainsString('<!DOCTYPE html>', $html);
-        self::assertStringContainsString('Hatfield Session', $html);
-        self::assertStringNotContainsString('<script>', $html);
+        $this->assertIsString($html);
+        $this->assertStringContainsString('<!DOCTYPE html>', $html);
+        $this->assertStringContainsString('Hatfield Session', $html);
+        $this->assertStringNotContainsString('<script>', $html);
 
         $factory = new TranscriptBlockFactory();
         $block = $factory->system(
@@ -101,10 +102,10 @@ final class TuiExportCommandVirtualTest extends TestCase
         $harness->screen()->setTranscriptBlocks([$block]);
 
         $screen = $harness->plainScreenText();
-        self::assertStringContainsString('Session exported to:', $screen);
+        $this->assertStringContainsString('Session exported to:', $screen);
         // Terminal wrap can split the filename across lines; unwrapped command result is asserted above.
         $normalizedScreen = str_replace(["\r", "\n"], '', $screen);
-        self::assertStringContainsString('hatfield-session-'.self::SESSION_ID.'.html', $normalizedScreen);
+        $this->assertStringContainsString('hatfield-session-'.self::SESSION_ID.'.html', $normalizedScreen);
     }
 
     private function createSessionStoreForProject(): HatfieldSessionStore

@@ -35,50 +35,6 @@ final class ToolQuestionStoreTest extends IsolatedKernelTestCase
         $this->em = $container->get('doctrine.orm.default_entity_manager');
     }
 
-    // ── Helpers ─────────────────────────────────────────────────────────
-
-    /**
-     * Create a fresh ToolQuestion entity with unique identifiers for isolated testing.
-     */
-    private function createQuestion(string $prefix = 'store-test'): ToolQuestion
-    {
-        $requestId = \sprintf('%s-%s', $prefix, \uniqid('', true));
-        $runId = \sprintf('run-%s', \uniqid('', true));
-
-        return ToolQuestion::create(
-            requestId: $requestId,
-            runId: $runId,
-            toolCallId: \sprintf('tc-%s', \uniqid('', true)),
-            toolName: 'bash',
-            pid: 12345,
-            logPath: '/tmp/test-tool-question.log',
-            commandPreview: 'echo "test command"',
-            prompt: 'Move command to the background?',
-            kind: 'confirm',
-        );
-    }
-
-    /**
-     * Use DBAL/ORM DQL to force a ToolQuestion's created_at backward in time.
-     * Lifecycle callbacks override constructor values at persist time, so we
-     * must UPDATE after persist.
-     */
-    private function forceCreatedAt(ToolQuestion $question, \DateTimeImmutable $newCreatedAt): void
-    {
-        $this->em->createQueryBuilder()
-            ->update(ToolQuestion::class, 'tq')
-            ->set('tq.createdAt', ':newCreatedAt')
-            ->set('tq.updatedAt', ':newUpdatedAt')
-            ->where('tq.requestId = :requestId')
-            ->setParameter('newCreatedAt', $newCreatedAt)
-            ->setParameter('newUpdatedAt', $newCreatedAt)
-            ->setParameter('requestId', $question->requestId)
-            ->getQuery()
-            ->execute();
-
-        $this->em->clear();
-    }
-
     // ── Test: create / find / poll lifecycle ────────────────────────────
 
     public function testCreateAndPollAnswerLifecycle(): void
@@ -91,42 +47,42 @@ final class ToolQuestionStoreTest extends IsolatedKernelTestCase
 
         // Can find by request ID.
         $found = $this->store->findByRequestId($requestId);
-        self::assertNotNull($found);
+        $this->assertNotNull($found);
 
         // Still pending, poll returns null.
-        self::assertNull($this->store->pollAnswer($requestId));
-        self::assertNull($found->answer, 'Pending question must have null answer');
-        self::assertNull($found->answeredAt, 'Pending question must have null answeredAt');
+        $this->assertNull($this->store->pollAnswer($requestId));
+        $this->assertNull($found->answer, 'Pending question must have null answer');
+        $this->assertNull($found->answeredAt, 'Pending question must have null answeredAt');
 
         // findUnemittedPendingQuestions includes it.
         $unemitted = $this->store->findUnemittedPendingQuestions();
-        self::assertNotEmpty($unemitted);
-        $foundPending = \array_filter(
+        $this->assertNotEmpty($unemitted);
+        $foundPending = array_filter(
             $unemitted,
             static fn (ToolQuestion $tq): bool => $tq->requestId === $requestId,
         );
-        self::assertCount(1, $foundPending);
+        $this->assertCount(1, $foundPending);
 
         // Mark emitted.
         $this->store->markEmitted($requestId);
         $afterEmit = $this->store->findByRequestId($requestId);
-        self::assertNotNull($afterEmit);
-        self::assertNotNull($afterEmit->emittedAt, 'Emitted question must have emittedAt set');
+        $this->assertNotNull($afterEmit);
+        $this->assertNotNull($afterEmit->emittedAt, 'Emitted question must have emittedAt set');
 
         // findUnemittedPendingQuestions no longer includes it.
         $unemittedAfter = $this->store->findUnemittedPendingQuestions();
-        $stillPending = \array_filter(
+        $stillPending = array_filter(
             $unemittedAfter,
             static fn (ToolQuestion $tq): bool => $tq->requestId === $requestId,
         );
-        self::assertCount(0, $stillPending, 'Emitted question must not appear in unemitted results');
+        $this->assertCount(0, $stillPending, 'Emitted question must not appear in unemitted results');
 
         // Answer true.
         $answered = $this->store->answer($requestId, true);
-        self::assertTrue($answered, 'First answer must return true');
+        $this->assertTrue($answered, 'First answer must return true');
 
         // poll returns true.
-        self::assertTrue($this->store->pollAnswer($requestId), 'pollAnswer must return true');
+        $this->assertTrue($this->store->pollAnswer($requestId), 'pollAnswer must return true');
     }
 
     // ── Test: answer / cancel idempotency ───────────────────────────────
@@ -139,16 +95,16 @@ final class ToolQuestionStoreTest extends IsolatedKernelTestCase
         $this->store->create($q1);
 
         // First answer returns true.
-        self::assertTrue($this->store->answer($r1, true));
-        self::assertTrue($this->store->pollAnswer($r1));
+        $this->assertTrue($this->store->answer($r1, true));
+        $this->assertTrue($this->store->pollAnswer($r1));
 
         // Second answer returns false (idempotent guard).
-        self::assertFalse($this->store->answer($r1, false), 'Second answer must return false (already resolved)');
-        self::assertTrue($this->store->pollAnswer($r1), 'pollAnswer must still return true (first answer preserved)');
+        $this->assertFalse($this->store->answer($r1, false), 'Second answer must return false (already resolved)');
+        $this->assertTrue($this->store->pollAnswer($r1), 'pollAnswer must still return true (first answer preserved)');
 
         // Cancel on answered question is no-op.
         $this->store->cancel($r1);
-        self::assertTrue($this->store->pollAnswer($r1), 'pollAnswer must still return true (cancel no-op on answered)');
+        $this->assertTrue($this->store->pollAnswer($r1), 'pollAnswer must still return true (cancel no-op on answered)');
 
         // --- Q2: cancel first, then answer -> answer no-op, poll stays false ---
         $q2 = $this->createQuestion('idempotent-q2');
@@ -157,11 +113,11 @@ final class ToolQuestionStoreTest extends IsolatedKernelTestCase
 
         // Cancel returns pollAnswer false.
         $this->store->cancel($r2);
-        self::assertFalse($this->store->pollAnswer($r2), 'pollAnswer must return false after cancel');
+        $this->assertFalse($this->store->pollAnswer($r2), 'pollAnswer must return false after cancel');
 
         // Answer on cancelled question returns false (idempotent guard).
-        self::assertFalse($this->store->answer($r2, true), 'Answer on cancelled must return false');
-        self::assertFalse($this->store->pollAnswer($r2), 'pollAnswer must still return false (cancel preserved)');
+        $this->assertFalse($this->store->answer($r2, true), 'Answer on cancelled must return false');
+        $this->assertFalse($this->store->pollAnswer($r2), 'pollAnswer must still return false (cancel preserved)');
     }
 
     // ── Test: stale pending cleanup ─────────────────────────────────────
@@ -194,40 +150,40 @@ final class ToolQuestionStoreTest extends IsolatedKernelTestCase
         // Cleanup: cancel pending rows created before 30 minutes ago.
         $cutoff = new \DateTimeImmutable('-30 minutes');
         $cleanupTime = new \DateTimeImmutable();
-        \usleep(1); // ensure cleanup timestamp is distinct from Q2 creation
+        usleep(1); // ensure cleanup timestamp is distinct from Q2 creation
         $count = $this->store->cancelPendingQuestionsCreatedBefore($cutoff);
 
         // Only Q1 was old+pending.
-        self::assertSame(1, $count, 'Only one old pending question should be cancelled');
+        $this->assertSame(1, $count, 'Only one old pending question should be cancelled');
 
         // Q1: now cancelled.
         $q1After = $this->store->findByRequestId($r1);
-        self::assertNotNull($q1After);
-        self::assertSame(ToolQuestionStatusEnum::Cancelled, $q1After->status);
-        self::assertFalse($this->store->pollAnswer($r1));
+        $this->assertNotNull($q1After);
+        $this->assertSame(ToolQuestionStatusEnum::Cancelled, $q1After->status);
+        $this->assertFalse($this->store->pollAnswer($r1));
 
         // Q1: answeredAt and updatedAt should be set to cleanup time (approximate).
-        self::assertNotNull($q1After->answeredAt, 'Cancelled question must have answeredAt set');
+        $this->assertNotNull($q1After->answeredAt, 'Cancelled question must have answeredAt set');
         // Allow some tolerance since DQL UPDATE and entity read happen at slightly different times.
-        $diff = \abs($q1After->answeredAt->getTimestamp() - $cleanupTime->getTimestamp());
-        self::assertLessThanOrEqual(5, $diff, 'answeredAt should be close to cleanup time');
+        $diff = abs($q1After->answeredAt->getTimestamp() - $cleanupTime->getTimestamp());
+        $this->assertLessThanOrEqual(5, $diff, 'answeredAt should be close to cleanup time');
 
         // DQL UPDATE sets updatedAt explicitly via the query.
-        self::assertNotNull($q1After->updatedAt, 'Cancelled question must have updatedAt set');
-        $diffUpd = \abs($q1After->updatedAt->getTimestamp() - $cleanupTime->getTimestamp());
-        self::assertLessThanOrEqual(5, $diffUpd, 'updatedAt should be close to cleanup time');
+        $this->assertNotNull($q1After->updatedAt, 'Cancelled question must have updatedAt set');
+        $diffUpd = abs($q1After->updatedAt->getTimestamp() - $cleanupTime->getTimestamp());
+        $this->assertLessThanOrEqual(5, $diffUpd, 'updatedAt should be close to cleanup time');
 
         // Q2: still pending.
         $q2After = $this->store->findByRequestId($r2);
-        self::assertNotNull($q2After);
-        self::assertSame(ToolQuestionStatusEnum::Pending, $q2After->status);
-        self::assertNull($this->store->pollAnswer($r2));
+        $this->assertNotNull($q2After);
+        $this->assertSame(ToolQuestionStatusEnum::Pending, $q2After->status);
+        $this->assertNull($this->store->pollAnswer($r2));
 
         // Q3: still answered (not touched by cleanup).
         $q3After = $this->store->findByRequestId($r3);
-        self::assertNotNull($q3After);
-        self::assertSame(ToolQuestionStatusEnum::Answered, $q3After->status, 'Answered question must not be changed by cleanup');
-        self::assertTrue($this->store->pollAnswer($r3), 'Answered question must still return true');
+        $this->assertNotNull($q3After);
+        $this->assertSame(ToolQuestionStatusEnum::Answered, $q3After->status, 'Answered question must not be changed by cleanup');
+        $this->assertTrue($this->store->pollAnswer($r3), 'Answered question must still return true');
     }
 
     // ── Test: duplicate create idempotency ───────────────────────────────
@@ -239,7 +195,7 @@ final class ToolQuestionStoreTest extends IsolatedKernelTestCase
 
         // First create succeeds.
         $first = $this->store->create($q1);
-        self::assertSame($r1, $first->requestId);
+        $this->assertSame($r1, $first->requestId);
 
         // Create a second question with the same requestId but different values.
         $q2 = ToolQuestion::create(
@@ -259,9 +215,9 @@ final class ToolQuestionStoreTest extends IsolatedKernelTestCase
         // Without DAMA isolation this would hit unique constraint, but DAMA
         // wraps in a transaction. Use a known assertion that works in both
         // cases: the returned entity should have the ORIGINAL runId (q1's).
-        self::assertSame($r1, $result->requestId);
-        self::assertSame($q1->runId, $result->runId, 'Should return existing entity with original values (not the new duplicate)');
-        self::assertSame('bash', $result->toolName, 'Should return existing entity with original tool name');
+        $this->assertSame($r1, $result->requestId);
+        $this->assertSame($q1->runId, $result->runId, 'Should return existing entity with original values (not the new duplicate)');
+        $this->assertSame('bash', $result->toolName, 'Should return existing entity with original tool name');
     }
 
     // ── Test: markEmitted deduplication ─────────────────────────────────
@@ -275,7 +231,7 @@ final class ToolQuestionStoreTest extends IsolatedKernelTestCase
         // First markEmitted succeeds (no-op semantics: does not throw).
         $this->store->markEmitted($r);
         $afterFirst = $this->store->findByRequestId($r);
-        self::assertNotNull($afterFirst->emittedAt);
+        $this->assertNotNull($afterFirst->emittedAt);
 
         $firstEmittedAt = $afterFirst->emittedAt;
 
@@ -288,6 +244,50 @@ final class ToolQuestionStoreTest extends IsolatedKernelTestCase
         // because the poller's findUnemittedPendingQuestions query uses
         // IS NULL, so a re-marked question with non-null emittedAt is
         // still excluded from the unemitted result set.
-        self::assertNotNull($afterSecond->emittedAt);
+        $this->assertNotNull($afterSecond->emittedAt);
+    }
+
+    // ── Helpers ─────────────────────────────────────────────────────────
+
+    /**
+     * Create a fresh ToolQuestion entity with unique identifiers for isolated testing.
+     */
+    private function createQuestion(string $prefix = 'store-test'): ToolQuestion
+    {
+        $requestId = \sprintf('%s-%s', $prefix, uniqid('', true));
+        $runId = \sprintf('run-%s', uniqid('', true));
+
+        return ToolQuestion::create(
+            requestId: $requestId,
+            runId: $runId,
+            toolCallId: \sprintf('tc-%s', uniqid('', true)),
+            toolName: 'bash',
+            pid: 12345,
+            logPath: '/tmp/test-tool-question.log',
+            commandPreview: 'echo "test command"',
+            prompt: 'Move command to the background?',
+            kind: 'confirm',
+        );
+    }
+
+    /**
+     * Use DBAL/ORM DQL to force a ToolQuestion's created_at backward in time.
+     * Lifecycle callbacks override constructor values at persist time, so we
+     * must UPDATE after persist.
+     */
+    private function forceCreatedAt(ToolQuestion $question, \DateTimeImmutable $newCreatedAt): void
+    {
+        $this->em->createQueryBuilder()
+            ->update(ToolQuestion::class, 'tq')
+            ->set('tq.createdAt', ':newCreatedAt')
+            ->set('tq.updatedAt', ':newUpdatedAt')
+            ->where('tq.requestId = :requestId')
+            ->setParameter('newCreatedAt', $newCreatedAt)
+            ->setParameter('newUpdatedAt', $newCreatedAt)
+            ->setParameter('requestId', $question->requestId)
+            ->getQuery()
+            ->execute();
+
+        $this->em->clear();
     }
 }

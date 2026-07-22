@@ -30,6 +30,7 @@ final readonly class AgentMcpToolsResolver
      * @return array{
      *     non_mcp_tools: list<string>,
      *     mcp_runtime_tools: list<string>,
+     *     catalog_mcp_runtime_tools: list<string>,
      *     mcp_policy: array{mode: string, tools: list<string>}
      * }
      */
@@ -38,6 +39,10 @@ final readonly class AgentMcpToolsResolver
         $config = $this->configLoader->load();
         $catalog = $this->catalogStore->read($catalogRunId);
         $exposedByServer = $this->indexExposedToolsByServer($catalog, $config);
+        // Catalog-advertised Hatfield runtime names from connected servers with config.
+        // Child inheritance strips these before re-adding only the selected MCP set. If MCP
+        // registration was skipped because a permanent/unrelated dynamic tool already owns the
+        // name, that name is still treated as MCP here so it cannot leak via omitted-tools inherit.
         $allExposed = $this->flattenExposed($exposedByServer);
         $globalExposed = $this->flattenExposed(
             $this->filterServersByAvailability($exposedByServer, $config, McpServerAvailabilityEnum::All),
@@ -47,6 +52,7 @@ final readonly class AgentMcpToolsResolver
             return [
                 'non_mcp_tools' => [],
                 'mcp_runtime_tools' => $globalExposed,
+                'catalog_mcp_runtime_tools' => $allExposed,
                 'mcp_policy' => [
                     'mode' => 'inherited_global',
                     'tools' => $globalExposed,
@@ -61,33 +67,70 @@ final readonly class AgentMcpToolsResolver
                 $selectors[] = $entry;
                 continue;
             }
-            $nonMcp[] = $entry;
+
+            // Treat every exact catalog runtime name as MCP-owned, even when it is listed
+            // without `mcp:`. This prevents raw global or specific names from bypassing policy.
+            // The name-based filtering has the same collision-safety trade-off as omitted-tool
+            // inheritance: a permanent/unrelated dynamic tool with a catalog name is classified
+            // as MCP for policy purposes.
+            if (!\in_array($entry, $allExposed, true)) {
+                $nonMcp[] = $entry;
+            }
         }
 
         if ([] === $selectors) {
             return [
                 'non_mcp_tools' => $nonMcp,
-                'mcp_runtime_tools' => [],
+                'mcp_runtime_tools' => $globalExposed,
+                'catalog_mcp_runtime_tools' => $allExposed,
                 'mcp_policy' => [
-                    'mode' => 'none',
-                    'tools' => [],
+                    'mode' => 'inherited_global',
+                    'tools' => $globalExposed,
                 ],
             ];
         }
 
-        $mcpTools = $this->expandSelectors($selectors, $allExposed);
+        $policyMode = $this->policyModeFromSelectors($selectors);
+        $mcpTools = match ($policyMode) {
+            'none' => [],
+            // `all` means all globally available MCP tools; specific tools require selectors.
+            'all' => $globalExposed,
+            'specific' => $globalExposed,
+        };
+        if ('specific' === $policyMode) {
+            $specificSelectors = array_values(array_filter(
+                $selectors,
+                static fn (string $selector): bool => 'mcp:*' !== $selector && 'mcp:-' !== $selector,
+            ));
+            foreach ($this->expandSelectors($specificSelectors, $allExposed) as $selectedTool) {
+                if (!\in_array($selectedTool, $mcpTools, true)) {
+                    $mcpTools[] = $selectedTool;
+                }
+            }
+        }
 
         return [
             'non_mcp_tools' => $nonMcp,
             'mcp_runtime_tools' => $mcpTools,
+            'catalog_mcp_runtime_tools' => $allExposed,
             'mcp_policy' => [
-                'mode' => $this->policyModeFromSelectors($selectors),
+                'mode' => $policyMode,
                 'tools' => $mcpTools,
             ],
         ];
     }
 
     /**
+     * Expand specific `mcp:` selectors against catalog-exposed Hatfield runtime names.
+     *
+     * The caller must invoke this only for `specific` policy mode; `mcp:-` and `mcp:*`
+     * are filtered before this method is called.
+     *
+     * Grammar invariants:
+     *  - Exactly one terminal `*` is the only prefix wildcard (`mcp:websearch_*` → names starting with `websearch_`).
+     *  - A selector with no `*` is always exact, including names that end with `_`.
+     *  - Embedded or multiple `*` characters are not globs; they fall through to exact match (normally no catalog hit).
+     *
      * @param list<string> $selectors
      * @param list<string> $allExposed
      *
@@ -95,27 +138,22 @@ final readonly class AgentMcpToolsResolver
      */
     private function expandSelectors(array $selectors, array $allExposed): array
     {
-        if (\in_array('mcp:-', $selectors, true)) {
-            return [];
-        }
-        if (\in_array('mcp:*', $selectors, true)) {
-            return $allExposed;
-        }
-
         $allowed = [];
         foreach ($selectors as $selector) {
             $value = substr($selector, \strlen(self::MCP_SELECTOR_PREFIX));
-            if ('-' === $value || '*' === $value) {
-                continue;
-            }
-            if (str_ends_with($value, '_')) {
+
+            // Prefix wildcard: exactly one star, and it must be terminal (`mcp:<prefix*>`).
+            if (str_ends_with($value, '*') && 1 === substr_count($value, '*')) {
+                $prefix = substr($value, 0, -1);
                 foreach ($allExposed as $name) {
-                    if (str_starts_with($name, $value)) {
+                    if (str_starts_with($name, $prefix)) {
                         $allowed[$name] = true;
                     }
                 }
                 continue;
             }
+
+            // Exact match only (including trailing `_`, embedded/multiple stars, etc.).
             if (\in_array($value, $allExposed, true)) {
                 $allowed[$value] = true;
             }
@@ -126,17 +164,22 @@ final readonly class AgentMcpToolsResolver
 
     /**
      * @param list<string> $selectors
+     *
+     * @return 'none'|'all'|'specific'
      */
     private function policyModeFromSelectors(array $selectors): string
     {
-        if (\in_array('mcp:*', $selectors, true)) {
-            return 'all';
-        }
         if (\in_array('mcp:-', $selectors, true)) {
             return 'none';
         }
 
-        return 'specific';
+        foreach ($selectors as $selector) {
+            if ('mcp:*' !== $selector) {
+                return 'specific';
+            }
+        }
+
+        return 'all';
     }
 
     /**
@@ -167,6 +210,9 @@ final readonly class AgentMcpToolsResolver
     }
 
     /**
+     * Flatten per-server Hatfield names into a single list, deduplicating by runtime name
+     * while preserving first-seen order across servers.
+     *
      * @param array<string, list<string>> $byServer
      *
      * @return list<string>

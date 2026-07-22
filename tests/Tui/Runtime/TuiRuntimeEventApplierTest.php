@@ -4,11 +4,12 @@ declare(strict_types=1);
 
 namespace Ineersa\Tests\Tui\Runtime;
 
+use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
-use Ineersa\AgentCore\Domain\Event\RunEvent;
+use Ineersa\CodingAgent\Runtime\Contract\TurnTreeProviderInterface;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\AssistantStreamProjectionSubscriber;
@@ -20,9 +21,9 @@ use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
 use Ineersa\CodingAgent\Runtime\ProjectionPipeline\UserMessageProjectionSubscriber;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTranslator;
-use Ineersa\CodingAgent\Session\HatfieldSessionStore;
-use Ineersa\CodingAgent\Runtime\Contract\TurnTreeProviderInterface;
 use Ineersa\CodingAgent\Runtime\Protocol\TurnTreeView;
+use Ineersa\CodingAgent\Session\FileRunSequenceAllocator;
+use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\SessionRunEventStore;
 use Ineersa\Tui\Application\SessionInitializer;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
@@ -50,7 +51,6 @@ final class TuiRuntimeEventApplierTest extends TestCase
         parent::tearDown();
     }
 
-
     public function testRunLeafChangedClearsStaleQueuedUserMessages(): void
     {
         // Thesis: without clearing queuedUserMessages on RunLeafChanged, rewind/resume
@@ -66,8 +66,8 @@ final class TuiRuntimeEventApplierTest extends TestCase
             payload: ['turn_no' => 2],
         ), replayMode: true);
 
-        self::assertSame([], $state->queuedUserMessages);
-        self::assertSame(RunActivityStateEnum::Idle, $state->activity);
+        $this->assertSame([], $state->queuedUserMessages);
+        $this->assertSame(RunActivityStateEnum::Idle, $state->activity);
     }
 
     public function testRunCancelledClearsPendingQueuedUserMessages(): void
@@ -84,15 +84,15 @@ final class TuiRuntimeEventApplierTest extends TestCase
             payload: [],
         ), replayMode: true);
 
-        self::assertSame([], $state->queuedUserMessages);
-        self::assertSame(RunActivityStateEnum::Cancelled, $state->activity);
+        $this->assertSame([], $state->queuedUserMessages);
+        $this->assertSame(RunActivityStateEnum::Cancelled, $state->activity);
     }
 
     public function testIdleFollowUpQueuedEventDoesNotPopulatePendingQueue(): void
     {
         // Thesis: idle follow_up should not emit user.message_queued (no ⏳ flicker).
         $mapper = new RuntimeEventMapper(new RuntimeEventTranslator(new EventDispatcher()));
-        $runEvent = new \Ineersa\AgentCore\Domain\Event\RunEvent(
+        $runEvent = new RunEvent(
             runId: 'run-fu',
             seq: 2,
             turnNo: 1,
@@ -104,7 +104,7 @@ final class TuiRuntimeEventApplierTest extends TestCase
             ],
         );
 
-        self::assertNull($mapper->toRuntimeEvent($runEvent));
+        $this->assertNull($mapper->toRuntimeEvent($runEvent));
     }
 
     public function testApplierAndSessionInitializerReplayProduceMatchingState(): void
@@ -134,21 +134,21 @@ final class TuiRuntimeEventApplierTest extends TestCase
         }
         $applierBlocks = $applier->projectedBlocks();
 
-        self::assertSame($resumeState->activity, $applierState->activity);
-        self::assertSame($resumeState->usage->inputTokens, $applierState->usage->inputTokens);
-        self::assertSame($resumeState->usage->outputTokens, $applierState->usage->outputTokens);
-        self::assertSame($resumeState->usage->latestInputTokens, $applierState->usage->latestInputTokens);
-        self::assertSame(0.0, $applierState->usage->turnStartTime, 'Replay contract: no wall-clock t/s timing');
-        self::assertSame($resumeState->queuedUserMessages, $applierState->queuedUserMessages);
+        $this->assertSame($resumeState->activity, $applierState->activity);
+        $this->assertSame($resumeState->usage->inputTokens, $applierState->usage->inputTokens);
+        $this->assertSame($resumeState->usage->outputTokens, $applierState->usage->outputTokens);
+        $this->assertSame($resumeState->usage->latestInputTokens, $applierState->usage->latestInputTokens);
+        $this->assertSame(0.0, $applierState->usage->turnStartTime, 'Replay contract: no wall-clock t/s timing');
+        $this->assertSame($resumeState->queuedUserMessages, $applierState->queuedUserMessages);
 
-        self::assertSame(
+        $this->assertSame(
             array_map(static fn ($b) => [$b->kind->value, $b->text, $b->streaming], $resumeBlocks),
             array_map(static fn ($b) => [$b->kind->value, $b->text, $b->streaming], $applierBlocks),
         );
 
-        $userCount = count(array_filter($resumeBlocks, static fn ($b) => TranscriptBlockKindEnum::UserMessage === $b->kind));
-        self::assertGreaterThanOrEqual(1, $userCount);
-        self::assertSame(RunActivityStateEnum::Cancelled, $resumeState->activity);
+        $userCount = \count(array_filter($resumeBlocks, static fn ($b) => TranscriptBlockKindEnum::UserMessage === $b->kind));
+        $this->assertGreaterThanOrEqual(1, $userCount);
+        $this->assertSame(RunActivityStateEnum::Cancelled, $resumeState->activity);
     }
 
     /** @return list<string> */
@@ -209,6 +209,12 @@ final class TuiRuntimeEventApplierTest extends TestCase
             logger: new NullLogger(),
             eventApplier: new TuiRuntimeEventApplier($projector),
             turnTreeProvider: $turnTreeProvider,
+            sessionTranscriptProvider: new class implements \Ineersa\CodingAgent\Runtime\Contract\SessionTranscriptProviderInterface {
+                public function transcriptForLeaf(string $runId, int $leafTurnNo): \Ineersa\CodingAgent\Runtime\Contract\SessionTranscriptSnapshotDTO
+                {
+                    return new \Ineersa\CodingAgent\Runtime\Contract\SessionTranscriptSnapshotDTO([], []);
+                }
+            },
         );
     }
 
@@ -222,6 +228,7 @@ final class TuiRuntimeEventApplierTest extends TestCase
             eventPayloadNormalizer: new EventPayloadNormalizer(),
             lockFactory: new LockFactory(new FlockStore()),
             logger: new NullLogger(),
+            sequenceAllocator: new FileRunSequenceAllocator(),
         );
     }
 

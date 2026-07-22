@@ -24,3 +24,4 @@ messenger.sqlite
 messenger.sqlite-journal
 messenger.sqlite-wal
 messenger.sqlite-shm
+rewind/

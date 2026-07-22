@@ -105,60 +105,14 @@ final class HatfieldSessionStore
     }
 
     /**
-     * Load session metadata from the database.
+     * Load the persisted session row by public session id (numeric string).
      *
-     * Returns the same array shape callers expect: session_id, run_id,
-     * parent_id, root_id, created_at, updated_at, cwd, prompt, model,
-     * model_provider, model_name, reasoning, name. Only returns keys with
-     * non-null values (except session_id/run_id/cwd/name/created_at/updated_at
-     * which are always present).
-     *
-     * @return array<string, mixed>|null Null if the session row does not exist
+     * Callers must treat the returned entity as read-only; mutations and flush
+     * belong on HatfieldSessionStore write APIs (updateMetadata, createSession).
      */
-    public function loadMetadata(string $sessionId): ?array
+    public function findSession(string $sessionId): ?HatfieldSession
     {
-        $entity = $this->fetchEntityOrNull($sessionId);
-        if (null === $entity) {
-            return null;
-        }
-
-        $id = (string) $entity->id;
-        $meta = [
-            'session_id' => $id,
-            'run_id' => $id,
-            'created_at' => $entity->createdAt->format(\DateTimeInterface::ATOM),
-            'updated_at' => $entity->updatedAt->format(\DateTimeInterface::ATOM),
-            'cwd' => $entity->cwd,
-        ];
-
-        if (null !== $entity->parentId) {
-            $meta['parent_id'] = $entity->parentId;
-        } else {
-            $meta['parent_id'] = null;
-        }
-        if (null !== $entity->rootId) {
-            $meta['root_id'] = $entity->rootId;
-        } else {
-            $meta['root_id'] = null;
-        }
-        if (null !== $entity->prompt) {
-            $meta['prompt'] = $entity->prompt;
-        }
-        if (null !== $entity->model) {
-            $meta['model'] = $entity->model;
-        }
-        if (null !== $entity->modelProvider) {
-            $meta['model_provider'] = $entity->modelProvider;
-        }
-        if (null !== $entity->modelName) {
-            $meta['model_name'] = $entity->modelName;
-        }
-        if (null !== $entity->reasoning) {
-            $meta['reasoning'] = $entity->reasoning;
-        }
-        $meta['name'] = $entity->name;
-
-        return $meta;
+        return $this->fetchEntityOrNull($sessionId);
     }
 
     /**
@@ -310,6 +264,25 @@ final class HatfieldSessionStore
     public function resolveSessionsBasePath(): string
     {
         return $this->getSessionsDir();
+    }
+
+    /**
+     * Ensure the session attachments directory exists and return its absolute path.
+     *
+     * Pasted images from the TUI are stored here for replay/resume (issue #119).
+     */
+    public function ensureSessionAttachmentsDirectory(string $sessionId): string
+    {
+        $sessionDir = $this->getSessionDir($sessionId);
+        $attachments = $sessionDir.'/attachments';
+        if (!is_dir($attachments)) {
+            if (!@mkdir($attachments, 0o700, true) && !is_dir($attachments)) {
+                throw new \RuntimeException(\sprintf('Failed to create session attachments directory for session "%s".', $sessionId));
+            }
+        }
+        @chmod($attachments, 0o700);
+
+        return $attachments;
     }
 
     /**

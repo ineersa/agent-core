@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Application;
 
 use Ineersa\AgentCore\Domain\Event\RunEvent;
+use Ineersa\CodingAgent\Runtime\Contract\SessionTranscriptProviderInterface;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\Contract\TranscriptProjectorInterface;
 use Ineersa\CodingAgent\Runtime\Contract\TurnTreeProviderInterface;
@@ -45,6 +46,7 @@ final readonly class SessionInitializer
         private LoggerInterface $logger,
         private TuiRuntimeEventApplier $eventApplier,
         private TurnTreeProviderInterface $turnTreeProvider,
+        private SessionTranscriptProviderInterface $sessionTranscriptProvider,
     ) {
     }
 
@@ -191,21 +193,21 @@ final readonly class SessionInitializer
         // in the transcript after resume. This matches the live poller's wholesale-
         // replace behavior on RunLeafChanged.
         $replayed = false;
+        $branchAwareBlocks = [];
+        $branchAwareLeafTurnNo = null;
 
         try {
             $tree = $this->turnTreeProvider->forSession($runId);
 
             if (null !== $tree->currentLeafTurnNo) {
-                $activeEvents = $this->turnTreeProvider->activePathRuntimeEvents(
+                $branchAwareLeafTurnNo = $tree->currentLeafTurnNo;
+                $snapshot = $this->sessionTranscriptProvider->transcriptForLeaf(
                     $runId,
-                    $tree->currentLeafTurnNo,
+                    $branchAwareLeafTurnNo,
                 );
+                $branchAwareBlocks = $snapshot->transcriptBlocks;
 
-                foreach ($activeEvents as $runtimeEvent) {
-                    if ($runtimeEvent->seq > $maxMappedSeq) {
-                        $maxMappedSeq = $runtimeEvent->seq;
-                    }
-
+                foreach ($snapshot->replayEvents as $runtimeEvent) {
                     $this->eventApplier->apply($state, $runtimeEvent, replayMode: true);
                 }
 
@@ -248,7 +250,8 @@ final readonly class SessionInitializer
         }
 
         // Set lastSeq so the live poller does not re-process replayed events.
-        // Always derived from the full canonical stream max, never regressed.
+        // Always derived from the full canonical stream max (RuntimeEvent seq), never
+        // from TranscriptBlock::seq (projection-internal) and never regressed.
         $state->lastSeq = max($maxMappedSeq, $maxSourceSeq);
 
         if ($state->isShellRun = $this->inferShellOnlySessionFromCanonicalEvents($runEvents)) {
@@ -272,6 +275,10 @@ final readonly class SessionInitializer
             && !$this->shouldSuppressTerminalActivityForInProgressCompaction($runEvents)) {
             $state->activity = $terminalActivity;
             $state->isCompacting = false;
+        }
+
+        if ($replayed && [] !== $branchAwareBlocks) {
+            return $branchAwareBlocks;
         }
 
         $blocks = $this->projector->blocks();

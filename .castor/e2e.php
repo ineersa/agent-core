@@ -21,8 +21,11 @@ use Castor\Attribute\AsTask;
 
 use function CastorTasks\check_lane_paratest_processes;
 use function CastorTasks\check_llm_generation_ready;
+use function CastorTasks\ensure_standalone_tui_qa_run_id;
+use function CastorTasks\finalize_qa_run_tui_tmux_sessions;
 use function CastorTasks\is_llm_mode;
 use function CastorTasks\phar_ensure;
+use function CastorTasks\qa_test_home_shell_prefix;
 use function CastorTasks\report_path;
 use function CastorTasks\run_quiet_command;
 
@@ -31,6 +34,7 @@ require_once __DIR__.'/helpers.php';
 require_once __DIR__.'/shared.php';
 require_once __DIR__.'/phpunit.php';
 require_once __DIR__.'/env.php';
+require_once __DIR__.'/qa_tmux.php';
 
 // ─── Real LLM smoke ──────────────────────────────────────────────
 
@@ -173,11 +177,13 @@ function test_tui(?string $filter = null): void
 {
     check_tmux();
 
+    $tuiQaRunId = ensure_standalone_tui_qa_run_id();
+
     // ParaTest bootstrap migrates per-worker DBs; sequential full group still needs default DB.
     if (null !== $filter || !class_exists(ParaTest\ParaTestCommand::class)) {
         @mkdir('var/test', 0755, true);
         $migrate = run_quiet_command(
-            'APP_ENV=test '.\PHP_BINARY.' bin/console doctrine:migrations:migrate --no-interaction --allow-no-migration'
+            qa_test_home_shell_prefix().' APP_ENV=test '.\PHP_BINARY.' bin/console doctrine:migrations:migrate --no-interaction --allow-no-migration'
         );
         if (0 !== $migrate->getExitCode()) {
             fail_quality('test database migration failed: '.$migrate->getErrorOutput());
@@ -189,7 +195,12 @@ function test_tui(?string $filter = null): void
     echo "\n=== TUI E2E journey tests (replay-backed, no live LLM) ===\n\n";
 
     $start = hrtime(true);
-    passthru($cmd, $exitCode);
+    $exitCode = 1;
+    try {
+        passthru($cmd, $exitCode);
+    } finally {
+        finalize_qa_run_tui_tmux_sessions($tuiQaRunId);
+    }
     $duration = (hrtime(true) - $start) / 1e9;
 
     if (is_llm_mode()) {
@@ -238,7 +249,7 @@ function test_controller(): void
 
     @mkdir('var/test', 0755, true);
     $migrate = run_quiet_command(
-        'APP_ENV=test '.\PHP_BINARY.' bin/console doctrine:migrations:migrate --no-interaction --allow-no-migration'
+        qa_test_home_shell_prefix().' APP_ENV=test '.\PHP_BINARY.' bin/console doctrine:migrations:migrate --no-interaction --allow-no-migration'
     );
     if (0 !== $migrate->getExitCode()) {
         fail_quality('test database migration failed: '.$migrate->getErrorOutput());
@@ -295,7 +306,7 @@ function test_controller_replay(): void
 {
     @mkdir('var/test', 0755, true);
     $migrate = run_quiet_command(
-        'APP_ENV=test '.\PHP_BINARY.' bin/console doctrine:migrations:migrate --no-interaction --allow-no-migration'
+        qa_test_home_shell_prefix().' APP_ENV=test '.\PHP_BINARY.' bin/console doctrine:migrations:migrate --no-interaction --allow-no-migration'
     );
     if (0 !== $migrate->getExitCode()) {
         fail_quality('test database migration failed: '.$migrate->getErrorOutput());

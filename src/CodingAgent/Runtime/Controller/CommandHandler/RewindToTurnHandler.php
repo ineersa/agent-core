@@ -4,8 +4,9 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Runtime\Controller\CommandHandler;
 
-use Ineersa\AgentCore\Application\Handler\RunRewindService;
+use Ineersa\AgentCore\Contract\Rewind\RunRewindServiceInterface;
 use Ineersa\CodingAgent\Runtime\Controller\Event\ControllerCommandEvent;
+use Ineersa\CodingAgent\Runtime\Protocol\RunLeafChangedEventFactory;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Psr\Log\LoggerInterface;
@@ -17,14 +18,14 @@ use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
  * When the TUI user selects a turn in the /tree picker, the parent sends a
  * rewind_to_turn JSONL command with the target turn number. This handler:
  *  - Validates the command
- *  - Delegates to RunRewindService (acquires lock, appends LeafSet, rebuilds, persists)
+ *  - Delegates to RunRewindServiceInterface (acquires lock, appends LeafSet, rebuilds, persists)
  *  - Emits a RunLeafChanged RuntimeEvent so the TUI observes the leaf change
  */
 #[AsEventListener(event: ControllerCommandEvent::class)]
 final readonly class RewindToTurnHandler
 {
     public function __construct(
-        private RunRewindService $rewindService,
+        private RunRewindServiceInterface $rewindService,
         private LoggerInterface $logger,
     ) {
     }
@@ -70,22 +71,7 @@ final readonly class RewindToTurnHandler
             $rebuiltState = $result['rebuiltState'];
             $leafSetSeq = $result['leafSetSeq'];
 
-            // Emit RunLeafChanged RuntimeEvent so the TUI observes the leaf change.
-            // The TUI can fetch the full tree via TurnTreeProviderInterface for richer info
-            // when rebuilding transcript blocks after the leaf change.
-            //
-            // NOTE: InProcessAgentSessionClient::handleInProcessRewind() mirrors this
-            // emission; both must emit an equivalent RunLeafChanged event so the TUI
-            // rebuilds its transcript regardless of transport. Keep them in sync.
-            $event->emit(new RuntimeEvent(
-                type: RuntimeEventTypeEnum::RunLeafChanged->value,
-                runId: $runId,
-                seq: $leafSetSeq,
-                payload: [
-                    'turn_no' => $targetTurnNo,
-                    'leaf_set_seq' => $leafSetSeq,
-                ],
-            ));
+            $event->emit(RunLeafChangedEventFactory::create($runId, $leafSetSeq, $targetTurnNo));
 
             $this->logger->info('rewind_handler.completed', [
                 'run_id' => $runId,

@@ -8,6 +8,7 @@ use Ineersa\AgentCore\Contract\AgentRunnerInterface;
 use Ineersa\AgentCore\Domain\Command\CoreCommandKind;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\ApplyCommand;
+use Ineersa\AgentCore\Domain\Message\ApplyShellCommand;
 use Ineersa\AgentCore\Domain\Message\StartRun;
 use Ineersa\AgentCore\Domain\Message\StartRunPayload;
 use Ineersa\AgentCore\Domain\Run\RunMetadata;
@@ -16,7 +17,7 @@ use Symfony\Component\Messenger\Exception\ExceptionInterface;
 use Symfony\Component\Messenger\MessageBusInterface;
 use Symfony\Component\Serializer\Normalizer\AbstractObjectNormalizer;
 use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
-use Symfony\Component\Uid\Uuid;
+use Symfony\Component\Uid\UuidV7;
 
 final readonly class AgentRunner implements AgentRunnerInterface
 {
@@ -31,8 +32,9 @@ final readonly class AgentRunner implements AgentRunnerInterface
      */
     public function start(StartRunInput $input): string
     {
-        $runId = $input->runId ?? Uuid::v4()->toRfc4122();
-        $stepId = $this->nextStepId('start');
+        $runId = $input->runId ?? UuidV7::v7()->toRfc4122();
+        $stepId = $this->resolveStartStepId($runId, $input->runId);
+        $idempotencyKey = $this->idempotencyKey($runId, $stepId);
 
         try {
             $this->commandBus->dispatch(new StartRun(
@@ -40,7 +42,7 @@ final readonly class AgentRunner implements AgentRunnerInterface
                 turnNo: 0,
                 stepId: $stepId,
                 attempt: 1,
-                idempotencyKey: $this->idempotencyKey($runId, $stepId),
+                idempotencyKey: $idempotencyKey,
                 payload: new StartRunPayload(
                     systemPrompt: $input->systemPrompt,
                     messages: $input->messages,
@@ -57,6 +59,24 @@ final readonly class AgentRunner implements AgentRunnerInterface
     public function continue(string $runId): void
     {
         $this->applyCoreCommand($runId, CoreCommandKind::Continue, []);
+    }
+
+    public function shell(string $runId, string $rawInput): void
+    {
+        $stepId = $this->nextStepId('shell');
+
+        try {
+            $this->commandBus->dispatch(new ApplyShellCommand(
+                runId: $runId,
+                turnNo: 0,
+                stepId: $stepId,
+                attempt: 1,
+                idempotencyKey: $this->idempotencyKey($runId, $stepId),
+                rawInput: $rawInput,
+            ));
+        } catch (ExceptionInterface $exception) {
+            throw new \RuntimeException('Failed to dispatch shell command message.', previous: $exception);
+        }
     }
 
     /**
@@ -146,6 +166,19 @@ final readonly class AgentRunner implements AgentRunnerInterface
     private function nextStepId(string $prefix): string
     {
         return \sprintf('%s-%d', $prefix, hrtime(true));
+    }
+
+    /**
+     * Explicit child run ids use a stable StartRun step/idempotency identity so
+     * redelivered launches dedupe through RunMessageProcessor. Fresh runs keep hrtime steps.
+     */
+    private function resolveStartStepId(string $runId, ?string $explicitRunId): string
+    {
+        if (null !== $explicitRunId && '' !== $explicitRunId) {
+            return 'start-'.substr(hash('sha256', $runId.'|start'), 0, 32);
+        }
+
+        return $this->nextStepId('start');
     }
 
     private function idempotencyKey(string $runId, string $stepId): string

@@ -8,8 +8,8 @@ use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeExceptionBoundary;
+use Ineersa\CodingAgent\Runtime\Contract\SessionTranscriptProviderInterface;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
-use Ineersa\CodingAgent\Runtime\Contract\TurnTreeProviderInterface;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
@@ -18,9 +18,10 @@ use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Ineersa\Tui\Editor\PromptEditor;
+use Ineersa\Tui\Listener\RuntimeQuestionEventHandler;
 use Ineersa\Tui\Listener\TickPollListener;
-use Ineersa\Tui\Question\QuestionCoordinator;
 use Ineersa\Tui\Question\QuestionController;
+use Ineersa\Tui\Question\QuestionCoordinator;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
 use Ineersa\Tui\Runtime\RuntimeEventPoller;
 use Ineersa\Tui\Runtime\SubagentLiveChildDTO;
@@ -59,7 +60,7 @@ final class TickPollListenerSubagentLiveTest extends TestCase
             new TuiRuntimeEventApplier($parentProjector),
             new TestLogger(),
             new RuntimeExceptionBoundary(new EventDispatcher()),
-            $this->createStub(TurnTreeProviderInterface::class),
+            $this->createStub(SessionTranscriptProviderInterface::class),
         );
 
         $state = new TuiSessionState($parentRun);
@@ -76,6 +77,7 @@ final class TickPollListenerSubagentLiveTest extends TestCase
 
         $childPoller = new SubagentLiveChildViewPoller(
             new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState()),
+            new \Psr\Log\NullLogger(),
         );
 
         $tui = new Tui();
@@ -84,11 +86,13 @@ final class TickPollListenerSubagentLiveTest extends TestCase
 
         $listenerRef = new \ReflectionClass(TickPollListener::class);
         $listener = $listenerRef->newInstanceWithoutConstructor();
+        $listenerRef->getProperty('subagentLivePickerController')->setValue($listener, $this->closedSubagentLivePicker());
         $listenerRef->getProperty('poller')->setValue($listener, $poller);
         $listenerRef->getProperty('subagentLiveChildPoller')->setValue($listener, $childPoller);
         $listenerRef->getProperty('questionCoordinator')->setValue($listener, new QuestionCoordinator());
         $ctrlRef = new \ReflectionClass(QuestionController::class);
         $listenerRef->getProperty('questionController')->setValue($listener, $ctrlRef->newInstanceWithoutConstructor());
+        $listenerRef->getProperty('runtimeQuestionEventHandler')->setValue($listener, new RuntimeQuestionEventHandler());
 
         $context = $this->buildTuiContext()
             ->withTui($tui)
@@ -100,15 +104,16 @@ final class TickPollListenerSubagentLiveTest extends TestCase
         $handlerRef = new \ReflectionProperty(TuiTickDispatcher::class, 'handlers');
         ($handlerRef->getValue($context->ticks)[0])();
 
-        self::assertSame(2, $state->lastSeq, 'Parent poller must advance lastSeq while live view is active');
+        $this->assertSame(2, $state->lastSeq, 'Parent poller must advance lastSeq while live view is active');
 
         $ref = new \ReflectionClass($screen);
         $widget = $ref->getProperty('transcriptRenderable')->getValue($screen);
         $blocks = (new \ReflectionClass($widget))->getProperty('blocks')->getValue($widget);
         $text = implode(' ', array_map(static fn ($b) => $b->text, $blocks));
-        self::assertStringContainsString('child live', $text);
-        self::assertStringNotContainsString('new parent block', $text);
+        $this->assertStringContainsString('child live', $text);
+        $this->assertStringNotContainsString('new parent block', $text);
     }
+
     public function testCompletedCatalogChildMapsToIdleWorkingMessage(): void
     {
         $parentRun = 'session-200';
@@ -119,7 +124,7 @@ final class TickPollListenerSubagentLiveTest extends TestCase
             new TuiRuntimeEventApplier($parentProjector),
             new TestLogger(),
             new RuntimeExceptionBoundary(new EventDispatcher()),
-            $this->createStub(TurnTreeProviderInterface::class),
+            $this->createStub(SessionTranscriptProviderInterface::class),
         );
 
         $state = new TuiSessionState($parentRun);
@@ -152,6 +157,7 @@ final class TickPollListenerSubagentLiveTest extends TestCase
 
         $childPoller = new SubagentLiveChildViewPoller(
             new TranscriptProjector(new EventDispatcher(), new TranscriptProjectionState()),
+            new \Psr\Log\NullLogger(),
         );
 
         $tui = new Tui();
@@ -160,11 +166,13 @@ final class TickPollListenerSubagentLiveTest extends TestCase
 
         $listenerRef = new \ReflectionClass(TickPollListener::class);
         $listener = $listenerRef->newInstanceWithoutConstructor();
+        $listenerRef->getProperty('subagentLivePickerController')->setValue($listener, $this->closedSubagentLivePicker());
         $listenerRef->getProperty('poller')->setValue($listener, $poller);
         $listenerRef->getProperty('subagentLiveChildPoller')->setValue($listener, $childPoller);
         $listenerRef->getProperty('questionCoordinator')->setValue($listener, new QuestionCoordinator());
         $ctrlRef = new \ReflectionClass(QuestionController::class);
         $listenerRef->getProperty('questionController')->setValue($listener, $ctrlRef->newInstanceWithoutConstructor());
+        $listenerRef->getProperty('runtimeQuestionEventHandler')->setValue($listener, new RuntimeQuestionEventHandler());
 
         $context = $this->buildTuiContext()
             ->withTui($tui)
@@ -176,21 +184,52 @@ final class TickPollListenerSubagentLiveTest extends TestCase
         $handlerRef = new \ReflectionProperty(TuiTickDispatcher::class, 'handlers');
         ($handlerRef->getValue($context->ticks)[0])();
 
-        self::assertSame(RunActivityStateEnum::Completed, $state->subagentLiveView->childActivity);
-        self::assertSame('Child agent idle', $state->subagentLiveView->lastLiveWorkingMessage);
+        $this->assertSame(RunActivityStateEnum::Completed, $state->subagentLiveView->childActivity);
+        $this->assertSame('Child agent idle', $state->subagentLiveView->lastLiveWorkingMessage);
     }
 
-}
+    private function closedSubagentLivePicker(): \Ineersa\Tui\Picker\SubagentLivePickerController
+    {
+        $picker = (new \ReflectionClass(\Ineersa\Tui\Picker\SubagentLivePickerController::class))->newInstanceWithoutConstructor();
+        $overlay = new \Ineersa\Tui\Picker\PickerOverlay();
+        $overlayRef = new \ReflectionProperty(\Ineersa\Tui\Picker\SubagentLivePickerController::class, 'overlay');
+        $overlayRef->setValue($picker, $overlay);
+        $openRef = new \ReflectionProperty(\Ineersa\Tui\Picker\PickerOverlay::class, 'isOpen');
+        $openRef->setValue($overlay, false);
 
+        return $picker;
+    }
+}
 final class ParentEventClient implements AgentSessionClient
 {
     private bool $yielded = false;
 
-    public function __construct(private string $parentRun, private RuntimeEvent $event) {}
+    public function __construct(private string $parentRun, private RuntimeEvent $event)
+    {
+    }
 
-    public function start(StartRunRequest $request): RunHandle { throw new \BadMethodCallException(); }
-    public function attach(string $runId): RunHandle { return new RunHandle($runId, 'attached'); }
-    public function send(string $runId, UserCommand $command): void {}
+    public function start(StartRunRequest $request): RunHandle
+    {
+        throw new \BadMethodCallException();
+    }
+
+    public function attach(string $runId): RunHandle
+    {
+        return new RunHandle($runId, 'attached');
+    }
+
+    public function send(string $runId, UserCommand $command): void
+    {
+    }
+
+    public function beginObservingChildRun(string $childRunId): void
+    {
+    }
+
+    public function endObservingChildRun(string $childRunId): void
+    {
+    }
+
     public function events(string $runId): iterable
     {
         if ($runId === $this->parentRun && !$this->yielded) {
@@ -198,8 +237,17 @@ final class ParentEventClient implements AgentSessionClient
             yield $this->event;
         }
     }
-    public function cancel(string $runId): void {}
-    public function shellExecute(string $command, string $sessionId, string $cwd): RunHandle { throw new \BadMethodCallException(); }
-    public function completeRun(string $runId): void {}
-    public function compact(string $runId, ?string $customInstructions = null): void {}
+
+    public function cancel(string $runId): void
+    {
+    }
+
+    public function shellExecute(string $command, string $sessionId, string $cwd): RunHandle
+    {
+        throw new \BadMethodCallException();
+    }
+
+    public function compact(string $runId, ?string $customInstructions = null): void
+    {
+    }
 }

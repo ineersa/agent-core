@@ -46,6 +46,168 @@ use PHPUnit\Framework\Attributes\Group;
 #[Group('controller-replay')]
 final class ControllerReplaySummaryOnlyGuardTest extends ControllerReplayE2eTestCase
 {
+    // ─────────────────────────────────────────────────────────────────
+    //  Single test method
+    // ─────────────────────────────────────────────────────────────────
+
+    public function testSummaryOnlyAutoCompactionIsPreventedAfterFollowUp(): void
+    {
+        $this->spawnController();
+
+        $this->waitForEvent('runtime.ready', $this->liveControllerReadyTimeout());
+
+        // ═════════════════════════════════════════════════════════════
+        //  Phase 1 — First turn + auto-compaction
+        // ═════════════════════════════════════════════════════════════
+
+        $startCmdId = 'cmd_start_'.uniqid();
+        $this->writeCommand([
+            'v' => 1,
+            'id' => $startCmdId,
+            'type' => 'start_run',
+            'payload' => [
+                'prompt' => str_repeat(
+                    'Automated testing is a fundamental practice. ',
+                    20,
+                ).'Now respond with exactly: Understood.',
+            ],
+        ]);
+
+        $turn1Events = $this->collectTurnEventsUntilRunTerminal('run.completed', 8.0, expectAfterTurnCompaction: true, compactionTimeoutSeconds: 6.0);
+        $t1ByType = $this->indexByType($turn1Events);
+
+        $this->assertStartRunAcked($turn1Events, $startCmdId);
+
+        $this->assertArrayHasKey('run.started', $t1ByType,
+            'Expected run.started after start_run');
+
+        $runStarted = $t1ByType['run.started'][0];
+        $this->runId = (string) ($runStarted['runId']
+            ?? $runStarted['payload']['runId'] ?? '');
+        $this->assertNotEmpty($this->runId);
+
+        if (isset($t1ByType['run.failed'])) {
+            $err = $t1ByType['run.failed'][0]['payload']['error'] ?? '?';
+            $this->fail("Turn 1 run failed: {$err}\n"
+                .$this->collectDiagnostics($turn1Events));
+        }
+
+        $this->assertArrayHasKey('run.completed', $t1ByType,
+            'Turn 1 must reach run.completed.');
+
+        // ═════════════════════════════════════════════════════════════
+        //  Phase 2 — Follow-up
+        // ═════════════════════════════════════════════════════════════
+
+        $followUpCmdId = 'cmd_fu_'.uniqid();
+        $this->writeCommand([
+            'v' => 1,
+            'id' => $followUpCmdId,
+            'type' => 'follow_up',
+            'runId' => $this->runId,
+            'payload' => ['text' => 'ok'],
+        ]);
+
+        $turn2Events = $this->collectTurnEventsUntilRunTerminal('run.completed', 8.0, expectAfterTurnCompaction: false);
+        $turn2Events = array_merge(
+            $turn2Events,
+            $this->drainUntilCompactionQuiet(1.5),
+        );
+        $t2ByType = $this->indexByType($turn2Events);
+
+        $this->assertTrue(
+            $this->foundAck($turn2Events, $followUpCmdId),
+            'Expected command.ack for follow_up.');
+
+        if (isset($t2ByType['run.failed'])) {
+            $err = $t2ByType['run.failed'][0]['payload']['error'] ?? '?';
+            $this->fail("Turn 2 run failed: {$err}\n"
+                .$this->collectDiagnostics($turn2Events));
+        }
+
+        $this->assertArrayHasKey('run.completed', $t2ByType,
+            'Turn 2 must reach run.completed after follow_up.');
+
+        // ═════════════════════════════════════════════════════════════
+        //  Phase 3 — Structural proof from events.jsonl
+        // ═════════════════════════════════════════════════════════════
+
+        $eventsPath = $this->tempDir.'/.hatfield/sessions/'
+            .$this->sessionId.'/events.jsonl';
+        $this->assertFileExists($eventsPath);
+
+        $coreEvents = $this->loadCoreEvents($eventsPath);
+        $timeline = $this->buildTimeline($coreEvents);
+
+        // Find all after-turn auto context_compacted events
+        // (trigger=auto, continue_after_compaction=false).
+        $afterTurnCompacted = $this->findAfterTurnAutoCompactedSeqs($coreEvents);
+
+        $this->assertNotEmpty(
+            $afterTurnCompacted,
+            "Must have at least one after-turn auto context_compacted.\n"
+            ."Timeline:\n".$timeline,
+        );
+
+        // Check that NO after-turn context_compacted is summary-only.
+        // "Summary-only" = messages_compacted=1 AND
+        //                   prior_summary_present=true
+        $summaryOnly = [];
+        foreach ($afterTurnCompacted as $evt) {
+            $cp = $evt['payload'] ?? [];
+            $isSummaryOnly = 1 === ($cp['messages_compacted'] ?? 0)
+                && true === ($cp['prior_summary_present'] ?? false);
+
+            if ($isSummaryOnly) {
+                $summaryOnly[] = $evt;
+            }
+        }
+
+        $this->assertEmpty(
+            $summaryOnly,
+            'SESSION 14 REGRESSION: after-turn auto context_compacted '
+            .'(continue_after_compaction=false) with '
+            .'messages_compacted=1 AND prior_summary_present=true '
+            .'must NOT appear.  Found '.\count($summaryOnly)
+            .' summary-only event(s).'
+            ."\nTimeline:\n".$timeline,
+        );
+
+        // ═════════════════════════════════════════════════════════════
+        //  Phase 4 — GHOST fixture NOT consumed
+        // ═════════════════════════════════════════════════════════════
+        //
+        // The ghost fixture (index 4) carries distinctive text and
+        // would only be consumed if the after-turn guard fires another
+        // auto-compaction.  Verify the ghost text is absent from the
+        // compacted events.
+        $this->assertStringNotContainsString(
+            'BUG: summary-only compaction fired on session 14',
+            json_encode($coreEvents),
+            'GHOST fixture was consumed — the after-turn hook dispatched '
+            .'a summary-only auto-compaction.  The guard must prevent this.'
+            ."\nTimeline:\n".$timeline,
+        );
+
+        // Also verify the ghost fixture was not consumed by checking
+        // no llm_step_completed references the ghost output text via
+        // context_compacted summary_text.
+        foreach ($coreEvents as $evt) {
+            if ('context_compacted' !== ($evt['type'] ?? '')) {
+                continue;
+            }
+            $cp = $evt['payload'] ?? [];
+            $summary = (string) ($cp['summary_text'] ?? '');
+            $this->assertStringNotContainsString(
+                'BUG: summary-only',
+                $summary,
+                'GHOST compaction summary found in context_compacted — '
+                .'session 14 regression is present.'
+                ."\nTimeline:\n".$timeline,
+            );
+        }
+    }
+
     protected function tempDirPrefix(): string
     {
         return 'test-replay-summary-guard';
@@ -226,255 +388,17 @@ YAML;
     }
 
     // ─────────────────────────────────────────────────────────────────
-    //  Single test method
-    // ─────────────────────────────────────────────────────────────────
-
-    public function testSummaryOnlyAutoCompactionIsPreventedAfterFollowUp(): void
-    {
-        $this->spawnController();
-
-        $this->waitForEvent('runtime.ready', $this->liveControllerReadyTimeout());
-
-        // ═════════════════════════════════════════════════════════════
-        //  Phase 1 — First turn + auto-compaction
-        // ═════════════════════════════════════════════════════════════
-
-        $startCmdId = 'cmd_start_' . \uniqid();
-        $this->writeCommand([
-            'v' => 1,
-            'id' => $startCmdId,
-            'type' => 'start_run',
-            'payload' => [
-                'prompt' => \str_repeat(
-                    'Automated testing is a fundamental practice. ',
-                    20,
-                ) . 'Now respond with exactly: Understood.',
-            ],
-        ]);
-
-        // Collect until run.completed, then drain for after-turn
-        // auto-compaction lifecycle events (compaction.started/
-        // completed/failed appear after the turn finishes).
-        $turn1Events = $this->collectEventsUntil('run.completed', 10.0);
-        $turn1Events = array_merge(
-            $turn1Events,
-            $this->drainUntilCompactionResolved(5.0, $turn1Events),
-        );
-        $t1ByType = $this->indexByType($turn1Events);
-
-        $this->assertStartRunAcked($turn1Events, $startCmdId);
-
-        self::assertArrayHasKey('run.started', $t1ByType,
-            'Expected run.started after start_run');
-
-        $runStarted = $t1ByType['run.started'][0];
-        $this->runId = (string) ($runStarted['runId']
-            ?? $runStarted['payload']['runId'] ?? '');
-        self::assertNotEmpty($this->runId);
-
-        if (isset($t1ByType['run.failed'])) {
-            $err = $t1ByType['run.failed'][0]['payload']['error'] ?? '?';
-            self::fail("Turn 1 run failed: {$err}\n"
-                . $this->collectDiagnostics($turn1Events));
-        }
-
-        self::assertArrayHasKey('run.completed', $t1ByType,
-            'Turn 1 must reach run.completed.');
-
-        // ═════════════════════════════════════════════════════════════
-        //  Phase 2 — Follow-up
-        // ═════════════════════════════════════════════════════════════
-
-        $followUpCmdId = 'cmd_fu_' . \uniqid();
-        $this->writeCommand([
-            'v' => 1,
-            'id' => $followUpCmdId,
-            'type' => 'follow_up',
-            'runId' => $this->runId,
-            'payload' => ['text' => 'ok'],
-        ]);
-
-        // Collect until run.completed (turn 2 finishes), then do a
-        // short drain.  If the summary-only guard works, no after-turn
-        // compaction fires → idle exit returns in ~500ms.  If the guard
-        // is broken, the ghost fixture is consumed and the drain catches
-        // compaction.completed within the 5s window.
-        $turn2Events = $this->collectEventsUntil('run.completed', 10.0);
-        $turn2Events = array_merge(
-            $turn2Events,
-            $this->drainUntilCompactionResolved(5.0, $turn2Events),
-        );
-        $t2ByType = $this->indexByType($turn2Events);
-
-        self::assertTrue(
-            $this->foundAck($turn2Events, $followUpCmdId),
-            'Expected command.ack for follow_up.');
-
-        if (isset($t2ByType['run.failed'])) {
-            $err = $t2ByType['run.failed'][0]['payload']['error'] ?? '?';
-            self::fail("Turn 2 run failed: {$err}\n"
-                . $this->collectDiagnostics($turn2Events));
-        }
-
-        self::assertArrayHasKey('run.completed', $t2ByType,
-            'Turn 2 must reach run.completed after follow_up.');
-
-        // ═════════════════════════════════════════════════════════════
-        //  Phase 3 — Structural proof from events.jsonl
-        // ═════════════════════════════════════════════════════════════
-
-        $eventsPath = $this->tempDir . '/.hatfield/sessions/'
-            . $this->sessionId . '/events.jsonl';
-        self::assertFileExists($eventsPath);
-
-        $coreEvents = $this->loadCoreEvents($eventsPath);
-        $timeline = $this->buildTimeline($coreEvents);
-
-        // Find all after-turn auto context_compacted events
-        // (trigger=auto, continue_after_compaction=false).
-        $afterTurnCompacted = $this->findAfterTurnAutoCompactedSeqs($coreEvents);
-
-        self::assertNotEmpty(
-            $afterTurnCompacted,
-            "Must have at least one after-turn auto context_compacted.\n"
-            . "Timeline:\n" . $timeline,
-        );
-
-        // Check that NO after-turn context_compacted is summary-only.
-        // "Summary-only" = messages_compacted=1 AND
-        //                   prior_summary_present=true
-        $summaryOnly = [];
-        foreach ($afterTurnCompacted as $evt) {
-            $cp = $evt['payload'] ?? [];
-            $isSummaryOnly = 1 === ($cp['messages_compacted'] ?? 0)
-                && true === ($cp['prior_summary_present'] ?? false);
-
-            if ($isSummaryOnly) {
-                $summaryOnly[] = $evt;
-            }
-        }
-
-        self::assertEmpty(
-            $summaryOnly,
-            'SESSION 14 REGRESSION: after-turn auto context_compacted '
-            . '(continue_after_compaction=false) with '
-            . 'messages_compacted=1 AND prior_summary_present=true '
-            . 'must NOT appear.  Found ' . \count($summaryOnly)
-            . ' summary-only event(s).'
-            . "\nTimeline:\n" . $timeline,
-        );
-
-        // ═════════════════════════════════════════════════════════════
-        //  Phase 4 — GHOST fixture NOT consumed
-        // ═════════════════════════════════════════════════════════════
-        //
-        // The ghost fixture (index 4) carries distinctive text and
-        // would only be consumed if the after-turn guard fires another
-        // auto-compaction.  Verify the ghost text is absent from the
-        // compacted events.
-        self::assertStringNotContainsString(
-            'BUG: summary-only compaction fired on session 14',
-            \json_encode($coreEvents),
-            'GHOST fixture was consumed — the after-turn hook dispatched '
-            . 'a summary-only auto-compaction.  The guard must prevent this.'
-            . "\nTimeline:\n" . $timeline,
-        );
-
-        // Also verify the ghost fixture was not consumed by checking
-        // no llm_step_completed references the ghost output text via
-        // context_compacted summary_text.
-        foreach ($coreEvents as $evt) {
-            if ('context_compacted' !== ($evt['type'] ?? '')) {
-                continue;
-            }
-            $cp = $evt['payload'] ?? [];
-            $summary = (string) ($cp['summary_text'] ?? '');
-            self::assertStringNotContainsString(
-                'BUG: summary-only',
-                $summary,
-                'GHOST compaction summary found in context_compacted — '
-                . 'session 14 regression is present.'
-                . "\nTimeline:\n" . $timeline,
-            );
-        }
-    }
-
-    // ─────────────────────────────────────────────────────────────────
     //  Local helpers
     // ─────────────────────────────────────────────────────────────────
 
     /**
-     * Collect events until a compaction.completed or compaction.failed
-     * event appears, or the timeout expires.  Used after
-     * collectEventsUntil('run.completed') to catch async after-turn
-     * compaction lifecycle events that arrive after the terminal
-     * run state.
-     *
-     * Exits early (without waiting the full timeout) when:
-     *  - The controller process stops.
-     *  - No new events arrive for 500ms (idle drain).
-     *
-     * @param list<array<string, mixed>> $alreadyCollected Events already
-     *        collected from the turn (used only for early-exit drain —
-     *        the result is a fresh list).
-     * @return list<array<string, mixed>> Events collected during the
-     *         drain (NOT merged with $alreadyCollected).
-     */
-    private function drainUntilCompactionResolved(
-        float $timeoutSeconds,
-        array $alreadyCollected,
-    ): array {
-        $events = [];
-        $deadline = \microtime(true) + $timeoutSeconds;
-        $lastEventAt = \microtime(true);
-
-        while (\microtime(true) < $deadline) {
-            foreach ($this->readEvents() as $event) {
-                $events[] = $event;
-                $lastEventAt = \microtime(true);
-                $type = $event['type'] ?? '';
-
-                if (\in_array($type, ['compaction.completed', 'compaction.failed'], true)) {
-                    return $events;
-                }
-            }
-
-            if (!$this->isRunning()) {
-                foreach ($this->readEvents() as $event) {
-                    $events[] = $event;
-                    $lastEventAt = \microtime(true);
-                    $type = $event['type'] ?? '';
-                    if (\in_array($type, ['compaction.completed', 'compaction.failed'], true)) {
-                        return $events;
-                    }
-                }
-                break;
-            }
-
-            // Idle drain: if no new events for 800ms after the
-            // initial post-completion flush, the async pipeline
-            // is clean and nothing is coming.  This prevents the
-            // test from burning the full timeout when the guard
-            // works and no after-turn compaction fires.
-            if (\microtime(true) - $lastEventAt > 0.8) {
-                break;
-            }
-
-            \usleep(50_000);
-        }
-
-        return $events;
-    }
-
-    /**
-     * @param list<array<string, mixed>> $coreEvents
      * @return list<array<string, mixed>>
      */
     private function loadCoreEvents(string $eventsPath): array
     {
         $core = [];
-        foreach (\file($eventsPath, \FILE_IGNORE_NEW_LINES | \FILE_SKIP_EMPTY_LINES) as $line) {
-            $evt = \json_decode($line, true, 512, \JSON_THROW_ON_ERROR);
+        foreach (file($eventsPath, \FILE_IGNORE_NEW_LINES | \FILE_SKIP_EMPTY_LINES) as $line) {
+            $evt = json_decode($line, true, 512, \JSON_THROW_ON_ERROR);
             if (\is_array($evt)) {
                 $core[] = $evt;
             }
@@ -520,7 +444,7 @@ YAML;
             $lines[] = "seq {$seq}: {$type}{$extra}";
         }
 
-        return \implode("\n", $lines);
+        return implode("\n", $lines);
     }
 
     /**
@@ -528,6 +452,7 @@ YAML;
      * (trigger=auto AND continue_after_compaction=false).
      *
      * @param list<array<string, mixed>> $coreEvents
+     *
      * @return list<array<string, mixed>>
      */
     private function findAfterTurnAutoCompactedSeqs(array $coreEvents): array

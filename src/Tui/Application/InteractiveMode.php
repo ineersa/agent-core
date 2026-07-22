@@ -7,6 +7,7 @@ namespace Ineersa\Tui\Application;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
+use Ineersa\CodingAgent\Runtime\Contract\TurnTreeProviderInterface;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\Tui\Editor\PromptEditor;
 use Ineersa\Tui\Listener\TuiListenerRegistrar;
@@ -69,6 +70,7 @@ final readonly class InteractiveMode
         private TuiSessionSwitchService $switchService,
         private AppConfig $appConfig,
         private TranscriptDisplayConfigMapper $transcriptConfigMapper,
+        private TurnTreeProviderInterface $turnTreeProvider,
     ) {
     }
 
@@ -226,6 +228,7 @@ final readonly class InteractiveMode
                 ticks: $ticks,
                 switch: $this->switchService,
                 lifecycle: $lifecycle,
+                turnTreeProvider: $this->turnTreeProvider,
             );
 
             foreach ($this->listenerRegistrars as $registrar) {
@@ -416,9 +419,9 @@ final readonly class InteractiveMode
             }
             $screen->setTranscriptBlocks($state->transcript);
         } elseif ($state->resuming) {
-            $meta = $this->sessionStore->loadMetadata($state->sessionId);
-            $existingRunId = $meta['run_id'] ?? null;
-            if (\is_string($existingRunId) && '' !== $existingRunId) {
+            $session = $this->sessionStore->findSession($state->sessionId);
+            if (null !== $session && $session->id > 0) {
+                $existingRunId = (string) $session->id;
                 try {
                     $state->handle = $client->attach($existingRunId);
                     $state->transcript[] = $this->blockFactory->system(

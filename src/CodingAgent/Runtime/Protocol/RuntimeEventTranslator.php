@@ -19,11 +19,9 @@ use Symfony\Component\EventDispatcher\EventDispatcherInterface;
  * explicit if/else in onAgentCommandApplied() rather than Symfony subscriber
  * priority ordering.
  *
- * Approval answer routing was previously handled by an
- * ExtensionApprovalAnswerSubscriber that observed the mapping flow through
- * EventDispatcher. That approach was removed in favor of commit-time
- * routing via ExtensionToolHookEventSubscriber (blocking-poll mechanism),
- * which fires IN the worker process where pending approvals live.
+ * Path A approval resume is handled inside the tool worker via
+ * ExtensionToolHookEventSubscriber when the exact ExecuteToolCall is
+ * re-dispatched with a typed internal answer (canonical WaitingHuman).
  * The event_dispatcher is still passed for potential extension subscribers.
  */
 final class RuntimeEventTranslator
@@ -92,8 +90,8 @@ final class RuntimeEventTranslator
         $type = $runEvent->type;
 
         // Dispatch to extension subscribers that observe the mapping flow.
-        // Approval answer routing is now handled at commit time by
-        // ExtensionToolHookEventSubscriber (blocking-poll), not through this dispatcher.
+        // Path A approval resume is applied in the tool worker on exact-call redispatch,
+        // not through this mapping dispatcher.
         $this->eventDispatcher->dispatch($runEvent, $type);
 
         if (isset($this->dispatchTable[$type])) {
@@ -406,7 +404,7 @@ final class RuntimeEventTranslator
 
     /**
      * Resolve agent_command_applied with explicit priority:
-     * steer / follow_up / append_message → user.message_submitted,
+     * steer / follow_up / append_message / shell_command → user.message_submitted,
      * human_response → human_input.answered,
      * cancel → cancellation.requested,
      * everything else → status.updated.
@@ -434,6 +432,21 @@ final class RuntimeEventTranslator
                 runId: $runEvent->runId,
                 seq: $runEvent->seq,
                 payload: ['kind' => $kind, 'reason' => 'user_cancelled'],
+            );
+        }
+
+        if ('shell_command' === $kind) {
+            $idempotencyKey = (string) ($p['idempotency_key'] ?? '');
+
+            return new RuntimeEvent(
+                type: RuntimeEventTypeEnum::UserMessageSubmitted->value,
+                runId: $runEvent->runId,
+                seq: $runEvent->seq,
+                payload: [
+                    'message_id' => \sprintf('user_%s_%d_%s', $runEvent->runId, $runEvent->seq, $idempotencyKey),
+                    'text' => (string) ($p['text'] ?? ''),
+                    'idempotency_key' => $idempotencyKey,
+                ],
             );
         }
 

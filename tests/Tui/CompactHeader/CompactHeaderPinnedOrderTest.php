@@ -41,9 +41,9 @@ final class CompactHeaderPinnedOrderTest extends TestCase
         $otherPos = strpos($plain, 'OTHER-WIDGET-LINE');
         $skillPos = strpos($plain, 'pinned-skill');
 
-        self::assertNotFalse($otherPos);
-        self::assertNotFalse($skillPos);
-        self::assertLessThan($skillPos, $otherPos, 'Default-order widget must appear above compact-header in the merge');
+        $this->assertNotFalse($otherPos);
+        $this->assertNotFalse($skillPos);
+        $this->assertLessThan($skillPos, $otherPos, 'Default-order widget must appear above compact-header in the merge');
     }
 
     #[Test]
@@ -71,8 +71,8 @@ final class CompactHeaderPinnedOrderTest extends TestCase
         $latePos = strpos($plain, 'LATE-OTHER');
         $promptPos = strpos($plain, '/z-last');
 
-        self::assertNotFalse($latePos);
-        self::assertNotFalse($promptPos);
-        self::assertLessThan($promptPos, $latePos);
+        $this->assertNotFalse($latePos);
+        $this->assertNotFalse($promptPos);
+        $this->assertLessThan($promptPos, $latePos);
     }
 }

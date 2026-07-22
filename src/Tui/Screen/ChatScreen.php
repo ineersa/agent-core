@@ -62,6 +62,12 @@ final class ChatScreen
     /** Number of blank lines rendered before the header logo. */
     private const int TOP_MARGIN_LINES = 4;
 
+    /**
+     * Producer output when the working indicator is hidden: one blank row so
+     * {@see LiveTextWidget} does not collapse the slot to zero lines.
+     */
+    private const string HIDDEN_WORKING_ROW_RESERVE = '  ';
+
     /* ── Symfony widget refs (internal) ── */
     private readonly LiveTextWidget $topMarginWidget;
     private readonly LiveTextWidget $headerWidget;
@@ -185,15 +191,22 @@ final class ChatScreen
         // ── Working status ──
         $this->workingWidget = new LiveTextWidget(
             function (RenderContext $symfonyCtx): string {
-                if (!$this->registry->isWorkingVisible()) {
-                    return '';
-                }
+                $visible = $this->registry->isWorkingVisible();
                 $msg = $this->registry->getWorkingMessage();
                 $this->workingRenderable->setMessage($msg);
-                $this->workingRenderable->setVisible(true);
+                // Sync visibility on every render: WorkingStatusWidget is a cached
+                // renderable; registry is authoritative and may change between invalidations.
+                $this->workingRenderable->setVisible($visible);
                 $tuiCtx = $this->tuiContext($symfonyCtx);
+                $lines = $this->workingRenderable->render($tuiCtx);
 
-                return implode("\n", $this->workingRenderable->render($tuiCtx));
+                // Reserve exactly one terminal row when the indicator is hidden so
+                // status-area visibility toggles do not shift the editor/footer.
+                if ([] === $lines) {
+                    return self::HIDDEN_WORKING_ROW_RESERVE;
+                }
+
+                return implode("\n", $lines);
             },
         );
 
@@ -391,12 +404,21 @@ final class ChatScreen
      */
     public function syncQueuedUserMessages(array $queuedMessages): void
     {
-        $this->pendingRenderable->setMessages(array_values($queuedMessages));
+        $next = array_values($queuedMessages);
+        if ($next === $this->pendingRenderable->messages()) {
+            return;
+        }
+
+        $this->pendingRenderable->setMessages($next);
         $this->pendingWidget->invalidate();
     }
 
     public function setWorkingMessage(?string $message): void
     {
+        if (($message ?? '') === $this->workingRenderable->getMessage()) {
+            return;
+        }
+
         $this->registry->setWorkingMessage($message);
         $this->workingRenderable->setMessage($message);
         $this->workingWidget->invalidate();
@@ -404,6 +426,10 @@ final class ChatScreen
 
     public function setWorkingVisible(bool $visible): void
     {
+        if ($visible === $this->registry->isWorkingVisible()) {
+            return;
+        }
+
         $this->registry->setWorkingVisible($visible);
         $this->workingRenderable->setVisible($visible);
         $this->workingWidget->invalidate();
@@ -411,6 +437,12 @@ final class ChatScreen
 
     public function setStatus(string $key, ?string $text): void
     {
+        $entries = $this->registry->getStatusEntries();
+        $current = $entries[$key] ?? null;
+        if ($text === $current) {
+            return;
+        }
+
         $this->registry->setStatus($key, $text);
         $this->statusPanelRenderable->setEntry($key, $text);
         $this->footerDataProvider->setStatus($key, $text);
@@ -419,9 +451,20 @@ final class ChatScreen
     }
 
     /**
+     * Remove the transient Shift+Tab reasoning level line from the status panel.
+     *
+     * Does not change {@see TuiSessionState::footerReasoning}, editor border
+     * colour, or footer diamond/model styling — only the panel-only notice.
+     */
+    public function clearTransientReasoningNotice(): void
+    {
+        $this->setStatus('reasoning', null);
+    }
+
+    /**
      * Apply the editor border colour matching the current reasoning level.
      *
-     * Maps reasoning levels (off, minimal, low, medium, high, xhigh) to the
+     * Maps reasoning levels (off, minimal, low, medium, high, xhigh, max) to the
      * corresponding theme thinking-colour tokens and updates the Symfony TUI
      * stylesheet so the EditorWidget frame is rendered in that colour.
      *
@@ -460,6 +503,22 @@ final class ChatScreen
     {
         $this->footerDataProvider->addProvider($provider);
         $this->footerWidget->invalidate();
+    }
+
+    /**
+     * Invalidate only the footer widget (elapsed time and footer segments).
+     */
+    public function refreshFooter(): void
+    {
+        $this->footerWidget->invalidate();
+    }
+
+    /**
+     * Invalidate only above-editor extension widgets (compact header, etc.).
+     */
+    public function refreshAboveEditorWidgets(): void
+    {
+        $this->aboveEditorWidget->invalidate();
     }
 
     /**

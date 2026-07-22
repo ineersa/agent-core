@@ -19,6 +19,11 @@ parameters:
     # its queries and avoids O(N) cross-session filesystem scans.
     env(HATFIELD_SESSION_ID): ''
 
+    # Context-gate committed RuntimeEvent stdout streaming (not per-consumer selection).
+    # Default off for in-process TUI, tests, and non-supervised contexts; ConsumerSupervisor sets '1'
+    # on env for every messenger:consume subprocess it launches.
+    env(HATFIELD_CONSUMER_STDOUT_EVENTS): '0'
+
     # Single source of truth for the file mention completion index path.
     # Built from %app.cwd% so it respects --cwd.  Injected into
     # FileMentionIndexReader and CompletionFileIndexRefreshCommand
@@ -29,6 +34,8 @@ services:
   _defaults:
     autowire: true
     autoconfigure: true
+
+  Ineersa\Tui\ImagePaste\ClipboardImageReaderInterface: '@Ineersa\Tui\ImagePaste\ClipboardImageReader'
 
   _instanceof:
     Ineersa\Tui\Listener\TuiListenerRegistrar:
@@ -63,6 +70,9 @@ services:
     Ineersa\CodingAgent\Tool\HatfieldToolProviderInterface:
       tags: ['hatfield.tool_provider']
 
+    Ineersa\CodingAgent\Infrastructure\SymfonyAi\SymfonyAiProviderBuilderInterface:
+      tags: ['hatfield.symfony_ai.provider_builder']
+
   Ineersa\CodingAgent\:
     resource: '%kernel.project_dir%/src/CodingAgent/**/*.php'
     exclude: '%kernel.project_dir%/src/CodingAgent/ExtensionApi/**/*.php'
@@ -74,6 +84,16 @@ services:
     resource: '%kernel.project_dir%/src/Tui/**/*.php'
 
   # ─── Session stores — resolved via HatfieldSessionStore for path ───
+
+
+  Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface:
+    alias: Ineersa\CodingAgent\Entity\DeferredToolCompletionRepository
+
+  Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository:
+    autowire: true
+
+  Ineersa\CodingAgent\Entity\DeferredSubagentChildRepository:
+    autowire: true
 
   Ineersa\AgentCore\Contract\IdempotencyStoreInterface:
     alias: Ineersa\CodingAgent\Session\JsonlIdempotencyStore
@@ -94,12 +114,44 @@ services:
     arguments:
       $appRoot: '%kernel.project_dir%'
 
+  # Provenance path queries need THROW_ON_INVALID_INDEX so isReadable()
+  # distinguishes missing keys from explicit null. FrameworkBundle's shared
+  # @property_accessor is non-strict by default and would report missing array
+  # indices as readable, falsely attributing every path to Project.
+  coding_agent.settings.property_accessor_builder:
+    class: Symfony\Component\PropertyAccess\PropertyAccessorBuilder
+    calls:
+      - enableExceptionOnInvalidIndex: []
+
+  coding_agent.settings.property_accessor:
+    class: Symfony\Component\PropertyAccess\PropertyAccessor
+    factory: ['@coding_agent.settings.property_accessor_builder', 'getPropertyAccessor']
+
+  # Dedicated strict accessor: provenance needs missing-index detection.
+  Ineersa\CodingAgent\Config\SettingsValueResolver:
+    arguments:
+      $propertyAccessor: '@coding_agent.settings.property_accessor'
+
+  Symfony\Component\Filesystem\Filesystem: ~
+
+  Ineersa\CodingAgent\Config\SettingsOverrideWriter:
+    arguments:
+      $propertyAccessor: '@coding_agent.settings.property_accessor'
+      $filesystem: '@Symfony\Component\Filesystem\Filesystem'
+
   # CodexAuthStorage is a service, not just a value object — it needs
   # the home directory resolved from SettingsPathResolver and a LockFactory.
   # Autowiring fails for the string $homeDir parameter.
   Ineersa\CodingAgent\Auth\CodexAuthStorage:
     arguments:
       $homeDir: '@=service("Ineersa\\CodingAgent\\Config\\SettingsPathResolver").getHomeDir()'
+
+
+  Symfony\AI\Platform\Bridge\OpenAICodex\CodexWebSocketConnectionCache:
+    shared: true
+  Ineersa\CodingAgent\Infrastructure\SymfonyAi\SymfonyAiProviderFactory:
+    arguments:
+      $builders: !tagged_iterator hatfield.symfony_ai.provider_builder
 
   # AppConfig is a value object, not an autowireable service.
   # The container uses the fromContainer() factory to construct it.
@@ -181,9 +233,18 @@ services:
 
   Ineersa\CodingAgent\Extension\ExtensionHookRegistry: ~
 
+  Ineersa\CodingAgent\Extension\ExtensionAfterTurnCommitHookSubscriber: ~
+
   Ineersa\CodingAgent\Extension\ExtensionManager:
     arguments:
       $extensionApi: '@Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface'
+
+  Ineersa\CodingAgent\Runtime\Contract\TuiExtensionRegistryInterface:
+    alias: Ineersa\CodingAgent\Extension\ExtensionManager
+
+  Ineersa\Tui\Listener\TuiProjectExtensionRegistrar:
+    tags: ['app.tui_listener']
+
 
   # LoggingConfig is derived from AppConfig and autowireable.
   Ineersa\CodingAgent\Config\LoggingConfig:
@@ -264,6 +325,13 @@ services:
   Ineersa\CodingAgent\Migrations\ApplicationMigrationExecutor:
     arguments:
       $connection: '@doctrine.dbal.default_connection'
+
+  # Outer transactions on messenger_transport use BEGIN IMMEDIATE (see doctrine.yaml).
+  # autoconfigure: false keeps middleware registration explicit and connection-scoped.
+  Ineersa\CodingAgent\Infrastructure\Doctrine\MessengerSqliteImmediateTransactionMiddleware:
+    autoconfigure: false
+    tags:
+      - { name: doctrine.middleware, connection: messenger_transport }
 
   Ineersa\CodingAgent\Migrations\MessengerTransportSchemaEnsurer:
     arguments:
@@ -392,12 +460,20 @@ services:
   Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient:
     alias: 'Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient'
 
-  # ShellCommandHandler dispatches ExecuteShellToolCall messages on the
-  # agent.execution.bus (not the default agent.command.bus) so that shell
-  # command tool execution runs in the tool consumer process (issue #183).
+  # ShellCommandHandler validates the JSONL shell_command protocol and dispatches
+  # ApplyShellCommand on the command bus. ApplyShellCommandHandler (under the run
+  # lock) owns turn allocation and later dispatches ExecuteShellToolCall on the
+  # execution bus so bash still runs in the tool consumer (issue #183).
   Ineersa\CodingAgent\Runtime\Controller\CommandHandler\ShellCommandHandler:
     arguments:
-      $executionBus: '@agent.execution.bus'
+      $commandBus: '@agent.command.bus'
+
+  # Explicit wiring overrides Ineersa\CodingAgent\ resource autowire (bool $streamCommittedEventsToStdout).
+  Ineersa\CodingAgent\Runtime\Stream\StreamingCommittedRuntimeEventStore:
+    arguments:
+      $inner: '@Ineersa\CodingAgent\Agent\Artifact\ChildAwareEventStore'
+      $stdoutSink: '@Ineersa\CodingAgent\Runtime\Stream\CommittedRuntimeEventStdoutSink'
+      $streamCommittedEventsToStdout: '%env(bool:HATFIELD_CONSUMER_STDOUT_EVENTS)%'
 
   Ineersa\CodingAgent\Runtime\Controller\RuntimeEventEmitter:
     arguments:
@@ -409,8 +485,8 @@ services:
 
   Ineersa\CodingAgent\Runtime\Controller\BackgroundProcessCompletionPoller:
     arguments:
-      # Session scoping prevents O(N) cross-session filesystem scans.
-      # Null/unset means unscoped (all processes), set = scoped to one run.
+      # Parent controller session from HATFIELD_SESSION_ID; poll loop scopes refresh
+      # and notifications to that session plus child agent run IDs from the artifact registry.
       $sessionId: '%env(HATFIELD_SESSION_ID)%'
 
   # Stream observer delegates to Symfony EventDispatcher with per-delta subscribers.
@@ -449,6 +525,63 @@ services:
   Ineersa\CodingAgent\Runtime\Contract\TurnTreeProviderInterface:
     alias: Ineersa\CodingAgent\Session\SessionTurnTreeProvider
 
+  session.transcript.projection_state:
+    class: Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState
+
+  session.transcript.transcript_projector:
+    class: Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector
+    arguments:
+      $eventDispatcher: '@event_dispatcher'
+      $state: '@session.transcript.projection_state'
+
+  Ineersa\CodingAgent\Session\SessionTranscriptProvider:
+    arguments:
+      $transcriptProjector: '@session.transcript.transcript_projector'
+
+  Ineersa\CodingAgent\Runtime\Contract\SessionTranscriptProviderInterface:
+    alias: Ineersa\CodingAgent\Session\SessionTranscriptProvider
+
+  child_run.transcript.projection_state:
+    class: Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState
+
+  child_run.transcript.transcript_projector:
+    class: Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector
+    arguments:
+      $eventDispatcher: '@event_dispatcher'
+      $state: '@child_run.transcript.projection_state'
+
+  Ineersa\CodingAgent\Session\ChildRunTranscriptSnapshotProvider:
+    arguments:
+      $transcriptProjector: '@child_run.transcript.transcript_projector'
+
+  Ineersa\CodingAgent\Runtime\Contract\ChildRunTranscriptSnapshotProviderInterface:
+    alias: Ineersa\CodingAgent\Session\ChildRunTranscriptSnapshotProvider
+
+  Ineersa\CodingAgent\Session\ChildAgentEventsPathResolver: ~
+
+  Ineersa\CodingAgent\Runtime\Contract\ChildAgentEventsPathResolverInterface:
+    alias: Ineersa\CodingAgent\Session\ChildAgentEventsPathResolver
+
+  Ineersa\Tui\Export\SessionEventsExportService: ~
+
+  Ineersa\AgentCore\Contract\TurnTree\TurnTreeProjectorInterface:
+    alias: Ineersa\CodingAgent\Session\TurnTree\TurnTreeProjectorContractAdapter
+
+  Ineersa\AgentCore\Contract\TurnTree\BranchReplayFilterInterface:
+    alias: Ineersa\CodingAgent\Session\Replay\BranchReplayFilterContractAdapter
+
+  Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface:
+    alias: Ineersa\CodingAgent\Session\Replay\SessionRunStateReplayService
+
+  Ineersa\AgentCore\Contract\Replay\HotPromptStateRebuilderInterface:
+    alias: Ineersa\CodingAgent\Session\Replay\SessionHotPromptReplayService
+
+  Ineersa\AgentCore\Contract\Replay\HotPromptIntegrityVerifierInterface:
+    alias: Ineersa\CodingAgent\Session\Replay\SessionHotPromptReplayService
+
+  Ineersa\AgentCore\Contract\Rewind\RunRewindServiceInterface:
+    alias: Ineersa\CodingAgent\Session\Rewind\SessionRewindService
+
   # ─── Symfony AI Platform wiring ───
   # PlatformInterface reads Hatfield config from autowired AppConfig,
   # so no explicit arguments are needed here.
@@ -468,6 +601,10 @@ services:
   Ineersa\AgentCore\Application\Handler\ExecuteLlmStepWorker:
     arguments:
       $defaultModel: '%app.default_model%'
+      $runModelResolver: '@Ineersa\AgentCore\Contract\Model\RunModelResolverInterface'
+
+  Ineersa\AgentCore\Contract\Model\RunModelResolverInterface:
+    alias: Ineersa\CodingAgent\Compaction\ModelSelectionActiveModelResolver
 
 
   Ineersa\AgentCore\Application\Pipeline\AdvanceRunHandler:
@@ -502,8 +639,9 @@ services:
   # ─── Compaction pipeline (COMP-02) ───
 
   # Compaction service: CodingAgent adapter implementing the AgentCore contract.
-  # Autowiring resolves SessionCompactor and CompactionConfig; the interface
-  # alias lets AgentCore pipeline code depend on the contract.
+  # Autowiring resolves SessionCompactor, hooks, model selection, and PlatformInterface
+  # for synchronous compactMessages; the interface alias lets AgentCore pipeline
+  # code depend on the contract.
   Ineersa\CodingAgent\Compaction\CompactionService: ~
 
   Ineersa\AgentCore\Contract\Compaction\CompactionServiceInterface:
@@ -564,6 +702,13 @@ services:
         execution: '@Ineersa\CodingAgent\Agent\Execution\SubagentExecutionService'
 
   Ineersa\CodingAgent\Agent\Tool\SubagentToolDefinitionProvider:
+    tags: ['hatfield.tool_provider']
+  Ineersa\CodingAgent\Agent\Tool\ForkToolHandler:
+    arguments:
+      $executionServiceLocator: !service_locator
+        execution: '@Ineersa\CodingAgent\Agent\Fork\ForkExecutionService'
+
+  Ineersa\CodingAgent\Agent\Tool\ForkToolDefinitionProvider:
     tags: ['hatfield.tool_provider']
 
   # CodingAgent ToolSetResolver — bridges ToolRegistry to AgentCore resolver seam.
@@ -646,10 +791,12 @@ services:
       $contextAccessor: '@Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor'
       $toolSetResolver: '@Ineersa\AgentCore\Contract\Tool\ToolSetResolverInterface'
       $toolResultProcessors: !tagged_iterator agent_core.tool_result_processor
-  # Durable tool batch store — persists batch state across consumer restarts.
-  # Uses Doctrine ORM entities/repositories against the shared messenger SQLite.
+  # Durable tool batch store — session-scoped atomic JSON snapshots (transient recovery).
+  Ineersa\CodingAgent\Session\ToolBatchRunStoragePathsInterface:
+    alias: Ineersa\CodingAgent\Agent\Artifact\ChildAwareToolBatchRunStoragePaths
+
   Ineersa\AgentCore\Contract\Tool\ToolBatchStoreInterface:
-    alias: Ineersa\CodingAgent\Tool\Store\DbalToolBatchStore
+    alias: Ineersa\CodingAgent\Session\SessionToolBatchStore
 
   # ─── AI-10 Per-turn model/reasoning routing ───
 
@@ -669,7 +816,7 @@ services:
   Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor:
     arguments:
       $handlers: !tagged_iterator agent_core.run_message_handler
-      $runStateReplayService: '@Ineersa\AgentCore\Application\Handler\RunStateReplayService'
+      $runStateRebuilder: '@Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface'
 
   Ineersa\AgentCore\Application\Handler\StepDispatcher:
     arguments:
@@ -713,6 +860,10 @@ services:
   Ineersa\Tui\Completion\SessionIdCompletionProvider:
     tags:
       - { name: 'app.completion_provider', priority: 95 }
+
+  Ineersa\Tui\Completion\SettingsPathCompletionProvider:
+    tags:
+      - { name: 'app.completion_provider', priority: 93 }
 
   Ineersa\Tui\Completion\FileMentionCompletionProvider:
     tags:
@@ -839,11 +990,10 @@ services:
 
   # ─── AGENT-05 Subagent execution service ──────────────────────────
 
-  # SubagentExecutionService needs two RunStoreInterface bindings:
-  # $runStore auto-wires to the child-aware decorator (child runs), $parentRunStore to
-  # SessionRunStore (parent run state for prompt/metadata extraction).
-  # $eventStore auto-wires to the ChildAwareEventStore for progress events.
-  Ineersa\CodingAgent\Agent\Execution\SubagentExecutionService:
+  # Subagent child-run stack: child RunStore auto-wires to ChildAwareRunStore; parent RunStore
+  # binds to SessionRunStore for prompt/metadata. Parent progress events append via
+  # CommittedRunEventAppender only (seq 0 input; committed store allocates persisted seq).
+  Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Preparation\SubagentChildLaunchInputFactory:
     arguments:
       $parentRunStore: '@Ineersa\CodingAgent\Session\SessionRunStore'
 
@@ -859,6 +1009,19 @@ services:
 
   # ChildAwareEventStore — delegates EventStoreInterface between parent-scoped
   # SessionRunEventStore (parent runs) and AgentChildRunEventStore (child runs).
+
+  Ineersa\CodingAgent\Session\Contract\RunSequenceAllocatorInterface:
+    alias: Ineersa\CodingAgent\Session\FileRunSequenceAllocator
+
+  Ineersa\CodingAgent\Session\FileRunSequenceAllocator: ~
+
+  Ineersa\CodingAgent\Session\EventLogMaxSeqBootstrapReader: ~
+
+  Ineersa\CodingAgent\Session\CommittedRunEventAppender:
+    arguments:
+      $eventStore: '@Ineersa\AgentCore\Contract\EventStoreInterface'
+      $runStore: '@Ineersa\CodingAgent\Session\SessionRunStore'
+
   Ineersa\CodingAgent\Agent\Artifact\ChildAwareEventStore:
     arguments:
       $parentStore: '@Ineersa\CodingAgent\Session\SessionRunEventStore'
@@ -872,4 +1035,5 @@ services:
     arguments:
       $toolRegistry: '@Ineersa\CodingAgent\Tool\ToolRegistryInterface'
       $mcpToolsResolver: '@Ineersa\CodingAgent\Agent\Execution\AgentMcpToolsResolver'
+      $agentsConfig: '@Ineersa\CodingAgent\Config\AgentsConfig'
 

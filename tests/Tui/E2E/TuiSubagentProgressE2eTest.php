@@ -6,6 +6,7 @@ namespace Ineersa\Tui\Tests\E2E;
 
 use Ineersa\CodingAgent\Tests\Support\ProjectDir;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
+use Ineersa\Tui\Tests\Support\ChildContextStatisticsFixture;
 use Ineersa\Tui\Tests\Support\SubagentProgressEventsFixture;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
@@ -68,19 +69,23 @@ final class TuiSubagentProgressE2eTest extends TestCase
 
             $capture = $this->tmux->capturePlainWithHistory($pane, 2500);
 
-            self::assertStringContainsString('subagent scout', $capture);
-            self::assertStringContainsString('completed scout', $capture);
-            self::assertStringNotContainsString('running scout |', $capture);
-            self::assertStringContainsString('Task: Inspect TUI subagent rendering', $capture);
-            self::assertStringContainsString('Artifacts:', $capture);
-            self::assertStringContainsString('agent_e2e_progress_fixture', $capture);
-            self::assertStringContainsString('3 turns', $capture);
-            self::assertStringContainsString('Use agent_retrieve', $capture);
-            self::assertStringNotContainsString('subagent scout running | turn 1 | artifact', $capture);
-            self::assertStringNotContainsString('parallel subagents running', $capture);
+            // Polished card format after SubagentTranscriptCardBuilder:
+            //   ✓ scout [completed] — glyph + agent_name + status badge
+            //   Task Inspect TUI subagent rendering — no colon
+            //   Artifact artifacts/agents/agent_e2e_progress_fixture — full path, singular, no colon
+            $this->assertStringContainsString('✓ scout [completed]', $capture);
+            $this->assertStringContainsString('Task Inspect TUI subagent rendering', $capture);
+            $this->assertStringContainsString('Artifact artifacts/agents/agent_e2e_progress_fixture', $capture);
+            $this->assertStringContainsString('agent_e2e_progress_fixture', $capture);
+            $this->assertStringContainsString('3 turns', $capture);
+            $this->assertStringContainsString('deepseek/deepseek-v4-flash', $capture);
+            $this->assertStringContainsString(ChildContextStatisticsFixture::TRANSCRIPT_CTX_LINE, $capture, 'Resumed parent transcript card must show child context usage');
+            $this->assertStringContainsString('Use agent_retrieve', $capture);
+            $this->assertStringNotContainsString('running scout |', $capture);
+            $this->assertStringNotContainsString('parallel subagents running', $capture);
 
             $turnOneCount = substr_count($capture, 'turn 1');
-            self::assertLessThanOrEqual(1, $turnOneCount, 'Coalesced progress must not repeat stale turn 1 spam');
+            $this->assertLessThanOrEqual(1, $turnOneCount, 'Coalesced progress must not repeat stale turn 1 spam');
 
             $this->saveAnsiSnapshot($pane, 'subagent-progress-resume');
             $this->tmux->sendKey($pane, 'C-d');
@@ -102,19 +107,27 @@ final class TuiSubagentProgressE2eTest extends TestCase
         $this->tmux->sendLiteral($pane, 'hi');
         $this->tmux->sendKey($pane, 'Enter');
 
+        $sessionId = null;
         $this->tmux->waitForCallback(
             $pane,
-            static fn (string $cap): bool => str_contains($cap, '◇') || str_contains($cap, '✕'),
+            static function (string $cap) use (&$sessionId): bool {
+                if (!str_contains($cap, '◇') && !str_contains($cap, '✕')) {
+                    return false;
+                }
+                if (!preg_match('/session\s+(\d+)/', $cap, $matches)) {
+                    return false;
+                }
+                $sessionId = $matches[1];
+
+                return true;
+            },
             timeout: TmuxHarness::TUI_ASSISTANT_BLOCK_TIMEOUT_PARALLEL,
-            message: 'Assistant block did not appear after first submit',
+            message: 'Assistant block and session id must both appear in capture',
             history: 2000,
         );
+        $this->assertNotEmpty($sessionId, 'Session id must appear in the same capture as assistant/error glyph');
 
-        $firstCapture = $this->tmux->capturePlainWithHistory($pane, 2000);
-        $matched = preg_match('/session\s+(\d+)/', $firstCapture, $matches);
-        self::assertSame(1, $matched, 'Footer must show numeric session ID');
-
-        return $matches[1];
+        return $sessionId;
     }
 
     private function agentCommand(): string
@@ -131,7 +144,7 @@ final class TuiSubagentProgressE2eTest extends TestCase
 
         $transportDbPath = $paths['transport'];
 
-        return sprintf(
+        return \sprintf(
             'APP_ENV=test %sHOME=%s HATFIELD_LLM_REPLAY_FIXTURE_PATH=%s %s %s agent --model=llama_cpp_test/test --tools-excluded=bash 2>&1',
             TuiE2eDatabaseEnv::shellPrefix($dbPath, $transportDbPath),
             escapeshellarg($this->testProjectDir.'/home'),
@@ -152,6 +165,7 @@ final class TuiSubagentProgressE2eTest extends TestCase
                 'default_model' => 'llama_cpp_test/test',
                 'default_reasoning' => 'off',
                 'providers' => [
+                    'deepseek' => ChildContextStatisticsFixture::deepseekProviderSettings(),
                     'llama_cpp_test' => [
                         'type' => 'generic',
                         'enabled' => true,
@@ -193,6 +207,6 @@ final class TuiSubagentProgressE2eTest extends TestCase
         $path = $this->snapshotDir.'/'.$name.'.ansi';
         $ansi = $this->tmux->captureAnsi($pane);
         $ts = date('Ymd-His');
-        file_put_contents(sprintf('%s/%s-%s.ansi', $this->snapshotDir, $name, $ts), $ansi);
+        file_put_contents(\sprintf('%s/%s-%s.ansi', $this->snapshotDir, $name, $ts), $ansi);
     }
 }

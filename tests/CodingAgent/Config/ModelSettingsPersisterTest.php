@@ -5,12 +5,11 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Config;
 
 use Ineersa\CodingAgent\Config\AppConfig;
+use Ineersa\CodingAgent\Config\HomeSettingsWriter;
 use Ineersa\CodingAgent\Config\LoggingConfig;
-use Ineersa\CodingAgent\Config\ModelResolver;
 use Ineersa\CodingAgent\Config\ModelSettingsPersister;
 use Ineersa\CodingAgent\Config\SessionMetadataStore;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
-use Ineersa\CodingAgent\Config\HomeSettingsWriter;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Entity\HatfieldSession;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
@@ -87,15 +86,16 @@ class ModelSettingsPersisterTest extends IsolatedKernelTestCase
         $this->persister->persistModel('deepseek/deepseek-v4-flash', 'deepseek', 'deepseek-v4-flash', $this->sessionId);
 
         // Session metadata
-        $meta = $this->sessionMetaStore->readSessionMetadata($this->sessionId);
-        self::assertSame('deepseek/deepseek-v4-flash', $meta['model']);
-        self::assertSame('deepseek', $meta['model_provider']);
-        self::assertSame('deepseek-v4-flash', $meta['model_name']);
+        $session = $this->sessionMetaStore->findSession($this->sessionId);
+        $this->assertNotNull($session);
+        $this->assertSame('deepseek/deepseek-v4-flash', $session->model);
+        $this->assertSame('deepseek', $session->modelProvider);
+        $this->assertSame('deepseek-v4-flash', $session->modelName);
 
         // Home settings YAML
         $homeContent = file_get_contents($this->homeDir.'/.hatfield/settings.yaml');
-        self::assertNotFalse($homeContent);
-        self::assertStringContainsString('default_model: deepseek/deepseek-v4-flash', (string) $homeContent);
+        $this->assertNotFalse($homeContent);
+        $this->assertStringContainsString('default_model: deepseek/deepseek-v4-flash', (string) $homeContent);
     }
 
     // ──────────────────────────────────────────────
@@ -107,13 +107,14 @@ class ModelSettingsPersisterTest extends IsolatedKernelTestCase
         $this->persister->persistReasoning('xhigh', $this->sessionId);
 
         // Session metadata
-        $meta = $this->sessionMetaStore->readSessionMetadata($this->sessionId);
-        self::assertSame('xhigh', $meta['reasoning']);
+        $session = $this->sessionMetaStore->findSession($this->sessionId);
+        $this->assertNotNull($session);
+        $this->assertSame('xhigh', $session->reasoning);
 
         // Home settings YAML
         $homeContent = file_get_contents($this->homeDir.'/.hatfield/settings.yaml');
-        self::assertNotFalse($homeContent);
-        self::assertStringContainsString('default_reasoning: xhigh', (string) $homeContent);
+        $this->assertNotFalse($homeContent);
+        $this->assertStringContainsString('default_reasoning: xhigh', (string) $homeContent);
     }
 
     public function testPersistReasoningWithInvalidLevelThrows(): void
@@ -133,12 +134,12 @@ class ModelSettingsPersisterTest extends IsolatedKernelTestCase
         $this->persister->persistFavoriteModels(['deepseek/deepseek-v4-pro', 'llama_cpp/flash']);
 
         $homeContent = file_get_contents($this->homeDir.'/.hatfield/settings.yaml');
-        self::assertNotFalse($homeContent);
+        $this->assertNotFalse($homeContent);
 
         $parsed = Yaml::parse((string) $homeContent);
-        self::assertIsArray($parsed);
-        self::assertArrayHasKey('ai', $parsed);
-        self::assertArrayHasKey('favorite_models', $parsed['ai']);
-        self::assertSame(['deepseek/deepseek-v4-pro', 'llama_cpp/flash'], $parsed['ai']['favorite_models']);
+        $this->assertIsArray($parsed);
+        $this->assertArrayHasKey('ai', $parsed);
+        $this->assertArrayHasKey('favorite_models', $parsed['ai']);
+        $this->assertSame(['deepseek/deepseek-v4-pro', 'llama_cpp/flash'], $parsed['ai']['favorite_models']);
     }
 }

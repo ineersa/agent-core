@@ -12,7 +12,7 @@ use Doctrine\ORM\Mapping as ORM;
  * Acts as the authoritative metadata store and ID registry for Hatfield
  * sessions. The auto-increment primary key is converted to a string and
  * used as both the public session_id and AgentCore runId, preserving the
- * invariant session_id === run_id.
+ * invariant session_id === run_id. provider_cache_key is a separate immutable UUIDv7 for provider cache/correlation.
  *
  * There is no separate public_id column — the auto-increment integer id
  * is used directly and cast to string wherever an external string
@@ -66,7 +66,7 @@ class HatfieldSession
     #[ORM\Column(name: 'model_name', type: 'string', nullable: true)]
     public ?string $modelName = null;
 
-    /** Reasoning level for the current session (off/minimal/low/medium/high/xhigh). */
+    /** Reasoning level for the current session (off/minimal/low/medium/high/xhigh/max). */
     #[ORM\Column(type: 'string', nullable: true)]
     public ?string $reasoning = null;
 
@@ -74,6 +74,19 @@ class HatfieldSession
      * and later renameable via /rename. Capped at 200 characters. */
     #[ORM\Column(type: 'string', length: 200)]
     public string $name = '';
+
+    /**
+     * Immutable provider-neutral UUIDv7 for LLM provider cache/correlation identity.
+     *
+     * Generated once at session construction and persisted for the life of the row.
+     * Public session_id/run_id remain the numeric DB id; provider adapters consume
+     * this key (e.g. Codex prompt_cache_key and correlation headers).
+     *
+     * SQLite DDL keeps this column nullable; new sessions always receive a UUIDv7 in
+     * __construct(). Startup migration repairs NULL or empty persisted rows.
+     */
+    #[ORM\Column(name: 'provider_cache_key', type: 'string', length: 36, nullable: true)]
+    public ?string $providerCacheKey = null;
 
     #[ORM\Column(name: 'created_at', type: 'datetime_immutable')]
     public \DateTimeImmutable $createdAt;
@@ -86,5 +99,6 @@ class HatfieldSession
     {
         $this->createdAt = new \DateTimeImmutable();
         $this->updatedAt = new \DateTimeImmutable();
+        $this->providerCacheKey = \Symfony\Component\Uid\UuidV7::v7()->toRfc4122();
     }
 }

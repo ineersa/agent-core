@@ -14,8 +14,13 @@ services:
   Ineersa\AgentCore\Contract\RunStoreInterface:
     alias: Ineersa\CodingAgent\Agent\Artifact\ChildAwareRunStore
 
+  # Durable append goes to ChildAwareEventStore; decorator may emit mapped RuntimeEvents
+  # on stdout after commit when HATFIELD_CONSUMER_STDOUT_EVENTS=1 (see services.yaml).
+  # ConsumerSupervisor sets that env for every messenger:consume subprocess it launches;
+  # default is off for in-process TUI, tests, and other non-supervised contexts.
   Ineersa\AgentCore\Contract\EventStoreInterface:
-    alias: Ineersa\CodingAgent\Agent\Artifact\ChildAwareEventStore
+    alias: Ineersa\CodingAgent\Runtime\Stream\StreamingCommittedRuntimeEventStore
+
 
   Ineersa\AgentCore\Contract\AgentRunnerInterface:
     alias: Ineersa\AgentCore\Application\Pipeline\AgentRunner

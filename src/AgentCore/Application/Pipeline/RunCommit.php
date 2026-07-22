@@ -5,12 +5,12 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Application\Pipeline;
 
 use Ineersa\AgentCore\Application\Handler\HookDispatcher;
-use Ineersa\AgentCore\Application\Handler\ReplayService;
 use Ineersa\AgentCore\Application\Handler\RunMetrics;
 use Ineersa\AgentCore\Application\Handler\RunTracer;
 use Ineersa\AgentCore\Application\Handler\StepDispatcher;
 use Ineersa\AgentCore\Contract\CommandStoreInterface;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
+use Ineersa\AgentCore\Contract\Replay\HotPromptStateRebuilderInterface;
 use Ineersa\AgentCore\Contract\RunStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitHookContext;
@@ -24,7 +24,7 @@ final readonly class RunCommit
         private RunStoreInterface $runStore,
         private EventStoreInterface $eventStore,
         private CommandStoreInterface $commandStore,
-        private ReplayService $replayService,
+        private HotPromptStateRebuilderInterface $hotPromptStateRebuilder,
         private StepDispatcher $stepDispatcher,
         private LoggerInterface $logger,
         private ?HookDispatcher $hookDispatcher = null,
@@ -39,19 +39,57 @@ final readonly class RunCommit
      */
     public function commit(RunState $state, RunState $nextState, array $events, array $effects = []): bool
     {
-        $persist = function () use ($state, $nextState, $events, $effects): bool {
-            if (!$this->runStore->compareAndSwap($nextState, $state->version)) {
-                return false;
+        $resolvedNextState = $nextState;
+
+        $persist = function () use ($state, &$resolvedNextState, $events, $effects): ?RunState {
+            if (!$this->runStore->compareAndSwap($resolvedNextState, $state->version)) {
+                return null;
             }
 
             $eventsPersisted = false;
+            /** @var list<RunEvent> $persistedEvents */
+            $persistedEvents = [];
 
             try {
                 if ([] !== $events) {
-                    if (1 === \count($events)) {
-                        $this->eventStore->append($events[0]);
-                    } else {
-                        $this->eventStore->appendMany($events);
+                    $persisted = 1 === \count($events)
+                        ? [$this->eventStore->append($events[0])]
+                        : $this->eventStore->appendMany($events);
+                    $persistedEvents = $persisted;
+                    $lastPersisted = $persisted[array_key_last($persisted)];
+                    if ($resolvedNextState->lastSeq !== $lastPersisted->seq) {
+                        $bumpedState = new RunState(
+                            runId: $resolvedNextState->runId,
+                            status: $resolvedNextState->status,
+                            version: $resolvedNextState->version + 1,
+                            turnNo: $resolvedNextState->turnNo,
+                            lastSeq: $lastPersisted->seq,
+                            isStreaming: $resolvedNextState->isStreaming,
+                            streamingMessage: $resolvedNextState->streamingMessage,
+                            pendingToolCalls: $resolvedNextState->pendingToolCalls,
+                            errorMessage: $resolvedNextState->errorMessage,
+                            messages: $resolvedNextState->messages,
+                            activeStepId: $resolvedNextState->activeStepId,
+                            retryableFailure: $resolvedNextState->retryableFailure,
+                            pendingHumanInputRequests: $resolvedNextState->pendingHumanInputRequests,
+                        );
+                        if (!$this->runStore->compareAndSwap($bumpedState, $resolvedNextState->version)) {
+                            $this->logger->warning('persistence.last_seq_cas_conflict', [
+                                'run_id' => $resolvedNextState->runId,
+                                'session_id' => $resolvedNextState->runId,
+                                'component' => 'persistence.run_commit',
+                                'event_type' => 'persistence.last_seq_cas_conflict',
+                                'expected_version' => $resolvedNextState->version,
+                                'intended_last_seq' => $lastPersisted->seq,
+                                'events_persisted' => true,
+                            ]);
+                            $actual = $this->runStore->get($resolvedNextState->runId);
+                            if (null !== $actual) {
+                                $resolvedNextState = $actual;
+                            }
+                        } else {
+                            $resolvedNextState = $bumpedState;
+                        }
                     }
 
                     $eventsPersisted = true;
@@ -61,12 +99,12 @@ final readonly class RunCommit
                 $rollbackError = null;
 
                 try {
-                    $rollbackRestored = $this->runStore->compareAndSwap($state, $nextState->version);
+                    $rollbackRestored = $this->runStore->compareAndSwap($state, $resolvedNextState->version);
                 } catch (\Throwable $rollbackException) {
                     $rollbackError = $rollbackException->getMessage();
                     $this->logger->warning('Rollback CAS failed after event persistence failure', [
-                        'run_id' => $nextState->runId,
-                        'turn_no' => $nextState->turnNo,
+                        'run_id' => $resolvedNextState->runId,
+                        'turn_no' => $resolvedNextState->turnNo,
                         'exception' => $rollbackException,
                     ]);
                 }
@@ -89,12 +127,13 @@ final readonly class RunCommit
                         messages: $state->messages,
                         activeStepId: $state->activeStepId,
                         retryableFailure: false,
+                        pendingHumanInputRequests: $state->pendingHumanInputRequests,
                     );
                     $this->runStore->compareAndSwap($failedState, $state->version);
                 } catch (\Throwable $markFailedException) {
                     // Best effort — cannot mark failed in store.
                     $this->logger->warning('Could not mark run as failed after event persistence failure', [
-                        'run_id' => $nextState->runId,
+                        'run_id' => $resolvedNextState->runId,
                         'exception' => $markFailedException,
                     ]);
                 }
@@ -102,26 +141,26 @@ final readonly class RunCommit
                 // Throw a terminal exception so the message processor
                 // does NOT retry (this is not a CAS conflict). The
                 // app-layer exception boundary decides capture vs crash.
-                throw new \RuntimeException(\sprintf('Event persistence failed for run %s turn %d: %s', $nextState->runId, $nextState->turnNo, $exception->getMessage()), previous: $exception);
+                throw new \RuntimeException(\sprintf('Event persistence failed for run %s turn %d: %s', $resolvedNextState->runId, $resolvedNextState->turnNo, $exception->getMessage()), previous: $exception);
             }
 
             if ($eventsPersisted) {
                 try {
-                    $this->replayService->rebuildHotPromptState($nextState->runId);
+                    $this->hotPromptStateRebuilder->rebuildHotPromptState($resolvedNextState->runId);
                 } catch (\Throwable $exception) {
                     // Hot prompt rebuild is best-effort — the previous
                     // hot state is still valid. Log the failure so
                     // operators can diagnose persistent rebuild issues.
                     $this->logger->warning('Hot prompt state rebuild failed (best-effort)', [
-                        'run_id' => $nextState->runId,
-                        'turn_no' => $nextState->turnNo,
-                        'step_id' => $nextState->activeStepId,
+                        'run_id' => $resolvedNextState->runId,
+                        'turn_no' => $resolvedNextState->turnNo,
+                        'step_id' => $resolvedNextState->activeStepId,
                         'exception' => $exception,
                     ]);
                 }
             }
 
-            $this->logCommittedEvents($nextState, $events);
+            $this->logCommittedEvents($resolvedNextState, $persistedEvents);
 
             if ([] !== $effects) {
                 try {
@@ -130,9 +169,9 @@ final readonly class RunCommit
                     // Effect dispatch is best-effort side work.
                     // The primary commit (state + events) succeeded.
                     $this->logger->warning('Effect dispatch failed after successful commit (best-effort)', [
-                        'run_id' => $nextState->runId,
-                        'turn_no' => $nextState->turnNo,
-                        'step_id' => $nextState->activeStepId,
+                        'run_id' => $resolvedNextState->runId,
+                        'turn_no' => $resolvedNextState->turnNo,
+                        'step_id' => $resolvedNextState->activeStepId,
                         'effects_count' => \count($effects),
                         'exception' => $exception,
                     ]);
@@ -141,38 +180,38 @@ final readonly class RunCommit
 
             try {
                 $this->hookDispatcher?->dispatchAfterTurnCommit(
-                    AfterTurnCommitHookContext::fromRunState($nextState, $events, \count($effects)),
+                    AfterTurnCommitHookContext::fromRunState($resolvedNextState, $persistedEvents, \count($effects)),
                 );
             } catch (\Throwable $exception) {
                 // After-turn commit hooks are optional extension points.
                 // A failing hook must not roll back the commit.
                 $this->logger->warning('After-turn commit hook failed (best-effort)', [
-                    'run_id' => $nextState->runId,
-                    'turn_no' => $nextState->turnNo,
-                    'step_id' => $nextState->activeStepId,
+                    'run_id' => $resolvedNextState->runId,
+                    'turn_no' => $resolvedNextState->turnNo,
+                    'step_id' => $resolvedNextState->activeStepId,
                     'exception' => $exception,
                 ]);
             }
 
-            return true;
+            return $resolvedNextState;
         };
 
-        $committed = null === $this->tracer
+        $resolvedAfterPersist = null === $this->tracer
             ? $persist()
             : $this->tracer->inSpan('persistence.commit', [
-                'run_id' => $nextState->runId,
-                'turn_no' => $nextState->turnNo,
-                'step_id' => $nextState->activeStepId,
+                'run_id' => $resolvedNextState->runId,
+                'turn_no' => $resolvedNextState->turnNo,
+                'step_id' => $resolvedNextState->activeStepId,
                 'event_count' => \count($events),
                 'effects_count' => \count($effects),
             ], $persist)
         ;
 
-        if (!$committed) {
+        if (null === $resolvedAfterPersist) {
             return false;
         }
 
-        $this->trackCommitMetrics($state, $nextState, $events);
+        $this->trackCommitMetrics($state, $resolvedAfterPersist, $events);
 
         return true;
     }

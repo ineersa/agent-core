@@ -39,6 +39,170 @@ use PHPUnit\Framework\Attributes\Group;
 #[Group('controller-replay')]
 final class ControllerReplayAutoCompactionRepeatedReplicationTest extends ControllerReplayE2eTestCase
 {
+    // ─────────────────────────────────────────────────────────────────
+    //  Single test method
+    // ─────────────────────────────────────────────────────────────────
+
+    public function testRepeatedAutoCompactionFiresOnMultipleTurns(): void
+    {
+        $this->spawnController();
+
+        // ── Wait for runtime.ready ──
+        $this->waitForEvent('runtime.ready', $this->liveControllerReadyTimeout());
+
+        // ═════════════════════════════════════════════════════════════
+        //  Turn 1: start_run — collect until run.completed
+        // ═════════════════════════════════════════════════════════════
+
+        $startCmdId = 'cmd_start_'.uniqid();
+        $this->writeCommand([
+            'v' => 1,
+            'id' => $startCmdId,
+            'type' => 'start_run',
+            'payload' => [
+                'prompt' => 'Write one sentence about automated testing in software development.',
+            ],
+        ]);
+
+        $turn1Events = $this->collectEvents(12.0);
+        $byType = $this->indexByType($turn1Events);
+
+        $this->assertStartRunAcked($turn1Events, $startCmdId);
+
+        $this->assertArrayHasKey('run.started', $byType, 'Expected run.started for turn 1');
+
+        $runStarted = $byType['run.started'][0];
+        $this->runId = (string) ($runStarted['runId'] ?? $runStarted['payload']['runId'] ?? '');
+        $this->assertNotEmpty($this->runId, 'run.started must have a runId');
+
+        $this->assertTrue(
+            isset($byType['run.completed']) || isset($byType['run.failed']),
+            'Turn 1 must reach terminal state (run.completed or run.failed).',
+        );
+
+        if (isset($byType['run.failed'])) {
+            $err = $byType['run.failed'][0]['payload']['error'] ?? '?';
+            $this->fail("Turn 1 failed unexpectedly: {$err}");
+        }
+
+        // ═════════════════════════════════════════════════════════════
+        //  Turn 2: follow_up — collect past run.completed until
+        //          first compaction lifecycle
+        // ═════════════════════════════════════════════════════════════
+
+        $followUpCmdId2 = 'cmd_followup_2_'.uniqid();
+        $this->writeCommand([
+            'v' => 1,
+            'id' => $followUpCmdId2,
+            'type' => 'follow_up',
+            'runId' => $this->runId,
+            'payload' => [
+                'text' => 'Write one sentence comparing automated testing to manual testing.',
+            ],
+        ]);
+
+        $turn2Events = $this->collectTurnEventsUntilRunTerminal('run.completed', 8.0, expectAfterTurnCompaction: true, compactionTimeoutSeconds: 6.0);
+        $turn2ByType = $this->indexByType($turn2Events);
+
+        $this->assertTrue(
+            $this->foundAck($turn2Events, $followUpCmdId2),
+            'Expected command.ack for follow_up (turn 2).',
+        );
+
+        $this->assertTrue(
+            isset($turn2ByType['compaction.completed']) || isset($turn2ByType['compaction.failed']),
+            "Turn 2 must trigger auto-compaction lifecycle.\n"
+            .$this->collectDiagnostics($turn2Events),
+        );
+
+        // ═════════════════════════════════════════════════════════════
+        //  Turn 3: follow_up — collect past run.completed until
+        //          second compaction lifecycle
+        //
+        //  THIS IS THE RED ASSERTION on HEAD:
+        //  compactionResolved blocks auto-compaction, so no
+        //  compaction.completed appears within the timeout.
+        // ═════════════════════════════════════════════════════════════
+
+        $followUpCmdId3 = 'cmd_followup_3_'.uniqid();
+        $this->writeCommand([
+            'v' => 1,
+            'id' => $followUpCmdId3,
+            'type' => 'follow_up',
+            'runId' => $this->runId,
+            'payload' => [
+                'text' => 'Write one sentence about how automated and manual testing complement each other.',
+            ],
+        ]);
+
+        $turn3Events = $this->collectTurnEventsUntilRunTerminal('run.completed', 8.0, expectAfterTurnCompaction: true, compactionTimeoutSeconds: 6.0);
+        $turn3ByType = $this->indexByType($turn3Events);
+
+        $this->assertTrue(
+            $this->foundAck($turn3Events, $followUpCmdId3),
+            'Expected command.ack for follow_up (turn 3).',
+        );
+
+        $this->assertTrue(
+            isset($turn3ByType['compaction.completed']) || isset($turn3ByType['compaction.failed']),
+            "Turn 3 MUST trigger a second auto-compaction lifecycle.\n"
+            ."The compactionResolved flag on HEAD permanently blocks this.\n"
+            .$this->collectDiagnostics($turn3Events),
+        );
+
+        // ═════════════════════════════════════════════════════════════
+        //  Structural proof from canonical events.jsonl
+        // ═════════════════════════════════════════════════════════════
+
+        $sessionDir = $this->tempDir.'/.hatfield/sessions/'.$this->sessionId;
+        $eventsPath = $sessionDir.'/events.jsonl';
+
+        $this->assertFileExists($eventsPath, 'Session events.jsonl must exist');
+
+        $coreEvents = $this->loadCoreEvents($eventsPath);
+        $this->assertNotEmpty($coreEvents, 'events.jsonl must have events');
+
+        $timeline = $this->buildTimeline($coreEvents);
+
+        // ── Assert: at least 2 auto context_compacted events ──
+        $autoCompactedSeqs = $this->findAutoCompactedSeqs($coreEvents);
+
+        $this->assertGreaterThanOrEqual(
+            2,
+            \count($autoCompactedSeqs),
+            "Session must have at least 2 auto compaction terminal events (one per above-threshold turn).\n"
+            .'Found: '.\count($autoCompactedSeqs)."\n"
+            ."On HEAD, compactionResolved permanently blocks the second auto-compaction.\n"
+            ."Timeline:\n".$timeline,
+        );
+
+        // ── Assert: no ghost turn_advanced / leaf_set / llm_step_*
+        //    after each auto compaction terminal ──
+        $this->assertNoGhostLlmAfterCompactionTerminals($coreEvents, $autoCompactedSeqs, $timeline);
+
+        // ── Assert: at least 3 llm_step_completed before the last
+        //    compaction terminal (proves genuine multi-turn) ──
+        $lastAutoSeq = max($autoCompactedSeqs);
+        $llmStepsBeforeLast = 0;
+        foreach ($coreEvents as $evt) {
+            $seq = (int) ($evt['seq'] ?? 0);
+            if ($seq >= $lastAutoSeq) {
+                break;
+            }
+            if ('llm_step_completed' === ($evt['type'] ?? '')) {
+                ++$llmStepsBeforeLast;
+            }
+        }
+
+        $this->assertGreaterThanOrEqual(
+            3,
+            $llmStepsBeforeLast,
+            'Session must have at least 3 llm_step_completed events before the last '
+            ."compaction terminal to prove genuine multi-turn (found {$llmStepsBeforeLast}).\n"
+            ."Timeline:\n".$timeline,
+        );
+    }
+
     protected function tempDirPrefix(): string
     {
         return 'test-replay-auto-compact-repeat';
@@ -176,170 +340,6 @@ YAML;
     }
 
     // ─────────────────────────────────────────────────────────────────
-    //  Single test method
-    // ─────────────────────────────────────────────────────────────────
-
-    public function testRepeatedAutoCompactionFiresOnMultipleTurns(): void
-    {
-        $this->spawnController();
-
-        // ── Wait for runtime.ready ──
-        $this->waitForEvent('runtime.ready', $this->liveControllerReadyTimeout());
-
-        // ═════════════════════════════════════════════════════════════
-        //  Turn 1: start_run — collect until run.completed
-        // ═════════════════════════════════════════════════════════════
-
-        $startCmdId = 'cmd_start_' . \uniqid();
-        $this->writeCommand([
-            'v' => 1,
-            'id' => $startCmdId,
-            'type' => 'start_run',
-            'payload' => [
-                'prompt' => 'Write one sentence about automated testing in software development.',
-            ],
-        ]);
-
-        $turn1Events = $this->collectEvents(25.0);
-        $byType = $this->indexByType($turn1Events);
-
-        $this->assertStartRunAcked($turn1Events, $startCmdId);
-
-        self::assertArrayHasKey('run.started', $byType, 'Expected run.started for turn 1');
-
-        $runStarted = $byType['run.started'][0];
-        $this->runId = (string) ($runStarted['runId'] ?? $runStarted['payload']['runId'] ?? '');
-        self::assertNotEmpty($this->runId, 'run.started must have a runId');
-
-        self::assertTrue(
-            isset($byType['run.completed']) || isset($byType['run.failed']),
-            'Turn 1 must reach terminal state (run.completed or run.failed).',
-        );
-
-        if (isset($byType['run.failed'])) {
-            $err = $byType['run.failed'][0]['payload']['error'] ?? '?';
-            self::fail("Turn 1 failed unexpectedly: {$err}");
-        }
-
-        // ═════════════════════════════════════════════════════════════
-        //  Turn 2: follow_up — collect past run.completed until
-        //          first compaction lifecycle
-        // ═════════════════════════════════════════════════════════════
-
-        $followUpCmdId2 = 'cmd_followup_2_' . \uniqid();
-        $this->writeCommand([
-            'v' => 1,
-            'id' => $followUpCmdId2,
-            'type' => 'follow_up',
-            'runId' => $this->runId,
-            'payload' => [
-                'text' => 'Write one sentence comparing automated testing to manual testing.',
-            ],
-        ]);
-
-        $turn2Events = $this->collectEventsPastRunCompleted(25.0);
-        $turn2ByType = $this->indexByType($turn2Events);
-
-        self::assertTrue(
-            $this->foundAck($turn2Events, $followUpCmdId2),
-            'Expected command.ack for follow_up (turn 2).',
-        );
-
-        self::assertTrue(
-            isset($turn2ByType['compaction.completed']) || isset($turn2ByType['compaction.failed']),
-            "Turn 2 must trigger auto-compaction lifecycle.\n"
-            . $this->collectDiagnostics($turn2Events),
-        );
-
-        // ═════════════════════════════════════════════════════════════
-        //  Turn 3: follow_up — collect past run.completed until
-        //          second compaction lifecycle
-        //
-        //  THIS IS THE RED ASSERTION on HEAD:
-        //  compactionResolved blocks auto-compaction, so no
-        //  compaction.completed appears within the timeout.
-        // ═════════════════════════════════════════════════════════════
-
-        $followUpCmdId3 = 'cmd_followup_3_' . \uniqid();
-        $this->writeCommand([
-            'v' => 1,
-            'id' => $followUpCmdId3,
-            'type' => 'follow_up',
-            'runId' => $this->runId,
-            'payload' => [
-                'text' => 'Write one sentence about how automated and manual testing complement each other.',
-            ],
-        ]);
-
-        $turn3Events = $this->collectEventsPastRunCompleted(25.0);
-        $turn3ByType = $this->indexByType($turn3Events);
-
-        self::assertTrue(
-            $this->foundAck($turn3Events, $followUpCmdId3),
-            'Expected command.ack for follow_up (turn 3).',
-        );
-
-        self::assertTrue(
-            isset($turn3ByType['compaction.completed']) || isset($turn3ByType['compaction.failed']),
-            "Turn 3 MUST trigger a second auto-compaction lifecycle.\n"
-            . "The compactionResolved flag on HEAD permanently blocks this.\n"
-            . $this->collectDiagnostics($turn3Events),
-        );
-
-        // ═════════════════════════════════════════════════════════════
-        //  Structural proof from canonical events.jsonl
-        // ═════════════════════════════════════════════════════════════
-
-        $sessionDir = $this->tempDir . '/.hatfield/sessions/' . $this->sessionId;
-        $eventsPath = $sessionDir . '/events.jsonl';
-
-        self::assertFileExists($eventsPath, 'Session events.jsonl must exist');
-
-        $coreEvents = $this->loadCoreEvents($eventsPath);
-        self::assertNotEmpty($coreEvents, 'events.jsonl must have events');
-
-        $timeline = $this->buildTimeline($coreEvents);
-
-        // ── Assert: at least 2 auto context_compacted events ──
-        $autoCompactedSeqs = $this->findAutoCompactedSeqs($coreEvents);
-
-        self::assertGreaterThanOrEqual(
-            2,
-            \count($autoCompactedSeqs),
-            "Session must have at least 2 auto compaction terminal events (one per above-threshold turn).\n"
-            . "Found: " . \count($autoCompactedSeqs) . "\n"
-            . "On HEAD, compactionResolved permanently blocks the second auto-compaction.\n"
-            . "Timeline:\n" . $timeline,
-        );
-
-        // ── Assert: no ghost turn_advanced / leaf_set / llm_step_*
-        //    after each auto compaction terminal ──
-        $this->assertNoGhostLlmAfterCompactionTerminals($coreEvents, $autoCompactedSeqs, $timeline);
-
-        // ── Assert: at least 3 llm_step_completed before the last
-        //    compaction terminal (proves genuine multi-turn) ──
-        $lastAutoSeq = \max($autoCompactedSeqs);
-        $llmStepsBeforeLast = 0;
-        foreach ($coreEvents as $evt) {
-            $seq = (int) ($evt['seq'] ?? 0);
-            if ($seq >= $lastAutoSeq) {
-                break;
-            }
-            if ('llm_step_completed' === ($evt['type'] ?? '')) {
-                $llmStepsBeforeLast++;
-            }
-        }
-
-        self::assertGreaterThanOrEqual(
-            3,
-            $llmStepsBeforeLast,
-            "Session must have at least 3 llm_step_completed events before the last "
-            . "compaction terminal to prove genuine multi-turn (found {$llmStepsBeforeLast}).\n"
-            . "Timeline:\n" . $timeline,
-        );
-    }
-
-    // ─────────────────────────────────────────────────────────────────
     //  Local helpers
     // ─────────────────────────────────────────────────────────────────
 
@@ -349,52 +349,6 @@ YAML;
      *
      * @return list<array<string, mixed>>
      */
-    private function collectEventsPastRunCompleted(float $timeoutSeconds): array
-    {
-        $events = [];
-        $deadline = \microtime(true) + $timeoutSeconds;
-        $lastEventAt = \microtime(true);
-        $sawRunTerminal = false;
-
-        while (\microtime(true) < $deadline) {
-            foreach ($this->readEvents() as $event) {
-                $events[] = $event;
-                $lastEventAt = \microtime(true);
-                $type = $event['type'] ?? '';
-
-                if (\in_array($type, ['run.completed', 'run.failed'], true)) {
-                    $sawRunTerminal = true;
-                }
-
-                if (\in_array($type, ['compaction.completed', 'compaction.failed'], true)) {
-                    return $events;
-                }
-            }
-
-            if (!$this->isRunning()) {
-                foreach ($this->readEvents() as $event) {
-                    $events[] = $event;
-                    $lastEventAt = \microtime(true);
-                    $type = $event['type'] ?? '';
-                    if (\in_array($type, ['run.completed', 'run.failed'], true)) {
-                        $sawRunTerminal = true;
-                    }
-                    if (\in_array($type, ['compaction.completed', 'compaction.failed'], true)) {
-                        return $events;
-                    }
-                }
-                break;
-            }
-
-            if ($sawRunTerminal && \microtime(true) - $lastEventAt > 0.8) {
-                break;
-            }
-
-            \usleep(50_000);
-        }
-
-        return $events;
-    }
 
     /**
      * Load core events from the canonical events.jsonl.
@@ -404,8 +358,8 @@ YAML;
     private function loadCoreEvents(string $eventsPath): array
     {
         $core = [];
-        foreach (\file($eventsPath, \FILE_IGNORE_NEW_LINES | \FILE_SKIP_EMPTY_LINES) as $line) {
-            $evt = \json_decode($line, true, 512, \JSON_THROW_ON_ERROR);
+        foreach (file($eventsPath, \FILE_IGNORE_NEW_LINES | \FILE_SKIP_EMPTY_LINES) as $line) {
+            $evt = json_decode($line, true, 512, \JSON_THROW_ON_ERROR);
             if (\is_array($evt)) {
                 $core[] = $evt;
             }
@@ -455,7 +409,7 @@ YAML;
         array $autoCompactedSeqs,
         string $timeline,
     ): void {
-        $compactedSeqSet = \array_flip($autoCompactedSeqs);
+        $compactedSeqSet = array_flip($autoCompactedSeqs);
 
         if ([] === $autoCompactedSeqs) {
             return;
@@ -489,12 +443,12 @@ YAML;
             }
         }
 
-        self::assertEmpty(
+        $this->assertEmpty(
             $violations,
             "Auto compaction must not cause extra LLM turns.\n"
-            . "Found post-compaction forbidden events (after last auto terminal seq {$lastCompacted}):\n"
-            . \implode("\n", $violations) . "\n"
-            . "\nFull timeline:\n" . $timeline,
+            ."Found post-compaction forbidden events (after last auto terminal seq {$lastCompacted}):\n"
+            .implode("\n", $violations)."\n"
+            ."\nFull timeline:\n".$timeline,
         );
     }
 
@@ -531,6 +485,6 @@ YAML;
             $lines[] = \sprintf('  [%s] %s%s', $seq, $type, $extra);
         }
 
-        return \implode("\n", $lines);
+        return implode("\n", $lines);
     }
 }

@@ -5,11 +5,8 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Runtime\InProcess;
 
 use Ineersa\AgentCore\Contract\AgentRunnerInterface;
-use Ineersa\AgentCore\Contract\Tool\ToolExecutorInterface;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Run\StartRunInput;
-use Ineersa\AgentCore\Domain\Tool\ToolCall;
-use Ineersa\AgentCore\Domain\Tool\ToolResult;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
 use Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient;
@@ -29,20 +26,161 @@ use Ineersa\CodingAgent\Tests\TestCase\PerMethodIsolatedKernelTestCase;
  */
 final class PromptTemplateExpansionInProcessTest extends PerMethodIsolatedKernelTestCase
 {
-    /** @var FakeCapturingAgentRunner */
     private FakeCapturingAgentRunner $spyRunner;
 
-    /** @var FakeCapturingToolExecutor */
-    private FakeCapturingToolExecutor $spyToolExecutor;
+    // ── start() expansion ──────────────────────────────────────────
+
+    public function testStartExpandsPromptTemplate(): void
+    {
+        $this->writeTemplate('review', "Review changes focusing on:\n\$ARGUMENTS");
+
+        $this->client()->start(new StartRunRequest(prompt: '/review security performance'));
+
+        $this->assertNotNull($this->spyRunner->lastStartInput);
+        $texts = $this->userMessageTexts($this->spyRunner->lastStartInput);
+        $this->assertCount(1, $texts);
+        $this->assertSame("Review changes focusing on:\nsecurity performance", $texts[0]);
+    }
+
+    public function testStartPassthroughForNonTemplateSlash(): void
+    {
+        $this->client()->start(new StartRunRequest(prompt: '/nonexistent arg'));
+
+        $this->assertNotNull($this->spyRunner->lastStartInput);
+        $texts = $this->userMessageTexts($this->spyRunner->lastStartInput);
+        $this->assertSame(['/nonexistent arg'], $texts);
+    }
+
+    public function testStartPassthroughForNonSlash(): void
+    {
+        $this->client()->start(new StartRunRequest(prompt: 'hello world'));
+
+        $this->assertNotNull($this->spyRunner->lastStartInput);
+        $texts = $this->userMessageTexts($this->spyRunner->lastStartInput);
+        $this->assertSame(['hello world'], $texts);
+    }
+
+    public function testStartSinglePassNoRecursiveExpansion(): void
+    {
+        $this->writeTemplate('first', '/second arg');
+        $this->writeTemplate('second', 'expanded: $@');
+
+        $this->client()->start(new StartRunRequest(prompt: '/first'));
+
+        $this->assertNotNull($this->spyRunner->lastStartInput);
+        $texts = $this->userMessageTexts($this->spyRunner->lastStartInput);
+        $this->assertCount(1, $texts);
+        $this->assertSame('/second arg', $texts[0]);
+    }
+
+    // ── send() expansion ───────────────────────────────────────────
+
+    public function testSendExpandsMessageType(): void
+    {
+        $this->writeTemplate('review', 'Review: $@');
+
+        $this->client()->send('run-1', new UserCommand(type: 'message', text: '/review foo bar'));
+
+        $this->assertCount(1, $this->spyRunner->steerMessages);
+        $this->assertSame('Review: foo bar', $this->msgText($this->spyRunner->steerMessages[0]));
+    }
+
+    public function testSendExpandsSteerType(): void
+    {
+        $this->writeTemplate('review', 'Review: $@');
+
+        $this->client()->send('run-1', new UserCommand(type: 'steer', text: '/review baz'));
+
+        $this->assertCount(1, $this->spyRunner->steerMessages);
+        $this->assertSame('Review: baz', $this->msgText($this->spyRunner->steerMessages[0]));
+    }
+
+    public function testSendExpandsFollowUpType(): void
+    {
+        $this->writeTemplate('review', 'Follow-up: $@');
+
+        $this->client()->send('run-1', new UserCommand(type: 'follow_up', text: '/review qux'));
+
+        $this->assertCount(1, $this->spyRunner->followUpMessages);
+        $this->assertSame('Follow-up: qux', $this->msgText($this->spyRunner->followUpMessages[0]));
+    }
+
+    public function testAnswerHumanIsNotExpanded(): void
+    {
+        $this->writeTemplate('review', 'expanded:$@');
+
+        $this->client()->send('run-1', new UserCommand(
+            type: 'answer_human',
+            text: '/review yes',
+            payload: ['question_id' => 'q1', 'answer' => true],
+        ));
+
+        $this->assertCount(1, $this->spyRunner->answerHumanCalls);
+        $this->assertSame('q1', $this->spyRunner->answerHumanCalls[0]['questionId']);
+        $this->assertTrue($this->spyRunner->answerHumanCalls[0]['answer']);
+    }
+
+    public function testAnswerToolQuestionIsNotExpanded(): void
+    {
+        $this->writeTemplate('review', 'expanded:$@');
+
+        // No ToolQuestionStore is injected into the container, so the
+        // answer_tool_question path will throw. But we can still verify
+        // the branch is reached BEFORE any expansion would happen by
+        // catching the exception and checking no steer/followUp were made.
+        try {
+            $this->client()->send('run-1', new UserCommand(
+                type: 'answer_tool_question',
+                text: '/review yes',
+                payload: ['request_id' => 'req-1', 'answer' => true],
+            ));
+        } catch (\RuntimeException $e) {
+            // Expected: ToolQuestionStore not configured
+            $this->assertStringContainsString('ToolQuestionStore', $e->getMessage());
+        }
+
+        // No expansion should have leaked into steer/followUp.
+        $this->assertCount(0, $this->spyRunner->steerMessages);
+        $this->assertCount(0, $this->spyRunner->followUpMessages);
+    }
+
+    // ── send() passthrough ────────────────────────────────────────
+
+    public function testSendPassthroughForNonMatchingSlash(): void
+    {
+        $this->writeTemplate('review', 'expanded:$@');
+
+        // Non-matching slash command passes through unchanged.
+        $this->client()->send('run-1', new UserCommand(type: 'message', text: '/nonexistent foo'));
+
+        $this->assertCount(1, $this->spyRunner->steerMessages);
+        $this->assertSame('/nonexistent foo', $this->msgText($this->spyRunner->steerMessages[0]));
+    }
+
+    // ── shell_command non-expansion ────────────────────────────────
+
+    public function testShellCommandIsNotExpanded(): void
+    {
+        $this->writeTemplate('review', 'expanded:$@');
+
+        // shell_command text must NOT be expanded — the raw command
+        // text is passed to the tool executor unchanged.
+        $this->client()->send('run-1', new UserCommand(
+            type: 'shell_command',
+            text: '!review rm -rf',
+        ));
+
+        $this->assertSame([
+            ['runId' => 'run-1', 'rawInput' => '!review rm -rf'],
+        ], $this->spyRunner->shellCalls);
+    }
 
     protected function afterKernelBoot(): void
     {
         // Install spies before any test code resolves the real services.
         $this->spyRunner = new FakeCapturingAgentRunner();
-        $this->spyToolExecutor = new FakeCapturingToolExecutor();
 
         self::getContainer()->set(AgentRunnerInterface::class, $this->spyRunner);
-        self::getContainer()->set(ToolExecutorInterface::class, $this->spyToolExecutor);
     }
 
     // ── Helpers ───────────────────────────────────────────────────
@@ -59,7 +197,7 @@ final class PromptTemplateExpansionInProcessTest extends PerMethodIsolatedKernel
 
     private function client(): InProcessAgentSessionClient
     {
-        /** @var InProcessAgentSessionClient */
+        /* @var InProcessAgentSessionClient */
         return self::getContainer()->get(InProcessAgentSessionClient::class);
     }
 
@@ -89,152 +227,6 @@ final class PromptTemplateExpansionInProcessTest extends PerMethodIsolatedKernel
 
         return '';
     }
-
-    // ── start() expansion ──────────────────────────────────────────
-
-    public function testStartExpandsPromptTemplate(): void
-    {
-        $this->writeTemplate('review', "Review changes focusing on:\n\$ARGUMENTS");
-
-        $this->client()->start(new StartRunRequest(prompt: '/review security performance'));
-
-        self::assertNotNull($this->spyRunner->lastStartInput);
-        $texts = $this->userMessageTexts($this->spyRunner->lastStartInput);
-        self::assertCount(1, $texts);
-        self::assertSame("Review changes focusing on:\nsecurity performance", $texts[0]);
-    }
-
-    public function testStartPassthroughForNonTemplateSlash(): void
-    {
-        $this->client()->start(new StartRunRequest(prompt: '/nonexistent arg'));
-
-        self::assertNotNull($this->spyRunner->lastStartInput);
-        $texts = $this->userMessageTexts($this->spyRunner->lastStartInput);
-        self::assertSame(['/nonexistent arg'], $texts);
-    }
-
-    public function testStartPassthroughForNonSlash(): void
-    {
-        $this->client()->start(new StartRunRequest(prompt: 'hello world'));
-
-        self::assertNotNull($this->spyRunner->lastStartInput);
-        $texts = $this->userMessageTexts($this->spyRunner->lastStartInput);
-        self::assertSame(['hello world'], $texts);
-    }
-
-    public function testStartSinglePassNoRecursiveExpansion(): void
-    {
-        $this->writeTemplate('first', '/second arg');
-        $this->writeTemplate('second', 'expanded: $@');
-
-        $this->client()->start(new StartRunRequest(prompt: '/first'));
-
-        self::assertNotNull($this->spyRunner->lastStartInput);
-        $texts = $this->userMessageTexts($this->spyRunner->lastStartInput);
-        self::assertCount(1, $texts);
-        self::assertSame('/second arg', $texts[0]);
-    }
-
-    // ── send() expansion ───────────────────────────────────────────
-
-    public function testSendExpandsMessageType(): void
-    {
-        $this->writeTemplate('review', 'Review: $@');
-
-        $this->client()->send('run-1', new UserCommand(type: 'message', text: '/review foo bar'));
-
-        self::assertCount(1, $this->spyRunner->steerMessages);
-        self::assertSame('Review: foo bar', $this->msgText($this->spyRunner->steerMessages[0]));
-    }
-
-    public function testSendExpandsSteerType(): void
-    {
-        $this->writeTemplate('review', 'Review: $@');
-
-        $this->client()->send('run-1', new UserCommand(type: 'steer', text: '/review baz'));
-
-        self::assertCount(1, $this->spyRunner->steerMessages);
-        self::assertSame('Review: baz', $this->msgText($this->spyRunner->steerMessages[0]));
-    }
-
-    public function testSendExpandsFollowUpType(): void
-    {
-        $this->writeTemplate('review', 'Follow-up: $@');
-
-        $this->client()->send('run-1', new UserCommand(type: 'follow_up', text: '/review qux'));
-
-        self::assertCount(1, $this->spyRunner->followUpMessages);
-        self::assertSame('Follow-up: qux', $this->msgText($this->spyRunner->followUpMessages[0]));
-    }
-
-    public function testAnswerHumanIsNotExpanded(): void
-    {
-        $this->writeTemplate('review', 'expanded:$@');
-
-        $this->client()->send('run-1', new UserCommand(
-            type: 'answer_human',
-            text: '/review yes',
-            payload: ['question_id' => 'q1', 'answer' => true],
-        ));
-
-        self::assertCount(1, $this->spyRunner->answerHumanCalls);
-        self::assertSame('q1', $this->spyRunner->answerHumanCalls[0]['questionId']);
-        self::assertTrue($this->spyRunner->answerHumanCalls[0]['answer']);
-    }
-
-    public function testAnswerToolQuestionIsNotExpanded(): void
-    {
-        $this->writeTemplate('review', 'expanded:$@');
-
-        // No ToolQuestionStore is injected into the container, so the
-        // answer_tool_question path will throw. But we can still verify
-        // the branch is reached BEFORE any expansion would happen by
-        // catching the exception and checking no steer/followUp were made.
-        try {
-            $this->client()->send('run-1', new UserCommand(
-                type: 'answer_tool_question',
-                text: '/review yes',
-                payload: ['request_id' => 'req-1', 'answer' => true],
-            ));
-        } catch (\RuntimeException $e) {
-            // Expected: ToolQuestionStore not configured
-            self::assertStringContainsString('ToolQuestionStore', $e->getMessage());
-        }
-
-        // No expansion should have leaked into steer/followUp.
-        self::assertCount(0, $this->spyRunner->steerMessages);
-        self::assertCount(0, $this->spyRunner->followUpMessages);
-    }
-
-    // ── send() passthrough ────────────────────────────────────────
-
-    public function testSendPassthroughForNonMatchingSlash(): void
-    {
-        $this->writeTemplate('review', 'expanded:$@');
-
-        // Non-matching slash command passes through unchanged.
-        $this->client()->send('run-1', new UserCommand(type: 'message', text: '/nonexistent foo'));
-
-        self::assertCount(1, $this->spyRunner->steerMessages);
-        self::assertSame('/nonexistent foo', $this->msgText($this->spyRunner->steerMessages[0]));
-    }
-
-    // ── shell_command non-expansion ────────────────────────────────
-
-    public function testShellCommandIsNotExpanded(): void
-    {
-        $this->writeTemplate('review', 'expanded:$@');
-
-        // shell_command text must NOT be expanded — the raw command
-        // text is passed to the tool executor unchanged.
-        $this->client()->send('run-1', new UserCommand(
-            type: 'shell_command',
-            text: '/review rm -rf',
-        ));
-
-        self::assertNotNull($this->spyToolExecutor->lastToolCall);
-        self::assertSame('/review rm -rf', $this->spyToolExecutor->lastToolCall->arguments['command']);
-    }
 }
 
 /**
@@ -249,6 +241,10 @@ final class FakeCapturingAgentRunner implements AgentRunnerInterface
 
     /** @var list<AgentMessage> */
     public array $followUpMessages = [];
+
+    /** @var list<array{runId: string, rawInput: string}> */
+    public array $shellCalls = [];
+
     /** @var list<AgentMessage> */
     public array $appendMessages = [];
 
@@ -261,6 +257,7 @@ final class FakeCapturingAgentRunner implements AgentRunnerInterface
         $this->lastStartInput = null;
         $this->steerMessages = [];
         $this->followUpMessages = [];
+        $this->shellCalls = [];
         $this->answerHumanCalls = [];
     }
 
@@ -273,6 +270,11 @@ final class FakeCapturingAgentRunner implements AgentRunnerInterface
 
     public function continue(string $runId): void
     {
+    }
+
+    public function shell(string $runId, string $rawInput): void
+    {
+        $this->shellCalls[] = ['runId' => $runId, 'rawInput' => $rawInput];
     }
 
     public function steer(string $runId, AgentMessage $message): void
@@ -301,31 +303,5 @@ final class FakeCapturingAgentRunner implements AgentRunnerInterface
 
     public function compact(string $runId, ?string $customInstructions = null): void
     {
-    }
-}
-
-/**
- * @internal
- */
-final class FakeCapturingToolExecutor implements ToolExecutorInterface
-{
-    public ?ToolCall $lastToolCall = null;
-
-    /** Clear captured state between test methods. */
-    public function reset(): void
-    {
-        $this->lastToolCall = null;
-    }
-
-    public function execute(ToolCall $toolCall): ToolResult
-    {
-        $this->lastToolCall = $toolCall;
-
-        return new ToolResult(
-            toolCallId: $toolCall->toolCallId,
-            toolName: $toolCall->toolName,
-            content: [['type' => 'text', 'text' => 'ok']],
-            isError: false,
-        );
     }
 }

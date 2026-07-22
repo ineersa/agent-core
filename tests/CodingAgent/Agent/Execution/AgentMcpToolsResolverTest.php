@@ -11,10 +11,10 @@ use Ineersa\CodingAgent\Mcp\Catalog\McpToolCatalogDTO;
 use Ineersa\CodingAgent\Mcp\Catalog\McpToolCatalogStoreInterface;
 use Ineersa\CodingAgent\Mcp\Catalog\McpToolDefinitionDTO;
 use Ineersa\CodingAgent\Mcp\Config\McpConfigDTO;
-use Ineersa\CodingAgent\Tests\Support\Mcp\TestMcpConfigLoaderFactory;
 use Ineersa\CodingAgent\Mcp\Config\McpServerAvailabilityEnum;
 use Ineersa\CodingAgent\Mcp\Config\McpServerDefinitionDTO;
 use Ineersa\CodingAgent\Mcp\Config\McpTransportTypeEnum;
+use Ineersa\CodingAgent\Tests\Support\Mcp\TestMcpConfigLoaderFactory;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 
@@ -29,84 +29,143 @@ final class AgentMcpToolsResolverTest extends TestCase
         $resolver = $this->createResolver();
         $result = $resolver->resolve(null, 'parent-run');
 
-        self::assertSame([], $result['non_mcp_tools']);
-        self::assertSame(['context7_resolve'], $result['mcp_runtime_tools']);
-        self::assertSame('inherited_global', $result['mcp_policy']['mode']);
+        $this->assertSame([], $result['non_mcp_tools']);
+        $this->assertSame(['context7_resolve'], $result['mcp_runtime_tools']);
+        $this->assertSame(['context7_resolve', 'websearch_search'], $result['catalog_mcp_runtime_tools']);
+        $this->assertSame('inherited_global', $result['mcp_policy']['mode']);
     }
 
-    public function testExplicitToolsWithoutMcpSelectorsDeniesMcp(): void
+    public function testExplicitToolsInheritGlobalAvailabilityServers(): void
     {
         $resolver = $this->createResolver();
         $result = $resolver->resolve(['read', 'bash'], 'parent-run');
 
-        self::assertSame(['read', 'bash'], $result['non_mcp_tools']);
-        self::assertSame([], $result['mcp_runtime_tools']);
-        self::assertSame('none', $result['mcp_policy']['mode']);
+        $this->assertSame(['read', 'bash'], $result['non_mcp_tools']);
+        $this->assertSame(['context7_resolve'], $result['mcp_runtime_tools']);
+        $this->assertSame('inherited_global', $result['mcp_policy']['mode']);
+        $this->assertSame(['context7_resolve'], $result['mcp_policy']['tools']);
     }
 
-    public function testMcpDenySelector(): void
+    public function testRawCatalogRuntimeNamesCannotBypassSpecificAvailability(): void
     {
         $resolver = $this->createResolver();
-        $result = $resolver->resolve(['read', 'mcp:-'], 'parent-run');
+        $result = $resolver->resolve(['read', 'websearch_search', 'custom'], 'parent-run');
 
-        self::assertSame([], $result['mcp_runtime_tools']);
+        $this->assertSame(['read', 'custom'], $result['non_mcp_tools']);
+        $this->assertSame(['context7_resolve'], $result['mcp_runtime_tools']);
+        $this->assertSame('inherited_global', $result['mcp_policy']['mode']);
     }
 
-    public function testMcpStarAllowsSpecificServerTools(): void
+    public function testMcpDenySelectorWinsOverAllOtherSelectors(): void
+    {
+        $resolver = $this->createResolver();
+        $result = $resolver->resolve(['read', 'mcp:*', 'mcp:websearch_search', 'mcp:-'], 'parent-run');
+
+        $this->assertSame(['read'], $result['non_mcp_tools']);
+        $this->assertSame([], $result['mcp_runtime_tools']);
+        $this->assertSame('none', $result['mcp_policy']['mode']);
+        $this->assertSame([], $result['mcp_policy']['tools']);
+    }
+
+    public function testMcpStarKeepsOnlyGlobalAvailabilityTools(): void
     {
         $resolver = $this->createResolver();
         $result = $resolver->resolve(['mcp:*'], 'parent-run');
 
-        self::assertContains('context7_resolve', $result['mcp_runtime_tools']);
-        self::assertContains('websearch_search', $result['mcp_runtime_tools']);
-        self::assertSame('all', $result['mcp_policy']['mode']);
+        $this->assertSame(['context7_resolve'], $result['mcp_runtime_tools']);
+        $this->assertNotContains('websearch_search', $result['mcp_runtime_tools']);
+        $this->assertSame('all', $result['mcp_policy']['mode']);
+        $this->assertSame(['context7_resolve'], $result['mcp_policy']['tools']);
     }
 
-    public function testConcreteAndPrefixSelectors(): void
+    public function testMcpStarCombinedWithSpecificSelectorAddsOnlySelectedTools(): void
+    {
+        $resolver = $this->createResolver([
+            'websearch' => ['websearch_search', 'websearch_open'],
+        ]);
+        $result = $resolver->resolve(['mcp:*', 'mcp:websearch_search'], 'parent-run');
+
+        $this->assertSame(['context7_resolve', 'websearch_search'], $result['mcp_runtime_tools']);
+        $this->assertNotContains('websearch_open', $result['mcp_runtime_tools']);
+        $this->assertSame('specific', $result['mcp_policy']['mode']);
+    }
+
+    public function testConcreteAndTerminalStarPrefixSelectorsIncludeGlobalTools(): void
     {
         $resolver = $this->createResolver();
-        $result = $resolver->resolve(['mcp:websearch_search', 'mcp:context7_'], 'parent-run');
+        // Terminal-star is the only prefix wildcard; trailing `_` alone is no longer special.
+        $result = $resolver->resolve(['mcp:websearch_search', 'mcp:context7_*'], 'parent-run');
 
-        self::assertSame(['websearch_search', 'context7_resolve'], $result['mcp_runtime_tools']);
-        self::assertSame('specific', $result['mcp_policy']['mode']);
+        $this->assertSame(['context7_resolve', 'websearch_search'], $result['mcp_runtime_tools']);
+        $this->assertSame('specific', $result['mcp_policy']['mode']);
     }
 
-    private function createResolver(): AgentMcpToolsResolver
+    public function testTrailingUnderscoreSelectorIsExactNotPrefix(): void
     {
+        // Hand-built catalog name ending `_` proves the grammar: no terminal star => exact only.
+        // Old production code would expand `mcp:websearch_` as a prefix over every websearch_* tool.
+        $resolver = $this->createResolver([
+            'websearch' => ['websearch_', 'websearch_search'],
+        ]);
+
+        $result = $resolver->resolve(['mcp:websearch_'], 'parent-run');
+
+        $this->assertSame(['context7_resolve', 'websearch_'], $result['mcp_runtime_tools']);
+        $this->assertNotContains('websearch_search', $result['mcp_runtime_tools']);
+        $this->assertSame('specific', $result['mcp_policy']['mode']);
+    }
+
+    public function testEmbeddedOrMultipleStarsAreNotGlobs(): void
+    {
+        $resolver = $this->createResolver();
+
+        $embedded = $resolver->resolve(['mcp:web*search_search'], 'parent-run');
+        $this->assertSame(['context7_resolve'], $embedded['mcp_runtime_tools']);
+        $this->assertNotContains('websearch_search', $embedded['mcp_runtime_tools']);
+
+        $multi = $resolver->resolve(['mcp:websearch**'], 'parent-run');
+        $this->assertSame(['context7_resolve'], $multi['mcp_runtime_tools']);
+        $this->assertNotContains('websearch_search', $multi['mcp_runtime_tools']);
+    }
+
+    /**
+     * @param array<string, list<string>>|null $extraServerTools When non-null, provided server entries replace that server's default catalog runtime-name list (array_replace top-level semantics)
+     */
+    private function createResolver(?array $extraServerTools = null): AgentMcpToolsResolver
+    {
+        $defaultServerTools = [
+            'context7' => ['context7_resolve'],
+            'websearch' => ['websearch_search'],
+        ];
+        $serverTools = null === $extraServerTools
+            ? $defaultServerTools
+            : array_replace($defaultServerTools, $extraServerTools);
+
+        $servers = [];
+        foreach ($serverTools as $serverName => $hatfieldNames) {
+            $toolDefs = [];
+            foreach ($hatfieldNames as $hatfieldName) {
+                $toolDefs[] = new McpToolDefinitionDTO(
+                    hatfieldName: $hatfieldName,
+                    serverName: $serverName,
+                    mcpName: $hatfieldName,
+                    description: $hatfieldName,
+                    inputSchema: ['type' => 'object'],
+                );
+            }
+            $servers[$serverName] = new McpServerCatalogEntryDTO(
+                serverName: $serverName,
+                transport: 'http',
+                status: McpServerCatalogStatusEnum::CONNECTED,
+                tools: $toolDefs,
+            );
+        }
+
         $catalog = new McpToolCatalogDTO(
             runId: 'parent-run',
             generatedAt: '2026-01-01T00:00:00Z',
             configHash: 'hash',
-            servers: [
-                'context7' => new McpServerCatalogEntryDTO(
-                    serverName: 'context7',
-                    transport: 'http',
-                    status: McpServerCatalogStatusEnum::CONNECTED,
-                    tools: [
-                        new McpToolDefinitionDTO(
-                            hatfieldName: 'context7_resolve',
-                            serverName: 'context7',
-                            mcpName: 'resolve',
-                            description: 'ctx',
-                            inputSchema: ['type' => 'object'],
-                        ),
-                    ],
-                ),
-                'websearch' => new McpServerCatalogEntryDTO(
-                    serverName: 'websearch',
-                    transport: 'http',
-                    status: McpServerCatalogStatusEnum::CONNECTED,
-                    tools: [
-                        new McpToolDefinitionDTO(
-                            hatfieldName: 'websearch_search',
-                            serverName: 'websearch',
-                            mcpName: 'search',
-                            description: 'search',
-                            inputSchema: ['type' => 'object'],
-                        ),
-                    ],
-                ),
-            ],
+            servers: $servers,
         );
 
         $catalogStore = $this->createStub(McpToolCatalogStoreInterface::class);

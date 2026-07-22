@@ -12,6 +12,8 @@ use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
 use Ineersa\AgentCore\Domain\Message\ToolCallResult;
+use Ineersa\AgentCore\Domain\Run\HumanInputContinuationKindEnum;
+use Ineersa\AgentCore\Domain\Run\PendingHumanInputRequestDTO;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Symfony\Component\Messenger\Exception\ExceptionInterface;
@@ -67,6 +69,17 @@ final readonly class ToolCallResultHandler implements RunMessageHandler
             );
         }
 
+        // Suspension envelopes are non-terminal: admit (or ignore) them before the
+        // Cancelling ordinary-result branch so a null suspension body is never
+        // committed as tool output and no question is admitted while cancelling.
+        if ($message->isHumanInputSuspension()) {
+            if (RunStatus::Cancelling === $state->status) {
+                // Fall through to cancel synthesis with preserveIncoming=false.
+            } else {
+                return $this->handleHumanInputSuspension($message, $state);
+            }
+        }
+
         if (RunStatus::Cancelling === $state->status) {
             $eventSpecs = [];
             $messages = $state->messages;
@@ -74,7 +87,9 @@ final readonly class ToolCallResultHandler implements RunMessageHandler
             $pendingToolCalls = $state->pendingToolCalls;
             $resolvedCount = 0;
 
-            $preserveIncoming = \array_key_exists($message->toolCallId, $pendingToolCalls)
+            // Suspension is not a finished tool result — never preserve its null body.
+            $preserveIncoming = !$message->isHumanInputSuspension()
+                && \array_key_exists($message->toolCallId, $pendingToolCalls)
                 && false === $pendingToolCalls[$message->toolCallId];
 
             if ($preserveIncoming) {
@@ -154,6 +169,8 @@ final readonly class ToolCallResultHandler implements RunMessageHandler
                     'type' => RunEventTypeEnum::ToolBatchCommitted->value,
                     'payload' => [
                         'count' => $resolvedCount,
+                        'turn_no' => $state->turnNo,
+                        'step_id' => $message->stepId(),
                     ],
                 ];
             }
@@ -179,6 +196,7 @@ final readonly class ToolCallResultHandler implements RunMessageHandler
                 messages: $messages,
                 activeStepId: $state->activeStepId,
                 retryableFailure: false,
+                pendingHumanInputRequests: $state->pendingHumanInputRequests,
             );
 
             $postCommit = $this->turnCompletedCallbacks($runId, $state->turnNo);
@@ -196,7 +214,11 @@ final readonly class ToolCallResultHandler implements RunMessageHandler
 
         $outcome = $this->toolBatchCollector->collect($message);
         if ($outcome->duplicate) {
-            return new HandlerResult();
+            return new HandlerResult(markHandled: true);
+        }
+
+        if ($outcome->complete && $this->canonicalBatchAlreadyCommitted($state, $message, $outcome->orderedResults)) {
+            return new HandlerResult(markHandled: true);
         }
 
         if (!$outcome->accepted) {
@@ -246,7 +268,11 @@ final readonly class ToolCallResultHandler implements RunMessageHandler
 
         $messages = $state->messages;
         $effects = $outcome->effectsToDispatch;
-        $status = RunStatus::Running;
+        // Ordinary sibling results must not drop WaitingHuman while any request is still pending.
+        // Never produce Running with a non-empty pendingHumanInputRequests list.
+        $status = [] !== $state->pendingHumanInputRequests
+            ? RunStatus::WaitingHuman
+            : RunStatus::Running;
 
         $postCommit = [];
 
@@ -288,16 +314,23 @@ final readonly class ToolCallResultHandler implements RunMessageHandler
                 'type' => RunEventTypeEnum::ToolBatchCommitted->value,
                 'payload' => [
                     'count' => \count($outcome->orderedResults),
+                    'turn_no' => $message->turnNo(),
+                    'step_id' => $message->stepId(),
                 ],
             ];
 
             $pendingToolCalls = [];
 
+            $pendingHumanInputRequests = $state->pendingHumanInputRequests;
             if (null !== $interruptPayload) {
                 $status = RunStatus::WaitingHuman;
                 $eventSpecs[] = [
                     'type' => RunEventTypeEnum::WaitingHuman->value,
                     'payload' => $interruptPayload,
+                ];
+                // ask_human path: exactly one model-turn pending request for this interrupt.
+                $pendingHumanInputRequests = [
+                    PendingHumanInputRequestDTO::modelTurnFromInterruptPayload($interruptPayload),
                 ];
             }
 
@@ -309,6 +342,8 @@ final readonly class ToolCallResultHandler implements RunMessageHandler
                     $postCommit[] = $followUpAdvance;
                 }
             }
+        } else {
+            $pendingHumanInputRequests = $state->pendingHumanInputRequests;
         }
 
         $events = $this->eventFactory->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, $eventSpecs);
@@ -326,6 +361,7 @@ final readonly class ToolCallResultHandler implements RunMessageHandler
             messages: $messages,
             activeStepId: $state->activeStepId,
             retryableFailure: false,
+            pendingHumanInputRequests: $pendingHumanInputRequests,
         );
 
         return new HandlerResult(
@@ -334,6 +370,133 @@ final readonly class ToolCallResultHandler implements RunMessageHandler
             postCommitEffects: $effects,
             postCommit: $postCommit,
         );
+    }
+
+    private function handleHumanInputSuspension(ToolCallResult $message, RunState $state): HandlerResult
+    {
+        $request = $message->pendingHumanInput;
+        if (null === $request || HumanInputContinuationKindEnum::ToolCall !== $request->continuationKind) {
+            throw new \LogicException('ToolCallResult human-input suspension requires a ToolCall pending request.');
+        }
+
+        $refToolCallId = $request->continuationRef['tool_call_id'] ?? null;
+        if ((\is_string($refToolCallId) && '' !== $refToolCallId && $refToolCallId !== $message->toolCallId)
+            || $request->questionId !== ($request->payload['question_id'] ?? null)
+            || !\array_key_exists($message->toolCallId, $state->pendingToolCalls)
+            || true === $state->pendingToolCalls[$message->toolCallId]
+        ) {
+            throw new \LogicException(\sprintf('Cannot admit tool-execution suspension for invalid or resolved call "%s".', $message->toolCallId));
+        }
+
+        // Idempotency/conflict is keyed solely on tool_call_id. Question IDs need not be
+        // globally unique across a run — two different calls may share a question_id.
+        foreach ($state->pendingHumanInputRequests as $existing) {
+            if (HumanInputContinuationKindEnum::ToolCall !== $existing->continuationKind) {
+                continue;
+            }
+            $existingCallId = $existing->continuationRef['tool_call_id'] ?? null;
+            if ($existingCallId !== $message->toolCallId) {
+                continue;
+            }
+            if ($existing->questionId === $request->questionId
+                && $existing->payload === $request->payload
+                && $existing->continuationRef === $request->continuationRef
+            ) {
+                return new HandlerResult(nextState: null, events: []);
+            }
+
+            throw new \LogicException(\sprintf('Conflicting tool-execution suspension for call "%s": existing request "%s", new request "%s".', $message->toolCallId, $existing->questionId, $request->questionId));
+        }
+
+        $effects = $this->toolBatchCollector->admitHumanInputSuspension(
+            $message->runId(),
+            $message->turnNo(),
+            $message->stepId(),
+            $message->toolCallId,
+            $request->questionId,
+        );
+        $events = $this->eventFactory->eventsFromSpecs($message->runId(), $state->turnNo, $state->lastSeq + 1, [[
+            'type' => RunEventTypeEnum::WaitingHuman->value,
+            'payload' => $request->waitingHumanEventPayload(),
+        ]]);
+
+        // Capture pending request count before append so FIFO index of the newly admitted
+        // request is deterministic (equals count-before; append is always at the tail).
+        $pendingRequestCountBefore = \count($state->pendingHumanInputRequests);
+        $pendingHumanInputRequests = [...$state->pendingHumanInputRequests, $request];
+        \assert($pendingRequestCountBefore + 1 === \count($pendingHumanInputRequests));
+
+        return new HandlerResult(
+            nextState: new RunState(
+                runId: $state->runId,
+                status: RunStatus::WaitingHuman,
+                version: $state->version + 1,
+                turnNo: $state->turnNo,
+                lastSeq: $state->lastSeq + \count($events),
+                isStreaming: false,
+                streamingMessage: null,
+                pendingToolCalls: $state->pendingToolCalls,
+                errorMessage: $state->errorMessage,
+                messages: $state->messages,
+                activeStepId: $state->activeStepId,
+                retryableFailure: false,
+                pendingHumanInputRequests: $pendingHumanInputRequests,
+            ),
+            events: $events,
+            postCommitEffects: $effects,
+        );
+    }
+
+    /**
+     * @param list<ToolCallResult> $orderedResults
+     */
+    private function canonicalBatchAlreadyCommitted(RunState $state, ToolCallResult $message, array $orderedResults): bool
+    {
+        if ([] === $orderedResults) {
+            return false;
+        }
+
+        if ($state->turnNo !== $message->turnNo() || $state->activeStepId !== $message->stepId()) {
+            return false;
+        }
+
+        foreach ($orderedResults as $orderedResult) {
+            if (!$this->stateContainsCommittedToolResult($state, $orderedResult)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private function stateContainsCommittedToolResult(RunState $state, ToolCallResult $result): bool
+    {
+        foreach ($state->messages as $message) {
+            if ('tool' !== $message->role) {
+                continue;
+            }
+
+            if ($message->toolCallId !== $result->toolCallId) {
+                continue;
+            }
+
+            $orderIndex = $message->metadata['order_index'] ?? null;
+            if (!\is_int($orderIndex) || $orderIndex !== $result->orderIndex) {
+                continue;
+            }
+
+            if ($message->isError !== $result->isError) {
+                continue;
+            }
+
+            if ($message->details !== $result->result) {
+                continue;
+            }
+
+            return true;
+        }
+
+        return false;
     }
 
     /**

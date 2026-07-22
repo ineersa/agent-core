@@ -7,26 +7,28 @@ namespace Ineersa\Tui\Tests\Listener;
 use Doctrine\ORM\EntityManagerInterface;
 use Ineersa\CodingAgent\Entity\HatfieldSession;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
-use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\Tui\Command\CommandMetadata;
 use Ineersa\Tui\Command\CommandParser;
 use Ineersa\Tui\Command\DispatchRuntime;
 use Ineersa\Tui\Command\SlashCommand;
 use Ineersa\Tui\Command\SlashCommandHandler;
 use Ineersa\Tui\Command\SlashCommandRegistry;
+use Ineersa\Tui\Command\SubagentLiveInputPolicy;
 use Ineersa\Tui\Command\SubmissionRouter;
 use Ineersa\Tui\Editor\PromptEditor;
+use Ineersa\Tui\Listener\PromptHistory;
 use Ineersa\Tui\Listener\SubmitListener;
 use Ineersa\Tui\Question\QuestionController;
 use Ineersa\Tui\Question\QuestionCoordinator;
+use Ineersa\Tui\Question\QuestionKind;
+use Ineersa\Tui\Question\QuestionRequest;
+use Ineersa\Tui\Question\QuestionSource;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
-use Ineersa\Tui\Runtime\SubagentLiveChildDTO;
-use Ineersa\Tui\Command\SubagentLiveInputPolicy;
-use Ineersa\Tui\Runtime\SubagentLiveStatusEnum;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Screen\ChatScreen;
 use Ineersa\Tui\Tests\Support\TuiRuntimeContextBuilderTrait;
@@ -104,15 +106,15 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
 
         $this->client->expects($this->once())
             ->method('start')
-            ->with($this->callback(function (StartRunRequest $req): bool {
-                return $req->prompt === '/review foo bar';
+            ->with($this->callback(static function (StartRunRequest $req): bool {
+                return '/review foo bar' === $req->prompt;
             }))
             ->willReturn($expectedHandle);
 
         $this->dispatchSubmit('/review foo bar');
 
-        self::assertSame($expectedHandle, $this->state->handle);
-        self::assertSame(RunActivityStateEnum::Starting, $this->state->activity);
+        $this->assertSame($expectedHandle, $this->state->handle);
+        $this->assertSame(RunActivityStateEnum::Starting, $this->state->activity);
     }
 
     #[Test]
@@ -124,15 +126,15 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
 
         $this->client->expects($this->once())
             ->method('start')
-            ->with($this->callback(function (StartRunRequest $req): bool {
-                return $req->prompt === '/review expanded-target';
+            ->with($this->callback(static function (StartRunRequest $req): bool {
+                return '/review expanded-target' === $req->prompt;
             }))
             ->willReturn(new RunHandle('run-1'));
 
         $this->dispatchSubmit('/review expanded-target');
 
-        self::assertNotNull($this->state->request);
-        self::assertSame('/review expanded-target', $this->state->request->prompt);
+        $this->assertNotNull($this->state->request);
+        $this->assertSame('/review expanded-target', $this->state->request->prompt);
     }
 
     // ── DispatchRuntime sends steer while active ────────────────────
@@ -148,7 +150,7 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
             ->method('send')
             ->with(
                 'run-1',
-                $this->callback(function (UserCommand $cmd): bool {
+                $this->callback(static function (UserCommand $cmd): bool {
                     return 'steer' === $cmd->type && '/review foo' === $cmd->text;
                 }),
             );
@@ -165,7 +167,7 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
 
         $this->client->expects($this->once())
             ->method('send')
-            ->with('run-1', $this->callback(function (UserCommand $cmd): bool {
+            ->with('run-1', $this->callback(static function (UserCommand $cmd): bool {
                 return 'steer' === $cmd->type;
             }));
 
@@ -185,7 +187,7 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
             ->method('send')
             ->with(
                 'run-1',
-                $this->callback(function (UserCommand $cmd): bool {
+                $this->callback(static function (UserCommand $cmd): bool {
                     return 'follow_up' === $cmd->type && '/review follow' === $cmd->text;
                 }),
             );
@@ -193,7 +195,7 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
         $this->dispatchSubmit('/review follow');
 
         // Activity transitions to Starting after follow_up
-        self::assertSame(RunActivityStateEnum::Starting, $this->state->activity);
+        $this->assertSame(RunActivityStateEnum::Starting, $this->state->activity);
     }
 
     #[Test]
@@ -205,7 +207,7 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
 
         $this->client->expects($this->once())
             ->method('send')
-            ->with('run-1', $this->callback(function (UserCommand $cmd): bool {
+            ->with('run-1', $this->callback(static function (UserCommand $cmd): bool {
                 return 'follow_up' === $cmd->type;
             }));
 
@@ -227,7 +229,7 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
 
         $screen = $this->dispatchSubmit('/review error');
 
-        self::assertSame(RunActivityStateEnum::Failed, $this->state->activity);
+        $this->assertSame(RunActivityStateEnum::Failed, $this->state->activity);
     }
 
     #[Test]
@@ -243,10 +245,10 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
 
         $screen = $this->dispatchSubmit('/review error');
 
-        self::assertNotEmpty($this->state->transcript);
-        $lastBlock = $this->state->transcript[count($this->state->transcript) - 1];
-        self::assertStringContainsString('Runtime error:', $lastBlock->text);
-        self::assertStringContainsString('Connection lost', $lastBlock->text);
+        $this->assertNotEmpty($this->state->transcript);
+        $lastBlock = $this->state->transcript[\count($this->state->transcript) - 1];
+        $this->assertStringContainsString('Runtime error:', $lastBlock->text);
+        $this->assertStringContainsString('Connection lost', $lastBlock->text);
     }
 
     #[Test]
@@ -267,7 +269,7 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
         // is also cleared but there is no public ChatScreen API to query
         // it directly — the visual outcome is covered by the combination
         // of Failed state (this test) + error block (dispatchRuntimeErrorAddsErrorBlock).
-        self::assertSame(RunActivityStateEnum::Failed, $this->state->activity);
+        $this->assertSame(RunActivityStateEnum::Failed, $this->state->activity);
     }
 
     // ── Draft session promotion for DispatchRuntime ─────────────
@@ -286,10 +288,10 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
         $nextId = 1;
         $persisted = null;
         $em = $this->createMock(EntityManagerInterface::class);
-        $em->method('persist')->willReturnCallback(function ($entity) use (&$persisted) {
+        $em->method('persist')->willReturnCallback(static function ($entity) use (&$persisted) {
             $persisted = $entity;
         });
-        $em->method('flush')->willReturnCallback(function () use (&$persisted, &$nextId) {
+        $em->method('flush')->willReturnCallback(static function () use (&$persisted, &$nextId) {
             if ($persisted instanceof HatfieldSession) {
                 $persisted->id = $nextId++;
                 $persisted = null;
@@ -310,16 +312,16 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
 
         $this->client->expects($this->once())
             ->method('start')
-            ->with($this->callback(function (StartRunRequest $req): bool {
+            ->with($this->callback(static function (StartRunRequest $req): bool {
                 return '/review draft' === $req->prompt;
             }))
             ->willReturn(new RunHandle('draft-run-1'));
 
         $screen = $this->dispatchSubmit('/review draft', $sessionStore);
 
-        self::assertNotSame('', $this->state->sessionId, 'Draft sessionId should be promoted');
-        self::assertSame(RunActivityStateEnum::Starting, $this->state->activity);
-        self::assertNotNull($this->state->handle);
+        $this->assertNotSame('', $this->state->sessionId, 'Draft sessionId should be promoted');
+        $this->assertSame(RunActivityStateEnum::Starting, $this->state->activity);
+        $this->assertNotNull($this->state->handle);
     }
 
     // ── Shell restart path for DispatchRuntime ─────────────────
@@ -338,7 +340,7 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
 
         $this->client->expects($this->once())
             ->method('start')
-            ->with($this->callback(function (StartRunRequest $req): bool {
+            ->with($this->callback(static function (StartRunRequest $req): bool {
                 return '/review restart' === $req->prompt;
             }))
             ->willReturn(new RunHandle('fresh-run'));
@@ -348,9 +350,9 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
 
         $this->dispatchSubmit('/review restart');
 
-        self::assertFalse($this->state->isShellRun);
-        self::assertSame('fresh-run', $this->state->handle->runId);
-        self::assertSame(RunActivityStateEnum::Starting, $this->state->activity);
+        $this->assertFalse($this->state->isShellRun);
+        $this->assertSame('fresh-run', $this->state->handle->runId);
+        $this->assertSame(RunActivityStateEnum::Starting, $this->state->activity);
     }
 
     // ── Normal prompt still works after refactor ────────────────────
@@ -364,15 +366,15 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
 
         $this->client->expects($this->once())
             ->method('start')
-            ->with($this->callback(function (StartRunRequest $req): bool {
-                return $req->prompt === 'hello world';
+            ->with($this->callback(static function (StartRunRequest $req): bool {
+                return 'hello world' === $req->prompt;
             }))
             ->willReturn(new RunHandle('run-1'));
 
         $this->dispatchSubmit('hello world');
 
-        self::assertNotNull($this->state->handle);
-        self::assertSame(RunActivityStateEnum::Starting, $this->state->activity);
+        $this->assertNotNull($this->state->handle);
+        $this->assertSame(RunActivityStateEnum::Starting, $this->state->activity);
     }
 
     #[Test]
@@ -384,18 +386,17 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
 
         $this->client->expects($this->once())
             ->method('send')
-            ->with('run-1', $this->callback(function (UserCommand $cmd): bool {
+            ->with('run-1', $this->callback(static function (UserCommand $cmd): bool {
                 return 'follow_up' === $cmd->type && 'hello again' === $cmd->text;
             }));
 
         $this->dispatchSubmit('hello again');
     }
 
-
     // ── Subsequent shell on terminal run ───────────────────────────
 
     #[Test]
-    public function testSubsequentShellOnCompletedRunSendsStandaloneShellCommand(): void
+    public function testSubsequentShellOnCompletedRunSendsRawBangShellCommand(): void
     {
         $this->state->sessionId = 'test-session';
         $this->state->handle = new RunHandle('run-completed');
@@ -406,10 +407,10 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
             ->method('send')
             ->with(
                 'run-completed',
-                $this->callback(function (UserCommand $cmd): bool {
+                $this->callback(static function (UserCommand $cmd): bool {
                     return 'shell_command' === $cmd->type
-                        && 'ls -1' === $cmd->text
-                        && true === ($cmd->payload['standalone'] ?? false);
+                        && '!ls -1' === $cmd->text
+                        && [] === $cmd->payload;
                 }),
             );
 
@@ -427,14 +428,186 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
             ->method('send')
             ->with(
                 'run-active',
-                $this->callback(function (UserCommand $cmd): bool {
+                $this->callback(static function (UserCommand $cmd): bool {
                     return 'shell_command' === $cmd->type
-                        && 'pwd' === $cmd->text
+                        && '!pwd' === $cmd->text
                         && [] === $cmd->payload;
                 }),
             );
 
         $this->dispatchSubmit('!pwd');
+    }
+
+    #[Test]
+    public function parentHumanInputAnswerRoutesToParentRunOnMainView(): void
+    {
+        $parentRunId = 'parent-session-hitl';
+        $this->state->sessionId = $parentRunId;
+        $this->state->handle = new RunHandle($parentRunId);
+        $this->state->activity = RunActivityStateEnum::WaitingHuman;
+
+        $sent = null;
+        $client = $this->client;
+        $this->client->expects($this->once())->method('send')->willReturnCallback(
+            static function (string $runId, UserCommand $cmd) use (&$sent, $parentRunId): void {
+                $sent = [$runId, $cmd];
+                self::assertSame($parentRunId, $runId);
+            },
+        );
+
+        $this->questionCoordinator->enqueue(
+            new QuestionRequest(
+                requestId: 'parent_main_hitl',
+                source: QuestionSource::AgentCore,
+                kind: QuestionKind::Text,
+                prompt: 'Which docs file would you like me to inspect and summarize?',
+                schema: ['type' => 'string'],
+                runId: $parentRunId,
+                questionId: 'q_docs_parent',
+            ),
+            onAnswer: static function (mixed $answer) use ($client, $parentRunId): void {
+                $client->send($parentRunId, new UserCommand(
+                    type: 'answer_human',
+                    payload: [
+                        'question_id' => 'q_docs_parent',
+                        'answer' => \is_scalar($answer) ? (string) $answer : 'cancel',
+                    ],
+                ));
+            },
+        );
+
+        $this->dispatchSubmit('docs/agents.md');
+
+        $this->assertNotNull($sent);
+        $this->assertSame('answer_human', $sent[1]->type);
+        $this->assertSame('q_docs_parent', $sent[1]->payload['question_id'] ?? null);
+        $this->assertSame('docs/agents.md', $sent[1]->payload['answer'] ?? null);
+        $this->assertFalse($this->questionCoordinator->actionRequired());
+    }
+
+    #[Test]
+    public function normalPromptSubmitAppendsToPromptHistory(): void
+    {
+        $history = new PromptHistory();
+        $this->state->handle = null;
+        $this->state->sessionId = 'test-session';
+        $this->state->activity = RunActivityStateEnum::Idle;
+
+        $this->client->expects($this->once())
+            ->method('start')
+            ->willReturn(new RunHandle('run-1'));
+
+        $this->dispatchSubmit('plain user prompt', history: $history);
+
+        $this->assertSame(['plain user prompt'], $history->prompts());
+    }
+
+    #[Test]
+    public function dispatchRuntimeSlashSubmitAppendsUserTypedTextNotPayloadOnly(): void
+    {
+        $history = new PromptHistory();
+        $this->state->handle = null;
+        $this->state->sessionId = 'test-session';
+        $this->state->activity = RunActivityStateEnum::Idle;
+
+        $this->client->expects($this->once())
+            ->method('start')
+            ->willReturn(new RunHandle('run-1'));
+
+        $this->dispatchSubmit('/review foo bar', history: $history);
+
+        $this->assertSame(['/review foo bar'], $history->prompts());
+    }
+
+    #[Test]
+    #[AllowMockObjectsWithoutExpectations]
+    public function localSlashHelpDoesNotAppendToPromptHistory(): void
+    {
+        $history = new PromptHistory();
+        $registry = new SlashCommandRegistry();
+        $registry->register(
+            new CommandMetadata(
+                name: 'localonly',
+                description: 'Local only',
+                usage: '/localonly',
+                acceptsArguments: false,
+            ),
+            new class implements SlashCommandHandler {
+                public function handle(SlashCommand $command): \Ineersa\Tui\Command\TranscriptMessage
+                {
+                    return new \Ineersa\Tui\Command\TranscriptMessage('local', 'system');
+                }
+            },
+        );
+        $router = new SubmissionRouter(new CommandParser(), $registry);
+
+        $this->dispatchSubmit('/localonly', history: $history, router: $router);
+
+        $this->assertSame([], $history->prompts());
+    }
+
+    #[Test]
+    #[AllowMockObjectsWithoutExpectations]
+    public function dispatchRuntimeStartsRunForPreconfiguredDraftWithPastedImage(): void
+    {
+        $this->state->sessionId = '';
+        $this->state->handle = null;
+        $this->state->activity = RunActivityStateEnum::Idle;
+        $this->state->request = new StartRunRequest(
+            prompt: '',
+            runId: '',
+            cwd: $this->tempCwd,
+            options: [],
+            model: 'llama_cpp_test/test',
+            reasoning: 'off',
+        );
+
+        $nextId = 1;
+        $persisted = null;
+        $em = $this->createMock(EntityManagerInterface::class);
+        $em->method('persist')->willReturnCallback(static function ($entity) use (&$persisted) {
+            $persisted = $entity;
+        });
+        $em->method('flush')->willReturnCallback(static function () use (&$persisted, &$nextId) {
+            if ($persisted instanceof HatfieldSession) {
+                $persisted->id = $nextId++;
+                $persisted = null;
+            }
+        });
+        $em->method('find')->willReturn(null);
+
+        $sessionStore = new HatfieldSessionStore(
+            appConfig: new \Ineersa\CodingAgent\Config\AppConfig(
+                tui: new \Ineersa\CodingAgent\Config\TuiConfig(theme: 'default'),
+                logging: new \Ineersa\CodingAgent\Config\LoggingConfig(),
+                sessions: new \Ineersa\CodingAgent\Config\SessionsConfig(),
+                cwd: $this->tempCwd,
+            ),
+            entityManager: $em,
+        );
+
+        $png = file_get_contents(__DIR__.'/../E2E/fixtures/paste-test-1x1.png');
+        $this->assertNotFalse($png);
+        $staged = $this->tempCwd.'/staged-paste-1.png';
+        file_put_contents($staged, $png);
+        $this->state->pastedImagePendingByIndex[1] = new \Ineersa\Tui\ImagePaste\PastedImagePendingDTO(1, '[Image #1]', $staged);
+
+        $this->client->expects($this->once())
+            ->method('start')
+            ->with($this->callback(static function (StartRunRequest $req): bool {
+                return str_contains($req->prompt, 'view_image')
+                    && str_contains($req->prompt, 'attachments/pasted-image-1.png')
+                    && 'llama_cpp_test/test' === $req->model
+                    && 'off' === $req->reasoning;
+            }))
+            ->willReturn(new RunHandle('draft-paste-run'));
+
+        $this->dispatchSubmit('describe [Image #1]', $sessionStore);
+
+        $this->assertNotSame('', $this->state->sessionId);
+        $this->assertSame(RunActivityStateEnum::Starting, $this->state->activity);
+        $this->assertNotNull($this->state->handle);
+        $this->assertStringContainsString('view_image', $this->state->request->prompt ?? '');
     }
 
     // ── Helpers ─────────────────────────────────────────────────────
@@ -448,7 +621,7 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
      *
      * @return ChatScreen the screen after dispatch (for state inspection)
      */
-    private function dispatchSubmit(string $text, ?HatfieldSessionStore $sessionStore = null): ChatScreen
+    private function dispatchSubmit(string $text, ?HatfieldSessionStore $sessionStore = null, ?PromptHistory $history = null, ?SubmissionRouter $router = null): ChatScreen
     {
         $tui = new Tui();
         $theme = new DefaultTheme(new ThemePalette('test'));
@@ -472,12 +645,25 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
 
         $listener = new SubmitListener(
             sessionStore: $context->sessionStore,
-            submissionRouter: $this->router,
+            submissionRouter: $router ?? $this->router,
             blockFactory: new \Ineersa\Tui\Transcript\TranscriptBlockFactory(),
             coordinator: $this->questionCoordinator,
             questionController: $this->questionController,
             subagentLiveInputPolicy: new SubagentLiveInputPolicy(),
             logger: $this->logger,
+            history: $history ?? new PromptHistory(),
+            pastedImageSubmissionService: new \Ineersa\Tui\ImagePaste\PastedImageSubmissionService(
+                new \Ineersa\Tui\ImagePaste\PastedImageValidationService(new \Ineersa\CodingAgent\Config\ImageToolConfig(), new \Ineersa\AgentCore\Tests\Support\TestLogger()),
+                $context->sessionStore,
+                new \Ineersa\CodingAgent\Config\AppConfig(
+                    tui: new \Ineersa\CodingAgent\Config\TuiConfig(theme: 'default'),
+                    logging: new \Ineersa\CodingAgent\Config\LoggingConfig(),
+                    sessions: new \Ineersa\CodingAgent\Config\SessionsConfig(),
+                    cwd: $this->tempCwd,
+                ),
+                new \Ineersa\Tui\Transcript\TranscriptBlockFactory(),
+                new \Ineersa\AgentCore\Tests\Support\TestLogger(),
+            ),
         );
         $listener->register($context);
 
@@ -488,11 +674,10 @@ final class SubmitListenerDispatchRuntimeTest extends TestCase
         // value argument is secondary but required.
         $dispatcher = $tui->getEventDispatcher();
         $listeners = $dispatcher->getListeners(SubmitEvent::class);
-        self::assertNotEmpty($listeners, 'SubmitEvent listener was not registered');
+        $this->assertNotEmpty($listeners, 'SubmitEvent listener was not registered');
 
         ($listeners[0])(new SubmitEvent($promptEditor->getWidget(), $text));
 
         return $screen;
     }
-
 }

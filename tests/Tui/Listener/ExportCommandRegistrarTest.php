@@ -10,6 +10,7 @@ use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\Tui\Command\SlashCommandRegistry;
+use Ineersa\Tui\Export\SessionEventsExportService;
 use Ineersa\Tui\Listener\ExportCommandRegistrar;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
 use Ineersa\Tui\Runtime\TuiSessionState;
@@ -24,7 +25,7 @@ final class ExportCommandRegistrarTest extends TestCase
     public function registersExportCommandWithMetadata(): void
     {
         $registry = new SlashCommandRegistry();
-        $registrar = new ExportCommandRegistrar($registry);
+        $registrar = new ExportCommandRegistrar($registry, new SessionEventsExportService());
 
         $this->assertFalse($registry->has('export'), 'Export should not be registered yet');
 
@@ -45,7 +46,7 @@ final class ExportCommandRegistrarTest extends TestCase
     public function registersIdempotentlyWithoutThrowing(): void
     {
         $registry = new SlashCommandRegistry();
-        $registrar = new ExportCommandRegistrar($registry);
+        $registrar = new ExportCommandRegistrar($registry, new SessionEventsExportService());
 
         // First registration.
         $registrar->register($this->createContext());
@@ -64,7 +65,7 @@ final class ExportCommandRegistrarTest extends TestCase
     public function metadataDescriptionContainsExport(): void
     {
         $registry = new SlashCommandRegistry();
-        $registrar = new ExportCommandRegistrar($registry);
+        $registrar = new ExportCommandRegistrar($registry, new SessionEventsExportService());
         $registrar->register($this->createContext());
 
         $meta = $registry->getMetadata('export');
@@ -102,6 +103,7 @@ final class ExportCommandRegistrarTest extends TestCase
             ticks: (new \ReflectionClass(\Ineersa\Tui\Runtime\TuiTickDispatcher::class))->newInstanceWithoutConstructor(),
             switch: $this->createStub(\Ineersa\Tui\Runtime\Contract\TuiSessionSwitchServiceInterface::class),
             lifecycle: (new \ReflectionClass(\Ineersa\Tui\Runtime\TuiSessionLifecycleDispatcher::class))->newInstanceWithoutConstructor(),
+            turnTreeProvider: $this->createStub(\Ineersa\CodingAgent\Runtime\Contract\TurnTreeProviderInterface::class),
         );
     }
 }

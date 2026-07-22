@@ -27,7 +27,7 @@ use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
  *  - prompts    PromptsConfig (custom system/user prompt overrides)
  *  - compaction CompactionConfig (auto_enabled, compact_after_tokens, keep_recent_tokens, model, thinking_level, provider_overrides, model_overrides)
  *  - agents     AgentsConfig (enabled, paths)
- *  - forks      ForksConfigDTO (max_concurrent, default_level, levels)
+ *  - forks      ForksConfigDTO (model, thinking_level)
  *
  * The raw array is kept for forward compatibility with config keys
  * that do not yet have a typed DTO. Production consumers must use
@@ -75,7 +75,7 @@ final class AppConfig
         DenormalizerInterface $denormalizer,
         string $cwd,
     ): self {
-        $data = $loader->load($resources->getDefaultsPath(), $cwd);
+        $data = $loader->load($resources->getDefaultsPath(), $cwd)->effective;
         $ai = AiConfig::optionalFromArray($data);
 
         $catalog = null !== $ai ? new HatfieldModelCatalog($ai) : null;
@@ -173,32 +173,9 @@ final class AppConfig
     {
         $rawForks = (array) ($data['forks'] ?? []);
 
-        // Denormalize scalar properties (max_concurrent, default_level).
-        $forks = $denormalizer->denormalize(
+        return $denormalizer->denormalize(
             $rawForks,
             ForksConfigDTO::class,
         );
-
-        // Manually denormalize the levels sub-map.
-        if (isset($rawForks['levels']) && \is_array($rawForks['levels'])) {
-            $levels = [];
-            foreach ($rawForks['levels'] as $levelKey => $levelData) {
-                if (!\is_string($levelKey) || !\is_array($levelData)) {
-                    continue;
-                }
-                $levels[$levelKey] = $denormalizer->denormalize(
-                    $levelData,
-                    ForkLevelConfigDTO::class,
-                );
-            }
-
-            $forks = new ForksConfigDTO(
-                maxConcurrent: $forks->maxConcurrent,
-                defaultLevel: $forks->defaultLevel,
-                levels: $levels,
-            );
-        }
-
-        return $forks;
     }
 }

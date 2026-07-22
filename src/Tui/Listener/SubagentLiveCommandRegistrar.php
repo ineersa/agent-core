@@ -4,9 +4,12 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Listener;
 
+use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\Tui\Command\CommandMetadata;
 use Ineersa\Tui\Command\SlashCommandRegistry;
 use Ineersa\Tui\Picker\SubagentLivePickerController;
+use Ineersa\Tui\Question\QuestionController;
+use Ineersa\Tui\Question\QuestionCoordinator;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
 
 final class SubagentLiveCommandRegistrar implements TuiListenerRegistrar
@@ -14,12 +17,40 @@ final class SubagentLiveCommandRegistrar implements TuiListenerRegistrar
     public function __construct(
         private readonly SlashCommandRegistry $commandRegistry,
         private readonly SubagentLivePickerController $pickerController,
+        private readonly RuntimeQuestionEventHandler $runtimeQuestionEventHandler,
+        private readonly QuestionCoordinator $questionCoordinator,
+        private readonly QuestionController $questionController,
     ) {
     }
 
     public function register(TuiRuntimeContext $context): void
     {
-        $this->pickerController->setRuntimeRefs($context->tui, $context->screen, $context->state);
+        $client = $context->client;
+        $state = $context->state;
+        $screen = $context->screen;
+        $runtimeQuestionEventHandler = $this->runtimeQuestionEventHandler;
+        $questionCoordinator = $this->questionCoordinator;
+        $questionController = $this->questionController;
+
+        $onHumanInputRequested = static function (RuntimeEvent $event) use ($client, $questionCoordinator, $state, $screen, $runtimeQuestionEventHandler): void {
+            $runtimeQuestionEventHandler->handleHumanInputRequested($event, $client, $questionCoordinator, $state, $screen);
+        };
+        $onToolQuestionRequested = static function (RuntimeEvent $event) use ($client, $questionCoordinator, $state, $screen, $runtimeQuestionEventHandler): void {
+            $runtimeQuestionEventHandler->handleToolQuestionRequested($event, $client, $questionCoordinator, $state, $screen);
+        };
+        $onToolTerminal = static function (RuntimeEvent $event) use ($questionCoordinator, $questionController, $runtimeQuestionEventHandler): void {
+            $runtimeQuestionEventHandler->handleToolTerminal($event, $questionCoordinator, $questionController);
+        };
+
+        $this->pickerController->setRuntimeRefs(
+            $context->tui,
+            $context->screen,
+            $context->state,
+            $client,
+            onHumanInputRequested: $onHumanInputRequested,
+            onToolQuestionRequested: $onToolQuestionRequested,
+            onToolTerminal: $onToolTerminal,
+        );
 
         $liveHandler = new AgentsLiveCommandHandler($this->pickerController);
         if ($this->commandRegistry->has('agents-live')) {
@@ -28,7 +59,7 @@ final class SubagentLiveCommandRegistrar implements TuiListenerRegistrar
             $this->commandRegistry->register(
                 new CommandMetadata(
                     name: 'agents-live',
-                    description: 'Open readonly live view for a running subagent',
+                    description: 'Open interactive live view for a subagent',
                     usage: '/agents-live',
                     acceptsArguments: false,
                 ),
@@ -36,7 +67,8 @@ final class SubagentLiveCommandRegistrar implements TuiListenerRegistrar
             );
         }
 
-        $mainHandler = new AgentsMainCommandHandler($context->state, $context->screen);
+        $mainHandler = new AgentsMainCommandHandler($context->state, $context->screen, $client);
+
         if ($this->commandRegistry->has('agents-main')) {
             $this->commandRegistry->setHandler('agents-main', $mainHandler);
         } else {

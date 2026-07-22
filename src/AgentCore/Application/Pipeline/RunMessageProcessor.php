@@ -7,8 +7,8 @@ namespace Ineersa\AgentCore\Application\Pipeline;
 use Ineersa\AgentCore\Application\Handler\MessageIdempotencyService;
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Application\Handler\RunStateReplayException;
-use Ineersa\AgentCore\Application\Handler\RunStateReplayService;
 use Ineersa\AgentCore\Application\Handler\StepDispatcher;
+use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
 use Ineersa\AgentCore\Contract\RunStoreInterface;
 use Ineersa\AgentCore\Domain\Message\AbstractAgentBusMessage;
 use Ineersa\AgentCore\Domain\Run\RunState;
@@ -53,7 +53,7 @@ final readonly class RunMessageProcessor
         private StepDispatcher $stepDispatcher,
         iterable $handlers,
         private LoggerInterface $logger,
-        private ?RunStateReplayService $runStateReplayService = null,
+        private ?RunStateRebuilderInterface $runStateRebuilder = null,
     ) {
         $this->handlers = [...$handlers];
     }
@@ -106,9 +106,9 @@ final readonly class RunMessageProcessor
             // handler operates on a correct baseline.  This ensures that
             // state.json is a rebuildable hot checkpoint, not a required
             // source of truth.
-            if (null !== $this->runStateReplayService) {
+            if (null !== $this->runStateRebuilder) {
                 try {
-                    $replayResult = $this->runStateReplayService->rebuildIfStale($state, $runId);
+                    $replayResult = $this->runStateRebuilder->rebuildIfStale($state, $runId);
 
                     if ($replayResult->rebuilt && null !== $replayResult->rebuiltState) {
                         $state = $replayResult->rebuiltState;
@@ -121,8 +121,8 @@ final readonly class RunMessageProcessor
                         ]);
                     }
                 } catch (RunStateReplayException $replayException) {
-                    // Non-contiguous or corrupted history — fail explicitly
-                    // rather than continuing from a stale or queued state.
+                    // Corrupted history (e.g. duplicate sequence numbers) — fail explicitly
+                    // rather than continuing from a stale or queued state. Sequence gaps are tolerated by replay.
                     $this->logger->error('messenger.state.replay_failed', [
                         'run_id' => $runId,
                         'reason' => $replayException->getMessage(),
@@ -140,8 +140,17 @@ final readonly class RunMessageProcessor
                 RunLogContext::leave(); // retry_count
             }
 
-            // No state change — nothing to commit.
+            // No state change — still honor post-commit effects/callbacks (e.g. durable
+            // tool-call human-answer redrive after RunState already advanced).
             if (null === $result->nextState) {
+                if ([] !== $result->postCommitEffects) {
+                    $this->stepDispatcher->dispatchEffects($result->postCommitEffects);
+                }
+
+                foreach ($result->postCommit as $callback) {
+                    $callback();
+                }
+
                 if ($result->markHandled) {
                     $this->idempotency->markHandled($scope, $runId, $idempotencyKey);
                 }

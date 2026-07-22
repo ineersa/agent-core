@@ -10,11 +10,9 @@ use Ineersa\CodingAgent\Runtime\Protocol\TurnTreeView;
 use Ineersa\Tui\Runtime\Contract\TuiSessionSwitchServiceInterface;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Screen\ChatScreen;
-use Ineersa\Tui\Theme\ThemeColorEnum;
 use Ineersa\Tui\Theme\TuiTheme;
 use Symfony\Component\Tui\Event\CancelEvent;
 use Symfony\Component\Tui\Event\SelectEvent;
-use Symfony\Component\Tui\Event\SelectionChangeEvent;
 use Symfony\Component\Tui\Input\Key;
 use Symfony\Component\Tui\Input\Keybindings;
 use Symfony\Component\Tui\Tui;
@@ -105,12 +103,10 @@ final class TreePickerController
             'select_cancel' => [Key::ESCAPE, Key::ctrl('c')],
         ]);
 
-        // ── Build items ──
+        // ── Build items (static labels; SelectListWidget highlights selection) ──
         $theme = $screen->theme();
-        // Pre-compute the depth-first order of turn numbers for selection-change indexing
-        $flattenedOrder = self::flattenTurnOrder($tree);
         $initialSelectedIndex = self::initialSelectedIndex($tree);
-        $items = self::buildItems($tree, $theme, selectedIndex: $initialSelectedIndex);
+        $items = self::buildItems($tree, $theme);
 
         $listWidget = new SelectListWidget(
             items: $items,
@@ -119,28 +115,7 @@ final class TreePickerController
         );
         $listWidget->setSelectedIndex(max(0, $initialSelectedIndex));
 
-        // ── Arrows → rebuild items so newly selected row gets accent colour ──
-        // setSelectedIndex() does NOT re-dispatch SelectionChangeEvent
-        // (verified in SelectListWidget.php), so calling it after
-        // setItems() is safe and does not cause infinite recursion.
-        $listWidget->onSelectionChange(
-            static function (SelectionChangeEvent $event) use ($listWidget, $tree, $theme, $flattenedOrder): void {
-                $selectedValue = $event->getItem()['value'];
-                $selectedIdx = -1;
-
-                foreach ($flattenedOrder as $i => $turnNo) {
-                    if ((string) $turnNo === $selectedValue) {
-                        $selectedIdx = $i;
-
-                        break;
-                    }
-                }
-
-                $newItems = self::buildItems($tree, $theme, selectedIndex: $selectedIdx);
-                $listWidget->setItems($newItems);
-                $listWidget->setSelectedIndex(max(0, $selectedIdx));
-            },
-        );
+        $this->overlay = new PickerOverlay();
 
         // ── Enter → rewind (or no-op if current leaf) ──
         $picker = $this;
@@ -164,8 +139,6 @@ final class TreePickerController
             $picker->closePicker();
         });
 
-        // ── Mount via PickerOverlay ──
-        $this->overlay = new PickerOverlay();
         $this->overlay->mount($tui, $screen, $listWidget, $header);
     }
 
@@ -205,9 +178,9 @@ final class TreePickerController
      *
      * @return list<array{value: string, label: string}>
      */
-    public static function buildItems(TurnTreeView $tree, TuiTheme $theme, int $selectedIndex = -1): array
+    public static function buildItems(TurnTreeView $tree, TuiTheme $theme): array
     {
-        return self::walk($tree, $theme, $selectedIndex)[0];
+        return self::walk($tree, $theme)[0];
     }
 
     /**
@@ -248,23 +221,68 @@ final class TreePickerController
      *
      * @return array{0: list<array{value:string,label:string}>, 1: list<int>}
      */
-    private static function walk(TurnTreeView $tree, ?TuiTheme $theme = null, int $selectedIndex = -1): array
+    private static function walk(TurnTreeView $tree, ?TuiTheme $theme = null): array
     {
         $items = [];
         $order = [];
         $visited = [];
+        $creationRankByTurnNo = self::creationRankByTurnNo($tree->nodesByTurnNo);
 
         foreach ($tree->rootTurnNos as $rootTurnNo) {
-            self::walkNode($rootTurnNo, $tree->nodesByTurnNo, [], $items, $order, $visited, $theme, $selectedIndex);
+            self::walkNode(
+                $rootTurnNo,
+                $tree->nodesByTurnNo,
+                $creationRankByTurnNo,
+                [],
+                $items,
+                $order,
+                $visited,
+                $theme,
+            );
         }
 
         return [$items, $order];
     }
 
     /**
+     * Rank every node by canonical creation order: ascending anchorSeq, then turnNo.
+     *
+     * Sparse turn identities (max(lastSeq, turnNo)+1) are not ordinal depths, so
+     * "flat continuation" cannot mean childTurnNo === parentTurnNo + 1. Creation-rank
+     * adjacency is the stable substitute: an only-child is flat iff nothing else in
+     * the whole tree was created between parent and child.
+     *
+     * @param array<int, TurnTreeNodeView> $nodesByTurnNo
+     *
+     * @return array<int, int> turnNo => 0-based creation rank
+     */
+    private static function creationRankByTurnNo(array $nodesByTurnNo): array
+    {
+        $nodes = array_values($nodesByTurnNo);
+        usort(
+            $nodes,
+            static function (TurnTreeNodeView $a, TurnTreeNodeView $b): int {
+                if ($a->anchorSeq !== $b->anchorSeq) {
+                    return $a->anchorSeq <=> $b->anchorSeq;
+                }
+
+                return $a->turnNo <=> $b->turnNo;
+            },
+        );
+
+        $ranks = [];
+        foreach ($nodes as $rank => $node) {
+            $ranks[$node->turnNo] = $rank;
+        }
+
+        return $ranks;
+    }
+
+    /**
      * @param array<int, TurnTreeNodeView>           $nodesByTurnNo
-     * @param list<bool>                             $branchStack    Each entry is true if that ancestor is the last child of its parent (guide column uses space vs │)
-     * @param bool                                   $isContinuation When true, this node is a single-child continuation: render guide only, no fork glyph
+     * @param array<int, int>                        $creationRankByTurnNo turnNo => 0-based creation rank
+     * @param list<bool>                             $branchStack          Each entry is true if that ancestor is the last child of its parent (guide column uses space vs │)
+     * @param bool                                   $isContinuation       When true, this node is a single-child continuation: render guide only, no fork glyph
      * @param list<array{value:string,label:string}> $items
      * @param list<int>                              $order
      * @param array<int, true>                       $visited
@@ -272,12 +290,12 @@ final class TreePickerController
     private static function walkNode(
         int $turnNo,
         array $nodesByTurnNo,
+        array $creationRankByTurnNo,
         array $branchStack,
         array &$items,
         array &$order,
         array &$visited,
         ?TuiTheme $theme,
-        int $selectedIndex,
         bool $isContinuation = false,
     ): void {
         if (isset($visited[$turnNo])) {
@@ -308,16 +326,16 @@ final class TreePickerController
             }
 
             $leafMarker = $node->isCurrentLeaf ? '◉ ' : '○ ';
-            $label = $nodePrefix.$leafMarker.\sprintf(
-                'Turn %d: %s',
-                $node->turnNo,
-                mb_strimwidth($node->title, 0, 60, '…'),
-            );
-
-            $idx = \count($items);
-            if ($idx === $selectedIndex) {
-                $label = $theme->color(ThemeColorEnum::Accent, $label);
+            $body = PickerListLabelFormatter::sanitizeTitle($node->title);
+            if ('' === $body || preg_match('/^Turn \d+$/', $body)) {
+                $body = PickerListLabelFormatter::sanitizeTitle($node->promptPreview);
             }
+            if ('' === $body || preg_match('/^Turn \d+$/', $body)) {
+                $body = 'Turn '.$node->turnNo;
+            }
+            $role = $node->displayRole;
+            $prefix = PickerListLabelFormatter::formatRolePrefix($theme, $role);
+            $label = $nodePrefix.$leafMarker.$prefix.' '.$body;
 
             $items[] = [
                 'value' => (string) $node->turnNo,
@@ -328,14 +346,21 @@ final class TreePickerController
         $order[] = $node->turnNo;
 
         $childCount = \count($node->childTurnNos);
+        $parentRank = $creationRankByTurnNo[$turnNo] ?? null;
 
         foreach ($node->childTurnNos as $ci => $childTurnNo) {
-            // Flat continuation: the ONLY child AND a consecutive follow-up (turn_no = parent + 1).
-            // A rewind branch is non-consecutive (turn_no != parent + 1) and must fork — indent
-            // with ├─/└─ even when it is an only-child, so a lone branch is shown as a child,
-            // not a sibling. A fork point (2+ children) always indents every child.
-            $isConsecutiveFollowUp = $childTurnNo === $turnNo + 1;
-            $childIsContinuation = 1 === $childCount && $isConsecutiveFollowUp;
+            // Flat continuation: the ONLY child AND creation-order adjacent to the parent.
+            // Creation rank is derived from anchorSeq (tie-break turnNo), not turn identity
+            // arithmetic. Sparse linear parent→only child with no node created between them
+            // stays flat even when childTurnNo != parentTurnNo + 1. A lone rewind branch where
+            // another turn was created globally between parent and child must fork with ├─/└─
+            // even as an only-child, so it reads as a child rather than a sibling. A fork point
+            // (2+ children) always indents every child.
+            $childRank = $creationRankByTurnNo[$childTurnNo] ?? null;
+            $isCreationAdjacent = null !== $parentRank
+                && null !== $childRank
+                && $childRank === $parentRank + 1;
+            $childIsContinuation = 1 === $childCount && $isCreationAdjacent;
             $childPushesLevel = !$childIsContinuation;
 
             $childStack = $childPushesLevel
@@ -345,12 +370,12 @@ final class TreePickerController
             self::walkNode(
                 $childTurnNo,
                 $nodesByTurnNo,
+                $creationRankByTurnNo,
                 $childStack,
                 $items,
                 $order,
                 $visited,
                 $theme,
-                $selectedIndex,
                 $childIsContinuation,
             );
         }

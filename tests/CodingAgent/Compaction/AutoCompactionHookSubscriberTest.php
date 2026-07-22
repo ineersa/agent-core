@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Compaction;
 
-use Ineersa\AgentCore\Contract\Compaction\CompactResult;
 use Ineersa\AgentCore\Contract\Compaction\CompactionPrepareResult;
 use Ineersa\AgentCore\Contract\Compaction\CompactionServiceInterface;
+use Ineersa\AgentCore\Contract\Compaction\CompactResult;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\Extension\HookSubscriberInterface;
 use Ineersa\AgentCore\Contract\RunStoreInterface;
@@ -92,82 +92,13 @@ final class AutoCompactionHookSubscriberTest extends TestCase
         );
     }
 
-    private function createRunState(
-        array $messages = [],
-        ?string $activeStepId = null,
-        RunStatus $status = RunStatus::Running,
-    ): RunState {
-        return new RunState(
-            runId: 'run-1',
-            status: $status,
-            turnNo: 1,
-            messages: $messages,
-            activeStepId: $activeStepId,
-        );
-    }
-
-    private function createHookContext(array $eventTypes = [], int $effectsCount = 0): AfterTurnCommitHookContext
-    {
-        $events = array_map(
-            static fn (string $type): AfterTurnCommitEventSummary => new AfterTurnCommitEventSummary(seq: 1, type: $type),
-            $eventTypes,
-        );
-
-        return new AfterTurnCommitHookContext(
-            runId: 'run-1',
-            turnNo: 1,
-            status: 'running',
-            events: $events,
-            effectsCount: $effectsCount,
-        );
-    }
-
-    private function makeTextMessage(string $role, string $text): AgentMessage
-    {
-        return AgentMessage::fromPayload([
-            'content' => [['text' => $text]],
-            'role' => $role,
-        ]);
-    }
-
-    private function makeCompactSummaryMessage(string $text = 'Prior conversation summary.'): AgentMessage
-    {
-        return new AgentMessage(
-            role: 'user',
-            content: [['type' => 'text', 'text' => $text]],
-            metadata: ['compact_summary' => true],
-        );
-    }
-
-    /**
-     * Create a RunEvent stub for llm_step_completed with given input_tokens.
-     */
-    private function makeLlmStepCompletedEvent(int $inputTokens): RunEvent
-    {
-        return new RunEvent(
-            runId: 'run-1',
-            seq: 1,
-            turnNo: 1,
-            type: RunEventTypeEnum::LlmStepCompleted->value,
-            payload: [
-                'step_id' => 'step-1',
-                'stop_reason' => 'stop',
-                'usage' => [
-                    'input_tokens' => $inputTokens,
-                    'output_tokens' => 100,
-                    'total_tokens' => $inputTokens + 100,
-                ],
-            ],
-        );
-    }
-
     // ─────────────────────────────────────────────────────────────────
     //  Test: auto compaction triggers when provider usage exceeds threshold
     // ─────────────────────────────────────────────────────────────────
 
     public function testDispatchesAutoCompactWhenProviderUsageExceedsThreshold(): void
     {
-        $this->modelResolver->expects(self::once())
+        $this->modelResolver->expects($this->once())
             ->method('getActiveModel')
             ->willReturn(null);
 
@@ -176,7 +107,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
         ];
         $runState = $this->createRunState($messages);
 
-        $this->runStore->expects(self::once())
+        $this->runStore->expects($this->once())
             ->method('get')
             ->willReturn($runState);
 
@@ -186,8 +117,8 @@ final class AutoCompactionHookSubscriberTest extends TestCase
         $context = $this->createHookContext();
         $this->subscriber->handleAfterTurnCommit($context);
 
-        self::assertCount(1, $this->commandBus->messages);
-        self::assertSame('auto', $this->commandBus->messages[0]->trigger);
+        $this->assertCount(1, $this->commandBus->messages);
+        $this->assertSame('auto', $this->commandBus->messages[0]->trigger);
     }
 
     /**
@@ -196,7 +127,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
      */
     public function testDoesNotDispatchWhenProviderUsageBelowThreshold(): void
     {
-        $this->modelResolver->expects(self::once())
+        $this->modelResolver->expects($this->once())
             ->method('getActiveModel')
             ->willReturn(null);
 
@@ -205,7 +136,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
         ];
         $runState = $this->createRunState($messages);
 
-        $this->runStore->expects(self::once())
+        $this->runStore->expects($this->once())
             ->method('get')
             ->willReturn($runState);
 
@@ -215,7 +146,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
         $context = $this->createHookContext();
         $this->subscriber->handleAfterTurnCommit($context);
 
-        self::assertCount(0, $this->commandBus->messages);
+        $this->assertCount(0, $this->commandBus->messages);
     }
 
     /**
@@ -224,7 +155,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
      */
     public function testDoesNotDispatchWhenNoProviderUsageExists(): void
     {
-        $this->modelResolver->expects(self::once())
+        $this->modelResolver->expects($this->once())
             ->method('getActiveModel')
             ->willReturn(null);
 
@@ -233,7 +164,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
         ];
         $runState = $this->createRunState($messages);
 
-        $this->runStore->expects(self::once())
+        $this->runStore->expects($this->once())
             ->method('get')
             ->willReturn($runState);
 
@@ -244,7 +175,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
         $context = $this->createHookContext();
         $this->subscriber->handleAfterTurnCommit($context);
 
-        self::assertCount(0, $this->commandBus->messages);
+        $this->assertCount(0, $this->commandBus->messages);
     }
 
     // ─────────────────────────────────────────────────────────────────
@@ -269,7 +200,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
         $context = $this->createHookContext();
         $subscriber->handleAfterTurnCommit($context);
 
-        self::assertCount(0, $this->commandBus->messages);
+        $this->assertCount(0, $this->commandBus->messages);
     }
 
     // ─────────────────────────────────────────────────────────────────
@@ -281,7 +212,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
         $context = $this->createHookContext([RunEventTypeEnum::ContextCompactionStarted->value]);
         $this->subscriber->handleAfterTurnCommit($context);
 
-        self::assertCount(0, $this->commandBus->messages);
+        $this->assertCount(0, $this->commandBus->messages);
     }
 
     public function testSkipsWhenContextCompactedEventPresent(): void
@@ -289,7 +220,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
         $context = $this->createHookContext([RunEventTypeEnum::ContextCompacted->value]);
         $this->subscriber->handleAfterTurnCommit($context);
 
-        self::assertCount(0, $this->commandBus->messages);
+        $this->assertCount(0, $this->commandBus->messages);
     }
 
     public function testSkipsWhenContextCompactionFailedEventPresent(): void
@@ -297,7 +228,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
         $context = $this->createHookContext([RunEventTypeEnum::ContextCompactionFailed->value]);
         $this->subscriber->handleAfterTurnCommit($context);
 
-        self::assertCount(0, $this->commandBus->messages);
+        $this->assertCount(0, $this->commandBus->messages);
     }
 
     // ─────────────────────────────────────────────────────────────────
@@ -306,7 +237,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
 
     public function testSkipsWhenCompactionAlreadyInFlight(): void
     {
-        $this->modelResolver->expects(self::once())
+        $this->modelResolver->expects($this->once())
             ->method('getActiveModel')
             ->willReturn(null);
 
@@ -315,14 +246,14 @@ final class AutoCompactionHookSubscriberTest extends TestCase
         ];
         $runState = $this->createRunState($messages, activeStepId: 'compact-1234567890');
 
-        $this->runStore->expects(self::once())
+        $this->runStore->expects($this->once())
             ->method('get')
             ->willReturn($runState);
 
         $context = $this->createHookContext();
         $this->subscriber->handleAfterTurnCommit($context);
 
-        self::assertCount(0, $this->commandBus->messages);
+        $this->assertCount(0, $this->commandBus->messages);
     }
 
     // ─────────────────────────────────────────────────────────────────
@@ -344,11 +275,11 @@ final class AutoCompactionHookSubscriberTest extends TestCase
 
         // First call → dispatches.
         $this->subscriber->handleAfterTurnCommit($this->createHookContext());
-        self::assertCount(1, $this->commandBus->messages);
+        $this->assertCount(1, $this->commandBus->messages);
 
         // Second call → dedup prevents dispatch (inFlight guard).
         $this->subscriber->handleAfterTurnCommit($this->createHookContext());
-        self::assertCount(1, $this->commandBus->messages);
+        $this->assertCount(1, $this->commandBus->messages);
     }
 
     public function testDedupClearedAndEligibilityPreventsRedispatchOnStaleMeasurement(): void
@@ -391,7 +322,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
 
         // Stable commit: measurement is ineligible via event-log.
         $this->subscriber->handleAfterTurnCommit($this->createHookContext());
-        self::assertCount(0, $this->commandBus->messages,
+        $this->assertCount(0, $this->commandBus->messages,
             'Stale measurement (seq=1, attempt seq=5) must NOT trigger dispatch');
     }
 
@@ -409,7 +340,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
             ],
         );
         $modelResolver = $this->createMock(ActiveModelResolverInterface::class);
-        $modelResolver->expects(self::once())
+        $modelResolver->expects($this->once())
             ->method('getActiveModel')
             ->willReturn('openai/gpt-4');
 
@@ -427,7 +358,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
         ];
         $runState = $this->createRunState($messages);
 
-        $this->runStore->expects(self::once())
+        $this->runStore->expects($this->once())
             ->method('get')
             ->willReturn($runState);
 
@@ -437,7 +368,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
         $context = $this->createHookContext();
         $subscriber->handleAfterTurnCommit($context);
 
-        self::assertCount(0, $this->commandBus->messages);
+        $this->assertCount(0, $this->commandBus->messages);
     }
 
     // ─────────────────────────────────────────────────────────────────
@@ -452,7 +383,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
         $context = $this->createHookContext();
         $this->subscriber->handleAfterTurnCommit($context);
 
-        self::assertCount(0, $this->commandBus->messages);
+        $this->assertCount(0, $this->commandBus->messages);
     }
 
     // ─────────────────────────────────────────────────────────────────
@@ -461,7 +392,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
 
     public function testImplementsHookSubscriberInterface(): void
     {
-        self::assertInstanceOf(HookSubscriberInterface::class, $this->subscriber);
+        $this->assertInstanceOf(HookSubscriberInterface::class, $this->subscriber);
     }
 
     // ─────────────────────────────────────────────────────────────────
@@ -483,7 +414,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
         $context = $this->createHookContext([RunEventTypeEnum::RunStarted->value]);
         $this->subscriber->handleAfterTurnCommit($context);
 
-        self::assertCount(0, $this->commandBus->messages);
+        $this->assertCount(0, $this->commandBus->messages);
     }
 
     // ─────────────────────────────────────────────────────────────────
@@ -505,7 +436,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
         $context = $this->createHookContext(effectsCount: 2);
         $this->subscriber->handleAfterTurnCommit($context);
 
-        self::assertCount(0, $this->commandBus->messages);
+        $this->assertCount(0, $this->commandBus->messages);
     }
 
     // ─────────────────────────────────────────────────────────────────
@@ -547,7 +478,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
 
         // Post-lifecycle stable commit — measurement is ineligible → no dispatch.
         $this->subscriber->handleAfterTurnCommit($this->createHookContext());
-        self::assertCount(0, $this->commandBus->messages,
+        $this->assertCount(0, $this->commandBus->messages,
             'Stale provider measurement must NOT trigger dispatch after lifecycle. '
             .'Event-log eligibility (seq 1 <= attempt seq 5) replaces compactionResolved.');
     }
@@ -569,7 +500,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
 
         // Pre-condition: dispatch auto-compaction, then lifecycle sets resolved.
         $this->subscriber->handleAfterTurnCommit($this->createHookContext());
-        self::assertCount(1, $this->commandBus->messages);
+        $this->assertCount(1, $this->commandBus->messages);
 
         $lifecycleContext = $this->createHookContext([RunEventTypeEnum::ContextCompactionFailed->value]);
         $this->subscriber->handleAfterTurnCommit($lifecycleContext);
@@ -581,8 +512,8 @@ final class AutoCompactionHookSubscriberTest extends TestCase
 
         // After new turn, provider usage still > threshold → should dispatch again.
         $this->subscriber->handleAfterTurnCommit($this->createHookContext());
-        self::assertCount(2, $this->commandBus->messages);
-        self::assertSame('auto', $this->commandBus->messages[1]->trigger);
+        $this->assertCount(2, $this->commandBus->messages);
+        $this->assertSame('auto', $this->commandBus->messages[1]->trigger);
     }
 
     // ─────────────────────────────────────────────────────────────────
@@ -602,10 +533,10 @@ final class AutoCompactionHookSubscriberTest extends TestCase
 
         $this->subscriber->handleAfterTurnCommit($this->createHookContext());
 
-        self::assertCount(1, $this->commandBus->messages);
+        $this->assertCount(1, $this->commandBus->messages);
         $msg = $this->commandBus->messages[0];
-        self::assertInstanceOf(CompactRun::class, $msg);
-        self::assertSame('auto', $msg->trigger);
+        $this->assertInstanceOf(CompactRun::class, $msg);
+        $this->assertSame('auto', $msg->trigger);
     }
 
     // ─────────────────────────────────────────────────────────────────
@@ -677,7 +608,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
 
         $freshSubscriber->handleAfterTurnCommit($this->createHookContext());
 
-        self::assertCount(0, $this->commandBus->messages,
+        $this->assertCount(0, $this->commandBus->messages,
             'Failure-only auto marker at seq 79 must block dispatch from stale provider measurement at seq 74');
     }
 
@@ -713,7 +644,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
         );
         $this->subscriber->handleAfterTurnCommit($context);
 
-        self::assertCount(0, $this->commandBus->messages,
+        $this->assertCount(0, $this->commandBus->messages,
             'ToolExecutionStart commit must NOT dispatch CompactRun '
             .'even when provider usage exceeds threshold (effectsCount=0). '
             .'Tool dispatch via postCommit must proceed without interruption.');
@@ -759,7 +690,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
         );
         $this->subscriber->handleAfterTurnCommit($context);
 
-        self::assertCount(0, $this->commandBus->messages,
+        $this->assertCount(0, $this->commandBus->messages,
             'ToolBatchCommitted commit must NOT dispatch CompactRun '
             .'even when provider usage exceeds threshold (effectsCount=0). '
             .'The postCommit AdvanceRun must proceed without interruption.');
@@ -831,7 +762,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
             eventTypes: [RunEventTypeEnum::ContextCompactionStarted->value],
         );
         $this->subscriber->handleAfterTurnCommit($lifecycleContext);
-        self::assertCount(0, $this->commandBus->messages,
+        $this->assertCount(0, $this->commandBus->messages,
             'Lifecycle commit itself must not dispatch');
 
         // Step 2: a stable commit on a later turn — fresh eligible provider usage.
@@ -840,10 +771,10 @@ final class AutoCompactionHookSubscriberTest extends TestCase
 
         // On HEAD: compactionResolved prevents dispatch → 0 messages.
         // After fix: event-log eligibility allows dispatch → 1 message.
-        self::assertCount(1, $this->commandBus->messages,
+        $this->assertCount(1, $this->commandBus->messages,
             'Later turn with fresh eligible provider usage MUST dispatch auto-compaction. '
             .'compactionResolved on HEAD permanently blocks this.');
-        self::assertSame('auto', $this->commandBus->messages[0]->trigger);
+        $this->assertSame('auto', $this->commandBus->messages[0]->trigger);
     }
 
     // ─────────────────────────────────────────────────────────────────
@@ -880,7 +811,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
         );
         $this->subscriber->handleAfterTurnCommit($context);
 
-        self::assertCount(0, $this->commandBus->messages,
+        $this->assertCount(0, $this->commandBus->messages,
             'AgentCommandQueued commit must NOT dispatch CompactRun '
             .'even when provider usage exceeds threshold (effectsCount=0). '
             .'The pending follow_up command must not be raced by compaction.');
@@ -916,7 +847,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
         );
         $this->subscriber->handleAfterTurnCommit($context);
 
-        self::assertCount(0, $this->commandBus->messages,
+        $this->assertCount(0, $this->commandBus->messages,
             'AgentCommandApplied commit must NOT dispatch CompactRun '
             .'even when provider usage exceeds threshold (effectsCount=0). '
             .'The pending follow_up/steer command must not be raced by compaction.');
@@ -956,8 +887,11 @@ final class AutoCompactionHookSubscriberTest extends TestCase
                 private readonly AgentMessage $compactSummaryMsg,
                 private readonly AgentMessage $freshUserMsg,
                 private readonly AgentMessage $freshAssistantMsg,
-            ) {}
-            public function prepare(array $messages): CompactionPrepareResult {
+            ) {
+            }
+
+            public function prepare(array $messages): CompactionPrepareResult
+            {
                 return CompactionPrepareResult::ready(
                     messagesToSummarize: [$this->compactSummaryMsg],
                     retainedTailMessages: [$this->freshUserMsg, $this->freshAssistantMsg],
@@ -968,8 +902,26 @@ final class AutoCompactionHookSubscriberTest extends TestCase
                     priorSummaryPresent: true,
                 );
             }
-            public function buildSummarizationMessages(CompactionPrepareResult $result, ?string $customInstructions): array { return []; }
-            public function buildCompactedMessages(string $summaryText, CompactionPrepareResult $result): \Ineersa\AgentCore\Contract\Compaction\CompactResult { throw new \RuntimeException('not called'); }
+
+            public function buildSummarizationMessages(CompactionPrepareResult $result, ?string $customInstructions): array
+            {
+                return [];
+            }
+
+            public function buildCompactedMessages(string $summaryText, CompactionPrepareResult $result): CompactResult
+            {
+                throw new \RuntimeException('not called');
+            }
+
+            public function compactMessages(
+                string $runId,
+                int $turnNo,
+                array $messages,
+                string $trigger = 'manual',
+                ?string $customInstructions = null,
+            ): \Ineersa\AgentCore\Contract\Compaction\MessageSnapshotCompactionResult {
+                throw new \LogicException('compactMessages not expected in this test path.');
+            }
         };
 
         $summaryOnlySubscriber = new AutoCompactionHookSubscriber(
@@ -984,7 +936,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
         $context = $this->createHookContext();
         $summaryOnlySubscriber->handleAfterTurnCommit($context);
 
-        self::assertCount(0, $this->commandBus->messages,
+        $this->assertCount(0, $this->commandBus->messages,
             'Auto compaction must NOT dispatch when messagesToSummarize '
             .'contains only compact_summary messages (session 14 seq149 class).');
     }
@@ -1024,8 +976,11 @@ final class AutoCompactionHookSubscriberTest extends TestCase
                 private readonly AgentMessage $freshAssistantMsg,
                 private readonly AgentMessage $recentUserMsg,
                 private readonly AgentMessage $recentAssistantMsg,
-            ) {}
-            public function prepare(array $messages): CompactionPrepareResult {
+            ) {
+            }
+
+            public function prepare(array $messages): CompactionPrepareResult
+            {
                 return CompactionPrepareResult::ready(
                     messagesToSummarize: [$this->compactSummaryMsg, $this->freshUserMsg, $this->freshAssistantMsg],
                     retainedTailMessages: [$this->recentUserMsg, $this->recentAssistantMsg],
@@ -1036,8 +991,26 @@ final class AutoCompactionHookSubscriberTest extends TestCase
                     priorSummaryPresent: true,
                 );
             }
-            public function buildSummarizationMessages(CompactionPrepareResult $result, ?string $customInstructions): array { return []; }
-            public function buildCompactedMessages(string $summaryText, CompactionPrepareResult $result): CompactResult { throw new \RuntimeException('not called'); }
+
+            public function buildSummarizationMessages(CompactionPrepareResult $result, ?string $customInstructions): array
+            {
+                return [];
+            }
+
+            public function buildCompactedMessages(string $summaryText, CompactionPrepareResult $result): CompactResult
+            {
+                throw new \RuntimeException('not called');
+            }
+
+            public function compactMessages(
+                string $runId,
+                int $turnNo,
+                array $messages,
+                string $trigger = 'manual',
+                ?string $customInstructions = null,
+            ): \Ineersa\AgentCore\Contract\Compaction\MessageSnapshotCompactionResult {
+                throw new \LogicException('compactMessages not expected in this test path.');
+            }
         };
 
         $summaryPlusFreshSubscriber = new AutoCompactionHookSubscriber(
@@ -1052,11 +1025,11 @@ final class AutoCompactionHookSubscriberTest extends TestCase
         $context = $this->createHookContext();
         $summaryPlusFreshSubscriber->handleAfterTurnCommit($context);
 
-        self::assertCount(1, $this->commandBus->messages,
+        $this->assertCount(1, $this->commandBus->messages,
             'Auto compaction MUST dispatch when messagesToSummarize includes '
             .'fresh non-summary messages alongside prior compact_summary '
             .'(session 14 seq230 class).');
-        self::assertSame('auto', $this->commandBus->messages[0]->trigger);
+        $this->assertSame('auto', $this->commandBus->messages[0]->trigger);
     }
 
     /**
@@ -1081,11 +1054,30 @@ final class AutoCompactionHookSubscriberTest extends TestCase
 
         // Use anonymous class to guarantee the exact return value
         $failedService = new class implements CompactionServiceInterface {
-            public function prepare(array $messages): CompactionPrepareResult {
+            public function prepare(array $messages): CompactionPrepareResult
+            {
                 return CompactionPrepareResult::failed('too_few_messages');
             }
-            public function buildSummarizationMessages(CompactionPrepareResult $result, ?string $customInstructions): array { return []; }
-            public function buildCompactedMessages(string $summaryText, CompactionPrepareResult $result): CompactResult { throw new \RuntimeException('not called'); }
+
+            public function buildSummarizationMessages(CompactionPrepareResult $result, ?string $customInstructions): array
+            {
+                return [];
+            }
+
+            public function buildCompactedMessages(string $summaryText, CompactionPrepareResult $result): CompactResult
+            {
+                throw new \RuntimeException('not called');
+            }
+
+            public function compactMessages(
+                string $runId,
+                int $turnNo,
+                array $messages,
+                string $trigger = 'manual',
+                ?string $customInstructions = null,
+            ): \Ineersa\AgentCore\Contract\Compaction\MessageSnapshotCompactionResult {
+                throw new \LogicException('compactMessages not expected in this test path.');
+            }
         };
 
         $failedSubscriber = new AutoCompactionHookSubscriber(
@@ -1100,7 +1092,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
         $context = $this->createHookContext();
         $failedSubscriber->handleAfterTurnCommit($context);
 
-        self::assertCount(0, $this->commandBus->messages,
+        $this->assertCount(0, $this->commandBus->messages,
             'Auto compaction must silently skip when preparation is not ready.');
     }
 
@@ -1126,8 +1118,77 @@ final class AutoCompactionHookSubscriberTest extends TestCase
         $context = $this->createHookContext();
         $this->subscriber->handleAfterTurnCommit($context);
 
-        self::assertCount(0, $this->commandBus->messages,
+        $this->assertCount(0, $this->commandBus->messages,
             'Must skip without fatal when RunState is missing from store '
             .'— null $runState must not dereference in prepare().');
+    }
+
+    private function createRunState(
+        array $messages = [],
+        ?string $activeStepId = null,
+        RunStatus $status = RunStatus::Running,
+    ): RunState {
+        return new RunState(
+            runId: 'run-1',
+            status: $status,
+            turnNo: 1,
+            messages: $messages,
+            activeStepId: $activeStepId,
+        );
+    }
+
+    private function createHookContext(array $eventTypes = [], int $effectsCount = 0): AfterTurnCommitHookContext
+    {
+        $events = array_map(
+            static fn (string $type): AfterTurnCommitEventSummary => new AfterTurnCommitEventSummary(seq: 1, type: $type),
+            $eventTypes,
+        );
+
+        return new AfterTurnCommitHookContext(
+            runId: 'run-1',
+            turnNo: 1,
+            status: 'running',
+            events: $events,
+            effectsCount: $effectsCount,
+        );
+    }
+
+    private function makeTextMessage(string $role, string $text): AgentMessage
+    {
+        return AgentMessage::fromPayload([
+            'content' => [['text' => $text]],
+            'role' => $role,
+        ]);
+    }
+
+    private function makeCompactSummaryMessage(string $text = 'Prior conversation summary.'): AgentMessage
+    {
+        return new AgentMessage(
+            role: 'user',
+            content: [['type' => 'text', 'text' => $text]],
+            metadata: ['compact_summary' => true],
+        );
+    }
+
+    /**
+     * Create a RunEvent stub for llm_step_completed with given input_tokens.
+     */
+    private function makeLlmStepCompletedEvent(int $inputTokens): RunEvent
+    {
+        return new RunEvent(
+            runId: 'run-1',
+            seq: 1,
+            turnNo: 1,
+            type: RunEventTypeEnum::LlmStepCompleted->value,
+            payload: [
+                'step_id' => 'step-1',
+                'stop_reason' => 'stop',
+                'usage' => [
+                    'input_tokens' => $inputTokens,
+                    'output_tokens' => 100,
+                    'total_tokens' => $inputTokens + 100,
+                ],
+            ],
+        );
     }
 }

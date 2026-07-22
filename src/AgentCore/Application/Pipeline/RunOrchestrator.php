@@ -7,6 +7,7 @@ namespace Ineersa\AgentCore\Application\Pipeline;
 use Ineersa\AgentCore\Application\Handler\RunTracer;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\ApplyCommand;
+use Ineersa\AgentCore\Domain\Message\ApplyShellCommand;
 use Ineersa\AgentCore\Domain\Message\CompactionStepResult;
 use Ineersa\AgentCore\Domain\Message\CompactRun;
 use Ineersa\AgentCore\Domain\Message\LlmStepResult;
@@ -19,6 +20,7 @@ final readonly class RunOrchestrator
 {
     private const string ScopeStartRun = 'command.start';
     private const string ScopeApplyCommand = 'command.apply';
+    private const string ScopeApplyShellCommand = 'command.apply_shell';
     private const string ScopeAdvanceRun = 'command.advance';
     private const string ScopeLlmResult = 'result.llm';
     private const string ScopeToolResult = 'result.tool';
@@ -75,6 +77,17 @@ final readonly class RunOrchestrator
                 'step_id' => $message->stepId(),
                 'command_kind' => $message->kind,
             ], $handle, root: true);
+        });
+    }
+
+    /**
+     * Processes a direct bang shell command through the locked run pipeline.
+     */
+    #[AsMessageHandler(bus: 'agent.command.bus')]
+    public function onApplyShellCommand(ApplyShellCommand $message): void
+    {
+        $this->withLogContext($message->runId(), self::ScopeApplyShellCommand, function () use ($message): void {
+            $this->runMessageProcessor->process(self::ScopeApplyShellCommand, $message);
         });
     }
 

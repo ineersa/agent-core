@@ -14,7 +14,10 @@ use Ineersa\AgentCore\Contract\Tool\ToolExecutorInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolIdempotencyKeyResolverInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolResultProcessorInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolSetResolverInterface;
+use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
 use Ineersa\AgentCore\Domain\Tool\ToolCall;
+use Ineersa\AgentCore\Domain\Tool\ToolCallHumanInputAnswerDTO;
+use Ineersa\AgentCore\Domain\Tool\ToolExecutionHumanInputSuspension;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionPolicy;
 use Ineersa\AgentCore\Domain\Tool\ToolResult;
 use Symfony\AI\Agent\Toolbox\FaultTolerantToolbox;
@@ -22,6 +25,8 @@ use Symfony\AI\Agent\Toolbox\Source\SourceCollection;
 use Symfony\AI\Agent\Toolbox\ToolboxInterface;
 use Symfony\AI\Agent\Toolbox\ToolResult as SymfonyToolResult;
 use Symfony\AI\Platform\Result\ToolCall as SymfonyToolCall;
+use Symfony\Component\Clock\ClockInterface;
+use Symfony\Component\Clock\MonotonicClock;
 
 final class ToolExecutor implements ToolExecutorInterface
 {
@@ -31,6 +36,8 @@ final class ToolExecutor implements ToolExecutorInterface
 
     /** @var list<ToolResultProcessorInterface> */
     private readonly array $toolResultProcessors;
+
+    private readonly ClockInterface $clock;
 
     /**
      * @param iterable<ToolResultProcessorInterface> $toolResultProcessors
@@ -45,12 +52,14 @@ final class ToolExecutor implements ToolExecutorInterface
         private readonly ?StackToolExecutionContextAccessor $contextAccessor = null,
         private readonly ?ToolSetResolverInterface $toolSetResolver = null,
         iterable $toolResultProcessors = [],
+        ?ClockInterface $clock = null,
     ) {
         $this->policyResolver = new ToolExecutionPolicyResolver($defaultMode, $defaultTimeoutSeconds, $maxParallelism);
         $this->faultTolerantToolbox = null !== $toolbox ? new FaultTolerantToolbox($toolbox) : null;
         $this->toolResultProcessors = \is_array($toolResultProcessors)
             ? array_values($toolResultProcessors)
             : iterator_to_array($toolResultProcessors, false);
+        $this->clock = $clock ?? new MonotonicClock();
     }
 
     /**
@@ -64,6 +73,7 @@ final class ToolExecutor implements ToolExecutorInterface
         ?StackToolExecutionContextAccessor $contextAccessor = null,
         ?ToolSetResolverInterface $toolSetResolver = null,
         iterable $toolResultProcessors = [],
+        ?ClockInterface $clock = null,
     ): self {
         return new self(
             defaultMode: $settings->defaultMode(),
@@ -75,6 +85,7 @@ final class ToolExecutor implements ToolExecutorInterface
             contextAccessor: $contextAccessor,
             toolSetResolver: $toolSetResolver,
             toolResultProcessors: $toolResultProcessors,
+            clock: $clock,
         );
     }
 
@@ -131,7 +142,7 @@ final class ToolExecutor implements ToolExecutorInterface
             );
         }
 
-        $startedAt = hrtime(true);
+        $startedAt = $this->nowMicros();
 
         try {
             $result = $this->executeToolCall($toolCall, $policy);
@@ -165,7 +176,13 @@ final class ToolExecutor implements ToolExecutorInterface
             }
         }
 
-        $durationMs = (hrtime(true) - $startedAt) / 1_000_000;
+        $durationMs = ($this->nowMicros() - $startedAt) / 1000;
+
+        // Typed human-input suspension is not a completed tool result: skip timeout
+        // rewrite, cancel overwrite, and result-store remember.
+        if ($this->isHumanInputSuspension($result)) {
+            return $this->withExecutionMetadata($result, $policy, $toolIdempotencyKey, $durationMs);
+        }
 
         if (null !== $policy->timeoutSeconds && $durationMs > $policy->timeoutSeconds * 1000) {
             $result = $this->errorResult(
@@ -262,6 +279,8 @@ final class ToolExecutor implements ToolExecutorInterface
 
         $batchToolCallCount = max(1, (int) ($toolCall->context['assistant_batch_tool_call_count'] ?? 1));
 
+        $humanInputAnswer = $toolCall->context['human_input_answer'] ?? null;
+        $stepId = $toolCall->context['step_id'] ?? null;
         $context = new ToolContext(
             runId: $this->runId($toolCall) ?? '',
             turnNo: (int) ($toolCall->context['turn_no'] ?? 0),
@@ -272,6 +291,8 @@ final class ToolExecutor implements ToolExecutorInterface
             orderIndex: $toolCall->orderIndex,
             executionMode: $policy->mode,
             batchToolCallCount: $batchToolCallCount,
+            humanInputAnswer: $humanInputAnswer instanceof ToolCallHumanInputAnswerDTO ? $humanInputAnswer : null,
+            stepId: \is_string($stepId) && '' !== $stepId ? $stepId : null,
         );
 
         /** @var SymfonyToolResult $result */
@@ -286,19 +307,29 @@ final class ToolExecutor implements ToolExecutorInterface
 
         return new ToolExecutionPolicy(
             mode: $toolCall->mode ?? $resolved->mode,
-            timeoutSeconds: $this->resolveTimeoutSeconds($toolCall->timeoutSeconds, $resolved->timeoutSeconds),
+            // Per-call timeout from LlmStepResultHandler / ActiveToolSet wins when set.
+            // When null: non-subagent tools keep tools.execution.timeout_seconds post-hoc cap;
+            // subagent has no ToolExecutor cap (agents.subagent_tool_timeout_seconds internal poll).
+            timeoutSeconds: $this->resolveTimeoutSeconds($toolCall->toolName, $toolCall->timeoutSeconds, $resolved->timeoutSeconds),
             maxParallelism: max(1, (int) ($toolCall->context['max_parallelism'] ?? $resolved->maxParallelism)),
         );
     }
 
-    private function resolveTimeoutSeconds(?int $callTimeout, ?int $resolvedTimeout): ?int
+    private function resolveTimeoutSeconds(string $toolName, ?int $callTimeout, ?int $resolvedTimeout): ?int
     {
-        $effective = $callTimeout ?? $resolvedTimeout;
-        if (null === $effective || $effective <= 0) {
+        if (null !== $callTimeout && $callTimeout > 0) {
+            return max(1, $callTimeout);
+        }
+
+        if ('subagent' === $toolName) {
             return null;
         }
 
-        return max(1, $effective);
+        if (null === $resolvedTimeout || $resolvedTimeout <= 0) {
+            return null;
+        }
+
+        return max(1, $resolvedTimeout);
     }
 
     private function rememberAndReturn(
@@ -376,6 +407,36 @@ final class ToolExecutor implements ToolExecutorInterface
     private function toDomainResult(ToolCall $toolCall, SymfonyToolResult $toolboxResult): ToolResult
     {
         $rawResult = $toolboxResult->getResult();
+
+        if ($rawResult instanceof DeferredToolCompletionOutcome) {
+            return new ToolResult(
+                toolCallId: $toolCall->toolCallId,
+                toolName: $toolCall->toolName,
+                content: [[
+                    'type' => 'text',
+                    'text' => 'Tool execution deferred.',
+                ]],
+                details: [
+                    'raw_result' => $rawResult,
+                ],
+                isError: false,
+            );
+        }
+
+        if ($rawResult instanceof ToolExecutionHumanInputSuspension) {
+            return new ToolResult(
+                toolCallId: $toolCall->toolCallId,
+                toolName: $toolCall->toolName,
+                content: [[
+                    'type' => 'text',
+                    'text' => 'Tool execution suspended for human input.',
+                ]],
+                details: [
+                    'raw_result' => $rawResult,
+                ],
+                isError: false,
+            );
+        }
 
         $details = [
             'raw_result' => $rawResult,
@@ -530,5 +591,24 @@ final class ToolExecutor implements ToolExecutorInterface
         $encoded = json_encode($result, \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE);
 
         return false === $encoded ? '{}' : $encoded;
+    }
+
+    private function isHumanInputSuspension(ToolResult $result): bool
+    {
+        $details = $result->details;
+        if (!\is_array($details)) {
+            return false;
+        }
+
+        return ($details['raw_result'] ?? null) instanceof ToolExecutionHumanInputSuspension;
+    }
+
+    private function nowMicros(): int
+    {
+        $instant = $this->clock->now();
+        $seconds = (int) $instant->format('U');
+        $micro = (int) $instant->format('u');
+
+        return ($seconds * 1_000_000) + $micro;
     }
 }

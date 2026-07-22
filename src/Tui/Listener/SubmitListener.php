@@ -19,10 +19,14 @@ use Ineersa\Tui\Command\StatusUpdate;
 use Ineersa\Tui\Command\SubagentLiveInputPolicy;
 use Ineersa\Tui\Command\SubmissionRouter;
 use Ineersa\Tui\Command\TranscriptMessage;
+use Ineersa\Tui\ImagePaste\PastedImagePlaceholderFormatter;
+use Ineersa\Tui\ImagePaste\PastedImageSubmissionService;
 use Ineersa\Tui\Question\QuestionController;
 use Ineersa\Tui\Question\QuestionCoordinator;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
+use Ineersa\Tui\Runtime\SubagentLiveAttention;
 use Ineersa\Tui\Runtime\TuiRuntimeContext;
+use Ineersa\Tui\Runtime\TuiSessionLifecycleDispatcher;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Screen\ChatScreen;
 use Ineersa\Tui\Transcript\HotkeyTableRenderer;
@@ -52,6 +56,8 @@ final class SubmitListener implements TuiListenerRegistrar
         private readonly QuestionController $questionController,
         private readonly SubagentLiveInputPolicy $subagentLiveInputPolicy,
         private readonly LoggerInterface $logger,
+        private readonly PromptHistory $history,
+        private readonly PastedImageSubmissionService $pastedImageSubmissionService,
     ) {
     }
 
@@ -70,13 +76,16 @@ final class SubmitListener implements TuiListenerRegistrar
 
         $logger = $this->logger;
         $subagentLiveInputPolicy = $this->subagentLiveInputPolicy;
+        $lifecycle = $context->lifecycle;
+        $history = $this->history;
+        $pastedImageSubmissionService = $this->pastedImageSubmissionService;
 
         // Wire the question controller with TUI runtime references
         $questionController->setRuntimeRefs($context, $screen);
 
         $context->tui->addListener(static function (SubmitEvent $event) use (
             $client, $sessionStore, $state, $screen, $tui, $router, $blockFactory,
-            $questionCoordinator, $questionController, $subagentLiveInputPolicy, $logger,
+            $questionCoordinator, $questionController, $subagentLiveInputPolicy, $logger, $lifecycle, $history, $pastedImageSubmissionService,
         ) {
             $text = $screen->extract();
             if ('' === $text) {
@@ -85,8 +94,22 @@ final class SubmitListener implements TuiListenerRegistrar
 
             // ── Question interception: route editor text to active question ──
             if ($questionCoordinator->actionRequired()) {
+                if ($state->subagentLiveView->active && $subagentLiveInputPolicy->isAllowedLiveViewNavigationSlash($text)) {
+                    $commandResult = $router->route($text);
+                    if (null !== $commandResult && !($commandResult instanceof DispatchRuntime) && !($commandResult instanceof DispatchShellCommand)) {
+                        self::applyCommandResult($commandResult, $state, $screen, $sessionStore, $tui, $blockFactory);
+
+                        return;
+                    }
+                }
+
+                $active = $questionCoordinator->activeRequest();
+                $answerRunId = null !== $active ? $active->runId : null;
                 $questionCoordinator->answer($text);
                 $questionController->close();
+                if (null !== $answerRunId && '' !== $answerRunId) {
+                    SubagentLiveAttention::clearWaitingHumanForRun($state, $screen, $answerRunId);
+                }
 
                 return;
             }
@@ -120,9 +143,10 @@ final class SubmitListener implements TuiListenerRegistrar
             if (null !== $commandResult) {
                 // ── Shell command — dispatch to runtime for execution ──
                 if ($commandResult instanceof DispatchShellCommand) {
+                    $history->append($commandResult->rawInput);
                     self::handleShellCommand(
                         $commandResult, $state, $screen, $sessionStore,
-                        $blockFactory, $client, $logger,
+                        $blockFactory, $client, $logger, $lifecycle,
                     );
 
                     return;
@@ -130,9 +154,10 @@ final class SubmitListener implements TuiListenerRegistrar
 
                 // ── DispatchRuntime — forward payload to runtime ──
                 if ($commandResult instanceof DispatchRuntime) {
+                    $history->append($text);
                     self::dispatchToRuntime(
                         $commandResult->payload, $state, $screen,
-                        $sessionStore, $blockFactory, $client, $logger, $tui,
+                        $sessionStore, $blockFactory, $client, $logger, $tui, $lifecycle, $pastedImageSubmissionService,
                     );
 
                     return;
@@ -148,7 +173,8 @@ final class SubmitListener implements TuiListenerRegistrar
             // No local echo or persistence: canonical runtime events project
             // user blocks (avoiding duplicate block IDs), and events.jsonl is
             // the single source of truth for transcript replay on resume.
-            self::dispatchToRuntime($text, $state, $screen, $sessionStore, $blockFactory, $client, $logger, $tui);
+            $history->append($text);
+            self::dispatchToRuntime($text, $state, $screen, $sessionStore, $blockFactory, $client, $logger, $tui, $lifecycle, $pastedImageSubmissionService);
         });
     }
 
@@ -235,42 +261,69 @@ final class SubmitListener implements TuiListenerRegistrar
         \Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient $client,
         LoggerInterface $logger,
         Tui $tui,
+        TuiSessionLifecycleDispatcher $lifecycle,
+        PastedImageSubmissionService $pastedImageSubmissionService,
     ): void {
-        // Show immediate visual feedback (◐ Working...) before heavy
-        // synchronous work (session creation, system prompt discovery,
-        // skills context building, runner start).  Force a terminal
-        // repaint so the user sees the indicator instantly instead of
-        // staring at a blank editor until the work completes.
-        $screen->setWorkingMessage('Working...');
         try {
-            $tui->requestRender();
-            $tui->processRender();
-        } catch (\Throwable $e) {
-            // Non-fatal: render may fail if the terminal is in a
-            // transient state.  The next tick will render normally.
-            $logger->debug('SubmitListener: immediate render failed (non-fatal)', [
-                'component' => 'SubmitListener',
-                'exception' => $e,
-                'session_id' => $state->sessionId,
-            ]);
-        }
+            // Capture first-run intent before pasted-image promotion may create a session id
+            // (e.g. lazy /new --model draft still has handle=null and a preconfigured request).
+            $shouldStartFirstRun = null === $state->handle
+                && (null === $state->request || '' === $state->sessionId);
 
-        try {
+            $text = self::promotePastedImagesInPrompt(
+                $text,
+                $state,
+                $screen,
+                $blockFactory,
+                $sessionStore,
+                $pastedImageSubmissionService,
+                $logger,
+                $lifecycle,
+            );
+            if (null === $text) {
+                return;
+            }
+
+            // Drop the transient reasoning-level notice from the status panel once
+            // pre-dispatch validation succeeded and we are about to attempt a turn
+            // (runtime dispatch may still fail afterward).
+            // Selected reasoning and editor/footer styling are unchanged (panel-only entry).
+            $screen->clearTransientReasoningNotice();
+
+            // Show immediate visual feedback (◐ Working...) before heavy
+            // synchronous work (session creation, system prompt discovery,
+            // skills context building, runner start).  Force a terminal
+            // repaint so the user sees the indicator instantly instead of
+            // staring at a blank editor until the work completes.
+            $screen->setWorkingMessage('Working...');
+            try {
+                $tui->requestRender();
+                $tui->processRender();
+            } catch (\Throwable $e) {
+                // Non-fatal: render may fail if the terminal is in a
+                // transient state.  The next tick will render normally.
+                $logger->debug('SubmitListener: immediate render failed (non-fatal)', [
+                    'component' => 'SubmitListener',
+                    'exception' => $e,
+                    'session_id' => $state->sessionId,
+                ]);
+            }
+
             // Start a run if this is the first message
-            if (null === $state->handle && (null === $state->request || '' === $state->sessionId)) {
+            if ($shouldStartFirstRun) {
                 // ── Draft session promotion ──
                 // If this is a lazy draft (sessionId === ''), create the
                 // real session row now so no orphan records are left when
                 // /new is typed but never followed by a message.
-                if ('' === $state->sessionId) {
-                    $state->sessionId = $sessionStore->createSession($text);
-                    $screen->updateSessionId($state->sessionId);
-                    $logger->info('Draft session promoted to real session', [
-                        'component' => 'SubmitListener',
-                        'event_type' => 'draft_promoted',
-                        'session_id' => $state->sessionId,
-                    ]);
-                }
+                self::ensureRealSessionForSubmit(
+                    $text,
+                    $state,
+                    $screen,
+                    $sessionStore,
+                    $lifecycle,
+                    $logger,
+                    'draft_promoted',
+                );
 
                 // Merge any pre-configured draft request (e.g. from /new --model)
                 // with the submitted text so model/reasoning metadata carries
@@ -396,10 +449,88 @@ final class SubmitListener implements TuiListenerRegistrar
      * input. Shell commands do not invoke the LLM — output is projected
      * through tool_execution events in the transcript.
      *
-     * Adds a user-message transcript block with the original submitted
-     * text (including the `!` prefix) so the prompt history navigator
-     * can recall shell commands via Up/Down.
+     * The raw input is appended to editor history; the transcript line is
+     * projected from the canonical runtime command event.
      */
+
+    /**
+     * Create a real session row when the TUI is still on a lazy draft (empty session id).
+     */
+    private static function ensureRealSessionForSubmit(
+        string $seedPrompt,
+        TuiSessionState $state,
+        ChatScreen $screen,
+        HatfieldSessionStore $sessionStore,
+        TuiSessionLifecycleDispatcher $lifecycle,
+        LoggerInterface $logger,
+        string $eventType,
+    ): void {
+        if ('' !== $state->sessionId) {
+            return;
+        }
+
+        $state->sessionId = $sessionStore->createSession($seedPrompt);
+        $screen->updateSessionId($state->sessionId);
+        $lifecycle->dispatch(new \Ineersa\Tui\Runtime\TuiSessionLifecycleEventDTO(
+            type: \Ineersa\Tui\Runtime\TuiSessionLifecycleEventTypeEnum::SessionStarted,
+            sessionId: $state->sessionId,
+            isDraft: false,
+            resuming: false,
+        ));
+        $logger->info('Draft session promoted to real session', [
+            'component' => 'SubmitListener',
+            'event_type' => $eventType,
+            'session_id' => $state->sessionId,
+        ]);
+    }
+
+    /**
+     * Promote pasted image placeholders once a session id exists (draft promotion when needed).
+     */
+    private static function promotePastedImagesInPrompt(
+        string $text,
+        TuiSessionState $state,
+        ChatScreen $screen,
+        TranscriptBlockFactory $blockFactory,
+        HatfieldSessionStore $sessionStore,
+        PastedImageSubmissionService $pastedImageSubmissionService,
+        LoggerInterface $logger,
+        TuiSessionLifecycleDispatcher $lifecycle,
+    ): ?string {
+        if (null !== $state->pastedImagePasteInProgressIndex) {
+            $inFlightPlaceholder = PastedImagePlaceholderFormatter::placeholder($state->pastedImagePasteInProgressIndex);
+            if (str_contains($text, $inFlightPlaceholder)) {
+                $state->transcript[] = $blockFactory->system(
+                    runId: '' !== $state->sessionId ? $state->sessionId : 'draft',
+                    text: 'Image paste is still being read from the clipboard. Wait a moment, then submit again.',
+                    seq: \count($state->transcript) + 1,
+                    style: 'info',
+                );
+                $screen->setTranscriptBlocks($state->transcript);
+                $screen->requestRender();
+
+                return null;
+            }
+        }
+
+        if (!$pastedImageSubmissionService->textContainsPlaceholder($text)
+            && [] === $state->pastedImagePendingByIndex) {
+            return $text;
+        }
+
+        self::ensureRealSessionForSubmit(
+            $text,
+            $state,
+            $screen,
+            $sessionStore,
+            $lifecycle,
+            $logger,
+            'draft_promoted_paste',
+        );
+
+        return $pastedImageSubmissionService->resolveSubmittedText($text, $state, $screen);
+    }
+
     private static function handleShellCommand(
         DispatchShellCommand $shellCommand,
         TuiSessionState $state,
@@ -408,12 +539,20 @@ final class SubmitListener implements TuiListenerRegistrar
         TranscriptBlockFactory $blockFactory,
         \Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient $client,
         LoggerInterface $logger,
+        TuiSessionLifecycleDispatcher $lifecycle,
     ): void {
         try {
+            // Shell commands do not promote [Image #N] placeholders — image paste is chat-submit only.
             // Create a session if this is the first input.
             if ('' === $state->sessionId) {
-                $state->sessionId = $sessionStore->createSession('!'.$shellCommand->command);
+                $state->sessionId = $sessionStore->createSession($shellCommand->rawInput);
                 $screen->updateSessionId($state->sessionId);
+                $lifecycle->dispatch(new \Ineersa\Tui\Runtime\TuiSessionLifecycleEventDTO(
+                    type: \Ineersa\Tui\Runtime\TuiSessionLifecycleEventTypeEnum::SessionStarted,
+                    sessionId: $state->sessionId,
+                    isDraft: false,
+                    resuming: false,
+                ));
                 $logger->info('Draft session promoted for shell command', [
                     'component' => 'SubmitListener',
                     'event_type' => 'draft_promoted_shell',
@@ -421,26 +560,19 @@ final class SubmitListener implements TuiListenerRegistrar
                 ]);
             }
 
-            // Add a user-message block so prompt history (Up/Down)
-            // can recall the shell command after submission.
-            $userSeq = \count($state->transcript) + 1;
-            $state->transcript[] = $blockFactory->user(
-                runId: $state->sessionId,
-                text: $shellCommand->originalText,
-                seq: $userSeq,
-            );
+            // No local transcript echo: canonical agent_command_applied
+            // projects the raw bang input through the runtime event stream.
 
             if (null === $state->handle) {
                 // First input — execute shell without starting an LLM run.
-                // shellExecute() is synchronous in InProcess transport: the
-                // bash command executes, tool_exec events are persisted, and
-                // completeRun() writes the terminal AgentEnd event before we
-                // return. Transition to Completed immediately rather than
-                // relying on the tick/poller cycle, so the working indicator
-                // clears promptly. The poller will still pick up tool_exec
-                // events on the next tick and project them as transcript blocks.
+                // In-process transport is synchronous: ApplyShellCommand commits,
+                // then ExecuteShellToolCallWorker writes tool lifecycle (+ AgentEnd
+                // for standalone) before shellExecute() returns. Transition to
+                // Completed immediately so the working indicator clears without
+                // waiting for the next tick. The poller still projects tool_exec
+                // events on the next cycle.
                 $state->handle = $client->shellExecute(
-                    $shellCommand->command,
+                    $shellCommand->rawInput,
                     $state->sessionId,
                     $state->request->cwd ?? '',
                 );
@@ -450,35 +582,22 @@ final class SubmitListener implements TuiListenerRegistrar
                     $state->sessionId,
                     [
                         'run_id' => $state->sessionId,
-                        'prompt' => '!'.$shellCommand->command,
+                        'prompt' => $shellCommand->rawInput,
                     ],
                 );
                 $state->lastSeq = 0;
             } else {
-                // Subsequent input — send shell command to existing run.
-                // The worker in the tool consumer process executes bash
-                // and writes tool_exec events to the canonical event store.
-                // Inline ! on a terminal run (Completed/Cancelled/Failed) has no
-                // in-flight LLM turn to attach tool_exec events to.  Request a
-                // standalone shell so ExecuteShellToolCallWorker emits agent_end
-                // and the poller clears Working/Running (issue #183 / journey phase 9).
-                $shellPayload = $state->activity->isTerminal()
-                    ? ['standalone' => true]
-                    : [];
-
+                // Subsequent input — send the raw bang input to the existing run.
+                // Pipeline derives ownership/standalone from RunState; boundary
+                // payload must not carry standalone or dual text fields.
                 $client->send(
                     $state->handle->runId,
-                    new UserCommand(
-                        type: 'shell_command',
-                        text: $shellCommand->command,
-                        payload: $shellPayload,
-                    ),
+                    new UserCommand(type: 'shell_command', text: $shellCommand->rawInput),
                 );
 
-                // The controller must NEVER synchronously call completeRun()
-                // for shell commands because that races with the async worker
-                // and produces [AgentEnd, tool_exec_start, tool_exec_end]
-                // ordering — a LifecycleOrderValidator violation (issue #183).
+                // The controller must NEVER write AgentEnd for shell commands.
+                // ApplyShellCommandHandler + ExecuteShellToolCallWorker own
+                // terminalization so tool_exec ordering stays valid (issue #183).
                 //
                 // Activity transitions (Running → Completed) are handled by
                 // TickPollListener from the authoritative event drain — we do
@@ -533,7 +652,7 @@ final class SubmitListener implements TuiListenerRegistrar
     ): void {
         $child = $state->subagentLiveView->selected;
         if (null === $child) {
-            $screen->setStatus('agents-live', 'No subagent selected for live view.');
+            $screen->setWorkingMessage('No subagent selected for live view.');
 
             return;
         }
@@ -560,9 +679,9 @@ final class SubmitListener implements TuiListenerRegistrar
             // Let TickPollListener re-apply the computed parent|child working line on the next tick.
             $state->subagentLiveView->lastLiveWorkingMessage = null;
 
-            $screen->setStatus('agents-live', $policy->dispatchConfirmationMessage($commandType, $child->agentName));
+            $screen->setWorkingMessage($policy->dispatchConfirmationMessage($commandType, $child->agentName));
         } catch (\Throwable $e) {
-            $screen->setStatus('agents-live', 'Failed to send to subagent: '.$e->getMessage());
+            $screen->setWorkingMessage('Failed to send to subagent: '.$e->getMessage());
             $logger->error('SubmitListener: child live steer/follow_up failed', [
                 'component' => 'SubmitListener',
                 'event_type' => 'child_live_dispatch_failed',
@@ -587,7 +706,7 @@ final class SubmitListener implements TuiListenerRegistrar
             \count($state->subagentLiveView->childTranscript) + 1,
         );
         $screen->setTranscriptBlocks($state->subagentLiveView->childTranscript);
-        $screen->setStatus('agents-live', $message);
+        $screen->setWorkingMessage($message);
     }
 
     private static function showLiveViewTerminalChildInput(
@@ -603,7 +722,7 @@ final class SubmitListener implements TuiListenerRegistrar
             \count($state->subagentLiveView->childTranscript) + 1,
         );
         $screen->setTranscriptBlocks($state->subagentLiveView->childTranscript);
-        $screen->setStatus('agents-live', $message);
+        $screen->setWorkingMessage($message);
     }
 
     private static function blockForTranscriptMessage(

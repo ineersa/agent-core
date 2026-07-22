@@ -10,11 +10,12 @@ use Ineersa\AgentCore\Schema\SchemaVersion;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
+use Ineersa\CodingAgent\Session\FileRunSequenceAllocator;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\SessionRunEventStore;
+use PHPUnit\Framework\TestCase;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\FlockStore;
-use PHPUnit\Framework\TestCase;
 
 final class SessionRunEventStoreTest extends TestCase
 {
@@ -47,6 +48,7 @@ final class SessionRunEventStoreTest extends TestCase
             eventPayloadNormalizer: new EventPayloadNormalizer(),
             lockFactory: new LockFactory(new FlockStore()),
             logger: new \Psr\Log\NullLogger(),
+            sequenceAllocator: new FileRunSequenceAllocator(),
         );
     }
 
@@ -68,19 +70,17 @@ final class SessionRunEventStoreTest extends TestCase
     public function testAppendAndRetrieveSingleEvent(): void
     {
         $runId = 'run-'.bin2hex(random_bytes(4));
-        $event = new RunEvent(
+        $persisted = $this->store->append(RunEvent::forAppend(
             runId: $runId,
-            seq: 1,
             turnNo: 0,
             type: 'run_started',
             payload: ['prompt' => 'hello'],
-        );
-
-        $this->store->append($event);
+        ));
 
         $events = $this->store->allFor($runId);
         $this->assertCount(1, $events);
         $this->assertSame($runId, $events[0]->runId);
+        $this->assertSame($persisted->seq, $events[0]->seq);
         $this->assertSame(1, $events[0]->seq);
         $this->assertSame('run_started', $events[0]->type);
         $this->assertSame('hello', $events[0]->payload['prompt']);
@@ -93,36 +93,35 @@ final class SessionRunEventStoreTest extends TestCase
     public function testAppendManyAndRetrieveSorted(): void
     {
         $runId = 'run-'.bin2hex(random_bytes(4));
-        $event1 = new RunEvent(runId: $runId, seq: 3, turnNo: 1, type: 'tool_execution_end');
-        $event2 = new RunEvent(runId: $runId, seq: 1, turnNo: 0, type: 'run_started');
-        $event3 = new RunEvent(runId: $runId, seq: 2, turnNo: 1, type: 'tool_execution_start');
-
-        $this->store->appendMany([$event1, $event2, $event3]);
+        $persisted = $this->store->appendMany([
+            RunEvent::forAppend(runId: $runId, turnNo: 1, type: 'tool_execution_end'),
+            RunEvent::forAppend(runId: $runId, turnNo: 0, type: 'run_started'),
+            RunEvent::forAppend(runId: $runId, turnNo: 1, type: 'tool_execution_start'),
+        ]);
 
         $events = $this->store->allFor($runId);
         $this->assertCount(3, $events);
 
-        // Must be sorted by seq
-        $this->assertSame(1, $events[0]->seq);
-        $this->assertSame(2, $events[1]->seq);
-        $this->assertSame(3, $events[2]->seq);
-        $this->assertSame('run_started', $events[0]->type);
-        $this->assertSame('tool_execution_start', $events[1]->type);
-        $this->assertSame('tool_execution_end', $events[2]->type);
+        $this->assertSame([1, 2, 3], array_map(static fn (RunEvent $e): int => $e->seq, $events));
+        $this->assertSame(
+            ['tool_execution_end', 'run_started', 'tool_execution_start'],
+            array_map(static fn (RunEvent $e): string => $e->type, $persisted),
+        );
+        $this->assertSame('tool_execution_end', $events[0]->type);
+        $this->assertSame('run_started', $events[1]->type);
+        $this->assertSame('tool_execution_start', $events[2]->type);
     }
 
     public function testEventsSurviveStoreRecreation(): void
     {
         // Simulate process restart: write events, create new store, read back
         $runId = 'run-'.bin2hex(random_bytes(4));
-        $event = new RunEvent(
+        $this->store->append(RunEvent::forAppend(
             runId: $runId,
-            seq: 1,
             turnNo: 0,
             type: 'agent_start',
             payload: [],
-        );
-        $this->store->append($event);
+        ));
 
         // New store instance (simulates recreating services after restart)
         $appConfig = new AppConfig(
@@ -139,6 +138,7 @@ final class SessionRunEventStoreTest extends TestCase
             eventPayloadNormalizer: new EventPayloadNormalizer(),
             lockFactory: new LockFactory(new FlockStore()),
             logger: new \Psr\Log\NullLogger(),
+            sequenceAllocator: new FileRunSequenceAllocator(),
         );
 
         $events = $newStore->allFor($runId);
@@ -149,8 +149,7 @@ final class SessionRunEventStoreTest extends TestCase
     public function testEmbeddedRunIdMustMatchDirectory(): void
     {
         $runId = 'run-'.bin2hex(random_bytes(4));
-        $event = new RunEvent(runId: $runId, seq: 1, turnNo: 0, type: 'run_started');
-        $this->store->append($event);
+        $this->store->append(RunEvent::forAppend(runId: $runId, turnNo: 0, type: 'run_started'));
 
         // Tamper with the JSONL to have wrong runId
         $eventsPath = $this->projectDir.'/.hatfield/sessions/'.$runId.'/events.jsonl';
@@ -168,8 +167,8 @@ final class SessionRunEventStoreTest extends TestCase
         $runA = 'run-'.bin2hex(random_bytes(2));
         $runB = 'run-'.bin2hex(random_bytes(2));
 
-        $this->store->append(new RunEvent(runId: $runA, seq: 1, turnNo: 0, type: 'run_started'));
-        $this->store->append(new RunEvent(runId: $runB, seq: 1, turnNo: 0, type: 'agent_start'));
+        $this->store->append(RunEvent::forAppend(runId: $runA, turnNo: 0, type: 'run_started'));
+        $this->store->append(RunEvent::forAppend(runId: $runB, turnNo: 0, type: 'agent_start'));
 
         $eventsA = $this->store->allFor($runA);
         $eventsB = $this->store->allFor($runB);
@@ -188,13 +187,7 @@ final class SessionRunEventStoreTest extends TestCase
         // Write a valid event then inject a corrupt line with no schema_version
         // and missing required fields — should throw, not silently skip.
         $runId = 'run-'.bin2hex(random_bytes(4));
-        $this->store->append(new RunEvent(
-            runId: $runId,
-            seq: 1,
-            turnNo: 0,
-            type: 'run_started',
-            payload: [],
-        ));
+        $this->store->append(RunEvent::forAppend(runId: $runId, turnNo: 0, type: 'run_started', payload: []));
 
         $eventsPath = $this->projectDir.'/.hatfield/sessions/'.$runId.'/events.jsonl';
         // Append a corrupt line (missing required fields, no schema_version)
@@ -208,13 +201,7 @@ final class SessionRunEventStoreTest extends TestCase
     public function testCorruptJsonLineWithCompatibleSchemaAndMissingRequiredFieldsThrows(): void
     {
         $runId = 'run-'.bin2hex(random_bytes(4));
-        $this->store->append(new RunEvent(
-            runId: $runId,
-            seq: 1,
-            turnNo: 0,
-            type: 'run_started',
-            payload: [],
-        ));
+        $this->store->append(RunEvent::forAppend(runId: $runId, turnNo: 0, type: 'run_started', payload: []));
 
         $eventsPath = $this->projectDir.'/.hatfield/sessions/'.$runId.'/events.jsonl';
         file_put_contents($eventsPath, '{"schema_version":"'.SchemaVersion::CURRENT.'","run_id":"'.$runId.'","seq":null}'."\n", \FILE_APPEND);
@@ -227,13 +214,7 @@ final class SessionRunEventStoreTest extends TestCase
     public function testIncompatibleSchemaVersionIsSkippedWithDiagnosticPolicy(): void
     {
         $runId = 'run-'.bin2hex(random_bytes(4));
-        $this->store->append(new RunEvent(
-            runId: $runId,
-            seq: 1,
-            turnNo: 0,
-            type: 'run_started',
-            payload: [],
-        ));
+        $this->store->append(RunEvent::forAppend(runId: $runId, turnNo: 0, type: 'run_started', payload: []));
 
         $eventsPath = $this->projectDir.'/.hatfield/sessions/'.$runId.'/events.jsonl';
         // Append an old-format event with incompatible schema version.

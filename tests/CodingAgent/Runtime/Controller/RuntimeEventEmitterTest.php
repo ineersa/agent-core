@@ -137,7 +137,6 @@ final class RuntimeEventEmitterTest extends TestCase
         $this->assertContains(159, $seqs);
     }
 
-
     public function testDrainRegistersCursorOnRunResumedAndForwardsCanonicalEvents(): void
     {
         $runId = 'resumed-session-7';
@@ -175,7 +174,6 @@ final class RuntimeEventEmitterTest extends TestCase
         $this->assertContains(RuntimeEventTypeEnum::RunResumed->value, $types);
         $this->assertContains(RuntimeEventTypeEnum::ToolExecutionCompleted->value, $types);
     }
-
 
     public function testEmitRegistersChildRunFromSubagentProgressAndDrainForwardsChildEvents(): void
     {
@@ -223,8 +221,34 @@ final class RuntimeEventEmitterTest extends TestCase
         $stdout = $this->stdoutHandle($emitter);
         rewind($stdout);
         $raw = stream_get_contents($stdout) ?: '';
-        self::assertStringContainsString($childRunId, $raw);
-        self::assertStringContainsString('turn.started', $raw);
+        $this->assertStringContainsString($childRunId, $raw);
+        $this->assertStringContainsString('turn.started', $raw);
+    }
+
+    public function testEmitAdvancesCursorForCanonicalEvents(): void
+    {
+        $runId = 'stdout-run-1';
+        $emitter = $this->createEmitter();
+        $emitter->openStdout();
+        $this->replaceStdoutWithMemory($emitter);
+
+        $emitter->emit(new RuntimeEvent(
+            type: RuntimeEventTypeEnum::RunStarted->value,
+            runId: $runId,
+            seq: 1,
+            payload: [],
+        ));
+        $emitter->emit(new RuntimeEvent(
+            type: RuntimeEventTypeEnum::TurnStarted->value,
+            runId: $runId,
+            seq: 42,
+            payload: [],
+        ));
+
+        $ref = new \ReflectionClass($emitter);
+        $prop = $ref->getProperty('runEventCursors');
+        $cursors = $prop->getValue($emitter);
+        $this->assertSame(42, $cursors[$runId]);
     }
 
     private function createEmitter(): RuntimeEventEmitter
@@ -294,6 +318,14 @@ final class FlakySeqDrainAgentSessionClient implements AgentSessionClient
     {
     }
 
+    public function beginObservingChildRun(string $childRunId): void
+    {
+    }
+
+    public function endObservingChildRun(string $childRunId): void
+    {
+    }
+
     public function events(string $runId): iterable
     {
         ++$this->eventsCallCount;
@@ -311,10 +343,6 @@ final class FlakySeqDrainAgentSessionClient implements AgentSessionClient
     public function shellExecute(string $command, string $sessionId, string $cwd): RunHandle
     {
         throw new \BadMethodCallException('not used');
-    }
-
-    public function completeRun(string $runId): void
-    {
     }
 
     public function compact(string $runId, ?string $customInstructions = null): void

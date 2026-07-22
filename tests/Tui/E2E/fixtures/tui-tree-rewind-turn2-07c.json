@@ -1,0 +1,33 @@
+{
+  "$schema": "SESSION-07C tree rewind replay fixture",
+  "model": "llama_cpp_test/test",
+  "provider_id": "llama_cpp_test",
+  "reasoning": "off",
+  "recorded_at": "2026-07-06T12:00:00+00:00",
+  "recording_source": "llama_cpp_test/test",
+  "input": {
+    "messages": [
+      {
+        "role": "user",
+        "content": "second-turn-marker-07c"
+      }
+    ]
+  },
+  "usage": {
+    "input_tokens": 5,
+    "output_tokens": 3,
+    "total_tokens": 8
+  },
+  "stop_reason": "stop",
+  "expected_text": null,
+  "deltas": [
+    {
+      "type": "text",
+      "content": "SECOND_TURN_REPLY_07C"
+    },
+    {
+      "type": "finished",
+      "content": "stop"
+    }
+  ]
+}

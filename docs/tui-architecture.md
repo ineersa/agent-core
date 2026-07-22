@@ -212,6 +212,7 @@ Each event has a dedicated listener class in `src/Tui/Listener/`: each implement
 
 | Event | Listener | File | Action |
 |-------|----------|------|--------|
+| `InputEvent` (priority 96) | `ImagePasteInputListener` | `src/Tui/Listener/ImagePasteInputListener.php` | Standalone Ctrl+V (`\x16`) reads OS clipboard image (wl-paste → pngpaste (macOS) → xclip), validates bytes, inserts `[Image #N]`; bracketed text paste unchanged (issue #119) |
 | `InputEvent` (priority 98) | `PreviewExpansionInputListener` | `src/Tui/Listener/PreviewExpansionInputListener.php` | Ctrl+O → toggle previewable transcript previews (session state only) |
 | `InputEvent` (priority 100) | `CtrlCInputInterceptor` | `src/Tui/Listener/CtrlCInputInterceptor.php` | Ctrl+D → stop TUI; Ctrl+C → cancel/double-press quit |
 | `SubmitEvent` | `SubmitListener` | `src/Tui/Listener/SubmitListener.php` | Append user message, start run or send follow-up, show processing indicator |
@@ -299,6 +300,13 @@ Extensions interact with the TUI through explicit slots, not direct widget mutat
 - `src/Tui/Extension/SlotBasedTuiExtensionContext.php` — delegates to TuiSlotRegistry
 - `src/Tui/Layout/TuiSlotRegistry.php` — central slot registry
 - `src/Tui/Layout/ChatLayout.php` — assembles layout from slots
+
+### Project extensions: Symfony TUI overlays (`ExtensionApi`)
+
+Built-in slot APIs (`TuiExtensionContext` on the host) cover header/footer/editor widgets. **Project extensions** under `.hatfield/extensions/` can additionally implement `Ineersa\Hatfield\ExtensionApi\Tui\TuiExtensionInterface` and receive `TuiExtensionContextInterface` at TUI startup. That context exposes Symfony TUI primitives (`insertOverlayAfterEditor`, `removeOverlay`, `setFocus`, `requestRender`) plus themed helpers and generic turn-row metadata for checkpoint pickers.
+
+The host adapts runtime state in `src/Tui/Runtime/BridgeTuiExtensionContext.php` and wires extensions from `TuiProjectExtensionRegistrar`. Extension-owned pickers (for example `/rewind`) build `SelectListWidget` / `TextWidget` trees in the extension package and mount them below the editor — no feature-specific types in `ExtensionApi` beyond the generic TUI contract.
+
 
 ## Footer & status providers
 
@@ -916,3 +924,8 @@ Key differences from the pre-cleanup boundary model:
 - `TuiListener` no longer depends on `TuiApplication` or `TuiWidget` — it depends
   on `TuiRuntime`/`TuiScreen`/`TuiTranscript` instead.
 - `TuiApplication` depends on `TuiRuntime`/`TuiScreen` (not the reverse).
+
+
+## Subagent live view
+
+Commands: `/agents-live`, `/agents-main`. Global **Ctrl+\** toggles picker (main) and return (live view). While live view is active: compact-header and parent footer stats are suppressed; footer shows live child identity and hints. Child queued steer/follow-up messages render in the pending queue (`⏳`). Parent prompt history (Up/Down) is disabled in live view. Process-mode JSONL client re-buffers non-matching run events with watermark/max diagnostics.

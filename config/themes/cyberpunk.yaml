@@ -66,6 +66,7 @@ colors:
     thinking_medium: "neon"
     thinking_high: "hot"
     thinking_xhigh: "#ff0000"
+    thinking_max: "#9214fa"
 
     bash_mode: "amber"
     header: "electric"

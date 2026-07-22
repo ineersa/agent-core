@@ -37,14 +37,19 @@ abstract class PerMethodIsolatedKernelTestCase extends KernelTestCase
     private string $isolatedCwd;
     private string|false $originalCwd;
 
+    /** @var list<callable> */
+    private array $exceptionHandlersAtTestMethodStart = [];
+
     // ── Per-method lifecycle ─────────────────────────────────────
 
     protected function setUp(): void
     {
+        $this->exceptionHandlersAtTestMethodStart = self::captureActiveExceptionHandlers();
+
         // Do NOT call parent::setUp() — KernelTestCase::setUp() is an
         // empty hook, and kernel boot is handled here.
 
-        $this->isolatedCwd = TestDirectoryIsolation::createProjectTempDir('hatfield-test', 0o750);
+        $this->isolatedCwd = $this->createIsolatedWorkingDirectory();
         TestDirectoryIsolation::createHatfieldTree($this->isolatedCwd);
 
         $this->originalCwd = getcwd();
@@ -62,19 +67,6 @@ abstract class PerMethodIsolatedKernelTestCase extends KernelTestCase
 
         // Hook for subclasses to install spies/mocks after kernel boot.
         $this->afterKernelBoot();
-    }
-
-    /**
-     * Override in subclasses to install spies, configure container
-     * overrides via Container::set(), or perform other per-method
-     * setup that requires a booted kernel.
-     *
-     * Called from setUp() immediately after kernel boot, before the
-     * test method body runs.
-     */
-    protected function afterKernelBoot(): void
-    {
-        // Default: no-op.
     }
 
     protected function tearDown(): void
@@ -97,13 +89,40 @@ abstract class PerMethodIsolatedKernelTestCase extends KernelTestCase
             TestDirectoryIsolation::removeDirectory($this->isolatedCwd);
         }
 
-        // Pop the exception handler that FrameworkBundle::boot()
-        // pushed during kernel boot.  This balances the handler stack
-        // exactly: one boot → one restore.
-        restore_exception_handler();
+        // Restore the exact handler stack from before this test method ran.
+        // A single restore_exception_handler() is wrong when a prior test left
+        // handlers on the stack: boot may not push another (ErrorHandler::$replace=false)
+        // but tearDown would still pop one, triggering PHPUnit risky detection.
+        self::restoreActiveExceptionHandlers($this->exceptionHandlersAtTestMethodStart);
 
         // Do NOT call parent::tearDown() — KernelTestCase::tearDown()
         // calls ensureKernelShutdown() which re-boots the kernel.
+    }
+
+    /**
+     * Override in subclasses to install spies, configure container
+     * overrides via Container::set(), or perform other per-method
+     * setup that requires a booted kernel.
+     *
+     * Called from setUp() immediately after kernel boot, before the
+     * test method body runs.
+     */
+    protected function afterKernelBoot(): void
+    {
+        // Default: no-op.
+    }
+
+    /**
+     * Create the per-method isolated working directory used as HATFIELD_CWD.
+     *
+     * Default is project var/tmp. Override to createOsTempDir() when the
+     * contract requires an ancestor walk that must not discover monorepo
+     * AGENTS.md / skills under the project tree (AgentsContextDiscovery
+     * walks from cwd to filesystem root).
+     */
+    protected function createIsolatedWorkingDirectory(): string
+    {
+        return TestDirectoryIsolation::createProjectTempDir('hatfield-test', 0o750);
     }
 
     // ── Kernel factory ───────────────────────────────────────────
@@ -129,5 +148,56 @@ abstract class PerMethodIsolatedKernelTestCase extends KernelTestCase
     protected function isolatedCwd(): string
     {
         return $this->isolatedCwd;
+    }
+
+    // ── Exception handler stack ─────────────────────────────────
+
+    /**
+     * @return list<callable>
+     */
+    private static function captureActiveExceptionHandlers(): array
+    {
+        $handlers = [];
+
+        while (true) {
+            $previousHandler = set_exception_handler(static fn () => null);
+            restore_exception_handler();
+
+            if (null === $previousHandler) {
+                break;
+            }
+
+            $handlers[] = $previousHandler;
+            restore_exception_handler();
+        }
+
+        $handlers = array_reverse($handlers);
+
+        foreach ($handlers as $handler) {
+            set_exception_handler($handler);
+        }
+
+        return $handlers;
+    }
+
+    /**
+     * @param list<callable> $handlers
+     */
+    private static function restoreActiveExceptionHandlers(array $handlers): void
+    {
+        while (true) {
+            $previousHandler = set_exception_handler(static fn () => null);
+            restore_exception_handler();
+
+            if (null === $previousHandler) {
+                break;
+            }
+
+            restore_exception_handler();
+        }
+
+        foreach ($handlers as $handler) {
+            set_exception_handler($handler);
+        }
     }
 }

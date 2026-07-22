@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Session;
 
 use Doctrine\ORM\EntityManagerInterface;
+use Ineersa\AgentCore\Domain\Run\HumanInputContinuationKindEnum;
+use Ineersa\AgentCore\Domain\Run\PendingHumanInputRequestDTO;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\CodingAgent\Config\AppConfig;
@@ -15,9 +17,15 @@ use Ineersa\CodingAgent\Session\SessionRunStore;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\FlockStore;
+use Symfony\Component\PropertyInfo\Extractor\PhpDocExtractor;
+use Symfony\Component\PropertyInfo\Extractor\ReflectionExtractor;
+use Symfony\Component\PropertyInfo\PropertyInfoExtractor;
 use Symfony\Component\Serializer\Encoder\JsonEncoder;
+use Symfony\Component\Serializer\Normalizer\ArrayDenormalizer;
 use Symfony\Component\Serializer\Normalizer\BackedEnumNormalizer;
 use Symfony\Component\Serializer\Normalizer\DateTimeNormalizer;
+use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
+use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
 use Symfony\Component\Serializer\Normalizer\ObjectNormalizer;
 use Symfony\Component\Serializer\Serializer;
 
@@ -40,11 +48,6 @@ final class SessionRunStoreTest extends TestCase
 
         $this->entityManager = $this->createStub(EntityManagerInterface::class);
 
-        $serializer = new Serializer(
-            [new DateTimeNormalizer(), new BackedEnumNormalizer(), new ObjectNormalizer()],
-            [new JsonEncoder()],
-        );
-
         $appConfig = new AppConfig(
             tui: new TuiConfig(theme: 'default'),
             logging: new LoggingConfig(),
@@ -57,7 +60,7 @@ final class SessionRunStoreTest extends TestCase
 
         $this->store = new SessionRunStore(
             hatfieldSessionStore: $hatfieldSessionStore,
-            serializer: $serializer,
+            serializer: $this->createRunStateSerializer(),
             lockFactory: new LockFactory(new FlockStore()),
         );
     }
@@ -123,16 +126,34 @@ final class SessionRunStoreTest extends TestCase
     {
         // Simulate process restart by creating a new store instance
         $runId = 'run-'.bin2hex(random_bytes(4));
+        $payload = [
+            'kind' => 'interrupt',
+            'question_id' => 'ah_roundtrip',
+            'prompt' => 'Persist me?',
+            'schema' => ['type' => 'boolean'],
+            'tool_call_id' => 'tc-rt',
+            'tool_name' => 'ask_human',
+            'ui_kind' => 'confirm',
+        ];
 
-        // First store writes state
-        $state = new RunState(runId: $runId, status: RunStatus::Running, version: 3, turnNo: 2);
+        // First store writes state including nested pending human-input request
+        $state = new RunState(
+            runId: $runId,
+            status: RunStatus::WaitingHuman,
+            version: 3,
+            turnNo: 2,
+            pendingHumanInputRequests: [
+                new PendingHumanInputRequestDTO(
+                    questionId: 'ah_roundtrip',
+                    continuationKind: HumanInputContinuationKindEnum::ModelTurn,
+                    payload: $payload,
+                    continuationRef: null,
+                ),
+            ],
+        );
         $this->store->compareAndSwap($state, 0);
 
         // New store instance (simulates recreating services after restart)
-        $serializer = new Serializer(
-            [new DateTimeNormalizer(), new BackedEnumNormalizer(), new ObjectNormalizer()],
-            [new JsonEncoder()],
-        );
         $appConfig = new AppConfig(
             tui: new TuiConfig(theme: 'default'),
             logging: new LoggingConfig(),
@@ -144,16 +165,23 @@ final class SessionRunStoreTest extends TestCase
         );
         $newStore = new SessionRunStore(
             hatfieldSessionStore: $hatfieldSessionStore,
-            serializer: $serializer,
+            serializer: $this->createRunStateSerializer(),
             lockFactory: new LockFactory(new FlockStore()),
         );
 
         $loaded = $newStore->get($runId);
         $this->assertNotNull($loaded, 'State must survive store recreation');
         $this->assertSame($runId, $loaded->runId);
-        $this->assertSame(RunStatus::Running, $loaded->status);
+        $this->assertSame(RunStatus::WaitingHuman, $loaded->status);
         $this->assertSame(3, $loaded->version);
         $this->assertSame(2, $loaded->turnNo);
+        $this->assertCount(1, $loaded->pendingHumanInputRequests);
+        $request = $loaded->pendingHumanInputRequests[0];
+        $this->assertSame(PendingHumanInputRequestDTO::class, $request::class);
+        $this->assertSame('ah_roundtrip', $request->questionId);
+        $this->assertSame(HumanInputContinuationKindEnum::ModelTurn, $request->continuationKind);
+        $this->assertSame($payload, $request->payload);
+        $this->assertNull($request->continuationRef);
     }
 
     public function testGetReturnsNullForEmptyFile(): void
@@ -231,6 +259,27 @@ final class SessionRunStoreTest extends TestCase
 
         $staleAfterComplete = $this->store->findRunningStaleBefore($future);
         $this->assertEmpty($staleAfterComplete, 'Completed runs should not be returned as stale');
+    }
+
+    /**
+     * Production-parity serializer: nested list DTOs (e.g. pending human-input
+     * requests) require ArrayDenormalizer + PropertyInfo type extraction.
+     */
+    private function createRunStateSerializer(): NormalizerInterface&DenormalizerInterface
+    {
+        $propertyInfo = new PropertyInfoExtractor(
+            typeExtractors: [new PhpDocExtractor(), new ReflectionExtractor()],
+        );
+
+        return new Serializer(
+            [
+                new DateTimeNormalizer(),
+                new BackedEnumNormalizer(),
+                new ArrayDenormalizer(),
+                new ObjectNormalizer(propertyTypeExtractor: $propertyInfo),
+            ],
+            [new JsonEncoder()],
+        );
     }
 
     private function rmDir(string $dir): void

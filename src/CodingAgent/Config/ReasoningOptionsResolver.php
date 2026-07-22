@@ -10,15 +10,15 @@ use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
 
 /**
  * Converts a global user-facing reasoning level + Hatfield model metadata
- * into provider invocation options such as reasoning_effort or enable_thinking.
+ * into provider invocation options such as reasoning_effort or z.ai thinking.type.
  *
- * Reasoning level: off | minimal | low | medium | high | xhigh.
+ * Reasoning level: off | minimal | low | medium | high | xhigh | max.
  * Returns an empty array when reasoning is not applicable.
  */
 final readonly class ReasoningOptionsResolver
 {
     /** Reasoning levels that are not "off". */
-    private const array ACTIVE_LEVELS = ['minimal', 'low', 'medium', 'high', 'xhigh'];
+    private const array ACTIVE_LEVELS = ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
 
     public function __construct(
         private HatfieldModelCatalog $catalog,
@@ -34,16 +34,30 @@ final readonly class ReasoningOptionsResolver
     {
         $level = strtolower($level);
 
-        if ('off' === $level) {
-            return [];
-        }
-
-        if (!\in_array($level, self::ACTIVE_LEVELS, true)) {
+        if (!\in_array($level, ['off', ...self::ACTIVE_LEVELS], true)) {
             return [];
         }
 
         $model = $this->catalog->getModel($ref);
-        if (null === $model || !$model->reasoning) {
+        if (null === $model) {
+            return [];
+        }
+
+        if ('off' === $level) {
+            if (!$model->reasoning) {
+                return [];
+            }
+
+            if ('zai' === $this->thinkingFormat($ref, $model)) {
+                // z.ai keeps reasoning enabled unless we send thinking.type=disabled;
+                // omitting options would leave prior thinking state on the provider side.
+                return ['thinking' => ['type' => 'disabled']];
+            }
+
+            return [];
+        }
+
+        if (!$model->reasoning) {
             return [];
         }
 
@@ -59,9 +73,19 @@ final readonly class ReasoningOptionsResolver
 
         $thinkingFormat = $this->thinkingFormat($ref, $model);
 
-        // z.ai: enable_thinking boolean
+        // z.ai: thinking.type + clear_thinking; optional reasoning_effort when supported
         if ('zai' === $thinkingFormat) {
-            return ['enable_thinking' => true];
+            $result = [
+                'thinking' => [
+                    'type' => 'enabled',
+                    'clear_thinking' => false,
+                ],
+            ];
+            if ($this->supportsReasoningEffort($ref, $model)) {
+                $result['reasoning_effort'] = $mappedValue;
+            }
+
+            return $result;
         }
 
         // Codex Responses API: reasoning.effort format
@@ -72,7 +96,7 @@ final readonly class ReasoningOptionsResolver
         // DeepSeek: thinking.type + optional reasoning_effort
         if ('deepseek' === $thinkingFormat) {
             $result = ['thinking' => ['type' => 'enabled']];
-            if ($this->supportsReasoningEffort($ref)) {
+            if ($this->supportsReasoningEffort($ref, $model)) {
                 $result['reasoning_effort'] = $mappedValue;
             }
 
@@ -80,7 +104,7 @@ final readonly class ReasoningOptionsResolver
         }
 
         // OpenAI-style: reasoning_effort
-        if ($this->supportsReasoningEffort($ref)) {
+        if ($this->supportsReasoningEffort($ref, $model)) {
             return ['reasoning_effort' => $mappedValue];
         }
 
@@ -106,16 +130,30 @@ final readonly class ReasoningOptionsResolver
     }
 
     /**
-     * Whether this provider supports OpenAI-style reasoning_effort.
+     * Whether this model/provider supports OpenAI-style reasoning_effort.
      *
-     * Provider-level compatibility is authoritative. Model-level only matters
-     * when the model has its own compatibility block. Defaults to true (the
-     * AiCompatibility default) when no compatibility metadata exists.
+     * Field-level override: explicit model-level supports_reasoning_effort wins
+     * over provider-level; otherwise provider explicit value, else default true.
+     * A model block with only zai_tool_stream must not imply supports_reasoning_effort.
      */
-    private function supportsReasoningEffort(AiModelReference $ref): bool
+    private function supportsReasoningEffort(AiModelReference $ref, ?AiModelDefinition $model = null): bool
     {
-        $provider = $this->catalog->getProvider($ref->providerId);
+        $model ??= $this->catalog->getModel($ref);
 
-        return $provider?->compatibility->supportsReasoningEffort ?? true;
+        if (null !== $model?->compatibility && $model->compatibility->hasExplicitSupportsReasoningEffort()) {
+            return $model->compatibility->supportsReasoningEffort;
+        }
+
+        $provider = $this->catalog->getProvider($ref->providerId);
+        $providerCompat = $provider?->compatibility;
+        if (null !== $providerCompat && $providerCompat->hasExplicitSupportsReasoningEffort()) {
+            return $providerCompat->supportsReasoningEffort;
+        }
+
+        if (null === $providerCompat) {
+            return true;
+        }
+
+        return $providerCompat->supportsReasoningEffort;
     }
 }

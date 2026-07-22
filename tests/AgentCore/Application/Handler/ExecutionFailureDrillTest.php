@@ -14,6 +14,7 @@ use Ineersa\AgentCore\Domain\Model\PlatformInvocationResult;
 use Ineersa\AgentCore\Domain\Tool\ToolResult;
 use Ineersa\AgentCore\Tests\Support\Fake\FakePlatform;
 use Ineersa\AgentCore\Tests\Support\Fake\FakeToolExecutor;
+use Ineersa\AgentCore\Tests\Support\InMemoryDeferredToolCompletionRepository;
 use Ineersa\AgentCore\Tests\Support\SymfonyAiTestMessages;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use PHPUnit\Framework\TestCase;
@@ -58,21 +59,21 @@ final class ExecutionFailureDrillTest extends TestCase
 
         try {
             $failingWorker($message);
-            self::fail('Expected dispatch crash to bubble as RuntimeException.');
+            $this->fail('Expected dispatch crash to bubble as RuntimeException.');
         } catch (\RuntimeException $exception) {
-            self::assertSame('Failed to dispatch LLM result to command bus.', $exception->getMessage());
+            $this->assertSame('Failed to dispatch LLM result to command bus.', $exception->getMessage());
         }
 
         $collectingBus = new TestMessageBus();
-        $retryWorker = new ExecuteLlmStepWorker($platform, $collectingBus, 'test-model');
+        $retryWorker = new ExecuteLlmStepWorker($platform, $collectingBus, 'test-model', runModelResolver: null);
         $retryWorker($message);
 
-        self::assertCount(1, $collectingBus->messages);
-        self::assertInstanceOf(LlmStepResult::class, $collectingBus->messages[0]);
+        $this->assertCount(1, $collectingBus->messages);
+        $this->assertInstanceOf(LlmStepResult::class, $collectingBus->messages[0]);
 
         /** @var LlmStepResult $result */
         $result = $collectingBus->messages[0];
-        self::assertSame('retry-attempt', $result->assistantMessage?->asText());
+        $this->assertSame('retry-attempt', $result->assistantMessage?->asText());
     }
 
     public function testToolWorkerCanBeRetriedAfterCommandBusDispatchCrash(): void
@@ -105,26 +106,27 @@ final class ExecutionFailureDrillTest extends TestCase
         $failingWorker = new ExecuteToolCallWorker(
             toolExecutor: $toolExecutor,
             commandBus: new FailingOnceMessageBus(new TransportException('simulated dispatch crash')),
+            deferredToolCompletionRepository: new InMemoryDeferredToolCompletionRepository(),
         );
 
         try {
             $failingWorker($message);
-            self::fail('Expected dispatch crash to bubble as RuntimeException.');
+            $this->fail('Expected dispatch crash to bubble as RuntimeException.');
         } catch (\RuntimeException $exception) {
-            self::assertSame('Failed to dispatch tool result to command bus.', $exception->getMessage());
+            $this->assertSame('Failed to dispatch tool result to command bus.', $exception->getMessage());
         }
 
         $collectingBus = new TestMessageBus();
-        $retryWorker = new ExecuteToolCallWorker($toolExecutor, $collectingBus);
+        $retryWorker = new ExecuteToolCallWorker($toolExecutor, $collectingBus, new InMemoryDeferredToolCompletionRepository());
         $retryWorker($message);
 
-        self::assertCount(1, $collectingBus->messages);
-        self::assertInstanceOf(ToolCallResult::class, $collectingBus->messages[0]);
+        $this->assertCount(1, $collectingBus->messages);
+        $this->assertInstanceOf(ToolCallResult::class, $collectingBus->messages[0]);
 
         /** @var ToolCallResult $result */
         $result = $collectingBus->messages[0];
-        self::assertSame('web_search', $result->result['tool_name']);
-        self::assertFalse($result->isError);
+        $this->assertSame('web_search', $result->result['tool_name']);
+        $this->assertFalse($result->isError);
     }
 }
 
@@ -147,5 +149,3 @@ final class FailingOnceMessageBus implements MessageBusInterface
         return new Envelope($message, $stamps);
     }
 }
-
-

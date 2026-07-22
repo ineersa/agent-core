@@ -404,13 +404,13 @@ classes, methods, risks, and recommendations. Do not edit files.
 
 ### 6.2 Discovery locations
 
-Recommended discovery order:
+Recommended discovery load order (lowest to highest; later layers override earlier):
 
 ```text
-user agents under ~/.hatfield/agents/
 user agents under ~/.agents/
-project agents under .hatfield/agents/
+user agents under ~/.hatfield/agents/
 project agents under .agents/
+project agents under .hatfield/agents/
 configured explicit agents.paths entries
 ```
 

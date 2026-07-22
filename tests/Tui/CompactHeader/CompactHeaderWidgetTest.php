@@ -7,9 +7,9 @@ namespace Ineersa\Tui\Tests\CompactHeader;
 use Ineersa\Tui\CompactHeader\CompactHeaderSnapshot;
 use Ineersa\Tui\CompactHeader\CompactHeaderWidget;
 use Ineersa\Tui\CompactHeader\McpServerHeaderEntry;
+use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
 use Ineersa\Tui\Theme\DefaultTheme;
 use Ineersa\Tui\Widget\TuiRenderContext;
-use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
@@ -21,7 +21,7 @@ final class CompactHeaderWidgetTest extends TestCase
         $widget = new CompactHeaderWidget();
         $widget->setSnapshot(new CompactHeaderSnapshot());
 
-        self::assertSame([], $widget->render($this->context(80)));
+        $this->assertSame([], $widget->render($this->context(80)));
     }
 
     #[Test]
@@ -41,25 +41,25 @@ final class CompactHeaderWidgetTest extends TestCase
 
         $plain = $this->plainLines($widget->render($this->context(120)));
 
-        self::assertStringContainsString('prompts', $plain);
-        self::assertStringContainsString('│', $plain);
-        self::assertStringContainsString('/review', $plain);
-        self::assertStringContainsString('castor', $plain);
-        self::assertStringNotContainsString('skill:', $plain);
-        self::assertStringContainsString('agents', $plain);
-        self::assertStringContainsString('scout', $plain);
-        self::assertStringContainsString('worker', $plain);
-        self::assertStringNotContainsString('available', $plain);
-        self::assertStringNotContainsString('/agents-live', $plain);
-        self::assertStringContainsString('context7', $plain);
-        self::assertStringContainsString('websearch', $plain);
-        self::assertStringContainsString('(2)', $plain);
-        self::assertStringContainsString('(3)', $plain);
-        self::assertStringContainsString('✓', $plain);
-        self::assertStringContainsString('◈', $plain);
-        self::assertStringContainsString('✗', $plain);
-        self::assertStringNotContainsString(': connected', $plain);
-        self::assertStringNotContainsString('─', $plain);
+        $this->assertStringContainsString('prompts', $plain);
+        $this->assertStringContainsString('│', $plain);
+        $this->assertStringContainsString('/review', $plain);
+        $this->assertStringContainsString('castor', $plain);
+        $this->assertStringNotContainsString('skill:', $plain);
+        $this->assertStringContainsString('agents', $plain);
+        $this->assertStringContainsString('scout', $plain);
+        $this->assertStringContainsString('worker', $plain);
+        $this->assertStringNotContainsString('available', $plain);
+        $this->assertStringNotContainsString('/agents-live', $plain);
+        $this->assertStringContainsString('context7', $plain);
+        $this->assertStringContainsString('websearch', $plain);
+        $this->assertStringContainsString('(2)', $plain);
+        $this->assertStringContainsString('(3)', $plain);
+        $this->assertStringContainsString('✓', $plain);
+        $this->assertStringContainsString('◈', $plain);
+        $this->assertStringContainsString('✗', $plain);
+        $this->assertStringNotContainsString(': connected', $plain);
+        $this->assertStringNotContainsString('─', $plain);
     }
 
     #[Test]
@@ -76,12 +76,12 @@ final class CompactHeaderWidgetTest extends TestCase
 
         $plain = $this->plainLines($widget->render($this->context(100)));
 
-        self::assertStringContainsString('✓', $plain);
-        self::assertStringContainsString('◈', $plain);
-        self::assertStringContainsString('✗', $plain);
-        self::assertStringContainsString('global-ok', $plain);
-        self::assertStringContainsString('specific-ok', $plain);
-        self::assertStringContainsString('fail', $plain);
+        $this->assertStringContainsString('✓', $plain);
+        $this->assertStringContainsString('◈', $plain);
+        $this->assertStringContainsString('✗', $plain);
+        $this->assertStringContainsString('global-ok', $plain);
+        $this->assertStringContainsString('specific-ok', $plain);
+        $this->assertStringContainsString('fail', $plain);
     }
 
     #[Test]
@@ -93,7 +93,7 @@ final class CompactHeaderWidgetTest extends TestCase
         ));
 
         $lines = $widget->render($this->context(40));
-        self::assertGreaterThan(1, \count($lines));
+        $this->assertGreaterThan(1, \count($lines));
     }
 
     private function context(int $width): TuiRenderContext

@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Tests\Doctrine;
 
 use Doctrine\DBAL\Connection;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
+use Symfony\Component\Yaml\Yaml;
 
 /**
  * Verifies that the Doctrine SQLite connection is configured with the
@@ -69,4 +70,16 @@ final class SqliteConnectionConfigTest extends IsolatedKernelTestCase
         $this->assertStringContainsString('.', (string) $version);
     }
 
+    public function testRuntimeConnectionsDisableDoctrineDebugCollectors(): void
+    {
+        $configPath = \dirname(__DIR__, 3).'/config/packages/doctrine.yaml';
+        /** @var array{doctrine?: array{dbal?: array{connections?: array<string, array<string, mixed>>}}} $config */
+        $config = Yaml::parseFile($configPath);
+        $connections = $config['doctrine']['dbal']['connections'] ?? [];
+
+        foreach (['default', 'messenger_transport'] as $connectionName) {
+            $this->assertFalse($connections[$connectionName]['logging'] ?? null, $connectionName.' DBAL logging must stay disabled in long-lived runtime processes.');
+            $this->assertFalse($connections[$connectionName]['profiling'] ?? null, $connectionName.' DBAL profiling must stay disabled in long-lived runtime processes.');
+        }
+    }
 }

@@ -4,10 +4,9 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Application\Pipeline;
 
-use Ineersa\AgentCore\Application\Pipeline\HandlerResult;
-use Ineersa\AgentCore\Contract\Compaction\CompactResult;
 use Ineersa\AgentCore\Contract\Compaction\CompactionPrepareResult;
 use Ineersa\AgentCore\Contract\Compaction\CompactionServiceInterface;
+use Ineersa\AgentCore\Contract\Compaction\CompactResult;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
@@ -69,21 +68,21 @@ final class CompactionStepResultHandlerTest extends TestCase
             $state,
         );
 
-        self::assertNotNull($result->nextState);
-        self::assertCount(1, $result->events);
-        self::assertSame(RunEventTypeEnum::ContextCompacted->value, $result->events[0]->type);
+        $this->assertNotNull($result->nextState);
+        $this->assertCount(1, $result->events);
+        $this->assertSame(RunEventTypeEnum::ContextCompacted->value, $result->events[0]->type);
 
         // activeStepId cleared on terminal outcome.
-        self::assertNull($result->nextState->activeStepId);
+        $this->assertNull($result->nextState->activeStepId);
 
         // Messages replaced with compacted list.
-        self::assertCount(\count($compactedMessages), $result->nextState->messages);
-        self::assertSame('This is a summary of prior context.', $result->nextState->messages[0]->content[0]['text'] ?? null);
+        $this->assertCount(\count($compactedMessages), $result->nextState->messages);
+        $this->assertSame('This is a summary of prior context.', $result->nextState->messages[0]->content[0]['text'] ?? null);
 
         // payload.messages contains full replacement list.
         $payload = $result->events[0]->payload;
-        self::assertArrayHasKey('messages', $payload);
-        self::assertCount(\count($compactedMessages), $payload['messages']);
+        $this->assertArrayHasKey('messages', $payload);
+        $this->assertCount(\count($compactedMessages), $payload['messages']);
     }
 
     public function testEmptySummaryEmitsFailedWithEmptySummaryReason(): void
@@ -115,19 +114,19 @@ final class CompactionStepResultHandlerTest extends TestCase
             $state,
         );
 
-        self::assertNotNull($result->nextState);
-        self::assertCount(1, $result->events);
-        self::assertSame(RunEventTypeEnum::ContextCompactionFailed->value, $result->events[0]->type);
-        self::assertSame('empty_summary', $result->events[0]->payload['reason']);
-        self::assertFalse($result->events[0]->payload['messages_replaced']);
-        self::assertSame('step-1', $result->events[0]->payload['step_id']);
+        $this->assertNotNull($result->nextState);
+        $this->assertCount(1, $result->events);
+        $this->assertSame(RunEventTypeEnum::ContextCompactionFailed->value, $result->events[0]->type);
+        $this->assertSame('empty_summary', $result->events[0]->payload['reason']);
+        $this->assertFalse($result->events[0]->payload['messages_replaced']);
+        $this->assertSame('step-1', $result->events[0]->payload['step_id']);
 
         // activeStepId cleared on terminal outcome.
-        self::assertNull($result->nextState->activeStepId);
+        $this->assertNull($result->nextState->activeStepId);
 
         // Messages preserved (not replaced).
-        self::assertCount(\count($originalMessages), $result->nextState->messages);
-        self::assertSame('hi', $result->nextState->messages[0]->content[0]['text'] ?? null);
+        $this->assertCount(\count($originalMessages), $result->nextState->messages);
+        $this->assertSame('hi', $result->nextState->messages[0]->content[0]['text'] ?? null);
     }
 
     public function testModelErrorEmitsFailedWithModelErrorReason(): void
@@ -159,20 +158,20 @@ final class CompactionStepResultHandlerTest extends TestCase
             $state,
         );
 
-        self::assertNotNull($result->nextState);
-        self::assertCount(1, $result->events);
-        self::assertSame(RunEventTypeEnum::ContextCompactionFailed->value, $result->events[0]->type);
-        self::assertSame('model_error', $result->events[0]->payload['reason']);
-        self::assertSame('Connection timeout', $result->events[0]->payload['message']);
-        self::assertFalse($result->events[0]->payload['messages_replaced']);
-        self::assertSame('step-1', $result->events[0]->payload['step_id']);
+        $this->assertNotNull($result->nextState);
+        $this->assertCount(1, $result->events);
+        $this->assertSame(RunEventTypeEnum::ContextCompactionFailed->value, $result->events[0]->type);
+        $this->assertSame('model_error', $result->events[0]->payload['reason']);
+        $this->assertSame('Connection timeout', $result->events[0]->payload['message']);
+        $this->assertFalse($result->events[0]->payload['messages_replaced']);
+        $this->assertSame('step-1', $result->events[0]->payload['step_id']);
 
         // activeStepId cleared on terminal outcome.
-        self::assertNull($result->nextState->activeStepId);
+        $this->assertNull($result->nextState->activeStepId);
 
         // Messages preserved.
-        self::assertCount(\count($originalMessages), $result->nextState->messages);
-        self::assertSame('hi', $result->nextState->messages[0]->content[0]['text'] ?? null);
+        $this->assertCount(\count($originalMessages), $result->nextState->messages);
+        $this->assertSame('hi', $result->nextState->messages[0]->content[0]['text'] ?? null);
     }
 
     public function testStaleResultEmitsFailedWhenStepIdMismatch(): void
@@ -205,19 +204,19 @@ final class CompactionStepResultHandlerTest extends TestCase
         );
 
         // Stale → emits context_compaction_failed with stale_result reason.
-        self::assertNotNull($result->nextState);
-        self::assertCount(1, $result->events);
-        self::assertSame(RunEventTypeEnum::ContextCompactionFailed->value, $result->events[0]->type);
-        self::assertSame('stale_result', $result->events[0]->payload['reason']);
-        self::assertFalse($result->events[0]->payload['messages_replaced']);
-        self::assertSame('step-1', $result->events[0]->payload['step_id']);
+        $this->assertNotNull($result->nextState);
+        $this->assertCount(1, $result->events);
+        $this->assertSame(RunEventTypeEnum::ContextCompactionFailed->value, $result->events[0]->type);
+        $this->assertSame('stale_result', $result->events[0]->payload['reason']);
+        $this->assertFalse($result->events[0]->payload['messages_replaced']);
+        $this->assertSame('step-1', $result->events[0]->payload['step_id']);
 
         // Messages preserved.
-        self::assertCount(\count($originalMessages), $result->nextState->messages);
+        $this->assertCount(\count($originalMessages), $result->nextState->messages);
 
         // Stale mismatch preserves current activeStepId — clearing 'step-5'
         // would lose a newer in-flight compaction's identity.
-        self::assertSame('step-5', $result->nextState->activeStepId);
+        $this->assertSame('step-5', $result->nextState->activeStepId);
     }
 
     public function testStaleResultEmitsFailedWhenTurnNoMismatch(): void
@@ -253,19 +252,19 @@ final class CompactionStepResultHandlerTest extends TestCase
         );
 
         // Stale (turnNo mismatch) → emits context_compaction_failed.
-        self::assertNotNull($result->nextState);
-        self::assertCount(1, $result->events);
-        self::assertSame(RunEventTypeEnum::ContextCompactionFailed->value, $result->events[0]->type);
-        self::assertSame('stale_result', $result->events[0]->payload['reason']);
-        self::assertFalse($result->events[0]->payload['messages_replaced']);
-        self::assertSame('step-1', $result->events[0]->payload['step_id']);
+        $this->assertNotNull($result->nextState);
+        $this->assertCount(1, $result->events);
+        $this->assertSame(RunEventTypeEnum::ContextCompactionFailed->value, $result->events[0]->type);
+        $this->assertSame('stale_result', $result->events[0]->payload['reason']);
+        $this->assertFalse($result->events[0]->payload['messages_replaced']);
+        $this->assertSame('step-1', $result->events[0]->payload['step_id']);
 
         // Messages preserved.
-        self::assertCount(\count($originalMessages), $result->nextState->messages);
+        $this->assertCount(\count($originalMessages), $result->nextState->messages);
 
         // Stale turn mismatch preserves current activeStepId — a newer
         // compaction B (step-5) is in-flight and must not be cleared.
-        self::assertSame('step-5', $result->nextState->activeStepId);
+        $this->assertSame('step-5', $result->nextState->activeStepId);
     }
 
     public function testMatchingResultOnCompletedRunProcessesNormally(): void
@@ -316,20 +315,20 @@ final class CompactionStepResultHandlerTest extends TestCase
         );
 
         // Completed run with matching correlation → accepted (NOT stale_result).
-        self::assertNotNull($result->nextState);
-        self::assertCount(1, $result->events);
-        self::assertSame(RunEventTypeEnum::ContextCompacted->value, $result->events[0]->type);
-        self::assertNotEquals('stale_result', $result->events[0]->payload['reason'] ?? null);
+        $this->assertNotNull($result->nextState);
+        $this->assertCount(1, $result->events);
+        $this->assertSame(RunEventTypeEnum::ContextCompacted->value, $result->events[0]->type);
+        $this->assertNotEquals('stale_result', $result->events[0]->payload['reason'] ?? null);
 
         // Messages replaced with compacted list.
-        self::assertCount(\count($compactedMessages), $result->nextState->messages);
-        self::assertSame('Summary of prior context.', $result->nextState->messages[0]->content[0]['text'] ?? null);
+        $this->assertCount(\count($compactedMessages), $result->nextState->messages);
+        $this->assertSame('Summary of prior context.', $result->nextState->messages[0]->content[0]['text'] ?? null);
 
         // activeStepId cleared on terminal outcome.
-        self::assertNull($result->nextState->activeStepId);
+        $this->assertNull($result->nextState->activeStepId);
 
         // Run status stays Completed — compaction does not restart the run.
-        self::assertSame(RunStatus::Completed, $result->nextState->status);
+        $this->assertSame(RunStatus::Completed, $result->nextState->status);
     }
 
     /**
@@ -380,21 +379,21 @@ final class CompactionStepResultHandlerTest extends TestCase
         );
 
         // ContextCompacted event emitted.
-        self::assertNotNull($result->nextState);
-        self::assertCount(1, $result->events);
-        self::assertSame(RunEventTypeEnum::ContextCompacted->value, $result->events[0]->type);
+        $this->assertNotNull($result->nextState);
+        $this->assertCount(1, $result->events);
+        $this->assertSame(RunEventTypeEnum::ContextCompacted->value, $result->events[0]->type);
 
         // Effects must include exactly one AdvanceRun.
-        self::assertCount(1, $result->effects);
-        self::assertInstanceOf(AdvanceRun::class, $result->effects[0]);
+        $this->assertCount(1, $result->effects);
+        $this->assertInstanceOf(AdvanceRun::class, $result->effects[0]);
 
         /** @var AdvanceRun $advanceRun */
         $advanceRun = $result->effects[0];
-        self::assertSame('run-1', $advanceRun->runId());
-        self::assertSame(5, $advanceRun->turnNo());
+        $this->assertSame('run-1', $advanceRun->runId());
+        $this->assertSame(5, $advanceRun->turnNo());
 
         // Status must be Running (holding a pending LLM turn).
-        self::assertSame(RunStatus::Running, $result->nextState->status);
+        $this->assertSame(RunStatus::Running, $result->nextState->status);
     }
 
     /**
@@ -440,15 +439,15 @@ final class CompactionStepResultHandlerTest extends TestCase
         );
 
         // ContextCompacted event emitted.
-        self::assertNotNull($result->nextState);
-        self::assertCount(1, $result->events);
-        self::assertSame(RunEventTypeEnum::ContextCompacted->value, $result->events[0]->type);
+        $this->assertNotNull($result->nextState);
+        $this->assertCount(1, $result->events);
+        $this->assertSame(RunEventTypeEnum::ContextCompacted->value, $result->events[0]->type);
 
         // Effects must NOT include an AdvanceRun — after-turn auto must not continue.
-        self::assertCount(0, $result->effects, 'After-turn auto must not auto-advance the run');
+        $this->assertCount(0, $result->effects, 'After-turn auto must not auto-advance the run');
 
         // Status must be Completed — the run was already terminal.
-        self::assertSame(RunStatus::Completed, $result->nextState->status);
+        $this->assertSame(RunStatus::Completed, $result->nextState->status);
     }
 
     /**
@@ -492,12 +491,12 @@ final class CompactionStepResultHandlerTest extends TestCase
         );
 
         // ContextCompacted event emitted.
-        self::assertNotNull($result->nextState);
-        self::assertCount(1, $result->events);
-        self::assertSame(RunEventTypeEnum::ContextCompacted->value, $result->events[0]->type);
+        $this->assertNotNull($result->nextState);
+        $this->assertCount(1, $result->events);
+        $this->assertSame(RunEventTypeEnum::ContextCompacted->value, $result->events[0]->type);
 
         // Effects must NOT include an AdvanceRun for manual trigger.
-        self::assertCount(0, $result->effects, 'Manual /compact must not auto-advance the run');
+        $this->assertCount(0, $result->effects, 'Manual /compact must not auto-advance the run');
     }
 
     /**
@@ -541,16 +540,16 @@ final class CompactionStepResultHandlerTest extends TestCase
             $state,
         );
 
-        self::assertNotNull($result->nextState);
-        self::assertSame(RunStatus::Running, $result->nextState->status,
+        $this->assertNotNull($result->nextState);
+        $this->assertSame(RunStatus::Running, $result->nextState->status,
             'Pre-LLM auto model_error must resolve to Running');
-        self::assertCount(1, $result->events);
-        self::assertSame(RunEventTypeEnum::ContextCompactionFailed->value, $result->events[0]->type);
+        $this->assertCount(1, $result->events);
+        $this->assertSame(RunEventTypeEnum::ContextCompactionFailed->value, $result->events[0]->type);
 
         // Effects MUST include an AdvanceRun so the pending LLM turn proceeds.
-        self::assertCount(1, $result->effects,
+        $this->assertCount(1, $result->effects,
             'Pre-LLM auto model_error must dispatch AdvanceRun to continue pending turn');
-        self::assertInstanceOf(AdvanceRun::class, $result->effects[0]);
+        $this->assertInstanceOf(AdvanceRun::class, $result->effects[0]);
     }
 
     /**
@@ -596,12 +595,12 @@ final class CompactionStepResultHandlerTest extends TestCase
             $state,
         );
 
-        self::assertNotNull($result->nextState);
-        self::assertSame(RunStatus::Running, $result->nextState->status,
+        $this->assertNotNull($result->nextState);
+        $this->assertSame(RunStatus::Running, $result->nextState->status,
             'Pre-LLM auto trigger success must resolve Compacting to Running');
-        self::assertNull($result->nextState->activeStepId);
-        self::assertCount(1, $result->effects);
-        self::assertInstanceOf(AdvanceRun::class, $result->effects[0]);
+        $this->assertNull($result->nextState->activeStepId);
+        $this->assertCount(1, $result->effects);
+        $this->assertInstanceOf(AdvanceRun::class, $result->effects[0]);
     }
 
     /**
@@ -647,11 +646,11 @@ final class CompactionStepResultHandlerTest extends TestCase
             $state,
         );
 
-        self::assertNotNull($result->nextState);
-        self::assertSame(RunStatus::Completed, $result->nextState->status,
+        $this->assertNotNull($result->nextState);
+        $this->assertSame(RunStatus::Completed, $result->nextState->status,
             'After-turn auto trigger success must resolve Compacting to Completed');
-        self::assertNull($result->nextState->activeStepId);
-        self::assertCount(0, $result->effects,
+        $this->assertNull($result->nextState->activeStepId);
+        $this->assertCount(0, $result->effects,
             'After-turn auto must not dispatch AdvanceRun');
     }
 
@@ -696,11 +695,11 @@ final class CompactionStepResultHandlerTest extends TestCase
             $state,
         );
 
-        self::assertNotNull($result->nextState);
-        self::assertSame(RunStatus::Completed, $result->nextState->status,
+        $this->assertNotNull($result->nextState);
+        $this->assertSame(RunStatus::Completed, $result->nextState->status,
             'Manual trigger success must resolve Compacting to Completed');
-        self::assertNull($result->nextState->activeStepId);
-        self::assertCount(0, $result->effects,
+        $this->assertNull($result->nextState->activeStepId);
+        $this->assertCount(0, $result->effects,
             'Manual trigger must not dispatch AdvanceRun');
     }
 
@@ -743,13 +742,13 @@ final class CompactionStepResultHandlerTest extends TestCase
             $state,
         );
 
-        self::assertNotNull($result->nextState);
-        self::assertSame(RunStatus::Running, $result->nextState->status,
+        $this->assertNotNull($result->nextState);
+        $this->assertSame(RunStatus::Running, $result->nextState->status,
             'Pre-LLM auto trigger failure must resolve Compacting to Running');
-        self::assertNull($result->nextState->activeStepId);
-        self::assertCount(1, $result->effects,
+        $this->assertNull($result->nextState->activeStepId);
+        $this->assertCount(1, $result->effects,
             'Pre-LLM auto failure with continueAfterCompaction must dispatch AdvanceRun');
-        self::assertInstanceOf(AdvanceRun::class, $result->effects[0]);
+        $this->assertInstanceOf(AdvanceRun::class, $result->effects[0]);
     }
 
     /**
@@ -788,10 +787,10 @@ final class CompactionStepResultHandlerTest extends TestCase
             $state,
         );
 
-        self::assertNotNull($result->nextState);
-        self::assertSame(RunStatus::Completed, $result->nextState->status,
+        $this->assertNotNull($result->nextState);
+        $this->assertSame(RunStatus::Completed, $result->nextState->status,
             'After-turn auto trigger failure must resolve Compacting to Completed');
-        self::assertNull($result->nextState->activeStepId);
+        $this->assertNull($result->nextState->activeStepId);
     }
 
     /**
@@ -843,32 +842,32 @@ final class CompactionStepResultHandlerTest extends TestCase
             $state,
         );
 
-        self::assertNotNull($result->nextState);
-        self::assertSame(RunStatus::Cancelled, $result->nextState->status,
+        $this->assertNotNull($result->nextState);
+        $this->assertSame(RunStatus::Cancelled, $result->nextState->status,
             'Compaction model_error during Cancelling must resolve to Cancelled');
-        self::assertCount(0, $result->effects,
+        $this->assertCount(0, $result->effects,
             'Must NOT dispatch AdvanceRun when Cancelling — run has been cancelled');
 
         // Compaction outcome FIRST, agent_end LAST for replay correctness.
         // Replay applies events sequentially; when agent_end came first,
         // context_compaction_failed could overwrite Cancelled with Running.
         // Events must have unique contiguous seq numbers.
-        self::assertCount(2, $result->events, 'Must emit context_compaction_failed + agent_end');
+        $this->assertCount(2, $result->events, 'Must emit context_compaction_failed + agent_end');
 
         $failedEvent = $result->events[0];
-        self::assertSame(RunEventTypeEnum::ContextCompactionFailed->value, $failedEvent->type,
+        $this->assertSame(RunEventTypeEnum::ContextCompactionFailed->value, $failedEvent->type,
             'Must emit context_compaction_failed first');
-        self::assertSame(21, $failedEvent->seq,
+        $this->assertSame(21, $failedEvent->seq,
             'First event seq must be lastSeq+1 (unique contiguous)');
 
         $agentEndEvent = $result->events[1];
-        self::assertSame(RunEventTypeEnum::AgentEnd->value, $agentEndEvent->type,
+        $this->assertSame(RunEventTypeEnum::AgentEnd->value, $agentEndEvent->type,
             'Must emit agent_end last (terminal event wins during replay)');
-        self::assertSame('cancelled', $agentEndEvent->payload['reason'] ?? null);
-        self::assertSame(22, $agentEndEvent->seq,
+        $this->assertSame('cancelled', $agentEndEvent->payload['reason'] ?? null);
+        $this->assertSame(22, $agentEndEvent->seq,
             'Second event seq must be lastSeq+2 (unique contiguous)');
 
-        self::assertSame(22, $result->nextState->lastSeq,
+        $this->assertSame(22, $result->nextState->lastSeq,
             'nextState.lastSeq must reflect both events');
     }
 
@@ -904,16 +903,16 @@ final class CompactionStepResultHandlerTest extends TestCase
             $state,
         );
 
-        self::assertNotNull($result->nextState);
-        self::assertSame(RunStatus::Running, $result->nextState->status,
+        $this->assertNotNull($result->nextState);
+        $this->assertSame(RunStatus::Running, $result->nextState->status,
             'Pre-LLM auto empty_summary must resolve to Running');
-        self::assertCount(1, $result->events);
-        self::assertSame(RunEventTypeEnum::ContextCompactionFailed->value, $result->events[0]->type);
-        self::assertSame('empty_summary', $result->events[0]->payload['reason']);
+        $this->assertCount(1, $result->events);
+        $this->assertSame(RunEventTypeEnum::ContextCompactionFailed->value, $result->events[0]->type);
+        $this->assertSame('empty_summary', $result->events[0]->payload['reason']);
 
-        self::assertCount(1, $result->effects,
+        $this->assertCount(1, $result->effects,
             'Pre-LLM auto empty_summary must dispatch AdvanceRun to continue pending turn');
-        self::assertInstanceOf(AdvanceRun::class, $result->effects[0]);
+        $this->assertInstanceOf(AdvanceRun::class, $result->effects[0]);
     }
 
     /**
@@ -955,29 +954,29 @@ final class CompactionStepResultHandlerTest extends TestCase
             $state,
         );
 
-        self::assertNotNull($result->nextState);
-        self::assertSame(RunStatus::Cancelled, $result->nextState->status,
+        $this->assertNotNull($result->nextState);
+        $this->assertSame(RunStatus::Cancelled, $result->nextState->status,
             'Compaction empty_summary during Cancelling must resolve to Cancelled');
-        self::assertCount(0, $result->effects,
+        $this->assertCount(0, $result->effects,
             'Must NOT dispatch AdvanceRun when Cancelling — run has been cancelled');
 
         // Compaction outcome FIRST, agent_end LAST — same replay contract.
-        self::assertCount(2, $result->events, 'Must emit context_compaction_failed + agent_end');
+        $this->assertCount(2, $result->events, 'Must emit context_compaction_failed + agent_end');
 
         $failedEvent = $result->events[0];
-        self::assertSame(RunEventTypeEnum::ContextCompactionFailed->value, $failedEvent->type,
+        $this->assertSame(RunEventTypeEnum::ContextCompactionFailed->value, $failedEvent->type,
             'Must emit context_compaction_failed first');
-        self::assertSame(21, $failedEvent->seq,
+        $this->assertSame(21, $failedEvent->seq,
             'First event seq must be lastSeq+1 (unique contiguous)');
 
         $agentEndEvent = $result->events[1];
-        self::assertSame(RunEventTypeEnum::AgentEnd->value, $agentEndEvent->type,
+        $this->assertSame(RunEventTypeEnum::AgentEnd->value, $agentEndEvent->type,
             'Must emit agent_end last (terminal event wins during replay)');
-        self::assertSame('cancelled', $agentEndEvent->payload['reason'] ?? null);
-        self::assertSame(22, $agentEndEvent->seq,
+        $this->assertSame('cancelled', $agentEndEvent->payload['reason'] ?? null);
+        $this->assertSame(22, $agentEndEvent->seq,
             'Second event seq must be lastSeq+2 (unique contiguous)');
 
-        self::assertSame(22, $result->nextState->lastSeq,
+        $this->assertSame(22, $result->nextState->lastSeq,
             'nextState.lastSeq must reflect both events');
     }
 
@@ -1040,135 +1039,39 @@ final class CompactionStepResultHandlerTest extends TestCase
             $state,
         );
 
-        self::assertNotNull($result->nextState);
-        self::assertSame(RunStatus::Cancelled, $result->nextState->status,
+        $this->assertNotNull($result->nextState);
+        $this->assertSame(RunStatus::Cancelled, $result->nextState->status,
             'Compaction success during Cancelling must resolve to Cancelled');
 
         // Must NOT dispatch AdvanceRun — cancellation wins.
-        self::assertCount(0, $result->effects,
+        $this->assertCount(0, $result->effects,
             'Must NOT dispatch AdvanceRun when Cancelling — run has been cancelled');
 
         // Compaction outcome FIRST, agent_end LAST — same replay contract.
-        self::assertCount(2, $result->events, 'Must emit context_compacted + agent_end');
+        $this->assertCount(2, $result->events, 'Must emit context_compacted + agent_end');
 
         $compactedEvent = $result->events[0];
-        self::assertSame(RunEventTypeEnum::ContextCompacted->value, $compactedEvent->type,
+        $this->assertSame(RunEventTypeEnum::ContextCompacted->value, $compactedEvent->type,
             'Must emit context_compacted first');
-        self::assertSame(21, $compactedEvent->seq,
+        $this->assertSame(21, $compactedEvent->seq,
             'First event seq must be lastSeq+1 (unique contiguous)');
 
         $agentEndEvent = $result->events[1];
-        self::assertSame(RunEventTypeEnum::AgentEnd->value, $agentEndEvent->type,
+        $this->assertSame(RunEventTypeEnum::AgentEnd->value, $agentEndEvent->type,
             'Must emit agent_end last (terminal event wins during replay)');
-        self::assertSame('cancelled', $agentEndEvent->payload['reason'] ?? null);
-        self::assertSame(22, $agentEndEvent->seq,
+        $this->assertSame('cancelled', $agentEndEvent->payload['reason'] ?? null);
+        $this->assertSame(22, $agentEndEvent->seq,
             'Second event seq must be lastSeq+2 (unique contiguous)');
 
-        self::assertSame(22, $result->nextState->lastSeq,
+        $this->assertSame(22, $result->nextState->lastSeq,
             'nextState.lastSeq must reflect both events');
 
         // Verify compacted messages were applied.
-        self::assertSame(
+        $this->assertSame(
             $compactedMessages,
             $result->nextState->messages,
             'Compacted messages must be applied even when cancelling',
         );
-    }
-
-    /**
-     * Create a RunState with Compacting status for testing status resolution.
-     *
-     * @param list<AgentMessage> $messages
-     */
-    private function createCompactingState(array $messages, string $activeStepId): RunState
-    {
-        return new RunState(
-            runId: 'run-1',
-            status: RunStatus::Compacting,
-            version: 10,
-            turnNo: 5,
-            lastSeq: 20,
-            isStreaming: false,
-            streamingMessage: null,
-            pendingToolCalls: [],
-            errorMessage: null,
-            messages: $messages,
-            activeStepId: $activeStepId,
-            retryableFailure: false,
-        );
-    }
-
-    // ── helpers ──
-
-    /**
-     * @param list<AgentMessage> $messages
-     */
-    private function createRunState(array $messages, string $activeStepId, int $turnNo = 5): RunState
-    {
-        return new RunState(
-            runId: 'run-1',
-            status: RunStatus::Running,
-            version: 10,
-            turnNo: $turnNo,
-            lastSeq: 20,
-            messages: $messages,
-            activeStepId: $activeStepId,
-        );
-    }
-
-    /**
-     * @param list<AgentMessage> $compactedMessages
-     */
-    private function stubCompactionService(array $compactedMessages): CompactionServiceInterface
-    {
-        return new class($compactedMessages) implements CompactionServiceInterface {
-            /** @param list<AgentMessage> $compacted */
-            public function __construct(private array $compacted) {}
-
-            public function prepare(array $messages): CompactionPrepareResult
-            {
-                throw new \LogicException('Not expected in this test.');
-            }
-
-            public function buildSummarizationMessages(CompactionPrepareResult $result, ?string $customInstructions): array
-            {
-                throw new \LogicException('Not expected in this test.');
-            }
-
-            public function buildCompactedMessages(string $summaryText, CompactionPrepareResult $result): CompactResult
-            {
-                return new CompactResult(
-                    summaryText: $summaryText,
-                    summaryMessage: $this->compacted[0] ?? new AgentMessage('assistant', $summaryText),
-                    compactedMessages: $this->compacted,
-                    tokenEstimateBefore: 50000,
-                    tokenEstimateAfter: 10000,
-                    messagesCompacted: 1,
-                    messagesRetained: \count($this->compacted) - 1,
-                    firstRetainedIndex: 0,
-                );
-            }
-        };
-    }
-
-    private function createNoOpStub(): CompactionServiceInterface
-    {
-        return new class implements CompactionServiceInterface {
-            public function prepare(array $messages): CompactionPrepareResult
-            {
-                throw new \LogicException('Not expected in this test path.');
-            }
-
-            public function buildSummarizationMessages(CompactionPrepareResult $result, ?string $customInstructions): array
-            {
-                throw new \LogicException('Not expected in this test path.');
-            }
-
-            public function buildCompactedMessages(string $summaryText, CompactionPrepareResult $result): CompactResult
-            {
-                throw new \LogicException('Not expected in this test path.');
-            }
-        };
     }
 
     // ── ineffective compaction detection ─────────────────────────────────
@@ -1230,35 +1133,35 @@ final class CompactionStepResultHandlerTest extends TestCase
         );
 
         // Assert: emits context_compaction_failed, NOT context_compacted.
-        self::assertNotNull($result->nextState);
-        self::assertGreaterThanOrEqual(1, \count($result->events));
-        self::assertSame(
+        $this->assertNotNull($result->nextState);
+        $this->assertGreaterThanOrEqual(1, \count($result->events));
+        $this->assertSame(
             RunEventTypeEnum::ContextCompactionFailed->value,
             $result->events[0]->type,
             'Ineffective compaction must emit context_compaction_failed, not context_compacted.',
         );
-        self::assertSame(
+        $this->assertSame(
             'ineffective_compaction',
             $result->events[0]->payload['reason'] ?? null,
             'Failure reason must be ineffective_compaction.',
         );
-        self::assertFalse(
+        $this->assertFalse(
             $result->events[0]->payload['messages_replaced'] ?? true,
             'Messages must NOT be replaced when compaction is ineffective.',
         );
-        self::assertArrayHasKey(
+        $this->assertArrayHasKey(
             'estimated_tokens_before',
             $result->events[0]->payload,
             'Payload must include token estimate before for diagnostics.',
         );
-        self::assertArrayHasKey(
+        $this->assertArrayHasKey(
             'estimated_tokens_after',
             $result->events[0]->payload,
             'Payload must include token estimate after for diagnostics.',
         );
 
         // Messages must be preserved (same count as original).
-        self::assertCount(\count($originalMessages), $result->nextState->messages);
+        $this->assertCount(\count($originalMessages), $result->nextState->messages);
     }
 
     /**
@@ -1311,22 +1214,140 @@ final class CompactionStepResultHandlerTest extends TestCase
             $state,
         );
 
-        self::assertNotNull($result->nextState);
-        self::assertGreaterThanOrEqual(1, \count($result->events));
-        self::assertSame(
+        $this->assertNotNull($result->nextState);
+        $this->assertGreaterThanOrEqual(1, \count($result->events));
+        $this->assertSame(
             RunEventTypeEnum::ContextCompactionFailed->value,
             $result->events[0]->type,
             'Compaction with increased estimate must emit context_compaction_failed.',
         );
-        self::assertSame(
+        $this->assertSame(
             'ineffective_compaction',
             $result->events[0]->payload['reason'] ?? null,
         );
-        self::assertFalse(
+        $this->assertFalse(
             $result->events[0]->payload['messages_replaced'] ?? true,
         );
         // Messages preserved.
-        self::assertCount(\count($originalMessages), $result->nextState->messages);
+        $this->assertCount(\count($originalMessages), $result->nextState->messages);
+    }
+
+    /**
+     * Create a RunState with Compacting status for testing status resolution.
+     *
+     * @param list<AgentMessage> $messages
+     */
+    private function createCompactingState(array $messages, string $activeStepId): RunState
+    {
+        return new RunState(
+            runId: 'run-1',
+            status: RunStatus::Compacting,
+            version: 10,
+            turnNo: 5,
+            lastSeq: 20,
+            isStreaming: false,
+            streamingMessage: null,
+            pendingToolCalls: [],
+            errorMessage: null,
+            messages: $messages,
+            activeStepId: $activeStepId,
+            retryableFailure: false,
+        );
+    }
+
+    // ── helpers ──
+
+    /**
+     * @param list<AgentMessage> $messages
+     */
+    private function createRunState(array $messages, string $activeStepId, int $turnNo = 5): RunState
+    {
+        return new RunState(
+            runId: 'run-1',
+            status: RunStatus::Running,
+            version: 10,
+            turnNo: $turnNo,
+            lastSeq: 20,
+            messages: $messages,
+            activeStepId: $activeStepId,
+        );
+    }
+
+    /**
+     * @param list<AgentMessage> $compactedMessages
+     */
+    private function stubCompactionService(array $compactedMessages): CompactionServiceInterface
+    {
+        return new class($compactedMessages) implements CompactionServiceInterface {
+            /** @param list<AgentMessage> $compacted */
+            public function __construct(private array $compacted)
+            {
+            }
+
+            public function prepare(array $messages): CompactionPrepareResult
+            {
+                throw new \LogicException('Not expected in this test.');
+            }
+
+            public function buildSummarizationMessages(CompactionPrepareResult $result, ?string $customInstructions): array
+            {
+                throw new \LogicException('Not expected in this test.');
+            }
+
+            public function buildCompactedMessages(string $summaryText, CompactionPrepareResult $result): CompactResult
+            {
+                return new CompactResult(
+                    summaryText: $summaryText,
+                    summaryMessage: $this->compacted[0] ?? new AgentMessage('assistant', $summaryText),
+                    compactedMessages: $this->compacted,
+                    tokenEstimateBefore: 50000,
+                    tokenEstimateAfter: 10000,
+                    messagesCompacted: 1,
+                    messagesRetained: \count($this->compacted) - 1,
+                    firstRetainedIndex: 0,
+                );
+            }
+
+            public function compactMessages(
+                string $runId,
+                int $turnNo,
+                array $messages,
+                string $trigger = 'manual',
+                ?string $customInstructions = null,
+            ): \Ineersa\AgentCore\Contract\Compaction\MessageSnapshotCompactionResult {
+                throw new \LogicException('compactMessages not expected in this test path.');
+            }
+        };
+    }
+
+    private function createNoOpStub(): CompactionServiceInterface
+    {
+        return new class implements CompactionServiceInterface {
+            public function prepare(array $messages): CompactionPrepareResult
+            {
+                throw new \LogicException('Not expected in this test path.');
+            }
+
+            public function buildSummarizationMessages(CompactionPrepareResult $result, ?string $customInstructions): array
+            {
+                throw new \LogicException('Not expected in this test path.');
+            }
+
+            public function buildCompactedMessages(string $summaryText, CompactionPrepareResult $result): CompactResult
+            {
+                throw new \LogicException('Not expected in this test path.');
+            }
+
+            public function compactMessages(
+                string $runId,
+                int $turnNo,
+                array $messages,
+                string $trigger = 'manual',
+                ?string $customInstructions = null,
+            ): \Ineersa\AgentCore\Contract\Compaction\MessageSnapshotCompactionResult {
+                throw new \LogicException('compactMessages not expected in this test path.');
+            }
+        };
     }
 
     /**
@@ -1347,7 +1368,8 @@ final class CompactionStepResultHandlerTest extends TestCase
                 private array $compacted,
                 private int $before,
                 private int $after,
-            ) {}
+            ) {
+            }
 
             public function prepare(array $messages): CompactionPrepareResult
             {
@@ -1371,6 +1393,16 @@ final class CompactionStepResultHandlerTest extends TestCase
                     messagesRetained: \count($this->compacted) - 1,
                     firstRetainedIndex: 0,
                 );
+            }
+
+            public function compactMessages(
+                string $runId,
+                int $turnNo,
+                array $messages,
+                string $trigger = 'manual',
+                ?string $customInstructions = null,
+            ): \Ineersa\AgentCore\Contract\Compaction\MessageSnapshotCompactionResult {
+                throw new \LogicException('compactMessages not expected in this test path.');
             }
         };
     }

@@ -31,23 +31,23 @@ final class RunMetricsTest extends TestCase
 
         $snapshot = $metrics->snapshot();
 
-        self::assertSame(1, $snapshot['active_runs_by_status']['running']);
-        self::assertSame(1, $snapshot['turn_duration_ms']['count']);
+        $this->assertSame(1, $snapshot['active_runs_by_status']['running']);
+        $this->assertSame(1, $snapshot['turn_duration_ms']['count']);
 
-        self::assertSame(2, $snapshot['llm']['calls']);
-        self::assertSame(1, $snapshot['llm']['errors']);
-        self::assertSame(0.5, $snapshot['llm']['error_rate']);
+        $this->assertSame(2, $snapshot['llm']['calls']);
+        $this->assertSame(1, $snapshot['llm']['errors']);
+        $this->assertSame(0.5, $snapshot['llm']['error_rate']);
 
-        self::assertSame(2, $snapshot['tools']['calls']);
-        self::assertSame(1, $snapshot['tools']['errors']);
-        self::assertSame(1, $snapshot['tools']['timeouts']);
-        self::assertSame(0.5, $snapshot['tools']['timeout_rate']);
+        $this->assertSame(2, $snapshot['tools']['calls']);
+        $this->assertSame(1, $snapshot['tools']['errors']);
+        $this->assertSame(1, $snapshot['tools']['timeouts']);
+        $this->assertSame(0.5, $snapshot['tools']['timeout_rate']);
 
-        self::assertSame(3, $snapshot['command_queue_lag']['max']);
-        self::assertSame(3, $snapshot['command_queue_lag']['by_run']['run-metrics-1']);
+        $this->assertSame(3, $snapshot['command_queue_lag']['max']);
+        $this->assertSame(3, $snapshot['command_queue_lag']['by_run']['run-metrics-1']);
 
-        self::assertSame(2, $snapshot['stale_result_count']);
-        self::assertSame(1, $snapshot['replay_rebuild_count']);
-        self::assertSame(1, $snapshot['replay_rebuild_by_source']['canonical_events']);
+        $this->assertSame(2, $snapshot['stale_result_count']);
+        $this->assertSame(1, $snapshot['replay_rebuild_count']);
+        $this->assertSame(1, $snapshot['replay_rebuild_by_source']['canonical_events']);
     }
 }

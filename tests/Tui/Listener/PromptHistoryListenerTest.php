@@ -4,16 +4,11 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\Listener;
 
-use Ineersa\CodingAgent\Config\AppConfig;
-use Ineersa\CodingAgent\Config\LoggingConfig;
-use Ineersa\CodingAgent\Config\TuiConfig;
-use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
-use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\Tui\Editor\PromptEditor;
+use Ineersa\Tui\Listener\PromptHistory;
 use Ineersa\Tui\Listener\PromptHistoryListener;
-use Ineersa\Tui\Runtime\TuiRuntimeContext;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Screen\ChatScreen;
 use Ineersa\Tui\Tests\Support\TuiRuntimeContextBuilderTrait;
@@ -32,6 +27,8 @@ final class PromptHistoryListenerTest extends TestCase
     private TuiSessionState $state;
     private ChatScreen $screen;
 
+    private PromptHistory $history;
+
     protected function setUp(): void
     {
         $this->editor = new PromptEditor();
@@ -39,6 +36,7 @@ final class PromptHistoryListenerTest extends TestCase
 
         $theme = new DefaultTheme(new ThemePalette('default'));
         $this->screen = new ChatScreen($theme, 'test-session', $this->editor);
+        $this->history = new PromptHistory();
     }
 
     // ─── Up on empty editor recalls latest user prompt ────────
@@ -336,8 +334,8 @@ final class PromptHistoryListenerTest extends TestCase
         $this->editor->clear();
         $this->editor->getWidget()->handleInput('x');
 
-        // Add a new user message to transcript (simulates new submission)
-        $this->state->transcript[] = self::userBlock('new prompt', 2);
+        // Live submit appends to history (transcript poller is not the append path)
+        $this->history->append('new prompt');
 
         // Up should now start from the newest (new prompt)
         // But first, the editor needs to be empty for Up to intercept.
@@ -347,6 +345,30 @@ final class PromptHistoryListenerTest extends TestCase
     }
 
     // ─── Helpers ────────────────────────────────────────────────
+
+    public function testLiveViewDoesNotRecallParentPromptHistory(): void
+    {
+        $this->state->transcript = [self::userBlock('parent prompt one')];
+        $this->state->subagentLiveView->active = true;
+        $this->registerListener();
+
+        $this->editor->getWidget()->handleInput("\x1b[A");
+        $this->assertSame('', $this->editor->getText());
+    }
+
+    #[Test]
+    public function registerSeedsHistoryFromTranscript(): void
+    {
+        $this->state->transcript = [
+            self::userBlock('seeded one', 1),
+            self::assistantBlock('reply', 2),
+            self::userBlock('seeded two', 3),
+        ];
+
+        $this->registerListener();
+
+        $this->assertSame(['seeded one', 'seeded two'], $this->history->prompts());
+    }
 
     private function registerListener(): void
     {
@@ -358,7 +380,7 @@ final class PromptHistoryListenerTest extends TestCase
             ->withScreen($this->screen)
             ->build();
 
-        $listener = new PromptHistoryListener();
+        $listener = new PromptHistoryListener($this->history);
         $listener->register($context);
     }
 

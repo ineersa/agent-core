@@ -7,7 +7,6 @@ namespace Ineersa\AgentCore\Application\Pipeline;
 use Ineersa\AgentCore\Application\Handler\RunMetrics;
 use Ineersa\AgentCore\Application\Handler\RunTracer;
 use Ineersa\AgentCore\Contract\Compaction\PreLlmCompactionGuardInterface;
-use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
@@ -23,7 +22,6 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
     public function __construct(
         private CommandMailboxPolicy $commandMailboxPolicy,
         private EventFactory $eventFactory,
-        private ?EventStoreInterface $eventStore = null,
         private ?RunMetrics $metrics = null,
         private ?RunTracer $tracer = null,
         private ?PreLlmCompactionGuardInterface $preLlmCompactionGuard = null,
@@ -90,6 +88,7 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
                 messages: $state->messages,
                 activeStepId: $state->activeStepId,
                 retryableFailure: false,
+                pendingHumanInputRequests: $state->pendingHumanInputRequests,
             );
 
             $postCommit = [];
@@ -165,6 +164,7 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
                     activeStepId: $preparedState->activeStepId,
                     retryableFailure: false,
                     retryAttempts: $preparedState->retryAttempts,
+                    pendingHumanInputRequests: $preparedState->pendingHumanInputRequests,
                 );
             // Fall through to the turn-advance code below.
             } else {
@@ -186,6 +186,7 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
                     messages: $preparedState->messages,
                     activeStepId: $preparedState->activeStepId,
                     retryableFailure: $preparedState->retryableFailure,
+                    pendingHumanInputRequests: $preparedState->pendingHumanInputRequests,
                 );
 
                 return new HandlerResult(
@@ -216,6 +217,7 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
                 messages: $preparedState->messages,
                 activeStepId: $preparedState->activeStepId,
                 retryableFailure: $preparedState->retryableFailure,
+                pendingHumanInputRequests: $preparedState->pendingHumanInputRequests,
             );
 
             return new HandlerResult(
@@ -252,17 +254,16 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
                     messages: $preparedState->messages,
                     activeStepId: $preparedState->activeStepId,
                     retryableFailure: $preparedState->retryableFailure,
+                    pendingHumanInputRequests: $preparedState->pendingHumanInputRequests,
                 ),
                 events: $events,
             );
         }
 
-        // Branch-aware turn allocation: compute nextTurnNo as max(globalMaxTurnNo, state.turnNo) + 1
-        // so that after rewind (where state.turnNo < globalMax), the new turn does NOT collide with
-        // existing turn numbers (which would corrupt TurnTreeDTO.nodesByTurnNo's int-keyed map).
-        // For linear sessions with no abandoned branches, globalMax == state.turnNo (unchanged behavior).
-        $globalMaxTurnNo = $this->resolveGlobalMaxTurnNo($runId);
-        $nextTurnNo = max($globalMaxTurnNo, $preparedState->turnNo) + 1;
+        // RunMessageProcessor serializes branch creation under the run lock.
+        // RunState.lastSeq is rebuilt from the global canonical event high-water,
+        // so abandoned branch turns cannot collide with this child turn.
+        $nextTurnNo = max($state->lastSeq, $preparedState->turnNo) + 1;
         $nextStepId = $message->stepId();
 
         // Pre-LLM compaction guard: when the coding-agent-side policy
@@ -372,6 +373,7 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
                     messages: $preparedState->messages,
                     activeStepId: $preparedState->activeStepId,
                     retryableFailure: $preparedState->retryableFailure,
+                    pendingHumanInputRequests: $preparedState->pendingHumanInputRequests,
                 );
 
                 return new HandlerResult(
@@ -438,6 +440,7 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
             activeStepId: $nextStepId,
             retryableFailure: false,
             retryAttempts: $preparedState->retryAttempts,
+            pendingHumanInputRequests: $preparedState->pendingHumanInputRequests,
         );
 
         $postCommit = [];
@@ -453,27 +456,5 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
             effects: [$effect],
             postCommit: $postCommit,
         );
-    }
-
-    /**
-     * Resolve the maximum turn number across ALL events in the event store for this run.
-     *
-     * Used for branch-aware turn allocation to prevent turn-number collisions after rewind.
-     * Returns 0 when event store is not available (backward compat) or when the run has no events.
-     */
-    private function resolveGlobalMaxTurnNo(string $runId): int
-    {
-        if (null === $this->eventStore) {
-            return 0;
-        }
-
-        $maxTurnNo = 0;
-        foreach ($this->eventStore->allFor($runId) as $event) {
-            if ($event->turnNo > $maxTurnNo) {
-                $maxTurnNo = $event->turnNo;
-            }
-        }
-
-        return $maxTurnNo;
     }
 }

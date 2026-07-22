@@ -395,18 +395,121 @@ final class PlatformIntegrationTest extends TestCase
         // The cost calculator must have been called with the resolved model ref,
         // NOT the empty request model.  This was the root cause: empty model
         // skipped cost calculation at the '' !== $modelName guard.
-        self::assertSame('test/priced-model', $costCalculator->capturedModel, 'Cost calculator should receive the resolved model, not the empty request model.');
-        self::assertSame(1000, $costCalculator->capturedUsage['input_tokens'] ?? null);
-        self::assertSame(500, $costCalculator->capturedUsage['output_tokens'] ?? null);
+        $this->assertSame('test/priced-model', $costCalculator->capturedModel, 'Cost calculator should receive the resolved model, not the empty request model.');
+        $this->assertSame(1000, $costCalculator->capturedUsage['input_tokens'] ?? null);
+        $this->assertSame(500, $costCalculator->capturedUsage['output_tokens'] ?? null);
 
         // The usage array must contain the computed cost.
-        self::assertArrayHasKey('cost', $response->usage, 'Usage should contain a cost key.');
-        self::assertSame(42.0, $response->usage['cost']);
+        $this->assertArrayHasKey('cost', $response->usage, 'Usage should contain a cost key.');
+        $this->assertSame(42.0, $response->usage['cost']);
 
         // Token counts still flow through independently.
-        self::assertSame(1000, $response->usage['input_tokens']);
-        self::assertSame(500, $response->usage['output_tokens']);
-        self::assertSame(1500, $response->usage['total_tokens']);
+        $this->assertSame(1000, $response->usage['input_tokens']);
+        $this->assertSame(500, $response->usage['output_tokens']);
+        $this->assertSame(1500, $response->usage['total_tokens']);
+    }
+
+    public function testImageRefSurvivesAdapterConvertWhenRequestCarriesActualVisionModel(): void
+    {
+        $tmpDir = \Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation::createOsTempDir('platform-image-gate');
+        try {
+            $imagePath = $tmpDir.'/vision-gate.png';
+            $png = base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==');
+            file_put_contents($imagePath, $png);
+
+            $runStore = new InMemoryRunStore();
+            $runStore->compareAndSwap(new RunState(
+                runId: 'run-image-gate-01',
+                status: RunStatus::Running,
+                version: 1,
+                turnNo: 1,
+                lastSeq: 0,
+                isStreaming: false,
+                streamingMessage: null,
+                pendingToolCalls: [],
+                errorMessage: null,
+                messages: [
+                    new AgentMessage('user', [['type' => 'text', 'text' => 'describe image']]),
+                    new AgentMessage(
+                        role: 'assistant',
+                        content: [['type' => 'text', 'text' => 'Calling view_image']],
+                        metadata: [
+                            'tool_calls' => [[
+                                'id' => 'call_view',
+                                'name' => 'view_image',
+                                'args' => ['path' => $imagePath],
+                                'order_index' => 0,
+                            ]],
+                        ],
+                    ),
+                    new AgentMessage(
+                        role: 'tool',
+                        content: [
+                            ['type' => 'text', 'text' => '{"type":"view_image"}'],
+                            [
+                                'type' => 'image_ref',
+                                'path' => $imagePath,
+                                'media_type' => 'image/png',
+                                'bytes' => \strlen($png),
+                                'width' => 1,
+                                'height' => 1,
+                            ],
+                        ],
+                        toolCallId: 'call_view',
+                        toolName: 'view_image',
+                    ),
+                ],
+                activeStepId: 'turn-1-llm-1',
+            ), 0);
+
+            $checker = $this->createStub(\Ineersa\AgentCore\Contract\Model\ImageCapabilityCheckerInterface::class);
+            $checker->method('supportsImages')->willReturn(true);
+
+            $imageGatingHook = new \Ineersa\CodingAgent\Tool\ImageProcessing\ImageGatingConvertHook(
+                $checker,
+                new AgentMessageConverter(),
+            );
+
+            $modelClient = new FakeSymfonyModelClient(new FakeTokenUsage(
+                promptTokens: 10,
+                completionTokens: 5,
+                totalTokens: 15,
+            ));
+
+            $platform = $this->createSymfonyPlatform(
+                modelClient: $modelClient,
+                streamFactory: static fn (): iterable => [new TextDelta('ok')],
+            );
+
+            $adapter = new LlmPlatformAdapter(
+                runStore: $runStore,
+                messageConverter: new AgentMessageConverter(),
+                toolDescriptionProcessor: new DynamicToolDescriptionProcessor(),
+                platform: $platform,
+                transformContextHooks: [],
+                convertToLlmHooks: [$imageGatingHook],
+                streamObserver: null,
+                costCalculator: null,
+                logger: new NullLogger(),
+            );
+
+            $adapter->invoke(new ModelInvocationRequest(
+                model: 'llama_cpp/flash',
+                input: new ModelInvocationInput(
+                    runId: 'run-image-gate-01',
+                    turnNo: 1,
+                    stepId: 'turn-1-llm-1',
+                ),
+            ));
+
+            $payload = $modelClient->capturedPayload;
+            $this->assertIsArray($payload);
+            $serialized = json_encode($payload);
+            $this->assertIsString($serialized);
+            $this->assertStringNotContainsString('does not support images', $serialized, 'Convert hooks must receive the actual request model, not an empty sentinel.');
+        } finally {
+            \Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation::removeDirectory($tmpDir);
+        }
     }
 
     public function testStreamingCancellationReturnsAbortedWithPartialOutput(): void
@@ -758,18 +861,18 @@ final class PlatformIntegrationTest extends TestCase
         ));
 
         // The usage payload must contain the cache fields.
-        self::assertArrayHasKey('cached_tokens', $response->usage, 'Usage must contain cached_tokens');
-        self::assertSame(78, $response->usage['cached_tokens']);
+        $this->assertArrayHasKey('cached_tokens', $response->usage, 'Usage must contain cached_tokens');
+        $this->assertSame(78, $response->usage['cached_tokens']);
 
-        self::assertArrayHasKey('cache_read_tokens', $response->usage, 'Usage must contain cache_read_tokens');
-        self::assertSame(78, $response->usage['cache_read_tokens']);
+        $this->assertArrayHasKey('cache_read_tokens', $response->usage, 'Usage must contain cache_read_tokens');
+        $this->assertSame(78, $response->usage['cache_read_tokens']);
 
-        self::assertArrayNotHasKey('cache_creation_tokens', $response->usage, 'cache_creation_tokens must be absent when not reported');
+        $this->assertArrayNotHasKey('cache_creation_tokens', $response->usage, 'cache_creation_tokens must be absent when not reported');
 
         // Standard fields still present.
-        self::assertSame(100, $response->usage['input_tokens']);
-        self::assertSame(50, $response->usage['output_tokens']);
-        self::assertSame(150, $response->usage['total_tokens']);
+        $this->assertSame(100, $response->usage['input_tokens']);
+        $this->assertSame(50, $response->usage['output_tokens']);
+        $this->assertSame(150, $response->usage['total_tokens']);
     }
 
     /**
@@ -832,18 +935,18 @@ final class PlatformIntegrationTest extends TestCase
 
         // cache_read_tokens must fall back to cached_tokens when explicit
         // cache-read is absent.
-        self::assertArrayHasKey('cache_read_tokens', $response->usage);
-        self::assertSame(120, $response->usage['cache_read_tokens'], 'cache_read_tokens must fall back to cached_tokens');
-        self::assertSame(120, $response->usage['cached_tokens']);
+        $this->assertArrayHasKey('cache_read_tokens', $response->usage);
+        $this->assertSame(120, $response->usage['cache_read_tokens'], 'cache_read_tokens must fall back to cached_tokens');
+        $this->assertSame(120, $response->usage['cached_tokens']);
     }
 
     /**
      * Create an LlmPlatformAdapter with a fake Symfony AI backend,
      * a simple text-delta stream, and the given transform hooks.
      *
-     * @param \Closure(): iterable<mixed>                     $streamFactory
-     * @param iterable<TransformContextHookInterface>          $transformHooks
-     * @param iterable<ConvertToLlmHookInterface>              $convertHooks
+     * @param \Closure(): iterable<mixed>             $streamFactory
+     * @param iterable<TransformContextHookInterface> $transformHooks
+     * @param iterable<ConvertToLlmHookInterface>     $convertHooks
      */
     private function createAdapter(
         InMemoryRunStore $runStore,

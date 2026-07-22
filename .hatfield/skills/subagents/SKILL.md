@@ -9,13 +9,15 @@ Hatfield exposes **`subagent`** (launch) and **`agent_retrieve`** (read artifact
 
 ## Quick start
 
-**Single child:**
+**Decision rule:** batch independent scouts/reviewers in **one** `tasks` call whenever within `agents.max_agents`. Use single mode only for exactly one child or work that must be serialized. Separate outer `subagent` calls are sequential; children inside one `tasks` array run concurrently. Multiple separate single-mode calls for independent work are valid syntax but an orchestration anti-pattern.
+
+**Single child** (or serialized/dependent work — e.g. scout B needs scout A’s findings, re-review after a fix):
 
 ```json
 { "agent": "scout", "task": "Map how skills are discovered and injected." }
 ```
 
-**Parallel children** (up to `agents.max_agents`, default 8 — use either single or `tasks`, not both):
+**Independent parallel children** (preferred for multi-scout/reviewer work; up to `agents.max_agents`, default 8 — use either single or `tasks`, not both):
 
 ```json
 {
@@ -26,16 +28,30 @@ Hatfield exposes **`subagent`** (launch) and **`agent_retrieve`** (read artifact
 }
 ```
 
-After a run, copy **`Artifact: agent_<hex>`** from the tool result and call **`agent_retrieve`** when you need the full handoff, metadata, or bounded events/history.
+**Anti-pattern for independent work** (valid syntax, but two separate outer calls serialize):
+
+```json
+{ "agent": "scout", "task": "Inspect routing." }
+```
+
+```json
+{ "agent": "scout", "task": "Inspect auth." }
+```
+
+Prefer one `tasks` batch instead of two single-mode calls.
+
+Split across multiple `subagent` calls only for **cap overflow** (`max_agents`) or **true dependencies**, not for routine independent reconnaissance.
+
+After a run, copy **`Artifact: agent_<hex>`** from the tool result and call **`agent_retrieve`** when you need the full handoff, metadata, or bounded events/history. Parallel results are bounded summaries; retrieve complete handoffs by artifact ID when needed.
 
 If a subagent was **cancelled**, the tool error still includes **`Artifact:`** and **`Status: cancelled`** when available. Retrieve with **`agent_retrieve`** (`metadata` / `events` / `history`); cancelled handoffs include bounded partial context only (no raw tool output).
 
 ## Where agents live
 
-Discovery precedence (higher wins on name collision):
+Discovery load order (lowest to highest; later layers override earlier on name collision):
 
-1. `~/.hatfield/agents/*.md` → `~/.agents/*.md`
-2. `.hatfield/agents/*.md` → `.agents/*.md`
+1. `~/.agents/*.md` → `~/.hatfield/agents/*.md`
+2. `.agents/*.md` → `.hatfield/agents/*.md`
 3. `agents.paths` in settings
 
 Parent sessions also get **`<available_agents>`** (name + description) in context when `agents.enabled` is true.
@@ -54,9 +70,24 @@ Parent sessions also get **`<available_agents>`** (name + description) in contex
 | `tools` | Optional in frontmatter; if omitted, child inherits all parent-available tools (except `subagent`). Explicit non-empty allowlist recommended for restricted agents. YAML lists **or** comma-separated strings; `tools: []` or empty entries fail validation. |
 | `parallelAllowed` | Defaults to **`true`**. Set `parallelAllowed: false` to block use in parallel `tasks`. |
 | `skills` / `skill` | `skill:` merges into `skills`; comma-separated strings are split. |
-| MCP `mode: none` | Default. Child MCP sessions are parent-scoped; `all` does not add MCP tools to the child allowlist the way `specific` does. |
-| Parallel cap | More than `max_agents` tasks → fail fast; split across multiple `subagent` calls. |
+| MCP availability | Servers marked `availability: all` are inherited by every child, including explicit `tools` lists. `availability: specific` tools require exact/prefix `mcp:` selectors. `mcp:-` suppresses all MCP tools; `mcp:*` selects globally available MCP tools only. |
+| Parallel cap | More than `max_agents` tasks → fail fast; split across calls only for cap overflow or true dependencies (not routine independent work). |
 | Subagent wait timeout | `agents.subagent_tool_timeout_seconds` (default **1800** s, min **60**; below min fails config load) — internal poll deadline for foreground child runs; not ToolExecutor generic timeout. |
+
+## Child MCP policy
+
+- Omitted or explicit `tools` lists inherit MCP tools from servers marked
+  `availability: all` in `.hatfield/mcp.json`.
+- `availability: specific` tools are opt-in through `mcp:` selectors. Selectors
+  add their catalog matches to inherited globals; `mcp:-` wins over every other
+  selector and suppresses all MCP tools.
+- Raw catalog runtime names without the `mcp:` prefix are stripped from explicit
+  non-MCP lists. Tools from `availability: all` servers remain available through
+  global inheritance, while tools from `availability: specific` servers are not
+  opted in by raw names. Unrelated non-MCP names remain available.
+- Selector grammar is terminal-star-only: exact names have no `*`, exactly one
+  terminal `*` is a prefix wildcard, and embedded or multiple stars are not
+  general globs.
 
 ## Workflows
 

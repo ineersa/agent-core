@@ -4,19 +4,20 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Agent\Artifact;
 
+use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactPathResolver;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
 use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunDirectory;
-use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+use Ineersa\CodingAgent\Session\SessionAgentArtifactPathResolver;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\FlockStore;
 use Symfony\Component\Serializer\Encoder\JsonEncoder;
+use Symfony\Component\Serializer\NameConverter\CamelCaseToSnakeCaseNameConverter;
 use Symfony\Component\Serializer\Normalizer\BackedEnumNormalizer;
 use Symfony\Component\Serializer\Normalizer\DateTimeNormalizer;
-use Symfony\Component\Serializer\NameConverter\CamelCaseToSnakeCaseNameConverter;
 use Symfony\Component\Serializer\Normalizer\ObjectNormalizer;
 use Symfony\Component\Serializer\Serializer;
 use Symfony\Component\Validator\ValidatorBuilder;
@@ -59,7 +60,7 @@ final class AgentChildRunDirectoryTest extends IsolatedKernelTestCase
 
         $validator = (new ValidatorBuilder())->enableAttributeMapping()->getValidator();
 
-        $pathResolver = new AgentArtifactPathResolver($this->hatfieldSessionStore);
+        $pathResolver = new AgentArtifactPathResolver(new SessionAgentArtifactPathResolver($this->hatfieldSessionStore));
 
         $this->registry = new AgentArtifactRegistry(
             pathResolver: $pathResolver,
@@ -92,10 +93,10 @@ final class AgentChildRunDirectoryTest extends IsolatedKernelTestCase
         // did not call register()).
         $found = $this->directory->locate($childAgentRunId);
 
-        self::assertNotNull($found, 'Locator must find child artifact after creation');
-        self::assertSame($childAgentRunId, $found->agentRunId);
-        self::assertSame($parentSessionId, $found->parentRunId);
-        self::assertSame($entry->artifactId, $found->artifactId);
+        $this->assertNotNull($found, 'Locator must find child artifact after creation');
+        $this->assertSame($childAgentRunId, $found->agentRunId);
+        $this->assertSame($parentSessionId, $found->parentRunId);
+        $this->assertSame($entry->artifactId, $found->artifactId);
     }
 
     /**
@@ -112,8 +113,8 @@ final class AgentChildRunDirectoryTest extends IsolatedKernelTestCase
         $this->registry->create($parentSessionId, 'rescan-artifact-1', $child1RunId, 'scout', AgentArtifactKindEnum::Subagent);
 
         $found1 = $this->directory->locate($child1RunId);
-        self::assertNotNull($found1, 'First child must be locatable');
-        self::assertSame($child1RunId, $found1->agentRunId);
+        $this->assertNotNull($found1, 'First child must be locatable');
+        $this->assertSame($child1RunId, $found1->agentRunId);
 
         // Now create a second child (different agentRunId and artifactId) —
         // do NOT call register(). If the directory has a stale-scanned flag,
@@ -123,17 +124,17 @@ final class AgentChildRunDirectoryTest extends IsolatedKernelTestCase
 
         $found2 = $this->directory->locate($child2RunId);
 
-        self::assertNotNull(
+        $this->assertNotNull(
             $found2,
             'Locator must rescan and find late-created child artifact — '
             .'stale process-wide scanned flag would hide it',
         );
-        self::assertSame($child2RunId, $found2->agentRunId, 'Late child must have correct agentRunId');
+        $this->assertSame($child2RunId, $found2->agentRunId, 'Late child must have correct agentRunId');
 
         // child-1 should still be in the cache (fast-path, no rescan needed).
         $found1Again = $this->directory->locate($child1RunId);
-        self::assertNotNull($found1Again, 'First child must remain in cache after second locate');
-        self::assertSame($child1RunId, $found1Again->agentRunId);
+        $this->assertNotNull($found1Again, 'First child must remain in cache after second locate');
+        $this->assertSame($child1RunId, $found1Again->agentRunId);
     }
 
     /**
@@ -152,8 +153,8 @@ final class AgentChildRunDirectoryTest extends IsolatedKernelTestCase
         $this->directory->register($entry);
 
         $found = $this->directory->locate($childAgentRunId);
-        self::assertNotNull($found, 'Pre-registered entry must be locatable without scan');
-        self::assertSame($entry->artifactId, $found->artifactId);
+        $this->assertNotNull($found, 'Pre-registered entry must be locatable without scan');
+        $this->assertSame($entry->artifactId, $found->artifactId);
     }
 
     /**
@@ -162,7 +163,7 @@ final class AgentChildRunDirectoryTest extends IsolatedKernelTestCase
     public function testLocateReturnsNullForUnknownRunId(): void
     {
         $result = $this->directory->locate('nonexistent-child-run-id');
-        self::assertNull($result, 'Locator must return null for unknown run IDs');
+        $this->assertNull($result, 'Locator must return null for unknown run IDs');
     }
 
     /**
@@ -186,9 +187,9 @@ final class AgentChildRunDirectoryTest extends IsolatedKernelTestCase
         // This makes AgentArtifactRegistry::list() throw, which the
         // directory's scanAllSessions() catches and skips.  No chmod/permission
         // tricks needed — portable across filesystems and CI environments.
-        $pathResolver = new AgentArtifactPathResolver($this->hatfieldSessionStore);
+        $pathResolver = new AgentArtifactPathResolver(new SessionAgentArtifactPathResolver($this->hatfieldSessionStore));
         $badRegistryPath = $pathResolver->registryPath($badParentId);
-        $badRegistryDir = dirname($badRegistryPath);
+        $badRegistryDir = \dirname($badRegistryPath);
 
         if (!is_dir($badRegistryDir)) {
             mkdir($badRegistryDir, 0755, true);
@@ -200,11 +201,11 @@ final class AgentChildRunDirectoryTest extends IsolatedKernelTestCase
         // Locating the good child must still succeed — the corrupt
         // parent's failure is logged and skipped, not propagated.
         $found = $this->directory->locate($childRunId);
-        self::assertNotNull(
+        $this->assertNotNull(
             $found,
             'Locator must find child artifacts in healthy parents even '
             .'when another parent has a corrupt registry',
         );
-        self::assertSame($childRunId, $found->agentRunId);
+        $this->assertSame($childRunId, $found->agentRunId);
     }
 }

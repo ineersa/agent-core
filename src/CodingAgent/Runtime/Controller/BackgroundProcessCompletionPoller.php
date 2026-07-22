@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Runtime\Controller;
 
+use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
@@ -45,15 +46,8 @@ final class BackgroundProcessCompletionPoller
     private const int NOTIFICATION_TAIL_CHARS = 3000;
 
     /**
-     * @param string|null $sessionId optional session/run ID to scope
-     *                               queries. When null or empty string,
-     *                               operates across all sessions
-     *                               (unscoped). Normalized from empty
-     *                               string to null so downstream
-     *                               repository null-guards work correctly.
-     *                               Set via DI from HATFIELD_SESSION_ID
-     *                               env var; defaults to empty string
-     *                               in non-controller/test environments.
+     * @param string|null $sessionId parent controller session/run ID from
+     *                               HATFIELD_SESSION_ID. When null, poll is a no-op.
      */
     private readonly ?string $sessionId;
 
@@ -63,6 +57,7 @@ final class BackgroundProcessCompletionPoller
         private readonly AgentSessionClient $sessionClient,
         private readonly RuntimeEventEmitter $emitter,
         private readonly LoggerInterface $logger,
+        private readonly AgentArtifactRegistry $artifactRegistry,
         ?string $sessionId = null,
     ) {
         // Normalize empty string to null so repository null-guards
@@ -89,40 +84,52 @@ final class BackgroundProcessCompletionPoller
 
     private function poll(): void
     {
-        // Step 1: Refresh unfinished process statuses from filesystem state.
-        //
-        // A backgrounded process that finishes naturally only writes its
-        // status file; the DB entity still has finishedAt=NULL. Without
-        // this refresh, findPendingNotifications() below would never
-        // select it because the query requires finishedAt IS NOT NULL.
-        //
-        // When sessionId is set, only processes for the current session
-        // are refreshed to avoid O(N) cross-session filesystem scans.
-        try {
-            $this->processManager->refreshAllUnfinished($this->sessionId);
-        } catch (\Throwable $e) {
-            $this->logger->warning('bg_process_completion.refresh_failed', [
+        $sessionIds = $this->resolveOwnedSessionIds();
+        if ([] === $sessionIds) {
+            $this->logger->debug('bg_process_completion.poll_skipped_no_session', [
                 'component' => 'bg_process_completion.poller',
-                'event_type' => 'bg_process_completion.refresh_failed',
-                'exception' => $e->getMessage(),
+                'event_type' => 'bg_process_completion.poll_skipped_no_session',
             ]);
 
             return;
         }
 
-        try {
-            $processes = $this->processStore->findPendingNotifications($this->sessionId);
-        } catch (\Throwable $e) {
-            $this->logger->warning('bg_process_completion.poller_query_failed', [
-                'component' => 'bg_process_completion.poller',
-                'event_type' => 'bg_process_completion.poller_query_failed',
-                'exception' => $e->getMessage(),
-            ]);
+        $pendingByPid = [];
 
-            return;
+        foreach ($sessionIds as $sessionId) {
+            // A backgrounded process that finishes naturally only writes its
+            // status file; the DB entity still has finishedAt=NULL. Without
+            // this refresh, findPendingNotifications() would never select it.
+            try {
+                $this->processManager->refreshAllUnfinished($sessionId);
+            } catch (\Throwable $e) {
+                $this->logger->warning('bg_process_completion.refresh_failed', [
+                    'component' => 'bg_process_completion.poller',
+                    'event_type' => 'bg_process_completion.refresh_failed',
+                    'controller_session_id' => $this->sessionId,
+                    'scoped_session_id' => $sessionId,
+                    'exception' => $e->getMessage(),
+                ]);
+
+                continue;
+            }
+
+            try {
+                foreach ($this->processStore->findPendingNotifications($sessionId) as $process) {
+                    $pendingByPid[$process->pid] = $process;
+                }
+            } catch (\Throwable $e) {
+                $this->logger->warning('bg_process_completion.poller_query_failed', [
+                    'component' => 'bg_process_completion.poller',
+                    'event_type' => 'bg_process_completion.poller_query_failed',
+                    'controller_session_id' => $this->sessionId,
+                    'scoped_session_id' => $sessionId,
+                    'exception' => $e->getMessage(),
+                ]);
+            }
         }
 
-        foreach ($processes as $process) {
+        foreach ($pendingByPid as $process) {
             try {
                 $this->sendNotification($process);
             } catch (\Throwable $e) {
@@ -139,6 +146,38 @@ final class BackgroundProcessCompletionPoller
     }
 
     /**
+     * Session IDs this controller owns: parent session plus child agent run IDs.
+     *
+     * @return list<string>
+     */
+    private function resolveOwnedSessionIds(): array
+    {
+        if (null === $this->sessionId) {
+            return [];
+        }
+
+        $ids = [$this->sessionId];
+
+        try {
+            foreach ($this->artifactRegistry->list($this->sessionId) as $entry) {
+                $childRunId = $entry->agentRunId;
+                if ('' !== $childRunId && !\in_array($childRunId, $ids, true)) {
+                    $ids[] = $childRunId;
+                }
+            }
+        } catch (\Throwable $e) {
+            $this->logger->warning('bg_process_completion.artifact_list_failed', [
+                'component' => 'bg_process_completion.poller',
+                'event_type' => 'bg_process_completion.artifact_list_failed',
+                'controller_session_id' => $this->sessionId,
+                'exception' => $e->getMessage(),
+            ]);
+        }
+
+        return $ids;
+    }
+
+    /**
      * Build and send a follow-up notification for a completed background process.
      */
     private function sendNotification(\Ineersa\CodingAgent\Entity\BackgroundProcess $process): void
@@ -147,10 +186,11 @@ final class BackgroundProcessCompletionPoller
         $sessionId = $process->sessionId;
 
         if ('' === $sessionId) {
-            // Unscopped process — cannot send follow-up without a run.
+            // Unscoped process — cannot send follow-up without a run.
             // Mark notified to avoid re-polling.
             $now = new \DateTimeImmutable();
-            $this->processStore->markCompletionNotified($pid, $now);
+            $process->markCompletionNotified($now);
+            $this->processStore->flush();
 
             $this->logger->info('bg_process_completion.skipped_no_session', [
                 'component' => 'bg_process_completion.poller',
@@ -164,7 +204,7 @@ final class BackgroundProcessCompletionPoller
         // Read log tail, matching pi's 3000 char cap.
         $output = '';
         try {
-            $tailResult = $this->processManager->readLogTail($pid, self::NOTIFICATION_TAIL_CHARS, $sessionId);
+            $tailResult = $this->processManager->readLogTailForRecord($process->id, self::NOTIFICATION_TAIL_CHARS, $sessionId);
             $output = $tailResult->content;
         } catch (\Throwable $e) {
             $output = \sprintf('[Could not read log: %s]', $e->getMessage());
@@ -220,7 +260,8 @@ final class BackgroundProcessCompletionPoller
 
         // Only mark notified after successful send.
         $now = new \DateTimeImmutable();
-        $this->processStore->markCompletionNotified($pid, $now);
+        $process->markCompletionNotified($now);
+        $this->processStore->flush();
 
         $this->logger->info('bg_process_completion.notification_sent', [
             'component' => 'bg_process_completion.poller',

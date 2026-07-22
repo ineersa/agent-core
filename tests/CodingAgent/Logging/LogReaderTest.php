@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Logging;
 
-use Ineersa\CodingAgent\Logging\LogEntry;
 use Ineersa\CodingAgent\Logging\LogFilter;
 use Ineersa\CodingAgent\Logging\LogParser;
 use Ineersa\CodingAgent\Logging\LogReader;
@@ -40,12 +39,12 @@ final class LogReaderTest extends TestCase
     public function testGetLogFilesReturnsEmptyForNonexistentDir(): void
     {
         $reader = new LogReader(new LogParser(), '/does/not/exist');
-        self::assertSame([], $reader->getLogFiles());
+        $this->assertSame([], $reader->getLogFiles());
     }
 
     public function testGetLogFilesReturnsEmptyForEmptyDir(): void
     {
-        self::assertSame([], $this->reader->getLogFiles());
+        $this->assertSame([], $this->reader->getLogFiles());
     }
 
     public function testGetLogFilesReturnsSortedByMtime(): void
@@ -61,21 +60,21 @@ final class LogReaderTest extends TestCase
 
         $files = $this->reader->getLogFiles();
 
-        self::assertCount(2, $files);
-        self::assertSame($log2, $files[0]); // newest first
-        self::assertSame($log1, $files[1]);
+        $this->assertCount(2, $files);
+        $this->assertSame($log2, $files[0]); // newest first
+        $this->assertSame($log1, $files[1]);
     }
 
     public function testReadFilesYieldsParsedEntries(): void
     {
         $lines = [
-            \json_encode([
+            json_encode([
                 'datetime' => '2026-05-18T10:00:00+00:00',
                 'channel' => 'app',
                 'level_name' => 'INFO',
                 'message' => 'First message',
             ], \JSON_THROW_ON_ERROR),
-            \json_encode([
+            json_encode([
                 'datetime' => '2026-05-18T10:01:00+00:00',
                 'channel' => 'app',
                 'level_name' => 'WARNING',
@@ -87,23 +86,23 @@ final class LogReaderTest extends TestCase
 
         $entries = iterator_to_array($this->reader->readFiles([$this->logDir.'/agent.log']));
 
-        self::assertCount(2, $entries);
-        self::assertSame('First message', $entries[0]->message);
-        self::assertSame('INFO', $entries[0]->level);
-        self::assertSame('Second message', $entries[1]->message);
-        self::assertSame('WARNING', $entries[1]->level);
+        $this->assertCount(2, $entries);
+        $this->assertSame('First message', $entries[0]->message);
+        $this->assertSame('INFO', $entries[0]->level);
+        $this->assertSame('Second message', $entries[1]->message);
+        $this->assertSame('WARNING', $entries[1]->level);
     }
 
     public function testReadFilesFiltersByLevel(): void
     {
         $lines = [
-            \json_encode([
+            json_encode([
                 'datetime' => '2026-05-18T10:00:00+00:00',
                 'channel' => 'app',
                 'level_name' => 'INFO',
                 'message' => 'Info message',
             ], \JSON_THROW_ON_ERROR),
-            \json_encode([
+            json_encode([
                 'datetime' => '2026-05-18T10:01:00+00:00',
                 'channel' => 'app',
                 'level_name' => 'ERROR',
@@ -116,16 +115,16 @@ final class LogReaderTest extends TestCase
         $filter = new LogFilter(level: 'ERROR');
         $entries = iterator_to_array($this->reader->readFiles([$this->logDir.'/agent.log'], $filter));
 
-        self::assertCount(1, $entries);
-        self::assertSame('Error message', $entries[0]->message);
+        $this->assertCount(1, $entries);
+        $this->assertSame('Error message', $entries[0]->message);
     }
 
     public function testReadFilesRespectsLimit(): void
     {
         $lines = [];
         for ($i = 0; $i < 50; ++$i) {
-            $lines[] = \json_encode([
-                'datetime' => '2026-05-18T10:00:'.sprintf('%02d', $i).'+00:00',
+            $lines[] = json_encode([
+                'datetime' => '2026-05-18T10:00:'.\sprintf('%02d', $i).'+00:00',
                 'channel' => 'app',
                 'level_name' => 'INFO',
                 'message' => "Message {$i}",
@@ -137,14 +136,14 @@ final class LogReaderTest extends TestCase
         $filter = new LogFilter(limit: 10);
         $entries = iterator_to_array($this->reader->readFiles([$this->logDir.'/agent.log'], $filter));
 
-        self::assertCount(10, $entries);
+        $this->assertCount(10, $entries);
     }
 
     public function testReadFilesSkipsInvalidLines(): void
     {
         $lines = [
             'not json',
-            \json_encode([
+            json_encode([
                 'datetime' => '2026-05-18T10:00:00+00:00',
                 'channel' => 'app',
                 'level_name' => 'INFO',
@@ -158,27 +157,27 @@ final class LogReaderTest extends TestCase
 
         $entries = iterator_to_array($this->reader->readFiles([$this->logDir.'/agent.log']));
 
-        self::assertCount(1, $entries);
-        self::assertSame('Valid message', $entries[0]->message);
+        $this->assertCount(1, $entries);
+        $this->assertSame('Valid message', $entries[0]->message);
     }
 
     public function testReadFilesHandlesMissingFile(): void
     {
         $entries = iterator_to_array($this->reader->readFiles(['/does/not/exist.log']));
-        self::assertCount(0, $entries);
+        $this->assertCount(0, $entries);
     }
 
     public function testTailReturnsEmptyForNoFiles(): void
     {
-        self::assertSame([], $this->reader->tail());
+        $this->assertSame([], $this->reader->tail());
     }
 
     public function testTailReturnsLastEntries(): void
     {
         $lines = [];
         for ($i = 0; $i < 20; ++$i) {
-            $lines[] = \json_encode([
-                'datetime' => '2026-05-18T10:00:'.sprintf('%02d', $i).'+00:00',
+            $lines[] = json_encode([
+                'datetime' => '2026-05-18T10:00:'.\sprintf('%02d', $i).'+00:00',
                 'channel' => 'app',
                 'level_name' => 'INFO',
                 'message' => "Message {$i}",
@@ -189,24 +188,24 @@ final class LogReaderTest extends TestCase
 
         $entries = $this->reader->tail(5);
 
-        self::assertCount(5, $entries);
+        $this->assertCount(5, $entries);
         // tail returns newest-first, so they should be messages 19..15 reversed
-        self::assertSame('Message 19', $entries[0]->message);
-        self::assertSame('Message 15', $entries[4]->message);
+        $this->assertSame('Message 19', $entries[0]->message);
+        $this->assertSame('Message 15', $entries[4]->message);
     }
 
     public function testTailFiltersByLevel(): void
     {
         $lines = [];
         for ($i = 0; $i < 10; ++$i) {
-            $lines[] = \json_encode([
-                'datetime' => '2026-05-18T10:00:'.sprintf('%02d', $i).'+00:00',
+            $lines[] = json_encode([
+                'datetime' => '2026-05-18T10:00:'.\sprintf('%02d', $i).'+00:00',
                 'channel' => 'app',
                 'level_name' => 'INFO',
                 'message' => "Info {$i}",
             ], \JSON_THROW_ON_ERROR);
         }
-        $lines[] = \json_encode([
+        $lines[] = json_encode([
             'datetime' => '2026-05-18T10:00:11+00:00',
             'channel' => 'app',
             'level_name' => 'ERROR',
@@ -218,8 +217,8 @@ final class LogReaderTest extends TestCase
         $filter = new LogFilter(level: 'ERROR');
         $entries = $this->reader->tail(50, $filter);
 
-        self::assertCount(1, $entries);
-        self::assertSame('Only error', $entries[0]->message);
+        $this->assertCount(1, $entries);
+        $this->assertSame('Only error', $entries[0]->message);
     }
 
     private function rmDir(string $dir): void

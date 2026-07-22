@@ -27,6 +27,9 @@ abstract class ControllerE2eTestCase extends TestCase
 
     /** @var array<int, resource> */
     protected array $pipes = [];
+
+    /** @var list<int> PIDs in this test's controller subprocess tree (proc child + descendants). */
+    protected array $trackedControllerPids = [];
     protected string $stdoutBuf = '';
     protected string $stderrBuf = '';
     protected string $runId = '';
@@ -37,6 +40,48 @@ abstract class ControllerE2eTestCase extends TestCase
      * Set from the first run.started seen during a collection window, or from $this->runId when known.
      */
     protected ?string $parentRunIdForCollection = null;
+
+    // ── Lifecycle ──
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        if (false === getenv('LLAMA_CPP_SMOKE_TEST') || '' === getenv('LLAMA_CPP_SMOKE_TEST')) {
+            $this->markTestSkipped(
+                'LLAMA_CPP_SMOKE_TEST is not set. Run `castor test:llm-real` or set '
+                .'LLAMA_CPP_SMOKE_TEST=1 to enable the real llama.cpp smoke test.'
+            );
+        }
+
+        $this->projectDir = \Ineersa\CodingAgent\Tests\Support\ProjectDir::get();
+
+        // Ephemeral live E2E runs must not use all-digit ids: SessionAwareModelResolver treats
+        // ctype_digit session ids as persisted Hatfield sessions and fails when metadata is missing.
+        $this->sessionId = 'e2e-'.substr(bin2hex(random_bytes(16)), 0, 12);
+        $this->tempDir = TestDirectoryIsolation::createProjectTempDir($this->tempDirPrefix());
+
+        $this->createIsolatedProjectDir();
+
+        $this->process = null;
+        $this->pipes = [];
+        $this->trackedControllerPids = [];
+        $this->stdoutBuf = '';
+        $this->stderrBuf = '';
+        $this->runId = '';
+        $this->parentRunIdForCollection = null;
+    }
+
+    protected function tearDown(): void
+    {
+        $this->stopProcess();
+
+        if (isset($this->tempDir) && '' !== $this->tempDir) {
+            TestDirectoryIsolation::removeDirectory($this->tempDir);
+        }
+
+        parent::tearDown();
+    }
 
     // ── Overridable hooks ──
 
@@ -58,7 +103,7 @@ abstract class ControllerE2eTestCase extends TestCase
 
     /**
      * @return list<string> Extra CLI arguments appended to `agent --controller`.
-     *                         Default excludes bash for deterministic E2E tests.
+     *                      Default excludes bash for deterministic E2E tests.
      */
     protected function controllerExtraArgs(): array
     {
@@ -74,7 +119,7 @@ abstract class ControllerE2eTestCase extends TestCase
     }
 
     /**
-     * @return array<string, string> Extra lines for diagnostics output.
+     * @return array<string, string> extra lines for diagnostics output
      */
     protected function extraDiagnostics(): array
     {
@@ -134,51 +179,12 @@ abstract class ControllerE2eTestCase extends TestCase
         return 12.0;
     }
 
-    // ── Lifecycle ──
-
-    protected function setUp(): void
-    {
-        parent::setUp();
-
-        if (false === getenv('LLAMA_CPP_SMOKE_TEST') || '' === getenv('LLAMA_CPP_SMOKE_TEST')) {
-            self::markTestSkipped(
-                'LLAMA_CPP_SMOKE_TEST is not set. Run `castor test:llm-real` or set '
-                .'LLAMA_CPP_SMOKE_TEST=1 to enable the real llama.cpp smoke test.'
-            );
-        }
-
-        $this->projectDir = \Ineersa\CodingAgent\Tests\Support\ProjectDir::get();
-
-        $this->sessionId = substr(bin2hex(random_bytes(16)), 0, 12);
-        $this->tempDir = TestDirectoryIsolation::createProjectTempDir($this->tempDirPrefix());
-
-        $this->createIsolatedProjectDir();
-
-        $this->process = null;
-        $this->pipes = [];
-        $this->stdoutBuf = '';
-        $this->stderrBuf = '';
-        $this->runId = '';
-        $this->parentRunIdForCollection = null;
-    }
-
-    protected function tearDown(): void
-    {
-        $this->stopProcess();
-
-        if (isset($this->tempDir) && '' !== $this->tempDir) {
-            TestDirectoryIsolation::removeDirectory($this->tempDir);
-        }
-
-        parent::tearDown();
-    }
-
     // ── Process lifecycle ──
 
     protected function spawnController(): void
     {
         [$php, $script] = AgentTestExecutable::sourceConsoleCommand();
-        self::assertFileExists($script, 'Agent executable not found at '.$script);
+        $this->assertFileExists($script, 'Agent executable not found at '.$script);
 
         $descriptors = [
             0 => ['pipe', 'r'],
@@ -226,6 +232,8 @@ abstract class ControllerE2eTestCase extends TestCase
         stream_set_blocking($pipes[0], true);
         stream_set_blocking($pipes[1], false);
         stream_set_blocking($pipes[2], false);
+
+        $this->trackControllerProcessTree($process);
     }
 
     protected function stopProcess(): void
@@ -241,19 +249,40 @@ abstract class ControllerE2eTestCase extends TestCase
             return;
         }
 
-        if ($this->isRunning()) {
-            @proc_terminate($this->process, \SIGTERM);
-            $deadline = microtime(true) + 3.0;
-            while ($this->isRunning() && microtime(true) < $deadline) {
+        $this->refreshTrackedControllerPids();
+
+        foreach ($this->trackedControllerPids as $pid) {
+            if ($this->isProcessOwnedForTeardown($pid)) {
+                @posix_kill($pid, \SIGTERM);
+            }
+        }
+
+        $deadline = microtime(true) + 1.0;
+        $stillAlive = true;
+        while ($stillAlive && microtime(true) < $deadline) {
+            $stillAlive = false;
+            foreach ($this->trackedControllerPids as $pid) {
+                if ($this->isProcessOwnedForTeardown($pid) && $this->isControllerPidAlive($pid)) {
+                    $stillAlive = true;
+                    break;
+                }
+            }
+            if ($stillAlive) {
                 usleep(50_000);
             }
-            if ($this->isRunning()) {
-                @proc_terminate($this->process, \SIGKILL);
+        }
+
+        foreach ($this->trackedControllerPids as $pid) {
+            if ($this->isProcessOwnedForTeardown($pid) && $this->isControllerPidAlive($pid)) {
+                @posix_kill($pid, \SIGKILL);
             }
         }
 
         @proc_close($this->process);
         $this->process = null;
+
+        $this->logControllerProcessSurvivors();
+        $this->trackedControllerPids = [];
     }
 
     /** @phpstan-impure */
@@ -309,40 +338,6 @@ abstract class ControllerE2eTestCase extends TestCase
         return $this->parseBuffer($this->stdoutBuf);
     }
 
-    /**
-     * @return list<array<string, mixed>>
-     */
-    private function parseBuffer(string &$buf): array
-    {
-        $lastNewline = strrpos($buf, "\n");
-        if (false === $lastNewline) {
-            return [];
-        }
-
-        $complete = substr($buf, 0, $lastNewline + 1);
-        $buf = substr($buf, $lastNewline + 1);
-
-        $events = [];
-        foreach (explode("\n", $complete) as $line) {
-            $trimmed = trim($line);
-            if ('' === $trimmed) {
-                continue;
-            }
-
-            try {
-                /** @var array<string, mixed> $decoded */
-                $decoded = json_decode($trimmed, true, 512, \JSON_THROW_ON_ERROR);
-                if (\is_array($decoded)) {
-                    $events[] = $decoded;
-                }
-            } catch (\JsonException) {
-                $this->stderrBuf .= "\n[malformed stdout] ".$trimmed;
-            }
-        }
-
-        return $events;
-    }
-
     protected function drainStderr(): void
     {
         if (!isset($this->pipes[2]) || !\is_resource($this->pipes[2])) {
@@ -361,6 +356,7 @@ abstract class ControllerE2eTestCase extends TestCase
      * Index events by type, returning `[type => [event, ...]]`.
      *
      * @param list<array<string, mixed>> $events
+     *
      * @return array<string, list<array<string, mixed>>>
      */
     protected function indexByType(array $events): array
@@ -402,7 +398,7 @@ abstract class ControllerE2eTestCase extends TestCase
      */
     protected function assertStartRunAcked(array $events, string $cmdId): void
     {
-        self::assertTrue(
+        $this->assertTrue(
             $this->foundAck($events, $cmdId),
             'Expected command.ack for start_run (cmdId='.$cmdId.'). '
             .$this->collectDiagnostics($events),
@@ -428,7 +424,7 @@ abstract class ControllerE2eTestCase extends TestCase
         }
 
         $events = $this->parseBuffer($this->stdoutBuf);
-        self::fail(
+        $this->fail(
             'Timed out waiting for '.$type.' after '.$timeout.'s. '
             .$this->collectDiagnostics($events),
         );
@@ -538,7 +534,6 @@ abstract class ControllerE2eTestCase extends TestCase
         return $events;
     }
 
-
     /**
      * @param array<string, mixed> $event
      */
@@ -583,10 +578,9 @@ abstract class ControllerE2eTestCase extends TestCase
     }
 
     protected function assertRunning(string $context): void
-
     {
         if (null !== $this->process && !$this->isRunning()) {
-            self::fail(
+            $this->fail(
                 'Controller process exited while '.$context.'. '
                 .'Stderr: '.$this->stderrBuf,
             );
@@ -607,7 +601,7 @@ abstract class ControllerE2eTestCase extends TestCase
             'Run ID: '.$this->runId,
             'Controller running: '.($this->isRunning() ? 'yes' : 'no'),
             'Stderr: '.$this->stderrBuf,
-            'Events collected: '.count($events),
+            'Events collected: '.\count($events),
             'Event types: '.implode(', ', array_unique(array_map(
                 static fn (array $e): string => (string) ($e['type'] ?? 'unknown'),
                 $events,
@@ -622,13 +616,13 @@ abstract class ControllerE2eTestCase extends TestCase
 
         $transportDb = $this->tempDir.'/.hatfield/messenger-transport.sqlite';
         if (is_file($transportDb)) {
-            $chunks[] = 'Messenger transport DB: '.\filesize($transportDb).' bytes';
+            $chunks[] = 'Messenger transport DB: '.filesize($transportDb).' bytes';
             try {
                 $db = new \PDO('sqlite:'.$transportDb);
                 $rows = $db->query('SELECT count(*), queue_name FROM messenger_messages GROUP BY queue_name');
                 if (false !== $rows) {
                     foreach ($rows as $row) {
-                        $chunks[] = '  '.($row[0] ?? 0).' messages in '.\escapeshellarg($row[1] ?? '?');
+                        $chunks[] = '  '.($row[0] ?? 0).' messages in '.escapeshellarg($row[1] ?? '?');
                     }
                 }
             } catch (\Throwable $e) {
@@ -647,7 +641,7 @@ abstract class ControllerE2eTestCase extends TestCase
             return 'Session dir: missing';
         }
 
-        $dirs = \glob($sessionsDir.'/*', \GLOB_ONLYDIR) ?: [];
+        $dirs = glob($sessionsDir.'/*', \GLOB_ONLYDIR) ?: [];
         $lines = ['Session dir: '.$sessionsDir."\nSessions: ".implode(', ', array_map('basename', $dirs))];
 
         foreach ($dirs as $sessionDir) {
@@ -683,7 +677,7 @@ abstract class ControllerE2eTestCase extends TestCase
             }
         }
 
-        self::assertEmpty(
+        $this->assertEmpty(
             $missing,
             'Missing or empty session artifacts: '.implode(', ', $missing)."\n"
             .$this->collectDiagnostics($events),
@@ -756,4 +750,233 @@ YAML;
         file_put_contents($this->tempDir.'/.hatfield/.gitignore', "*\n");
     }
 
+    /**
+     * Record the controller proc child and any descendants for bounded teardown.
+     */
+    protected function trackControllerProcessTree(mixed $process): void
+    {
+        if (!\is_resource($process)) {
+            return;
+        }
+
+        $status = @proc_get_status($process);
+        if (!\is_array($status) || !isset($status['pid'])) {
+            return;
+        }
+
+        $rootPid = (int) $status['pid'];
+        $this->trackedControllerPids = array_values(array_unique(array_merge(
+            [$rootPid],
+            $this->discoverControllerChildPids($rootPid),
+        )));
+    }
+
+    /**
+     * Refresh descendant PIDs immediately before shutdown (Messenger consumers
+     * may spawn after the initial track at proc_open).
+     */
+    protected function refreshTrackedControllerPids(): void
+    {
+        if (null === $this->process) {
+            return;
+        }
+
+        $status = @proc_get_status($this->process);
+        if (!\is_array($status) || !isset($status['pid'])) {
+            return;
+        }
+
+        $rootPid = (int) $status['pid'];
+        $this->trackedControllerPids = array_values(array_unique(array_merge(
+            $this->trackedControllerPids,
+            [$rootPid],
+            $this->discoverControllerChildPids($rootPid),
+        )));
+    }
+
+    /**
+     * @return list<int>
+     */
+    protected function discoverControllerChildPids(int $parentPid): array
+    {
+        $pids = [];
+
+        $childrenPath = "/proc/{$parentPid}/task/{$parentPid}/children";
+        if (is_readable($childrenPath)) {
+            $content = (string) @file_get_contents($childrenPath);
+            foreach (explode(' ', trim($content)) as $token) {
+                $childPid = (int) $token;
+                if ($childPid <= 1 || !$this->isProcessOwnedForTeardown($childPid)) {
+                    continue;
+                }
+                $pids[] = $childPid;
+                $pids = array_merge($pids, $this->discoverControllerChildPids($childPid));
+            }
+
+            return $pids;
+        }
+
+        $procDir = '/proc';
+        if (!is_dir($procDir)) {
+            return $pids;
+        }
+
+        $entries = @scandir($procDir);
+        if (false === $entries) {
+            return $pids;
+        }
+
+        foreach ($entries as $entry) {
+            $candidatePid = (int) $entry;
+            if ($candidatePid <= 1 || (string) $candidatePid !== $entry) {
+                continue;
+            }
+
+            $statPath = "{$procDir}/{$entry}/stat";
+            if (!is_readable($statPath)) {
+                continue;
+            }
+
+            $stat = (string) @file_get_contents($statPath);
+            if ('' === $stat) {
+                continue;
+            }
+
+            if (preg_match('/^\d+\s+\(.*?\)\s+\w\s+(\d+)/', $stat, $m)
+                && (int) $m[1] === $parentPid
+            ) {
+                if (!$this->isProcessOwnedForTeardown($candidatePid)) {
+                    continue;
+                }
+                $pids[] = $candidatePid;
+                $pids = array_merge($pids, $this->discoverControllerChildPids($candidatePid));
+            }
+        }
+
+        return $pids;
+    }
+
+    protected function isProcessOwnedForTeardown(int $pid): bool
+    {
+        if ($pid <= 1) {
+            return false;
+        }
+
+        $stat = @file_get_contents("/proc/{$pid}/stat");
+        if (false === $stat) {
+            return false;
+        }
+
+        $closeParen = strrpos($stat, ')');
+        if (false === $closeParen) {
+            return false;
+        }
+
+        $rest = trim(substr($stat, $closeParen + 1));
+        $fields = preg_split('/\s+/', $rest) ?: [];
+        if ((int) ($fields[2] ?? -1) !== posix_getuid()) {
+            return false;
+        }
+
+        if ('' === $this->sessionId) {
+            return true;
+        }
+
+        $environ = @file_get_contents("/proc/{$pid}/environ");
+        if (false === $environ) {
+            return false;
+        }
+
+        $expected = 'HATFIELD_SESSION_ID='.$this->sessionId;
+        foreach (explode("\0", $environ) as $entry) {
+            if ($entry === $expected) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    protected function isControllerPidAlive(int $pid): bool
+    {
+        if (!@posix_kill($pid, 0)) {
+            return false;
+        }
+
+        $stat = @file_get_contents("/proc/{$pid}/stat");
+        if (false === $stat) {
+            return true;
+        }
+
+        $closeParen = strrpos($stat, ')');
+        if (false === $closeParen) {
+            return true;
+        }
+
+        $rest = trim(substr($stat, $closeParen + 1));
+        $fields = preg_split('/\s+/', $rest) ?: [];
+
+        return 'Z' !== ($fields[0] ?? '');
+    }
+
+    protected function logControllerProcessSurvivors(): void
+    {
+        $survivors = [];
+        foreach ($this->trackedControllerPids as $pid) {
+            if ($this->isProcessOwnedForTeardown($pid) && $this->isControllerPidAlive($pid)) {
+                $survivors[] = $pid;
+            }
+        }
+
+        if ([] === $survivors) {
+            return;
+        }
+
+        $names = [];
+        foreach ($survivors as $pid) {
+            $cmdline = (string) @file_get_contents("/proc/{$pid}/cmdline");
+            $names[] = "  PID {$pid}: ".str_replace("\0", ' ', $cmdline ?: '(unknown)');
+        }
+
+        fwrite(
+            \STDERR,
+            '[WARNING] Controller E2E process ownership: '.\count($survivors)
+            ." tracked PIDs still alive after teardown:\n"
+            .implode("\n", $names)."\n",
+        );
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function parseBuffer(string &$buf): array
+    {
+        $lastNewline = strrpos($buf, "\n");
+        if (false === $lastNewline) {
+            return [];
+        }
+
+        $complete = substr($buf, 0, $lastNewline + 1);
+        $buf = substr($buf, $lastNewline + 1);
+
+        $events = [];
+        foreach (explode("\n", $complete) as $line) {
+            $trimmed = trim($line);
+            if ('' === $trimmed) {
+                continue;
+            }
+
+            try {
+                /** @var array<string, mixed> $decoded */
+                $decoded = json_decode($trimmed, true, 512, \JSON_THROW_ON_ERROR);
+                if (\is_array($decoded)) {
+                    $events[] = $decoded;
+                }
+            } catch (\JsonException) {
+                $this->stderrBuf .= "\n[malformed stdout] ".$trimmed;
+            }
+        }
+
+        return $events;
+    }
 }

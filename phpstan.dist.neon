@@ -14,6 +14,7 @@ parameters:
     scanFiles:
         - .castor.stub.php
         - .castor/helpers.php
+        - .castor/qa_tmux.php
     tmpDir: var/phpstan
     excludePaths:
         - .castor/vendor/*
@@ -22,5 +23,6 @@ parameters:
         - .hatfield/extensions/vendor/*
         - .hatfield/extensions/task-workflow/tests/*
         - .hatfield/extensions/castor-llm-mode/tests/*
+        - .hatfield/extensions/file-rewind/tests/*
     parallel:
         maximumNumberOfProcesses: 1

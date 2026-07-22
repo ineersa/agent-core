@@ -32,7 +32,7 @@ final class DynamicToolDescriptionProcessorTest extends TestCase
     public function testResolverPathFiltersToolsByActiveSet(): void
     {
         $resolver = $this->createMock(ToolSetResolverInterface::class);
-        $resolver->expects(self::once())
+        $resolver->expects($this->once())
             ->method('resolve')
             ->with('toolset:run:abc:turn:1')
             ->willReturn(new ActiveToolSet(
@@ -50,38 +50,43 @@ final class DynamicToolDescriptionProcessorTest extends TestCase
         $processor->processInput($input);
 
         $options = $input->getOptions();
-        self::assertArrayHasKey('tools', $options);
+        $this->assertArrayHasKey('tools', $options);
         $tools = $options['tools'];
-        self::assertCount(1, $tools);
-        self::assertSame('read', $tools[0]->getName());
-        // Resolver-only options should be cleaned up
-        self::assertArrayNotHasKey('tools_ref', $options);
-        self::assertArrayNotHasKey('turn_no', $options);
+        $this->assertCount(1, $tools);
+        $this->assertSame('read', $tools[0]->getName());
+        // Resolver-only options should be cleaned up; run_id stays for provider cache correlation
+        $this->assertArrayNotHasKey('tools_ref', $options);
+        $this->assertArrayNotHasKey('turn_no', $options);
+        $this->assertSame('abc', $options['run_id']);
     }
 
     public function testResolverPathWithEmptyActiveSetResultsInNoTools(): void
     {
         $resolver = $this->createMock(ToolSetResolverInterface::class);
-        $resolver->expects(self::once())
+        $resolver->expects($this->once())
             ->method('resolve')
             ->willReturn(new ActiveToolSet(toolNames: [], allowListNames: []));
 
         $processor = new DynamicToolDescriptionProcessor($this->toolbox, $resolver);
         $input = new Input('test-model', new \Symfony\AI\Platform\Message\MessageBag(), [
             'tools_ref' => 'toolset:run:abc:turn:1',
+            'run_id' => 'session-stable-uuid',
         ]);
 
         $processor->processInput($input);
 
         $options = $input->getOptions();
         // Empty active set removes tools option, falling through to no-tools path
-        self::assertArrayNotHasKey('tools', $options);
+        $this->assertArrayNotHasKey('tools', $options);
+        $this->assertArrayNotHasKey('tools_ref', $options);
+        $this->assertArrayNotHasKey('turn_no', $options);
+        $this->assertSame('session-stable-uuid', $options['run_id']);
     }
 
     public function testResolverPathPassesTurnNoAndRunIdToResolver(): void
     {
         $resolver = $this->createMock(ToolSetResolverInterface::class);
-        $resolver->expects(self::once())
+        $resolver->expects($this->once())
             ->method('resolve')
             ->with('toolset:run:x:turn:5', 5, 'x')
             ->willReturn(new ActiveToolSet(toolNames: ['bash'], allowListNames: ['bash']));
@@ -96,8 +101,23 @@ final class DynamicToolDescriptionProcessorTest extends TestCase
         $processor->processInput($input);
 
         $options = $input->getOptions();
-        self::assertCount(1, $options['tools']);
-        self::assertSame('bash', $options['tools'][0]->getName());
+        $this->assertCount(1, $options['tools']);
+        $this->assertSame('bash', $options['tools'][0]->getName());
+        $this->assertSame('x', $options['run_id']);
+        $this->assertArrayNotHasKey('tools_ref', $options);
+        $this->assertArrayNotHasKey('turn_no', $options);
+    }
+
+    public function testRunIdPreservedWhenToolsRefAbsent(): void
+    {
+        $processor = new DynamicToolDescriptionProcessor($this->toolbox);
+        $input = new Input('test-model', new \Symfony\AI\Platform\Message\MessageBag(), [
+            'run_id' => 'hatfield-session-run',
+        ]);
+
+        $processor->processInput($input);
+
+        $this->assertSame('hatfield-session-run', $input->getOptions()['run_id']);
     }
 
     /* ───────── Fallback behavior unchanged ───────── */
@@ -110,17 +130,17 @@ final class DynamicToolDescriptionProcessorTest extends TestCase
         $processor->processInput($input);
 
         $options = $input->getOptions();
-        self::assertArrayHasKey('tools', $options);
-        self::assertCount(3, $options['tools']);
-        self::assertSame('read', $options['tools'][0]->getName());
-        self::assertSame('write', $options['tools'][1]->getName());
-        self::assertSame('bash', $options['tools'][2]->getName());
+        $this->assertArrayHasKey('tools', $options);
+        $this->assertCount(3, $options['tools']);
+        $this->assertSame('read', $options['tools'][0]->getName());
+        $this->assertSame('write', $options['tools'][1]->getName());
+        $this->assertSame('bash', $options['tools'][2]->getName());
     }
 
     public function testWithoutToolsRefResolverIsNotCalled(): void
     {
         $resolver = $this->createMock(ToolSetResolverInterface::class);
-        $resolver->expects(self::never())->method('resolve');
+        $resolver->expects($this->never())->method('resolve');
 
         $processor = new DynamicToolDescriptionProcessor($this->toolbox, $resolver);
         $input = new Input('test-model', new \Symfony\AI\Platform\Message\MessageBag(), []);
@@ -128,13 +148,13 @@ final class DynamicToolDescriptionProcessorTest extends TestCase
         $processor->processInput($input);
 
         $options = $input->getOptions();
-        self::assertCount(3, $options['tools']);
+        $this->assertCount(3, $options['tools']);
     }
 
     public function testFlatStringArrayFilteringStillWorksWithResolverButNoRef(): void
     {
         $resolver = $this->createMock(ToolSetResolverInterface::class);
-        $resolver->expects(self::never())->method('resolve');
+        $resolver->expects($this->never())->method('resolve');
 
         $processor = new DynamicToolDescriptionProcessor($this->toolbox, $resolver);
 
@@ -147,14 +167,14 @@ final class DynamicToolDescriptionProcessorTest extends TestCase
         $processor->processInput($input);
 
         $options = $input->getOptions();
-        self::assertCount(1, $options['tools']);
-        self::assertSame('bash', $options['tools'][0]->getName());
+        $this->assertCount(1, $options['tools']);
+        $this->assertSame('bash', $options['tools'][0]->getName());
     }
 
     public function testResolverWithToolsRefAndDescriptionOverrides(): void
     {
         $resolver = $this->createMock(ToolSetResolverInterface::class);
-        $resolver->expects(self::once())
+        $resolver->expects($this->once())
             ->method('resolve')
             ->willReturn(new ActiveToolSet(toolNames: ['read', 'bash'], allowListNames: ['read', 'bash']));
 
@@ -168,15 +188,15 @@ final class DynamicToolDescriptionProcessorTest extends TestCase
         $processor->processInput($input);
 
         $options = $input->getOptions();
-        self::assertCount(2, $options['tools']);
+        $this->assertCount(2, $options['tools']);
         $names = array_map(static fn (Tool $t): string => $t->getName(), $options['tools']);
-        self::assertContains('read', $names);
-        self::assertContains('bash', $names);
+        $this->assertContains('read', $names);
+        $this->assertContains('bash', $names);
 
         // Description override should still apply
         foreach ($options['tools'] as $tool) {
             if ('read' === $tool->getName()) {
-                self::assertSame('Custom read description', $tool->getDescription());
+                $this->assertSame('Custom read description', $tool->getDescription());
             }
         }
     }
@@ -188,7 +208,7 @@ final class DynamicToolDescriptionProcessorTest extends TestCase
         // the resolver is still set in options. The processor cannot create
         // Tool objects without a toolbox, so it preserves the names.
         $resolver = $this->createMock(ToolSetResolverInterface::class);
-        $resolver->expects(self::once())
+        $resolver->expects($this->once())
             ->method('resolve')
             ->willReturn(new ActiveToolSet(toolNames: ['read'], allowListNames: ['read']));
 
@@ -201,8 +221,8 @@ final class DynamicToolDescriptionProcessorTest extends TestCase
 
         $options = $input->getOptions();
         // Without a toolbox, the resolver's flat names are preserved
-        self::assertArrayHasKey('tools', $options);
-        self::assertSame(['read'], $options['tools']);
+        $this->assertArrayHasKey('tools', $options);
+        $this->assertSame(['read'], $options['tools']);
     }
 
     public function testResolverPathUpdatesToolsOptionPreservingExistingFiltering(): void
@@ -210,7 +230,7 @@ final class DynamicToolDescriptionProcessorTest extends TestCase
         // When resolver sets tool names and toolbox has matching tools,
         // the existing filtering path still runs and produces Tool[] results.
         $resolver = $this->createMock(ToolSetResolverInterface::class);
-        $resolver->expects(self::once())
+        $resolver->expects($this->once())
             ->method('resolve')
             ->willReturn(new ActiveToolSet(toolNames: ['write', 'bash'], allowListNames: ['write', 'bash']));
 
@@ -222,9 +242,9 @@ final class DynamicToolDescriptionProcessorTest extends TestCase
         $processor->processInput($input);
 
         $options = $input->getOptions();
-        self::assertCount(2, $options['tools']);
-        self::assertSame('write', $options['tools'][0]->getName());
-        self::assertSame('bash', $options['tools'][1]->getName());
+        $this->assertCount(2, $options['tools']);
+        $this->assertSame('write', $options['tools'][0]->getName());
+        $this->assertSame('bash', $options['tools'][1]->getName());
     }
 
     /* ───────── Empty-tools / no-tools path ───────── */
@@ -247,8 +267,8 @@ final class DynamicToolDescriptionProcessorTest extends TestCase
         $processor->processInput($input);
 
         $options = $input->getOptions();
-        self::assertArrayNotHasKey('tools', $options, 'Empty tools array MUST be removed so strict providers do not reject the request');
-        self::assertArrayNotHasKey('tool_descriptions', $options, 'Tool descriptions MUST be removed when tools are empty');
+        $this->assertArrayNotHasKey('tools', $options, 'Empty tools array MUST be removed so strict providers do not reject the request');
+        $this->assertArrayNotHasKey('tool_descriptions', $options, 'Tool descriptions MUST be removed when tools are empty');
     }
 
     /**
@@ -266,7 +286,7 @@ final class DynamicToolDescriptionProcessorTest extends TestCase
         $processor->processInput($input);
 
         $options = $input->getOptions();
-        self::assertArrayNotHasKey('tools', $options);
+        $this->assertArrayNotHasKey('tools', $options);
     }
 
     /* ───────── Helpers ───────── */

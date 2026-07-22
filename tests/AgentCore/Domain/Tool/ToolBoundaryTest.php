@@ -25,15 +25,15 @@ final class ToolBoundaryTest extends TestCase
             orderIndex: 0,
         );
 
-        self::assertSame('call-abc', $toolCall->toolCallId);
-        self::assertSame('read_file', $toolCall->toolName);
-        self::assertSame(['path' => 'test.txt'], $toolCall->arguments);
-        self::assertSame(0, $toolCall->orderIndex);
-        self::assertNull($toolCall->runId);
-        self::assertNull($toolCall->mode);
-        self::assertNull($toolCall->timeoutSeconds);
-        self::assertNull($toolCall->toolIdempotencyKey);
-        self::assertSame([], $toolCall->context);
+        $this->assertSame('call-abc', $toolCall->toolCallId);
+        $this->assertSame('read_file', $toolCall->toolName);
+        $this->assertSame(['path' => 'test.txt'], $toolCall->arguments);
+        $this->assertSame(0, $toolCall->orderIndex);
+        $this->assertNull($toolCall->runId);
+        $this->assertNull($toolCall->mode);
+        $this->assertNull($toolCall->timeoutSeconds);
+        $this->assertNull($toolCall->toolIdempotencyKey);
+        $this->assertSame([], $toolCall->context);
     }
 
     public function testToolCallBuilderFullMetadata(): void
@@ -49,15 +49,15 @@ final class ToolBoundaryTest extends TestCase
             ->withContext(['turn_no' => 2, 'retry' => false])
             ->build();
 
-        self::assertSame('call-full', $toolCall->toolCallId);
-        self::assertSame('web_search', $toolCall->toolName);
-        self::assertSame(['query' => 'php 8.4'], $toolCall->arguments);
-        self::assertSame(3, $toolCall->orderIndex);
-        self::assertSame('run-full', $toolCall->runId);
-        self::assertSame(ToolExecutionMode::Parallel, $toolCall->mode);
-        self::assertSame(120, $toolCall->timeoutSeconds);
-        self::assertSame('idem-xyz', $toolCall->toolIdempotencyKey);
-        self::assertSame(['turn_no' => 2, 'retry' => false], $toolCall->context);
+        $this->assertSame('call-full', $toolCall->toolCallId);
+        $this->assertSame('web_search', $toolCall->toolName);
+        $this->assertSame(['query' => 'php 8.4'], $toolCall->arguments);
+        $this->assertSame(3, $toolCall->orderIndex);
+        $this->assertSame('run-full', $toolCall->runId);
+        $this->assertSame(ToolExecutionMode::Parallel, $toolCall->mode);
+        $this->assertSame(120, $toolCall->timeoutSeconds);
+        $this->assertSame('idem-xyz', $toolCall->toolIdempotencyKey);
+        $this->assertSame(['turn_no' => 2, 'retry' => false], $toolCall->context);
     }
 
     /* ─── ToolResult ─── */
@@ -70,11 +70,11 @@ final class ToolBoundaryTest extends TestCase
             content: [['type' => 'text', 'text' => 'result data']],
         );
 
-        self::assertSame('call-1', $result->toolCallId);
-        self::assertSame('web_search', $result->toolName);
-        self::assertSame([['type' => 'text', 'text' => 'result data']], $result->content);
-        self::assertNull($result->details);
-        self::assertFalse($result->isError);
+        $this->assertSame('call-1', $result->toolCallId);
+        $this->assertSame('web_search', $result->toolName);
+        $this->assertSame([['type' => 'text', 'text' => 'result data']], $result->content);
+        $this->assertNull($result->details);
+        $this->assertFalse($result->isError);
     }
 
     public function testToolResultErrorShape(): void
@@ -87,10 +87,10 @@ final class ToolBoundaryTest extends TestCase
             isError: true,
         );
 
-        self::assertSame('call-err', $result->toolCallId);
-        self::assertTrue($result->isError);
-        self::assertSame(['error_code' => 500, 'message' => 'API unavailable'], $result->details);
-        self::assertSame([], $result->content);
+        $this->assertSame('call-err', $result->toolCallId);
+        $this->assertTrue($result->isError);
+        $this->assertSame(['error_code' => 500, 'message' => 'API unavailable'], $result->details);
+        $this->assertSame([], $result->content);
     }
 
     /* ─── ToolExecutionMode enum ─── */
@@ -98,7 +98,7 @@ final class ToolBoundaryTest extends TestCase
     #[DataProvider('toolExecutionModeProvider')]
     public function testToolExecutionModeValues(string $expectedValue, ToolExecutionMode $mode): void
     {
-        self::assertSame($expectedValue, $mode->value);
+        $this->assertSame($expectedValue, $mode->value);
     }
 
     /**
@@ -123,8 +123,8 @@ final class ToolBoundaryTest extends TestCase
             maxParallelism: 3,
         );
 
-        self::assertSame(ToolExecutionMode::Parallel, $policy->mode);
-        self::assertSame(60, $policy->timeoutSeconds);
-        self::assertSame(3, $policy->maxParallelism);
+        $this->assertSame(ToolExecutionMode::Parallel, $policy->mode);
+        $this->assertSame(60, $policy->timeoutSeconds);
+        $this->assertSame(3, $policy->maxParallelism);
     }
 }

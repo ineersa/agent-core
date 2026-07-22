@@ -295,12 +295,15 @@ final class BackgroundProcessManager
      *                               When provided, only a matching session
      *                               process is returned.
      *
-     * @return BackgroundProcess|null The entity with refreshed status, or
+     * @return BackgroundProcess|null the entity with refreshed status, or
      *                                null if not found or session mismatch
+     *
+     * PID resolution uses the newest retained row (ORDER BY id DESC) for public
+     * bg_status semantics; session ownership is enforced after lookup
      */
     public function find(int $pid, ?string $sessionId = null): ?BackgroundProcess
     {
-        $entity = $this->store->fetchByPid($pid);
+        $entity = $this->store->fetchLatestByPid($pid);
 
         if (null === $entity) {
             $this->logger->notice('background_process.find_by_pid_null', [
@@ -406,12 +409,15 @@ final class BackgroundProcessManager
      * Return the tail of a background process log file.
      *
      * @throws \RuntimeException when process not found, session mismatch, or log unreadable
+     *
+     * Resolves the newest retained row for the OS PID (bg_status pid= semantics);
+     * session ownership is checked after resolution
      */
     public function readLogTail(int $pid, ?int $maxChars = null, ?string $sessionId = null): LogTailResult
     {
         $maxChars ??= $this->config->logTailChars;
 
-        $entity = $this->store->fetchByPid($pid);
+        $entity = $this->store->fetchLatestByPid($pid);
 
         if (null === $entity) {
             throw new \RuntimeException(\sprintf('No background process found with PID %d.', $pid));
@@ -425,33 +431,46 @@ final class BackgroundProcessManager
     }
 
     /**
-     * Read the full background process log file without truncation.
-     *
-     * Used for commands that run in the foreground and have completed
-     * — the full output is needed so the primary OutputCapToolResultProcessor
-     * can decide whether to cap.  BgStatusTool continues to use readLogTail
-     * for its diagnostic log view.
-     *
-     * @param int         $pid       Process PID. Must be > 0.
-     * @param string|null $sessionId optional session ownership check
-     *
-     * @return LogTailResult full log content (truncated flag is always false)
-     *
-     * @throws \RuntimeException when process not found or session mismatches
+     * Return the tail of a background process log by immutable record ID.
      */
-    public function readLogFull(int $pid, ?string $sessionId = null): LogTailResult
+    public function readLogTailForRecord(int $recordId, ?int $maxChars = null, ?string $sessionId = null): LogTailResult
     {
-        $entity = $this->store->fetchByPid($pid);
+        $maxChars ??= $this->config->logTailChars;
+
+        $entity = $this->store->fetchByRecordId($recordId);
 
         if (null === $entity) {
-            throw new \RuntimeException(\sprintf('No background process found with PID %d.', $pid));
+            throw new \RuntimeException(\sprintf('No background process found with record ID %d.', $recordId));
         }
 
         if (null !== $sessionId && $entity->sessionId !== $sessionId) {
-            throw new \RuntimeException(\sprintf('No background process found with PID %d for this session.', $pid));
+            throw new \RuntimeException(\sprintf('No background process found with record ID %d for this session.', $recordId));
         }
 
-        return $this->lifecycle->readLogFile($entity->logPath, $pid);
+        return $this->lifecycle->readLogTail($entity->logPath, $entity->pid, $maxChars);
+    }
+
+    /**
+     * Read the full log for a background process by immutable record ID.
+     *
+     * Foreground BashTool uses this path so completed invocations never
+     * re-resolve output through a reusable OS PID.
+     *
+     * @throws \RuntimeException when process not found or session mismatches
+     */
+    public function readLogFullForRecord(int $recordId, ?string $sessionId = null): LogTailResult
+    {
+        $entity = $this->store->fetchByRecordId($recordId);
+
+        if (null === $entity) {
+            throw new \RuntimeException(\sprintf('No background process found with record ID %d.', $recordId));
+        }
+
+        if (null !== $sessionId && $entity->sessionId !== $sessionId) {
+            throw new \RuntimeException(\sprintf('No background process found with record ID %d for this session.', $recordId));
+        }
+
+        return $this->lifecycle->readLogFile($entity->logPath, $entity->pid);
     }
 
     /**
@@ -469,6 +488,9 @@ final class BackgroundProcessManager
      *
      * @throws \RuntimeException when process not found, session mismatch,
      *                           or PID is invalid
+     *
+     * Resolves the newest retained row for the OS PID (bg_status stop pid=);
+     * session ownership is checked after resolution
      */
     public function stop(int $pid, ?string $sessionId = null): StopResult
     {
@@ -478,7 +500,7 @@ final class BackgroundProcessManager
             throw new \RuntimeException(\sprintf('Invalid PID %d for stop.', $pid));
         }
 
-        $entity = $this->store->fetchByPid($pid);
+        $entity = $this->store->fetchLatestByPid($pid);
 
         if (null === $entity) {
             throw new \RuntimeException(\sprintf('No background process found with PID %d.', $pid));
@@ -488,74 +510,7 @@ final class BackgroundProcessManager
             throw new \RuntimeException(\sprintf('No background process found with PID %d for this session.', $pid));
         }
 
-        // Refresh status before acting — the process may have finished
-        // since the last list() call (status file written, /proc gone).
-        $this->refreshEntity($entity);
-
-        // Re-fetch after refresh (entity may have been marked finished)
-        $entity = $this->store->fetchByPid($pid);
-        if (null === $entity) {
-            throw new \RuntimeException(\sprintf('Background process with PID %d disappeared during refresh.', $pid));
-        }
-
-        if (null !== $entity->finishedAt) {
-            return new StopResult(
-                pid: $pid,
-                pgid: $entity->pgid,
-                stoppedByUser: false,
-                alreadyFinished: true,
-                signalSent: 'none',
-            );
-        }
-
-        $pgid = $entity->pgid;
-        $graceSeconds = $this->config->stopGraceSeconds;
-
-        // TERM signal — target process group (negative PGID)
-        $signalSent = 'term';
-        $this->lifecycle->sendTerm($pid, $pgid);
-
-        // Wait grace period
-        if ($graceSeconds > 0) {
-            sleep($graceSeconds);
-        }
-
-        // Check if still alive and KILL if needed
-        if ($this->lifecycle->isAlive($pid)) {
-            $signalSent = 'term+kill';
-            $this->lifecycle->sendKill($pid, $pgid);
-        }
-
-        $this->logger->info('background_process.stopped', [
-            'component' => 'tool.background_process',
-            'event_type' => 'background_process.stopped',
-            'process_pid' => $pid,
-            'process_pgid' => $pgid,
-            'signal_sent' => $signalSent,
-            'grace_seconds' => $graceSeconds,
-        ]);
-
-        $now = Clock::get()->now();
-        $entity->markStopped($now);
-
-        // Write -1 to the status file only when the wrapper did not
-        // already write a real exit code (KILL path). When TERM succeeds
-        // the wrapper's trap handler writes the child's real exit code
-        // before exiting; overwriting would corrupt forensic evidence.
-        $statusPath = $entity->statusPath;
-        if ('' !== $statusPath) {
-            $this->lifecycle->writeStopMarker($statusPath);
-        }
-
-        $this->store->flush();
-
-        return new StopResult(
-            pid: $pid,
-            pgid: $pgid,
-            stoppedByUser: true,
-            alreadyFinished: false,
-            signalSent: $signalSent,
-        );
+        return $this->stopProcessEntity($entity);
     }
 
     /**
@@ -602,34 +557,62 @@ final class BackgroundProcessManager
     }
 
     /**
-     * Mark a process as explicitly moved to background by user action.
+     * Mark the exact background-process record as user-backgrounded.
      *
-     * Called by BashTool when the user accepts the background prompt.
-     * Only processes marked backgrounded are eligible for automatic
-     * completion notification via the controller poller.
+     * Used by BashTool when the user accepts the background prompt for the
+     * current invocation (immutable record ID from start()).
      *
-     * @throws \RuntimeException when process not found
+     * @throws \RuntimeException when record not found or session mismatches
      */
-    public function markBackgrounded(int $pid, ?string $sessionId = null): void
+    public function markBackgroundedForRecord(int $recordId, ?string $sessionId = null): void
     {
-        $entity = $this->store->fetchByPid($pid);
+        $entity = $this->store->fetchByRecordId($recordId);
 
         if (null === $entity) {
-            throw new \RuntimeException(\sprintf('Background process with PID %d not found.', $pid));
+            throw new \RuntimeException(\sprintf('Background process record with ID %d not found.', $recordId));
         }
 
         if (null !== $sessionId && $entity->sessionId !== $sessionId) {
-            throw new \RuntimeException(\sprintf('No background process with PID %d for this session.', $pid));
+            throw new \RuntimeException(\sprintf('No background process with record ID %d for this session.', $recordId));
         }
 
-        $this->store->markBackgrounded($pid, Clock::get()->now());
+        $entity->markBackgrounded(Clock::get()->now());
+        $this->store->flush();
 
         $this->logger->info('background_process.marked_backgrounded', [
             'component' => 'tool.background_process',
             'event_type' => 'background_process.marked_backgrounded',
-            'process_pid' => $pid,
+            'process_pid' => $entity->pid,
+            'record_id' => $recordId,
             'process_session_id' => $sessionId ?? '',
         ]);
+    }
+
+    /**
+     * Stop a background process by immutable record ID.
+     *
+     * Same TERM → grace → KILL lifecycle as stop(), but targets the exact
+     * row tracked by a foreground BashTool invocation.
+     *
+     * @throws \RuntimeException when record not found, session mismatch, or invalid state
+     */
+    public function stopByRecordId(int $recordId, ?string $sessionId = null): StopResult
+    {
+        if ($recordId <= 0) {
+            throw new \RuntimeException(\sprintf('Invalid record ID %d for stop.', $recordId));
+        }
+
+        $entity = $this->store->fetchByRecordId($recordId);
+
+        if (null === $entity) {
+            throw new \RuntimeException(\sprintf('No background process found with record ID %d.', $recordId));
+        }
+
+        if (null !== $sessionId && $entity->sessionId !== $sessionId) {
+            throw new \RuntimeException(\sprintf('No background process found with record ID %d for this session.', $recordId));
+        }
+
+        return $this->stopProcessEntity($entity);
     }
 
     /**
@@ -721,6 +704,77 @@ final class BackgroundProcessManager
         }
 
         $this->store->flush();
+    }
+
+    /**
+     * Shared stop lifecycle for a resolved background-process entity.
+     */
+    private function stopProcessEntity(BackgroundProcess $entity): StopResult
+    {
+        $pid = $entity->pid;
+
+        // Refresh status before acting — the process may have finished
+        // since the last list() call (status file written, /proc gone).
+        $this->refreshEntity($entity);
+
+        if (null !== $entity->finishedAt) {
+            return new StopResult(
+                pid: $pid,
+                pgid: $entity->pgid,
+                stoppedByUser: false,
+                alreadyFinished: true,
+                signalSent: 'none',
+            );
+        }
+
+        $pgid = $entity->pgid;
+        $graceSeconds = $this->config->stopGraceSeconds;
+
+        // TERM signal — target process group (negative PGID)
+        $signalSent = 'term';
+        $this->lifecycle->sendTerm($pid, $pgid);
+
+        // Wait grace period
+        if ($graceSeconds > 0) {
+            sleep($graceSeconds);
+        }
+
+        // Check if still alive and KILL if needed
+        if ($this->lifecycle->isAlive($pid)) {
+            $signalSent = 'term+kill';
+            $this->lifecycle->sendKill($pid, $pgid);
+        }
+
+        $this->logger->info('background_process.stopped', [
+            'component' => 'tool.background_process',
+            'event_type' => 'background_process.stopped',
+            'process_pid' => $pid,
+            'process_pgid' => $pgid,
+            'signal_sent' => $signalSent,
+            'grace_seconds' => $graceSeconds,
+        ]);
+
+        $now = Clock::get()->now();
+        $entity->markStopped($now);
+
+        // Write -1 to the status file only when the wrapper did not
+        // already write a real exit code (KILL path). When TERM succeeds
+        // the wrapper's trap handler writes the child's real exit code
+        // before exiting; overwriting would corrupt forensic evidence.
+        $statusPath = $entity->statusPath;
+        if ('' !== $statusPath) {
+            $this->lifecycle->writeStopMarker($statusPath);
+        }
+
+        $this->store->flush();
+
+        return new StopResult(
+            pid: $pid,
+            pgid: $pgid,
+            stoppedByUser: true,
+            alreadyFinished: false,
+            signalSent: $signalSent,
+        );
     }
 
     /**

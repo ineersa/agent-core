@@ -14,6 +14,8 @@ use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageConverter;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\DynamicToolDescriptionProcessor;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\LlmPlatformAdapter;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\ModelResolverRoutingSubscriber;
+use Ineersa\AgentCore\Tests\Infrastructure\SymfonyAi\Replay\FixtureReplayModelClient;
+use Ineersa\AgentCore\Tests\Infrastructure\SymfonyAi\Replay\FixtureReplayResultConverter;
 use Ineersa\CodingAgent\Config\Ai\AiConfig;
 use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
 use Ineersa\CodingAgent\Config\AppConfig;
@@ -27,14 +29,12 @@ use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Entity\HatfieldSession;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
-use Ineersa\AgentCore\Tests\Infrastructure\SymfonyAi\Replay\FixtureReplayModelClient;
-use Ineersa\AgentCore\Tests\Infrastructure\SymfonyAi\Replay\FixtureReplayResultConverter;
-use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Psr\Log\NullLogger;
 use Symfony\AI\Platform\ModelCatalog\FallbackModelCatalog;
 use Symfony\AI\Platform\Platform;
 use Symfony\AI\Platform\PlatformInterface as SymfonyPlatformInterface;
 use Symfony\AI\Platform\Provider;
+use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 
 /**
@@ -46,14 +46,6 @@ use Symfony\Component\EventDispatcher\EventDispatcher;
  */
 final class TraceReplayTest extends KernelTestCase
 {
-    protected static function createKernel(array $options = []): \Ineersa\CodingAgent\Kernel
-    {
-        $env = $options['environment'] ?? 'test';
-        $debug = (bool) ($options['debug'] ?? false);
-
-        return new \Ineersa\CodingAgent\Kernel($env, $debug);
-    }
-
     private string $tempDir;
     private string $homeDir;
     private SessionMetadataStore $sessionMetaStore;
@@ -178,9 +170,10 @@ final class TraceReplayTest extends KernelTestCase
         $this->assertSame($fixture['usage']['total_tokens'], $result->usage['total_tokens']);
 
         // Session metadata remains available
-        $meta = $this->sessionMetaStore->readSessionMetadata($replaySessId);
-        $this->assertSame($fixture['model'], $meta['model'] ?? null);
-        $this->assertSame($fixture['reasoning'], $meta['reasoning'] ?? null);
+        $session = $this->sessionMetaStore->findSession($replaySessId);
+        $this->assertNotNull($session);
+        $this->assertSame($fixture['model'], $session->model ?? null);
+        $this->assertSame($fixture['reasoning'], $session->reasoning ?? null);
     }
 
     // ──────────────────────────────────────────────
@@ -276,9 +269,10 @@ final class TraceReplayTest extends KernelTestCase
         $persistSessId = $this->writeSessionMetadata('', []);
 
         // Initially no model/reasoning metadata — only identity fields exist
-        $meta = $this->sessionMetaStore->readSessionMetadata($persistSessId);
-        $this->assertArrayNotHasKey('model', $meta, 'Model not set before change');
-        $this->assertArrayNotHasKey('reasoning', $meta, 'Reasoning not set before change');
+        $session = $this->sessionMetaStore->findSession($persistSessId);
+        $this->assertNotNull($session);
+        $this->assertNull($session->model, 'Model not set before change');
+        $this->assertNull($session->reasoning, 'Reasoning not set before change');
 
         // Change model and reasoning
         $selectionService->changeModel(
@@ -288,12 +282,13 @@ final class TraceReplayTest extends KernelTestCase
         $selectionService->changeReasoning('low', $persistSessId);
 
         // Verify metadata was persisted
-        $meta = $this->sessionMetaStore->readSessionMetadata($persistSessId);
-        $this->assertSame('deepseek/deepseek-v4-flash', $meta['model'] ?? null);
-        $this->assertSame('deepseek', $meta['model_provider'] ?? null);
-        $this->assertSame('deepseek-v4-flash', $meta['model_name'] ?? null);
-        $this->assertSame('low', $meta['reasoning'] ?? null);
-        $this->assertArrayHasKey('updated_at', $meta);
+        $session = $this->sessionMetaStore->findSession($persistSessId);
+        $this->assertNotNull($session);
+        $this->assertSame('deepseek/deepseek-v4-flash', $session->model ?? null);
+        $this->assertSame('deepseek', $session->modelProvider ?? null);
+        $this->assertSame('deepseek-v4-flash', $session->modelName ?? null);
+        $this->assertSame('low', $session->reasoning ?? null);
+        $this->assertInstanceOf(\DateTimeImmutable::class, $session->updatedAt);
 
         // Resume resolves from persisted metadata
         $resolvedModel = $selectionService->resolveInitialModel(
@@ -379,6 +374,14 @@ final class TraceReplayTest extends KernelTestCase
         $this->assertSame($fixture['usage']['total_tokens'], $result->usage['total_tokens']);
     }
 
+    protected static function createKernel(array $options = []): \Ineersa\CodingAgent\Kernel
+    {
+        $env = $options['environment'] ?? 'test';
+        $debug = (bool) ($options['debug'] ?? false);
+
+        return new \Ineersa\CodingAgent\Kernel($env, $debug);
+    }
+
     // ──────────────────────────────────────────────
     //  Common helpers
     // ──────────────────────────────────────────────
@@ -404,9 +407,9 @@ final class TraceReplayTest extends KernelTestCase
         $appConfig = $this->makeAppConfig($aiData);
         $selectionService = new ModelSelectionService($appConfig, new \Ineersa\CodingAgent\Config\ModelResolver($appConfig, $this->sessionMetaStore), new \Ineersa\CodingAgent\Config\ModelSettingsPersister($homeWriter, $this->sessionMetaStore));
         $catalog = $appConfig->catalog
-            ?? new \Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog(new \Ineersa\CodingAgent\Config\Ai\AiConfig(defaultModel: '', defaultReasoning: 'medium', providers: []));
+            ?? new HatfieldModelCatalog(new AiConfig(defaultModel: '', defaultReasoning: 'medium', providers: []));
 
-        return new SessionAwareModelResolver($selectionService, $catalog);
+        return new SessionAwareModelResolver($selectionService, $catalog, $this->sessionMetaStore);
     }
 
     private function createSelectionService(array $aiData): ModelSelectionService
@@ -571,7 +574,7 @@ final class TraceReplayTest extends KernelTestCase
             providers: [new Provider(
                 name: 'replay',
                 modelClients: [$modelClient],
-                resultConverters: [new \Ineersa\AgentCore\Tests\Infrastructure\SymfonyAi\Replay\FixtureReplayResultConverter($fixture)],
+                resultConverters: [new FixtureReplayResultConverter($fixture)],
                 modelCatalog: new FallbackModelCatalog(),
                 eventDispatcher: $eventDispatcher,
             )],

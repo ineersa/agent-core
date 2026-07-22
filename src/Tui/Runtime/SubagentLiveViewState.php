@@ -26,13 +26,39 @@ final class SubagentLiveViewState
 
     public float $childLastPoll = 0.0;
 
+    /**
+     * Per-child transcript/seq cache keyed by agentRunId so switching picker rows
+     * does not discard completed transcripts (JSONL pipe events are consumed once).
+     *
+     * @var array<string, array{transcript: list<TranscriptBlock>, lastSeq: int, lastPoll: float, activity: RunActivityStateEnum, queuedUserMessages: array<string, string>, replayEvents: list<\Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent>}>
+     */
+    public array $childCaches = [];
+
     public RunActivityStateEnum $childActivity = RunActivityStateEnum::Idle;
+
+    /** @var array<string, string> idempotency_key => text */
+    public array $childQueuedUserMessages = [];
+
+    /** @var list<\Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent> */
+    public array $childReplayEvents = [];
 
     /**
      * Last combined parent|child working line pushed to ChatScreen while live view is active.
      * Avoids per-tick widget invalidation when the message is unchanged (terminal flicker).
      */
     public ?string $lastLiveWorkingMessage = null;
+
+    /**
+     * Transient picker overlay feedback (e.g. child export path). Shown in the picker header
+     * and preserved across tick working-message updates while the picker is open.
+     */
+    public ?string $pickerFeedbackMessage = null;
+
+    /**
+     * Last picker feedback line applied to ChatScreen while the picker is open.
+     * Avoids per-tick widget invalidation when the message is unchanged.
+     */
+    public ?string $lastPickerFeedbackWorkingMessage = null;
 
     public function isSameChild(SubagentLiveChildDTO $child): bool
     {
@@ -53,9 +79,57 @@ final class SubagentLiveViewState
         return [] === $this->childTranscript;
     }
 
+    public function persistCurrentChildCache(): void
+    {
+        if (null === $this->selected || '' === $this->selected->agentRunId) {
+            return;
+        }
+
+        $this->childCaches[$this->selected->agentRunId] = [
+            'transcript' => $this->childTranscript,
+            'lastSeq' => $this->childLastSeq,
+            'lastPoll' => $this->childLastPoll,
+            'activity' => $this->childActivity,
+            'queuedUserMessages' => $this->childQueuedUserMessages,
+            'replayEvents' => $this->childReplayEvents,
+        ];
+    }
+
+    public function restoreChildCacheFor(SubagentLiveChildDTO $child): void
+    {
+        $cached = $this->childCaches[$child->agentRunId] ?? null;
+        if (null === $cached) {
+            return;
+        }
+
+        $this->childTranscript = $cached['transcript'];
+        $this->childLastSeq = $cached['lastSeq'];
+        $this->childLastPoll = $cached['lastPoll'];
+        $this->childActivity = $cached['activity'];
+        $this->childQueuedUserMessages = $cached['queuedUserMessages'] ?? [];
+        $this->childReplayEvents = $cached['replayEvents'] ?? [];
+    }
+
     public function enter(SubagentLiveChildDTO $child): void
     {
         $this->active = true;
+
+        if (!$this->isSameChild($child)) {
+            $this->persistCurrentChildCache();
+        }
+
+        $cached = $this->childCaches[$child->agentRunId] ?? null;
+        if (null !== $cached && [] !== $cached['transcript']) {
+            $this->selected = $child;
+            $this->childTranscript = $cached['transcript'];
+            $this->childLastSeq = $cached['lastSeq'];
+            $this->childLastPoll = $cached['lastPoll'];
+            $this->childActivity = $cached['activity'];
+            $this->childQueuedUserMessages = $cached['queuedUserMessages'] ?? [];
+            $this->childReplayEvents = $cached['replayEvents'] ?? [];
+
+            return;
+        }
 
         if ($this->shouldResetProjectionFor($child)) {
             $this->selected = $child;
@@ -102,7 +176,7 @@ final class SubagentLiveViewState
                 runId: $child->agentRunId,
                 seq: 0,
                 text: \sprintf(
-                    'Loading live view for %s [%s] %s — waiting for child events…',
+                    'Loading live view for %s · [%s] %s — waiting for child events…',
                     $child->agentName,
                     $child->statusLabel(),
                     $child->artifactId,
@@ -111,9 +185,15 @@ final class SubagentLiveViewState
         ];
     }
 
+    public function removeChildCache(string $agentRunId): void
+    {
+        unset($this->childCaches[$agentRunId]);
+    }
+
     public function exit(): void
     {
         $this->active = false;
         $this->lastLiveWorkingMessage = null;
+        $this->childQueuedUserMessages = [];
     }
 }

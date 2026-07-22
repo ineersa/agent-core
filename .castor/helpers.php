@@ -257,6 +257,67 @@ function initialize_qa_check_run(): string
 }
 
 /**
+ * Minimal personal Hatfield settings for QA/test Symfony kernel subprocesses.
+ *
+ * Prevents developer ~/.hatfield/settings.yaml (invalid default_model, secrets)
+ * from breaking castor test/check migrations and PHPUnit/ParaTest workers.
+ * Project .hatfield/settings.yaml in the worktree cwd is still loaded as layer 3.
+ */
+function qa_test_home_settings_contents(): string
+{
+    return "ai:\n    default_model: null\n";
+}
+
+/**
+ * Absolute path to an isolated HOME directory for this Castor invocation or check run.
+ */
+function qa_test_home_dir(): string
+{
+    static $resolved = null;
+    if (null !== $resolved) {
+        return $resolved;
+    }
+
+    $projectRoot = project_root_dir();
+    $runId = getenv('HATFIELD_QA_RUN_ID');
+    if (false !== $runId && '' !== trim((string) $runId)) {
+        $segment = sanitize_qa_run_id_segment((string) $runId);
+        $resolved = $projectRoot.'/var/tmp/'.$segment.'/qa-home';
+    } else {
+        $resolved = $projectRoot.'/var/tmp/qa-home/pid-'.getmypid();
+    }
+
+    $hatfieldDir = $resolved.'/.hatfield';
+    if (!is_dir($hatfieldDir) && !mkdir($hatfieldDir, 0777, true) && !is_dir($hatfieldDir)) {
+        throw new \RuntimeException(\sprintf('Unable to create QA test HOME directory "%s".', $hatfieldDir));
+    }
+
+    $settingsPath = $hatfieldDir.'/settings.yaml';
+    $contents = qa_test_home_settings_contents();
+    if (!is_file($settingsPath) || file_get_contents($settingsPath) !== $contents) {
+        if (false === file_put_contents($settingsPath, $contents)) {
+            throw new \RuntimeException(\sprintf('Unable to write QA test HOME settings at "%s".', $settingsPath));
+        }
+    }
+
+    putenv('HATFIELD_QA_TEST_HOME='.$resolved);
+    $_ENV['HATFIELD_QA_TEST_HOME'] = $resolved;
+    $_SERVER['HATFIELD_QA_TEST_HOME'] = $resolved;
+
+    return $resolved;
+}
+
+/**
+ * Shell prefix exporting isolated HOME for subprocesses that boot the test kernel.
+ */
+function qa_test_home_shell_prefix(): string
+{
+    $home = qa_test_home_dir();
+
+    return 'HOME='.escapeshellarg($home).' HATFIELD_QA_TEST_HOME='.escapeshellarg($home);
+}
+
+/**
  * Return the most recent modification time among all files in the given directories.
  *
  * Recurses into subdirectories, skips unreadable directories silently,
@@ -1209,6 +1270,15 @@ function phar_build(): string
         }
     }
 
+    // Curated internal docs use source-tree symlinks; Box rejects links, so
+    // materialize regular files into the staging tree before compilation.
+    $internalDocsPath = $root.'/internal-docs';
+    if (is_dir($internalDocsPath)) {
+        shell_exec(
+            'cp -aL '.escapeshellarg($internalDocsPath).' '.escapeshellarg($stagingDir.'/')
+        );
+    }
+
     // Copy individual root files needed by Box and Composer.
     foreach (['composer.json', 'composer.lock', 'box.json'] as $file) {
         $srcPath = $root.'/'.$file;
@@ -1632,29 +1702,44 @@ function collect_qa_check_run_leaked_processes(string $runId): array
  */
 function assert_castor_check_run_no_process_leaks(string $runId): void
 {
-    $leaks = collect_qa_check_run_leaked_processes($runId);
-    if ([] === $leaks) {
-        echo "QA run leak check: ok (no processes with HATFIELD_QA_RUN_ID={$runId})\n";
+    $processLeaks = collect_qa_check_run_leaked_processes($runId);
+    $tmuxLeaks = collect_qa_check_run_leaked_tmux_sessions($runId);
+
+    if ([] === $processLeaks && [] === $tmuxLeaks) {
+        echo "QA run leak check: ok (no processes or tmux sessions owned by HATFIELD_QA_RUN_ID={$runId})\n";
 
         return;
     }
 
     $lines = [
-        'QA run leak check FAILED: processes still carry HATFIELD_QA_RUN_ID='.$runId,
+        'QA run leak check FAILED: resources still owned by HATFIELD_QA_RUN_ID='.$runId,
         'Investigate lifecycle teardown (do not auto-kill). Manual cleanup only when safe:',
         '  castor clean:cleanup:workers:list',
         '  castor clean:cleanup:workers',
+        '  tmux list-sessions (see @hatfield_qa_run_id session option)',
         '',
     ];
-    foreach ($leaks as $row) {
-        $lines[] = \sprintf(
-            '  pid=%d ppid=%d sid=%d cwd=%s cmd=%s',
-            $row['pid'],
-            $row['ppid'],
-            $row['sid'],
-            '' !== $row['cwd'] ? $row['cwd'] : '?',
-            '' !== $row['cmd'] ? $row['cmd'] : '?',
-        );
+
+    if ([] !== $processLeaks) {
+        $lines[] = 'Processes:';
+        foreach ($processLeaks as $row) {
+            $lines[] = \sprintf(
+                '  pid=%d ppid=%d sid=%d cwd=%s cmd=%s',
+                $row['pid'],
+                $row['ppid'],
+                $row['sid'],
+                '' !== $row['cwd'] ? $row['cwd'] : '?',
+                '' !== $row['cmd'] ? $row['cmd'] : '?',
+            );
+        }
+        $lines[] = '';
+    }
+
+    if ([] !== $tmuxLeaks) {
+        $lines[] = 'Tmux sessions (exact @hatfield_qa_run_id match):';
+        foreach ($tmuxLeaks as $session) {
+            $lines[] = '  '.$session.'  (tmux kill-session -t '.escapeshellarg($session).')';
+        }
     }
 
     fail_quality(implode("\n", $lines));

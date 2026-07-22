@@ -12,6 +12,8 @@ use Ineersa\AgentCore\Application\Dto\RunStateSnapshot;
 use Ineersa\AgentCore\Contract\CommandStoreInterface;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\PromptStateStoreInterface;
+use Ineersa\AgentCore\Contract\Replay\HotPromptIntegrityVerifierInterface;
+use Ineersa\AgentCore\Contract\Replay\HotPromptStateRebuilderInterface;
 use Ineersa\AgentCore\Contract\RunStoreInterface;
 use Ineersa\AgentCore\Domain\Command\PendingCommand;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
@@ -19,12 +21,17 @@ use Ineersa\AgentCore\Domain\Run\PromptState;
 
 final readonly class RunDebugService
 {
+    /**
+     * Hot-prompt rebuild and integrity are separate narrow Core contracts;
+     * both resolve to the same App session implementation via DI aliases.
+     */
     public function __construct(
         private RunStoreInterface $runStore,
         private CommandStoreInterface $commandStore,
         private PromptStateStoreInterface $promptStateStore,
         private EventStoreInterface $eventStore,
-        private ReplayService $replayService,
+        private HotPromptStateRebuilderInterface $hotPromptStateRebuilder,
+        private HotPromptIntegrityVerifierInterface $hotPromptIntegrityVerifier,
         private ?RunMetrics $metrics = null,
     ) {
     }
@@ -35,7 +42,7 @@ final readonly class RunDebugService
     public function inspect(string $runId): RunDebugSnapshot
     {
         $state = $this->runStore->get($runId);
-        $integrity = $this->replayService->verifyIntegrity($runId);
+        $integrity = $this->hotPromptIntegrityVerifier->verifyIntegrity($runId);
         $hotPromptState = HotPromptStateSnapshot::fromPromptState($this->promptStateStore->get($runId));
 
         $pendingCommands = array_map(
@@ -144,7 +151,7 @@ final readonly class RunDebugService
      */
     public function rebuildHotPromptState(string $runId): PromptState
     {
-        return $this->replayService->rebuildHotPromptState($runId);
+        return $this->hotPromptStateRebuilder->rebuildHotPromptState($runId);
     }
 
     /**

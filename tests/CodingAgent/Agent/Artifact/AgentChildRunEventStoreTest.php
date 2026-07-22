@@ -11,7 +11,9 @@ use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunEventStore;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
+use Ineersa\CodingAgent\Session\FileRunSequenceAllocator;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+use Ineersa\CodingAgent\Session\SessionAgentArtifactPathResolver;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
@@ -48,7 +50,7 @@ final class AgentChildRunEventStoreTest extends TestCase
             entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
         );
 
-        $this->pathResolver = new AgentArtifactPathResolver($hatfieldSessionStore);
+        $this->pathResolver = new AgentArtifactPathResolver(new SessionAgentArtifactPathResolver($hatfieldSessionStore));
     }
 
     protected function tearDown(): void
@@ -77,11 +79,11 @@ final class AgentChildRunEventStoreTest extends TestCase
         $store->append($event);
 
         $events = $store->allFor($agentRunId);
-        self::assertCount(1, $events);
-        self::assertSame($agentRunId, $events[0]->runId);
-        self::assertSame(1, $events[0]->seq);
-        self::assertSame('run_started', $events[0]->type);
-        self::assertSame('Explore codebase', $events[0]->payload['prompt']);
+        $this->assertCount(1, $events);
+        $this->assertSame($agentRunId, $events[0]->runId);
+        $this->assertSame(1, $events[0]->seq);
+        $this->assertSame('run_started', $events[0]->type);
+        $this->assertSame('Explore codebase', $events[0]->payload['prompt']);
     }
 
     public function testEventsStoredUnderParentArtifactPath(): void
@@ -101,10 +103,10 @@ final class AgentChildRunEventStoreTest extends TestCase
 
         // Verify events exist at the parent-scoped artifact path
         $expectedPath = "{$this->projectDir}/.hatfield/sessions/{$parentRunId}/artifacts/agents/{$artifactId}/events.jsonl";
-        self::assertFileExists($expectedPath);
+        $this->assertFileExists($expectedPath);
 
         // Verify no top-level child session directory was created
-        self::assertDirectoryDoesNotExist("{$this->projectDir}/.hatfield/sessions/{$agentRunId}");
+        $this->assertDirectoryDoesNotExist("{$this->projectDir}/.hatfield/sessions/{$agentRunId}");
     }
 
     public function testAllForReturnsEmptyForMismatchedRunId(): void
@@ -124,7 +126,7 @@ final class AgentChildRunEventStoreTest extends TestCase
 
         // Different runId returns empty
         $events = $store->allFor('different-run');
-        self::assertCount(0, $events);
+        $this->assertCount(0, $events);
     }
 
     public function testAppendRejectsMismatchedRunId(): void
@@ -149,7 +151,7 @@ final class AgentChildRunEventStoreTest extends TestCase
     public function testAllForReturnsEmptyForMissingEvents(): void
     {
         $store = $this->createStore('parent-x', 'child-x', 'artifact-x');
-        self::assertCount(0, $store->allFor('child-x'));
+        $this->assertCount(0, $store->allFor('child-x'));
     }
 
     public function testAppendManyAndRetrieveSorted(): void
@@ -169,12 +171,34 @@ final class AgentChildRunEventStoreTest extends TestCase
         $store->appendMany($events);
 
         $retrieved = $store->allFor($agentRunId);
-        self::assertCount(3, $retrieved);
+        $this->assertCount(3, $retrieved);
 
         // Events are sorted by seq
-        self::assertSame(1, $retrieved[0]->seq);
-        self::assertSame(2, $retrieved[1]->seq);
-        self::assertSame(3, $retrieved[2]->seq);
+        $this->assertSame(1, $retrieved[0]->seq);
+        $this->assertSame(2, $retrieved[1]->seq);
+        $this->assertSame(3, $retrieved[2]->seq);
+    }
+
+    public function testAppendManyRejectsMismatchedRunIdBeforeAllocation(): void
+    {
+        $parentRunId = 'parent-'.bin2hex(random_bytes(4));
+        $agentRunId = 'child-'.bin2hex(random_bytes(4));
+        $artifactId = 'scout-001';
+        $store = $this->createStore($parentRunId, $agentRunId, $artifactId);
+
+        $events = [
+            new RunEvent(runId: $agentRunId, seq: 0, turnNo: 0, type: 'run_started'),
+            new RunEvent(runId: 'other-child', seq: 0, turnNo: 1, type: 'tool_execution.started'),
+        ];
+
+        try {
+            $store->appendMany($events);
+            $this->fail('Expected RuntimeException for mismatched runId');
+        } catch (\RuntimeException $exception) {
+            $this->assertStringContainsString('does not match bound agentRunId', $exception->getMessage());
+        }
+
+        $this->assertCount(0, $store->allFor($agentRunId));
     }
 
     public function testMultipleChildrenDoNotInterfere(): void
@@ -188,10 +212,10 @@ final class AgentChildRunEventStoreTest extends TestCase
         $storeB->append(new RunEvent(runId: 'child-b', seq: 1, turnNo: 0, type: 'run_started'));
 
         // Each store only returns its own events
-        self::assertCount(1, $storeA->allFor('child-a'));
-        self::assertCount(0, $storeA->allFor('child-b'));
-        self::assertCount(1, $storeB->allFor('child-b'));
-        self::assertCount(0, $storeB->allFor('child-a'));
+        $this->assertCount(1, $storeA->allFor('child-a'));
+        $this->assertCount(0, $storeA->allFor('child-b'));
+        $this->assertCount(1, $storeB->allFor('child-b'));
+        $this->assertCount(0, $storeB->allFor('child-a'));
     }
 
     // ── Constructor path validation ──────────────────────────────────────
@@ -228,6 +252,50 @@ final class AgentChildRunEventStoreTest extends TestCase
         $this->createStore('parent-x', 'child-x', '..');
     }
 
+    public function testReadAfterSeqReturnsOnlyEventsAfterCursorAndAcceptsSequenceHoles(): void
+    {
+        $parentRunId = 'parent-'.bin2hex(random_bytes(4));
+        $agentRunId = 'child-'.bin2hex(random_bytes(4));
+        $artifactId = 'scout-hole';
+
+        $store = $this->createStore($parentRunId, $agentRunId, $artifactId);
+        $normalizer = new EventPayloadNormalizer();
+        $path = "{$this->projectDir}/.hatfield/sessions/{$parentRunId}/artifacts/agents/{$artifactId}/events.jsonl";
+        mkdir(\dirname($path), 0775, true);
+
+        foreach ([
+            $normalizer->normalize($agentRunId, 1, 0, 'run_started', []),
+            $normalizer->normalize($agentRunId, 3, 1, 'turn_advanced', ['turn_no' => 1]),
+        ] as $line) {
+            file_put_contents($path, json_encode($line, \JSON_THROW_ON_ERROR).'
+', \FILE_APPEND);
+        }
+
+        $tail = $store->readAfterSeq(1);
+        $this->assertCount(1, $tail);
+        $this->assertSame(3, $tail[0]->seq);
+        $this->assertSame('turn_advanced', $tail[0]->type);
+    }
+
+    public function testReadAfterSeqRejectsRunIdMismatch(): void
+    {
+        $parentRunId = 'parent-'.bin2hex(random_bytes(4));
+        $agentRunId = 'child-'.bin2hex(random_bytes(4));
+        $artifactId = 'scout-mismatch';
+
+        $store = $this->createStore($parentRunId, $agentRunId, $artifactId);
+        $normalizer = new EventPayloadNormalizer();
+        $path = "{$this->projectDir}/.hatfield/sessions/{$parentRunId}/artifacts/agents/{$artifactId}/events.jsonl";
+        mkdir(\dirname($path), 0775, true);
+        $bad = $normalizer->normalize('other-child', 2, 0, 'run_started', []);
+        file_put_contents($path, json_encode($bad, \JSON_THROW_ON_ERROR).'
+', \FILE_APPEND);
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('integrity error');
+        $store->readAfterSeq(0);
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────
 
     private function createStore(string $parentRunId, string $agentRunId, string $artifactId): AgentChildRunEventStore
@@ -237,6 +305,7 @@ final class AgentChildRunEventStoreTest extends TestCase
             eventPayloadNormalizer: new EventPayloadNormalizer(),
             lockFactory: new LockFactory(new FlockStore()),
             logger: new NullLogger(),
+            sequenceAllocator: new FileRunSequenceAllocator(),
             parentRunId: $parentRunId,
             agentRunId: $agentRunId,
             artifactId: $artifactId,

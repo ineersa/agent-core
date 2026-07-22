@@ -14,6 +14,8 @@ use Ineersa\AgentCore\Infrastructure\SymfonyAi\ZaiToolStreamFeatureShaper;
 use Ineersa\CodingAgent\Config\Ai\AiModelReference;
 use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
 use Symfony\AI\Platform\Message\MessageBag;
+use Symfony\Component\Uid\Uuid;
+use Symfony\Component\Uid\UuidV7;
 
 /**
  * Production model resolver backed by Hatfield model/reasoning selection services.
@@ -33,6 +35,7 @@ final class SessionAwareModelResolver implements ModelResolverInterface
     public function __construct(
         private readonly ModelSelectionService $selectionService,
         private readonly HatfieldModelCatalog $catalog,
+        private readonly SessionMetadataStore $sessionMetadataStore,
     ) {
     }
 
@@ -76,13 +79,13 @@ final class SessionAwareModelResolver implements ModelResolverInterface
         if (null !== $modelRef) {
             // Clamp the reasoning level to the model's supported levels.
             // A persisted xhigh for a model that only supports up to high
-            // must be resolved to high so enable_thinking is honoured.
+            // must be resolved to high so z.ai thinking options are honoured.
             $reasoning = $this->selectionService->clampReasoningLevel($reasoning, $modelRef);
 
             $compatFeatures = $this->resolveCompatFeatures($modelRef);
             $reasoningOptions = $this->resolveReasoningOptions($modelRef, $reasoning);
 
-            // Always pass 'reasoning' in compat features when reasoning is active.
+            // Pass 'reasoning' compat when options are present (z.ai off sends disabled thinking).
             if ([] !== $reasoningOptions && !\in_array(ReasoningOptionsFeatureShaper::FEATURE, $compatFeatures, true)) {
                 $compatFeatures[] = ReasoningOptionsFeatureShaper::FEATURE;
             }
@@ -91,12 +94,46 @@ final class SessionAwareModelResolver implements ModelResolverInterface
                 model: $modelRef->toString(),
                 providerId: $modelRef->providerId,
                 reasoning: $reasoning,
+                options: $this->resolveInvocationOptions($sessionId),
                 compatFeatures: $compatFeatures,
                 reasoningOptions: $reasoningOptions,
             );
         }
 
         throw new \RuntimeException('No AI model is configured. Add at least one enabled provider/model under ai.providers in ~/.hatfield/settings.yaml or project .hatfield/settings.yaml.');
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function resolveInvocationOptions(string $sessionId): array
+    {
+        if ('' === $sessionId) {
+            return [];
+        }
+
+        $session = $this->sessionMetadataStore->findSession($sessionId);
+        if (null === $session) {
+            // Persisted Hatfield sessions use numeric string ids. Missing metadata for those ids
+            // is a stale or corrupt session reference. Ephemeral child/controller runs use UUIDv7
+            // or other non-numeric run ids without a hatfield_session row.
+            if (ctype_digit($sessionId)) {
+                throw new \RuntimeException(\sprintf('Session "%s" has no metadata for model resolution.', $sessionId));
+            }
+
+            return [];
+        }
+
+        $providerCacheKey = $session->providerCacheKey;
+        if (null === $providerCacheKey || '' === $providerCacheKey) {
+            throw new \RuntimeException(\sprintf('Session "%s" is missing a provider_cache_key.', $sessionId));
+        }
+
+        if (!Uuid::isValid($providerCacheKey) || !Uuid::fromString($providerCacheKey) instanceof UuidV7) {
+            throw new \RuntimeException(\sprintf('Session "%s" has an invalid provider_cache_key.', $sessionId));
+        }
+
+        return ['provider_cache_key' => $providerCacheKey];
     }
 
     /**
@@ -136,7 +173,7 @@ final class SessionAwareModelResolver implements ModelResolverInterface
      * and reasoning level.
      *
      * Uses {@see ReasoningOptionsResolver} to produce options such as
-     * {@code enable_thinking}, {@code reasoning_effort}, {@code thinking.type}.
+     * {@code thinking.type}, {@code reasoning_effort}, {@code reasoning.effort}.
      * This is done in CodingAgent where the catalog is available; AgentCore's
      * {@see ReasoningOptionsFeatureShaper}
      * only merges the result.
@@ -145,7 +182,7 @@ final class SessionAwareModelResolver implements ModelResolverInterface
      */
     private function resolveReasoningOptions(AiModelReference $ref, string $reasoningLevel): array
     {
-        if ('' === $reasoningLevel || 'off' === $reasoningLevel) {
+        if ('' === $reasoningLevel) {
             return [];
         }
 

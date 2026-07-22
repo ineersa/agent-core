@@ -41,28 +41,17 @@ use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
  */
 abstract class ControllerReplayE2eTestCase extends ControllerE2eTestCase
 {
-    /** @var list<int> PIDs of tracked child processes */
-    private array $trackedPids = [];
+    /** Max wait for compaction.completed/failed after compaction.started (replay fixtures). */
+    protected const COMPACTION_TERMINAL_AFTER_STARTED_SECONDS = 4.0;
 
+    /**
+     * Quiet period after the last runtime event when compaction must not fire.
+     * Symfony messenger:consume defaults to 1s between empty polls; use a bound
+     * above that so a message queued just after an empty poll is still observable.
+     */
+    protected const COMPACTION_NO_COMPACTION_QUIET_SECONDS = 1.35;
     /** @var list<array<string, mixed>> One fixture per expected LLM call */
     protected array $replayFixtures = [];
-
-    /**
-     * Subclasses MUST override to return at least one fixture.
-     *
-     * @return list<array<string, mixed>>
-     */
-    abstract protected function replayFixtures(): array;
-
-    /**
-     * @return array<string, string> Extra env vars passed to the
-     *         controller subprocess (added to the replay-aware defaults).
-     */
-    protected function replayExtraEnv(): array
-    {
-        return [];
-    }
-
     // ── Lifecycle ──
 
     protected function setUp(): void
@@ -83,22 +72,27 @@ abstract class ControllerReplayE2eTestCase extends ControllerE2eTestCase
         $this->stdoutBuf = '';
         $this->stderrBuf = '';
         $this->runId = '';
-        $this->trackedPids = [];
+        $this->trackedControllerPids = [];
 
         // Resolve fixtures from subclass AFTER tempDir is set (fixtures
         // may reference tempDir-relative paths).
         $this->replayFixtures = $this->replayFixtures();
     }
 
-    protected function tearDown(): void
+    /**
+     * Subclasses MUST override to return at least one fixture.
+     *
+     * @return list<array<string, mixed>>
+     */
+    abstract protected function replayFixtures(): array;
+
+    /**
+     * @return array<string, string> extra env vars passed to the
+     *                               controller subprocess (added to the replay-aware defaults)
+     */
+    protected function replayExtraEnv(): array
     {
-        $this->stopProcessWithOwnership();
-
-        if (isset($this->tempDir) && '' !== $this->tempDir) {
-            TestDirectoryIsolation::removeDirectory($this->tempDir);
-        }
-
-        \PHPUnit\Framework\TestCase::tearDown();
+        return [];
     }
 
     // ── Process lifecycle with ownership ─────────────────────────
@@ -209,203 +203,7 @@ abstract class ControllerReplayE2eTestCase extends ControllerE2eTestCase
         stream_set_blocking($pipes[1], false);
         stream_set_blocking($pipes[2], false);
 
-        // Track the PID and discover initial child PIDs.
-        $status = @proc_get_status($process);
-        if (\is_array($status) && isset($status['pid'])) {
-            $this->trackedPids = [$status['pid']];
-
-            // Discover immediate descendants for explicit teardown.
-            $descendants = $this->discoverChildPids($status['pid']);
-            $this->trackedPids = array_merge($this->trackedPids, $descendants);
-        }
-    }
-
-    /**
-     * Terminate the controller process group and assert no survivors.
-     *
-     * Uses SIGTERM → short grace → SIGKILL for the entire tracked
-     * set of PIDs.  Afterward, asserts no child processes remain.
-     * On failure, records diagnostics for debugging.
-     */
-    private function stopProcessWithOwnership(): void
-    {
-        foreach ($this->pipes as $pipe) {
-            if (\is_resource($pipe)) {
-                @fclose($pipe);
-            }
-        }
-        $this->pipes = [];
-
-        if (null === $this->process) {
-            return;
-        }
-
-        // Refresh tracked PIDs before killing — children may have been
-        // spawned since the last discovery.
-        $status = @proc_get_status($this->process);
-        if (\is_array($status) && isset($status['pid'])) {
-            $descendants = $this->discoverChildPids($status['pid']);
-            $this->trackedPids = array_unique(
-                array_merge($this->trackedPids, $descendants),
-            );
-        }
-
-        // SIGTERM all tracked PIDs.
-        foreach ($this->trackedPids as $pid) {
-            if ($pid > 1) {
-                @posix_kill($pid, \SIGTERM);
-            }
-        }
-
-        $deadline = microtime(true) + 1.0;
-        $stillAlive = true;
-        while ($stillAlive && microtime(true) < $deadline) {
-            $stillAlive = false;
-            foreach ($this->trackedPids as $pid) {
-                if ($pid > 1 && $this->isPidAlive($pid)) {
-                    $stillAlive = true;
-                    break;
-                }
-            }
-            if ($stillAlive) {
-                usleep(50_000);
-            }
-        }
-
-        // SIGKILL any survivors.
-        foreach ($this->trackedPids as $pid) {
-            if ($pid > 1 && $this->isPidAlive($pid)) {
-                @posix_kill($pid, \SIGKILL);
-            }
-        }
-
-        // Close the proc resource (reaps the main controller child).
-        @proc_close($this->process);
-        $this->process = null;
-
-        // Assert: no tracked PIDs still alive.
-        $survivors = [];
-        foreach ($this->trackedPids as $pid) {
-            if ($pid > 1 && $this->isPidAlive($pid)) {
-                $survivors[] = $pid;
-            }
-        }
-
-        if ([] !== $survivors) {
-            // Log survivorship — this is a soft diagnostic, not a hard
-            // test failure, because some platforms (e.g. macOS) may
-            // have timing differences in process reaping.
-            $names = [];
-            foreach ($survivors as $pid) {
-                $cmdline = (string) @file_get_contents("/proc/{$pid}/cmdline");
-                $names[] = "  PID {$pid}: ".($cmdline ?: '(unknown)');
-            }
-            \fwrite(\STDERR, "[WARNING] Process ownership: ".count($survivors)
-                ." tracked PIDs still alive after teardown:\n"
-                .implode("\n", $names)."\n");
-        }
-    }
-
-    /**
-     * True when the PID still has a live task (not a zombie waiting on reap).
-     */
-    private function isPidAlive(int $pid): bool
-    {
-        if (!@posix_kill($pid, 0)) {
-            return false;
-        }
-
-        $stat = @file_get_contents("/proc/{$pid}/stat");
-        if (false === $stat) {
-            return true;
-        }
-
-        $closeParen = strrpos($stat, ')');
-        if (false === $closeParen) {
-            return true;
-        }
-
-        $rest = trim(substr($stat, $closeParen + 1));
-        $fields = preg_split('/\s+/', $rest) ?: [];
-
-        return 'Z' !== ($fields[0] ?? '');
-    }
-
-    /**
-     * Discover child PIDs of a process by scanning /proc.
-     *
-     * @return list<int>
-     */
-    private function discoverChildPids(int $parentPid): array
-    {
-        $pids = [];
-
-        // Try /proc/<pid>/task/<tid>/children (Linux).
-        $childrenPath = "/proc/{$parentPid}/task/{$parentPid}/children";
-        if (is_readable($childrenPath)) {
-            $content = (string) @file_get_contents($childrenPath);
-            foreach (explode(' ', trim($content)) as $token) {
-                $childPid = (int) $token;
-                if ($childPid > 1) {
-                    $pids[] = $childPid;
-                    // Recurse into grandchildren.
-                    $pids = array_merge($pids, $this->discoverChildPids($childPid));
-                }
-            }
-
-            return $pids;
-        }
-
-        // Fallback: scan /proc for PPID matching (less precise, but
-        // works on systems without /proc/<pid>/children).
-        $procDir = '/proc';
-        if (!is_dir($procDir)) {
-            return $pids;
-        }
-
-        $entries = @scandir($procDir);
-        if (false === $entries) {
-            return $pids;
-        }
-
-        foreach ($entries as $entry) {
-            $candidatePid = (int) $entry;
-            if ($candidatePid <= 1 || (string) $candidatePid !== $entry) {
-                continue;
-            }
-
-            $statPath = "{$procDir}/{$entry}/stat";
-            if (!is_readable($statPath)) {
-                continue;
-            }
-
-            $stat = (string) @file_get_contents($statPath);
-            if ('' === $stat) {
-                continue;
-            }
-
-            // /proc/<pid>/stat fields are space-separated; PPID is field 4
-            // (indices 0-based after the pid and comm fields, which may
-            // contain spaces).  Use a regex to extract.
-            if (preg_match('/^\d+\s+\(.*?\)\s+\w\s+(\d+)/', $stat, $m)
-                && (int) $m[1] === $parentPid
-            ) {
-                $pids[] = $candidatePid;
-                $pids = array_merge($pids, $this->discoverChildPids($candidatePid));
-            }
-        }
-
-        return $pids;
-    }
-
-    // ── Override: override stopProcess so the live-LLM teardown helpers
-    //    use our ownership-aware version instead.
-
-    protected function stopProcess(): void
-    {
-        // Called by ControllerE2eTestCase::tearDown().
-        // We override to delegate to our ownership-aware version.
-        $this->stopProcessWithOwnership();
+        $this->trackControllerProcessTree($process);
     }
 
     protected function collectDiagnostics(array $events): string
@@ -413,11 +211,139 @@ abstract class ControllerReplayE2eTestCase extends ControllerE2eTestCase
         $parentDiag = parent::collectDiagnostics($events);
 
         $ownershipLines = [
-            'Tracked PIDs: '.('' !== implode(', ', $this->trackedPids)
-                ? implode(', ', $this->trackedPids) : '(none)'),
-            'Fixture count: '.count($this->replayFixtures),
+            'Tracked PIDs: '.('' !== implode(', ', $this->trackedControllerPids)
+                ? implode(', ', $this->trackedControllerPids) : '(none)'),
+            'Fixture count: '.\count($this->replayFixtures),
         ];
 
         return $parentDiag."\n".implode("\n", $ownershipLines)."\n";
+    }
+
+    /**
+     * Collect until the parent run reaches a terminal event, then optionally
+     * wait for async after-turn compaction on run_control.
+     *
+     * @return list<array<string, mixed>>
+     */
+    protected function collectTurnEventsUntilRunTerminal(
+        ?string $runTerminalType,
+        float $runTerminalTimeoutSeconds,
+        bool $expectAfterTurnCompaction = false,
+        float $compactionTimeoutSeconds = 6.0,
+    ): array {
+        $events = $this->collectEventsUntil($runTerminalType, $runTerminalTimeoutSeconds);
+
+        if (!$expectAfterTurnCompaction) {
+            return $events;
+        }
+
+        return array_merge(
+            $events,
+            $this->drainUntilCompactionTerminal($compactionTimeoutSeconds),
+        );
+    }
+
+    /**
+     * After run.completed when compaction is expected: wait event-driven for
+     * compaction.completed/failed once compaction.started appears (bounded phase).
+     *
+     * @return list<array<string, mixed>>
+     */
+    protected function drainUntilCompactionTerminal(float $timeoutSeconds): array
+    {
+        $events = [];
+        $deadline = microtime(true) + $timeoutSeconds;
+        $compactionStartedAt = null;
+        $compactionTerminalDeadline = null;
+
+        while (microtime(true) < $deadline) {
+            $sawNew = false;
+            foreach ($this->readEvents() as $event) {
+                $events[] = $event;
+                $sawNew = true;
+                $type = $event['type'] ?? '';
+
+                if ('compaction.started' === $type && null === $compactionStartedAt) {
+                    $compactionStartedAt = microtime(true);
+                    $compactionTerminalDeadline = $compactionStartedAt
+                        + self::COMPACTION_TERMINAL_AFTER_STARTED_SECONDS;
+                }
+
+                if (\in_array($type, ['compaction.completed', 'compaction.failed'], true)) {
+                    return $events;
+                }
+            }
+
+            if (!$this->isRunning()) {
+                foreach ($this->readEvents() as $event) {
+                    $events[] = $event;
+                    $sawNew = true;
+                    $type = $event['type'] ?? '';
+                    if (\in_array($type, ['compaction.completed', 'compaction.failed'], true)) {
+                        return $events;
+                    }
+                }
+                break;
+            }
+
+            if (null !== $compactionTerminalDeadline && microtime(true) > $compactionTerminalDeadline) {
+                break;
+            }
+
+            if (!$sawNew) {
+                usleep(50_000);
+            }
+        }
+
+        return $events;
+    }
+
+    /**
+     * After run.completed when compaction must NOT fire: bounded idle drain only.
+     *
+     * @return list<array<string, mixed>>
+     */
+    protected function drainUntilCompactionQuiet(float $timeoutSeconds): array
+    {
+        $events = [];
+        $deadline = microtime(true) + $timeoutSeconds;
+        $lastEventAt = microtime(true);
+
+        while (microtime(true) < $deadline) {
+            $sawNew = false;
+            foreach ($this->readEvents() as $event) {
+                $events[] = $event;
+                $sawNew = true;
+                $lastEventAt = microtime(true);
+                $type = $event['type'] ?? '';
+
+                if (\in_array($type, ['compaction.completed', 'compaction.failed'], true)) {
+                    return $events;
+                }
+            }
+
+            if (!$this->isRunning()) {
+                foreach ($this->readEvents() as $event) {
+                    $events[] = $event;
+                    $sawNew = true;
+                    $lastEventAt = microtime(true);
+                    $type = $event['type'] ?? '';
+                    if (\in_array($type, ['compaction.completed', 'compaction.failed'], true)) {
+                        return $events;
+                    }
+                }
+                break;
+            }
+
+            if (microtime(true) - $lastEventAt > self::COMPACTION_NO_COMPACTION_QUIET_SECONDS) {
+                break;
+            }
+
+            if (!$sawNew) {
+                usleep(50_000);
+            }
+        }
+
+        return $events;
     }
 }

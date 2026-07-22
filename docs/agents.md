@@ -1,3 +1,7 @@
+---
+description: Agent definitions, discovery, catalog, and foreground subagent tool behavior.
+---
+
 # Agent Definitions
 
 Agent definitions configure named child-agent roles for your project or user environment. For example, you can define agents named `scout`, `reviewer`, `researcher`, `worker`, or any custom name. Each definition lives in a Markdown file with YAML frontmatter.
@@ -14,8 +18,8 @@ name: scout
 description: Fast read-only codebase reconnaissance
 tools:
   - read
-  - ide_find_file
-  - ide_search_text
+  - bash
+  # availability: all MCP tools are inherited automatically
 inheritProjectContext: true
 inheritAgentsMd: true
 systemPromptMode: replace
@@ -34,7 +38,7 @@ You are a scout. Explore the codebase read-only and return dense findings...
 |---|---|---|---|---|
 | `name` | string | yes | — | Unique agent name. Lowercase `[a-z][a-z0-9-]{0,47}`. |
 | `description` | string | yes | — | Human-readable description. |
-| `tools` | list\<string\> | no | inherit all parent-available tools (+ global MCP when omitted) | Non-MCP tool allowlist and MCP selectors in one list. Omitted: inherit parent non-MCP tools and MCP from servers with `availability: all` in `.hatfield/mcp.json` (`subagent` always excluded). Explicit list without `mcp:` entries: non-MCP allowlist only (no MCP). MCP selectors: `mcp:*`, `mcp:-`, `mcp:<exposed_name>`, `mcp:<prefix_>` (runtime names `{server}_{tool}`). Legacy top-level `mcp.mode` / `mcp.tools` frontmatter is ignored for child policy. Invalid: `tools: []`, blank entries. |
+| `tools` | list\<string\> | no | inherit all parent-available tools (+ global MCP) | Non-MCP tool allowlist and MCP selectors in one list. Omitted: inherit parent non-MCP tools and MCP from servers with `availability: all` in `.hatfield/mcp.json` (`subagent` always excluded). Explicit lists also inherit all `availability: all` MCP tools unless `mcp:-` is present. Specific servers require explicit `mcp:` selectors. Raw catalog runtime names without `mcp:` are stripped from the explicit non-MCP allowlist; `availability: all` tools remain available through global inheritance, while `availability: specific` tools are not opted in by raw names. MCP selectors: `mcp:*`, `mcp:-`, `mcp:<exposed_name>`, `mcp:<prefix*>` (exactly one terminal `*` is a prefix wildcard; runtime names `{server}_{tool}`). Legacy top-level `mcp.mode` / `mcp.tools` frontmatter is ignored for child policy. Invalid: `tools: []`, blank entries. |
 | `model` | string\|null | no | `null` | Optional model override. |
 | `thinking` | string\|null | no | `null` | Reasoning/thinking override (`off`, `minimal`, `low`, `medium`, `high`, `xhigh`). |
 | `skills` | list\<string\> | no | `[]` | Setup skills loaded from start. |
@@ -54,14 +58,14 @@ The body after the closing `---` delimiter is stored as the agent's instructions
 
 ## Discovery
 
-Agent definitions are discovered from the following locations in deterministic order. Higher-numbered layers override lower-numbered layers by agent `name`.
+Agent definitions are discovered from the following locations in deterministic load order. Later layers override earlier layers by agent `name` (lowest to highest).
 
-### Precedence (highest wins)
+### Precedence (load order, lowest to highest)
 
-1. **User agents** — `~/.hatfield/agents/*.md`
-2. **User agents** — `~/.agents/*.md`
-3. **Project agents** — `.hatfield/agents/*.md`
-4. **Project agents** — `.agents/*.md`
+1. **User agents** — `~/.agents/*.md`
+2. **User agents** — `~/.hatfield/agents/*.md`
+3. **Project agents** — `.agents/*.md`
+4. **Project agents** — `.hatfield/agents/*.md`
 5. **Configured paths** — `agents.paths` settings (highest precedence)
 
 Each directory is scanned non-recursively for `*.md` files (sorted lexicographically). Configured paths may be a single `.md` file or a directory of `*.md` files.
@@ -94,7 +98,8 @@ name: my-custom-agent
 description: Custom agent for specialized analysis
 tools:
   - read
-  - ide_search_text
+  - bash
+  # availability: all MCP tools are inherited automatically
   - semantic-search
 maxDepth: 1
 ---
@@ -154,15 +159,26 @@ subagent orchestration may block its worker while polling child runs; isolating 
 prevents starving child agents' `read`/`write`/`shell` calls on the `tool` queue.
 
 The `subagent` tool is registered as a permanent model-visible tool. It supports
-**single or parallel foreground mode** with the following JSON schema:
+**single or parallel foreground mode** with the following JSON schema.
 
-Single mode:
+**Decision rule:** batch independent scouts/reviewers in **one** parallel
+`tasks` call whenever within `agents.max_agents`. Use single mode only for
+exactly one child or work that must be serialized (a later investigation depends
+on an earlier result, a follow-up cannot be formed until prior output, or a
+deliberate re-review/implementation step after a fix). Separate outer `subagent`
+tool calls are serialized by the tool executor; children inside one `tasks`
+array run concurrently. Multiple separate single-mode calls for independent work
+are valid syntax but an orchestration anti-pattern (they run one after another).
+
+Single mode (one child, or serialized/dependent work):
 
 ```json
 { "agent": "scout", "task": "Inspect routing config" }
 ```
 
-Parallel mode (up to `agents.max_agents`, default **8** per tool call):
+Parallel mode for independent work (up to `agents.max_agents`, default **8**
+per tool call) — prefer this shape when launching multiple independent
+scouts/reviewers:
 
 ```json
 {
@@ -176,7 +192,8 @@ Parallel mode (up to `agents.max_agents`, default **8** per tool call):
 - Use **either** single mode or parallel `tasks`, never both.
 - All tasks in one call run concurrently (no `concurrency` argument).
 - If more than `agents.max_agents` tasks are requested, the tool fails fast
-  before creating artifacts — split work across multiple `subagent` calls.
+  before creating artifacts — split across multiple `subagent` calls only for
+  **cap overflow** or **true dependencies**, not for routine independent work.
 - Each child agent definition used in parallel mode must set
   `parallelAllowed: true`.
 - `background` remains unsupported.
@@ -298,9 +315,22 @@ definition `tools` list (including `mcp:` selectors) plus hard safety rules:
 - Omitted `tools`: inherit parent/default non-MCP tools plus MCP tools from
   servers marked `availability: all` in `.hatfield/mcp.json` (exclude
   `availability: specific`).
-- Explicit `tools` without any `mcp:` selector: non-MCP allowlist only (no MCP).
-- `mcp:` selectors in `tools` resolve to runtime tool names `{server}_{tool}`
-  (e.g. `mcp:websearch_search`, `mcp:websearch_`, `mcp:*`, `mcp:-`).
+- Explicit `tools` lists also inherit all MCP tools from `availability: all`
+  servers unless `mcp:-` is present. An explicit list without selectors therefore
+  has mode `inherited_global`; selected `availability: specific` tools are merged
+  with those globals when `mcp:` selectors are used.
+- Raw catalog runtime names without the `mcp:` prefix are stripped from the
+  non-MCP allowlist. Tools from `availability: all` servers remain available
+  through global MCP inheritance, while tools from `availability: specific`
+  servers are not opted in by raw names. Unrelated non-MCP names remain unchanged.
+- `mcp:-` wins over every other selector and suppresses all MCP tools. `mcp:*`
+  selects all globally available MCP tools when deny is absent; specific tools
+  require an exact or terminal-star selector. When combined with those selectors,
+  only their specific matches are added to the globals. Selectors resolve to
+  runtime names `{server}_{tool}` (e.g. `mcp:websearch_search`, `mcp:websearch_*`).
+  Exactly one terminal `*` is
+  a prefix wildcard; a selector with no `*` is always exact, even if it ends with
+  `_`. Embedded or multiple `*` characters are not globs.
 - The `subagent` tool is **always excluded** from child tool lists in v1.
 - Parent/main runs only expose MCP tools from `availability: all` servers in
   the active toolset; `availability: specific` tools stay hidden until a child
@@ -365,3 +395,12 @@ The following features are **not yet implemented**:
 - [Session storage](session-storage.md) — child artifact layout and invariants
 - [Settings](settings.md) — `agents.enabled`, `agents.paths`
 - [Implementation plan](../.pi/plans/agents-subagents-implementation-plan.md)
+
+
+## Subagent live view (parent TUI)
+
+- `/agents-live` opens a picker of known child runs; Enter enters interactive live view for the selected child.
+- `/agents-main` and **Ctrl+\** return to the parent transcript. Live view routes plain text to the selected child as steer/follow_up.
+- Child HITL (`ask_human`, SafeGuard) questions are labeled and answered on the child run id. ESC cancels the selected child while in live view.
+- Picker **d** dismisses finished catalog rows only; active/pending/running/waiting children stay listed until they complete or you cancel them.
+- Steering applies at turn boundaries (not interruptive). Auto-delete of completed children is future settings work.

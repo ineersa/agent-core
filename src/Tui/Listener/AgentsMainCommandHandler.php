@@ -4,10 +4,12 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Listener;
 
+use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
 use Ineersa\Tui\Command\CommandResult;
 use Ineersa\Tui\Command\NoOp;
 use Ineersa\Tui\Command\SlashCommand;
 use Ineersa\Tui\Command\SlashCommandHandler;
+use Ineersa\Tui\Runtime\SubagentLiveMainReturn;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Screen\ChatScreen;
 
@@ -16,6 +18,7 @@ final class AgentsMainCommandHandler implements SlashCommandHandler
     public function __construct(
         private readonly TuiSessionState $state,
         private readonly ChatScreen $screen,
+        private readonly ?AgentSessionClient $client = null,
     ) {
     }
 
@@ -25,12 +28,7 @@ final class AgentsMainCommandHandler implements SlashCommandHandler
             return new NoOp();
         }
 
-        $this->state->subagentLiveView->exit();
-        $this->screen->setStatus('agents-live', '');
-        // Parent transcript kept updating in memory while live view was active.
-        $this->screen->setTranscriptBlocks($this->state->transcript);
-        $this->screen->setWorkingMessage('');
-        $this->screen->requestRender(true);
+        SubagentLiveMainReturn::returnToMain($this->state, $this->screen, $this->client);
 
         return new NoOp();
     }

@@ -7,7 +7,6 @@ namespace Ineersa\AgentCore\Tests\Application\Orchestrator;
 use Ineersa\AgentCore\Application\Handler\CommandHandlerRegistry;
 use Ineersa\AgentCore\Application\Handler\CommandRouter;
 use Ineersa\AgentCore\Application\Handler\MessageIdempotencyService;
-use Ineersa\AgentCore\Application\Handler\ReplayService;
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Application\Handler\StepDispatcher;
 use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
@@ -17,10 +16,11 @@ use Ineersa\AgentCore\Application\Pipeline\CommandMailboxPolicy;
 use Ineersa\AgentCore\Application\Pipeline\LlmStepResultHandler;
 use Ineersa\AgentCore\Application\Pipeline\RunCommit;
 use Ineersa\AgentCore\Application\Pipeline\RunMessageProcessor;
-
 use Ineersa\AgentCore\Application\Pipeline\RunOrchestrator;
 use Ineersa\AgentCore\Application\Pipeline\StartRunHandler;
 use Ineersa\AgentCore\Application\Pipeline\ToolCallResultHandler;
+use Ineersa\AgentCore\Application\Replay\PromptStateReplayService;
+use Ineersa\AgentCore\Application\Replay\ReplayEventPreparer;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\ApplyCommand;
@@ -32,10 +32,11 @@ use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Infrastructure\Storage\HotPromptStateStore;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryRunStore;
-use Ineersa\AgentCore\Infrastructure\Storage\RunEventStore;
 use Ineersa\AgentCore\Tests\Application\Handler\InMemoryIdempotencyStore;
+use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use Ineersa\AgentCore\Tests\Support\TestSerializerFactory;
+use Ineersa\CodingAgent\Session\Replay\SessionHotPromptReplayService;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 use Symfony\Component\Lock\LockFactory;
@@ -150,7 +151,7 @@ final class CommandMailboxPolicyTest extends TestCase
 
         $fixture->orchestrator->onLlmStepResult(new LlmStepResult(
             runId: $runId,
-            turnNo: 1,
+            turnNo: $this->currentTurnNo($fixture, $runId),
             stepId: 'advance-1',
             attempt: 1,
             idempotencyKey: 'llm-failed-1',
@@ -162,7 +163,7 @@ final class CommandMailboxPolicyTest extends TestCase
 
         $fixture->orchestrator->onApplyCommand(new ApplyCommand(
             runId: $runId,
-            turnNo: 1,
+            turnNo: $this->currentTurnNo($fixture, $runId),
             stepId: 'cancel-1',
             attempt: 1,
             idempotencyKey: 'cancel-1',
@@ -172,7 +173,7 @@ final class CommandMailboxPolicyTest extends TestCase
 
         $fixture->orchestrator->onApplyCommand(new ApplyCommand(
             runId: $runId,
-            turnNo: 1,
+            turnNo: $this->currentTurnNo($fixture, $runId),
             stepId: 'continue-1',
             attempt: 1,
             idempotencyKey: 'continue-1',
@@ -221,7 +222,7 @@ final class CommandMailboxPolicyTest extends TestCase
 
         $fixture->orchestrator->onLlmStepResult(new LlmStepResult(
             runId: $runId,
-            turnNo: 1,
+            turnNo: $this->currentTurnNo($fixture, $runId),
             stepId: 'advance-1',
             attempt: 1,
             idempotencyKey: 'llm-failed-1',
@@ -233,7 +234,7 @@ final class CommandMailboxPolicyTest extends TestCase
 
         $fixture->orchestrator->onApplyCommand(new ApplyCommand(
             runId: $runId,
-            turnNo: 1,
+            turnNo: $this->currentTurnNo($fixture, $runId),
             stepId: 'continue-1',
             attempt: 1,
             idempotencyKey: 'continue-1',
@@ -271,7 +272,7 @@ final class CommandMailboxPolicyTest extends TestCase
         // Queue a follow-up command (stored in command store, pending)
         $fixture->orchestrator->onApplyCommand(new ApplyCommand(
             runId: $runId,
-            turnNo: 1,
+            turnNo: $this->currentTurnNo($fixture, $runId),
             stepId: 'follow-up-1',
             attempt: 1,
             idempotencyKey: 'follow-up-1',
@@ -286,7 +287,7 @@ final class CommandMailboxPolicyTest extends TestCase
         // This triggers the stop-boundary path in LlmStepResultHandler
         $fixture->orchestrator->onLlmStepResult(new LlmStepResult(
             runId: $runId,
-            turnNo: 1,
+            turnNo: $this->currentTurnNo($fixture, $runId),
             stepId: 'advance-1',
             attempt: 1,
             idempotencyKey: 'llm-stop-1',
@@ -340,7 +341,7 @@ final class CommandMailboxPolicyTest extends TestCase
         // Send LLM result with stop_reason='stop', no tool calls, no error
         $fixture->orchestrator->onLlmStepResult(new LlmStepResult(
             runId: $runId,
-            turnNo: 1,
+            turnNo: $this->currentTurnNo($fixture, $runId),
             stepId: 'advance-1',
             attempt: 1,
             idempotencyKey: 'llm-stop-2',
@@ -393,7 +394,7 @@ final class CommandMailboxPolicyTest extends TestCase
         // and NO pending commands -> shouldContinue=false
         $fixture->orchestrator->onLlmStepResult(new LlmStepResult(
             runId: $runId,
-            turnNo: 1,
+            turnNo: $this->currentTurnNo($fixture, $runId),
             stepId: 'advance-1',
             attempt: 1,
             idempotencyKey: 'llm-stop-3',
@@ -416,13 +417,42 @@ final class CommandMailboxPolicyTest extends TestCase
         $this->assertCount(0, $advanceCommands);
     }
 
+    public function testCopyStatePreservesRetryAttempts(): void
+    {
+        $policy = new CommandMailboxPolicy(
+            commandStore: new InMemoryCommandStore(),
+            commandRouter: new CommandRouter(new CommandHandlerRegistry([])),
+        );
+
+        $state = new RunState(
+            runId: 'run-copy-retry',
+            status: RunStatus::Running,
+            retryAttempts: 2,
+        );
+
+        $reflection = new \ReflectionClass($policy);
+        $copyState = $reflection->getMethod('copyState');
+        /** @var RunState $copied */
+        $copied = $copyState->invoke($policy, $state, ['messages' => []]);
+
+        $this->assertSame(2, $copied->retryAttempts);
+    }
+
+    private function currentTurnNo(CommandMailboxFixture $fixture, string $runId): int
+    {
+        $state = $fixture->runStore->get($runId);
+        $this->assertNotNull($state);
+
+        return $state->turnNo;
+    }
+
     private function createFixture(int $maxPendingCommands = 100, string $steerDrainMode = 'one_at_a_time'): CommandMailboxFixture
     {
         $runStore = new InMemoryRunStore();
-        $eventStore = new RunEventStore();
+        $eventStore = new InMemoryEventStore();
         $commandStore = new InMemoryCommandStore();
 
-        $replayService = new ReplayService($eventStore, new HotPromptStateStore());
+        $replayService = new SessionHotPromptReplayService($eventStore, new HotPromptStateStore(), new PromptStateReplayService(), new ReplayEventPreparer());
 
         $commandBus = new TestMessageBus();
         $executionBus = new TestMessageBus();
@@ -440,7 +470,7 @@ final class CommandMailboxPolicyTest extends TestCase
             runStore: $runStore,
             eventStore: $eventStore,
             commandStore: $commandStore,
-            replayService: $replayService,
+            hotPromptStateRebuilder: $replayService,
             stepDispatcher: $stepDispatcher,
             logger: new NullLogger(),
             hookDispatcher: null,
@@ -535,27 +565,6 @@ final class CommandMailboxPolicyTest extends TestCase
         );
     }
 
-    public function testCopyStatePreservesRetryAttempts(): void
-    {
-        $policy = new CommandMailboxPolicy(
-            commandStore: new InMemoryCommandStore(),
-            commandRouter: new CommandRouter(new CommandHandlerRegistry([])),
-        );
-
-        $state = new RunState(
-            runId: 'run-copy-retry',
-            status: RunStatus::Running,
-            retryAttempts: 2,
-        );
-
-        $reflection = new \ReflectionClass($policy);
-        $copyState = $reflection->getMethod('copyState');
-        /** @var RunState $copied */
-        $copied = $copyState->invoke($policy, $state, ['messages' => []]);
-
-        self::assertSame(2, $copied->retryAttempts);
-    }
-
     private function deleteDirectory(string $path): void
     {
         if (!is_dir($path)) {
@@ -586,10 +595,9 @@ final readonly class CommandMailboxFixture
     public function __construct(
         public RunOrchestrator $orchestrator,
         public InMemoryRunStore $runStore,
-        public RunEventStore $eventStore,
+        public InMemoryEventStore $eventStore,
         public InMemoryCommandStore $commandStore,
         public TestMessageBus $commandBus,
     ) {
     }
 }
-

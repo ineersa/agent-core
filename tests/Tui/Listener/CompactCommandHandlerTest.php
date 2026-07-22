@@ -101,6 +101,14 @@ final class CompactCommandSpyClient implements AgentSessionClient
         throw new \RuntimeException('Unexpected send()');
     }
 
+    public function beginObservingChildRun(string $childRunId): void
+    {
+    }
+
+    public function endObservingChildRun(string $childRunId): void
+    {
+    }
+
     public function events(string $runId): iterable
     {
         return [];
@@ -114,11 +122,6 @@ final class CompactCommandSpyClient implements AgentSessionClient
     public function shellExecute(string $command, string $sessionId, string $cwd): RunHandle
     {
         throw new \RuntimeException('Unexpected shellExecute()');
-    }
-
-    public function completeRun(string $runId): void
-    {
-        throw new \RuntimeException('Unexpected completeRun()');
     }
 
     public function compact(string $runId, ?string $customInstructions = null): void

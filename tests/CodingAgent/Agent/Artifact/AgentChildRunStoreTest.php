@@ -12,14 +12,15 @@ use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+use Ineersa\CodingAgent\Session\SessionAgentArtifactPathResolver;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\FlockStore;
 use Symfony\Component\Serializer\Encoder\JsonEncoder;
+use Symfony\Component\Serializer\NameConverter\CamelCaseToSnakeCaseNameConverter;
 use Symfony\Component\Serializer\Normalizer\BackedEnumNormalizer;
 use Symfony\Component\Serializer\Normalizer\DateTimeNormalizer;
-use Symfony\Component\Serializer\NameConverter\CamelCaseToSnakeCaseNameConverter;
 use Symfony\Component\Serializer\Normalizer\ObjectNormalizer;
 use Symfony\Component\Serializer\Serializer;
 
@@ -57,7 +58,7 @@ final class AgentChildRunStoreTest extends TestCase
             entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
         );
 
-        $this->pathResolver = new AgentArtifactPathResolver($hatfieldSessionStore);
+        $this->pathResolver = new AgentArtifactPathResolver(new SessionAgentArtifactPathResolver($hatfieldSessionStore));
 
         $this->serializer = new Serializer(
             [new DateTimeNormalizer(), new BackedEnumNormalizer(), new ObjectNormalizer(
@@ -80,14 +81,14 @@ final class AgentChildRunStoreTest extends TestCase
     {
         $store = $this->createStore('parent-x', 'child-x', 'artifact-x');
 
-        self::assertNull($store->get('child-x'));
+        $this->assertNull($store->get('child-x'));
     }
 
     public function testGetReturnsNullForMismatchedRunId(): void
     {
         $store = $this->createStore('parent-x', 'child-x', 'artifact-x');
 
-        self::assertNull($store->get('different-run'));
+        $this->assertNull($store->get('different-run'));
     }
 
     public function testCompareAndSwapCreatesStateAndCanBeRetrieved(): void
@@ -101,13 +102,13 @@ final class AgentChildRunStoreTest extends TestCase
         $state = new RunState(runId: $agentRunId, status: RunStatus::Queued, version: 1);
 
         $result = $store->compareAndSwap($state, 0);
-        self::assertTrue($result, 'CAS should succeed for new run');
+        $this->assertTrue($result, 'CAS should succeed for new run');
 
         $loaded = $store->get($agentRunId);
-        self::assertNotNull($loaded);
-        self::assertSame($agentRunId, $loaded->runId);
-        self::assertSame(RunStatus::Queued, $loaded->status);
-        self::assertSame(1, $loaded->version);
+        $this->assertNotNull($loaded);
+        $this->assertSame($agentRunId, $loaded->runId);
+        $this->assertSame(RunStatus::Queued, $loaded->status);
+        $this->assertSame(1, $loaded->version);
     }
 
     public function testCompareAndSwapFailsOnVersionMismatch(): void
@@ -119,19 +120,19 @@ final class AgentChildRunStoreTest extends TestCase
         $store = $this->createStore($parentRunId, $agentRunId, $artifactId);
 
         $stateV1 = new RunState(runId: $agentRunId, status: RunStatus::Queued, version: 1);
-        self::assertTrue($store->compareAndSwap($stateV1, 0));
+        $this->assertTrue($store->compareAndSwap($stateV1, 0));
 
         // Same state applied with wrong expected version
-        self::assertFalse($store->compareAndSwap($stateV1, 0), 'CAS should fail because version is now 1');
+        $this->assertFalse($store->compareAndSwap($stateV1, 0), 'CAS should fail because version is now 1');
 
         // Correct expected version
         $stateV2 = new RunState(runId: $agentRunId, status: RunStatus::Running, version: 2);
-        self::assertTrue($store->compareAndSwap($stateV2, 1));
+        $this->assertTrue($store->compareAndSwap($stateV2, 1));
 
         $loaded = $store->get($agentRunId);
-        self::assertNotNull($loaded);
-        self::assertSame(RunStatus::Running, $loaded->status);
-        self::assertSame(2, $loaded->version);
+        $this->assertNotNull($loaded);
+        $this->assertSame(RunStatus::Running, $loaded->status);
+        $this->assertSame(2, $loaded->version);
     }
 
     // ── State stored under parent artifact path ───────────────────────────
@@ -149,10 +150,10 @@ final class AgentChildRunStoreTest extends TestCase
 
         // Verify state.json exists at the parent-scoped artifact path
         $expectedPath = "{$this->projectDir}/.hatfield/sessions/{$parentRunId}/artifacts/agents/{$artifactId}/state.json";
-        self::assertFileExists($expectedPath);
+        $this->assertFileExists($expectedPath);
 
         // Verify no top-level child session directory was created
-        self::assertDirectoryDoesNotExist("{$this->projectDir}/.hatfield/sessions/{$agentRunId}");
+        $this->assertDirectoryDoesNotExist("{$this->projectDir}/.hatfield/sessions/{$agentRunId}");
     }
 
     // ── Embedded runId validation ─────────────────────────────────────────
@@ -211,8 +212,8 @@ final class AgentChildRunStoreTest extends TestCase
 
         // Look for runs stale before "now" (which includes our 1-hour-old file)
         $stale = $store->findRunningStaleBefore(new \DateTimeImmutable());
-        self::assertCount(1, $stale);
-        self::assertSame($agentRunId, $stale[0]->runId);
+        $this->assertCount(1, $stale);
+        $this->assertSame($agentRunId, $stale[0]->runId);
     }
 
     public function testFindRunningStaleBeforeReturnsEmptyForNoArtifacts(): void
@@ -220,7 +221,7 @@ final class AgentChildRunStoreTest extends TestCase
         $store = $this->createStore('parent-x', 'child-x', 'artifact-x');
 
         $stale = $store->findRunningStaleBefore(new \DateTimeImmutable());
-        self::assertCount(0, $stale);
+        $this->assertCount(0, $stale);
     }
 
     public function testFindRunningStaleBeforeReturnsEmptyForNonRunningChild(): void
@@ -239,7 +240,7 @@ final class AgentChildRunStoreTest extends TestCase
         touch($statePath, time() - 3600);
 
         $stale = $store->findRunningStaleBefore(new \DateTimeImmutable());
-        self::assertCount(0, $stale);
+        $this->assertCount(0, $stale);
     }
 
     /**
@@ -277,13 +278,13 @@ final class AgentChildRunStoreTest extends TestCase
 
         // Store A only reports child A.
         $staleA = $storeA->findRunningStaleBefore(new \DateTimeImmutable());
-        self::assertCount(1, $staleA, 'Store A should report exactly one stale child — its own');
-        self::assertSame($agentRunIdA, $staleA[0]->runId);
+        $this->assertCount(1, $staleA, 'Store A should report exactly one stale child — its own');
+        $this->assertSame($agentRunIdA, $staleA[0]->runId);
 
         // Store B only reports child B.
         $staleB = $storeB->findRunningStaleBefore(new \DateTimeImmutable());
-        self::assertCount(1, $staleB, 'Store B should report exactly one stale child — its own');
-        self::assertSame($agentRunIdB, $staleB[0]->runId);
+        $this->assertCount(1, $staleB, 'Store B should report exactly one stale child — its own');
+        $this->assertSame($agentRunIdB, $staleB[0]->runId);
     }
 
     // ── Constructor path validation ──────────────────────────────────────
@@ -356,10 +357,10 @@ final class AgentChildRunStoreTest extends TestCase
         $store->compareAndSwap(new RunState(runId: $agentRunId, status: RunStatus::Running, version: 1), 0);
 
         // Top-level child session directory must not exist
-        self::assertDirectoryDoesNotExist("{$this->projectDir}/.hatfield/sessions/{$agentRunId}");
+        $this->assertDirectoryDoesNotExist("{$this->projectDir}/.hatfield/sessions/{$agentRunId}");
 
         // Parent artifacts directory must exist
-        self::assertDirectoryExists("{$this->projectDir}/.hatfield/sessions/{$parentRunId}/artifacts/agents/{$artifactId}");
+        $this->assertDirectoryExists("{$this->projectDir}/.hatfield/sessions/{$parentRunId}/artifacts/agents/{$artifactId}");
     }
 
     // ── Atomic write resilience ──────────────────────────────────────────
@@ -376,12 +377,12 @@ final class AgentChildRunStoreTest extends TestCase
         $store->compareAndSwap($state, 0);
 
         $statePath = "{$this->projectDir}/.hatfield/sessions/{$parentRunId}/artifacts/agents/{$artifactId}/state.json";
-        self::assertFileExists($statePath);
+        $this->assertFileExists($statePath);
 
         // Verify no temp files linger
         $artifactDir = \dirname($statePath);
         $tmpFiles = glob($artifactDir.'/*.tmp');
-        self::assertCount(0, $tmpFiles !== false ? $tmpFiles : [], 'No .tmp files should remain after CAS');
+        $this->assertCount(0, false !== $tmpFiles ? $tmpFiles : [], 'No .tmp files should remain after CAS');
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────

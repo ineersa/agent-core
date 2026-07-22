@@ -4,17 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\Listener;
 
-use Ineersa\CodingAgent\Config\Ai\AiConfig;
-use Ineersa\CodingAgent\Config\Ai\AiModelReference;
-use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
-use Ineersa\CodingAgent\Config\AppConfig;
-use Ineersa\CodingAgent\Config\HomeSettingsWriter;
-use Ineersa\CodingAgent\Config\ModelSelectionService;
-use Ineersa\CodingAgent\Config\SessionMetadataStore;
-use Ineersa\CodingAgent\Config\SettingsPathResolver;
-use Ineersa\CodingAgent\Config\TuiConfig;
-use Ineersa\Tui\Footer\FooterDataProvider;
-use Ineersa\Tui\Footer\FooterBarWidget;
 use Ineersa\Tui\Footer\FooterSegment;
 use Ineersa\Tui\Listener\FooterStateSegmentProvider;
 use Ineersa\Tui\Runtime\TuiSessionState;
@@ -46,45 +35,51 @@ class FooterStateSegmentProviderTest extends TestCase
         // off → ThinkingOff
         $state->footerReasoning = 'off';
         $segments = $provider->getSegments();
-        self::assertSame(ThemeColorEnum::ThinkingOff, $segments[0]->color);
-        self::assertSame('◆', $segments[0]->text);
-        self::assertSame(ThemeColorEnum::ThinkingOff, $segments[1]->color);
+        $this->assertSame(ThemeColorEnum::ThinkingOff, $segments[0]->color);
+        $this->assertSame('◆', $segments[0]->text);
+        $this->assertSame(ThemeColorEnum::ThinkingOff, $segments[1]->color);
 
         // minimal → ThinkingMinimal
         $state->footerReasoning = 'minimal';
         $segments = $provider->getSegments();
-        self::assertSame(ThemeColorEnum::ThinkingMinimal, $segments[0]->color);
-        self::assertSame(ThemeColorEnum::ThinkingMinimal, $segments[1]->color);
+        $this->assertSame(ThemeColorEnum::ThinkingMinimal, $segments[0]->color);
+        $this->assertSame(ThemeColorEnum::ThinkingMinimal, $segments[1]->color);
 
         // low → ThinkingLow
         $state->footerReasoning = 'low';
         $segments = $provider->getSegments();
-        self::assertSame(ThemeColorEnum::ThinkingLow, $segments[0]->color);
-        self::assertSame(ThemeColorEnum::ThinkingLow, $segments[1]->color);
+        $this->assertSame(ThemeColorEnum::ThinkingLow, $segments[0]->color);
+        $this->assertSame(ThemeColorEnum::ThinkingLow, $segments[1]->color);
 
         // medium → ThinkingMedium
         $state->footerReasoning = 'medium';
         $segments = $provider->getSegments();
-        self::assertSame(ThemeColorEnum::ThinkingMedium, $segments[0]->color);
-        self::assertSame(ThemeColorEnum::ThinkingMedium, $segments[1]->color);
+        $this->assertSame(ThemeColorEnum::ThinkingMedium, $segments[0]->color);
+        $this->assertSame(ThemeColorEnum::ThinkingMedium, $segments[1]->color);
 
         // high → ThinkingHigh
         $state->footerReasoning = 'high';
         $segments = $provider->getSegments();
-        self::assertSame(ThemeColorEnum::ThinkingHigh, $segments[0]->color);
-        self::assertSame(ThemeColorEnum::ThinkingHigh, $segments[1]->color);
+        $this->assertSame(ThemeColorEnum::ThinkingHigh, $segments[0]->color);
+        $this->assertSame(ThemeColorEnum::ThinkingHigh, $segments[1]->color);
 
         // xhigh → ThinkingXhigh
         $state->footerReasoning = 'xhigh';
         $segments = $provider->getSegments();
-        self::assertSame(ThemeColorEnum::ThinkingXhigh, $segments[0]->color);
-        self::assertSame(ThemeColorEnum::ThinkingXhigh, $segments[1]->color, 'Model name should use same thinking colour as diamond');
+        $this->assertSame(ThemeColorEnum::ThinkingXhigh, $segments[0]->color);
+        $this->assertSame(ThemeColorEnum::ThinkingXhigh, $segments[1]->color, 'Model name should use same thinking colour as diamond');
+
+        // max → ThinkingMax
+        $state->footerReasoning = 'max';
+        $segments = $provider->getSegments();
+        $this->assertSame(ThemeColorEnum::ThinkingMax, $segments[0]->color);
+        $this->assertSame(ThemeColorEnum::ThinkingMax, $segments[1]->color);
 
         // Unknown / empty → ThinkingText
         $state->footerReasoning = '';
         $segments = $provider->getSegments();
-        self::assertSame(ThemeColorEnum::ThinkingText, $segments[0]->color);
-        self::assertSame(ThemeColorEnum::ThinkingText, $segments[1]->color);
+        $this->assertSame(ThemeColorEnum::ThinkingText, $segments[0]->color);
+        $this->assertSame(ThemeColorEnum::ThinkingText, $segments[1]->color);
     }
 
     #[Test]
@@ -99,9 +94,9 @@ class FooterStateSegmentProviderTest extends TestCase
 
         // Model name segment (priority 1) uses thinking color, NOT Accent
         $modelSegment = $segments[1];
-        self::assertSame('glm-5.1', $modelSegment->text);
-        self::assertSame(ThemeColorEnum::ThinkingHigh, $modelSegment->color);
-        self::assertNotSame(ThemeColorEnum::Accent, $modelSegment->color);
+        $this->assertSame('glm-5.1', $modelSegment->text);
+        $this->assertSame(ThemeColorEnum::ThinkingHigh, $modelSegment->color);
+        $this->assertNotSame(ThemeColorEnum::Accent, $modelSegment->color);
     }
 
     #[Test]
@@ -116,7 +111,7 @@ class FooterStateSegmentProviderTest extends TestCase
 
         // Verify that the word "medium" does not appear as a text segment
         foreach ($segments as $segment) {
-            self::assertStringNotContainsString(
+            $this->assertStringNotContainsString(
                 'medium',
                 $segment->text,
                 'Reasoning level text should not appear in footer segments',
@@ -130,13 +125,13 @@ class FooterStateSegmentProviderTest extends TestCase
         $state = $this->state;
         $state->footerModel = 'deepseek-v4-pro';
 
-        foreach (['off', 'minimal', 'low', 'medium', 'high', 'xhigh'] as $level) {
+        foreach (['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as $level) {
             $state->footerReasoning = $level;
             $provider = new FooterStateSegmentProvider($state);
             $segments = $provider->getSegments();
 
             // Priority 0 = ◆, priority 1 = model name — same color
-            self::assertSame(
+            $this->assertSame(
                 $segments[0]->color,
                 $segments[1]->color,
                 "Diamond and model name should share the same thinking colour for level '{$level}'",
@@ -164,12 +159,12 @@ class FooterStateSegmentProviderTest extends TestCase
             $segments,
             static fn (FooterSegment $s): bool => 12 === $s->priority,
         );
-        self::assertCount(1, $cacheSegments, 'Cache segment should exist when telemetry is present');
+        $this->assertCount(1, $cacheSegments, 'Cache segment should exist when telemetry is present');
 
         $cacheSegment = array_values($cacheSegments)[0];
-        self::assertStringContainsString('↻', $cacheSegment->text, 'Cache segment should contain ↻ symbol');
-        self::assertStringContainsString('78%', $cacheSegment->text, 'Cache segment should show 78%');
-        self::assertSame(ThemeColorEnum::Success, $cacheSegment->color);
+        $this->assertStringContainsString('↻', $cacheSegment->text, 'Cache segment should contain ↻ symbol');
+        $this->assertStringContainsString('78%', $cacheSegment->text, 'Cache segment should show 78%');
+        $this->assertSame(ThemeColorEnum::Success, $cacheSegment->color);
     }
 
     #[Test]
@@ -180,8 +175,8 @@ class FooterStateSegmentProviderTest extends TestCase
         $state->contextWindow = 32768;
 
         // No cache telemetry set.
-        self::assertFalse($state->usage->hasCacheTelemetry);
-        self::assertSame(0, $state->usage->cacheReadTokens);
+        $this->assertFalse($state->usage->hasCacheTelemetry);
+        $this->assertSame(0, $state->usage->cacheReadTokens);
 
         $provider = new FooterStateSegmentProvider($state);
         $segments = $provider->getSegments();
@@ -191,7 +186,7 @@ class FooterStateSegmentProviderTest extends TestCase
             $segments,
             static fn (FooterSegment $s): bool => 12 === $s->priority,
         );
-        self::assertCount(0, $cacheSegments, 'Cache segment should NOT exist when telemetry is absent');
+        $this->assertCount(0, $cacheSegments, 'Cache segment should NOT exist when telemetry is absent');
     }
 
     #[Test]
@@ -220,17 +215,152 @@ class FooterStateSegmentProviderTest extends TestCase
             static fn (FooterSegment $s): bool => str_contains($s->text, '/') && str_contains($s->text, '%'),
         );
 
-        self::assertCount(1, $cacheSegments, 'Cache segment should exist when telemetry is present');
-        self::assertCount(1, $ctxSegments, 'Context window segment should exist');
+        $this->assertCount(1, $cacheSegments, 'Cache segment should exist when telemetry is present');
+        $this->assertCount(1, $ctxSegments, 'Context window segment should exist');
 
         $cacheSegment = array_values($cacheSegments)[0];
         $ctxSegment = array_values($ctxSegments)[0];
 
         // Cache segment must render before the context window segment.
-        self::assertLessThan(
+        $this->assertLessThan(
             $ctxSegment->priority,
             $cacheSegment->priority,
             'Cache segment priority must be less than context window priority (cache renders first)',
         );
+    }
+
+    #[Test]
+    public function testLiveViewSegmentsHideParentStats(): void
+    {
+        $state = $this->state;
+        $state->footerModel = 'parent-model';
+        $state->footerReasoning = 'high';
+        $state->usage->inputTokens = 999;
+        $state->subagentLiveView->active = true;
+        $state->subagentLiveView->enter(new \Ineersa\Tui\Runtime\SubagentLiveChildDTO(
+            agentRunId: 'child-1',
+            artifactId: 'agent_a',
+            agentName: 'scout',
+            status: \Ineersa\Tui\Runtime\SubagentLiveStatusEnum::Running,
+            taskSummary: 'Task',
+            lastActivityAtMs: 1,
+        ));
+
+        $segments = (new FooterStateSegmentProvider($state))->getSegments();
+        $texts = array_map(static fn ($s) => $s->text, $segments);
+        $this->assertContains('agents-live', $texts);
+        $this->assertContains('scout [running]', $texts);
+        $this->assertNotContains('parent-model', $texts);
+    }
+
+    #[Test]
+    public function testFooterFingerprintChangesWhenElapsedSecondChanges(): void
+    {
+        $state = $this->state;
+        $state->footerModel = 'm';
+        $state->sessionStartTime = microtime(true) - 65.0;
+
+        $provider = new FooterStateSegmentProvider($state);
+        $first = $provider->footerFingerprint();
+
+        $state->sessionStartTime = microtime(true) - 125.0;
+        $second = $provider->footerFingerprint();
+
+        $this->assertNotSame($first, $second);
+        $this->assertStringContainsString('⏱', $second);
+    }
+
+    #[Test]
+    public function testFooterFingerprintStableWithinSameElapsedDisplay(): void
+    {
+        $state = $this->state;
+        $state->footerModel = 'm';
+        $state->sessionStartTime = microtime(true) - 10.4;
+
+        $provider = new FooterStateSegmentProvider($state);
+        $a = $provider->footerFingerprint();
+        $b = $provider->footerFingerprint();
+
+        $this->assertSame($a, $b);
+    }
+
+    #[Test]
+    public function testLiveViewFooterShowsChildContextUsageAndModel(): void
+    {
+        $state = $this->state;
+        $state->subagentLiveCatalog->ingestRuntimeEvent(new \Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent(
+            type: \Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum::ToolExecutionOutputDelta->value,
+            runId: 'parent-run',
+            seq: 1,
+            payload: [
+                'tool_call_id' => 'tc_subagent',
+                'tool_name' => 'subagent',
+                'delta' => '',
+                'subagent_progress' => array_merge([
+                    'mode' => 'single',
+                    'status' => 'completed',
+                    'agent_name' => 'scout',
+                    'artifact_id' => 'agent_ctx',
+                    'agent_run_id' => 'child-run-ctx',
+                    'task_summary' => 'Context stats',
+                ], \Ineersa\Tui\Tests\Support\ChildContextStatisticsFixture::progressPayloadOverrides()),
+            ],
+        ));
+
+        $child = $state->subagentLiveCatalog->findByArtifactId('agent_ctx');
+        $this->assertNotNull($child);
+        $state->subagentLiveView->enter($child);
+
+        $segments = (new FooterStateSegmentProvider($state))->getSegments();
+        $texts = array_map(static fn (FooterSegment $s): string => $s->text, $segments);
+        $joined = implode(' ', $texts);
+
+        $this->assertStringContainsString(\Ineersa\Tui\Tests\Support\ChildContextStatisticsFixture::CONTEXT_DETAIL, $joined);
+        $this->assertStringContainsString(\Ineersa\Tui\Tests\Support\ChildContextStatisticsFixture::MODEL_SHORT, $joined);
+    }
+
+    #[Test]
+    public function testChildLiveFooterContextThresholdColorsMatchMainFooterSemantics(): void
+    {
+        $window = \Ineersa\Tui\Tests\Support\ChildContextStatisticsFixture::CONTEXT_WINDOW;
+        $cases = [
+            [(int) round($window * 0.50), ThemeColorEnum::Success],
+            [(int) round($window * 0.51), ThemeColorEnum::Warning],
+            [(int) round($window * 0.75), ThemeColorEnum::Warning],
+            [(int) round($window * 0.76), ThemeColorEnum::Error],
+        ];
+
+        foreach ($cases as [$latestInput, $expectedColor]) {
+            $state = new TuiSessionState('child-ctx-threshold-'.$latestInput);
+            $state->subagentLiveCatalog->ingestRuntimeEvent(new \Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent(
+                type: \Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum::ToolExecutionOutputDelta->value,
+                runId: 'parent-run',
+                seq: 1,
+                payload: [
+                    'tool_call_id' => 'tc_subagent',
+                    'tool_name' => 'subagent',
+                    'delta' => '',
+                    'subagent_progress' => array_merge([
+                        'mode' => 'single',
+                        'status' => 'completed',
+                        'agent_name' => 'scout',
+                        'artifact_id' => 'agent_ctx_thr',
+                        'agent_run_id' => 'child-run-ctx-thr',
+                        'task_summary' => 'Threshold',
+                    ], \Ineersa\Tui\Tests\Support\ChildContextStatisticsFixture::progressPayloadOverridesWithLatestInput($latestInput)),
+                ],
+            ));
+            $child = $state->subagentLiveCatalog->findByArtifactId('agent_ctx_thr');
+            $this->assertNotNull($child);
+            $state->subagentLiveView->enter($child);
+
+            $segments = (new FooterStateSegmentProvider($state))->getSegments();
+            $ctxSegments = array_values(array_filter(
+                $segments,
+                static fn (FooterSegment $s): bool => str_contains($s->text, '%') && str_contains($s->text, '/'),
+            ));
+            $this->assertCount(1, $ctxSegments, 'Child live footer must expose one context segment for latestInput='.$latestInput);
+            $this->assertSame($expectedColor, $ctxSegments[0]->color, 'Child context threshold color for latestInput='.$latestInput);
+        }
     }
 }

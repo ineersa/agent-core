@@ -189,6 +189,7 @@ tools:
 #                 write: write
 #                 edit: edit
 #                 read: read
+#                 settings: settings
 #             allow_command_patterns: []
 #             allow_write_outside_cwd: []
 #             protected_read_patterns: []
@@ -227,6 +228,10 @@ logging:
 #     # Foreground subagent internal poll timeout (seconds). Default 900.
 #     # Not ToolExecutor generic timeout; subagent has no ToolExecutor cap.
 #     # subagent_tool_timeout_seconds: 1800
+#     # Parent-only tools stripped from every child (inherit-all and explicit).
+#     # subagent_excluded_tools:
+#     #     - settings
+#     #     - hatfield_docs
 #     paths:
 #         - ~/shared/agents/custom-reviewer.md
 #         - .hatfield/team-agents
@@ -393,7 +398,8 @@ ai:
             supports_embeddings: false
             # z.ai differs from standard OpenAI in several ways:
             # - No developer role; use system/user/assistant/tool only.
-            # - Binary reasoning via enable_thinking (no reasoning_effort).
+            # - Reasoning via thinking.type (enabled/disabled) and clear_thinking on active.
+            # - Provider default: no reasoning_effort; per-model override on glm-5.2.
             # - thinking_format: zai signals this quirk to the request mapper.
             # - zai_tool_stream is a per-model flag for streaming tool calls.
             compatibility:
@@ -421,8 +427,21 @@ ai:
                     thinking_level_map: { minimal: enabled, low: enabled, medium: enabled, high: enabled }
                     compatibility: { zai_tool_stream: true }
                     cost: { input: 0, output: 0, cache_read: 0, cache_write: 0 }
+                glm-5.2:
+                    name: GLM 5.2
+                    context_window: 1000000
+                    max_tokens: 131072
+                    input: [text]
+                    tool_calling: true
+                    reasoning: true
+                    thinking_level_map: { minimal: null, low: high, medium: high, high: high, xhigh: max }
+                    compatibility: { supports_reasoning_effort: true, zai_tool_stream: true }
+                    cost: { input: 0, output: 0, cache_read: 0, cache_write: 0 }
         openai-codex:
              type: codex
+             transport: websocket-cached  # project default: reuse connections and continuation deltas; set transport: websocket for one-shot per request
+             websocket_cache_idle_ttl_seconds: 300
+             websocket_cache_max_age_seconds: 3300
              enabled: true
              base_url: https://chatgpt.com/backend-api
              api: openai-responses
@@ -438,39 +457,40 @@ ai:
                  supports_reasoning_effort: false
                  thinking_format: codex
              models:
-                 gpt-5.5:
-                     name: GPT-5.5
+                 gpt-5.6-luna:
+                     name: GPT-5.6 Luna
                      reasoning: true
-                     thinking_level_map: { minimal: low, low: low, medium: medium, high: high, xhigh: xhigh }
+                     thinking_level_map: { minimal: low, low: low, medium: medium, high: high, xhigh: xhigh, max: max }
                      tool_calling: true
                      input: [text, image]
-                     context_window: 272000
+                     context_window: 372000
                      max_tokens: 128000
-                     cost: { input: 5.00, output: 30.00 }
-                 gpt-5.4:
-                     name: GPT-5.4
+                     cost: { input: 1.00, output: 6.00, cache_read: 0.10, cache_write: 1.25 }
+                 gpt-5.6-sol:
+                     name: GPT-5.6 Sol
                      reasoning: true
-                     thinking_level_map: { minimal: low, low: low, medium: medium, high: high, xhigh: xhigh }
+                     thinking_level_map: { minimal: low, low: low, medium: medium, high: high, xhigh: xhigh, max: max }
                      tool_calling: true
                      input: [text, image]
-                     context_window: 272000
+                     context_window: 372000
                      max_tokens: 128000
-                     cost: { input: 2.50, output: 15.00 }
-                 gpt-5.4-mini:
-                     name: GPT-5.4 Mini
+                     cost: { input: 5.00, output: 30.00, cache_read: 0.50, cache_write: 6.25 }
+                 gpt-5.6-terra:
+                     name: GPT-5.6 Terra
                      reasoning: true
-                     thinking_level_map: { minimal: low, low: low, medium: medium, high: high, xhigh: xhigh }
+                     thinking_level_map: { minimal: low, low: low, medium: medium, high: high, xhigh: xhigh, max: max }
                      tool_calling: true
                      input: [text, image]
-                     context_window: 272000
+                     context_window: 372000
                      max_tokens: 128000
-                     cost: { input: 0.75, output: 4.50 }
+                     cost: { input: 2.50, output: 15.00, cache_read: 0.25, cache_write: 3.125 }
 
 extensions:
     # List values replace lower layers entirely (they do not merge). Keep SafeGuard enabled.
     enabled:
         - Ineersa\CodingAgent\Extension\Builtin\SafeGuard\SafeGuardExtension
         - Ineersa\HatfieldExt\TaskWorkflow\TaskWorkflowExtension
+        - Ineersa\HatfieldExt\FileRewind\FileRewindExtension
         - Ineersa\HatfieldExt\CastorLlmMode\CastorLlmModeExtension
     settings:
         task_workflow:
@@ -479,3 +499,7 @@ extensions:
         castor_llm_mode:
             enabled: true
 
+
+forks:
+    model: null
+    thinking_level: null

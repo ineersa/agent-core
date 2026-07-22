@@ -30,8 +30,8 @@ final class TuiSlotRegistryPriorityTest extends TestCase
         $this->registry->setWidget('low', $low, WidgetPlacementEnum::AboveEditor, 0);
 
         $widgets = $this->registry->getWidgetsByPlacement(WidgetPlacementEnum::AboveEditor);
-        self::assertSame($low, $widgets[0]);
-        self::assertSame($high, $widgets[1]);
+        $this->assertSame($low, $widgets[0]);
+        $this->assertSame($high, $widgets[1]);
     }
 
     public function testEqualOrderPreservesInsertionOrder(): void
@@ -45,7 +45,7 @@ final class TuiSlotRegistryPriorityTest extends TestCase
         $this->registry->setWidget('c', $c, WidgetPlacementEnum::AboveEditor, 0);
 
         $widgets = $this->registry->getWidgetsByPlacement(WidgetPlacementEnum::AboveEditor);
-        self::assertSame([$a, $b, $c], $widgets);
+        $this->assertSame([$a, $b, $c], $widgets);
     }
 
     public function testResettingKeyUpdatesOrder(): void
@@ -58,8 +58,8 @@ final class TuiSlotRegistryPriorityTest extends TestCase
         $this->registry->setWidget('a', $a, WidgetPlacementEnum::AboveEditor, 10);
 
         $widgets = $this->registry->getWidgetsByPlacement(WidgetPlacementEnum::AboveEditor);
-        self::assertSame($b, $widgets[0]);
-        self::assertSame($a, $widgets[1]);
+        $this->assertSame($b, $widgets[0]);
+        $this->assertSame($a, $widgets[1]);
     }
 
     public function testBelowEditorOrderSymmetric(): void
@@ -71,7 +71,7 @@ final class TuiSlotRegistryPriorityTest extends TestCase
         $this->registry->setWidget('first', $first, WidgetPlacementEnum::BelowEditor, 1);
 
         $widgets = $this->registry->getWidgetsByPlacement(WidgetPlacementEnum::BelowEditor);
-        self::assertSame([$first, $second], $widgets);
+        $this->assertSame([$first, $second], $widgets);
     }
 
     private function createLineWidget(string $line): TuiWidget

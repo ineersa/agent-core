@@ -1,11 +1,13 @@
 # Messenger bus, transport, and routing configuration.
 #
 # Two buses:
-#   agent.command.bus    — sync orchestration for StartRun/ApplyCommand/AdvanceRun
-#                          and results (LlmStepResult, ToolCallResult). Self-advance
-#                          callbacks (postCommit) dispatch back here synchronously.
-#                          Results are handled sync within consumer processes — they
-#                          are NOT routed through Doctrine transport.
+#   agent.command.bus    — orchestration for StartRun/ApplyCommand and run results.
+#                          Routed messages (StartRun, ApplyCommand,
+#                          ApplyShellCommand, LlmStepResult,
+#                          ToolCallResult, CompactionStepResult) are enqueued on
+#                          run_control and handled by the single run_control consumer.
+#                          Unrouted messages (AdvanceRun, CompactRun) are handled
+#                          synchronously on the bus in the caller/consumer process.
 #   agent.execution.bus  — async LLM/tool work. ExecuteLlmStep → llm transport,
 #                          ExecuteToolCall → tool transport. Workers consume from
 #                          their respective queues and dispatch results back to
@@ -18,20 +20,18 @@
 # After ASYNC-05:
 # - StartRun → run_control transport (messenger:consume run_control)
 # - ApplyCommand → run_control transport
-# - AdvanceRun → run_control transport
+# - ApplyShellCommand → run_control transport
+# - AdvanceRun is intentionally NOT routed (sync on agent.command.bus / agent.execution.bus).
 # - ExecuteLlmStep → llm transport (messenger:consume llm)
 # - ExecuteToolCall → tool transport (messenger:consume tool)
 # - ExecuteToolCall (toolName=subagent) → agent transport via
 #   SubagentExecuteToolCallRoutingMiddleware (messenger:consume agent)
 # - McpInitializeSessionCommand → mcp transport (messenger:consume mcp)
 #   MCP lifecycle messages are routed to the dedicated mcp consumer (Phase 1).
-# - Result messages (LlmStepResult, ToolCallResult, CompactionStepResult) stay
-#   sync on command bus within the consumer process where the worker ran.
-#   RunOrchestrator is registered for agent.command.bus and handles results
-#   in the same process.  CompactionStepResult is intentionally not routed
-#   to a transport — it is dispatched synchronously by ExecuteCompactionStepWorker
-#   via the agent.command.bus and processed by CompactionStepResultHandler
-#   in the same consumer process, mirroring LlmStepResult / ToolCallResult.
+# - Result messages (LlmStepResult, ToolCallResult, CompactionStepResult) route
+#   to run_control so execution workers enqueue results instead of mutating
+#   RunStore/EventStore/tool-batch state in llm/tool consumer processes.
+#   RunOrchestrator handlers run when the run_control consumer receives them.
 #
 # Transient streaming deltas (thinking, text, tool-call arguments) are
 # delivered via STDOUT from the LLM consumer child process. The controller
@@ -85,6 +85,16 @@ framework:
         routing:
             Ineersa\AgentCore\Domain\Message\StartRun: run_control
             Ineersa\AgentCore\Domain\Message\ApplyCommand: run_control
+            Ineersa\AgentCore\Domain\Message\ApplyShellCommand: run_control
+            Ineersa\AgentCore\Domain\Message\LlmStepResult: run_control
+            Ineersa\AgentCore\Domain\Message\ToolCallResult: run_control
+            Ineersa\AgentCore\Domain\Message\CompactionStepResult: run_control
+            Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Observation\ObserveDeferredSubagentBatchChildTurnMessage: run_control
+            Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Lifecycle\DeliverDeferredSubagentBatchLifecycleMessage: run_control
+            Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Interruption\InterruptDeferredSubagentBatchMessage: run_control
+            Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Recovery\RecoverDeferredSubagentBatchLifecycleMessage: run_control
+
+            Ineersa\AgentCore\Domain\Message\CompleteDeferredToolCall: run_control
             # AdvanceRun is intentionally NOT routed to a transport.
             # It is handled synchronously by AdvanceRunHandler (registered on
             # agent.command.bus AND agent.execution.bus via RunMessageHandler

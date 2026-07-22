@@ -41,47 +41,6 @@ final class InProcessRewindEmitsRunLeafChangedTest extends IsolatedKernelTestCas
 {
     private const string RUN_ID = 'test-rewind-run';
 
-    /**
-     * Minimal events forming a valid session with turns 0 and 1.
-     * Sequences must be contiguous without gaps.
-     *
-     * @return list<RunEvent>
-     */
-    private static function minimalSessionEvents(): array
-    {
-        return [
-            new RunEvent(
-                runId: self::RUN_ID,
-                seq: 1,
-                turnNo: 0,
-                type: RunEventTypeEnum::RunStarted->value,
-                payload: [],
-                createdAt: new \DateTimeImmutable('2026-06-29T00:00:00Z'),
-            ),
-            new RunEvent(
-                runId: self::RUN_ID,
-                seq: 2,
-                turnNo: 1,
-                type: RunEventTypeEnum::TurnAdvanced->value,
-                // No parent_turn_no — LeafSet in the next event triggers
-                // explicit-tree mode, but without parent_turn_no on the
-                // TurnAdvanced, turn 1 becomes a root (parentTurnNo=null).
-                // This avoids "Dangling parent_turn_no 0" in walkActivePath
-                // because RunStarted (turnNo=0) doesn't create a turnInfo node.
-                payload: ['turn_no' => 1],
-                createdAt: new \DateTimeImmutable('2026-06-29T00:00:01Z'),
-            ),
-            new RunEvent(
-                runId: self::RUN_ID,
-                seq: 3,
-                turnNo: 1,
-                type: RunEventTypeEnum::LeafSet->value,
-                payload: ['turn_no' => 1, 'previous_turn_no' => 0, 'parent_turn_no' => 0, 'reason' => 'advance'],
-                createdAt: new \DateTimeImmutable('2026-06-29T00:00:02Z'),
-            ),
-        ];
-    }
-
     public static function setUpBeforeClass(): void
     {
         parent::setUpBeforeClass();
@@ -100,13 +59,28 @@ final class InProcessRewindEmitsRunLeafChangedTest extends IsolatedKernelTestCas
                 return $this->events;
             }
 
-            public function append(RunEvent $event): void
+            public function append(RunEvent $event): RunEvent
             {
-                // Accept without persisting.
+                $max = 0;
+                foreach ($this->events as $existing) {
+                    if ($existing->runId === $event->runId && $existing->seq > $max) {
+                        $max = $existing->seq;
+                    }
+                }
+                $persisted = new RunEvent($event->runId, $max + 1, $event->turnNo, $event->type, $event->payload, $event->createdAt);
+                $this->events[] = $persisted;
+
+                return $persisted;
             }
 
-            public function appendMany(array $events): void
+            public function appendMany(array $events): array
             {
+                $out = [];
+                foreach ($events as $event) {
+                    $out[] = $this->append($event);
+                }
+
+                return $out;
             }
         };
         self::getContainer()->set(EventStoreInterface::class, $eventStore);
@@ -155,12 +129,53 @@ final class InProcessRewindEmitsRunLeafChangedTest extends IsolatedKernelTestCas
         /** @var list<RuntimeEvent> $events */
         $events = iterator_to_array($sink->drain(self::RUN_ID));
 
-        self::assertCount(1, $events, 'Expected exactly one RunLeafChanged event in the transient sink');
+        $this->assertCount(1, $events, 'Expected exactly one RunLeafChanged event in the transient sink');
 
         $event = $events[0];
-        self::assertSame(RuntimeEventTypeEnum::RunLeafChanged->value, $event->type);
-        self::assertSame(self::RUN_ID, $event->runId);
-        self::assertSame(1, $event->payload['turn_no'] ?? null);
-        self::assertIsInt($event->payload['leaf_set_seq'] ?? null);
+        $this->assertSame(RuntimeEventTypeEnum::RunLeafChanged->value, $event->type);
+        $this->assertSame(self::RUN_ID, $event->runId);
+        $this->assertSame(1, $event->payload['turn_no'] ?? null);
+        $this->assertIsInt($event->payload['leaf_set_seq'] ?? null);
+    }
+
+    /**
+     * Minimal events forming a valid session with turns 0 and 1.
+     * Sequences must be contiguous without gaps.
+     *
+     * @return list<RunEvent>
+     */
+    private static function minimalSessionEvents(): array
+    {
+        return [
+            new RunEvent(
+                runId: self::RUN_ID,
+                seq: 1,
+                turnNo: 0,
+                type: RunEventTypeEnum::RunStarted->value,
+                payload: [],
+                createdAt: new \DateTimeImmutable('2026-06-29T00:00:00Z'),
+            ),
+            new RunEvent(
+                runId: self::RUN_ID,
+                seq: 2,
+                turnNo: 1,
+                type: RunEventTypeEnum::TurnAdvanced->value,
+                // No parent_turn_no — LeafSet in the next event triggers
+                // explicit-tree mode, but without parent_turn_no on the
+                // TurnAdvanced, turn 1 becomes a root (parentTurnNo=null).
+                // This avoids "Dangling parent_turn_no 0" in walkActivePath
+                // because RunStarted (turnNo=0) doesn't create a turnInfo node.
+                payload: ['turn_no' => 1],
+                createdAt: new \DateTimeImmutable('2026-06-29T00:00:01Z'),
+            ),
+            new RunEvent(
+                runId: self::RUN_ID,
+                seq: 3,
+                turnNo: 1,
+                type: RunEventTypeEnum::LeafSet->value,
+                payload: ['turn_no' => 1, 'previous_turn_no' => 0, 'parent_turn_no' => 0, 'reason' => 'advance'],
+                createdAt: new \DateTimeImmutable('2026-06-29T00:00:02Z'),
+            ),
+        ];
     }
 }

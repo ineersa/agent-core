@@ -10,10 +10,10 @@ use Ineersa\AgentCore\Application\Pipeline\AdvanceRunHandler;
 use Ineersa\AgentCore\Application\Pipeline\ApplyCommandHandler;
 use Ineersa\AgentCore\Application\Pipeline\CommandMailboxPolicy;
 use Ineersa\AgentCore\Domain\Command\CoreCommandKind;
-use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
+use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
 use Ineersa\AgentCore\Domain\Message\ApplyCommand;
 use Ineersa\AgentCore\Domain\Message\CompactRun;
 use Ineersa\AgentCore\Domain\Run\RunState;
@@ -146,7 +146,6 @@ final class ApplyCommandHandlerTest extends TestCase
         $this->assertCount(1, $commandBus->messages);
         $this->assertInstanceOf(AdvanceRun::class, $commandBus->messages[0]);
     }
-
 
     public function testAppendMessageAllowedAfterCancelledRun(): void
     {
@@ -1448,5 +1447,4 @@ final class ApplyCommandHandlerTest extends TestCase
         $this->assertSame(RunStatus::Cancelled, $result->nextState->status);
         $this->assertContains('agent_end', array_map(static fn ($e) => $e->type, $result->events));
     }
-
 }

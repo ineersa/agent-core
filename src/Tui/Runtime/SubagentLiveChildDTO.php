@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Runtime;
 
 /**
- * Known subagent child run surfaced in the parent TUI for readonly live view.
+ * Known subagent child run surfaced in the parent TUI for interactive live view and picker rows.
  */
 final readonly class SubagentLiveChildDTO
 {
@@ -16,6 +16,9 @@ final readonly class SubagentLiveChildDTO
         public SubagentLiveStatusEnum $status,
         public string $taskSummary,
         public int $lastActivityAtMs,
+        public ?string $model = null,
+        public int $latestInputTokens = 0,
+        public int $contextWindow = 0,
     ) {
     }
 

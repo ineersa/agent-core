@@ -29,13 +29,18 @@ use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Entity\HatfieldSession;
 use Ineersa\CodingAgent\Infrastructure\SymfonyAi\ProjectedSymfonyModelCatalog;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+use Ineersa\Platform\Bridge\Generic\DurableResultConverter;
+use Ineersa\Platform\Bridge\Generic\SanitizedGenericModelClient;
 use PHPUnit\Framework\Attributes\Group;
-use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Psr\Log\NullLogger;
-use Symfony\AI\Platform\Bridge\Generic\Factory as GenericFactory;
+use Symfony\AI\Platform\Bridge\Generic\Completions\ModelClient as GenericCompletionsModelClient;
+use Symfony\AI\Platform\Bridge\Generic\CompletionsModel;
 use Symfony\AI\Platform\Platform;
+use Symfony\AI\Platform\Provider;
 use Symfony\AI\Platform\ProviderInterface;
+use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\EventDispatcher\EventDispatcher;
+use Symfony\Component\HttpClient\HttpClient;
 use Symfony\Component\Yaml\Yaml;
 
 /**
@@ -48,17 +53,6 @@ use Symfony\Component\Yaml\Yaml;
 #[Group('llm-real')]
 final class LlamaCppSmokeTest extends KernelTestCase
 {
-    protected static function createKernel(array $options = []): \Ineersa\CodingAgent\Kernel
-    {
-        // Use debug from options (default false) to prevent Symfony ErrorHandler
-        // from registering exception handlers that trigger PHPUnit's risky
-        // 'did not remove its own exception handlers' warning.
-        return new \Ineersa\CodingAgent\Kernel(
-            $options['environment'] ?? 'test',
-            $options['debug'] ?? false,
-        );
-    }
-
     /** Set to true after setUp() successfully boots the kernel, to guard
      * restore_exception_handler() in tearDown() against the skipped case
      * where no handler was pushed. */
@@ -161,16 +155,22 @@ final class LlamaCppSmokeTest extends KernelTestCase
         $this->assertNotNull($modelDefinition, 'Expected configured llama_cpp model in test AppConfig');
 
         // ── Build the real Platform with a live Provider ──
-        $provider = GenericFactory::createProvider(
-            baseUrl: $baseUrl,
-            apiKey: $apiKey,
-            httpClient: null,
-            modelCatalog: new ProjectedSymfonyModelCatalog([$modelName => $modelDefinition]),
-            eventDispatcher: $eventDispatcher,
-            supportsCompletions: true,
-            supportsEmbeddings: false,
-            completionsPath: $completionsPath,
-            name: $llamaCppProviderKey,
+        // Mirror production SymfonyAiProviderFactory: sanitize internal Hatfield options
+        // before generic completions wire JSON (run_id, provider_cache_key, etc.).
+        $provider = new Provider(
+            $llamaCppProviderKey,
+            [
+                new SanitizedGenericModelClient(new GenericCompletionsModelClient(
+                    HttpClient::create(),
+                    $baseUrl,
+                    $apiKey,
+                    $completionsPath,
+                )),
+            ],
+            [new DurableResultConverter()],
+            new ProjectedSymfonyModelCatalog([$modelName => $modelDefinition], CompletionsModel::class),
+            null,
+            $eventDispatcher,
         );
 
         $eventDispatcher->addSubscriber(new ModelResolverRoutingSubscriber(
@@ -259,9 +259,21 @@ final class LlamaCppSmokeTest extends KernelTestCase
         }
 
         // Session metadata is still intact — model resolution used it correctly
-        $meta = $this->sessionMetaStore->readSessionMetadata($this->sessionId);
-        $this->assertSame($modelRef, $meta['model'] ?? null,
+        $session = $this->sessionMetaStore->findSession($this->sessionId);
+        $this->assertNotNull($session);
+        $this->assertSame($modelRef, $session->model ?? null,
             'Session metadata model should be preserved after invocation');
+    }
+
+    protected static function createKernel(array $options = []): \Ineersa\CodingAgent\Kernel
+    {
+        // Use debug from options (default false) to prevent Symfony ErrorHandler
+        // from registering exception handlers that trigger PHPUnit's risky
+        // 'did not remove its own exception handlers' warning.
+        return new \Ineersa\CodingAgent\Kernel(
+            $options['environment'] ?? 'test',
+            $options['debug'] ?? false,
+        );
     }
 
     // ── Helpers ──
@@ -277,9 +289,9 @@ final class LlamaCppSmokeTest extends KernelTestCase
         $homeWriter = new HomeSettingsWriter($pathResolver);
         $selectionService = new ModelSelectionService($appConfig, new \Ineersa\CodingAgent\Config\ModelResolver($appConfig, $this->sessionMetaStore), new \Ineersa\CodingAgent\Config\ModelSettingsPersister($homeWriter, $this->sessionMetaStore));
         $catalog = $appConfig->catalog
-            ?? new \Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog(new \Ineersa\CodingAgent\Config\Ai\AiConfig(defaultModel: '', defaultReasoning: 'medium', providers: []));
+            ?? new HatfieldModelCatalog(new AiConfig(defaultModel: '', defaultReasoning: 'medium', providers: []));
 
-        return new SessionAwareModelResolver($selectionService, $catalog);
+        return new SessionAwareModelResolver($selectionService, $catalog, $this->sessionMetaStore);
     }
 
     /**
@@ -454,9 +466,6 @@ final class LlamaCppSmokeTest extends KernelTestCase
         }
         if (isset($meta['reasoning']) && \is_string($meta['reasoning'])) {
             $entity->reasoning = $meta['reasoning'];
-        }
-        if (isset($meta['session_id']) && \is_string($meta['session_id'])) {
-            // No-op: session_id is always the auto-increment id.
         }
 
         $this->entityManager->flush();

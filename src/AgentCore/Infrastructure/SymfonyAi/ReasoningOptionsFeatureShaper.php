@@ -12,8 +12,8 @@ use Ineersa\AgentCore\Domain\Model\ProviderRequestOptionKeys;
  * Merges pre-computed reasoning options into the provider request.
  *
  * CodingAgent pre-computes provider-specific reasoning options
- * (e.g. {@code enable_thinking}, {@code reasoning_effort},
- * {@code thinking.type}) from the Hatfield model catalog and the
+ * (e.g. {@code thinking.type}, {@code reasoning_effort},
+ * {@code reasoning.effort}) from the Hatfield model catalog and the
  * active reasoning level. This shaper only merges them and strips
  * the internal key — it has zero knowledge of the model catalog.
  *

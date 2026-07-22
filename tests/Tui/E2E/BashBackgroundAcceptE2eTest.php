@@ -81,8 +81,8 @@ final class BashBackgroundAcceptE2eTest extends TestCase
                 history: 4000,
             );
 
-            self::assertNotNull($this->backgroundedPid, 'Background notice should include a PID');
-            self::assertGreaterThan(0, $this->backgroundedPid);
+            $this->assertNotNull($this->backgroundedPid, 'Background notice should include a PID');
+            $this->assertGreaterThan(0, $this->backgroundedPid);
 
             // Second replay fixture serves the post-bash LLM turn (bg_status list).
             $this->tmux->waitForCallback(

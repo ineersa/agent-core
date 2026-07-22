@@ -10,7 +10,14 @@ use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Yaml\Yaml;
 
-
+/**
+ * Contract tests for sparse home AI settings mutations via YAML round-trip.
+ *
+ * Thesis: writers replace or insert one ai.* override, preserve unrelated
+ * parsed keys, create a sparse document on first write, and fail clearly on
+ * unreadable files, uncreatable directories, or malformed root/ai structure
+ * (including non-empty YAML lists, which are not mappings).
+ */
 class HomeSettingsWriterTest extends TestCase
 {
     private string $tmpDir;
@@ -20,8 +27,7 @@ class HomeSettingsWriterTest extends TestCase
     protected function setUp(): void
     {
         $this->tmpDir = TestDirectoryIsolation::createProjectTempDir('hatfield_writer');
-        \mkdir($this->tmpDir . '/.hatfield', 0o755, true);
-        $this->file = $this->tmpDir . '/.hatfield/settings.yaml';
+        $this->file = $this->tmpDir.'/.hatfield/settings.yaml';
         $pathResolver = new SettingsPathResolver('/app', $this->tmpDir);
         $this->writer = new HomeSettingsWriter($pathResolver);
     }
@@ -31,213 +37,160 @@ class HomeSettingsWriterTest extends TestCase
         TestDirectoryIsolation::removeDirectory($this->tmpDir);
     }
 
-    private function write(string $content): void
+    public function testReplacesExistingAiValue(): void
     {
-        \file_put_contents($this->file, $content);
+        $this->write([
+            'ai' => [
+                'default_model' => 'old',
+                'default_reasoning' => 'medium',
+            ],
+        ]);
+
+        $this->writer->writeDefaultModel('zai/glm-5.1');
+
+        $parsed = $this->parse();
+        $this->assertSame('zai/glm-5.1', $parsed['ai']['default_model'] ?? null);
+        $this->assertSame('medium', $parsed['ai']['default_reasoning'] ?? null);
     }
 
-    private function read(): string
+    public function testPreservesUnrelatedSettings(): void
     {
-        return (string) \file_get_contents($this->file);
+        $this->write([
+            'tui' => ['theme' => 'cyberpunk'],
+            'logging' => ['level' => 'debug'],
+            'ai' => ['default_reasoning' => 'medium'],
+        ]);
+
+        $this->writer->writeDefaultModel('llama_cpp/flash');
+
+        $parsed = $this->parse();
+        $this->assertSame('llama_cpp/flash', $parsed['ai']['default_model'] ?? null);
+        $this->assertSame('medium', $parsed['ai']['default_reasoning'] ?? null);
+        $this->assertSame('cyberpunk', $parsed['tui']['theme'] ?? null);
+        $this->assertSame('debug', $parsed['logging']['level'] ?? null);
+    }
+
+    public function testInsertsAiSectionWhenAbsent(): void
+    {
+        $this->write([
+            'tui' => ['theme' => 'nord'],
+        ]);
+
+        $this->writer->writeDefaultReasoning('high');
+
+        $parsed = $this->parse();
+        $this->assertSame('high', $parsed['ai']['default_reasoning'] ?? null);
+        $this->assertSame('nord', $parsed['tui']['theme'] ?? null);
+    }
+
+    public function testFavoriteModelsListAndEmptyListSurviveYamlRoundTrip(): void
+    {
+        $this->write([
+            'ai' => ['default_model' => 'old'],
+        ]);
+
+        $this->writer->writeFavoriteModels(['zai/glm-5.1', 'llama_cpp/flash']);
+        $parsed = $this->parse();
+        $this->assertSame(['zai/glm-5.1', 'llama_cpp/flash'], $parsed['ai']['favorite_models'] ?? null);
+
+        $this->writer->writeFavoriteModels([]);
+        $parsed = $this->parse();
+        $this->assertSame([], $parsed['ai']['favorite_models'] ?? null);
+        $this->assertIsArray($parsed['ai']['favorite_models']);
+    }
+
+    public function testMissingFileCreatesSparseAiDocument(): void
+    {
+        $this->assertFileDoesNotExist($this->file);
+
+        $this->writer->writeDefaultModel('zai/glm-5.1');
+
+        $this->assertFileExists($this->file);
+        $parsed = $this->parse();
+        $this->assertSame(['ai' => ['default_model' => 'zai/glm-5.1']], $parsed);
+    }
+
+    public function testThrowsWhenRootDocumentIsNotAMapping(): void
+    {
+        TestDirectoryIsolation::ensureDirectory(\dirname($this->file));
+        file_put_contents($this->file, "just a scalar\n");
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('root document must be a mapping');
+
+        $this->writer->writeDefaultModel('x');
+    }
+
+    public function testThrowsWhenRootDocumentIsAList(): void
+    {
+        TestDirectoryIsolation::ensureDirectory(\dirname($this->file));
+        file_put_contents($this->file, "- foo\n- bar\n");
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('root document must be a mapping');
+
+        $this->writer->writeDefaultModel('x');
+    }
+
+    public function testThrowsWhenAiValueIsNotAMapping(): void
+    {
+        $this->write(['ai' => 'broken']);
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('key "ai" must be a mapping');
+
+        $this->writer->writeDefaultModel('x');
+    }
+
+    public function testThrowsWhenAiValueIsAList(): void
+    {
+        $this->write(['ai' => ['one', 'two']]);
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('key "ai" must be a mapping');
+
+        $this->writer->writeDefaultModel('x');
+    }
+
+    public function testThrowsWhenExistingHomeFileIsUnreadable(): void
+    {
+        TestDirectoryIsolation::ensureDirectory(\dirname($this->file));
+        file_put_contents($this->file, "ai:\n    default_model: old\n");
+        chmod($this->file, 0o000);
+
+        try {
+            $this->expectException(\RuntimeException::class);
+            $this->expectExceptionMessage('Cannot read');
+            $this->writer->writeDefaultModel('new/model');
+        } finally {
+            chmod($this->file, 0o644);
+        }
+    }
+
+    public function testThrowsWhenHomeDirectoryCannotBeCreated(): void
+    {
+        $blockedHome = $this->tmpDir.'/blocked-home';
+        file_put_contents($blockedHome, 'not-a-directory');
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Cannot create home settings directory');
+
+        $writer = new HomeSettingsWriter(new SettingsPathResolver('/app', $blockedHome));
+        $writer->writeDefaultModel('x');
+    }
+
+    /** @param array<string, mixed> $data */
+    private function write(array $data): void
+    {
+        TestDirectoryIsolation::ensureDirectory(\dirname($this->file));
+        file_put_contents($this->file, Yaml::dump($data, 4, 4));
     }
 
     /** @return array<string, mixed> */
     private function parse(): array
     {
-        return Yaml::parseFile($this->file) ?? [];
+        $parsed = Yaml::parseFile($this->file);
+
+        return \is_array($parsed) ? $parsed : [];
     }
-
-    // ── writeDefaultModel ──────────────────────────────────────────────
-
-    public function testReplacesActiveModel(): void
-    {
-        $this->write("ai:\n    default_model: old\n    default_reasoning: medium\n");
-        $this->writer->writeDefaultModel('zai/glm-5.1');
-
-        $p = $this->parse();
-        self::assertSame('zai/glm-5.1', $p['ai']['default_model'] ?? null);
-        self::assertSame('medium', $p['ai']['default_reasoning'] ?? null);
-    }
-
-    public function testDoesNotUncommentModelKey(): void
-    {
-        // Old behaviour silently uncommented commented keys.
-        // Now: only active keys are replaced; commented keys are left
-        // untouched and a fresh active key is inserted below the ai: section.
-        $this->write("ai:\n# default_model: old\n");
-        $this->writer->writeDefaultModel('deepseek/deepseek-v4-pro');
-
-        $result = $this->read();
-        // The commented line survives
-        self::assertStringContainsString('# default_model: old', $result);
-        // A new active key is inserted
-        self::assertStringContainsString('default_model: deepseek/deepseek-v4-pro', $result);
-        // The active key is not prefixed with #
-        self::assertStringNotContainsString('# default_model: deepseek', $result);
-
-        $p = $this->parse();
-        self::assertSame('deepseek/deepseek-v4-pro', $p['ai']['default_model'] ?? null);
-    }
-
-    public function testInsertsModelWhenAiSectionExists(): void
-    {
-        $this->write("ai:\n    default_reasoning: medium\n");
-        $this->writer->writeDefaultModel('zai/glm-5.1');
-
-        $p = $this->parse();
-        self::assertSame('zai/glm-5.1', $p['ai']['default_model'] ?? null);
-    }
-
-    public function testAppendsAiSectionForModel(): void
-    {
-        $this->write("tui:\n    theme: cyberpunk\n");
-        $this->writer->writeDefaultModel('llama_cpp/flash');
-
-        $p = $this->parse();
-        self::assertSame('llama_cpp/flash', $p['ai']['default_model'] ?? null);
-        self::assertSame('cyberpunk', $p['tui']['theme'] ?? null);
-    }
-
-    public function testPreservesCommentsOnModelWrite(): void
-    {
-        $this->write("# my settings\nai:\n    # model note\n    default_reasoning: medium\n    # end note\n");
-        $this->writer->writeDefaultModel('zai/glm-5.1');
-
-        $result = $this->read();
-        self::assertStringContainsString('# my settings', $result);
-        self::assertStringContainsString('# model note', $result);
-        self::assertStringContainsString('# end note', $result);
-    }
-
-    // ── writeDefaultReasoning ──────────────────────────────────────────
-
-    public function testReplacesActiveReasoningOnly(): void
-    {
-        // When a key exists only as a comment, the writer now inserts a
-        // fresh active key instead of uncommenting.
-        $this->write("ai:\n    default_model: deepseek/deepseek-v4-pro\n#   default_reasoning: low\n");
-        $this->writer->writeDefaultReasoning('xhigh');
-
-        $result = $this->read();
-        // Commented line survives
-        self::assertStringContainsString('#   default_reasoning: low', $result);
-        // A new active key is inserted
-        self::assertStringContainsString('    default_reasoning: xhigh', $result);
-
-        $p = $this->parse();
-        self::assertSame('xhigh', $p['ai']['default_reasoning'] ?? null);
-    }
-
-    public function testInsertsReasoningWhenAbsent(): void
-    {
-        $this->write("ai:\n    default_model: deepseek/deepseek-v4-pro\n");
-        $this->writer->writeDefaultReasoning('minimal');
-
-        $p = $this->parse();
-        self::assertSame('minimal', $p['ai']['default_reasoning'] ?? null);
-    }
-
-    // ── writeFavoriteModels ────────────────────────────────────────────
-
-    public function testWritesFavoriteModelsAsFlowSequence(): void
-    {
-        $this->write("ai:\n    default_model: old\n");
-        $this->writer->writeFavoriteModels(['zai/glm-5.1', 'llama_cpp/flash']);
-
-        $p = $this->parse();
-        self::assertSame(['zai/glm-5.1', 'llama_cpp/flash'], $p['ai']['favorite_models'] ?? null);
-        self::assertStringContainsString('favorite_models: [zai/glm-5.1, llama_cpp/flash]', $this->read());
-    }
-
-    public function testWritesEmptyFavoriteModels(): void
-    {
-        $this->write("ai:\n    default_model: old\n");
-        $this->writer->writeFavoriteModels([]);
-
-        $p = $this->parse();
-        self::assertSame([], $p['ai']['favorite_models'] ?? null);
-        self::assertStringContainsString('favorite_models: []', $this->read());
-    }
-
-    public function testReplacesActiveFavoriteModels(): void
-    {
-        $this->write("ai:\n    favorite_models: [old/model]\n");
-        $this->writer->writeFavoriteModels(['new/model']);
-
-        $p = $this->parse();
-        self::assertSame(['new/model'], $p['ai']['favorite_models'] ?? null);
-    }
-
-    public function testDoesNotUncommentFavoriteModels(): void
-    {
-        // Commented line should survive; a new active key is inserted.
-        $this->write("ai:\n#    favorite_models: [old/model]\n");
-        $this->writer->writeFavoriteModels(['new/model']);
-
-        $result = $this->read();
-        self::assertStringContainsString('#    favorite_models: [old/model]', $result);
-        self::assertStringContainsString('favorite_models: [new/model]', $result);
-
-        $p = $this->parse();
-        self::assertSame(['new/model'], $p['ai']['favorite_models'] ?? null);
-    }
-
-    public function testInsertsFavoriteModelsWhenAiSectionExists(): void
-    {
-        $this->write("ai:\n    default_model: zai/glm-5.1\n");
-        $this->writer->writeFavoriteModels(['deepseek/deepseek-v4-pro']);
-
-        $p = $this->parse();
-        self::assertSame(['deepseek/deepseek-v4-pro'], $p['ai']['favorite_models'] ?? null);
-    }
-
-    public function testAppendsAiSectionForFavoriteModels(): void
-    {
-        $this->write("tui:\n    theme: cyberpunk\n");
-        $this->writer->writeFavoriteModels(['zai/glm-5.1']);
-
-        $p = $this->parse();
-        self::assertSame(['zai/glm-5.1'], $p['ai']['favorite_models'] ?? null);
-        self::assertSame('cyberpunk', $p['tui']['theme'] ?? null);
-    }
-
-    // ── YAML quoting ───────────────────────────────────────────────────
-
-    public function testQuotesColonAndHash(): void
-    {
-        $this->write("ai:\n    default_model: old\n");
-        $this->writer->writeDefaultModel('model:with:colons#hash');
-
-        $result = $this->read();
-        self::assertStringContainsString("default_model: 'model:with:colons#hash'", $result);
-    }
-
-    public function testDoesNotQuoteNormalValues(): void
-    {
-        $this->write("ai:\n    default_model: old\n");
-        $this->writer->writeDefaultModel('zai/glm-5.1');
-
-        self::assertStringNotContainsString("'zai/glm-5.1'", $this->read());
-    }
-
-    public function testQuotesEmptyValue(): void
-    {
-        $this->write("ai:\n    default_model: old\n");
-        $this->writer->writeDefaultModel('');
-
-        self::assertStringContainsString("default_model: ''", $this->read());
-    }
-
-    // ── Error ──────────────────────────────────────────────────────────
-
-    public function testThrowsOnMissingFile(): void
-    {
-        $this->expectException(\RuntimeException::class);
-        $this->expectExceptionMessage('Cannot read');
-
-        $writer = new HomeSettingsWriter(new SettingsPathResolver('/app', '/nonexistent'));
-        $writer->writeDefaultModel('x');
-    }
-
-
 }

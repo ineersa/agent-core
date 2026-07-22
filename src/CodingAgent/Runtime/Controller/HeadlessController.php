@@ -23,13 +23,13 @@ use Symfony\Component\EventDispatcher\EventDispatcherInterface;
  * Orchestrates the controller event loop: reads JSONL commands from stdin,
  * ACKs immediately, dispatches through Symfony EventDispatcher to focused
  * #[AsEventListener] command handlers, and delegates event emit and LLM
- * stdout polling to RuntimeEventEmitter and LlmStdoutPoller respectively.
+ * consumer stdout polling to RuntimeEventEmitter via ConsumerStdoutPoller.
  *
  * Event sources:
- * - Canonical events: drained by RuntimeEventEmitter from events.jsonl via
- *   InProcessAgentSessionClient (seq > 0).
- * - Transient streaming deltas: polled by LlmStdoutPoller from the LLM
- *   consumer child process stdout pipe.
+ * - Committed canonical events: messenger consumers persist to events.jsonl, then
+ *   stream mapped RuntimeEvent JSONL on stdout; ConsumerStdoutPoller forwards to TUI.
+ * - Transient streaming deltas: LLM consumer stream subscribers on the same stdout pipe.
+ * - events.jsonl is durable replay/recovery/export only — not the live 50ms event bus.
  *
  * Command protocol:
  *   TUI → stdin JSONL → controller parses → emits command.ack → dispatches event
@@ -38,7 +38,7 @@ use Symfony\Component\EventDispatcher\EventDispatcherInterface;
  * @see ControllerCommandEvent
  * @see ConsumerSupervisor
  * @see RuntimeEventEmitter
- * @see LlmStdoutPoller
+ * @see ConsumerStdoutPoller
  */
 final class HeadlessController
 {
@@ -142,7 +142,8 @@ final class HeadlessController
         // One agent consumer: parent subagent tool orchestration/polling is isolated
         // from generic tool workers so child tool calls are not starved.
         $this->consumerSupervisor->launch('agent');
-        // - run_control consumes StartRun, ApplyCommand, AdvanceRun (ASYNC-05)
+        // - run_control consumes StartRun, ApplyCommand, and run results
+        //   (LlmStepResult, ToolCallResult, CompactionStepResult); AdvanceRun stays sync on the bus
         // - llm consumes ExecuteLlmStep (ASYNC-04)
         // - tool consumes ExecuteToolCall (generic tools; not subagent)
         // - agent consumes ExecuteToolCall when toolName=subagent (AGENT-07)
@@ -189,14 +190,14 @@ final class HeadlessController
             $this->handleCommandLine($trimmed);
         });
 
-        // Poll LLM consumer stdout for transient streaming deltas.
-        $poller = new LlmStdoutPoller(
+        // Poll all messenger consumer stdout pipes for committed + streaming RuntimeEvents.
+        $stdoutPoller = new ConsumerStdoutPoller(
             $this->consumerSupervisor,
             $this->emitter,
             $this->boundary,
             $this->logger,
         );
-        $poller->startPollLoop(0.01);
+        $stdoutPoller->startPollLoop(0.01);
 
         // Poll tool_question DB table for un-emitted tool questions.
         // Runs in-process alongside the controller rather than relying on
@@ -207,9 +208,6 @@ final class HeadlessController
         // processes and send follow-up notifications to the agent session.
         // This mirrors pi's bg-process.ts finalizeBackgroundProcess behavior.
         $this->bgProcessCompletionPoller?->startPollLoop();
-
-        // Periodic event drain via emitter.
-        $this->emitter->startDrainLoop(0.05);
 
         // Consumer supervision: check child process health.
         EventLoop::repeat(self::SUPERVISE_INTERVAL, function (): void {

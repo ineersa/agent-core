@@ -11,21 +11,21 @@ use Ineersa\CodingAgent\Config\ExtensionsConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\PromptsConfig;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
-use Ineersa\CodingAgent\Skills\SkillsConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
-use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
 use Ineersa\CodingAgent\Extension\ExtensionManager;
+use Ineersa\CodingAgent\Markdown\MarkdownFrontmatterExtractor;
 use Ineersa\CodingAgent\PromptTemplate\PromptTemplateFrontmatterParser;
 use Ineersa\CodingAgent\PromptTemplate\PromptTemplateLoader;
 use Ineersa\CodingAgent\PromptTemplate\PromptTemplatesRuntimeConfig;
 use Ineersa\CodingAgent\Runtime\Contract\LoadedResourcesSummaryDTO;
 use Ineersa\CodingAgent\Runtime\Contract\LoadedResourcesSummaryProviderInterface;
 use Ineersa\CodingAgent\Runtime\LoadedResources\LoadedResourcesSummaryBuilder;
-use Ineersa\CodingAgent\Markdown\MarkdownFrontmatterExtractor;
 use Ineersa\CodingAgent\Skills\SkillDiscovery;
+use Ineersa\CodingAgent\Skills\SkillsConfig;
 use Ineersa\CodingAgent\SystemPrompt\AgentsContextDiscovery;
 use Ineersa\CodingAgent\Tests\Support\ProjectDir;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
+use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
 use Ineersa\Tui\Listener\LoadedResourcesStartupRegistrar;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Tests\Support\TuiRuntimeContextBuilderTrait;
@@ -55,7 +55,7 @@ final class LoadedResourcesStartupRegistrarTest extends TestCase
     }
 
     #[Test]
-    public function defersSummaryBuildUntilFirstTickOnFreshSession(): void
+    public function preSeedsSummaryOnRegisterForFreshSession(): void
     {
         $harness = new VirtualTuiHarness(sessionId: 'defer-summary');
         $state = new TuiSessionState('defer-summary');
@@ -66,15 +66,9 @@ final class LoadedResourcesStartupRegistrarTest extends TestCase
             ->withScreen($harness->screen())
             ->build();
 
-        self::assertFalse($harness->screen()->hasLoadedResourcesBlock());
-
         (new LoadedResourcesStartupRegistrar($this->createMinimalBuilder()))->register($context);
 
-        self::assertFalse($harness->screen()->hasLoadedResourcesBlock());
-
-        $context->ticks->dispatch(new TickEvent());
-
-        self::assertTrue($harness->screen()->hasLoadedResourcesBlock());
+        $this->assertTrue($harness->screen()->hasLoadedResourcesBlock());
     }
 
     #[Test]
@@ -92,11 +86,11 @@ final class LoadedResourcesStartupRegistrarTest extends TestCase
         (new LoadedResourcesStartupRegistrar($this->createMinimalBuilder()))->register($context);
         $context->ticks->dispatch(new TickEvent());
 
-        self::assertFalse($harness->screen()->hasLoadedResourcesBlock());
+        $this->assertFalse($harness->screen()->hasLoadedResourcesBlock());
     }
 
     #[Test]
-    public function buildIsNotInvokedBeforeFirstTick(): void
+    public function buildIsInvokedDuringRegisterOnFreshSession(): void
     {
         $calls = 0;
         $provider = new class($calls) implements LoadedResourcesSummaryProviderInterface {
@@ -123,11 +117,7 @@ final class LoadedResourcesStartupRegistrarTest extends TestCase
 
         (new LoadedResourcesStartupRegistrar($provider))->register($context);
 
-        self::assertSame(0, $calls, 'summary build must not run during register() / pre-loop startup');
-
-        $context->ticks->dispatch(new TickEvent());
-
-        self::assertSame(1, $calls);
+        $this->assertSame(1, $calls, 'summary build runs during register() for first paint batching');
     }
 
     private function createMinimalBuilder(): LoadedResourcesSummaryBuilder
@@ -206,5 +196,4 @@ final class LoadedResourcesStartupRegistrarTest extends TestCase
             validator: $validator,
         );
     }
-
 }

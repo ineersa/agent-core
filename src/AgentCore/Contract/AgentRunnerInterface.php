@@ -13,6 +13,11 @@ interface AgentRunnerInterface
 
     public function continue(string $runId): void;
 
+    /**
+     * Dispatch a raw bang shell command through the run pipeline.
+     */
+    public function shell(string $runId, string $rawInput): void;
+
     public function steer(string $runId, AgentMessage $message): void;
 
     public function followUp(string $runId, AgentMessage $message): void;

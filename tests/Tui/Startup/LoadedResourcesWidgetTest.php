@@ -75,7 +75,6 @@ final class LoadedResourcesWidgetTest extends TestCase
         $this->assertStringContainsString('review: name collision (won /global/review.md, ignored /project/review.md)', $joined);
     }
 
-
     #[Test]
     public function testConflictWithEmptyWinnerAndMessageRendersMessageOnly(): void
     {

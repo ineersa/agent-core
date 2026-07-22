@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Listener;
 
+use Ineersa\Tui\Footer\ContextUsageFormatter;
 use Ineersa\Tui\Footer\FooterSegment;
 use Ineersa\Tui\Footer\FooterSegmentProvider;
 use Ineersa\Tui\Runtime\TuiSessionState;
@@ -35,6 +36,10 @@ final readonly class FooterStateSegmentProvider implements FooterSegmentProvider
     public function getSegments(): array
     {
         $s = $this->state;
+        if ($s->subagentLiveView->active) {
+            return $this->liveViewSegments($s);
+        }
+
         $segments = [];
 
         // ── Group 1: ◆ model (priorities 0-1) ──
@@ -79,14 +84,14 @@ final readonly class FooterStateSegmentProvider implements FooterSegmentProvider
             );
         }
 
-        if ($s->contextWindow > 0) {
-            // Context window usage uses the latest input_tokens value
-            // (not accumulated) — this represents the actual context size
-            // sent to the API for the latest turn.
-            $used = $s->usage->latestInputTokens;
-            $pct = $used > 0 ? min(100, ($used / $s->contextWindow) * 100) : 0.0;
-            $pctColor = $pct > 75 ? ThemeColorEnum::Error : ($pct > 50 ? ThemeColorEnum::Warning : ThemeColorEnum::Success);
-            $ctxDetail = \sprintf('%.0f%% %s/%s', $pct, self::fmt($used), self::fmt($s->contextWindow));
+        $ctxFormatted = ContextUsageFormatter::format(
+            '' !== $s->footerModel ? $s->footerModel : null,
+            $s->usage->latestInputTokens,
+            $s->contextWindow,
+        );
+        if (null !== $ctxFormatted) {
+            $ctxDetail = $ctxFormatted->text;
+            $pctColor = $ctxFormatted->color;
         } else {
             $ctxDetail = '0%';
             $pctColor = ThemeColorEnum::Success;
@@ -144,6 +149,27 @@ final readonly class FooterStateSegmentProvider implements FooterSegmentProvider
         return $segments;
     }
 
+    /**
+     * Stable fingerprint of rendered footer segments for tick coalescing.
+     *
+     * Includes text, priority, and color so elapsed/tps/token updates trigger
+     * a repaint without re-rendering on every Revolt tick when unchanged.
+     */
+    public function footerFingerprint(): string
+    {
+        $parts = [];
+        foreach ($this->getSegments() as $segment) {
+            $parts[] = \sprintf(
+                '%d:%s:%s',
+                $segment->priority,
+                $segment->text,
+                $segment->color->value,
+            );
+        }
+
+        return implode("\n", $parts);
+    }
+
     // ── Formatting helpers ──
 
     /**
@@ -152,9 +178,6 @@ final readonly class FooterStateSegmentProvider implements FooterSegmentProvider
      * Uses the semantic ThemeColorEnum::Thinking* tokens (not generic
      * Accent/Warning/Dim) for consistent reasoning-level colouring
      * across the diamond, model name, and any future thinking indicators.
-     */
-    /**
-     * Map a reasoning level to the dedicated ThemeColorEnum thinking token.
      *
      * Public so callers that need the same mapping (e.g. editor border colour)
      * can reuse it without duplicating the logic.
@@ -164,13 +187,52 @@ final readonly class FooterStateSegmentProvider implements FooterSegmentProvider
         return ThemeColorEnum::forReasoning($reasoning);
     }
 
-    private static function fmt(int $n): string
+    public static function formatTokenCount(int $n): string
     {
-        if ($n >= 1_000) {
-            return \sprintf('%.1fk', $n / 1_000);
+        return ContextUsageFormatter::formatTokenCount($n);
+    }
+
+    /** @return list<FooterSegment> */
+    private function liveViewSegments(TuiSessionState $s): array
+    {
+        $segments = [];
+        $segments[] = new FooterSegment(text: '◆', priority: 0, color: ThemeColorEnum::Accent);
+        $segments[] = new FooterSegment(text: 'agents-live', priority: 1, color: ThemeColorEnum::Accent);
+
+        $child = $s->subagentLiveView->selected;
+        if (null !== $child) {
+            $statusLabel = $child->statusLabel();
+            $agentStatusText = \in_array($child->status->value, ['running', 'waiting_human'], true)
+                ? \sprintf('%s [%s]', $child->agentName, $statusLabel)
+                : \sprintf('%s · %s', $child->agentName, $statusLabel);
+            $segments[] = new FooterSegment(
+                text: $agentStatusText,
+                priority: 5,
+                color: ThemeColorEnum::Working,
+            );
+            $ctxFormatted = ContextUsageFormatter::format($child->model, $child->latestInputTokens, $child->contextWindow);
+            if (null !== $ctxFormatted) {
+                $segments[] = new FooterSegment(text: $ctxFormatted->text, priority: 6, color: $ctxFormatted->color);
+            }
+            if (null !== $child->model && '' !== $child->model) {
+                $segments[] = new FooterSegment(
+                    text: FooterStateInitializer::shortModelName($child->model),
+                    priority: 7,
+                    color: ThemeColorEnum::Accent,
+                );
+            }
         }
 
-        return (string) $n;
+        $segments[] = new FooterSegment(text: '/agents-main', priority: 10, color: ThemeColorEnum::Dim);
+        $segments[] = new FooterSegment(text: 'Ctrl+\\ main', priority: 11, color: ThemeColorEnum::Dim);
+        $segments[] = new FooterSegment(text: 'Esc cancel child', priority: 12, color: ThemeColorEnum::Muted);
+
+        return $segments;
+    }
+
+    private static function fmt(int $n): string
+    {
+        return self::formatTokenCount($n);
     }
 
     private static function formatElapsed(float $elapsedSeconds): string

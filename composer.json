@@ -16,13 +16,13 @@
         "doctrine/migrations": "^3.8",
         "symfony/lock": "^8.0",
         "helgesverre/toon": "^3.1",
-        "symfony/ai-agent": "dev-main",
-        "symfony/ai-platform": "dev-main as 0.10.99",
+        "symfony/ai-agent": "^0.11",
+        "symfony/ai-platform": "^0.11",
         "symfony/validator": "^8.0",
         "symfony/uid": "^8.0",
         "symfony/tui": "^8.1",
-        "symfony/ai-generic-platform": "dev-main",
-        "symfony/ai-open-responses-platform": "dev-main",
+        "symfony/ai-generic-platform": "^0.11",
+        "symfony/ai-open-responses-platform": "^0.11",
         "monolog/monolog": "^3.10",
         "symfony/framework-bundle": "^8.1",
         "symfony/monolog-bundle": "^4.0",
@@ -38,7 +38,8 @@
         "symfony/scheduler": "^8.1",
         "mcp/sdk": "^0.6.0",
         "league/commonmark": "^2.8",
-        "tempest/highlight": "^2.27"
+        "tempest/highlight": "^2.27",
+        "amphp/websocket-client": "^2.0"
     },
     "require-dev": {
         "friendsofphp/php-cs-fixer": "^3.94",
@@ -61,7 +62,8 @@
             "Symfony\\AI\\Platform\\Bridge\\OpenAICodex\\": "src/Platform/Bridge/OpenAICodex/",
             "Ineersa\\Platform\\": "src/Platform/",
             "Ineersa\\HatfieldExt\\TaskWorkflow\\": ".hatfield/extensions/task-workflow/src/",
-            "Ineersa\\HatfieldExt\\CastorLlmMode\\": ".hatfield/extensions/castor-llm-mode/src/"
+            "Ineersa\\HatfieldExt\\CastorLlmMode\\": ".hatfield/extensions/castor-llm-mode/src/",
+            "Ineersa\\HatfieldExt\\FileRewind\\": ".hatfield/extensions/file-rewind/src/"
         }
     },
     "autoload-dev": {
@@ -72,7 +74,8 @@
             "Symfony\\AI\\Platform\\Bridge\\OpenAICodex\\Tests\\": "tests/Platform/Bridge/OpenAICodex/",
             "Ineersa\\Platform\\Tests\\": "tests/Platform/",
             "Ineersa\\HatfieldExt\\TaskWorkflow\\Tests\\": ".hatfield/extensions/task-workflow/tests/",
-            "Ineersa\\HatfieldExt\\CastorLlmMode\\Tests\\": ".hatfield/extensions/castor-llm-mode/tests/"
+            "Ineersa\\HatfieldExt\\CastorLlmMode\\Tests\\": ".hatfield/extensions/castor-llm-mode/tests/",
+            "Ineersa\\HatfieldExt\\FileRewind\\Tests\\": ".hatfield/extensions/file-rewind/tests/"
         }
     },
     "minimum-stability": "dev",

@@ -71,6 +71,7 @@ final class SafeGuardExtensionTest extends TestCase
             $dto->kind,
             'Custom alias "shell" should be recognized and auto_deny_in_noninteractive=false should return RequireApproval',
         );
+        $this->assertSame(['✅ Allow', '❌ Deny'], $dto->details['schema']['enum'] ?? null);
     }
 
     public function testRegisterCanBeCalledMultipleTimes(): void

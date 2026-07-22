@@ -43,7 +43,36 @@ final class NoninteractiveChildRunProbeTest extends TestCase
         $probeChild = new NoninteractiveChildRunProbe($childStore);
         $probeEmpty = new NoninteractiveChildRunProbe($emptyStore);
 
-        self::assertTrue($probeChild->isNoninteractiveChildRun($runId));
-        self::assertFalse($probeEmpty->isNoninteractiveChildRun('parent-1'));
+        $this->assertTrue($probeChild->isNoninteractiveChildRun($runId));
+        $this->assertFalse($probeEmpty->isNoninteractiveChildRun('parent-1'));
+    }
+
+    public function testInteractiveChildReturnsFalseFromProbe(): void
+    {
+        $runId = 'child-run-interactive';
+        $event = new RunEvent(
+            runId: $runId,
+            seq: 1,
+            turnNo: 0,
+            type: RunEventTypeEnum::RunStarted->value,
+            payload: [
+                'payload' => [
+                    'metadata' => [
+                        'session' => [
+                            'kind' => 'agent_child',
+                            'interactive' => true,
+                            'parent_run_id' => 'parent-1',
+                        ],
+                    ],
+                ],
+            ],
+            createdAt: new \DateTimeImmutable(),
+        );
+
+        $store = $this->createStub(EventStoreInterface::class);
+        $store->method('allFor')->willReturn([$event]);
+        $probe = new NoninteractiveChildRunProbe($store);
+
+        $this->assertFalse($probe->isNoninteractiveChildRun($runId));
     }
 }

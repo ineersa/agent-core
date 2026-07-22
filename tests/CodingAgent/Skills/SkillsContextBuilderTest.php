@@ -8,8 +8,8 @@ use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Config\TuiConfig;
-use Ineersa\CodingAgent\Skills\SkillContextRenderer;
 use Ineersa\CodingAgent\Markdown\MarkdownFrontmatterExtractor;
+use Ineersa\CodingAgent\Skills\SkillContextRenderer;
 use Ineersa\CodingAgent\Skills\SkillDiscovery;
 use Ineersa\CodingAgent\Skills\SkillsConfig;
 use Ineersa\CodingAgent\Skills\SkillsContextBuilder;
@@ -150,17 +150,16 @@ final class SkillsContextBuilderTest extends TestCase
 
     /* ───────── Private helpers ───────── */
 
-
     public function testBuildForRendersNamedSkillBodies(): void
     {
         $skillDir = $this->tmpDir.'/.hatfield/skills/arch';
         mkdir($skillDir, 0777, true);
-        file_put_contents($skillDir.'/SKILL.md', "---
+        file_put_contents($skillDir.'/SKILL.md', '---
 name: arch
 description: Arch skill
 ---
 
-ARCH_BODY_UNIQUE");
+ARCH_BODY_UNIQUE');
 
         $builder = $this->createBuilder(cwd: $this->tmpDir);
         $output = $builder->buildFor(['arch']);
@@ -175,6 +174,7 @@ ARCH_BODY_UNIQUE");
         $builder = $this->createBuilder(cwd: $this->tmpDir);
         $this->assertSame('', $builder->buildFor([]));
     }
+
     private function createBuilder(
         ?string $cwd = null,
         ?SkillsConfig $config = null,

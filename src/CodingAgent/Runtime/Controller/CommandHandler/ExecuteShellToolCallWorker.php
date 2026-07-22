@@ -18,17 +18,16 @@ use Symfony\Component\Messenger\Attribute\AsMessageHandler;
  * Handles ExecuteShellToolCall messages on the agent.execution.bus.
  *
  * Executes bash tool calls in the tool consumer process (separate from the
- * controller), avoiding the controller event-loop freeze that occurs when
- * SafeGuard extension hooks require approval and enter a blocking poll
- * in the controller process (issue #183).
+ * controller) so the controller remains free to project runtime events and
+ * accept human answers while shell execution is in flight.
  *
  * Writes canonical tool_execution_start / tool_execution_end events to the
  * EventStore so the TUI poller surfaces shell output in the transcript.
  *
- * For standalone shell commands (first-input !cmd), also writes a terminal
- * AgentEnd event after tool_exec events, ensuring the EventStore ordering
- * guarantee (tool_exec_start → tool_exec_end → agent_end) is maintained by
- * a single writer — no cross-process race with the controller.
+ * For standalone shell commands, also writes a terminal AgentEnd event after
+ * tool_exec events, ensuring the EventStore ordering guarantee
+ * (tool_exec_start → tool_exec_end → agent_end) is maintained by a single
+ * writer — no cross-process race with the controller.
  */
 #[AsMessageHandler(bus: 'agent.execution.bus')]
 final readonly class ExecuteShellToolCallWorker
@@ -65,22 +64,16 @@ final readonly class ExecuteShellToolCallWorker
         $runId = $message->runId();
         $toolCallId = $message->toolCallId;
         $commandText = $message->commandText;
+        $turnNo = $message->turnNo();
 
         if ('' === $commandText) {
             return;
         }
 
-        // Compute next sequence number from existing events.
-        $existingEvents = $this->eventStore->allFor($runId);
-        $nextSeq = [] !== $existingEvents
-            ? max(array_map(static fn (RunEvent $e): int => $e->seq, $existingEvents)) + 1
-            : 1;
-
-        // Emit tool_execution_start event.
         $this->eventStore->append(new RunEvent(
             runId: $runId,
-            seq: $nextSeq,
-            turnNo: 0,
+            seq: 0,
+            turnNo: $turnNo,
             type: RunEventTypeEnum::ToolExecutionStart->value,
             payload: [
                 'tool_call_id' => $toolCallId,
@@ -121,8 +114,8 @@ final readonly class ExecuteShellToolCallWorker
         // Emit tool_execution_end event with result text.
         $this->eventStore->append(new RunEvent(
             runId: $runId,
-            seq: $nextSeq + 1,
-            turnNo: 0,
+            seq: 0,
+            turnNo: $turnNo,
             type: RunEventTypeEnum::ToolExecutionEnd->value,
             payload: [
                 'tool_call_id' => $toolCallId,
@@ -139,18 +132,18 @@ final readonly class ExecuteShellToolCallWorker
             'is_error' => $result->isError,
         ]);
 
-        // Standalone shell commands (first-input !cmd) need a terminal
+        // Standalone shell commands need a terminal
         // AgentEnd event so the TUI poller transitions from Running to
         // Completed and clears the working indicator.  Writing it here,
         // in the same process as tool_exec events, guarantees the
         // EventStore ordering: tool_exec_start → tool_exec_end →
         // agent_end.  This avoids the ordering race that occurs when the
-        // controller calls completeRun() synchronously before the async
+        // controller writes AgentEnd synchronously before the async
         // worker has written tool_exec events (issue #183).
         if ($message->standalone) {
             $this->eventStore->append(new RunEvent(
                 runId: $runId,
-                seq: $nextSeq + 2,
+                seq: 0,
                 turnNo: 0,
                 type: RunEventTypeEnum::AgentEnd->value,
                 payload: ['reason' => 'completed'],

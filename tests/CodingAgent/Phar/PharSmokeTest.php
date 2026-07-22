@@ -28,6 +28,16 @@ use Symfony\Component\Process\Process;
 #[Group('phar')]
 final class PharSmokeTest extends TestCase
 {
+    /**
+     * Default project-relative PHAR path used in skip messages.
+     *
+     * The actual path is resolved via HATFIELD_BINARY_PATH env var
+     * (set by Castor tasks) or AgentTestExecutable.  This constant mirrors
+     * the build default from .castor/helpers.php:hatfield_phar_path().
+     * Castor resolves this relative to the project root so each worktree
+     * gets its own local PHAR.
+     */
+    private const string DEFAULT_PHAR_PATH = 'var/tmp/phar/hatfield.phar';
     /** @var list<string> */
     private array $isolatedHomeDirs = [];
 
@@ -39,72 +49,31 @@ final class PharSmokeTest extends TestCase
         $this->isolatedHomeDirs = [];
     }
 
-    /**
-     * Create an isolated HOME directory with no user config.
-     *
-     * The empty HOME dir prevents the PHAR subprocess from inheriting
-     * the real user's ~/.hatfield/settings.yaml, which may reference an
-     * ai.default_model whose provider definition is not available in the
-     * packaged production PHAR (e.g. llama_cpp_test/test defined in a
-     * project-level .hatfield/settings.yaml but not in the PHAR provider
-     * list).  With an empty HOME, built-in defaults apply and the PHAR
-     * picks the first available model from packaged providers.
-     */
-    private function createIsolatedHome(): string
-    {
-        $dir = sys_get_temp_dir().'/phar-smoke-home-'.bin2hex(random_bytes(6));
-        @mkdir($dir, 0755, true);
-        $this->isolatedHomeDirs[] = $dir;
-        return $dir;
-    }
-
-    /**
-     * Run a shell command with an isolated HOME.
-     */
-    private function shellExecIsolated(string $command): string
-    {
-        $home = $this->createIsolatedHome();
-        return shell_exec(
-            sprintf('HOME=%s %s', escapeshellarg($home), $command),
-        ) ?? '';
-    }
-
-    /**
-     * Default project-relative PHAR path used in skip messages.
-     *
-     * The actual path is resolved via HATFIELD_BINARY_PATH env var
-     * (set by Castor tasks) or AgentTestExecutable.  This constant mirrors
-     * the build default from .castor/helpers.php:hatfield_phar_path().
-     * Castor resolves this relative to the project root so each worktree
-     * gets its own local PHAR.
-     */
-    private const string DEFAULT_PHAR_PATH = 'var/tmp/phar/hatfield.phar';
-
     public function testPharBootingToAgentList(): void
     {
         [$php, $pharPath] = AgentTestExecutable::command();
         $isPhar = str_ends_with($pharPath, '.phar');
 
         if (!$isPhar) {
-            self::markTestSkipped(\sprintf(
+            $this->markTestSkipped(\sprintf(
                 'HATFIELD_BINARY_PATH not set or not a PHAR. Resolved to %s. '
                 .'Run: castor phar:build && HATFIELD_BINARY_PATH=var/tmp/phar/hatfield.phar vendor/bin/phpunit --filter PharSmokeTest',
                 $pharPath,
             ));
         }
 
-        self::assertFileExists($pharPath, 'PHAR not found at '.$pharPath);
-        self::assertFileIsReadable($pharPath);
+        $this->assertFileExists($pharPath, 'PHAR not found at '.$pharPath);
+        $this->assertFileIsReadable($pharPath);
 
         // PHAR is a production artifact — never inherit APP_ENV=test from
         // the PHPUnit parent process (which would trigger
         // Class-not-found for test-only bundles like DAMADoctrineTestBundle).
         $output = $this->shellExecIsolated('APP_ENV=prod '.$php.' '.escapeshellarg($pharPath).' list 2>&1');
-        self::assertNotNull($output, 'PHAR list command produced no output');
-        self::assertStringContainsString('agent', $output, 'PHAR list output should contain the agent command');
+        $this->assertNotNull($output, 'PHAR list command produced no output');
+        $this->assertStringContainsString('agent', $output, 'PHAR list output should contain the agent command');
 
         $sizeMb = filesize($pharPath) / 1024 / 1024;
-        self::assertLessThan(
+        $this->assertLessThan(
             20.0,
             $sizeMb,
             \sprintf('PHAR size %.1f MB exceeds 20 MB limit', $sizeMb),
@@ -119,7 +88,7 @@ final class PharSmokeTest extends TestCase
         $isPhar = str_ends_with($pharPath, '.phar');
 
         if (!$isPhar) {
-            self::markTestSkipped(\sprintf(
+            $this->markTestSkipped(\sprintf(
                 'HATFIELD_BINARY_PATH not set or not a PHAR. Resolved to %s. '
                 .'Run: castor phar:build && HATFIELD_BINARY_PATH=var/tmp/phar/hatfield.phar vendor/bin/phpunit --filter PharSmokeTest',
                 $pharPath,
@@ -130,8 +99,8 @@ final class PharSmokeTest extends TestCase
         // APP_ENV=prod prevents the PHAR from trying to load test-only
         // bundles (DAMADoctrineTestBundle) inherited from the PHPUnit env.
         $output = $this->shellExecIsolated('APP_ENV=prod '.$php.' '.escapeshellarg($pharPath).' agent --help 2>&1');
-        self::assertNotNull($output, 'PHAR agent --help produced no output');
-        self::assertStringContainsString('Usage:', $output);
+        $this->assertNotNull($output, 'PHAR agent --help produced no output');
+        $this->assertStringContainsString('Usage:', $output);
     }
 
     /**
@@ -154,7 +123,7 @@ final class PharSmokeTest extends TestCase
         $isPhar = str_ends_with($pharPath, '.phar');
 
         if (!$isPhar) {
-            self::markTestSkipped('Not running as PHAR — requires HATFIELD_BINARY_PATH pointing to built hatfield.phar');
+            $this->markTestSkipped('Not running as PHAR — requires HATFIELD_BINARY_PATH pointing to built hatfield.phar');
         }
 
         // Run from repo root (where source-tree vendor/ is visible).
@@ -162,7 +131,7 @@ final class PharSmokeTest extends TestCase
         // Force APP_ENV=prod — the PHAR is a production artifact without dev
         // bundles. Inheriting APP_ENV=test from PHPUnit would cause
         // Class-not-found errors for test-only bundles like DAMADoctrineTestBundle.
-        $repoRoot = dirname(__DIR__, 3);
+        $repoRoot = \dirname(__DIR__, 3);
         $isolatedHome = $this->createIsolatedHome();
         $process = Process::fromShellCommandline(
             \sprintf('HOME=%s APP_ENV=prod HATFIELD_CACHE_DIR= %s %s list', escapeshellarg($isolatedHome), escapeshellarg($php), escapeshellarg($pharPath)),
@@ -171,7 +140,7 @@ final class PharSmokeTest extends TestCase
         $process->mustRun();
 
         $output = $process->getOutput();
-        self::assertStringContainsString('agent', $output, 'PHAR list must contain agent command when run from repo root');
+        $this->assertStringContainsString('agent', $output, 'PHAR list must contain agent command when run from repo root');
     }
 
     /**
@@ -197,7 +166,7 @@ final class PharSmokeTest extends TestCase
         $isPhar = str_ends_with($pharPath, '.phar');
 
         if (!$isPhar) {
-            self::markTestSkipped('Not running as PHAR — requires HATFIELD_BINARY_PATH pointing to built hatfield.phar');
+            $this->markTestSkipped('Not running as PHAR — requires HATFIELD_BINARY_PATH pointing to built hatfield.phar');
         }
 
         // Run PHAR from an isolated temp dir to trigger fresh cache
@@ -211,17 +180,17 @@ final class PharSmokeTest extends TestCase
             $process = Process::fromShellCommandline(
                 \sprintf(
                     'HOME=%s APP_ENV=prod HATFIELD_CACHE_DIR= %s %s list',
-                    \escapeshellarg($isolatedHome),
-                    \escapeshellarg($php),
-                    \escapeshellarg($pharPath),
+                    escapeshellarg($isolatedHome),
+                    escapeshellarg($php),
+                    escapeshellarg($pharPath),
                 ),
                 cwd: $tmpCwd,
             );
             $process->mustRun();
 
             // Cache should have been created with a content-hash suffix.
-            $cacheDirs = glob($tmpCwd.'/.hatfield/cache/prod-*', GLOB_ONLYDIR);
-            self::assertNotEmpty(
+            $cacheDirs = glob($tmpCwd.'/.hatfield/cache/prod-*', \GLOB_ONLYDIR);
+            $this->assertNotEmpty(
                 $cacheDirs,
                 'PHAR did not create a cache directory in the isolated CWD',
             );
@@ -231,7 +200,7 @@ final class PharSmokeTest extends TestCase
             // Content hash (SHA-256) → 12 hex chars.
             // Legacy md5(__FILE__) → 8 hex chars.  A suffix shorter than
             // 12 indicates the old stable-fixpoint bug has regressed.
-            self::assertSame(
+            $this->assertSame(
                 12,
                 \strlen($suffix),
                 \sprintf(
@@ -241,7 +210,7 @@ final class PharSmokeTest extends TestCase
                     \strlen($suffix),
                 ),
             );
-            self::assertMatchesRegularExpression(
+            $this->assertMatchesRegularExpression(
                 '/^[0-9a-f]{12}$/',
                 $suffix,
                 \sprintf('Cache dir suffix "%s" should be lowercase hex', $suffix),
@@ -250,5 +219,82 @@ final class PharSmokeTest extends TestCase
             // Clean up the isolated temp dir even on assertion failure.
             shell_exec('rm -rf '.escapeshellarg($tmpCwd));
         }
+    }
+
+    public function testPharContainsMaterializedInternalDocs(): void
+    {
+        [$php, $pharPath] = AgentTestExecutable::command();
+        $isPhar = str_ends_with($pharPath, '.phar');
+
+        if (!$isPhar) {
+            $this->markTestSkipped(\sprintf(
+                'HATFIELD_BINARY_PATH not set or not a PHAR. Resolved to %s.',
+                $pharPath,
+            ));
+        }
+
+        $this->assertFileExists($pharPath);
+        $phar = new \Phar($pharPath);
+        $expected = [
+            'agents',
+            'background-processes',
+            'compaction',
+            'hitl-and-approvals',
+            'mcp',
+            'prompt-templates',
+            'session-storage',
+            'settings',
+        ];
+
+        foreach ($expected as $id) {
+            $entry = 'internal-docs/'.$id.'.md';
+            $this->assertTrue(isset($phar[$entry]), 'Missing PHAR entry '.$entry);
+            $this->assertFalse($phar[$entry]->isLink(), $entry.' must be a regular file, not a symlink');
+            $uri = 'phar://'.$pharPath.'/'.$entry;
+            $raw = file_get_contents($uri);
+            $this->assertNotFalse($raw, 'Unable to read '.$uri);
+            $this->assertStringContainsString('description:', $raw);
+            $this->assertStringContainsString('# ', $raw);
+        }
+
+        $this->assertFalse(isset($phar['docs/settings.md']), 'PHAR must not bundle docs/');
+        $this->assertFalse(isset($phar['docs/archive']), 'PHAR must not bundle docs/archive');
+
+        $locator = new \Ineersa\CodingAgent\Config\AppResourceLocator('phar://'.$pharPath);
+        $settingsPath = $locator->getInternalDocsPath().'/settings.md';
+        $this->assertFileExists($settingsPath);
+        $this->assertStringContainsString('Hatfield Settings', (string) file_get_contents($settingsPath));
+    }
+
+    /**
+     * Create an isolated HOME directory with no user config.
+     *
+     * The empty HOME dir prevents the PHAR subprocess from inheriting
+     * the real user's ~/.hatfield/settings.yaml, which may reference an
+     * ai.default_model whose provider definition is not available in the
+     * packaged production PHAR (e.g. llama_cpp_test/test defined in a
+     * project-level .hatfield/settings.yaml but not in the PHAR provider
+     * list).  With an empty HOME, built-in defaults apply and the PHAR
+     * picks the first available model from packaged providers.
+     */
+    private function createIsolatedHome(): string
+    {
+        $dir = sys_get_temp_dir().'/phar-smoke-home-'.bin2hex(random_bytes(6));
+        @mkdir($dir, 0755, true);
+        $this->isolatedHomeDirs[] = $dir;
+
+        return $dir;
+    }
+
+    /**
+     * Run a shell command with an isolated HOME.
+     */
+    private function shellExecIsolated(string $command): string
+    {
+        $home = $this->createIsolatedHome();
+
+        return shell_exec(
+            \sprintf('HOME=%s %s', escapeshellarg($home), $command),
+        ) ?? '';
     }
 }

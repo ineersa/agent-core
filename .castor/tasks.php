@@ -12,15 +12,21 @@ declare(strict_types=1);
  *   castor test:controller, castor llm:fixtures:record
  *
  * Lanes (typical shell timeouts):
- *   deptrac (30s), test ParaTest (120s), test:controller-replay (75s),
- *   test:tui (120s), test:llm-real (180s), phpstan (90s), cs-check (30s).
+ *   deptrac (30s), test ParaTest (120s), test:controller-replay (90s),
+ *   test:tui (180s), test:llm-real (180s), phpstan (90s), cs-check (30s).
  *   No PHAR in the gate.
  *
- * Budget increase (30s → 75s) for test:controller-replay reflects
- * expanded replay E2E suite (7 isolated controller subprocess tests
- * as of COMP-06, each spawning controller + messenger consumers with
- * SIGTERM → 3s grace → SIGKILL teardown).  Typical suite runtime is
- * ~56s; 75s provides healthy headroom for build/CI variance.
+ * Budget for test:controller-replay (75s → 90s) reflects the current
+ * replay E2E suite (8 isolated controller subprocess tests, each
+ * spawning controller + messenger consumers with SIGTERM → 3s grace
+ * → SIGKILL teardown).  Observed sequential runtime is ~59s when idle;
+ * ~71s under active-session host load; 90s gives bounded headroom
+ * without masking a true hang.
+ *
+ * Budget for test:tui (120s → 180s): the replay TUI lane runs 36 tests on
+ * 2 ParaTest workers; healthy gate runs are often 108–118s, so 120s left
+ * little margin under concurrent lane contention and risked GNU timeout
+ * killing ParaTest before PHPUnit tearDown.
  *
  * =========================================================================
  * This file was split from the former monolithic .castor/tasks.php.
@@ -51,6 +57,7 @@ use function CastorTasks\assert_castor_check_run_no_process_leaks;
 use function CastorTasks\begin_castor_check_llama_proxy_cache_guard;
 use function CastorTasks\castor_check_lock_enabled;
 use function CastorTasks\check_llm_generation_ready;
+use function CastorTasks\finalize_qa_run_tui_tmux_sessions;
 use function CastorTasks\initialize_qa_check_run;
 use function CastorTasks\is_llm_mode;
 use function CastorTasks\release_castor_check_lock;
@@ -147,13 +154,13 @@ function _run_castor_check_body(string $root, string $qaRunId): void
                     .' --group=controller-replay'
                     .' '.$strictFlags.$llmFlags
                     .(is_llm_mode() ? ' --log-junit='.report_path('phpunit-controller-replay.junit.xml') : ''),
-                75,
+                90,
             ),
         ],
         'test:tui' => [
             'cmd' => timeout_check_command(
                 build_test_tui_phpunit_command(null),
-                120,
+                180,
             ),
         ],
         'test:llm-real' => [
@@ -212,6 +219,10 @@ function _run_castor_check_body(string $root, string $qaRunId): void
     } finally {
         unset($GLOBALS['CASTOR_CHECK_AGGREGATING']);
         unset($GLOBALS['CASTOR_PHAR_READY']);
+        // Detached tmux panes live outside the lane setsid tree; finalize exact-run
+        // sessions here so external lane timeouts still release QA-owned resources
+        // before cache-guard or leak assertions can abort the check body.
+        finalize_qa_run_tui_tmux_sessions($qaRunId);
     }
 
     assert_castor_check_llama_proxy_cache_unchanged($llamaProxyCacheBaseline);

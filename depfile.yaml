@@ -116,6 +116,11 @@ parameters:
         - type: directory
           value: src/Tui/Utility/.*
 
+    - name: TuiExport
+      collectors:
+        - type: directory
+          value: src/Tui/Export/.*
+
     - name: AppRuntimeContract
       collectors:
         - type: directory
@@ -136,6 +141,11 @@ parameters:
         - type: classNameRegex
           value: '#^Ineersa\\HatfieldExt\\TaskWorkflow\\#'
 
+    - name: HatfieldExtFileRewind
+      collectors:
+        - type: classNameRegex
+          value: '#^Ineersa\\HatfieldExt\\FileRewind\\#'
+
     - name: AppExtensionBuiltin
       collectors:
         - type: classNameRegex
@@ -149,7 +159,7 @@ parameters:
     - name: AppRuntimeInternals
       collectors:
         - type: directory
-          value: src/CodingAgent/Runtime/(InProcess|Process|Stream|Controller)/.*
+          value: src/CodingAgent/Runtime/(InProcess|Process|Stream|Controller|Messenger)/.*
 
     - name: AppRuntimeProjection
       collectors:
@@ -336,6 +346,7 @@ parameters:
   ruleset:
     TuiApplication:
       - AppRuntimeContract
+      # Session transcript provider contract returns TranscriptBlock DTOs.
       - AppRuntimeProjection
       - AppSession
       - AppConfig
@@ -356,10 +367,13 @@ parameters:
       - SymfonyConsole
 
     TuiListener:
+      - TuiExport
+      - AppExtensionApi
       - AppRuntimeContract
       - AppRuntimeProjection
       - AppSession
       - AppConfig
+      - TuiImagePaste
       - TuiRuntime
       - TuiScreen
       - TuiLayout
@@ -377,12 +391,14 @@ parameters:
       - SymfonyTui
 
     TuiRuntime:
+      - AppExtensionApi
       - AppRuntimeContract
       - AppRuntimeProjection
       - AppSession
       - TuiTranscript
       - TuiScreen
       - TuiTheme
+      - TuiPicker
       - SymfonyTui
 
     TuiScreen:
@@ -410,11 +426,14 @@ parameters:
 
     TuiExtension:
       - AppExtensionApi
+      - AppRuntimeContract
       - TuiLayout
       - TuiWidget
       - TuiFooter
       - TuiTheme
       - TuiCommand
+      - TuiRuntime
+      - TuiPicker
 
     TuiHeader:
       - TuiWidget
@@ -424,6 +443,7 @@ parameters:
       - AppRuntimeProjection
       - TuiWidget
       - TuiTheme
+      - TuiFooter
       - SymfonyTui
       - SymfonyYaml
 
@@ -431,12 +451,17 @@ parameters:
       - TuiWidget
       - TuiTheme
 
-    TuiCommand: ~
+    TuiExport:
+      - TuiCommand
+
+    TuiCommand:
+      - TuiExtension
 
     TuiCompletion:
       - TuiCommand
 
     TuiPicker:
+      - TuiExport
       - AppConfig
       - AppRuntimeContract
       - AppSession
@@ -490,6 +515,14 @@ parameters:
       - SymfonyTui
 
     TuiUtility:
+      - SymfonyProcess
+
+    TuiImagePaste:
+      - AppConfig
+      - AppSession
+      - TuiRuntime
+      - TuiScreen
+      - TuiTranscript
       - SymfonyProcess
 
     AppRuntimeInternals:
@@ -550,6 +583,7 @@ parameters:
       - AgentCore
       - AppConfig
       - AppRuntimeContract
+      - AppRuntimeProjection
       - SymfonyConsole
       - SymfonyLock
       - SymfonyYaml
@@ -610,6 +644,7 @@ parameters:
       - AppMcpConfig
       - TuiTheme
       - AppSession
+      - AppRuntimeContract
       - AppSkills
       - AppTool
       - AgentCore
@@ -633,6 +668,9 @@ parameters:
       - AppExtensionApi
       - AgentCore
       - AppConfig
+      - AppMarkdown
+      - SymfonyFinder
+      - SymfonyYaml
       - SymfonyAiPlatform
       - SymfonyEventDispatcher
 
@@ -668,12 +706,18 @@ parameters:
 
     McpSdk: ~
 
-    AppExtensionApi: ~
+    # ExtensionApi generic TUI contracts (Symfony\Component\Tui\*) — intentional public UI API.
+    AppExtensionApi:
+      - SymfonyTui
     HatfieldExtTaskWorkflow:
       - AppExtensionApi
       - HatfieldExtTaskWorkflow
+    HatfieldExtFileRewind:
+      - AppExtensionApi
+      - SymfonyTui
     AppExtensionBuiltin:
       - AppExtensionApi
+      - AppRuntimeContract
       - SymfonyYaml
 
     AgentCore:

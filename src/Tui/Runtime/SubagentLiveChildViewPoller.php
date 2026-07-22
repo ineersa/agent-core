@@ -5,14 +5,21 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Runtime;
 
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
+use Ineersa\CodingAgent\Runtime\Contract\ChildRunTranscriptSnapshotDTO;
 use Ineersa\CodingAgent\Runtime\Contract\TranscriptProjectorInterface;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
+use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
+use Psr\Log\LoggerInterface;
 
 /**
  * Polls a selected child run id and projects readonly live transcript blocks.
  *
- * Readonly child transcript projection only (no child HITL in Phase 1).
+ * Canonical child history is replayed once on live-view entry via {@see replaySnapshot()};
+ * {@see poll()} consumes only live {@see AgentSessionClient::events()} for the child run id.
+ *
+ * Optional HITL callbacks mirror RuntimeEventPoller so child human_input.requested
+ * and tool_question.requested events can drive the shared QuestionCoordinator.
  */
 final class SubagentLiveChildViewPoller
 {
@@ -22,6 +29,7 @@ final class SubagentLiveChildViewPoller
 
     public function __construct(
         private readonly TranscriptProjectorInterface $projector,
+        private readonly LoggerInterface $logger,
     ) {
         $this->eventApplier = new TuiRuntimeEventApplier($this->projector);
     }
@@ -32,11 +40,71 @@ final class SubagentLiveChildViewPoller
     }
 
     /**
-     * @return list<TranscriptBlock>|null null when no new child blocks (no screen repaint)
+     * One-time replay of a canonical child snapshot into live view state and the child projector.
+     *
+     * Call only while {@see SubagentLiveViewState::$active} is true (picker sets this before replay).
+     * Transient seq=0 replay events do not advance {@see SubagentLiveViewState::$childLastSeq}.
+     *
+     * @param ?callable(RuntimeEvent): void $onHumanInputRequested
+     * @param ?callable(RuntimeEvent): void $onToolQuestionRequested
+     * @param ?callable(RuntimeEvent): void $onToolTerminal
+     *
+     * @return list<TranscriptBlock>
+     */
+    public function replaySnapshot(
+        SubagentLiveViewState $live,
+        ChildRunTranscriptSnapshotDTO $snapshot,
+        ?callable $onHumanInputRequested = null,
+        ?callable $onToolQuestionRequested = null,
+        ?callable $onToolTerminal = null,
+    ): array {
+        if (!$live->active || null === $live->selected) {
+            return $live->childTranscript;
+        }
+
+        $this->projector->reset();
+
+        $scratch = new TuiSessionState($live->selected->agentRunId);
+        $scratch->activity = $live->childActivity;
+        $scratch->queuedUserMessages = $live->childQueuedUserMessages;
+
+        foreach ($snapshot->replayEvents as $event) {
+            $this->eventApplier->apply($scratch, $event, replayMode: true);
+            $this->dispatchEventCallbacks(
+                $event,
+                $live->selected->agentRunId,
+                $onHumanInputRequested,
+                $onToolQuestionRequested,
+                $onToolTerminal,
+            );
+        }
+
+        $live->childActivity = $scratch->activity;
+        $live->childQueuedUserMessages = $scratch->queuedUserMessages;
+        $live->childLastSeq = $snapshot->maxSeq;
+        $live->childReplayEvents = $snapshot->replayEvents;
+        $projected = $this->projector->blocks();
+        $live->childTranscript = [] !== $projected
+            ? $projected
+            : $snapshot->transcriptBlocks;
+        $live->persistCurrentChildCache();
+
+        return $live->childTranscript;
+    }
+
+    /**
+     * @param ?callable(RuntimeEvent): void $onHumanInputRequested
+     * @param ?callable(RuntimeEvent): void $onToolQuestionRequested
+     * @param ?callable(RuntimeEvent): void $onToolTerminal
+     *
+     * @return list<TranscriptBlock>|null
      */
     public function poll(
         SubagentLiveViewState $live,
         AgentSessionClient $client,
+        ?callable $onHumanInputRequested = null,
+        ?callable $onToolQuestionRequested = null,
+        ?callable $onToolTerminal = null,
     ): ?array {
         if (!$live->active || null === $live->selected) {
             return null;
@@ -56,6 +124,7 @@ final class SubagentLiveChildViewPoller
         $changed = false;
         $scratch = new TuiSessionState($live->selected->agentRunId);
         $scratch->activity = $live->childActivity;
+        $scratch->queuedUserMessages = $live->childQueuedUserMessages;
 
         foreach ($events as $event) {
             $seq = $event->seq;
@@ -67,11 +136,21 @@ final class SubagentLiveChildViewPoller
             }
 
             $this->eventApplier->apply($scratch, $event);
+            $live->childReplayEvents[] = $event;
             $changed = true;
+
+            $this->dispatchEventCallbacks(
+                $event,
+                $live->selected->agentRunId,
+                $onHumanInputRequested,
+                $onToolQuestionRequested,
+                $onToolTerminal,
+            );
         }
 
         if ($changed) {
             $live->childActivity = $scratch->activity;
+            $live->childQueuedUserMessages = $scratch->queuedUserMessages;
         }
 
         if (!$changed) {
@@ -79,8 +158,59 @@ final class SubagentLiveChildViewPoller
         }
 
         $live->childTranscript = $this->projector->blocks();
+        $live->persistCurrentChildCache();
 
         return $live->childTranscript;
+    }
+
+    /**
+     * @param ?callable(RuntimeEvent): void $onHumanInputRequested
+     * @param ?callable(RuntimeEvent): void $onToolQuestionRequested
+     * @param ?callable(RuntimeEvent): void $onToolTerminal
+     */
+    private function dispatchEventCallbacks(
+        RuntimeEvent $event,
+        string $childRunId,
+        ?callable $onHumanInputRequested,
+        ?callable $onToolQuestionRequested,
+        ?callable $onToolTerminal,
+    ): void {
+        if (null !== $onHumanInputRequested && RuntimeEventTypeEnum::HumanInputRequested->value === $event->type) {
+            $this->invokeEventCallback($onHumanInputRequested, $event, $childRunId, 'onHumanInputRequested');
+        }
+
+        if (null !== $onToolQuestionRequested && RuntimeEventTypeEnum::ToolQuestionRequested->value === $event->type) {
+            $this->invokeEventCallback($onToolQuestionRequested, $event, $childRunId, 'onToolQuestionRequested');
+        }
+
+        if (null !== $onToolTerminal && (
+            RuntimeEventTypeEnum::ToolExecutionCompleted->value === $event->type
+            || RuntimeEventTypeEnum::ToolExecutionFailed->value === $event->type
+            || RuntimeEventTypeEnum::ToolExecutionCancelled->value === $event->type
+        )) {
+            $this->invokeEventCallback($onToolTerminal, $event, $childRunId, 'onToolTerminal');
+        }
+    }
+
+    /**
+     * @param callable(RuntimeEvent): void $callback
+     */
+    private function invokeEventCallback(callable $callback, RuntimeEvent $runtimeEvent, string $childRunId, string $callbackName): void
+    {
+        try {
+            $callback($runtimeEvent);
+        } catch (\Throwable $e) {
+            $this->logger->warning('SubagentLiveChildViewPoller event callback failed', [
+                'component' => 'tui.subagent_live_child_poller',
+                'event_type' => 'subagent_live_child_poller.callback_failed',
+                'run_id' => $childRunId,
+                'callback' => $callbackName,
+                'runtime_event_type' => $runtimeEvent->type,
+                'seq' => $runtimeEvent->seq,
+                'exception_class' => $e::class,
+                'exception_message' => $e->getMessage(),
+            ]);
+        }
     }
 
     /** @return list<RuntimeEvent> */

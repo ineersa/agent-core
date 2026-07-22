@@ -211,6 +211,33 @@ final class SafeGuardClassifierTest extends TestCase
         $this->assertSame(SafeGuardDecisionKind::ProtectedRead, $decision->kind);
     }
 
+    // ── Settings tool ──
+
+    /**
+     * @return iterable<string, array{0: array<string, mixed>, 1: SafeGuardDecisionKind}>
+     */
+    public static function settingsClassificationCases(): iterable
+    {
+        yield 'read allows' => [['operation' => 'read', 'path' => 'tui.theme'], SafeGuardDecisionKind::Allow];
+        yield 'set custom dangerous' => [['operation' => 'set', 'path' => 'tui.theme', 'scope' => 'project', 'value' => 'x'], SafeGuardDecisionKind::CustomDangerous];
+        yield 'remove custom dangerous' => [['operation' => 'remove', 'path' => 'tui.theme', 'scope' => 'user'], SafeGuardDecisionKind::CustomDangerous];
+    }
+
+    /**
+     * @param array<string, mixed> $arguments
+     */
+    #[\PHPUnit\Framework\Attributes\DataProvider('settingsClassificationCases')]
+    public function testSettingsOperationClassification(array $arguments, SafeGuardDecisionKind $expected): void
+    {
+        $decision = $this->classifier->classify('settings', $arguments, $this->cwd, new SafeGuardPolicy());
+
+        $this->assertSame($expected, $decision->kind);
+        if (SafeGuardDecisionKind::CustomDangerous === $expected) {
+            $this->assertStringContainsString((string) $arguments['operation'], $decision->reason);
+            $this->assertStringContainsString((string) $arguments['path'], $decision->reason);
+        }
+    }
+
     // ── Unknown tools ──
 
     public function testUnknownToolIsAllowedByDefault(): void

@@ -16,11 +16,6 @@ This intentionally starts with tool interception only. Session lifecycle hooks, 
 
 Relevant existing docs:
 
-- `docs/archive/implementation/events_and_hooks_report.md`
-  - marks `tool_call` and `tool_result` as partial: AgentCore has indirect Symfony Toolbox events, but no first-class native/public hook contract.
-- `docs/archive/implementation/15-pi-mono-hooks-events-report.md`
-  - Pi `tool_call` can mutate input in place and/or block.
-  - Pi `tool_result` can override result fields.
 - `.pi/plans/extension-api-phar-plan.md`
   - `src/CodingAgent/ExtensionApi/` is a public compatibility boundary using namespace `Ineersa\Hatfield\ExtensionApi`.
   - ExtensionApi must not depend on Symfony, AgentCore, CodingAgent internals, TUI, settings, runtime, or DI.

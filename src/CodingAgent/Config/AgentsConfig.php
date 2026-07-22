@@ -22,9 +22,10 @@ final readonly class AgentsConfig
     private const SUBAGENT_TOOL_TIMEOUT_SECONDS_DEFAULT = 1800;
 
     /**
-     * @param bool         $enabled   Whether agent discovery is enabled
-     * @param list<string> $paths     Additional agent definition file or directory paths
-     * @param int          $maxAgents Maximum parallel subagents per `subagent` tool call
+     * @param bool         $enabled               Whether agent discovery is enabled
+     * @param list<string> $paths                 Additional agent definition file or directory paths
+     * @param int          $maxAgents             Maximum parallel subagents per `subagent` tool call
+     * @param list<string> $subagentExcludedTools Tool names removed from child agents by default/configuration
      */
     public function __construct(
         public bool $enabled = true,
@@ -36,6 +37,9 @@ final readonly class AgentsConfig
 
         #[SerializedName('subagent_tool_timeout_seconds')]
         public int $subagentToolTimeoutSeconds = 1800,
+
+        #[SerializedName('subagent_excluded_tools')]
+        public array $subagentExcludedTools = ['settings', 'hatfield_docs'],
     ) {
     }
 
@@ -74,8 +78,16 @@ final readonly class AgentsConfig
         }
 
         $subagentToolTimeoutSeconds = self::resolveSubagentToolTimeoutSeconds($raw);
+        $subagentExcludedTools = self::resolveSubagentExcludedTools($raw);
 
-        return new self(enabled: $enabled, paths: $paths, retrieve: $retrieve, maxAgents: $maxAgents, subagentToolTimeoutSeconds: $subagentToolTimeoutSeconds);
+        return new self(
+            enabled: $enabled,
+            paths: $paths,
+            retrieve: $retrieve,
+            maxAgents: $maxAgents,
+            subagentToolTimeoutSeconds: $subagentToolTimeoutSeconds,
+            subagentExcludedTools: $subagentExcludedTools,
+        );
     }
 
     /**
@@ -105,5 +117,32 @@ final readonly class AgentsConfig
         }
 
         return $value;
+    }
+
+    /**
+     * @param array<string, mixed> $raw
+     *
+     * @return list<string>
+     */
+    private static function resolveSubagentExcludedTools(array $raw): array
+    {
+        if (!\array_key_exists('subagent_excluded_tools', $raw)) {
+            return ['settings', 'hatfield_docs'];
+        }
+
+        $value = $raw['subagent_excluded_tools'];
+        if (!\is_array($value) || !array_is_list($value)) {
+            throw new \InvalidArgumentException(\sprintf('Invalid value for agents.subagent_excluded_tools: expected list of strings, got %s.', get_debug_type($value)));
+        }
+
+        $tools = [];
+        foreach ($value as $item) {
+            if (!\is_string($item) || '' === trim($item)) {
+                throw new \InvalidArgumentException('Invalid value for agents.subagent_excluded_tools: every entry must be a non-empty string.');
+            }
+            $tools[] = $item;
+        }
+
+        return array_values(array_unique($tools));
     }
 }

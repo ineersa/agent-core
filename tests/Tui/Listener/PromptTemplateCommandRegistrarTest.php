@@ -45,15 +45,6 @@ final class PromptTemplateCommandRegistrarTest extends TestCase
         $this->screen = new ChatScreen($theme, 'test-session', $promptEditor);
     }
 
-    private function buildContext(): TuiRuntimeContext
-    {
-        return $this->buildTuiContext()
-            ->withTui($this->tui)
-            ->withState($this->state)
-            ->withScreen($this->screen)
-            ->build();
-    }
-
     #[Test]
     public function registersCommandPerTemplate(): void
     {
@@ -65,10 +56,10 @@ final class PromptTemplateCommandRegistrarTest extends TestCase
         $registrar = new PromptTemplateCommandRegistrar($this->registry, $this->catalog);
         $registrar->register($this->buildContext());
 
-        self::assertTrue($this->registry->has('review'));
-        self::assertTrue($this->registry->has('summarize'));
-        self::assertNotNull($this->registry->getMetadata('review'));
-        self::assertNotNull($this->registry->getMetadata('summarize'));
+        $this->assertTrue($this->registry->has('review'));
+        $this->assertTrue($this->registry->has('summarize'));
+        $this->assertNotNull($this->registry->getMetadata('review'));
+        $this->assertNotNull($this->registry->getMetadata('summarize'));
     }
 
     #[Test]
@@ -82,17 +73,17 @@ final class PromptTemplateCommandRegistrarTest extends TestCase
         $registrar->register($this->buildContext());
 
         $meta = $this->registry->getMetadata('review');
-        self::assertNotNull($meta);
-        self::assertSame('review', $meta->name);
-        self::assertTrue($meta->acceptsArguments);
-        self::assertSame('Review code changes', $meta->description);
-        self::assertSame('/review <args>', $meta->usage);
-        self::assertSame([], $meta->aliases);
+        $this->assertNotNull($meta);
+        $this->assertSame('review', $meta->name);
+        $this->assertTrue($meta->acceptsArguments);
+        $this->assertSame('Review code changes', $meta->description);
+        $this->assertSame('/review <args>', $meta->usage);
+        $this->assertSame([], $meta->aliases);
 
         // Metadata appears in allMetadata()
         $all = $this->registry->allMetadata();
-        $names = array_map(fn ($m) => $m->name, $all);
-        self::assertContains('review', $names);
+        $names = array_map(static fn ($m) => $m->name, $all);
+        $this->assertContains('review', $names);
     }
 
     #[Test]
@@ -106,8 +97,8 @@ final class PromptTemplateCommandRegistrarTest extends TestCase
         $registrar->register($this->buildContext());
 
         $result = $this->registry->execute(new SlashCommand('review', 'foo bar', '/review foo bar'));
-        self::assertInstanceOf(DispatchRuntime::class, $result);
-        self::assertSame('/review foo bar', $result->payload);
+        $this->assertInstanceOf(DispatchRuntime::class, $result);
+        $this->assertSame('/review foo bar', $result->payload);
     }
 
     #[Test]
@@ -142,12 +133,12 @@ final class PromptTemplateCommandRegistrarTest extends TestCase
         $registrar->register($this->buildContext());
 
         $result = $this->registry->execute(new SlashCommand('review', '', '/review'));
-        self::assertInstanceOf(DispatchRuntime::class, $result);
-        self::assertSame('from-real-handler', $result->payload, 'Real handler should still execute');
+        $this->assertInstanceOf(DispatchRuntime::class, $result);
+        $this->assertSame('from-real-handler', $result->payload, 'Real handler should still execute');
 
         $meta = $this->registry->getMetadata('review');
-        self::assertNotNull($meta);
-        self::assertSame('Real review command', $meta->description);
+        $this->assertNotNull($meta);
+        $this->assertSame('Real review command', $meta->description);
     }
 
     #[Test]
@@ -166,10 +157,10 @@ final class PromptTemplateCommandRegistrarTest extends TestCase
         // /help should still be the built-in help, not a DispatchRuntime
         $result = $this->registry->execute(new SlashCommand('help', '', '/help'));
         // Built-in help returns TranscriptMessage, not DispatchRuntime
-        self::assertInstanceOf(\Ineersa\Tui\Command\TranscriptMessage::class, $result);
+        $this->assertInstanceOf(\Ineersa\Tui\Command\TranscriptMessage::class, $result);
 
         // /review should be registered as a template command
-        self::assertTrue($this->registry->has('review'));
+        $this->assertTrue($this->registry->has('review'));
     }
 
     #[Test]
@@ -182,14 +173,14 @@ final class PromptTemplateCommandRegistrarTest extends TestCase
         $registrar = new PromptTemplateCommandRegistrar($this->registry, $this->catalog);
         $registrar->register($this->buildContext());
 
-        self::assertTrue($this->registry->has('team-review'));
+        $this->assertTrue($this->registry->has('team-review'));
         $meta = $this->registry->getMetadata('team-review');
-        self::assertNotNull($meta);
-        self::assertSame('team-review', $meta->name);
+        $this->assertNotNull($meta);
+        $this->assertSame('team-review', $meta->name);
 
         $result = $this->registry->execute(new SlashCommand('team-review', 'pr #42', '/team-review pr #42'));
-        self::assertInstanceOf(DispatchRuntime::class, $result);
-        self::assertSame('/team-review pr #42', $result->payload);
+        $this->assertInstanceOf(DispatchRuntime::class, $result);
+        $this->assertSame('/team-review pr #42', $result->payload);
     }
 
     #[Test]
@@ -203,19 +194,28 @@ final class PromptTemplateCommandRegistrarTest extends TestCase
         $registrar->register($this->buildContext());
 
         // Only built-in commands should exist
-        self::assertSame($initialCount, $this->registry->count());
+        $this->assertSame($initialCount, $this->registry->count());
     }
 
     #[Test]
     public function implementsTuiListenerRegistrar(): void
     {
         $registrar = new PromptTemplateCommandRegistrar($this->registry, $this->catalog);
-        self::assertInstanceOf(TuiListenerRegistrar::class, $registrar);
+        $this->assertInstanceOf(TuiListenerRegistrar::class, $registrar);
     }
 
     #[Test]
     public function getPriorityReturnsNegative100(): void
     {
-        self::assertSame(-100, PromptTemplateCommandRegistrar::getPriority());
+        $this->assertSame(-100, PromptTemplateCommandRegistrar::getPriority());
+    }
+
+    private function buildContext(): TuiRuntimeContext
+    {
+        return $this->buildTuiContext()
+            ->withTui($this->tui)
+            ->withState($this->state)
+            ->withScreen($this->screen)
+            ->build();
     }
 }

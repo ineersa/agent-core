@@ -1,3 +1,7 @@
+---
+description: Context compaction settings, /compact command behavior, events, and validation.
+---
+
 # Context Compaction
 
 Context compaction replaces older conversation history with a concise handoff summary while keeping the most recent messages raw. This prevents sessions from exceeding the model context window without losing the accumulated knowledge and decisions.
@@ -129,10 +133,9 @@ The template uses the following placeholders:
 |-------------|--------|
 | `{date}` | Current date |
 | `{cwd}` | Working directory |
-| `{custom_instructions_part}` | Custom instructions from `/compact <text>` |
-| `{summary_prefix}` | Injected summary prefix wrapper |
+| `{custom_instructions_part}` | Custom instructions from `/compact <text>` or compaction hooks |
 
-The built-in prompt tells the model to produce a handoff summary with current progress, key decisions, constraints/preferences, next steps, and critical references. It also instructs the model to incorporate prior compaction summaries if they exist in the conversation.
+The built-in prompt instructs the summarization model to respond with text only (no tools), then produce a structured handoff summary with numbered sections: primary request/intent; key context and decisions; files, code, commands, and results; errors and fixes; progress and current work; pending tasks; and an optional next step. It requires merging prior compaction summaries when present, and favors exact paths, commands, errors, and user quotes over vague paraphrase. The runtime wraps the model's summary text in a separate user-message prefix/suffix (`SessionCompactor`); that wrapper is not part of the template file.
 
 ## Model and tool behavior
 

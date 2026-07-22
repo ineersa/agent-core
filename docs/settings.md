@@ -1,3 +1,7 @@
+---
+description: Hatfield settings precedence, keys, sparse overrides, and runtime behavior.
+---
+
 # Hatfield Settings
 
 Hatfield is the application name for the local coding agent configuration system.
@@ -6,19 +10,23 @@ settings in the home directory, overridden by project-local settings.
 
 ## First launch
 
-On first launch the global home settings file (`~/.hatfield/settings.yaml`)
-is created by copying `config/hatfield.defaults.yaml`. The defaults file is
-designed with comments that double as documentation, so the copied home file
-is self-documenting.
+Hatfield does **not** copy `config/hatfield.defaults.yaml` into your home
+directory on first launch. Built-in defaults are inherited automatically until
+you add a sparse override.
 
-Edit the home copy to set personal API keys, default model, reasoning level,
-and other overrides. The file is **never auto-overwritten**; it remains yours
-to maintain across application upgrades.
+Create `~/.hatfield/settings.yaml` when you first change a setting (for example
+via model picker persistence) or when you add overrides manually. The file
+should contain only keys whose values differ from defaults — not a full snapshot of the
+defaults file.
+
+Project overrides in `<project>/.hatfield/settings.yaml` follow the same sparse
+override model. Existing full home or project files remain valid overlays; Hatfield
+does not rewrite or prune them automatically.
 
 ## Directory layout
 
 ```text
-~/.hatfield/settings.yaml       # Global user settings (copied from defaults on first launch)
+~/.hatfield/settings.yaml       # Global user settings (sparse overrides; created on first mutation)
 <project>/.hatfield/settings.yaml  # Project-local overrides
 .hatfield/sessions/    # Session/run storage (session_id === run_id)
 <project>/.hatfield/themes/      # Custom project themes
@@ -683,6 +691,24 @@ agents:
     subagent_tool_timeout_seconds: 1200
 ```
 
+### `agents.subagent_excluded_tools`
+
+Tool names always removed from child/subagent runs, for both omitted (inherit-all)
+and explicit frontmatter tool lists. Parent agent tool registry is unaffected.
+
+**Default:** `[settings, hatfield_docs]`. An explicit empty list disables the configurable denylist.
+Non-list or non-string values are rejected at config load. Nested children still cannot
+launch `fork`/`subagent` because the structural recursion strip always removes both tools
+from every child policy, even when this denylist is emptied.
+
+**Example:**
+```yaml
+agents:
+    subagent_excluded_tools:
+        - settings
+        - hatfield_docs
+```
+
 See [Agent Definitions](agents.md) for the full definition format,
 discovery precedence, foreground execution (including timeout), and catalog API.
 
@@ -801,7 +827,7 @@ Settings are read at extension load time through
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| `tool_names` | map | `{bash: bash, write: write, edit: edit, read: read}` | Maps internal tool labels to tool call names. Change if you register custom aliases. |
+| `tool_names` | map | `{bash: bash, write: write, edit: edit, read: read, settings: settings}` | Maps internal tool labels to tool call names. Change if you register custom aliases. |
 | `allow_command_patterns` | list | `[]` | Command substrings that bypass destructive/dangerous checks (case-insensitive substring match). |
 | `allow_write_outside_cwd` | list | `[]` | Absolute paths where writes/edits outside the project CWD are always allowed. |
 | `allow_destructive_in_paths` | list | `[]` | Reserved for serialization compatibility. Not currently wired to classification logic. |
@@ -820,6 +846,7 @@ extensions:
                 write: write
                 edit: edit
                 read: read
+                settings: settings
             allow_command_patterns: []
             allow_write_outside_cwd:
                 - /home/user/shared-tmp
@@ -868,7 +895,7 @@ with `Ctrl+P`. Each entry is a `provider_id/model_name` string.
 **Example:**
 ```yaml
 ai:
-    favorite_models: [deepseek/deepseek-v4-pro, zai/glm-5.1]
+    favorite_models: [deepseek/deepseek-v4-pro, zai/glm-5.2]
 ```
 
 Favorites can be toggled via `/model fav <provider/modelname>` in the
@@ -963,13 +990,14 @@ OpenAI chat-completions-style but may need request-shaping adjustments.
 |-----|------|-------------|
 | `supports_developer_role` | bool | Whether the provider accepts the OpenAI `developer` role. When `false`, map to `system` role. |
 | `supports_reasoning_effort` | bool | Whether the provider accepts `reasoning_effort`. When `false`, do not send this parameter. |
-| `thinking_format` | string | How reasoning is signalled. `zai` means `enable_thinking: boolean`; `deepseek` means `thinking.type` + `reasoning_effort`; `codex` means Codex Responses API `reasoning.effort`. Null = standard OpenAI `reasoning_effort`. |
+| `thinking_format` | string | How reasoning is signalled. `zai` means `thinking.type` (`enabled`/`disabled`) and `clear_thinking` on active levels; `deepseek` means `thinking.type` + `reasoning_effort`; `codex` means Codex Responses API `reasoning.effort`. Null = standard OpenAI `reasoning_effort`. |
 | `requires_reasoning_content_on_assistant_messages` | bool | Whether assistant messages without thinking must include an empty `reasoning_content` field (DeepSeek). Default: `false`. |
 
 Model-level `compatibility`:
 
 | Key | Type | Description |
 |-----|------|-------------|
+| `supports_reasoning_effort` | bool | Per-model override for provider-level `supports_reasoning_effort` (e.g. `glm-5.2` enables `reasoning_effort` while provider default is `false`). Only applies when this key is present on the model block. |
 | `zai_tool_stream` | bool | Whether the model supports streaming tool-call deltas (z.ai provider only). When `true`, `tool_stream: true` is sent in the request. |
 | `requires_reasoning_content_on_assistant_messages` | bool | Per-model override for the provider-level flag. |
 
@@ -1006,10 +1034,12 @@ provider-specific value.
 
 - If the model has `reasoning: false` or the selected level maps to
   `null`, reasoning options are omitted.
-- For z.ai (binary reasoning), map any non-off level through
-  `thinking_level_map` to `enabled` and send `enable_thinking: true`.
-- For providers with `compatibility.supports_reasoning_effort: false`, never
-  send the `reasoning_effort` parameter.
+- For z.ai, active reasoning sends `thinking: { type: enabled, clear_thinking: false }`;
+  `off` sends `thinking: { type: disabled }`. Map non-off levels through
+  `thinking_level_map` (e.g. `enabled` for glm-5.1, or `high`/`max` for glm-5.2).
+- When a model sets `compatibility.supports_reasoning_effort: true`, also send
+  `reasoning_effort` from the map (glm-5.2). Provider-level `supports_reasoning_effort: false`
+  still applies to models without that per-model override.
 
 ### Configured providers
 
@@ -1040,15 +1070,34 @@ z.ai GLM models via OpenAI chat-completions-style API. Requires `ZAI_API_KEY` en
 **Compat quirks:**
 
 - No developer role — role mapping sends `system` instead of `developer`.
-- No reasoning effort — use `enable_thinking` (binary) rather than `reasoning_effort`.
-- `thinking_format: zai` — signals the request mapper to use z.ai reasoning conventions.
-- `zai_tool_stream` — per-model flag for streaming tool-call deltas; enabled on `glm-5.1` and `glm-5v-turbo`.
+- Provider default: no `reasoning_effort` (`supports_reasoning_effort: false`).
+- `glm-5.2` per-model override: `supports_reasoning_effort: true` plus `zai_tool_stream`.
+- `thinking_format: zai` — active/off thinking via `thinking.type` and `clear_thinking`.
+- `zai_tool_stream` — streaming tool-call deltas on `glm-5.1`, `glm-5v-turbo`, and `glm-5.2`.
 
-Seed models: `glm-5.1`, `glm-5v-turbo`.
+Seed models: `glm-5.1`, `glm-5.2`, `glm-5v-turbo`.
 
 All z.ai models have zero cost (plan-based billing).
 
 #### openai-codex
+
+Codex providers support an explicit transport:
+
+| `transport` | Behavior |
+| --- | --- |
+| `websocket-cached` (tracked project default) | Reuses one healthy WebSocket per compatible Hatfield session between turns. After a successful terminal response, compatible follow-up turns may send `previous_response_id` with only the new input delta. Recommended normal mode for Codex in this repo. |
+| `websocket` | Explicit one-shot fallback: WebSocket handshake to `wss://…/codex/responses`, one connection per request, `response.create` frame. Use when you want no cross-turn socket reuse. Required transport shape for GPT-5.6 models (cached mode still uses WebSocket). |
+| `sse` | Legacy HTTP/SSE POST to `/codex/responses`. Diagnostic only; GPT-5.6 models return model-not-found on SSE. |
+
+Optional cache tuning keys (Codex providers only):
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `websocket_cache_idle_ttl_seconds` | `300` | Close an idle cached socket after this many seconds. |
+| `websocket_cache_max_age_seconds` | `3300` | Close a cached socket after this many seconds regardless of reuse. |
+
+WebSocket handshake sends `OpenAI-Beta: responses_websockets=2026-02-06` and does **not** send SSE `Accept` / `Content-Type` headers.
+
 
 OpenAI Codex backend via OpenAI Responses API (`type: codex`). Uses the
 OpenAICodex platform bridge which talks to the ChatGPT backend at
@@ -1111,7 +1160,7 @@ paid OpenAI accounts separately — not for usage-limit circumvention.
 
 **Compat quirks:**
 
-- Uses `reasoning.effort` (not `enable_thinking` or `reasoning_effort`)
+- Uses `reasoning.effort` (not standard `reasoning_effort` or `thinking.type`)
   for thinking signalled via `thinking_format: codex`.
 - `supports_developer_role: false` — maps `developer` to `system` role.
 - `supports_reasoning_effort: false` — uses `reasoning.effort` instead
@@ -1122,7 +1171,7 @@ endpoint, which is not an officially documented OpenAI API surface.
 Use at your own risk. Only the OAuth PKCE authentication path is
 supported (run `bin/console auth:codex`).
 
-Seed models: `gpt-5.5`, `gpt-5.4`, `gpt-5.4-mini`.
+Seed models: `gpt-5.6-luna`, `gpt-5.6-sol`, `gpt-5.6-terra`.
 
 ### Model reference format
 
@@ -1132,6 +1181,7 @@ Model references use the format `provider_id/model_name`:
 deepseek/deepseek-v4-pro
 llama_cpp/flash
 zai/glm-5.1
+zai/glm-5.2
 ```
 
 Models can only be selected if their provider is `enabled: true` and the
@@ -1249,6 +1299,18 @@ ai:
                         output: 0
                         cache_read: 0
                         cache_write: 0
+                glm-5.2:
+                    name: GLM 5.2
+                    context_window: 1000000
+                    max_tokens: 131072
+                    input: [text]
+                    tool_calling: true
+                    reasoning: true
+                    thinking_level_map: { minimal: null, low: high, medium: high, high: high, xhigh: max }
+                    compatibility:
+                        supports_reasoning_effort: true
+                        zai_tool_stream: true
+                    cost: { input: 0, output: 0, cache_read: 0, cache_write: 0 }
                 glm-5v-turbo:
                     name: GLM 5V Turbo
                     context_window: 200000
@@ -1406,15 +1468,42 @@ SafeGuard applies policy decisions and, for relaxable violations (e.g.
 write outside CWD, destructive commands), prompts the user for approval
 via the HITL question system when an approval channel is available.
 
-In interactive TUI mode the user sees an approval overlay with three options:
+In interactive TUI mode the user sees an approval overlay with two options:
 
-- **Allow once** — approve the current operation for this session only
-- **Always allow** — approve AND persist the pattern to `.hatfield/settings.yaml`
-  so the operation is allowed in future sessions
-- **Deny** — block the operation immediately
+- **✅ Allow** — approve the exact suspended tool call once (no extra LLM turn)
+- **❌ Deny** — block the operation immediately
+
+There is no interactive Always-allow. Persist allowlists only via static settings
+(`allow_command_patterns`, `allow_write_outside_cwd`, etc.).
 
 In headless/noninteractive contexts with `auto_deny_in_noninteractive: true`
 (the default), relaxable violations are auto-blocked without prompting.
 
 See [HITL and Approval Architecture](hitl-and-approvals.md) for the full
 end-to-end flow.
+
+### `extensions.settings.file_rewind`
+
+Project extension class: `Ineersa\HatfieldExt\FileRewind\FileRewindExtension` (enable in `extensions.enabled`; package under `.hatfield/extensions/file-rewind/`).
+
+- `enabled` (default `true`)
+- `max_retained_turns` (default `100`)
+- `max_file_bytes` (default `2097152`)
+- `git_timeout_seconds` (default `30`)
+
+## Fork tool defaults
+
+The `fork` tool launches an isolated child with inherited parent conversation context. These settings apply only to fork launches (not the parent session):
+
+```yaml
+forks:
+    model: null
+    thinking_level: null
+```
+
+Precedence:
+
+- **model**: explicit `fork` tool argument → `forks.model` → parent session model → runtime default
+- **thinking**: explicit `fork` tool argument → `forks.thinking_level` → parent session reasoning → null
+
+Fork children cannot launch `fork` or `subagent`.

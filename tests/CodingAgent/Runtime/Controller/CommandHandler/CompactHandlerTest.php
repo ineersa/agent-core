@@ -40,8 +40,8 @@ final class CompactHandlerTest extends TestCase
         $event = new ControllerCommandEvent($command, static function (): void {});
         $handler($event);
 
-        self::assertSame('run-123', $this->spyClient->lastCompactRunId);
-        self::assertSame('Focus on key points.', $this->spyClient->lastCompactInstructions);
+        $this->assertSame('run-123', $this->spyClient->lastCompactRunId);
+        $this->assertSame('Focus on key points.', $this->spyClient->lastCompactInstructions);
     }
 
     public function testDispatchesCompactWithoutCustomInstructions(): void
@@ -58,8 +58,8 @@ final class CompactHandlerTest extends TestCase
         $event = new ControllerCommandEvent($command, static function (): void {});
         $handler($event);
 
-        self::assertSame('run-456', $this->spyClient->lastCompactRunId);
-        self::assertNull($this->spyClient->lastCompactInstructions);
+        $this->assertSame('run-456', $this->spyClient->lastCompactRunId);
+        $this->assertNull($this->spyClient->lastCompactInstructions);
     }
 
     public function testEmitsProtocolErrorWhenRunIdMissing(): void
@@ -81,10 +81,10 @@ final class CompactHandlerTest extends TestCase
         $event = new ControllerCommandEvent($command, $emit);
         $handler($event);
 
-        self::assertNull($this->spyClient->lastCompactRunId);
-        self::assertCount(1, $emittedEvents);
-        self::assertSame(RuntimeEventTypeEnum::ProtocolError->value, $emittedEvents[0]->type);
-        self::assertStringContainsString('compact requires runId', $emittedEvents[0]->payload['error'] ?? '');
+        $this->assertNull($this->spyClient->lastCompactRunId);
+        $this->assertCount(1, $emittedEvents);
+        $this->assertSame(RuntimeEventTypeEnum::ProtocolError->value, $emittedEvents[0]->type);
+        $this->assertStringContainsString('compact requires runId', $emittedEvents[0]->payload['error'] ?? '');
     }
 
     public function testIgnoresNonCompactCommands(): void
@@ -101,7 +101,7 @@ final class CompactHandlerTest extends TestCase
         $event = new ControllerCommandEvent($command, static function (): void {});
         $handler($event);
 
-        self::assertNull($this->spyClient->lastCompactRunId);
+        $this->assertNull($this->spyClient->lastCompactRunId);
         $this->addToAssertionCount(1);
     }
 }
@@ -131,6 +131,14 @@ final class CompactSpySessionClient implements AgentSessionClient
         throw new \RuntimeException('Unexpected send()');
     }
 
+    public function beginObservingChildRun(string $childRunId): void
+    {
+    }
+
+    public function endObservingChildRun(string $childRunId): void
+    {
+    }
+
     public function events(string $runId): iterable
     {
         return [];
@@ -144,11 +152,6 @@ final class CompactSpySessionClient implements AgentSessionClient
     public function shellExecute(string $command, string $sessionId, string $cwd): RunHandle
     {
         throw new \RuntimeException('Unexpected shellExecute()');
-    }
-
-    public function completeRun(string $runId): void
-    {
-        throw new \RuntimeException('Unexpected completeRun()');
     }
 
     public function compact(string $runId, ?string $customInstructions = null): void

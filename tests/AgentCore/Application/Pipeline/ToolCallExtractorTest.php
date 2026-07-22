@@ -49,19 +49,19 @@ final class ToolCallExtractorTest extends TestCase
 
         $payload = $this->extractor->interruptPayloadFromToolResult($result);
 
-        self::assertNotNull($payload);
-        self::assertSame('interrupt', $payload['kind'], 'kind must survive from interrupt array');
-        self::assertSame('tc-1', $payload['tool_call_id'], 'tool_call_id must come from message');
-        self::assertSame('ask_human', $payload['tool_name'], 'tool_name from outer result');
-        self::assertSame('ah_abc123', $payload['question_id']);
-        self::assertSame('Approve the change?', $payload['prompt']);
-        self::assertSame(['type' => 'object', 'properties' => ['choice' => ['type' => 'string']]], $payload['schema']);
-        self::assertSame('approval', $payload['ui_kind']);
-        self::assertSame('Confirm Action', $payload['header']);
-        self::assertSame([['label' => 'Yes', 'description' => 'Approve'], ['label' => 'No', 'description' => 'Cancel']], $payload['choices']);
-        self::assertFalse($payload['default']);
-        self::assertFalse($payload['allow_other']);
-        self::assertFalse($payload['secret']);
+        $this->assertNotNull($payload);
+        $this->assertSame('interrupt', $payload['kind'], 'kind must survive from interrupt array');
+        $this->assertSame('tc-1', $payload['tool_call_id'], 'tool_call_id must come from message');
+        $this->assertSame('ask_human', $payload['tool_name'], 'tool_name from outer result');
+        $this->assertSame('ah_abc123', $payload['question_id']);
+        $this->assertSame('Approve the change?', $payload['prompt']);
+        $this->assertSame(['type' => 'object', 'properties' => ['choice' => ['type' => 'string']]], $payload['schema']);
+        $this->assertSame('approval', $payload['ui_kind']);
+        $this->assertSame('Confirm Action', $payload['header']);
+        $this->assertSame([['label' => 'Yes', 'description' => 'Approve'], ['label' => 'No', 'description' => 'Cancel']], $payload['choices']);
+        $this->assertFalse($payload['default']);
+        $this->assertFalse($payload['allow_other']);
+        $this->assertFalse($payload['secret']);
     }
 
     public function testDefaultNullSurvivesNoBlanketArrayFilter(): void
@@ -82,9 +82,9 @@ final class ToolCallExtractorTest extends TestCase
 
         $payload = $this->extractor->interruptPayloadFromToolResult($result);
 
-        self::assertNotNull($payload);
-        self::assertArrayHasKey('default', $payload, 'default key must survive even when null');
-        self::assertNull($payload['default']);
+        $this->assertNotNull($payload);
+        $this->assertArrayHasKey('default', $payload, 'default key must survive even when null');
+        $this->assertNull($payload['default']);
     }
 
     public function testInterruptInResultKind(): void
@@ -101,12 +101,12 @@ final class ToolCallExtractorTest extends TestCase
 
         $payload = $this->extractor->interruptPayloadFromToolResult($result);
 
-        self::assertNotNull($payload);
-        self::assertSame('tc-kind', $payload['tool_call_id']);
-        self::assertSame('q-old-path', $payload['question_id']);
-        self::assertSame('Go?', $payload['prompt']);
-        self::assertSame(['type' => 'boolean'], $payload['schema']);
-        self::assertArrayNotHasKey('tool_name', $payload, 'tool_name must not be synthesized when absent from both paths');
+        $this->assertNotNull($payload);
+        $this->assertSame('tc-kind', $payload['tool_call_id']);
+        $this->assertSame('q-old-path', $payload['question_id']);
+        $this->assertSame('Go?', $payload['prompt']);
+        $this->assertSame(['type' => 'boolean'], $payload['schema']);
+        $this->assertArrayNotHasKey('tool_name', $payload, 'tool_name must not be synthesized when absent from both paths');
     }
 
     public function testMissingQuestionIdFallsBackToToolCallId(): void
@@ -125,8 +125,8 @@ final class ToolCallExtractorTest extends TestCase
 
         $payload = $this->extractor->interruptPayloadFromToolResult($result);
 
-        self::assertNotNull($payload);
-        self::assertSame('tc-fallback', $payload['question_id'], 'question_id falls back to toolCallId');
+        $this->assertNotNull($payload);
+        $this->assertSame('tc-fallback', $payload['question_id'], 'question_id falls back to toolCallId');
     }
 
     public function testMissingPromptFallsBackToDefault(): void
@@ -145,8 +145,8 @@ final class ToolCallExtractorTest extends TestCase
 
         $payload = $this->extractor->interruptPayloadFromToolResult($result);
 
-        self::assertNotNull($payload);
-        self::assertSame('Human input required.', $payload['prompt']);
+        $this->assertNotNull($payload);
+        $this->assertSame('Human input required.', $payload['prompt']);
     }
 
     public function testMissingSchemaFallsBackToString(): void
@@ -165,8 +165,8 @@ final class ToolCallExtractorTest extends TestCase
 
         $payload = $this->extractor->interruptPayloadFromToolResult($result);
 
-        self::assertNotNull($payload);
-        self::assertSame(['type' => 'string'], $payload['schema']);
+        $this->assertNotNull($payload);
+        $this->assertSame(['type' => 'string'], $payload['schema']);
     }
 
     public function testNonInterruptResultReturnsNull(): void
@@ -179,7 +179,7 @@ final class ToolCallExtractorTest extends TestCase
             ])
             ->build();
 
-        self::assertNull($this->extractor->interruptPayloadFromToolResult($result));
+        $this->assertNull($this->extractor->interruptPayloadFromToolResult($result));
     }
 
     public function testErrorResultReturnsNull(): void
@@ -190,7 +190,7 @@ final class ToolCallExtractorTest extends TestCase
             ->withError(['message' => 'Timeout'])
             ->build();
 
-        self::assertNull($this->extractor->interruptPayloadFromToolResult($result));
+        $this->assertNull($this->extractor->interruptPayloadFromToolResult($result));
     }
 
     public function testPartialUiFieldsPreservedNoSynthesis(): void
@@ -211,13 +211,13 @@ final class ToolCallExtractorTest extends TestCase
 
         $payload = $this->extractor->interruptPayloadFromToolResult($result);
 
-        self::assertNotNull($payload);
-        self::assertSame('confirm', $payload['ui_kind']);
-        self::assertArrayNotHasKey('header', $payload, 'header must not be synthesized when absent');
-        self::assertArrayNotHasKey('choices', $payload, 'choices must not be synthesized when absent');
-        self::assertArrayNotHasKey('default', $payload, 'default must not be synthesized when absent');
-        self::assertArrayNotHasKey('allow_other', $payload, 'allow_other must not be synthesized when absent');
-        self::assertArrayNotHasKey('secret', $payload, 'secret must not be synthesized when absent');
+        $this->assertNotNull($payload);
+        $this->assertSame('confirm', $payload['ui_kind']);
+        $this->assertArrayNotHasKey('header', $payload, 'header must not be synthesized when absent');
+        $this->assertArrayNotHasKey('choices', $payload, 'choices must not be synthesized when absent');
+        $this->assertArrayNotHasKey('default', $payload, 'default must not be synthesized when absent');
+        $this->assertArrayNotHasKey('allow_other', $payload, 'allow_other must not be synthesized when absent');
+        $this->assertArrayNotHasKey('secret', $payload, 'secret must not be synthesized when absent');
     }
 
     public function testToolNamePassthroughWhenOuterResultLacksIt(): void
@@ -239,8 +239,8 @@ final class ToolCallExtractorTest extends TestCase
 
         $payload = $this->extractor->interruptPayloadFromToolResult($result);
 
-        self::assertNotNull($payload);
-        self::assertSame('ask_human', $payload['tool_name'], 'tool_name from interrupt array survives when outer result lacks it');
+        $this->assertNotNull($payload);
+        $this->assertSame('ask_human', $payload['tool_name'], 'tool_name from interrupt array survives when outer result lacks it');
     }
 
     public function testNonArrayResultReturnsNull(): void
@@ -250,6 +250,6 @@ final class ToolCallExtractorTest extends TestCase
             ->withResult('not an array')
             ->build();
 
-        self::assertNull($this->extractor->interruptPayloadFromToolResult($result));
+        $this->assertNull($this->extractor->interruptPayloadFromToolResult($result));
     }
 }

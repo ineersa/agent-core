@@ -180,11 +180,13 @@ class AiConfigTest extends TestCase
         $this->assertFalse($provider->compatibility->supportsReasoningEffort);
         $this->assertSame('zai', $provider->compatibility->thinkingFormat);
         $this->assertFalse($provider->compatibility->zaiToolStream);
+        $this->assertTrue($provider->compatibility->hasExplicitSupportsReasoningEffort());
 
         $model = $provider->models['glm-5.1'] ?? null;
         $this->assertNotNull($model);
         $this->assertNotNull($model->compatibility);
         $this->assertTrue($model->compatibility->zaiToolStream);
+        $this->assertFalse($model->compatibility->hasExplicitSupportsReasoningEffort());
         $this->assertNull($model->compatibility->thinkingFormat, 'model-level compatibility does not repeat provider thinking_format');
         $this->assertSame(0.0, $model->cost->input);
     }
@@ -325,6 +327,7 @@ class AiConfigTest extends TestCase
         $this->assertNull($compatibility->thinkingFormat);
         $this->assertFalse($compatibility->zaiToolStream);
         $this->assertFalse($compatibility->requiresReasoningContentOnAssistantMessages);
+        $this->assertFalse($compatibility->hasExplicitSupportsReasoningEffort());
     }
 
     public function testCompatibilityFromNonBoolValuesFallsBackToDefault(): void
@@ -341,6 +344,7 @@ class AiConfigTest extends TestCase
         $this->assertTrue($compatibility->supportsReasoningEffort);
         $this->assertSame('zai', $compatibility->thinkingFormat);
         $this->assertFalse($compatibility->requiresReasoningContentOnAssistantMessages, 'non-bool falls back to false');
+        $this->assertTrue($compatibility->hasExplicitSupportsReasoningEffort());
     }
 
     public function testCompatibilityFullParsing(): void
@@ -358,6 +362,7 @@ class AiConfigTest extends TestCase
         $this->assertSame('deepseek', $compatibility->thinkingFormat);
         $this->assertTrue($compatibility->zaiToolStream);
         $this->assertTrue($compatibility->requiresReasoningContentOnAssistantMessages);
+        $this->assertTrue($compatibility->hasExplicitSupportsReasoningEffort());
     }
 
     public function testCompatibilityDeepseekFlags(): void

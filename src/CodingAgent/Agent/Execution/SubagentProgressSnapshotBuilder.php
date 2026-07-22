@@ -15,6 +15,64 @@ final class SubagentProgressSnapshotBuilder
     /**
      * @return array<string, mixed>
      */
+    public function singleRunningFromChildTurn(
+        string $agentName,
+        string $artifactId,
+        string $agentRunId,
+        string $taskSummary,
+        int $childTurnNo,
+        int $elapsedMs,
+        ?SubagentChildProgressSummary $enrichment = null,
+        string $status = 'running',
+    ): array {
+        $base = [
+            'mode' => 'single',
+            'status' => $status,
+            'agent_name' => $agentName,
+            'artifact_id' => $artifactId,
+            'agent_run_id' => $agentRunId,
+            'task_summary' => $taskSummary,
+            'turn_no' => $childTurnNo,
+            'elapsed_ms' => max(0, $elapsedMs),
+        ];
+
+        return null !== $enrichment
+            ? array_merge($base, $enrichment->toProgressFields())
+            : $base;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function singleTerminalFromChildTurn(
+        string $status,
+        string $agentName,
+        string $artifactId,
+        string $agentRunId,
+        string $taskSummary,
+        int $childTurnNo,
+        int $elapsedMs,
+        ?SubagentChildProgressSummary $enrichment = null,
+    ): array {
+        $base = [
+            'mode' => 'single',
+            'status' => $status,
+            'agent_name' => $agentName,
+            'artifact_id' => $artifactId,
+            'agent_run_id' => $agentRunId,
+            'task_summary' => $taskSummary,
+            'turn_no' => $childTurnNo,
+            'elapsed_ms' => max(0, $elapsedMs),
+        ];
+
+        return null !== $enrichment
+            ? array_merge($base, $enrichment->toProgressFields())
+            : $base;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
     public function singleRunning(
         string $agentName,
         string $artifactId,
@@ -23,21 +81,9 @@ final class SubagentProgressSnapshotBuilder
         RunState $childState,
         int $elapsedMs,
         ?SubagentChildProgressSummary $enrichment = null,
+        string $status = 'running',
     ): array {
-        $base = [
-            'mode' => 'single',
-            'status' => 'running',
-            'agent_name' => $agentName,
-            'artifact_id' => $artifactId,
-            'agent_run_id' => $agentRunId,
-            'task_summary' => $taskSummary,
-            'turn_no' => $childState->turnNo,
-            'elapsed_ms' => max(0, $elapsedMs),
-        ];
-
-        return null !== $enrichment
-            ? array_merge($base, $enrichment->toProgressFields())
-            : $base;
+        return $this->singleRunningFromChildTurn($agentName, $artifactId, $agentRunId, $taskSummary, $childState->turnNo, $elapsedMs, $enrichment, $status);
     }
 
     /**
@@ -53,20 +99,7 @@ final class SubagentProgressSnapshotBuilder
         int $elapsedMs,
         ?SubagentChildProgressSummary $enrichment = null,
     ): array {
-        $base = [
-            'mode' => 'single',
-            'status' => $status,
-            'agent_name' => $agentName,
-            'artifact_id' => $artifactId,
-            'agent_run_id' => $agentRunId,
-            'task_summary' => $taskSummary,
-            'turn_no' => $childState->turnNo,
-            'elapsed_ms' => max(0, $elapsedMs),
-        ];
-
-        return null !== $enrichment
-            ? array_merge($base, $enrichment->toProgressFields())
-            : $base;
+        return $this->singleTerminalFromChildTurn($status, $agentName, $artifactId, $agentRunId, $taskSummary, $childState->turnNo, $elapsedMs, $enrichment);
     }
 
     /**
@@ -105,7 +138,9 @@ final class SubagentProgressSnapshotBuilder
             }
 
             $childStatus = 'running';
-            if ($terminal && null !== $report['status']) {
+            if (!$terminal && AgentArtifactStatusEnum::NeedsClarification === $report['status']) {
+                $childStatus = 'waiting_human';
+            } elseif ($terminal && null !== $report['status']) {
                 $childStatus = match ($report['status']) {
                     AgentArtifactStatusEnum::Completed => 'completed',
                     AgentArtifactStatusEnum::Failed => 'failed',

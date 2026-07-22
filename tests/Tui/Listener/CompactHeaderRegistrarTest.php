@@ -12,16 +12,15 @@ use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Config\TuiConfig;
-use Ineersa\CodingAgent\Mcp\Catalog\McpToolCatalogStoreInterface;
 use Ineersa\CodingAgent\Markdown\MarkdownFrontmatterExtractor;
-use Ineersa\CodingAgent\Runtime\Contract\PromptTemplateCatalogInterface;
-use Ineersa\CodingAgent\Runtime\Contract\PromptTemplateCommand;
-use Ineersa\CodingAgent\Skills\SkillDiscovery;
-use Ineersa\CodingAgent\Skills\SkillsConfig;
-use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
+use Ineersa\CodingAgent\Mcp\Catalog\McpToolCatalogStoreInterface;
 use Ineersa\CodingAgent\Mcp\Config\McpConfigLoader;
 use Ineersa\CodingAgent\Mcp\Config\McpConfigValidator;
 use Ineersa\CodingAgent\Mcp\Config\McpEnvInterpolator;
+use Ineersa\CodingAgent\Runtime\Contract\PromptTemplateCatalogInterface;
+use Ineersa\CodingAgent\Skills\SkillDiscovery;
+use Ineersa\CodingAgent\Skills\SkillsConfig;
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\Tui\CompactHeader\CompactHeaderSnapshotProvider;
 use Ineersa\Tui\CompactHeader\CompactHeaderWidget;
 use Ineersa\Tui\Listener\CompactHeaderRegistrar;
@@ -58,7 +57,6 @@ final class CompactHeaderRegistrarTest extends TestCase
         TestDirectoryIsolation::removeDirectory($this->tmpDir);
     }
 
-
     #[Test]
     public function snapshotFailureDoesNotPropagateFromTick(): void
     {
@@ -83,11 +81,11 @@ final class CompactHeaderRegistrarTest extends TestCase
         $context->ticks->dispatch(new TickEvent());
 
         $widgets = $harness->screen()->registry()->getWidgetsByPlacement(WidgetPlacementEnum::AboveEditor);
-        self::assertCount(0, $widgets);
+        $this->assertCount(0, $widgets);
     }
 
     #[Test]
-    public function registersPinnedWidgetOnFirstTickRegardlessOfResume(): void
+    public function preSeedsPinnedWidgetOnRegisterRegardlessOfResume(): void
     {
         $harness = new VirtualTuiHarness(sessionId: 'compact-reg');
         $state = new TuiSessionState('compact-reg');
@@ -108,14 +106,39 @@ final class CompactHeaderRegistrarTest extends TestCase
             ->build();
 
         (new CompactHeaderRegistrar($provider))->register($context);
-        $context->ticks->dispatch(new TickEvent());
 
         $widgets = $harness->screen()->registry()->getWidgetsByPlacement(WidgetPlacementEnum::AboveEditor);
-        self::assertCount(1, $widgets);
-        self::assertInstanceOf(CompactHeaderWidget::class, $widgets[0]);
+        $this->assertCount(1, $widgets);
+        $this->assertInstanceOf(CompactHeaderWidget::class, $widgets[0]);
 
         $harness->render();
-        self::assertStringContainsString('reg-skill', $harness->plainScreenText());
+        $this->assertStringContainsString('reg-skill', $harness->plainScreenText());
+    }
+
+    #[Test]
+    public function testCompactHeaderHiddenWhileLiveViewActive(): void
+    {
+        $harness = new VirtualTuiHarness(sessionId: 'compact-live');
+        $state = new TuiSessionState('compact-live');
+        $provider = new CompactHeaderSnapshotProvider(
+            $this->promptCatalog(),
+            $this->skillDiscovery(),
+            $this->agentDiscovery(),
+            $this->mcpStore(),
+            $this->mcpConfigLoader(),
+        );
+        $context = $this->buildTuiContext()
+            ->withTui($harness->tui())
+            ->withState($state)
+            ->withScreen($harness->screen())
+            ->build();
+        (new CompactHeaderRegistrar($provider, new NullLogger()))->register($context);
+        $context->ticks->dispatch(new TickEvent());
+        $this->assertNotEmpty($harness->screen()->registry()->getWidgetsByPlacement(WidgetPlacementEnum::AboveEditor));
+
+        $state->subagentLiveView->active = true;
+        $context->ticks->dispatch(new TickEvent());
+        $this->assertEmpty($harness->screen()->registry()->getWidgetsByPlacement(WidgetPlacementEnum::AboveEditor));
     }
 
     private function promptCatalog(): PromptTemplateCatalogInterface

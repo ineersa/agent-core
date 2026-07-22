@@ -13,13 +13,10 @@ use Psr\Log\LoggerInterface;
 use Revolt\EventLoop;
 
 /**
- * Owns the controller stdout emit pipeline, per-run event cursoring, and
- * canonical event drain from the headless AgentSessionClient.
+ * Owns the controller stdout emit pipeline and optional recovery backfill from events.jsonl.
  *
- * All runtime event writes go through this class. Cursor tracking auto-registers
- * on RunStarted events and cursors are never released (issue #183). The drain loop polls eventClient per
- * active run, skips already-seen events by cursor,
- * and writes to stdout via JsonlCodec.
+ * Live canonical events arrive on messenger consumer stdout and are forwarded via emit().
+ * drainRegisteredRunsOnce() is for explicit recovery/backfill only — not a hot poll loop.
  */
 final class RuntimeEventEmitter
 {
@@ -97,6 +94,13 @@ final class RuntimeEventEmitter
 
         $this->registerChildRunsFromSubagentProgress($event);
 
+        if ($event->seq > 0 && '' !== $event->runId) {
+            $this->runEventCursors[$event->runId] = max(
+                $this->runEventCursors[$event->runId] ?? 0,
+                $event->seq,
+            );
+        }
+
         $this->emitInternal($event);
     }
 
@@ -117,10 +121,10 @@ final class RuntimeEventEmitter
     }
 
     /**
-     * Register the canonical event drain loop.
+     * Register a recovery/backfill drain loop (not used in live controller mode).
      *
-     * Polls InProcessAgentSessionClient for each active run, forwards
-     * unseen events to stdout.
+     * Polls InProcessAgentSessionClient for each registered run and forwards
+     * unseen canonical events to stdout.
      */
     public function startDrainLoop(float $interval = 0.05): void
     {

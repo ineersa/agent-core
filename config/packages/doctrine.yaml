@@ -13,7 +13,7 @@
 #
 # ORM entities on the default connection:
 #   - background_process  — BackgroundProcessManager durable tracking
-#   - tool_batch_state    — DbalToolBatchStore parallel tool execution state
+#   - (tool_batch_state removed — session filesystem snapshots via SessionToolBatchStore)
 #   - tool_question       — ToolQuestionStore cross-process tool-local questions
 #
 doctrine:
@@ -23,12 +23,19 @@ doctrine:
             default:
                 driver: pdo_sqlite
                 path: '%app.cwd%/.hatfield/state.sqlite'
+                logging: false
+                profiling: false
                 options:
                     2: 5
 
+            # MessengerSqliteImmediateTransactionMiddleware (connection tag only) uses
+            # BEGIN IMMEDIATE so concurrent messenger:consume workers wait on the writer
+            # slot at transaction start instead of failing on deferred read→write upgrade.
             messenger_transport:
                 driver: pdo_sqlite
                 path: '%app.cwd%/.hatfield/messenger-transport.sqlite'
+                logging: false
+                profiling: false
                 options:
                     2: 5
 

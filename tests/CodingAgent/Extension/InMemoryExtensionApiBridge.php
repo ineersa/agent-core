@@ -5,11 +5,12 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Extension;
 
 use Ineersa\Hatfield\ExtensionApi\Command\CommandDefinitionDTO;
+use Ineersa\Hatfield\ExtensionApi\Command\ExtensionCommandHandlerInterface;
 use Ineersa\Hatfield\ExtensionApi\Exec\ExecInterface;
 use Ineersa\Hatfield\ExtensionApi\Exec\ExecOptionsDTO;
 use Ineersa\Hatfield\ExtensionApi\Exec\ExecResultDTO;
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
-use Ineersa\Hatfield\ExtensionApi\Command\ExtensionCommandHandlerInterface;
+use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterTurnCommitHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Prompt\PromptContributorInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallRewriteHookInterface;
@@ -52,6 +53,9 @@ final class InMemoryExtensionApiBridge implements ExtensionApiInterface
      * @var list<ToolResultHookInterface>
      */
     private array $toolResultHooks = [];
+
+    /** @var list<AfterTurnCommitHookInterface> */
+    private array $afterTurnCommitHooks = [];
 
     public function __construct(?string $cwd = null)
     {
@@ -145,5 +149,10 @@ final class InMemoryExtensionApiBridge implements ExtensionApiInterface
     public function registerToolCallRewriteHook(string $toolName, ToolCallRewriteHookInterface $hook): void
     {
         throw new \LogicException('registerToolCallRewriteHook is not supported on the InMemoryExtensionApiBridge. Use the production ExtensionToolRegistryBridge.');
+    }
+
+    public function registerAfterTurnCommitHook(AfterTurnCommitHookInterface $hook): void
+    {
+        $this->afterTurnCommitHooks[] = $hook;
     }
 }
