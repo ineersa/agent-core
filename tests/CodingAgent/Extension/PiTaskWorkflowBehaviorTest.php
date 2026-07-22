@@ -30,15 +30,15 @@ final class PiTaskWorkflowBehaviorTest extends TestCase
         $resolver = $projectRoot.'/tests/CodingAgent/Extension/PiTaskWorkflow/ts-extension-resolve.mjs';
         $extensionRoot = $projectRoot.'/.pi/extensions/task-workflow';
 
-        self::assertFileExists($harness);
-        self::assertFileExists($resolver);
-        self::assertDirectoryExists($extensionRoot);
-        self::assertFileExists($extensionRoot.'/task-store.ts');
-        self::assertFileExists($extensionRoot.'/worktrees.ts');
+        $this->assertFileExists($harness);
+        $this->assertFileExists($resolver);
+        $this->assertDirectoryExists($extensionRoot);
+        $this->assertFileExists($extensionRoot.'/task-store.ts');
+        $this->assertFileExists($extensionRoot.'/worktrees.ts');
 
         $node = $this->resolveNodeBinary();
         if (null === $node) {
-            self::markTestSkipped('Node.js >= 22 is required for Pi task-workflow behavioral tests (not found on PATH).');
+            $this->markTestSkipped('Node.js >= 22 is required for Pi task-workflow behavioral tests (not found on PATH).');
         }
 
         $process = new Process(
@@ -57,17 +57,17 @@ final class PiTaskWorkflowBehaviorTest extends TestCase
         $process->run();
 
         $output = trim($process->getOutput()."\n".$process->getErrorOutput());
-        self::assertSame(
+        $this->assertSame(
             0,
             $process->getExitCode(),
             "Pi task-workflow behavioral harness failed (exit {$process->getExitCode()}):\n".$output,
         );
-        self::assertStringContainsString(
+        $this->assertStringContainsString(
             'PI_TASK_WORKFLOW_BEHAVIOR_OK',
             $output,
             "Harness did not emit success marker:\n".$output,
         );
-        self::assertStringContainsString('5 behavioral case(s) passed', $output);
+        $this->assertStringContainsString('5 behavioral case(s) passed', $output);
     }
 
     private function resolveNodeBinary(): ?string
