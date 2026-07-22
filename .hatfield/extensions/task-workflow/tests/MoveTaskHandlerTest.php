@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\HatfieldExt\TaskWorkflow\Tests;
 
+use HelgeSverre\Toon\Toon;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\Hatfield\ExtensionApi\Exec\ExecInterface;
 use Ineersa\Hatfield\ExtensionApi\Exec\ExecOptionsDTO;
@@ -48,6 +49,10 @@ final class MoveTaskHandlerTest extends TestCase
     protected function tearDown(): void
     {
         putenv('HATFIELD_TASK_WORKFLOW_ROOT');
+        // worktreesBase sits beside the temp repo and is not under board/repo roots.
+        if (isset($this->worktreesBase) && is_dir($this->worktreesBase)) {
+            TestDirectoryIsolation::removeDirectory($this->worktreesBase);
+        }
         TestDirectoryIsolation::removeDirectory($this->boardRoot);
         TestDirectoryIsolation::removeDirectory($this->repoRoot);
     }
@@ -241,6 +246,190 @@ final class MoveTaskHandlerTest extends TestCase
         $this->assertStringContainsString('Moved task', $r['content'][0]['text']);
         $this->assertFileExists($this->boardRoot.'/IN-PROGRESS/'.$slug.'.md');
         $this->assertDirectoryExists($this->worktreesBase.'/'.$slug);
+    }
+
+    #[Test]
+    public function doneToArchiveMovesFileWithoutGitSideEffects(): void
+    {
+        // Thesis: without this test, ARCHIVE could run merge/cleanup side effects
+        // or accept non-DONE sources, violating the metadata-only archive contract.
+        $slug = '2026-01-01-archive-me';
+        $branch = 'task/'.$slug;
+        $this->runGit($this->repoRoot, ['branch', $branch]);
+        file_put_contents(
+            $this->boardRoot.'/DONE/'.$slug.'.md',
+            TaskMarkdown::updateField(
+                TaskMarkdown::updateField(TaskMarkdown::renderTask('Archive me'), 'Status', 'DONE'),
+                'Branch',
+                $branch,
+            ),
+        );
+
+        $inner = new StubExec($this->gitStub(...));
+        $recording = new RecordingExec($inner);
+        $handler = $this->makeHandler($recording);
+
+        $result = ($handler)(['task' => $slug, 'from' => 'DONE', 'to' => 'ARCHIVE']);
+
+        $this->assertFileExists($this->boardRoot.'/ARCHIVE/'.$slug.'.md');
+        $this->assertFileDoesNotExist($this->boardRoot.'/DONE/'.$slug.'.md');
+        $archived = file_get_contents($this->boardRoot.'/ARCHIVE/'.$slug.'.md');
+        $this->assertIsString($archived);
+        $this->assertStringContainsString('Status: ARCHIVE', $archived);
+        $this->assertStringContainsString('Branch: '.$branch, $archived);
+        $this->assertTrue($this->branchExists($branch), 'archive must leave the git branch');
+
+        $gitCalls = $this->findCallsByCommand($recording, 'git');
+        $this->assertEmpty($gitCalls, 'DONE→ARCHIVE must not invoke git');
+
+        $decoded = Toon::decode($result['details']);
+        $this->assertIsArray($decoded);
+        $this->assertSame('DONE', $decoded['from'] ?? null);
+        $this->assertSame('ARCHIVE', $decoded['to'] ?? null);
+    }
+
+    #[Test]
+    public function archiveRejectsNonDoneSource(): void
+    {
+        $slug = '2026-01-01-archive-bad';
+        file_put_contents($this->boardRoot.'/TODO/'.$slug.'.md', TaskMarkdown::renderTask('Not done'));
+        $handler = $this->makeHandler(new StubExec($this->gitStub(...)));
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('ARCHIVE is only allowed from DONE');
+        ($handler)(['task' => $slug, 'to' => 'ARCHIVE']);
+    }
+
+    #[Test]
+    public function cancelWithoutWorktreeMovesTaskOnly(): void
+    {
+        $slug = '2026-01-01-cancel-plain';
+        file_put_contents($this->boardRoot.'/TODO/'.$slug.'.md', TaskMarkdown::renderTask('Cancel plain'));
+        $handler = $this->makeHandler(new StubExec($this->gitStub(...)));
+
+        $result = ($handler)(['task' => $slug, 'to' => 'CANCELLED']);
+
+        $this->assertFileExists($this->boardRoot.'/CANCELLED/'.$slug.'.md');
+        $this->assertFileDoesNotExist($this->boardRoot.'/TODO/'.$slug.'.md');
+        $this->assertStringContainsString('No Worktree metadata', $result['content'][0]['text']);
+    }
+
+    #[Test]
+    public function cancelCleanInProgressRemovesWorktreeAndIdeaExclusionButKeepsBranch(): void
+    {
+        // Thesis: without this test, CANCELLED could leave worktrees/IDEA markers
+        // or delete the branch, or move the task before cleanup succeeds.
+        $slug = '2026-01-01-cancel-clean';
+        $branch = 'task/'.$slug;
+        $worktree = $this->worktreesBase.'/'.$slug;
+
+        mkdir($this->worktreesBase.'/.idea', 0o755, true);
+        $iml = $this->worktreesBase.'/.idea/'.basename($this->worktreesBase).'.iml';
+        file_put_contents($iml, "<?xml version=\"1.0\"?>\n<module>\n  <component name=\"NewModuleRootManager\">\n    <content url=\"file://\$MODULE_DIR$\">\n    </content>\n  </component>\n</module>\n");
+
+        $handler = $this->makeHandler(new StubExec($this->gitStub(...)));
+        file_put_contents($this->boardRoot.'/TODO/'.$slug.'.md', TaskMarkdown::renderTask('Cancel clean'));
+        ($handler)(['task' => $slug, 'to' => 'IN-PROGRESS', 'worktreeBase' => $this->worktreesBase]);
+        $this->assertDirectoryExists($worktree);
+        $this->assertStringContainsString('pi-task-workflow:start '.$slug, (string) file_get_contents($iml));
+
+        $result = ($handler)(['task' => $slug, 'from' => 'IN-PROGRESS', 'to' => 'CANCELLED']);
+
+        $this->assertFileExists($this->boardRoot.'/CANCELLED/'.$slug.'.md');
+        $this->assertFileDoesNotExist($this->boardRoot.'/IN-PROGRESS/'.$slug.'.md');
+        $this->assertDirectoryDoesNotExist($worktree);
+        $this->assertTrue($this->branchExists($branch), 'cancellation must leave the branch');
+        $cancelled = file_get_contents($this->boardRoot.'/CANCELLED/'.$slug.'.md');
+        $this->assertIsString($cancelled);
+        $this->assertStringContainsString('Status: CANCELLED', $cancelled);
+        $this->assertStringContainsString('Branch: '.$branch, $cancelled);
+        $this->assertStringContainsString('Worktree: '.$worktree, $cancelled);
+        $this->assertStringNotContainsString('pi-task-workflow:start '.$slug, (string) file_get_contents($iml));
+        $this->assertStringContainsString('Removed worktree', $result['content'][0]['text']);
+    }
+
+    #[Test]
+    public function cancelDirtyWorktreeFailsClosedWithoutMovingTask(): void
+    {
+        // Thesis: without this test, dirty-worktree cancellation could force-delete
+        // trees, strip IDEA exclusions, or still move the task to CANCELLED.
+        $slug = '2026-01-01-cancel-dirty';
+        $branch = 'task/'.$slug;
+        $worktree = $this->worktreesBase.'/'.$slug;
+
+        mkdir($this->worktreesBase.'/.idea', 0o755, true);
+        $iml = $this->worktreesBase.'/.idea/'.basename($this->worktreesBase).'.iml';
+        file_put_contents($iml, "<?xml version=\"1.0\"?>\n<module>\n  <component name=\"NewModuleRootManager\">\n    <content url=\"file://\$MODULE_DIR$\">\n    </content>\n  </component>\n</module>\n");
+
+        $handler = $this->makeHandler(new StubExec($this->gitStub(...)));
+        file_put_contents($this->boardRoot.'/TODO/'.$slug.'.md', TaskMarkdown::renderTask('Cancel dirty'));
+        ($handler)(['task' => $slug, 'to' => 'IN-PROGRESS', 'worktreeBase' => $this->worktreesBase]);
+        file_put_contents($worktree.'/dirty.txt', 'dirty');
+
+        try {
+            ($handler)(['task' => $slug, 'from' => 'IN-PROGRESS', 'to' => 'CANCELLED']);
+            $this->fail('Expected RuntimeException for dirty worktree cancellation');
+        } catch (\RuntimeException $e) {
+            $this->assertStringContainsString('Safe worktree cleanup failed', $e->getMessage());
+        }
+
+        $this->assertFileExists($this->boardRoot.'/IN-PROGRESS/'.$slug.'.md');
+        $this->assertFileDoesNotExist($this->boardRoot.'/CANCELLED/'.$slug.'.md');
+        $this->assertDirectoryExists($worktree);
+        $this->assertTrue($this->branchExists($branch));
+        $this->assertStringContainsString('pi-task-workflow:start '.$slug, (string) file_get_contents($iml));
+    }
+
+    #[Test]
+    public function cancelDestinationCollisionFailsBeforeWorktreeCleanup(): void
+    {
+        // Thesis: without this test, CANCELLED could remove a clean worktree and IDEA
+        // markers, then fail when CANCELLED/<same-file>.md already exists — leaving the
+        // board task stranded without its worktree.
+        $slug = '2026-01-01-cancel-collision';
+        $branch = 'task/'.$slug;
+        $worktree = $this->worktreesBase.'/'.$slug;
+        $destination = $this->boardRoot.'/CANCELLED/'.$slug.'.md';
+        $destinationBody = "# Pre-existing cancelled\n\n## Workflow metadata\nStatus: CANCELLED\n\nDo not overwrite me.\n";
+
+        mkdir($this->worktreesBase.'/.idea', 0o755, true);
+        $iml = $this->worktreesBase.'/.idea/'.basename($this->worktreesBase).'.iml';
+        file_put_contents($iml, "<?xml version=\"1.0\"?>\n<module>\n  <component name=\"NewModuleRootManager\">\n    <content url=\"file://\$MODULE_DIR$\">\n    </content>\n  </component>\n</module>\n");
+
+        $inner = new StubExec($this->gitStub(...));
+        $recording = new RecordingExec($inner);
+        $handler = $this->makeHandler($recording);
+        file_put_contents($this->boardRoot.'/TODO/'.$slug.'.md', TaskMarkdown::renderTask('Cancel collision'));
+        ($handler)(['task' => $slug, 'to' => 'IN-PROGRESS', 'worktreeBase' => $this->worktreesBase]);
+        $this->assertDirectoryExists($worktree);
+        $this->assertStringContainsString('pi-task-workflow:start '.$slug, (string) file_get_contents($iml));
+
+        // Existing destination with the same filename must block cancellation preflight.
+        file_put_contents($destination, $destinationBody);
+
+        try {
+            ($handler)(['task' => $slug, 'from' => 'IN-PROGRESS', 'to' => 'CANCELLED']);
+            $this->fail('Expected RuntimeException for CANCELLED destination collision');
+        } catch (\RuntimeException $e) {
+            $this->assertStringContainsString('Target task already exists', $e->getMessage());
+            $this->assertStringContainsString('CANCELLED/'.$slug.'.md', $e->getMessage());
+        }
+
+        $this->assertFileExists($this->boardRoot.'/IN-PROGRESS/'.$slug.'.md');
+        $this->assertFileExists($destination);
+        $this->assertSame($destinationBody, file_get_contents($destination));
+        $this->assertDirectoryExists($worktree);
+        $this->assertTrue($this->branchExists($branch), 'collision must leave the branch');
+        $this->assertStringContainsString('pi-task-workflow:start '.$slug, (string) file_get_contents($iml));
+
+        $gitCalls = $this->findCallsByCommand($recording, 'git');
+        foreach ($gitCalls as $call) {
+            $args = $call['args'] ?? [];
+            $this->assertFalse(
+                ($args[0] ?? null) === 'worktree' && ($args[1] ?? null) === 'remove',
+                'destination collision must not run git worktree remove',
+            );
+        }
     }
 
     #[Test]

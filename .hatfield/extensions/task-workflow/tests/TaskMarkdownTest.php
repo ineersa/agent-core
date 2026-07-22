@@ -16,6 +16,10 @@ final class TaskMarkdownTest extends TestCase
         $text = TaskMarkdown::renderTask('My Task', 'body', ['a1']);
         $this->assertSame('My Task', TaskMarkdown::extractTitle($text, 'x.md'));
         $this->assertSame('TODO', TaskMarkdown::extractField($text, 'Status'));
+        // Empty metadata fields must not spill into the next label value.
+        $this->assertNull(TaskMarkdown::extractField($text, 'Worktree'));
+        $this->assertNull(TaskMarkdown::extractField($text, 'Branch'));
+        $this->assertNull(TaskMarkdown::extractField($text, 'Fork run'));
     }
 
     #[Test]

@@ -421,23 +421,9 @@ export async function mergeTaskBranch(
 	notes.push(`Merged ${branch} into integration checkout.`, (merge.stdout || merge.stderr).trim());
 
 	if (options.cleanupWorktree) {
-		const slug = task.file.replace(/\.md$/, "");
-		const base = dirname(worktree);
-
-		// Remove worktree first; only clean up IDEA exclusions on success
-		const remove = await git(pi, codeRoot, ["worktree", "remove", worktree], signal);
-		if (remove.code !== 0) {
-			const msg = `Worktree cleanup failed: ${remove.stderr || remove.stdout}`;
-			notes.push(msg);
-			// Worktree still exists — keep exclusion block and add failure note
-			notes.push(`IDEA exclusions preserved for ${worktree} because worktree removal failed.`);
-		} else {
-			notes.push(`Removed worktree ${worktree}.`);
-			// Worktree gone — safe to remove IDEA exclusions
-			const { updated: exclusionsRemoved, note: exclusionNote } = await removeWorktreeExclusions(slug, base);
-			if (exclusionNote) notes.push(exclusionNote);
-			if (exclusionsRemoved) notes.push(`Removed IDEA exclusions for worktree ${worktree}.`);
-		}
+		// DONE cleanup is best-effort: failure notes are recorded but the merge still succeeds.
+		const cleanupNotes = await cleanupWorktreeAndIdeaExclusions(pi, codeRoot, task, false, signal);
+		notes.push(...cleanupNotes);
 	}
 	if (options.deleteBranch) {
 		const del = await git(pi, codeRoot, ["branch", "-d", branch], signal);
@@ -453,4 +439,82 @@ export async function mergeTaskBranch(
 	}
 
 	return notes;
+}
+
+// ── Shared worktree + IDEA exclusion cleanup ─────────────────────────────────
+//
+// Ordering invariant: never strip IDEA exclusions until `git worktree remove`
+// succeeds. Never force-delete or recursively delete a dirty worktree.
+// Used by DONE merge (best-effort) and CANCELLED (fail-closed).
+
+async function cleanupWorktreeAndIdeaExclusions(
+	pi: ExtensionAPI,
+	codeRoot: string,
+	task: TaskInfo,
+	failClosed: boolean,
+	signal?: AbortSignal,
+): Promise<string[]> {
+	const worktree = task.worktree;
+	if (!worktree) {
+		return [];
+	}
+
+	const slug = task.file.replace(/\.md$/, "");
+	const base = dirname(worktree);
+	const notes: string[] = [];
+
+	// Non-forced remove only. Dirty trees must fail rather than be deleted.
+	const remove = await git(pi, codeRoot, ["worktree", "remove", worktree], signal);
+	if (remove.code !== 0) {
+		const detail = (remove.stderr || remove.stdout || "").trim() || "(no git output)";
+		if (failClosed) {
+			throw new Error(
+				`Safe worktree cleanup failed; leaving task unmoved and IDEA exclusions intact.\n` +
+				`Worktree: ${worktree}\n${detail}`,
+			);
+		}
+		notes.push(`Worktree cleanup failed: ${detail}`);
+		notes.push(`IDEA exclusions preserved for ${worktree} because worktree removal failed.`);
+		return notes;
+	}
+
+	notes.push(`Removed worktree ${worktree}.`);
+	const { updated: exclusionsRemoved, note: exclusionNote } = await removeWorktreeExclusions(slug, base);
+	if (exclusionNote) notes.push(exclusionNote);
+	if (exclusionsRemoved) notes.push(`Removed IDEA exclusions for worktree ${worktree}.`);
+	return notes;
+}
+
+/**
+ * Cancel/cleanup path: remove a task worktree without merge/pull/branch deletion.
+ *
+ * Fail closed: if Worktree metadata points at a directory and safe
+ * `git worktree remove` fails, throw without removing IDEA exclusions.
+ * Leave the git branch intact. Historical Branch/Worktree metadata is left
+ * for the caller to preserve in the task Markdown.
+ */
+export async function removeTaskWorktreeSafely(
+	pi: ExtensionAPI,
+	codeRoot: string,
+	task: TaskInfo,
+	signal?: AbortSignal,
+): Promise<string[]> {
+	const worktree = task.worktree;
+	if (!worktree) {
+		return ["No Worktree metadata; cancelled without git worktree cleanup."];
+	}
+
+	if (!existsSync(worktree)) {
+		// Directory already gone — still try IDEA exclusion cleanup so markers
+		// do not linger after an external/manual worktree removal.
+		const slug = task.file.replace(/\.md$/, "");
+		const base = dirname(worktree);
+		const notes = [`Worktree path missing (${worktree}); skipping git worktree remove.`];
+		const { updated: exclusionsRemoved, note: exclusionNote } = await removeWorktreeExclusions(slug, base);
+		if (exclusionNote) notes.push(exclusionNote);
+		if (exclusionsRemoved) notes.push(`Removed IDEA exclusions for worktree ${worktree}.`);
+		return notes;
+	}
+
+	return cleanupWorktreeAndIdeaExclusions(pi, codeRoot, task, true, signal);
 }
