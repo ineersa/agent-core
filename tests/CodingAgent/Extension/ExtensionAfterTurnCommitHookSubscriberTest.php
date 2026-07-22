@@ -15,24 +15,34 @@ use PHPUnit\Framework\TestCase;
 
 final class ExtensionAfterTurnCommitHookSubscriberTest extends TestCase
 {
-    public function testDispatchesRegisteredExtensionHook(): void
+    public function testDispatchesRegisteredExtensionHookWithHotBatchPayload(): void
     {
         $registry = new ExtensionHookRegistry();
-        $called = false;
-        $registry->addAfterTurnCommitHook(new class($called) implements AfterTurnCommitHookInterface {
-            public function __construct(private bool &$called)
+        $captured = null;
+        $registry->addAfterTurnCommitHook(new class($captured) implements AfterTurnCommitHookInterface {
+            public function __construct(private mixed &$captured)
             {
             }
 
             public function onAfterTurnCommit(AfterTurnCommitHookContextDTO $context): void
             {
-                $this->called = true;
+                $this->captured = $context;
             }
         });
         $subscriber = new ExtensionAfterTurnCommitHookSubscriber($registry, new TestLogger());
-        $ctx = new AfterTurnCommitHookContext('run-1', 2, 'running', [new AfterTurnCommitEventSummary(1, 'turn_end')], 0);
+        $ctx = new AfterTurnCommitHookContext(
+            'run-1',
+            2,
+            'running',
+            [new AfterTurnCommitEventSummary(1, 'turn_end', ['reason' => 'completed'])],
+            0,
+        );
         $subscriber->handleAfterTurnCommit($ctx);
-        $this->assertTrue($called);
+        $this->assertInstanceOf(AfterTurnCommitHookContextDTO::class, $captured);
+        $this->assertSame(1, $captured->events[0]->seq);
+        $this->assertSame('turn_end', $captured->events[0]->type);
+        $this->assertSame(['reason' => 'completed'], $captured->events[0]->payload);
+        $this->assertSame(2, $captured->events[0]->turnNo);
     }
 
     public function testHookFailureIsLoggedAndDoesNotPropagate(): void

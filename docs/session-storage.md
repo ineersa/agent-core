@@ -682,6 +682,16 @@ reusable without destructive truncation or separate tree files.
 | Session rename / alias | **Done** | SESSION-01 added `name` column (non-null, initialized from first user message) + listing; SESSION-04 `/rename` TUI command with picker insertion and session-id completions for `/resume` + `/rename`. |
 | Runtime event streaming | Medium | Current polling is synchronous full-scan. Incremental delivery would improve large sessions. |
 | Rebuild `state.json` from `events.jsonl` | **Done** | `RunStateReplayService` rebuilds RunState from canonical events when `state.json` is missing or stale. `state.json` is now a disposable cache. |
+## Extension API foundations (OM-01)
+
+Hatfield exposes three minimal Extension API capabilities for independently owned observational memory:
+
+1. **After-turn commit hook** — existing `AfterTurnCommitHookInterface` receives the already-committed hot event batch (`seq`, `type`, optional `payload`/`turnNo`/`createdAt`). Best-effort acceleration only; no EventStore historical reads on this path.
+2. **Canonical session event reader** — `SessionEventReaderInterface::readRange()` for recovery/compaction catch-up only. Full-log scans are acceptable here; do not call on every turn/boundary.
+3. **Agent runner** — `$api->agent()->run(AgentCallRequestDTO)` is publicly blocking. Internally Hatfield streams (`stream=true`) via the configured Symfony AI Platform + Agent + AgentProcessor so Codex WebSocket and HTTP streaming providers complete. Isolated tools only; no ambient Hatfield tools; exact `provider/model` string.
+
+No custom conversation-boundary notifier/projector, no runtime lifecycle APIs in OM-01, and no branch-aware event projection for MVP.
+
 ## Related documents
 
 - [Hatfield Settings](settings.md) — configuring session path and theme

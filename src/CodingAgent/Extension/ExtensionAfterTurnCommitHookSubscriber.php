@@ -5,12 +5,16 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Extension;
 
 use Ineersa\AgentCore\Contract\Extension\HookSubscriberInterface;
+use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitEventSummary;
 use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitHookContext;
 use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterTurnCommitEventSummaryDTO;
 use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterTurnCommitHookContextDTO;
 
 /**
  * Bridges AgentCore after-turn hook dispatch to ExtensionApi hooks.
+ *
+ * Maps only the already-committed hot batch from AfterTurnCommitHookContext.
+ * Never reads EventStore/history for this path.
  */
 final readonly class ExtensionAfterTurnCommitHookSubscriber implements HookSubscriberInterface
 {
@@ -27,7 +31,15 @@ final readonly class ExtensionAfterTurnCommitHookSubscriber implements HookSubsc
             turnNo: $context->turnNo,
             status: $context->status,
             events: array_map(
-                static fn ($e): AfterTurnCommitEventSummaryDTO => new AfterTurnCommitEventSummaryDTO($e->seq, $e->type),
+                static function (AfterTurnCommitEventSummary $e) use ($context): AfterTurnCommitEventSummaryDTO {
+                    return new AfterTurnCommitEventSummaryDTO(
+                        seq: $e->seq,
+                        type: $e->type,
+                        payload: $e->payload,
+                        turnNo: $context->turnNo,
+                        createdAt: null,
+                    );
+                },
                 $context->events,
             ),
             effectsCount: $context->effectsCount,
