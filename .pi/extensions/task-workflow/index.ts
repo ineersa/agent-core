@@ -35,7 +35,7 @@ import {
 	lockPath,
 	today,
 } from "./task-store";
-import { createWorktreeForTask, mergeTaskBranch } from "./worktrees";
+import { createWorktreeForTask, mergeTaskBranch, removeTaskWorktreeSafely } from "./worktrees";
 import { pushTaskBranch, ghAvailable, findExistingPr, createPr } from "./pr";
 import { workflowPrompt } from "./prompt";
 
@@ -52,6 +52,9 @@ const CreateTaskParams = Type.Object({
 
 const ListTasksParams = Type.Object({
 	status: Type.Optional(statusParam),
+	include_archive: Type.Optional(Type.Boolean({
+		description: "When true, include ARCHIVE tasks. Default false. With status TODO, returns TODO plus ARCHIVE.",
+	})),
 });
 
 const MoveTaskParams = Type.Object({
@@ -137,10 +140,11 @@ export default function (pi: ExtensionAPI) {
 	pi.registerTool({
 		name: "task_list",
 		label: "Task List",
-		description: "List workflow tasks from the external task board (TODO, IN-PROGRESS, CODE-REVIEW, DONE).",
+		description: "List workflow tasks from the external task board (TODO, IN-PROGRESS, CODE-REVIEW, DONE, CANCELLED; ARCHIVE only when include_archive is true or status=ARCHIVE).",
 		promptSnippet: "List project workflow tasks from the external task board",
 		promptGuidelines: [
 			"Use task_list before starting tracked project work to understand TODO and IN-PROGRESS tasks.",
+			"ARCHIVE is omitted by default; pass include_archive=true or status=ARCHIVE to list archived tasks.",
 		],
 		parameters: ListTasksParams,
 		async execute(_toolCallId, params, signal, _onUpdate, ctx: ExtensionContext) {
@@ -148,8 +152,12 @@ export default function (pi: ExtensionAPI) {
 			const settings = readSettings(root);
 			const taskRoot = await resolveTaskRoot(root, settings);
 			const status = params.status ? normalizeStatus(params.status) : undefined;
-			const tasks = await listTasks(taskRoot, status);
-			return { content: [{ type: "text", text: taskListText(tasks, taskRoot) }], details: { tasks } };
+			const includeArchive = params.include_archive === true;
+			const tasks = await listTasks(taskRoot, status, includeArchive);
+			return {
+				content: [{ type: "text", text: taskListText(tasks, taskRoot) }],
+				details: { tasks, include_archive: includeArchive },
+			};
 		},
 	});
 
@@ -188,13 +196,15 @@ export default function (pi: ExtensionAPI) {
 	pi.registerTool({
 		name: "move_task",
 		label: "Move Task",
-		description: "Move a task between TODO, IN-PROGRESS, CODE-REVIEW, and DONE on the external task board. TODO→IN-PROGRESS creates a code worktree; IN-PROGRESS→CODE-REVIEW pushes branch and creates PR; CODE-REVIEW→DONE merges the task branch.",
+		description: "Move a task between TODO, IN-PROGRESS, CODE-REVIEW, DONE, ARCHIVE, and CANCELLED on the external task board. TODO→IN-PROGRESS creates a code worktree; IN-PROGRESS→CODE-REVIEW pushes branch and creates PR; CODE-REVIEW→DONE merges the task branch; DONE→ARCHIVE is metadata-only; ANY→CANCELLED removes a clean worktree (if present) and leaves the branch.",
 		promptSnippet: "Move tracked project tasks between statuses; creates worktrees, opens PRs, and merges completed task branches",
 		promptGuidelines: [
 			"Use move_task instead of manual mv/git worktree commands for tracked task workflow transitions.",
 			"Use move_task with to=\"IN-PROGRESS\" before launching a worker/fork for a tracked task.",
 			"Use move_task with to=\"CODE-REVIEW\" after the worktree branch is committed and ready for review; this automatically runs deterministic castor check in the worktree, then pushes the branch and creates a PR. Run focused Castor validation (castor test, castor deptrac, castor phpstan, castor cs-check) yourself before moving to catch issues early.",
 			"Use move_task with to=\"DONE\" only after PR review is approved and the user/parent decides to merge; move_task reports merge conflicts and leaves the task in CODE-REVIEW on failure.",
+			"Use move_task with to=\"ARCHIVE\" only from DONE; this updates Status metadata and moves the Markdown file with no git side effects.",
+			"Use move_task with to=\"CANCELLED\" to abandon a task from any status; clean worktrees and IDEA exclusions are removed safely, the git branch is left, and dirty worktrees fail closed without moving the task.",
 		],
 		parameters: MoveTaskParams,
 		async execute(_toolCallId, params, signal, _onUpdate, ctx: ExtensionContext) {
@@ -320,6 +330,28 @@ export default function (pi: ExtensionAPI) {
 					}
 
 					text = updateField(text, "Status", "CODE-REVIEW");
+				}
+				// ── DONE → ARCHIVE: metadata-only, no git side effects ─────
+				else if (to === "ARCHIVE") {
+					if (task.status !== "DONE") {
+						throw new Error(`ARCHIVE is only allowed from DONE. Task is currently ${task.status}.`);
+					}
+					notes.push("Archived task without git, worktree, PR, or branch side effects.");
+					text = updateField(text, "Status", "ARCHIVE");
+				}
+				// ── ANY → CANCELLED: safe worktree cleanup, leave branch ──
+				else if (to === "CANCELLED") {
+					// Preflight destination collision before destructive cleanup so a
+					// failed rename cannot leave the worktree already removed.
+					const cancelTarget = join(taskRoot, "CANCELLED", task.file);
+					if (existsSync(cancelTarget)) {
+						throw new Error(`Target task already exists: ${rel(taskRoot, cancelTarget)}`);
+					}
+					// Fail closed before rewriting metadata: if safe worktree cleanup
+					// cannot complete, the task must stay in its current status folder.
+					const cleanupNotes = await removeTaskWorktreeSafely(pi, codeRoot, task, signal);
+					notes.push(...cleanupNotes);
+					text = updateField(text, "Status", "CANCELLED");
 				}
 				// ── → DONE: merge ───────────────────────────────────────────
 				else if (to === "DONE") {

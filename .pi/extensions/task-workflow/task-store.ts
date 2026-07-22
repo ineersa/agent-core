@@ -7,7 +7,12 @@
 import { existsSync } from "node:fs";
 import { mkdir, readdir, readFile, rename, writeFile } from "node:fs/promises";
 import { join, relative } from "node:path";
-import { STATUSES, type TaskStatus, type TaskInfo } from "./types";
+import {
+	STATUSES,
+	DEFAULT_LISTED_STATUSES,
+	type TaskStatus,
+	type TaskInfo,
+} from "./types";
 
 // ── Task root resolution ─────────────────────────────────────────────────────
 
@@ -106,31 +111,62 @@ export function normalizeStatus(value: string): TaskStatus {
 	if (upper === "IN_PROGRESS" || upper === "INPROGRESS" || upper === "IN-PROGRESS") return "IN-PROGRESS";
 	if (upper === "CODE_REVIEW" || upper === "CODEREVIEW" || upper === "CODE-REVIEW") return "CODE-REVIEW";
 	if (upper === "DONE") return "DONE";
+	if (upper === "ARCHIVE") return "ARCHIVE";
+	if (upper === "CANCELLED" || upper === "CANCELED") return "CANCELLED";
 	throw new Error(`Unknown task status: ${value}`);
+}
+
+/**
+ * Resolve which status directories to scan for listTasks.
+ *
+ * When status is omitted:
+ * - includeArchive false (default): TODO, IN-PROGRESS, CODE-REVIEW, DONE, CANCELLED
+ * - includeArchive true: all six statuses including ARCHIVE
+ *
+ * When status is set:
+ * - that status always listed (including ARCHIVE)
+ * - includeArchive true additionally unions ARCHIVE (e.g. TODO + ARCHIVE)
+ * - deterministic order matching STATUSES
+ */
+export function resolveListStatuses(
+	status: TaskStatus | undefined,
+	includeArchive = false,
+): TaskStatus[] {
+	if (!status) {
+		return includeArchive ? [...STATUSES] : [...DEFAULT_LISTED_STATUSES];
+	}
+
+	const statuses: TaskStatus[] = [status];
+	if (includeArchive && status !== "ARCHIVE") {
+		statuses.push("ARCHIVE");
+	}
+
+	const order = new Map(STATUSES.map((s, i) => [s, i]));
+	statuses.sort((a, b) => (order.get(a) ?? 99) - (order.get(b) ?? 99));
+	return statuses;
 }
 
 // ── Directory management ─────────────────────────────────────────────────────
 
 export async function ensureTaskDirs(root: string): Promise<void> {
+	// Create all known status directories, including ARCHIVE and CANCELLED.
 	for (const status of STATUSES) {
 		const dir = join(root, status);
 		await mkdir(dir, { recursive: true });
 		const keep = join(dir, ".gitkeep");
 		if (!existsSync(keep)) await writeFile(keep, "", "utf8");
 	}
-	// Also ensure legacy ARCHIVE / CANCELLED if they exist
-	for (const extra of ["ARCHIVE", "CANCELLED"]) {
-		const dir = join(root, extra);
-		if (!existsSync(dir)) continue;
-		// Already exists, that's fine
-	}
 }
 
 // ── List tasks ────────────────────────────────────────────────────────────────
 
-export async function listTasks(root: string, status?: TaskStatus): Promise<TaskInfo[]> {
+export async function listTasks(
+	root: string,
+	status?: TaskStatus,
+	includeArchive = false,
+): Promise<TaskInfo[]> {
 	await ensureTaskDirs(root);
-	const statuses = status ? [status] : STATUSES;
+	const statuses = resolveListStatuses(status, includeArchive);
 	const tasks: TaskInfo[] = [];
 	for (const s of statuses) {
 		const dir = join(root, s);

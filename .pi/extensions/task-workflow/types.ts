@@ -1,7 +1,23 @@
 // Shared type definitions for the task-workflow extension
 
-export const STATUSES = ["TODO", "IN-PROGRESS", "CODE-REVIEW", "DONE"] as const;
+export const STATUSES = [
+	"TODO",
+	"IN-PROGRESS",
+	"CODE-REVIEW",
+	"DONE",
+	"ARCHIVE",
+	"CANCELLED",
+] as const;
 export type TaskStatus = (typeof STATUSES)[number];
+
+/** Default task_list statuses: active + cancelled, omitting ARCHIVE unless requested. */
+export const DEFAULT_LISTED_STATUSES = [
+	"TODO",
+	"IN-PROGRESS",
+	"CODE-REVIEW",
+	"DONE",
+	"CANCELLED",
+] as const satisfies readonly TaskStatus[];
 
 export type ExecResult = {
 	stdout: string;
