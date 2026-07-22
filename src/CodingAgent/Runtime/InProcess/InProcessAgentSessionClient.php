@@ -7,13 +7,9 @@ namespace Ineersa\CodingAgent\Runtime\InProcess;
 use Ineersa\AgentCore\Contract\AgentRunnerInterface;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\Rewind\RunRewindServiceInterface;
-use Ineersa\AgentCore\Contract\Tool\ToolExecutorInterface;
-use Ineersa\AgentCore\Domain\Event\RunEvent;
-use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Run\RunMetadata;
 use Ineersa\AgentCore\Domain\Run\StartRunInput;
-use Ineersa\AgentCore\Domain\Tool\ToolCall;
 use Ineersa\CodingAgent\Agent\Context\AgentsContextBuilder;
 use Ineersa\CodingAgent\Config\Ai\AiModelReference;
 use Ineersa\CodingAgent\Config\ModelResolver;
@@ -63,7 +59,6 @@ final class InProcessAgentSessionClient implements AgentSessionClient
         private readonly ?RuntimeEventSinkInterface $transientSink = null,
         private readonly ?ToolQuestionStoreInterface $toolQuestionStore = null,
         private readonly ToolQuestionAnswerResolver $answerResolver = new ToolQuestionAnswerResolver(),
-        private readonly ?ToolExecutorInterface $toolExecutor = null,
         private readonly ?McpSessionLifecycleDispatcher $mcpDispatcher = null,
     ) {
     }
@@ -294,35 +289,12 @@ final class InProcessAgentSessionClient implements AgentSessionClient
 
     public function shellExecute(string $command, string $sessionId, string $cwd): RunHandle
     {
-        $runId = $sessionId;
+        // In-process and controller transports both enter the same
+        // ApplyShellCommand pipeline. The configured in-process bus is
+        // synchronous, so the worker has completed before this returns.
+        $this->runner->shell($sessionId, $command);
 
-        // Shell commands write tool_execution events directly to the
-        // event store. Execute bash now so the events are available
-        // when the TUI polls events().
-        $this->executeShellCommand($runId, new UserCommand(
-            type: 'shell_command',
-            text: $command,
-        ));
-
-        // Emit a terminal AgentEnd event so the TUI poller transitions
-        // from Running to Completed and clears the working indicator.
-        // Without this, the ActivityStateMachine never leaves Running
-        // because standalone shell commands only emit tool_execution
-        // events (no RunCompleted / AgentEnd).
-        $this->completeRun($runId);
-
-        return new RunHandle(runId: $runId, status: 'completed');
-    }
-
-    public function completeRun(string $runId): void
-    {
-        $this->eventStore->append(new RunEvent(
-            runId: $runId,
-            seq: 0,
-            turnNo: 0,
-            type: RunEventTypeEnum::AgentEnd->value,
-            payload: ['reason' => 'completed'],
-        ));
+        return new RunHandle(runId: $sessionId, status: 'completed');
     }
 
     public function compact(string $runId, ?string $customInstructions = null): void
@@ -367,96 +339,11 @@ final class InProcessAgentSessionClient implements AgentSessionClient
     }
 
     /**
-     * Execute a shell command submitted via the ! prefix.
-     *
-     * Executes bash through the shared tool executor path, persists
-     * tool_execution_start / tool_execution_end events into the canonical
-     * event store, and does NOT add output to model context or trigger
-     * an LLM turn.
-     *
-     * When no ToolExecutor is configured (null), a diagnostic error
-     * event is emitted instead so the user sees a clear message.
+     * Forward a shell command submitted while a run already exists through
+     * the same locked pipeline used by first-input shellExecute().
      */
     private function handleShellCommandSend(string $runId, UserCommand $command): void
     {
-        $this->executeShellCommand($runId, $command);
-
-        if ((bool) ($command->payload['standalone'] ?? false)) {
-            $this->completeRun($runId);
-        }
-    }
-
-    private function executeShellCommand(string $runId, UserCommand $command): void
-    {
-        $commandText = $command->text ?? '';
-
-        if ('' === $commandText) {
-            return;
-        }
-
-        $toolCallId = uniqid('sh_', true);
-
-        $this->eventStore->append(new RunEvent(
-            runId: $runId,
-            seq: 0,
-            turnNo: 0,
-            type: RunEventTypeEnum::ToolExecutionStart->value,
-            payload: [
-                'tool_call_id' => $toolCallId,
-                'tool_name' => 'bash',
-                'order_index' => 0,
-            ],
-        ));
-
-        if (null === $this->toolExecutor) {
-            // No ToolExecutor configured — emit a diagnostic error event.
-            $this->eventStore->append(new RunEvent(
-                runId: $runId,
-                seq: 0,
-                turnNo: 0,
-                type: RunEventTypeEnum::ToolExecutionEnd->value,
-                payload: [
-                    'tool_call_id' => $toolCallId,
-                    'is_error' => true,
-                    'result' => 'Shell command execution unavailable: ToolExecutor not configured.',
-                ],
-            ));
-
-            return;
-        }
-
-        // Execute bash through the shared tool executor.
-        // Uses a synthetic ToolCall so cancellation/timeout/approval hooks
-        // from the existing tool infrastructure apply.
-        $result = $this->toolExecutor->execute(new ToolCall(
-            toolCallId: $toolCallId,
-            toolName: 'bash',
-            arguments: ['command' => $commandText],
-            orderIndex: 0,
-            runId: $runId,
-        ));
-
-        // Extract the result text from the ToolResult's content blocks.
-        $resultText = '';
-        foreach ($result->content as $contentBlock) {
-            if (\is_array($contentBlock) && 'text' === ($contentBlock['type'] ?? '')) {
-                $resultText .= (string) ($contentBlock['text'] ?? '');
-            } elseif (\is_string($contentBlock)) {
-                $resultText .= $contentBlock;
-            }
-        }
-
-        // Emit tool_execution_end event with result text.
-        $this->eventStore->append(new RunEvent(
-            runId: $runId,
-            seq: 0,
-            turnNo: 0,
-            type: RunEventTypeEnum::ToolExecutionEnd->value,
-            payload: [
-                'tool_call_id' => $toolCallId,
-                'is_error' => $result->isError,
-                'result' => $resultText,
-            ],
-        ));
+        $this->runner->shell($runId, $command->text ?? '');
     }
 }

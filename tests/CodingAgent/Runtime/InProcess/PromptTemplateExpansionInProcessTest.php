@@ -5,11 +5,8 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Runtime\InProcess;
 
 use Ineersa\AgentCore\Contract\AgentRunnerInterface;
-use Ineersa\AgentCore\Contract\Tool\ToolExecutorInterface;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Run\StartRunInput;
-use Ineersa\AgentCore\Domain\Tool\ToolCall;
-use Ineersa\AgentCore\Domain\Tool\ToolResult;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
 use Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient;
@@ -30,8 +27,6 @@ use Ineersa\CodingAgent\Tests\TestCase\PerMethodIsolatedKernelTestCase;
 final class PromptTemplateExpansionInProcessTest extends PerMethodIsolatedKernelTestCase
 {
     private FakeCapturingAgentRunner $spyRunner;
-
-    private FakeCapturingToolExecutor $spyToolExecutor;
 
     // ── start() expansion ──────────────────────────────────────────
 
@@ -172,21 +167,20 @@ final class PromptTemplateExpansionInProcessTest extends PerMethodIsolatedKernel
         // text is passed to the tool executor unchanged.
         $this->client()->send('run-1', new UserCommand(
             type: 'shell_command',
-            text: '/review rm -rf',
+            text: '!review rm -rf',
         ));
 
-        $this->assertNotNull($this->spyToolExecutor->lastToolCall);
-        $this->assertSame('/review rm -rf', $this->spyToolExecutor->lastToolCall->arguments['command']);
+        $this->assertSame([
+            ['runId' => 'run-1', 'rawInput' => '!review rm -rf'],
+        ], $this->spyRunner->shellCalls);
     }
 
     protected function afterKernelBoot(): void
     {
         // Install spies before any test code resolves the real services.
         $this->spyRunner = new FakeCapturingAgentRunner();
-        $this->spyToolExecutor = new FakeCapturingToolExecutor();
 
         self::getContainer()->set(AgentRunnerInterface::class, $this->spyRunner);
-        self::getContainer()->set(ToolExecutorInterface::class, $this->spyToolExecutor);
     }
 
     // ── Helpers ───────────────────────────────────────────────────
@@ -247,6 +241,10 @@ final class FakeCapturingAgentRunner implements AgentRunnerInterface
 
     /** @var list<AgentMessage> */
     public array $followUpMessages = [];
+
+    /** @var list<array{runId: string, rawInput: string}> */
+    public array $shellCalls = [];
+
     /** @var list<AgentMessage> */
     public array $appendMessages = [];
 
@@ -259,6 +257,7 @@ final class FakeCapturingAgentRunner implements AgentRunnerInterface
         $this->lastStartInput = null;
         $this->steerMessages = [];
         $this->followUpMessages = [];
+        $this->shellCalls = [];
         $this->answerHumanCalls = [];
     }
 
@@ -271,6 +270,11 @@ final class FakeCapturingAgentRunner implements AgentRunnerInterface
 
     public function continue(string $runId): void
     {
+    }
+
+    public function shell(string $runId, string $rawInput): void
+    {
+        $this->shellCalls[] = ['runId' => $runId, 'rawInput' => $rawInput];
     }
 
     public function steer(string $runId, AgentMessage $message): void
@@ -299,31 +303,5 @@ final class FakeCapturingAgentRunner implements AgentRunnerInterface
 
     public function compact(string $runId, ?string $customInstructions = null): void
     {
-    }
-}
-
-/**
- * @internal
- */
-final class FakeCapturingToolExecutor implements ToolExecutorInterface
-{
-    public ?ToolCall $lastToolCall = null;
-
-    /** Clear captured state between test methods. */
-    public function reset(): void
-    {
-        $this->lastToolCall = null;
-    }
-
-    public function execute(ToolCall $toolCall): ToolResult
-    {
-        $this->lastToolCall = $toolCall;
-
-        return new ToolResult(
-            toolCallId: $toolCall->toolCallId,
-            toolName: $toolCall->toolName,
-            content: [['type' => 'text', 'text' => 'ok']],
-            isError: false,
-        );
     }
 }

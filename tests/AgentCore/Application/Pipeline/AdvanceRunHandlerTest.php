@@ -9,12 +9,9 @@ use Ineersa\AgentCore\Application\Handler\CommandRouter;
 use Ineersa\AgentCore\Application\Handler\RunMetrics;
 use Ineersa\AgentCore\Application\Pipeline\AdvanceRunHandler;
 use Ineersa\AgentCore\Application\Pipeline\CommandMailboxPolicy;
-use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Domain\Command\CoreCommandKind;
 use Ineersa\AgentCore\Domain\Command\PendingCommand;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
-use Ineersa\AgentCore\Domain\Event\RunEvent;
-use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Extension\CommandCancellationOptions;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
@@ -54,7 +51,7 @@ final class AdvanceRunHandlerTest extends TestCase
 
         $message = AdvanceRunMessageBuilder::create('run-advance-handler-1')
             ->withTurnNo(2)
-            ->withStepId('turn-3-step')
+            ->withStepId('turn-12-step')
             ->withIdempotencyKey('advance-idempotency-1')
             ->build();
 
@@ -63,22 +60,22 @@ final class AdvanceRunHandlerTest extends TestCase
         $this->assertNotNull($result->nextState);
         $this->assertSame(RunStatus::Running, $result->nextState->status);
         $this->assertSame(8, $result->nextState->version);
-        $this->assertSame(3, $result->nextState->turnNo);
+        $this->assertSame(12, $result->nextState->turnNo);
         $this->assertSame(13, $result->nextState->lastSeq);
-        $this->assertSame('turn-3-step', $result->nextState->activeStepId);
+        $this->assertSame('turn-12-step', $result->nextState->activeStepId);
 
         $this->assertCount(2, $result->events);
         $this->assertSame('turn_advanced', $result->events[0]->type);
         $this->assertSame('leaf_set', $result->events[1]->type);
-        $this->assertSame(3, $result->events[1]->payload['turn_no']);
+        $this->assertSame(12, $result->events[1]->payload['turn_no']);
         $this->assertSame('continue', $result->events[1]->payload['reason']);
-        $this->assertSame(3, $result->events[0]->payload['turn_no']);
+        $this->assertSame(12, $result->events[0]->payload['turn_no']);
         $this->assertSame(2, $result->events[0]->payload['parent_turn_no']);
 
         $this->assertCount(1, $result->effects);
         $this->assertInstanceOf(ExecuteLlmStep::class, $result->effects[0]);
-        $this->assertSame(3, $result->effects[0]->turnNo());
-        $this->assertSame('turn-3-step', $result->effects[0]->stepId());
+        $this->assertSame(12, $result->effects[0]->turnNo());
+        $this->assertSame('turn-12-step', $result->effects[0]->stepId());
 
         $this->assertSame([], $result->postCommitEffects);
         $this->assertCount(1, $result->postCommit);
@@ -128,10 +125,10 @@ final class AdvanceRunHandlerTest extends TestCase
 
         $result = $handler->handle($message, $state);
 
-        // AdvanceRun should transition Cancelled → Running and advance the turn
+        // AdvanceRun should transition Cancelled → Running and allocate from the canonical sequence high-water.
         $this->assertNotNull($result->nextState);
         $this->assertSame(RunStatus::Running, $result->nextState->status, 'Cancelled run with pending FollowUp should transition to Running');
-        $this->assertSame(2, $result->nextState->turnNo, 'Turn should advance from 1 to 2');
+        $this->assertSame(11, $result->nextState->turnNo, 'Turn should advance to max(lastSeq, turnNo)+1');
         $this->assertNull($result->nextState->errorMessage, 'errorMessage should be cleared when transitioning Cancelled → Running');
 
         // Should produce events including agent_command_applied, turn_advanced, and leaf_set
@@ -186,7 +183,7 @@ final class AdvanceRunHandlerTest extends TestCase
 
         $this->assertNotNull($result->nextState);
         $this->assertSame(RunStatus::Running, $result->nextState->status, 'WaitingHuman run with pending FollowUp should transition to Running');
-        $this->assertSame(23, $result->nextState->turnNo, 'Turn should advance from 22 to 23');
+        $this->assertSame(279, $result->nextState->turnNo, 'Turn should advance to max(lastSeq, turnNo)+1');
         $this->assertNull($result->nextState->errorMessage, 'errorMessage should be cleared when transitioning WaitingHuman → Running');
 
         $eventTypes = array_map(static fn ($e) => $e->type, $result->events);
@@ -228,18 +225,18 @@ final class AdvanceRunHandlerTest extends TestCase
         $result = $handler->handle($message, $state);
 
         $this->assertNotNull($result->nextState);
-        $this->assertSame(1, $result->nextState->turnNo);
+        $this->assertSame(4, $result->nextState->turnNo);
 
         // leaf_set must be present
         $this->assertCount(2, $result->events);
         $this->assertSame('turn_advanced', $result->events[0]->type);
         $this->assertSame('leaf_set', $result->events[1]->type);
 
-        // parent_turn_no must be null for the root turn (turnNo 1)
+        // parent_turn_no must be null for the root turn (the sparse identity is 4 here).
         $this->assertArrayHasKey('parent_turn_no', $result->events[0]->payload);
         $this->assertNull($result->events[0]->payload['parent_turn_no']);
-        $this->assertSame(1, $result->events[0]->payload['turn_no']);
-        $this->assertSame(1, $result->events[1]->payload['turn_no']);
+        $this->assertSame(4, $result->events[0]->payload['turn_no']);
+        $this->assertSame(4, $result->events[1]->payload['turn_no']);
         $this->assertNull($result->events[1]->payload['parent_turn_no']);
         $this->assertNull($result->events[1]->payload['previous_turn_no']);
     }
@@ -542,8 +539,8 @@ final class AdvanceRunHandlerTest extends TestCase
             'Steer on Completed run MUST transition to Running.',
         );
 
-        // Should advance the turn
-        $this->assertSame(2, $result->nextState->turnNo, 'Steer should advance the turn.');
+        // Should allocate the next sparse turn identity from the canonical sequence high-water.
+        $this->assertSame(11, $result->nextState->turnNo, 'Steer should advance to max(lastSeq, turnNo)+1.');
     }
 
     public function testCancellingWithPendingAppendMessageTerminalizesBeforeMailboxDrain(): void
@@ -687,32 +684,15 @@ final class AdvanceRunHandlerTest extends TestCase
         $this->assertSame([], $commandBus->messages);
     }
 
-    // ── Branch-aware turn allocation (Phase A5) ─────────────────────────────
+    // ── Branch-aware turn allocation ─────────────────────────────────────
 
-    public function testTurnAllocationAfterRewindReturnsBranchAwareTurnNo(): void
+    public function testTurnAllocationAfterRewindUsesCanonicalSequenceHighWater(): void
     {
-        // Thesis: after rewind to turn N where turns N+1, N+2 exist in the
-        // canonical event stream (abandoned branch), the next AdvanceRun
-        // allocates max(globalMaxTurnNo, state.turnNo) + 1 = N+3, NOT N+1
-        // (which would collide with the already-existing abandoned turn).
-        // This test would FAIL with the old state.turnNo+1 allocation.
+        // Thesis: after rewind to turn N, next child turn uses
+        // max(state.lastSeq, state.turnNo)+1 rather than scanning EventStore.
+        // With lastSeq=10 and turnNo=1, next turn is 11.
 
         $runId = 'run-branch-alloc-test';
-
-        // Create events for turns 1, 2, 3 (linear, pre-rewind).
-        $events = [
-            new RunEvent($runId, seq: 1, turnNo: 0, type: 'run_started', payload: ['payload' => ['messages' => []]]),
-            new RunEvent($runId, seq: 2, turnNo: 1, type: RunEventTypeEnum::TurnAdvanced->value, payload: ['turn_no' => 1]),
-            new RunEvent($runId, seq: 3, turnNo: 1, type: RunEventTypeEnum::LeafSet->value, payload: ['turn_no' => 1, 'reason' => 'continue']),
-            new RunEvent($runId, seq: 4, turnNo: 2, type: RunEventTypeEnum::TurnAdvanced->value, payload: ['turn_no' => 2, 'parent_turn_no' => 1]),
-            new RunEvent($runId, seq: 5, turnNo: 2, type: RunEventTypeEnum::LeafSet->value, payload: ['turn_no' => 2, 'reason' => 'continue']),
-            new RunEvent($runId, seq: 6, turnNo: 3, type: RunEventTypeEnum::TurnAdvanced->value, payload: ['turn_no' => 3, 'parent_turn_no' => 2]),
-            new RunEvent($runId, seq: 7, turnNo: 3, type: RunEventTypeEnum::LeafSet->value, payload: ['turn_no' => 3, 'reason' => 'continue']),
-        ];
-
-        $eventStore = $this->createStub(EventStoreInterface::class);
-        $eventStore->method('allFor')->willReturn($events);
-
         $commandStore = new InMemoryCommandStore();
         $commandMailboxPolicy = new CommandMailboxPolicy(
             commandStore: $commandStore,
@@ -722,11 +702,8 @@ final class AdvanceRunHandlerTest extends TestCase
         $handler = new AdvanceRunHandler(
             commandMailboxPolicy: $commandMailboxPolicy,
             eventFactory: new EventFactory(),
-            eventStore: $eventStore,
         );
 
-        // State after rewind: turnNo=1 (back to turn 1), but canonical events
-        // have turnNo up to 3 (the abandoned branch).
         $state = RunStateBuilder::create($runId)
             ->withStatus(RunStatus::Running)
             ->withVersion(8)
@@ -744,29 +721,9 @@ final class AdvanceRunHandlerTest extends TestCase
         $result = $handler->handle($message, $state);
 
         $this->assertNotNull($result->nextState);
-        $this->assertSame(RunStatus::Running, $result->nextState->status);
-
-        // Critical assertion: next turn must NOT be 2 (would collide with
-        // abandoned turn 2). Must be max(3, 1) + 1 = 4.
-        $this->assertSame(4, $result->nextState->turnNo,
-            'After rewind to turn 1 with abandoned turns 2,3, next turn must be 4 (not 2).'
+        $this->assertSame(11, $result->nextState->turnNo,
+            'After rewind, next turn must be max(lastSeq, turnNo)+1.'
         );
-
-        $this->assertCount(2, $result->events);
-        $this->assertSame('turn_advanced', $result->events[0]->type);
-        $this->assertSame(4, $result->events[0]->payload['turn_no'],
-            'turn_advanced payload must carry branch-aware turn_no=4.'
-        );
-        $this->assertSame('leaf_set', $result->events[1]->type);
-        $this->assertSame(4, $result->events[1]->payload['turn_no'],
-            'leaf_set payload must carry branch-aware turn_no=4.'
-        );
-        $this->assertSame('continue', $result->events[1]->payload['reason']);
-
-        $this->assertCount(1, $result->effects);
-        $this->assertInstanceOf(ExecuteLlmStep::class, $result->effects[0]);
-        $this->assertSame(4, $result->effects[0]->turnNo(),
-            'ExecuteLlmStep effect must carry branch-aware turnNo=4.'
-        );
+        $this->assertSame(11, $result->events[0]->payload['turn_no']);
     }
 }

@@ -460,14 +460,13 @@ services:
   Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient:
     alias: 'Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient'
 
-  # ShellCommandHandler dispatches ExecuteShellToolCall messages on the
-  # agent.execution.bus (not the default agent.command.bus) so that shell
-  # command tool execution runs in the tool consumer process (issue #183).
+  # ShellCommandHandler validates the JSONL shell_command protocol and dispatches
+  # ApplyShellCommand on the command bus. ApplyShellCommandHandler (under the run
+  # lock) owns turn allocation and later dispatches ExecuteShellToolCall on the
+  # execution bus so bash still runs in the tool consumer (issue #183).
   Ineersa\CodingAgent\Runtime\Controller\CommandHandler\ShellCommandHandler:
     arguments:
-      $executionBus: '@agent.execution.bus'
-
-
+      $commandBus: '@agent.command.bus'
 
   # Explicit wiring overrides Ineersa\CodingAgent\ resource autowire (bool $streamCommittedEventsToStdout).
   Ineersa\CodingAgent\Runtime\Stream\StreamingCommittedRuntimeEventStore:

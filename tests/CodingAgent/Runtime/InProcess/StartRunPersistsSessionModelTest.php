@@ -544,6 +544,10 @@ final class FakeNoopAgentRunner implements AgentRunnerInterface
     {
     }
 
+    public function shell(string $runId, string $rawInput): void
+    {
+    }
+
     public function steer(string $runId, AgentMessage $message): void
     {
     }

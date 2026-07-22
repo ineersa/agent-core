@@ -45,6 +45,7 @@ final class ExecuteShellToolCallWorkerTest extends TestCase
         $worker = new ExecuteShellToolCallWorker($toolExecutor, $eventStore);
         $worker(new ExecuteShellToolCall(
             runId: 'run-standalone',
+            turnNo: 2,
             toolCallId: 'sh_tc_1',
             commandText: 'echo hello',
             standalone: true,
@@ -55,11 +56,13 @@ final class ExecuteShellToolCallWorkerTest extends TestCase
         // Seq 1: tool_execution_start
         $this->assertSame(1, $this->appendedEvents[0]->seq);
         $this->assertSame(RunEventTypeEnum::ToolExecutionStart->value, $this->appendedEvents[0]->type);
+        $this->assertSame(2, $this->appendedEvents[0]->turnNo);
         $this->assertSame('sh_tc_1', $this->appendedEvents[0]->payload['tool_call_id'] ?? null);
 
         // Seq 2: tool_execution_end
         $this->assertSame(2, $this->appendedEvents[1]->seq);
         $this->assertSame(RunEventTypeEnum::ToolExecutionEnd->value, $this->appendedEvents[1]->type);
+        $this->assertSame(2, $this->appendedEvents[1]->turnNo);
         $this->assertSame('sh_tc_1', $this->appendedEvents[1]->payload['tool_call_id'] ?? null);
         $this->assertStringContainsString('hello', (string) ($this->appendedEvents[1]->payload['result'] ?? ''));
 
@@ -99,6 +102,7 @@ final class ExecuteShellToolCallWorkerTest extends TestCase
         $worker = new ExecuteShellToolCallWorker($toolExecutor, $eventStore);
         $worker(new ExecuteShellToolCall(
             runId: 'run-inline',
+            turnNo: 2,
             toolCallId: 'sh_tc_2',
             commandText: 'echo inline',
             standalone: false,

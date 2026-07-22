@@ -6,6 +6,7 @@ This README is an architecture map (not an index).
 
 - `StartRun` -> `RunOrchestrator::onStartRun()` on `agent.command.bus`
 - `ApplyCommand` -> `RunOrchestrator::onApplyCommand()` on `agent.command.bus`
+- `ApplyShellCommand` -> `RunOrchestrator::onApplyShellCommand()` on `agent.command.bus`
 - `AdvanceRun` -> `RunOrchestrator::onAdvanceRun()` on `agent.command.bus`
 - `LlmStepResult` -> routed `run_control`; `RunOrchestrator::onLlmStepResult()` on `agent.command.bus`
 - `ToolCallResult` -> routed `run_control`; `RunOrchestrator::onToolCallResult()` on `agent.command.bus`
@@ -25,6 +26,10 @@ Note: `CollectToolBatch` is routed to `agent.execution.bus` in `config/messenger
 - `ApplyCommand`
   - dispatched by: `AgentRunner::continue()/steer()/followUp()/cancel()/answerHuman()` via `applyCoreCommand()`
   - handled by: `RunOrchestrator::onApplyCommand()` -> `RunMessageProcessor` -> `ApplyCommandHandler`
+- `ApplyShellCommand`
+  - dispatched by: `AgentRunner::shell()`, controller `ShellCommandHandler`, and in-process shell send path
+  - handled by: `RunOrchestrator::onApplyShellCommand()` -> `RunMessageProcessor` -> `ApplyShellCommandHandler`
+  - effect: `ExecuteShellToolCall` on `agent.execution.bus` (tool consumer writes tool lifecycle / optional AgentEnd)
 - `AdvanceRun`
   - dispatched by: `StartRunHandler` (initial post-commit kickoff), `ApplyCommandHandler` and `LlmStepResultHandler` follow-up callbacks, plus `AgentLoopResumeStaleRunsCommand::execute()`
   - handled by: `RunOrchestrator::onAdvanceRun()` -> `RunMessageProcessor` -> `AdvanceRunHandler`
