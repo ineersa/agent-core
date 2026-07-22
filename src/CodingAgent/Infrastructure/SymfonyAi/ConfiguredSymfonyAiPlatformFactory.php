@@ -6,7 +6,6 @@ namespace Ineersa\CodingAgent\Infrastructure\SymfonyAi;
 
 use Symfony\AI\Platform\ModelRouter\CatalogBasedModelRouter;
 use Symfony\AI\Platform\Platform;
-use Symfony\AI\Platform\PlatformInterface;
 use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 
 /**
@@ -19,11 +18,8 @@ use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
  *
  * The returned Platform is used as the concrete implementation behind
  * {@see Symfony\AI\Platform\PlatformInterface} in the DI container.
- * Callers that must avoid eager provider construction should depend on
- * {@see SymfonyPlatformFactoryInterface} and invoke createPlatform() only
- * when a model call is actually required.
  */
-final class ConfiguredSymfonyAiPlatformFactory implements SymfonyPlatformFactoryInterface
+final class ConfiguredSymfonyAiPlatformFactory
 {
     public function __construct(
         private readonly SymfonyAiProviderFactory $providerFactory,
@@ -36,7 +32,7 @@ final class ConfiguredSymfonyAiPlatformFactory implements SymfonyPlatformFactory
      *
      * @throws \RuntimeException when no providers are configured
      */
-    public function createPlatform(): PlatformInterface
+    public function createPlatform(): Platform
     {
         $providers = $this->providerFactory->createProviders();
 

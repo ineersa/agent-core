@@ -10,14 +10,8 @@ use Ineersa\Hatfield\ExtensionApi\Exec\ExecInterface;
 use Ineersa\Hatfield\ExtensionApi\Exec\ExecOptionsDTO;
 use Ineersa\Hatfield\ExtensionApi\Exec\ExecResultDTO;
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
-use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterConversationBoundaryHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterTurnCommitHookInterface;
-use Ineersa\Hatfield\ExtensionApi\Lifecycle\RuntimeLifecycleHookInterface;
-use Ineersa\Hatfield\ExtensionApi\Model\ModelCallException;
-use Ineersa\Hatfield\ExtensionApi\Model\ModelCallResultDTO;
 use Ineersa\Hatfield\ExtensionApi\Prompt\PromptContributorInterface;
-use Ineersa\Hatfield\ExtensionApi\Session\SessionEventReaderException;
-use Ineersa\Hatfield\ExtensionApi\Session\SessionEventReaderInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallRewriteHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolRegistrationDTO;
@@ -62,12 +56,6 @@ final class InMemoryExtensionApiBridge implements ExtensionApiInterface
 
     /** @var list<AfterTurnCommitHookInterface> */
     private array $afterTurnCommitHooks = [];
-
-    /** @var list<AfterConversationBoundaryHookInterface> */
-    private array $afterConversationBoundaryHooks = [];
-
-    /** @var list<RuntimeLifecycleHookInterface> */
-    private array $runtimeLifecycleHooks = [];
 
     public function __construct(?string $cwd = null)
     {
@@ -166,46 +154,5 @@ final class InMemoryExtensionApiBridge implements ExtensionApiInterface
     public function registerAfterTurnCommitHook(AfterTurnCommitHookInterface $hook): void
     {
         $this->afterTurnCommitHooks[] = $hook;
-    }
-
-    public function sessionEvents(): SessionEventReaderInterface
-    {
-        return new class implements SessionEventReaderInterface {
-            public function readRange(string $runId, int $startSeq, int $endSeq): array
-            {
-                throw SessionEventReaderException::readFailed($runId, 'sessionEvents is not supported on the InMemoryExtensionApiBridge.');
-            }
-        };
-    }
-
-    public function callModel(
-        string $model,
-        array $messages,
-        array $tools = [],
-        ?array $structuredContent = null,
-    ): ModelCallResultDTO {
-        throw ModelCallException::unsupported($model, 'callModel is not supported on the InMemoryExtensionApiBridge.');
-    }
-
-    public function registerAfterConversationBoundaryHook(AfterConversationBoundaryHookInterface $hook): void
-    {
-        $this->afterConversationBoundaryHooks[] = $hook;
-    }
-
-    /** @return list<AfterConversationBoundaryHookInterface> */
-    public function getAfterConversationBoundaryHooks(): array
-    {
-        return $this->afterConversationBoundaryHooks;
-    }
-
-    public function registerRuntimeLifecycleHook(RuntimeLifecycleHookInterface $hook): void
-    {
-        $this->runtimeLifecycleHooks[] = $hook;
-    }
-
-    /** @return list<RuntimeLifecycleHookInterface> */
-    public function getRuntimeLifecycleHooks(): array
-    {
-        return $this->runtimeLifecycleHooks;
     }
 }

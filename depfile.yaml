@@ -529,7 +529,6 @@ parameters:
       - AppRuntimeContract
       - AppRuntimeProjection
       - AppExtensionApi
-      - AppExtension
       - AppSystemPrompt
       - AppSkills
       - AppAgent
@@ -632,8 +631,6 @@ parameters:
       - AppRuntimeContract
       - AppConfig
       - AppTool
-      - AppSession
-      - AppInfrastructureSymfonyAi
       - AgentCore
       - SymfonyAiPlatform
       - SymfonyEventDispatcher

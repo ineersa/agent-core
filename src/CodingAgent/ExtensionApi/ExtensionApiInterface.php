@@ -7,13 +7,8 @@ namespace Ineersa\Hatfield\ExtensionApi;
 use Ineersa\Hatfield\ExtensionApi\Command\CommandDefinitionDTO;
 use Ineersa\Hatfield\ExtensionApi\Command\ExtensionCommandHandlerInterface;
 use Ineersa\Hatfield\ExtensionApi\Exec\ExecInterface;
-use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterConversationBoundaryHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterTurnCommitHookInterface;
-use Ineersa\Hatfield\ExtensionApi\Lifecycle\RuntimeLifecycleHookInterface;
-use Ineersa\Hatfield\ExtensionApi\Model\ModelCallException;
-use Ineersa\Hatfield\ExtensionApi\Model\ModelCallResultDTO;
 use Ineersa\Hatfield\ExtensionApi\Prompt\PromptContributorInterface;
-use Ineersa\Hatfield\ExtensionApi\Session\SessionEventReaderInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallRewriteHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolRegistrationDTO;
@@ -91,48 +86,6 @@ interface ExtensionApiInterface
     public function exec(): ExecInterface;
 
     /**
-     * Get the read-only canonical session event reader.
-     *
-     * Returns public SessionEventDTO values only. Reads are non-branch-aware
-     * and use (run_id, seq) source identity.
-     *
-     * @see SessionEventReaderInterface
-     */
-    public function sessionEvents(): SessionEventReaderInterface;
-
-    /**
-     * Perform one blocking, non-streaming model call.
-     *
-     * Model must be an exact configured provider/model reference. Only the
-     * tools array supplied by the extension is exposed; Hatfield ambient tools
-     * are never injected or executed. structuredContent is an optional
-     * provider-neutral JSON Schema object for structured responses.
-     *
-     * Message array schema (list of maps):
-     * - role: system|user|assistant|tool (required)
-     * - content: string (optional; default empty)
-     * - tool_call_id: string (required when role=tool)
-     * - tool_calls: list of {id, name, arguments?} (optional for assistant)
-     *
-     * Tool array schema (list of maps):
-     * - name: string (required)
-     * - description: string (optional)
-     * - parameters: JSON Schema object/map (optional)
-     *
-     * @param list<array<string, mixed>> $messages
-     * @param list<array<string, mixed>> $tools
-     * @param array<string, mixed>|null  $structuredContent JSON Schema object when structured output is requested
-     *
-     * @throws ModelCallException on invalid input, unknown model, unsupported semantics, or provider failure
-     */
-    public function callModel(
-        string $model,
-        array $messages,
-        array $tools = [],
-        ?array $structuredContent = null,
-    ): ModelCallResultDTO;
-
-    /**
      * Register a prompt contributor that injects markdown into the system prompt.
      *
      * The contributor's output is appended after static APPEND_SYSTEM.md content
@@ -171,21 +124,4 @@ interface ExtensionApiInterface
      * Register a hook invoked after AgentCore commits a turn.
      */
     public function registerAfterTurnCommitHook(AfterTurnCommitHookInterface $hook): void;
-
-    /**
-     * Register a post-commit terminal conversation-boundary hook.
-     *
-     * Delivery is best-effort after canonical event persistence with allocated
-     * seq. Distinct from AfterTurnCommitHookInterface, which remains for
-     * file-rewind and other per-commit observers.
-     */
-    public function registerAfterConversationBoundaryHook(AfterConversationBoundaryHookInterface $hook): void;
-
-    /**
-     * Register a hook for owning runtime process start/stop notifications.
-     *
-     * Notifications are emitted once per controller process, not per run and
-     * not from Messenger workers.
-     */
-    public function registerRuntimeLifecycleHook(RuntimeLifecycleHookInterface $hook): void;
 }

@@ -12,10 +12,8 @@ use Ineersa\CodingAgent\Extension\ExtensionExecBridge;
 use Ineersa\CodingAgent\Extension\ExtensionHookRegistry;
 use Ineersa\CodingAgent\Extension\ExtensionManager;
 use Ineersa\CodingAgent\Extension\ExtensionToolRegistryBridge;
-use Ineersa\CodingAgent\Extension\Model\ExtensionModelCallInterface;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tool\ToolRegistry;
-use Ineersa\Hatfield\ExtensionApi\Session\SessionEventReaderInterface;
 use Ineersa\HatfieldExt\TaskWorkflow\TaskWorkflowExtension;
 use Ineersa\Tui\Command\SlashCommandRegistry;
 use Ineersa\Tui\Extension\TuiCommandRegistryAdapter;
@@ -74,8 +72,6 @@ final class TaskWorkflowExtensionIntegrationTest extends TestCase
             $appConfig,
             $execBridge,
             $commandAdapter,
-            $this->createStub(SessionEventReaderInterface::class),
-            $this->createStub(ExtensionModelCallInterface::class),
         );
 
         $manager = new ExtensionManager($appConfig, $bridge, new NullLogger());

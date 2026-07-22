@@ -11,7 +11,6 @@ use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Extension\ExtensionHookRegistry;
 use Ineersa\CodingAgent\Extension\ExtensionToolHandlerAdapter;
 use Ineersa\CodingAgent\Extension\ExtensionToolRegistryBridge;
-use Ineersa\CodingAgent\Extension\Model\ExtensionModelCallInterface;
 use Ineersa\CodingAgent\Tests\Extension\Support\NoOpExtensionToolHandler;
 use Ineersa\CodingAgent\Tests\Extension\Support\RecordingExtensionToolHandler;
 use Ineersa\CodingAgent\Tool\ToolRegistry;
@@ -24,7 +23,6 @@ use Ineersa\Hatfield\ExtensionApi\Exec\ExecInterface;
 use Ineersa\Hatfield\ExtensionApi\Exec\ExecOptionsDTO;
 use Ineersa\Hatfield\ExtensionApi\Exec\ExecResultDTO;
 use Ineersa\Hatfield\ExtensionApi\Prompt\PromptContributorInterface;
-use Ineersa\Hatfield\ExtensionApi\Session\SessionEventReaderInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\ExtensionToolHandlerInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallContextDTO;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallDecisionDTO;
@@ -590,8 +588,6 @@ final class ExtensionToolRegistryBridgeTest extends TestCase
         ?AppConfig $appConfig = null,
         ?ExecInterface $execBridge = null,
         ?CommandRegistryInterface $commandRegistry = null,
-        ?SessionEventReaderInterface $sessionEventReader = null,
-        ?ExtensionModelCallInterface $modelCaller = null,
     ): ExtensionToolRegistryBridge {
         return new ExtensionToolRegistryBridge(
             $toolRegistry,
@@ -599,8 +595,6 @@ final class ExtensionToolRegistryBridgeTest extends TestCase
             $appConfig ?? $this->testAppConfig(),
             $execBridge ?? $this->dummyExecBridge(),
             $commandRegistry ?? $this->dummyCommandRegistry(),
-            $sessionEventReader ?? $this->createStub(SessionEventReaderInterface::class),
-            $modelCaller ?? $this->createStub(ExtensionModelCallInterface::class),
         );
     }
 

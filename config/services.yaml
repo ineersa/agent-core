@@ -210,27 +210,6 @@ services:
 
   Ineersa\CodingAgent\Extension\ExtensionExecBridge: ~
 
-  Ineersa\CodingAgent\Extension\Session\ExtensionSessionEventReader: ~
-
-  Ineersa\CodingAgent\Session\SessionExistenceCheckerInterface:
-    alias: Ineersa\CodingAgent\Session\HatfieldSessionStore
-
-  Ineersa\Hatfield\ExtensionApi\Session\SessionEventReaderInterface:
-    alias: Ineersa\CodingAgent\Extension\Session\ExtensionSessionEventReader
-
-  Ineersa\CodingAgent\Extension\Model\ExtensionModelCaller: ~
-
-  Ineersa\CodingAgent\Extension\Model\ExtensionModelCallInterface:
-    alias: Ineersa\CodingAgent\Extension\Model\ExtensionModelCaller
-
-  Ineersa\CodingAgent\Extension\Boundary\ConversationBoundaryProjector: ~
-
-  Ineersa\CodingAgent\Extension\Boundary\ConversationBoundaryNotifier: ~
-
-  Ineersa\CodingAgent\Extension\Boundary\ExtensionConversationBoundaryHookSubscriber: ~
-
-  Ineersa\CodingAgent\Extension\Lifecycle\RuntimeLifecycleNotifier: ~
-
   Ineersa\Tui\Extension\TuiCommandRegistryAdapter:
     arguments:
       $slashCommandRegistry: '@Ineersa\Tui\Command\SlashCommandRegistry'
@@ -243,8 +222,6 @@ services:
       $appConfig: '@Ineersa\CodingAgent\Config\AppConfig'
       $execBridge: '@Ineersa\CodingAgent\Extension\ExtensionExecBridge'
       $commandRegistry: '@Ineersa\Hatfield\ExtensionApi\Command\CommandRegistryInterface'
-      $sessionEventReader: '@Ineersa\Hatfield\ExtensionApi\Session\SessionEventReaderInterface'
-      $modelCaller: '@Ineersa\CodingAgent\Extension\Model\ExtensionModelCallInterface'
 
   Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface:
     alias: Ineersa\CodingAgent\Extension\ExtensionToolRegistryBridge
@@ -617,9 +594,6 @@ services:
   # patterns (phar:// paths require **/*.php globs for reliable Symfony DI
   # service discovery — bare directory paths register 0 services).
   Ineersa\CodingAgent\Infrastructure\SymfonyAi\ConfiguredSymfonyAiPlatformFactory: ~
-
-  Ineersa\CodingAgent\Infrastructure\SymfonyAi\SymfonyPlatformFactoryInterface:
-    alias: Ineersa\CodingAgent\Infrastructure\SymfonyAi\ConfiguredSymfonyAiPlatformFactory
 
   Symfony\AI\Platform\PlatformInterface:
     factory: ['@Ineersa\CodingAgent\Infrastructure\SymfonyAi\ConfiguredSymfonyAiPlatformFactory', 'createPlatform']
