@@ -7,20 +7,19 @@ namespace Ineersa\Hatfield\ExtensionApi\Model;
 /**
  * Completed non-streaming model call result for extensions.
  *
- * @phpstan-type StructuredContentObject array<string, mixed>
- * @phpstan-type StructuredContentList list<mixed>
+ * @phpstan-type StructuredContent array<string, mixed>|list<mixed>|null
  */
 final readonly class ModelCallResultDTO
 {
     /**
-     * @param list<ModelToolCallDTO>                             $toolCalls
-     * @param StructuredContentObject|StructuredContentList|null $structuredContent Parsed structured JSON when requested/available
+     * @param list<ModelToolCallDTO> $toolCalls
+     * @param StructuredContent      $structuredContent
      */
     public function __construct(
         public string $model,
         public string $content,
         public array $toolCalls = [],
-        public ?array $structuredContent = null,
+        public mixed $structuredContent = null,
     ) {
         if ('' === $this->model) {
             throw new \InvalidArgumentException('model must not be empty.');

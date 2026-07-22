@@ -9,12 +9,6 @@ namespace Ineersa\Hatfield\ExtensionApi\Lifecycle;
  *
  * Source identity is always (runId, seq). turnNo is diagnostic only and is
  * not part of the opaque boundary identity.
- *
- * boundaryAt semantics (MVP):
- * - AfterTurnCommit-derived boundaries currently reflect notification/projection
- *   time because AfterTurnCommit event summaries do not carry createdAt.
- * - Direct worker-failure permanent appends can preserve the terminal event's
- *   createdAt when that RunEvent is passed through intact.
  */
 final readonly class ConversationBoundaryDTO
 {
