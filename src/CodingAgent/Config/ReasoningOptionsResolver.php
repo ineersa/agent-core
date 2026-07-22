@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Config;
 
 use Ineersa\CodingAgent\Config\Ai\AiModelDefinition;
+use Ineersa\CodingAgent\Config\Ai\AiModelReference;
 use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
-use Ineersa\Hatfield\ExtensionApi\Model\AiModelReference;
 
 /**
  * Converts a global user-facing reasoning level + Hatfield model metadata

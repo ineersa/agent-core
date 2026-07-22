@@ -10,16 +10,14 @@ use Ineersa\Hatfield\ExtensionApi\Exec\ExecInterface;
 use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterConversationBoundaryHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterTurnCommitHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Lifecycle\RuntimeLifecycleHookInterface;
-use Ineersa\Hatfield\ExtensionApi\Model\AiModelReference;
+use Ineersa\Hatfield\ExtensionApi\Model\ModelCallException;
+use Ineersa\Hatfield\ExtensionApi\Model\ModelCallResultDTO;
 use Ineersa\Hatfield\ExtensionApi\Prompt\PromptContributorInterface;
 use Ineersa\Hatfield\ExtensionApi\Session\SessionEventReaderInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallRewriteHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolRegistrationDTO;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolResultHookInterface;
-use Symfony\AI\Agent\Toolbox\ToolboxInterface;
-use Symfony\AI\Platform\Message\MessageBag;
-use Symfony\AI\Platform\Result\ResultInterface;
 
 /**
  * Public API surface that Hatfield exposes to enabled extensions.
@@ -93,35 +91,50 @@ interface ExtensionApiInterface
     public function exec(): ExecInterface;
 
     /**
-     * Get the recovery/catch-up/compaction canonical session event reader.
+     * Get the read-only canonical session event reader.
      *
      * Returns public SessionEventDTO values only. Reads are non-branch-aware
-     * and use (run_id, seq) source identity. This is NOT a per-boundary hot-path
-     * reader; hot commit hooks expose just-persisted batches instead. The MVP
-     * implementation may scan the full journal and is acceptable only for
-     * recovery/compaction workloads.
+     * and use (run_id, seq) source identity.
      *
      * @see SessionEventReaderInterface
      */
     public function sessionEvents(): SessionEventReaderInterface;
 
     /**
-     * Perform one blocking, non-streaming model call through Hatfield's configured
-     * Symfony AI Platform.
+     * Perform one blocking, non-streaming model call.
      *
-     * Uses a standard Symfony AI Agent for `$model->toString()`. When a toolbox is
-     * supplied, attaches Symfony's AgentProcessor as both input and output processor
-     * so the normal tool-loop executes. Ambient Hatfield tools are never injected.
-     * Returns the native Symfony AI ResultInterface. Native provider/platform
-     * exceptions propagate; there is no parallel public error DTO.
+     * Model must be an exact configured provider/model reference (no aliases).
+     * Only the tools array supplied by the extension is exposed; Hatfield ambient
+     * tools are never injected or executed.
      *
-     * Structured-output helpers are intentionally out of scope for MVP.
+     * structuredContent is an optional JSON Schema object. Hatfield currently
+     * requests structured output via OpenAI-compatible `response_format`
+     * `json_schema` semantics (not a provider-neutral capability claim). Providers
+     * that do not support that shape fail through ModelCallException.
+     *
+     * Message array schema (list of maps):
+     * - role: system|user|assistant|tool (required)
+     * - content: string (optional; default empty)
+     * - tool_call_id: string (required when role=tool)
+     * - tool_calls: list of {id, name, arguments?} (optional for assistant)
+     *
+     * Tool array schema (list of maps):
+     * - name: string (required)
+     * - description: string (optional)
+     * - parameters: JSON Schema object/map (optional)
+     *
+     * @param list<array<string, mixed>> $messages
+     * @param list<array<string, mixed>> $tools
+     * @param array<string, mixed>|null  $structuredContent JSON Schema object when structured output is requested
+     *
+     * @throws ModelCallException on invalid input, unknown model, unsupported semantics, or provider failure
      */
     public function callModel(
-        AiModelReference $model,
-        MessageBag $messages,
-        ?ToolboxInterface $toolbox = null,
-    ): ResultInterface;
+        string $model,
+        array $messages,
+        array $tools = [],
+        ?array $structuredContent = null,
+    ): ModelCallResultDTO;
 
     /**
      * Register a prompt contributor that injects markdown into the system prompt.

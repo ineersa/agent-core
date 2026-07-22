@@ -19,10 +19,11 @@ use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
  *
  * The returned Platform is used as the concrete implementation behind
  * {@see Symfony\AI\Platform\PlatformInterface} in the DI container.
- * The PlatformInterface service is marked lazy so console/migration boots do
- * not construct providers until first use.
+ * Callers that must avoid eager provider construction should depend on
+ * {@see SymfonyPlatformFactoryInterface} and invoke createPlatform() only
+ * when a model call is actually required.
  */
-final class ConfiguredSymfonyAiPlatformFactory
+final class ConfiguredSymfonyAiPlatformFactory implements SymfonyPlatformFactoryInterface
 {
     public function __construct(
         private readonly SymfonyAiProviderFactory $providerFactory,

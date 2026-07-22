@@ -2,15 +2,13 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\Hatfield\ExtensionApi\Model;
+namespace Ineersa\CodingAgent\Config\Ai;
 
 /**
  * A reference to a specific model by provider and model name.
  *
  * Format: provider/model — parsed from a single string (e.g. deepseek/deepseek-v4-pro)
  * and rendered back to the same string form.
- *
- * Canonical public type shared by Hatfield config/runtime and ExtensionApi::callModel().
  */
 final readonly class AiModelReference
 {

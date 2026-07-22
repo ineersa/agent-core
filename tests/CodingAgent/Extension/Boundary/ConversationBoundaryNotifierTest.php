@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Extension\Boundary;
 
 use Ineersa\AgentCore\Domain\Event\RunEvent;
+use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Extension\Boundary\ConversationBoundaryNotifier;
 use Ineersa\CodingAgent\Extension\Boundary\ConversationBoundaryProjector;
@@ -15,16 +16,19 @@ use Ineersa\Hatfield\ExtensionApi\Lifecycle\ConversationBoundaryOutcomeEnum;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Thesis: terminal agent_end batches deliver one post-persist boundary with
- * sourceEndSeq/latestCommittedSeq/outcome derived solely from the current batch;
- * intermediate commits do not notify; hook failure is isolated; no event-store
- * history scan is required.
+ * Thesis: terminal agent_end commits deliver one post-persist boundary with
+ * deterministic range/outcome/watermark; intermediate commits do not; hook
+ * failure is isolated.
  */
 final class ConversationBoundaryNotifierTest extends TestCase
 {
-    public function testTerminalCompletedBatchNotifiesOnceFromCurrentBatchOnly(): void
+    public function testTerminalCompletedBatchNotifiesOnceWithDeterministicRange(): void
     {
-        $terminal = new RunEvent('run-1', 3, 1, 'agent_end', ['reason' => 'completed']);
+        $eventStore = new InMemoryEventStore();
+        $eventStore->append(new RunEvent('run-1', 1, 1, 'run_started', []));
+        $eventStore->append(new RunEvent('run-1', 2, 1, 'llm_step_completed', []));
+        $terminal = $eventStore->append(new RunEvent('run-1', 3, 1, 'agent_end', ['reason' => 'completed']));
+
         $registry = new ExtensionHookRegistry();
         $seen = [];
         $registry->addAfterConversationBoundaryHook(new class($seen) implements AfterConversationBoundaryHookInterface {
@@ -40,13 +44,13 @@ final class ConversationBoundaryNotifierTest extends TestCase
         });
 
         $notifier = new ConversationBoundaryNotifier(
-            new ConversationBoundaryProjector(),
+            new ConversationBoundaryProjector($eventStore),
             $registry,
             new TestLogger(),
         );
 
         $notifier->notifyPersistedBatch('run-1', [
-            new RunEvent('run-1', 2, 1, 'llm_step_completed', ['usage' => ['input_tokens' => 1]]),
+            new RunEvent('run-1', 2, 1, 'llm_step_completed', []),
             $terminal,
         ]);
 
@@ -54,17 +58,15 @@ final class ConversationBoundaryNotifierTest extends TestCase
         $boundary = $seen[0];
         $this->assertSame('run-1', $boundary->runId);
         $this->assertSame(ConversationBoundaryOutcomeEnum::Completed, $boundary->outcome);
+        $this->assertSame(1, $boundary->sourceStartSeq);
         $this->assertSame(3, $boundary->sourceEndSeq);
         $this->assertSame(3, $boundary->latestCommittedSeq);
         $this->assertSame(hash('sha256', 'run-1|3|completed'), $boundary->boundaryId);
-        $this->assertCount(2, $boundary->events);
-        $this->assertSame('llm_step_completed', $boundary->events[0]->type);
-        $this->assertSame(['usage' => ['input_tokens' => 1]], $boundary->events[0]->payload);
-        $this->assertSame(1, $boundary->events[0]->turnNo);
     }
 
     public function testIntermediateCommitDoesNotNotify(): void
     {
+        $eventStore = new InMemoryEventStore();
         $registry = new ExtensionHookRegistry();
         $called = false;
         $registry->addAfterConversationBoundaryHook(new class($called) implements AfterConversationBoundaryHookInterface {
@@ -79,7 +81,7 @@ final class ConversationBoundaryNotifierTest extends TestCase
         });
 
         $notifier = new ConversationBoundaryNotifier(
-            new ConversationBoundaryProjector(),
+            new ConversationBoundaryProjector($eventStore),
             $registry,
             new TestLogger(),
         );
@@ -94,7 +96,9 @@ final class ConversationBoundaryNotifierTest extends TestCase
 
     public function testHookFailureIsIsolatedAndDoesNotPropagate(): void
     {
-        $terminal = new RunEvent('run-3', 1, 1, 'agent_end', ['reason' => 'failed']);
+        $eventStore = new InMemoryEventStore();
+        $terminal = $eventStore->append(new RunEvent('run-3', 1, 1, 'agent_end', ['reason' => 'failed']));
+
         $registry = new ExtensionHookRegistry();
         $secondCalled = false;
         $registry->addAfterConversationBoundaryHook(new class implements AfterConversationBoundaryHookInterface {
@@ -116,7 +120,7 @@ final class ConversationBoundaryNotifierTest extends TestCase
 
         $logger = new TestLogger();
         $notifier = new ConversationBoundaryNotifier(
-            new ConversationBoundaryProjector(),
+            new ConversationBoundaryProjector($eventStore),
             $registry,
             $logger,
         );
@@ -126,5 +130,91 @@ final class ConversationBoundaryNotifierTest extends TestCase
         $this->assertTrue($secondCalled);
         $this->assertSame('warning', $logger->records[0]['level'] ?? null);
         $this->assertSame('extension.conversation_boundary_hook_failed', $logger->records[0]['message'] ?? null);
+    }
+
+    public function testSecondTerminalBoundaryStartsAfterPreviousTerminal(): void
+    {
+        $eventStore = new InMemoryEventStore();
+        $eventStore->append(new RunEvent('run-4', 1, 1, 'agent_end', ['reason' => 'completed']));
+        $eventStore->append(new RunEvent('run-4', 2, 2, 'llm_step_completed', []));
+        $second = $eventStore->append(new RunEvent('run-4', 3, 2, 'agent_end', ['reason' => 'cancelled']));
+
+        $registry = new ExtensionHookRegistry();
+        $seen = [];
+        $registry->addAfterConversationBoundaryHook(new class($seen) implements AfterConversationBoundaryHookInterface {
+            /** @param list<ConversationBoundaryDTO> $seen */
+            public function __construct(private array &$seen)
+            {
+            }
+
+            public function afterConversationBoundary(ConversationBoundaryDTO $boundary): void
+            {
+                $this->seen[] = $boundary;
+            }
+        });
+
+        $notifier = new ConversationBoundaryNotifier(
+            new ConversationBoundaryProjector($eventStore),
+            $registry,
+            new TestLogger(),
+        );
+        $notifier->notifyPersistedBatch('run-4', [$second]);
+
+        $this->assertCount(1, $seen);
+        $this->assertSame(2, $seen[0]->sourceStartSeq);
+        $this->assertSame(3, $seen[0]->sourceEndSeq);
+        $this->assertSame(ConversationBoundaryOutcomeEnum::Cancelled, $seen[0]->outcome);
+    }
+
+    public function testEventStoreHistoryReadFailureIsIsolatedAndSkipsHooks(): void
+    {
+        $eventStore = new class implements \Ineersa\AgentCore\Contract\EventStoreInterface {
+            public function append(RunEvent $event): RunEvent
+            {
+                return $event;
+            }
+
+            public function appendMany(array $events): array
+            {
+                return $events;
+            }
+
+            public function allFor(string $runId): array
+            {
+                throw new \RuntimeException('events.jsonl unreadable for '.$runId);
+            }
+        };
+
+        $registry = new ExtensionHookRegistry();
+        $called = false;
+        $registry->addAfterConversationBoundaryHook(new class($called) implements AfterConversationBoundaryHookInterface {
+            public function __construct(private bool &$called)
+            {
+            }
+
+            public function afterConversationBoundary(ConversationBoundaryDTO $boundary): void
+            {
+                $this->called = true;
+            }
+        });
+
+        $logger = new TestLogger();
+        $notifier = new ConversationBoundaryNotifier(
+            new ConversationBoundaryProjector($eventStore),
+            $registry,
+            $logger,
+        );
+
+        $terminal = new RunEvent('run-5', 7, 3, 'agent_end', ['reason' => 'completed']);
+        $notifier->notifyPersistedBatch('run-5', [$terminal]);
+
+        $this->assertFalse($called);
+        $this->assertSame('warning', $logger->records[0]['level'] ?? null);
+        $this->assertSame('extension.conversation_boundary_project_failed', $logger->records[0]['message'] ?? null);
+        $this->assertSame('extension_conversation_boundary', $logger->records[0]['context']['component'] ?? null);
+        $this->assertSame('conversation_boundary_project_failed', $logger->records[0]['context']['event_type'] ?? null);
+        $this->assertSame('run-5', $logger->records[0]['context']['run_id'] ?? null);
+        $this->assertArrayNotHasKey('exception_message', $logger->records[0]['context'] ?? []);
+        $this->assertArrayNotHasKey('payload', $logger->records[0]['context'] ?? []);
     }
 }

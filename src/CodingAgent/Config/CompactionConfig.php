@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Config;
 
-use Ineersa\Hatfield\ExtensionApi\Model\AiModelReference;
+use Ineersa\CodingAgent\Config\Ai\AiModelReference;
 use Symfony\Component\Serializer\Attribute\SerializedName;
 
 /**

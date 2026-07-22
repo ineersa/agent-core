@@ -220,6 +220,8 @@ services:
 
   Ineersa\CodingAgent\Extension\Model\ExtensionModelCaller: ~
 
+  Ineersa\CodingAgent\Extension\Model\ExtensionModelCallInterface:
+    alias: Ineersa\CodingAgent\Extension\Model\ExtensionModelCaller
 
   Ineersa\CodingAgent\Extension\Boundary\ConversationBoundaryProjector: ~
 
@@ -242,7 +244,7 @@ services:
       $execBridge: '@Ineersa\CodingAgent\Extension\ExtensionExecBridge'
       $commandRegistry: '@Ineersa\Hatfield\ExtensionApi\Command\CommandRegistryInterface'
       $sessionEventReader: '@Ineersa\Hatfield\ExtensionApi\Session\SessionEventReaderInterface'
-      $modelCaller: '@Ineersa\CodingAgent\Extension\Model\ExtensionModelCaller'
+      $modelCaller: '@Ineersa\CodingAgent\Extension\Model\ExtensionModelCallInterface'
 
   Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface:
     alias: Ineersa\CodingAgent\Extension\ExtensionToolRegistryBridge
@@ -616,10 +618,10 @@ services:
   # service discovery — bare directory paths register 0 services).
   Ineersa\CodingAgent\Infrastructure\SymfonyAi\ConfiguredSymfonyAiPlatformFactory: ~
 
-  # Lazy: do not construct providers/OAuth clients until first model call.
-  # Extension model bridge and LlmPlatformAdapter both inject this service.
+  Ineersa\CodingAgent\Infrastructure\SymfonyAi\SymfonyPlatformFactoryInterface:
+    alias: Ineersa\CodingAgent\Infrastructure\SymfonyAi\ConfiguredSymfonyAiPlatformFactory
+
   Symfony\AI\Platform\PlatformInterface:
-    lazy: true
     factory: ['@Ineersa\CodingAgent\Infrastructure\SymfonyAi\ConfiguredSymfonyAiPlatformFactory', 'createPlatform']
 
   # Default model binding (fallback when no resolver or no session context).

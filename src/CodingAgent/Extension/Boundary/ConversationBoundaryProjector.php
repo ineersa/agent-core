@@ -4,29 +4,36 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Extension\Boundary;
 
+use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\Hatfield\ExtensionApi\Lifecycle\ConversationBoundaryDTO;
 use Ineersa\Hatfield\ExtensionApi\Lifecycle\ConversationBoundaryOutcomeEnum;
-use Ineersa\Hatfield\ExtensionApi\Session\SessionEventDTO;
 
 /**
  * Stateless projector that derives post-commit conversation boundaries from
- * the just-persisted event batch only (no events.jsonl history scan).
+ * canonical event history and the just-committed batch.
  *
- * MVP rule:
+ * MVP range rule:
  * - Terminal marker is agent_end with reason completed|failed|cancelled in the
  *   just-committed batch (or a direct permanent-failure append of that event).
  * - sourceEndSeq is the terminal agent_end seq.
- * - latestCommittedSeq is the highest seq in the batch.
- * - Events after agent_end in the same batch do not change sourceEndSeq.
+ * - sourceStartSeq is the first seq after the previous terminal agent_end in
+ *   canonical history, or 1 when none exists.
+ * - Events after agent_end in the same batch do not extend the boundary range;
+ *   latestCommittedSeq still reflects the batch watermark.
  * - Intermediate/retryable commits without a terminal agent_end emit nothing.
- * - The extension owns its previous cursor; Hatfield does not invent sourceStartSeq.
+ * - Repair/rewind metadata events alone never create boundaries.
  *
  * @internal app-layer adapter; not part of ExtensionApi
  */
 final readonly class ConversationBoundaryProjector
 {
+    public function __construct(
+        private EventStoreInterface $eventStore,
+    ) {
+    }
+
     /**
      * @param list<RunEvent> $persistedEvents
      */
@@ -48,16 +55,17 @@ final readonly class ConversationBoundaryProjector
 
         $latestCommittedSeq = $persistedEvents[array_key_last($persistedEvents)]->seq;
         $sourceEndSeq = $terminal->seq;
+        $sourceStartSeq = $this->resolveSourceStartSeq($runId, $sourceEndSeq);
 
         return new ConversationBoundaryDTO(
             runId: $runId,
             sessionId: $runId,
             boundaryId: $this->boundaryId($runId, $sourceEndSeq, $outcome),
             outcome: $outcome,
+            sourceStartSeq: $sourceStartSeq,
             sourceEndSeq: $sourceEndSeq,
             latestCommittedSeq: max($latestCommittedSeq, $sourceEndSeq),
             boundaryAt: $terminal->createdAt,
-            events: $this->toSessionEvents($persistedEvents),
             metadata: [
                 'terminal_event_type' => $terminal->type,
                 'terminal_reason' => (string) ($terminal->payload['reason'] ?? $outcome->value),
@@ -100,26 +108,27 @@ final readonly class ConversationBoundaryProjector
         };
     }
 
-    /**
-     * @param list<RunEvent> $events
-     *
-     * @return list<SessionEventDTO>
-     */
-    private function toSessionEvents(array $events): array
+    private function resolveSourceStartSeq(string $runId, int $sourceEndSeq): int
     {
-        $out = [];
-        foreach ($events as $event) {
-            $out[] = new SessionEventDTO(
-                runId: $event->runId,
-                seq: $event->seq,
-                turnNo: $event->turnNo,
-                type: $event->type,
-                payload: $event->payload,
-                createdAt: $event->createdAt,
-            );
+        // Propagate event-store failures so ConversationBoundaryNotifier can
+        // isolate/log them and skip delivering an inaccurate boundary DTO.
+        $history = $this->eventStore->allFor($runId);
+
+        $previousTerminalSeq = 0;
+        foreach ($history as $event) {
+            if ($event->seq >= $sourceEndSeq) {
+                break;
+            }
+            if (RunEventTypeEnum::AgentEnd->value !== $event->type) {
+                continue;
+            }
+            if (null === $this->outcomeFromAgentEnd($event)) {
+                continue;
+            }
+            $previousTerminalSeq = $event->seq;
         }
 
-        return $out;
+        return max(1, $previousTerminalSeq + 1);
     }
 
     private function boundaryId(

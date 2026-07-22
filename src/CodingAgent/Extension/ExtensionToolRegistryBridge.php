@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Extension;
 
 use Ineersa\CodingAgent\Config\AppConfig;
-use Ineersa\CodingAgent\Extension\Model\ExtensionModelCaller;
+use Ineersa\CodingAgent\Extension\Model\ExtensionModelCallInterface;
 use Ineersa\CodingAgent\Tool\ToolRegistryInterface;
 use Ineersa\Hatfield\ExtensionApi\Command\CommandDefinitionDTO;
 use Ineersa\Hatfield\ExtensionApi\Command\CommandRegistryInterface;
@@ -15,16 +15,13 @@ use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
 use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterConversationBoundaryHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterTurnCommitHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Lifecycle\RuntimeLifecycleHookInterface;
-use Ineersa\Hatfield\ExtensionApi\Model\AiModelReference;
+use Ineersa\Hatfield\ExtensionApi\Model\ModelCallResultDTO;
 use Ineersa\Hatfield\ExtensionApi\Prompt\PromptContributorInterface;
 use Ineersa\Hatfield\ExtensionApi\Session\SessionEventReaderInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallRewriteHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolRegistrationDTO;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolResultHookInterface;
-use Symfony\AI\Agent\Toolbox\ToolboxInterface;
-use Symfony\AI\Platform\Message\MessageBag;
-use Symfony\AI\Platform\Result\ResultInterface;
 
 /**
  * Bridges public ExtensionApiInterface calls to the internal ToolRegistry.
@@ -50,7 +47,7 @@ final readonly class ExtensionToolRegistryBridge implements ExtensionApiInterfac
         private ExecInterface $execBridge,
         private CommandRegistryInterface $commandRegistry,
         private SessionEventReaderInterface $sessionEventReader,
-        private ExtensionModelCaller $modelCaller,
+        private ExtensionModelCallInterface $modelCaller,
     ) {
     }
 
@@ -126,11 +123,12 @@ final readonly class ExtensionToolRegistryBridge implements ExtensionApiInterfac
     }
 
     public function callModel(
-        AiModelReference $model,
-        MessageBag $messages,
-        ?ToolboxInterface $toolbox = null,
-    ): ResultInterface {
-        return $this->modelCaller->call($model, $messages, $toolbox);
+        string $model,
+        array $messages,
+        array $tools = [],
+        ?array $structuredContent = null,
+    ): ModelCallResultDTO {
+        return $this->modelCaller->call($model, $messages, $tools, $structuredContent);
     }
 
     public function registerPromptContributor(PromptContributorInterface $contributor): void

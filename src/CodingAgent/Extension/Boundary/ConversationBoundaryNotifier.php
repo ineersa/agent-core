@@ -59,6 +59,7 @@ final readonly class ConversationBoundaryNotifier
                     'session_id' => $runId,
                     'boundary_id' => $boundary->boundaryId,
                     'outcome' => $boundary->outcome->value,
+                    'source_start_seq' => $boundary->sourceStartSeq,
                     'source_end_seq' => $boundary->sourceEndSeq,
                     'latest_committed_seq' => $boundary->latestCommittedSeq,
                     'hook' => $hook::class,

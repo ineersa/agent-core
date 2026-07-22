@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Config\Ai;
 
-use Ineersa\Hatfield\ExtensionApi\Model\AiModelReference;
+use Ineersa\CodingAgent\Config\Ai\AiModelReference;
 use PHPUnit\Framework\TestCase;
 
 class AiModelReferenceTest extends TestCase

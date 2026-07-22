@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Picker;
 
+use Ineersa\CodingAgent\Config\Ai\AiModelReference;
 use Ineersa\CodingAgent\Config\ModelSelectionService;
-use Ineersa\Hatfield\ExtensionApi\Model\AiModelReference;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Screen\ChatScreen;
 use Ineersa\Tui\Theme\ThemeColorEnum;

@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Config\Ai;
 
-use Ineersa\Hatfield\ExtensionApi\Model\AiModelReference;
-
 /**
  * Authoritative model catalog built from Hatfield AI settings.
  *

@@ -4,30 +4,21 @@ declare(strict_types=1);
 
 namespace Ineersa\Hatfield\ExtensionApi\Lifecycle;
 
-use Ineersa\Hatfield\ExtensionApi\Session\SessionEventDTO;
-
 /**
  * Immutable public context for a post-commit conversation boundary.
  *
  * Source identity is always (runId, seq). turnNo is diagnostic only and is
  * not part of the opaque boundary identity.
  *
- * The extension owns its durable previous cursor and derives the observation
- * range as (previous_cursor + 1)..sourceEndSeq. Hatfield does not recompute a
- * historical sourceStartSeq on the hot path.
- *
- * boundaryAt is the terminal event createdAt when available from the just-
- * persisted batch; otherwise projection time.
- *
- * @phpstan-type MetadataValue scalar|list<mixed>|array<string, mixed>|null
+ * boundaryAt semantics (MVP):
+ * - AfterTurnCommit-derived boundaries currently reflect notification/projection
+ *   time because AfterTurnCommit event summaries do not carry createdAt.
+ * - Direct worker-failure permanent appends can preserve the terminal event's
+ *   createdAt when that RunEvent is passed through intact.
  */
 final readonly class ConversationBoundaryDTO
 {
-    /** @var list<SessionEventDTO> */
-    public array $events;
-
     /**
-     * @param list<SessionEventDTO>                                       $events   Just-persisted batch events (hot path; no history scan)
      * @param array<string, scalar|list<mixed>|array<string, mixed>|null> $metadata JSON-safe correlation metadata only
      */
     public function __construct(
@@ -35,10 +26,10 @@ final readonly class ConversationBoundaryDTO
         public string $sessionId,
         public string $boundaryId,
         public ConversationBoundaryOutcomeEnum $outcome,
+        public int $sourceStartSeq,
         public int $sourceEndSeq,
         public int $latestCommittedSeq,
         public \DateTimeImmutable $boundaryAt,
-        array $events = [],
         public array $metadata = [],
     ) {
         if ('' === $this->runId) {
@@ -50,19 +41,15 @@ final readonly class ConversationBoundaryDTO
         if ('' === $this->boundaryId) {
             throw new \InvalidArgumentException('boundaryId must not be empty.');
         }
-        if ($this->sourceEndSeq < 1) {
-            throw new \InvalidArgumentException('sourceEndSeq must be >= 1.');
+        if ($this->sourceStartSeq < 1) {
+            throw new \InvalidArgumentException('sourceStartSeq must be >= 1.');
+        }
+        if ($this->sourceEndSeq < $this->sourceStartSeq) {
+            throw new \InvalidArgumentException('sourceEndSeq must be >= sourceStartSeq.');
         }
         if ($this->latestCommittedSeq < $this->sourceEndSeq) {
             throw new \InvalidArgumentException('latestCommittedSeq must be >= sourceEndSeq.');
         }
-
-        foreach ($events as $event) {
-            if (!$event instanceof SessionEventDTO) {
-                throw new \InvalidArgumentException('events must be a list of SessionEventDTO.');
-            }
-        }
-        $this->events = array_values($events);
 
         foreach ($this->metadata as $key => $value) {
             if (!\is_string($key) || '' === $key) {

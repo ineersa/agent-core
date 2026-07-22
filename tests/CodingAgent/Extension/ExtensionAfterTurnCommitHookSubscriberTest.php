@@ -11,56 +11,28 @@ use Ineersa\CodingAgent\Extension\ExtensionAfterTurnCommitHookSubscriber;
 use Ineersa\CodingAgent\Extension\ExtensionHookRegistry;
 use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterTurnCommitHookContextDTO;
 use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterTurnCommitHookInterface;
-use Ineersa\Hatfield\ExtensionApi\Session\SessionEventDTO;
 use PHPUnit\Framework\TestCase;
 
-/**
- * Thesis: post-commit public hook receives full just-committed SessionEventDTO
- * payload/turnNo/createdAt without event-store reads.
- */
 final class ExtensionAfterTurnCommitHookSubscriberTest extends TestCase
 {
-    public function testDispatchesRegisteredExtensionHookWithFullSessionEventDtos(): void
+    public function testDispatchesRegisteredExtensionHook(): void
     {
         $registry = new ExtensionHookRegistry();
-        $seen = null;
-        $registry->addAfterTurnCommitHook(new class($seen) implements AfterTurnCommitHookInterface {
-            public function __construct(private mixed &$seen)
+        $called = false;
+        $registry->addAfterTurnCommitHook(new class($called) implements AfterTurnCommitHookInterface {
+            public function __construct(private bool &$called)
             {
             }
 
             public function onAfterTurnCommit(AfterTurnCommitHookContextDTO $context): void
             {
-                $this->seen = $context;
+                $this->called = true;
             }
         });
         $subscriber = new ExtensionAfterTurnCommitHookSubscriber($registry, new TestLogger());
-        $createdAt = '2026-07-21T12:00:00+00:00';
-        $ctx = new AfterTurnCommitHookContext(
-            'run-1',
-            2,
-            'running',
-            [new AfterTurnCommitEventSummary(
-                seq: 5,
-                type: 'llm_step_completed',
-                payload: ['usage' => ['input_tokens' => 3]],
-                turnNo: 2,
-                createdAt: $createdAt,
-            )],
-            0,
-        );
+        $ctx = new AfterTurnCommitHookContext('run-1', 2, 'running', [new AfterTurnCommitEventSummary(1, 'turn_end')], 0);
         $subscriber->handleAfterTurnCommit($ctx);
-
-        $this->assertInstanceOf(AfterTurnCommitHookContextDTO::class, $seen);
-        $this->assertCount(1, $seen->events);
-        $event = $seen->events[0];
-        $this->assertInstanceOf(SessionEventDTO::class, $event);
-        $this->assertSame('run-1', $event->runId);
-        $this->assertSame(5, $event->seq);
-        $this->assertSame(2, $event->turnNo);
-        $this->assertSame('llm_step_completed', $event->type);
-        $this->assertSame(['usage' => ['input_tokens' => 3]], $event->payload);
-        $this->assertEquals(new \DateTimeImmutable($createdAt), $event->createdAt);
+        $this->assertTrue($called);
     }
 
     public function testHookFailureIsLoggedAndDoesNotPropagate(): void
