@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Extension;
 
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Tool\ToolRegistryInterface;
+use Ineersa\Hatfield\ExtensionApi\Agent\AgentRunnerInterface;
 use Ineersa\Hatfield\ExtensionApi\Command\CommandDefinitionDTO;
 use Ineersa\Hatfield\ExtensionApi\Command\CommandRegistryInterface;
 use Ineersa\Hatfield\ExtensionApi\Command\ExtensionCommandHandlerInterface;
@@ -13,7 +14,7 @@ use Ineersa\Hatfield\ExtensionApi\Exec\ExecInterface;
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
 use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterTurnCommitHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Prompt\PromptContributorInterface;
-use Ineersa\Hatfield\ExtensionApi\Tool\ExtensionToolHandlerInterface;
+use Ineersa\Hatfield\ExtensionApi\Session\SessionEventReaderInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallRewriteHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolRegistrationDTO;
@@ -42,6 +43,8 @@ final readonly class ExtensionToolRegistryBridge implements ExtensionApiInterfac
         private AppConfig $appConfig,
         private ExecInterface $execBridge,
         private CommandRegistryInterface $commandRegistry,
+        private AgentRunnerInterface $agentRunner,
+        private SessionEventReaderInterface $sessionEventReader,
     ) {
     }
 
@@ -129,5 +132,15 @@ final readonly class ExtensionToolRegistryBridge implements ExtensionApiInterfac
     public function registerAfterTurnCommitHook(AfterTurnCommitHookInterface $hook): void
     {
         $this->hookRegistry->addAfterTurnCommitHook($hook);
+    }
+
+    public function agent(): AgentRunnerInterface
+    {
+        return $this->agentRunner;
+    }
+
+    public function sessionEvents(): SessionEventReaderInterface
+    {
+        return $this->sessionEventReader;
     }
 }
