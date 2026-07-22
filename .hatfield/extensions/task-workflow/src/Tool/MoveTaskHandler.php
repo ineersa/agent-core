@@ -70,8 +70,10 @@ final readonly class MoveTaskHandler implements ExtensionToolHandlerInterface
             if (TaskStatusEnum::ARCHIVE === $to) {
                 $text = $this->transitionToArchive($text, $task, $notes);
             } elseif (TaskStatusEnum::CANCELLED === $to) {
+                // Destination collision must fail before any worktree/IDEA cleanup.
                 // Fail closed before rewriting metadata: if safe worktree cleanup
                 // cannot complete, the task must stay in its current status folder.
+                $this->store->assertDestinationAvailable($task, $to, $taskRoot);
                 $text = $this->transitionToCancelled($text, $task, $notes);
             } elseif (TaskStatusEnum::TODO === $task->status && TaskStatusEnum::IN_PROGRESS === $to) {
                 $text = $this->transitionTodoToInProgress($text, $task, $arguments, $notes);

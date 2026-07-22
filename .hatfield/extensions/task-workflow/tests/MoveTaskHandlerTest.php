@@ -49,6 +49,10 @@ final class MoveTaskHandlerTest extends TestCase
     protected function tearDown(): void
     {
         putenv('HATFIELD_TASK_WORKFLOW_ROOT');
+        // worktreesBase sits beside the temp repo and is not under board/repo roots.
+        if (isset($this->worktreesBase) && is_dir($this->worktreesBase)) {
+            TestDirectoryIsolation::removeDirectory($this->worktreesBase);
+        }
         TestDirectoryIsolation::removeDirectory($this->boardRoot);
         TestDirectoryIsolation::removeDirectory($this->repoRoot);
     }
@@ -374,6 +378,58 @@ final class MoveTaskHandlerTest extends TestCase
         $this->assertDirectoryExists($worktree);
         $this->assertTrue($this->branchExists($branch));
         $this->assertStringContainsString('pi-task-workflow:start '.$slug, (string) file_get_contents($iml));
+    }
+
+    #[Test]
+    public function cancelDestinationCollisionFailsBeforeWorktreeCleanup(): void
+    {
+        // Thesis: without this test, CANCELLED could remove a clean worktree and IDEA
+        // markers, then fail when CANCELLED/<same-file>.md already exists — leaving the
+        // board task stranded without its worktree.
+        $slug = '2026-01-01-cancel-collision';
+        $branch = 'task/'.$slug;
+        $worktree = $this->worktreesBase.'/'.$slug;
+        $destination = $this->boardRoot.'/CANCELLED/'.$slug.'.md';
+        $destinationBody = "# Pre-existing cancelled\n\n## Workflow metadata\nStatus: CANCELLED\n\nDo not overwrite me.\n";
+
+        mkdir($this->worktreesBase.'/.idea', 0o755, true);
+        $iml = $this->worktreesBase.'/.idea/'.basename($this->worktreesBase).'.iml';
+        file_put_contents($iml, "<?xml version=\"1.0\"?>\n<module>\n  <component name=\"NewModuleRootManager\">\n    <content url=\"file://\$MODULE_DIR$\">\n    </content>\n  </component>\n</module>\n");
+
+        $inner = new StubExec($this->gitStub(...));
+        $recording = new RecordingExec($inner);
+        $handler = $this->makeHandler($recording);
+        file_put_contents($this->boardRoot.'/TODO/'.$slug.'.md', TaskMarkdown::renderTask('Cancel collision'));
+        ($handler)(['task' => $slug, 'to' => 'IN-PROGRESS', 'worktreeBase' => $this->worktreesBase]);
+        $this->assertDirectoryExists($worktree);
+        $this->assertStringContainsString('pi-task-workflow:start '.$slug, (string) file_get_contents($iml));
+
+        // Existing destination with the same filename must block cancellation preflight.
+        file_put_contents($destination, $destinationBody);
+
+        try {
+            ($handler)(['task' => $slug, 'from' => 'IN-PROGRESS', 'to' => 'CANCELLED']);
+            $this->fail('Expected RuntimeException for CANCELLED destination collision');
+        } catch (\RuntimeException $e) {
+            $this->assertStringContainsString('Target task already exists', $e->getMessage());
+            $this->assertStringContainsString('CANCELLED/'.$slug.'.md', $e->getMessage());
+        }
+
+        $this->assertFileExists($this->boardRoot.'/IN-PROGRESS/'.$slug.'.md');
+        $this->assertFileExists($destination);
+        $this->assertSame($destinationBody, file_get_contents($destination));
+        $this->assertDirectoryExists($worktree);
+        $this->assertTrue($this->branchExists($branch), 'collision must leave the branch');
+        $this->assertStringContainsString('pi-task-workflow:start '.$slug, (string) file_get_contents($iml));
+
+        $gitCalls = $this->findCallsByCommand($recording, 'git');
+        foreach ($gitCalls as $call) {
+            $args = $call['args'] ?? [];
+            $this->assertFalse(
+                ($args[0] ?? null) === 'worktree' && ($args[1] ?? null) === 'remove',
+                'destination collision must not run git worktree remove',
+            );
+        }
     }
 
     #[Test]

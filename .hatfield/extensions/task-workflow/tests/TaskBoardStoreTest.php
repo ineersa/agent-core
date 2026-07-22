@@ -77,6 +77,26 @@ final class TaskBoardStoreTest extends TestCase
     }
 
     #[Test]
+    public function assertDestinationAvailableRejectsExistingTarget(): void
+    {
+        // Thesis: shared preflight/move API must surface destination collisions with the
+        // same relative path wording before any destructive cleanup/move proceeds.
+        $path = $this->boardRoot.'/TODO/collision.md';
+        file_put_contents($path, TaskMarkdown::renderTask('Source'));
+        file_put_contents($this->boardRoot.'/CANCELLED/collision.md', TaskMarkdown::renderTask('Existing'));
+        $task = $this->store->findTask($this->boardRoot, 'collision', TaskStatusEnum::TODO);
+
+        $this->assertSame(
+            $this->boardRoot.'/CANCELLED/collision.md',
+            $this->store->targetPathFor($task, TaskStatusEnum::CANCELLED, $this->boardRoot),
+        );
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Target task already exists: CANCELLED/collision.md');
+        $this->store->assertDestinationAvailable($task, TaskStatusEnum::CANCELLED, $this->boardRoot);
+    }
+
+    #[Test]
     public function listTasksOmitsArchiveByDefaultAndCanIncludeIt(): void
     {
         // Thesis: without this test, archived tasks could leak into default listings

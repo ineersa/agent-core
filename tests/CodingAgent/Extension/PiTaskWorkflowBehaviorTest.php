@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Extension;
 
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Process\ExecutableFinder;
 use Symfony\Component\Process\Process;
 
 /**
@@ -15,6 +16,7 @@ use Symfony\Component\Process\Process;
  *
  * Portability assumptions:
  * - Node.js >= 22 is available on PATH (type-stripping of .ts without a build step).
+ *   When missing, this test is skipped (external optional dependency), not failed.
  * - Extension-relative imports use extensionless paths; the local ESM resolve hook
  *   under tests/CodingAgent/Extension/PiTaskWorkflow/ts-extension-resolve.mjs maps
  *   them to .ts files. No absolute monorepo paths and no Bun dependency.
@@ -35,7 +37,9 @@ final class PiTaskWorkflowBehaviorTest extends TestCase
         self::assertFileExists($extensionRoot.'/worktrees.ts');
 
         $node = $this->resolveNodeBinary();
-        self::assertNotNull($node, 'Node.js >= 22 is required for Pi task-workflow behavioral tests');
+        if (null === $node) {
+            self::markTestSkipped('Node.js >= 22 is required for Pi task-workflow behavioral tests (not found on PATH).');
+        }
 
         $process = new Process(
             [
@@ -68,19 +72,23 @@ final class PiTaskWorkflowBehaviorTest extends TestCase
 
     private function resolveNodeBinary(): ?string
     {
+        $finder = new ExecutableFinder();
         $candidates = [];
-        $fromPath = trim((string) shell_exec('command -v node 2>/dev/null'));
-        if ('' !== $fromPath) {
+        $fromPath = $finder->find('node');
+        if (null !== $fromPath && '' !== $fromPath) {
             $candidates[] = $fromPath;
         }
         // Common local install locations; still no monorepo absolute imports.
         $candidates[] = '/usr/bin/node';
         $candidates[] = '/usr/local/bin/node';
 
+        $seen = [];
         foreach ($candidates as $candidate) {
-            if (!is_executable($candidate)) {
+            if (isset($seen[$candidate]) || !is_executable($candidate)) {
                 continue;
             }
+            $seen[$candidate] = true;
+
             $versionProcess = new Process([$candidate, '--version']);
             $versionProcess->run();
             if (0 !== $versionProcess->getExitCode()) {

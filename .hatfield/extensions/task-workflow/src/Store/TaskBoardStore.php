@@ -145,12 +145,31 @@ final class TaskBoardStore
         return $matches[0];
     }
 
-    public function moveFileWithMetadata(TaskInfo $task, TaskStatusEnum $to, string $text, string $taskRoot): string
+    /**
+     * Absolute destination path for moving $task into $to under $taskRoot.
+     */
+    public function targetPathFor(TaskInfo $task, TaskStatusEnum $to, string $taskRoot): string
     {
-        $target = $taskRoot.'/'.$to->value.'/'.$task->file;
+        return $taskRoot.'/'.$to->value.'/'.$task->file;
+    }
+
+    /**
+     * Fail closed if the destination Markdown file already exists.
+     * Shared by preflight (before destructive cleanup) and moveFileWithMetadata.
+     */
+    public function assertDestinationAvailable(TaskInfo $task, TaskStatusEnum $to, string $taskRoot): string
+    {
+        $target = $this->targetPathFor($task, $to, $taskRoot);
         if (is_file($target)) {
             throw new \RuntimeException('Target task already exists: '.$this->rel($taskRoot, $target));
         }
+
+        return $target;
+    }
+
+    public function moveFileWithMetadata(TaskInfo $task, TaskStatusEnum $to, string $text, string $taskRoot): string
+    {
+        $target = $this->assertDestinationAvailable($task, $to, $taskRoot);
         $toDir = $taskRoot.'/'.$to->value;
         if (!is_dir($toDir)) {
             mkdir($toDir, 0o755, true);
