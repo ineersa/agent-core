@@ -383,8 +383,8 @@ final class CodexWebSocketCachedModelClientTest extends TestCase
     }
 
     /**
-     * @param list<string>                                    $frames
-     * @param list<list<array<string, mixed>>>                $inboundQueues per request stream
+     * @param list<string>                     $frames
+     * @param list<list<array<string, mixed>>> $inboundQueues per request stream
      */
     private function createQueuedStreamingConnection(array &$frames, array $inboundQueues): WebsocketConnection
     {
