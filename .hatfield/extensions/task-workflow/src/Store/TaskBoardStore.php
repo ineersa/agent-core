@@ -71,12 +71,22 @@ final class TaskBoardStore
     }
 
     /**
+     * List tasks for one status or a status set.
+     *
+     * When $status is null:
+     * - includeArchive false (default): TODO, IN-PROGRESS, CODE-REVIEW, DONE, CANCELLED
+     * - includeArchive true: all six statuses including ARCHIVE
+     *
+     * When $status is set:
+     * - that status always listed (including ARCHIVE)
+     * - includeArchive true additionally unions ARCHIVE (e.g. TODO + ARCHIVE)
+     *
      * @return list<TaskInfo>
      */
-    public function listTasks(string $root, ?TaskStatusEnum $status = null): array
+    public function listTasks(string $root, ?TaskStatusEnum $status = null, bool $includeArchive = false): array
     {
         $this->ensureTaskDirs($root);
-        $statuses = null !== $status ? [$status] : TaskStatusEnum::all();
+        $statuses = $this->resolveListStatuses($status, $includeArchive);
         $tasks = [];
         foreach ($statuses as $s) {
             $dir = $root.'/'.$s->value;
@@ -135,12 +145,31 @@ final class TaskBoardStore
         return $matches[0];
     }
 
-    public function moveFileWithMetadata(TaskInfo $task, TaskStatusEnum $to, string $text, string $taskRoot): string
+    /**
+     * Absolute destination path for moving $task into $to under $taskRoot.
+     */
+    public function targetPathFor(TaskInfo $task, TaskStatusEnum $to, string $taskRoot): string
     {
-        $target = $taskRoot.'/'.$to->value.'/'.$task->file;
+        return $taskRoot.'/'.$to->value.'/'.$task->file;
+    }
+
+    /**
+     * Fail closed if the destination Markdown file already exists.
+     * Shared by preflight (before destructive cleanup) and moveFileWithMetadata.
+     */
+    public function assertDestinationAvailable(TaskInfo $task, TaskStatusEnum $to, string $taskRoot): string
+    {
+        $target = $this->targetPathFor($task, $to, $taskRoot);
         if (is_file($target)) {
             throw new \RuntimeException('Target task already exists: '.$this->rel($taskRoot, $target));
         }
+
+        return $target;
+    }
+
+    public function moveFileWithMetadata(TaskInfo $task, TaskStatusEnum $to, string $text, string $taskRoot): string
+    {
+        $target = $this->assertDestinationAvailable($task, $to, $taskRoot);
         $toDir = $taskRoot.'/'.$to->value;
         if (!is_dir($toDir)) {
             mkdir($toDir, 0o755, true);
@@ -153,5 +182,32 @@ final class TaskBoardStore
         }
 
         return $target;
+    }
+
+    /**
+     * @return list<TaskStatusEnum>
+     */
+    private function resolveListStatuses(?TaskStatusEnum $status, bool $includeArchive): array
+    {
+        if (null === $status) {
+            return $includeArchive ? TaskStatusEnum::all() : TaskStatusEnum::defaultListed();
+        }
+
+        $statuses = [$status];
+        if ($includeArchive && TaskStatusEnum::ARCHIVE !== $status) {
+            $statuses[] = TaskStatusEnum::ARCHIVE;
+        }
+
+        // Deterministic order matching TaskStatusEnum::all().
+        $order = array_flip(array_map(
+            static fn (TaskStatusEnum $s): string => $s->value,
+            TaskStatusEnum::all(),
+        ));
+        usort(
+            $statuses,
+            static fn (TaskStatusEnum $a, TaskStatusEnum $b): int => ($order[$a->value] ?? 99) <=> ($order[$b->value] ?? 99),
+        );
+
+        return $statuses;
     }
 }
