@@ -203,8 +203,12 @@ export function extractTitle(text: string, file: string): string {
 
 export function extractField(text: string, name: string): string | undefined {
 	const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-	const match = text.match(new RegExp(`^${escaped}:\\s*(.+)$`, "mi"));
-	return match?.[1]?.trim();
+	// Horizontal whitespace only after the colon. JS `\s` includes newlines, so
+	// empty fields like `Worktree:\nFork run:` would otherwise capture the next label.
+	// Capture the rest of the same line (including empty) and treat blank as undefined.
+	const match = text.match(new RegExp(`^${escaped}:[ \\t]*([^\\r\\n]*)$`, "mi"));
+	const value = match?.[1]?.trim();
+	return value ? value : undefined;
 }
 
 export function updateField(text: string, name: string, value: string): string {
