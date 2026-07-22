@@ -13,6 +13,9 @@ use Symfony\Component\Process\Process;
  *
  * One supervisor instance per owning HeadlessController. Does not use Hatfield
  * ConsumerSupervisor or messenger:consume transports.
+ *
+ * Callers store the launch specification via start() and then call the
+ * argument-free supervise() periodically from the controller Revolt loop.
  */
 final class OmConsumerSupervisor
 {
@@ -25,6 +28,17 @@ final class OmConsumerSupervisor
     private ?Process $process = null;
 
     private bool $shuttingDown = false;
+
+    private bool $started = false;
+
+    /** @var list<string> */
+    private array $applicationCommand = [];
+
+    private string $runtimeCwd = '';
+
+    private string $sessionId = '';
+
+    private string $databasePath = '';
 
     /** @var list<float> */
     private array $restartTimestamps = [];
@@ -47,11 +61,16 @@ final class OmConsumerSupervisor
             return;
         }
 
+        $this->applicationCommand = $applicationCommand;
+        $this->runtimeCwd = $runtimeCwd;
+        $this->sessionId = $sessionId;
+        $this->databasePath = $databasePath;
+        $this->started = true;
         $this->shuttingDown = false;
-        $this->launch($applicationCommand, $runtimeCwd, $sessionId, $databasePath);
+        $this->launch();
     }
 
-    public function stop(string $sessionId): void
+    public function stop(): void
     {
         $this->shuttingDown = true;
         $process = $this->process;
@@ -69,7 +88,7 @@ final class OmConsumerSupervisor
         $this->logger->info('om.supervisor.stop', [
             'component' => 'observational_memory',
             'event_type' => 'om.supervisor.stop',
-            'session_id' => $sessionId,
+            'session_id' => $this->sessionId,
             'pid' => $pid,
         ]);
 
@@ -79,17 +98,11 @@ final class OmConsumerSupervisor
     }
 
     /**
-     * Optional health check; call from extension code if periodic supervise is wired later.
-     *
-     * @param list<string> $applicationCommand
+     * Periodic health check using the launch specification stored by start().
      */
-    public function supervise(
-        array $applicationCommand,
-        string $runtimeCwd,
-        string $sessionId,
-        string $databasePath,
-    ): void {
-        if ($this->shuttingDown) {
+    public function supervise(): void
+    {
+        if ($this->shuttingDown || !$this->started) {
             return;
         }
 
@@ -109,11 +122,11 @@ final class OmConsumerSupervisor
             $this->logger->info('om.supervisor.recycle', [
                 'component' => 'observational_memory',
                 'event_type' => 'om.supervisor.recycle',
-                'session_id' => $sessionId,
+                'session_id' => $this->sessionId,
                 'exit_code' => $exitCode,
             ]);
             $this->restartTimestamps = [];
-            $this->launch($applicationCommand, $runtimeCwd, $sessionId, $databasePath);
+            $this->launch();
 
             return;
         }
@@ -121,7 +134,7 @@ final class OmConsumerSupervisor
         $this->logger->warning('om.supervisor.abnormal_exit', [
             'component' => 'observational_memory',
             'event_type' => 'om.supervisor.abnormal_exit',
-            'session_id' => $sessionId,
+            'session_id' => $this->sessionId,
             'exit_code' => $exitCode,
         ]);
 
@@ -129,27 +142,20 @@ final class OmConsumerSupervisor
             $this->logger->error('om.supervisor.abandoned', [
                 'component' => 'observational_memory',
                 'event_type' => 'om.supervisor.abandoned',
-                'session_id' => $sessionId,
+                'session_id' => $this->sessionId,
             ]);
 
             return;
         }
 
         $this->restartTimestamps[] = microtime(true);
-        $this->launch($applicationCommand, $runtimeCwd, $sessionId, $databasePath);
+        $this->launch();
     }
 
-    /**
-     * @param list<string> $applicationCommand
-     */
-    private function launch(
-        array $applicationCommand,
-        string $runtimeCwd,
-        string $sessionId,
-        string $databasePath,
-    ): void {
+    private function launch(): void
+    {
         $command = [
-            ...$applicationCommand,
+            ...$this->applicationCommand,
             'extension:run',
             ObservationalMemoryExtension::class,
             ObservationalMemoryExtension::ENTRYPOINT_CONSUME,
@@ -158,14 +164,17 @@ final class OmConsumerSupervisor
 
         $env = $_ENV;
         $env['HATFIELD_OM_CONSUMER'] = '1';
-        $env['HATFIELD_OM_DATABASE_PATH'] = $databasePath;
+        $env['HATFIELD_OM_DATABASE_PATH'] = $this->databasePath;
+        // Owning controller PID so the child can exit if the parent dies
+        // (SIGKILL / abrupt death) without an ordered RuntimeStoppingEvent.
+        $env['HATFIELD_OM_PARENT_PID'] = (string) getmypid();
         // Consumer must not emit Hatfield messenger stdout protocol noise.
         $env['HATFIELD_CONSUMER_STDOUT_EVENTS'] = '0';
 
         try {
             $process = new Process(
                 $command,
-                cwd: $runtimeCwd,
+                cwd: $this->runtimeCwd,
                 env: $env,
                 timeout: null,
             );
@@ -174,7 +183,7 @@ final class OmConsumerSupervisor
             $this->logger->error('om.supervisor.launch_failed', [
                 'component' => 'observational_memory',
                 'event_type' => 'om.supervisor.launch_failed',
-                'session_id' => $sessionId,
+                'session_id' => $this->sessionId,
                 'exception_class' => $e::class,
             ]);
 
@@ -185,8 +194,9 @@ final class OmConsumerSupervisor
         $this->logger->info('om.supervisor.launched', [
             'component' => 'observational_memory',
             'event_type' => 'om.supervisor.launched',
-            'session_id' => $sessionId,
+            'session_id' => $this->sessionId,
             'pid' => $process->getPid(),
+            'parent_pid' => getmypid(),
         ]);
     }
 

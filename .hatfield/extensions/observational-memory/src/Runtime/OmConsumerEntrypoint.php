@@ -44,7 +44,12 @@ final class OmConsumerEntrypoint
         try {
             $database = OmDatabase::connect($paths->databasePath);
             (new OmSchemaMigrator($database->connection(), $this->logger))->migrate();
-            $runtime = OmMessengerRuntime::create($database, $api, $this->logger);
+            $runtime = OmMessengerRuntime::create(
+                $database,
+                $api,
+                $this->logger,
+                self::resolveParentPid(),
+            );
             $runtime->run();
         } catch (\Throwable $e) {
             $this->logger->error('om.consumer.failed', [
@@ -62,5 +67,26 @@ final class OmConsumerEntrypoint
         ]);
 
         return Command::SUCCESS;
+    }
+
+    private static function resolveParentPid(): ?int
+    {
+        $raw = $_ENV['HATFIELD_OM_PARENT_PID'] ?? $_SERVER['HATFIELD_OM_PARENT_PID'] ?? null;
+        if (null === $raw || false === $raw || '' === $raw) {
+            $env = getenv('HATFIELD_OM_PARENT_PID');
+            $raw = false === $env ? null : $env;
+        }
+
+        if (null === $raw || '' === $raw) {
+            return null;
+        }
+
+        if (!is_numeric($raw)) {
+            return null;
+        }
+
+        $pid = (int) $raw;
+
+        return $pid > 1 ? $pid : null;
     }
 }

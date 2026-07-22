@@ -18,6 +18,8 @@ use Ineersa\Hatfield\ExtensionApi\Runtime\RuntimeStartedEvent;
 use Ineersa\Hatfield\ExtensionApi\Runtime\RuntimeStoppingEvent;
 use Monolog\Level;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\LoggerAwareInterface;
+use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\EventDispatcher\EventDispatcher;
@@ -46,7 +48,6 @@ final class ExtensionRuntimeBootstrapTest extends TestCase
             sessionId: 'sess-1',
             runtimeCwd: '/tmp/project',
             applicationCommand: [\PHP_BINARY, '/tmp/bin/console'],
-            executablePath: '/tmp/bin/console',
         ));
         $dispatcher->dispatch(new RuntimeStoppingEvent(
             sessionId: 'sess-1',
@@ -91,6 +92,23 @@ final class ExtensionRuntimeBootstrapTest extends TestCase
         $this->assertSame(Command::FAILURE, $exit);
     }
 
+    public function testManagerInjectsLoggerIntoLoggerAwareExtensionsBeforeRegister(): void
+    {
+        $dispatcher = new EventDispatcher();
+        $bridge = new InMemoryExtensionApiBridge('/tmp/project');
+        $config = $this->configWithEnabled([TestLoggerAwareExtension::class]);
+        $logger = new NullLogger();
+
+        $manager = new ExtensionManager($config, $bridge, $logger, $dispatcher);
+        $diagnostics = $manager->loadExtensions();
+
+        $this->assertSame([], $diagnostics);
+        $extension = $manager->getLoadedExtension(TestLoggerAwareExtension::class);
+        $this->assertInstanceOf(TestLoggerAwareExtension::class, $extension);
+        $this->assertSame($logger, $extension->logger);
+        $this->assertTrue($extension->registeredWithLogger);
+    }
+
     /**
      * @param list<class-string> $enabled
      */
@@ -102,6 +120,26 @@ final class ExtensionRuntimeBootstrapTest extends TestCase
             extensions: new ExtensionsConfig(enabled: $enabled, settings: []),
             cwd: '/tmp/project',
         );
+    }
+}
+
+/**
+ * Test-local LoggerAware extension for host logger injection proof.
+ */
+final class TestLoggerAwareExtension implements HatfieldExtensionInterface, LoggerAwareInterface
+{
+    public ?LoggerInterface $logger = null;
+
+    public bool $registeredWithLogger = false;
+
+    public function setLogger(LoggerInterface $logger): void
+    {
+        $this->logger = $logger;
+    }
+
+    public function register(ExtensionApiInterface $api): void
+    {
+        $this->registeredWithLogger = null !== $this->logger;
     }
 }
 

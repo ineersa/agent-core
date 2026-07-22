@@ -64,6 +64,12 @@ final class HeadlessController
         private readonly RuntimeExceptionBoundary $boundary,
         private readonly RuntimeEventEmitter $emitter,
         /**
+         * Source/PHAR-safe executable prefix and runtime CWD for public
+         * extension runtime lifecycle events. Required so lifecycle dispatch
+         * cannot silently skip when the owning controller is running.
+         */
+        private readonly RuntimeProcessConfig $runtimeProcessConfig,
+        /**
          * Optional override for parallel tool messenger consumers.
          * Values <= 0 use tools.execution.max_parallelism from settings.
          */
@@ -86,12 +92,6 @@ final class HeadlessController
          * and sends append_message UserCommands to the agent session.
          */
         private readonly ?BackgroundProcessCompletionPoller $bgProcessCompletionPoller = null,
-        /**
-         * Source/PHAR-safe executable prefix and runtime CWD for public
-         * extension runtime lifecycle events. Optional so unit tests that
-         * construct the controller without process config remain valid.
-         */
-        private readonly ?RuntimeProcessConfig $runtimeProcessConfig = null,
     ) {
         $this->sessionId = $_SERVER['HATFIELD_SESSION_ID'] ?? $_ENV['HATFIELD_SESSION_ID'] ?? 'unknown';
     }
@@ -439,16 +439,11 @@ final class HeadlessController
 
     private function dispatchRuntimeStarted(): void
     {
-        if (null === $this->runtimeProcessConfig) {
-            return;
-        }
-
         try {
             $this->dispatcher->dispatch(new RuntimeStartedEvent(
                 sessionId: $this->sessionId,
                 runtimeCwd: $this->runtimeProcessConfig->runtimeCwd(),
                 applicationCommand: $this->runtimeProcessConfig->executableCommand(),
-                executablePath: $this->runtimeProcessConfig->executablePath(),
             ));
         } catch (\Throwable $e) {
             // Extension lifecycle failures must not take down the controller.
@@ -463,25 +458,10 @@ final class HeadlessController
 
     private function dispatchRuntimeStopping(): void
     {
-        $runtimeCwd = $this->runtimeProcessConfig?->runtimeCwd();
-        if (null === $runtimeCwd || '' === $runtimeCwd) {
-            $fromEnv = $_ENV['HATFIELD_CWD'] ?? null;
-            if (\is_string($fromEnv) && '' !== $fromEnv) {
-                $runtimeCwd = $fromEnv;
-            } else {
-                $cwd = getcwd();
-                $runtimeCwd = false === $cwd ? '' : $cwd;
-            }
-        }
-
-        if ('' === $runtimeCwd) {
-            return;
-        }
-
         try {
             $this->dispatcher->dispatch(new RuntimeStoppingEvent(
                 sessionId: $this->sessionId,
-                runtimeCwd: $runtimeCwd,
+                runtimeCwd: $this->runtimeProcessConfig->runtimeCwd(),
             ));
         } catch (\Throwable $e) {
             $this->logger->error('RuntimeStoppingEvent dispatch failed', [

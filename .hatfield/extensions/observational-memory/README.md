@@ -6,6 +6,7 @@ Architecture preview of the extension-owned operational runtime:
 - private Symfony Messenger bus + Doctrine transport (not Hatfield's Messenger DB)
 - one persistent consumer process per owning HeadlessController
 - extension-owned supervisor started/stopped via public `RuntimeStartedEvent` / `RuntimeStoppingEvent`
+- parent-death stop via `HATFIELD_OM_PARENT_PID` so SIGKILL of the controller does not leave orphans
 
 ## Activation
 
@@ -23,12 +24,16 @@ extensions:
       # enabled: true   # default true when the extension class is enabled
 ```
 
-Also install the package into the project extension Composer root:
+The package is already required from the project extension Composer root
+(`.hatfield/extensions/composer.json` path repository
+`ineersa/hatfield-ext-observational-memory`). Install or refresh autoload after
+checkout/pull:
 
 ```bash
 cd .hatfield/extensions
-# path repository already present after checkout; require the package
-composer require ineersa/hatfield-ext-observational-memory:@dev
+composer install
+# or, after package/path changes:
+composer update ineersa/hatfield-ext-observational-memory
 ```
 
 ## Process topology
@@ -37,12 +42,15 @@ composer require ineersa/hatfield-ext-observational-memory:@dev
 HeadlessController
   → RuntimeStartedEvent
   → OM supervisor (in controller process)
+      → Revolt repeat watcher → supervise()
       → <hatfield> extension:run Ineersa\HatfieldExt\ObservationalMemory\ObservationalMemoryExtension consume
           env HATFIELD_OM_CONSUMER=1
+          env HATFIELD_OM_PARENT_PID=<controller pid>
           → private Worker against om.sqlite
+          → OmParentDeathListener stops Worker if parent dies
 ```
 
-Recursion guard: when `HATFIELD_OM_CONSUMER=1` is set, the extension does not start another supervisor.
+Recursion guard: when `HATFIELD_OM_CONSUMER=1` is set, the extension does not start another supervisor or Revolt watcher.
 
 ## Ownership boundaries
 

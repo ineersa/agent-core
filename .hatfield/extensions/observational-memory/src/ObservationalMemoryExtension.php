@@ -13,8 +13,9 @@ use Ineersa\HatfieldExt\ObservationalMemory\Runtime\OmConsumerEntrypoint;
 use Ineersa\HatfieldExt\ObservationalMemory\Runtime\OmConsumerSupervisor;
 use Ineersa\HatfieldExt\ObservationalMemory\Runtime\OmPaths;
 use Ineersa\HatfieldExt\ObservationalMemory\Runtime\OmSettings;
+use Psr\Log\LoggerAwareInterface;
 use Psr\Log\LoggerInterface;
-use Psr\Log\NullLogger;
+use Revolt\EventLoop;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 
 /**
@@ -22,23 +23,27 @@ use Symfony\Component\EventDispatcher\EventSubscriberInterface;
  *
  * Host bootstrap only uses public Extension API + EventSubscriberInterface.
  * Messenger, Doctrine, and process supervision stay extension-local.
+ *
+ * Logger injection: ExtensionManager calls setLogger() with the process-local
+ * host logger before register() for LoggerAwareInterface extensions.
  */
-final class ObservationalMemoryExtension implements HatfieldExtensionInterface, ExtensionEntrypointInterface, EventSubscriberInterface
+final class ObservationalMemoryExtension implements HatfieldExtensionInterface, ExtensionEntrypointInterface, EventSubscriberInterface, LoggerAwareInterface
 {
     public const ENTRYPOINT_CONSUME = 'consume';
+
+    private const float SUPERVISE_INTERVAL_SECONDS = 5.0;
 
     private ?ExtensionApiInterface $api = null;
 
     private ?OmConsumerSupervisor $supervisor = null;
 
-    private LoggerInterface $logger;
+    private ?string $superviseWatcherId = null;
 
-    public function __construct(?LoggerInterface $logger = null)
+    private ?LoggerInterface $logger = null;
+
+    public function setLogger(LoggerInterface $logger): void
     {
-        // ExtensionManager instantiates extensions with new $className().
-        // NullLogger is acceptable for the registration object; the consumer
-        // entrypoint uses a privacy-safe stderr logger when run as a process.
-        $this->logger = $logger ?? new NullLogger();
+        $this->logger = $logger;
     }
 
     public function register(ExtensionApiInterface $api): void
@@ -54,7 +59,7 @@ final class ObservationalMemoryExtension implements HatfieldExtensionInterface, 
     public function runEntrypoint(string $entrypoint, ExtensionApiInterface $api): int
     {
         return match ($entrypoint) {
-            self::ENTRYPOINT_CONSUME => (new OmConsumerEntrypoint($this->logger))->run($api),
+            self::ENTRYPOINT_CONSUME => (new OmConsumerEntrypoint($this->requireLogger()))->run($api),
             default => 1,
         };
     }
@@ -69,13 +74,15 @@ final class ObservationalMemoryExtension implements HatfieldExtensionInterface, 
 
     public function onRuntimeStarted(RuntimeStartedEvent $event): void
     {
+        // Consumer process must never start a nested supervisor/watcher.
         if ($this->isConsumerProcess()) {
             return;
         }
 
+        $logger = $this->requireLogger();
         $api = $this->api;
         if (null === $api) {
-            $this->logger->warning('om.supervisor.skip_no_api', [
+            $logger->warning('om.supervisor.skip_no_api', [
                 'component' => 'observational_memory',
                 'event_type' => 'om.supervisor.skip_no_api',
                 'session_id' => $event->sessionId,
@@ -86,7 +93,7 @@ final class ObservationalMemoryExtension implements HatfieldExtensionInterface, 
 
         $settings = OmSettings::fromApi($api);
         if (!$settings->enabled) {
-            $this->logger->info('om.supervisor.disabled', [
+            $logger->info('om.supervisor.disabled', [
                 'component' => 'observational_memory',
                 'event_type' => 'om.supervisor.disabled',
                 'session_id' => $event->sessionId,
@@ -96,12 +103,23 @@ final class ObservationalMemoryExtension implements HatfieldExtensionInterface, 
         }
 
         $paths = OmPaths::fromSettings($settings, $api->getCwd());
-        $this->supervisor = new OmConsumerSupervisor($this->logger);
+        $this->cancelSuperviseWatcher();
+        $this->supervisor = new OmConsumerSupervisor($logger);
         $this->supervisor->start(
             applicationCommand: $event->applicationCommand,
             runtimeCwd: $event->runtimeCwd,
             sessionId: $event->sessionId,
             databasePath: $paths->databasePath,
+        );
+
+        // Periodic restart/health checks on the owning controller Revolt loop.
+        // No host OM-specific polling: the extension registers its own watcher.
+        $supervisor = $this->supervisor;
+        $this->superviseWatcherId = EventLoop::repeat(
+            self::SUPERVISE_INTERVAL_SECONDS,
+            static function () use ($supervisor): void {
+                $supervisor->supervise();
+            },
         );
     }
 
@@ -111,8 +129,28 @@ final class ObservationalMemoryExtension implements HatfieldExtensionInterface, 
             return;
         }
 
-        $this->supervisor?->stop($event->sessionId);
+        $this->cancelSuperviseWatcher();
+        $this->supervisor?->stop();
         $this->supervisor = null;
+    }
+
+    private function cancelSuperviseWatcher(): void
+    {
+        if (null === $this->superviseWatcherId) {
+            return;
+        }
+
+        EventLoop::cancel($this->superviseWatcherId);
+        $this->superviseWatcherId = null;
+    }
+
+    private function requireLogger(): LoggerInterface
+    {
+        if (null === $this->logger) {
+            throw new \LogicException('ObservationalMemoryExtension requires setLogger() before use. ExtensionManager must inject LoggerAwareInterface loggers before register().');
+        }
+
+        return $this->logger;
     }
 
     private function isConsumerProcess(): bool

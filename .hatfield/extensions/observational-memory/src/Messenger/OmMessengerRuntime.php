@@ -58,6 +58,7 @@ final class OmMessengerRuntime
         OmDatabase $database,
         ExtensionApiInterface $api,
         LoggerInterface $logger,
+        ?int $parentPid = null,
     ): self {
         // $api is retained for OM-03/OM-04 model calls inside handlers later.
         unset($api);
@@ -130,6 +131,11 @@ final class OmMessengerRuntime
             $logger,
         ));
         $eventDispatcher->addSubscriber(new DispatchPcntlSignalListener());
+
+        // Exit when the owning controller PID disappears (SIGKILL/abrupt death).
+        if (null !== $parentPid && $parentPid > 1) {
+            $eventDispatcher->addSubscriber(new OmParentDeathListener($parentPid, $logger));
+        }
 
         return new self(
             $bus,

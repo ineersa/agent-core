@@ -20,7 +20,6 @@ final readonly class RuntimeStartedEvent
         public string $sessionId,
         public string $runtimeCwd,
         public array $applicationCommand,
-        public string $executablePath,
     ) {
         if ('' === $this->sessionId) {
             throw new \InvalidArgumentException('RuntimeStartedEvent sessionId must be non-empty.');
@@ -30,9 +29,6 @@ final readonly class RuntimeStartedEvent
         }
         if ([] === $this->applicationCommand) {
             throw new \InvalidArgumentException('RuntimeStartedEvent applicationCommand must be non-empty.');
-        }
-        if ('' === $this->executablePath) {
-            throw new \InvalidArgumentException('RuntimeStartedEvent executablePath must be non-empty.');
         }
         foreach ($this->applicationCommand as $part) {
             if (!\is_string($part) || '' === $part) {

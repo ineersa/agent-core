@@ -26,6 +26,7 @@ use Ineersa\Tui\Theme\ThemeRegistry;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
+use Symfony\Component\EventDispatcher\EventDispatcher;
 
 /**
  * Contract tests: skill, prompt, and agent collisions surface winner vs loser paths in summary DTO.
@@ -299,6 +300,7 @@ final class LoadedResourcesSummaryBuilderTest extends TestCase
             config: $config,
             extensionApi: $this->createStub(ExtensionApiInterface::class),
             logger: new NullLogger(),
+            eventDispatcher: new EventDispatcher(),
         );
     }
 
@@ -316,6 +318,7 @@ final class LoadedResourcesSummaryBuilderTest extends TestCase
             config: $config,
             extensionApi: $this->createStub(ExtensionApiInterface::class),
             logger: new NullLogger(),
+            eventDispatcher: new EventDispatcher(),
         );
     }
 }

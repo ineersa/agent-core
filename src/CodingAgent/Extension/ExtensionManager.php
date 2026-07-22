@@ -10,6 +10,7 @@ use Ineersa\CodingAgent\Runtime\Contract\TuiExtensionRegistryInterface;
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
 use Ineersa\Hatfield\ExtensionApi\HatfieldExtensionInterface;
 use Ineersa\Hatfield\ExtensionApi\Tui\TuiExtensionInterface;
+use Psr\Log\LoggerAwareInterface;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
@@ -46,7 +47,7 @@ final class ExtensionManager implements TuiExtensionRegistryInterface
         private readonly AppConfig $config,
         private readonly ExtensionApiInterface $extensionApi,
         private readonly LoggerInterface $logger,
-        private readonly ?EventDispatcherInterface $eventDispatcher = null,
+        private readonly EventDispatcherInterface $eventDispatcher,
     ) {
     }
 
@@ -189,6 +190,12 @@ final class ExtensionManager implements TuiExtensionRegistryInterface
             return $msg;
         }
 
+        // Inject the host logger before register() so LoggerAware extensions can
+        // log registration failures with the process-local Monolog channel.
+        if ($instance instanceof LoggerAwareInterface) {
+            $instance->setLogger($this->logger);
+        }
+
         try {
             $instance->register($this->extensionApi);
         } catch (\Throwable $e) {
@@ -212,15 +219,7 @@ final class ExtensionManager implements TuiExtensionRegistryInterface
         // registered on the host EventDispatcher so they can listen to public
         // runtime lifecycle events without a custom hook registry.
         if ($instance instanceof EventSubscriberInterface) {
-            if (null === $this->eventDispatcher) {
-                $this->logger->warning('Extension implements EventSubscriberInterface but no EventDispatcher is available', [
-                    'component' => 'ExtensionManager',
-                    'event_type' => 'extension.subscriber_skipped',
-                    'class' => $className,
-                ]);
-            } else {
-                $this->eventDispatcher->addSubscriber($instance);
-            }
+            $this->eventDispatcher->addSubscriber($instance);
         }
 
         return null;
