@@ -75,4 +75,32 @@ final class TaskBoardStoreTest extends TestCase
         $this->assertFileExists($target);
         $this->assertFileDoesNotExist($path);
     }
+
+    #[Test]
+    public function listTasksOmitsArchiveByDefaultAndCanIncludeIt(): void
+    {
+        // Thesis: without this test, archived tasks could leak into default listings
+        // or become unlistable when include_archive/status filters are used.
+        file_put_contents($this->boardRoot.'/TODO/active.md', TaskMarkdown::renderTask('Active'));
+        file_put_contents($this->boardRoot.'/ARCHIVE/old.md', TaskMarkdown::renderTask('Old'));
+        file_put_contents($this->boardRoot.'/CANCELLED/dropped.md', TaskMarkdown::renderTask('Dropped'));
+
+        $default = $this->store->listTasks($this->boardRoot);
+        $defaultFiles = array_map(static fn ($t): string => $t->status->value.'/'.$t->file, $default);
+        $this->assertContains('TODO/active.md', $defaultFiles);
+        $this->assertContains('CANCELLED/dropped.md', $defaultFiles);
+        $this->assertNotContains('ARCHIVE/old.md', $defaultFiles);
+
+        $withArchive = $this->store->listTasks($this->boardRoot, null, true);
+        $withArchiveFiles = array_map(static fn ($t): string => $t->status->value.'/'.$t->file, $withArchive);
+        $this->assertContains('ARCHIVE/old.md', $withArchiveFiles);
+
+        $todoPlusArchive = $this->store->listTasks($this->boardRoot, TaskStatusEnum::TODO, true);
+        $todoPlusArchiveFiles = array_map(static fn ($t): string => $t->status->value.'/'.$t->file, $todoPlusArchive);
+        $this->assertSame(['TODO/active.md', 'ARCHIVE/old.md'], $todoPlusArchiveFiles);
+
+        $archiveOnly = $this->store->listTasks($this->boardRoot, TaskStatusEnum::ARCHIVE);
+        $this->assertCount(1, $archiveOnly);
+        $this->assertSame('ARCHIVE', $archiveOnly[0]->status->value);
+    }
 }

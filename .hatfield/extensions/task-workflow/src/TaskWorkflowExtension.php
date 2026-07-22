@@ -40,15 +40,19 @@ final readonly class TaskWorkflowExtension implements HatfieldExtensionInterface
 
         $api->registerPromptContributor(new WorkflowPrompt($taskRoot));
 
-        $statusEnum = ['TODO', 'IN-PROGRESS', 'CODE-REVIEW', 'DONE'];
+        $statusEnum = ['TODO', 'IN-PROGRESS', 'CODE-REVIEW', 'DONE', 'ARCHIVE', 'CANCELLED'];
 
         $api->registerTool(new ToolRegistrationDTO(
             name: 'task_list',
-            description: 'List workflow tasks from the external task board (TODO, IN-PROGRESS, CODE-REVIEW, DONE).',
+            description: 'List workflow tasks from the external task board (TODO, IN-PROGRESS, CODE-REVIEW, DONE, CANCELLED; ARCHIVE only when include_archive is true or status=ARCHIVE).',
             parametersJsonSchema: [
                 'type' => 'object',
                 'properties' => [
                     'status' => ['type' => 'string', 'enum' => $statusEnum, 'description' => 'Filter by status'],
+                    'include_archive' => [
+                        'type' => 'boolean',
+                        'description' => 'When true, include ARCHIVE tasks. Default false. With status TODO, returns TODO plus ARCHIVE.',
+                    ],
                 ],
                 'additionalProperties' => false,
             ],
@@ -56,6 +60,7 @@ final readonly class TaskWorkflowExtension implements HatfieldExtensionInterface
             promptSummary: 'List project workflow tasks from the external task board',
             promptGuidelines: [
                 'Use task_list before starting tracked project work to understand TODO and IN-PROGRESS tasks.',
+                'ARCHIVE is omitted by default; pass include_archive=true or status=ARCHIVE to list archived tasks.',
             ],
         ));
 
@@ -82,7 +87,7 @@ final readonly class TaskWorkflowExtension implements HatfieldExtensionInterface
 
         $api->registerTool(new ToolRegistrationDTO(
             name: 'move_task',
-            description: 'Move a task between TODO, IN-PROGRESS, CODE-REVIEW, and DONE on the external task board. TODO→IN-PROGRESS creates a code worktree; IN-PROGRESS→CODE-REVIEW pushes branch and creates PR; CODE-REVIEW→DONE merges the task branch.',
+            description: 'Move a task between TODO, IN-PROGRESS, CODE-REVIEW, DONE, ARCHIVE, and CANCELLED on the external task board. TODO→IN-PROGRESS creates a code worktree; IN-PROGRESS→CODE-REVIEW pushes branch and creates PR; CODE-REVIEW→DONE merges the task branch; DONE→ARCHIVE is metadata-only; ANY→CANCELLED removes a clean worktree (if present) and leaves the branch.',
             parametersJsonSchema: [
                 'type' => 'object',
                 'properties' => [
@@ -113,6 +118,8 @@ final readonly class TaskWorkflowExtension implements HatfieldExtensionInterface
                 'Use move_task with to="IN-PROGRESS" before launching a worker/fork for a tracked task.',
                 'Use move_task with to="CODE-REVIEW" after the worktree branch is committed and ready for review; this automatically runs deterministic castor check in the worktree, then pushes the branch and creates a PR. Run focused Castor validation (castor test, castor deptrac, castor phpstan, castor cs-check) yourself before moving to catch issues early.',
                 'Use move_task with to="DONE" only after PR review is approved and the user/parent decides to merge; move_task reports merge conflicts and leaves the task in CODE-REVIEW on failure.',
+                'Use move_task with to="ARCHIVE" only from DONE; this updates Status metadata and moves the Markdown file with no git side effects.',
+                'Use move_task with to="CANCELLED" to abandon a task from any status; clean worktrees and IDEA exclusions are removed safely, the git branch is left, and dirty worktrees fail closed without moving the task.',
             ],
         ));
 

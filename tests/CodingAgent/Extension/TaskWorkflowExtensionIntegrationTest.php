@@ -32,7 +32,7 @@ final class TaskWorkflowExtensionIntegrationTest extends TestCase
     {
         parent::setUp();
         $this->taskRoot = TestDirectoryIsolation::createProjectTempDir('task-board');
-        foreach (['TODO', 'IN-PROGRESS', 'CODE-REVIEW', 'DONE'] as $status) {
+        foreach (['TODO', 'IN-PROGRESS', 'CODE-REVIEW', 'DONE', 'ARCHIVE', 'CANCELLED'] as $status) {
             TestDirectoryIsolation::ensureDirectory($this->taskRoot.'/'.$status);
         }
     }
@@ -87,5 +87,21 @@ final class TaskWorkflowExtensionIntegrationTest extends TestCase
         foreach (['tasks', 'tasks-todo', 'tasks-in-progress', 'tasks-code-review', 'tasks-done'] as $command) {
             $this->assertTrue($slashRegistry->has($command), 'Missing slash command: '.$command);
         }
+
+        $definitions = [];
+        foreach ($toolRegistry->activeToolDefinitions() as $definition) {
+            $definitions[$definition->name] = $definition;
+        }
+
+        $this->assertArrayHasKey('task_list', $definitions);
+        $listSchema = $definitions['task_list']->parametersJsonSchema;
+        $this->assertArrayHasKey('include_archive', $listSchema['properties'] ?? []);
+        $this->assertContains('ARCHIVE', $listSchema['properties']['status']['enum'] ?? []);
+        $this->assertContains('CANCELLED', $listSchema['properties']['status']['enum'] ?? []);
+
+        $this->assertArrayHasKey('move_task', $definitions);
+        $moveSchema = $definitions['move_task']->parametersJsonSchema;
+        $this->assertContains('ARCHIVE', $moveSchema['properties']['to']['enum'] ?? []);
+        $this->assertContains('CANCELLED', $moveSchema['properties']['to']['enum'] ?? []);
     }
 }

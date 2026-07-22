@@ -32,7 +32,7 @@ final readonly class MoveTaskHandler implements ExtensionToolHandlerInterface
     /**
      * @param array<string, mixed> $arguments
      *
-     * @return array{content: list<array{type: string, text: string}>, details: array<string, mixed>}
+     * @return array{content: list<array{type: string, text: string}>, details: string}
      */
     public function __invoke(array $arguments): array
     {
@@ -67,7 +67,13 @@ final readonly class MoveTaskHandler implements ExtensionToolHandlerInterface
 
             $notes = ['Moved '.$task->status->value.' → '.$to->value.'.'];
 
-            if (TaskStatusEnum::TODO === $task->status && TaskStatusEnum::IN_PROGRESS === $to) {
+            if (TaskStatusEnum::ARCHIVE === $to) {
+                $text = $this->transitionToArchive($text, $task, $notes);
+            } elseif (TaskStatusEnum::CANCELLED === $to) {
+                // Fail closed before rewriting metadata: if safe worktree cleanup
+                // cannot complete, the task must stay in its current status folder.
+                $text = $this->transitionToCancelled($text, $task, $notes);
+            } elseif (TaskStatusEnum::TODO === $task->status && TaskStatusEnum::IN_PROGRESS === $to) {
                 $text = $this->transitionTodoToInProgress($text, $task, $arguments, $notes);
             } elseif (TaskStatusEnum::IN_PROGRESS === $task->status && TaskStatusEnum::CODE_REVIEW === $to) {
                 $text = $this->transitionInProgressToCodeReview($text, $task, $arguments, $notes);
@@ -225,6 +231,36 @@ final readonly class MoveTaskHandler implements ExtensionToolHandlerInterface
         }
 
         return TaskMarkdown::updateField($text, 'Status', TaskStatusEnum::CODE_REVIEW->value);
+    }
+
+    /**
+     * DONE → ARCHIVE only: metadata/status update + file move by caller; no git side effects.
+     *
+     * @param list<string> $notes
+     */
+    private function transitionToArchive(string $text, \Ineersa\HatfieldExt\TaskWorkflow\Store\TaskInfo $task, array &$notes): string
+    {
+        if (TaskStatusEnum::DONE !== $task->status) {
+            throw new \RuntimeException('ARCHIVE is only allowed from DONE. Task is currently '.$task->status->value.'.');
+        }
+
+        $notes[] = 'Archived task without git, worktree, PR, or branch side effects.';
+
+        return TaskMarkdown::updateField($text, 'Status', TaskStatusEnum::ARCHIVE->value);
+    }
+
+    /**
+     * ANY → CANCELLED: update status metadata and, when Worktree metadata is present,
+     * safely remove that worktree + IDEA exclusions. Never merge, pull, push, or delete branch.
+     *
+     * @param list<string> $notes
+     */
+    private function transitionToCancelled(string $text, \Ineersa\HatfieldExt\TaskWorkflow\Store\TaskInfo $task, array &$notes): string
+    {
+        $cleanupNotes = $this->worktrees->removeTaskWorktreeSafely($this->codeRoot, $task);
+        array_push($notes, ...$cleanupNotes);
+
+        return TaskMarkdown::updateField($text, 'Status', TaskStatusEnum::CANCELLED->value);
     }
 
     /**

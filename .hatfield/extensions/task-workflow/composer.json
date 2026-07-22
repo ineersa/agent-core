@@ -4,7 +4,8 @@
     "type": "hatfield-extension",
     "license": "MIT",
     "require": {
-        "php": ">=8.3"
+        "php": ">=8.3",
+        "helgesverre/toon": "^3.1"
     },
     "autoload": {
         "psr-4": {

@@ -162,22 +162,9 @@ final class WorktreeManager
         $notes[] = trim('' !== $merge->stdout ? $merge->stdout : $merge->stderr);
 
         if ($options['cleanupWorktree']) {
-            $slug = preg_replace('/\.md$/', '', $task->file) ?? $task->file;
-            $base = \dirname($worktree);
-            $remove = $this->git->git(['worktree', 'remove', $worktree], $codeRoot);
-            if (0 !== $remove->exitCode) {
-                $notes[] = 'Worktree cleanup failed: '.trim('' !== $remove->stderr ? $remove->stderr : $remove->stdout);
-                $notes[] = 'IDEA exclusions preserved for '.$worktree.' because worktree removal failed.';
-            } else {
-                $notes[] = 'Removed worktree '.$worktree.'.';
-                $exclusion = $this->removeWorktreeExclusions($slug, $base);
-                if (($exclusion['note'] ?? null) !== null) {
-                    $notes[] = $exclusion['note'];
-                }
-                if ($exclusion['updated']) {
-                    $notes[] = 'Removed IDEA exclusions for worktree '.$worktree.'.';
-                }
-            }
+            // Shared non-forced cleanup: remove worktree first, then IDEA exclusions only
+            // after a successful remove so a dirty/failed worktree keeps its markers.
+            array_push($notes, ...$this->cleanupWorktreeAndIdeaExclusions($codeRoot, $task, failClosed: false));
         }
 
         if ($options['deleteBranch']) {
@@ -195,6 +182,43 @@ final class WorktreeManager
         }
 
         return $notes;
+    }
+
+    /**
+     * Cancel/cleanup path: remove a task worktree without merge/pull/branch deletion.
+     *
+     * Fail closed: if Worktree metadata points at a directory and safe
+     * `git worktree remove` fails, throw without removing IDEA exclusions.
+     * Leave the git branch intact. Historical Branch/Worktree metadata is left
+     * for the caller to preserve in the task Markdown.
+     *
+     * @return list<string>
+     */
+    public function removeTaskWorktreeSafely(string $codeRoot, TaskInfo $task): array
+    {
+        $worktree = $task->worktree;
+        if (null === $worktree || '' === $worktree) {
+            return ['No Worktree metadata; cancelled without git worktree cleanup.'];
+        }
+
+        if (!is_dir($worktree)) {
+            // Directory already gone — still try IDEA exclusion cleanup so markers
+            // do not linger after an external/manual worktree removal.
+            $slug = preg_replace('/\.md$/', '', $task->file) ?? $task->file;
+            $base = \dirname($worktree);
+            $notes = ['Worktree path missing ('.$worktree.'); skipping git worktree remove.'];
+            $exclusion = $this->removeWorktreeExclusions($slug, $base);
+            if (($exclusion['note'] ?? null) !== null) {
+                $notes[] = $exclusion['note'];
+            }
+            if ($exclusion['updated']) {
+                $notes[] = 'Removed IDEA exclusions for worktree '.$worktree.'.';
+            }
+
+            return $notes;
+        }
+
+        return $this->cleanupWorktreeAndIdeaExclusions($codeRoot, $task, failClosed: true);
     }
 
     /** @return array{updated: bool, note?: string} */
@@ -279,6 +303,51 @@ final class WorktreeManager
         }
 
         return ['updated' => true];
+    }
+
+    /**
+     * Shared worktree + IDEA exclusion cleanup used by DONE merge and CANCELLED.
+     *
+     * Ordering invariant: never strip IDEA exclusions until `git worktree remove`
+     * succeeds. Never force-delete or recursively delete a dirty worktree.
+     *
+     * @return list<string>
+     */
+    private function cleanupWorktreeAndIdeaExclusions(string $codeRoot, TaskInfo $task, bool $failClosed): array
+    {
+        $worktree = $task->worktree;
+        if (null === $worktree || '' === $worktree) {
+            return [];
+        }
+
+        $slug = preg_replace('/\.md$/', '', $task->file) ?? $task->file;
+        $base = \dirname($worktree);
+        $notes = [];
+
+        // Non-forced remove only. Dirty trees must fail rather than be deleted.
+        $remove = $this->git->git(['worktree', 'remove', $worktree], $codeRoot);
+        if (0 !== $remove->exitCode) {
+            $detail = trim('' !== $remove->stderr ? $remove->stderr : $remove->stdout);
+            if ($failClosed) {
+                throw new \RuntimeException('Safe worktree cleanup failed; leaving task unmoved and IDEA exclusions intact.'."\nWorktree: ".$worktree."\n".('' !== $detail ? $detail : '(no git output)'));
+            }
+
+            $notes[] = 'Worktree cleanup failed: '.('' !== $detail ? $detail : '(no git output)');
+            $notes[] = 'IDEA exclusions preserved for '.$worktree.' because worktree removal failed.';
+
+            return $notes;
+        }
+
+        $notes[] = 'Removed worktree '.$worktree.'.';
+        $exclusion = $this->removeWorktreeExclusions($slug, $base);
+        if (($exclusion['note'] ?? null) !== null) {
+            $notes[] = $exclusion['note'];
+        }
+        if ($exclusion['updated']) {
+            $notes[] = 'Removed IDEA exclusions for worktree '.$worktree.'.';
+        }
+
+        return $notes;
     }
 
     private function resolvePath(string $codeRoot, string $worktreeBase): string
