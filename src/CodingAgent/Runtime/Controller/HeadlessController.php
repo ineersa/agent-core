@@ -7,11 +7,14 @@ namespace Ineersa\CodingAgent\Runtime\Controller;
 use Ineersa\AgentCore\Contract\Tool\ToolExecutionSettingsInterface;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeExceptionBoundary;
 use Ineersa\CodingAgent\Runtime\Controller\Event\ControllerCommandEvent;
+use Ineersa\CodingAgent\Runtime\Process\RuntimeProcessConfig;
 use Ineersa\CodingAgent\Runtime\Protocol\JsonlCodec;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeCommand;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Ineersa\CodingAgent\Tool\BackgroundProcessManager;
+use Ineersa\Hatfield\ExtensionApi\Runtime\RuntimeStartedEvent;
+use Ineersa\Hatfield\ExtensionApi\Runtime\RuntimeStoppingEvent;
 use Psr\Log\LoggerInterface;
 use Revolt\EventLoop;
 use Symfony\Component\Console\Command\Command;
@@ -83,6 +86,12 @@ final class HeadlessController
          * and sends append_message UserCommands to the agent session.
          */
         private readonly ?BackgroundProcessCompletionPoller $bgProcessCompletionPoller = null,
+        /**
+         * Source/PHAR-safe executable prefix and runtime CWD for public
+         * extension runtime lifecycle events. Optional so unit tests that
+         * construct the controller without process config remain valid.
+         */
+        private readonly ?RuntimeProcessConfig $runtimeProcessConfig = null,
     ) {
         $this->sessionId = $_SERVER['HATFIELD_SESSION_ID'] ?? $_ENV['HATFIELD_SESSION_ID'] ?? 'unknown';
     }
@@ -157,6 +166,10 @@ final class HeadlessController
         // spawning.
         $this->consumerSupervisor->launch('scheduler_default');
         $this->consumerSupervisor->launch('mcp');
+
+        // Notify extensions that the owning controller runtime is ready.
+        // Scalar-only payload: no Process/Messenger/Doctrine/container objects.
+        $this->dispatchRuntimeStarted();
 
         // Non-blocking stdin: read JSONL commands from TUI.
         EventLoop::onReadable(\STDIN, function (string $watcherId, $stream): void {
@@ -418,7 +431,65 @@ final class HeadlessController
 
         $this->logger->info('Controller shutting down gracefully');
 
+        // Extension-owned children first, then Hatfield messenger consumers.
+        $this->dispatchRuntimeStopping();
         $this->consumerSupervisor->shutdown();
         $this->bgProcessManager?->shutdownCleanup($this->sessionId);
+    }
+
+    private function dispatchRuntimeStarted(): void
+    {
+        if (null === $this->runtimeProcessConfig) {
+            return;
+        }
+
+        try {
+            $this->dispatcher->dispatch(new RuntimeStartedEvent(
+                sessionId: $this->sessionId,
+                runtimeCwd: $this->runtimeProcessConfig->runtimeCwd(),
+                applicationCommand: $this->runtimeProcessConfig->executableCommand(),
+                executablePath: $this->runtimeProcessConfig->executablePath(),
+            ));
+        } catch (\Throwable $e) {
+            // Extension lifecycle failures must not take down the controller.
+            $this->logger->error('RuntimeStartedEvent dispatch failed', [
+                'component' => 'HeadlessController',
+                'event_type' => 'runtime.started.dispatch_failed',
+                'session_id' => $this->sessionId,
+                'exception_class' => $e::class,
+            ]);
+        }
+    }
+
+    private function dispatchRuntimeStopping(): void
+    {
+        $runtimeCwd = $this->runtimeProcessConfig?->runtimeCwd();
+        if (null === $runtimeCwd || '' === $runtimeCwd) {
+            $fromEnv = $_ENV['HATFIELD_CWD'] ?? null;
+            if (\is_string($fromEnv) && '' !== $fromEnv) {
+                $runtimeCwd = $fromEnv;
+            } else {
+                $cwd = getcwd();
+                $runtimeCwd = false === $cwd ? '' : $cwd;
+            }
+        }
+
+        if ('' === $runtimeCwd) {
+            return;
+        }
+
+        try {
+            $this->dispatcher->dispatch(new RuntimeStoppingEvent(
+                sessionId: $this->sessionId,
+                runtimeCwd: $runtimeCwd,
+            ));
+        } catch (\Throwable $e) {
+            $this->logger->error('RuntimeStoppingEvent dispatch failed', [
+                'component' => 'HeadlessController',
+                'event_type' => 'runtime.stopping.dispatch_failed',
+                'session_id' => $this->sessionId,
+                'exception_class' => $e::class,
+            ]);
+        }
     }
 }

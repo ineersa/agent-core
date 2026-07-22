@@ -11,6 +11,7 @@ parameters:
   paths:
     - ./src
     - .hatfield/extensions/task-workflow/src
+    - .hatfield/extensions/observational-memory/src
   exclude_files:
     - .*\.test\.php$
     - .*Test\.php$
@@ -145,6 +146,11 @@ parameters:
       collectors:
         - type: classNameRegex
           value: '#^Ineersa\\HatfieldExt\\FileRewind\\#'
+
+    - name: HatfieldExtObservationalMemory
+      collectors:
+        - type: classNameRegex
+          value: '#^Ineersa\\HatfieldExt\\ObservationalMemory\\#'
 
     - name: AppExtensionBuiltin
       collectors:
@@ -721,6 +727,12 @@ parameters:
     HatfieldExtFileRewind:
       - AppExtensionApi
       - SymfonyTui
+    HatfieldExtObservationalMemory:
+      - AppExtensionApi
+      - SymfonyMessenger
+      - SymfonyEventDispatcher
+      - SymfonyProcess
+      - HatfieldExtObservationalMemory
     AppExtensionBuiltin:
       - AppExtensionApi
       - AppRuntimeContract

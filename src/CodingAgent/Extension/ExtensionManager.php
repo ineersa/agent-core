@@ -11,6 +11,8 @@ use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
 use Ineersa\Hatfield\ExtensionApi\HatfieldExtensionInterface;
 use Ineersa\Hatfield\ExtensionApi\Tui\TuiExtensionInterface;
 use Psr\Log\LoggerInterface;
+use Symfony\Component\EventDispatcher\EventDispatcherInterface;
+use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 
 /**
  * Discovers and loads enabled Hatfield extensions at startup.
@@ -37,11 +39,25 @@ final class ExtensionManager implements TuiExtensionRegistryInterface
     /** @var list<TuiExtensionInterface> */
     private array $tuiExtensions = [];
 
+    /** @var array<class-string, HatfieldExtensionInterface> */
+    private array $loadedExtensions = [];
+
     public function __construct(
         private readonly AppConfig $config,
         private readonly ExtensionApiInterface $extensionApi,
         private readonly LoggerInterface $logger,
+        private readonly ?EventDispatcherInterface $eventDispatcher = null,
     ) {
+    }
+
+    /**
+     * Return a successfully loaded extension instance by class name.
+     *
+     * Used by generic host bootstrap commands such as extension:run.
+     */
+    public function getLoadedExtension(string $className): ?HatfieldExtensionInterface
+    {
+        return $this->loadedExtensions[$className] ?? null;
     }
 
     /**
@@ -77,6 +93,7 @@ final class ExtensionManager implements TuiExtensionRegistryInterface
     {
         $this->loadOutcomes = [];
         $this->tuiExtensions = [];
+        $this->loadedExtensions = [];
         $enabled = $this->getEnabledClasses();
 
         if ([] === $enabled) {
@@ -185,9 +202,25 @@ final class ExtensionManager implements TuiExtensionRegistryInterface
             return $msg;
         }
 
+        $this->loadedExtensions[$className] = $instance;
         $this->loadOutcomes[] = new LoadedExtensionItemDTO($className, true);
         if ($instance instanceof TuiExtensionInterface) {
             $this->tuiExtensions[] = $instance;
+        }
+
+        // Extensions that implement Symfony's EventSubscriberInterface are
+        // registered on the host EventDispatcher so they can listen to public
+        // runtime lifecycle events without a custom hook registry.
+        if ($instance instanceof EventSubscriberInterface) {
+            if (null === $this->eventDispatcher) {
+                $this->logger->warning('Extension implements EventSubscriberInterface but no EventDispatcher is available', [
+                    'component' => 'ExtensionManager',
+                    'event_type' => 'extension.subscriber_skipped',
+                    'class' => $className,
+                ]);
+            } else {
+                $this->eventDispatcher->addSubscriber($instance);
+            }
         }
 
         return null;
