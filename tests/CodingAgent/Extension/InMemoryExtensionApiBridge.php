@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Extension;
 
+use Ineersa\Hatfield\ExtensionApi\Agent\AgentCallRequestDTO;
+use Ineersa\Hatfield\ExtensionApi\Agent\AgentRunnerInterface;
 use Ineersa\Hatfield\ExtensionApi\Command\CommandDefinitionDTO;
 use Ineersa\Hatfield\ExtensionApi\Command\ExtensionCommandHandlerInterface;
 use Ineersa\Hatfield\ExtensionApi\Exec\ExecInterface;
@@ -12,6 +14,7 @@ use Ineersa\Hatfield\ExtensionApi\Exec\ExecResultDTO;
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
 use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterTurnCommitHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Prompt\PromptContributorInterface;
+use Ineersa\Hatfield\ExtensionApi\Session\SessionEventReaderInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallRewriteHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolRegistrationDTO;
@@ -154,5 +157,25 @@ final class InMemoryExtensionApiBridge implements ExtensionApiInterface
     public function registerAfterTurnCommitHook(AfterTurnCommitHookInterface $hook): void
     {
         $this->afterTurnCommitHooks[] = $hook;
+    }
+
+    public function agent(): AgentRunnerInterface
+    {
+        return new class implements AgentRunnerInterface {
+            public function run(AgentCallRequestDTO $request): void
+            {
+                throw new \LogicException('agent() is not supported on the InMemoryExtensionApiBridge. Use the production ExtensionToolRegistryBridge.');
+            }
+        };
+    }
+
+    public function sessionEvents(): SessionEventReaderInterface
+    {
+        return new class implements SessionEventReaderInterface {
+            public function readRange(string $runId, int $startSeq, int $endSeq): iterable
+            {
+                return [];
+            }
+        };
     }
 }

@@ -15,6 +15,8 @@ use Ineersa\CodingAgent\Tests\Extension\Support\NoOpExtensionToolHandler;
 use Ineersa\CodingAgent\Tests\Extension\Support\RecordingExtensionToolHandler;
 use Ineersa\CodingAgent\Tool\ToolRegistry;
 use Ineersa\CodingAgent\Tool\ToolRegistryInterface;
+use Ineersa\Hatfield\ExtensionApi\Agent\AgentCallRequestDTO;
+use Ineersa\Hatfield\ExtensionApi\Agent\AgentRunnerInterface;
 use Ineersa\Hatfield\ExtensionApi\Command\CommandContextInterface;
 use Ineersa\Hatfield\ExtensionApi\Command\CommandDefinitionDTO;
 use Ineersa\Hatfield\ExtensionApi\Command\CommandRegistryInterface;
@@ -23,6 +25,7 @@ use Ineersa\Hatfield\ExtensionApi\Exec\ExecInterface;
 use Ineersa\Hatfield\ExtensionApi\Exec\ExecOptionsDTO;
 use Ineersa\Hatfield\ExtensionApi\Exec\ExecResultDTO;
 use Ineersa\Hatfield\ExtensionApi\Prompt\PromptContributorInterface;
+use Ineersa\Hatfield\ExtensionApi\Session\SessionEventReaderInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\ExtensionToolHandlerInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallContextDTO;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallDecisionDTO;
@@ -595,7 +598,28 @@ final class ExtensionToolRegistryBridgeTest extends TestCase
             $appConfig ?? $this->testAppConfig(),
             $execBridge ?? $this->dummyExecBridge(),
             $commandRegistry ?? $this->dummyCommandRegistry(),
+            $this->dummyAgentRunner(),
+            $this->dummySessionEventReader(),
         );
+    }
+
+    private function dummyAgentRunner(): AgentRunnerInterface
+    {
+        return new class implements AgentRunnerInterface {
+            public function run(AgentCallRequestDTO $request): void
+            {
+            }
+        };
+    }
+
+    private function dummySessionEventReader(): SessionEventReaderInterface
+    {
+        return new class implements SessionEventReaderInterface {
+            public function readRange(string $runId, int $startSeq, int $endSeq): iterable
+            {
+                return [];
+            }
+        };
     }
 
     private function dummyToolCallHook(string $label = 'test'): ToolCallHookInterface

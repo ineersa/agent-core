@@ -4,11 +4,13 @@ declare(strict_types=1);
 
 namespace Ineersa\Hatfield\ExtensionApi;
 
+use Ineersa\Hatfield\ExtensionApi\Agent\AgentRunnerInterface;
 use Ineersa\Hatfield\ExtensionApi\Command\CommandDefinitionDTO;
 use Ineersa\Hatfield\ExtensionApi\Command\ExtensionCommandHandlerInterface;
 use Ineersa\Hatfield\ExtensionApi\Exec\ExecInterface;
 use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterTurnCommitHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Prompt\PromptContributorInterface;
+use Ineersa\Hatfield\ExtensionApi\Session\SessionEventReaderInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallRewriteHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolRegistrationDTO;
@@ -122,6 +124,27 @@ interface ExtensionApiInterface
 
     /**
      * Register a hook invoked after AgentCore commits a turn.
+     *
+     * The context includes the already-committed hot event batch (seq, type,
+     * payload, turnNo when available). This is the best-effort acceleration
+     * path for post-commit observers such as observational memory. Permanent
+     * worker-failure/crash gaps are repaired by recovery/compaction reads.
      */
     public function registerAfterTurnCommitHook(AfterTurnCommitHookInterface $hook): void;
+
+    /**
+     * Hatfield-owned background agent runner.
+     *
+     * Runs one isolated model invocation with only the tools supplied on the
+     * request. Publicly blocking; may stream internally for provider transports.
+     */
+    public function agent(): AgentRunnerInterface;
+
+    /**
+     * Canonical session event reader for recovery/compaction catch-up only.
+     *
+     * Do not call this on every turn or boundary. Hot paths must use the
+     * AfterTurnCommit committed batch instead.
+     */
+    public function sessionEvents(): SessionEventReaderInterface;
 }

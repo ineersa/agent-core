@@ -266,6 +266,11 @@ parameters:
         - type: classNameRegex
           value: '#^Symfony\\\\AI\\\\Platform\\\\#i'
 
+    - name: SymfonyAiAgent
+      collectors:
+        - type: classNameRegex
+          value: '#^Symfony\\\\AI\\\\Agent\\\\#i'
+
     - name: SymfonyHttpClient
       collectors:
         - type: classNameRegex
@@ -633,6 +638,7 @@ parameters:
       - AppTool
       - AgentCore
       - SymfonyAiPlatform
+      - SymfonyAiAgent
       - SymfonyEventDispatcher
       - SymfonyProcess
 
@@ -728,6 +734,8 @@ parameters:
     SymfonyAiPlatform:
       - SymfonyEventDispatcher
       - SymfonyHttpClient
+    SymfonyAiAgent:
+      - SymfonyAiPlatform
     SymfonyEventDispatcher: ~
     SymfonyConsole: ~
     SymfonyMessenger: ~
