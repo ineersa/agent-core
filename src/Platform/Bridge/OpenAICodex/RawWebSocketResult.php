@@ -25,6 +25,18 @@ final class RawWebSocketResult implements CancellableRawResultInterface
 
     private bool $cacheFinalized = false;
 
+    /**
+     * Completed output items observed via response.output_item.done.
+     *
+     * Used as the continuation baseline when the terminal response omits or
+     * empties response.output. Mirrors ResultConverter's stream fallback for
+     * function calls so previous_response_id deltas do not re-send items the
+     * provider already owns.
+     *
+     * @var list<array<string, mixed>>
+     */
+    private array $completedOutputItems = [];
+
     public function __construct(
         private readonly WebsocketConnection $connection,
         private readonly float $idleTimeoutSeconds,
@@ -127,6 +139,14 @@ final class RawWebSocketResult implements CancellableRawResultInterface
             yield $event;
 
             $type = $event['type'] ?? '';
+
+            // Capture finalized items as they complete. Terminal response.output
+            // is preferred when present; these are the fallback when it is not
+            // (common for tool-call turns on the WebSocket transport).
+            if ('response.output_item.done' === $type && \is_array($event['item'] ?? null)) {
+                $this->completedOutputItems[] = $event['item'];
+            }
+
             if ('response.completed' === $type) {
                 $this->commitContinuationIfSuccessful($event);
                 $streamSucceeded = true;
@@ -186,6 +206,27 @@ final class RawWebSocketResult implements CancellableRawResultInterface
             return;
         }
 
+        $context->lease->entry->continuation = CodexWebSocketContinuationState::fromSuccessfulResponse(
+            $context->fullRequestBody,
+            $responseId,
+            $this->resolveContinuationResponseItems($response),
+        );
+    }
+
+    /**
+     * Prefer canonical terminal response.output when populated; otherwise use
+     * completed response.output_item.done items accumulated during the stream.
+     *
+     * When terminal output is present it is authoritative — do not merge with
+     * streamed items, which would duplicate function_call/message/reasoning
+     * entries already listed there.
+     *
+     * @param array<string, mixed> $response
+     *
+     * @return list<array<string, mixed>>
+     */
+    private function resolveContinuationResponseItems(array $response): array
+    {
         $output = $response['output'] ?? [];
         if (!\is_array($output)) {
             $output = [];
@@ -198,11 +239,11 @@ final class RawWebSocketResult implements CancellableRawResultInterface
             }
         }
 
-        $context->lease->entry->continuation = CodexWebSocketContinuationState::fromSuccessfulResponse(
-            $context->fullRequestBody,
-            $responseId,
-            $items,
-        );
+        if ([] !== $items) {
+            return $items;
+        }
+
+        return $this->completedOutputItems;
     }
 
     private function finalizeCachedLifecycle(bool $success): void
