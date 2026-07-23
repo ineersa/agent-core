@@ -15,20 +15,13 @@ use Ineersa\Tui\Footer\ContextUsageFormatter;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Screen\ChatScreen;
 use Psr\Log\LoggerInterface;
-use Psr\Log\NullLogger;
 use Symfony\Component\Tui\Tui;
 
 /**
  * Handler for the /usage slash command.
  *
- * Probes provider quotas through the runtime contract and formats
+ * Probes configured provider quotas through the runtime contract and formats
  * current-session totals from {@see TuiSessionState::$usage}.
- *
- * The slash-command interface is synchronous, so network probes can block the
- * event loop for up to the probe timeout. To avoid an unexplained frozen
- * terminal, this handler paints an immediate working indicator (same pattern as
- * {@see SubmitListener}'s pre-dispatch Working... feedback) before probing and
- * clears it afterward.
  *
  * @internal Registered by UsageCommandRegistrar
  */
@@ -37,9 +30,9 @@ final class UsageCommandHandler implements SlashCommandHandler
     public function __construct(
         private readonly ProviderQuotaProbeServiceInterface $quotaProbe,
         private readonly TuiSessionState $state,
-        private readonly ?ChatScreen $screen = null,
-        private readonly ?Tui $tui = null,
-        private readonly LoggerInterface $logger = new NullLogger(),
+        private readonly ChatScreen $screen,
+        private readonly Tui $tui,
+        private readonly LoggerInterface $logger,
     ) {
     }
 
@@ -51,8 +44,6 @@ final class UsageCommandHandler implements SlashCommandHandler
             try {
                 $report = $this->quotaProbe->probe();
             } catch (\Throwable $e) {
-                // Top-level guard: probe service should already degrade per-provider,
-                // but never let an unexpected failure blank the session totals.
                 return new TranscriptMessage(
                     implode("\n", [
                         '## Provider usage / quota status',
@@ -66,15 +57,16 @@ final class UsageCommandHandler implements SlashCommandHandler
                 );
             }
 
-            $lines = [
-                '## Provider usage / quota status',
-                '',
-                ...$this->formatSection($report->openaiCodex),
-                '',
-                ...$this->formatSection($report->zai),
-                '',
-                ...$this->formatSessionLines(),
-            ];
+            $lines = ['## Provider usage / quota status', ''];
+            if ([] === $report->sections) {
+                $lines[] = '_No configured providers to probe._';
+                $lines[] = '';
+            } else {
+                foreach ($report->sections as $section) {
+                    $lines = [...$lines, ...$this->formatSection($section), ''];
+                }
+            }
+            $lines = [...$lines, ...$this->formatSessionLines()];
 
             return new TranscriptMessage(implode("\n", $lines), 'system', 'markdown');
         } finally {
@@ -84,18 +76,11 @@ final class UsageCommandHandler implements SlashCommandHandler
 
     private function showProbingIndicator(): void
     {
-        if (null === $this->screen || null === $this->tui) {
-            return;
-        }
-
-        // Force a terminal repaint so the user sees the indicator immediately
-        // instead of staring at a frozen editor while provider HTTP runs.
         $this->screen->setWorkingMessage('Checking provider usage...');
         try {
             $this->tui->requestRender();
             $this->tui->processRender();
         } catch (\Throwable $e) {
-            // Non-fatal: render may fail if the terminal is in a transient state.
             $this->logger->debug('UsageCommandHandler: immediate probing render failed (non-fatal)', [
                 'component' => 'UsageCommandHandler',
                 'event_type' => 'usage_probe_indicator_render_failed',
@@ -107,11 +92,6 @@ final class UsageCommandHandler implements SlashCommandHandler
 
     private function clearProbingIndicator(): void
     {
-        if (null === $this->screen) {
-            return;
-        }
-
-        // Clear only our own message so concurrent Working... from a run is not clobbered incorrectly.
         if ('Checking provider usage...' === $this->screen->registry()->getWorkingMessage()) {
             $this->screen->setWorkingMessage('');
         }
@@ -128,12 +108,11 @@ final class UsageCommandHandler implements SlashCommandHandler
             $lines[] = '- **Error:** '.$section->error;
         }
 
-        $windows = $section->windows;
-        if ([] === $windows && (null === $section->error || '' === $section->error)) {
+        if ([] === $section->windows && (null === $section->error || '' === $section->error)) {
             $lines[] = '- Quota windows: unavailable';
         }
 
-        foreach ($windows as $window) {
+        foreach ($section->windows as $window) {
             $lines[] = '- '.$this->formatWindow($window);
         }
 
@@ -142,9 +121,6 @@ final class UsageCommandHandler implements SlashCommandHandler
         }
         if (null !== $section->account && '' !== $section->account) {
             $lines[] = '- **Account:** '.$section->account;
-        }
-        if (null !== $section->credits) {
-            $lines[] = \sprintf('- **Credits:** %.2f', $section->credits);
         }
         if (null !== $section->modelCount) {
             $lines[] = \sprintf('- **Models visible:** %d', $section->modelCount);
@@ -162,12 +138,7 @@ final class UsageCommandHandler implements SlashCommandHandler
             ? ', resets '.$window->resetDescription
             : '';
 
-        return \sprintf(
-            '%s: %.0f%% left%s',
-            $window->label,
-            $window->percentLeft,
-            $reset,
-        );
+        return \sprintf('%s: %.0f%% left%s', $window->label, $window->percentLeft, $reset);
     }
 
     /**
@@ -194,7 +165,6 @@ final class UsageCommandHandler implements SlashCommandHandler
             $this->state->contextWindow,
         );
         if (null !== $context) {
-            // Latest-turn context usage — distinct from cumulative session tokens below.
             $lines[] = '- **Context (latest turn):** '.$context->text
                 .\sprintf(' (%s / %s tokens)', number_format($usage->latestInputTokens), number_format($this->state->contextWindow));
         } elseif ($this->state->contextWindow > 0) {
@@ -229,7 +199,6 @@ final class UsageCommandHandler implements SlashCommandHandler
 
     private function sanitizeError(\Throwable $e): string
     {
-        // User-facing text: class + bounded first line only; never multi-line dumps.
         $trimmed = trim($e->getMessage());
         if ('' === $trimmed) {
             return $e::class;

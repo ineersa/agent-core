@@ -7,11 +7,9 @@ namespace Ineersa\CodingAgent\Runtime\Contract;
 /**
  * Read-only boundary for probing provider quota endpoints.
  *
- * Implemented by CodingAgent infrastructure. TUI code depends on this
- * interface only — never on auth storage, API keys, or HTTP clients.
- *
- * Probes are independently degradable: one provider failure must not
- * suppress the other provider's section.
+ * TUI depends on this interface only — never on auth storage, API keys, or HTTP.
+ * Absent providers produce an empty section list; configured failures degrade
+ * into per-section errors without suppressing sibling sections.
  */
 interface ProviderQuotaProbeServiceInterface
 {

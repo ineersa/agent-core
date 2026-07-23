@@ -7,9 +7,7 @@ namespace Ineersa\CodingAgent\Runtime\Contract;
 /**
  * Sanitized provider-quota section for the `/usage` command.
  *
- * Contains display-safe fields only — never tokens, API keys, or raw
- * provider response bodies. Independent sections degrade via {@see $error}
- * / {@see $note} without affecting sibling providers or session totals.
+ * Display-safe fields only — never tokens, API keys, or raw response bodies.
  */
 final readonly class ProviderQuotaSectionDTO
 {
@@ -21,11 +19,9 @@ final readonly class ProviderQuotaSectionDTO
         public array $windows = [],
         public ?string $plan = null,
         public ?string $account = null,
-        public ?float $credits = null,
         public ?int $modelCount = null,
         public ?string $note = null,
         public ?string $error = null,
-        public bool $configured = true,
     ) {
     }
 }

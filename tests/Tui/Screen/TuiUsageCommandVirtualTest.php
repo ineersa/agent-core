@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\Tui\Tests\Screen;
 
+use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Runtime\Contract\ProviderQuotaProbeServiceInterface;
 use Ineersa\CodingAgent\Runtime\Contract\ProviderQuotaReportDTO;
 use Ineersa\CodingAgent\Runtime\Contract\ProviderQuotaSectionDTO;
@@ -24,9 +25,7 @@ use Symfony\Component\Tui\Widget\MarkdownWidget;
 
 /**
  * Thesis: production parser/router/registrar/handler for /usage renders
- * sanitized provider sections plus session cumulative tokens, cost, and
- * latest-turn context usage in the transcript (lowest correct TUI layer).
- * Also proves the synchronous probe paints and clears a working indicator.
+ * provider sections when present and always renders session totals.
  */
 final class TuiUsageCommandVirtualTest extends TestCase
 {
@@ -38,8 +37,8 @@ final class TuiUsageCommandVirtualTest extends TestCase
         $probe = new class implements ProviderQuotaProbeServiceInterface {
             public function probe(): ProviderQuotaReportDTO
             {
-                return new ProviderQuotaReportDTO(
-                    openaiCodex: new ProviderQuotaSectionDTO(
+                return new ProviderQuotaReportDTO([
+                    new ProviderQuotaSectionDTO(
                         title: 'OpenAI Codex',
                         windows: [
                             new ProviderQuotaWindowDTO('Codex (5h)', 83.0, 'in 2h'),
@@ -47,14 +46,14 @@ final class TuiUsageCommandVirtualTest extends TestCase
                         plan: 'pro',
                         account: 'user@example.com',
                     ),
-                    zai: new ProviderQuotaSectionDTO(
+                    new ProviderQuotaSectionDTO(
                         title: 'z.ai',
                         windows: [
                             new ProviderQuotaWindowDTO('Tokens (250/1,000)', 75.0, 'in 1h'),
                         ],
                         modelCount: 3,
                     ),
-                );
+                ]);
             }
         };
 
@@ -72,7 +71,7 @@ final class TuiUsageCommandVirtualTest extends TestCase
         $state->usage->hasCacheTelemetry = true;
 
         $harness = new VirtualTuiHarness(sessionId: 'usage-virtual');
-        (new UsageCommandRegistrar($registry, $probe))->register(
+        (new UsageCommandRegistrar($registry, $probe, new TestLogger()))->register(
             $this->buildTuiContext()
                 ->withTui($harness->tui())
                 ->withState($state)
@@ -117,6 +116,39 @@ final class TuiUsageCommandVirtualTest extends TestCase
     }
 
     #[Test]
+    public function testUsageOmitsProviderSectionsWhenProbeReturnsEmptyList(): void
+    {
+        $probe = new class implements ProviderQuotaProbeServiceInterface {
+            public function probe(): ProviderQuotaReportDTO
+            {
+                return new ProviderQuotaReportDTO([]);
+            }
+        };
+
+        $registry = new SlashCommandRegistry();
+        $state = new TuiSessionState('usage-empty');
+        $state->usage->inputTokens = 11;
+        $state->usage->outputTokens = 2;
+        $state->usage->totalCost = 0.01;
+        $harness = new VirtualTuiHarness(sessionId: 'usage-empty');
+        (new UsageCommandRegistrar($registry, $probe, new TestLogger()))->register(
+            $this->buildTuiContext()
+                ->withTui($harness->tui())
+                ->withState($state)
+                ->withScreen($harness->screen())
+                ->build(),
+        );
+
+        $result = (new SubmissionRouter(new CommandParser(), $registry))->route('/usage');
+        $this->assertInstanceOf(TranscriptMessage::class, $result);
+        $this->assertStringContainsString('No configured providers to probe', $result->text);
+        $this->assertStringNotContainsString('### OpenAI Codex', $result->text);
+        $this->assertStringNotContainsString('### z.ai', $result->text);
+        $this->assertStringContainsString('### Session totals', $result->text);
+        $this->assertStringContainsString('11 in / 2 out', $result->text);
+    }
+
+    #[Test]
     public function testUsageShowsAndClearsProbingWorkingIndicator(): void
     {
         $registry = new SlashCommandRegistry();
@@ -137,22 +169,11 @@ final class TuiUsageCommandVirtualTest extends TestCase
             {
                 $this->workingDuringProbe = $this->screen->registry()->getWorkingMessage();
 
-                return new ProviderQuotaReportDTO(
-                    openaiCodex: new ProviderQuotaSectionDTO(
-                        title: 'OpenAI Codex',
-                        error: 'skip',
-                        configured: false,
-                    ),
-                    zai: new ProviderQuotaSectionDTO(
-                        title: 'z.ai',
-                        error: 'skip',
-                        configured: false,
-                    ),
-                );
+                return new ProviderQuotaReportDTO([]);
             }
         };
 
-        (new UsageCommandRegistrar($registry, $probe))->register(
+        (new UsageCommandRegistrar($registry, $probe, new TestLogger()))->register(
             $this->buildTuiContext()
                 ->withTui($tui)
                 ->withState($state)
@@ -183,7 +204,7 @@ final class TuiUsageCommandVirtualTest extends TestCase
         $state->usage->totalCost = 0.001;
 
         $harness = new VirtualTuiHarness(sessionId: 'usage-virtual-fail');
-        (new UsageCommandRegistrar($registry, $probe))->register(
+        (new UsageCommandRegistrar($registry, $probe, new TestLogger()))->register(
             $this->buildTuiContext()
                 ->withTui($harness->tui())
                 ->withState($state)
