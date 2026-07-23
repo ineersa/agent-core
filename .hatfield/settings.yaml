@@ -1,375 +1,40 @@
-# Project settings override home settings (~/.hatfield/settings.yaml)
-# which in turn override built-in defaults.
-#
-# When adding new settings keys, update this file and AGENTS.md.
-
-# ---------------------------------------------------------------------------
-# Prompt templates
-# ---------------------------------------------------------------------------
-# Prompt templates are Markdown files invoked with /name. Uncomment and
-# add template files or directories below. Paths support ~,
-# %kernel.project_dir%, and relative paths.
-#
-# Auto-discovery scans ~/.hatfield/prompts/*.md and
-# <cwd>/.hatfield/prompts/*.md non-recursively. These directories are
-# always scanned, even when the prompts: list is set.
-#
-# Template names are derived from lowercase filename stems (review.md →
-# /review). Use lowercase filenames to match TUI slash-command routing.
-#
-# CLI flags:
-#   --prompt-template <path>    (repeatable) explicit template path
-#   --no-prompt-templates       disable auto-discovery and settings paths
-#                               (CLI --prompt-template paths still load)
-#
-# Example:
-# prompts:
-#   - .hatfield/team-prompts
-#   - ~/shared/prompts/review.md
-#
-# See docs/prompt-templates.md for full reference.
-
-# ---------------------------------------------------------------------------
-# Tool output capping
-# ---------------------------------------------------------------------------
-#
-# Uncomment and adjust to override output cap settings:
-#
-# tools:
-#     output_cap:
-#         # Storage directory. Relative paths resolve against the project CWD.
-#         path: .hatfield/tmp/output-cap
-#
-#         # Default char cap for code-like paths (read, bash, edit).
-#         default_cap: 20000
-#
-#         # Char cap for doc-like paths (.md, .txt, .toon).
-#         doc_cap: 50000
-#
-#         # Stale file retention in seconds (24 hours).
-#         retention: 86400
-#
-#         # Optional session prefix for persisted filenames.
-#         # See OutputCapConfig::sessionPrefix.
-#         session_prefix: null
-
-# ---------------------------------------------------------------------------
-# Background process settings (bash/bg_status tools)
-# ---------------------------------------------------------------------------
-#
-# Uncomment and adjust to override background process settings:
-#
-# tools:
-#     background_process:
-#         # Storage directory for background process log files.
-#         # Relative paths resolve against the project CWD.
-#         path: .hatfield/tmp/bg
-#
-#         # Stale log/record retention in seconds (24 hours).
-#         retention: 86400
-#
-#         # Grace period for SIGTERM before SIGKILL on stop.
-#         stop_grace_seconds: 5
-#
-#         # Max characters returned by bg_status log action.
-#         log_tail_chars: 5000
-
-# ---------------------------------------------------------------------------
-# Image tool (view_image) settings
-# ---------------------------------------------------------------------------
-#
-# Uncomment and adjust to override image tool limits:
-#
-# tools:
-#     image:
-#         # Maximum file size in bytes (10 MB).
-#         max_bytes: 10485760
-#
-#         # Maximum image width in pixels (rejection limit).
-#         max_width: 4096
-#
-#         # Maximum image height in pixels (rejection limit).
-#         max_height: 2000
-#
-#         # Resize-to-fit target dimension (default 2000px).
-#         max_dimension: 2000
-#
-#         # Max base64-encoded payload length (default 4.5 MiB).
-#         encoded_max_bytes: 4718592
-#
-#         # Starting JPEG/WebP compression quality.
-#         jpeg_quality: 80
-#
-#         # Minimum JPEG/WebP quality for size reduction steps.
-#         jpeg_min_quality: 40
-
 tui:
-    # Available built-in themes:
-    #   cyberpunk, catppuccin-mocha, nord, gruvbox-dark, oh-p-dark, tokyo-night
-    #
-    # Theme name — choose from a built-in theme or a custom theme from
-    # one of the theme_paths directories.
     theme: cyberpunk
-
-    # Extra search paths for custom theme YAML files.
-    # Note: if uncommented, this replaces the default paths entirely,
-    # not appends. Include any built-in paths you still want.
-    # Default built-in paths are:
-    #   '%kernel.project_dir%/config/themes'
-    #   '.hatfield/themes'
-    #   '~/.hatfield/themes'
-    # theme_paths:
-    #     - '%kernel.project_dir%/config/themes'
-    #     - '.hatfield/themes'
-    #     - '~/.hatfield/themes'
-    #     - .hatfield/themes/custom
-
-    # Transcript display settings.
-    # Uncomment to override defaults. Preview expansion is TUI-session-only
-    # and is not persisted across sessions.
-    # transcript:
-    #     thinking:
-    #         visible: true
-    #         style: dim_italic
-    #     previews:
-    #         expanded_by_default: false
-    #         tool_result_lines: 8
-    #         diff_lines: 20
-
-# Session storage directory for agent runs.
-# Defaults to .hatfield/sessions/ (ignored by git via .hatfield/.gitignore).
-# sessions:
-#     path: .hatfield/sessions
-
-# ---------------------------------------------------------------------------
-# Tools
-# ---------------------------------------------------------------------------
-#
-# Tool execution defaults. To override any of these, uncomment and set values here.
-#
-# tools:
-#     execution:
-#         default_mode: sequential
-#         timeout_seconds: 300
-#         max_parallelism: 4
-#
-#     bash:
-#         default_timeout_seconds: 300
-#         max_timeout_seconds: 3600
-#         background_prompt_threshold_seconds: 15
-#         poll_interval_micros: 100000
-#         log_tail_chars: 20000
-#
-# Active project override (highest precedence): keeps manual smoke at 15s even
-# when ~/.hatfield/settings.yaml sets a different value (e.g. 30).
 tools:
     bash:
         background_prompt_threshold_seconds: 15
-
-# ---------------------------------------------------------------------------
-# Logging configuration
-# ---------------------------------------------------------------------------
-#
-# Controls application logging. Logs use JSONL format with daily rotation
-# (one file per day). The log directory, minimum level, and rotation count
-# are all configurable.
-#
-# ---------------------------------------------------------------------------
-# Extensions
-# ---------------------------------------------------------------------------
-#
-# SafeGuard is enabled by default (see config/hatfield.defaults.yaml).
-# Uncomment below to customize SafeGuard policy:
-#
-# extensions:
-#     settings:
-#         safe_guard:
-#             tool_names:
-#                 bash: bash
-#                 write: write
-#                 edit: edit
-#                 read: read
-#                 settings: settings
-#             allow_command_patterns: []
-#             allow_write_outside_cwd: []
-#             protected_read_patterns: []
-#             dangerous_command_patterns: []
-#             # Fail-closed when no approval channel (controller/TUI) is
-#             # available. Interactive TUI auto-signals an approval channel
-#             # (HATFIELD_APPROVAL_CHANNEL) so SafeGuard prompts even with
-#             # auto_deny_in_noninteractive=true. Set false only when an
-#             # external approval broker will relay questions and send
-#             # answer_human — otherwise the run hangs in WaitingHuman.
-#             auto_deny_in_noninteractive: true
-
 logging:
-#     # Log storage directory. Relative paths resolve against the active
-#     # project CWD. Supports ~ (home) and %kernel.project_dir%.
-#     # Default: .hatfield/logs
-#     path: .hatfield/logs
-#
-#     # Minimum log level. PSR-3 level names (lowercase):
-#     #   debug, info, notice, warning, error, critical, alert, emergency
-      level: info
-#
-#     # Number of daily rotated log files to retain before deletion.
-      max_files: 2
-
-# ---------------------------------------------------------------------------
-# Agent definitions
-# ---------------------------------------------------------------------------
-#
-# Uncomment and adjust to add custom agent definition paths or disable
-# agent discovery entirely.
-#
-# agents:
-#     enabled: true
-#     max_agents: 8
-#     # Foreground subagent internal poll timeout (seconds). Default 900.
-#     # Not ToolExecutor generic timeout; subagent has no ToolExecutor cap.
-#     # subagent_tool_timeout_seconds: 1800
-#     # Parent-only tools stripped from every child (inherit-all and explicit).
-#     # subagent_excluded_tools:
-#     #     - settings
-#     #     - hatfield_docs
-#     paths:
-#         - ~/shared/agents/custom-reviewer.md
-#         - .hatfield/team-agents
-
-# ---------------------------------------------------------------------------
-# Compaction
-# ---------------------------------------------------------------------------
-#
-# Compaction replaces older conversation history with a summary while
-# keeping the most recent messages raw. Uncomment and adjust to override
-# compaction settings.
-#
-# compaction:
-#     auto_enabled: true
-#     compact_after_tokens: 120000
-#     keep_recent_tokens: 20000
-#     model: null                    # null = session model; set provider/model to override
-#     thinking_level: null           # null = session thinking level
-#     provider_overrides:
-#         openai:
-#             compact_after_tokens: 120000
-#             model: openai/gpt-4.1-mini
-#             thinking_level: low
-#     model_overrides:
-#         openai/gpt-4.1:
-#             compact_after_tokens: 140000
-#             model: openai/gpt-4.1-mini
-#             thinking_level: off
-
-# ---------------------------------------------------------------------------
-# AI provider and model configuration
-# ---------------------------------------------------------------------------
-#
-# Add providers and models below to make them available to the agent.
-# Home settings (~/.hatfield/settings.yaml) are the recommended place for
-# personal defaults and secrets references. Project settings can override
-# shared project-local providers or override the default model.
-#
-# Every selectable model must be explicitly listed under its provider.
-# Unknown model names are rejected.
-#
-# Model identifiers follow the format provider_id/model_name:
-#   deepseek/deepseek-v4-pro
-#   llama_cpp/flash
-#   zai/glm-5.1
-#
-# API keys use the env:VAR syntax to avoid committing secrets.
-# Use env:VAR in your home settings file.
-#
+    level: info
+    max_files: 2
 ai:
-    # default_model and default_reasoning belong in ~/.hatfield/settings.yaml
-    # (home settings), not here. Uncomment these only if you want to force
-    # a specific model for everyone working in this project.
-    # default_model: deepseek/deepseek-v4-pro
-    # default_reasoning: medium
-
-    # Favorite models (provider/modelname format) — shown first in /model list
-    # and cycled with Ctrl+P. Toggled via /model fav <provider/modelname>.
-    # favorite_models: []
-
-    # HTTP retry/timeout settings (all values support env:VAR syntax):
-    # http:
-    #     timeout: 30
-    #     max_duration: 120
-    #     max_retries: 2
-    #     base_delay_ms: 1000
-    #     max_delay_ms: 60000
-
-    # Agent-level LLM step auto-retry after classified retryable failures:
-    # agent_retry:
-    #     max_attempts: 2
-    #     base_delay_ms: 1000
-    #     max_delay_ms: 60000
-
     providers:
         deepseek:
             type: generic
             enabled: true
-            base_url: https://api.deepseek.com
+            base_url: 'https://api.deepseek.com'
             api: openai-completions
-            api_key: env:DEEPSEEK_API_KEY
+            api_key: 'env:DEEPSEEK_API_KEY'
             completions_path: /chat/completions
             supports_completions: true
             supports_embeddings: false
-            # DeepSeek API requires reasoning_content on every assistant
-            # message. thinking_format: deepseek emits thinking.type alongside
-            # reasoning_effort when enabled.
-            compatibility:
-                thinking_format: deepseek
-                requires_reasoning_content_on_assistant_messages: true
-            models:
-                deepseek-v4-pro:
-                    name: DeepSeek V4 Pro
-                    context_window: 1000000
-                    max_tokens: 384000
-                    input: [text]
-                    tool_calling: true
-                    reasoning: true
-                    thinking_level_map: { minimal: high, low: high, medium: high, high: high, xhigh: max }
-                    cost: { input: 0.435, output: 0.87, cache_read: 0.003625, cache_write: 0 }
-                deepseek-v4-flash:
-                    name: DeepSeek V4 Flash
-                    context_window: 1000000
-                    max_tokens: 384000
-                    input: [text]
-                    tool_calling: true
-                    reasoning: true
-                    thinking_level_map: { minimal: high, low: high, medium: high, high: high, xhigh: max }
-                    cost: { input: 0.14, output: 0.28, cache_read: 0.0028, cache_write: 0 }
-
+            compatibility: { thinking_format: deepseek, requires_reasoning_content_on_assistant_messages: true }
+            models: { deepseek-v4-pro: { name: 'DeepSeek V4 Pro', context_window: 1000000, max_tokens: 384000, input: [text], tool_calling: true, reasoning: true, thinking_level_map: { minimal: high, low: high, medium: high, high: high, xhigh: max }, cost: { input: 0.435, output: 0.87, cache_read: 0.003625, cache_write: 0 } }, deepseek-v4-flash: { name: 'DeepSeek V4 Flash', context_window: 1000000, max_tokens: 384000, input: [text], tool_calling: true, reasoning: true, thinking_level_map: { minimal: high, low: high, medium: high, high: high, xhigh: max }, cost: { input: 0.14, output: 0.28, cache_read: 0.0028, cache_write: 0 } } }
         llama_cpp:
             type: generic
             enabled: true
-            base_url: http://192.168.2.38:8052/v1
+            base_url: 'http://192.168.2.38:8052/v1'
             api: openai-completions
             api_key: dummy
             completions_path: /chat/completions
             embeddings_path: /embeddings
             supports_completions: true
             supports_embeddings: false
-            # llama.cpp has no native reasoning/thinking level API.
-            # supports_thinking_levels: false disables Shift+Tab cycling
-            # for models from this provider.
             supports_thinking_levels: false
-            models:
-                flash:
-                    name: flash
-                    context_window: 200000
-                    max_tokens: 65536
-                    input: [text, image]
-                    tool_calling: true
-                    reasoning: true
-                    cost: { input: 0, output: 0, cache_read: 0, cache_write: 0 }
-
+            models: { flash: { name: flash, context_window: 200000, max_tokens: 65536, input: [text, image], tool_calling: true, reasoning: true, cost: { input: 0, output: 0, cache_read: 0, cache_write: 0 } } }
         llama_cpp_test:
             type: generic
             enabled: true
-            base_url: http://192.168.2.38:9052/v1
+            base_url: 'http://192.168.2.38:9052/v1'
             api: openai-completions
             api_key: dummy
             completions_path: /chat/completions
@@ -377,116 +42,33 @@ ai:
             supports_completions: true
             supports_embeddings: false
             supports_thinking_levels: false
-            models:
-                test:
-                    name: test
-                    context_window: 32768
-                    max_tokens: 32768
-                    input: [text, image]
-                    tool_calling: true
-                    reasoning: false
-                    cost: { input: 1000.0, output: 100000.0, cache_read: 0, cache_write: 0 }
-
+            models: { test: { name: test, context_window: 32768, max_tokens: 32768, input: [text, image], tool_calling: true, reasoning: false, cost: { input: 1000.0, output: 100000.0, cache_read: 0, cache_write: 0 } } }
         zai:
             type: generic
             enabled: true
-            base_url: https://api.z.ai/api/coding/paas/v4
+            base_url: 'https://api.z.ai/api/coding/paas/v4'
             api: openai-completions
-            api_key: env:ZAI_API_KEY
+            api_key: 'env:ZAI_API_KEY'
             completions_path: /chat/completions
             supports_completions: true
             supports_embeddings: false
-            # z.ai differs from standard OpenAI in several ways:
-            # - No developer role; use system/user/assistant/tool only.
-            # - Reasoning via thinking.type (enabled/disabled) and clear_thinking on active.
-            # - Provider default: no reasoning_effort; per-model override on glm-5.2.
-            # - thinking_format: zai signals this quirk to the request mapper.
-            # - zai_tool_stream is a per-model flag for streaming tool calls.
-            compatibility:
-                supports_developer_role: false
-                supports_reasoning_effort: false
-                thinking_format: zai
-            models:
-                glm-5.1:
-                    name: GLM 5.1
-                    context_window: 200000
-                    max_tokens: 131072
-                    input: [text]
-                    tool_calling: true
-                    reasoning: true
-                    thinking_level_map: { minimal: enabled, low: enabled, medium: enabled, high: enabled }
-                    compatibility: { zai_tool_stream: true }
-                    cost: { input: 0, output: 0, cache_read: 0, cache_write: 0 }
-                glm-5v-turbo:
-                    name: GLM 5V Turbo
-                    context_window: 200000
-                    max_tokens: 131072
-                    input: [text, image]
-                    tool_calling: true
-                    reasoning: true
-                    thinking_level_map: { minimal: enabled, low: enabled, medium: enabled, high: enabled }
-                    compatibility: { zai_tool_stream: true }
-                    cost: { input: 0, output: 0, cache_read: 0, cache_write: 0 }
-                glm-5.2:
-                    name: GLM 5.2
-                    context_window: 1000000
-                    max_tokens: 131072
-                    input: [text]
-                    tool_calling: true
-                    reasoning: true
-                    thinking_level_map: { minimal: null, low: high, medium: high, high: high, xhigh: max }
-                    compatibility: { supports_reasoning_effort: true, zai_tool_stream: true }
-                    cost: { input: 0, output: 0, cache_read: 0, cache_write: 0 }
+            compatibility: { supports_developer_role: false, supports_reasoning_effort: false, thinking_format: zai }
+            models: { glm-5.1: { name: 'GLM 5.1', context_window: 200000, max_tokens: 131072, input: [text], tool_calling: true, reasoning: true, thinking_level_map: { minimal: enabled, low: enabled, medium: enabled, high: enabled }, compatibility: { zai_tool_stream: true }, cost: { input: 0, output: 0, cache_read: 0, cache_write: 0 } }, glm-5v-turbo: { name: 'GLM 5V Turbo', context_window: 200000, max_tokens: 131072, input: [text, image], tool_calling: true, reasoning: true, thinking_level_map: { minimal: enabled, low: enabled, medium: enabled, high: enabled }, compatibility: { zai_tool_stream: true }, cost: { input: 0, output: 0, cache_read: 0, cache_write: 0 } }, glm-5.2: { name: 'GLM 5.2', context_window: 1000000, max_tokens: 131072, input: [text], tool_calling: true, reasoning: true, thinking_level_map: { minimal: null, low: high, medium: high, high: high, xhigh: max }, compatibility: { supports_reasoning_effort: true, zai_tool_stream: true }, cost: { input: 0, output: 0, cache_read: 0, cache_write: 0 } } }
         openai-codex:
-             type: codex
-             transport: websocket-cached  # project default: reuse connections and continuation deltas; set transport: websocket for one-shot per request
-             websocket_cache_idle_ttl_seconds: 300
-             websocket_cache_max_age_seconds: 3300
-             enabled: true
-             base_url: https://chatgpt.com/backend-api
-             api: openai-responses
-             # Codex credentials are created via OAuth PKCE. Run `bin/console auth:codex`
-             # to authenticate; the access token and account ID are stored in
-             # ~/.hatfield/auth.json. Do not set api_key or account_id here.
-             completions_path: /codex/responses
-             supports_completions: true
-             supports_embeddings: false
-             supports_thinking_levels: true
-             compatibility:
-                 supports_developer_role: false
-                 supports_reasoning_effort: false
-                 thinking_format: codex
-             models:
-                 gpt-5.6-luna:
-                     name: GPT-5.6 Luna
-                     reasoning: true
-                     thinking_level_map: { minimal: low, low: low, medium: medium, high: high, xhigh: xhigh, max: max }
-                     tool_calling: true
-                     input: [text, image]
-                     context_window: 372000
-                     max_tokens: 128000
-                     cost: { input: 1.00, output: 6.00, cache_read: 0.10, cache_write: 1.25 }
-                 gpt-5.6-sol:
-                     name: GPT-5.6 Sol
-                     reasoning: true
-                     thinking_level_map: { minimal: low, low: low, medium: medium, high: high, xhigh: xhigh, max: max }
-                     tool_calling: true
-                     input: [text, image]
-                     context_window: 372000
-                     max_tokens: 128000
-                     cost: { input: 5.00, output: 30.00, cache_read: 0.50, cache_write: 6.25 }
-                 gpt-5.6-terra:
-                     name: GPT-5.6 Terra
-                     reasoning: true
-                     thinking_level_map: { minimal: low, low: low, medium: medium, high: high, xhigh: xhigh, max: max }
-                     tool_calling: true
-                     input: [text, image]
-                     context_window: 372000
-                     max_tokens: 128000
-                     cost: { input: 2.50, output: 15.00, cache_read: 0.25, cache_write: 3.125 }
-
+            type: codex
+            transport: websocket-cached
+            websocket_cache_idle_ttl_seconds: 300
+            websocket_cache_max_age_seconds: 3300
+            enabled: true
+            base_url: 'https://chatgpt.com/backend-api'
+            api: openai-responses
+            completions_path: /codex/responses
+            supports_completions: true
+            supports_embeddings: false
+            supports_thinking_levels: true
+            compatibility: { supports_developer_role: false, supports_reasoning_effort: false, thinking_format: codex }
+            models: { gpt-5.6-luna: { name: 'GPT-5.6 Luna', reasoning: true, thinking_level_map: { minimal: low, low: low, medium: medium, high: high, xhigh: xhigh, max: max }, tool_calling: true, input: [text, image], context_window: 372000, max_tokens: 128000, cost: { input: 1.0, output: 6.0, cache_read: 0.1, cache_write: 1.25 } }, gpt-5.6-sol: { name: 'GPT-5.6 Sol', reasoning: true, thinking_level_map: { minimal: low, low: low, medium: medium, high: high, xhigh: xhigh, max: max }, tool_calling: true, input: [text, image], context_window: 372000, max_tokens: 128000, cost: { input: 5.0, output: 30.0, cache_read: 0.5, cache_write: 6.25 } }, gpt-5.6-terra: { name: 'GPT-5.6 Terra', reasoning: true, thinking_level_map: { minimal: low, low: low, medium: medium, high: high, xhigh: xhigh, max: max }, tool_calling: true, input: [text, image], context_window: 372000, max_tokens: 128000, cost: { input: 2.5, output: 15.0, cache_read: 0.25, cache_write: 3.125 } } }
 extensions:
-    # List values replace lower layers entirely (they do not merge). Keep SafeGuard enabled.
     enabled:
         - Ineersa\CodingAgent\Extension\Builtin\SafeGuard\SafeGuardExtension
         - Ineersa\HatfieldExt\TaskWorkflow\TaskWorkflowExtension
@@ -498,8 +80,6 @@ extensions:
             castor_check_timeout_seconds: 480
         castor_llm_mode:
             enabled: true
-
-
 forks:
-    model: null
-    thinking_level: null
+    model: openai-codex/gpt-5.6-luna
+    thinking_level: high
