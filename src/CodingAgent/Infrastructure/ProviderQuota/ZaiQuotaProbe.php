@@ -71,14 +71,18 @@ final class ZaiQuotaProbe
         $variants = $this->zaiAuthHeaderVariants($token);
         $usedAuth = $variants[0] ?? $token;
 
-        // Symfony HttpClient is lazy: transport errors surface on response access.
+        // Symfony HttpClient is lazy: transport failures surface on response consumption
+        // (getStatusCode/toArray). request() itself only throws for argument/validation or
+        // immediate construction failures (e.g. malformed options), not network I/O.
         $quotaResponse = $this->requestZai($quotaUrl, $usedAuth);
 
         $modelsResponse = null;
         try {
             $modelsResponse = $this->requestZai($modelsUrl, $usedAuth);
         } catch (\Throwable $e) {
-            // Model count is optional enrichment only.
+            // Defensive: catches only argument/validation/immediate construction exceptions
+            // from request(). Transport failures surface later when the models response is
+            // consumed. Model count is optional enrichment only.
             $this->logFailure('models_request_failed', $e);
         }
 
@@ -167,6 +171,9 @@ final class ZaiQuotaProbe
         // If models also failed auth (or never arrived), re-request with the alternate form.
         if (null === $modelCount) {
             try {
+                // Same lazy-client note as start(): this catch is for immediate request()
+                // construction/validation errors only; transport failures surface in
+                // readZaiModelCount() response consumption.
                 $modelsResponse = $this->requestZai($pending['modelsUrl'], $alternateAuth);
                 $modelCount = $this->readZaiModelCount($modelsResponse);
             } catch (\Throwable $e) {
@@ -224,8 +231,13 @@ final class ZaiQuotaProbe
         }
 
         $success = true === ($payload['success'] ?? false);
-        $code = $this->format->parseFiniteNumber($payload['code'] ?? null);
-        if (!$success || 200.0 !== $code) {
+        // success === true with omitted/null code is treated as successful; only an
+        // explicit non-200 code is rejected.
+        $code = \array_key_exists('code', $payload)
+            ? $this->format->parseFiniteNumber($payload['code'])
+            : null;
+        $explicitNonOkCode = null !== $code && 200.0 !== $code;
+        if (!$success || $explicitNonOkCode) {
             $msg = $payload['msg'] ?? null;
             // Bound provider-supplied message; never dump multi-line bodies.
             $message = \is_string($msg) ? trim(explode("\n", $msg, 2)[0]) : 'Unknown z.ai error';
@@ -408,13 +420,12 @@ final class ZaiQuotaProbe
 
     private function logFailure(string $eventType, \Throwable $e): void
     {
+        // Privacy-safe structured fields only — never log exception messages (may contain response snippets).
         $this->logger->warning('Provider quota probe degraded', [
             'component' => 'provider_quota_probe',
             'event_type' => $eventType,
             'provider' => self::PROVIDER_ID,
             'exception_class' => $e::class,
-            // Never log raw exception messages — they may contain response snippets.
-            'reason_code' => $eventType,
         ]);
     }
 }

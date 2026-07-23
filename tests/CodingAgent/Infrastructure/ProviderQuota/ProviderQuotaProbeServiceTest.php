@@ -312,16 +312,7 @@ final class ProviderQuotaProbeServiceTest extends TestCase
                 return new MockResponse('{}', ['http_code' => 200]);
             }
 
-            $auth = '';
-            foreach (($options['headers'] ?? []) as $headerLine) {
-                if (!\is_string($headerLine)) {
-                    continue;
-                }
-                if (str_starts_with(strtolower($headerLine), 'authorization:')) {
-                    $auth = trim(substr($headerLine, \strlen('Authorization:')));
-                    break;
-                }
-            }
+            $auth = self::authorizationHeader($options);
 
             if (str_contains($url, '/quota/limit')) {
                 ++$quotaAttempts;
@@ -355,6 +346,110 @@ final class ProviderQuotaProbeServiceTest extends TestCase
         $this->assertSame(75.0, $report->zai->windows[0]->percentLeft);
         $this->assertGreaterThanOrEqual(2, $quotaAttempts);
         $this->assertSame(1, $modelsAttempts, 'models should not be re-requested when first attempt succeeded');
+    }
+
+    #[Test]
+    public function testZaiAlternateAuthRetryReRequestsModelsWhenFirstFormRejected(): void
+    {
+        $this->authStorage->saveCredentials('openai-codex', new CodexAuthRecord(
+            access: 'token',
+            refresh: 'refresh',
+            expires: time() + 3600,
+            accountId: 'acct',
+        ));
+
+        // success=true with omitted code is a representative successful payload.
+        $zaiQuotaOk = json_encode([
+            'success' => true,
+            'data' => [
+                'limits' => [
+                    ['type' => 'TOKENS_LIMIT', 'usage' => 200, 'currentValue' => 50, 'percentage' => 25],
+                ],
+            ],
+        ], \JSON_THROW_ON_ERROR);
+        $zaiModelsOk = json_encode([
+            'data' => [['id' => 'm1'], ['id' => 'm2']],
+        ], \JSON_THROW_ON_ERROR);
+
+        $quotaAttempts = 0;
+        $modelsAttempts = 0;
+        $mock = new MockHttpClient(static function (string $method, string $url, array $options = []) use (
+            &$quotaAttempts,
+            &$modelsAttempts,
+            $zaiQuotaOk,
+            $zaiModelsOk,
+        ): MockResponse {
+            if (str_contains($url, '/wham/usage')) {
+                return new MockResponse('{}', ['http_code' => 200]);
+            }
+
+            $auth = self::authorizationHeader($options);
+            $isBearer = str_starts_with(strtolower($auth), 'bearer ');
+
+            if (str_contains($url, '/quota/limit')) {
+                ++$quotaAttempts;
+                if (!$isBearer) {
+                    return new MockResponse('unauthorized', ['http_code' => 401]);
+                }
+
+                return new MockResponse($zaiQuotaOk, ['http_code' => 200]);
+            }
+            if (str_contains($url, '/models')) {
+                ++$modelsAttempts;
+                // First-form models also rejected; alternate auth must re-request and count them.
+                if (!$isBearer) {
+                    return new MockResponse('unauthorized', ['http_code' => 401]);
+                }
+
+                return new MockResponse($zaiModelsOk, ['http_code' => 200]);
+            }
+
+            return new MockResponse('nope', ['http_code' => 404]);
+        });
+
+        putenv('ZAI_API_KEY=raw-key-without-bearer');
+        $service = new ProviderQuotaProbeService(
+            codexAuthStorage: $this->authStorage,
+            modelCatalog: $this->catalogWithProviders(),
+            httpClient: $mock,
+        );
+        $report = $service->probe();
+
+        $this->assertNull($report->zai->error);
+        $this->assertSame(2, $report->zai->modelCount, 'models count must come from alternate-auth re-request');
+        $this->assertNotEmpty($report->zai->windows);
+        $this->assertSame(75.0, $report->zai->windows[0]->percentLeft);
+        $this->assertGreaterThanOrEqual(2, $quotaAttempts);
+        $this->assertSame(2, $modelsAttempts, 'models must be re-requested after first-form 401');
+    }
+
+    #[Test]
+    public function testOpenAiUnexpectedHttpStatusIsErrorNotNote(): void
+    {
+        $this->authStorage->saveCredentials('openai-codex', new CodexAuthRecord(
+            access: 'token',
+            refresh: 'refresh',
+            expires: time() + 3600,
+            accountId: 'acct',
+        ));
+
+        $mock = new MockHttpClient(static function (string $method, string $url): MockResponse {
+            if (str_contains($url, '/wham/usage')) {
+                return new MockResponse('boom', ['http_code' => 503]);
+            }
+
+            return new MockResponse('{}', ['http_code' => 404]);
+        });
+
+        $service = new ProviderQuotaProbeService(
+            codexAuthStorage: $this->authStorage,
+            modelCatalog: $this->catalogWithProviders(),
+            httpClient: $mock,
+        );
+        $report = $service->probe();
+
+        $this->assertStringContainsString('returned 503', (string) $report->openaiCodex->error);
+        $this->assertNull($report->openaiCodex->note);
     }
 
     #[Test]
@@ -401,8 +496,11 @@ final class ProviderQuotaProbeServiceTest extends TestCase
         foreach ($logger->records as $record) {
             $context = $record['context'] ?? [];
             $this->assertArrayNotHasKey('error', $context);
+            $this->assertArrayNotHasKey('reason_code', $context);
+            $this->assertArrayHasKey('component', $context);
+            $this->assertArrayHasKey('event_type', $context);
+            $this->assertArrayHasKey('provider', $context);
             $this->assertArrayHasKey('exception_class', $context);
-            $this->assertArrayHasKey('reason_code', $context);
             $serialized = json_encode($context, \JSON_THROW_ON_ERROR);
             $this->assertStringNotContainsString('SECRET', $serialized);
             $this->assertStringNotContainsString('refresh denied', $serialized);
@@ -454,5 +552,22 @@ final class ProviderQuotaProbeServiceTest extends TestCase
                 ),
             ],
         ));
+    }
+
+    /**
+     * @param array<string, mixed> $options
+     */
+    private static function authorizationHeader(array $options): string
+    {
+        foreach (($options['headers'] ?? []) as $headerLine) {
+            if (!\is_string($headerLine)) {
+                continue;
+            }
+            if (str_starts_with(strtolower($headerLine), 'authorization:')) {
+                return trim(substr($headerLine, \strlen('Authorization:')));
+            }
+        }
+
+        return '';
     }
 }

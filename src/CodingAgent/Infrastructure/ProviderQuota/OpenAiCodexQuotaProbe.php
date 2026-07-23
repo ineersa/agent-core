@@ -174,7 +174,7 @@ final class OpenAiCodexQuotaProbe
                 title: 'OpenAI Codex',
                 account: $account,
                 plan: $plan,
-                note: \sprintf('OpenAI usage endpoint returned %d.', $status),
+                error: \sprintf('OpenAI usage endpoint returned %d.', $status),
             );
         }
 
@@ -389,13 +389,12 @@ final class OpenAiCodexQuotaProbe
 
     private function logFailure(string $eventType, \Throwable $e): void
     {
+        // Privacy-safe structured fields only — never log exception messages (may contain response snippets).
         $this->logger->warning('Provider quota probe degraded', [
             'component' => 'provider_quota_probe',
             'event_type' => $eventType,
             'provider' => CodexOAuthConfig::PROVIDER_KEY,
             'exception_class' => $e::class,
-            // Never log raw exception messages — they may contain response snippets.
-            'reason_code' => $eventType,
         ]);
     }
 }
