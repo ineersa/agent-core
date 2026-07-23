@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace Symfony\AI\Platform\Bridge\OpenAICodex\Tests;
 
+use Amp\ByteStream\ReadableIterableStream;
 use Amp\CancelledException;
+use Amp\Pipeline\Queue;
 use Amp\Websocket\Client\WebsocketConnection;
 use Amp\Websocket\WebsocketMessage;
 use Ineersa\AgentCore\Tests\Support\TestLogger;
@@ -18,6 +20,9 @@ use Symfony\AI\Platform\Bridge\OpenAICodex\CodexWebSocketConnectionCache;
 use Symfony\AI\Platform\Bridge\OpenAICodex\CodexWebSocketContinuationState;
 use Symfony\AI\Platform\Bridge\OpenAICodex\CodexWebSocketResultHandle;
 use Symfony\AI\Platform\Bridge\OpenAICodex\RawWebSocketResult;
+
+use function Amp\async;
+use function Amp\delay;
 
 final class RawWebSocketResultTest extends TestCase
 {
@@ -57,7 +62,8 @@ final class RawWebSocketResultTest extends TestCase
             ->willThrowException(new CancelledException());
         $connection->expects($this->once())->method('close');
 
-        $raw = new RawWebSocketResult($connection, 0.01);
+        $logger = new TestLogger();
+        $raw = new RawWebSocketResult($connection, 0.01, $logger);
 
         try {
             iterator_to_array($raw->getDataStream());
@@ -66,6 +72,79 @@ final class RawWebSocketResultTest extends TestCase
             $this->assertSame('Codex WebSocket idle timeout.', $e->getMessage());
             $this->assertInstanceOf(CancelledException::class, $e->getPrevious());
         }
+
+        $timeoutLogs = array_values(array_filter(
+            $logger->records,
+            static fn (array $record): bool => 'codex.websocket.io_timeout' === $record['message'],
+        ));
+        $this->assertCount(1, $timeoutLogs);
+        $this->assertSame('receive', $timeoutLogs[0]['context']['phase']);
+    }
+
+    public function testFragmentedMessageBufferTimeoutIsBoundedAndInvalidatesCache(): void
+    {
+        $cache = new CodexWebSocketConnectionCache();
+        $settings = new CodexWebSocketCacheSettings();
+        $identity = CodexWebSocketCompatibilityFingerprint::fromContext(
+            '0194dddd-bbbb-7ccc-8ddd-dddddddddddd',
+            'openai-codex',
+            'gpt-5.6-luna',
+            'https://chatgpt.com/backend-api',
+            '/codex/responses',
+            'acct-1',
+        );
+
+        $queue = new Queue();
+        // Incomplete first fragment: buffer() must wait for more data and is now timeout-bounded.
+        $queue->pushAsync('{')->ignore();
+        $message = WebsocketMessage::fromText(new ReadableIterableStream($queue->iterate()));
+
+        $connection = $this->createMock(WebsocketConnection::class);
+        $connection->expects($this->once())->method('receive')->willReturn($message);
+        $connection->expects($this->once())->method('close');
+
+        $entry = new CodexWebSocketCacheEntry($connection, $identity, time(), $settings);
+        $entry->continuation = CodexWebSocketContinuationState::fromSuccessfulResponse(
+            ['input' => []],
+            'resp-old',
+            [],
+        );
+        $lease = new CodexWebSocketCacheLease($connection, true, true, false, $entry);
+        $context = new CodexWebSocketCachedStreamContext($cache, $lease, ['input' => []]);
+
+        $reflection = new \ReflectionClass($cache);
+        $prop = $reflection->getProperty('entries');
+        $prop->setValue($cache, [$identity->sessionKey => $entry]);
+
+        $logger = new TestLogger();
+        $raw = new RawWebSocketResult($connection, 0.15, $logger, cachedStreamContext: $context);
+
+        // Keep the event loop alive while buffer() waits on the incomplete fragment stream.
+        $keeper = async(static fn () => delay(1.0));
+
+        $started = microtime(true);
+        try {
+            iterator_to_array($raw->getDataStream());
+            $this->fail('Expected message buffer timeout');
+        } catch (\RuntimeException $e) {
+            $elapsed = microtime(true) - $started;
+            $this->assertSame('Codex WebSocket message buffer timeout.', $e->getMessage());
+            $this->assertInstanceOf(CancelledException::class, $e->getPrevious());
+            $this->assertLessThan(0.8, $elapsed, 'buffer timeout must not hang the worker');
+        } finally {
+            $queue->complete();
+            $keeper->ignore();
+        }
+        $this->assertNull($entry->continuation);
+        $this->assertSame([], $prop->getValue($cache));
+
+        $timeoutLogs = array_values(array_filter(
+            $logger->records,
+            static fn (array $record): bool => 'codex.websocket.io_timeout' === $record['message'],
+        ));
+        $this->assertCount(1, $timeoutLogs);
+        $this->assertSame('buffer', $timeoutLogs[0]['context']['phase']);
+        $this->assertTrue($timeoutLogs[0]['context']['cache_reused']);
     }
 
     public function testNonTextFrameIsProtocolError(): void

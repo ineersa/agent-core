@@ -18,10 +18,8 @@ final readonly class CreateTaskHandler implements ExtensionToolHandlerInterface
 
     /**
      * @param array<string, mixed> $arguments
-     *
-     * @return array{content: list<array{type: string, text: string}>, details: string}
      */
-    public function __invoke(array $arguments): array
+    public function __invoke(array $arguments): string
     {
         $title = $arguments['title'] ?? null;
         if (!\is_string($title) || '' === trim($title)) {
@@ -39,7 +37,7 @@ final readonly class CreateTaskHandler implements ExtensionToolHandlerInterface
         $this->store->ensureTaskDirs($taskRoot);
         $lock = new TaskBoardLock(TaskBoardLock::lockPathForRoot($taskRoot));
 
-        return $lock->withLock(function () use ($taskRoot, $title, $body, $acceptance, $id): array {
+        return $lock->withLock(function () use ($taskRoot, $title, $body, $acceptance, $id): string {
             $slug = TaskMarkdown::slugify($id ?? (TaskMarkdown::today().'-'.$title));
             $path = $taskRoot.'/TODO/'.$slug.'.md';
             if (is_file($path)) {
