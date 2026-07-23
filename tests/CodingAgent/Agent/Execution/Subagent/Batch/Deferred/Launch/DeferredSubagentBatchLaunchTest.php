@@ -476,6 +476,7 @@ final class DeferredSubagentBatchLaunchTest extends IsolatedKernelTestCase
             self::getContainer()->get(\Ineersa\CodingAgent\Agent\Context\AgentsContextBuilder::class),
             $parentRunStore ?? self::getContainer()->get(RunStoreInterface::class),
             self::getContainer()->get(\Ineersa\CodingAgent\Config\AppConfig::class),
+            self::getContainer()->get(\Ineersa\CodingAgent\Config\ModelSelectionService::class),
         );
         $launchPreparation = new SubagentLaunchPreparationService(
             $definitionPolicy,

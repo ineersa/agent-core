@@ -27,6 +27,7 @@ use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use Ineersa\AgentCore\Tests\Support\TestSerializerFactory;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient;
+use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\Replay\SessionHotPromptReplayService;
 use Ineersa\CodingAgent\Tests\Agent\Execution\Support\PromptContractTestSupport;
 use Ineersa\CodingAgent\Tests\Agent\Execution\Support\ProviderBoundaryCaptureSupport;
@@ -56,7 +57,7 @@ final class ParentPromptUserContextRegressionTest extends PerMethodIsolatedKerne
 
     public function testParentStartRunPreservesMessageOrderAndProviderRepresentation(): void
     {
-        $sessionId = Uuid::v4()->toRfc4122();
+        $sessionId = self::getContainer()->get(HatfieldSessionStore::class)->createSession('parent user task');
         self::getContainer()->get(InProcessAgentSessionClient::class)->start(new StartRunRequest(
             prompt: 'parent user task',
             runId: $sessionId,
@@ -108,7 +109,7 @@ final class ParentPromptUserContextRegressionTest extends PerMethodIsolatedKerne
         $sentinel = 'GF05_BARE_ROOT_AGENTS_SENTINEL_'.bin2hex(random_bytes(4));
         file_put_contents($this->isolatedCwd().'/AGENTS.md', $sentinel."\n");
 
-        $sessionId = Uuid::v4()->toRfc4122();
+        $sessionId = self::getContainer()->get(HatfieldSessionStore::class)->createSession('parent user task');
         self::getContainer()->get(InProcessAgentSessionClient::class)->start(new StartRunRequest(
             prompt: 'parent user task',
             runId: $sessionId,
