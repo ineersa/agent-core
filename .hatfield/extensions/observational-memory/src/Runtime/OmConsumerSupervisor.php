@@ -183,12 +183,8 @@ final class OmConsumerSupervisor
         );
         $setup->run();
         if (!$setup->isSuccessful()) {
-            // setup-transports may no-op when auto_setup=false tables already exist
-            // from om:migrate; only fail hard on non-zero when stderr is non-empty.
-            $stderr = trim($setup->getErrorOutput());
-            if ('' !== $stderr) {
-                throw new \RuntimeException(\sprintf('OM messenger:setup-transports failed (exit %s).', (string) $setup->getExitCode()));
-            }
+            // No-op setups must exit 0; nonzero is always a hard failure.
+            throw new \RuntimeException(\sprintf('OM messenger:setup-transports failed (exit %s).', (string) $setup->getExitCode()));
         }
     }
 
@@ -240,8 +236,11 @@ final class OmConsumerSupervisor
         $env['APP_DEBUG'] = $env['APP_DEBUG'] ?? '0';
         $env['OM_DATABASE_PATH'] = $this->databasePath;
         $env['OM_PARENT_PID'] = (string) getmypid();
-        $env['OM_CACHE_DIR'] = $this->packageRoot.'/var/cache';
-        $env['OM_LOG_DIR'] = $this->packageRoot.'/var/log';
+        // Isolate compiled container/cache per project database — packageRoot/var/cache
+        // would bake the first OM_DATABASE_PATH into a shared container dump.
+        $dataDir = \dirname($this->databasePath);
+        $env['OM_CACHE_DIR'] = $dataDir.'/cache';
+        $env['OM_LOG_DIR'] = $dataDir.'/log';
 
         // Isolate package console from ambient Hatfield session/messenger markers.
         unset($env['HATFIELD_CONSUMER_STDOUT_EVENTS'], $env['HATFIELD_OM_CONSUMER']);

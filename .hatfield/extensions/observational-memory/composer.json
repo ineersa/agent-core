@@ -4,7 +4,7 @@
     "type": "hatfield-extension",
     "license": "MIT",
     "require": {
-        "php": ">=8.3",
+        "php": ">=8.5",
         "doctrine/dbal": "^4.3",
         "doctrine/doctrine-bundle": "^3.2",
         "psr/log": "^3.0",

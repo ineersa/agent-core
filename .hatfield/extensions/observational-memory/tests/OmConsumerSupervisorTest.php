@@ -39,4 +39,36 @@ final class OmConsumerSupervisorTest extends TestCase
         $this->assertNotContains('extension:run', $command);
         $this->assertNotContains('agent', $command);
     }
+
+    public function testChildEnvIsolatesCacheAndLogUnderDatabaseDirectory(): void
+    {
+        $supervisor = new OmConsumerSupervisor(new NullLogger());
+        $databasePath = '/tmp/project/.hatfield/extensions-data/observational-memory/om.sqlite';
+
+        $ref = new \ReflectionClass($supervisor);
+        foreach ([
+            'consolePath' => '/tmp/om-pkg/bin/console',
+            'packageRoot' => '/tmp/om-pkg',
+            'sessionId' => 'sess-1',
+            'databasePath' => $databasePath,
+        ] as $prop => $value) {
+            $property = $ref->getProperty($prop);
+            $property->setValue($supervisor, $value);
+        }
+
+        $method = $ref->getMethod('childEnv');
+        /** @var array<string, string> $env */
+        $env = $method->invoke($supervisor);
+
+        $this->assertSame(
+            '/tmp/project/.hatfield/extensions-data/observational-memory/cache',
+            $env['OM_CACHE_DIR'],
+        );
+        $this->assertSame(
+            '/tmp/project/.hatfield/extensions-data/observational-memory/log',
+            $env['OM_LOG_DIR'],
+        );
+        $this->assertSame($databasePath, $env['OM_DATABASE_PATH']);
+        $this->assertNotSame('/tmp/om-pkg/var/cache', $env['OM_CACHE_DIR']);
+    }
 }

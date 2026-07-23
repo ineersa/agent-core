@@ -8,42 +8,49 @@ use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
 use Ineersa\HatfieldExt\ObservationalMemory\ObservationalMemoryExtension;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
-use Symfony\Component\Console\Command\Command;
-use Symfony\Component\Console\Event\ConsoleCommandEvent;
-use Symfony\Component\Console\Input\ArrayInput;
-use Symfony\Component\Console\Output\NullOutput;
 
 /**
- * Thesis: OM supervisor starts only for interactive public command name "agent"
- * and skips controller/headless modes.
+ * Thesis: OM supervisor start selection runs during register() from process argv
+ * (because COMMAND listeners added mid-dispatch never receive the current event)
+ * and skips non-agent plus agent --controller/--headless paths.
  */
 final class OmConsoleLifecycleSelectionTest extends TestCase
 {
-    public function testSkipsNonAgentCommands(): void
+    /** @var list<string>|null */
+    private ?array $originalArgv = null;
+
+    protected function setUp(): void
     {
+        parent::setUp();
+        $this->originalArgv = $_SERVER['argv'] ?? null;
+    }
+
+    protected function tearDown(): void
+    {
+        if (null === $this->originalArgv) {
+            unset($_SERVER['argv']);
+        } else {
+            $_SERVER['argv'] = $this->originalArgv;
+        }
+        parent::tearDown();
+    }
+
+    public function testRegisterSkipsNonAgentCommands(): void
+    {
+        $_SERVER['argv'] = ['bin/console', 'cache:clear'];
+
         $extension = new ObservationalMemoryExtension();
         $extension->setLogger(new NullLogger());
         $extension->register($this->createStub(ExtensionApiInterface::class));
-
-        $command = new class extends Command {
-            public function __construct()
-            {
-                parent::__construct('cache:clear');
-            }
-        };
-
-        $extension->onConsoleCommand(new ConsoleCommandEvent(
-            $command,
-            new ArrayInput([]),
-            new NullOutput(),
-        ));
 
         $ref = new \ReflectionProperty($extension, 'started');
         $this->assertFalse($ref->getValue($extension));
     }
 
-    public function testSkipsAgentControllerMode(): void
+    public function testRegisterSkipsAgentControllerMode(): void
     {
+        $_SERVER['argv'] = ['bin/console', 'agent', '--controller'];
+
         $extension = new ObservationalMemoryExtension();
         $extension->setLogger(new NullLogger());
         $api = $this->createStub(ExtensionApiInterface::class);
@@ -51,20 +58,30 @@ final class OmConsoleLifecycleSelectionTest extends TestCase
         $api->method('getSettings')->willReturn(['enabled' => true]);
         $extension->register($api);
 
-        $command = new class extends Command {
-            public function __construct()
-            {
-                parent::__construct('agent');
-            }
-        };
+        $ref = new \ReflectionProperty($extension, 'started');
+        $this->assertFalse($ref->getValue($extension));
+    }
 
-        $extension->onConsoleCommand(new ConsoleCommandEvent(
-            $command,
-            new ArrayInput(['--controller' => true]),
-            new NullOutput(),
-        ));
+    public function testRegisterSkipsAgentHeadlessMode(): void
+    {
+        $_SERVER['argv'] = ['bin/console', 'agent', '--headless'];
+
+        $extension = new ObservationalMemoryExtension();
+        $extension->setLogger(new NullLogger());
+        $api = $this->createStub(ExtensionApiInterface::class);
+        $api->method('getCwd')->willReturn(sys_get_temp_dir());
+        $api->method('getSettings')->willReturn(['enabled' => true]);
+        $extension->register($api);
 
         $ref = new \ReflectionProperty($extension, 'started');
         $this->assertFalse($ref->getValue($extension));
+    }
+
+    public function testDoesNotSubscribeToConsoleCommand(): void
+    {
+        $events = ObservationalMemoryExtension::getSubscribedEvents();
+        $this->assertArrayNotHasKey('console.command', $events);
+        $this->assertArrayHasKey('console.terminate', $events);
+        $this->assertArrayHasKey('console.error', $events);
     }
 }

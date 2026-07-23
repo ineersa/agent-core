@@ -5,7 +5,8 @@ Self-contained Symfony console package providing the OM operational runtime:
 - private SQLite database at `.hatfield/extensions-data/observational-memory/om.sqlite`
 - private Symfony Messenger bus + Doctrine transports (`om_observation`, `om_compaction`, `om_failed`)
 - package-owned `bin/console` (`om:migrate`, `messenger:consume`, …)
-- extension-owned supervisor started from native Symfony `ConsoleEvents` on the interactive Hatfield `agent` command
+- extension-owned supervisor started during Hatfield extension `register()` for the interactive `agent` process (not `--controller` / `--headless`)
+- native Symfony `ConsoleEvents::TERMINATE` / `ERROR` for stop
 
 Hatfield does **not** expose `extension:run`, custom runtime lifecycle DTOs, or construct OM Messenger programmatically.
 
@@ -38,17 +39,24 @@ composer update ineersa/hatfield-ext-observational-memory
 
 ```text
 Interactive Hatfield process: `agent` (not --controller / --headless)
-  → ConsoleEvents::COMMAND
-  → ObservationalMemoryExtension
-  → OmConsumerSupervisor
-      → php .hatfield/extensions/observational-memory/bin/console om:migrate
-      → php …/bin/console messenger:setup-transports   # best-effort
-      → php …/bin/console messenger:consume om_compaction om_observation
-          env OM_DATABASE_PATH=<abs path>
-          env OM_PARENT_PID=<owning agent pid>
+  → ExtensionLoaderSubscriber dispatches ConsoleEvents::COMMAND
+  → ExtensionManager loads extension, injects logger, calls register()
+  → ObservationalMemoryExtension::register()
+      (startup here: COMMAND listeners added mid-dispatch never receive
+       the current event because EventDispatcher snapshots listeners)
+      → OmConsumerSupervisor
+          → php .hatfield/extensions/observational-memory/bin/console om:migrate
+          → php …/bin/console messenger:setup-transports   # exit 0 required
+          → php …/bin/console messenger:consume om_compaction om_observation
+              env OM_DATABASE_PATH=<abs path>
+              env OM_CACHE_DIR=<dirname(database)>/cache
+              env OM_LOG_DIR=<dirname(database)>/log
+              env OM_PARENT_PID=<owning agent pid>
+  → later ConsoleEvents::TERMINATE / ERROR
+  → ObservationalMemoryExtension stops supervisor + child
 ```
 
-The child boots the **OM package Kernel**, not Hatfield. Recursion cannot occur via Hatfield extension loading.
+The child boots the **OM package Kernel**, not Hatfield. Recursion cannot occur via Hatfield extension loading. Cache/log dirs are project/database-specific so the compiled container never bakes another project's `OM_DATABASE_PATH`.
 
 ## Ownership boundaries
 

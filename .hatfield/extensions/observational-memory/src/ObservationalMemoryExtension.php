@@ -13,16 +13,19 @@ use Psr\Log\LoggerAwareInterface;
 use Psr\Log\LoggerInterface;
 use Revolt\EventLoop;
 use Symfony\Component\Console\ConsoleEvents;
-use Symfony\Component\Console\Event\ConsoleCommandEvent;
 use Symfony\Component\Console\Event\ConsoleErrorEvent;
 use Symfony\Component\Console\Event\ConsoleTerminateEvent;
+use Symfony\Component\Console\Input\ArgvInput;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 
 /**
  * Hatfield registration surface for observational memory.
  *
- * Lifecycle uses native Symfony ConsoleEvents only — no custom Hatfield
- * RuntimeStarted/Stopping DTOs and no extension:run entrypoints.
+ * Lifecycle uses native Symfony ConsoleEvents for shutdown only. Startup must
+ * run inside register() because ExtensionLoaderSubscriber loads/registers
+ * extensions while ConsoleEvents::COMMAND is already being dispatched;
+ * EventDispatcher snapshots listeners before iteration, so a COMMAND listener
+ * added during that dispatch never receives the current command.
  *
  * The extension-owned supervisor starts the package's own bin/console
  * messenger:consume process against private om.sqlite.
@@ -49,38 +52,45 @@ final class ObservationalMemoryExtension implements HatfieldExtensionInterface, 
     public function register(ExtensionApiInterface $api): void
     {
         $this->api = $api;
+        // Start selection here (not ConsoleEvents::COMMAND): see class docblock.
+        $this->maybeStartSupervisorFromArgv();
     }
 
     public static function getSubscribedEvents(): array
     {
         return [
-            // After ExtensionLoaderSubscriber (default priority 0) has loaded extensions.
-            ConsoleEvents::COMMAND => ['onConsoleCommand', -32],
             ConsoleEvents::TERMINATE => 'onConsoleTerminate',
             ConsoleEvents::ERROR => 'onConsoleError',
         ];
     }
 
-    public function onConsoleCommand(ConsoleCommandEvent $event): void
+    public function onConsoleTerminate(ConsoleTerminateEvent $event): void
+    {
+        unset($event);
+        $this->shutdownSupervisor();
+    }
+
+    public function onConsoleError(ConsoleErrorEvent $event): void
+    {
+        unset($event);
+        $this->shutdownSupervisor();
+    }
+
+    private function maybeStartSupervisorFromArgv(): void
     {
         if ($this->started) {
             return;
         }
 
-        $command = $event->getCommand();
-        if (null === $command) {
-            return;
-        }
-
-        // Public console name only — no CodingAgent class/namespace coupling.
-        if ('agent' !== $command->getName()) {
+        // Public console first argument only — no CodingAgent class/namespace coupling.
+        // ArgvInput reads current process argv; works while COMMAND is mid-dispatch.
+        $input = new ArgvInput();
+        if ('agent' !== $input->getFirstArgument()) {
             return;
         }
 
         // Controllers and messenger workers also run `agent --controller` or other
-        // processes; start only the interactive owning agent process. Controller
-        // mode is selected via --controller; headless via --headless.
-        $input = $event->getInput();
+        // processes; start only the interactive owning agent process.
         if ($input->hasParameterOption(['--controller'], true)
             || $input->hasParameterOption(['--headless'], true)
         ) {
@@ -142,18 +152,6 @@ final class ObservationalMemoryExtension implements HatfieldExtensionInterface, 
             },
         );
         $this->started = true;
-    }
-
-    public function onConsoleTerminate(ConsoleTerminateEvent $event): void
-    {
-        unset($event);
-        $this->shutdownSupervisor();
-    }
-
-    public function onConsoleError(ConsoleErrorEvent $event): void
-    {
-        unset($event);
-        $this->shutdownSupervisor();
     }
 
     private function shutdownSupervisor(): void
