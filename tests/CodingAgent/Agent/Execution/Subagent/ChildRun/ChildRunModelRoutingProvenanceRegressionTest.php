@@ -101,15 +101,17 @@ final class ChildRunModelRoutingProvenanceRegressionTest extends IsolatedKernelT
         $resolver = self::getContainer()->get(RunModelResolverInterface::class);
         \assert($resolver instanceof RunModelResolverInterface);
 
+        // Schedule-time resolution is the durable boundary: child UUID must
+        // return definition_model, never the colliding numeric session/default.
+        $scheduledModel = $resolver->resolveActiveModel(self::CHILD_RUN_ID);
+        $this->assertSame(self::CHILD_MODEL, $scheduledModel);
+
         $worker = new ExecuteLlmStepWorker(
             platform: $platform,
             commandBus: new TestMessageBus(),
-            defaultModel: self::DEFAULT_CODEX_MODEL,
-            runModelResolver: $resolver,
         );
 
-        // Current production message has no model field. The RED assertion
-        // documents that the durable child model must still reach the platform.
+        // Worker must use only the immutable model on the message envelope.
         $worker(new ExecuteLlmStep(
             runId: self::CHILD_RUN_ID,
             turnNo: 620,
@@ -118,6 +120,7 @@ final class ChildRunModelRoutingProvenanceRegressionTest extends IsolatedKernelT
             idempotencyKey: 'ik-child-model-routing',
             contextRef: 'hot:run:'.self::CHILD_RUN_ID,
             toolsRef: 'toolset:run:'.self::CHILD_RUN_ID.':turn:620',
+            model: $scheduledModel,
         ));
 
         $this->assertSame(

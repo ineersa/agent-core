@@ -133,7 +133,7 @@ final class ControllerReplaySummaryOnlyGuardTest extends ControllerReplayE2eTest
         // ═════════════════════════════════════════════════════════════
 
         $eventsPath = $this->tempDir.'/.hatfield/sessions/'
-            .$this->sessionId.'/events.jsonl';
+            .$this->runId.'/events.jsonl';
         $this->assertFileExists($eventsPath);
 
         $coreEvents = $this->loadCoreEvents($eventsPath);

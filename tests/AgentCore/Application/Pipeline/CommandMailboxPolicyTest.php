@@ -500,6 +500,12 @@ final class CommandMailboxPolicyTest extends TestCase
                 new AdvanceRunHandler(
                     commandMailboxPolicy: $commandMailboxPolicy,
                     eventFactory: new \Ineersa\AgentCore\Domain\Event\EventFactory(),
+                    runModelResolver: new class implements \Ineersa\AgentCore\Contract\Model\RunModelResolverInterface {
+                        public function resolveActiveModel(string $runId): ?string
+                        {
+                            return 'test-model';
+                        }
+                    },
                 ),
                 new LlmStepResultHandler(
                     toolBatchCollector: $toolBatchCollector,

@@ -11,13 +11,14 @@ use Doctrine\Persistence\ManagerRegistry;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentChildLaunchStatusEnum;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentChildProjectionDTO;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\ChildRunDefinitionModelLookupInterface;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredChildRunLifecycleProjectionDTO;
 use Symfony\Component\Clock\Clock;
 
 /**
  * @extends ServiceEntityRepository<DeferredSubagentChild>
  */
-final class DeferredSubagentChildRepository extends ServiceEntityRepository
+final class DeferredSubagentChildRepository extends ServiceEntityRepository implements ChildRunDefinitionModelLookupInterface
 {
     public function __construct(ManagerRegistry $registry)
     {
@@ -29,6 +30,18 @@ final class DeferredSubagentChildRepository extends ServiceEntityRepository
         $row = $this->findOneBy(['childRunId' => $childRunId]);
 
         return $row instanceof DeferredSubagentChild ? $this->toDto($row) : null;
+    }
+
+    public function findDefinitionModelByChildRunId(string $childRunId): ?string
+    {
+        $child = $this->findByChildRunId($childRunId);
+        if (null === $child) {
+            return null;
+        }
+
+        $model = null !== $child->definitionModel ? trim($child->definitionModel) : '';
+
+        return '' !== $model ? $model : null;
     }
 
     /**

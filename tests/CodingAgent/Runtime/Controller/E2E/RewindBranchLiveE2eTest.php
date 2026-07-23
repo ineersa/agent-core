@@ -84,13 +84,16 @@ final class RewindBranchLiveE2eTest extends ControllerE2eTestCase
                 logger: new TestLogger(),
             );
 
-            $runId = $this->sessionId;
-
-            // ── First conversational turn: start_run ─────────────────────
-            $this->client->start(new StartRunRequest(
+            // Parent runs must use pure-digit hatfield_session ids. Leave runId
+            // empty so controller StartRunHandler creates a real session row
+            // instead of reusing the non-numeric process label.
+            $handle = $this->client->start(new StartRunRequest(
                 prompt: $this->marker.' I will share secret words, remember them.',
-                runId: $runId,
             ));
+            $runId = $handle->runId;
+            $this->runId = $runId;
+            $this->assertNotSame('', $runId, 'start() must return a concrete run id');
+            $this->assertTrue(ctype_digit($runId), 'Parent run id must be a pure-digit hatfield_session id');
 
             $events1 = $this->collectEventsFromClient($runId, 30.0);
             $byType1 = $this->indexClientEvents($events1);

@@ -134,50 +134,53 @@ final class InProcessAgentSessionClient implements AgentSessionClient
             );
         }
 
+        // Parent execution identity is always a pure-digit hatfield_session id.
+        // Controller process labels (HATFIELD_SESSION_ID) may be non-numeric for
+        // queue/process scoping; when no numeric run id is supplied, create a real
+        // session row here rather than letting AgentRunner invent a UUID parent run.
+        $sessionId = trim($request->runId);
+        if ('' === $sessionId) {
+            $sessionId = $this->sessionMetaStore->createSession($prompt);
+        } elseif (!ctype_digit($sessionId)) {
+            throw new \RuntimeException(\sprintf('start requires a pure-digit hatfield_session runId; got "%s".', $sessionId));
+        }
+
         // Persist session-scoped model/reasoning selection so resume restores it.
         // Session-start is NOT a global-default change (unlike /model mid-session,
         // which intentionally also updates the home default via ModelSettingsPersister).
-        // Guard: only persist when a session row already exists ($request->runId !== ''),
-        // since HatfieldSessionStore::updateMetadata() is a no-op for unknown sessions
-        // and sessions are created lazily by createSession()/SessionInitializer before start().
         //
-        // Two-tier resolution mirrors what the LLM worker uses on turn 1 via
-        // SessionAwareModelResolver → ModelResolver.  Explicit request values
-        // (--model / /new --model) take the fast catalog-free parse path; when
-        // absent, the effective model/reasoning is resolved via ModelResolver so
-        // the session is pinned to what the first turn actually used.  This makes
-        // resume stable even if the global default later changes.
-        $sessionId = $request->runId;
-        if ('' !== $sessionId) {
-            $modelRef = null !== $request->model
-                ? AiModelReference::tryParse($request->model)
-                : $this->modelResolver->resolveInitialModel(null, $sessionId);
+        // Two-tier resolution mirrors schedule-time model resolution:
+        // Explicit request values (--model / /new --model) take the fast catalog-free
+        // parse path; when absent, the effective model/reasoning is resolved via
+        // ModelResolver so the session is pinned to what the first turn actually used.
+        $modelRef = null !== $request->model
+            ? AiModelReference::tryParse($request->model)
+            : $this->modelResolver->resolveInitialModel(null, $sessionId);
 
-            $reasoning = null;
-            if (null !== $request->reasoning && \in_array($request->reasoning, ModelResolver::LEVELS, true)) {
-                $reasoning = $request->reasoning;
-            } else {
-                $reasoning = $this->modelResolver->resolveInitialReasoning(null, $sessionId);
-            }
+        $reasoning = null;
+        if (null !== $request->reasoning && \in_array($request->reasoning, ModelResolver::LEVELS, true)) {
+            $reasoning = $request->reasoning;
+        } else {
+            $reasoning = $this->modelResolver->resolveInitialReasoning(null, $sessionId);
+        }
 
-            $metaFields = [];
-            if (null !== $modelRef) {
-                $metaFields['model'] = $modelRef->toString();
-                $metaFields['model_provider'] = $modelRef->providerId;
-                $metaFields['model_name'] = $modelRef->modelName;
-            }
-            if ('' !== $reasoning) {
-                $metaFields['reasoning'] = $reasoning;
-            }
-            if ([] !== $metaFields) {
-                $this->sessionMetaStore->writeSessionMetadata($sessionId, $metaFields);
-            }
+        $metaFields = [];
+        if (null !== $modelRef) {
+            $metaFields['model'] = $modelRef->toString();
+            $metaFields['model_provider'] = $modelRef->providerId;
+            $metaFields['model_name'] = $modelRef->modelName;
+        }
+        if ('' !== $reasoning) {
+            $metaFields['reasoning'] = $reasoning;
+        }
+        if ([] !== $metaFields) {
+            $this->sessionMetaStore->writeSessionMetadata($sessionId, $metaFields);
         }
 
         $input = new StartRunInput(
             systemPrompt: '',
             messages: $messages,
-            runId: '' !== $request->runId ? $request->runId : null,
+            runId: $sessionId,
             metadata: $metadata,
         );
 

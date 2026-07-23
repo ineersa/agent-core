@@ -7,6 +7,7 @@ namespace Ineersa\AgentCore\Application\Pipeline;
 use Ineersa\AgentCore\Application\Handler\RunMetrics;
 use Ineersa\AgentCore\Application\Handler\RunTracer;
 use Ineersa\AgentCore\Contract\Compaction\PreLlmCompactionGuardInterface;
+use Ineersa\AgentCore\Contract\Model\RunModelResolverInterface;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
@@ -22,6 +23,7 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
     public function __construct(
         private CommandMailboxPolicy $commandMailboxPolicy,
         private EventFactory $eventFactory,
+        private RunModelResolverInterface $runModelResolver,
         private ?RunMetrics $metrics = null,
         private ?RunTracer $tracer = null,
         private ?PreLlmCompactionGuardInterface $preLlmCompactionGuard = null,
@@ -384,6 +386,15 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
             }
         }
 
+        // Resolve the immutable execution model at schedule time so the LLM
+        // worker never re-reads mutable session/default state. Normal numeric
+        // sessions may still honor /model changes because resolution happens
+        // on every AdvanceRun; child UUIDs use durable definition_model.
+        $invocationModel = $this->runModelResolver->resolveActiveModel($runId);
+        if (null === $invocationModel || '' === trim($invocationModel)) {
+            throw new \RuntimeException(\sprintf('Cannot schedule ExecuteLlmStep: no active model resolved for run_id=%s.', $runId));
+        }
+
         $effect = new ExecuteLlmStep(
             runId: $runId,
             turnNo: $nextTurnNo,
@@ -392,6 +403,7 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
             idempotencyKey: hash('sha256', \sprintf('%s|llm|%d|%s', $runId, $nextTurnNo, $nextStepId)),
             contextRef: \sprintf('hot:run:%s', $runId),
             toolsRef: \sprintf('toolset:run:%s:turn:%d', $runId, $nextTurnNo),
+            model: $invocationModel,
         );
 
         $parentTurnNo = $preparedState->turnNo > 0 ? $preparedState->turnNo : null;

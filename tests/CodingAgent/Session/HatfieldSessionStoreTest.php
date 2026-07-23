@@ -72,6 +72,17 @@ final class HatfieldSessionStoreTest extends IsolatedKernelTestCase
         $this->assertNull($this->store->findSession('nonexistent-session-id'));
     }
 
+    public function testFindSessionDoesNotCoerceUuidPrefixToNumericSessionId(): void
+    {
+        $sessionId = $this->store->createSession('seed-uuid-coercion');
+        // A UUID-like string that begins with the real session digits would
+        // coerce via (int) to that same primary key. The store must reject it.
+        $uuidWithNumericPrefix = $sessionId.'d451a76-e371-5ece-b9ca-8769167d85e4';
+        $this->assertSame((int) $sessionId, (int) $uuidWithNumericPrefix);
+        $this->assertNull($this->store->findSession($uuidWithNumericPrefix));
+        $this->assertFalse($this->store->exists($uuidWithNumericPrefix));
+    }
+
     public function testUpdateMetadataMergesFields(): void
     {
         $sessionId = $this->store->createSession();

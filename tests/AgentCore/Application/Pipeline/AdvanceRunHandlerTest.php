@@ -38,6 +38,12 @@ final class AdvanceRunHandlerTest extends TestCase
         $handler = new AdvanceRunHandler(
             commandMailboxPolicy: $commandMailboxPolicy,
             eventFactory: new EventFactory(),
+            runModelResolver: new class implements \Ineersa\AgentCore\Contract\Model\RunModelResolverInterface {
+                public function resolveActiveModel(string $runId): ?string
+                {
+                    return 'test-model';
+                }
+            },
             metrics: $metrics,
         );
 
@@ -76,6 +82,7 @@ final class AdvanceRunHandlerTest extends TestCase
         $this->assertInstanceOf(ExecuteLlmStep::class, $result->effects[0]);
         $this->assertSame(12, $result->effects[0]->turnNo());
         $this->assertSame('turn-12-step', $result->effects[0]->stepId());
+        $this->assertSame('test-model', $result->effects[0]->model);
 
         $this->assertSame([], $result->postCommitEffects);
         $this->assertCount(1, $result->postCommit);
@@ -107,6 +114,12 @@ final class AdvanceRunHandlerTest extends TestCase
         $handler = new AdvanceRunHandler(
             commandMailboxPolicy: $commandMailboxPolicy,
             eventFactory: new EventFactory(),
+            runModelResolver: new class implements \Ineersa\AgentCore\Contract\Model\RunModelResolverInterface {
+                public function resolveActiveModel(string $runId): ?string
+                {
+                    return 'test-model';
+                }
+            },
         );
 
         $state = RunStateBuilder::create('run-cancel-advance')
@@ -163,6 +176,12 @@ final class AdvanceRunHandlerTest extends TestCase
         $handler = new AdvanceRunHandler(
             commandMailboxPolicy: $commandMailboxPolicy,
             eventFactory: new EventFactory(),
+            runModelResolver: new class implements \Ineersa\AgentCore\Contract\Model\RunModelResolverInterface {
+                public function resolveActiveModel(string $runId): ?string
+                {
+                    return 'test-model';
+                }
+            },
         );
 
         $state = RunStateBuilder::create('run-waiting-human-advance')
@@ -206,6 +225,12 @@ final class AdvanceRunHandlerTest extends TestCase
         $handler = new AdvanceRunHandler(
             commandMailboxPolicy: $commandMailboxPolicy,
             eventFactory: new EventFactory(),
+            runModelResolver: new class implements \Ineersa\AgentCore\Contract\Model\RunModelResolverInterface {
+                public function resolveActiveModel(string $runId): ?string
+                {
+                    return 'test-model';
+                }
+            },
         );
 
         // Initial state: turnNo=0 (as after StartRun)
@@ -252,6 +277,12 @@ final class AdvanceRunHandlerTest extends TestCase
         $handler = new AdvanceRunHandler(
             commandMailboxPolicy: $commandMailboxPolicy,
             eventFactory: new EventFactory(),
+            runModelResolver: new class implements \Ineersa\AgentCore\Contract\Model\RunModelResolverInterface {
+                public function resolveActiveModel(string $runId): ?string
+                {
+                    return 'test-model';
+                }
+            },
         );
 
         $state = RunStateBuilder::create('run-cancel-noop')
@@ -287,6 +318,12 @@ final class AdvanceRunHandlerTest extends TestCase
         $handler = new AdvanceRunHandler(
             commandMailboxPolicy: $commandMailboxPolicy,
             eventFactory: new EventFactory(),
+            runModelResolver: new class implements \Ineersa\AgentCore\Contract\Model\RunModelResolverInterface {
+                public function resolveActiveModel(string $runId): ?string
+                {
+                    return 'test-model';
+                }
+            },
         );
 
         $state = RunStateBuilder::create('run-pending-tools')
@@ -326,6 +363,12 @@ final class AdvanceRunHandlerTest extends TestCase
         $handler = new AdvanceRunHandler(
             commandMailboxPolicy: $commandMailboxPolicy,
             eventFactory: new EventFactory(),
+            runModelResolver: new class implements \Ineersa\AgentCore\Contract\Model\RunModelResolverInterface {
+                public function resolveActiveModel(string $runId): ?string
+                {
+                    return 'test-model';
+                }
+            },
         );
 
         $state = RunStateBuilder::create('run-mixed-tools')
@@ -370,6 +413,12 @@ final class AdvanceRunHandlerTest extends TestCase
         $handler = new AdvanceRunHandler(
             commandMailboxPolicy: $commandMailboxPolicy,
             eventFactory: new EventFactory(),
+            runModelResolver: new class implements \Ineersa\AgentCore\Contract\Model\RunModelResolverInterface {
+                public function resolveActiveModel(string $runId): ?string
+                {
+                    return 'test-model';
+                }
+            },
             metrics: $metrics,
         );
 
@@ -433,6 +482,12 @@ final class AdvanceRunHandlerTest extends TestCase
         $handler = new AdvanceRunHandler(
             commandMailboxPolicy: $commandMailboxPolicy,
             eventFactory: new EventFactory(),
+            runModelResolver: new class implements \Ineersa\AgentCore\Contract\Model\RunModelResolverInterface {
+                public function resolveActiveModel(string $runId): ?string
+                {
+                    return 'test-model';
+                }
+            },
         );
 
         $state = RunStateBuilder::create('run-compact-completed')
@@ -517,6 +572,12 @@ final class AdvanceRunHandlerTest extends TestCase
         $handler = new AdvanceRunHandler(
             commandMailboxPolicy: $commandMailboxPolicy,
             eventFactory: new EventFactory(),
+            runModelResolver: new class implements \Ineersa\AgentCore\Contract\Model\RunModelResolverInterface {
+                public function resolveActiveModel(string $runId): ?string
+                {
+                    return 'test-model';
+                }
+            },
         );
 
         $state = RunStateBuilder::create('run-steer-completed')
@@ -563,6 +624,12 @@ final class AdvanceRunHandlerTest extends TestCase
         $handler = new AdvanceRunHandler(
             commandMailboxPolicy: $commandMailboxPolicy,
             eventFactory: new EventFactory(),
+            runModelResolver: new class implements \Ineersa\AgentCore\Contract\Model\RunModelResolverInterface {
+                public function resolveActiveModel(string $runId): ?string
+                {
+                    return 'test-model';
+                }
+            },
             commandBus: $commandBus,
         );
 
@@ -612,6 +679,12 @@ final class AdvanceRunHandlerTest extends TestCase
         $handler = new AdvanceRunHandler(
             commandMailboxPolicy: $commandMailboxPolicy,
             eventFactory: new EventFactory(),
+            runModelResolver: new class implements \Ineersa\AgentCore\Contract\Model\RunModelResolverInterface {
+                public function resolveActiveModel(string $runId): ?string
+                {
+                    return 'test-model';
+                }
+            },
         );
 
         $state = RunStateBuilder::create('run-post-cancel-append')
@@ -659,6 +732,12 @@ final class AdvanceRunHandlerTest extends TestCase
         $handler = new AdvanceRunHandler(
             commandMailboxPolicy: $commandMailboxPolicy,
             eventFactory: new EventFactory(),
+            runModelResolver: new class implements \Ineersa\AgentCore\Contract\Model\RunModelResolverInterface {
+                public function resolveActiveModel(string $runId): ?string
+                {
+                    return 'test-model';
+                }
+            },
             commandBus: $commandBus,
         );
 
@@ -702,6 +781,12 @@ final class AdvanceRunHandlerTest extends TestCase
         $handler = new AdvanceRunHandler(
             commandMailboxPolicy: $commandMailboxPolicy,
             eventFactory: new EventFactory(),
+            runModelResolver: new class implements \Ineersa\AgentCore\Contract\Model\RunModelResolverInterface {
+                public function resolveActiveModel(string $runId): ?string
+                {
+                    return 'test-model';
+                }
+            },
         );
 
         $state = RunStateBuilder::create($runId)
@@ -725,5 +810,42 @@ final class AdvanceRunHandlerTest extends TestCase
             'After rewind, next turn must be max(lastSeq, turnNo)+1.'
         );
         $this->assertSame(11, $result->events[0]->payload['turn_no']);
+    }
+
+    public function testHandleFailsClosedWhenModelResolverReturnsNull(): void
+    {
+        $commandStore = new InMemoryCommandStore();
+        $commandMailboxPolicy = new CommandMailboxPolicy(
+            commandStore: $commandStore,
+            commandRouter: new CommandRouter(new CommandHandlerRegistry([])),
+        );
+
+        $handler = new AdvanceRunHandler(
+            commandMailboxPolicy: $commandMailboxPolicy,
+            eventFactory: new EventFactory(),
+            runModelResolver: new class implements \Ineersa\AgentCore\Contract\Model\RunModelResolverInterface {
+                public function resolveActiveModel(string $runId): ?string
+                {
+                    return null;
+                }
+            },
+        );
+
+        $state = RunStateBuilder::create('run-no-model')
+            ->withStatus(RunStatus::Running)
+            ->withVersion(1)
+            ->withTurnNo(1)
+            ->withLastSeq(1)
+            ->build();
+
+        $message = AdvanceRunMessageBuilder::create('run-no-model')
+            ->withTurnNo(1)
+            ->withStepId('step-no-model')
+            ->withIdempotencyKey('advance-no-model')
+            ->build();
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('no active model resolved');
+        $handler->handle($message, $state);
     }
 }

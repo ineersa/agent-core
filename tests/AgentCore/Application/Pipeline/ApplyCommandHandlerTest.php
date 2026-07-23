@@ -730,6 +730,12 @@ final class ApplyCommandHandlerTest extends TestCase
         $advanceHandler = new AdvanceRunHandler(
             commandMailboxPolicy: $commandMailboxPolicy,
             eventFactory: new EventFactory(),
+            runModelResolver: new class implements \Ineersa\AgentCore\Contract\Model\RunModelResolverInterface {
+                public function resolveActiveModel(string $runId): ?string
+                {
+                    return 'test-model';
+                }
+            },
         );
         $drainResult = $advanceHandler->handle($commandBus->messages[0], $result->nextState);
         $this->assertSame(RunStatus::Running, $drainResult->nextState->status);

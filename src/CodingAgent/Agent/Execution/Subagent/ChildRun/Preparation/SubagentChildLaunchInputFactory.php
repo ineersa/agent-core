@@ -15,6 +15,7 @@ use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunIdentityDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\PreparedAgentChildRunDTO;
 use Ineersa\CodingAgent\Config\Ai\AiModelReference;
 use Ineersa\CodingAgent\Config\AppConfig;
+use Ineersa\CodingAgent\Config\ModelSelectionService;
 use Ineersa\CodingAgent\Skills\SkillsContextBuilder;
 
 final class SubagentChildLaunchInputFactory
@@ -25,6 +26,7 @@ final class SubagentChildLaunchInputFactory
         private readonly AgentsContextBuilder $agentsContextBuilder,
         private readonly RunStoreInterface $parentRunStore,
         private readonly AppConfig $appConfig,
+        private readonly ModelSelectionService $modelSelectionService,
     ) {
     }
 
@@ -49,11 +51,15 @@ final class SubagentChildLaunchInputFactory
             agentsDefinitionsContext: $launchContext->agentsDefinitionsContext,
         );
 
+        // Pin the effective child model at launch so scheduling never falls
+        // through mutable parent/default resolution for UUID child runs.
+        $effectiveModel = $this->resolveEffectiveChildModel($definition->model, $identity->parentRunId);
+
         $childMetadata = $this->buildChildRunMetadata(
             parentRunId: $identity->parentRunId,
             agentName: $identity->displayName,
             artifactId: $identity->artifactId,
-            model: $definition->model,
+            model: $effectiveModel,
             reasoning: $definition->thinking,
             allowedTools: $allowedTools,
             mcp: $mcp,
@@ -101,6 +107,23 @@ final class SubagentChildLaunchInputFactory
             ],
             contextWindow: $contextWindow > 0 ? $contextWindow : null,
         );
+    }
+
+    private function resolveEffectiveChildModel(?string $definitionModel, string $parentRunId): string
+    {
+        $explicit = null !== $definitionModel ? trim($definitionModel) : '';
+        // Only pure-digit parent sessions participate in session-model inheritance.
+        // UUID parent labels (tests/ephemeral) must not be coerced into session lookup.
+        $sessionId = '' === $explicit && ctype_digit($parentRunId) ? $parentRunId : '';
+        $resolved = $this->modelSelectionService->resolveInitialModel(
+            explicitModel: '' !== $explicit ? $explicit : null,
+            sessionId: $sessionId,
+        );
+        if (null === $resolved) {
+            throw new \RuntimeException(\sprintf('Cannot launch child run: no effective model resolved for parent_run_id=%s.', $parentRunId));
+        }
+
+        return $resolved->toString();
     }
 
     private function resolveContextWindowForModel(?string $model): int
