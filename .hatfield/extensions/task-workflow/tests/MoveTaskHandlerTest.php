@@ -77,7 +77,7 @@ final class MoveTaskHandlerTest extends TestCase
         file_put_contents($this->boardRoot.'/TODO/'.$slug.'.md', TaskMarkdown::renderTask('Test task'));
 
         $r1 = ($handler)(['task' => $slug, 'to' => 'IN-PROGRESS', 'worktreeBase' => $this->worktreesBase]);
-        $this->assertStringContainsString('Moved task', $r1['content'][0]['text']);
+        $this->assertStringContainsString('Moved task', $r1);
         $branch = 'task/'.$slug;
         $this->assertTrue($this->branchExists($branch));
         $this->assertDirectoryExists($this->worktreesBase.'/'.$slug);
@@ -108,7 +108,7 @@ final class MoveTaskHandlerTest extends TestCase
             'castorCheckTimeoutSeconds' => 60,
         ]);
 
-        $this->assertStringContainsString('Moved task', $r['content'][0]['text']);
+        $this->assertStringContainsString('Moved task', $r);
         $this->assertFileExists($this->boardRoot.'/CODE-REVIEW/'.$slug.'.md');
         $moved = file_get_contents($this->boardRoot.'/CODE-REVIEW/'.$slug.'.md');
         $this->assertIsString($moved);
@@ -209,7 +209,7 @@ final class MoveTaskHandlerTest extends TestCase
         file_put_contents($this->boardRoot.'/TODO/'.$slug.'.md', TaskMarkdown::renderTask('Ext vendor'));
         $r = ($handler)(['task' => $slug, 'to' => 'IN-PROGRESS', 'worktreeBase' => $this->worktreesBase]);
 
-        $this->assertStringContainsString('Installed extensions vendor', $r['content'][0]['text']);
+        $this->assertStringContainsString('Installed extensions vendor', $r);
 
         $composerCalls = $this->findCallsByCommand($recording, 'composer');
         $this->assertNotEmpty($composerCalls, 'composer install must run on worktree creation');
@@ -243,7 +243,7 @@ final class MoveTaskHandlerTest extends TestCase
         file_put_contents($this->boardRoot.'/TODO/'.$slug.'.md', TaskMarkdown::renderTask('Ext fail'));
         $r = ($handler)(['task' => $slug, 'to' => 'IN-PROGRESS', 'worktreeBase' => $this->worktreesBase]);
 
-        $this->assertStringContainsString('Moved task', $r['content'][0]['text']);
+        $this->assertStringContainsString('Moved task', $r);
         $this->assertFileExists($this->boardRoot.'/IN-PROGRESS/'.$slug.'.md');
         $this->assertDirectoryExists($this->worktreesBase.'/'.$slug);
     }
@@ -282,10 +282,14 @@ final class MoveTaskHandlerTest extends TestCase
         $gitCalls = $this->findCallsByCommand($recording, 'git');
         $this->assertEmpty($gitCalls, 'DONE→ARCHIVE must not invoke git');
 
-        $decoded = Toon::decode($result['details']);
+        $this->assertIsString($result);
+        $this->assertNull(json_decode($result, true), 'move_task ARCHIVE output must not be a JSON envelope');
+        $decoded = Toon::decode($result);
         $this->assertIsArray($decoded);
         $this->assertSame('DONE', $decoded['from'] ?? null);
         $this->assertSame('ARCHIVE', $decoded['to'] ?? null);
+        $this->assertArrayHasKey('message', $decoded);
+        $this->assertStringContainsString('Moved task', (string) $decoded['message']);
     }
 
     #[Test]
@@ -311,7 +315,7 @@ final class MoveTaskHandlerTest extends TestCase
 
         $this->assertFileExists($this->boardRoot.'/CANCELLED/'.$slug.'.md');
         $this->assertFileDoesNotExist($this->boardRoot.'/TODO/'.$slug.'.md');
-        $this->assertStringContainsString('No Worktree metadata', $result['content'][0]['text']);
+        $this->assertStringContainsString('No Worktree metadata', $result);
     }
 
     #[Test]
@@ -345,7 +349,7 @@ final class MoveTaskHandlerTest extends TestCase
         $this->assertStringContainsString('Branch: '.$branch, $cancelled);
         $this->assertStringContainsString('Worktree: '.$worktree, $cancelled);
         $this->assertStringNotContainsString('pi-task-workflow:start '.$slug, (string) file_get_contents($iml));
-        $this->assertStringContainsString('Removed worktree', $result['content'][0]['text']);
+        $this->assertStringContainsString('Removed worktree', $result);
     }
 
     #[Test]
@@ -455,7 +459,7 @@ final class MoveTaskHandlerTest extends TestCase
         file_put_contents($this->boardRoot.'/TODO/'.$slug.'.md', TaskMarkdown::renderTask('Ext missing'));
         $r = ($handler)(['task' => $slug, 'to' => 'IN-PROGRESS', 'worktreeBase' => $this->worktreesBase]);
 
-        $this->assertStringContainsString('Moved task', $r['content'][0]['text']);
+        $this->assertStringContainsString('Moved task', $r);
         $composerCalls = $this->findCallsByCommand($recording, 'composer');
         $this->assertEmpty($composerCalls, 'must not call composer when extensions dir is missing');
     }

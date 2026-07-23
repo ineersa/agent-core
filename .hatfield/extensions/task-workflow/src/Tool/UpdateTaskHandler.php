@@ -19,10 +19,8 @@ final readonly class UpdateTaskHandler implements ExtensionToolHandlerInterface
 
     /**
      * @param array<string, mixed> $arguments
-     *
-     * @return array{content: list<array{type: string, text: string}>, details: string}
      */
-    public function __invoke(array $arguments): array
+    public function __invoke(array $arguments): string
     {
         $taskQuery = $arguments['task'] ?? null;
         if (!\is_string($taskQuery) || '' === $taskQuery) {
@@ -38,7 +36,7 @@ final readonly class UpdateTaskHandler implements ExtensionToolHandlerInterface
         $this->store->ensureTaskDirs($taskRoot);
         $lock = new TaskBoardLock(TaskBoardLock::lockPathForRoot($taskRoot));
 
-        return $lock->withLock(function () use ($taskRoot, $taskQuery, $from, $arguments): array {
+        return $lock->withLock(function () use ($taskRoot, $taskQuery, $from, $arguments): string {
             $task = $this->store->findTask($taskRoot, $taskQuery, $from);
             $text = file_get_contents($task->path);
             if (false === $text) {
