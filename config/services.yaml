@@ -104,6 +104,10 @@ services:
     arguments:
       $captureErrors: '%app.capture_errors%'
 
+  # Provider quota probes for /usage — TUI depends on the contract only.
+  Ineersa\CodingAgent\Runtime\Contract\ProviderQuotaProbeServiceInterface:
+    alias: Ineersa\CodingAgent\Infrastructure\ProviderQuota\ProviderQuotaProbeService
+
   # ─── Hatfield config services ───
 
   Ineersa\CodingAgent\Config\AppResourceLocator:

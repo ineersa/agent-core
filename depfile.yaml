@@ -201,6 +201,11 @@ parameters:
         - type: directory
           value: src/CodingAgent/Infrastructure/SymfonyAi/.*
 
+    - name: AppProviderQuota
+      collectors:
+        - type: directory
+          value: src/CodingAgent/Infrastructure/ProviderQuota/.*
+
     - name: AgentCore
       collectors:
         - type: classNameRegex
@@ -583,6 +588,13 @@ parameters:
       - AppConfig
       - SymfonyAiPlatform
       - AppAuth
+
+    # /usage provider probes: auth + catalog + HttpClient + sanitized Runtime/Contract DTOs.
+    AppProviderQuota:
+      - AppAuth
+      - AppConfig
+      - AppRuntimeContract
+      - SymfonyHttpClient
 
     AppSession:
       - AgentCore
