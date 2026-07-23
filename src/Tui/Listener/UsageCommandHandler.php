@@ -13,12 +13,22 @@ use Ineersa\Tui\Command\SlashCommandHandler;
 use Ineersa\Tui\Command\TranscriptMessage;
 use Ineersa\Tui\Footer\ContextUsageFormatter;
 use Ineersa\Tui\Runtime\TuiSessionState;
+use Ineersa\Tui\Screen\ChatScreen;
+use Psr\Log\LoggerInterface;
+use Psr\Log\NullLogger;
+use Symfony\Component\Tui\Tui;
 
 /**
  * Handler for the /usage slash command.
  *
  * Probes provider quotas through the runtime contract and formats
  * current-session totals from {@see TuiSessionState::$usage}.
+ *
+ * The slash-command interface is synchronous, so network probes can block the
+ * event loop for up to the probe timeout. To avoid an unexplained frozen
+ * terminal, this handler paints an immediate working indicator (same pattern as
+ * {@see SubmitListener}'s pre-dispatch Working... feedback) before probing and
+ * clears it afterward.
  *
  * @internal Registered by UsageCommandRegistrar
  */
@@ -27,40 +37,84 @@ final class UsageCommandHandler implements SlashCommandHandler
     public function __construct(
         private readonly ProviderQuotaProbeServiceInterface $quotaProbe,
         private readonly TuiSessionState $state,
+        private readonly ?ChatScreen $screen = null,
+        private readonly ?Tui $tui = null,
+        private readonly LoggerInterface $logger = new NullLogger(),
     ) {
     }
 
     public function handle(SlashCommand $command): CommandResult
     {
+        $this->showProbingIndicator();
+
         try {
-            $report = $this->quotaProbe->probe();
-        } catch (\Throwable $e) {
-            // Top-level guard: probe service should already degrade per-provider,
-            // but never let an unexpected failure blank the session totals.
-            return new TranscriptMessage(
-                implode("\n", [
-                    '## Provider usage / quota status',
-                    '',
-                    'Provider probes failed: '.$this->sanitizeError($e->getMessage()),
-                    '',
-                    ...$this->formatSessionLines(),
-                ]),
-                'system',
-                'markdown',
-            );
+            try {
+                $report = $this->quotaProbe->probe();
+            } catch (\Throwable $e) {
+                // Top-level guard: probe service should already degrade per-provider,
+                // but never let an unexpected failure blank the session totals.
+                return new TranscriptMessage(
+                    implode("\n", [
+                        '## Provider usage / quota status',
+                        '',
+                        'Provider probes failed: '.$this->sanitizeError($e),
+                        '',
+                        ...$this->formatSessionLines(),
+                    ]),
+                    'system',
+                    'markdown',
+                );
+            }
+
+            $lines = [
+                '## Provider usage / quota status',
+                '',
+                ...$this->formatSection($report->openaiCodex),
+                '',
+                ...$this->formatSection($report->zai),
+                '',
+                ...$this->formatSessionLines(),
+            ];
+
+            return new TranscriptMessage(implode("\n", $lines), 'system', 'markdown');
+        } finally {
+            $this->clearProbingIndicator();
+        }
+    }
+
+    private function showProbingIndicator(): void
+    {
+        if (null === $this->screen || null === $this->tui) {
+            return;
         }
 
-        $lines = [
-            '## Provider usage / quota status',
-            '',
-            ...$this->formatSection($report->openaiCodex),
-            '',
-            ...$this->formatSection($report->zai),
-            '',
-            ...$this->formatSessionLines(),
-        ];
+        // Force a terminal repaint so the user sees the indicator immediately
+        // instead of staring at a frozen editor while provider HTTP runs.
+        $this->screen->setWorkingMessage('Checking provider usage...');
+        try {
+            $this->tui->requestRender();
+            $this->tui->processRender();
+        } catch (\Throwable $e) {
+            // Non-fatal: render may fail if the terminal is in a transient state.
+            $this->logger->debug('UsageCommandHandler: immediate probing render failed (non-fatal)', [
+                'component' => 'UsageCommandHandler',
+                'event_type' => 'usage_probe_indicator_render_failed',
+                'session_id' => $this->state->sessionId,
+                'exception_class' => $e::class,
+            ]);
+        }
+    }
 
-        return new TranscriptMessage(implode("\n", $lines), 'system', 'markdown');
+    private function clearProbingIndicator(): void
+    {
+        if (null === $this->screen) {
+            return;
+        }
+
+        // Clear only our own message so concurrent Working... from a run is not clobbered incorrectly.
+        if ('Checking provider usage...' === $this->screen->registry()->getWorkingMessage()) {
+            $this->screen->setWorkingMessage('');
+        }
     }
 
     /**
@@ -173,15 +227,16 @@ final class UsageCommandHandler implements SlashCommandHandler
         return $lines;
     }
 
-    private function sanitizeError(string $message): string
+    private function sanitizeError(\Throwable $e): string
     {
-        $trimmed = trim($message);
+        // User-facing text: class + bounded first line only; never multi-line dumps.
+        $trimmed = trim($e->getMessage());
         if ('' === $trimmed) {
-            return 'unknown error';
+            return $e::class;
         }
-        // Bound length; never echo multi-line dumps that might contain secrets.
         $firstLine = explode("\n", $trimmed, 2)[0];
+        $bounded = mb_strlen($firstLine) > 200 ? mb_substr($firstLine, 0, 200).'…' : $firstLine;
 
-        return mb_strlen($firstLine) > 200 ? mb_substr($firstLine, 0, 200).'…' : $firstLine;
+        return $e::class.': '.$bounded;
     }
 }

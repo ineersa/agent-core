@@ -105,6 +105,15 @@ services:
       $captureErrors: '%app.capture_errors%'
 
   # Provider quota probes for /usage — TUI depends on the contract only.
+  # Built from AppConfig so a missing ai section yields a null catalog instead
+  # of failing container boot via HatfieldModelCatalog's non-null AiConfig arg.
+  Ineersa\CodingAgent\Infrastructure\ProviderQuota\ProviderQuotaProbeService:
+    factory: ['Ineersa\CodingAgent\Infrastructure\ProviderQuota\ProviderQuotaProbeService', 'fromAppConfig']
+    arguments:
+      $codexAuthStorage: '@Ineersa\CodingAgent\Auth\CodexAuthStorage'
+      $appConfig: '@Ineersa\CodingAgent\Config\AppConfig'
+      $logger: '@Psr\Log\LoggerInterface'
+
   Ineersa\CodingAgent\Runtime\Contract\ProviderQuotaProbeServiceInterface:
     alias: Ineersa\CodingAgent\Infrastructure\ProviderQuota\ProviderQuotaProbeService
 

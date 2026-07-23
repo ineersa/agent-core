@@ -26,6 +26,7 @@ use Symfony\Component\Tui\Widget\MarkdownWidget;
  * Thesis: production parser/router/registrar/handler for /usage renders
  * sanitized provider sections plus session cumulative tokens, cost, and
  * latest-turn context usage in the transcript (lowest correct TUI layer).
+ * Also proves the synchronous probe paints and clears a working indicator.
  */
 final class TuiUsageCommandVirtualTest extends TestCase
 {
@@ -116,12 +117,62 @@ final class TuiUsageCommandVirtualTest extends TestCase
     }
 
     #[Test]
+    public function testUsageShowsAndClearsProbingWorkingIndicator(): void
+    {
+        $registry = new SlashCommandRegistry();
+        $state = new TuiSessionState('usage-working');
+        $harness = new VirtualTuiHarness(sessionId: 'usage-working');
+        $screen = $harness->screen();
+        $tui = $harness->tui();
+
+        $workingDuringProbe = null;
+        $probe = new class($workingDuringProbe, $screen) implements ProviderQuotaProbeServiceInterface {
+            public function __construct(
+                private ?string &$workingDuringProbe,
+                private \Ineersa\Tui\Screen\ChatScreen $screen,
+            ) {
+            }
+
+            public function probe(): ProviderQuotaReportDTO
+            {
+                $this->workingDuringProbe = $this->screen->registry()->getWorkingMessage();
+
+                return new ProviderQuotaReportDTO(
+                    openaiCodex: new ProviderQuotaSectionDTO(
+                        title: 'OpenAI Codex',
+                        error: 'skip',
+                        configured: false,
+                    ),
+                    zai: new ProviderQuotaSectionDTO(
+                        title: 'z.ai',
+                        error: 'skip',
+                        configured: false,
+                    ),
+                );
+            }
+        };
+
+        (new UsageCommandRegistrar($registry, $probe))->register(
+            $this->buildTuiContext()
+                ->withTui($tui)
+                ->withState($state)
+                ->withScreen($screen)
+                ->build(),
+        );
+
+        $result = (new SubmissionRouter(new CommandParser(), $registry))->route('/usage');
+        $this->assertInstanceOf(TranscriptMessage::class, $result);
+        $this->assertSame('Checking provider usage...', $workingDuringProbe);
+        $this->assertSame('', $screen->registry()->getWorkingMessage());
+    }
+
+    #[Test]
     public function testUsageKeepsSessionTotalsWhenProviderProbeThrows(): void
     {
         $probe = new class implements ProviderQuotaProbeServiceInterface {
             public function probe(): ProviderQuotaReportDTO
             {
-                throw new \RuntimeException('boom');
+                throw new \RuntimeException("boom\nsecret-line");
             }
         };
 
@@ -143,6 +194,7 @@ final class TuiUsageCommandVirtualTest extends TestCase
         $result = (new SubmissionRouter(new CommandParser(), $registry))->route('/usage');
         $this->assertInstanceOf(TranscriptMessage::class, $result);
         $this->assertStringContainsString('Provider probes failed', $result->text);
+        $this->assertStringNotContainsString('secret-line', $result->text);
         $this->assertStringContainsString('### Session totals', $result->text);
         $this->assertStringContainsString('10 in / 5 out', $result->text);
     }

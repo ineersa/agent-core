@@ -56,3 +56,8 @@ services:
   #  through its constructor; no production env-var branching needed.
   Symfony\Contracts\HttpClient\HttpClientInterface:
     factory: ['Ineersa\CodingAgent\Tests\Runtime\Controller\E2E\Replay\ControllerReplayHttpClientFactory', 'create']
+
+  # Deterministic /usage provider quota stub for APP_ENV=test (TUI E2E + unit).
+  # Lives in tests/ — never contacts real auth files or provider networks.
+  Ineersa\CodingAgent\Runtime\Contract\ProviderQuotaProbeServiceInterface:
+    class: Ineersa\CodingAgent\Tests\Infrastructure\ProviderQuota\FakeProviderQuotaProbeService
