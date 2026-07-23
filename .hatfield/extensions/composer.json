@@ -7,8 +7,7 @@
         "php": ">=8.3",
         "ineersa/hatfield-ext-task-workflow": "@dev",
         "ineersa/hatfield-ext-castor-llm-mode": "@dev",
-        "ineersa/hatfield-ext-file-rewind": "@dev",
-        "ineersa/hatfield-ext-observational-memory": "@dev"
+        "ineersa/hatfield-ext-file-rewind": "@dev"
     },
     "repositories": [
         {
@@ -22,10 +21,6 @@
         {
             "type": "path",
             "url": "file-rewind"
-        },
-        {
-            "type": "path",
-            "url": "observational-memory"
         }
     ],
     "config": {

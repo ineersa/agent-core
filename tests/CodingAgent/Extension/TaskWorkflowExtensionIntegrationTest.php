@@ -19,7 +19,6 @@ use Ineersa\Tui\Command\SlashCommandRegistry;
 use Ineersa\Tui\Extension\TuiCommandRegistryAdapter;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
-use Symfony\Component\EventDispatcher\EventDispatcher;
 
 /**
  * Proves TaskWorkflowExtension connects through the production ExtensionManager
@@ -86,7 +85,7 @@ final class TaskWorkflowExtensionIntegrationTest extends TestCase
             },
         );
 
-        $manager = new ExtensionManager($appConfig, $bridge, new NullLogger(), new EventDispatcher());
+        $manager = new ExtensionManager($appConfig, $bridge, new NullLogger());
         $diagnostics = $manager->loadExtensions();
 
         $this->assertSame([], $diagnostics, 'Extension must register without failures: '.implode('; ', $diagnostics));

@@ -63,8 +63,7 @@
             "Ineersa\\Platform\\": "src/Platform/",
             "Ineersa\\HatfieldExt\\TaskWorkflow\\": ".hatfield/extensions/task-workflow/src/",
             "Ineersa\\HatfieldExt\\CastorLlmMode\\": ".hatfield/extensions/castor-llm-mode/src/",
-            "Ineersa\\HatfieldExt\\FileRewind\\": ".hatfield/extensions/file-rewind/src/",
-            "Ineersa\\HatfieldExt\\ObservationalMemory\\": ".hatfield/extensions/observational-memory/src/"
+            "Ineersa\\HatfieldExt\\FileRewind\\": ".hatfield/extensions/file-rewind/src/"
         }
     },
     "autoload-dev": {
@@ -76,8 +75,7 @@
             "Ineersa\\Platform\\Tests\\": "tests/Platform/",
             "Ineersa\\HatfieldExt\\TaskWorkflow\\Tests\\": ".hatfield/extensions/task-workflow/tests/",
             "Ineersa\\HatfieldExt\\CastorLlmMode\\Tests\\": ".hatfield/extensions/castor-llm-mode/tests/",
-            "Ineersa\\HatfieldExt\\FileRewind\\Tests\\": ".hatfield/extensions/file-rewind/tests/",
-            "Ineersa\\HatfieldExt\\ObservationalMemory\\Tests\\": ".hatfield/extensions/observational-memory/tests/"
+            "Ineersa\\HatfieldExt\\FileRewind\\Tests\\": ".hatfield/extensions/file-rewind/tests/"
         }
     },
     "minimum-stability": "dev",

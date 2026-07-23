@@ -22,7 +22,6 @@ use Monolog\Level;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
-use Symfony\Component\EventDispatcher\EventDispatcher;
 
 final class ExtensionManagerTest extends TestCase
 {
@@ -131,7 +130,7 @@ final class ExtensionManagerTest extends TestCase
         $bridge = new InMemoryExtensionApiBridge();
         $logger = new NullLogger();
 
-        $manager = new ExtensionManager($config, $bridge, $logger, new EventDispatcher());
+        $manager = new ExtensionManager($config, $bridge, $logger);
         $manager->loadExtensions();
 
         $this->assertCount(0, $bridge->getRegistrations());
@@ -187,7 +186,7 @@ PHP;
         $bridge = new InMemoryExtensionApiBridge();
         $logger = new NullLogger();
 
-        $manager = new ExtensionManager($config, $bridge, $logger, new EventDispatcher());
+        $manager = new ExtensionManager($config, $bridge, $logger);
         $manager->loadExtensions();
 
         $this->assertCount(1, $bridge->getRegistrations());
@@ -203,7 +202,7 @@ PHP;
         $bridge = new InMemoryExtensionApiBridge();
         $logger = new LoggerSpy();
 
-        $manager = new ExtensionManager($config, $bridge, $logger, new EventDispatcher());
+        $manager = new ExtensionManager($config, $bridge, $logger);
         $manager->loadExtensions();
 
         $this->assertCount(0, $bridge->getRegistrations());
@@ -239,7 +238,7 @@ PHP
         $bridge = new InMemoryExtensionApiBridge();
         $logger = new LoggerSpy();
 
-        $manager = new ExtensionManager($config, $bridge, $logger, new EventDispatcher());
+        $manager = new ExtensionManager($config, $bridge, $logger);
         $manager->loadExtensions();
 
         $this->assertCount(0, $bridge->getRegistrations());
@@ -339,7 +338,7 @@ PHP
         $bridge = new InMemoryExtensionApiBridge();
         $logger = new LoggerSpy();
 
-        $manager = new ExtensionManager($config, $bridge, $logger, new EventDispatcher());
+        $manager = new ExtensionManager($config, $bridge, $logger);
         $manager->loadExtensions();
 
         // Both good extensions should have registered their tools
@@ -360,7 +359,7 @@ PHP
         $bridge = new InMemoryExtensionApiBridge();
         $logger = new NullLogger();
 
-        $manager = new ExtensionManager($config, $bridge, $logger, new EventDispatcher());
+        $manager = new ExtensionManager($config, $bridge, $logger);
         $manager->loadExtensions();
 
         $this->assertCount(0, $bridge->getRegistrations());
@@ -379,7 +378,7 @@ PHP
             extensions: ['Ineersa\\Hatfield\\ExtensionApi\\ExtensionApiInterface']
         );
 
-        $manager = new ExtensionManager($config, $bridge, $logger, new EventDispatcher());
+        $manager = new ExtensionManager($config, $bridge, $logger);
         $manager->loadExtensions();
 
         $this->assertCount(0, $bridge->getRegistrations());
@@ -443,7 +442,7 @@ PHP
         $bridge = new InMemoryExtensionApiBridge();
         $logger = new NullLogger();
 
-        $manager = new ExtensionManager($config, $bridge, $logger, new EventDispatcher());
+        $manager = new ExtensionManager($config, $bridge, $logger);
         $manager->loadExtensions();
 
         // Verify tool registration

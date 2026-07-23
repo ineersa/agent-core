@@ -7,14 +7,11 @@ namespace Ineersa\CodingAgent\Runtime\Controller;
 use Ineersa\AgentCore\Contract\Tool\ToolExecutionSettingsInterface;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeExceptionBoundary;
 use Ineersa\CodingAgent\Runtime\Controller\Event\ControllerCommandEvent;
-use Ineersa\CodingAgent\Runtime\Process\RuntimeProcessConfig;
 use Ineersa\CodingAgent\Runtime\Protocol\JsonlCodec;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeCommand;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Ineersa\CodingAgent\Tool\BackgroundProcessManager;
-use Ineersa\Hatfield\ExtensionApi\Runtime\RuntimeStartedEvent;
-use Ineersa\Hatfield\ExtensionApi\Runtime\RuntimeStoppingEvent;
 use Psr\Log\LoggerInterface;
 use Revolt\EventLoop;
 use Symfony\Component\Console\Command\Command;
@@ -63,12 +60,6 @@ final class HeadlessController
         private readonly ToolExecutionSettingsInterface $toolExecutionSettings,
         private readonly RuntimeExceptionBoundary $boundary,
         private readonly RuntimeEventEmitter $emitter,
-        /**
-         * Source/PHAR-safe executable prefix and runtime CWD for public
-         * extension runtime lifecycle events. Required so lifecycle dispatch
-         * cannot silently skip when the owning controller is running.
-         */
-        private readonly RuntimeProcessConfig $runtimeProcessConfig,
         /**
          * Optional override for parallel tool messenger consumers.
          * Values <= 0 use tools.execution.max_parallelism from settings.
@@ -166,10 +157,6 @@ final class HeadlessController
         // spawning.
         $this->consumerSupervisor->launch('scheduler_default');
         $this->consumerSupervisor->launch('mcp');
-
-        // Notify extensions that the owning controller runtime is ready.
-        // Scalar-only payload: no Process/Messenger/Doctrine/container objects.
-        $this->dispatchRuntimeStarted();
 
         // Non-blocking stdin: read JSONL commands from TUI.
         EventLoop::onReadable(\STDIN, function (string $watcherId, $stream): void {
@@ -431,45 +418,7 @@ final class HeadlessController
 
         $this->logger->info('Controller shutting down gracefully');
 
-        // Extension-owned children first, then Hatfield messenger consumers.
-        $this->dispatchRuntimeStopping();
         $this->consumerSupervisor->shutdown();
         $this->bgProcessManager?->shutdownCleanup($this->sessionId);
-    }
-
-    private function dispatchRuntimeStarted(): void
-    {
-        try {
-            $this->dispatcher->dispatch(new RuntimeStartedEvent(
-                sessionId: $this->sessionId,
-                runtimeCwd: $this->runtimeProcessConfig->runtimeCwd(),
-                applicationCommand: $this->runtimeProcessConfig->executableCommand(),
-            ));
-        } catch (\Throwable $e) {
-            // Extension lifecycle failures must not take down the controller.
-            $this->logger->error('RuntimeStartedEvent dispatch failed', [
-                'component' => 'HeadlessController',
-                'event_type' => 'runtime.started.dispatch_failed',
-                'session_id' => $this->sessionId,
-                'exception_class' => $e::class,
-            ]);
-        }
-    }
-
-    private function dispatchRuntimeStopping(): void
-    {
-        try {
-            $this->dispatcher->dispatch(new RuntimeStoppingEvent(
-                sessionId: $this->sessionId,
-                runtimeCwd: $this->runtimeProcessConfig->runtimeCwd(),
-            ));
-        } catch (\Throwable $e) {
-            $this->logger->error('RuntimeStoppingEvent dispatch failed', [
-                'component' => 'HeadlessController',
-                'event_type' => 'runtime.stopping.dispatch_failed',
-                'session_id' => $this->sessionId,
-                'exception_class' => $e::class,
-            ]);
-        }
     }
 }

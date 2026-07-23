@@ -21,7 +21,6 @@ use Ineersa\Tui\Completion\SlashCommandCompletionProvider;
 use Ineersa\Tui\Extension\TuiCommandRegistryAdapter;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
-use Symfony\Component\EventDispatcher\EventDispatcher;
 
 final class FileRewindExtensionIntegrationTest extends TestCase
 {
@@ -56,7 +55,7 @@ final class FileRewindExtensionIntegrationTest extends TestCase
             },
         );
 
-        $diagnostics = (new ExtensionManager($appConfig, $bridge, new NullLogger(), new EventDispatcher()))->loadExtensions();
+        $diagnostics = (new ExtensionManager($appConfig, $bridge, new NullLogger()))->loadExtensions();
 
         $this->assertSame([], $diagnostics, implode('; ', $diagnostics));
         $this->assertTrue($slashRegistry->has('rewind'));

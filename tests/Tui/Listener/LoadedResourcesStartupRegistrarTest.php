@@ -34,7 +34,6 @@ use Ineersa\Tui\Theme\ThemeRegistry;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
-use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\Tui\Event\TickEvent;
 
 final class LoadedResourcesStartupRegistrarTest extends TestCase
@@ -172,7 +171,6 @@ final class LoadedResourcesStartupRegistrarTest extends TestCase
                 ),
                 extensionApi: $this->createStub(ExtensionApiInterface::class),
                 logger: new NullLogger(),
-                eventDispatcher: new EventDispatcher(),
             ),
         );
     }

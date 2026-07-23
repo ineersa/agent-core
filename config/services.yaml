@@ -238,7 +238,6 @@ services:
   Ineersa\CodingAgent\Extension\ExtensionManager:
     arguments:
       $extensionApi: '@Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface'
-      $eventDispatcher: '@event_dispatcher'
 
   Ineersa\CodingAgent\Runtime\Contract\TuiExtensionRegistryInterface:
     alias: Ineersa\CodingAgent\Extension\ExtensionManager
@@ -483,7 +482,6 @@ services:
   Ineersa\CodingAgent\Runtime\Controller\HeadlessController:
     arguments:
       $dispatcher: '@event_dispatcher'
-      $runtimeProcessConfig: '@Ineersa\CodingAgent\Runtime\Process\RuntimeProcessConfig'
 
   Ineersa\CodingAgent\Runtime\Controller\BackgroundProcessCompletionPoller:
     arguments:
