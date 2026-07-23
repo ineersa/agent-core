@@ -18,10 +18,8 @@ final readonly class ListTasksHandler implements ExtensionToolHandlerInterface
 
     /**
      * @param array<string, mixed> $arguments
-     *
-     * @return array{content: list<array{type: string, text: string}>, details: string}
      */
-    public function __invoke(array $arguments): array
+    public function __invoke(array $arguments): string
     {
         $taskRoot = $this->store->resolveTaskRoot();
         $status = null;
