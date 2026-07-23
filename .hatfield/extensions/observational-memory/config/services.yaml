@@ -1,0 +1,35 @@
+parameters:
+    env(OM_DATABASE_PATH): '%kernel.project_dir%/var/om.sqlite'
+    env(OM_PARENT_PID): '0'
+    env(APP_SECRET): 'om-dev-secret-change-me'
+
+services:
+    _defaults:
+        autowire: true
+        autoconfigure: true
+
+    # Package-local stderr logger (no MonologBundle dependency).
+    logger:
+        class: Ineersa\HatfieldExt\ObservationalMemory\Logging\OmStderrLogger
+    Psr\Log\LoggerInterface: '@logger'
+
+    Ineersa\HatfieldExt\ObservationalMemory\:
+        resource: '../src/'
+        exclude:
+            - '../src/Kernel.php'
+            - '../src/Message/'
+            - '../src/ObservationalMemoryExtension.php'
+            - '../src/Runtime/OmPaths.php'
+            - '../src/Runtime/OmSettings.php'
+            - '../src/Runtime/OmConsumerSupervisor.php'
+
+    # Repositories / migrator / handlers use DoctrineBundle default connection.
+    Doctrine\DBAL\Connection: '@doctrine.dbal.default_connection'
+
+    Ineersa\HatfieldExt\ObservationalMemory\Messenger\OmParentDeathListener:
+        arguments:
+            $parentPid: '%env(int:OM_PARENT_PID)%'
+
+    Ineersa\HatfieldExt\ObservationalMemory\Storage\OmSqliteConnectionConfigurator:
+        tags:
+            - { name: kernel.event_listener, event: console.command, method: onConsoleCommand, priority: 128 }

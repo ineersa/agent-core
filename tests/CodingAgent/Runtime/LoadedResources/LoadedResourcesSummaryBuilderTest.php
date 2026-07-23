@@ -299,6 +299,7 @@ final class LoadedResourcesSummaryBuilderTest extends TestCase
             config: $config,
             extensionApi: $this->createStub(ExtensionApiInterface::class),
             logger: new NullLogger(),
+            eventDispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(),
         );
     }
 
@@ -316,6 +317,7 @@ final class LoadedResourcesSummaryBuilderTest extends TestCase
             config: $config,
             extensionApi: $this->createStub(ExtensionApiInterface::class),
             logger: new NullLogger(),
+            eventDispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(),
         );
     }
 }

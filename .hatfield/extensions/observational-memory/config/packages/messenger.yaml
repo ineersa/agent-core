@@ -1,0 +1,46 @@
+framework:
+    messenger:
+        failure_transport: om_failed
+        buses:
+            messenger.bus.default:
+                default_middleware:
+                    enabled: true
+                    allow_no_handlers: false
+                    allow_no_senders: true
+
+        transports:
+            om_observation:
+                dsn: 'doctrine://default?queue_name=om_observation'
+                options:
+                    auto_setup: false
+                    table_name: messenger_messages
+                    redeliver_timeout: 3600
+                    use_notify: false
+                retry_strategy:
+                    max_retries: 3
+                    delay: 1000
+                    multiplier: 2
+                    max_delay: 60000
+            om_compaction:
+                dsn: 'doctrine://default?queue_name=om_compaction'
+                options:
+                    auto_setup: false
+                    table_name: messenger_messages
+                    redeliver_timeout: 3600
+                    use_notify: false
+                retry_strategy:
+                    max_retries: 3
+                    delay: 1000
+                    multiplier: 2
+                    max_delay: 60000
+            om_failed:
+                dsn: 'doctrine://default?queue_name=om_failed'
+                options:
+                    auto_setup: false
+                    table_name: messenger_messages
+                    redeliver_timeout: 3600
+                    use_notify: false
+
+        routing:
+            'Ineersa\HatfieldExt\ObservationalMemory\Message\ObserveBoundaryMessage': om_observation
+            'Ineersa\HatfieldExt\ObservationalMemory\Message\BuildCompactionMemoryMessage': om_compaction

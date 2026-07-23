@@ -1,0 +1,15 @@
+# DoctrineBundle is present so Symfony Doctrine Messenger can resolve a
+# Connection service. Path comes from OM_DATABASE_PATH; SQLite PRAGMAs are
+# applied by OmSqliteConnectionConfigurator on console.command.
+doctrine:
+    dbal:
+        default_connection: default
+        connections:
+            default:
+                driver: pdo_sqlite
+                path: '%env(resolve:OM_DATABASE_PATH)%'
+                logging: false
+                profiling: false
+                options:
+                    # PDO::ATTR_TIMEOUT (constant 2) = 5 seconds connection timeout
+                    2: 5
