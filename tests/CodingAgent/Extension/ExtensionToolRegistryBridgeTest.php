@@ -610,7 +610,7 @@ final class ExtensionToolRegistryBridgeTest extends TestCase
                 {
                     return new \Symfony\Component\Messenger\Envelope($message);
                 }
-            }, $logger),
+            }, $logger, 'in-memory://'),
         );
     }
 

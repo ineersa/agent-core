@@ -10,6 +10,10 @@ use Ineersa\Hatfield\ExtensionApi\Tool\ExtensionToolHandlerInterface;
  * In-process tool that validates and collects Observer observations.
  *
  * Persistence happens after AgentRunner returns, not inside this tool.
+ *
+ * Model-correctable validation failures return a structured rejection so
+ * Symfony AgentProcessor can feed the error back for another tool call.
+ * Only the first valid invocation (including empty list) is accepted.
  */
 final class RecordObservationsToolHandler implements ExtensionToolHandlerInterface
 {
@@ -24,6 +28,8 @@ final class RecordObservationsToolHandler implements ExtensionToolHandlerInterfa
      * }>
      */
     private array $collected = [];
+
+    private bool $recorded = false;
 
     /**
      * @param list<array{run_id: string, seq: int}> $allowedSourceRefs
@@ -42,47 +48,86 @@ final class RecordObservationsToolHandler implements ExtensionToolHandlerInterfa
 
     public function __invoke(array $arguments): mixed
     {
+        if ($this->recorded) {
+            return $this->reject(
+                'already_recorded',
+                'record_observations already accepted one invocation for this interaction; do not call it again.',
+            );
+        }
+
         $observations = $arguments['observations'] ?? null;
         if (!\is_array($observations)) {
-            throw new \InvalidArgumentException('record_observations requires observations: list.');
+            return $this->reject(
+                'invalid_arguments',
+                'record_observations requires observations as a list (array).',
+            );
         }
 
         if (\count($observations) > $this->maxObservations) {
-            throw new \InvalidArgumentException(\sprintf('record_observations exceeded max observations (%d > %d).', \count($observations), $this->maxObservations));
+            return $this->reject(
+                'too_many_observations',
+                \sprintf('record_observations exceeded max observations (%d > %d).', \count($observations), $this->maxObservations),
+            );
         }
 
         $seen = [];
         $validated = [];
         foreach ($observations as $index => $raw) {
             if (!\is_array($raw)) {
-                throw new \InvalidArgumentException(\sprintf('Observation at index %d must be an object.', $index));
+                return $this->reject(
+                    'invalid_observation',
+                    \sprintf('Observation at index %d must be an object.', $index),
+                );
             }
 
             $content = $raw['content'] ?? null;
             if (!\is_string($content) || '' === trim($content)) {
-                throw new \InvalidArgumentException(\sprintf('Observation at index %d must have non-empty content.', $index));
+                return $this->reject(
+                    'invalid_content',
+                    \sprintf('Observation at index %d must have non-empty content.', $index),
+                );
             }
             $content = trim($content);
             if (mb_strlen($content, 'UTF-8') > $this->contentMaxChars) {
-                throw new \InvalidArgumentException(\sprintf('Observation at index %d content exceeds %d characters.', $index, $this->contentMaxChars));
+                return $this->reject(
+                    'content_too_long',
+                    \sprintf('Observation at index %d content exceeds %d characters.', $index, $this->contentMaxChars),
+                );
             }
 
             $relevance = $raw['relevance'] ?? null;
             if (!is_numeric($relevance)) {
-                throw new \InvalidArgumentException(\sprintf('Observation at index %d relevance must be numeric.', $index));
+                return $this->reject(
+                    'invalid_relevance',
+                    \sprintf('Observation at index %d relevance must be numeric 0..100.', $index),
+                );
             }
             $relevanceInt = (int) $relevance;
             if ($relevanceInt < 0 || $relevanceInt > 100) {
-                throw new \InvalidArgumentException(\sprintf('Observation at index %d relevance must be 0..100.', $index));
+                return $this->reject(
+                    'invalid_relevance',
+                    \sprintf('Observation at index %d relevance must be 0..100.', $index),
+                );
             }
 
             $sourceRefs = $raw['source_refs'] ?? $raw['sourceRefs'] ?? [];
             if (!\is_array($sourceRefs) || [] === $sourceRefs) {
-                throw new \InvalidArgumentException(\sprintf('Observation at index %d must cite one or more source_refs.', $index));
+                return $this->reject(
+                    'missing_source_refs',
+                    \sprintf('Observation at index %d must cite one or more source_refs.', $index),
+                );
             }
 
-            $normalizedRefs = $this->normalizeAndValidateRefs($sourceRefs, $index);
-            $refsJson = json_encode($normalizedRefs, \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE);
+            try {
+                $normalizedRefs = $this->normalizeAndValidateRefs($sourceRefs, $index);
+                $refsJson = json_encode($normalizedRefs, \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE);
+            } catch (\InvalidArgumentException $e) {
+                return $this->reject('invalid_source_refs', $e->getMessage());
+            } catch (\JsonException $e) {
+                // True internal failure: encoding should never fail for our normalized shape.
+                throw new \RuntimeException('Failed to encode normalized source_refs.', previous: $e);
+            }
+
             $contentHash = hash('sha256', $content);
             $dedupeKey = $contentHash.'|'.$refsJson;
             if (isset($seen[$dedupeKey])) {
@@ -108,12 +153,19 @@ final class RecordObservationsToolHandler implements ExtensionToolHandlerInterfa
             ];
         }
 
+        // First valid invocation wins (including empty list). Later calls reject.
         $this->collected = $validated;
+        $this->recorded = true;
 
         return [
             'status' => 'accepted',
             'observation_count' => \count($validated),
         ];
+    }
+
+    public function hasRecorded(): bool
+    {
+        return $this->recorded;
     }
 
     /**
@@ -129,6 +181,18 @@ final class RecordObservationsToolHandler implements ExtensionToolHandlerInterfa
     public function collected(): array
     {
         return $this->collected;
+    }
+
+    /**
+     * @return array{status: 'rejected', error: string, message: string}
+     */
+    private function reject(string $error, string $message): array
+    {
+        return [
+            'status' => 'rejected',
+            'error' => $error,
+            'message' => $message,
+        ];
     }
 
     /**

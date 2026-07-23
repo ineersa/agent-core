@@ -246,9 +246,12 @@ services:
 
   # Async extension-agent jobs share agent.execution.bus so BusNameStamp routes
   # re-dispatch to the bus that owns ExtensionAgentJobWorker.
+  # transportDsn is fail-closed for sync:// — process controllers override
+  # HATFIELD_EXTENSION_AGENT_TRANSPORT_DSN to doctrine:// for real async.
   Ineersa\CodingAgent\Extension\Agent\ExtensionAgentJobDispatcher:
     arguments:
       $bus: '@agent.execution.bus'
+      $transportDsn: '%env(HATFIELD_EXTENSION_AGENT_TRANSPORT_DSN)%'
 
   Ineersa\CodingAgent\Extension\Agent\ExtensionAgentJobRegistry: ~
 

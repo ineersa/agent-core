@@ -11,6 +11,10 @@ use Psr\Log\NullLogger;
 
 /**
  * Production OM SQLite connection factory (extension-owned DB only).
+ *
+ * Intentionally constructs a standalone DBAL connection per job so OM never
+ * shares Hatfield's Doctrine connection/pool. The extension_agent worker may
+ * process jobs from many projects; path + PRAGMA setup is therefore job-local.
  */
 final class OmDatabaseFactory
 {
@@ -18,7 +22,8 @@ final class OmDatabaseFactory
     {
         $logger ??= new NullLogger();
         $dir = \dirname($databasePath);
-        if (!is_dir($dir) && !mkdir($dir, 0o755, true) && !is_dir($dir)) {
+        // Owner-only directory: om.sqlite holds conversation-derived memory.
+        if (!is_dir($dir) && !mkdir($dir, 0o700, true) && !is_dir($dir)) {
             throw new \RuntimeException(\sprintf('Unable to create OM data directory: %s', $dir));
         }
 

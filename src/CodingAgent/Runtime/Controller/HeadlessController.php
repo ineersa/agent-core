@@ -159,6 +159,8 @@ final class HeadlessController
         $this->consumerSupervisor->launch('mcp');
         // Dedicated extension-agent worker: isolated from llm/tool/run_control so
         // extension Observer/Reflector jobs do not starve main run execution.
+        // Unconditional for now (MVP) — even when no extension registers handlers,
+        // an idle consumer is cheap relative to wiring conditional launch.
         $this->consumerSupervisor->launch('extension_agent');
 
         // Non-blocking stdin: read JSONL commands from TUI.

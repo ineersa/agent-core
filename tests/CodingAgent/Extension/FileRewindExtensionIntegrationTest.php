@@ -61,7 +61,7 @@ final class FileRewindExtensionIntegrationTest extends TestCase
                 {
                     return new \Symfony\Component\Messenger\Envelope($message);
                 }
-            }, new NullLogger()),
+            }, new NullLogger(), 'in-memory://'),
         );
 
         $diagnostics = (new ExtensionManager($appConfig, $bridge, new NullLogger(), new \Symfony\Component\EventDispatcher\EventDispatcher()))->loadExtensions();

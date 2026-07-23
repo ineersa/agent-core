@@ -84,6 +84,9 @@ framework:
             mcp:         '%env(HATFIELD_MCP_TRANSPORT_DSN)%'
             # Dedicated async worker for extension-owned agent jobs (Observer, etc.).
             # Uses default Symfony Serializer (scalar/array payload only).
+            # MUST be a process transport (doctrine:// / in-memory:// for tests).
+            # ExtensionAgentJobDispatcher refuses sync:// so model work cannot run
+            # inline during AfterTurnCommit / on the caller thread.
             extension_agent: '%env(HATFIELD_EXTENSION_AGENT_TRANSPORT_DSN)%'
 
         routing:

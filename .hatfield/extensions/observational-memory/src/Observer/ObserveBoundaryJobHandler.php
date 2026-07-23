@@ -43,6 +43,8 @@ final readonly class ObserveBoundaryJobHandler implements ExtensionAgentJobHandl
         }
 
         $paths = OmPaths::fromSettings($settings, $api->getCwd());
+        // Per-job DB open/migrate: OM is multi-project path-aware and must not
+        // reuse a process-wide connection that could point at another CWD.
         $connection = OmDatabaseFactory::connectAndMigrate($paths->databasePath, $this->logger);
         $repository = new ObservationRepository($connection);
 
@@ -175,6 +177,8 @@ final readonly class ObserveBoundaryJobHandler implements ExtensionAgentJobHandl
                 ),
             ],
             correlationId: $jobId ?? $correlationId,
+            // Exactly-one record tool + room for one/two model corrections.
+            maxToolCalls: 3,
         ));
 
         $observations = $toolHandler->collected();

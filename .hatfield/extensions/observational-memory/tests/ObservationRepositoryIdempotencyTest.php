@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\HatfieldExt\ObservationalMemory\Tests;
 
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\HatfieldExt\ObservationalMemory\Storage\ObservationRepository;
 use Ineersa\HatfieldExt\ObservationalMemory\Storage\OmSchemaMigrator;
 use Ineersa\HatfieldExt\ObservationalMemory\Tests\Support\OmTestDatabase;
@@ -20,22 +21,13 @@ final class ObservationRepositoryIdempotencyTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        $this->tmpDir = sys_get_temp_dir().'/om-repo-'.bin2hex(random_bytes(6));
-        mkdir($this->tmpDir, 0750, true);
+        $this->tmpDir = TestDirectoryIsolation::createProjectTempDir('om-repo');
     }
 
     protected function tearDown(): void
     {
+        TestDirectoryIsolation::removeDirectory($this->tmpDir);
         parent::tearDown();
-        $iterator = new \RecursiveIteratorIterator(
-            new \RecursiveDirectoryIterator($this->tmpDir, \FilesystemIterator::SKIP_DOTS),
-            \RecursiveIteratorIterator::CHILD_FIRST,
-        );
-        foreach ($iterator as $file) {
-            $path = $file->getPathname();
-            $file->isDir() ? @rmdir($path) : @unlink($path);
-        }
-        @rmdir($this->tmpDir);
     }
 
     public function testZeroObservationCoverageIsIdempotentAndTracksWatermark(): void
