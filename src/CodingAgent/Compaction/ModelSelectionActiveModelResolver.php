@@ -141,12 +141,15 @@ final readonly class ModelSelectionActiveModelResolver implements ActiveModelRes
 
     private function readAgentChildMetadataModel(string $childRunId): ?string
     {
-        if (!$this->childRunMetadataReader->isAgentChild($childRunId)) {
+        // One event-store scan: kind check and model extraction share the same
+        // run_started metadata payload (isAgentChild() would re-scan).
+        $metadata = $this->childRunMetadataReader->readRunStartedMetadata($childRunId);
+        if (null === $metadata) {
             return null;
         }
 
-        $metadata = $this->childRunMetadataReader->readRunStartedMetadata($childRunId);
-        if (null === $metadata) {
+        $session = $metadata['session'] ?? null;
+        if (!\is_array($session) || 'agent_child' !== ($session['kind'] ?? null)) {
             return null;
         }
 
