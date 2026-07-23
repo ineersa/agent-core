@@ -78,6 +78,7 @@ final class ProviderQuotaProbeServiceTest extends TestCase
                     'usage' => 1000,
                     'currentValue' => 250,
                     'percentage' => 25,
+                    // Absolute epoch ms; humanized countdown is asserted via pattern (not exact wall-clock).
                     'nextResetTime' => (int) ((microtime(true) + 3600) * 1000),
                 ]],
             ],
@@ -99,13 +100,19 @@ final class ProviderQuotaProbeServiceTest extends TestCase
         $this->assertCount(2, $report->sections);
         $this->assertSame('OpenAI Codex', $report->sections[0]->title);
         $joinedOpenAi = implode("\n", $report->sections[0]->lines);
-        $this->assertStringContainsString('Codex (5h): 83% left', $joinedOpenAi);
+        $this->assertStringContainsString('Codex (5h): 83% left, resets in 2h', $joinedOpenAi);
         $this->assertStringContainsString('Plan: pro', $joinedOpenAi);
         $this->assertStringContainsString('Account: user@example.com', $joinedOpenAi);
         $this->assertStringNotContainsString('Error:', $joinedOpenAi);
+        $this->assertStringNotContainsString('7200s', $joinedOpenAi);
         $this->assertSame('z.ai', $report->sections[1]->title);
         $joinedZai = implode("\n", $report->sections[1]->lines);
-        $this->assertStringContainsString('Tokens (250/1,000): 75% left', $joinedZai);
+        // OpenAI reset_after_seconds is relative → exact "2h". z.ai uses absolute epoch ms, so countdown
+        // can tick during the probe; accept any humanized form (not raw seconds-only).
+        $this->assertMatchesRegularExpression(
+            '/Tokens \(250\/1,000\): 75% left, resets in (\d+h(\d+m)?|\d+m(\d+s)?)/',
+            $joinedZai,
+        );
         $this->assertStringNotContainsString('Error:', $joinedZai);
     }
 
@@ -146,9 +153,10 @@ final class ProviderQuotaProbeServiceTest extends TestCase
             ],
         ], \JSON_THROW_ON_ERROR);
 
+        // 401 exercises the actionable Codex auth remediation path (not a generic status line).
         $mock = new MockHttpClient(static function (string $method, string $url) use ($zaiQuotaBody): MockResponse {
             if (str_contains($url, '/wham/usage')) {
-                return new MockResponse('{"error":"secret-body"}', ['http_code' => 503]);
+                return new MockResponse('{"error":"secret-body"}', ['http_code' => 401]);
             }
             if (str_contains($url, '/quota/limit')) {
                 return new MockResponse($zaiQuotaBody, ['http_code' => 200]);
@@ -160,7 +168,8 @@ final class ProviderQuotaProbeServiceTest extends TestCase
         $report = $this->service($mock, both: true, logger: $logger)->probe();
         $this->assertCount(2, $report->sections);
         $openAi = implode("\n", $report->sections[0]->lines);
-        $this->assertStringContainsString('returned 503', $openAi);
+        $this->assertStringContainsString('OpenAI auth token expired', $openAi);
+        $this->assertStringContainsString('bin/console auth:codex', $openAi);
         $this->assertStringNotContainsString('secret-body', $openAi);
         $this->assertStringNotContainsString('secret-access-token', $openAi);
         $zai = implode("\n", $report->sections[1]->lines);

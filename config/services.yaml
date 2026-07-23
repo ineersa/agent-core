@@ -106,8 +106,10 @@ services:
 
   # Provider quota probes for /usage — TUI depends on the contract only.
   # Dedicated bounded HttpClient (no LLM retry decorator) so 401/429 stay visible.
+  # HttpClient::create() selects Curl/Amp/Native transport the same way app code does.
   Ineersa\CodingAgent\Infrastructure\ProviderQuota\ProviderQuotaProbeService.http_client:
-    class: Symfony\Component\HttpClient\CurlHttpClient
+    class: Symfony\Contracts\HttpClient\HttpClientInterface
+    factory: ['Symfony\Component\HttpClient\HttpClient', 'create']
     arguments:
       $defaultOptions:
         timeout: 15

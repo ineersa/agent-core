@@ -42,6 +42,8 @@ final class UsageCommandHandler implements SlashCommandHandler
             try {
                 $report = $this->quotaProbe->probe();
             } catch (\Throwable $e) {
+                // Unexpected probe failures must not blank session totals — still
+                // render what we know from local TUI state.
                 return new TranscriptMessage(
                     implode("\n", [
                         '## Provider usage / quota status',
@@ -73,6 +75,9 @@ final class UsageCommandHandler implements SlashCommandHandler
 
     private function showProbingIndicator(): void
     {
+        // Synchronous provider HTTP can take up to the probe timeout. Paint the
+        // working indicator and force a frame before blocking so the user sees
+        // progress immediately on the Revolt event loop.
         $this->screen->setWorkingMessage('Checking provider usage...');
         try {
             $this->tui->requestRender();
@@ -89,6 +94,8 @@ final class UsageCommandHandler implements SlashCommandHandler
 
     private function clearProbingIndicator(): void
     {
+        // Clear only our exact message so a concurrent agent run's working
+        // status is not clobbered when /usage finishes mid-run.
         if ('Checking provider usage...' === $this->screen->registry()->getWorkingMessage()) {
             $this->screen->setWorkingMessage('');
         }

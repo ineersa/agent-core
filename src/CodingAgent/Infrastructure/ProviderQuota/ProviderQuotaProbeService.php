@@ -93,17 +93,23 @@ final class ProviderQuotaProbeService implements ProviderQuotaProbeServiceInterf
             }
         }
 
-        if (null !== $openAi) {
-            $sections[] = $openAiEarly ?? $this->openAi($openAiResponse, $openAiAuthKey);
+        // Early sections win; otherwise response is non-null by construction above.
+        if (null !== $openAiEarly) {
+            $sections[] = $openAiEarly;
+        } elseif (null !== $openAiResponse) {
+            $sections[] = $this->openAi($openAiResponse, $openAiAuthKey);
         }
-        if (null !== $zai) {
-            $sections[] = $zaiEarly ?? $this->zai($zaiResponse);
+
+        if (null !== $zaiEarly) {
+            $sections[] = $zaiEarly;
+        } elseif (null !== $zaiResponse) {
+            $sections[] = $this->zai($zaiResponse);
         }
 
         return new ProviderQuotaReportDTO($sections);
     }
 
-    private function openAi(?ResponseInterface $response, string $authKey): ProviderQuotaSectionDTO
+    private function openAi(ResponseInterface $response, string $authKey): ProviderQuotaSectionDTO
     {
         [$status, $payload] = $this->read($response, 'openai');
         if (null === $status) {
@@ -127,12 +133,13 @@ final class ProviderQuotaProbeService implements ProviderQuotaProbeServiceInterf
         $window = \is_array($payload['rate_limit']['primary_window'] ?? null) ? $payload['rate_limit']['primary_window'] : null;
         $used = null === $window ? null : $this->num($window['used_percent'] ?? null);
         if (null !== $used) {
-            $seconds = $this->num($window['limit_window_seconds'] ?? null);
-            $sec = null !== $seconds && $seconds > 0 ? (int) round($seconds) : null;
-            $suffix = null === $sec ? 'primary' : (0 === $sec % 3600
-                ? ((0 === ($hours = intdiv($sec, 3600)) % 24) ? intdiv($hours, 24).'d' : $hours.'h')
-                : (0 === $sec % 60 ? intdiv($sec, 60).'m' : $sec.'s'));
-            $lines[] = \sprintf('- Codex (%s): %.0f%% left%s', $suffix, max(0.0, min(100.0, 100.0 - $used)), $this->reset($window['reset_after_seconds'] ?? null));
+            $suffix = $this->windowLabel($this->num($window['limit_window_seconds'] ?? null));
+            $lines[] = \sprintf(
+                '- Codex (%s): %.0f%% left%s',
+                $suffix,
+                max(0.0, min(100.0, 100.0 - $used)),
+                $this->resetSuffix($window['reset_after_seconds'] ?? null),
+            );
         }
         foreach (['plan_type' => 'Plan', 'email' => 'Account'] as $field => $label) {
             $value = $payload[$field] ?? null;
@@ -146,7 +153,7 @@ final class ProviderQuotaProbeService implements ProviderQuotaProbeServiceInterf
             : new ProviderQuotaSectionDTO('OpenAI Codex', $lines);
     }
 
-    private function zai(?ResponseInterface $response): ProviderQuotaSectionDTO
+    private function zai(ResponseInterface $response): ProviderQuotaSectionDTO
     {
         [$status, $payload] = $this->read($response, 'zai');
         if (null === $status) {
@@ -181,13 +188,15 @@ final class ProviderQuotaProbeService implements ProviderQuotaProbeServiceInterf
             }
             $type = \is_string($limit['type'] ?? null) ? strtoupper($limit['type']) : '';
             $label = match ($type) {
-                'TOKENS_LIMIT' => 'Tokens', 'TIME_LIMIT' => 'Time', default => 'Quota'
+                'TOKENS_LIMIT' => 'Tokens', 'TIME_LIMIT' => 'Time', default => 'Quota',
             };
             if (null !== $total && null !== $used) {
                 $label .= \sprintf(' (%s/%s)', number_format((int) round($used)), number_format((int) round($total)));
             }
             $resetMs = $this->num($limit['nextResetTime'] ?? null);
-            $reset = null === $resetMs ? '' : $this->reset(($resetMs - (microtime(true) * 1000.0)) / 1000.0);
+            $reset = null === $resetMs
+                ? ''
+                : $this->resetSuffix(($resetMs - (microtime(true) * 1000.0)) / 1000.0);
             $lines[] = \sprintf('- %s: %.0f%% left%s', $label, max(0.0, min(100.0, 100.0 - $usedPercent)), $reset);
         }
 
@@ -197,11 +206,8 @@ final class ProviderQuotaProbeService implements ProviderQuotaProbeServiceInterf
     }
 
     /** @return array{0: ?int, 1: ?array<string, mixed>} */
-    private function read(?ResponseInterface $response, string $provider): array
+    private function read(ResponseInterface $response, string $provider): array
     {
-        if (null === $response) {
-            return [null, null];
-        }
         try {
             $status = $response->getStatusCode();
         } catch (TransportExceptionInterface $e) {
@@ -230,14 +236,59 @@ final class ProviderQuotaProbeService implements ProviderQuotaProbeServiceInterf
         }
     }
 
-    private function reset(mixed $seconds): string
+    private function windowLabel(?float $seconds): string
+    {
+        if (null === $seconds || $seconds <= 0) {
+            return 'primary';
+        }
+
+        $sec = (int) round($seconds);
+        if (0 === $sec % 3600) {
+            $hours = intdiv($sec, 3600);
+            if (0 === $hours % 24) {
+                return intdiv($hours, 24).'d';
+            }
+
+            return $hours.'h';
+        }
+        if (0 === $sec % 60) {
+            return intdiv($sec, 60).'m';
+        }
+
+        return $sec.'s';
+    }
+
+    private function resetSuffix(mixed $seconds): string
     {
         $parsed = $this->num($seconds);
         if (null === $parsed) {
             return '';
         }
+        if ($parsed <= 0) {
+            return ', resets now';
+        }
 
-        return $parsed <= 0 ? ', resets now' : ', resets in '.(int) floor($parsed).'s';
+        return ', resets in '.$this->formatDuration($parsed);
+    }
+
+    private function formatDuration(float $seconds): string
+    {
+        $total = (int) floor(max(0.0, $seconds));
+        if ($total < 60) {
+            return $total.'s';
+        }
+
+        $minutes = intdiv($total, 60);
+        if ($minutes < 60) {
+            $remS = $total % 60;
+
+            return $minutes.'m'.($remS > 0 ? $remS.'s' : '');
+        }
+
+        $hours = intdiv($minutes, 60);
+        $remM = $minutes % 60;
+
+        return $hours.'h'.($remM > 0 ? $remM.'m' : '');
     }
 
     private function num(mixed $value): ?float
