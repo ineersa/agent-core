@@ -87,6 +87,7 @@ final class ProviderQuotaProbeService implements ProviderQuotaProbeServiceInterf
                     : 'Configured, but API key could not be resolved.';
                 $zaiEarly = new ProviderQuotaSectionDTO('z.ai', ['- Error: '.$hint]);
             } else {
+                // Coding Plan monitor endpoint expects the API key verbatim (not Bearer like the chat API).
                 $zaiResponse = $this->httpClient->request('GET', self::ZAI_QUOTA, [
                     'headers' => ['Authorization' => $token, 'Accept' => 'application/json', 'User-Agent' => 'hatfield-usage/1.0'],
                 ]);

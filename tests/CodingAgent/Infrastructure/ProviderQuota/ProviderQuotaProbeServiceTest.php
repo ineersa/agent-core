@@ -56,7 +56,7 @@ final class ProviderQuotaProbeServiceTest extends TestCase
             expires: time() + 3600,
             accountId: 'acct_123',
         ));
-        putenv('ZAI_API_KEY=test-zai-key');
+        putenv('ZAI_API_KEY=secret-zai-key');
 
         $openaiBody = json_encode([
             'plan_type' => 'pro',
@@ -84,12 +84,14 @@ final class ProviderQuotaProbeServiceTest extends TestCase
             ],
         ], \JSON_THROW_ON_ERROR);
 
-        $mock = new MockHttpClient(static function (string $method, string $url) use ($openaiBody, $zaiQuotaBody): MockResponse {
+        $mock = new MockHttpClient(static function (string $method, string $url, array $options) use ($openaiBody, $zaiQuotaBody): MockResponse {
             self::assertSame('GET', $method);
             if (str_contains($url, '/wham/usage')) {
                 return new MockResponse($openaiBody, ['http_code' => 200]);
             }
             if (str_contains($url, '/quota/limit')) {
+                self::assertSame('Authorization: secret-zai-key', $options['normalized_headers']['authorization'][0]);
+
                 return new MockResponse($zaiQuotaBody, ['http_code' => 200]);
             }
 
