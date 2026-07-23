@@ -10,7 +10,10 @@ use Ineersa\CodingAgent\Runtime\Contract\TuiExtensionRegistryInterface;
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
 use Ineersa\Hatfield\ExtensionApi\HatfieldExtensionInterface;
 use Ineersa\Hatfield\ExtensionApi\Tui\TuiExtensionInterface;
+use Psr\Log\LoggerAwareInterface;
 use Psr\Log\LoggerInterface;
+use Symfony\Component\EventDispatcher\EventDispatcherInterface;
+use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 
 /**
  * Discovers and loads enabled Hatfield extensions at startup.
@@ -22,7 +25,9 @@ use Psr\Log\LoggerInterface;
  *  2. Require the project-local extension Composer autoloader when the
  *     extensions directory exists: `<cwd>/.hatfield/extensions/vendor/autoload.php`.
  *  3. For each enabled class name, verify the class exists, instantiate it,
- *     confirm it implements HatfieldExtensionInterface, and call register($api).
+ *     inject logger when LoggerAwareInterface, confirm HatfieldExtensionInterface,
+ *     call register($api), and if EventSubscriberInterface register on the host
+ *     EventDispatcher.
  *  4. Handle lifecycle errors deterministically: log and continue processing
  *     remaining extensions; do not crash the startup sequence.
  *
@@ -41,6 +46,7 @@ final class ExtensionManager implements TuiExtensionRegistryInterface
         private readonly AppConfig $config,
         private readonly ExtensionApiInterface $extensionApi,
         private readonly LoggerInterface $logger,
+        private readonly EventDispatcherInterface $eventDispatcher,
     ) {
     }
 
@@ -172,6 +178,12 @@ final class ExtensionManager implements TuiExtensionRegistryInterface
             return $msg;
         }
 
+        // Inject the host logger before register() so LoggerAware extensions can
+        // log registration failures with the process-local Monolog channel.
+        if ($instance instanceof LoggerAwareInterface) {
+            $instance->setLogger($this->logger);
+        }
+
         try {
             $instance->register($this->extensionApi);
         } catch (\Throwable $e) {
@@ -188,6 +200,12 @@ final class ExtensionManager implements TuiExtensionRegistryInterface
         $this->loadOutcomes[] = new LoadedExtensionItemDTO($className, true);
         if ($instance instanceof TuiExtensionInterface) {
             $this->tuiExtensions[] = $instance;
+        }
+
+        // Native Symfony EventSubscriberInterface extensions subscribe to the
+        // host dispatcher (ConsoleEvents, etc.) without a custom hook registry.
+        if ($instance instanceof EventSubscriberInterface) {
+            $this->eventDispatcher->addSubscriber($instance);
         }
 
         return null;

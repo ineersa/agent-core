@@ -171,6 +171,7 @@ final class LoadedResourcesStartupRegistrarTest extends TestCase
                 ),
                 extensionApi: $this->createStub(ExtensionApiInterface::class),
                 logger: new NullLogger(),
+                eventDispatcher: new \Symfony\Component\EventDispatcher\EventDispatcher(),
             ),
         );
     }

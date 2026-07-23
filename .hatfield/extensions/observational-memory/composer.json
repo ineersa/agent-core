@@ -1,0 +1,45 @@
+{
+    "name": "ineersa/hatfield-ext-observational-memory",
+    "description": "Observational memory extension for Hatfield (self-contained Symfony Messenger + SQLite package)",
+    "type": "hatfield-extension",
+    "license": "MIT",
+    "require": {
+        "php": ">=8.3",
+        "doctrine/dbal": "^4.3",
+        "doctrine/doctrine-bundle": "^3.2",
+        "psr/log": "^3.0",
+        "revolt/event-loop": "^1.0",
+        "symfony/config": "^8.1",
+        "symfony/console": "^8.1",
+        "symfony/dependency-injection": "^8.1",
+        "symfony/doctrine-messenger": "^8.0",
+        "symfony/dotenv": "^8.1",
+        "symfony/event-dispatcher": "^8.1",
+        "symfony/framework-bundle": "^8.1",
+        "symfony/http-kernel": "^8.1",
+        "symfony/messenger": "^8.1",
+        "symfony/process": "^8.1",
+        "symfony/yaml": "^8.1"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^12.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "Ineersa\\HatfieldExt\\ObservationalMemory\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Ineersa\\HatfieldExt\\ObservationalMemory\\Tests\\": "tests/"
+        }
+    },
+    "bin": [
+        "bin/console"
+    ],
+    "config": {
+        "sort-packages": true
+    },
+    "minimum-stability": "dev",
+    "prefer-stable": true
+}

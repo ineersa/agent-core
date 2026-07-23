@@ -1,0 +1,41 @@
+# CLI-only FrameworkBundle for the OM package console.
+# Keep aligned with Hatfield's CLI-only surface: Messenger/console only.
+framework:
+    secret: '%env(APP_SECRET)%'
+    http_method_override: false
+    handle_all_throwables: true
+    php_errors:
+        log: true
+
+    # CLI-only — disable HTTP/routing stack
+    router:
+        enabled: false
+        resource: ''
+    session:
+        enabled: false
+    form:
+        enabled: false
+    assets:
+        enabled: false
+
+    # Optional features — explicitly disabled
+    profiler:
+        enabled: false
+    translator:
+        enabled: false
+    validation:
+        enabled: false
+    web_link:
+        enabled: false
+    workflows:
+        enabled: false
+    webhook:
+        enabled: false
+    html_sanitizer:
+        enabled: false
+    notifier:
+        enabled: false
+    mailer:
+        enabled: false
+    uid:
+        enabled: false

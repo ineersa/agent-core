@@ -1,0 +1,15 @@
+# DoctrineBundle is present so Symfony Doctrine Messenger can resolve a
+# Connection service. OM still owns the actual SQLite path and PRAGMAs via
+# OmDatabase factory wired in services.yaml; this file only satisfies the
+# bundle boot contract with a throwaway default connection.
+doctrine:
+    dbal:
+        default_connection: default
+        connections:
+            default:
+                driver: pdo_sqlite
+                path: '%env(resolve:OM_DATABASE_PATH)%'
+                logging: false
+                profiling: false
+                options:
+                    2: 5
