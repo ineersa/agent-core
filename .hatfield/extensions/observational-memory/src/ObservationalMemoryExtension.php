@@ -144,6 +144,8 @@ final class ObservationalMemoryExtension implements HatfieldExtensionInterface, 
             return;
         }
 
+        // Revolt::repeat schedules into the interactive agent event loop, which
+        // starts after command wiring completes. No-op until that loop runs.
         $supervisor = $this->supervisor;
         $this->superviseWatcherId = EventLoop::repeat(
             self::SUPERVISE_INTERVAL_SECONDS,
@@ -187,6 +189,9 @@ final class ObservationalMemoryExtension implements HatfieldExtensionInterface, 
 
     private function resolveSessionId(): string
     {
+        // ExtensionLoaderSubscriber runs during ConsoleEvents::COMMAND, before
+        // the agent command typically assigns HATFIELD_SESSION_ID. When absent,
+        // agent-<pid> is intentional logging correlation only — not session identity.
         $fromEnv = $_ENV['HATFIELD_SESSION_ID'] ?? $_SERVER['HATFIELD_SESSION_ID'] ?? null;
         if (\is_string($fromEnv) && '' !== $fromEnv) {
             return $fromEnv;

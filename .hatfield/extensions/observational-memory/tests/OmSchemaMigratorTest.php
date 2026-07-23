@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\HatfieldExt\ObservationalMemory\Tests;
 
-use Ineersa\HatfieldExt\ObservationalMemory\Storage\OmDatabase;
 use Ineersa\HatfieldExt\ObservationalMemory\Storage\OmSchemaMigrator;
+use Ineersa\HatfieldExt\ObservationalMemory\Tests\Support\OmTestDatabase;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 
@@ -41,7 +41,7 @@ final class OmSchemaMigratorTest extends TestCase
     public function testMigrateCreatesDomainAndMessengerTablesIdempotently(): void
     {
         $dbPath = $this->tmpDir.'/om.sqlite';
-        $database = OmDatabase::connect($dbPath);
+        $database = OmTestDatabase::connect($dbPath);
         $migrator = new OmSchemaMigrator($database->connection(), new NullLogger());
 
         $migrator->migrate();

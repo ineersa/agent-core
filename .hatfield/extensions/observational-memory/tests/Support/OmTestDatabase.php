@@ -2,18 +2,19 @@
 
 declare(strict_types=1);
 
-namespace Ineersa\HatfieldExt\ObservationalMemory\Storage;
+namespace Ineersa\HatfieldExt\ObservationalMemory\Tests\Support;
 
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Platforms\SQLitePlatform;
 
 /**
- * Standalone DBAL connection for the OM SQLite database.
+ * Test-only standalone DBAL connection for OM SQLite fixtures.
  *
- * Explicitly independent of Hatfield Doctrine connections.
+ * Production uses DoctrineBundle's default connection plus
+ * OmSqliteConnectionConfigurator. Keep this helper out of src/.
  */
-final class OmDatabase
+final class OmTestDatabase
 {
     private function __construct(
         private readonly Connection $connection,
@@ -23,25 +24,12 @@ final class OmDatabase
 
     public static function connect(string $absolutePath): self
     {
-        $connection = self::connectConnection($absolutePath);
-
-        return new self($connection, $absolutePath);
-    }
-
-    /**
-     * Factory used by Symfony DI for Doctrine\DBAL\Connection so Messenger
-     * and repositories share the hardened OM SQLite connection.
-     */
-    public static function connectConnection(string $absolutePath): Connection
-    {
         $dir = \dirname($absolutePath);
         if (!is_dir($dir) && !mkdir($dir, 0750, true) && !is_dir($dir)) {
             throw new \RuntimeException(\sprintf('Unable to create OM data directory: %s', $dir));
         }
 
-        // Explicit driver/path params — DBAL 4 no longer requires a URL, and
-        // path-based construction keeps the private OM connection independent
-        // of any DoctrineBundle connection registry.
+        // Explicit driver/path params — independent of DoctrineBundle.
         $connection = DriverManager::getConnection([
             'driver' => 'pdo_sqlite',
             'path' => $absolutePath,
@@ -52,7 +40,7 @@ final class OmDatabase
 
         self::applySqliteHardeningTo($connection);
 
-        return $connection;
+        return new self($connection, $absolutePath);
     }
 
     public function connection(): Connection

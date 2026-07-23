@@ -197,8 +197,12 @@ final class OmConsumerSupervisor
                 env: $this->childEnv(),
                 timeout: null,
             );
+            // Long-running messenger:consume is never drained programmatically.
+            // disableOutput prevents unbounded pipe buffering over --time-limit.
+            $process->disableOutput();
             $process->start();
         } catch (\Throwable $e) {
+            // Structured diagnostics only — no raw process output (disabled).
             $this->logger->error('om.supervisor.launch_failed', [
                 'component' => 'observational_memory',
                 'event_type' => 'om.supervisor.launch_failed',
@@ -221,7 +225,17 @@ final class OmConsumerSupervisor
     }
 
     /**
-     * @return array<string, string>
+     * Build env overrides for OM package children.
+     *
+     * Symfony Process merges the OS default environment after this array
+     * (Process::start → getDefaultEnv). Entries set to false are omitted from
+     * the final env block and therefore remove inherited variables — unset()
+     * alone cannot suppress OS-inherited Hatfield process-role markers.
+     *
+     * Credentials and model-provider config are intentionally preserved for
+     * later OM Observer/Reflector model work.
+     *
+     * @return array<string, string|false>
      */
     private function childEnv(): array
     {
@@ -242,8 +256,10 @@ final class OmConsumerSupervisor
         $env['OM_CACHE_DIR'] = $dataDir.'/cache';
         $env['OM_LOG_DIR'] = $dataDir.'/log';
 
-        // Isolate package console from ambient Hatfield session/messenger markers.
-        unset($env['HATFIELD_CONSUMER_STDOUT_EVENTS'], $env['HATFIELD_OM_CONSUMER']);
+        // Strip Hatfield process-role/consumer markers from the standalone OM
+        // kernel. false removes the key after Process merges OS defaults.
+        $env['HATFIELD_CONSUMER_STDOUT_EVENTS'] = false;
+        $env['HATFIELD_OM_CONSUMER'] = false;
 
         return $env;
     }

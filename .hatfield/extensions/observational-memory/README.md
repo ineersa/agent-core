@@ -58,6 +58,8 @@ Interactive Hatfield process: `agent` (not --controller / --headless)
 
 The child boots the **OM package Kernel**, not Hatfield. Recursion cannot occur via Hatfield extension loading. Cache/log dirs are project/database-specific so the compiled container never bakes another project's `OM_DATABASE_PATH`.
 
+Supervisor health checks use `Revolt\EventLoop::repeat` and assume the interactive agent event loop will run after command startup. `HATFIELD_SESSION_ID` is often unset during `register()` (extensions load mid-`ConsoleEvents::COMMAND`); OM falls back to `agent-<pid>` for log correlation only.
+
 ## Ownership boundaries
 
 | Owned by OM package | Not owned by OM |

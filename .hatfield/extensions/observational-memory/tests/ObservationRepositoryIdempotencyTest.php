@@ -7,8 +7,8 @@ namespace Ineersa\HatfieldExt\ObservationalMemory\Tests;
 use Ineersa\HatfieldExt\ObservationalMemory\Handler\ObserveBoundaryHandler;
 use Ineersa\HatfieldExt\ObservationalMemory\Message\ObserveBoundaryMessage;
 use Ineersa\HatfieldExt\ObservationalMemory\Storage\ObservationRepository;
-use Ineersa\HatfieldExt\ObservationalMemory\Storage\OmDatabase;
 use Ineersa\HatfieldExt\ObservationalMemory\Storage\OmSchemaMigrator;
+use Ineersa\HatfieldExt\ObservationalMemory\Tests\Support\OmTestDatabase;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 
@@ -43,7 +43,7 @@ final class ObservationRepositoryIdempotencyTest extends TestCase
 
     public function testZeroObservationCoverageIsIdempotentOnRedelivery(): void
     {
-        $database = OmDatabase::connect($this->tmpDir.'/om.sqlite');
+        $database = OmTestDatabase::connect($this->tmpDir.'/om.sqlite');
         (new OmSchemaMigrator($database->connection(), new NullLogger()))->migrate();
 
         $handler = new ObserveBoundaryHandler(
@@ -74,7 +74,7 @@ final class ObservationRepositoryIdempotencyTest extends TestCase
 
     public function testObservationsPersistOnceOnRedelivery(): void
     {
-        $database = OmDatabase::connect($this->tmpDir.'/om.sqlite');
+        $database = OmTestDatabase::connect($this->tmpDir.'/om.sqlite');
         (new OmSchemaMigrator($database->connection(), new NullLogger()))->migrate();
 
         $handler = new ObserveBoundaryHandler(

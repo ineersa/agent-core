@@ -22,9 +22,8 @@ services:
             - '../src/Runtime/OmPaths.php'
             - '../src/Runtime/OmSettings.php'
             - '../src/Runtime/OmConsumerSupervisor.php'
-            - '../src/Storage/OmDatabase.php'
 
-    # Repositories / migrator / handlers use the DoctrineBundle default connection.
+    # Repositories / migrator / handlers use DoctrineBundle default connection.
     Doctrine\DBAL\Connection: '@doctrine.dbal.default_connection'
 
     Ineersa\HatfieldExt\ObservationalMemory\Messenger\OmParentDeathListener:
