@@ -31,10 +31,8 @@ final readonly class MoveTaskHandler implements ExtensionToolHandlerInterface
 
     /**
      * @param array<string, mixed> $arguments
-     *
-     * @return array{content: list<array{type: string, text: string}>, details: string}
      */
-    public function __invoke(array $arguments): array
+    public function __invoke(array $arguments): string
     {
         $taskQuery = $arguments['task'] ?? null;
         if (!\is_string($taskQuery) || '' === $taskQuery) {
@@ -48,7 +46,7 @@ final readonly class MoveTaskHandler implements ExtensionToolHandlerInterface
         $this->store->ensureTaskDirs($taskRoot);
         $lock = new TaskBoardLock(TaskBoardLock::lockPathForRoot($taskRoot));
 
-        return $lock->withLock(function () use ($taskRoot, $taskQuery, $arguments): array {
+        return $lock->withLock(function () use ($taskRoot, $taskQuery, $arguments): string {
             $to = TaskStatusEnum::fromMixed($arguments['to']);
             $from = null;
             if (isset($arguments['from']) && \is_string($arguments['from']) && '' !== $arguments['from']) {
