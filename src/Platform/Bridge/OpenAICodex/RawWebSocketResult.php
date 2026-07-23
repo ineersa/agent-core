@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Symfony\AI\Platform\Bridge\OpenAICodex;
 
 use Amp\CancelledException;
+use Amp\TimeoutCancellation;
 use Amp\Websocket\Client\WebsocketConnection;
 use Ineersa\Platform\Result\CancellableRawResultInterface;
 use Psr\Log\LoggerInterface;
@@ -105,10 +106,14 @@ final class RawWebSocketResult implements CancellableRawResultInterface
     {
         while (!$this->aborted) {
             try {
+                // receive() is cancellable; idleTimeoutSeconds bounds waiting for the next
+                // complete WebSocket message start. Half-closed sockets may lag isClosed()
+                // until the background parser observes EOF — the timeout is the hard bound.
                 $message = $this->connection->receive(
-                    new \Amp\TimeoutCancellation($this->idleTimeoutSeconds),
+                    new TimeoutCancellation($this->idleTimeoutSeconds),
                 );
             } catch (CancelledException $e) {
+                $this->logIoTimeout('receive');
                 throw new \RuntimeException('Codex WebSocket idle timeout.', previous: $e);
             }
 
@@ -120,7 +125,16 @@ final class RawWebSocketResult implements CancellableRawResultInterface
                 throw new \RuntimeException('Codex WebSocket frame was not a text message.');
             }
 
-            $payload = $message->buffer();
+            // WebsocketMessage::buffer() accepts Cancellation; without it a fragmented
+            // message whose continuation never arrives can block indefinitely after receive()
+            // returned. Bound buffering with the same idle timeout as receive/send.
+            try {
+                $payload = $message->buffer(new TimeoutCancellation($this->idleTimeoutSeconds));
+            } catch (CancelledException $e) {
+                $this->logIoTimeout('buffer');
+                throw new \RuntimeException('Codex WebSocket message buffer timeout.', previous: $e);
+            }
+
             if ('' === $payload) {
                 continue;
             }
@@ -169,6 +183,20 @@ final class RawWebSocketResult implements CancellableRawResultInterface
                 throw new \RuntimeException('Codex WebSocket stream ended with a non-success terminal event.');
             }
         }
+    }
+
+    private function logIoTimeout(string $phase): void
+    {
+        $lease = $this->cachedStreamContext?->lease;
+
+        $this->logger->warning('codex.websocket.io_timeout', [
+            'event_type' => 'codex.websocket.io_timeout',
+            'component' => 'raw_websocket_result',
+            'phase' => $phase,
+            'timeout_seconds' => $this->idleTimeoutSeconds,
+            'cache_reused' => null !== $lease && $lease->reused,
+            'cache_one_shot' => null !== $lease && $lease->oneShot,
+        ]);
     }
 
     /**
