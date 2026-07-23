@@ -130,7 +130,7 @@ final class ExtensionManagerTest extends TestCase
         $bridge = new InMemoryExtensionApiBridge();
         $logger = new NullLogger();
 
-        $manager = new ExtensionManager($config, $bridge, $logger);
+        $manager = new ExtensionManager($config, $bridge, $logger, new \Symfony\Component\EventDispatcher\EventDispatcher());
         $manager->loadExtensions();
 
         $this->assertCount(0, $bridge->getRegistrations());
@@ -186,7 +186,7 @@ PHP;
         $bridge = new InMemoryExtensionApiBridge();
         $logger = new NullLogger();
 
-        $manager = new ExtensionManager($config, $bridge, $logger);
+        $manager = new ExtensionManager($config, $bridge, $logger, new \Symfony\Component\EventDispatcher\EventDispatcher());
         $manager->loadExtensions();
 
         $this->assertCount(1, $bridge->getRegistrations());
@@ -202,7 +202,7 @@ PHP;
         $bridge = new InMemoryExtensionApiBridge();
         $logger = new LoggerSpy();
 
-        $manager = new ExtensionManager($config, $bridge, $logger);
+        $manager = new ExtensionManager($config, $bridge, $logger, new \Symfony\Component\EventDispatcher\EventDispatcher());
         $manager->loadExtensions();
 
         $this->assertCount(0, $bridge->getRegistrations());
@@ -238,7 +238,7 @@ PHP
         $bridge = new InMemoryExtensionApiBridge();
         $logger = new LoggerSpy();
 
-        $manager = new ExtensionManager($config, $bridge, $logger);
+        $manager = new ExtensionManager($config, $bridge, $logger, new \Symfony\Component\EventDispatcher\EventDispatcher());
         $manager->loadExtensions();
 
         $this->assertCount(0, $bridge->getRegistrations());
@@ -338,7 +338,7 @@ PHP
         $bridge = new InMemoryExtensionApiBridge();
         $logger = new LoggerSpy();
 
-        $manager = new ExtensionManager($config, $bridge, $logger);
+        $manager = new ExtensionManager($config, $bridge, $logger, new \Symfony\Component\EventDispatcher\EventDispatcher());
         $manager->loadExtensions();
 
         // Both good extensions should have registered their tools
@@ -359,7 +359,7 @@ PHP
         $bridge = new InMemoryExtensionApiBridge();
         $logger = new NullLogger();
 
-        $manager = new ExtensionManager($config, $bridge, $logger);
+        $manager = new ExtensionManager($config, $bridge, $logger, new \Symfony\Component\EventDispatcher\EventDispatcher());
         $manager->loadExtensions();
 
         $this->assertCount(0, $bridge->getRegistrations());
@@ -378,7 +378,7 @@ PHP
             extensions: ['Ineersa\\Hatfield\\ExtensionApi\\ExtensionApiInterface']
         );
 
-        $manager = new ExtensionManager($config, $bridge, $logger);
+        $manager = new ExtensionManager($config, $bridge, $logger, new \Symfony\Component\EventDispatcher\EventDispatcher());
         $manager->loadExtensions();
 
         $this->assertCount(0, $bridge->getRegistrations());
@@ -442,7 +442,7 @@ PHP
         $bridge = new InMemoryExtensionApiBridge();
         $logger = new NullLogger();
 
-        $manager = new ExtensionManager($config, $bridge, $logger);
+        $manager = new ExtensionManager($config, $bridge, $logger, new \Symfony\Component\EventDispatcher\EventDispatcher());
         $manager->loadExtensions();
 
         // Verify tool registration
@@ -452,6 +452,73 @@ PHP
         // Verify hook registrations
         $this->assertCount(1, $bridge->getToolCallHooks());
         $this->assertCount(1, $bridge->getToolResultHooks());
+    }
+
+    public function testLoadExtensionsInjectsLoggerAndRegistersEventSubscribers(): void
+    {
+        $autoloadCode = <<<'PHP'
+<?php
+spl_autoload_register(function (string $class): void {
+    if ('HatfieldExtTest\\SubscriberAwareExtension' === $class) {
+        require_once __DIR__ . '/SubscriberAwareExtension.php';
+    }
+});
+PHP;
+        file_put_contents($this->autoloadPath, $autoloadCode);
+
+        file_put_contents(
+            \dirname($this->autoloadPath).'/SubscriberAwareExtension.php',
+            <<<'PHP'
+<?php
+namespace HatfieldExtTest;
+
+use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
+use Ineersa\Hatfield\ExtensionApi\HatfieldExtensionInterface;
+use Psr\Log\LoggerAwareInterface;
+use Psr\Log\LoggerInterface;
+use Symfony\Component\EventDispatcher\EventSubscriberInterface;
+
+class SubscriberAwareExtension implements HatfieldExtensionInterface, LoggerAwareInterface, EventSubscriberInterface
+{
+    public static ?LoggerInterface $injectedLogger = null;
+    public static int $subscriberCalls = 0;
+
+    public function setLogger(LoggerInterface $logger): void
+    {
+        self::$injectedLogger = $logger;
+    }
+
+    public function register(ExtensionApiInterface $api): void
+    {
+    }
+
+    public static function getSubscribedEvents(): array
+    {
+        return ['om.test.event' => 'onTestEvent'];
+    }
+
+    public function onTestEvent(): void
+    {
+        ++self::$subscriberCalls;
+    }
+}
+PHP
+        );
+
+        $config = $this->createAppConfig(
+            cwd: $this->extensionsDir,
+            extensions: ['HatfieldExtTest\\SubscriberAwareExtension']
+        );
+        $bridge = new InMemoryExtensionApiBridge();
+        $logger = new NullLogger();
+        $dispatcher = new \Symfony\Component\EventDispatcher\EventDispatcher();
+
+        $manager = new ExtensionManager($config, $bridge, $logger, $dispatcher);
+        $manager->loadExtensions();
+
+        $this->assertSame($logger, \HatfieldExtTest\SubscriberAwareExtension::$injectedLogger);
+        $dispatcher->dispatch(new \stdClass(), 'om.test.event');
+        $this->assertSame(1, \HatfieldExtTest\SubscriberAwareExtension::$subscriberCalls);
     }
 
     // ── Helpers ──

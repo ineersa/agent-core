@@ -24,5 +24,6 @@ parameters:
         - .hatfield/extensions/task-workflow/tests/*
         - .hatfield/extensions/castor-llm-mode/tests/*
         - .hatfield/extensions/file-rewind/tests/*
+        - .hatfield/extensions/observational-memory/tests/*
     parallel:
         maximumNumberOfProcesses: 1

@@ -1,0 +1,37 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+use Ineersa\HatfieldExt\ObservationalMemory\Kernel;
+use Symfony\Bundle\FrameworkBundle\Console\Application;
+
+// Resolve package root and autoloaders for both standalone package installs
+// and the project aggregate path under .hatfield/extensions/.
+$packageRoot = \dirname(__DIR__);
+$autoloadCandidates = [
+    $packageRoot.'/vendor/autoload.php',
+    $packageRoot.'/../vendor/autoload.php',
+    $packageRoot.'/../../vendor/autoload.php',
+];
+
+$autoloadLoaded = false;
+foreach ($autoloadCandidates as $autoload) {
+    if (is_file($autoload)) {
+        require_once $autoload;
+        $autoloadLoaded = true;
+        break;
+    }
+}
+
+if (!$autoloadLoaded) {
+    fwrite(STDERR, "Unable to find Composer autoload.php for observational-memory package.\n");
+    exit(1);
+}
+
+$env = $_SERVER['APP_ENV'] ?? $_ENV['APP_ENV'] ?? 'prod';
+$debug = (bool) ($_SERVER['APP_DEBUG'] ?? $_ENV['APP_DEBUG'] ?? false);
+
+$kernel = new Kernel($env, $debug);
+$application = new Application($kernel);
+$application->run();
