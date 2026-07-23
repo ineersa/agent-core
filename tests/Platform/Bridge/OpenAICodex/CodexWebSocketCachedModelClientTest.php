@@ -4,11 +4,17 @@ declare(strict_types=1);
 
 namespace Symfony\AI\Platform\Bridge\OpenAICodex\Tests;
 
+use Amp\Cancellation;
 use Amp\Http\Client\Request;
 use Amp\Http\Client\Response;
+use Amp\Socket;
+use Amp\TimeoutCancellation;
+use Amp\Websocket\Client\Rfc6455Connection;
 use Amp\Websocket\Client\WebsocketConnectException;
 use Amp\Websocket\Client\WebsocketConnection;
+use Amp\Websocket\Rfc6455Client;
 use Amp\Websocket\WebsocketMessage;
+use Ineersa\AgentCore\Tests\Support\TestLogger;
 use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use PHPUnit\Framework\TestCase;
 use Symfony\AI\Platform\Bridge\OpenAICodex\CodexModel;
@@ -22,6 +28,9 @@ use Symfony\AI\Platform\Bridge\OpenAICodex\CodexWebSocketModelClient;
 use Symfony\AI\Platform\Bridge\OpenAICodex\CodexWebSocketUrlResolver;
 use Symfony\AI\Platform\Bridge\OpenAICodex\RawWebSocketResult;
 use Symfony\Component\Clock\MockClock;
+
+use function Amp\async;
+use function Amp\delay;
 
 #[AllowMockObjectsWithoutExpectations]
 final class CodexWebSocketCachedModelClientTest extends TestCase
@@ -179,6 +188,179 @@ final class CodexWebSocketCachedModelClientTest extends TestCase
         $this->assertSame('resp_tool_1', $secondFrame['previous_response_id'] ?? null);
         // Explicitly prove the prior function_call was not replayed in the delta.
         $this->assertSame([$functionCallOutput], $secondFrame['input']);
+    }
+
+    /**
+     * Session-33 hang regression: a retained cached Amp WebSocket whose peer stops
+     * reading must not pin the worker in sendText() forever. Bound send, invalidate
+     * the cache entry, and never auto-resend that ambiguous attempt. A later distinct
+     * request must open a fresh connection and send full context (no previous_response_id).
+     *
+     * Uses a real Amp Rfc6455Client over a socket pair so the hang is in WritableResourceStream,
+     * not a mock that simply throws/sleeps.
+     */
+    public function testCachedSendTimeoutOnBackpressuredPeerInvalidatesWithoutDuplicateSend(): void
+    {
+        $cacheKey = '0194eeee-bbbb-7ccc-8ddd-aaaaaaaaaaaa';
+        self::assertUuidVersion7($cacheKey);
+
+        $connectCount = 0;
+        $connections = [];
+        $peerSockets = [];
+        $peerMessages = [];
+        $peerKeepers = [];
+
+        $connector = $this->createMock(CodexWebSocketConnectorInterface::class);
+        $connector->method('connect')->willReturnCallback(function () use (
+            &$connectCount,
+            &$connections,
+            &$peerSockets,
+            &$peerMessages,
+            &$peerKeepers,
+        ): WebsocketConnection {
+            ++$connectCount;
+            [$clientSocket, $peerSocket] = Socket\createSocketPair();
+            $peerSockets[] = $peerSocket;
+
+            // First peer: complete one response, then stop reading so the next
+            // outbound write blocks in Amp's real WritableResourceStream.
+            // Later peers: complete immediately so recovery path can finish.
+            $index = $connectCount - 1;
+            $peerKeepers[] = async(function () use ($peerSocket, $index, &$peerMessages): void {
+                $cancellation = new TimeoutCancellation(5.0);
+                try {
+                    $message = $this->readClientWebSocketMessage($peerSocket, $cancellation);
+                    $peerMessages[$index][] = $message;
+                    if (0 === $index) {
+                        $peerSocket->write($this->encodeServerWebSocketText(json_encode([
+                            'type' => 'response.completed',
+                            'response' => [
+                                'id' => 'resp_cached_peer_1',
+                                'output' => [['type' => 'message', 'role' => 'assistant', 'content' => 'ok']],
+                            ],
+                        ], \JSON_THROW_ON_ERROR)));
+                        // Stop reading: leave the TCP peer open so the next client write blocks.
+                        delay(10.0);
+
+                        return;
+                    }
+
+                    $peerSocket->write($this->encodeServerWebSocketText(json_encode([
+                        'type' => 'response.completed',
+                        'response' => [
+                            'id' => 'resp_fresh_peer_2',
+                            'output' => [['type' => 'message', 'role' => 'assistant', 'content' => 'recovered']],
+                        ],
+                    ], \JSON_THROW_ON_ERROR)));
+                    delay(2.0);
+                } catch (\Throwable) {
+                    // Peer is torn down by the test; swallow late I/O errors.
+                }
+            });
+
+            $client = new Rfc6455Client($clientSocket, true, closePeriod: 0.05);
+            $request = new Request('ws://127.0.0.1/codex/responses');
+            $response = new Response('1.1', 101, null, [], null, $request);
+            $connection = new Rfc6455Connection($client, $response);
+            $connections[] = $connection;
+
+            return $connection;
+        });
+
+        $logger = new TestLogger();
+        $cache = new CodexWebSocketConnectionCache(logger: $logger);
+        $client = new CodexWebSocketModelClient(
+            $connector,
+            new CodexWebSocketUrlResolver(),
+            new CodexWebSocketHandshakeHeadersFactory(),
+            new CodexRequestBodyFactory(),
+            'https://chatgpt.com/backend-api',
+            'access',
+            'acct-1',
+            logger: $logger,
+            // Short idle timeout so the regression stays deterministic and fast.
+            idleTimeoutSeconds: 0.35,
+            transport: CodexTransportEnum::WebsocketCached,
+            connectionCache: $cache,
+        );
+
+        $options = ['provider_cache_key' => $cacheKey];
+        $first = $client->request(
+            new CodexModel('gpt-5.6-luna'),
+            ['input' => [['role' => 'user', 'content' => 'first']]],
+            $options,
+        );
+        iterator_to_array($first->getDataStream());
+        $this->assertSame(1, $connectCount);
+        $this->assertTrue(false === $connections[0]->isClosed());
+
+        // Divergent input forces full-context fallback on the retained socket.
+        // Pre-fix, sendText() could hang forever here under peer backpressure.
+        $started = microtime(true);
+        try {
+            $client->request(
+                new CodexModel('gpt-5.6-luna'),
+                [
+                    'input' => [
+                        ['role' => 'user', 'content' => 'first'],
+                        ['type' => 'message', 'role' => 'assistant', 'content' => 'ok'],
+                        // Large payload ensures the write exceeds socket buffer when peer stops reading.
+                        ['role' => 'user', 'content' => str_repeat('x', 256 * 1024)],
+                    ],
+                ],
+                $options,
+            );
+            $this->fail('Expected send timeout on backpressured cached socket');
+        } catch (\RuntimeException $e) {
+            $this->assertSame('Codex WebSocket send timeout.', $e->getMessage());
+        }
+        $elapsed = microtime(true) - $started;
+        $this->assertLessThan(2.5, $elapsed, 'send timeout must bound the hang and close promptly');
+        $this->assertSame(1, $connectCount, 'timed-out attempt must not auto-reconnect/resend');
+        $this->assertTrue($connections[0]->isClosed());
+
+        $entries = (new \ReflectionClass($cache))->getProperty('entries')->getValue($cache);
+        $this->assertSame([], $entries, 'cache entry must be invalidated after send timeout');
+
+        $timeoutLogs = array_values(array_filter(
+            $logger->records,
+            static fn (array $record): bool => 'codex.websocket.io_timeout' === $record['message'],
+        ));
+        $this->assertNotEmpty($timeoutLogs);
+        $this->assertSame('send', $timeoutLogs[0]['context']['phase']);
+        $this->assertSame('unknown', $timeoutLogs[0]['context']['delivery_status']);
+        $this->assertTrue($timeoutLogs[0]['context']['cache_reused']);
+
+        // A later distinct request must acquire a fresh connection and use full context.
+        $third = $client->request(
+            new CodexModel('gpt-5.6-luna'),
+            [
+                'input' => [
+                    ['role' => 'user', 'content' => 'first'],
+                    ['type' => 'message', 'role' => 'assistant', 'content' => 'ok'],
+                    ['role' => 'user', 'content' => 'after-timeout'],
+                ],
+            ],
+            $options,
+        );
+        iterator_to_array($third->getDataStream());
+
+        $this->assertSame(2, $connectCount);
+        $this->assertArrayHasKey(1, $peerMessages);
+        $this->assertCount(1, $peerMessages[1], 'fresh connection should receive exactly one full-context request');
+        $frame = json_decode($peerMessages[1][0], true, flags: \JSON_THROW_ON_ERROR);
+        $this->assertArrayNotHasKey('previous_response_id', $frame);
+        $this->assertSame('after-timeout', $frame['input'][2]['content']);
+
+        foreach ($peerSockets as $peerSocket) {
+            try {
+                $peerSocket->close();
+            } catch (\Throwable) {
+            }
+        }
+        foreach ($peerKeepers as $keeper) {
+            $keeper->ignore();
+        }
     }
 
     public function testPostIdleExpirySendsFullContextWithoutPreviousResponseId(): void
@@ -414,6 +596,70 @@ final class CodexWebSocketCachedModelClientTest extends TestCase
         });
 
         return $connection;
+    }
+
+    /**
+     * @return non-empty-string
+     */
+    private function readClientWebSocketMessage(Socket\Socket $socket, Cancellation $cancellation): string
+    {
+        $payload = '';
+        while (true) {
+            $b1 = \ord($this->readSocketBytes($socket, 1, $cancellation)[0]);
+            $b2 = \ord($this->readSocketBytes($socket, 1, $cancellation)[0]);
+            $fin = (0x80 & $b1) !== 0;
+            $length = 0x7F & $b2;
+            $masked = (0x80 & $b2) !== 0;
+            if (126 === $length) {
+                $length = unpack('n', $this->readSocketBytes($socket, 2, $cancellation))[1];
+            } elseif (127 === $length) {
+                $length = unpack('J', $this->readSocketBytes($socket, 8, $cancellation))[1];
+            }
+            $mask = $masked ? $this->readSocketBytes($socket, 4, $cancellation) : '';
+            $data = $this->readSocketBytes($socket, $length, $cancellation);
+            if ($masked) {
+                $unmasked = '';
+                for ($i = 0; $i < $length; ++$i) {
+                    $unmasked .= $data[$i] ^ $mask[$i % 4];
+                }
+                $data = $unmasked;
+            }
+            $payload .= $data;
+            if ($fin) {
+                if ('' === $payload) {
+                    throw new \RuntimeException('Empty websocket payload from peer.');
+                }
+
+                return $payload;
+            }
+        }
+    }
+
+    private function readSocketBytes(Socket\Socket $socket, int $length, Cancellation $cancellation): string
+    {
+        $buffer = '';
+        while (\strlen($buffer) < $length) {
+            $chunk = $socket->read($cancellation, $length - \strlen($buffer));
+            if (null === $chunk) {
+                throw new \RuntimeException('Peer socket closed while reading websocket frame.');
+            }
+            $buffer .= $chunk;
+        }
+
+        return $buffer;
+    }
+
+    private function encodeServerWebSocketText(string $payload): string
+    {
+        $length = \strlen($payload);
+        if ($length < 126) {
+            return \chr(0x81).\chr($length).$payload;
+        }
+        if ($length < 65536) {
+            return \chr(0x81).\chr(126).pack('n', $length).$payload;
+        }
+
+        return \chr(0x81).\chr(127).pack('J', $length).$payload;
     }
 
     private function websocketConnectException(int $status): WebsocketConnectException
