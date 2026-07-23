@@ -6,6 +6,8 @@ namespace Ineersa\CodingAgent\Tests\Extension;
 
 use Ineersa\Hatfield\ExtensionApi\Agent\AgentCallRequestDTO;
 use Ineersa\Hatfield\ExtensionApi\Agent\AgentRunnerInterface;
+use Ineersa\Hatfield\ExtensionApi\Agent\ExtensionAgentJobHandlerInterface;
+use Ineersa\Hatfield\ExtensionApi\Agent\ExtensionAgentJobRequestDTO;
 use Ineersa\Hatfield\ExtensionApi\Command\CommandDefinitionDTO;
 use Ineersa\Hatfield\ExtensionApi\Command\ExtensionCommandHandlerInterface;
 use Ineersa\Hatfield\ExtensionApi\Exec\ExecInterface;
@@ -59,6 +61,12 @@ final class InMemoryExtensionApiBridge implements ExtensionApiInterface
 
     /** @var list<AfterTurnCommitHookInterface> */
     private array $afterTurnCommitHooks = [];
+
+    /** @var array<string, ExtensionAgentJobHandlerInterface> */
+    private array $extensionAgentJobHandlers = [];
+
+    /** @var list<ExtensionAgentJobRequestDTO> */
+    private array $dispatchedExtensionAgentJobs = [];
 
     public function __construct(?string $cwd = null)
     {
@@ -177,5 +185,35 @@ final class InMemoryExtensionApiBridge implements ExtensionApiInterface
                 return [];
             }
         };
+    }
+
+    public function registerExtensionAgentJobHandler(string $handlerId, ExtensionAgentJobHandlerInterface $handler): void
+    {
+        if (isset($this->extensionAgentJobHandlers[$handlerId])) {
+            throw new \InvalidArgumentException(\sprintf('Extension agent job handler "%s" is already registered.', $handlerId));
+        }
+
+        $this->extensionAgentJobHandlers[$handlerId] = $handler;
+    }
+
+    public function dispatchExtensionAgentJob(ExtensionAgentJobRequestDTO $request): void
+    {
+        $this->dispatchedExtensionAgentJobs[] = $request;
+    }
+
+    /**
+     * @return array<string, ExtensionAgentJobHandlerInterface>
+     */
+    public function getExtensionAgentJobHandlers(): array
+    {
+        return $this->extensionAgentJobHandlers;
+    }
+
+    /**
+     * @return list<ExtensionAgentJobRequestDTO>
+     */
+    public function getDispatchedExtensionAgentJobs(): array
+    {
+        return $this->dispatchedExtensionAgentJobs;
     }
 }

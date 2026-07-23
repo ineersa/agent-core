@@ -157,6 +157,9 @@ final class HeadlessController
         // spawning.
         $this->consumerSupervisor->launch('scheduler_default');
         $this->consumerSupervisor->launch('mcp');
+        // Dedicated extension-agent worker: isolated from llm/tool/run_control so
+        // extension Observer/Reflector jobs do not starve main run execution.
+        $this->consumerSupervisor->launch('extension_agent');
 
         // Non-blocking stdin: read JSONL commands from TUI.
         EventLoop::onReadable(\STDIN, function (string $watcherId, $stream): void {

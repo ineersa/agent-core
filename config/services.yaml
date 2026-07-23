@@ -244,6 +244,14 @@ services:
       $execBridge: '@Ineersa\CodingAgent\Extension\ExtensionExecBridge'
       $commandRegistry: '@Ineersa\Hatfield\ExtensionApi\Command\CommandRegistryInterface'
 
+  # Async extension-agent jobs share agent.execution.bus so BusNameStamp routes
+  # re-dispatch to the bus that owns ExtensionAgentJobWorker.
+  Ineersa\CodingAgent\Extension\Agent\ExtensionAgentJobDispatcher:
+    arguments:
+      $bus: '@agent.execution.bus'
+
+  Ineersa\CodingAgent\Extension\Agent\ExtensionAgentJobRegistry: ~
+
   Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface:
     alias: Ineersa\CodingAgent\Extension\ExtensionToolRegistryBridge
 

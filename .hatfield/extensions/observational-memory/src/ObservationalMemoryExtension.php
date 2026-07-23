@@ -6,43 +6,31 @@ namespace Ineersa\HatfieldExt\ObservationalMemory;
 
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
 use Ineersa\Hatfield\ExtensionApi\HatfieldExtensionInterface;
-use Ineersa\HatfieldExt\ObservationalMemory\Runtime\OmConsumerSupervisor;
-use Ineersa\HatfieldExt\ObservationalMemory\Runtime\OmPaths;
+use Ineersa\HatfieldExt\ObservationalMemory\Observer\ObserveBoundaryJobHandler;
+use Ineersa\HatfieldExt\ObservationalMemory\Observer\ObserveBoundaryTerminalHook;
 use Ineersa\HatfieldExt\ObservationalMemory\Runtime\OmSettings;
 use Psr\Log\LoggerAwareInterface;
 use Psr\Log\LoggerInterface;
-use Revolt\EventLoop;
-use Symfony\Component\Console\ConsoleEvents;
-use Symfony\Component\Console\Event\ConsoleErrorEvent;
-use Symfony\Component\Console\Event\ConsoleTerminateEvent;
-use Symfony\Component\Console\Input\ArgvInput;
-use Symfony\Component\EventDispatcher\EventSubscriberInterface;
+use Psr\Log\NullLogger;
 
 /**
  * Hatfield registration surface for observational memory.
  *
- * Lifecycle uses native Symfony ConsoleEvents for shutdown only. Startup must
- * run inside register() because ExtensionLoaderSubscriber loads/registers
- * extensions while ConsoleEvents::COMMAND is already being dispatched;
- * EventDispatcher snapshots listeners before iteration, so a COMMAND listener
- * added during that dispatch never receives the current command.
+ * Registers:
+ * - after-turn terminal detector that dispatches a scalar extension-agent job
+ * - worker-local ObserveBoundaryJobHandler resolved by stable handler ID
  *
- * The extension-owned supervisor starts the package's own bin/console
- * messenger:consume process against private om.sqlite.
+ * Model work and history reads run only inside the dedicated Hatfield
+ * extension_agent Messenger worker (process-local ExtensionApi).
  */
-final class ObservationalMemoryExtension implements HatfieldExtensionInterface, EventSubscriberInterface, LoggerAwareInterface
+final class ObservationalMemoryExtension implements HatfieldExtensionInterface, LoggerAwareInterface
 {
-    private const float SUPERVISE_INTERVAL_SECONDS = 5.0;
+    private LoggerInterface $logger;
 
-    private ?ExtensionApiInterface $api = null;
-
-    private ?OmConsumerSupervisor $supervisor = null;
-
-    private ?string $superviseWatcherId = null;
-
-    private ?LoggerInterface $logger = null;
-
-    private bool $started = false;
+    public function __construct()
+    {
+        $this->logger = new NullLogger();
+    }
 
     public function setLogger(LoggerInterface $logger): void
     {
@@ -51,152 +39,29 @@ final class ObservationalMemoryExtension implements HatfieldExtensionInterface, 
 
     public function register(ExtensionApiInterface $api): void
     {
-        $this->api = $api;
-        // Start selection here (not ConsoleEvents::COMMAND): see class docblock.
-        $this->maybeStartSupervisorFromArgv();
-    }
-
-    public static function getSubscribedEvents(): array
-    {
-        return [
-            ConsoleEvents::TERMINATE => 'onConsoleTerminate',
-            ConsoleEvents::ERROR => 'onConsoleError',
-        ];
-    }
-
-    public function onConsoleTerminate(ConsoleTerminateEvent $event): void
-    {
-        unset($event);
-        $this->shutdownSupervisor();
-    }
-
-    public function onConsoleError(ConsoleErrorEvent $event): void
-    {
-        unset($event);
-        $this->shutdownSupervisor();
-    }
-
-    private function maybeStartSupervisorFromArgv(): void
-    {
-        if ($this->started) {
-            return;
-        }
-
-        // Public console first argument only — no CodingAgent class/namespace coupling.
-        // ArgvInput reads current process argv; works while COMMAND is mid-dispatch.
-        $input = new ArgvInput();
-        if ('agent' !== $input->getFirstArgument()) {
-            return;
-        }
-
-        // Controllers and messenger workers also run `agent --controller` or other
-        // processes; start only the interactive owning agent process.
-        if ($input->hasParameterOption(['--controller'], true)
-            || $input->hasParameterOption(['--headless'], true)
-        ) {
-            return;
-        }
-
-        $logger = $this->requireLogger();
-        $api = $this->api;
-        if (null === $api) {
-            $logger->warning('om.supervisor.skip_no_api', [
-                'component' => 'observational_memory',
-                'event_type' => 'om.supervisor.skip_no_api',
-            ]);
-
-            return;
-        }
-
         $settings = OmSettings::fromApi($api);
         if (!$settings->enabled) {
-            $logger->info('om.supervisor.disabled', [
+            $this->logger->info('om.extension.disabled', [
                 'component' => 'observational_memory',
-                'event_type' => 'om.supervisor.disabled',
+                'event_type' => 'om.extension.disabled',
             ]);
 
             return;
         }
 
-        $packageRoot = \dirname(__DIR__);
-        $paths = OmPaths::fromSettings($settings, $api->getCwd(), $packageRoot);
-        $sessionId = $this->resolveSessionId();
-
-        $this->cancelSuperviseWatcher();
-        $this->supervisor = new OmConsumerSupervisor($logger);
-
-        try {
-            $this->supervisor->start(
-                consolePath: $paths->consolePath,
-                packageRoot: $paths->packageRoot,
-                sessionId: $sessionId,
-                databasePath: $paths->databasePath,
-            );
-        } catch (\Throwable $e) {
-            $logger->error('om.supervisor.start_failed', [
-                'component' => 'observational_memory',
-                'event_type' => 'om.supervisor.start_failed',
-                'session_id' => $sessionId,
-                'exception_class' => $e::class,
-            ]);
-            $this->supervisor = null;
-
-            return;
-        }
-
-        // Revolt::repeat schedules into the interactive agent event loop, which
-        // starts after command wiring completes. No-op until that loop runs.
-        $supervisor = $this->supervisor;
-        $this->superviseWatcherId = EventLoop::repeat(
-            self::SUPERVISE_INTERVAL_SECONDS,
-            static function () use ($supervisor): void {
-                $supervisor->supervise();
-            },
+        $api->registerExtensionAgentJobHandler(
+            ObserveBoundaryTerminalHook::HANDLER_ID,
+            new ObserveBoundaryJobHandler($this->logger),
         );
-        $this->started = true;
-    }
 
-    private function shutdownSupervisor(): void
-    {
-        if (!$this->started && null === $this->supervisor) {
-            return;
-        }
+        $api->registerAfterTurnCommitHook(
+            new ObserveBoundaryTerminalHook($api, $settings, $this->logger),
+        );
 
-        $this->cancelSuperviseWatcher();
-        $this->supervisor?->stop();
-        $this->supervisor = null;
-        $this->started = false;
-    }
-
-    private function cancelSuperviseWatcher(): void
-    {
-        if (null === $this->superviseWatcherId) {
-            return;
-        }
-
-        EventLoop::cancel($this->superviseWatcherId);
-        $this->superviseWatcherId = null;
-    }
-
-    private function requireLogger(): LoggerInterface
-    {
-        if (null === $this->logger) {
-            throw new \LogicException('ObservationalMemoryExtension requires setLogger() before use. ExtensionManager must inject LoggerAwareInterface loggers before register().');
-        }
-
-        return $this->logger;
-    }
-
-    private function resolveSessionId(): string
-    {
-        // ExtensionLoaderSubscriber runs during ConsoleEvents::COMMAND, before
-        // the agent command typically assigns HATFIELD_SESSION_ID. When absent,
-        // agent-<pid> is intentional logging correlation only — not session identity.
-        $fromEnv = $_ENV['HATFIELD_SESSION_ID'] ?? $_SERVER['HATFIELD_SESSION_ID'] ?? null;
-        if (\is_string($fromEnv) && '' !== $fromEnv) {
-            return $fromEnv;
-        }
-
-        return 'agent-'.getmypid();
+        $this->logger->info('om.extension.registered', [
+            'component' => 'observational_memory',
+            'event_type' => 'om.extension.registered',
+            'handler_id' => ObserveBoundaryTerminalHook::HANDLER_ID,
+        ]);
     }
 }

@@ -652,6 +652,7 @@ parameters:
       - SymfonyAiPlatform
       - SymfonyAiAgent
       - SymfonyEventDispatcher
+      - SymfonyMessenger
       - SymfonyProcess
 
     AppAgent:

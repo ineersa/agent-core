@@ -1,14 +1,28 @@
 # Observational Memory (OM) extension
 
-Self-contained Symfony console package providing the OM operational runtime:
+Extension-owned observational memory storage and asynchronous Observer pipeline.
 
-- private SQLite database at `.hatfield/extensions-data/observational-memory/om.sqlite`
-- private Symfony Messenger bus + Doctrine transports (`om_observation`, `om_compaction`, `om_failed`)
-- package-owned `bin/console` (`om:migrate`, `messenger:consume`, …)
-- extension-owned supervisor started during Hatfield extension `register()` for the interactive `agent` process (not `--controller` / `--headless`)
-- native Symfony `ConsoleEvents::TERMINATE` / `ERROR` for stop
+## Architecture (OM-03)
 
-Hatfield does **not** expose `extension:run`, custom runtime lifecycle DTOs, or construct OM Messenger programmatically.
+Hatfield provides a **generic** async extension-agent job facility:
+
+```text
+AfterTurnCommit (any run_control/llm/tool worker)
+  → ObserveBoundaryTerminalHook (hot batch only)
+  → ExtensionApi::dispatchExtensionAgentJob(scalar payload)
+  → Symfony Messenger transport `extension_agent`
+  → dedicated Hatfield messenger:consume extension_agent worker
+      → ExtensionLoaderSubscriber loads extensions
+      → ExtensionAgentJobWorker resolves handler by stable ID
+      → ObserveBoundaryJobHandler
+          → open/migrate om.sqlite
+          → SessionEventReader::readRange (async path)
+          → package-local renderer + tool-result bounding
+          → $api->agent()->run(... record_observations tool ...)
+          → transactionally persist observations + coverage
+```
+
+OM no longer owns a private Symfony Kernel, bin/console, Messenger bus, or consumer supervisor.
 
 ## Activation
 
@@ -21,12 +35,17 @@ extensions:
     - Ineersa\HatfieldExt\ObservationalMemory\ObservationalMemoryExtension
   settings:
     observational_memory:
-      # Optional absolute path. Relative paths resolve against Hatfield CWD.
+      enabled: true
+      # exact provider/model required for Observer jobs
+      observer_model: llama_cpp_test/test
       # database_path: .hatfield/extensions-data/observational-memory/om.sqlite
-      # enabled: true
+      # observer_input_budget_tokens: 12000
+      # max_observations: 12
+      # tool_result_max_chars: 4000
+      # content_max_chars: 2000
 ```
 
-Install package dependencies into the project extension Composer root (package is already required by `.hatfield/extensions/composer.json` after checkout):
+Install package dependencies into the project extension Composer root:
 
 ```bash
 cd .hatfield/extensions
@@ -35,44 +54,24 @@ composer install
 composer update ineersa/hatfield-ext-observational-memory
 ```
 
-## Process topology
-
-```text
-Interactive Hatfield process: `agent` (not --controller / --headless)
-  → ExtensionLoaderSubscriber dispatches ConsoleEvents::COMMAND
-  → ExtensionManager loads extension, injects logger, calls register()
-  → ObservationalMemoryExtension::register()
-      (startup here: COMMAND listeners added mid-dispatch never receive
-       the current event because EventDispatcher snapshots listeners)
-      → OmConsumerSupervisor
-          → php .hatfield/extensions/observational-memory/bin/console om:migrate
-          → php …/bin/console messenger:setup-transports   # exit 0 required
-          → php …/bin/console messenger:consume om_compaction om_observation
-              env OM_DATABASE_PATH=<abs path>
-              env OM_CACHE_DIR=<dirname(database)>/cache
-              env OM_LOG_DIR=<dirname(database)>/log
-              env OM_PARENT_PID=<owning agent pid>
-  → later ConsoleEvents::TERMINATE / ERROR
-  → ObservationalMemoryExtension stops supervisor + child
-```
-
-The child boots the **OM package Kernel**, not Hatfield. Recursion cannot occur via Hatfield extension loading. Cache/log dirs are project/database-specific so the compiled container never bakes another project's `OM_DATABASE_PATH`.
-
-Supervisor health checks use `Revolt\EventLoop::repeat` and assume the interactive agent event loop will run after command startup. `HATFIELD_SESSION_ID` is often unset during `register()` (extensions load mid-`ConsoleEvents::COMMAND`); OM falls back to `agent-<pid>` for log correlation only.
-
 ## Ownership boundaries
 
 | Owned by OM package | Not owned by OM |
 |---|---|
-| `om.sqlite` | `.hatfield/state.sqlite` |
-| OM Messenger queues | `.hatfield/messenger-transport.sqlite` |
-| observation/reflection/coverage tables | `events.jsonl` |
-| package `bin/console` + supervisor | Hatfield `ConsumerSupervisor` |
+| `om.sqlite` domain tables | `.hatfield/state.sqlite` |
+| observation/reflection/coverage schema | `.hatfield/messenger-transport.sqlite` |
+| package-local renderer / tool validation | Hatfield provider credentials / Platform |
+| | `events.jsonl` (read-only via public SessionEventReader) |
+
+The generic `extension_agent` transport lives in Hatfield Messenger and carries only JSON-safe job envelopes (handler ID + payload). Live tool handlers are never serialized.
 
 ## Privacy
 
-Runtime logs use structured fields only (`component`, `event_type`, correlation IDs). Observation content, prompts, and tool output are never written to Hatfield logs by default. Failed Messenger messages may retain rendered payloads inside `om.sqlite` until drained — treat the OM DB as sensitive.
+Runtime logs use structured fields only (`component`, `event_type`, correlation IDs). Observation content, prompts, and tool output are never written to Hatfield logs by default. Treat `om.sqlite` as sensitive.
 
-## Out of scope for this package preview
+## Out of scope (later OM tasks)
 
-Observer/Reflector prompts, model calls from handlers, boundary enqueue hooks, compaction replacement hook, `/om` TUI commands, and settings UI belong to later OM tasks.
+- Reflector / compaction replacement hook
+- `/om status` and `/om view` TUI commands
+- Cross-session memory index
+- Failure-transport drain UI
