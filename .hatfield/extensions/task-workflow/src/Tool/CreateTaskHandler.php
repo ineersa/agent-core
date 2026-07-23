@@ -19,7 +19,7 @@ final readonly class CreateTaskHandler implements ExtensionToolHandlerInterface
     /**
      * @param array<string, mixed> $arguments
      *
-     * @return array{content: list<array{type: string, text: string}>, details: array<string, mixed>}
+     * @return array{content: list<array{type: string, text: string}>, details: string}
      */
     public function __invoke(array $arguments): array
     {

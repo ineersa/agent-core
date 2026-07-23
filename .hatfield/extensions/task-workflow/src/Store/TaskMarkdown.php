@@ -73,7 +73,9 @@ final class TaskMarkdown
     public static function extractField(string $text, string $name): ?string
     {
         $escaped = preg_quote($name, '/');
-        if (1 === preg_match('/^'.$escaped.':\s*(.+)$/mi', $text, $m)) {
+        // Horizontal whitespace only after the colon. PHP `\s` includes newlines, so
+        // empty fields like `Worktree:\nFork run:` would otherwise capture the next label.
+        if (1 === preg_match('/^'.$escaped.':[ \t]*([^\r\n]*)$/mi', $text, $m)) {
             $v = trim($m[1]);
 
             return '' === $v ? null : $v;

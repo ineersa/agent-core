@@ -162,4 +162,102 @@ final class RawWebSocketResultTest extends TestCase
         $raw = new RawWebSocketResult($connection, 5.0);
         unset($raw);
     }
+
+    public function testTerminalResponseOutputIsAuthoritativeOverStreamedOutputItems(): void
+    {
+        $cache = new CodexWebSocketConnectionCache();
+        $settings = new CodexWebSocketCacheSettings();
+        $identity = CodexWebSocketCompatibilityFingerprint::fromContext(
+            '0194cccc-bbbb-7ccc-8ddd-cccccccccccc',
+            'openai-codex',
+            'gpt-5.6-luna',
+            'https://chatgpt.com/backend-api',
+            '/codex/responses',
+            'acct-1',
+        );
+
+        $streamed = [
+            'type' => 'function_call',
+            'id' => 'fc_streamed',
+            'call_id' => 'fc_streamed',
+            'name' => 'streamed',
+            'arguments' => '{}',
+        ];
+        $terminal = [
+            'type' => 'function_call',
+            'id' => 'fc_terminal',
+            'call_id' => 'fc_terminal',
+            'name' => 'terminal',
+            'arguments' => '{}',
+        ];
+
+        $messages = [
+            WebsocketMessage::fromText(json_encode([
+                'type' => 'response.output_item.done',
+                'item' => $streamed,
+            ], \JSON_THROW_ON_ERROR)),
+            WebsocketMessage::fromText(json_encode([
+                'type' => 'response.completed',
+                'response' => [
+                    'id' => 'resp_terminal',
+                    'output' => [$terminal],
+                ],
+            ], \JSON_THROW_ON_ERROR)),
+        ];
+        $index = 0;
+
+        $connection = $this->createMock(WebsocketConnection::class);
+        $connection->expects($this->exactly(2))
+            ->method('receive')
+            ->willReturnCallback(static function () use (&$index, $messages): WebsocketMessage {
+                return $messages[$index++];
+            });
+        // Successful cached stream retains the connection (no close).
+        $connection->expects($this->never())->method('close');
+
+        $entry = new CodexWebSocketCacheEntry($connection, $identity, time(), $settings);
+        $lease = new CodexWebSocketCacheLease($connection, true, true, false, $entry);
+        $fullRequestBody = [
+            'model' => 'gpt-5.6-luna',
+            'input' => [['role' => 'user', 'content' => 'first']],
+            'stream' => true,
+        ];
+        $context = new CodexWebSocketCachedStreamContext($cache, $lease, $fullRequestBody);
+
+        // Put the entry in the cache so release() keeps the retained connection path healthy.
+        $reflection = new \ReflectionClass($cache);
+        $prop = $reflection->getProperty('entries');
+        $prop->setValue($cache, [$identity->sessionKey => $entry]);
+
+        $raw = new RawWebSocketResult($connection, 5.0, cachedStreamContext: $context);
+        iterator_to_array($raw->getDataStream());
+
+        $this->assertNotNull($entry->continuation);
+        $delta = $entry->continuation->buildDeltaRequest([
+            'model' => 'gpt-5.6-luna',
+            'input' => [
+                ['role' => 'user', 'content' => 'first'],
+                $terminal,
+                ['role' => 'user', 'content' => 'next'],
+            ],
+            'stream' => true,
+        ]);
+
+        $this->assertNotNull($delta);
+        $this->assertSame('resp_terminal', $delta['previous_response_id']);
+        $this->assertSame([['role' => 'user', 'content' => 'next']], $delta['input']);
+
+        // Streamed item must not have been merged with terminal output (no duplicate baseline).
+        $mergedWouldMatch = $entry->continuation->buildDeltaRequest([
+            'model' => 'gpt-5.6-luna',
+            'input' => [
+                ['role' => 'user', 'content' => 'first'],
+                $streamed,
+                $terminal,
+                ['role' => 'user', 'content' => 'next'],
+            ],
+            'stream' => true,
+        ]);
+        $this->assertNull($mergedWouldMatch);
+    }
 }
