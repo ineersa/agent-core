@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace Symfony\AI\Platform\Bridge\OpenAICodex;
 
+use Amp\CancelledException;
 use Amp\Http\HttpStatus;
+use Amp\TimeoutCancellation;
 use Amp\Websocket\Client\WebsocketConnectException;
 use Amp\Websocket\Client\WebsocketConnection;
 use Psr\Log\LoggerInterface;
@@ -13,6 +15,8 @@ use Symfony\AI\Platform\Exception\InvalidArgumentException;
 use Symfony\AI\Platform\Model;
 use Symfony\AI\Platform\ModelClientInterface;
 use Symfony\AI\Platform\Result\RawResultInterface;
+
+use function Amp\async;
 
 final class CodexWebSocketModelClient implements ModelClientInterface
 {
@@ -68,21 +72,11 @@ final class CodexWebSocketModelClient implements ModelClientInterface
 
         $this->logRequestSummary($model, $wireBody, $websocketUrl, $lease);
 
-        try {
-            $frame = json_encode(
-                array_merge($wireBody, ['type' => 'response.create']),
-                \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE,
-            );
-            $connection->sendText($frame);
-        } catch (\Throwable $e) {
-            if (null !== $lease && $lease->cached && !$lease->oneShot && null !== $lease->entry && null !== $this->connectionCache) {
-                $this->connectionCache->invalidateEntry($lease->entry, 'send_failure');
-            } else {
-                $this->closeConnectionQuietly($connection);
-            }
-
-            throw new \RuntimeException('Codex WebSocket request frame could not be sent.', previous: $e);
-        }
+        $frame = json_encode(
+            array_merge($wireBody, ['type' => 'response.create']),
+            \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE,
+        );
+        $this->sendRequestFrame($connection, $frame, $lease);
 
         $cachedContext = null;
         if (CodexTransportEnum::WebsocketCached === $this->transport && null !== $this->connectionCache && null !== $lease && $lease->cached && !$lease->oneShot) {
@@ -90,6 +84,77 @@ final class CodexWebSocketModelClient implements ModelClientInterface
         }
 
         return new RawWebSocketResult($connection, $this->idleTimeoutSeconds, $this->logger, cachedStreamContext: $cachedContext);
+    }
+
+    /**
+     * Bound outbound send. Amp's WebsocketClient::sendText() has no Cancellation parameter,
+     * so we await it under TimeoutCancellation. Cancellation alone does not abort the write;
+     * on timeout/failure the lease/socket MUST be closed so Amp wakes the blocked writer.
+     *
+     * Delivery after a timed-out send is UNKNOWN: do not reconnect and resend the same
+     * request (that could duplicate a provider request). A later distinct request acquires
+     * a fresh connection and sends full context.
+     */
+    private function sendRequestFrame(
+        WebsocketConnection $connection,
+        string $frame,
+        ?CodexWebSocketCacheLease $lease,
+    ): void {
+        $sendFuture = async(static function () use ($connection, $frame): void {
+            $connection->sendText($frame);
+        });
+
+        try {
+            $sendFuture->await(new TimeoutCancellation($this->idleTimeoutSeconds));
+        } catch (CancelledException $e) {
+            $this->failOutboundTransport($connection, $lease, 'send_timeout');
+            // Observe the child future so a late write error is not unhandled after close.
+            $sendFuture->ignore();
+
+            $this->logger->warning('codex.websocket.io_timeout', [
+                'event_type' => 'codex.websocket.io_timeout',
+                'component' => 'codex_websocket_model_client',
+                'phase' => 'send',
+                'timeout_seconds' => $this->idleTimeoutSeconds,
+                'cache_reused' => null !== $lease && $lease->reused,
+                'cache_one_shot' => null !== $lease && $lease->oneShot,
+                // Send started; whether the peer accepted any bytes is unknown after timeout.
+                'delivery_status' => 'unknown',
+            ]);
+
+            throw new \RuntimeException('Codex WebSocket send timeout.', previous: $e);
+        } catch (\Throwable $e) {
+            $this->failOutboundTransport($connection, $lease, 'send_failure');
+            $sendFuture->ignore();
+
+            $this->logger->warning('codex.websocket.io_failure', [
+                'event_type' => 'codex.websocket.io_failure',
+                'component' => 'codex_websocket_model_client',
+                'phase' => 'send',
+                'timeout_seconds' => $this->idleTimeoutSeconds,
+                'cache_reused' => null !== $lease && $lease->reused,
+                'cache_one_shot' => null !== $lease && $lease->oneShot,
+                'delivery_status' => 'failed',
+                'exception_class' => $e::class,
+            ]);
+
+            throw new \RuntimeException('Codex WebSocket request frame could not be sent.', previous: $e);
+        }
+    }
+
+    private function failOutboundTransport(
+        WebsocketConnection $connection,
+        ?CodexWebSocketCacheLease $lease,
+        string $reason,
+    ): void {
+        if (null !== $lease && $lease->cached && !$lease->oneShot && null !== $lease->entry && null !== $this->connectionCache) {
+            // invalidateEntry closes the socket and clears continuation for this session key.
+            $this->connectionCache->invalidateEntry($lease->entry, $reason);
+
+            return;
+        }
+
+        $this->closeConnectionQuietly($connection);
     }
 
     /**
