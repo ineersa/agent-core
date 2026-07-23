@@ -5,8 +5,6 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Listener;
 
 use Ineersa\CodingAgent\Runtime\Contract\ProviderQuotaProbeServiceInterface;
-use Ineersa\CodingAgent\Runtime\Contract\ProviderQuotaSectionDTO;
-use Ineersa\CodingAgent\Runtime\Contract\ProviderQuotaWindowDTO;
 use Ineersa\Tui\Command\CommandResult;
 use Ineersa\Tui\Command\SlashCommand;
 use Ineersa\Tui\Command\SlashCommandHandler;
@@ -58,13 +56,12 @@ final class UsageCommandHandler implements SlashCommandHandler
             }
 
             $lines = ['## Provider usage / quota status', ''];
-            if ([] === $report->sections) {
-                $lines[] = '_No configured providers to probe._';
-                $lines[] = '';
-            } else {
-                foreach ($report->sections as $section) {
-                    $lines = [...$lines, ...$this->formatSection($section), ''];
+            foreach ($report->sections as $section) {
+                $lines[] = '### '.$section->title;
+                foreach ($section->lines as $line) {
+                    $lines[] = $line;
                 }
+                $lines[] = '';
             }
             $lines = [...$lines, ...$this->formatSessionLines()];
 
@@ -95,50 +92,6 @@ final class UsageCommandHandler implements SlashCommandHandler
         if ('Checking provider usage...' === $this->screen->registry()->getWorkingMessage()) {
             $this->screen->setWorkingMessage('');
         }
-    }
-
-    /**
-     * @return list<string>
-     */
-    private function formatSection(ProviderQuotaSectionDTO $section): array
-    {
-        $lines = ['### '.$section->title];
-
-        if (null !== $section->error && '' !== $section->error) {
-            $lines[] = '- **Error:** '.$section->error;
-        }
-
-        if ([] === $section->windows && (null === $section->error || '' === $section->error)) {
-            $lines[] = '- Quota windows: unavailable';
-        }
-
-        foreach ($section->windows as $window) {
-            $lines[] = '- '.$this->formatWindow($window);
-        }
-
-        if (null !== $section->plan && '' !== $section->plan) {
-            $lines[] = '- **Plan:** '.$section->plan;
-        }
-        if (null !== $section->account && '' !== $section->account) {
-            $lines[] = '- **Account:** '.$section->account;
-        }
-        if (null !== $section->modelCount) {
-            $lines[] = \sprintf('- **Models visible:** %d', $section->modelCount);
-        }
-        if (null !== $section->note && '' !== $section->note) {
-            $lines[] = '- **Note:** '.$section->note;
-        }
-
-        return $lines;
-    }
-
-    private function formatWindow(ProviderQuotaWindowDTO $window): string
-    {
-        $reset = null !== $window->resetDescription && '' !== $window->resetDescription
-            ? ', resets '.$window->resetDescription
-            : '';
-
-        return \sprintf('%s: %.0f%% left%s', $window->label, $window->percentLeft, $reset);
     }
 
     /**

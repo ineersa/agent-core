@@ -8,7 +8,6 @@ use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Runtime\Contract\ProviderQuotaProbeServiceInterface;
 use Ineersa\CodingAgent\Runtime\Contract\ProviderQuotaReportDTO;
 use Ineersa\CodingAgent\Runtime\Contract\ProviderQuotaSectionDTO;
-use Ineersa\CodingAgent\Runtime\Contract\ProviderQuotaWindowDTO;
 use Ineersa\Tui\Command\CommandParser;
 use Ineersa\Tui\Command\SlashCommandRegistry;
 use Ineersa\Tui\Command\SubmissionRouter;
@@ -38,21 +37,14 @@ final class TuiUsageCommandVirtualTest extends TestCase
             public function probe(): ProviderQuotaReportDTO
             {
                 return new ProviderQuotaReportDTO([
-                    new ProviderQuotaSectionDTO(
-                        title: 'OpenAI Codex',
-                        windows: [
-                            new ProviderQuotaWindowDTO('Codex (5h)', 83.0, 'in 2h'),
-                        ],
-                        plan: 'pro',
-                        account: 'user@example.com',
-                    ),
-                    new ProviderQuotaSectionDTO(
-                        title: 'z.ai',
-                        windows: [
-                            new ProviderQuotaWindowDTO('Tokens (250/1,000)', 75.0, 'in 1h'),
-                        ],
-                        modelCount: 3,
-                    ),
+                    new ProviderQuotaSectionDTO('OpenAI Codex', [
+                        '- Codex (5h): 83% left, resets in 2h',
+                        '- Plan: pro',
+                        '- Account: user@example.com',
+                    ]),
+                    new ProviderQuotaSectionDTO('z.ai', [
+                        '- Tokens (250/1,000): 75% left, resets in 1h',
+                    ]),
                 ]);
             }
         };
@@ -98,7 +90,7 @@ final class TuiUsageCommandVirtualTest extends TestCase
         $this->assertStringContainsString('### OpenAI Codex', $result->text);
         $this->assertStringContainsString('Codex (5h): 83% left, resets in 2h', $result->text);
         $this->assertStringContainsString('### z.ai', $result->text);
-        $this->assertStringContainsString('**Models visible:** 3', $result->text);
+        $this->assertStringNotContainsString('Models visible', $result->text);
         $this->assertStringContainsString('### Session totals', $result->text);
         $this->assertStringContainsString('openai-codex/gpt-5.6-luna', $result->text);
         $this->assertStringContainsString('**Tokens (session cumulative):** 12,345 in / 2,100 out', $result->text);
@@ -141,9 +133,10 @@ final class TuiUsageCommandVirtualTest extends TestCase
 
         $result = (new SubmissionRouter(new CommandParser(), $registry))->route('/usage');
         $this->assertInstanceOf(TranscriptMessage::class, $result);
-        $this->assertStringContainsString('No configured providers to probe', $result->text);
+        $this->assertStringNotContainsString('No configured providers', $result->text);
         $this->assertStringNotContainsString('### OpenAI Codex', $result->text);
         $this->assertStringNotContainsString('### z.ai', $result->text);
+        $this->assertStringContainsString('## Provider usage / quota status', $result->text);
         $this->assertStringContainsString('### Session totals', $result->text);
         $this->assertStringContainsString('11 in / 2 out', $result->text);
     }

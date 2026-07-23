@@ -5,11 +5,9 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Runtime\Contract;
 
 /**
- * Read-only boundary for probing provider quota endpoints.
+ * Probes configured AI-provider quotas for the `/usage` command.
  *
- * TUI depends on this interface only — never on auth storage, API keys, or HTTP.
- * Absent providers produce an empty section list; configured failures degrade
- * into per-section errors without suppressing sibling sections.
+ * Implementations must never return secrets or raw response bodies.
  */
 interface ProviderQuotaProbeServiceInterface
 {

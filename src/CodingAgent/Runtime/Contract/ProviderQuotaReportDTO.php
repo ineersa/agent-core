@@ -16,7 +16,7 @@ final readonly class ProviderQuotaReportDTO
      * @param list<ProviderQuotaSectionDTO> $sections
      */
     public function __construct(
-        public array $sections = [],
+        public array $sections,
     ) {
     }
 }

@@ -23,7 +23,7 @@ use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\FlockStore;
 
 /**
- * Thesis: probe only configured providers; success renders core quota windows;
+ * Thesis: probe only configured providers; success renders core quota lines;
  * degraded responses stay sanitized and never leak secrets.
  */
 final class ProviderQuotaProbeServiceTest extends TestCase
@@ -82,18 +82,14 @@ final class ProviderQuotaProbeServiceTest extends TestCase
                 ]],
             ],
         ], \JSON_THROW_ON_ERROR);
-        $zaiModelsBody = json_encode(['data' => [['id' => 'glm-5.1'], ['id' => 'glm-5.2']]], \JSON_THROW_ON_ERROR);
 
-        $mock = new MockHttpClient(static function (string $method, string $url) use ($openaiBody, $zaiQuotaBody, $zaiModelsBody): MockResponse {
+        $mock = new MockHttpClient(static function (string $method, string $url) use ($openaiBody, $zaiQuotaBody): MockResponse {
             self::assertSame('GET', $method);
             if (str_contains($url, '/wham/usage')) {
                 return new MockResponse($openaiBody, ['http_code' => 200]);
             }
             if (str_contains($url, '/quota/limit')) {
                 return new MockResponse($zaiQuotaBody, ['http_code' => 200]);
-            }
-            if (str_contains($url, '/models')) {
-                return new MockResponse($zaiModelsBody, ['http_code' => 200]);
             }
 
             self::fail('Unexpected URL: '.$url);
@@ -102,15 +98,15 @@ final class ProviderQuotaProbeServiceTest extends TestCase
         $report = $this->service($mock, both: true)->probe();
         $this->assertCount(2, $report->sections);
         $this->assertSame('OpenAI Codex', $report->sections[0]->title);
-        $this->assertNull($report->sections[0]->error);
-        $this->assertSame('pro', $report->sections[0]->plan);
-        $this->assertSame('user@example.com', $report->sections[0]->account);
-        $this->assertNotEmpty($report->sections[0]->windows);
-        $this->assertSame(83.0, $report->sections[0]->windows[0]->percentLeft);
+        $joinedOpenAi = implode("\n", $report->sections[0]->lines);
+        $this->assertStringContainsString('Codex (5h): 83% left', $joinedOpenAi);
+        $this->assertStringContainsString('Plan: pro', $joinedOpenAi);
+        $this->assertStringContainsString('Account: user@example.com', $joinedOpenAi);
+        $this->assertStringNotContainsString('Error:', $joinedOpenAi);
         $this->assertSame('z.ai', $report->sections[1]->title);
-        $this->assertNull($report->sections[1]->error);
-        $this->assertSame(2, $report->sections[1]->modelCount);
-        $this->assertSame(75.0, $report->sections[1]->windows[0]->percentLeft);
+        $joinedZai = implode("\n", $report->sections[1]->lines);
+        $this->assertStringContainsString('Tokens (250/1,000): 75% left', $joinedZai);
+        $this->assertStringNotContainsString('Error:', $joinedZai);
     }
 
     #[Test]
@@ -157,20 +153,19 @@ final class ProviderQuotaProbeServiceTest extends TestCase
             if (str_contains($url, '/quota/limit')) {
                 return new MockResponse($zaiQuotaBody, ['http_code' => 200]);
             }
-            if (str_contains($url, '/models')) {
-                return new MockResponse('{"data":[]}', ['http_code' => 200]);
-            }
 
             self::fail('Unexpected URL: '.$url);
         });
 
         $report = $this->service($mock, both: true, logger: $logger)->probe();
         $this->assertCount(2, $report->sections);
-        $this->assertStringContainsString('returned 503', (string) $report->sections[0]->error);
-        $this->assertStringNotContainsString('secret-body', (string) $report->sections[0]->error);
-        $this->assertStringNotContainsString('secret-access-token', (string) $report->sections[0]->error);
-        $this->assertNull($report->sections[1]->error);
-        $this->assertNotEmpty($report->sections[1]->windows);
+        $openAi = implode("\n", $report->sections[0]->lines);
+        $this->assertStringContainsString('returned 503', $openAi);
+        $this->assertStringNotContainsString('secret-body', $openAi);
+        $this->assertStringNotContainsString('secret-access-token', $openAi);
+        $zai = implode("\n", $report->sections[1]->lines);
+        $this->assertStringContainsString('90% left', $zai);
+        $this->assertStringNotContainsString('Error:', $zai);
 
         foreach ($logger->records as $record) {
             $encoded = json_encode($record, \JSON_THROW_ON_ERROR);
@@ -178,44 +173,6 @@ final class ProviderQuotaProbeServiceTest extends TestCase
             $this->assertStringNotContainsString('secret-access-token', $encoded);
             $this->assertStringNotContainsString('secret-zai-key', $encoded);
         }
-    }
-
-    #[Test]
-    public function testMissingCodexCredentialsDegradesOnlyOpenAi(): void
-    {
-        putenv('ZAI_API_KEY=test-zai-key');
-        $zaiQuotaBody = json_encode([
-            'success' => true,
-            'code' => 200,
-            'data' => [
-                'limits' => [[
-                    'type' => 'TOKENS_LIMIT',
-                    'usage' => 10,
-                    'currentValue' => 1,
-                    'percentage' => 10,
-                    'nextResetTime' => (int) ((microtime(true) + 60) * 1000),
-                ]],
-            ],
-        ], \JSON_THROW_ON_ERROR);
-        $mock = new MockHttpClient(static function (string $method, string $url) use ($zaiQuotaBody): MockResponse {
-            if (str_contains($url, '/wham/usage')) {
-                self::fail('OpenAI HTTP must not run without credentials');
-            }
-            if (str_contains($url, '/quota/limit')) {
-                return new MockResponse($zaiQuotaBody, ['http_code' => 200]);
-            }
-            if (str_contains($url, '/models')) {
-                return new MockResponse('{"data":[]}', ['http_code' => 200]);
-            }
-
-            self::fail('Unexpected URL: '.$url);
-        });
-
-        $report = $this->service($mock, both: true)->probe();
-        $this->assertCount(2, $report->sections);
-        $this->assertStringContainsString('Auth token unavailable/expired', (string) $report->sections[0]->error);
-        $this->assertStringContainsString('auth:codex', (string) $report->sections[0]->error);
-        $this->assertNull($report->sections[1]->error);
     }
 
     private function service(MockHttpClient $http, bool $both, ?TestLogger $logger = null): ProviderQuotaProbeService
