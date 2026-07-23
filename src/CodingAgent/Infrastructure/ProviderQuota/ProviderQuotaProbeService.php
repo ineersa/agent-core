@@ -288,8 +288,17 @@ final class ProviderQuotaProbeService implements ProviderQuotaProbeServiceInterf
 
         $hours = intdiv($minutes, 60);
         $remM = $minutes % 60;
+        if ($hours < 24) {
+            return $hours.'h'.($remM > 0 ? $remM.'m' : '');
+        }
 
-        return $hours.'h'.($remM > 0 ? $remM.'m' : '');
+        // Multi-day resets: compact d/h/m, omit zero components (24h→1d, 25h→1d1h).
+        $days = intdiv($hours, 24);
+        $remH = $hours % 24;
+
+        return $days.'d'
+            .($remH > 0 ? $remH.'h' : '')
+            .($remM > 0 ? $remM.'m' : '');
     }
 
     private function num(mixed $value): ?float

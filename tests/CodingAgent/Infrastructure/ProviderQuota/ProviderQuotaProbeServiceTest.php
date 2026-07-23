@@ -63,9 +63,10 @@ final class ProviderQuotaProbeServiceTest extends TestCase
             'email' => 'user@example.com',
             'rate_limit' => [
                 'primary_window' => [
-                    'used_percent' => 17,
-                    'limit_window_seconds' => 18000,
-                    'reset_after_seconds' => 7200,
+                    // User-visible multi-day reset: 165h57m must render as 6d21h57m, not hours-only.
+                    'used_percent' => 9,
+                    'limit_window_seconds' => 604800,
+                    'reset_after_seconds' => 597420,
                 ],
             ],
         ], \JSON_THROW_ON_ERROR);
@@ -102,17 +103,18 @@ final class ProviderQuotaProbeServiceTest extends TestCase
         $this->assertCount(2, $report->sections);
         $this->assertSame('OpenAI Codex', $report->sections[0]->title);
         $joinedOpenAi = implode("\n", $report->sections[0]->lines);
-        $this->assertStringContainsString('Codex (5h): 83% left, resets in 2h', $joinedOpenAi);
+        $this->assertStringContainsString('Codex (7d): 91% left, resets in 6d21h57m', $joinedOpenAi);
         $this->assertStringContainsString('Plan: pro', $joinedOpenAi);
         $this->assertStringContainsString('Account: user@example.com', $joinedOpenAi);
         $this->assertStringNotContainsString('Error:', $joinedOpenAi);
-        $this->assertStringNotContainsString('7200s', $joinedOpenAi);
+        $this->assertStringNotContainsString('165h57m', $joinedOpenAi);
+        $this->assertStringNotContainsString('597420s', $joinedOpenAi);
         $this->assertSame('z.ai', $report->sections[1]->title);
         $joinedZai = implode("\n", $report->sections[1]->lines);
-        // OpenAI reset_after_seconds is relative → exact "2h". z.ai uses absolute epoch ms, so countdown
-        // can tick during the probe; accept any humanized form (not raw seconds-only).
+        // OpenAI reset_after_seconds is relative → exact multi-day form. z.ai uses absolute epoch ms,
+        // so countdown can tick during the probe; accept any humanized form including days.
         $this->assertMatchesRegularExpression(
-            '/Tokens \(250\/1,000\): 75% left, resets in (\d+h(\d+m)?|\d+m(\d+s)?)/',
+            '/Tokens \(250\/1,000\): 75% left, resets in (\d+d(\d+h)?(\d+m)?|\d+h(\d+m)?|\d+m(\d+s)?)/',
             $joinedZai,
         );
         $this->assertStringNotContainsString('Error:', $joinedZai);
