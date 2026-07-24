@@ -87,8 +87,9 @@ final class ModelControlListener implements TuiListenerRegistrar
 
         // ── Register Ctrl+P — cycle favorite models ──
         $sessionClient = $context->client;
+        $logger = $this->logger;
         $tui->addListener(static function (InputEvent $event) use (
-            $modelService, $state, $appConfig, $screen, $sessionClient,
+            $modelService, $state, $appConfig, $screen, $sessionClient, $logger,
         ): void {
             // Ctrl+P is \x10
             if ("\x10" !== $event->getData()) {
@@ -121,8 +122,16 @@ final class ModelControlListener implements TuiListenerRegistrar
                             payload: ['model' => $nextRef->toString()],
                         ),
                     );
-                } catch (\Throwable) {
-                    // Settings already updated; durable run change is best-effort here.
+                } catch (\Throwable $exception) {
+                    // Intentional local degradation: settings/footer already updated;
+                    // durable run model change is best-effort and must not block the hotkey path.
+                    $logger->warning('tui.model_control.change_model_send_failed', [
+                        'session_id' => $state->sessionId,
+                        'component' => 'tui.model_control',
+                        'event_type' => 'tui.model_control.change_model_send_failed',
+                        'model' => $nextRef->toString(),
+                        'exception_class' => $exception::class,
+                    ]);
                 }
             }
 

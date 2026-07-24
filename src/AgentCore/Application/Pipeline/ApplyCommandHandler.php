@@ -1061,23 +1061,11 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
         // Safe boundary: update canonical run model now. Already-queued
         // ExecuteLlmStep messages remain immutable on their original model;
         // the next AdvanceRun schedules from the transitioned state.
-        $nextState = new RunState(
-            runId: $state->runId,
-            status: $state->status,
-            version: $state->version + 1,
-            turnNo: $state->turnNo,
-            lastSeq: $state->lastSeq + 2,
-            isStreaming: $state->isStreaming,
-            streamingMessage: $state->streamingMessage,
-            pendingToolCalls: $state->pendingToolCalls,
-            errorMessage: $state->errorMessage,
-            messages: $state->messages,
-            activeStepId: $state->activeStepId,
-            retryableFailure: $state->retryableFailure,
-            retryAttempts: $state->retryAttempts,
-            pendingHumanInputRequests: $state->pendingHumanInputRequests,
-            model: $model,
-        );
+        $nextState = $state->with([
+            'version' => $state->version + 1,
+            'lastSeq' => $state->lastSeq + 2,
+            'model' => $model,
+        ]);
 
         $events = [
             $this->eventFactory->event(
