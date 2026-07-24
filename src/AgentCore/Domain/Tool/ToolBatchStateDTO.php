@@ -168,6 +168,9 @@ final class ToolBatchStateDTO
                 'assistantMessage' => $call->assistantMessage,
                 'argSchema' => $call->argSchema,
                 'humanInputAnswer' => $call->humanInputAnswer?->toPersistedArray(),
+                // Canonical parent execution model snapshot for child inheritance
+                // across crash recovery / human-input continuation.
+                'parentModel' => $call->parentModel,
             ];
         }
 

@@ -167,17 +167,10 @@ final class InProcessAgentSessionClient implements AgentSessionClient
         if ('' !== $reasoning) {
             $metaFields['reasoning'] = $reasoning;
         }
-        // Best-effort session metadata for UI/resume; non-numeric ids are ignored
-        // by the store's own repository boundary (not inferred here).
-        try {
-            $this->sessionMetaStore->writeSessionMetadata($sessionId, $metaFields);
-        } catch (\Throwable $exception) {
-            // Child/ephemeral starts may not have a hatfield_session row. Canonical
-            // execution identity still lives on RunMetadata below.
-            if (!str_contains($exception->getMessage(), 'session') && !str_contains(strtolower($exception->getMessage()), 'not found')) {
-                throw $exception;
-            }
-        }
+        // Best-effort session metadata for UI/resume. The store is a no-op for
+        // missing rows (e.g. UUID child/ephemeral starts); canonical execution
+        // identity still lives on RunMetadata below.
+        $this->sessionMetaStore->writeSessionMetadata($sessionId, $metaFields);
 
         $metadata = new RunMetadata(
             session: null !== $metadata ? $metadata->session : [],

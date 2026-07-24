@@ -11,6 +11,7 @@ use Ineersa\AgentCore\Application\Pipeline\ApplyCommandHandler;
 use Ineersa\AgentCore\Application\Pipeline\CommandMailboxPolicy;
 use Ineersa\AgentCore\Domain\Command\CoreCommandKind;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
+use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\AgentMessageNormalizer;
@@ -1446,5 +1447,72 @@ final class ApplyCommandHandlerTest extends TestCase
 
         $this->assertSame(RunStatus::Cancelled, $result->nextState->status);
         $this->assertContains('agent_end', array_map(static fn ($e) => $e->type, $result->events));
+    }
+
+    public function testChangeModelEmitsAppliedAndModelChangedEventsAndIsIdempotent(): void
+    {
+        $commandStore = new InMemoryCommandStore();
+        $commandRouter = new CommandRouter(new CommandHandlerRegistry([]));
+        $commandMailboxPolicy = new CommandMailboxPolicy(
+            commandStore: $commandStore,
+            commandRouter: $commandRouter,
+        );
+
+        $handler = new ApplyCommandHandler(
+            commandStore: $commandStore,
+            commandRouter: $commandRouter,
+            commandMailboxPolicy: $commandMailboxPolicy,
+            eventFactory: new EventFactory(),
+            messageNormalizer: new AgentMessageNormalizer(),
+            maxPendingCommands: 10,
+        );
+
+        $state = new RunState(
+            runId: 'run-change-model-1',
+            status: RunStatus::Running,
+            version: 4,
+            turnNo: 2,
+            lastSeq: 10,
+            messages: [],
+            model: 'deepseek/deepseek-v4-flash',
+        );
+
+        $message = new ApplyCommand(
+            runId: 'run-change-model-1',
+            turnNo: 2,
+            stepId: 'change-model-step-1',
+            attempt: 1,
+            idempotencyKey: 'change-model-idempotency-1',
+            kind: CoreCommandKind::ChangeModel,
+            payload: ['model' => 'openai-codex/gpt-5.6-sol'],
+        );
+
+        $result = $handler->handle($message, $state);
+
+        $this->assertNotNull($result->nextState);
+        $this->assertSame(RunStatus::Running, $result->nextState->status);
+        $this->assertSame(5, $result->nextState->version);
+        $this->assertSame(12, $result->nextState->lastSeq);
+        $this->assertSame('openai-codex/gpt-5.6-sol', $result->nextState->model);
+
+        $this->assertCount(2, $result->events);
+        $this->assertSame(RunEventTypeEnum::AgentCommandApplied->value, $result->events[0]->type);
+        $this->assertSame(11, $result->events[0]->seq);
+        $this->assertSame(CoreCommandKind::ChangeModel, $result->events[0]->payload['kind']);
+        $this->assertSame('change-model-idempotency-1', $result->events[0]->payload['idempotency_key']);
+        $this->assertSame('openai-codex/gpt-5.6-sol', $result->events[0]->payload['model']);
+
+        $this->assertSame(RunEventTypeEnum::ModelChanged->value, $result->events[1]->type);
+        $this->assertSame(12, $result->events[1]->seq);
+        $this->assertSame('openai-codex/gpt-5.6-sol', $result->events[1]->payload['model']);
+        $this->assertSame('deepseek/deepseek-v4-flash', $result->events[1]->payload['previous_model']);
+
+        $this->assertTrue($commandStore->has('run-change-model-1', 'change-model-idempotency-1'));
+
+        $replay = $handler->handle($message, $result->nextState);
+        $this->assertNull($replay->nextState);
+        $this->assertSame([], $replay->events);
+        $this->assertSame([], $replay->effects);
+        $this->assertSame([], $replay->postCommit);
     }
 }

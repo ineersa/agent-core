@@ -9,7 +9,6 @@ use Ineersa\AgentCore\Application\Handler\CommandRouter;
 use Ineersa\AgentCore\Application\Pipeline\AdvanceRunHandler;
 use Ineersa\AgentCore\Application\Pipeline\CommandMailboxPolicy;
 use Ineersa\AgentCore\Application\Replay\RunStateReducer;
-use Ineersa\AgentCore\Domain\Command\CoreCommandKind;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
@@ -130,7 +129,7 @@ final class RunStateModelIdentityTest extends TestCase
         }
         $this->assertInstanceOf(ExecuteLlmStep::class, $step);
         $this->assertSame('openai-codex/gpt-5.6-sol', $step->model);
-        $this->assertSame(CoreCommandKind::ChangeModel, CoreCommandKind::ChangeModel);
+        $this->assertSame('openai-codex/gpt-5.6-sol', $result->nextState?->model);
     }
 
     public function testMissingRunModelFailsClosedBeforeScheduling(): void

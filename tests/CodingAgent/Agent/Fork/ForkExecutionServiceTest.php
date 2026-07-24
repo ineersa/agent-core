@@ -10,7 +10,10 @@ use Ineersa\AgentCore\Contract\AgentRunnerInterface;
 use Ineersa\AgentCore\Contract\Compaction\CompactionServiceInterface;
 use Ineersa\AgentCore\Contract\Compaction\MessageSnapshotCompactionResult;
 use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
+use Ineersa\AgentCore\Contract\RunStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
+use Ineersa\AgentCore\Domain\Run\RunState;
+use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Domain\Run\StartRunInput;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
 use Ineersa\CodingAgent\Agent\Fork\ForkExecutionService;
@@ -30,14 +33,39 @@ final class ForkExecutionServiceTest extends PerMethodIsolatedKernelTestCase
             static fn (StartRunInput $input): string => $input->runId,
         );
 
-        $compaction = $this->createStub(CompactionServiceInterface::class);
-        $compaction->method('compactMessages')->willReturnCallback(
-            static fn (string $runId, int $turnNo, array $messages): MessageSnapshotCompactionResult => MessageSnapshotCompactionResult::structuralNoOp($messages, 'too_few_messages'),
-        );
+        $compaction = $this->createMock(CompactionServiceInterface::class);
+        $compaction->expects($this->atLeastOnce())
+            ->method('compactMessages')
+            ->willReturnCallback(
+                function (
+                    string $runId,
+                    int $turnNo,
+                    array $messages,
+                    string $trigger = 'manual',
+                    ?string $customInstructions = null,
+                    ?string $activeModel = null,
+                ) use ($parentRunId): MessageSnapshotCompactionResult {
+                    $this->assertSame($parentRunId, $runId);
+                    $this->assertSame('fork', $trigger);
+                    $this->assertSame('deepseek/deepseek-v4-flash', $activeModel);
+
+                    return MessageSnapshotCompactionResult::structuralNoOp($messages, 'too_few_messages');
+                },
+            );
 
         $container = self::getContainer();
         $container->set(AgentRunnerInterface::class, $agentRunner);
         $container->set(CompactionServiceInterface::class, $compaction);
+
+        $runStore = $container->get(RunStoreInterface::class);
+        $this->assertTrue($runStore->compareAndSwap(new RunState(
+            runId: $parentRunId,
+            status: RunStatus::Running,
+            version: 0,
+            turnNo: 2,
+            messages: [],
+            model: 'deepseek/deepseek-v4-flash',
+        ), 0));
 
         $forkExecution = $container->get(ForkExecutionService::class);
 
@@ -53,6 +81,62 @@ final class ForkExecutionServiceTest extends PerMethodIsolatedKernelTestCase
             'Delegated integration task',
         ));
         $this->assertSame($outcome->deferredId, $retry->deferredId);
+    }
+
+    public function testForkFailsClosedWhenParentRunStateMissing(): void
+    {
+        $parentRunId = 'parent-fork-missing-state';
+
+        $compaction = $this->createMock(CompactionServiceInterface::class);
+        $compaction->expects($this->never())->method('compactMessages');
+        self::getContainer()->set(CompactionServiceInterface::class, $compaction);
+
+        $forkExecution = self::getContainer()->get(ForkExecutionService::class);
+
+        try {
+            $this->withToolContext($parentRunId, 'call-missing-state', static fn () => $forkExecution->execute(
+                $parentRunId,
+                'Delegated integration task',
+            ));
+            $this->fail('Expected ToolCallException');
+        } catch (ToolCallException $e) {
+            $this->assertStringContainsString('canonical parent run state', $e->getMessage());
+            $this->assertStringContainsString($parentRunId, $e->getMessage());
+            $this->assertFalse($e->retryable());
+        }
+    }
+
+    public function testForkFailsClosedWhenParentRunModelMissing(): void
+    {
+        $parentRunId = 'parent-fork-missing-model';
+
+        $compaction = $this->createMock(CompactionServiceInterface::class);
+        $compaction->expects($this->never())->method('compactMessages');
+        self::getContainer()->set(CompactionServiceInterface::class, $compaction);
+
+        $runStore = self::getContainer()->get(RunStoreInterface::class);
+        $this->assertTrue($runStore->compareAndSwap(new RunState(
+            runId: $parentRunId,
+            status: RunStatus::Running,
+            version: 0,
+            turnNo: 1,
+            messages: [],
+            model: null,
+        ), 0));
+
+        $forkExecution = self::getContainer()->get(ForkExecutionService::class);
+
+        try {
+            $this->withToolContext($parentRunId, 'call-missing-model', static fn () => $forkExecution->execute(
+                $parentRunId,
+                'Delegated integration task',
+            ));
+            $this->fail('Expected ToolCallException');
+        } catch (ToolCallException $e) {
+            $this->assertStringContainsString('canonical parent run model', $e->getMessage());
+            $this->assertStringContainsString($parentRunId, $e->getMessage());
+            $this->assertFalse($e->retryable());
+        }
     }
 
     public function testNestedForkRejectedBeforeReservation(): void
@@ -106,6 +190,7 @@ final class ForkExecutionServiceTest extends PerMethodIsolatedKernelTestCase
             cancellationToken: new NullCancellationToken(),
             timeoutSeconds: 120,
             orderIndex: 0,
+            parentModel: 'deepseek/deepseek-v4-flash',
         );
 
         return $accessor->with($context, $callback);

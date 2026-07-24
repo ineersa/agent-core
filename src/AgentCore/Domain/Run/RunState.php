@@ -49,8 +49,7 @@ final readonly class RunState
     /**
      * Safe immutable copy that preserves every field unless explicitly overridden.
      * Prefer this over raw `new RunState(...)` when only a subset of fields change.
-     */
-    /**
+     *
      * @param array{
      *     runId?: string,
      *     status?: RunStatus,

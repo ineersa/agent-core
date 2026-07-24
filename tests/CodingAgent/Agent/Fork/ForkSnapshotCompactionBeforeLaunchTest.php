@@ -91,11 +91,13 @@ final class ForkSnapshotCompactionBeforeLaunchTest extends PerMethodIsolatedKern
                 array $messages,
                 string $trigger = 'manual',
                 ?string $customInstructions = null,
+                ?string $activeModel = null,
             ) use (&$compactCalls, $parentRunId, $compactedMessages, $toolCallId): MessageSnapshotCompactionResult {
                 ++$compactCalls;
                 $this->assertSame($parentRunId, $runId);
                 $this->assertSame(3, $turnNo);
                 $this->assertSame('fork', $trigger);
+                $this->assertSame('test-model', $activeModel);
                 foreach ($messages as $message) {
                     $calls = $message->metadata['tool_calls'] ?? null;
                     if (!\is_array($calls)) {
@@ -295,6 +297,7 @@ final class ForkSnapshotCompactionBeforeLaunchTest extends PerMethodIsolatedKern
             cancellationToken: new NullCancellationToken(),
             timeoutSeconds: 120,
             orderIndex: 0,
+            parentModel: 'test-model',
         );
 
         return $accessor->with($context, $callback);

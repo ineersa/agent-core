@@ -83,10 +83,14 @@ abstract class ControllerReplayE2eTestCase extends ControllerE2eTestCase
     {
         $this->stopProcess();
         // Keep failing fixtures when debugging controller-replay failures.
-        if (isset($this->tempDir) && '' !== $this->tempDir && false === getenv('HATFIELD_KEEP_TMP')) {
+        // Parent tearDown always removes tempDir; clear it first when keeping
+        // so the parent lifecycle cannot delete retained artifacts.
+        $keepTmp = false !== getenv('HATFIELD_KEEP_TMP') && '' !== getenv('HATFIELD_KEEP_TMP');
+        if (!$keepTmp && isset($this->tempDir) && '' !== $this->tempDir) {
             TestDirectoryIsolation::removeDirectory($this->tempDir);
         }
-        \PHPUnit\Framework\TestCase::tearDown();
+        $this->tempDir = '';
+        parent::tearDown();
     }
 
     /**
