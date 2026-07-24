@@ -94,9 +94,35 @@ final class TestDirectoryIsolation
         }
 
         if (!is_file($hatfieldDir.'/settings.yaml')) {
-            // Override any home settings that may have a dangling ai.default_model
-            // without providers — kernel boot validation rejects those.
-            file_put_contents($hatfieldDir.'/settings.yaml', "# hatfield settings (test isolation)\nai:\n    default_model: null\n");
+            // Provide a minimal enabled model catalog so child-launch model pinning
+            // and schedule-time resolution can fail closed only on real missing
+            // identity, not on empty isolation settings. Override home settings
+            // that may reference unavailable providers.
+            file_put_contents(
+                $hatfieldDir.'/settings.yaml',
+                <<<'YAML'
+# hatfield settings (test isolation)
+ai:
+    default_model: llama_cpp_test/test
+    providers:
+        llama_cpp_test:
+            type: generic
+            enabled: true
+            base_url: 'http://127.0.0.1:9052/v1'
+            api: openai-completions
+            api_key: dummy
+            completions_path: /chat/completions
+            supports_completions: true
+            models:
+                test:
+                    id: test
+                    name: test
+                    context_window: 8192
+                    max_tokens: 1024
+                    input: [text]
+                    tool_calling: true
+YAML
+            );
         }
     }
 

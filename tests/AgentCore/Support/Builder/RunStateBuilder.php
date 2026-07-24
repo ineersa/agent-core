@@ -48,6 +48,8 @@ final class RunStateBuilder
     /** @var PendingHumanInputRequests */
     private array $pendingHumanInputRequests = [];
 
+    private ?string $model = 'test-model';
+
     private function __construct(string $runId, RunStatus $status)
     {
         $this->runId = $runId;
@@ -188,6 +190,13 @@ final class RunStateBuilder
         return $this;
     }
 
+    public function withModel(?string $model): self
+    {
+        $this->model = $model;
+
+        return $this;
+    }
+
     public function build(): RunState
     {
         return new RunState(
@@ -204,6 +213,7 @@ final class RunStateBuilder
             activeStepId: $this->activeStepId,
             retryableFailure: $this->retryableFailure,
             pendingHumanInputRequests: $this->pendingHumanInputRequests,
+            model: $this->model,
         );
     }
 }

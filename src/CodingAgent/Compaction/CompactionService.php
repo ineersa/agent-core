@@ -119,6 +119,7 @@ final readonly class CompactionService implements CompactionServiceInterface
         array $messages,
         string $trigger = 'manual',
         ?string $customInstructions = null,
+        ?string $activeModel = null,
     ): MessageSnapshotCompactionResult {
         RunLogContext::enter([
             'run_id' => $runId,
@@ -129,7 +130,7 @@ final readonly class CompactionService implements CompactionServiceInterface
         ]);
 
         try {
-            return $this->doCompactMessages($runId, $turnNo, $messages, $trigger, $customInstructions);
+            return $this->doCompactMessages($runId, $turnNo, $messages, $trigger, $customInstructions, $activeModel);
         } finally {
             RunLogContext::leave();
         }
@@ -144,9 +145,14 @@ final readonly class CompactionService implements CompactionServiceInterface
         array $messages,
         string $trigger,
         ?string $customInstructions,
+        ?string $activeModel = null,
     ): MessageSnapshotCompactionResult {
-        $activeModel = $this->modelSelectionService->getCurrentModel($runId);
-        $activeModelStr = $activeModel?->toString();
+        // Prefer canonical RunState model snapshot from the caller; only fall
+        // back to session/default for legacy snapshot entry points that cannot
+        // supply execution identity yet.
+        $activeModelStr = null !== $activeModel && '' !== trim($activeModel)
+            ? trim($activeModel)
+            : $this->modelSelectionService->getCurrentModel($runId)?->toString();
         $runtimeSettings = $this->appConfig->compaction->resolveRuntimeSettings($activeModelStr);
         $thinkingLevel = $runtimeSettings->thinkingLevel;
         $modelOptions = null !== $thinkingLevel && '' !== $thinkingLevel

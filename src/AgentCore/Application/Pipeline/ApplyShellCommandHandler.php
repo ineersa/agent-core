@@ -145,6 +145,7 @@ final readonly class ApplyShellCommandHandler implements RunMessageHandler
                 : $state->activeStepId,
             retryableFailure: $startsChildTurn ? false : $state->retryableFailure,
             pendingHumanInputRequests: $state->pendingHumanInputRequests,
+            model: $state->model,
         );
 
         return new HandlerResult(

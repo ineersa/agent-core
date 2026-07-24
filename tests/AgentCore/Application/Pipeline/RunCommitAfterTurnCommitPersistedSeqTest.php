@@ -86,7 +86,7 @@ final class RunCommitAfterTurnCommitPersistedSeqTest extends TestCase
             version: $previous->version + 1,
             turnNo: 1,
             lastSeq: 0,
-        );
+            model: 'test-model');
 
         $events = [
             new RunEvent('child-run-1', 0, 1, 'llm_step_completed', ['usage' => ['input_tokens' => 10]]),

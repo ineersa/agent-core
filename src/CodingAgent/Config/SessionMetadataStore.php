@@ -45,4 +45,15 @@ final class SessionMetadataStore
     {
         $this->hatfieldSessionStore->updateMetadata($sessionId, $fields);
     }
+
+    /**
+     * Create a new pure-digit hatfield_session row and session files.
+     *
+     * Used by controller start paths when no numeric run id is supplied so
+     * process-scoping labels never become execution identities.
+     */
+    public function createSession(string $prompt = ''): string
+    {
+        return $this->hatfieldSessionStore->createSession($prompt);
+    }
 }

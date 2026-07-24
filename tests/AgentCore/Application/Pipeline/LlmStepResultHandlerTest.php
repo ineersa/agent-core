@@ -55,7 +55,7 @@ final class LlmStepResultHandlerTest extends TestCase
             turnNo: 1,
             lastSeq: 4,
             activeStepId: 'turn-1-step',
-        );
+            model: 'test-model');
 
         $message = new LlmStepResult(
             runId: 'run-llm-handler-1',
@@ -129,7 +129,7 @@ final class LlmStepResultHandlerTest extends TestCase
             lastSeq: 4,
             activeStepId: 'abort-step',
             messages: $existingMessages,
-        );
+            model: 'test-model');
 
         $message = new LlmStepResult(
             runId: 'run-abort-test',
@@ -212,7 +212,7 @@ final class LlmStepResultHandlerTest extends TestCase
             lastSeq: 3,
             activeStepId: 'abort-text-step',
             messages: $existingMessages,
-        );
+            model: 'test-model');
 
         $message = new LlmStepResult(
             runId: 'run-abort-text',
@@ -291,7 +291,7 @@ final class LlmStepResultHandlerTest extends TestCase
             turnNo: 1,
             lastSeq: 4,
             activeStepId: 'turn-1-step',
-        );
+            model: 'test-model');
 
         // No-tool-call result triggers the stop-boundary mailbox drain
         $message = new LlmStepResult(
@@ -369,7 +369,7 @@ final class LlmStepResultHandlerTest extends TestCase
             lastSeq: 4,
             activeStepId: 'turn-1-step',
             messages: $existingMessages,
-        );
+            model: 'test-model');
 
         $message = new LlmStepResult(
             runId: 'run-empty-asst',
@@ -460,7 +460,7 @@ final class LlmStepResultHandlerTest extends TestCase
                 new \Ineersa\AgentCore\Domain\Message\AgentMessage(role: 'user', content: [['type' => 'text', 'text' => 'Hi']]),
             ],
             retryAttempts: 0,
-        );
+            model: 'test-model');
 
         $message = new LlmStepResult(
             runId: 'run-auto-retry-1',
@@ -548,7 +548,7 @@ final class LlmStepResultHandlerTest extends TestCase
                 new \Ineersa\AgentCore\Domain\Message\AgentMessage(role: 'user', content: [['type' => 'text', 'text' => 'Hi']]),
             ],
             retryAttempts: 2,
-        );
+            model: 'test-model');
 
         $message = new LlmStepResult(
             runId: 'run-exhausted',
@@ -631,7 +631,7 @@ final class LlmStepResultHandlerTest extends TestCase
             messages: [
                 new \Ineersa\AgentCore\Domain\Message\AgentMessage(role: 'user', content: [['type' => 'text', 'text' => 'Hi']]),
             ],
-        );
+            model: 'test-model');
 
         $message = new LlmStepResult(
             runId: 'run-overflow',
@@ -699,7 +699,7 @@ final class LlmStepResultHandlerTest extends TestCase
             turnNo: 1,
             lastSeq: 4,
             activeStepId: 'turn-1-step',
-        );
+            model: 'test-model');
 
         $message = new LlmStepResult(
             runId: 'run-parallel-max',
@@ -751,7 +751,7 @@ final class LlmStepResultHandlerTest extends TestCase
             turnNo: 1,
             lastSeq: 1,
             activeStepId: 'step-1',
-        );
+            model: 'test-model');
 
         $message = new LlmStepResult(
             runId: 'run-timeout-null',

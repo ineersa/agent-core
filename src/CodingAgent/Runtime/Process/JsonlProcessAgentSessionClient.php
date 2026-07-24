@@ -309,6 +309,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
             'answer_tool_question' => 'answer_tool_question',
             'shell_command' => 'shell_command',
             'rewind_to_turn' => 'rewind_to_turn',
+            'change_model' => 'change_model',
             default => throw new \InvalidArgumentException(\sprintf('Unknown command type: "%s"', $command->type)),
         };
 

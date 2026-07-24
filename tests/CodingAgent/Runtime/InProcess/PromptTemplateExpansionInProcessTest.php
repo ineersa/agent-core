@@ -10,6 +10,7 @@ use Ineersa\AgentCore\Domain\Run\StartRunInput;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
 use Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient;
+use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Tests\TestCase\PerMethodIsolatedKernelTestCase;
 
 /**
@@ -34,7 +35,7 @@ final class PromptTemplateExpansionInProcessTest extends PerMethodIsolatedKernel
     {
         $this->writeTemplate('review', "Review changes focusing on:\n\$ARGUMENTS");
 
-        $this->client()->start(new StartRunRequest(prompt: '/review security performance'));
+        $this->startWithPrompt('/review security performance');
 
         $this->assertNotNull($this->spyRunner->lastStartInput);
         $texts = $this->userMessageTexts($this->spyRunner->lastStartInput);
@@ -44,7 +45,7 @@ final class PromptTemplateExpansionInProcessTest extends PerMethodIsolatedKernel
 
     public function testStartPassthroughForNonTemplateSlash(): void
     {
-        $this->client()->start(new StartRunRequest(prompt: '/nonexistent arg'));
+        $this->startWithPrompt('/nonexistent arg');
 
         $this->assertNotNull($this->spyRunner->lastStartInput);
         $texts = $this->userMessageTexts($this->spyRunner->lastStartInput);
@@ -53,7 +54,7 @@ final class PromptTemplateExpansionInProcessTest extends PerMethodIsolatedKernel
 
     public function testStartPassthroughForNonSlash(): void
     {
-        $this->client()->start(new StartRunRequest(prompt: 'hello world'));
+        $this->startWithPrompt('hello world');
 
         $this->assertNotNull($this->spyRunner->lastStartInput);
         $texts = $this->userMessageTexts($this->spyRunner->lastStartInput);
@@ -65,7 +66,7 @@ final class PromptTemplateExpansionInProcessTest extends PerMethodIsolatedKernel
         $this->writeTemplate('first', '/second arg');
         $this->writeTemplate('second', 'expanded: $@');
 
-        $this->client()->start(new StartRunRequest(prompt: '/first'));
+        $this->startWithPrompt('/first');
 
         $this->assertNotNull($this->spyRunner->lastStartInput);
         $texts = $this->userMessageTexts($this->spyRunner->lastStartInput);
@@ -201,6 +202,12 @@ final class PromptTemplateExpansionInProcessTest extends PerMethodIsolatedKernel
         return self::getContainer()->get(InProcessAgentSessionClient::class);
     }
 
+    private function startWithPrompt(string $prompt): void
+    {
+        $runId = self::getContainer()->get(HatfieldSessionStore::class)->createSession($prompt);
+        $this->client()->start(new StartRunRequest(prompt: $prompt, runId: $runId));
+    }
+
     private function userMessageTexts(StartRunInput $input): array
     {
         $texts = [];
@@ -302,6 +309,10 @@ final class FakeCapturingAgentRunner implements AgentRunnerInterface
     }
 
     public function compact(string $runId, ?string $customInstructions = null): void
+    {
+    }
+
+    public function changeModel(string $runId, string $model): void
     {
     }
 }

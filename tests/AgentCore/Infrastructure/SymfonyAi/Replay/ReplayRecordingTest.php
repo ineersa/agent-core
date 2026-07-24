@@ -319,7 +319,7 @@ final class ReplayRecordingTest extends \PHPUnit\Framework\TestCase
             errorMessage: null,
             messages: [],
             activeStepId: null,
-        ), 0);
+            model: 'test-model'), 0);
 
         return new LlmPlatformAdapter(
             runStore: $runStore,

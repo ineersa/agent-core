@@ -48,7 +48,7 @@ final class AgentBusMessageContractTest extends TestCase
                 new StartRun(
                     runId: 'run-sr', turnNo: 0, stepId: 'sr-step', attempt: 1,
                     idempotencyKey: 'ik-sr',
-                    payload: new StartRunPayload(systemPrompt: '', messages: []),
+                    payload: new StartRunPayload(systemPrompt: '', messages: [], metadata: new RunMetadata(model: 'gpt-4')),
                 ),
                 StartRun::class, 'run-sr', 0, 'sr-step', 1, 'ik-sr',
             ],
@@ -76,6 +76,7 @@ final class AgentBusMessageContractTest extends TestCase
                     idempotencyKey: 'ik-llm',
                     contextRef: 'ctx-abc',
                     toolsRef: 'tools-xyz',
+                    model: 'test-model',
                 ),
                 ExecuteLlmStep::class, 'run-llm', 1, 'llm-step', 1, 'ik-llm',
             ],
@@ -171,17 +172,19 @@ final class AgentBusMessageContractTest extends TestCase
         $this->assertSame(['cancel_safe' => false], $message->options);
     }
 
-    public function testExecuteLlmStepPreservesRefs(): void
+    public function testExecuteLlmStepPreservesRefsAndModel(): void
     {
         $message = new ExecuteLlmStep(
             runId: 'run', turnNo: 1, stepId: 's', attempt: 1,
             idempotencyKey: 'ik',
             contextRef: 'ctx-main',
             toolsRef: 'tools-v2',
+            model: 'deepseek/deepseek-v4-flash',
         );
 
         $this->assertSame('ctx-main', $message->contextRef);
         $this->assertSame('tools-v2', $message->toolsRef);
+        $this->assertSame('deepseek/deepseek-v4-flash', $message->model);
     }
 
     public function testExecuteToolCallPreservesAllFields(): void

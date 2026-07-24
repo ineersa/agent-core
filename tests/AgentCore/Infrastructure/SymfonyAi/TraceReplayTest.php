@@ -120,7 +120,7 @@ final class TraceReplayTest extends KernelTestCase
                 $fixture['input']['messages'],
             ),
             activeStepId: 'turn-1-llm-1',
-        ), 0);
+            model: 'test-model'), 0);
 
         // Build real model resolution chain
         $modelResolver = $this->createSessionAwareResolver($this->standardAiData());
@@ -335,7 +335,7 @@ final class TraceReplayTest extends KernelTestCase
             errorMessage: null,
             messages: [new AgentMessage('user', [['type' => 'text', 'text' => 'Explain recursion']])],
             activeStepId: 'turn-1-llm-1',
-        ), 0);
+            model: 'test-model'), 0);
 
         $modelResolver = $this->createSessionAwareResolver($this->standardAiData());
         $modelClient = new FixtureReplayModelClient($fixture);

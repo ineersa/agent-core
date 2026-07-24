@@ -55,11 +55,12 @@ final class SubagentLaunchPreparationService
         string $parentRunId,
         string $agentName,
         string $task,
+        ?string $parentModel = null,
     ): PreparedAgentChildRunDTO {
         $definition = $this->definitionPolicy->requireForegroundDefinition($agentName);
         $this->definitionPolicy->assertDepthAllowed($parentRunId);
 
-        return $this->prepareFromDefinition($parentRunId, $definition, $agentName, $task);
+        return $this->prepareFromDefinition($parentRunId, $definition, $agentName, $task, parentModel: $parentModel);
     }
 
     public function prepareFromDefinition(
@@ -71,6 +72,7 @@ final class SubagentLaunchPreparationService
         ?string $childRunId = null,
         bool $skipReservation = false,
         ?ChildRunIdentityDTO $identityTemplate = null,
+        ?string $parentModel = null,
     ): PreparedAgentChildRunDTO {
         $artifactId ??= 'agent_'.bin2hex(random_bytes(8));
         $childRunId ??= Uuid::v4()->toRfc4122();
@@ -96,6 +98,7 @@ final class SubagentLaunchPreparationService
             $definition,
             $policy['tools'],
             $policy['mcp'],
+            parentModel: $parentModel,
         );
     }
 
@@ -110,6 +113,7 @@ final class SubagentLaunchPreparationService
         ?string $childRunId = null,
         bool $skipReservation = false,
         ?ChildRunIdentityDTO $identityTemplate = null,
+        ?string $parentModel = null,
     ): PreparedAgentChildRunDTO {
         if (AgentArtifactKindEnum::Fork !== $profile->artifactKind) {
             throw new \InvalidArgumentException('prepareForkFromProfile requires artifact kind Fork.');
@@ -141,6 +145,7 @@ final class SubagentLaunchPreparationService
                 reasoningOverride: $profile->reasoningOverride,
             ),
             $this->forkToolPolicyResolver->resolve($parentRunId),
+            parentModel: $parentModel,
         );
     }
 }

@@ -7,8 +7,11 @@ namespace Ineersa\CodingAgent\Compaction;
 use Ineersa\CodingAgent\Config\ModelSelectionService;
 
 /**
- * Production implementation of {@see ActiveModelResolverInterface}
- * backed by {@see ModelSelectionService}.
+ * Session/default model lookup for configuration surfaces (UI, compaction config).
+ *
+ * Execution identity for LLM steps is canonical RunState.model scheduled onto
+ * ExecuteLlmStep. This resolver must not classify run IDs as child/parent domains
+ * or look up deferred child definition models.
  */
 final readonly class ModelSelectionActiveModelResolver implements ActiveModelResolverInterface
 {

@@ -391,7 +391,7 @@ final class DeferredSubagentBatchLaunchTest extends IsolatedKernelTestCase
                 throw new \RuntimeException('second child context blew up');
             }
 
-            return new RunState(runId: $runId, status: RunStatus::Running, version: 1, messages: []);
+            return new RunState(runId: $runId, status: RunStatus::Running, version: 1, messages: [], model: 'test-model');
         });
 
         $agentRunner = $this->createMock(AgentRunnerInterface::class);
@@ -545,6 +545,7 @@ final class DeferredSubagentBatchLaunchTest extends IsolatedKernelTestCase
             cancellationToken: new NullCancellationToken(),
             timeoutSeconds: 120,
             orderIndex: 0,
+            parentModel: 'test-model',
         );
 
         return $accessor->with($context, $callback);

@@ -25,7 +25,7 @@ final class AgentRunnerStartIdempotencyTest extends TestCase
             systemPrompt: 'sys',
             messages: [],
             runId: $runId,
-            metadata: new RunMetadata(),
+            metadata: new RunMetadata(model: 'test-model'),
         );
 
         $runner->start($input);
@@ -48,7 +48,7 @@ final class AgentRunnerStartIdempotencyTest extends TestCase
         $bus = new TestMessageBus();
         $runner = new AgentRunner($bus, new Serializer([new ObjectNormalizer()]));
 
-        $input = new StartRunInput(systemPrompt: 'sys', messages: [], metadata: new RunMetadata());
+        $input = new StartRunInput(systemPrompt: 'sys', messages: [], metadata: new RunMetadata(model: 'test-model'));
         $runner->start($input);
         $runner->start($input);
 

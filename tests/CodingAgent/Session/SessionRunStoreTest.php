@@ -82,7 +82,7 @@ final class SessionRunStoreTest extends TestCase
     public function testCompareAndSwapCreatesStateAndCanBeRetrieved(): void
     {
         $runId = 'run-'.bin2hex(random_bytes(4));
-        $state = new RunState(runId: $runId, status: RunStatus::Queued, version: 1);
+        $state = new RunState(runId: $runId, status: RunStatus::Queued, version: 1, model: 'test-model');
 
         $result = $this->store->compareAndSwap($state, 0);
         $this->assertTrue($result, 'CAS should succeed for new run');
@@ -101,7 +101,7 @@ final class SessionRunStoreTest extends TestCase
     public function testCompareAndSwapFailsOnVersionMismatch(): void
     {
         $runId = 'run-'.bin2hex(random_bytes(4));
-        $stateV1 = new RunState(runId: $runId, status: RunStatus::Queued, version: 1);
+        $stateV1 = new RunState(runId: $runId, status: RunStatus::Queued, version: 1, model: 'test-model');
 
         // First CAS: version 0 → creates
         $result1 = $this->store->compareAndSwap($stateV1, 0);
@@ -112,7 +112,7 @@ final class SessionRunStoreTest extends TestCase
         $this->assertFalse($result2, 'CAS should fail because version is now 1');
 
         // Correct expected version
-        $stateV2 = new RunState(runId: $runId, status: RunStatus::Running, version: 2);
+        $stateV2 = new RunState(runId: $runId, status: RunStatus::Running, version: 2, model: 'test-model');
         $result3 = $this->store->compareAndSwap($stateV2, 1);
         $this->assertTrue($result3);
 
@@ -150,7 +150,7 @@ final class SessionRunStoreTest extends TestCase
                     continuationRef: null,
                 ),
             ],
-        );
+            model: 'test-model');
         $this->store->compareAndSwap($state, 0);
 
         // New store instance (simulates recreating services after restart)
@@ -199,7 +199,7 @@ final class SessionRunStoreTest extends TestCase
         $this->assertNull($loaded, 'Empty state.json must return null, not throw');
 
         // CAS should still work starting from version 0
-        $state = new RunState(runId: $runId, status: RunStatus::Running, version: 1);
+        $state = new RunState(runId: $runId, status: RunStatus::Running, version: 1, model: 'test-model');
         $result = $this->store->compareAndSwap($state, 0);
         $this->assertTrue($result, 'CAS should succeed starting from version 0 on empty file');
 
@@ -226,7 +226,7 @@ final class SessionRunStoreTest extends TestCase
     public function testEmbeddedRunIdMustMatchDirectory(): void
     {
         $runId = 'run-'.bin2hex(random_bytes(4));
-        $state = new RunState(runId: $runId, status: RunStatus::Queued, version: 1);
+        $state = new RunState(runId: $runId, status: RunStatus::Queued, version: 1, model: 'test-model');
 
         $this->store->compareAndSwap($state, 0);
 
@@ -244,7 +244,7 @@ final class SessionRunStoreTest extends TestCase
     {
         // Create a running run
         $runId = 'run-'.bin2hex(random_bytes(4));
-        $state = new RunState(runId: $runId, status: RunStatus::Running, version: 1);
+        $state = new RunState(runId: $runId, status: RunStatus::Running, version: 1, model: 'test-model');
         $this->store->compareAndSwap($state, 0);
 
         // Run is recent, should not be stale
@@ -254,7 +254,7 @@ final class SessionRunStoreTest extends TestCase
         $this->assertSame($runId, $stale[0]->runId);
 
         // Completed runs are not returned as stale
-        $completedState = new RunState(runId: $runId, status: RunStatus::Completed, version: 2);
+        $completedState = new RunState(runId: $runId, status: RunStatus::Completed, version: 2, model: 'test-model');
         $this->store->compareAndSwap($completedState, 1);
 
         $staleAfterComplete = $this->store->findRunningStaleBefore($future);

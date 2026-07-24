@@ -7,6 +7,8 @@ namespace Ineersa\Tui\Listener;
 use Ineersa\CodingAgent\Config\Ai\AiModelReference;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\ModelSelectionService;
+use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
+use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
 use Ineersa\Tui\Command\CommandResult;
 use Ineersa\Tui\Command\NoOp;
 use Ineersa\Tui\Command\SlashCommand;
@@ -45,6 +47,7 @@ final class ModelCommandHandler implements SlashCommandHandler
         private readonly LoggerInterface $logger,
         private readonly ?ChatScreen $screen = null,
         private readonly bool $isFavourites = false,
+        private readonly ?AgentSessionClient $sessionClient = null,
     ) {
     }
 
@@ -118,6 +121,33 @@ final class ModelCommandHandler implements SlashCommandHandler
             ]);
 
             return new TranscriptMessage($e->getMessage(), 'system', 'muted');
+        }
+
+        // Persist canonical run model at the next safe command boundary.
+        // Already-queued ExecuteLlmStep messages keep their immutable model.
+        if (null !== $this->sessionClient && '' !== trim($this->state->sessionId)) {
+            try {
+                $this->sessionClient->send(
+                    $this->state->sessionId,
+                    new UserCommand(
+                        type: 'change_model',
+                        text: null,
+                        payload: ['model' => $ref->toString()],
+                    ),
+                );
+            } catch (\Throwable $e) {
+                $this->logger->warning('Failed to apply durable run model change', [
+                    'exception' => $e,
+                    'model' => $ref->toString(),
+                    'session_id' => $this->state->sessionId,
+                ]);
+
+                return new TranscriptMessage(
+                    \sprintf('Model settings updated, but active run model change failed: %s', $e->getMessage()),
+                    'system',
+                    'muted',
+                );
+            }
         }
 
         $this->state->footerModel = FooterStateInitializer::shortModelName(

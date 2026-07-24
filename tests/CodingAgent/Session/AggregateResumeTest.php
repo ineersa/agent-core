@@ -91,7 +91,7 @@ final class AggregateResumeTest extends TestCase
         $eventStore1 = new SessionRunEventStore($this->hatfieldSessionStore, $normalizer1, $lockFactory1, $nullLogger, new FileRunSequenceAllocator());
 
         // Create run state
-        $initialState = new RunState(runId: $runId, status: RunStatus::Queued, version: 1);
+        $initialState = new RunState(runId: $runId, status: RunStatus::Queued, version: 1, model: 'test-model');
         $casResult = $runStore1->compareAndSwap($initialState, 0);
         $this->assertTrue($casResult, 'First CAS must succeed');
 
@@ -129,7 +129,7 @@ final class AggregateResumeTest extends TestCase
         $this->assertSame(2, $events[1]->seq);
 
         // Phase 6: Continue the run (CAS to next version)
-        $nextState = new RunState(runId: $runId, status: RunStatus::Running, version: 2, turnNo: 1);
+        $nextState = new RunState(runId: $runId, status: RunStatus::Running, version: 2, turnNo: 1, model: 'test-model');
         $casResult2 = $runStore2->compareAndSwap($nextState, 1);
         $this->assertTrue($casResult2, 'CAS after resume must succeed');
 

@@ -284,7 +284,7 @@ final class CompactionStepResultHandlerTest extends TestCase
             lastSeq: 20,
             messages: $originalMessages,
             activeStepId: 'step-1',
-        );
+            model: 'test-model');
 
         $summaryMsg = $this->userMsg('Summary of prior context.');
         $retained = [$this->userMsg('recent question'), $this->assistantMsg('recent answer')];
@@ -816,7 +816,7 @@ final class CompactionStepResultHandlerTest extends TestCase
             messages: [$this->userMsg('q')],
             activeStepId: 'step-1',
             retryableFailure: false,
-        );
+            model: 'test-model');
 
         $handler = new CompactionStepResultHandler($this->createNoOpStub(), new EventFactory());
 
@@ -928,7 +928,7 @@ final class CompactionStepResultHandlerTest extends TestCase
             lastSeq: 20,
             activeStepId: 'step-1',
             messages: [$this->userMsg('q')],
-        );
+            model: 'test-model');
 
         $handler = new CompactionStepResultHandler($this->createNoOpStub(), new EventFactory());
 
@@ -1008,7 +1008,7 @@ final class CompactionStepResultHandlerTest extends TestCase
             messages: $originalMessages,
             activeStepId: 'step-1',
             retryableFailure: false,
-        );
+            model: 'test-model');
 
         $summaryMsg = $this->userMsg('summary');
         $retained = [$this->userMsg('recent'), $this->assistantMsg('recent')];
@@ -1252,7 +1252,7 @@ final class CompactionStepResultHandlerTest extends TestCase
             messages: $messages,
             activeStepId: $activeStepId,
             retryableFailure: false,
-        );
+            model: 'test-model');
     }
 
     // ── helpers ──
@@ -1270,7 +1270,7 @@ final class CompactionStepResultHandlerTest extends TestCase
             lastSeq: 20,
             messages: $messages,
             activeStepId: $activeStepId,
-        );
+            model: 'test-model');
     }
 
     /**
@@ -1314,6 +1314,7 @@ final class CompactionStepResultHandlerTest extends TestCase
                 array $messages,
                 string $trigger = 'manual',
                 ?string $customInstructions = null,
+                ?string $activeModel = null,
             ): \Ineersa\AgentCore\Contract\Compaction\MessageSnapshotCompactionResult {
                 throw new \LogicException('compactMessages not expected in this test path.');
             }
@@ -1344,6 +1345,7 @@ final class CompactionStepResultHandlerTest extends TestCase
                 array $messages,
                 string $trigger = 'manual',
                 ?string $customInstructions = null,
+                ?string $activeModel = null,
             ): \Ineersa\AgentCore\Contract\Compaction\MessageSnapshotCompactionResult {
                 throw new \LogicException('compactMessages not expected in this test path.');
             }
@@ -1401,6 +1403,7 @@ final class CompactionStepResultHandlerTest extends TestCase
                 array $messages,
                 string $trigger = 'manual',
                 ?string $customInstructions = null,
+                ?string $activeModel = null,
             ): \Ineersa\AgentCore\Contract\Compaction\MessageSnapshotCompactionResult {
                 throw new \LogicException('compactMessages not expected in this test path.');
             }

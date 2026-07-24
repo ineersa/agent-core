@@ -37,6 +37,8 @@ final readonly class StartRunHandler implements RunMessageHandler
 
         $messages = [] === $message->payload->messages ? $state->messages : $message->payload->messages;
 
+        $canonicalModel = $this->requireCanonicalModel($message);
+
         $nextState = new RunState(
             runId: $state->runId,
             status: RunStatus::Running,
@@ -50,6 +52,7 @@ final readonly class StartRunHandler implements RunMessageHandler
             messages: $messages,
             activeStepId: $message->stepId(),
             retryableFailure: false,
+            model: $canonicalModel,
         );
 
         $event = $this->eventFactory->event(
@@ -97,6 +100,21 @@ final readonly class StartRunHandler implements RunMessageHandler
                 throw new \RuntimeException('Failed to dispatch initial AdvanceRun command.', previous: $exception);
             }
         };
+    }
+
+    private function requireCanonicalModel(StartRun $message): string
+    {
+        $model = $message->payload->metadata?->model;
+        if (!\is_string($model)) {
+            throw new \RuntimeException(\sprintf('Cannot start run_id=%s: StartRun payload metadata.model is required.', $message->runId()));
+        }
+
+        $model = trim($model);
+        if ('' === $model) {
+            throw new \RuntimeException(\sprintf('Cannot start run_id=%s: StartRun payload metadata.model must be non-empty.', $message->runId()));
+        }
+
+        return $model;
     }
 
     /**

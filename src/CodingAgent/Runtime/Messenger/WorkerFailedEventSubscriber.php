@@ -158,6 +158,7 @@ final readonly class WorkerFailedEventSubscriber implements EventSubscriberInter
                 activeStepId: $current->activeStepId,
                 retryableFailure: false,
                 pendingHumanInputRequests: $current->pendingHumanInputRequests,
+                model: $current->model,
             );
 
             $committed = $this->runStore->compareAndSwap($failedState, $current->version);

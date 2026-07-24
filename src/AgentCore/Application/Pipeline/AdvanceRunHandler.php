@@ -89,6 +89,7 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
                 activeStepId: $state->activeStepId,
                 retryableFailure: false,
                 pendingHumanInputRequests: $state->pendingHumanInputRequests,
+                model: $state->model,
             );
 
             $postCommit = [];
@@ -165,6 +166,7 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
                     retryableFailure: false,
                     retryAttempts: $preparedState->retryAttempts,
                     pendingHumanInputRequests: $preparedState->pendingHumanInputRequests,
+                    model: $preparedState->model,
                 );
             // Fall through to the turn-advance code below.
             } else {
@@ -187,6 +189,7 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
                     activeStepId: $preparedState->activeStepId,
                     retryableFailure: $preparedState->retryableFailure,
                     pendingHumanInputRequests: $preparedState->pendingHumanInputRequests,
+                    model: $preparedState->model,
                 );
 
                 return new HandlerResult(
@@ -218,6 +221,7 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
                 activeStepId: $preparedState->activeStepId,
                 retryableFailure: $preparedState->retryableFailure,
                 pendingHumanInputRequests: $preparedState->pendingHumanInputRequests,
+                model: $preparedState->model,
             );
 
             return new HandlerResult(
@@ -255,6 +259,7 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
                     activeStepId: $preparedState->activeStepId,
                     retryableFailure: $preparedState->retryableFailure,
                     pendingHumanInputRequests: $preparedState->pendingHumanInputRequests,
+                    model: $preparedState->model,
                 ),
                 events: $events,
             );
@@ -323,6 +328,7 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
                     $nextTurnNo,
                     $preparedState->messages,
                     $preparedState->activeStepId,
+                    $preparedState->model,
                 )
                 : $this->tracer->inSpan('compaction.pre_llm_guard', [
                     'run_id' => $runId,
@@ -332,6 +338,7 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
                     $nextTurnNo,
                     $preparedState->messages,
                     $preparedState->activeStepId,
+                    $preparedState->model,
                 ));
 
             if ($shouldCompact) {
@@ -374,6 +381,7 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
                     activeStepId: $preparedState->activeStepId,
                     retryableFailure: $preparedState->retryableFailure,
                     pendingHumanInputRequests: $preparedState->pendingHumanInputRequests,
+                    model: $preparedState->model,
                 );
 
                 return new HandlerResult(
@@ -384,6 +392,14 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
             }
         }
 
+        // Canonical model is already on RunState (run_started / model_changed).
+        // Never re-resolve session/default/repository identity at schedule time.
+        $invocationModel = $preparedState->model;
+        if (null === $invocationModel || '' === trim($invocationModel)) {
+            throw new \RuntimeException(\sprintf('Cannot schedule ExecuteLlmStep: run model is absent for run_id=%s.', $runId));
+        }
+        $invocationModel = trim($invocationModel);
+
         $effect = new ExecuteLlmStep(
             runId: $runId,
             turnNo: $nextTurnNo,
@@ -392,6 +408,7 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
             idempotencyKey: hash('sha256', \sprintf('%s|llm|%d|%s', $runId, $nextTurnNo, $nextStepId)),
             contextRef: \sprintf('hot:run:%s', $runId),
             toolsRef: \sprintf('toolset:run:%s:turn:%d', $runId, $nextTurnNo),
+            model: $invocationModel,
         );
 
         $parentTurnNo = $preparedState->turnNo > 0 ? $preparedState->turnNo : null;
@@ -441,6 +458,7 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
             retryableFailure: false,
             retryAttempts: $preparedState->retryAttempts,
             pendingHumanInputRequests: $preparedState->pendingHumanInputRequests,
+            model: $preparedState->model,
         );
 
         $postCommit = [];

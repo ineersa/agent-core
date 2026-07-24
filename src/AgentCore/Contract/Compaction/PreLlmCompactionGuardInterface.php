@@ -35,5 +35,6 @@ interface PreLlmCompactionGuardInterface
         int $nextTurnNo,
         array $messages,
         ?string $activeStepId,
+        ?string $activeModel = null,
     ): bool;
 }

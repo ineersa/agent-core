@@ -247,6 +247,7 @@ final readonly class SessionRepairService implements SessionRepairServiceInterfa
             retryableFailure: $finalReplay->retryableFailure,
             retryAttempts: $finalReplay->retryAttempts,
             pendingHumanInputRequests: $finalReplay->pendingHumanInputRequests,
+            model: $finalReplay->model,
         );
 
         if (!$this->runStore->compareAndSwap($persisted, $storedState->version)) {

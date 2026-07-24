@@ -12,7 +12,6 @@ use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\PreparedAgentChildRunD
 use Ineersa\CodingAgent\Agent\Execution\SubagentRunMetadataReader;
 use Ineersa\CodingAgent\Config\Ai\AiModelReference;
 use Ineersa\CodingAgent\Config\AppConfig;
-use Ineersa\CodingAgent\Config\ModelResolver;
 use Ineersa\CodingAgent\Skills\SkillsContextBuilder;
 
 final class ForkChildLaunchInputBuilder
@@ -21,7 +20,6 @@ final class ForkChildLaunchInputBuilder
         private readonly ForkChildMessageComposer $messageComposer,
         private readonly ForkRuntimeConfigResolver $configResolver,
         private readonly SubagentRunMetadataReader $metadataReader,
-        private readonly ModelResolver $modelResolver,
         private readonly SkillsContextBuilder $skillsContextBuilder,
         private readonly AppConfig $appConfig,
     ) {
@@ -34,16 +32,20 @@ final class ForkChildLaunchInputBuilder
         ChildRunIdentityDTO $identity,
         ForkLaunchTaskDTO $task,
         array $policy,
+        ?string $parentModel = null,
     ): PreparedAgentChildRunDTO {
         $parentRunId = $identity->parentRunId;
         $inherited = $task->inheritedMessages;
 
         $parentMetadata = $this->metadataReader->readRunStartedMetadata($parentRunId) ?? [];
+        $effectiveParentModel = null !== $parentModel && '' !== trim($parentModel)
+            ? trim($parentModel)
+            : $this->readParentModelFromMetadata($parentMetadata);
         $resolved = $this->configResolver->resolve(
             explicitModel: $task->modelOverride,
             explicitThinking: $task->reasoningOverride,
-            parentModel: $this->readParentModel($parentRunId, $parentMetadata),
-            parentReasoning: $this->readParentReasoning($parentRunId, $parentMetadata),
+            parentModel: $effectiveParentModel,
+            parentReasoning: $this->readParentReasoningFromMetadata($parentMetadata),
         );
 
         $composed = $this->messageComposer->compose(
@@ -86,29 +88,24 @@ final class ForkChildLaunchInputBuilder
     /**
      * @param array<string, mixed> $parentMetadata
      */
-    private function readParentModel(string $parentRunId, array $parentMetadata): ?string
+    /**
+     * @param array<string, mixed> $parentMetadata
+     */
+    private function readParentModelFromMetadata(array $parentMetadata): ?string
     {
-        $current = $this->modelResolver->getCurrentModel($parentRunId)?->toString();
-        if (null !== $current && '' !== trim($current)) {
-            return $current;
-        }
         $model = $parentMetadata['model'] ?? null;
 
-        return \is_string($model) && '' !== trim($model) ? $model : null;
+        return \is_string($model) && '' !== trim($model) ? trim($model) : null;
     }
 
     /**
      * @param array<string, mixed> $parentMetadata
      */
-    private function readParentReasoning(string $parentRunId, array $parentMetadata): ?string
+    private function readParentReasoningFromMetadata(array $parentMetadata): ?string
     {
-        $current = $this->modelResolver->getCurrentReasoning($parentRunId);
-        if ('' !== $current) {
-            return $current;
-        }
         $reasoning = $parentMetadata['reasoning'] ?? null;
 
-        return \is_string($reasoning) && '' !== trim($reasoning) ? $reasoning : null;
+        return \is_string($reasoning) && '' !== trim($reasoning) ? trim($reasoning) : null;
     }
 
     private function resolveContextWindowForModel(?string $model): ?int

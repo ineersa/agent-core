@@ -121,7 +121,7 @@ final class ControllerReplayAutoCompactionToolCycleTest extends ControllerReplay
         //  Structural proof from canonical events.jsonl
         // ═════════════════════════════════════════════════════════════
 
-        $sessionDir = $this->tempDir.'/.hatfield/sessions/'.$this->sessionId;
+        $sessionDir = $this->tempDir.'/.hatfield/sessions/'.$this->runId;
         $eventsPath = $sessionDir.'/events.jsonl';
 
         $this->assertFileExists($eventsPath, 'Session events.jsonl must exist');

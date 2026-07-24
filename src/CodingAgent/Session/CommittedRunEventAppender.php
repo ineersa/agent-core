@@ -69,6 +69,7 @@ final readonly class CommittedRunEventAppender
             activeStepId: $state->activeStepId,
             retryableFailure: $state->retryableFailure,
             pendingHumanInputRequests: $state->pendingHumanInputRequests,
+            model: $state->model,
         );
 
         if (!$this->runStore->compareAndSwap($nextState, $state->version)) {

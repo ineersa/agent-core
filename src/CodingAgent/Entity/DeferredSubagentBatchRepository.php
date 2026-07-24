@@ -182,6 +182,7 @@ final class DeferredSubagentBatchRepository extends ServiceEntityRepository
         int $totalChildCount,
         \DateTimeImmutable $deadlineAt,
         array $childIntents,
+        ?string $parentModel = null,
     ): DeferredSubagentBatchProjectionDTO {
         $existing = $this->findOneBy([
             'parentRunId' => $parentRunId,
@@ -205,6 +206,7 @@ final class DeferredSubagentBatchRepository extends ServiceEntityRepository
                 'parent_turn_no' => $parentTurnNo,
                 'parent_tool_call_id' => $parentToolCallId,
                 'parent_order_index' => $parentOrderIndex,
+                'parent_model' => $parentModel,
                 'execution_mode' => $executionMode->value,
                 'total_child_count' => $totalChildCount,
                 'launch_status' => DeferredSubagentBatchLaunchStatusEnum::Reserved->value,
@@ -640,6 +642,7 @@ final class DeferredSubagentBatchRepository extends ServiceEntityRepository
             interruptionKind: $row->interruptionKind,
             interruptionRequestedAt: $row->interruptionRequestedAt,
             interruptionProgressEnqueuedAt: $row->interruptionProgressEnqueuedAt,
+            parentModel: $row->parentModel,
         );
     }
 }

@@ -37,6 +37,13 @@ class DeferredSubagentBatch
     #[ORM\Column(name: 'parent_order_index', type: 'integer')]
     public int $parentOrderIndex = 0;
 
+    /**
+     * Canonical parent execution model snapshot at tool-call time.
+     * Required for child inheritance on retry/recovery; missing rows fail closed.
+     */
+    #[ORM\Column(name: 'parent_model', type: 'string', length: 255, nullable: true)]
+    public ?string $parentModel = null;
+
     #[ORM\Column(name: 'execution_mode', type: 'string', length: 16, enumType: ChildRunBatchExecutionModeEnum::class)]
     public ChildRunBatchExecutionModeEnum $executionMode = ChildRunBatchExecutionModeEnum::Parallel;
 

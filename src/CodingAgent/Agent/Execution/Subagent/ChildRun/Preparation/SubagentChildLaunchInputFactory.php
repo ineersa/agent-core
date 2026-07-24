@@ -37,6 +37,7 @@ final class SubagentChildLaunchInputFactory
         AgentDefinitionDTO $definition,
         array $allowedTools,
         array $mcp,
+        ?string $parentModel = null,
     ): PreparedAgentChildRunDTO {
         $launchContext = $this->resolveChildLaunchContext($identity->parentRunId, $definition, $allowedTools);
         $prompt = $this->promptBuilder->build(
@@ -49,11 +50,15 @@ final class SubagentChildLaunchInputFactory
             agentsDefinitionsContext: $launchContext->agentsDefinitionsContext,
         );
 
+        // Pin the effective child model at launch from explicit override or
+        // the exact parent execution model that produced the tool call.
+        $effectiveModel = $this->resolveEffectiveChildModel($definition->model, $parentModel);
+
         $childMetadata = $this->buildChildRunMetadata(
             parentRunId: $identity->parentRunId,
             agentName: $identity->displayName,
             artifactId: $identity->artifactId,
-            model: $definition->model,
+            model: $effectiveModel,
             reasoning: $definition->thinking,
             allowedTools: $allowedTools,
             mcp: $mcp,
@@ -101,6 +106,21 @@ final class SubagentChildLaunchInputFactory
             ],
             contextWindow: $contextWindow > 0 ? $contextWindow : null,
         );
+    }
+
+    private function resolveEffectiveChildModel(?string $definitionModel, ?string $parentModel): string
+    {
+        $explicit = null !== $definitionModel ? trim($definitionModel) : '';
+        if ('' !== $explicit) {
+            return $explicit;
+        }
+
+        $inherited = null !== $parentModel ? trim($parentModel) : '';
+        if ('' !== $inherited) {
+            return $inherited;
+        }
+
+        throw new \RuntimeException('Cannot launch child run: missing explicit child model and parent execution model snapshot.');
     }
 
     private function resolveContextWindowForModel(?string $model): int

@@ -32,7 +32,7 @@ final class ForkChildStartRunInputCompositionTest extends IsolatedKernelTestCase
         ];
 
         $runStore = self::getContainer()->get(\Ineersa\AgentCore\Contract\RunStoreInterface::class);
-        $runStore->compareAndSwap(new RunState(runId: $parentRunId, status: RunStatus::Running, version: 0, messages: $parentMessages, turnNo: 1), 0);
+        $runStore->compareAndSwap(new RunState(runId: $parentRunId, status: RunStatus::Running, version: 0, messages: $parentMessages, turnNo: 1, model: 'test-model'), 0);
 
         /** @var ForkChildLaunchInputBuilder $builder */
         $builder = self::getContainer()->get(ForkChildLaunchInputBuilder::class);
@@ -82,7 +82,7 @@ final class ForkChildStartRunInputCompositionTest extends IsolatedKernelTestCase
     {
         $parentRunId = 'parent-fork-sys-1';
         $runStore = self::getContainer()->get(\Ineersa\AgentCore\Contract\RunStoreInterface::class);
-        $runStore->compareAndSwap(new RunState(runId: $parentRunId, status: RunStatus::Running, version: 0, messages: [], turnNo: 1), 0);
+        $runStore->compareAndSwap(new RunState(runId: $parentRunId, status: RunStatus::Running, version: 0, messages: [], turnNo: 1, model: 'test-model'), 0);
 
         $builder = self::getContainer()->get(ForkChildLaunchInputBuilder::class);
         $identity = new ChildRunIdentityDTO(
@@ -125,7 +125,7 @@ final class ForkChildStartRunInputCompositionTest extends IsolatedKernelTestCase
         ];
 
         $runStore = self::getContainer()->get(\Ineersa\AgentCore\Contract\RunStoreInterface::class);
-        $runStore->compareAndSwap(new RunState(runId: $parentRunId, status: RunStatus::Running, version: 0, messages: $parentMessages, turnNo: 1), 0);
+        $runStore->compareAndSwap(new RunState(runId: $parentRunId, status: RunStatus::Running, version: 0, messages: $parentMessages, turnNo: 1, model: 'test-model'), 0);
 
         $builder = self::getContainer()->get(ForkChildLaunchInputBuilder::class);
         $identity = new ChildRunIdentityDTO(
@@ -173,7 +173,7 @@ final class ForkChildStartRunInputCompositionTest extends IsolatedKernelTestCase
             ),
         ];
         $runStore = self::getContainer()->get(\Ineersa\AgentCore\Contract\RunStoreInterface::class);
-        $runStore->compareAndSwap(new RunState(runId: $parentRunId, status: RunStatus::Running, version: 0, messages: $parentMessages, turnNo: 1), 0);
+        $runStore->compareAndSwap(new RunState(runId: $parentRunId, status: RunStatus::Running, version: 0, messages: $parentMessages, turnNo: 1, model: 'test-model'), 0);
 
         $builder = self::getContainer()->get(ForkChildLaunchInputBuilder::class);
         $identity = new ChildRunIdentityDTO(
@@ -203,7 +203,7 @@ final class ForkChildStartRunInputCompositionTest extends IsolatedKernelTestCase
     {
         $parentRunId = 'parent-fork-sys-tools';
         $runStore = self::getContainer()->get(\Ineersa\AgentCore\Contract\RunStoreInterface::class);
-        $runStore->compareAndSwap(new RunState(runId: $parentRunId, status: RunStatus::Running, version: 0, messages: [], turnNo: 1), 0);
+        $runStore->compareAndSwap(new RunState(runId: $parentRunId, status: RunStatus::Running, version: 0, messages: [], turnNo: 1, model: 'test-model'), 0);
 
         $builder = self::getContainer()->get(ForkChildLaunchInputBuilder::class);
         $identity = new ChildRunIdentityDTO(
@@ -260,7 +260,7 @@ final class ForkChildStartRunInputCompositionTest extends IsolatedKernelTestCase
     {
         $parentRunId = 'parent-fork-no-contract';
         $runStore = self::getContainer()->get(\Ineersa\AgentCore\Contract\RunStoreInterface::class);
-        $runStore->compareAndSwap(new RunState(runId: $parentRunId, status: RunStatus::Running, version: 0, messages: [], turnNo: 1), 0);
+        $runStore->compareAndSwap(new RunState(runId: $parentRunId, status: RunStatus::Running, version: 0, messages: [], turnNo: 1, model: 'test-model'), 0);
 
         $builder = self::getContainer()->get(ForkChildLaunchInputBuilder::class);
         $identity = new ChildRunIdentityDTO(

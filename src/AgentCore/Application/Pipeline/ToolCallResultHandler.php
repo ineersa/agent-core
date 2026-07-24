@@ -197,6 +197,7 @@ final readonly class ToolCallResultHandler implements RunMessageHandler
                 activeStepId: $state->activeStepId,
                 retryableFailure: false,
                 pendingHumanInputRequests: $state->pendingHumanInputRequests,
+                model: $state->model,
             );
 
             $postCommit = $this->turnCompletedCallbacks($runId, $state->turnNo);
@@ -362,6 +363,7 @@ final readonly class ToolCallResultHandler implements RunMessageHandler
             activeStepId: $state->activeStepId,
             retryableFailure: false,
             pendingHumanInputRequests: $pendingHumanInputRequests,
+            model: $state->model,
         );
 
         return new HandlerResult(
@@ -441,6 +443,7 @@ final readonly class ToolCallResultHandler implements RunMessageHandler
                 activeStepId: $state->activeStepId,
                 retryableFailure: false,
                 pendingHumanInputRequests: $pendingHumanInputRequests,
+                model: $state->model,
             ),
             events: $events,
             postCommitEffects: $effects,

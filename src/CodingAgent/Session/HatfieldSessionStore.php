@@ -374,17 +374,19 @@ final class HatfieldSessionStore
     /**
      * Fetch a HatfieldSession entity by its string session ID.
      *
-     * Parses the session ID as an integer and looks up the
-     * auto-increment primary key directly via the EntityManager.
-     * Non-numeric IDs always return null without any fallback.
+     * Only pure-digit hatfield_session ids are valid. Never cast UUID prefixes
+     * or other non-numeric labels into the auto-increment primary key.
      */
     private function fetchEntityOrNull(string $sessionId): ?HatfieldSession
     {
-        // Only numeric IDs are valid; cast to int for primary-key lookup.
-        // Non-numeric strings -> (int) -> 0, which never matches a real
-        // auto-increment ID (starts at 1 in SQLite).
+        // ctype_digit rejects UUID prefixes like "3d451..." that PHP would
+        // otherwise coerce with (int) into an unrelated session primary key.
+        if ('' === $sessionId || !ctype_digit($sessionId)) {
+            return null;
+        }
+
         $id = (int) $sessionId;
-        if (0 === $id) {
+        if ($id <= 0) {
             return null;
         }
 

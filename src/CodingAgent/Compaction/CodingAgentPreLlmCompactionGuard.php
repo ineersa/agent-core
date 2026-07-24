@@ -49,6 +49,7 @@ final class CodingAgentPreLlmCompactionGuard implements PreLlmCompactionGuardInt
         int $nextTurnNo,
         array $messages,
         ?string $activeStepId,
+        ?string $activeModel = null,
     ): bool {
         // One-shot guard: prevent repeated pre-LLM compaction for the
         // same run+turnNo.  When the pre-LLM guard fires, the AdvanceRun
@@ -61,9 +62,15 @@ final class CodingAgentPreLlmCompactionGuard implements PreLlmCompactionGuardInt
             return false;
         }
 
-        // Resolve per-provider/per-model runtime settings.
-        $activeModel = $this->modelResolver->getActiveModel($runId);
-        $runtimeSettings = $this->compactionConfig->resolveRuntimeSettings($activeModel);
+        // Prefer canonical RunState model from the scheduler. Session/default
+        // remains config-only fallback when the caller cannot supply state model.
+        $modelForSettings = null !== $activeModel && '' !== trim($activeModel)
+            ? trim($activeModel)
+            : null;
+        if (null === $modelForSettings) {
+            $modelForSettings = $this->modelResolver->getActiveModel($runId);
+        }
+        $runtimeSettings = $this->compactionConfig->resolveRuntimeSettings($modelForSettings);
 
         if (!$runtimeSettings->autoEnabled) {
             return false;

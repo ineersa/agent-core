@@ -76,6 +76,7 @@ final class AdvanceRunHandlerTest extends TestCase
         $this->assertInstanceOf(ExecuteLlmStep::class, $result->effects[0]);
         $this->assertSame(12, $result->effects[0]->turnNo());
         $this->assertSame('turn-12-step', $result->effects[0]->stepId());
+        $this->assertSame('test-model', $result->effects[0]->model);
 
         $this->assertSame([], $result->postCommitEffects);
         $this->assertCount(1, $result->postCommit);
@@ -725,5 +726,37 @@ final class AdvanceRunHandlerTest extends TestCase
             'After rewind, next turn must be max(lastSeq, turnNo)+1.'
         );
         $this->assertSame(11, $result->events[0]->payload['turn_no']);
+    }
+
+    public function testHandleFailsClosedWhenCanonicalRunModelIsAbsent(): void
+    {
+        $commandStore = new InMemoryCommandStore();
+        $commandMailboxPolicy = new CommandMailboxPolicy(
+            commandStore: $commandStore,
+            commandRouter: new CommandRouter(new CommandHandlerRegistry([])),
+        );
+
+        $handler = new AdvanceRunHandler(
+            commandMailboxPolicy: $commandMailboxPolicy,
+            eventFactory: new EventFactory(),
+        );
+
+        $state = RunStateBuilder::create('run-no-model')
+            ->withStatus(RunStatus::Running)
+            ->withVersion(1)
+            ->withTurnNo(1)
+            ->withLastSeq(1)
+            ->withModel(null)
+            ->build();
+
+        $message = AdvanceRunMessageBuilder::create('run-no-model')
+            ->withTurnNo(1)
+            ->withStepId('step-no-model')
+            ->withIdempotencyKey('advance-no-model')
+            ->build();
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('run model is absent');
+        $handler->handle($message, $state);
     }
 }

@@ -68,7 +68,7 @@ final class PlatformIntegrationTest extends TestCase
             errorMessage: null,
             messages: [new AgentMessage('user', [['type' => 'text', 'text' => 'ping']])],
             activeStepId: 'turn-2-llm-1',
-        ), 0);
+            model: 'test-model'), 0);
 
         $calls = [];
 
@@ -328,7 +328,7 @@ final class PlatformIntegrationTest extends TestCase
             errorMessage: null,
             messages: [new AgentMessage('user', [['type' => 'text', 'text' => 'ping']])],
             activeStepId: 'turn-1-llm-1',
-        ), 0);
+            model: 'test-model'), 0);
 
         $costCalculator = new class implements \Ineersa\AgentCore\Domain\Model\CostCalculatorInterface {
             public ?string $capturedModel = null;
@@ -460,7 +460,7 @@ final class PlatformIntegrationTest extends TestCase
                     ),
                 ],
                 activeStepId: 'turn-1-llm-1',
-            ), 0);
+                model: 'test-model'), 0);
 
             $checker = $this->createStub(\Ineersa\AgentCore\Contract\Model\ImageCapabilityCheckerInterface::class);
             $checker->method('supportsImages')->willReturn(true);
@@ -822,7 +822,7 @@ final class PlatformIntegrationTest extends TestCase
             errorMessage: null,
             messages: [new AgentMessage('user', [['type' => 'text', 'text' => 'ping']])],
             activeStepId: 'turn-1-llm-1',
-        ), 0);
+            model: 'test-model'), 0);
 
         // Fake token usage with cache-read tokens but no explicit cache-creation.
         $modelClient = new FakeSymfonyModelClient(new FakeTokenUsage(
@@ -895,7 +895,7 @@ final class PlatformIntegrationTest extends TestCase
             errorMessage: null,
             messages: [new AgentMessage('user', [['type' => 'text', 'text' => 'ping']])],
             activeStepId: 'turn-1-llm-1',
-        ), 0);
+            model: 'test-model'), 0);
 
         // Only aggregate cached_tokens; no explicit cache_read_tokens.
         $modelClient = new FakeSymfonyModelClient(new FakeTokenUsage(

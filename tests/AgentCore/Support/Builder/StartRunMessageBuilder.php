@@ -7,6 +7,7 @@ namespace Ineersa\AgentCore\Tests\Support\Builder;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
 use Ineersa\AgentCore\Domain\Message\StartRun;
 use Ineersa\AgentCore\Domain\Message\StartRunPayload;
+use Ineersa\AgentCore\Domain\Run\RunMetadata;
 
 /**
  * Builder for StartRun messages in tests.
@@ -117,6 +118,7 @@ final class StartRunMessageBuilder
             payload: new StartRunPayload(
                 systemPrompt: $this->systemPrompt,
                 messages: $this->payloadMessages,
+                metadata: new RunMetadata(model: 'test-model'),
             ),
         );
     }

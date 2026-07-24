@@ -40,7 +40,7 @@ final class ExecuteLlmStepWorkerTest extends TestCase
         $testBus = new TestMessageBus();
         $testLogger = new TestLogger();
 
-        $worker = new ExecuteLlmStepWorker($platform, $testBus, 'test-model', logger: $testLogger, runModelResolver: null);
+        $worker = new ExecuteLlmStepWorker($platform, $testBus, logger: $testLogger);
 
         $worker(new ExecuteLlmStep(
             runId: 'run-1',
@@ -50,6 +50,7 @@ final class ExecuteLlmStepWorkerTest extends TestCase
             idempotencyKey: 'key-1',
             contextRef: 'ctx-1',
             toolsRef: 'tools-1',
+            model: 'test-model',
         ));
 
         $this->assertCount(1, $testBus->messages);
@@ -77,7 +78,7 @@ final class ExecuteLlmStepWorkerTest extends TestCase
         $testBus = new TestMessageBus();
         $testLogger = new TestLogger();
 
-        $worker = new ExecuteLlmStepWorker($platform, $testBus, 'test-model', logger: $testLogger, runModelResolver: null);
+        $worker = new ExecuteLlmStepWorker($platform, $testBus, logger: $testLogger);
 
         $worker(new ExecuteLlmStep(
             runId: 'run-2',
@@ -87,6 +88,7 @@ final class ExecuteLlmStepWorkerTest extends TestCase
             idempotencyKey: 'key-2',
             contextRef: 'ctx-2',
             toolsRef: 'tools-2',
+            model: 'test-model',
         ));
 
         $this->assertCount(1, $testBus->messages);
@@ -115,7 +117,7 @@ final class ExecuteLlmStepWorkerTest extends TestCase
         $testBus = new TestMessageBus();
         $testLogger = new TestLogger();
 
-        $worker = new ExecuteLlmStepWorker($platform, $testBus, 'test-model', logger: $testLogger, runModelResolver: null);
+        $worker = new ExecuteLlmStepWorker($platform, $testBus, logger: $testLogger);
 
         $worker(new ExecuteLlmStep(
             runId: 'run-3',
@@ -125,6 +127,7 @@ final class ExecuteLlmStepWorkerTest extends TestCase
             idempotencyKey: 'key-3',
             contextRef: 'ctx-3',
             toolsRef: 'tools-3',
+            model: 'test-model',
         ));
 
         $this->assertCount(1, $testBus->messages);
@@ -156,7 +159,7 @@ final class ExecuteLlmStepWorkerTest extends TestCase
         $testBus = new TestMessageBus();
         $testLogger = new TestLogger();
 
-        $worker = new ExecuteLlmStepWorker($platform, $testBus, 'test-model', logger: $testLogger, runModelResolver: null);
+        $worker = new ExecuteLlmStepWorker($platform, $testBus, logger: $testLogger);
 
         $worker(new ExecuteLlmStep(
             runId: 'run-4',
@@ -166,6 +169,7 @@ final class ExecuteLlmStepWorkerTest extends TestCase
             idempotencyKey: 'key-4',
             contextRef: 'ctx-4',
             toolsRef: 'tools-4',
+            model: 'test-model',
         ));
 
         $this->assertCount(1, $testBus->messages);
@@ -183,25 +187,16 @@ final class ExecuteLlmStepWorkerTest extends TestCase
         $this->assertCount(0, $retryLogs, 'No retry on provider error.');
     }
 
-    public function testInvokesPlatformWithResolvedActiveModel(): void
+    public function testInvokesPlatformWithMessageModel(): void
     {
         $validResponse = new AssistantMessage(new Text('ok'));
         $platform = $this->createAlternatingPlatform([$validResponse]);
         $testBus = new TestMessageBus();
 
-        $resolver = new class implements \Ineersa\AgentCore\Contract\Model\RunModelResolverInterface {
-            public function resolveActiveModel(string $runId): ?string
-            {
-                return 'llama_cpp/flash';
-            }
-        };
-
         $worker = new ExecuteLlmStepWorker(
             $platform,
             $testBus,
-            '',
             logger: new TestLogger(),
-            runModelResolver: $resolver,
         );
 
         $worker(new ExecuteLlmStep(
@@ -212,31 +207,23 @@ final class ExecuteLlmStepWorkerTest extends TestCase
             idempotencyKey: 'key-vision',
             contextRef: 'ctx',
             toolsRef: 'tools',
+            model: 'llama_cpp/flash',
         ));
 
         $this->assertSame('llama_cpp/flash', $platform->lastRequestModel);
     }
 
-    public function testThinkingOnlyRetryReusesResolvedModel(): void
+    public function testThinkingOnlyRetryReusesMessageModel(): void
     {
         $thinkingOnly = new AssistantMessage(new Thinking('reasoning'));
         $validResponse = new AssistantMessage(new Text('recovered'));
         $platform = $this->createAlternatingPlatform([$thinkingOnly, $validResponse]);
         $testBus = new TestMessageBus();
 
-        $resolver = new class implements \Ineersa\AgentCore\Contract\Model\RunModelResolverInterface {
-            public function resolveActiveModel(string $runId): ?string
-            {
-                return 'runpod/Qwen3.6-27B';
-            }
-        };
-
         $worker = new ExecuteLlmStepWorker(
             $platform,
             $testBus,
-            '',
             logger: new TestLogger(),
-            runModelResolver: $resolver,
         );
 
         $worker(new ExecuteLlmStep(
@@ -247,6 +234,7 @@ final class ExecuteLlmStepWorkerTest extends TestCase
             idempotencyKey: 'key-retry',
             contextRef: 'ctx',
             toolsRef: 'tools',
+            model: 'runpod/Qwen3.6-27B',
         ));
 
         $this->assertSame(2, $platform->invocationCount);

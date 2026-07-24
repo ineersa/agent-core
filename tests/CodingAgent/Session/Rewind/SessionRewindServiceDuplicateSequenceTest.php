@@ -64,7 +64,7 @@ final class SessionRewindServiceDuplicateSequenceTest extends TestCase
         $turnTreeProjector->method('build')->willReturn($tree);
 
         $runStore = new InMemoryRunStore();
-        $runStore->compareAndSwap(new RunState(runId: $runId, status: RunStatus::Running, version: 1, turnNo: 1, lastSeq: 1), 0);
+        $runStore->compareAndSwap(new RunState(runId: $runId, status: RunStatus::Running, version: 1, turnNo: 1, lastSeq: 1, model: 'test-model'), 0);
 
         $rebuilder = $this->createMock(RunStateRebuilderInterface::class);
         $rebuilder->expects($this->never())->method('rebuildForLeaf');

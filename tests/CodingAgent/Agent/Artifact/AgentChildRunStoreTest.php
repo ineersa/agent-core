@@ -99,7 +99,7 @@ final class AgentChildRunStoreTest extends TestCase
 
         $store = $this->createStore($parentRunId, $agentRunId, $artifactId);
 
-        $state = new RunState(runId: $agentRunId, status: RunStatus::Queued, version: 1);
+        $state = new RunState(runId: $agentRunId, status: RunStatus::Queued, version: 1, model: 'test-model');
 
         $result = $store->compareAndSwap($state, 0);
         $this->assertTrue($result, 'CAS should succeed for new run');
@@ -119,14 +119,14 @@ final class AgentChildRunStoreTest extends TestCase
 
         $store = $this->createStore($parentRunId, $agentRunId, $artifactId);
 
-        $stateV1 = new RunState(runId: $agentRunId, status: RunStatus::Queued, version: 1);
+        $stateV1 = new RunState(runId: $agentRunId, status: RunStatus::Queued, version: 1, model: 'test-model');
         $this->assertTrue($store->compareAndSwap($stateV1, 0));
 
         // Same state applied with wrong expected version
         $this->assertFalse($store->compareAndSwap($stateV1, 0), 'CAS should fail because version is now 1');
 
         // Correct expected version
-        $stateV2 = new RunState(runId: $agentRunId, status: RunStatus::Running, version: 2);
+        $stateV2 = new RunState(runId: $agentRunId, status: RunStatus::Running, version: 2, model: 'test-model');
         $this->assertTrue($store->compareAndSwap($stateV2, 1));
 
         $loaded = $store->get($agentRunId);
@@ -145,7 +145,7 @@ final class AgentChildRunStoreTest extends TestCase
 
         $store = $this->createStore($parentRunId, $agentRunId, $artifactId);
 
-        $state = new RunState(runId: $agentRunId, status: RunStatus::Running, version: 1);
+        $state = new RunState(runId: $agentRunId, status: RunStatus::Running, version: 1, model: 'test-model');
         $store->compareAndSwap($state, 0);
 
         // Verify state.json exists at the parent-scoped artifact path
@@ -166,7 +166,7 @@ final class AgentChildRunStoreTest extends TestCase
         $this->expectExceptionMessage('integrity error');
 
         $store->compareAndSwap(
-            new RunState(runId: 'wrong-id', status: RunStatus::Queued, version: 1),
+            new RunState(runId: 'wrong-id', status: RunStatus::Queued, version: 1, model: 'test-model'),
             0,
         );
     }
@@ -180,12 +180,12 @@ final class AgentChildRunStoreTest extends TestCase
         $store = $this->createStore($parentRunId, $agentRunId, $artifactId);
 
         // Write a valid state
-        $state = new RunState(runId: $agentRunId, status: RunStatus::Running, version: 1);
+        $state = new RunState(runId: $agentRunId, status: RunStatus::Running, version: 1, model: 'test-model');
         $store->compareAndSwap($state, 0);
 
         // Tamper with the state.json by writing a different runId
         $statePath = "{$this->projectDir}/.hatfield/sessions/{$parentRunId}/artifacts/agents/{$artifactId}/state.json";
-        $tampered = $this->serializer->normalize(new RunState(runId: 'tampered-id', status: RunStatus::Queued, version: 1));
+        $tampered = $this->serializer->normalize(new RunState(runId: 'tampered-id', status: RunStatus::Queued, version: 1, model: 'test-model'));
         file_put_contents($statePath, json_encode($tampered));
 
         $this->expectException(\RuntimeException::class);
@@ -203,7 +203,7 @@ final class AgentChildRunStoreTest extends TestCase
 
         $store = $this->createStore($parentRunId, $agentRunId, $artifactId);
 
-        $state = new RunState(runId: $agentRunId, status: RunStatus::Running, version: 1);
+        $state = new RunState(runId: $agentRunId, status: RunStatus::Running, version: 1, model: 'test-model');
         $store->compareAndSwap($state, 0);
 
         // Touch the state.json to have a known modification time
@@ -233,7 +233,7 @@ final class AgentChildRunStoreTest extends TestCase
         $store = $this->createStore($parentRunId, $agentRunId, $artifactId);
 
         // A completed child is not stale
-        $state = new RunState(runId: $agentRunId, status: RunStatus::Completed, version: 1);
+        $state = new RunState(runId: $agentRunId, status: RunStatus::Completed, version: 1, model: 'test-model');
         $store->compareAndSwap($state, 0);
 
         $statePath = "{$this->projectDir}/.hatfield/sessions/{$parentRunId}/artifacts/agents/{$artifactId}/state.json";
@@ -265,8 +265,8 @@ final class AgentChildRunStoreTest extends TestCase
         $storeB = $this->createStore($parentRunId, $agentRunIdB, $artifactB);
 
         // Both children are running and stale.
-        $stateA = new RunState(runId: $agentRunIdA, status: RunStatus::Running, version: 1);
-        $stateB = new RunState(runId: $agentRunIdB, status: RunStatus::Running, version: 1);
+        $stateA = new RunState(runId: $agentRunIdA, status: RunStatus::Running, version: 1, model: 'test-model');
+        $stateB = new RunState(runId: $agentRunIdB, status: RunStatus::Running, version: 1, model: 'test-model');
 
         $storeA->compareAndSwap($stateA, 0);
         $storeB->compareAndSwap($stateB, 0);
@@ -332,7 +332,7 @@ final class AgentChildRunStoreTest extends TestCase
         $store = $this->createStore($parentRunId, $agentRunId, $artifactId);
 
         // Write a valid state first to create the directory, then overwrite with scalar
-        $state = new RunState(runId: $agentRunId, status: RunStatus::Running, version: 1);
+        $state = new RunState(runId: $agentRunId, status: RunStatus::Running, version: 1, model: 'test-model');
         $store->compareAndSwap($state, 0);
 
         $statePath = "{$this->projectDir}/.hatfield/sessions/{$parentRunId}/artifacts/agents/{$artifactId}/state.json";
@@ -354,7 +354,7 @@ final class AgentChildRunStoreTest extends TestCase
 
         $store = $this->createStore($parentRunId, $agentRunId, $artifactId);
 
-        $store->compareAndSwap(new RunState(runId: $agentRunId, status: RunStatus::Running, version: 1), 0);
+        $store->compareAndSwap(new RunState(runId: $agentRunId, status: RunStatus::Running, version: 1, model: 'test-model'), 0);
 
         // Top-level child session directory must not exist
         $this->assertDirectoryDoesNotExist("{$this->projectDir}/.hatfield/sessions/{$agentRunId}");
@@ -373,7 +373,7 @@ final class AgentChildRunStoreTest extends TestCase
 
         $store = $this->createStore($parentRunId, $agentRunId, $artifactId);
 
-        $state = new RunState(runId: $agentRunId, status: RunStatus::Running, version: 1);
+        $state = new RunState(runId: $agentRunId, status: RunStatus::Running, version: 1, model: 'test-model');
         $store->compareAndSwap($state, 0);
 
         $statePath = "{$this->projectDir}/.hatfield/sessions/{$parentRunId}/artifacts/agents/{$artifactId}/state.json";

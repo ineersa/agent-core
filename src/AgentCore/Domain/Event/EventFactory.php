@@ -67,6 +67,7 @@ final readonly class EventFactory
             activeStepId: $state->activeStepId,
             retryableFailure: $state->retryableFailure,
             pendingHumanInputRequests: $state->pendingHumanInputRequests,
+            model: $state->model,
         );
     }
 }

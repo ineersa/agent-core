@@ -128,23 +128,19 @@ final class StartRunPersistsSessionModelTest extends IsolatedKernelTestCase
             'Resolved default reasoning must be persisted when no explicit reasoning given');
     }
 
-    public function testStartDoesNotWriteMetadataForNewSessionWithoutRunId(): void
+    public function testStartRequiresExplicitRunIdAndNeverCreatesSessions(): void
     {
-        // When runId is empty, no session row exists — guard must skip persistence.
+        // Parent entrypoints own session allocation with the real prompt.
+        // InProcess start fails closed on empty runId rather than inventing rows.
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('start requires an explicit runId');
+
         $this->client()->start(new StartRunRequest(
             prompt: 'hi',
             runId: '',
             model: 'llama_cpp/flash',
             reasoning: 'high',
         ));
-
-        $this->assertNotNull($this->spyRunner->lastStartInput,
-            'Runner must still be called even when no session row exists');
-
-        // No metadata must be written when no session row exists.
-        $session = $this->hatfieldSessionStore()->findSession('');
-        $this->assertNull($session,
-            'No session metadata must be written for an empty session ID');
     }
 
     public function testStartPersistsResolvedDefaultModelWhenNoExplicitModelGiven(): void
@@ -569,6 +565,10 @@ final class FakeNoopAgentRunner implements AgentRunnerInterface
     }
 
     public function compact(string $runId, ?string $customInstructions = null): void
+    {
+    }
+
+    public function changeModel(string $runId, string $model): void
     {
     }
 }

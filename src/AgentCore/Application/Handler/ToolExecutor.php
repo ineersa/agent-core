@@ -293,6 +293,7 @@ final class ToolExecutor implements ToolExecutorInterface
             batchToolCallCount: $batchToolCallCount,
             humanInputAnswer: $humanInputAnswer instanceof ToolCallHumanInputAnswerDTO ? $humanInputAnswer : null,
             stepId: \is_string($stepId) && '' !== $stepId ? $stepId : null,
+            parentModel: \is_string($toolCall->context['parent_model'] ?? null) ? $toolCall->context['parent_model'] : null,
         );
 
         /** @var SymfonyToolResult $result */

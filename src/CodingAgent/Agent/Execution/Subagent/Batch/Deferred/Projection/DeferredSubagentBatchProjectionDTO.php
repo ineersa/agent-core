@@ -36,6 +36,7 @@ final readonly class DeferredSubagentBatchProjectionDTO
         public ?DeferredSubagentInterruptionKindEnum $interruptionKind = null,
         public ?\DateTimeImmutable $interruptionRequestedAt = null,
         public ?\DateTimeImmutable $interruptionProgressEnqueuedAt = null,
+        public ?string $parentModel = null,
     ) {
     }
 }

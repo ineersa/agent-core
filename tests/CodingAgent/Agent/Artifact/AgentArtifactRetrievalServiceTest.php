@@ -266,7 +266,7 @@ final class AgentArtifactRetrievalServiceTest extends IsolatedKernelTestCase
             $messages[] = new AgentMessage(role: 'user', content: [['type' => 'text', 'text' => 'short user message '.$i]]);
         }
 
-        $state = new RunState(runId: $childRun, status: RunStatus::Completed, messages: $messages);
+        $state = new RunState(runId: $childRun, status: RunStatus::Completed, messages: $messages, model: 'test-model');
         $runStore = $this->createMock(RunStoreInterface::class);
         $runStore->expects($this->once())->method('get')->with($this->identicalTo($childRun))->willReturn($state);
         $eventStore = $this->createStub(EventStoreInterface::class);
@@ -339,7 +339,7 @@ final class AgentArtifactRetrievalServiceTest extends IsolatedKernelTestCase
             turnNo: 4,
             lastSeq: 18,
             messages: [],
-        ));
+            model: 'test-model'));
 
         $service = $this->makeService(runStore: $runStore);
         $out = $service->retrieve($parent, ['artifact_id' => $artifactId, 'mode' => 'metadata']);
