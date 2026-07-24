@@ -49,12 +49,12 @@ final class ExecutionFailureDrillTest extends TestCase
             idempotencyKey: 'llm-failure-worker-1',
             contextRef: 'hot:run:run-failure-worker-1',
             toolsRef: 'toolset:run:run-failure-worker-1:turn:1',
+            model: 'test-model',
         );
 
         $failingWorker = new ExecuteLlmStepWorker(
             platform: $platform,
             commandBus: new FailingOnceMessageBus(new TransportException('simulated dispatch crash')),
-            defaultModel: 'test-model',
         );
 
         try {
@@ -65,7 +65,7 @@ final class ExecutionFailureDrillTest extends TestCase
         }
 
         $collectingBus = new TestMessageBus();
-        $retryWorker = new ExecuteLlmStepWorker($platform, $collectingBus, 'test-model', runModelResolver: null);
+        $retryWorker = new ExecuteLlmStepWorker($platform, $collectingBus);
         $retryWorker($message);
 
         $this->assertCount(1, $collectingBus->messages);

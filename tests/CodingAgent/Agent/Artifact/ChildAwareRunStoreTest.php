@@ -26,7 +26,7 @@ final class ChildAwareRunStoreTest extends IsolatedKernelTestCase
         $parentStore = self::getContainer()->get(SessionRunStore::class);
 
         // Write a parent-run state and verify the router finds it.
-        $state = new RunState(runId: 'parent-99', status: RunStatus::Running, version: 0);
+        $state = new RunState(runId: 'parent-99', status: RunStatus::Running, version: 0, model: 'test-model');
         $parentStore->compareAndSwap($state, 0);
 
         $result = $store->get('parent-99');
@@ -36,7 +36,7 @@ final class ChildAwareRunStoreTest extends IsolatedKernelTestCase
         // Cleanup: mark cancelled.
         $current = $store->get('parent-99');
         if (null !== $current) {
-            $cancelled = new RunState(runId: 'parent-99', status: RunStatus::Cancelled, version: $current->version);
+            $cancelled = new RunState(runId: 'parent-99', status: RunStatus::Cancelled, version: $current->version, model: 'test-model');
             $store->compareAndSwap($cancelled, $current->version);
         }
     }
@@ -45,7 +45,7 @@ final class ChildAwareRunStoreTest extends IsolatedKernelTestCase
     {
         $store = self::getContainer()->get(ChildAwareRunStore::class);
 
-        $state = new RunState(runId: 'parent-cas', status: RunStatus::Running, version: 0);
+        $state = new RunState(runId: 'parent-cas', status: RunStatus::Running, version: 0, model: 'test-model');
         $success = $store->compareAndSwap($state, 0);
         $this->assertTrue($success);
 
@@ -57,7 +57,7 @@ final class ChildAwareRunStoreTest extends IsolatedKernelTestCase
         // Cleanup: write cancelled.
         $current = $store->get('parent-cas');
         if (null !== $current) {
-            $cancelled = new RunState(runId: 'parent-cas', status: RunStatus::Cancelled, version: $current->version);
+            $cancelled = new RunState(runId: 'parent-cas', status: RunStatus::Cancelled, version: $current->version, model: 'test-model');
             $store->compareAndSwap($cancelled, $current->version);
         }
     }

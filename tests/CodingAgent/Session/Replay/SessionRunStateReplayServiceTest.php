@@ -61,6 +61,7 @@ final class SessionRunStateReplayServiceTest extends TestCase
             version: 1,
             turnNo: 0,
             lastSeq: 1, // current — matches max event seq
+            model: 'test-model',
         );
 
         $result = $this->service->rebuildIfStale($state, $this->runId);
@@ -79,6 +80,7 @@ final class SessionRunStateReplayServiceTest extends TestCase
             version: 1,
             turnNo: 0,
             lastSeq: 0, // stale — behind max event seq
+            model: 'test-model',
         );
 
         $result = $this->service->rebuildIfStale($state, $this->runId);
@@ -518,6 +520,7 @@ final class SessionRunStateReplayServiceTest extends TestCase
             version: 1,
             turnNo: 0,
             lastSeq: 0,
+            model: 'test-model',
         );
 
         $result = $this->service->rebuildIfStale($state, $this->runId);
@@ -538,6 +541,7 @@ final class SessionRunStateReplayServiceTest extends TestCase
             version: 5,
             turnNo: 0,
             lastSeq: 0,
+            model: 'test-model',
         );
 
         $result = $this->service->rebuildIfStale($state, $this->runId);
@@ -693,6 +697,7 @@ final class SessionRunStateReplayServiceTest extends TestCase
             version: 1,
             turnNo: 0,
             lastSeq: 0,
+            model: 'test-model',
         );
 
         try {
@@ -1027,6 +1032,7 @@ final class SessionRunStateReplayServiceTest extends TestCase
             version: 10,
             turnNo: 2,
             lastSeq: 11,
+            model: 'test-model',
         );
 
         $result = $this->service->rebuildForLeaf($state, $this->runId, 1);
@@ -1157,6 +1163,7 @@ final class SessionRunStateReplayServiceTest extends TestCase
             version: 10,
             turnNo: 3,
             lastSeq: 18,
+            model: 'test-model',
         );
 
         $result = $this->service->rebuildForLeaf($state, $this->runId, 3);
@@ -1958,6 +1965,7 @@ final class SessionRunStateReplayServiceTest extends TestCase
             version: 0,
             turnNo: 0,
             lastSeq: 0,
+            model: 'test-model',
         );
 
         $result = $this->service->rebuildIfStale($state, $this->runId);

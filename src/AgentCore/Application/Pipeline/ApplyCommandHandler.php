@@ -131,6 +131,10 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
             return $this->applyCompactCommand($state, $message);
         }
 
+        if (CoreCommandKind::ChangeModel === $message->kind) {
+            return $this->applyChangeModelCommand($state, $message);
+        }
+
         $pendingCommand = new PendingCommand(
             runId: $runId,
             kind: $message->kind,
@@ -159,6 +163,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
             activeStepId: $state->activeStepId,
             retryableFailure: $state->retryableFailure,
             pendingHumanInputRequests: $state->pendingHumanInputRequests,
+            model: $state->model,
         );
 
         $queuedEvent = $this->eventFactory->event(
@@ -224,6 +229,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
             activeStepId: $state->activeStepId,
             retryableFailure: $state->retryableFailure,
             pendingHumanInputRequests: $state->pendingHumanInputRequests,
+            model: $state->model,
         );
 
         $event = $this->eventFactory->event(
@@ -337,6 +343,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
                         activeStepId: null,
                         retryableFailure: false,
                         pendingHumanInputRequests: $state->pendingHumanInputRequests,
+                        model: $state->model,
                     ),
                     events: $events,
                     postCommit: $postCommit,
@@ -366,6 +373,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
                 activeStepId: $state->activeStepId,
                 retryableFailure: $state->retryableFailure,
                 pendingHumanInputRequests: $state->pendingHumanInputRequests,
+                model: $state->model,
             );
 
             return new HandlerResult(
@@ -407,6 +415,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
                 activeStepId: null,
                 retryableFailure: false,
                 pendingHumanInputRequests: $state->pendingHumanInputRequests,
+                model: $state->model,
             );
 
             $postCommit = [];
@@ -438,6 +447,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
             activeStepId: $state->activeStepId,
             retryableFailure: false,
             pendingHumanInputRequests: $state->pendingHumanInputRequests,
+            model: $state->model,
         );
 
         return new HandlerResult(
@@ -500,6 +510,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
             activeStepId: $state->activeStepId,
             retryableFailure: $state->retryableFailure,
             pendingHumanInputRequests: $state->pendingHumanInputRequests,
+            model: $state->model,
         );
 
         $queuedEvent = $this->eventFactory->event(
@@ -552,6 +563,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
             retryableFailure: false,
             retryAttempts: $retryAttempts,
             pendingHumanInputRequests: $state->pendingHumanInputRequests,
+            model: $state->model,
         );
 
         $event = $this->eventFactory->event(
@@ -682,6 +694,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
             activeStepId: $state->activeStepId,
             retryableFailure: false,
             pendingHumanInputRequests: $remainingRequests,
+            model: $state->model,
         );
 
         $humanResponseMessageArray = $humanResponseMessage->toArray();
@@ -797,6 +810,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
             activeStepId: $state->activeStepId,
             retryableFailure: false,
             pendingHumanInputRequests: $remainingRequests,
+            model: $state->model,
         );
 
         // Replay-complete AgentCommandApplied without model-visible message payload.
@@ -956,6 +970,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
                 activeStepId: $state->activeStepId,
                 retryableFailure: $state->retryableFailure,
                 pendingHumanInputRequests: $state->pendingHumanInputRequests,
+                model: $state->model,
             );
 
             $appliedEvent = $this->eventFactory->event(
@@ -1009,6 +1024,7 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
             activeStepId: $state->activeStepId,
             retryableFailure: $state->retryableFailure,
             pendingHumanInputRequests: $state->pendingHumanInputRequests,
+            model: $state->model,
         );
 
         $queuedEvent = $this->eventFactory->event(
@@ -1026,6 +1042,60 @@ final readonly class ApplyCommandHandler implements RunMessageHandler
         return new HandlerResult(
             nextState: $nextState,
             events: [$queuedEvent],
+        );
+    }
+
+    private function applyChangeModelCommand(RunState $state, ApplyCommand $message): HandlerResult
+    {
+        $runId = $message->runId();
+        $rawModel = $message->payload['model'] ?? null;
+        if (!\is_string($rawModel) || '' === trim($rawModel)) {
+            return $this->rejectCommand(
+                $state,
+                $message,
+                'ChangeModel rejected: payload.model must be a non-empty provider/model reference.',
+            );
+        }
+        $model = trim($rawModel);
+
+        // Safe boundary: update canonical run model now. Already-queued
+        // ExecuteLlmStep messages remain immutable on their original model;
+        // the next AdvanceRun schedules from the transitioned state.
+        $nextState = $state->with([
+            'version' => $state->version + 1,
+            'lastSeq' => $state->lastSeq + 2,
+            'model' => $model,
+        ]);
+
+        $events = [
+            $this->eventFactory->event(
+                runId: $runId,
+                seq: $state->lastSeq + 1,
+                turnNo: $state->turnNo,
+                type: RunEventTypeEnum::AgentCommandApplied->value,
+                payload: [
+                    'kind' => CoreCommandKind::ChangeModel,
+                    'idempotency_key' => $message->idempotencyKey(),
+                    'model' => $model,
+                ],
+            ),
+            $this->eventFactory->event(
+                runId: $runId,
+                seq: $state->lastSeq + 2,
+                turnNo: $state->turnNo,
+                type: RunEventTypeEnum::ModelChanged->value,
+                payload: [
+                    'model' => $model,
+                    'previous_model' => $state->model,
+                ],
+            ),
+        ];
+
+        $this->commandStore->markApplied($runId, $message->idempotencyKey());
+
+        return new HandlerResult(
+            nextState: $nextState,
+            events: $events,
         );
     }
 

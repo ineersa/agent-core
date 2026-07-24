@@ -190,7 +190,7 @@ final class TuiRepairCommandE2eTest extends TestCase
             lastSeq: 12,
             pendingToolCalls: ['call_00_abc' => true],
             activeStepId: 'follow_up-xyz',
-        );
+            model: 'test-model');
         $json = json_encode($serializer->normalize($state), \JSON_PRETTY_PRINT | \JSON_THROW_ON_ERROR);
         file_put_contents($sessionDir.'/state.json', $json);
 

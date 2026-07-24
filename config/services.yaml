@@ -638,11 +638,9 @@ services:
   Ineersa\Hatfield\ExtensionApi\Session\SessionEventReaderInterface:
     alias: Ineersa\CodingAgent\Extension\Session\ExtensionSessionEventReader
 
-  # Default model binding (fallback when no resolver or no session context).
-  Ineersa\AgentCore\Application\Handler\ExecuteLlmStepWorker:
-    arguments:
-      $defaultModel: '%app.default_model%'
-      $runModelResolver: '@Ineersa\AgentCore\Contract\Model\RunModelResolverInterface'
+  # LLM worker uses only the immutable model carried by ExecuteLlmStep.
+  # Model resolution happens at schedule time in AdvanceRunHandler.
+  Ineersa\AgentCore\Application\Handler\ExecuteLlmStepWorker: ~
 
   Ineersa\AgentCore\Contract\Model\RunModelResolverInterface:
     alias: Ineersa\CodingAgent\Compaction\ModelSelectionActiveModelResolver
@@ -699,9 +697,8 @@ services:
 
   # ─── Compaction auto-trigger (COMP-06) ───
 
-  # Active model resolver: thin abstraction over ModelSelectionService
-  # so compaction services can be tested without the full model-selection
-  # dependency tree.
+  # Active model resolver: session/default lookup for config surfaces.
+  # Execution identity is RunState.model / ExecuteLlmStep.model, not this resolver.
   Ineersa\CodingAgent\Compaction\ModelSelectionActiveModelResolver: ~
 
   Ineersa\CodingAgent\Compaction\ActiveModelResolverInterface:

@@ -72,8 +72,6 @@ final class CompactRunHandlerTest extends TestCase
         $retained = [$messages[2], $messages[3]];
 
         $fakeService = $this->createReadyCompactionService($summarize, $retained, tokenEstimateBefore: 42000);
-        $fakeModelSelection = $this->createModelSelectionStub();
-
         // Explicit compaction model override — prove it flows to both the
         // started event payload and the dispatched ExecuteCompactionStep.
         $appConfig = $this->createAppConfig(keepRecentTokens: 20000, compactionModel: 'openai/compaction-model');
@@ -82,7 +80,6 @@ final class CompactRunHandlerTest extends TestCase
             $fakeService,
             $appConfig,
             new EventFactory(),
-            $fakeModelSelection,
             new CompactionHookDispatcher([]),
         );
 
@@ -154,14 +151,12 @@ final class CompactRunHandlerTest extends TestCase
             $this->assistantMsg('answer 1'),
             $this->assistantMsg('answer 2'),
         ];
-        $state = $this->createRunState($messages);
+        $state = $this->createRunState($messages)->with(['model' => null]);
 
         $summarize = [$messages[0], $messages[1]];
         $retained = [$messages[2], $messages[3]];
 
         $fakeService = $this->createReadyCompactionService($summarize, $retained, tokenEstimateBefore: 42000);
-        $fakeModelSelection = $this->createModelSelectionStub();
-
         // No explicit compaction model — resolved model is null (getCurrentModel also returns null).
         $appConfig = $this->createAppConfig(keepRecentTokens: 20000);
 
@@ -169,7 +164,6 @@ final class CompactRunHandlerTest extends TestCase
             $fakeService,
             $appConfig,
             new EventFactory(),
-            $fakeModelSelection,
             new CompactionHookDispatcher([]),
         );
 
@@ -205,15 +199,12 @@ final class CompactRunHandlerTest extends TestCase
         $state = $this->createRunState($messages);
 
         $fakeService = $this->createFailedCompactionService('too_few_messages');
-        $fakeModelSelection = $this->createModelSelectionStub();
-
         $appConfig = $this->createAppConfig();
 
         $handler = new CompactRunHandler(
             $fakeService,
             $appConfig,
             new EventFactory(),
-            $fakeModelSelection,
             new CompactionHookDispatcher([]),
         );
 
@@ -265,15 +256,12 @@ final class CompactRunHandlerTest extends TestCase
 
         foreach ($reasonMessages as $reason => $expectedSubstring) {
             $fakeService = $this->createFailedCompactionService($reason);
-            $fakeModelSelection = $this->createModelSelectionStub();
-
             $appConfig = $this->createAppConfig();
 
             $handler = new CompactRunHandler(
                 $fakeService,
                 $appConfig,
                 new EventFactory(),
-                $fakeModelSelection,
                 new CompactionHookDispatcher([]),
             );
 
@@ -333,7 +321,6 @@ final class CompactRunHandlerTest extends TestCase
             $fakeService,
             $this->createAppConfig(),
             new EventFactory(),
-            $this->createModelSelectionStub(),
             new CompactionHookDispatcher([$cancelHook]),
         );
 
@@ -414,7 +401,6 @@ final class CompactRunHandlerTest extends TestCase
             $fakeService,
             $this->createAppConfig(),
             new EventFactory(),
-            $this->createModelSelectionStub(),
             new CompactionHookDispatcher([$replaceHook]),
         );
 
@@ -709,6 +695,7 @@ final class CompactRunHandlerTest extends TestCase
                 array $messages,
                 string $trigger = 'manual',
                 ?string $customInstructions = null,
+                ?string $activeModel = null,
             ): MessageSnapshotCompactionResult {
                 throw new \LogicException('compactMessages not expected in this test path.');
             }
@@ -727,7 +714,6 @@ final class CompactRunHandlerTest extends TestCase
             $fakeService,
             $this->createAppConfig(),
             new EventFactory(),
-            $this->createModelSelectionStub(),
             new CompactionHookDispatcher([$hook]),
         );
 
@@ -780,7 +766,6 @@ final class CompactRunHandlerTest extends TestCase
             $fakeService,
             $this->createAppConfig(),
             new EventFactory(),
-            $this->createModelSelectionStub(),
             new CompactionHookDispatcher([$hook]),
         );
 
@@ -849,7 +834,6 @@ final class CompactRunHandlerTest extends TestCase
             $fakeService,
             $this->createAppConfig(),
             new EventFactory(),
-            $this->createModelSelectionStub(),
             new CompactionHookDispatcher([$cancelHook]),
         );
 
@@ -906,13 +890,10 @@ final class CompactRunHandlerTest extends TestCase
         $retained = [$messages[1]];
 
         $fakeService = $this->createReadyCompactionService($summarize, $retained);
-        $fakeModelSelection = $this->createModelSelectionStub();
-
         $handler = new CompactRunHandler(
             $fakeService,
             $this->createAppConfig(),
             new EventFactory(),
-            $fakeModelSelection,
             new CompactionHookDispatcher([]),
         );
 
@@ -951,15 +932,12 @@ final class CompactRunHandlerTest extends TestCase
         $state = $this->createRunState($messages);
 
         $fakeService = $this->createFailedCompactionService('too_few_messages');
-        $fakeModelSelection = $this->createModelSelectionStub();
-
         $appConfig = $this->createAppConfig();
 
         $handler = new CompactRunHandler(
             $fakeService,
             $appConfig,
             new EventFactory(),
-            $fakeModelSelection,
             new CompactionHookDispatcher([]),
         );
 
@@ -1035,7 +1013,6 @@ final class CompactRunHandlerTest extends TestCase
             $fakeService,
             $this->createAppConfig(),
             new EventFactory(),
-            $this->createModelSelectionStub(),
             new CompactionHookDispatcher([$cancelHook]),
         );
 
@@ -1101,6 +1078,7 @@ final class CompactRunHandlerTest extends TestCase
             turnNo: 5,
             lastSeq: 20,
             messages: $messages,
+            model: 'openai/test-model',
         );
     }
 
@@ -1152,6 +1130,7 @@ final class CompactRunHandlerTest extends TestCase
                 array $messages,
                 string $trigger = 'manual',
                 ?string $customInstructions = null,
+                ?string $activeModel = null,
             ): MessageSnapshotCompactionResult {
                 throw new \LogicException('compactMessages not expected in this test path.');
             }
@@ -1186,6 +1165,7 @@ final class CompactRunHandlerTest extends TestCase
                 array $messages,
                 string $trigger = 'manual',
                 ?string $customInstructions = null,
+                ?string $activeModel = null,
             ): MessageSnapshotCompactionResult {
                 throw new \LogicException('compactMessages not expected in this test path.');
             }
@@ -1261,6 +1241,7 @@ final class CompactRunHandlerTest extends TestCase
                 array $messages,
                 string $trigger = 'manual',
                 ?string $customInstructions = null,
+                ?string $activeModel = null,
             ): MessageSnapshotCompactionResult {
                 throw new \LogicException('compactMessages not expected in this test path.');
             }

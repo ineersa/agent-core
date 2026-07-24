@@ -82,7 +82,7 @@ final class SubagentPromptUserContextContractTest extends IsolatedKernelTestCase
             ],
             activeStepId: 'parent-step',
             retryableFailure: false,
-        ),
+            model: 'test-model'),
             0,
         );
 
@@ -113,6 +113,7 @@ final class SubagentPromptUserContextContractTest extends IsolatedKernelTestCase
             toolName: 'subagent',
             cancellationToken: new NullCancellationToken(),
             timeoutSeconds: 120,
+            parentModel: 'test-model',
         ), static fn () => $service->execute($parentRunId, 'gf05-scout', 'Inspect layout contract'));
 
         $this->assertNotNull($pipelineRunner->lastStartInput);
@@ -168,7 +169,7 @@ final class SubagentPromptUserContextContractTest extends IsolatedKernelTestCase
             messages: [],
             activeStepId: 'p',
             retryableFailure: false,
-        ),
+            model: 'test-model'),
             0,
         );
 
@@ -223,6 +224,7 @@ final class SubagentPromptUserContextContractTest extends IsolatedKernelTestCase
             toolName: 'subagent',
             cancellationToken: new NullCancellationToken(),
             timeoutSeconds: 120,
+            parentModel: 'test-model',
         ), static fn () => $service->execute('parent-mcp', 'gf05-mcp', 'Use MCP tool'));
 
         $systemText = PromptContractTestSupport::messageText($pipelineRunner->lastStartInput->messages[0]);
@@ -277,7 +279,7 @@ final class SubagentPromptUserContextContractTest extends IsolatedKernelTestCase
             ],
             activeStepId: 'p',
             retryableFailure: false,
-        ),
+            model: 'test-model'),
             0,
         );
 
@@ -307,6 +309,7 @@ final class SubagentPromptUserContextContractTest extends IsolatedKernelTestCase
             toolName: 'subagent',
             cancellationToken: new NullCancellationToken(),
             timeoutSeconds: 120,
+            parentModel: 'test-model',
         ), static fn () => $service->execute('parent-no-agents-def', 'gf05-worker', 'Task'));
 
         foreach ($pipelineRunner->lastStartInput->messages as $message) {
@@ -380,6 +383,7 @@ final class SubagentPromptUserContextContractTest extends IsolatedKernelTestCase
                         activeStepId: $state->activeStepId,
                         retryableFailure: false,
                         pendingHumanInputRequests: $state->pendingHumanInputRequests,
+                        model: $state->model,
                     );
                 }
 

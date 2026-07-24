@@ -21,7 +21,7 @@ final class InMemoryRunStoreCasTest extends TestCase
             version: 1,
             turnNo: 1,
             lastSeq: 1,
-        );
+            model: 'test-model');
         $this->assertTrue($store->compareAndSwap($initialState, expectedVersion: 0));
 
         // Writer B acquires lock after takeover and commits version=2.
@@ -31,7 +31,7 @@ final class InMemoryRunStoreCasTest extends TestCase
             version: 2,
             turnNo: 2,
             lastSeq: 2,
-        );
+            model: 'test-model');
         $this->assertTrue($store->compareAndSwap($writerBState, expectedVersion: 1));
 
         // Writer A still holds stale expectedVersion=1 and must be rejected.
@@ -41,7 +41,7 @@ final class InMemoryRunStoreCasTest extends TestCase
             version: 2,
             turnNo: 99,
             lastSeq: 99,
-        );
+            model: 'test-model');
         $this->assertFalse($store->compareAndSwap($writerAStaleState, expectedVersion: 1));
 
         $currentState = $store->get('run-cas-1');
@@ -60,7 +60,7 @@ final class InMemoryRunStoreCasTest extends TestCase
             version: 1,
             turnNo: 1,
             lastSeq: 1,
-        ), expectedVersion: 0));
+            model: 'test-model'), expectedVersion: 0));
 
         $this->assertTrue($store->compareAndSwap(new RunState(
             runId: 'run-stale-completed',
@@ -68,7 +68,7 @@ final class InMemoryRunStoreCasTest extends TestCase
             version: 1,
             turnNo: 1,
             lastSeq: 1,
-        ), expectedVersion: 0));
+            model: 'test-model'), expectedVersion: 0));
 
         $staleRuns = $store->findRunningStaleBefore((new \DateTimeImmutable())->setTimestamp(time() + 1));
 

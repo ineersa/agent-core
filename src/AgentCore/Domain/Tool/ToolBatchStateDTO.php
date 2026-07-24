@@ -168,6 +168,9 @@ final class ToolBatchStateDTO
                 'assistantMessage' => $call->assistantMessage,
                 'argSchema' => $call->argSchema,
                 'humanInputAnswer' => $call->humanInputAnswer?->toPersistedArray(),
+                // Canonical parent execution model snapshot for child inheritance
+                // across crash recovery / human-input continuation.
+                'parentModel' => $call->parentModel,
             ];
         }
 
@@ -297,6 +300,7 @@ final class ToolBatchStateDTO
             argSchema: \array_key_exists('argSchema', $data) ? $data['argSchema'] : null,
             toolsRef: \array_key_exists('toolsRef', $data) ? $data['toolsRef'] : null,
             humanInputAnswer: self::reconstructHumanInputAnswer($data),
+            parentModel: \is_string($data['parentModel'] ?? null) ? $data['parentModel'] : null,
         );
     }
 

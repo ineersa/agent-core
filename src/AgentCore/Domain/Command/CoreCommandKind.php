@@ -13,6 +13,7 @@ final class CoreCommandKind
     public const string HumanResponse = 'human_response';
     public const string Continue = 'continue';
     public const string Compact = 'compact';
+    public const string ChangeModel = 'change_model';
 
     /** @var list<string> */
     public const array ALL = [
@@ -23,6 +24,7 @@ final class CoreCommandKind
         self::HumanResponse,
         self::Continue,
         self::Compact,
+        self::ChangeModel,
     ];
 
     public static function isCore(string $kind): bool

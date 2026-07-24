@@ -162,8 +162,10 @@ final class AutoCompactionHookSubscriber implements HookSubscriberInterface
             return $context;
         }
 
-        // Resolve active model for per-provider/per-model override support.
-        $activeModel = $this->modelResolver->getActiveModel($runId);
+        // Prefer canonical RunState.model; session/default is config-only fallback.
+        $activeModel = null !== $runState && null !== $runState->model && '' !== trim($runState->model)
+            ? trim($runState->model)
+            : $this->modelResolver->getActiveModel($runId);
         $runtimeSettings = $this->compactionConfig->resolveRuntimeSettings($activeModel);
 
         if (!$runtimeSettings->autoEnabled) {
