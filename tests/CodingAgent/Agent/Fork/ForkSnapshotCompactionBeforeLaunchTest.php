@@ -64,7 +64,7 @@ final class ForkSnapshotCompactionBeforeLaunchTest extends PerMethodIsolatedKern
             version: 0,
             messages: $parentMessages,
             turnNo: 3,
-        ), 0);
+            model: 'test-model'), 0);
 
         $parentBefore = $runStore->get($parentRunId);
         $this->assertNotNull($parentBefore);
@@ -179,7 +179,7 @@ final class ForkSnapshotCompactionBeforeLaunchTest extends PerMethodIsolatedKern
                 new AgentMessage(role: 'user', content: [['type' => 'text', 'text' => 'hello']]),
             ],
             turnNo: 1,
-        ), 0);
+            model: 'test-model'), 0);
 
         $compaction = $this->createMock(CompactionServiceInterface::class);
         $compaction->expects($this->once())
@@ -231,7 +231,7 @@ final class ForkSnapshotCompactionBeforeLaunchTest extends PerMethodIsolatedKern
                 new AgentMessage(role: 'user', content: [['type' => 'text', 'text' => 'only one']]),
             ],
             turnNo: 1,
-        ), 0);
+            model: 'test-model'), 0);
 
         $compaction = $this->createMock(CompactionServiceInterface::class);
         $compaction->expects($this->once())

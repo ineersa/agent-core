@@ -53,7 +53,7 @@ final class ApplyCommandHandlerTest extends TestCase
             lastSeq: 5,
             messages: [new AgentMessage(role: 'tool', content: [])],
             retryableFailure: true,
-        );
+            model: 'test-model');
 
         $message = new ApplyCommand(
             runId: 'run-apply-handler-1',
@@ -119,7 +119,7 @@ final class ApplyCommandHandlerTest extends TestCase
             lastSeq: 10,
             messages: [new AgentMessage(role: 'assistant', content: [['type' => 'text', 'text' => 'Hello']])],
             retryableFailure: false,
-        );
+            model: 'test-model');
 
         $message = new ApplyCommand(
             runId: 'run-cancel-followup',
@@ -175,7 +175,7 @@ final class ApplyCommandHandlerTest extends TestCase
             lastSeq: 10,
             messages: [],
             retryableFailure: false,
-        );
+            model: 'test-model');
 
         $message = new ApplyCommand(
             runId: 'run-cancel-append',
@@ -223,7 +223,7 @@ final class ApplyCommandHandlerTest extends TestCase
             lastSeq: 10,
             messages: [],
             retryableFailure: false,
-        );
+            model: 'test-model');
 
         $message = new ApplyCommand(
             runId: 'run-cancel-steer',
@@ -271,7 +271,7 @@ final class ApplyCommandHandlerTest extends TestCase
             lastSeq: 10,
             messages: [new AgentMessage(role: 'assistant', content: [['type' => 'text', 'text' => 'Hello']])],
             retryableFailure: false,
-        );
+            model: 'test-model');
 
         $message = new ApplyCommand(
             runId: 'run-cancelling-followup',
@@ -319,7 +319,7 @@ final class ApplyCommandHandlerTest extends TestCase
             lastSeq: 10,
             messages: [new AgentMessage(role: 'tool', content: [])],
             retryableFailure: false,
-        );
+            model: 'test-model');
 
         $message = new ApplyCommand(
             runId: 'run-cancel-continue',
@@ -367,7 +367,7 @@ final class ApplyCommandHandlerTest extends TestCase
             lastSeq: 10,
             messages: [],
             retryableFailure: false,
-        );
+            model: 'test-model');
 
         $message = new ApplyCommand(
             runId: 'run-cancel-human',
@@ -417,7 +417,7 @@ final class ApplyCommandHandlerTest extends TestCase
             turnNo: 1,
             lastSeq: 5,
             messages: [new AgentMessage(role: 'assistant', content: [['type' => 'text', 'text' => 'Hello']])],
-        );
+            model: 'test-model');
 
         $message = new ApplyCommand(
             runId: 'run-steer-while-running',
@@ -477,7 +477,7 @@ final class ApplyCommandHandlerTest extends TestCase
             turnNo: 1,
             lastSeq: 5,
             messages: [new AgentMessage(role: 'assistant', content: [['type' => 'text', 'text' => 'Hello']])],
-        );
+            model: 'test-model');
 
         $message = new ApplyCommand(
             runId: 'run-followup-while-running',
@@ -532,7 +532,7 @@ final class ApplyCommandHandlerTest extends TestCase
             lastSeq: 10,
             messages: [new AgentMessage(role: 'assistant', content: [['type' => 'text', 'text' => 'Hello']])],
             retryableFailure: false,
-        );
+            model: 'test-model');
 
         $message = new ApplyCommand(
             runId: 'run-cancel-followup-advance',
@@ -607,7 +607,7 @@ final class ApplyCommandHandlerTest extends TestCase
                 new AgentMessage(role: 'user', content: [['type' => 'text', 'text' => 'Committed user message']]),
                 new AgentMessage(role: 'assistant', content: [['type' => 'text', 'text' => 'Working...']]),
             ],
-        );
+            model: 'test-model');
 
         $cancelMessage = new ApplyCommand(
             runId: 'run-cancel-stale',
@@ -698,7 +698,7 @@ final class ApplyCommandHandlerTest extends TestCase
             lastSeq: 5,
             activeStepId: 'step-active',
             messages: [],
-        );
+            model: 'test-model');
 
         $cancelMessage = new ApplyCommand(
             runId: 'run-append-cancel',
@@ -730,12 +730,6 @@ final class ApplyCommandHandlerTest extends TestCase
         $advanceHandler = new AdvanceRunHandler(
             commandMailboxPolicy: $commandMailboxPolicy,
             eventFactory: new EventFactory(),
-            runModelResolver: new class implements \Ineersa\AgentCore\Contract\Model\RunModelResolverInterface {
-                public function resolveActiveModel(string $runId): ?string
-                {
-                    return 'test-model';
-                }
-            },
         );
         $drainResult = $advanceHandler->handle($commandBus->messages[0], $result->nextState);
         $this->assertSame(RunStatus::Running, $drainResult->nextState->status);
@@ -783,7 +777,7 @@ final class ApplyCommandHandlerTest extends TestCase
             messages: [new AgentMessage(role: 'user', content: [['type' => 'text', 'text' => 'prior']])],
             activeStepId: null,
             retryableFailure: false,
-        );
+            model: 'test-model');
 
         $cancelMessage = new ApplyCommand(
             runId: 'run-second-cancel-append',
@@ -838,7 +832,7 @@ final class ApplyCommandHandlerTest extends TestCase
             lastSeq: 58,
             activeStepId: 'step-active',
             messages: [new AgentMessage(role: 'user', content: [['type' => 'text', 'text' => 'prior']])],
-        );
+            model: 'test-model');
 
         $message = new ApplyCommand(
             runId: 'run-append-cancelling',
@@ -883,7 +877,7 @@ final class ApplyCommandHandlerTest extends TestCase
             turnNo: 1,
             lastSeq: 5,
             messages: [],
-        );
+            model: 'test-model');
 
         $message = new ApplyCommand(
             runId: 'run-user-cancelling',
@@ -939,7 +933,7 @@ final class ApplyCommandHandlerTest extends TestCase
                 new AgentMessage(role: 'user', content: [['type' => 'text', 'text' => 'Hello']]),
                 new AgentMessage(role: 'assistant', content: [['type' => 'text', 'text' => 'Hi']]),
             ],
-        );
+            model: 'test-model');
 
         $message = new ApplyCommand(
             runId: 'run-terminal-compact',
@@ -1020,7 +1014,7 @@ final class ApplyCommandHandlerTest extends TestCase
                 new AgentMessage(role: 'user', content: [['type' => 'text', 'text' => 'Hello']]),
                 new AgentMessage(role: 'assistant', content: [['type' => 'text', 'text' => 'Hi there!']]),
             ],
-        );
+            model: 'test-model');
 
         $cancelMessage = new ApplyCommand(
             runId: 'run-cancel-completed',
@@ -1086,7 +1080,7 @@ final class ApplyCommandHandlerTest extends TestCase
             messages: [
                 new AgentMessage(role: 'user', content: [['type' => 'text', 'text' => 'Task']]),
             ],
-        );
+            model: 'test-model');
 
         $cancelMessage = new ApplyCommand(
             runId: 'run-cancel-failed',
@@ -1142,7 +1136,7 @@ final class ApplyCommandHandlerTest extends TestCase
             turnNo: 5,
             lastSeq: 10,
             messages: [],
-        );
+            model: 'test-model');
 
         $message = new ApplyCommand(
             runId: 'run-compact-idempotent',
@@ -1204,7 +1198,7 @@ final class ApplyCommandHandlerTest extends TestCase
             ],
             activeStepId: null,  // idle: no active step
             retryableFailure: false,
-        );
+            model: 'test-model');
 
         $cancelMessage = new ApplyCommand(
             runId: 'run-idle-cancel',
@@ -1277,7 +1271,7 @@ final class ApplyCommandHandlerTest extends TestCase
             ],
             activeStepId: null,  // no active work
             retryableFailure: false,
-        );
+            model: 'test-model');
 
         $cancelMessage = new ApplyCommand(
             runId: 'run-cancel-repeat',
@@ -1339,7 +1333,7 @@ final class ApplyCommandHandlerTest extends TestCase
             messages: [],
             activeStepId: 'advance-after-tools-33525236701801',
             retryableFailure: false,
-        );
+            model: 'test-model');
 
         $cancelMessage = new ApplyCommand(
             runId: 'run-stale-step',
@@ -1388,7 +1382,7 @@ final class ApplyCommandHandlerTest extends TestCase
             messages: [],
             activeStepId: 'step-tools',
             retryableFailure: false,
-        );
+            model: 'test-model');
 
         $cancelMessage = new ApplyCommand(
             runId: 'run-pending-tool',
@@ -1436,7 +1430,7 @@ final class ApplyCommandHandlerTest extends TestCase
             messages: [],
             activeStepId: 'advance-after-tools-33525236701801',
             retryableFailure: false,
-        );
+            model: 'test-model');
 
         $cancelMessage = new ApplyCommand(
             runId: 'run-stuck-cancelling',

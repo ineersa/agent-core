@@ -359,7 +359,7 @@ final class ReplayTest extends \PHPUnit\Framework\TestCase
             errorMessage: null,
             messages: [],
             activeStepId: null,
-        ), 0);
+            model: 'test-model'), 0);
 
         $modelClient = new FixtureReplayModelClient($fixture);
         $resultConverter = new FixtureReplayResultConverter($fixture);

@@ -79,6 +79,16 @@ abstract class ControllerReplayE2eTestCase extends ControllerE2eTestCase
         $this->replayFixtures = $this->replayFixtures();
     }
 
+    protected function tearDown(): void
+    {
+        $this->stopProcess();
+        // Keep failing fixtures when debugging controller-replay failures.
+        if (isset($this->tempDir) && '' !== $this->tempDir && false === getenv('HATFIELD_KEEP_TMP')) {
+            TestDirectoryIsolation::removeDirectory($this->tempDir);
+        }
+        \PHPUnit\Framework\TestCase::tearDown();
+    }
+
     /**
      * Subclasses MUST override to return at least one fixture.
      *

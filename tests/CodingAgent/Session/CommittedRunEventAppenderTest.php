@@ -21,7 +21,7 @@ final class CommittedRunEventAppenderTest extends TestCase
     {
         $runId = 'parent-1';
         $runStore = new InMemoryRunStore();
-        $runStore->compareAndSwap(new RunState(runId: $runId, status: RunStatus::Running, version: 1, lastSeq: 3), 0);
+        $runStore->compareAndSwap(new RunState(runId: $runId, status: RunStatus::Running, version: 1, lastSeq: 3, model: 'test-model'), 0);
 
         $eventStore = $this->createMock(EventStoreInterface::class);
         $eventStore->method('append')->willReturn(new RunEvent($runId, 4, 1, 'tool_execution_update', []));

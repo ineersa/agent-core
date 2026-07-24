@@ -80,5 +80,6 @@ interface CompactionServiceInterface
         array $messages,
         string $trigger = 'manual',
         ?string $customInstructions = null,
+        ?string $activeModel = null,
     ): MessageSnapshotCompactionResult;
 }

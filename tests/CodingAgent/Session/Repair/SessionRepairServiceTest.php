@@ -72,7 +72,7 @@ final class SessionRepairServiceTest extends TestCase
             version: 1,
             turnNo: 1,
             lastSeq: 3,
-        ), 0);
+            model: 'test-model'), 0);
 
         $service = $this->createService($runStore);
         $before = $this->readEvents($runId);
@@ -257,7 +257,7 @@ final class SessionRepairServiceTest extends TestCase
             isStreaming: true,
             streamingMessage: ['message_id' => 'm1'],
             activeStepId: 'llm-1',
-        ), 0);
+            model: 'test-model'), 0);
 
         $service = $this->createService($runStore);
         $before = $this->readRawLines($runId);
@@ -305,7 +305,7 @@ final class SessionRepairServiceTest extends TestCase
             lastSeq: \count($events),
             pendingToolCalls: [self::TOOL_CALL_ID => false],
             activeStepId: self::STEP_ID,
-        ), 0);
+            model: 'test-model'), 0);
 
         $service = $this->createService($runStore);
         $before = $this->readRawLines($runId);
@@ -372,7 +372,7 @@ final class SessionRepairServiceTest extends TestCase
             turnNo: $turnNo,
             lastSeq: \count($events),
             activeStepId: self::STEP_ID,
-        ), 0);
+            model: 'test-model'), 0);
 
         $service = $this->createService($runStore);
         $prefix = \count($events);
@@ -463,7 +463,7 @@ final class SessionRepairServiceTest extends TestCase
             turnNo: 33,
             lastSeq: \count($events),
             activeStepId: $secondStep,
-        ), 0);
+            model: 'test-model'), 0);
 
         $service = $this->createService($runStore);
         $prefix = \count($events);
@@ -540,7 +540,7 @@ final class SessionRepairServiceTest extends TestCase
             lastSeq: \count($events),
             pendingToolCalls: [$secondTool => false],
             activeStepId: self::STEP_ID,
-        ), 0);
+            model: 'test-model'), 0);
 
         $service = $this->createService($runStore);
         $service->repair($runId, true);
@@ -861,7 +861,7 @@ final class SessionRepairServiceTest extends TestCase
             lastSeq: $eventCount,
             pendingToolCalls: $unresolvedTool ? [self::TOOL_CALL_ID => false] : [self::TOOL_CALL_ID => true],
             activeStepId: self::STEP_ID,
-        ), 0);
+            model: 'test-model'), 0);
 
         return $runStore;
     }

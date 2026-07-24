@@ -48,7 +48,7 @@ final class AgentBusMessageContractTest extends TestCase
                 new StartRun(
                     runId: 'run-sr', turnNo: 0, stepId: 'sr-step', attempt: 1,
                     idempotencyKey: 'ik-sr',
-                    payload: new StartRunPayload(systemPrompt: '', messages: []),
+                    payload: new StartRunPayload(systemPrompt: '', messages: [], metadata: new RunMetadata(model: 'gpt-4')),
                 ),
                 StartRun::class, 'run-sr', 0, 'sr-step', 1, 'ik-sr',
             ],

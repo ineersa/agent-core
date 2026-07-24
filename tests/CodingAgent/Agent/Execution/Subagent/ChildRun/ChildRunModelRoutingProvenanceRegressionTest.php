@@ -5,13 +5,20 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Agent\Execution\Subagent\ChildRun;
 
 use Ineersa\AgentCore\Application\Handler\ExecuteLlmStepWorker;
+use Ineersa\AgentCore\Application\Pipeline\AdvanceRunHandler;
+use Ineersa\AgentCore\Application\Pipeline\CommandMailboxPolicy;
+use Ineersa\AgentCore\Application\Replay\RunStateReducer;
 use Ineersa\AgentCore\Contract\Model\PlatformInterface;
-use Ineersa\AgentCore\Contract\Model\RunModelResolverInterface;
+use Ineersa\AgentCore\Domain\Event\EventFactory;
+use Ineersa\AgentCore\Domain\Event\RunEvent;
+use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
+use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\ExecuteLlmStep;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationRequest;
 use Ineersa\AgentCore\Domain\Model\PlatformInvocationResult;
+use Ineersa\AgentCore\Domain\Run\RunState;
+use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
-use Ineersa\CodingAgent\Entity\DeferredSubagentChildRepository;
 use Ineersa\CodingAgent\Entity\HatfieldSession;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Symfony\AI\Platform\Message\AssistantMessage;
@@ -21,16 +28,9 @@ use Symfony\Component\Yaml\Yaml;
 /**
  * P0 cost-safety regression for session-33 model drift.
  *
- * Thesis: a deferred subagent child launched with DeepSeek must invoke the
- * platform with that same DeepSeek model even when:
- *  - the child run UUID has a numeric prefix that collides with a normal
- *    hatfield_session primary key;
- *  - the global/default model is expensive Codex;
- *  - ExecuteLlmStep is scheduled and handled by the real worker path.
- *
- * Without production model-envelope propagation this fails because the worker
- * late-resolves via session lookup / default model and can cast the UUID
- * prefix to an unrelated numeric session id.
+ * Thesis: a child run whose run_started metadata.model is DeepSeek must schedule
+ * and invoke DeepSeek even when its UUID numeric prefix collides with a normal
+ * session whose model/default is Codex. Scheduling uses only RunState.model.
  */
 final class ChildRunModelRoutingProvenanceRegressionTest extends IsolatedKernelTestCase
 {
@@ -58,34 +58,64 @@ final class ChildRunModelRoutingProvenanceRegressionTest extends IsolatedKernelT
                 $collidingSessionId = (string) $session->id;
             }
         }
-        $this->assertSame('3', $collidingSessionId, 'Fixture must place colliding numeric session at id 3.');
-        $this->assertSame(3, (int) self::CHILD_RUN_ID, 'Child UUID prefix must cast to session id 3.');
+        $this->assertSame('3', $collidingSessionId);
+        $this->assertSame(3, (int) self::CHILD_RUN_ID);
 
-        $childRepo = self::getContainer()->get(DeferredSubagentChildRepository::class);
-        \assert($childRepo instanceof DeferredSubagentChildRepository);
-        $childRepo->insertReservedChildren('batch-model-routing-red', [[
-            'batchIndex' => 1,
-            'childRunId' => self::CHILD_RUN_ID,
-            'artifactId' => 'agent_dd2f69d9cb4c075c',
-            'agentName' => 'scout',
-            'task' => 'investigate model routing',
-            'definitionModel' => self::CHILD_MODEL,
-        ]]);
+        $runStarted = new RunEvent(
+            runId: self::CHILD_RUN_ID,
+            seq: 1,
+            turnNo: 0,
+            type: RunEventTypeEnum::RunStarted->value,
+            payload: [
+                'step_id' => 'start-child',
+                'payload' => [
+                    'messages' => [],
+                    'metadata' => [
+                        'session' => [
+                            'kind' => 'agent_child',
+                            'parent_run_id' => '1',
+                        ],
+                        'model' => self::CHILD_MODEL,
+                    ],
+                ],
+            ],
+        );
 
-        $stored = $childRepo->findByChildRunId(self::CHILD_RUN_ID);
-        $this->assertNotNull($stored);
-        $this->assertSame(self::CHILD_MODEL, $stored->definitionModel);
+        $reducer = new RunStateReducer();
+        $state = $reducer->replay(RunState::queued(self::CHILD_RUN_ID), [$runStarted]);
+        $this->assertSame(self::CHILD_MODEL, $state->model);
+
+        $handler = new AdvanceRunHandler(
+            commandMailboxPolicy: self::getContainer()->get(CommandMailboxPolicy::class),
+            eventFactory: self::getContainer()->get(EventFactory::class),
+        );
+        $result = $handler->handle(
+            new AdvanceRun(
+                runId: self::CHILD_RUN_ID,
+                turnNo: 0,
+                stepId: 'advance-1',
+                attempt: 1,
+                idempotencyKey: 'ik-advance-1',
+            ),
+            $state,
+        );
+
+        $effect = null;
+        foreach ($result->effects as $candidate) {
+            if ($candidate instanceof ExecuteLlmStep) {
+                $effect = $candidate;
+                break;
+            }
+        }
+        $this->assertInstanceOf(ExecuteLlmStep::class, $effect);
+        $this->assertSame(self::CHILD_MODEL, $effect->model);
 
         $platform = new class implements PlatformInterface {
             public ?string $lastModel = null;
 
-            /** @var list<string> */
-            public array $models = [];
-
             public function invoke(ModelInvocationRequest $request): PlatformInvocationResult
             {
                 $this->lastModel = $request->model;
-                $this->models[] = $request->model;
 
                 return new PlatformInvocationResult(
                     assistantMessage: new AssistantMessage(new Text('ok')),
@@ -98,44 +128,41 @@ final class ChildRunModelRoutingProvenanceRegressionTest extends IsolatedKernelT
             }
         };
 
-        $resolver = self::getContainer()->get(RunModelResolverInterface::class);
-        \assert($resolver instanceof RunModelResolverInterface);
-
-        // Schedule-time resolution is the durable boundary: child UUID must
-        // return definition_model, never the colliding numeric session/default.
-        $scheduledModel = $resolver->resolveActiveModel(self::CHILD_RUN_ID);
-        $this->assertSame(self::CHILD_MODEL, $scheduledModel);
-
         $worker = new ExecuteLlmStepWorker(
             platform: $platform,
             commandBus: new TestMessageBus(),
         );
+        $worker($effect);
 
-        // Worker must use only the immutable model on the message envelope.
-        $worker(new ExecuteLlmStep(
-            runId: self::CHILD_RUN_ID,
-            turnNo: 620,
-            stepId: 'advance-after-tools-model-routing',
-            attempt: 1,
-            idempotencyKey: 'ik-child-model-routing',
-            contextRef: 'hot:run:'.self::CHILD_RUN_ID,
-            toolsRef: 'toolset:run:'.self::CHILD_RUN_ID.':turn:620',
-            model: $scheduledModel,
-        ));
-
-        $this->assertSame(
-            self::CHILD_MODEL,
-            $platform->lastModel,
-            \sprintf(
-                'Child definition model %s must be invoked; got %s (default=%s, colliding session 3 model=%s).',
-                self::CHILD_MODEL,
-                $platform->lastModel ?? 'null',
-                self::DEFAULT_CODEX_MODEL,
-                self::COLLIDING_SESSION_MODEL,
-            ),
-        );
+        $this->assertSame(self::CHILD_MODEL, $platform->lastModel);
         $this->assertNotSame(self::DEFAULT_CODEX_MODEL, $platform->lastModel);
         $this->assertNotSame(self::COLLIDING_SESSION_MODEL, $platform->lastModel);
+    }
+
+    public function testMissingCanonicalModelFailsClosedBeforeScheduling(): void
+    {
+        $handler = new AdvanceRunHandler(
+            commandMailboxPolicy: self::getContainer()->get(CommandMailboxPolicy::class),
+            eventFactory: self::getContainer()->get(EventFactory::class),
+        );
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('run model is absent');
+
+        $handler->handle(
+            new AdvanceRun(
+                runId: 'missing-model-run',
+                turnNo: 0,
+                stepId: 'advance-missing',
+                attempt: 1,
+                idempotencyKey: 'ik-missing',
+            ),
+            new RunState(
+                runId: 'missing-model-run',
+                status: RunStatus::Running,
+                model: null,
+            ),
+        );
     }
 
     protected static function configureIsolatedProjectBeforeKernelBoot(string $classCwd): void
@@ -154,15 +181,6 @@ final class ChildRunModelRoutingProvenanceRegressionTest extends IsolatedKernelT
                             'deepseek-v4-flash' => [
                                 'id' => 'deepseek-v4-flash',
                                 'name' => 'DeepSeek V4 Flash',
-                                'context_window' => 1000000,
-                                'max_tokens' => 384000,
-                                'input' => ['text'],
-                                'tool_calling' => true,
-                                'reasoning' => true,
-                            ],
-                            'deepseek-v4-pro' => [
-                                'id' => 'deepseek-v4-pro',
-                                'name' => 'DeepSeek V4 Pro',
                                 'context_window' => 1000000,
                                 'max_tokens' => 384000,
                                 'input' => ['text'],

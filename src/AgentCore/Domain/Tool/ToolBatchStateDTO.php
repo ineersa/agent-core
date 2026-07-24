@@ -297,6 +297,7 @@ final class ToolBatchStateDTO
             argSchema: \array_key_exists('argSchema', $data) ? $data['argSchema'] : null,
             toolsRef: \array_key_exists('toolsRef', $data) ? $data['toolsRef'] : null,
             humanInputAnswer: self::reconstructHumanInputAnswer($data),
+            parentModel: \is_string($data['parentModel'] ?? null) ? $data['parentModel'] : null,
         );
     }
 

@@ -42,7 +42,6 @@ final class SubagentExecutionServiceFactory
             'logger' => null,
             'agentsConfig' => new AgentsConfig(maxAgents: 8),
             'appConfig' => null,
-            'modelSelectionService' => null,
             'batchRepository' => null,
             'lifecycleListener' => null,
             'forkLaunchInputBuilder' => null,
@@ -51,7 +50,7 @@ final class SubagentExecutionServiceFactory
 
         $args = array_merge($defaults, $overrides);
 
-        foreach (['policyResolver', 'promptBuilder', 'skillsContextBuilder', 'agentsContextBuilder', 'artifactRegistry', 'agentRunner', 'parentRunStore', 'metadataReader', 'childRunDirectory', 'contextAccessor', 'logger', 'appConfig', 'batchRepository', 'lifecycleListener', 'forkLaunchInputBuilder', 'forkToolPolicyResolver', 'modelSelectionService'] as $required) {
+        foreach (['policyResolver', 'promptBuilder', 'skillsContextBuilder', 'agentsContextBuilder', 'artifactRegistry', 'agentRunner', 'parentRunStore', 'metadataReader', 'childRunDirectory', 'contextAccessor', 'logger', 'appConfig', 'batchRepository', 'lifecycleListener', 'forkLaunchInputBuilder', 'forkToolPolicyResolver'] as $required) {
             if (null === $args[$required]) {
                 throw new \InvalidArgumentException(\sprintf('SubagentExecutionServiceFactory requires override "%s".', $required));
             }
@@ -60,7 +59,7 @@ final class SubagentExecutionServiceFactory
         $artifactLifecycle = $args['artifactLifecycle'] ?? new ChildRunArtifactLifecycleService($args['artifactRegistry'], $args['childRunDirectory']);
 
         $definitionPolicy = new SubagentLaunchDefinitionPolicyService($args['catalog'], $args['depthGuard'], $args['policyResolver'], $args['metadataReader']);
-        $launchInputFactory = new SubagentChildLaunchInputFactory($args['promptBuilder'], $args['skillsContextBuilder'], $args['agentsContextBuilder'], $args['parentRunStore'], $args['appConfig'], $args['modelSelectionService']);
+        $launchInputFactory = new SubagentChildLaunchInputFactory($args['promptBuilder'], $args['skillsContextBuilder'], $args['agentsContextBuilder'], $args['parentRunStore'], $args['appConfig']);
         $launchPreparation = new SubagentLaunchPreparationService(
             $definitionPolicy,
             $artifactLifecycle,

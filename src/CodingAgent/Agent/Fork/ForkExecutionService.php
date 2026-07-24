@@ -54,6 +54,7 @@ final class ForkExecutionService implements ForkExecutionServiceInterface
             turnNo: $turnNo,
             messages: $sanitized,
             trigger: 'fork',
+            activeModel: $parentState?->model,
         );
 
         if ($compactResult->isFailure()) {

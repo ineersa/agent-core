@@ -25,6 +25,7 @@ final readonly class ToolContext
         private int $batchToolCallCount = 1,
         private ?ToolCallHumanInputAnswerDTO $humanInputAnswer = null,
         private ?string $stepId = null,
+        private ?string $parentModel = null,
     ) {
     }
 
@@ -87,5 +88,14 @@ final readonly class ToolContext
     public function humanInputAnswer(): ?ToolCallHumanInputAnswerDTO
     {
         return $this->humanInputAnswer;
+    }
+
+    /**
+     * Canonical parent execution model snapshot that produced this tool call.
+     * Child launches must inherit this value rather than re-resolving session/default.
+     */
+    public function parentModel(): ?string
+    {
+        return $this->parentModel;
     }
 }

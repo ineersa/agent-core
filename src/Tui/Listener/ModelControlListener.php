@@ -52,7 +52,7 @@ final class ModelControlListener implements TuiListenerRegistrar
         $this->favPickerController->setRuntimeRefs($tui, $screen, $state);
 
         // ── Register /model slash command (idempotent) ──
-        $modelHandler = new ModelCommandHandler($modelService, $appConfig, $state, $this->pickerController, $this->favPickerController, $this->logger, $screen);
+        $modelHandler = new ModelCommandHandler($modelService, $appConfig, $state, $this->pickerController, $this->favPickerController, $this->logger, $screen, sessionClient: $context->client);
         if ($this->commandRegistry->has('model')) {
             $this->commandRegistry->setHandler('model', $modelHandler);
         } else {
@@ -69,7 +69,7 @@ final class ModelControlListener implements TuiListenerRegistrar
         }
 
         // ── Register /model-favourites slash command ──
-        $favCmdHandler = new ModelCommandHandler($modelService, $appConfig, $state, $this->pickerController, $this->favPickerController, $this->logger, $screen, isFavourites: true);
+        $favCmdHandler = new ModelCommandHandler($modelService, $appConfig, $state, $this->pickerController, $this->favPickerController, $this->logger, $screen, isFavourites: true, sessionClient: $context->client);
         if ($this->commandRegistry->has('model-favourites')) {
             $this->commandRegistry->setHandler('model-favourites', $favCmdHandler);
         } else {
@@ -86,8 +86,9 @@ final class ModelControlListener implements TuiListenerRegistrar
         }
 
         // ── Register Ctrl+P — cycle favorite models ──
+        $sessionClient = $context->client;
         $tui->addListener(static function (InputEvent $event) use (
-            $modelService, $state, $appConfig, $screen,
+            $modelService, $state, $appConfig, $screen, $sessionClient,
         ): void {
             // Ctrl+P is \x10
             if ("\x10" !== $event->getData()) {
@@ -109,6 +110,21 @@ final class ModelControlListener implements TuiListenerRegistrar
 
             // Apply editor border colour matching the new reasoning level.
             $screen->applyEditorBorderColor($state->footerReasoning);
+
+            if ('' !== $state->sessionId) {
+                try {
+                    $sessionClient->send(
+                        $state->sessionId,
+                        new \Ineersa\CodingAgent\Runtime\Contract\UserCommand(
+                            type: 'change_model',
+                            text: null,
+                            payload: ['model' => $nextRef->toString()],
+                        ),
+                    );
+                } catch (\Throwable) {
+                    // Settings already updated; durable run change is best-effort here.
+                }
+            }
 
             // For draft sessions, carry the model into the request so it is
             // used when the draft is promoted on first submit.  Without this,

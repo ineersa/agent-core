@@ -616,7 +616,6 @@ services:
 
   Ineersa\AgentCore\Application\Pipeline\AdvanceRunHandler:
     arguments:
-      $runModelResolver: '@Ineersa\AgentCore\Contract\Model\RunModelResolverInterface'
       $commandBus: '@agent.command.bus'
 
   Ineersa\AgentCore\Application\Pipeline\ApplyCommandHandler:
@@ -666,12 +665,8 @@ services:
 
   # ─── Compaction auto-trigger (COMP-06) ───
 
-  # Active model resolver: thin abstraction over ModelSelectionService
-  # so compaction services can be tested without the full model-selection
-  # dependency tree. Child UUIDs resolve via durable deferred_subagent_child.
-  Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\ChildRunDefinitionModelLookupInterface:
-    alias: Ineersa\CodingAgent\Entity\DeferredSubagentChildRepository
-
+  # Active model resolver: session/default lookup for config surfaces.
+  # Execution identity is RunState.model / ExecuteLlmStep.model, not this resolver.
   Ineersa\CodingAgent\Compaction\ModelSelectionActiveModelResolver: ~
 
   Ineersa\CodingAgent\Compaction\ActiveModelResolverInterface:

@@ -26,6 +26,7 @@ enum RunEventTypeEnum: string
 
     // ── Pipeline events ──────────────────────────────────────────────────
     case RunStarted = 'run_started';
+    case ModelChanged = 'model_changed';
     case TurnAdvanced = 'turn_advanced';
     case LlmStepCompleted = 'llm_step_completed';
     case LlmStepFailed = 'llm_step_failed';

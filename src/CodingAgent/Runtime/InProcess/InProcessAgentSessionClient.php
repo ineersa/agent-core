@@ -65,8 +65,9 @@ final class InProcessAgentSessionClient implements AgentSessionClient
 
     public function start(StartRunRequest $request): RunHandle
     {
-        $metadata = null !== $request->model || null !== $request->reasoning
-            ? new RunMetadata(model: $request->model, reasoning: $request->reasoning)
+        // Placeholder only; effective model is resolved once below and replaces this.
+        $metadata = null !== $request->reasoning
+            ? new RunMetadata(reasoning: $request->reasoning)
             : null;
 
         $messages = [];
@@ -134,48 +135,57 @@ final class InProcessAgentSessionClient implements AgentSessionClient
             );
         }
 
-        // Parent execution identity is always a pure-digit hatfield_session id.
-        // Controller process labels (HATFIELD_SESSION_ID) may be non-numeric for
-        // queue/process scoping; when no numeric run id is supplied, create a real
-        // session row here rather than letting AgentRunner invent a UUID parent run.
+        // Callers own session allocation with the real prompt/title.
+        // This client never creates empty-prompt sessions.
         $sessionId = trim($request->runId);
         if ('' === $sessionId) {
-            $sessionId = $this->sessionMetaStore->createSession($prompt);
-        } elseif (!ctype_digit($sessionId)) {
-            throw new \RuntimeException(\sprintf('start requires a pure-digit hatfield_session runId; got "%s".', $sessionId));
+            throw new \RuntimeException('start requires an explicit runId; session creation belongs to the parent entrypoint.');
         }
 
-        // Persist session-scoped model/reasoning selection so resume restores it.
-        // Session-start is NOT a global-default change (unlike /model mid-session,
-        // which intentionally also updates the home default via ModelSettingsPersister).
-        //
-        // Two-tier resolution mirrors schedule-time model resolution:
-        // Explicit request values (--model / /new --model) take the fast catalog-free
-        // parse path; when absent, the effective model/reasoning is resolved via
-        // ModelResolver so the session is pinned to what the first turn actually used.
+        // Resolve effective model exactly once at the parent start boundary.
+        // The exact value is persisted into RunMetadata/run_started and becomes
+        // RunState.model — scheduling never re-resolves session/default later.
         $modelRef = null !== $request->model
             ? AiModelReference::tryParse($request->model)
             : $this->modelResolver->resolveInitialModel(null, $sessionId);
+        if (null === $modelRef) {
+            throw new \RuntimeException(\sprintf('Cannot start run_id=%s: no effective model could be resolved.', $sessionId));
+        }
+        $effectiveModel = $modelRef->toString();
 
-        $reasoning = null;
         if (null !== $request->reasoning && \in_array($request->reasoning, ModelResolver::LEVELS, true)) {
             $reasoning = $request->reasoning;
         } else {
             $reasoning = $this->modelResolver->resolveInitialReasoning(null, $sessionId);
         }
 
-        $metaFields = [];
-        if (null !== $modelRef) {
-            $metaFields['model'] = $modelRef->toString();
-            $metaFields['model_provider'] = $modelRef->providerId;
-            $metaFields['model_name'] = $modelRef->modelName;
-        }
+        $metaFields = [
+            'model' => $effectiveModel,
+            'model_provider' => $modelRef->providerId,
+            'model_name' => $modelRef->modelName,
+        ];
         if ('' !== $reasoning) {
             $metaFields['reasoning'] = $reasoning;
         }
-        if ([] !== $metaFields) {
+        // Best-effort session metadata for UI/resume; non-numeric ids are ignored
+        // by the store's own repository boundary (not inferred here).
+        try {
             $this->sessionMetaStore->writeSessionMetadata($sessionId, $metaFields);
+        } catch (\Throwable $exception) {
+            // Child/ephemeral starts may not have a hatfield_session row. Canonical
+            // execution identity still lives on RunMetadata below.
+            if (!str_contains($exception->getMessage(), 'session') && !str_contains(strtolower($exception->getMessage()), 'not found')) {
+                throw $exception;
+            }
         }
+
+        $metadata = new RunMetadata(
+            session: null !== $metadata ? $metadata->session : [],
+            model: $effectiveModel,
+            reasoning: $reasoning,
+            toolsScope: null !== $metadata ? $metadata->toolsScope : null,
+            contextWindow: null !== $metadata ? $metadata->contextWindow : null,
+        );
 
         $input = new StartRunInput(
             systemPrompt: '',
@@ -246,6 +256,10 @@ final class InProcessAgentSessionClient implements AgentSessionClient
             'answer_tool_question' => $this->handleAnswerToolQuestion($runId, $command),
             'shell_command' => $this->handleShellCommandSend($runId, $command),
             'rewind_to_turn' => $this->handleInProcessRewind($runId, $command),
+            'change_model' => $this->runner->changeModel(
+                $runId,
+                (string) ($command->payload['model'] ?? ''),
+            ),
             default => throw new \InvalidArgumentException(\sprintf('Unknown UserCommand type: "%s"', $command->type)),
         };
     }

@@ -38,6 +38,7 @@ final class DeferredSubagentBatchPreparationService
         string $toolCallId,
         array $tasks,
         ChildRunBatchExecutionModeEnum $executionMode,
+        ?string $parentModel = null,
     ): DeferredSubagentBatchLaunchPlanDTO {
         $this->launchPreparation->assertDepthAllowed($parentRunId);
 
@@ -80,6 +81,7 @@ final class DeferredSubagentBatchPreparationService
             childIntents: $childIntents,
             definitionsByBatchIndex: $definitionsByBatchIndex,
             identities: $identities,
+            parentModel: $parentModel,
         );
     }
 
@@ -91,6 +93,7 @@ final class DeferredSubagentBatchPreparationService
         string $toolCallId,
         string $task,
         DeferredSubagentSingleChildLaunchProfileDTO $profile,
+        ?string $parentModel = null,
     ): DeferredSubagentBatchLaunchPlanDTO {
         $this->launchPreparation->assertDepthAllowed($parentRunId);
 
@@ -127,6 +130,7 @@ final class DeferredSubagentBatchPreparationService
             childIntents: $childIntents,
             definitionsByBatchIndex: [1 => $profile->definition],
             identities: $identities,
+            parentModel: $parentModel,
         );
     }
 
@@ -170,6 +174,7 @@ final class DeferredSubagentBatchPreparationService
                     $identity->childRunId,
                     skipReservation: true,
                     identityTemplate: $identity,
+                    parentModel: $plan->parentModel,
                 );
                 $this->artifactLifecycle->ensureReservedPending($identity);
                 $preparedChildren[] = $prepared;
@@ -224,6 +229,7 @@ final class DeferredSubagentBatchPreparationService
                 $identity->childRunId,
                 skipReservation: true,
                 identityTemplate: $identity,
+                parentModel: $plan->parentModel,
             );
             $this->artifactLifecycle->ensureReservedPending($identity);
 

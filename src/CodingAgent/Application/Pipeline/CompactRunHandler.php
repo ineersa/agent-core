@@ -21,7 +21,6 @@ use Ineersa\CodingAgent\Compaction\CompactionHookContextDTO;
 use Ineersa\CodingAgent\Compaction\CompactionHookDispatcher;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\CompactionRuntimeSettingsDTO;
-use Ineersa\CodingAgent\Config\ModelSelectionService;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 
@@ -42,7 +41,6 @@ final readonly class CompactRunHandler implements RunMessageHandler
         private CompactionServiceInterface $compactionService,
         private AppConfig $appConfig,
         private EventFactory $eventFactory,
-        private ModelSelectionService $modelSelectionService,
         private CompactionHookDispatcher $hookDispatcher,
         private LoggerInterface $logger = new NullLogger(),
     ) {
@@ -61,12 +59,12 @@ final readonly class CompactRunHandler implements RunMessageHandler
 
         $runId = $message->runId();
 
-        // Resolve the active session model for compaction override resolution.
-        // session_id === run_id per AGENTS.md; ModelSelectionService reads it
-        // from session metadata so per-model/per-provider compaction overrides
-        // apply based on the currently active chat model.
-        $activeModel = $this->modelSelectionService->getCurrentModel($runId);
-        $activeModelStr = $activeModel?->toString();
+        // Canonical execution model is RunState.model (run_started / model_changed).
+        // Compaction override resolution may still use configured overrides, but
+        // base identity must not re-query mutable session/default selection.
+        $activeModelStr = null !== $state->model && '' !== trim($state->model)
+            ? trim($state->model)
+            : null;
 
         $runtimeSettings = $this->appConfig->compaction->resolveRuntimeSettings($activeModelStr);
         $thinkingLevel = $runtimeSettings->thinkingLevel;
@@ -411,6 +409,7 @@ final readonly class CompactRunHandler implements RunMessageHandler
             activeStepId: null,
             retryableFailure: $afterStartState->retryableFailure,
             pendingHumanInputRequests: $afterStartState->pendingHumanInputRequests,
+            model: $afterStartState->model,
         );
 
         // Pre-LLM guard replacement must continue the LLM turn.
@@ -489,6 +488,7 @@ final readonly class CompactRunHandler implements RunMessageHandler
             activeStepId: $activeStepId ?? $state->activeStepId,
             retryableFailure: $state->retryableFailure,
             pendingHumanInputRequests: $state->pendingHumanInputRequests,
+            model: $state->model,
         );
     }
 

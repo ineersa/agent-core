@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Runtime\Controller\CommandHandler;
 
+use Ineersa\CodingAgent\Config\SessionMetadataStore;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\Controller\Event\ControllerCommandEvent;
 use Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient;
@@ -23,6 +24,7 @@ final readonly class StartRunHandler
 {
     public function __construct(
         private readonly InProcessAgentSessionClient $client,
+        private readonly SessionMetadataStore $sessionMetaStore,
     ) {
     }
 
@@ -40,14 +42,16 @@ final readonly class StartRunHandler
         $commandRunId = trim($command->runId ?? '');
         $sessionRunId = 'unknown' !== $event->sessionId ? trim($event->sessionId) : '';
         $runId = $this->resolveRequestedRunId($commandRunId, $sessionRunId);
+        if ('' === $runId) {
+            // Parent entrypoint allocates the session with the real user prompt.
+            $runId = $this->sessionMetaStore->createSession($prompt);
+        }
 
         // Non-blocking: dispatches StartRun to run_control transport and returns
         // immediately. The run_control consumer picks up the message and processes
         // the run asynchronously. Events flow back through:
         //   1. Consumer stdout (committed RunEvents mapped to RuntimeEvent JSONL)
         //   2. LLM consumer stdout (transient streaming deltas, seq=0)
-        // Empty runId is intentional: InProcessAgentSessionClient creates a real
-        // pure-digit hatfield_session instead of reusing process-scoping labels.
         $handle = $this->client->start(new StartRunRequest(
             prompt: $prompt,
             runId: $runId,
@@ -68,20 +72,19 @@ final readonly class StartRunHandler
     }
 
     /**
-     * Only pure-digit ids are valid parent execution identities.
-     * Non-numeric HATFIELD_SESSION_ID labels are process-scoping only and must
-     * not become run ids.
+     * Parent execution identity is a real session id allocated by a parent entrypoint.
+     * Opaque HATFIELD_SESSION_ID process labels must not become run ids.
+     *
+     * Command-supplied run ids are accepted when present. Environment labels are
+     * only reused when they are already pure-digit session primary keys.
      */
     private function resolveRequestedRunId(string $commandRunId, string $sessionRunId): string
     {
         if ('' !== $commandRunId) {
-            if (!ctype_digit($commandRunId)) {
-                throw new \RuntimeException(\sprintf('start_run requires a pure-digit hatfield_session runId; got "%s".', $commandRunId));
-            }
-
             return $commandRunId;
         }
 
+        // Process-scoping labels are often non-numeric; only real session PKs are reusable.
         if ('' !== $sessionRunId && ctype_digit($sessionRunId)) {
             return $sessionRunId;
         }

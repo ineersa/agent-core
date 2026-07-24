@@ -25,6 +25,7 @@ final readonly class DeferredSubagentBatchLaunchPlanDTO
         public array $childIntents,
         public array $definitionsByBatchIndex,
         public array $identities,
+        public ?string $parentModel = null,
     ) {
     }
 

@@ -170,6 +170,7 @@ final class LlmStepResultHandler implements RunMessageHandler
                 retryableFailure: false,
                 retryAttempts: 0,
                 pendingHumanInputRequests: $state->pendingHumanInputRequests,
+                model: $state->model,
             );
 
             return new HandlerResult(
@@ -252,6 +253,7 @@ final class LlmStepResultHandler implements RunMessageHandler
                 retryableFailure: $canAutoRetry,
                 retryAttempts: $canAutoRetry ? $nextRetryAttempt : ($retriesExhausted ? $nextRetryAttempt : $currentAttempts),
                 pendingHumanInputRequests: $state->pendingHumanInputRequests,
+                model: $state->model,
             );
 
             $events = $this->eventFactory->eventsFromSpecs($runId, $state->turnNo, $state->lastSeq + 1, $eventSpecs);
@@ -320,6 +322,7 @@ final class LlmStepResultHandler implements RunMessageHandler
                 assistantMessage: $assistantMessagePayload,
                 argSchema: $toolSchemas[$toolCall['name']] ?? null,
                 toolsRef: $message->toolsRef,
+                parentModel: $state->model,
             );
         }
 
@@ -360,6 +363,7 @@ final class LlmStepResultHandler implements RunMessageHandler
                 retryableFailure: false,
                 retryAttempts: 0,
                 pendingHumanInputRequests: $state->pendingHumanInputRequests,
+                model: $state->model,
             );
 
             $mailboxResult = null === $this->tracer
@@ -407,6 +411,7 @@ final class LlmStepResultHandler implements RunMessageHandler
                 retryableFailure: false,
                 retryAttempts: 0,
                 pendingHumanInputRequests: $stateAfterBoundary->pendingHumanInputRequests,
+                model: $state->model,
             );
 
             $postCommit = [
@@ -455,6 +460,7 @@ final class LlmStepResultHandler implements RunMessageHandler
             retryableFailure: false,
             retryAttempts: 0,
             pendingHumanInputRequests: $state->pendingHumanInputRequests,
+            model: $state->model,
         );
 
         $postCommit = [function () use ($runId, $state, $message, $effects): void {

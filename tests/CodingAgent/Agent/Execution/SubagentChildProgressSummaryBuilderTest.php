@@ -108,7 +108,7 @@ final class SubagentChildProgressSummaryBuilderTest extends IsolatedKernelTestCa
             messages: [
                 new AgentMessage('assistant', [['type' => 'text', 'text' => 'Found the rendering path in ChatScreen.']]),
             ],
-        );
+            model: 'test-model');
 
         $pathResolver = new AgentArtifactPathResolver(new SessionAgentArtifactPathResolver(new HatfieldSessionStore(
             appConfig: new AppConfig(tui: new TuiConfig(theme: 'default'), logging: new LoggingConfig(), cwd: $this->projectDir),

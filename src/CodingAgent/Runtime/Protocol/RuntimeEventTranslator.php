@@ -44,6 +44,7 @@ final class RuntimeEventTranslator
         $this->dispatchTable = [
             // Lifecycle
             RunEventTypeEnum::RunStarted->value => $this->onRunStarted(...),
+            RunEventTypeEnum::ModelChanged->value => $this->onModelChanged(...),
             RunEventTypeEnum::TurnAdvanced->value => $this->onTurnStarted(...),
             RunEventTypeEnum::AgentEnd->value => $this->onAgentEnd(...),
             // Assistant stream
@@ -111,6 +112,21 @@ final class RuntimeEventTranslator
     }
 
     // ── Lifecycle ──────────────────────────────────────────────────────────
+
+    private function onModelChanged(RunEvent $runEvent): RuntimeEvent
+    {
+        $p = $runEvent->payload;
+
+        return new RuntimeEvent(
+            type: RuntimeEventTypeEnum::ModelChanged->value,
+            runId: $runEvent->runId,
+            seq: $runEvent->seq,
+            payload: [
+                'model' => (string) ($p['model'] ?? ''),
+                'previous_model' => $p['previous_model'] ?? null,
+            ],
+        );
+    }
 
     private function onRunStarted(RunEvent $runEvent): RuntimeEvent
     {
