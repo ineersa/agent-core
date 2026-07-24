@@ -56,8 +56,6 @@ final class OmSchemaMigrator
                 'version' => $version,
             ]);
         }
-
-        $this->ensureMessengerMessagesTable();
     }
 
     /**
@@ -85,28 +83,6 @@ final class OmSchemaMigrator
                 checksum TEXT NOT NULL,
                 applied_at TEXT NOT NULL
             )',
-        );
-    }
-
-    /**
-     * Messenger operational queue table (Doctrine transport shape).
-     * Created with auto_setup=false on the private transport.
-     */
-    private function ensureMessengerMessagesTable(): void
-    {
-        $this->connection->executeStatement(
-            'CREATE TABLE IF NOT EXISTS messenger_messages (
-                id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
-                body CLOB NOT NULL,
-                headers CLOB NOT NULL,
-                queue_name VARCHAR(190) NOT NULL,
-                created_at DATETIME NOT NULL,
-                available_at DATETIME NOT NULL,
-                delivered_at DATETIME DEFAULT NULL
-            )',
-        );
-        $this->connection->executeStatement(
-            'CREATE INDEX IF NOT EXISTS IDX_OM_MESSENGER_QUEUE ON messenger_messages (queue_name, available_at, delivered_at, id)',
         );
     }
 

@@ -11,6 +11,7 @@ parameters:
   paths:
     - ./src
     - .hatfield/extensions/task-workflow/src
+    - .hatfield/extensions/observational-memory/src
   exclude_files:
     - .*\.test\.php$
     - .*Test\.php$
@@ -145,6 +146,11 @@ parameters:
       collectors:
         - type: classNameRegex
           value: '#^Ineersa\\HatfieldExt\\FileRewind\\#'
+
+    - name: HatfieldExtObservationalMemory
+      collectors:
+        - type: classNameRegex
+          value: '#^Ineersa\\HatfieldExt\\ObservationalMemory\\#'
 
     - name: AppExtensionBuiltin
       collectors:
@@ -652,6 +658,7 @@ parameters:
       - SymfonyAiPlatform
       - SymfonyAiAgent
       - SymfonyEventDispatcher
+      - SymfonyMessenger
       - SymfonyProcess
 
     AppAgent:
@@ -733,6 +740,11 @@ parameters:
     HatfieldExtFileRewind:
       - AppExtensionApi
       - SymfonyTui
+    # OM may use ExtensionApi + vendor libs only (Doctrine DBAL, PSR log).
+    # Vendor packages are not Deptrac layers; only forbid project-layer leakage.
+    HatfieldExtObservationalMemory:
+      - AppExtensionApi
+      - HatfieldExtObservationalMemory
     AppExtensionBuiltin:
       - AppExtensionApi
       - AppRuntimeContract

@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Ineersa\Hatfield\ExtensionApi;
 
 use Ineersa\Hatfield\ExtensionApi\Agent\AgentRunnerInterface;
+use Ineersa\Hatfield\ExtensionApi\Agent\ExtensionAgentJobHandlerInterface;
+use Ineersa\Hatfield\ExtensionApi\Agent\ExtensionAgentJobRequestDTO;
 use Ineersa\Hatfield\ExtensionApi\Command\CommandDefinitionDTO;
 use Ineersa\Hatfield\ExtensionApi\Command\ExtensionCommandHandlerInterface;
 use Ineersa\Hatfield\ExtensionApi\Exec\ExecInterface;
@@ -147,4 +149,23 @@ interface ExtensionApiInterface
      * AfterTurnCommit committed batch instead.
      */
     public function sessionEvents(): SessionEventReaderInterface;
+
+    /**
+     * Register a process-local asynchronous extension-agent job handler.
+     *
+     * Handlers are never serialized. They are resolved by stable ID inside the
+     * dedicated extension_agent Messenger worker after extensions load.
+     *
+     * @param string                            $handlerId stable extension-owned id
+     * @param ExtensionAgentJobHandlerInterface $handler   process-local invokable handler
+     */
+    public function registerExtensionAgentJobHandler(string $handlerId, ExtensionAgentJobHandlerInterface $handler): void;
+
+    /**
+     * Dispatch one JSON-safe asynchronous extension-agent job.
+     *
+     * The job is routed to the dedicated extension_agent transport. Callers must
+     * not embed live tool handlers or other non-serializable objects.
+     */
+    public function dispatchExtensionAgentJob(ExtensionAgentJobRequestDTO $request): void;
 }

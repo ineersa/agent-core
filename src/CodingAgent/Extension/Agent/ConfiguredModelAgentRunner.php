@@ -44,7 +44,14 @@ final readonly class ConfiguredModelAgentRunner implements AgentRunnerInterface
         $inputProcessors = [];
         $outputProcessors = [];
         if ([] !== $request->tools) {
-            $processor = new AgentProcessor(new IsolatedAgentToolbox(array_values($request->tools)));
+            // Omit maxToolCalls when null so AgentProcessor keeps its default (50).
+            // Passing null explicitly would mean unlimited iterations.
+            $processor = null === $request->maxToolCalls
+                ? new AgentProcessor(new IsolatedAgentToolbox(array_values($request->tools)))
+                : new AgentProcessor(
+                    toolbox: new IsolatedAgentToolbox(array_values($request->tools)),
+                    maxToolCalls: $request->maxToolCalls,
+                );
             $inputProcessors[] = $processor;
             $outputProcessors[] = $processor;
         }

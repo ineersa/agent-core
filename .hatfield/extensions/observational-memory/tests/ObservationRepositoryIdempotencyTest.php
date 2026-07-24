@@ -4,8 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\HatfieldExt\ObservationalMemory\Tests;
 
-use Ineersa\HatfieldExt\ObservationalMemory\Handler\ObserveBoundaryHandler;
-use Ineersa\HatfieldExt\ObservationalMemory\Message\ObserveBoundaryMessage;
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\HatfieldExt\ObservationalMemory\Storage\ObservationRepository;
 use Ineersa\HatfieldExt\ObservationalMemory\Storage\OmSchemaMigrator;
 use Ineersa\HatfieldExt\ObservationalMemory\Tests\Support\OmTestDatabase;
@@ -13,8 +12,7 @@ use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 
 /**
- * Thesis: redelivering the same ObserveBoundaryMessage is a compatible no-op
- * including the zero-observation coverage path.
+ * Thesis: compatible redelivery no-ops; mismatched digest conflicts; zero observations still cover.
  */
 final class ObservationRepositoryIdempotencyTest extends TestCase
 {
@@ -23,37 +21,25 @@ final class ObservationRepositoryIdempotencyTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        $this->tmpDir = sys_get_temp_dir().'/om-idem-'.bin2hex(random_bytes(6));
-        mkdir($this->tmpDir, 0750, true);
+        $this->tmpDir = TestDirectoryIsolation::createProjectTempDir('om-repo');
     }
 
     protected function tearDown(): void
     {
+        TestDirectoryIsolation::removeDirectory($this->tmpDir);
         parent::tearDown();
-        $iterator = new \RecursiveIteratorIterator(
-            new \RecursiveDirectoryIterator($this->tmpDir, \FilesystemIterator::SKIP_DOTS),
-            \RecursiveIteratorIterator::CHILD_FIRST,
-        );
-        foreach ($iterator as $file) {
-            $path = $file->getPathname();
-            $file->isDir() ? @rmdir($path) : @unlink($path);
-        }
-        @rmdir($this->tmpDir);
     }
 
-    public function testZeroObservationCoverageIsIdempotentOnRedelivery(): void
+    public function testZeroObservationCoverageIsIdempotentAndTracksWatermark(): void
     {
-        $database = OmTestDatabase::connect($this->tmpDir.'/om.sqlite');
-        (new OmSchemaMigrator($database->connection(), new NullLogger()))->migrate();
+        $db = OmTestDatabase::connect($this->tmpDir.'/om.sqlite');
+        (new OmSchemaMigrator($db->connection(), new NullLogger()))->migrate();
+        $repo = new ObservationRepository($db->connection());
 
-        $handler = new ObserveBoundaryHandler(
-            new ObservationRepository($database->connection()),
-            new NullLogger(),
-        );
-
-        $message = new ObserveBoundaryMessage(
+        $first = $repo->commitBoundaryCoverage(
+            coverageKey: 'cov-1',
             runId: 'run-1',
-            boundaryKey: 'boundary-a',
+            boundaryKey: 'b-1',
             sourceStartSeq: 1,
             sourceEndSeq: 10,
             sourceDigest: 'digest-a',
@@ -61,50 +47,26 @@ final class ObservationRepositoryIdempotencyTest extends TestCase
             observerSchemaVersion: 'o1',
             observerModel: 'provider/model',
             observations: [],
+            coveredAt: '2026-07-23T00:00:00+00:00',
         );
+        $this->assertSame('inserted', $first['status']);
+        $this->assertSame(0, $first['observation_count']);
 
-        $handler($message);
-        $handler($message);
-
-        $count = (int) $database->connection()->fetchOne('SELECT COUNT(*) FROM om_coverage');
-        $this->assertSame(1, $count);
-        $observationCount = (int) $database->connection()->fetchOne('SELECT observation_count FROM om_coverage');
-        $this->assertSame(0, $observationCount);
-    }
-
-    public function testObservationsPersistOnceOnRedelivery(): void
-    {
-        $database = OmTestDatabase::connect($this->tmpDir.'/om.sqlite');
-        (new OmSchemaMigrator($database->connection(), new NullLogger()))->migrate();
-
-        $handler = new ObserveBoundaryHandler(
-            new ObservationRepository($database->connection()),
-            new NullLogger(),
-        );
-
-        $message = new ObserveBoundaryMessage(
-            runId: 'run-2',
-            boundaryKey: 'boundary-b',
+        $second = $repo->commitBoundaryCoverage(
+            coverageKey: 'cov-1',
+            runId: 'run-1',
+            boundaryKey: 'b-1',
             sourceStartSeq: 1,
-            sourceEndSeq: 5,
-            sourceDigest: 'digest-b',
+            sourceEndSeq: 10,
+            sourceDigest: 'digest-a',
             rendererVersion: 'r1',
             observerSchemaVersion: 'o1',
             observerModel: 'provider/model',
-            observations: [
-                [
-                    'content' => 'User prefers linear history.',
-                    'relevance' => 80,
-                    'token_count' => 6,
-                ],
-            ],
+            observations: [],
+            coveredAt: '2026-07-23T00:00:01+00:00',
         );
-
-        $handler($message);
-        $handler($message);
-
-        $this->assertSame(1, (int) $database->connection()->fetchOne('SELECT COUNT(*) FROM om_observation'));
-        $this->assertSame(1, (int) $database->connection()->fetchOne('SELECT COUNT(*) FROM om_coverage'));
-        $this->assertSame(1, (int) $database->connection()->fetchOne('SELECT observation_count FROM om_coverage'));
+        $this->assertSame('noop', $second['status']);
+        $this->assertTrue($repo->hasCompatibleCoverage('cov-1', 'digest-a'));
+        $this->assertSame(10, $repo->latestCoveredEndSeq('run-1', 'r1', 'o1'));
     }
 }

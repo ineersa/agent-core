@@ -8,6 +8,8 @@ use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\ExtensionsConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
+use Ineersa\CodingAgent\Extension\Agent\ExtensionAgentJobDispatcher;
+use Ineersa\CodingAgent\Extension\Agent\ExtensionAgentJobRegistry;
 use Ineersa\CodingAgent\Extension\ExtensionHookRegistry;
 use Ineersa\CodingAgent\Extension\ExtensionToolHandlerAdapter;
 use Ineersa\CodingAgent\Extension\ExtensionToolRegistryBridge;
@@ -592,6 +594,8 @@ final class ExtensionToolRegistryBridgeTest extends TestCase
         ?ExecInterface $execBridge = null,
         ?CommandRegistryInterface $commandRegistry = null,
     ): ExtensionToolRegistryBridge {
+        $logger = new \Psr\Log\NullLogger();
+
         return new ExtensionToolRegistryBridge(
             $toolRegistry,
             $hookRegistry ?? new ExtensionHookRegistry(),
@@ -600,6 +604,13 @@ final class ExtensionToolRegistryBridgeTest extends TestCase
             $commandRegistry ?? $this->dummyCommandRegistry(),
             $this->dummyAgentRunner(),
             $this->dummySessionEventReader(),
+            new ExtensionAgentJobRegistry(),
+            new ExtensionAgentJobDispatcher(new class implements \Symfony\Component\Messenger\MessageBusInterface {
+                public function dispatch(object $message, array $stamps = []): \Symfony\Component\Messenger\Envelope
+                {
+                    return new \Symfony\Component\Messenger\Envelope($message);
+                }
+            }, $logger, 'in-memory://'),
         );
     }
 
