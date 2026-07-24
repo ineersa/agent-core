@@ -33,6 +33,7 @@ final readonly class ExecuteToolCall extends AbstractAgentBusMessage
         public ?array $argSchema = null,
         public ?string $toolsRef = null,
         public ?ToolCallHumanInputAnswerDTO $humanInputAnswer = null,
+        public ?string $parentModel = null,
     ) {
         parent::__construct($runId, $turnNo, $stepId, $attempt, $idempotencyKey);
     }
@@ -57,6 +58,7 @@ final readonly class ExecuteToolCall extends AbstractAgentBusMessage
             argSchema: $this->argSchema,
             toolsRef: $this->toolsRef,
             humanInputAnswer: $answer,
+            parentModel: $this->parentModel,
         );
     }
 }

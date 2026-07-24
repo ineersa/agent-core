@@ -125,10 +125,10 @@ final class ToolBatchSnapshotCleanupHookSubscriberTest extends TestCase
             version: $live->version + 1,
             turnNo: 1,
             lastSeq: 0,
-        ), $live->version);
+            model: 'test-model'), $live->version);
 
         $commit = $this->createRunCommit($store, $runStoreForCommit);
-        $next = new RunState(runId: 'run-1', status: RunStatus::Running, version: $stalePrev->version + 1, turnNo: 1, lastSeq: 2);
+        $next = new RunState(runId: 'run-1', status: RunStatus::Running, version: $stalePrev->version + 1, turnNo: 1, lastSeq: 2, model: 'test-model');
         $events = [
             new RunEvent('run-1', 1, 1, RunEventTypeEnum::ToolBatchCommitted->value, [
                 'count' => 1,
@@ -153,7 +153,7 @@ final class ToolBatchSnapshotCleanupHookSubscriberTest extends TestCase
 
         $prev = $runStore->get('run-1');
         $this->assertNotNull($prev);
-        $next = new RunState(runId: 'run-1', status: RunStatus::Running, version: $prev->version + 1, turnNo: 1, lastSeq: 2);
+        $next = new RunState(runId: 'run-1', status: RunStatus::Running, version: $prev->version + 1, turnNo: 1, lastSeq: 2, model: 'test-model');
         $events = [
             new RunEvent('run-1', 1, 1, RunEventTypeEnum::ToolBatchCommitted->value, [
                 'count' => 1,

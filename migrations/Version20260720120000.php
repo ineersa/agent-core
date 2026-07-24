@@ -20,6 +20,26 @@ final class Version20260720120000 extends AbstractMigration
 
     public function up(Schema $schema): void
     {
+        // Fresh runtime DBs may not have tool_question yet when this version is
+        // applied through ApplicationMigrationExecutor's ordered list. Only
+        // drop the obsolete column when the table/column still exist.
+        $schemaManager = $this->connection->createSchemaManager();
+        if (!$schemaManager->tablesExist(['tool_question'])) {
+            return;
+        }
+
+        $columns = $schemaManager->listTableColumns('tool_question');
+        $hasAnswerText = false;
+        foreach ($columns as $column) {
+            if ('answer_text' === $column->getName()) {
+                $hasAnswerText = true;
+                break;
+            }
+        }
+        if (!$hasAnswerText) {
+            return;
+        }
+
         $this->addSql('ALTER TABLE tool_question DROP COLUMN answer_text');
     }
 

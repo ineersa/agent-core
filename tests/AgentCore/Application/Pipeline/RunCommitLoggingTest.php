@@ -62,7 +62,7 @@ final class RunCommitLoggingTest extends TestCase
             version: $previous->version + 1,
             turnNo: 1,
             lastSeq: 2,
-        );
+            model: 'test-model');
 
         $events = [
             new RunEvent('run-1', 1, 1, 'user.message', ['text' => 'hi']),
@@ -89,7 +89,7 @@ final class RunCommitLoggingTest extends TestCase
             version: 1,
             turnNo: 0,
             lastSeq: 0,
-        ), 0);
+            model: 'test-model'), 0);
 
         $runStore = new FailsSecondCompareAndSwapRunStore($inner);
         $eventStore = new RecordingEventStore();
@@ -119,7 +119,7 @@ final class RunCommitLoggingTest extends TestCase
             version: $previous->version + 1,
             turnNo: 1,
             lastSeq: 0,
-        );
+            model: 'test-model');
 
         $events = [
             new RunEvent('run-1', 99, 1, 'user.message', ['text' => 'hi']),
@@ -151,7 +151,7 @@ final class RunCommitLoggingTest extends TestCase
             version: 1,
             turnNo: 0,
             lastSeq: 0,
-        ), 0);
+            model: 'test-model'), 0);
 
         $runStore = new ReloadsCompletedAfterSecondCasFailRunStore($inner);
         $eventStore = new RecordingEventStore();
@@ -180,7 +180,7 @@ final class RunCommitLoggingTest extends TestCase
             version: $previous->version + 1,
             turnNo: 1,
             lastSeq: 0,
-        );
+            model: 'test-model');
 
         $events = [
             new RunEvent('run-1', 99, 1, 'user.message', ['text' => 'hi']),
@@ -212,7 +212,7 @@ final class ReloadsCompletedAfterSecondCasFailRunStore implements RunStoreInterf
                 version: 3,
                 turnNo: 0,
                 lastSeq: 0,
-            );
+                model: 'test-model');
         }
 
         return $this->inner->get($runId);

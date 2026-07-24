@@ -27,6 +27,7 @@ use Ineersa\AgentCore\Domain\Message\ApplyCommand;
 use Ineersa\AgentCore\Domain\Message\LlmStepResult;
 use Ineersa\AgentCore\Domain\Message\StartRun;
 use Ineersa\AgentCore\Domain\Message\StartRunPayload;
+use Ineersa\AgentCore\Domain\Run\RunMetadata;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Infrastructure\Storage\HotPromptStateStore;
@@ -428,7 +429,7 @@ final class CommandMailboxPolicyTest extends TestCase
             runId: 'run-copy-retry',
             status: RunStatus::Running,
             retryAttempts: 2,
-        );
+            model: 'test-model');
 
         $reflection = new \ReflectionClass($policy);
         $copyState = $reflection->getMethod('copyState');
@@ -534,13 +535,16 @@ final class CommandMailboxPolicyTest extends TestCase
             stepId: 'start-1',
             attempt: 1,
             idempotencyKey: 'start-idemp-1',
-            payload: new StartRunPayload(messages: [new AgentMessage(
-                role: 'user',
-                content: [[
-                    'type' => 'text',
-                    'text' => 'hello',
-                ]],
-            )]),
+            payload: new StartRunPayload(
+                messages: [new AgentMessage(
+                    role: 'user',
+                    content: [[
+                        'type' => 'text',
+                        'text' => 'hello',
+                    ]],
+                )],
+                metadata: new RunMetadata(model: 'test-model'),
+            ),
         );
     }
 

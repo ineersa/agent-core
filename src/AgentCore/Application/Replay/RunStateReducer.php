@@ -25,6 +25,7 @@ final readonly class RunStateReducer
             turnNo: 0,
             lastSeq: 0,
             pendingHumanInputRequests: $existingState->pendingHumanInputRequests,
+            model: $existingState->model,
         );
 
         // By-ref accumulators: reducers append to these arrays; intermediate
@@ -51,6 +52,7 @@ final readonly class RunStateReducer
                 retryableFailure: $state->retryableFailure,
                 retryAttempts: $state->retryAttempts,
                 pendingHumanInputRequests: $state->pendingHumanInputRequests,
+                model: $state->model,
             );
         }
 
@@ -70,6 +72,7 @@ final readonly class RunStateReducer
             retryableFailure: $state->retryableFailure,
             retryAttempts: $state->retryAttempts,
             pendingHumanInputRequests: $state->pendingHumanInputRequests,
+            model: $state->model,
         );
     }
 
@@ -87,6 +90,7 @@ final readonly class RunStateReducer
 
         return match ($event->type) {
             RunEventTypeEnum::RunStarted->value => $this->applyRunStarted($event, $state, $messages),
+            RunEventTypeEnum::ModelChanged->value => $this->applyModelChanged($payload, $state),
             RunEventTypeEnum::TurnAdvanced->value => $this->applyTurnAdvanced($payload, $state),
             RunEventTypeEnum::AgentCommandApplied->value => $this->applyAgentCommandApplied($payload, $state, $messages),
             RunEventTypeEnum::AgentCommandRejected->value => $this->applyCommandRejected($payload, $state),
@@ -144,6 +148,16 @@ final readonly class RunStateReducer
             }
         }
 
+        $model = null;
+        $rawMetadata = $innerPayload['metadata'] ?? null;
+        if (\is_array($rawMetadata)) {
+            $rawModel = $rawMetadata['model'] ?? null;
+            if (\is_string($rawModel)) {
+                $rawModel = trim($rawModel);
+                $model = '' !== $rawModel ? $rawModel : null;
+            }
+        }
+
         return new RunState(
             runId: $state->runId,
             status: RunStatus::Running,
@@ -158,6 +172,40 @@ final readonly class RunStateReducer
             activeStepId: $stepId,
             retryableFailure: false,
             pendingHumanInputRequests: $state->pendingHumanInputRequests,
+            model: $model,
+        );
+    }
+
+    /**
+     * @param array<string, mixed> $payload
+     */
+    private function applyModelChanged(array $payload, RunState $state): RunState
+    {
+        $model = $payload['model'] ?? null;
+        if (!\is_string($model)) {
+            return $state;
+        }
+        $model = trim($model);
+        if ('' === $model) {
+            return $state;
+        }
+
+        return new RunState(
+            runId: $state->runId,
+            status: $state->status,
+            version: $state->version,
+            turnNo: $state->turnNo,
+            lastSeq: $state->lastSeq,
+            isStreaming: $state->isStreaming,
+            streamingMessage: $state->streamingMessage,
+            pendingToolCalls: $state->pendingToolCalls,
+            errorMessage: $state->errorMessage,
+            messages: $state->messages,
+            activeStepId: $state->activeStepId,
+            retryableFailure: $state->retryableFailure,
+            retryAttempts: $state->retryAttempts,
+            pendingHumanInputRequests: $state->pendingHumanInputRequests,
+            model: $model,
         );
     }
 
@@ -184,6 +232,7 @@ final readonly class RunStateReducer
             retryableFailure: false,
             retryAttempts: $state->retryAttempts,
             pendingHumanInputRequests: $state->pendingHumanInputRequests,
+            model: $state->model,
         );
     }
 
@@ -219,6 +268,7 @@ final readonly class RunStateReducer
                 activeStepId: $state->activeStepId,
                 retryableFailure: false,
                 pendingHumanInputRequests: $state->pendingHumanInputRequests,
+                model: $state->model,
             );
         }
 
@@ -262,6 +312,7 @@ final readonly class RunStateReducer
                 activeStepId: $state->activeStepId,
                 retryableFailure: false,
                 pendingHumanInputRequests: $remaining,
+                model: $state->model,
             );
         }
 
@@ -283,6 +334,7 @@ final readonly class RunStateReducer
                 activeStepId: $state->activeStepId,
                 retryableFailure: false,
                 pendingHumanInputRequests: $state->pendingHumanInputRequests,
+                model: $state->model,
             );
         }
 
@@ -307,6 +359,7 @@ final readonly class RunStateReducer
                 retryableFailure: false,
                 retryAttempts: $retryAttempts,
                 pendingHumanInputRequests: $state->pendingHumanInputRequests,
+                model: $state->model,
             );
         }
 
@@ -334,6 +387,7 @@ final readonly class RunStateReducer
             activeStepId: $state->activeStepId,
             retryableFailure: $state->retryableFailure,
             pendingHumanInputRequests: $state->pendingHumanInputRequests,
+            model: $state->model,
         );
     }
 
@@ -387,6 +441,7 @@ final readonly class RunStateReducer
             retryableFailure: false,
             retryAttempts: 0,
             pendingHumanInputRequests: $state->pendingHumanInputRequests,
+            model: $state->model,
         );
     }
 
@@ -417,6 +472,7 @@ final readonly class RunStateReducer
             retryableFailure: $retryable,
             retryAttempts: $retryAttempt,
             pendingHumanInputRequests: $state->pendingHumanInputRequests,
+            model: $state->model,
         );
     }
 
@@ -524,6 +580,7 @@ final readonly class RunStateReducer
             activeStepId: $state->activeStepId,
             retryableFailure: $state->retryableFailure,
             pendingHumanInputRequests: [...$state->pendingHumanInputRequests, $request],
+            model: $state->model,
         );
     }
 
@@ -554,6 +611,7 @@ final readonly class RunStateReducer
             activeStepId: null,
             retryableFailure: false,
             pendingHumanInputRequests: $state->pendingHumanInputRequests,
+            model: $state->model,
         );
     }
 
@@ -590,6 +648,7 @@ final readonly class RunStateReducer
             activeStepId: $stepId,
             retryableFailure: $state->retryableFailure,
             pendingHumanInputRequests: $state->pendingHumanInputRequests,
+            model: $state->model,
         );
     }
 
@@ -648,6 +707,7 @@ final readonly class RunStateReducer
             activeStepId: null,
             retryableFailure: $state->retryableFailure,
             pendingHumanInputRequests: $state->pendingHumanInputRequests,
+            model: $state->model,
         );
     }
 
@@ -698,6 +758,7 @@ final readonly class RunStateReducer
                 activeStepId: $state->activeStepId,
                 retryableFailure: $state->retryableFailure,
                 pendingHumanInputRequests: $state->pendingHumanInputRequests,
+                model: $state->model,
             );
         }
 
@@ -733,6 +794,7 @@ final readonly class RunStateReducer
                 activeStepId: null,
                 retryableFailure: $state->retryableFailure,
                 pendingHumanInputRequests: $state->pendingHumanInputRequests,
+                model: $state->model,
             );
         }
 
@@ -754,6 +816,7 @@ final readonly class RunStateReducer
             activeStepId: $state->activeStepId,
             retryableFailure: $state->retryableFailure,
             pendingHumanInputRequests: $state->pendingHumanInputRequests,
+            model: $state->model,
         );
     }
 

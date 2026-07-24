@@ -275,10 +275,14 @@ final class AgentCommand
         $reasoning = isset($command->payload['reasoning']) ? (string) $command->payload['reasoning'] : null;
         $client = $this->inProcessClient;
 
+        // Parent entrypoint allocates the session with the real prompt.
+        $runId = $this->sessionStore->createSession($prompt);
+
         // Non-blocking: dispatches StartRun to run_control transport.
         // Events flow through EventStore / publish transport, not stdout.
         $handle = $client->start(new StartRunRequest(
             prompt: $prompt,
+            runId: $runId,
             model: '' !== $model ? $model : null,
             reasoning: '' !== $reasoning ? $reasoning : null,
         ));

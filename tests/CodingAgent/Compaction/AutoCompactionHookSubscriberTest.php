@@ -919,6 +919,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
                 array $messages,
                 string $trigger = 'manual',
                 ?string $customInstructions = null,
+                ?string $activeModel = null,
             ): \Ineersa\AgentCore\Contract\Compaction\MessageSnapshotCompactionResult {
                 throw new \LogicException('compactMessages not expected in this test path.');
             }
@@ -1008,6 +1009,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
                 array $messages,
                 string $trigger = 'manual',
                 ?string $customInstructions = null,
+                ?string $activeModel = null,
             ): \Ineersa\AgentCore\Contract\Compaction\MessageSnapshotCompactionResult {
                 throw new \LogicException('compactMessages not expected in this test path.');
             }
@@ -1075,6 +1077,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
                 array $messages,
                 string $trigger = 'manual',
                 ?string $customInstructions = null,
+                ?string $activeModel = null,
             ): \Ineersa\AgentCore\Contract\Compaction\MessageSnapshotCompactionResult {
                 throw new \LogicException('compactMessages not expected in this test path.');
             }
@@ -1134,7 +1137,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
             turnNo: 1,
             messages: $messages,
             activeStepId: $activeStepId,
-        );
+            model: null);
     }
 
     private function createHookContext(array $eventTypes = [], int $effectsCount = 0): AfterTurnCommitHookContext

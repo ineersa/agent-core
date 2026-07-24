@@ -29,6 +29,7 @@ use Ineersa\CodingAgent\Config\AgentsConfig;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient;
 use Ineersa\CodingAgent\Session\CommittedRunEventAppender;
+use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\SystemPrompt\SystemPromptBuilder;
 use Ineersa\CodingAgent\Tests\Agent\Execution\Support\PipelineCapturingAgentRunner;
 use Ineersa\CodingAgent\Tests\Agent\Execution\Support\PromptContractTestSupport;
@@ -37,7 +38,6 @@ use Ineersa\CodingAgent\Tests\Support\Mcp\TestMcpConfigLoaderFactory;
 use Ineersa\CodingAgent\Tests\TestCase\PerMethodIsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tool\ToolRegistryInterface;
 use PHPUnit\Framework\Attributes\Group;
-use Symfony\Component\Uid\Uuid;
 
 /**
  * GF-05 RED: bare project-root AGENTS.md must appear in effective parent + inheriting child context.
@@ -50,7 +50,9 @@ final class Gf05BareAgentsEffectiveContextIntegrationTest extends PerMethodIsola
         $sentinel = 'GF05_BARE_ROOT_AGENTS_SENTINEL_'.bin2hex(random_bytes(4));
         file_put_contents($this->isolatedCwd().'/AGENTS.md', $sentinel."\n");
 
-        $parentRunId = Uuid::v4()->toRfc4122();
+        // Parent run identity must be a pure-digit hatfield_session id.
+        // createSession() allocates a real DB PK so ParaTest workers cannot collide.
+        $parentRunId = self::getContainer()->get(HatfieldSessionStore::class)->createSession('launch child after context');
         $parentRunStore = self::getContainer()->get(RunStoreInterface::class);
         $eventStore = self::getContainer()->get(EventStoreInterface::class);
         $parentRunner = PipelineCapturingAgentRunner::create($parentRunStore, $eventStore);
@@ -94,6 +96,7 @@ final class Gf05BareAgentsEffectiveContextIntegrationTest extends PerMethodIsola
             toolName: 'subagent',
             cancellationToken: new NullCancellationToken(),
             timeoutSeconds: 120,
+            parentModel: 'test-model',
         ), static fn () => $service->execute($parentRunId, 'gf05-scout', 'Verify inherited AGENTS context'));
 
         $this->assertNotNull($childRunner->lastStartInput);
@@ -194,6 +197,7 @@ final class Gf05BareAgentsEffectiveContextIntegrationTest extends PerMethodIsola
                     activeStepId: $state->activeStepId,
                     retryableFailure: false,
                     pendingHumanInputRequests: $state->pendingHumanInputRequests,
+                    model: $state->model,
                 );
             }
 

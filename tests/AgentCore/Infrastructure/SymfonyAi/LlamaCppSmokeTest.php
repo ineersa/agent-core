@@ -210,7 +210,7 @@ final class LlamaCppSmokeTest extends KernelTestCase
                 new AgentMessage('user', [['type' => 'text', 'text' => '[llm-real:platform-smoke] Respond with exactly one word: hello.']]),
             ],
             activeStepId: 'turn-1-llm-1',
-        ), 0);
+            model: 'test-model'), 0);
 
         // ── Adapter ──
         $adapter = new LlmPlatformAdapter(

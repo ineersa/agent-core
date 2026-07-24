@@ -38,10 +38,18 @@ final class ForkExecutionService implements ForkExecutionServiceInterface
             throw new ToolCallException('Nested fork launches are not supported.', retryable: false);
         }
 
-        // 1) One parent RunStore read → immutable snapshot
+        // 1) One parent RunStore read → immutable snapshot. Fork compaction must
+        // use the canonical parent execution model; never re-resolve session/default.
         $parentState = $this->parentRunStore->get($parentRunId);
-        $parentMessages = null !== $parentState ? $parentState->messages : [];
-        $turnNo = null !== $parentState ? $parentState->turnNo : 0;
+        if (null === $parentState) {
+            throw new ToolCallException(\sprintf('Fork requires canonical parent run state for run_id=%s before compaction.', $parentRunId), retryable: false);
+        }
+        $parentModel = null !== $parentState->model ? trim($parentState->model) : '';
+        if ('' === $parentModel) {
+            throw new ToolCallException(\sprintf('Fork requires canonical parent run model for run_id=%s before compaction.', $parentRunId), retryable: false);
+        }
+        $parentMessages = $parentState->messages;
+        $turnNo = $parentState->turnNo;
 
         // 2) Sanitize in-flight fork invocation / provider-invalid tail
         $sanitized = $this->snapshotSanitizer->sanitize($parentMessages);
@@ -54,6 +62,7 @@ final class ForkExecutionService implements ForkExecutionServiceInterface
             turnNo: $turnNo,
             messages: $sanitized,
             trigger: 'fork',
+            activeModel: $parentModel,
         );
 
         if ($compactResult->isFailure()) {

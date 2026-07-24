@@ -10,6 +10,7 @@ use Ineersa\AgentCore\Contract\RunStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Message\StartRun;
 use Ineersa\AgentCore\Domain\Message\StartRunPayload;
+use Ineersa\AgentCore\Domain\Run\RunMetadata;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\CodingAgent\Runtime\Messenger\WorkerFailedEventSubscriber;
@@ -89,7 +90,7 @@ class WorkerFailedEventSubscriberTest extends TestCase
     #[Test]
     public function skipsWhenRunAlreadyTerminal(): void
     {
-        $runState = new RunState(runId: self::RUN_ID, status: RunStatus::Failed, version: 5);
+        $runState = new RunState(runId: self::RUN_ID, status: RunStatus::Failed, version: 5, model: 'test-model');
 
         $runStore = $this->createMock(RunStoreInterface::class);
         $runStore->method('get')->willReturn($runState);
@@ -165,7 +166,7 @@ class WorkerFailedEventSubscriberTest extends TestCase
             turnNo: 2,
             lastSeq: 5,
             messages: [],
-        );
+            model: 'test-model');
 
         $runStore = $this->createMock(RunStoreInterface::class);
         $runStore->method('get')->willReturn($existingState);
@@ -211,7 +212,7 @@ class WorkerFailedEventSubscriberTest extends TestCase
     #[Test]
     public function handlesCasConflictAfterSequencedAppendWithoutThrowing(): void
     {
-        $currentState = new RunState(runId: self::RUN_ID, status: RunStatus::Running, version: 3, turnNo: 1, lastSeq: 4);
+        $currentState = new RunState(runId: self::RUN_ID, status: RunStatus::Running, version: 3, turnNo: 1, lastSeq: 4, model: 'test-model');
 
         $runStore = $this->createMock(RunStoreInterface::class);
         $runStore->method('get')->willReturnOnConsecutiveCalls($currentState, $currentState);
@@ -239,7 +240,7 @@ class WorkerFailedEventSubscriberTest extends TestCase
     #[Test]
     public function handlesCasConflictExceptionGracefully(): void
     {
-        $currentState = new RunState(runId: self::RUN_ID, status: RunStatus::Running, version: 3);
+        $currentState = new RunState(runId: self::RUN_ID, status: RunStatus::Running, version: 3, model: 'test-model');
 
         $runStore = $this->createStub(RunStoreInterface::class);
         $runStore->method('get')->willReturn($currentState);
@@ -275,7 +276,7 @@ class WorkerFailedEventSubscriberTest extends TestCase
     #[Test]
     public function skipsOnlyTypedDuplicateReplayCorruption(): void
     {
-        $currentState = new RunState(runId: self::RUN_ID, status: RunStatus::Running, version: 3, turnNo: 1, lastSeq: 4);
+        $currentState = new RunState(runId: self::RUN_ID, status: RunStatus::Running, version: 3, turnNo: 1, lastSeq: 4, model: 'test-model');
 
         $runStore = $this->createMock(RunStoreInterface::class);
         $runStore->method('get')->willReturn($currentState);
@@ -313,7 +314,7 @@ class WorkerFailedEventSubscriberTest extends TestCase
             stepId: 'step-1',
             attempt: 1,
             idempotencyKey: 'ik-test-123',
-            payload: new StartRunPayload(systemPrompt: 'test prompt'),
+            payload: new StartRunPayload(systemPrompt: 'test prompt', metadata: new RunMetadata(model: 'test-model')),
         );
     }
 }

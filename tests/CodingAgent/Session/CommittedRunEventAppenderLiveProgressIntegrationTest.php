@@ -43,7 +43,7 @@ final class CommittedRunEventAppenderLiveProgressIntegrationTest extends PerMeth
             version: 0,
             turnNo: 1,
             lastSeq: 0,
-        ), 0);
+            model: 'test-model'), 0);
 
         $resolvedEventStore = self::getContainer()->get(EventStoreInterface::class);
         $this->assertInstanceOf(

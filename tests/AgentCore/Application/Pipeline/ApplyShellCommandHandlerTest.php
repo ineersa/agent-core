@@ -108,7 +108,7 @@ final class ApplyShellCommandHandlerTest extends TestCase
             lastSeq: $lastSeq,
             messages: [],
             activeStepId: 'existing-step',
-        );
+            model: 'test-model');
 
         $result = $handler->handle($message, $state);
 
@@ -148,7 +148,7 @@ final class ApplyShellCommandHandlerTest extends TestCase
     public function testRejectsInvalidRawInput(): void
     {
         $handler = new ApplyShellCommandHandler(new EventFactory());
-        $state = new RunState(runId: 'run-shell-2', status: RunStatus::Queued, turnNo: 0, lastSeq: 0);
+        $state = new RunState(runId: 'run-shell-2', status: RunStatus::Queued, turnNo: 0, lastSeq: 0, model: 'test-model');
 
         $this->expectException(\InvalidArgumentException::class);
         $handler->handle(new ApplyShellCommand(
