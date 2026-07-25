@@ -420,6 +420,33 @@ dispatch pipeline.
 
 ---
 
+### `runtime.llm_worker_count`
+
+Fixed number of `messenger:consume llm` worker processes launched by
+`HeadlessController` at controller startup. All `ExecuteLlmStep`
+messages (parent turns and parallel subagent children) share the `llm`
+Doctrine transport; each consumer claims at most one message, so this
+setting is the real provider-call concurrency limit for parallel
+subagents.
+
+This is **not** the same as `tools.execution.max_parallelism` (tool
+workers) or `agents.max_agents` (how many children one `subagent` tool
+call may request). Do not raise it blindly: each llm worker is a full
+PHP process with process-local provider/WebSocket cache state.
+
+**Default:** `4`
+**Accepted range:** integer `1..8` (enforced by Symfony Validator
+attributes on `RuntimeConfig` at config load).
+
+**Example:**
+
+```yaml
+runtime:
+    llm_worker_count: 4
+```
+
+---
+
 ### `tools.execution` notes
 
 Execution mode per tool is set at registration time by the tool
@@ -659,7 +686,7 @@ Auto-discovery directories (`~/.hatfield/agents/`, `~/.agents/`,
 ```yaml
 agents:
     enabled: true
-    max_agents: 8
+    max_agents: 4
     paths:
         - ~/shared/agents/custom-reviewer.md
         - .hatfield/team-agents
@@ -668,7 +695,7 @@ agents:
 ### `agents.max_agents`
 
 Maximum number of parallel subagents allowed in a single `subagent` tool call
-(`tasks` array). Default: `8`. Requests above this limit fail fast with a hint
+(`tasks` array). Default: `4`. Requests above this limit fail fast with a hint
 to split work across multiple tool calls.
 
 ### `agents.subagent_tool_timeout_seconds`

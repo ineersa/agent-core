@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Runtime\Controller;
 
 use Ineersa\AgentCore\Contract\Tool\ToolExecutionSettingsInterface;
+use Ineersa\CodingAgent\Config\RuntimeConfig;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeExceptionBoundary;
 use Ineersa\CodingAgent\Runtime\Controller\Event\ControllerCommandEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\JsonlCodec;
@@ -60,11 +61,17 @@ final class HeadlessController
         private readonly ToolExecutionSettingsInterface $toolExecutionSettings,
         private readonly RuntimeExceptionBoundary $boundary,
         private readonly RuntimeEventEmitter $emitter,
+        private readonly RuntimeConfig $runtimeConfig = new RuntimeConfig(),
         /**
          * Optional override for parallel tool messenger consumers.
          * Values <= 0 use tools.execution.max_parallelism from settings.
          */
         private readonly int $toolWorkerCount = 0,
+        /**
+         * Optional override for fixed llm messenger consumer pool size.
+         * Values <= 0 use runtime.llm_worker_count from settings (default 4, range 1..8).
+         */
+        private readonly int $llmWorkerCount = 0,
         /**
          * Optional background process manager for session-scoped cleanup
          * on graceful controller shutdown (SIGTERM/SIGINT).
@@ -132,7 +139,14 @@ final class HeadlessController
 
         // Launch messenger consumers for async execution and command transports.
         $this->consumerSupervisor->launch('run_control');
-        $this->consumerSupervisor->launch('llm');
+        // llm consumers: fixed bounded pool for concurrent provider calls
+        // (parent turns + parallel subagent children share the llm transport).
+        // Count defaults to runtime.llm_worker_count (1..8, default 4) and is
+        // intentionally distinct from tools.execution.max_parallelism.
+        $effectiveLlmWorkerCount = $this->llmWorkerCount > 0
+            ? max(RuntimeConfig::MIN_LLM_WORKER_COUNT, min(RuntimeConfig::MAX_LLM_WORKER_COUNT, $this->llmWorkerCount))
+            : max(RuntimeConfig::MIN_LLM_WORKER_COUNT, min(RuntimeConfig::MAX_LLM_WORKER_COUNT, $this->runtimeConfig->llmWorkerCount));
+        $this->consumerSupervisor->launchMultiple('llm', $effectiveLlmWorkerCount);
         // tool consumers: N parallel workers for concurrent tool execution.
         // N defaults to tools.execution.max_parallelism.
         $effectiveWorkerCount = $this->toolWorkerCount > 0

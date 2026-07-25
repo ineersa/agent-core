@@ -435,8 +435,12 @@ final class DeferredSubagentBatchRepository extends ServiceEntityRepository
             // Child evidence commits first; batch becomes Launched only when every child row is Launched.
             // If known child indices were forward-marked but the all-child condition is not met, commit
             // child updates, leave batch Reserved, then signal incomplete transition after commit.
+            //
+            // Bump aggregate_progress_revision exactly once on the Reserved→Launched transition so the
+            // parent receives an initial pending snapshot for all reserved/launched children before the
+            // first child lifecycle observe. Revision is not bumped on redelivery when already Launched.
             $batchAffected = $conn->executeStatement(
-                'UPDATE deferred_subagent_batch SET launch_status = :launched, started_at = COALESCE(started_at, :started), updated_at = :now, projection_version = projection_version + 1
+                'UPDATE deferred_subagent_batch SET launch_status = :launched, started_at = COALESCE(started_at, :started), updated_at = :now, projection_version = projection_version + 1, aggregate_progress_revision = aggregate_progress_revision + 1
                  WHERE parent_run_id = :parent AND parent_tool_call_id = :tool AND launch_status = :reserved
                    AND total_child_count = (
                      SELECT COUNT(*) FROM deferred_subagent_child

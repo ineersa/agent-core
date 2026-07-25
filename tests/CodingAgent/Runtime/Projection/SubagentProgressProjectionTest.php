@@ -204,7 +204,35 @@ final class SubagentProgressProjectionTest extends TestCase
         $this->assertSame('subagent', $block->meta['tool_name'] ?? null);
     }
 
-    /** @param array<string, mixed> $payload */
+    public function testParallelPendingChildrenRenderAsPending(): void
+    {
+        $this->accept('tool_execution.started', [
+            'tool_call_id' => 'tc_pending', 'tool_name' => 'subagent',
+        ]);
+        $progress = [
+            'mode' => 'parallel', 'status' => 'running', 'completed_count' => 0, 'total_count' => 2, 'elapsed_ms' => 10,
+            'children' => [
+                [
+                    'index' => 1, 'label' => 'Step 1', 'agent_name' => 'scout', 'status' => 'pending',
+                    'artifact_id' => 'agent_p1', 'task_summary' => 'Queued one', 'turn_no' => 0,
+                ],
+                [
+                    'index' => 2, 'label' => 'Step 2', 'agent_name' => 'worker', 'status' => 'pending',
+                    'artifact_id' => 'agent_p2', 'task_summary' => 'Queued two', 'turn_no' => 0,
+                ],
+            ],
+        ];
+        $this->accept('tool_execution.output_delta', [
+            'tool_call_id' => 'tc_pending', 'tool_name' => 'subagent', 'subagent_progress' => $progress,
+        ]);
+        $blocks = $this->projector->blocks();
+        $this->assertCount(1, $blocks);
+        $text = $blocks[0]->text;
+        $this->assertStringContainsString('pending', strtolower($text));
+        $this->assertStringContainsString('agent_p1', $text);
+        $this->assertStringContainsString('agent_p2', $text);
+    }
+
     private function accept(string $type, array $payload): void
     {
         $this->projector->accept([

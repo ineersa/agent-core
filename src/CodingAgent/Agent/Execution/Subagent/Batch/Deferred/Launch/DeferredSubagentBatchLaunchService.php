@@ -10,6 +10,7 @@ use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchExecutionModeEnum;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\PreparedAgentChildRunDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Preparation\DeferredSubagentSingleChildLaunchProfileDTO;
+use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Progress\DeferredSubagentBatchProgressDeliveryService;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentBatchProjectionDTO;
 use Ineersa\CodingAgent\Agent\Execution\SubagentTaskDTO;
 use Ineersa\CodingAgent\Config\AgentsConfig;
@@ -29,6 +30,7 @@ final class DeferredSubagentBatchLaunchService
         private readonly StackToolExecutionContextAccessor $contextAccessor,
         private readonly AgentsConfig $agentsConfig,
         private readonly LoggerInterface $logger,
+        private readonly ?DeferredSubagentBatchProgressDeliveryService $progressDelivery = null,
     ) {
     }
 
@@ -251,6 +253,7 @@ final class DeferredSubagentBatchLaunchService
         );
         try {
             $this->batchRepository->applyLaunchSuccessState($parentRunId, $toolCallId, $lifecycleId, $startedAt, $launchedIndices);
+            $this->deliverInitialProgressIfNeeded($lifecycleId);
         } catch (\Throwable $persistFailure) {
             $this->logger->warning('deferred_subagent_batch.launch_success_persist_failed', [
                 'run_id' => $parentRunId,
@@ -284,6 +287,7 @@ final class DeferredSubagentBatchLaunchService
                 Clock::get()->now(),
                 $launchedIndices,
             );
+            $this->deliverInitialProgressIfNeeded($lifecycleId);
         } catch (\Throwable $persistFailure) {
             $this->logger->warning('deferred_subagent_batch.launch_success_persist_failed', [
                 'run_id' => $parentRunId,
@@ -291,6 +295,37 @@ final class DeferredSubagentBatchLaunchService
                 'component' => 'agent.execution',
                 'event_type' => 'deferred_subagent_batch.launch_success_persist_failed',
                 'exception_class' => $persistFailure::class,
+            ]);
+        }
+    }
+
+    /**
+     * After reservation/commit success, emit one bounded snapshot when aggregate revision advanced.
+     * Revision gating + delivered marker keep this idempotent on redelivery.
+     */
+    private function deliverInitialProgressIfNeeded(string $lifecycleId): void
+    {
+        if (null === $this->progressDelivery) {
+            return;
+        }
+
+        $batch = $this->batchRepository->findByLifecycleId($lifecycleId);
+        if (null === $batch) {
+            return;
+        }
+
+        try {
+            $this->progressDelivery->deliverIfNeeded($batch);
+        } catch (\Throwable $exception) {
+            // Progress is best-effort observability; launch success must not roll back.
+            // Lifecycle recovery/observe will re-deliver when revision is still undelivered.
+            $this->logger->warning('deferred_subagent_batch.initial_progress_delivery_failed', [
+                'batch_lifecycle_id' => $lifecycleId,
+                'parent_run_id' => $batch->parentRunId,
+                'tool_call_id' => $batch->parentToolCallId,
+                'component' => 'agent.execution',
+                'event_type' => 'deferred_subagent_batch.initial_progress_delivery_failed',
+                'exception_class' => $exception::class,
             ]);
         }
     }

@@ -205,7 +205,33 @@ final class SubagentLiveCatalogTest extends TestCase
         $this->assertSame(\Ineersa\Tui\Tests\Support\ChildContextStatisticsFixture::CONTEXT_WINDOW, $this->childContextInt($child, 'contextWindow'));
     }
 
-    /** @param array<string, mixed> $progress */
+    public function testIngestsParallelPendingChildrenBeforeRunning(): void
+    {
+        $catalog = new SubagentLiveCatalog();
+        $catalog->ingestRuntimeEvent($this->progressEvent('parent-1', [
+            'mode' => 'parallel',
+            'status' => 'running',
+            'children' => [
+                ['agent_name' => 'scout', 'artifact_id' => 'a1', 'agent_run_id' => 'run-1', 'status' => 'pending', 'task_summary' => 'One'],
+                ['agent_name' => 'worker', 'artifact_id' => 'a2', 'agent_run_id' => 'run-2', 'status' => 'pending', 'task_summary' => 'Two'],
+            ],
+        ]));
+        $this->assertCount(2, $catalog->all());
+        $this->assertSame(SubagentLiveStatusEnum::Pending, $catalog->findByArtifactId('a1')?->status);
+        $this->assertSame(SubagentLiveStatusEnum::Pending, $catalog->findByArtifactId('a2')?->status);
+
+        $catalog->ingestRuntimeEvent($this->progressEvent('parent-1', [
+            'mode' => 'parallel',
+            'status' => 'running',
+            'children' => [
+                ['agent_name' => 'scout', 'artifact_id' => 'a1', 'agent_run_id' => 'run-1', 'status' => 'running', 'task_summary' => 'One'],
+                ['agent_name' => 'worker', 'artifact_id' => 'a2', 'agent_run_id' => 'run-2', 'status' => 'completed', 'task_summary' => 'Two'],
+            ],
+        ]));
+        $this->assertSame(SubagentLiveStatusEnum::Running, $catalog->findByArtifactId('a1')?->status);
+        $this->assertSame(SubagentLiveStatusEnum::Completed, $catalog->findByArtifactId('a2')?->status);
+    }
+
     private function progressEvent(string $runId, array $progress): RuntimeEvent
     {
         return new RuntimeEvent(

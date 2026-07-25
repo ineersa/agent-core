@@ -8,6 +8,8 @@ use Ineersa\CodingAgent\Config\Ai\AiConfig;
 use Ineersa\CodingAgent\Config\Ai\AiModelReference;
 use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
 use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
+use Symfony\Component\Validator\Exception\ValidationFailedException;
+use Symfony\Component\Validator\Validation;
 
 /**
  * Resolved Hatfield application configuration.
@@ -28,6 +30,7 @@ use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
  *  - compaction CompactionConfig (auto_enabled, compact_after_tokens, keep_recent_tokens, model, thinking_level, provider_overrides, model_overrides)
  *  - agents     AgentsConfig (enabled, paths)
  *  - forks      ForksConfigDTO (model, thinking_level)
+ *  - runtime    RuntimeConfig (llm_worker_count)
  *
  * The raw array is kept for forward compatibility with config keys
  * that do not yet have a typed DTO. Production consumers must use
@@ -47,6 +50,7 @@ final class AppConfig
         public CompactionConfig $compaction = new CompactionConfig(),
         public ForksConfigDTO $forks = new ForksConfigDTO(),
         public AgentsConfig $agents = new AgentsConfig(),
+        public RuntimeConfig $runtime = new RuntimeConfig(),
         /** @var array<string, mixed> Raw merged data for forward compatibility */
         public array $raw = [],
         public ?HatfieldModelCatalog $catalog = null,
@@ -111,10 +115,36 @@ final class AppConfig
             ),
             forks: self::denormalizeForksConfig($data, $denormalizer),
             agents: AgentsConfig::fromRaw($data['agents'] ?? []),
+            runtime: self::denormalizeAndValidateRuntimeConfig($data, $denormalizer),
             raw: $data,
             catalog: $catalog,
             cwd: $cwd,
         );
+    }
+
+    /**
+     * Denormalize runtime config and enforce Symfony Validator attributes
+     * (e.g. runtime.llm_worker_count Range 1..8).
+     *
+     * @param array<string, mixed> $data
+     */
+    private static function denormalizeAndValidateRuntimeConfig(array $data, DenormalizerInterface $denormalizer): RuntimeConfig
+    {
+        $runtime = $denormalizer->denormalize(
+            (array) ($data['runtime'] ?? []),
+            RuntimeConfig::class,
+        );
+
+        $violations = Validation::createValidatorBuilder()
+            ->enableAttributeMapping()
+            ->getValidator()
+            ->validate($runtime);
+
+        if (\count($violations) > 0) {
+            throw new ValidationFailedException($runtime, $violations);
+        }
+
+        return $runtime;
     }
 
     /**

@@ -33,7 +33,7 @@ final readonly class AgentsConfig
         #[SerializedName('retrieve')]
         public AgentArtifactRetrievalLimitsConfig $retrieve = new AgentArtifactRetrievalLimitsConfig(),
         #[SerializedName('max_agents')]
-        public int $maxAgents = 8,
+        public int $maxAgents = 4,
 
         #[SerializedName('subagent_tool_timeout_seconds')]
         public int $subagentToolTimeoutSeconds = 1800,
@@ -72,7 +72,7 @@ final readonly class AgentsConfig
 
         $retrieve = AgentArtifactRetrievalLimitsConfig::fromRaw($raw['retrieve'] ?? []);
 
-        $maxAgents = 8;
+        $maxAgents = 4;
         if (\array_key_exists('max_agents', $raw) && \is_int($raw['max_agents']) && $raw['max_agents'] > 0) {
             $maxAgents = $raw['max_agents'];
         }

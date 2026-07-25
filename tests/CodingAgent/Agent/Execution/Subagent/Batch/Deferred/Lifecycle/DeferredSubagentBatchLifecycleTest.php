@@ -86,16 +86,17 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
             new TestMessageBus(),
         );
 
-        // First turn: observe committed events, aggregate revision increments
+        // Launch success bumps aggregate revision once for the initial pending snapshot.
         $batchBefore = $repo->findByLifecycleId($lifecycle);
-        $this->assertSame(0, $batchBefore->aggregateProgressRevision);
+        $this->assertSame(1, $batchBefore->aggregateProgressRevision);
 
+        // First turn: observe committed events, aggregate revision increments again.
         $handler(new ObserveDeferredSubagentBatchChildTurnMessage($lifecycle, 1, $c1['childRunId'], RunStatus::Running, 1, [
             new AfterTurnCommitEventSummary(1, RunEventTypeEnum::LlmStepCompleted->value, ['assistant_message' => ['content' => [['type' => 'text', 'text' => 'hello']]]]),
         ]));
 
         $batchAfter1 = $repo->findByLifecycleId($lifecycle);
-        $this->assertSame(1, $batchAfter1->aggregateProgressRevision);
+        $this->assertSame(2, $batchAfter1->aggregateProgressRevision);
 
         // Duplicate seq: suppressed, aggregate revision unchanged
         $handler(new ObserveDeferredSubagentBatchChildTurnMessage($lifecycle, 1, $c1['childRunId'], RunStatus::Running, 1, [
@@ -103,7 +104,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         ]));
 
         $batchAfter2 = $repo->findByLifecycleId($lifecycle);
-        $this->assertSame(1, $batchAfter2->aggregateProgressRevision);
+        $this->assertSame(2, $batchAfter2->aggregateProgressRevision);
 
         // Gap (seq jump): logged, aggregate revision unchanged
         $handler(new ObserveDeferredSubagentBatchChildTurnMessage($lifecycle, 1, $c1['childRunId'], RunStatus::Running, 3, [
@@ -111,7 +112,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         ]));
 
         $batchAfter3 = $repo->findByLifecycleId($lifecycle);
-        $this->assertSame(1, $batchAfter3->aggregateProgressRevision);
+        $this->assertSame(2, $batchAfter3->aggregateProgressRevision);
     }
 
     public function testAggregateParallelProgressUsesRevisionDedupAndStatusPrecedence(): void
@@ -158,7 +159,8 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
 
         $progressRepo = self::getContainer()->get(DeferredSubagentBatchRepository::class);
         $batch = $progressRepo->findByLifecycleId($lifecycle);
-        $this->assertSame(2, $batch->aggregateProgressRevision);
+        // launch bump + two child observes
+        $this->assertSame(3, $batch->aggregateProgressRevision);
 
         // Observer delivers running progress
         $appendedSp = [];
@@ -1022,7 +1024,8 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
                 $this->assertArrayHasKey('input_tokens', $forced);
                 $this->assertNotNull($batchDone->interruptionProgressEnqueuedAt);
             } elseif ('natural_terminal' === $variant) {
-                $this->assertCount(1, $appended);
+                // launch revision delivery (pending/terminal snapshot) + forced timeout progress
+                $this->assertCount(2, $appended);
                 $this->assertNotNull($batchDone->interruptionProgressEnqueuedAt);
             } else {
                 $this->assertCount('no_projection' === $variant ? 0 : 1, $appended);
@@ -1044,7 +1047,8 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
                 $this->assertNotNull($batchDone->interruptionProgressEnqueuedAt);
             } else {
                 if ('natural_terminal' === $variant) {
-                    $this->assertCount(1, $appended);
+                    // launch revision delivery + forced parent-cancel progress
+                    $this->assertCount(2, $appended);
                     $this->assertNotNull($batchDone->interruptionProgressEnqueuedAt);
                 } else {
                     $this->assertCount('no_projection' === $variant ? 0 : 1, $appended);
@@ -1180,9 +1184,58 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
         $this->assertCount(0, $commandBus->messages, 'Redelivered lifecycle observation must not complete parent tool twice');
     }
 
-    /**
-     * @param array<int, array<string, mixed>> $appended
-     */
+    public function testLaunchSuccessEmitsInitialPendingProgressForParallelChildren(): void
+    {
+        $repo = self::getContainer()->get(DeferredSubagentBatchRepository::class);
+        $factory = new DeferredSubagentBatchIdentityFactory();
+        $parent = 'parent-batch-initial-pending';
+        $tool = 'tool-batch-initial-pending';
+        $lifecycle = $factory->batchLifecycleId($parent, $tool);
+        $c1 = $factory->childIdentity($parent, $tool, 1);
+        $c2 = $factory->childIdentity($parent, $tool, 2);
+        $repo->reserveBatch(
+            lifecycleId: $lifecycle,
+            parentRunId: $parent,
+            parentTurnNo: 1,
+            parentToolCallId: $tool,
+            parentOrderIndex: 0,
+            executionMode: ChildRunBatchExecutionModeEnum::Parallel,
+            totalChildCount: 2,
+            deadlineAt: new \DateTimeImmutable('+600 seconds'),
+            childIntents: [
+                ['batchIndex' => 1, 'childRunId' => $c1['childRunId'], 'artifactId' => $c1['artifactId'], 'agentName' => 'scout', 'task' => 'T1', 'definitionModel' => null],
+                ['batchIndex' => 2, 'childRunId' => $c2['childRunId'], 'artifactId' => $c2['artifactId'], 'agentName' => 'worker', 'task' => 'T2', 'definitionModel' => null],
+            ],
+        );
+
+        $appended = [];
+        $progress = new DeferredSubagentBatchProgressDeliveryService(
+            $repo,
+            $this->createSnapshotFactory(),
+            $this->createSpyProgressAppender($appended),
+            new TestLogger(),
+        );
+
+        $repo->applyLaunchSuccessState($parent, $tool, $lifecycle, new \DateTimeImmutable(), [1, 2]);
+        $batch = $repo->findByLifecycleId($lifecycle);
+        $this->assertNotNull($batch);
+        $this->assertGreaterThan(0, $batch->aggregateProgressRevision);
+        $this->assertTrue($progress->deliverIfNeeded($batch), 'Initial pending progress must deliver after launch revision bump');
+        $this->assertCount(1, $appended);
+        $payload = $appended[0];
+        $this->assertSame('parallel', $payload['mode'] ?? null);
+        $children = $payload['children'] ?? [];
+        $this->assertCount(2, $children);
+        $statuses = array_map(static fn (array $child): string => (string) ($child['status'] ?? ''), $children);
+        $this->assertSame(['pending', 'pending'], $statuses);
+
+        // Redelivery after delivered marker must not duplicate.
+        $batchAfter = $repo->findByLifecycleId($lifecycle);
+        $this->assertNotNull($batchAfter);
+        $this->assertFalse($progress->deliverIfNeeded($batchAfter));
+        $this->assertCount(1, $appended);
+    }
+
     private function createSpyProgressAppender(array &$appended): SubagentProgressEventAppender
     {
         return new class(self::getContainer()->get(CommittedRunEventAppender::class), $appended) extends SubagentProgressEventAppender {
