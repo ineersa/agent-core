@@ -10,8 +10,7 @@ use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 
 /**
- * Thesis: OM migrations create domain + messenger tables in om.sqlite only
- * and are idempotent on re-run.
+ * Thesis: OM migrations create domain tables in om.sqlite only and are idempotent.
  */
 final class OmSchemaMigratorTest extends TestCase
 {
@@ -38,7 +37,7 @@ final class OmSchemaMigratorTest extends TestCase
         @rmdir($this->tmpDir);
     }
 
-    public function testMigrateCreatesDomainAndMessengerTablesIdempotently(): void
+    public function testMigrateCreatesDomainTablesIdempotently(): void
     {
         $dbPath = $this->tmpDir.'/om.sqlite';
         $database = OmTestDatabase::connect($dbPath);
@@ -55,10 +54,11 @@ final class OmSchemaMigratorTest extends TestCase
             'om_reflection',
             'om_compaction_request',
             'om_compaction_result',
-            'messenger_messages',
         ] as $table) {
             $this->assertTrue($schema->tablesExist([$table]), $table.' should exist');
         }
+
+        $this->assertFalse($schema->tablesExist(['messenger_messages']), 'OM no longer owns Messenger tables');
 
         $versions = $database->connection()->fetchFirstColumn('SELECT version FROM om_schema_version');
         $this->assertContains('20260722_001_domain', $versions);

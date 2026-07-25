@@ -25,7 +25,8 @@ final class OmTestDatabase
     public static function connect(string $absolutePath): self
     {
         $dir = \dirname($absolutePath);
-        if (!is_dir($dir) && !mkdir($dir, 0750, true) && !is_dir($dir)) {
+        // Owner-only matches production OmDatabaseFactory (sensitive memory data).
+        if (!is_dir($dir) && !mkdir($dir, 0700, true) && !is_dir($dir)) {
             throw new \RuntimeException(\sprintf('Unable to create OM data directory: %s', $dir));
         }
 

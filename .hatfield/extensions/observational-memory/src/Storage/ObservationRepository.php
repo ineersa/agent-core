@@ -17,6 +17,42 @@ final class ObservationRepository
     ) {
     }
 
+    public function hasCompatibleCoverage(string $coverageKey, string $sourceDigest): bool
+    {
+        $existing = $this->connection->fetchAssociative(
+            'SELECT source_digest FROM om_coverage WHERE coverage_key = ?',
+            [$coverageKey],
+        );
+
+        if (false === $existing) {
+            return false;
+        }
+
+        if (($existing['source_digest'] ?? '') !== $sourceDigest) {
+            throw new OmConflictException(\sprintf('Coverage conflict for key %s: source_digest mismatch.', $coverageKey));
+        }
+
+        return true;
+    }
+
+    /**
+     * Latest covered source end seq for a run under the active renderer/schema versions.
+     */
+    public function latestCoveredEndSeq(string $runId, string $rendererVersion, string $observerSchemaVersion): ?int
+    {
+        $value = $this->connection->fetchOne(
+            'SELECT MAX(source_end_seq) FROM om_coverage
+             WHERE run_id = ? AND renderer_version = ? AND observer_schema_version = ?',
+            [$runId, $rendererVersion, $observerSchemaVersion],
+        );
+
+        if (null === $value || false === $value) {
+            return null;
+        }
+
+        return (int) $value;
+    }
+
     /**
      * @param list<array{
      *   observation_id: string,

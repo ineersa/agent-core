@@ -5,8 +5,12 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Extension;
 
 use Ineersa\CodingAgent\Config\AppConfig;
+use Ineersa\CodingAgent\Extension\Agent\ExtensionAgentJobDispatcher;
+use Ineersa\CodingAgent\Extension\Agent\ExtensionAgentJobRegistry;
 use Ineersa\CodingAgent\Tool\ToolRegistryInterface;
 use Ineersa\Hatfield\ExtensionApi\Agent\AgentRunnerInterface;
+use Ineersa\Hatfield\ExtensionApi\Agent\ExtensionAgentJobHandlerInterface;
+use Ineersa\Hatfield\ExtensionApi\Agent\ExtensionAgentJobRequestDTO;
 use Ineersa\Hatfield\ExtensionApi\Command\CommandDefinitionDTO;
 use Ineersa\Hatfield\ExtensionApi\Command\CommandRegistryInterface;
 use Ineersa\Hatfield\ExtensionApi\Command\ExtensionCommandHandlerInterface;
@@ -45,6 +49,8 @@ final readonly class ExtensionToolRegistryBridge implements ExtensionApiInterfac
         private CommandRegistryInterface $commandRegistry,
         private AgentRunnerInterface $agentRunner,
         private SessionEventReaderInterface $sessionEventReader,
+        private ExtensionAgentJobRegistry $extensionAgentJobRegistry,
+        private ExtensionAgentJobDispatcher $extensionAgentJobDispatcher,
     ) {
     }
 
@@ -142,5 +148,15 @@ final readonly class ExtensionToolRegistryBridge implements ExtensionApiInterfac
     public function sessionEvents(): SessionEventReaderInterface
     {
         return $this->sessionEventReader;
+    }
+
+    public function registerExtensionAgentJobHandler(string $handlerId, ExtensionAgentJobHandlerInterface $handler): void
+    {
+        $this->extensionAgentJobRegistry->register($handlerId, $handler);
+    }
+
+    public function dispatchExtensionAgentJob(ExtensionAgentJobRequestDTO $request): void
+    {
+        $this->extensionAgentJobDispatcher->dispatch($request);
     }
 }
