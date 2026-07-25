@@ -272,7 +272,7 @@ final readonly class OmBeforeCompactionHook implements BeforeCompactionHookInter
             throw new \InvalidArgumentException('metadata_json is not JSON-safe for public metadata.', previous: $e);
         }
 
-        /* @var array<string, mixed> $decoded */
+        // $decoded is array after is_array + non-list checks; method return type is array<string, mixed>.
         return $decoded;
     }
 

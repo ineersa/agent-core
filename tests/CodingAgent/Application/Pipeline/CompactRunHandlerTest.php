@@ -1150,10 +1150,8 @@ final class CompactRunHandlerTest extends TestCase
         $this->assertSame(20, $captured->requiredEndSeq);
         $this->assertSame(RunEventTypeEnum::ContextCompactionStarted->value, $result->events[0]->type);
         $this->assertSame(RunEventTypeEnum::ContextCompacted->value, $result->events[1]->type);
+        // Empty effects already prove ExecuteCompactionStep was not dispatched.
         $this->assertEmpty($result->effects);
-        foreach ($result->effects as $effect) {
-            $this->assertNotInstanceOf(ExecuteCompactionStep::class, $effect);
-        }
         $this->assertSame($replacementText, $result->events[1]->payload['summary_text'] ?? null);
     }
 

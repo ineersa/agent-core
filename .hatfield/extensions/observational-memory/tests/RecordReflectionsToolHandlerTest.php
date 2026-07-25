@@ -102,6 +102,45 @@ final class RecordReflectionsToolHandlerTest extends TestCase
         $this->assertFalse($levelMismatch->hasRecorded());
     }
 
+    /**
+     * Thesis: duplicate fully-validated reflections count once toward reflections_max_tokens.
+     */
+    public function testDuplicateReflectionDoesNotDoubleCountTokenBudget(): void
+    {
+        // 20 UTF-8 chars => ceil(20 / 3.25) = 7 tokens. Budget fits one copy, not two.
+        $content = str_repeat('x', 20);
+        $tokens = \Ineersa\HatfieldExt\ObservationalMemory\Observer\OmTokenEstimator::estimate($content);
+        $this->assertSame(7, $tokens);
+
+        $handler = new RecordReflectionsToolHandler(
+            runId: 'run-1',
+            requestId: 'req-dedupe-budget',
+            reflectorSchemaVersion: 'v1',
+            compressionLevel: 0,
+            allowedObservationIds: ['obs-a' => true],
+            maxReflections: 2,
+            reflectionContentMaxChars: 100,
+            replacementMaxChars: 200,
+            reflectionsMaxTokens: $tokens,
+        );
+
+        $reflection = [
+            'content' => $content,
+            'supporting_observation_ids' => ['obs-a'],
+            'compression_level' => 0,
+        ];
+        $ok = $handler([
+            'replacement_text' => 'Summary text',
+            'reflections' => [$reflection, $reflection],
+        ]);
+
+        $this->assertIsArray($ok);
+        $this->assertSame('accepted', $ok['status']);
+        $this->assertTrue($handler->hasRecorded());
+        $this->assertCount(1, $handler->reflections());
+        $this->assertSame($tokens, $handler->reflections()[0]['token_count']);
+    }
+
     public function testEmptyReflectionsRejectedWithoutStateMutation(): void
     {
         $handler = new RecordReflectionsToolHandler(

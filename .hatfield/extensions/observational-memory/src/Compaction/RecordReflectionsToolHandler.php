@@ -151,6 +151,13 @@ final class RecordReflectionsToolHandler implements ExtensionToolHandlerInterfac
             }
 
             $tokenCount = OmTokenEstimator::estimate($content);
+
+            // Dedupe before budget accounting so identical records do not consume the pool twice.
+            $dedupeKey = hash('sha256', $content).'|'.$supportJson.'|'.$levelInt;
+            if (isset($seen[$dedupeKey])) {
+                continue;
+            }
+
             $tokenTotal += $tokenCount;
             if ($tokenTotal > $this->reflectionsMaxTokens) {
                 return $this->reject(
@@ -159,10 +166,6 @@ final class RecordReflectionsToolHandler implements ExtensionToolHandlerInterfac
                 );
             }
 
-            $dedupeKey = hash('sha256', $content).'|'.$supportJson.'|'.$levelInt;
-            if (isset($seen[$dedupeKey])) {
-                continue;
-            }
             $seen[$dedupeKey] = true;
 
             $reflectionId = hash('sha256', implode('|', [
