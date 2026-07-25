@@ -45,6 +45,7 @@
 parameters:
     env(HATFIELD_AGENT_TRANSPORT_DSN): 'sync://'
     env(HATFIELD_MCP_TRANSPORT_DSN): 'in-memory://'
+    env(HATFIELD_EXTENSION_AGENT_TRANSPORT_DSN): 'sync://'
 # llm and tool transports use the default Symfony Serializer since
 # their messages contain only scalar/array properties.
 
@@ -81,6 +82,12 @@ framework:
             tool:        '%env(HATFIELD_TOOL_TRANSPORT_DSN)%'
             agent:       '%env(HATFIELD_AGENT_TRANSPORT_DSN)%'
             mcp:         '%env(HATFIELD_MCP_TRANSPORT_DSN)%'
+            # Dedicated async worker for extension-owned agent jobs (Observer, etc.).
+            # Uses default Symfony Serializer (scalar/array payload only).
+            # MUST be a process transport (doctrine:// / in-memory:// for tests).
+            # ExtensionAgentJobDispatcher refuses sync:// so model work cannot run
+            # inline during AfterTurnCommit / on the caller thread.
+            extension_agent: '%env(HATFIELD_EXTENSION_AGENT_TRANSPORT_DSN)%'
 
         routing:
             Ineersa\AgentCore\Domain\Message\StartRun: run_control
@@ -138,3 +145,5 @@ framework:
             Ineersa\CodingAgent\Mcp\Message\McpInitializeSessionCommand: mcp
             Ineersa\CodingAgent\Mcp\Message\McpRefreshCatalogCommand: mcp
             Ineersa\CodingAgent\Mcp\Message\McpDisconnectSessionCommand: mcp
+            # Generic extension-agent jobs only — no OM-specific message classes.
+            Ineersa\CodingAgent\Extension\Agent\ExtensionAgentJobMessage: extension_agent

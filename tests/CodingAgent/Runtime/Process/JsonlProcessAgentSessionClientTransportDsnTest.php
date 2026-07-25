@@ -53,6 +53,7 @@ $keys = [
     'HATFIELD_TOOL_TRANSPORT_DSN',
     'HATFIELD_AGENT_TRANSPORT_DSN',
     'HATFIELD_MCP_TRANSPORT_DSN',
+    'HATFIELD_EXTENSION_AGENT_TRANSPORT_DSN',
     'HATFIELD_TEST_DATABASE_PATH',
     'HATFIELD_TEST_MESSENGER_TRANSPORT_DATABASE_PATH',
 ];
@@ -132,6 +133,7 @@ PHP);
             'HATFIELD_TOOL_TRANSPORT_DSN',
             'HATFIELD_AGENT_TRANSPORT_DSN',
             'HATFIELD_MCP_TRANSPORT_DSN',
+            'HATFIELD_EXTENSION_AGENT_TRANSPORT_DSN',
         ] as $dsnKey) {
             $this->assertStringStartsWith('doctrine://messenger_transport?', $env[$dsnKey], $dsnKey);
         }
@@ -139,6 +141,7 @@ PHP);
         $this->assertStringContainsString('run_control_session-42', $env['HATFIELD_RUN_CONTROL_TRANSPORT_DSN']);
         $this->assertStringContainsString('llm_session-42', $env['HATFIELD_LLM_TRANSPORT_DSN']);
         $this->assertStringContainsString('tool_session-42', $env['HATFIELD_TOOL_TRANSPORT_DSN']);
+        $this->assertStringContainsString('extension_agent_session-42', $env['HATFIELD_EXTENSION_AGENT_TRANSPORT_DSN']);
         $this->assertStringNotContainsString('doctrine://default', implode(' ', $env));
     }
 

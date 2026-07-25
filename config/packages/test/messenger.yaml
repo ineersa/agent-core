@@ -17,6 +17,7 @@ parameters:
     env(HATFIELD_TOOL_TRANSPORT_DSN): 'in-memory://'
     env(HATFIELD_AGENT_TRANSPORT_DSN): 'in-memory://'
     env(HATFIELD_MCP_TRANSPORT_DSN): 'in-memory://'
+    env(HATFIELD_EXTENSION_AGENT_TRANSPORT_DSN): 'in-memory://'
 
 framework:
     messenger:
@@ -36,3 +37,5 @@ framework:
                 dsn: '%env(HATFIELD_AGENT_TRANSPORT_DSN)%'
             mcp:
                 dsn: '%env(HATFIELD_MCP_TRANSPORT_DSN)%'
+            extension_agent:
+                dsn: '%env(HATFIELD_EXTENSION_AGENT_TRANSPORT_DSN)%'
