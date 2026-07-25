@@ -47,26 +47,9 @@ final readonly class ObserveBoundaryJobHandler implements ExtensionAgentJobHandl
 
         $rendererVersion = (string) ($payload['renderer_version'] ?? $settings->rendererVersion);
         $observerSchemaVersion = (string) ($payload['observer_schema_version'] ?? $settings->observerSchemaVersion);
-        $effectiveSettings = new OmSettings(
-            enabled: $settings->enabled,
-            databasePath: $settings->databasePath,
-            observerModel: $settings->observerModel,
-            reflectorModel: $settings->reflectorModel,
-            rendererVersion: $rendererVersion,
-            observerSchemaVersion: $observerSchemaVersion,
-            reflectorSchemaVersion: $settings->reflectorSchemaVersion,
-            maxObservations: $settings->maxObservations,
-            observerInputBudgetTokens: $settings->observerInputBudgetTokens,
-            toolResultMaxChars: $settings->toolResultMaxChars,
-            contentMaxChars: $settings->contentMaxChars,
-            waitTimeoutSeconds: $settings->waitTimeoutSeconds,
-            observationsMaxTokens: $settings->observationsMaxTokens,
-            reflectionsMaxTokens: $settings->reflectionsMaxTokens,
-            reflectorInputBudgetTokens: $settings->reflectorInputBudgetTokens,
-            maxReflections: $settings->maxReflections,
-            reflectionContentMaxChars: $settings->reflectionContentMaxChars,
-            replacementMaxChars: $settings->replacementMaxChars,
-        );
+        // Payload may pin renderer/schema versions from dispatch time without
+        // reconstructing every OmSettings field (models/budgets must stay intact).
+        $effectiveSettings = $settings->withRendererAndObserverVersions($rendererVersion, $observerSchemaVersion);
 
         $contiguousEnd = $repository->contiguousCoveredEndSeq($runId, $rendererVersion, $observerSchemaVersion);
         $sourceStartSeq = null === $contiguousEnd ? 1 : $contiguousEnd + 1;

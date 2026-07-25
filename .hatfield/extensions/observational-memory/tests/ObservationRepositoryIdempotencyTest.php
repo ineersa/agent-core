@@ -67,6 +67,6 @@ final class ObservationRepositoryIdempotencyTest extends TestCase
         );
         $this->assertSame('noop', $second['status']);
         $this->assertTrue($repo->hasCompatibleCoverage('cov-1', 'digest-a'));
-        $this->assertSame(10, $repo->latestCoveredEndSeq('run-1', 'r1', 'o1'));
+        $this->assertSame(10, $repo->contiguousCoveredEndSeq('run-1', 'r1', 'o1'));
     }
 }

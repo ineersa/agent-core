@@ -77,6 +77,15 @@ final class RecordReflectionsToolHandler implements ExtensionToolHandlerInterfac
                 'record_reflections requires reflections as a list (array).',
             );
         }
+        // Reflector success requires at least one durable reflection when
+        // observations were non-empty (worker only invokes Reflector then).
+        // Empty list is model-correctable; do not mutate recorded state.
+        if ([] === $reflections) {
+            return $this->reject(
+                'empty_reflections',
+                'record_reflections requires at least one reflection.',
+            );
+        }
         if (\count($reflections) > $this->maxReflections) {
             return $this->reject(
                 'too_many_reflections',

@@ -202,6 +202,35 @@ final readonly class OmSettings
     }
 
     /**
+     * Immutable copy with job-payload renderer/observer schema versions only.
+     *
+     * All other settings (models, budgets, paths, timeouts) are retained exactly.
+     */
+    public function withRendererAndObserverVersions(string $rendererVersion, string $observerSchemaVersion): self
+    {
+        return new self(
+            enabled: $this->enabled,
+            databasePath: $this->databasePath,
+            observerModel: $this->observerModel,
+            reflectorModel: $this->reflectorModel,
+            rendererVersion: $rendererVersion,
+            observerSchemaVersion: $observerSchemaVersion,
+            reflectorSchemaVersion: $this->reflectorSchemaVersion,
+            maxObservations: $this->maxObservations,
+            observerInputBudgetTokens: $this->observerInputBudgetTokens,
+            toolResultMaxChars: $this->toolResultMaxChars,
+            contentMaxChars: $this->contentMaxChars,
+            waitTimeoutSeconds: $this->waitTimeoutSeconds,
+            observationsMaxTokens: $this->observationsMaxTokens,
+            reflectionsMaxTokens: $this->reflectionsMaxTokens,
+            reflectorInputBudgetTokens: $this->reflectorInputBudgetTokens,
+            maxReflections: $this->maxReflections,
+            reflectionContentMaxChars: $this->reflectionContentMaxChars,
+            replacementMaxChars: $this->replacementMaxChars,
+        );
+    }
+
+    /**
      * Deterministic request fingerprint inputs for compaction jobs.
      *
      * @return array<string, scalar>

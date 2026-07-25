@@ -116,7 +116,7 @@ final class ObserveBoundaryJobHandlerTest extends TestCase
 
         $connection = OmDatabaseFactory::connect($dbPath, new NullLogger());
         $repo = new ObservationRepository($connection);
-        $this->assertSame(2, $repo->latestCoveredEndSeq('run-1', 'r1', 'o1'));
+        $this->assertSame(2, $repo->contiguousCoveredEndSeq('run-1', 'r1', 'o1'));
 
         $count = (int) $connection->fetchOne('SELECT COUNT(*) FROM om_observation WHERE run_id = ?', ['run-1']);
         $this->assertSame(1, $count);
@@ -165,7 +165,7 @@ final class ObserveBoundaryJobHandlerTest extends TestCase
         $dbPath = $this->projectDir.'/.hatfield/extensions-data/observational-memory/om.sqlite';
         $connection = OmDatabaseFactory::connect($dbPath, new NullLogger());
         $repo = new ObservationRepository($connection);
-        $this->assertSame(1, $repo->latestCoveredEndSeq('run-2', 'r1', 'o1'));
+        $this->assertSame(1, $repo->contiguousCoveredEndSeq('run-2', 'r1', 'o1'));
         $obs = (int) $connection->fetchOne('SELECT COUNT(*) FROM om_observation WHERE run_id = ?', ['run-2']);
         $this->assertSame(0, $obs);
         $covCount = (int) $connection->fetchOne(

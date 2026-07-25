@@ -174,7 +174,12 @@ final class OmBeforeCompactionHookTest extends TestCase
                     reflectorSchemaVersion: 'om-reflector-v1',
                     reflections: [],
                     now: $now,
-                    metadata: ['source' => 'test'],
+                    metadata: [
+                        'source' => 'test',
+                        'compression_level' => 0,
+                        'observation_count' => 3,
+                        'reflection_count' => 1,
+                    ],
                 );
             }
         };
@@ -204,6 +209,11 @@ final class OmBeforeCompactionHookTest extends TestCase
         $this->assertArrayHasKey('request_id', $api->jobs[0]->payload);
         $this->assertSame(1, $api->jobs[0]->payload['required_start_seq']);
         $this->assertSame(10, $api->jobs[0]->payload['required_end_seq']);
+        $this->assertSame('observational_memory', $result->metadata['om_source'] ?? null);
+        $this->assertIsArray($result->metadata['om_provenance'] ?? null);
+        $this->assertSame(0, $result->metadata['om_provenance']['compression_level'] ?? null);
+        $this->assertSame(3, $result->metadata['om_provenance']['observation_count'] ?? null);
+        $this->assertSame(1, $result->metadata['om_provenance']['reflection_count'] ?? null);
     }
 
     public function testTimeoutCancelsWithoutPersistingTimedOutState(): void
@@ -319,5 +329,442 @@ final class OmBeforeCompactionHookTest extends TestCase
             "SELECT COUNT(*) FROM om_compaction_result WHERE status = 'failed' AND failure_code = 'timed_out'",
         );
         $this->assertSame(0, $failedTimedOut);
+    }
+
+    public function testDurableFailedResultCancelsImmediatelyWithoutRedispatchWait(): void
+    {
+        $settings = OmSettings::fromArray([
+            'enabled' => true,
+            'observer_model' => 'llama_cpp_test/test',
+            'reflector_model' => 'llama_cpp_test/test',
+            'wait_timeout_seconds' => 30,
+        ]);
+        $api = new class($this->projectDir, $settings) implements ExtensionApiInterface {
+            public int $dispatches = 0;
+
+            public function __construct(
+                private readonly string $cwd,
+                private readonly OmSettings $settings,
+            ) {
+            }
+
+            public function registerTool(ToolRegistrationDTO $tool): void
+            {
+            }
+
+            public function registerToolCallHook(ToolCallHookInterface $hook): void
+            {
+            }
+
+            public function registerToolResultHook(ToolResultHookInterface $hook): void
+            {
+            }
+
+            public function getSettings(string $key): array
+            {
+                return [
+                    'enabled' => true,
+                    'observer_model' => 'llama_cpp_test/test',
+                    'reflector_model' => 'llama_cpp_test/test',
+                ];
+            }
+
+            public function getCwd(): string
+            {
+                return $this->cwd;
+            }
+
+            public function exec(): ExecInterface
+            {
+                throw new \LogicException('unused');
+            }
+
+            public function registerPromptContributor(PromptContributorInterface $contributor): void
+            {
+            }
+
+            public function registerCommand(CommandDefinitionDTO $definition, ExtensionCommandHandlerInterface $handler): void
+            {
+            }
+
+            public function registerToolCallRewriteHook(string $toolName, ToolCallRewriteHookInterface $hook): void
+            {
+            }
+
+            public function registerAfterTurnCommitHook(AfterTurnCommitHookInterface $hook): void
+            {
+            }
+
+            public function registerBeforeCompactionHook(BeforeCompactionHookInterface $hook): void
+            {
+            }
+
+            public function agent(): AgentRunnerInterface
+            {
+                throw new \LogicException('agent must not be called on hot path');
+            }
+
+            public function sessionEvents(): SessionEventReaderInterface
+            {
+                throw new \LogicException('sessionEvents must not be called on hot path');
+            }
+
+            public function registerExtensionAgentJobHandler(string $handlerId, ExtensionAgentJobHandlerInterface $handler): void
+            {
+            }
+
+            public function dispatchExtensionAgentJob(ExtensionAgentJobRequestDTO $request): void
+            {
+                ++$this->dispatches;
+            }
+
+            public function seedFailedRequest(string $requestId, string $runId, int $endSeq, string $fingerprint): void
+            {
+                $paths = \Ineersa\HatfieldExt\ObservationalMemory\Runtime\OmPaths::fromSettings($this->settings, $this->cwd);
+                $connection = OmDatabaseFactory::connectAndMigrate($paths->databasePath, new NullLogger());
+                $repo = new CompactionRepository($connection);
+                $now = (new \DateTimeImmutable('now', new \DateTimeZone('UTC')))->format(\DateTimeInterface::ATOM);
+                $repo->ensureRequest($requestId, $runId, 1, $endSeq, $endSeq, $fingerprint, $now);
+                $repo->commitFailure(
+                    requestId: $requestId,
+                    resultId: 'fail-result',
+                    runId: $runId,
+                    requiredStartSeq: 1,
+                    requiredEndSeq: $endSeq,
+                    requiredWatermark: $endSeq,
+                    requestFingerprint: $fingerprint,
+                    failureCode: 'no_observations',
+                    now: $now,
+                );
+            }
+        };
+
+        // Pre-seed using the same deterministic request id the hook will compute.
+        $context = new BeforeCompactionHookContextDTO(
+            runId: 'run-failed',
+            turnNo: 1,
+            trigger: 'manual',
+            requiredStartSeq: 1,
+            requiredEndSeq: 4,
+            tokenEstimateBefore: 100,
+            messagesCompacted: 2,
+            messagesRetained: 1,
+            firstRetainedIndex: 2,
+            priorSummaryPresent: false,
+            customInstructions: null,
+            resolvedModel: null,
+            thinkingLevel: null,
+        );
+        $parts = $settings->compactionIdentityParts();
+        $parts['run_id'] = $context->runId;
+        $parts['required_start_seq'] = $context->requiredStartSeq;
+        $parts['required_end_seq'] = $context->requiredEndSeq;
+        $parts['custom_instructions'] = '';
+        ksort($parts);
+        $fingerprint = hash('sha256', json_encode($parts, \JSON_THROW_ON_ERROR));
+        $requestId = hash('sha256', implode('|', [
+            $context->runId,
+            (string) $context->requiredStartSeq,
+            (string) $context->requiredEndSeq,
+            $fingerprint,
+        ]));
+        $api->seedFailedRequest($requestId, $context->runId, $context->requiredEndSeq, $fingerprint);
+
+        $started = microtime(true);
+        $hook = new OmBeforeCompactionHook($api, $settings, new NullLogger(), pollIntervalMicros: 50_000);
+        $result = $hook->beforeCompaction($context);
+        $elapsed = microtime(true) - $started;
+
+        $this->assertTrue($result->cancels());
+        $this->assertStringContainsString('no_observations', (string) $result->cancelReason);
+        $this->assertSame(0, $api->dispatches, 'durable failed result must not redispatch');
+        $this->assertLessThan(2.0, $elapsed, 'must cancel immediately without timeout wait');
+    }
+
+    public function testTerminalWithoutResultCancelsImmediatelyWithoutDispatch(): void
+    {
+        $settings = OmSettings::fromArray([
+            'enabled' => true,
+            'observer_model' => 'llama_cpp_test/test',
+            'reflector_model' => 'llama_cpp_test/test',
+            'wait_timeout_seconds' => 30,
+        ]);
+        $api = new class($this->projectDir, $settings) implements ExtensionApiInterface {
+            public int $dispatches = 0;
+
+            public function __construct(
+                private readonly string $cwd,
+                private readonly OmSettings $settings,
+            ) {
+            }
+
+            public function registerTool(ToolRegistrationDTO $tool): void
+            {
+            }
+
+            public function registerToolCallHook(ToolCallHookInterface $hook): void
+            {
+            }
+
+            public function registerToolResultHook(ToolResultHookInterface $hook): void
+            {
+            }
+
+            public function getSettings(string $key): array
+            {
+                return [
+                    'enabled' => true,
+                    'observer_model' => 'llama_cpp_test/test',
+                    'reflector_model' => 'llama_cpp_test/test',
+                ];
+            }
+
+            public function getCwd(): string
+            {
+                return $this->cwd;
+            }
+
+            public function exec(): ExecInterface
+            {
+                throw new \LogicException('unused');
+            }
+
+            public function registerPromptContributor(PromptContributorInterface $contributor): void
+            {
+            }
+
+            public function registerCommand(CommandDefinitionDTO $definition, ExtensionCommandHandlerInterface $handler): void
+            {
+            }
+
+            public function registerToolCallRewriteHook(string $toolName, ToolCallRewriteHookInterface $hook): void
+            {
+            }
+
+            public function registerAfterTurnCommitHook(AfterTurnCommitHookInterface $hook): void
+            {
+            }
+
+            public function registerBeforeCompactionHook(BeforeCompactionHookInterface $hook): void
+            {
+            }
+
+            public function agent(): AgentRunnerInterface
+            {
+                throw new \LogicException('agent must not be called on hot path');
+            }
+
+            public function sessionEvents(): SessionEventReaderInterface
+            {
+                throw new \LogicException('sessionEvents must not be called on hot path');
+            }
+
+            public function registerExtensionAgentJobHandler(string $handlerId, ExtensionAgentJobHandlerInterface $handler): void
+            {
+            }
+
+            public function dispatchExtensionAgentJob(ExtensionAgentJobRequestDTO $request): void
+            {
+                ++$this->dispatches;
+            }
+
+            public function seedTerminalRequestWithoutResult(string $requestId, string $runId, int $endSeq, string $fingerprint): void
+            {
+                $paths = \Ineersa\HatfieldExt\ObservationalMemory\Runtime\OmPaths::fromSettings($this->settings, $this->cwd);
+                $connection = OmDatabaseFactory::connectAndMigrate($paths->databasePath, new NullLogger());
+                $now = (new \DateTimeImmutable('now', new \DateTimeZone('UTC')))->format(\DateTimeInterface::ATOM);
+                $connection->insert('om_compaction_request', [
+                    'request_id' => $requestId,
+                    'run_id' => $runId,
+                    'required_start_seq' => 1,
+                    'required_end_seq' => $endSeq,
+                    'required_watermark' => $endSeq,
+                    'observation_set_hash' => $fingerprint,
+                    'status' => CompactionRepository::STATUS_FAILED,
+                    'requested_at' => $now,
+                    'updated_at' => $now,
+                    'completed_at' => $now,
+                    'failure_code' => 'corrupt_state',
+                    'failure_metadata_json' => null,
+                ]);
+            }
+        };
+
+        $context = new BeforeCompactionHookContextDTO(
+            runId: 'run-terminal-gap',
+            turnNo: 1,
+            trigger: 'manual',
+            requiredStartSeq: 1,
+            requiredEndSeq: 3,
+            tokenEstimateBefore: 100,
+            messagesCompacted: 1,
+            messagesRetained: 1,
+            firstRetainedIndex: 1,
+            priorSummaryPresent: false,
+            customInstructions: null,
+            resolvedModel: null,
+            thinkingLevel: null,
+        );
+        $parts = $settings->compactionIdentityParts();
+        $parts['run_id'] = $context->runId;
+        $parts['required_start_seq'] = $context->requiredStartSeq;
+        $parts['required_end_seq'] = $context->requiredEndSeq;
+        $parts['custom_instructions'] = '';
+        ksort($parts);
+        $fingerprint = hash('sha256', json_encode($parts, \JSON_THROW_ON_ERROR));
+        $requestId = hash('sha256', implode('|', [
+            $context->runId,
+            (string) $context->requiredStartSeq,
+            (string) $context->requiredEndSeq,
+            $fingerprint,
+        ]));
+        $api->seedTerminalRequestWithoutResult($requestId, $context->runId, $context->requiredEndSeq, $fingerprint);
+
+        $started = microtime(true);
+        $hook = new OmBeforeCompactionHook($api, $settings, new NullLogger(), pollIntervalMicros: 50_000);
+        $result = $hook->beforeCompaction($context);
+        $elapsed = microtime(true) - $started;
+
+        $this->assertTrue($result->cancels());
+        $this->assertStringContainsString('no result row', (string) $result->cancelReason);
+        $this->assertSame(0, $api->dispatches);
+        $this->assertLessThan(2.0, $elapsed);
+    }
+
+    public function testMalformedResultMetadataCancelsWithoutLeakingRawContent(): void
+    {
+        $settings = OmSettings::fromArray([
+            'enabled' => true,
+            'observer_model' => 'llama_cpp_test/test',
+            'reflector_model' => 'llama_cpp_test/test',
+            'wait_timeout_seconds' => 2,
+        ]);
+        $api = new class($this->projectDir, $settings) implements ExtensionApiInterface {
+            public int $dispatches = 0;
+
+            public function __construct(
+                private readonly string $cwd,
+                private readonly OmSettings $settings,
+            ) {
+            }
+
+            public function registerTool(ToolRegistrationDTO $tool): void
+            {
+            }
+
+            public function registerToolCallHook(ToolCallHookInterface $hook): void
+            {
+            }
+
+            public function registerToolResultHook(ToolResultHookInterface $hook): void
+            {
+            }
+
+            public function getSettings(string $key): array
+            {
+                return [
+                    'enabled' => true,
+                    'observer_model' => 'llama_cpp_test/test',
+                    'reflector_model' => 'llama_cpp_test/test',
+                ];
+            }
+
+            public function getCwd(): string
+            {
+                return $this->cwd;
+            }
+
+            public function exec(): ExecInterface
+            {
+                throw new \LogicException('unused');
+            }
+
+            public function registerPromptContributor(PromptContributorInterface $contributor): void
+            {
+            }
+
+            public function registerCommand(CommandDefinitionDTO $definition, ExtensionCommandHandlerInterface $handler): void
+            {
+            }
+
+            public function registerToolCallRewriteHook(string $toolName, ToolCallRewriteHookInterface $hook): void
+            {
+            }
+
+            public function registerAfterTurnCommitHook(AfterTurnCommitHookInterface $hook): void
+            {
+            }
+
+            public function registerBeforeCompactionHook(BeforeCompactionHookInterface $hook): void
+            {
+            }
+
+            public function agent(): AgentRunnerInterface
+            {
+                throw new \LogicException('unused');
+            }
+
+            public function sessionEvents(): SessionEventReaderInterface
+            {
+                throw new \LogicException('unused');
+            }
+
+            public function registerExtensionAgentJobHandler(string $handlerId, ExtensionAgentJobHandlerInterface $handler): void
+            {
+            }
+
+            public function dispatchExtensionAgentJob(ExtensionAgentJobRequestDTO $request): void
+            {
+                ++$this->dispatches;
+                $paths = \Ineersa\HatfieldExt\ObservationalMemory\Runtime\OmPaths::fromSettings($this->settings, $this->cwd);
+                $connection = OmDatabaseFactory::connectAndMigrate($paths->databasePath, new NullLogger());
+                $repo = new CompactionRepository($connection);
+                $now = (new \DateTimeImmutable('now', new \DateTimeZone('UTC')))->format(\DateTimeInterface::ATOM);
+                $payload = $request->payload;
+                $repo->commitSuccess(
+                    requestId: (string) $payload['request_id'],
+                    resultId: 'result-bad-meta',
+                    runId: (string) $payload['run_id'],
+                    requiredStartSeq: (int) $payload['required_start_seq'],
+                    requiredEndSeq: (int) $payload['required_end_seq'],
+                    requiredWatermark: (int) $payload['required_end_seq'],
+                    requestFingerprint: (string) $payload['request_fingerprint'],
+                    observationSetHash: 'obs-set',
+                    replacementText: 'text ok',
+                    reflectorModel: 'llama_cpp_test/test',
+                    reflectorSchemaVersion: 'om-reflector-v1',
+                    reflections: [],
+                    now: $now,
+                    metadata: null,
+                );
+                // Corrupt metadata after insert to prove fail-closed decoding.
+                $connection->executeStatement(
+                    'UPDATE om_compaction_result SET metadata_json = ? WHERE request_id = ?',
+                    ['not-json-at-all SECRET_PROMPT_LEAK', (string) $payload['request_id']],
+                );
+            }
+        };
+
+        $hook = new OmBeforeCompactionHook($api, $settings, new NullLogger(), pollIntervalMicros: 1_000);
+        $result = $hook->beforeCompaction(new BeforeCompactionHookContextDTO(
+            runId: 'run-bad-meta',
+            turnNo: 1,
+            trigger: 'manual',
+            requiredStartSeq: 1,
+            requiredEndSeq: 2,
+            tokenEstimateBefore: 50,
+            messagesCompacted: 1,
+            messagesRetained: 1,
+            firstRetainedIndex: 1,
+            priorSummaryPresent: false,
+            customInstructions: null,
+            resolvedModel: null,
+            thinkingLevel: null,
+        ));
+
+        $this->assertTrue($result->cancels());
+        $this->assertStringContainsString('metadata', (string) $result->cancelReason);
+        $this->assertStringNotContainsString('SECRET_PROMPT_LEAK', (string) $result->cancelReason);
+        $this->assertSame(1, $api->dispatches);
     }
 }

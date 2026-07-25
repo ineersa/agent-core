@@ -82,14 +82,6 @@ final class ObservationRepository
     }
 
     /**
-     * @deprecated use contiguousCoveredEndSeq(); kept for temporary call-site clarity
-     */
-    public function latestCoveredEndSeq(string $runId, string $rendererVersion, string $observerSchemaVersion): ?int
-    {
-        return $this->contiguousCoveredEndSeq($runId, $rendererVersion, $observerSchemaVersion);
-    }
-
-    /**
      * @return list<array{
      *   observation_id: string,
      *   content: string,

@@ -69,6 +69,26 @@ final readonly class OmBeforeCompactionHook implements BeforeCompactionHookInter
                 now: $now,
             );
 
+            // Terminal request without a readable result row is an impossible durable
+            // state (e.g. request marked failed/succeeded but result row missing).
+            // Fail closed immediately — never redispatch and wait the full timeout.
+            if ($ensured['terminal'] && null === $ensured['result']) {
+                $this->logger->error('om.compaction.terminal_without_result', [
+                    'component' => 'observational_memory',
+                    'event_type' => 'om.compaction.terminal_without_result',
+                    'run_id' => $context->runId,
+                    'request_id' => $requestId,
+                    'request_status' => $ensured['status'],
+                ]);
+
+                return BeforeCompactionHookResultDTO::cancel(
+                    \sprintf(
+                        'observational_memory terminal request has no result row (status=%s)',
+                        $ensured['status'],
+                    ),
+                );
+            }
+
             if ($ensured['terminal'] && null !== $ensured['result']) {
                 return $this->resultFromRow($ensured['result'], $requestId, $context);
             }
@@ -175,12 +195,31 @@ final readonly class OmBeforeCompactionHook implements BeforeCompactionHookInter
                 return BeforeCompactionHookResultDTO::cancel('observational_memory returned empty replacement_text');
             }
 
+            try {
+                $provenance = $this->decodeResultProvenance($result);
+            } catch (\InvalidArgumentException $e) {
+                $this->logger->error('om.compaction.unsafe_result_metadata', [
+                    'component' => 'observational_memory',
+                    'event_type' => 'om.compaction.unsafe_result_metadata',
+                    'run_id' => $context->runId,
+                    'request_id' => $requestId,
+                    'exception_class' => $e::class,
+                ]);
+
+                return BeforeCompactionHookResultDTO::cancel(
+                    'observational_memory result metadata is not JSON-safe for public replacement',
+                );
+            }
+
             $dto = BeforeCompactionHookResultDTO::replaceSummary($text);
+            // Public metadata keeps stable request/watermark keys and namespaces
+            // worker provenance under om_provenance (never raw metadata_json).
             $dto->metadata = [
                 'om_request_id' => $requestId,
                 'om_required_start_seq' => $context->requiredStartSeq,
                 'om_required_end_seq' => $context->requiredEndSeq,
                 'om_source' => 'observational_memory',
+                'om_provenance' => $provenance,
             ];
 
             return $dto;
@@ -191,6 +230,50 @@ final readonly class OmBeforeCompactionHook implements BeforeCompactionHookInter
         return BeforeCompactionHookResultDTO::cancel(
             'observational_memory compaction failed: '.$code,
         );
+    }
+
+    /**
+     * Decode and validate persisted result metadata for public hook metadata.
+     *
+     * @param array<string, mixed> $result
+     *
+     * @return array<string, mixed>
+     */
+    private function decodeResultProvenance(array $result): array
+    {
+        $raw = $result['metadata_json'] ?? null;
+        if (null === $raw || '' === $raw) {
+            return [];
+        }
+        if (!\is_string($raw)) {
+            throw new \InvalidArgumentException('metadata_json must be a JSON string when present.');
+        }
+
+        try {
+            $decoded = json_decode($raw, true, 512, \JSON_THROW_ON_ERROR);
+        } catch (\JsonException $e) {
+            throw new \InvalidArgumentException('metadata_json is not valid JSON.', previous: $e);
+        }
+
+        if (!\is_array($decoded)) {
+            throw new \InvalidArgumentException('metadata_json must decode to a JSON object/array.');
+        }
+
+        // Reject list-shaped roots so public provenance stays a map of keys.
+        if (array_is_list($decoded) && [] !== $decoded) {
+            throw new \InvalidArgumentException('metadata_json must decode to a JSON object, not a list.');
+        }
+
+        // Validate JSON-safety (including finite floats) via the public DTO contract
+        // without constructing a full result or leaking raw content into logs.
+        try {
+            new BeforeCompactionHookResultDTO(metadata: ['om_provenance' => $decoded]);
+        } catch (\InvalidArgumentException $e) {
+            throw new \InvalidArgumentException('metadata_json is not JSON-safe for public metadata.', previous: $e);
+        }
+
+        /* @var array<string, mixed> $decoded */
+        return $decoded;
     }
 
     private function requestId(BeforeCompactionHookContextDTO $context): string

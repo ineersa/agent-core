@@ -74,7 +74,12 @@ Do not work around this by launching consumers in direct/headless mode.
 
 ## Activation
 
-OM is **not enabled by default**. Enable the extension class in project settings:
+OM is **not enabled by default**. Tracked project `.hatfield/settings.yaml` intentionally
+omits both the extension class and any `observational_memory` settings block so normal
+dev sessions do not start Observer/Reflector work. Canonical key documentation also lives
+in `docs/settings.md` under `extensions.settings.observational_memory`.
+
+Enable the extension class and settings when you want OM active:
 
 ```yaml
 # project .hatfield/settings.yaml
@@ -95,7 +100,7 @@ extensions:
       # observations_max_tokens: 30000
       # reflections_max_tokens: 10000
       # reflector_input_budget_tokens: 20000
-      # max_reflections: 8
+      # max_reflections: 8   # Reflector requires >=1 reflection when invoked
       # reflection_content_max_chars: 4000
       # replacement_max_chars: 12000
       # compaction:
@@ -126,10 +131,13 @@ The generic `extension_agent` transport lives in Hatfield Messenger and carries 
 ## Failure semantics
 
 - Public CompactRun hook expected failures return `cancel(...)` (conflict, timeout, durable worker failure, missing model config, `sync://` dispatch refusal). No silent fallback to summary-mode LLM compaction.
-- Explicit empty `record_observations` is valid coverage; model never calling the tool is failure and does not advance coverage.
+- Explicit empty `record_observations` is valid coverage; model never calling the tool is a durable typed failure (`observer_tool_not_called`) and does not advance coverage.
 - Zero durable observations after catch-up produces durable `no_observations` failure (no empty-memory replacement).
+- Reflector must call `record_reflections` once with non-empty `replacement_text` and **at least one** reflection; empty reflections are model-correctable rejections (no state mutation).
 - Compatible job redelivery no-ops without a second model call. Immutable request fingerprint mismatches are conflicts.
-- Unexpected transient provider/process errors may propagate for Messenger retry; the hook timeout remains the CompactRun safety valve if no durable failure row is available.
+- Terminal request without a result row cancels CompactRun immediately (no redispatch / timeout wait).
+- Unexpected transient provider/process errors may propagate for Messenger retry; durable failure persistence exceptions are also rethrown (not swallowed) so the job can retry rather than ACK while the request stays `running`. CompactRun hook timeout remains the safety valve if no durable failure row is available.
+- Successful replacement metadata exposes request/watermark keys plus namespaced `om_provenance` from result `metadata_json`; malformed/non-JSON-safe provenance fails closed without leaking raw content.
 
 ## Privacy
 

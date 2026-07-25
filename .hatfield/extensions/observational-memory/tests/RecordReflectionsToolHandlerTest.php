@@ -101,4 +101,30 @@ final class RecordReflectionsToolHandlerTest extends TestCase
         $this->assertSame('compression_level_mismatch', $levelRejected['error']);
         $this->assertFalse($levelMismatch->hasRecorded());
     }
+
+    public function testEmptyReflectionsRejectedWithoutStateMutation(): void
+    {
+        $handler = new RecordReflectionsToolHandler(
+            runId: 'run-1',
+            requestId: 'req-empty',
+            reflectorSchemaVersion: 'v1',
+            compressionLevel: 0,
+            allowedObservationIds: ['obs-a' => true],
+            maxReflections: 2,
+            reflectionContentMaxChars: 100,
+            replacementMaxChars: 200,
+            reflectionsMaxTokens: 10_000,
+        );
+
+        $rejected = $handler([
+            'replacement_text' => 'Summary only is not enough',
+            'reflections' => [],
+        ]);
+
+        $this->assertSame('rejected', $rejected['status']);
+        $this->assertSame('empty_reflections', $rejected['error']);
+        $this->assertFalse($handler->hasRecorded());
+        $this->assertNull($handler->replacementText());
+        $this->assertSame([], $handler->reflections());
+    }
 }

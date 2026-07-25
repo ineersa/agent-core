@@ -1491,6 +1491,66 @@ Project extension class: `Ineersa\HatfieldExt\FileRewind\FileRewindExtension` (e
 - `max_file_bytes` (default `2097152`)
 - `git_timeout_seconds` (default `30`)
 
+### `extensions.settings.observational_memory`
+
+Settings for the project Observational Memory extension
+(`Ineersa\HatfieldExt\ObservationalMemory\ObservationalMemoryExtension`, package under
+`.hatfield/extensions/observational-memory/`). Read via
+`ExtensionApiInterface::getSettings('observational_memory')`.
+
+OM is **not enabled by default**. This repository’s tracked `.hatfield/settings.yaml`
+intentionally omits both the extension class from `extensions.enabled` and any
+`extensions.settings.observational_memory` block so local/dev sessions do not start
+Observer/Reflector workers or write `om.sqlite` until explicitly activated. When you
+enable the class, add the settings section below (or rely on package defaults for
+optional keys). Full activation steps and ownership boundaries live in
+`.hatfield/extensions/observational-memory/README.md`.
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `enabled` | bool | `true` (when section present) | Set `false` to keep the class loaded but skip observe/compaction work. |
+| `observer_model` | string | *(required for observe/compaction)* | Exact `provider/model` for Observer catch-up jobs. |
+| `reflector_model` | string | *(required for compaction)* | Exact `provider/model` for Reflector replacement summaries. |
+| `database_path` | string | `.hatfield/extensions-data/observational-memory/om.sqlite` | Extension-owned SQLite path (relative to project CWD or absolute). |
+| `renderer_version` | string | `om-renderer-v1` | Interaction renderer identity baked into coverage keys. |
+| `observer_schema_version` | string | `om-observer-v1` | Observer tool/schema identity baked into coverage keys. |
+| `reflector_schema_version` | string | `om-reflector-v1` | Reflector schema identity baked into request fingerprints. |
+| `max_observations` | int | `12` | Max observations per Observer tool call. |
+| `observer_input_budget_tokens` | int | `12000` | Rendered interaction token budget for Observer input. |
+| `tool_result_max_chars` | int | `4000` | Per-tool-result char bound in rendered interaction text. |
+| `content_max_chars` | int | `2000` | Max chars per observation content. |
+| `observations_max_tokens` | int | `30000` | Session observation pool pressure budget (compression level). |
+| `reflections_max_tokens` | int | `10000` | Token budget for recorded reflections. |
+| `reflector_input_budget_tokens` | int | `20000` | Reflector input truncation budget. |
+| `max_reflections` | int | `8` | Max reflections per Reflector tool call (`minItems: 1` when reflecting). |
+| `reflection_content_max_chars` | int | `4000` | Max chars per reflection content. |
+| `replacement_max_chars` | int | `12000` | Max chars for CompactRun replacement summary text. |
+| `compaction.wait_timeout_seconds` | int | `180` | Bounded CompactRun hook poll timeout waiting on `om.sqlite` result. Nested `compaction.wait_timeout_seconds` preferred; flat `wait_timeout_seconds` also accepted. |
+
+Nested aliases also accepted: `observer.model`, `reflector.model`,
+`pools.observations_max_tokens`, `pools.reflections_max_tokens`.
+
+Example (disabled-by-default project activation surface):
+
+```yaml
+extensions:
+    enabled:
+        # ...other extensions...
+        - Ineersa\HatfieldExt\ObservationalMemory\ObservationalMemoryExtension
+    settings:
+        observational_memory:
+            enabled: true
+            observer_model: llama_cpp_test/test
+            reflector_model: llama_cpp_test/test
+            # database_path: .hatfield/extensions-data/observational-memory/om.sqlite
+            # compaction:
+            #     wait_timeout_seconds: 180
+```
+
+Requires async `extension_agent` transport (process controller Doctrine DSN).
+`sync://` dispatch is fail-closed. Compaction uses session-global coverage watermark
+`1..RunState.lastSeq` and a single FIFO `extension_agent` worker (no priority queue).
+
 ## Fork tool defaults
 
 The `fork` tool launches an isolated child with inherited parent conversation context. These settings apply only to fork launches (not the parent session):

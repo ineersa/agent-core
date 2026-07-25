@@ -68,7 +68,16 @@ final class BeforeCompactionHookResultDTO
 
     private function assertJsonSafe(mixed $value, string $path): void
     {
-        if (null === $value || \is_bool($value) || \is_int($value) || \is_float($value) || \is_string($value)) {
+        if (null === $value || \is_bool($value) || \is_int($value) || \is_string($value)) {
+            return;
+        }
+
+        if (\is_float($value)) {
+            // INF/NAN are not JSON-encodable; reject before they reach lifecycle events.
+            if (!is_finite($value)) {
+                throw new \InvalidArgumentException(\sprintf('BeforeCompactionHookResultDTO.%s must be a finite float; got non-finite float.', $path));
+            }
+
             return;
         }
 

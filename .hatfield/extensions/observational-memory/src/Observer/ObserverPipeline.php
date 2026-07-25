@@ -91,8 +91,8 @@ final readonly class ObserverPipeline
         );
 
         if (($rendered['token_estimate'] ?? 0) > $settings->observerInputBudgetTokens) {
-            // Renderer already profile-bounds; treat residual over-budget as actionable failure.
-            throw new \RuntimeException(\sprintf('Observer input still exceeds budget after rendering (%d > %d).', (int) $rendered['token_estimate'], $settings->observerInputBudgetTokens));
+            // Renderer already profile-bounds; residual over-budget is durable, not transient.
+            throw ObserverException::inputOverBudget((int) $rendered['token_estimate'], $settings->observerInputBudgetTokens);
         }
 
         $coverageKey = hash('sha256', implode('|', [
@@ -194,7 +194,7 @@ final readonly class ObserverPipeline
         ));
 
         if (!$toolHandler->hasRecorded()) {
-            throw new \RuntimeException('Observer model did not call record_observations; coverage not advanced.');
+            throw ObserverException::toolNotCalled();
         }
 
         $observations = $toolHandler->collected();

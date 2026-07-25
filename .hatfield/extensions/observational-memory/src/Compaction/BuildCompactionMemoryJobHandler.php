@@ -8,6 +8,7 @@ use Ineersa\Hatfield\ExtensionApi\Agent\AgentCallRequestDTO;
 use Ineersa\Hatfield\ExtensionApi\Agent\AgentToolDTO;
 use Ineersa\Hatfield\ExtensionApi\Agent\ExtensionAgentJobHandlerInterface;
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
+use Ineersa\HatfieldExt\ObservationalMemory\Observer\ObserverException;
 use Ineersa\HatfieldExt\ObservationalMemory\Observer\ObserverPipeline;
 use Ineersa\HatfieldExt\ObservationalMemory\Observer\OmTokenEstimator;
 use Ineersa\HatfieldExt\ObservationalMemory\Runtime\OmPaths;
@@ -162,6 +163,7 @@ final readonly class BuildCompactionMemoryJobHandler implements ExtensionAgentJo
                                 ],
                                 'reflections' => [
                                     'type' => 'array',
+                                    'minItems' => 1,
                                     'maxItems' => $settings->maxReflections,
                                     'items' => [
                                         'type' => 'object',
@@ -249,43 +251,77 @@ final readonly class BuildCompactionMemoryJobHandler implements ExtensionAgentJo
             ]);
         } catch (OmConflictException $e) {
             throw $e;
-        } catch (\InvalidArgumentException $e) {
-            $compactionRepo->commitFailure(
+        } catch (ObserverException $e) {
+            // Typed durable Observer failures: persist once so the waiting CompactRun
+            // hook can cancel immediately without waiting for timeout/retry.
+            $this->commitDurableFailure(
+                compactionRepo: $compactionRepo,
                 requestId: $requestId,
-                resultId: hash('sha256', $requestId.'|failure|invalid'),
                 runId: $runId,
                 requiredStartSeq: $requiredStartSeq,
                 requiredEndSeq: $requiredEndSeq,
-                requiredWatermark: $requiredEndSeq,
+                requestFingerprint: $requestFingerprint,
+                failureCode: $e->failureCode,
+                now: $now,
+                failureMetadata: [
+                    'exception_class' => $e::class,
+                    'observer_failure_code' => $e->failureCode,
+                ],
+            );
+        } catch (\InvalidArgumentException $e) {
+            $this->commitDurableFailure(
+                compactionRepo: $compactionRepo,
+                requestId: $requestId,
+                runId: $runId,
+                requiredStartSeq: $requiredStartSeq,
+                requiredEndSeq: $requiredEndSeq,
                 requestFingerprint: $requestFingerprint,
                 failureCode: 'invalid_payload',
                 now: $now,
                 failureMetadata: ['exception_class' => $e::class],
             );
         } catch (\RuntimeException $e) {
-            // Deterministic durable failures (budget, no tool call path already handled).
-            // Over-budget / coverage failures are durable.
-            if (str_contains($e->getMessage(), 'exceeds budget')
-                || str_contains($e->getMessage(), 'did not call record_observations')) {
-                $compactionRepo->commitFailure(
-                    requestId: $requestId,
-                    resultId: hash('sha256', $requestId.'|failure|runtime'),
-                    runId: $runId,
-                    requiredStartSeq: $requiredStartSeq,
-                    requiredEndSeq: $requiredEndSeq,
-                    requiredWatermark: $requiredEndSeq,
-                    requestFingerprint: $requestFingerprint,
-                    failureCode: 'observer_catchup_failed',
-                    now: $now,
-                    failureMetadata: ['exception_class' => $e::class],
-                );
-
-                return;
-            }
-
-            // Transient/provider failures: allow Messenger retry; hook timeout is fallback.
+            // Transient/provider/process failures: allow Messenger retry; CompactRun
+            // hook timeout remains the safety valve if no durable failure row lands.
             throw $e;
         }
+    }
+
+    /**
+     * Persist a durable failed result for the waiting CompactRun hook.
+     *
+     * Intentionally does NOT swallow secondary persistence failures: if
+     * commitFailure itself throws (SQLite busy, disk full, schema conflict),
+     * the exception must propagate so Messenger can retry. Swallowing would
+     * ACK the job with the request still "running" and leave CompactRun
+     * waiting until wait_timeout_seconds, which hides storage outages and
+     * prevents recovery. Prefer retry/timeout over silent ACK.
+     *
+     * @param array<string, scalar|null> $failureMetadata
+     */
+    private function commitDurableFailure(
+        CompactionRepository $compactionRepo,
+        string $requestId,
+        string $runId,
+        int $requiredStartSeq,
+        int $requiredEndSeq,
+        string $requestFingerprint,
+        string $failureCode,
+        string $now,
+        array $failureMetadata = [],
+    ): void {
+        $compactionRepo->commitFailure(
+            requestId: $requestId,
+            resultId: hash('sha256', $requestId.'|failure|'.$failureCode),
+            runId: $runId,
+            requiredStartSeq: $requiredStartSeq,
+            requiredEndSeq: $requiredEndSeq,
+            requiredWatermark: $requiredEndSeq,
+            requestFingerprint: $requestFingerprint,
+            failureCode: $failureCode,
+            now: $now,
+            failureMetadata: $failureMetadata,
+        );
     }
 
     private function repairCoverage(
@@ -458,7 +494,7 @@ Call the record_reflections tool exactly once.
 
 Rules:
 - replacement_text must be non-empty and <= {$replacementMax} characters.
-- Max {$maxReflections} reflections.
+- Provide 1..{$maxReflections} reflections (at least one is required).
 - Each reflection content must be non-empty and <= {$contentMax} characters.
 - compression_level must be {$compressionLevel} for this request (0 or 1 only).
 - Every reflection must cite supporting_observation_ids from the provided observation id list only.

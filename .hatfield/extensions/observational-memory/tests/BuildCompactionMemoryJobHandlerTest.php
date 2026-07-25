@@ -215,6 +215,118 @@ final class BuildCompactionMemoryJobHandlerTest extends TestCase
         $this->assertSame('no_observations', $result['failure_code']);
     }
 
+    public function testReflectorNoToolCallPersistsDurableFailureCode(): void
+    {
+        $events = [
+            new SessionEventDTO(
+                runId: 'run-no-tool',
+                seq: 1,
+                turnNo: 1,
+                type: 'agent_command_applied',
+                payload: ['kind' => 'prompt', 'text' => 'Remember the rollout plan'],
+                createdAt: '2026-07-25T00:00:00+00:00',
+            ),
+            new SessionEventDTO(
+                runId: 'run-no-tool',
+                seq: 2,
+                turnNo: 1,
+                type: 'agent_end',
+                payload: ['reason' => 'completed'],
+                createdAt: '2026-07-25T00:00:01+00:00',
+            ),
+        ];
+
+        $api = $this->buildApi($events, static function (AgentCallRequestDTO $request): void {
+            $tool = $request->tools[0] ?? null;
+            if (null === $tool) {
+                throw new \RuntimeException('missing tool');
+            }
+            if ('record_observations' === $tool->name) {
+                ($tool->handler)([
+                    'observations' => [
+                        [
+                            'content' => 'Rollout uses staged flags',
+                            'relevance' => 80,
+                            'source_refs' => [['run_id' => 'run-no-tool', 'seq' => 1]],
+                        ],
+                    ],
+                ]);
+
+                return;
+            }
+            // Reflector model never calls the tool.
+        });
+
+        $settings = OmSettings::fromArray([
+            'enabled' => true,
+            'observer_model' => 'llama_cpp_test/test',
+            'reflector_model' => 'llama_cpp_test/test',
+        ]);
+        $paths = \Ineersa\HatfieldExt\ObservationalMemory\Runtime\OmPaths::fromSettings($settings, $this->projectDir);
+        $connection = OmDatabaseFactory::connectAndMigrate($paths->databasePath, new NullLogger());
+        $repo = new CompactionRepository($connection);
+        $now = (new \DateTimeImmutable('now', new \DateTimeZone('UTC')))->format(\DateTimeInterface::ATOM);
+        $repo->ensureRequest('req-no-tool', 'run-no-tool', 1, 2, 2, 'fp-no-tool', $now);
+
+        $handler = new BuildCompactionMemoryJobHandler(new NullLogger());
+        $handler->handle($api, [
+            'request_id' => 'req-no-tool',
+            'run_id' => 'run-no-tool',
+            'required_start_seq' => 1,
+            'required_end_seq' => 2,
+            'request_fingerprint' => 'fp-no-tool',
+        ], 'job-no-tool', 'run-no-tool');
+
+        $result = $repo->getResult('req-no-tool');
+        $this->assertNotNull($result);
+        $this->assertSame(CompactionRepository::STATUS_FAILED, $result['status']);
+        $this->assertSame('reflector_tool_not_called', $result['failure_code']);
+    }
+
+    public function testObserverToolNotCalledPersistsTypedFailureCode(): void
+    {
+        $events = [
+            new SessionEventDTO(
+                runId: 'run-obs-tool',
+                seq: 1,
+                turnNo: 1,
+                type: 'agent_end',
+                payload: ['reason' => 'completed'],
+                createdAt: '2026-07-25T00:00:00+00:00',
+            ),
+        ];
+
+        $api = $this->buildApi($events, static function (AgentCallRequestDTO $request): void {
+            // Observer model returns without calling record_observations.
+        });
+
+        $settings = OmSettings::fromArray([
+            'enabled' => true,
+            'observer_model' => 'llama_cpp_test/test',
+            'reflector_model' => 'llama_cpp_test/test',
+        ]);
+        $paths = \Ineersa\HatfieldExt\ObservationalMemory\Runtime\OmPaths::fromSettings($settings, $this->projectDir);
+        $connection = OmDatabaseFactory::connectAndMigrate($paths->databasePath, new NullLogger());
+        $repo = new CompactionRepository($connection);
+        $now = (new \DateTimeImmutable('now', new \DateTimeZone('UTC')))->format(\DateTimeInterface::ATOM);
+        $repo->ensureRequest('req-obs-tool', 'run-obs-tool', 1, 1, 1, 'fp-obs-tool', $now);
+
+        $handler = new BuildCompactionMemoryJobHandler(new NullLogger());
+        $handler->handle($api, [
+            'request_id' => 'req-obs-tool',
+            'run_id' => 'run-obs-tool',
+            'required_start_seq' => 1,
+            'required_end_seq' => 1,
+            'request_fingerprint' => 'fp-obs-tool',
+        ], 'job-obs-tool', 'run-obs-tool');
+
+        $result = $repo->getResult('req-obs-tool');
+        $this->assertNotNull($result);
+        $this->assertSame(CompactionRepository::STATUS_FAILED, $result['status']);
+        // Classification must use ObserverException::CODE_TOOL_NOT_CALLED, not message wording.
+        $this->assertSame('observer_tool_not_called', $result['failure_code']);
+    }
+
     /**
      * @param list<SessionEventDTO>              $events
      * @param callable(AgentCallRequestDTO):void $onAgentRun
