@@ -251,6 +251,10 @@ final class ObserveBoundaryJobHandlerTest extends TestCase
             {
             }
 
+            public function registerBeforeCompactionHook(\Ineersa\Hatfield\ExtensionApi\Compaction\BeforeCompactionHookInterface $hook): void
+            {
+            }
+
             public function agent(): AgentRunnerInterface
             {
                 $onAgentRun = $this->onAgentRun;

@@ -8,13 +8,213 @@ use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 
 /**
- * Durable compaction request/result + reflection persistence.
+ * Durable compaction request/result + reflection persistence with immutable request identity.
  */
 final class CompactionRepository
 {
+    public const string STATUS_QUEUED = 'queued';
+
+    public const string STATUS_RUNNING = 'running';
+
+    public const string STATUS_SUCCEEDED = 'succeeded';
+
+    public const string STATUS_FAILED = 'failed';
+
     public function __construct(
         private readonly Connection $connection,
     ) {
+    }
+
+    /**
+     * Ensure a request row with immutable fingerprint fields.
+     *
+     * @return array{
+     *   status: string,
+     *   request_id: string,
+     *   created: bool,
+     *   terminal: bool,
+     *   result: ?array<string, mixed>
+     * }
+     */
+    public function ensureRequest(
+        string $requestId,
+        string $runId,
+        int $requiredStartSeq,
+        int $requiredEndSeq,
+        int $requiredWatermark,
+        string $requestFingerprint,
+        string $now,
+    ): array {
+        $existing = $this->connection->fetchAssociative(
+            'SELECT request_id, run_id, required_start_seq, required_end_seq, required_watermark,
+                    observation_set_hash, status
+             FROM om_compaction_request WHERE request_id = ?',
+            [$requestId],
+        );
+
+        if (false !== $existing) {
+            $this->assertRequestIdentity(
+                $existing,
+                $runId,
+                $requiredStartSeq,
+                $requiredEndSeq,
+                $requiredWatermark,
+                $requestFingerprint,
+            );
+
+            $status = (string) ($existing['status'] ?? self::STATUS_QUEUED);
+            $result = $this->getResult($requestId);
+            $terminal = \in_array($status, [self::STATUS_SUCCEEDED, self::STATUS_FAILED], true)
+                || (null !== $result && \in_array((string) ($result['status'] ?? ''), [self::STATUS_SUCCEEDED, self::STATUS_FAILED], true));
+
+            return [
+                'status' => $status,
+                'request_id' => $requestId,
+                'created' => false,
+                'terminal' => $terminal,
+                'result' => $result,
+            ];
+        }
+
+        try {
+            $this->connection->insert('om_compaction_request', [
+                'request_id' => $requestId,
+                'run_id' => $runId,
+                'required_start_seq' => $requiredStartSeq,
+                'required_end_seq' => $requiredEndSeq,
+                'required_watermark' => $requiredWatermark,
+                'observation_set_hash' => $requestFingerprint,
+                'status' => self::STATUS_QUEUED,
+                'requested_at' => $now,
+                'updated_at' => $now,
+                'completed_at' => null,
+                'failure_code' => null,
+                'failure_metadata_json' => null,
+            ]);
+        } catch (UniqueConstraintViolationException) {
+            return $this->ensureRequest(
+                $requestId,
+                $runId,
+                $requiredStartSeq,
+                $requiredEndSeq,
+                $requiredWatermark,
+                $requestFingerprint,
+                $now,
+            );
+        }
+
+        return [
+            'status' => self::STATUS_QUEUED,
+            'request_id' => $requestId,
+            'created' => true,
+            'terminal' => false,
+            'result' => null,
+        ];
+    }
+
+    public function markRunning(string $requestId, string $requestFingerprint, string $now): void
+    {
+        $row = $this->connection->fetchAssociative(
+            'SELECT observation_set_hash, status FROM om_compaction_request WHERE request_id = ?',
+            [$requestId],
+        );
+        if (false === $row) {
+            throw new \RuntimeException(\sprintf('Compaction request %s not found.', $requestId));
+        }
+        if (($row['observation_set_hash'] ?? '') !== $requestFingerprint) {
+            throw new OmConflictException(\sprintf('Compaction request %s fingerprint mismatch.', $requestId));
+        }
+
+        $status = (string) ($row['status'] ?? '');
+        if (\in_array($status, [self::STATUS_SUCCEEDED, self::STATUS_FAILED], true)) {
+            return;
+        }
+
+        $this->connection->executeStatement(
+            'UPDATE om_compaction_request SET status = ?, updated_at = ? WHERE request_id = ? AND status IN (?, ?)',
+            [self::STATUS_RUNNING, $now, $requestId, self::STATUS_QUEUED, self::STATUS_RUNNING],
+        );
+    }
+
+    /**
+     * Short autocommit read for hook polling — no transaction held.
+     *
+     * @return array{
+     *   request_id: string,
+     *   status: string,
+     *   failure_code: ?string,
+     *   failure_metadata_json: ?string,
+     *   result: ?array<string, mixed>
+     * }|null
+     */
+    public function getRequestStatus(string $requestId): ?array
+    {
+        $row = $this->connection->fetchAssociative(
+            'SELECT request_id, status, failure_code, failure_metadata_json
+             FROM om_compaction_request WHERE request_id = ?',
+            [$requestId],
+        );
+        if (false === $row) {
+            return null;
+        }
+
+        return [
+            'request_id' => (string) $row['request_id'],
+            'status' => (string) ($row['status'] ?? self::STATUS_QUEUED),
+            'failure_code' => isset($row['failure_code']) ? (string) $row['failure_code'] : null,
+            'failure_metadata_json' => isset($row['failure_metadata_json'])
+                ? (string) $row['failure_metadata_json']
+                : null,
+            'result' => $this->getResult($requestId),
+        ];
+    }
+
+    /**
+     * @return array{
+     *   result_id: string,
+     *   request_id: string,
+     *   run_id: string,
+     *   required_watermark: int,
+     *   observation_set_hash: string,
+     *   status: string,
+     *   replacement_text: ?string,
+     *   metadata_json: ?string,
+     *   failure_code: ?string,
+     *   failure_metadata_json: ?string
+     * }|null
+     */
+    public function getResult(string $requestId): ?array
+    {
+        $row = $this->connection->fetchAssociative(
+            'SELECT result_id, request_id, run_id, required_watermark, observation_set_hash, status,
+                    replacement_text, metadata_json, failure_code, failure_metadata_json
+             FROM om_compaction_result WHERE request_id = ?',
+            [$requestId],
+        );
+        if (false === $row) {
+            return null;
+        }
+
+        return [
+            'result_id' => (string) $row['result_id'],
+            'request_id' => (string) $row['request_id'],
+            'run_id' => (string) $row['run_id'],
+            'required_watermark' => (int) $row['required_watermark'],
+            'observation_set_hash' => (string) ($row['observation_set_hash'] ?? ''),
+            'status' => (string) ($row['status'] ?? ''),
+            'replacement_text' => isset($row['replacement_text'])
+                ? (string) $row['replacement_text']
+                : null,
+            'metadata_json' => isset($row['metadata_json'])
+                ? (string) $row['metadata_json']
+                : null,
+            'failure_code' => isset($row['failure_code'])
+                ? (string) $row['failure_code']
+                : null,
+            'failure_metadata_json' => isset($row['failure_metadata_json'])
+                ? (string) $row['failure_metadata_json']
+                : null,
+        ];
     }
 
     /**
@@ -25,67 +225,59 @@ final class CompactionRepository
      *   compression_level: string,
      *   token_count: int
      * }> $reflections
+     * @param array<string, mixed>|null $metadata
      *
      * @return array{status: 'inserted'|'noop'}
      */
-    public function commitResult(
+    public function commitSuccess(
         string $requestId,
         string $resultId,
         string $runId,
         int $requiredStartSeq,
         int $requiredEndSeq,
         int $requiredWatermark,
+        string $requestFingerprint,
         string $observationSetHash,
-        string $status,
-        ?string $replacementText,
+        string $replacementText,
         string $reflectorModel,
         string $reflectorSchemaVersion,
         array $reflections,
         string $now,
-        ?string $failureCode = null,
-        ?string $failureMetadataJson = null,
+        ?array $metadata = null,
     ): array {
-        $existing = $this->connection->fetchAssociative(
-            'SELECT result_id, observation_set_hash, status FROM om_compaction_result WHERE request_id = ?',
-            [$requestId],
-        );
-
-        if (false !== $existing) {
-            if (($existing['observation_set_hash'] ?? '') !== $observationSetHash) {
-                throw new OmConflictException(\sprintf('Compaction result conflict for request %s: observation_set_hash mismatch.', $requestId));
+        $existing = $this->getResult($requestId);
+        if (null !== $existing) {
+            if (($existing['observation_set_hash'] ?? '') !== $observationSetHash
+                || ($existing['status'] ?? '') !== self::STATUS_SUCCEEDED
+                || ($existing['replacement_text'] ?? null) !== $replacementText) {
+                throw new OmConflictException(\sprintf('Compaction result conflict for request %s.', $requestId));
             }
 
             return ['status' => 'noop'];
         }
 
+        $metadataJson = null;
+        if (null !== $metadata) {
+            try {
+                $metadataJson = json_encode($metadata, \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE);
+            } catch (\JsonException $e) {
+                throw new \RuntimeException('Failed to encode compaction metadata.', previous: $e);
+            }
+        }
+
         $this->connection->beginTransaction();
         try {
-            $this->connection->executeStatement(
-                'INSERT INTO om_compaction_request (
-                    request_id, run_id, required_start_seq, required_end_seq, required_watermark,
-                    observation_set_hash, status, requested_at, updated_at, completed_at,
-                    failure_code, failure_metadata_json
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(request_id) DO UPDATE SET
-                    status = excluded.status,
-                    updated_at = excluded.updated_at,
-                    completed_at = excluded.completed_at,
-                    failure_code = excluded.failure_code,
-                    failure_metadata_json = excluded.failure_metadata_json',
-                [
-                    $requestId,
-                    $runId,
-                    $requiredStartSeq,
-                    $requiredEndSeq,
-                    $requiredWatermark,
-                    $observationSetHash,
-                    $status,
-                    $now,
-                    $now,
-                    $now,
-                    $failureCode,
-                    $failureMetadataJson,
-                ],
+            $this->assertAndTouchRequest(
+                $requestId,
+                $runId,
+                $requiredStartSeq,
+                $requiredEndSeq,
+                $requiredWatermark,
+                $requestFingerprint,
+                self::STATUS_SUCCEEDED,
+                $now,
+                null,
+                null,
             );
 
             foreach ($reflections as $reflection) {
@@ -104,7 +296,13 @@ final class CompactionRepository
                         'created_at' => $now,
                     ]);
                 } catch (UniqueConstraintViolationException $e) {
-                    // Compatible redelivery of the same reflection identity.
+                    $prior = $this->connection->fetchOne(
+                        'SELECT content FROM om_reflection WHERE reflection_id = ?',
+                        [$reflection['reflection_id']],
+                    );
+                    if ($prior !== $reflection['content']) {
+                        throw new OmConflictException(\sprintf('Reflection conflict for id %s.', $reflection['reflection_id']), previous: $e);
+                    }
                 }
             }
 
@@ -115,21 +313,20 @@ final class CompactionRepository
                     'run_id' => $runId,
                     'required_watermark' => $requiredWatermark,
                     'observation_set_hash' => $observationSetHash,
-                    'status' => $status,
+                    'status' => self::STATUS_SUCCEEDED,
                     'replacement_text' => $replacementText,
-                    'metadata_json' => null,
-                    'failure_code' => $failureCode,
-                    'failure_metadata_json' => $failureMetadataJson,
+                    'metadata_json' => $metadataJson,
+                    'failure_code' => null,
+                    'failure_metadata_json' => null,
                     'created_at' => $now,
                     'completed_at' => $now,
                 ]);
             } catch (UniqueConstraintViolationException $e) {
                 $this->connection->rollBack();
-                $again = $this->connection->fetchAssociative(
-                    'SELECT observation_set_hash FROM om_compaction_result WHERE request_id = ?',
-                    [$requestId],
-                );
-                if (false === $again || ($again['observation_set_hash'] ?? '') !== $observationSetHash) {
+                $again = $this->getResult($requestId);
+                if (null === $again
+                    || ($again['observation_set_hash'] ?? '') !== $observationSetHash
+                    || ($again['status'] ?? '') !== self::STATUS_SUCCEEDED) {
                     throw new OmConflictException(\sprintf('Compaction result conflict for request %s after concurrent insert.', $requestId), previous: $e);
                 }
 
@@ -145,5 +342,168 @@ final class CompactionRepository
         }
 
         return ['status' => 'inserted'];
+    }
+
+    /**
+     * Persist a durable terminal failure. Do not call for transient provider/process errors that Messenger should retry.
+     *
+     * @param array<string, mixed>|null $failureMetadata
+     *
+     * @return array{status: 'inserted'|'noop'}
+     */
+    public function commitFailure(
+        string $requestId,
+        string $resultId,
+        string $runId,
+        int $requiredStartSeq,
+        int $requiredEndSeq,
+        int $requiredWatermark,
+        string $requestFingerprint,
+        string $failureCode,
+        string $now,
+        ?array $failureMetadata = null,
+    ): array {
+        $existing = $this->getResult($requestId);
+        if (null !== $existing) {
+            if (($existing['status'] ?? '') === self::STATUS_FAILED
+                && ($existing['failure_code'] ?? null) === $failureCode) {
+                return ['status' => 'noop'];
+            }
+            if (($existing['status'] ?? '') === self::STATUS_SUCCEEDED) {
+                throw new OmConflictException(\sprintf('Compaction request %s already succeeded; cannot fail.', $requestId));
+            }
+            throw new OmConflictException(\sprintf('Compaction failure conflict for request %s.', $requestId));
+        }
+
+        $failureMetadataJson = null;
+        if (null !== $failureMetadata) {
+            try {
+                $failureMetadataJson = json_encode($failureMetadata, \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE);
+            } catch (\JsonException $e) {
+                throw new \RuntimeException('Failed to encode compaction failure metadata.', previous: $e);
+            }
+        }
+
+        $this->connection->beginTransaction();
+        try {
+            $this->assertAndTouchRequest(
+                $requestId,
+                $runId,
+                $requiredStartSeq,
+                $requiredEndSeq,
+                $requiredWatermark,
+                $requestFingerprint,
+                self::STATUS_FAILED,
+                $now,
+                $failureCode,
+                $failureMetadataJson,
+            );
+
+            try {
+                $this->connection->insert('om_compaction_result', [
+                    'result_id' => $resultId,
+                    'request_id' => $requestId,
+                    'run_id' => $runId,
+                    'required_watermark' => $requiredWatermark,
+                    'observation_set_hash' => $requestFingerprint,
+                    'status' => self::STATUS_FAILED,
+                    'replacement_text' => null,
+                    'metadata_json' => null,
+                    'failure_code' => $failureCode,
+                    'failure_metadata_json' => $failureMetadataJson,
+                    'created_at' => $now,
+                    'completed_at' => $now,
+                ]);
+            } catch (UniqueConstraintViolationException $e) {
+                $this->connection->rollBack();
+                $again = $this->getResult($requestId);
+                if (null !== $again && ($again['status'] ?? '') === self::STATUS_FAILED && ($again['failure_code'] ?? null) === $failureCode) {
+                    return ['status' => 'noop'];
+                }
+                throw new OmConflictException(\sprintf('Compaction failure conflict for request %s after concurrent insert.', $requestId), previous: $e);
+            }
+
+            $this->connection->commit();
+        } catch (\Throwable $e) {
+            if ($this->connection->isTransactionActive()) {
+                $this->connection->rollBack();
+            }
+            throw $e;
+        }
+
+        return ['status' => 'inserted'];
+    }
+
+    /**
+     * @param array<string, mixed> $existing
+     */
+    private function assertRequestIdentity(
+        array $existing,
+        string $runId,
+        int $requiredStartSeq,
+        int $requiredEndSeq,
+        int $requiredWatermark,
+        string $requestFingerprint,
+    ): void {
+        if ((string) ($existing['run_id'] ?? '') !== $runId
+            || (int) ($existing['required_start_seq'] ?? 0) !== $requiredStartSeq
+            || (int) ($existing['required_end_seq'] ?? 0) !== $requiredEndSeq
+            || (int) ($existing['required_watermark'] ?? 0) !== $requiredWatermark
+            || (string) ($existing['observation_set_hash'] ?? '') !== $requestFingerprint) {
+            throw new OmConflictException(\sprintf('Compaction request identity conflict for %s.', (string) ($existing['request_id'] ?? 'unknown')));
+        }
+    }
+
+    private function assertAndTouchRequest(
+        string $requestId,
+        string $runId,
+        int $requiredStartSeq,
+        int $requiredEndSeq,
+        int $requiredWatermark,
+        string $requestFingerprint,
+        string $status,
+        string $now,
+        ?string $failureCode,
+        ?string $failureMetadataJson,
+    ): void {
+        $existing = $this->connection->fetchAssociative(
+            'SELECT request_id, run_id, required_start_seq, required_end_seq, required_watermark, observation_set_hash, status
+             FROM om_compaction_request WHERE request_id = ?',
+            [$requestId],
+        );
+        if (false === $existing) {
+            $this->connection->insert('om_compaction_request', [
+                'request_id' => $requestId,
+                'run_id' => $runId,
+                'required_start_seq' => $requiredStartSeq,
+                'required_end_seq' => $requiredEndSeq,
+                'required_watermark' => $requiredWatermark,
+                'observation_set_hash' => $requestFingerprint,
+                'status' => $status,
+                'requested_at' => $now,
+                'updated_at' => $now,
+                'completed_at' => $now,
+                'failure_code' => $failureCode,
+                'failure_metadata_json' => $failureMetadataJson,
+            ]);
+
+            return;
+        }
+
+        $this->assertRequestIdentity(
+            $existing,
+            $runId,
+            $requiredStartSeq,
+            $requiredEndSeq,
+            $requiredWatermark,
+            $requestFingerprint,
+        );
+
+        $this->connection->executeStatement(
+            'UPDATE om_compaction_request
+             SET status = ?, updated_at = ?, completed_at = ?, failure_code = ?, failure_metadata_json = ?
+             WHERE request_id = ?',
+            [$status, $now, $now, $failureCode, $failureMetadataJson, $requestId],
+        );
     }
 }

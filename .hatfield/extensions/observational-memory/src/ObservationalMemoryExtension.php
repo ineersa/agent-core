@@ -6,6 +6,8 @@ namespace Ineersa\HatfieldExt\ObservationalMemory;
 
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
 use Ineersa\Hatfield\ExtensionApi\HatfieldExtensionInterface;
+use Ineersa\HatfieldExt\ObservationalMemory\Compaction\BuildCompactionMemoryJobHandler;
+use Ineersa\HatfieldExt\ObservationalMemory\Compaction\OmBeforeCompactionHook;
 use Ineersa\HatfieldExt\ObservationalMemory\Observer\ObserveBoundaryJobHandler;
 use Ineersa\HatfieldExt\ObservationalMemory\Observer\ObserveBoundaryTerminalHook;
 use Ineersa\HatfieldExt\ObservationalMemory\Runtime\OmSettings;
@@ -18,10 +20,8 @@ use Psr\Log\NullLogger;
  *
  * Registers:
  * - after-turn terminal detector that dispatches a scalar extension-agent job
- * - worker-local ObserveBoundaryJobHandler resolved by stable handler ID
- *
- * Model work and history reads run only inside the dedicated Hatfield
- * extension_agent Messenger worker (process-local ExtensionApi).
+ * - worker-local ObserveBoundaryJobHandler / BuildCompactionMemoryJobHandler
+ * - public before-compaction hook (CompactRun only) for replacement summaries
  */
 final class ObservationalMemoryExtension implements HatfieldExtensionInterface, LoggerAwareInterface
 {
@@ -53,15 +53,23 @@ final class ObservationalMemoryExtension implements HatfieldExtensionInterface, 
             ObserveBoundaryTerminalHook::HANDLER_ID,
             new ObserveBoundaryJobHandler($this->logger),
         );
+        $api->registerExtensionAgentJobHandler(
+            BuildCompactionMemoryJobHandler::HANDLER_ID,
+            new BuildCompactionMemoryJobHandler($this->logger),
+        );
 
         $api->registerAfterTurnCommitHook(
             new ObserveBoundaryTerminalHook($api, $settings, $this->logger),
+        );
+        $api->registerBeforeCompactionHook(
+            new OmBeforeCompactionHook($api, $settings, $this->logger),
         );
 
         $this->logger->info('om.extension.registered', [
             'component' => 'observational_memory',
             'event_type' => 'om.extension.registered',
             'handler_id' => ObserveBoundaryTerminalHook::HANDLER_ID,
+            'compaction_handler_id' => BuildCompactionMemoryJobHandler::HANDLER_ID,
         ]);
     }
 }

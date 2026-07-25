@@ -20,17 +20,17 @@ final class ObserveBoundaryTerminalHookTest extends TestCase
     public function testDispatchesOnAgentEndCompleted(): void
     {
         $api = new InMemoryExtensionApiBridge('/tmp');
-        $settings = new OmSettings(
-            enabled: true,
-            databasePath: OmSettings::DEFAULT_RELATIVE_DB_PATH,
-            observerModel: 'llama_cpp_test/test',
-            rendererVersion: 'r1',
-            observerSchemaVersion: 'o1',
-            maxObservations: 12,
-            observerInputBudgetTokens: 12000,
-            toolResultMaxChars: 4000,
-            contentMaxChars: 2000,
-        );
+        $settings = OmSettings::fromArray([
+            'enabled' => true,
+            'observer_model' => 'llama_cpp_test/test',
+            'reflector_model' => 'llama_cpp_test/test',
+            'renderer_version' => 'r1',
+            'observer_schema_version' => 'o1',
+            'max_observations' => 12,
+            'observer_input_budget_tokens' => 12000,
+            'tool_result_max_chars' => 4000,
+            'content_max_chars' => 2000,
+        ]);
         $hook = new ObserveBoundaryTerminalHook($api, $settings, new NullLogger());
 
         $hook->onAfterTurnCommit(new AfterTurnCommitHookContextDTO(
@@ -55,17 +55,17 @@ final class ObserveBoundaryTerminalHookTest extends TestCase
     public function testSkipsIntermediateToolBatch(): void
     {
         $api = new InMemoryExtensionApiBridge('/tmp');
-        $settings = new OmSettings(
-            enabled: true,
-            databasePath: OmSettings::DEFAULT_RELATIVE_DB_PATH,
-            observerModel: 'llama_cpp_test/test',
-            rendererVersion: 'r1',
-            observerSchemaVersion: 'o1',
-            maxObservations: 12,
-            observerInputBudgetTokens: 12000,
-            toolResultMaxChars: 4000,
-            contentMaxChars: 2000,
-        );
+        $settings = OmSettings::fromArray([
+            'enabled' => true,
+            'observer_model' => 'llama_cpp_test/test',
+            'reflector_model' => 'llama_cpp_test/test',
+            'renderer_version' => 'r1',
+            'observer_schema_version' => 'o1',
+            'max_observations' => 12,
+            'observer_input_budget_tokens' => 12000,
+            'tool_result_max_chars' => 4000,
+            'content_max_chars' => 2000,
+        ]);
         $hook = new ObserveBoundaryTerminalHook($api, $settings, new NullLogger());
 
         $hook->onAfterTurnCommit(new AfterTurnCommitHookContextDTO(

@@ -166,6 +166,39 @@ final class OmSchemaMigrator
                     completed_at TEXT DEFAULT NULL
                 )',
             ],
+            // Fix UNIQUE(request, schema) so multiple reflections per request are possible,
+            // and add contiguous coverage / observation / reflection lookup indexes.
+            '20260725_002_reflection_multi_and_indexes' => [
+                'CREATE TABLE om_reflection_new (
+                    reflection_id TEXT PRIMARY KEY NOT NULL,
+                    run_id TEXT NOT NULL,
+                    compaction_request_id TEXT NOT NULL,
+                    observation_set_hash TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    supporting_observation_ids_json TEXT NOT NULL,
+                    compression_level TEXT NOT NULL,
+                    token_count INTEGER NOT NULL,
+                    reflector_model TEXT NOT NULL,
+                    reflector_schema_version TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                )',
+                'INSERT INTO om_reflection_new (
+                    reflection_id, run_id, compaction_request_id, observation_set_hash, content,
+                    supporting_observation_ids_json, compression_level, token_count,
+                    reflector_model, reflector_schema_version, created_at
+                )
+                SELECT reflection_id, run_id, compaction_request_id, observation_set_hash, content,
+                       supporting_observation_ids_json, compression_level, token_count,
+                       reflector_model, reflector_schema_version, created_at
+                FROM om_reflection',
+                'DROP TABLE om_reflection',
+                'ALTER TABLE om_reflection_new RENAME TO om_reflection',
+                'CREATE INDEX IF NOT EXISTS idx_om_reflection_request ON om_reflection (compaction_request_id, created_at)',
+                'CREATE INDEX IF NOT EXISTS idx_om_reflection_run ON om_reflection (run_id, created_at)',
+                'CREATE INDEX IF NOT EXISTS idx_om_coverage_run_versions_range ON om_coverage (run_id, renderer_version, observer_schema_version, source_start_seq, source_end_seq)',
+                'CREATE INDEX IF NOT EXISTS idx_om_observation_run_range ON om_observation (run_id, source_start_seq, source_end_seq)',
+                'CREATE INDEX IF NOT EXISTS idx_om_compaction_request_run_status ON om_compaction_request (run_id, status, updated_at)',
+            ],
         ];
     }
 
@@ -176,6 +209,7 @@ final class OmSchemaMigrator
     {
         return [
             '20260722_001_domain' => 'OM domain tables: observation, coverage, reflection, compaction request/result',
+            '20260725_002_reflection_multi_and_indexes' => 'Allow multiple reflections per request; add coverage/observation/request indexes',
         ];
     }
 }

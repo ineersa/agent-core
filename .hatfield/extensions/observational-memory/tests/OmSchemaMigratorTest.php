@@ -4,49 +4,44 @@ declare(strict_types=1);
 
 namespace Ineersa\HatfieldExt\ObservationalMemory\Tests;
 
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\HatfieldExt\ObservationalMemory\Storage\OmSchemaMigrator;
 use Ineersa\HatfieldExt\ObservationalMemory\Tests\Support\OmTestDatabase;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 
 /**
- * Thesis: OM migrations create domain tables in om.sqlite only and are idempotent.
+ * Thesis: OM migrations create domain tables in om.sqlite only, remain idempotent,
+ * and migration 002 preserves reflections while allowing multiple per request.
  */
 final class OmSchemaMigratorTest extends TestCase
 {
-    private string $tmpDir;
+    private string $projectDir;
 
     protected function setUp(): void
     {
         parent::setUp();
-        $this->tmpDir = sys_get_temp_dir().'/om-schema-'.bin2hex(random_bytes(6));
-        mkdir($this->tmpDir, 0750, true);
+        $this->projectDir = TestDirectoryIsolation::createProjectTempDir('om-schema');
+        TestDirectoryIsolation::createHatfieldTree($this->projectDir);
     }
 
     protected function tearDown(): void
     {
+        TestDirectoryIsolation::removeDirectory($this->projectDir);
         parent::tearDown();
-        $iterator = new \RecursiveIteratorIterator(
-            new \RecursiveDirectoryIterator($this->tmpDir, \FilesystemIterator::SKIP_DOTS),
-            \RecursiveIteratorIterator::CHILD_FIRST,
-        );
-        foreach ($iterator as $file) {
-            $path = $file->getPathname();
-            $file->isDir() ? @rmdir($path) : @unlink($path);
-        }
-        @rmdir($this->tmpDir);
     }
 
-    public function testMigrateCreatesDomainTablesIdempotently(): void
+    public function testMigrateCreatesDomainTablesIdempotentlyAndSupportsMultipleReflections(): void
     {
-        $dbPath = $this->tmpDir.'/om.sqlite';
+        $dbPath = $this->projectDir.'/.hatfield/extensions-data/observational-memory/om.sqlite';
         $database = OmTestDatabase::connect($dbPath);
-        $migrator = new OmSchemaMigrator($database->connection(), new NullLogger());
+        $connection = $database->connection();
+        $migrator = new OmSchemaMigrator($connection, new NullLogger());
 
         $migrator->migrate();
         $migrator->migrate();
 
-        $schema = $database->connection()->createSchemaManager();
+        $schema = $connection->createSchemaManager();
         foreach ([
             'om_schema_version',
             'om_observation',
@@ -60,8 +55,42 @@ final class OmSchemaMigratorTest extends TestCase
 
         $this->assertFalse($schema->tablesExist(['messenger_messages']), 'OM no longer owns Messenger tables');
 
-        $versions = $database->connection()->fetchFirstColumn('SELECT version FROM om_schema_version');
+        $versions = $connection->fetchFirstColumn('SELECT version FROM om_schema_version');
         $this->assertContains('20260722_001_domain', $versions);
+        $this->assertContains('20260725_002_reflection_multi_and_indexes', $versions);
+
+        // Multiple reflections per request must be allowed after migration 002.
+        $connection->insert('om_reflection', [
+            'reflection_id' => 'r1',
+            'run_id' => 'run-1',
+            'compaction_request_id' => 'req-1',
+            'observation_set_hash' => 'h',
+            'content' => 'one',
+            'supporting_observation_ids_json' => '[]',
+            'compression_level' => '0',
+            'token_count' => 1,
+            'reflector_model' => 'p/m',
+            'reflector_schema_version' => 'v1',
+            'created_at' => '2026-07-25T00:00:00+00:00',
+        ]);
+        $connection->insert('om_reflection', [
+            'reflection_id' => 'r2',
+            'run_id' => 'run-1',
+            'compaction_request_id' => 'req-1',
+            'observation_set_hash' => 'h',
+            'content' => 'two',
+            'supporting_observation_ids_json' => '[]',
+            'compression_level' => '0',
+            'token_count' => 1,
+            'reflector_model' => 'p/m',
+            'reflector_schema_version' => 'v1',
+            'created_at' => '2026-07-25T00:00:01+00:00',
+        ]);
+        $count = (int) $connection->fetchOne(
+            'SELECT COUNT(*) FROM om_reflection WHERE compaction_request_id = ?',
+            ['req-1'],
+        );
+        $this->assertSame(2, $count);
         $this->assertFileExists($dbPath);
     }
 }

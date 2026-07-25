@@ -36,21 +36,97 @@ final class ObservationRepository
     }
 
     /**
-     * Latest covered source end seq for a run under the active renderer/schema versions.
+     * Contiguous covered end seq from source seq 1 under active renderer/schema versions.
+     *
+     * Does not trust MAX(source_end_seq): a later island cannot hide an earlier gap.
      */
-    public function latestCoveredEndSeq(string $runId, string $rendererVersion, string $observerSchemaVersion): ?int
+    public function contiguousCoveredEndSeq(string $runId, string $rendererVersion, string $observerSchemaVersion): ?int
     {
-        $value = $this->connection->fetchOne(
-            'SELECT MAX(source_end_seq) FROM om_coverage
-             WHERE run_id = ? AND renderer_version = ? AND observer_schema_version = ?',
+        $rows = $this->connection->fetchAllAssociative(
+            'SELECT source_start_seq, source_end_seq FROM om_coverage
+             WHERE run_id = ? AND renderer_version = ? AND observer_schema_version = ?
+             ORDER BY source_start_seq ASC, source_end_seq ASC',
             [$runId, $rendererVersion, $observerSchemaVersion],
         );
 
-        if (null === $value || false === $value) {
+        if ([] === $rows) {
             return null;
         }
 
-        return (int) $value;
+        $cursor = 0;
+        foreach ($rows as $row) {
+            $start = (int) ($row['source_start_seq'] ?? 0);
+            $end = (int) ($row['source_end_seq'] ?? 0);
+            if ($end < $start || $start < 1) {
+                continue;
+            }
+
+            if (0 === $cursor) {
+                if (1 !== $start) {
+                    return null;
+                }
+                $cursor = $end;
+                continue;
+            }
+
+            if ($start > $cursor + 1) {
+                break;
+            }
+
+            if ($end > $cursor) {
+                $cursor = $end;
+            }
+        }
+
+        return $cursor > 0 ? $cursor : null;
+    }
+
+    /**
+     * @deprecated use contiguousCoveredEndSeq(); kept for temporary call-site clarity
+     */
+    public function latestCoveredEndSeq(string $runId, string $rendererVersion, string $observerSchemaVersion): ?int
+    {
+        return $this->contiguousCoveredEndSeq($runId, $rendererVersion, $observerSchemaVersion);
+    }
+
+    /**
+     * @return list<array{
+     *   observation_id: string,
+     *   content: string,
+     *   content_hash: string,
+     *   relevance: int,
+     *   token_count: int,
+     *   source_refs_json: string,
+     *   source_start_seq: int,
+     *   source_end_seq: int
+     * }>
+     */
+    public function listObservationsForRun(string $runId): array
+    {
+        $rows = $this->connection->fetchAllAssociative(
+            'SELECT observation_id, content, content_hash, relevance, token_count, source_refs_json,
+                    source_start_seq, source_end_seq
+             FROM om_observation
+             WHERE run_id = ?
+             ORDER BY source_start_seq ASC, source_end_seq ASC, observation_id ASC',
+            [$runId],
+        );
+
+        $out = [];
+        foreach ($rows as $row) {
+            $out[] = [
+                'observation_id' => (string) ($row['observation_id'] ?? ''),
+                'content' => (string) ($row['content'] ?? ''),
+                'content_hash' => (string) ($row['content_hash'] ?? ''),
+                'relevance' => (int) ($row['relevance'] ?? 0),
+                'token_count' => (int) ($row['token_count'] ?? 0),
+                'source_refs_json' => (string) ($row['source_refs_json'] ?? '[]'),
+                'source_start_seq' => (int) ($row['source_start_seq'] ?? 0),
+                'source_end_seq' => (int) ($row['source_end_seq'] ?? 0),
+            ];
+        }
+
+        return $out;
     }
 
     /**

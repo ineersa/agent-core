@@ -9,6 +9,7 @@ use Ineersa\Hatfield\ExtensionApi\Agent\ExtensionAgentJobHandlerInterface;
 use Ineersa\Hatfield\ExtensionApi\Agent\ExtensionAgentJobRequestDTO;
 use Ineersa\Hatfield\ExtensionApi\Command\CommandDefinitionDTO;
 use Ineersa\Hatfield\ExtensionApi\Command\ExtensionCommandHandlerInterface;
+use Ineersa\Hatfield\ExtensionApi\Compaction\BeforeCompactionHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Exec\ExecInterface;
 use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterTurnCommitHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Prompt\PromptContributorInterface;
@@ -133,6 +134,15 @@ interface ExtensionApiInterface
      * worker-failure/crash gaps are repaired by recovery/compaction reads.
      */
     public function registerAfterTurnCommitHook(AfterTurnCommitHookInterface $hook): void;
+
+    /**
+     * Register a public before-compaction hook for the canonical CompactRun path.
+     *
+     * Invoked synchronously after safe partition preparation with the session-global
+     * required coverage watermark (1..RunState.lastSeq). Snapshot/fork compaction
+     * does not invoke public extension hooks.
+     */
+    public function registerBeforeCompactionHook(BeforeCompactionHookInterface $hook): void;
 
     /**
      * Hatfield-owned background agent runner.

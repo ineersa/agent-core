@@ -39,6 +39,8 @@ use Ineersa\CodingAgent\Config\ModelSettingsPersister;
 use Ineersa\CodingAgent\Config\SessionMetadataStore;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Config\TuiConfig;
+use Ineersa\CodingAgent\Extension\ExtensionCompactionHookDispatcher;
+use Ineersa\CodingAgent\Extension\ExtensionHookRegistry;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
 use Symfony\AI\Platform\Message\TemplateRenderer\StringTemplateRenderer;
@@ -80,7 +82,8 @@ final class CompactRunHandlerTest extends TestCase
             $fakeService,
             $appConfig,
             new EventFactory(),
-            new CompactionHookDispatcher([]),
+            $this->hooks([]),
+            $this->extensionHooks([]),
         );
 
         $result = $handler->handle(
@@ -164,7 +167,8 @@ final class CompactRunHandlerTest extends TestCase
             $fakeService,
             $appConfig,
             new EventFactory(),
-            new CompactionHookDispatcher([]),
+            $this->hooks([]),
+            $this->extensionHooks([]),
         );
 
         $result = $handler->handle(
@@ -205,7 +209,8 @@ final class CompactRunHandlerTest extends TestCase
             $fakeService,
             $appConfig,
             new EventFactory(),
-            new CompactionHookDispatcher([]),
+            $this->hooks([]),
+            $this->extensionHooks([]),
         );
 
         $result = $handler->handle(
@@ -262,7 +267,8 @@ final class CompactRunHandlerTest extends TestCase
                 $fakeService,
                 $appConfig,
                 new EventFactory(),
-                new CompactionHookDispatcher([]),
+                $this->hooks([]),
+                $this->extensionHooks([]),
             );
 
             $result = $handler->handle(
@@ -321,7 +327,8 @@ final class CompactRunHandlerTest extends TestCase
             $fakeService,
             $this->createAppConfig(),
             new EventFactory(),
-            new CompactionHookDispatcher([$cancelHook]),
+            $this->hooks([$cancelHook]),
+            $this->extensionHooks([$cancelHook]),
         );
 
         $result = $handler->handle(
@@ -401,7 +408,8 @@ final class CompactRunHandlerTest extends TestCase
             $fakeService,
             $this->createAppConfig(),
             new EventFactory(),
-            new CompactionHookDispatcher([$replaceHook]),
+            $this->hooks([$replaceHook]),
+            $this->extensionHooks([$replaceHook]),
         );
 
         $result = $handler->handle(
@@ -714,7 +722,8 @@ final class CompactRunHandlerTest extends TestCase
             $fakeService,
             $this->createAppConfig(),
             new EventFactory(),
-            new CompactionHookDispatcher([$hook]),
+            $this->hooks([$hook]),
+            $this->extensionHooks([$hook]),
         );
 
         $handler->handle(
@@ -766,7 +775,8 @@ final class CompactRunHandlerTest extends TestCase
             $fakeService,
             $this->createAppConfig(),
             new EventFactory(),
-            new CompactionHookDispatcher([$hook]),
+            $this->hooks([$hook]),
+            $this->extensionHooks([$hook]),
         );
 
         $result = $handler->handle(
@@ -834,7 +844,8 @@ final class CompactRunHandlerTest extends TestCase
             $fakeService,
             $this->createAppConfig(),
             new EventFactory(),
-            new CompactionHookDispatcher([$cancelHook]),
+            $this->hooks([$cancelHook]),
+            $this->extensionHooks([$cancelHook]),
         );
 
         $result = $handler->handle(
@@ -894,7 +905,8 @@ final class CompactRunHandlerTest extends TestCase
             $fakeService,
             $this->createAppConfig(),
             new EventFactory(),
-            new CompactionHookDispatcher([]),
+            $this->hooks([]),
+            $this->extensionHooks([]),
         );
 
         $result = $handler->handle(
@@ -938,7 +950,8 @@ final class CompactRunHandlerTest extends TestCase
             $fakeService,
             $appConfig,
             new EventFactory(),
-            new CompactionHookDispatcher([]),
+            $this->hooks([]),
+            $this->extensionHooks([]),
         );
 
         $result = $handler->handle(
@@ -1013,7 +1026,8 @@ final class CompactRunHandlerTest extends TestCase
             $fakeService,
             $this->createAppConfig(),
             new EventFactory(),
-            new CompactionHookDispatcher([$cancelHook]),
+            $this->hooks([$cancelHook]),
+            $this->extensionHooks([$cancelHook]),
         );
 
         $result = $handler->handle(
@@ -1062,6 +1076,85 @@ final class CompactRunHandlerTest extends TestCase
         $advance = $result->effects[0];
         $this->assertSame('run-1', $advance->runId());
         $this->assertSame(5, $advance->turnNo());
+    }
+
+    /**
+     * Thesis: CompactRun public extension hooks receive session-global 1..lastSeq and
+     * a public replacement summary skips ExecuteCompactionStep via the existing path.
+     */
+    public function testPublicExtensionHookReceivesLastSeqWatermarkAndReplacesWithoutWorker(): void
+    {
+        $messages = [
+            $this->userMsg('Hello'),
+            $this->assistantMsg('World'),
+            $this->userMsg('Again'),
+            $this->assistantMsg('More'),
+        ];
+        $state = $this->createRunState($messages);
+        $this->assertSame(20, $state->lastSeq);
+
+        $summarize = [$messages[0], $messages[1]];
+        $retained = [$messages[2], $messages[3]];
+        $replacementText = 'Public OM replacement summary';
+        $compactedMessages = [
+            new AgentMessage('user', [['type' => 'text', 'text' => $replacementText]], metadata: ['compact_summary' => true]),
+            ...$retained,
+        ];
+
+        $fakeService = $this->createReadyCompactionServiceWithBuildCompactedMessages(
+            summarizeMessages: $summarize,
+            retainedMessages: $retained,
+            compactedMessages: $compactedMessages,
+            tokenEstimateBefore: 5000,
+            tokenEstimateAfter: 2000,
+        );
+
+        $captured = null;
+        $publicHook = new class($captured, $replacementText) implements \Ineersa\Hatfield\ExtensionApi\Compaction\BeforeCompactionHookInterface {
+            public function __construct(
+                private mixed &$captured,
+                private string $replacementText,
+            ) {
+            }
+
+            public function beforeCompaction(\Ineersa\Hatfield\ExtensionApi\Compaction\BeforeCompactionHookContextDTO $context): \Ineersa\Hatfield\ExtensionApi\Compaction\BeforeCompactionHookResultDTO
+            {
+                $this->captured = $context;
+
+                return \Ineersa\Hatfield\ExtensionApi\Compaction\BeforeCompactionHookResultDTO::replaceSummary($this->replacementText);
+            }
+        };
+
+        $handler = new CompactRunHandler(
+            $fakeService,
+            $this->createAppConfig(),
+            new EventFactory(),
+            $this->hooks([]),
+            $this->extensionHooks([], [$publicHook]),
+        );
+
+        $result = $handler->handle(
+            new CompactRun(
+                runId: 'run-1',
+                turnNo: 5,
+                stepId: 'step-1',
+                attempt: 1,
+                idempotencyKey: 'key-public-om',
+                trigger: 'manual',
+            ),
+            $state,
+        );
+
+        $this->assertInstanceOf(\Ineersa\Hatfield\ExtensionApi\Compaction\BeforeCompactionHookContextDTO::class, $captured);
+        $this->assertSame(1, $captured->requiredStartSeq);
+        $this->assertSame(20, $captured->requiredEndSeq);
+        $this->assertSame(RunEventTypeEnum::ContextCompactionStarted->value, $result->events[0]->type);
+        $this->assertSame(RunEventTypeEnum::ContextCompacted->value, $result->events[1]->type);
+        $this->assertEmpty($result->effects);
+        foreach ($result->effects as $effect) {
+            $this->assertNotInstanceOf(ExecuteCompactionStep::class, $effect);
+        }
+        $this->assertSame($replacementText, $result->events[1]->payload['summary_text'] ?? null);
     }
 
     // ── Helpers ──
@@ -1303,5 +1396,27 @@ final class CompactRunHandlerTest extends TestCase
     private function assistantMsg(string $text): AgentMessage
     {
         return new AgentMessage('assistant', [['type' => 'text', 'text' => $text]]);
+    }
+
+    private function hooks(array $hooks = []): CompactionHookDispatcher
+    {
+        return new CompactionHookDispatcher($hooks);
+    }
+
+    /**
+     * @param list<BeforeCompactionHookInterface>                                           $internalHooks
+     * @param list<\Ineersa\Hatfield\ExtensionApi\Compaction\BeforeCompactionHookInterface> $publicHooks
+     */
+    private function extensionHooks(array $internalHooks = [], array $publicHooks = []): ExtensionCompactionHookDispatcher
+    {
+        $registry = new ExtensionHookRegistry();
+        foreach ($publicHooks as $hook) {
+            $registry->addBeforeCompactionHook($hook);
+        }
+
+        return new ExtensionCompactionHookDispatcher(
+            $registry,
+            new CompactionHookDispatcher($internalHooks),
+        );
     }
 }
