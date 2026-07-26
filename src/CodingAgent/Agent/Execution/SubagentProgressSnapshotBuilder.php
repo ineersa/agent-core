@@ -138,9 +138,7 @@ final class SubagentProgressSnapshotBuilder
             }
 
             $childStatus = 'running';
-            if (!$terminal && AgentArtifactStatusEnum::Pending === $report['status']) {
-                $childStatus = 'pending';
-            } elseif (!$terminal && AgentArtifactStatusEnum::NeedsClarification === $report['status']) {
+            if (!$terminal && AgentArtifactStatusEnum::NeedsClarification === $report['status']) {
                 $childStatus = 'waiting_human';
             } elseif ($terminal && null !== $report['status']) {
                 $childStatus = match ($report['status']) {

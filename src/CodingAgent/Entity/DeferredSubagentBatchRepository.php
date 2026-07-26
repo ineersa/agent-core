@@ -126,50 +126,22 @@ final class DeferredSubagentBatchRepository extends ServiceEntityRepository
         $em->clear();
     }
 
-    /**
-     * Atomically claim exclusive delivery rights for one aggregate progress revision.
-     *
-     * Semantics (at-most-once-per-claimed-revision):
-     * - Succeeds only when {@see $expectedDeliveredRevision} still matches the durable
-     *   delivered marker and {@see $targetRevision} is still undelivered and already
-     *   published on aggregate_progress_revision.
-     * - Callers must append the progress payload only after a successful claim.
-     * - A later claim for a higher target still succeeds even if a previous claim's
-     *   append failed — latest-state recovery is via a new aggregate revision, not
-     *   by re-appending a previously claimed revision.
-     * - Cross-store exactly-once with events.jsonl is not claimed; the durable claim
-     *   lives only on deferred_subagent_batch.delivered_progress_revision.
-     */
-    public function claimProgressDeliveryRevision(
+    public function markDeliveredProgressRevision(
         string $batchLifecycleId,
-        int $targetRevision,
-        int $expectedDeliveredRevision,
-    ): bool {
-        if ($targetRevision <= $expectedDeliveredRevision) {
-            return false;
+        int $deliveredProgressRevision,
+        int $expectedProjectionVersion,
+    ): void {
+        $row = $this->findOneBy(['lifecycleId' => $batchLifecycleId]);
+        if (!$row instanceof DeferredSubagentBatch) {
+            throw new \RuntimeException(\sprintf('Deferred subagent batch missing for lifecycle "%s".', $batchLifecycleId));
         }
 
-        $conn = $this->getEntityManager()->getConnection();
-        $affected = $conn->executeStatement(
-            'UPDATE deferred_subagent_batch
-             SET delivered_progress_revision = :target, updated_at = :now
-             WHERE lifecycle_id = :id
-               AND delivered_progress_revision = :expected
-               AND delivered_progress_revision < :target
-               AND aggregate_progress_revision >= :target',
-            [
-                'target' => $targetRevision,
-                'expected' => $expectedDeliveredRevision,
-                'id' => $batchLifecycleId,
-                'now' => Clock::get()->now()->format('Y-m-d H:i:s'),
-            ],
-        );
-
-        if ($affected > 0) {
-            $this->getEntityManager()->clear();
+        if ($row->projectionVersion !== $expectedProjectionVersion) {
+            throw OptimisticLockException::lockFailed($row);
         }
 
-        return $affected > 0;
+        $row->deliveredProgressRevision = max($row->deliveredProgressRevision, $deliveredProgressRevision);
+        $this->getEntityManager()->flush();
     }
 
     public function markTerminalCompletionEnqueued(
@@ -463,12 +435,8 @@ final class DeferredSubagentBatchRepository extends ServiceEntityRepository
             // Child evidence commits first; batch becomes Launched only when every child row is Launched.
             // If known child indices were forward-marked but the all-child condition is not met, commit
             // child updates, leave batch Reserved, then signal incomplete transition after commit.
-            //
-            // Bump aggregate_progress_revision exactly once on the Reserved→Launched transition so the
-            // parent receives an initial pending snapshot for all reserved/launched children before the
-            // first child lifecycle observe. Revision is not bumped on redelivery when already Launched.
             $batchAffected = $conn->executeStatement(
-                'UPDATE deferred_subagent_batch SET launch_status = :launched, started_at = COALESCE(started_at, :started), updated_at = :now, projection_version = projection_version + 1, aggregate_progress_revision = aggregate_progress_revision + 1
+                'UPDATE deferred_subagent_batch SET launch_status = :launched, started_at = COALESCE(started_at, :started), updated_at = :now, projection_version = projection_version + 1
                  WHERE parent_run_id = :parent AND parent_tool_call_id = :tool AND launch_status = :reserved
                    AND total_child_count = (
                      SELECT COUNT(*) FROM deferred_subagent_child

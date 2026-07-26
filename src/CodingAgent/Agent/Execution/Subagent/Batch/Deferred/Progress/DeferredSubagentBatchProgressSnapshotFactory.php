@@ -282,11 +282,8 @@ final readonly class DeferredSubagentBatchProgressSnapshotFactory
             );
         }
 
-        // Reserved (or launched) with no lifecycle projection yet is queued work,
-        // not an active provider turn. Label as pending so TUI catalog/picker rows
-        // are not mis-shown as running before the first child progress arrives.
         return new DeferredSubagentBatchChildProgressStateDTO(
-            terminal: false, artifactStatus: AgentArtifactStatusEnum::Pending,
+            terminal: false, artifactStatus: AgentArtifactStatusEnum::Running,
             message: '', turnNo: 0, enrichment: null,
         );
     }

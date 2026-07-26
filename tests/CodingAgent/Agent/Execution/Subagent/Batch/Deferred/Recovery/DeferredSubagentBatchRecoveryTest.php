@@ -126,8 +126,7 @@ final class DeferredSubagentBatchRecoveryTest extends IsolatedKernelTestCase
         $this->assertInstanceOf(RecoverDeferredSubagentBatchLifecycleMessage::class, $bus->messages[0]);
 
         $batchBeforeRecovery = $batchRepo->findByLifecycleId($lifecycle);
-        // Launch success already bumped once for the initial pending snapshot.
-        $this->assertSame(1, $batchBeforeRecovery->aggregateProgressRevision);
+        $this->assertSame(0, $batchBeforeRecovery->aggregateProgressRevision);
 
         $recoveryBus = new TestMessageBus();
         $recovery = new DeferredSubagentBatchRecoveryService(
@@ -148,8 +147,7 @@ final class DeferredSubagentBatchRecoveryTest extends IsolatedKernelTestCase
         $this->assertSame('completed', $child2Recovered?->childLifecycleProjection['child_status'] ?? null);
 
         $batchAfterRecovery = $batchRepo->findByLifecycleId($lifecycle);
-        // Launch bump (1) + recovery reconcile bump(s). Current recovery path yields 3 total.
-        $this->assertSame(3, $batchAfterRecovery->aggregateProgressRevision);
+        $this->assertSame(2, $batchAfterRecovery->aggregateProgressRevision);
         $this->assertInstanceOf(DeliverDeferredSubagentBatchLifecycleMessage::class, $recoveryBus->messages[0]);
 
         $recovery->recover($lifecycle);
@@ -158,7 +156,7 @@ final class DeferredSubagentBatchRecoveryTest extends IsolatedKernelTestCase
         $this->assertSame(2, $child1Dup?->childEventCursor);
         $this->assertSame(2, $child2Dup?->childEventCursor);
         $batchDup = $batchRepo->findByLifecycleId($lifecycle);
-        $this->assertSame(3, $batchDup->aggregateProgressRevision);
+        $this->assertSame(2, $batchDup->aggregateProgressRevision);
     }
 
     public function testWorkerStartScopesRecoveryAndResumesDeadlineOrInterruption(): void

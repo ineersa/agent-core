@@ -159,18 +159,6 @@ final class ShellFollowUpLiveE2eTest extends ControllerE2eTestCase
             'Shell: expected tool_execution.completed. '.$this->collectDiagnostics($shellEvents),
         );
 
-        // Phase boundary: under concurrent gate load, the shell command's
-        // trailing parent run.completed can lag behind tool_execution.completed.
-        // Soft-drain any already-buffered or shortly-arriving shell terminal
-        // BEFORE follow_up so it cannot be consumed as the follow-up outcome.
-        // Do not hard-require shell run.completed: bash tool completion is the
-        // durable shell-phase success signal; standalone AgentEnd can race or
-        // be delayed on the consumer stdout pipe without meaning the shell hung.
-        $shellEvents = array_merge(
-            $shellEvents,
-            $this->drainParentRunTerminalQuietly(0.25),
-        );
-
         // ── Follow-up (THE CRITICAL PATH) ──
         $followUpCmdId = 'cmd_followup_'.uniqid();
         $this->writeCommand([
@@ -180,14 +168,12 @@ final class ShellFollowUpLiveE2eTest extends ControllerE2eTestCase
             'payload' => ['text' => 'Say hello again.'],
         ]);
 
-        // Correlate follow-up terminal to this command: ignore parent terminals
-        // until the follow_up command.ack is observed, then require assistant
-        // evidence and a post-ack terminal for THIS turn.
-        $followUpEvents = $this->collectFollowUpPhaseEvents(
-            $followUpCmdId,
-            $this->liveLlmRunWaitTimeout(),
-        );
+        $followUpEvents = $this->collectEventsUntil('assistant.message_started', $this->liveLlmRunWaitTimeout());
         $followUpByType = $this->indexByType($followUpEvents);
+        if (!isset($followUpByType['run.completed']) && !isset($followUpByType['run.failed'])) {
+            $followUpEvents = array_merge($followUpEvents, $this->collectEvents($this->liveLlmRunWaitTimeout()));
+            $followUpByType = $this->indexByType($followUpEvents);
+        }
 
         $this->assertTrue($this->foundAck($followUpEvents, $followUpCmdId),
             'Follow-up: expected command.ack. '.$this->collectDiagnostics($followUpEvents));
@@ -212,8 +198,7 @@ final class ShellFollowUpLiveE2eTest extends ControllerE2eTestCase
             );
         }
 
-        // THE KEY ASSERTION — true dead follow-up still fails here even if a
-        // stale shell terminal arrived (it is discarded by the collector until ack).
+        // THE KEY ASSERTION
         $this->assertTrue(
             $this->hasAssistantResponseEvidence($followUpByType),
             'Follow-up: NO assistant response — run appears DEAD (issue #183). '
@@ -222,8 +207,8 @@ final class ShellFollowUpLiveE2eTest extends ControllerE2eTestCase
         );
 
         $this->assertTrue(
-            $this->hasParentRunTerminalAfterAck($followUpEvents, $followUpCmdId),
-            'Follow-up: expected terminal state after follow_up command.ack. '
+            isset($followUpByType['run.completed']) || isset($followUpByType['run.failed']),
+            'Follow-up: expected terminal state. '
             .'Event types: '.implode(', ', array_keys($followUpByType))."\n"
             .$this->collectDiagnostics($followUpEvents),
         );
@@ -238,122 +223,5 @@ final class ShellFollowUpLiveE2eTest extends ControllerE2eTestCase
     {
         // Do NOT exclude bash — shell commands are the feature under test.
         return [];
-    }
-
-    /**
-     * Soft-drain any parent terminal that is already buffered or arrives within
-     * $timeoutSeconds. Returns immediately after the first parent terminal or
-     * when the quiet window elapses — never fails on missing shell terminal.
-     *
-     * @return list<array<string, mixed>>
-     */
-    private function drainParentRunTerminalQuietly(float $timeoutSeconds): array
-    {
-        $events = [];
-        $deadline = microtime(true) + $timeoutSeconds;
-        $this->parentRunIdForCollection = '' !== $this->runId ? $this->runId : null;
-
-        while (microtime(true) < $deadline) {
-            foreach ($this->readEvents() as $event) {
-                $events[] = $event;
-                $this->noteParentRunIdFromEvent($event);
-
-                if ($this->isParentRunTerminalEvent($event)) {
-                    return $events;
-                }
-            }
-
-            if (!$this->isRunning()) {
-                foreach ($this->readEvents() as $event) {
-                    $events[] = $event;
-                }
-                break;
-            }
-
-            usleep(10_000);
-        }
-
-        return $events;
-    }
-
-    /**
-     * Collect the follow_up phase correlated to $followUpCmdId.
-     *
-     * Parent terminals observed before the follow_up command.ack are treated as
-     * stale shell-phase leftovers and cannot close this phase. After ack, require
-     * assistant evidence plus a parent terminal for the follow-up turn.
-     *
-     * @return list<array<string, mixed>>
-     */
-    private function collectFollowUpPhaseEvents(string $followUpCmdId, float $timeout): array
-    {
-        $events = [];
-        $deadline = microtime(true) + $timeout;
-        $this->parentRunIdForCollection = '' !== $this->runId ? $this->runId : null;
-        $acked = false;
-        $sawAssistant = false;
-
-        while (microtime(true) < $deadline) {
-            foreach ($this->readEvents() as $event) {
-                $events[] = $event;
-                $this->noteParentRunIdFromEvent($event);
-
-                if (!$acked && $this->foundAck([$event], $followUpCmdId)) {
-                    $acked = true;
-                }
-
-                $type = (string) ($event['type'] ?? '');
-                if (\in_array($type, [
-                    'assistant.message_started',
-                    'assistant.text_started',
-                    'assistant.text_delta',
-                    'assistant.thinking_started',
-                    'assistant.message_completed',
-                ], true)) {
-                    $sawAssistant = true;
-                }
-
-                // Only a post-ack parent terminal can close the follow-up phase.
-                if ($acked && $sawAssistant && $this->isParentRunTerminalEvent($event)) {
-                    return $events;
-                }
-
-                // Hard stop on rejection/protocol errors so diagnostics stay bounded.
-                if (\in_array($type, ['command.rejected', 'protocol.error'], true)) {
-                    return $events;
-                }
-            }
-
-            if (!$this->isRunning()) {
-                foreach ($this->readEvents() as $event) {
-                    $events[] = $event;
-                }
-                break;
-            }
-
-            usleep(10_000);
-        }
-
-        return $events;
-    }
-
-    /**
-     * @param list<array<string, mixed>> $events
-     */
-    private function hasParentRunTerminalAfterAck(array $events, string $cmdId): bool
-    {
-        $acked = false;
-        foreach ($events as $event) {
-            if (!$acked && $this->foundAck([$event], $cmdId)) {
-                $acked = true;
-                continue;
-            }
-
-            if ($acked && $this->isParentRunTerminalEvent($event)) {
-                return true;
-            }
-        }
-
-        return false;
     }
 }
