@@ -507,7 +507,7 @@ final class TuiAutoCompactionE2eTest extends TestCase
 
         $settings = $this->buildBaseSettings($extraSettings);
 
-        $yaml = \Symfony\Component\Yaml\Yaml::dump($settings, 6, 4);
+        $yaml = \Symfony\Component\Yaml\Yaml::dump(TuiE2eDatabaseEnv::withSingleLlmWorkerForReplay($settings), 6, 4);
         file_put_contents($dir.'/.hatfield/settings.yaml', $yaml);
 
         @mkdir($dir.'/home/.hatfield', 0o777, true);

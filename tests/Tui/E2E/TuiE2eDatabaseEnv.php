@@ -159,6 +159,28 @@ final class TuiE2eDatabaseEnv
     }
 
     /**
+     * Replay fixtures use a process-local FIFO cursor inside each llm worker.
+     * With production default runtime.llm_worker_count=4, concurrent workers each
+     * restart at fixture 0 and can serve the wrong turn. Force a single llm consumer
+     * for all TUI replay isolation (same rationale as ControllerReplayE2eTestCase).
+     *
+     * @param array<string, mixed> $settings
+     *
+     * @return array<string, mixed>
+     */
+    public static function withSingleLlmWorkerForReplay(array $settings): array
+    {
+        $runtime = $settings['runtime'] ?? [];
+        if (!\is_array($runtime)) {
+            $runtime = [];
+        }
+        $runtime['llm_worker_count'] = 1;
+        $settings['runtime'] = $runtime;
+
+        return $settings;
+    }
+
+    /**
      * @param non-empty-string $from Directory anchor (kernel.project_dir/var/test)
      * @param non-empty-string $to   Target file path
      */

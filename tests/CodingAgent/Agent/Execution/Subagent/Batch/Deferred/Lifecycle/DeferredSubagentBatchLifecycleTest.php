@@ -1024,7 +1024,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
                 $this->assertArrayHasKey('input_tokens', $forced);
                 $this->assertNotNull($batchDone->interruptionProgressEnqueuedAt);
             } elseif ('natural_terminal' === $variant) {
-                // launch revision delivery (pending/terminal snapshot) + forced timeout progress
+                // launch revision delivery (initial pending snapshot) + forced timeout progress
                 $this->assertCount(2, $appended);
                 $this->assertNotNull($batchDone->interruptionProgressEnqueuedAt);
             } else {

@@ -126,6 +126,56 @@ final class DeferredSubagentBatchRepository extends ServiceEntityRepository
         $em->clear();
     }
 
+    /**
+     * Atomically claim exclusive delivery rights for one aggregate progress revision.
+     *
+     * Semantics (at-most-once-per-claimed-revision):
+     * - Succeeds only when {@see $expectedDeliveredRevision} still matches the durable
+     *   delivered marker and {@see $targetRevision} is still undelivered and already
+     *   published on aggregate_progress_revision.
+     * - Callers must append the progress payload only after a successful claim.
+     * - A later claim for a higher target still succeeds even if a previous claim's
+     *   append failed — latest-state recovery is via a new aggregate revision, not
+     *   by re-appending a previously claimed revision.
+     * - Cross-store exactly-once with events.jsonl is not claimed; the durable claim
+     *   lives only on deferred_subagent_batch.delivered_progress_revision.
+     */
+    public function claimProgressDeliveryRevision(
+        string $batchLifecycleId,
+        int $targetRevision,
+        int $expectedDeliveredRevision,
+    ): bool {
+        if ($targetRevision <= $expectedDeliveredRevision) {
+            return false;
+        }
+
+        $conn = $this->getEntityManager()->getConnection();
+        $affected = $conn->executeStatement(
+            'UPDATE deferred_subagent_batch
+             SET delivered_progress_revision = :target, updated_at = :now
+             WHERE lifecycle_id = :id
+               AND delivered_progress_revision = :expected
+               AND delivered_progress_revision < :target
+               AND aggregate_progress_revision >= :target',
+            [
+                'target' => $targetRevision,
+                'expected' => $expectedDeliveredRevision,
+                'id' => $batchLifecycleId,
+                'now' => Clock::get()->now()->format('Y-m-d H:i:s'),
+            ],
+        );
+
+        if ($affected > 0) {
+            $this->getEntityManager()->clear();
+        }
+
+        return $affected > 0;
+    }
+
+    /**
+     * @deprecated Prefer claimProgressDeliveryRevision() before append. Kept only for
+     *             forced-path callers that still mark after a non-revision-gated emit.
+     */
     public function markDeliveredProgressRevision(
         string $batchLifecycleId,
         int $deliveredProgressRevision,

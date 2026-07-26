@@ -434,6 +434,13 @@ workers) or `agents.max_agents` (how many children one `subagent` tool
 call may request). Do not raise it blindly: each llm worker is a full
 PHP process with process-local provider/WebSocket cache state.
 
+**Resource ballpark (environment-dependent):** on a controlled local
+measurement, raising the pool from **1 → 4** added about **+233 MB**
+idle RSS for the controller + llm children (~**78 MB per llm process**).
+Figures vary by PHP build, extensions, and provider client state; each
+worker also owns its own provider/WebSocket cache, so active sessions
+cost more than idle RSS alone.
+
 **Default:** `4`
 **Accepted range:** integer `1..8` (enforced by Symfony Validator
 attributes on `RuntimeConfig` at config load).

@@ -92,6 +92,12 @@ final class HeadlessController
         private readonly ?BackgroundProcessCompletionPoller $bgProcessCompletionPoller = null,
     ) {
         $this->sessionId = $_SERVER['HATFIELD_SESSION_ID'] ?? $_ENV['HATFIELD_SESSION_ID'] ?? 'unknown';
+        // Fail closed on invalid constructor overrides at construction time (no silent clamp).
+        // Values <= 0 mean "use RuntimeConfig"; positive values must be in RuntimeConfig range.
+        // MIN is 1, so any positive override is already >= MIN; only enforce the upper bound here.
+        if ($this->llmWorkerCount > RuntimeConfig::MAX_LLM_WORKER_COUNT) {
+            throw new \InvalidArgumentException(\sprintf('HeadlessController llmWorkerCount override must be an integer between %d and %d, got %d.', RuntimeConfig::MIN_LLM_WORKER_COUNT, RuntimeConfig::MAX_LLM_WORKER_COUNT, $this->llmWorkerCount));
+        }
     }
 
     public function run(): int
@@ -143,10 +149,8 @@ final class HeadlessController
         // (parent turns + parallel subagent children share the llm transport).
         // Count defaults to runtime.llm_worker_count (1..8, default 4) and is
         // intentionally distinct from tools.execution.max_parallelism.
-        $effectiveLlmWorkerCount = $this->llmWorkerCount > 0
-            ? max(RuntimeConfig::MIN_LLM_WORKER_COUNT, min(RuntimeConfig::MAX_LLM_WORKER_COUNT, $this->llmWorkerCount))
-            : max(RuntimeConfig::MIN_LLM_WORKER_COUNT, min(RuntimeConfig::MAX_LLM_WORKER_COUNT, $this->runtimeConfig->llmWorkerCount));
-        $this->consumerSupervisor->launchMultiple('llm', $effectiveLlmWorkerCount);
+        // Constructor override must already be in range; invalid overrides fail closed.
+        $this->consumerSupervisor->launchMultiple('llm', $this->resolveLlmWorkerCount());
         // tool consumers: N parallel workers for concurrent tool execution.
         // N defaults to tools.execution.max_parallelism.
         $effectiveWorkerCount = $this->toolWorkerCount > 0
@@ -439,5 +443,17 @@ final class HeadlessController
 
         $this->consumerSupervisor->shutdown();
         $this->bgProcessManager?->shutdownCleanup($this->sessionId);
+    }
+
+    /**
+     * Resolve the fixed llm consumer pool size once from either the constructor
+     * override or typed RuntimeConfig settings. Invalid overrides are rejected in
+     * the constructor; settings are validator-enforced at config load.
+     */
+    private function resolveLlmWorkerCount(): int
+    {
+        return $this->llmWorkerCount > 0
+            ? $this->llmWorkerCount
+            : $this->runtimeConfig->llmWorkerCount;
     }
 }
