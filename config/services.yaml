@@ -186,6 +186,7 @@ services:
       $resources: '@Ineersa\CodingAgent\Config\AppResourceLocator'
       $denormalizer: '@Symfony\Component\Serializer\SerializerInterface'
       $cwd: '%app.cwd%'
+      $validator: '@validator'
 
   Ineersa\CodingAgent\Config\CompactionConfig:
     factory: ['Ineersa\CodingAgent\Config\CompactionConfig', 'fromAppConfig']
@@ -514,6 +515,12 @@ services:
   Ineersa\CodingAgent\Runtime\Controller\HeadlessController:
     arguments:
       $dispatcher: '@event_dispatcher'
+      $runtimeConfig: '@Ineersa\CodingAgent\Config\RuntimeConfig'
+
+  Ineersa\CodingAgent\Config\RuntimeConfig:
+    factory: ['Ineersa\CodingAgent\Config\RuntimeConfig', 'fromAppConfig']
+    arguments:
+      - '@Ineersa\CodingAgent\Config\AppConfig'
 
   Ineersa\CodingAgent\Runtime\Controller\BackgroundProcessCompletionPoller:
     arguments:

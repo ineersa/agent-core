@@ -126,7 +126,7 @@ final class TuiSubagentChildHitlCancellationE2eTest extends TestCase
         @mkdir($dir.'/.hatfield', 0o777, true);
         @mkdir($dir.'/home/.hatfield', 0o777, true);
         $settings = ['ai' => ['providers' => ['llama_cpp_test' => ['api' => 'openai-completions', 'api_key' => 'dummy', 'completions_path' => '/chat/completions', 'supports_completions' => true, 'supports_embeddings' => false, 'supports_thinking_levels' => true, 'models' => ['test' => ['name' => 'test', 'context_window' => 32768, 'max_tokens' => 32768, 'input' => ['text'], 'tool_calling' => true, 'reasoning' => true, 'thinking_level_map' => ['off' => '0'], 'cost' => ['input' => 0, 'output' => 0]]]]]]];
-        $yaml = \Symfony\Component\Yaml\Yaml::dump($settings, 6, 4);
+        $yaml = \Symfony\Component\Yaml\Yaml::dump(TuiE2eDatabaseEnv::withSingleLlmWorkerForReplay($settings), 6, 4);
         file_put_contents($dir.'/.hatfield/settings.yaml', $yaml);
         file_put_contents($dir.'/home/.hatfield/settings.yaml', $yaml);
 
