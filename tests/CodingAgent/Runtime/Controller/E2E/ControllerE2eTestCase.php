@@ -933,36 +933,6 @@ YAML;
         return (int) $m[1] === posix_getuid();
     }
 
-    protected function isProcessOwnedForTeardown(int $pid): bool
-    {
-        if ($pid <= 1 || !$this->isSameUidProcess($pid)) {
-            return false;
-        }
-
-        // Already recorded under this test's controller process tree.
-        if (\in_array($pid, $this->trackedControllerPids, true)) {
-            return true;
-        }
-
-        if ('' === $this->sessionId) {
-            return true;
-        }
-
-        $environ = @file_get_contents("/proc/{$pid}/environ");
-        if (false === $environ) {
-            return false;
-        }
-
-        $expected = 'HATFIELD_SESSION_ID='.$this->sessionId;
-        foreach (explode("\0", $environ) as $entry) {
-            if ($entry === $expected) {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
     protected function isControllerPidAlive(int $pid): bool
     {
         if (!@posix_kill($pid, 0)) {
