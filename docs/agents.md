@@ -176,7 +176,7 @@ Single mode (one child, or serialized/dependent work):
 { "agent": "scout", "task": "Inspect routing config" }
 ```
 
-Parallel mode for independent work (up to `agents.max_agents`, default **8**
+Parallel mode for independent work (up to `agents.max_agents`, default **4**
 per tool call) — prefer this shape when launching multiple independent
 scouts/reviewers:
 

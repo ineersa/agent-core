@@ -402,7 +402,7 @@ final class TuiJourneyE2eTest extends TestCase
             ],
         ];
 
-        $yaml = \Symfony\Component\Yaml\Yaml::dump($settings, 6, 4);
+        $yaml = \Symfony\Component\Yaml\Yaml::dump(TuiE2eDatabaseEnv::withSingleLlmWorkerForReplay($settings), 6, 4);
         file_put_contents($dir.'/.hatfield/settings.yaml', $yaml);
 
         // Also write for the HOME dir.

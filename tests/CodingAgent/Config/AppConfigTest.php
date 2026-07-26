@@ -13,6 +13,8 @@ use Symfony\Component\Serializer\Mapping\Factory\ClassMetadataFactory;
 use Symfony\Component\Serializer\Mapping\Loader\AttributeLoader;
 use Symfony\Component\Serializer\NameConverter\MetadataAwareNameConverter;
 use Symfony\Component\Serializer\SerializerInterface;
+use Symfony\Component\Validator\Validation;
+use Symfony\Component\Validator\Validator\ValidatorInterface;
 
 /**
  * Tests that AppConfig rejects invalid ai.default_model at boot time.
@@ -320,7 +322,15 @@ class AppConfigTest extends TestCase
             $this->resources,
             $this->createSerializer(),
             $this->tmpDir,
+            $this->createValidator(),
         );
+    }
+
+    private function createValidator(): ValidatorInterface
+    {
+        return Validation::createValidatorBuilder()
+            ->enableAttributeMapping()
+            ->getValidator();
     }
 
     private function createSerializer(): SerializerInterface

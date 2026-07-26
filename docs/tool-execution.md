@@ -292,7 +292,13 @@ The number of tool consumer workers launched by `HeadlessController` defaults
 to `max_parallelism` from `tools.execution` settings. This can be overridden
 with the `$toolWorkerCount` constructor parameter if needed.
 
-See `docs/settings.md` → `tools.execution.max_parallelism`.
+The number of **llm** consumer workers is a separate fixed pool
+(`runtime.llm_worker_count`, default 4, range 1..8) launched via
+`ConsumerSupervisor::launchMultiple('llm', count)`. It is not derived from
+tool max_parallelism or agents.max_agents.
+
+See `docs/settings.md` → `tools.execution.max_parallelism` and
+`runtime.llm_worker_count`.
 
 ## No shared foreground process management
 

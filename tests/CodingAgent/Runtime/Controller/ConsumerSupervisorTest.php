@@ -121,6 +121,31 @@ final class ConsumerSupervisorTest extends TestCase
         }
     }
 
+    public function testLaunchMultipleCreatesIndependentLlmInstances(): void
+    {
+        $argvFile = tempnam(sys_get_temp_dir(), 'hatfield-consumer-llm-pool-');
+        $this->assertNotFalse($argvFile);
+
+        try {
+            $supervisor = $this->createSupervisor($argvFile);
+            $supervisor->launchMultiple('llm', 4);
+
+            $running = $this->consumerKeysRunning($supervisor);
+            $keys = array_keys($running);
+            sort($keys);
+            $this->assertSame(['llm#0', 'llm#1', 'llm#2', 'llm#3'], $keys);
+
+            foreach (['llm#0', 'llm#1', 'llm#2', 'llm#3'] as $key) {
+                $process = $this->getConsumerProcess($supervisor, $key);
+                if ($process->isRunning()) {
+                    $process->stop(0);
+                }
+            }
+        } finally {
+            @unlink($argvFile);
+        }
+    }
+
     private function createSupervisor(string $argvCaptureFile, int $exitCode = 0): ConsumerSupervisor
     {
         $this->logger = new TestLogger();
