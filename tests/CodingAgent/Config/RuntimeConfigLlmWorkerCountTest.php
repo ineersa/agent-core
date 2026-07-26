@@ -16,6 +16,8 @@ use Symfony\Component\Serializer\Mapping\Loader\AttributeLoader;
 use Symfony\Component\Serializer\NameConverter\MetadataAwareNameConverter;
 use Symfony\Component\Serializer\SerializerInterface;
 use Symfony\Component\Validator\Exception\ValidationFailedException;
+use Symfony\Component\Validator\Validation;
+use Symfony\Component\Validator\Validator\ValidatorInterface;
 use Symfony\Component\Yaml\Yaml;
 
 /**
@@ -54,45 +56,16 @@ final class RuntimeConfigLlmWorkerCountTest extends TestCase
         parent::tearDown();
     }
 
-    public function testDefaultLlmWorkerCountIsFourAndDistinctFromToolParallelism(): void
+    public function testDefaultLlmWorkerCountIsFourAndDistinctFromToolAndAgentLimits(): void
     {
-        $this->writeDefaults([
-            'tui' => ['theme' => 'cyberpunk', 'theme_paths' => ['/app/config/themes']],
-            'sessions' => ['path' => '.hatfield/sessions'],
-            'logging' => ['path' => '.hatfield/logs', 'level' => 'info', 'max_files' => 14],
+        $this->writeDefaults($this->baseDefaults([
             'tools' => [
                 'execution' => [
                     'default_mode' => 'sequential',
                     'max_parallelism' => 3,
                 ],
             ],
-            'ai' => [
-                'default_model' => 'deepseek/deepseek-v4-pro',
-                'providers' => [
-                    'deepseek' => [
-                        'type' => 'generic',
-                        'enabled' => true,
-                        'base_url' => 'https://api.deepseek.com',
-                        'models' => [
-                            'deepseek-v4-pro' => [
-                                'name' => 'DeepSeek V4 Pro',
-                                'context_window' => 131072,
-                                'max_tokens' => 8192,
-                                'input' => ['text'],
-                                'tool_calling' => true,
-                                'reasoning' => false,
-                                'cost' => [
-                                    'input' => 0.0,
-                                    'output' => 0.0,
-                                    'cache_read' => 0.0,
-                                    'cache_write' => 0.0,
-                                ],
-                            ],
-                        ],
-                    ],
-                ],
-            ],
-        ]);
+        ]));
 
         $config = $this->buildConfig();
 
@@ -104,38 +77,9 @@ final class RuntimeConfigLlmWorkerCountTest extends TestCase
 
     public function testConfiguredLlmWorkerCountIsAcceptedWithinBounds(): void
     {
-        $this->writeDefaults([
-            'tui' => ['theme' => 'cyberpunk', 'theme_paths' => ['/app/config/themes']],
-            'sessions' => ['path' => '.hatfield/sessions'],
-            'logging' => ['path' => '.hatfield/logs', 'level' => 'info', 'max_files' => 14],
+        $this->writeDefaults($this->baseDefaults([
             'runtime' => ['llm_worker_count' => 2],
-            'ai' => [
-                'default_model' => 'deepseek/deepseek-v4-pro',
-                'providers' => [
-                    'deepseek' => [
-                        'type' => 'generic',
-                        'enabled' => true,
-                        'base_url' => 'https://api.deepseek.com',
-                        'models' => [
-                            'deepseek-v4-pro' => [
-                                'name' => 'DeepSeek V4 Pro',
-                                'context_window' => 131072,
-                                'max_tokens' => 8192,
-                                'input' => ['text'],
-                                'tool_calling' => true,
-                                'reasoning' => false,
-                                'cost' => [
-                                    'input' => 0.0,
-                                    'output' => 0.0,
-                                    'cache_read' => 0.0,
-                                    'cache_write' => 0.0,
-                                ],
-                            ],
-                        ],
-                    ],
-                ],
-            ],
-        ]);
+        ]));
 
         $config = $this->buildConfig();
         $this->assertSame(2, $config->runtime->llmWorkerCount);
@@ -143,11 +87,25 @@ final class RuntimeConfigLlmWorkerCountTest extends TestCase
 
     public function testOutOfRangeLlmWorkerCountIsRejected(): void
     {
-        $this->writeDefaults([
+        $this->writeDefaults($this->baseDefaults([
+            'runtime' => ['llm_worker_count' => 9],
+        ]));
+
+        $this->expectException(ValidationFailedException::class);
+        $this->buildConfig();
+    }
+
+    /**
+     * @param array<string, mixed> $overrides
+     *
+     * @return array<string, mixed>
+     */
+    private function baseDefaults(array $overrides = []): array
+    {
+        $base = [
             'tui' => ['theme' => 'cyberpunk', 'theme_paths' => ['/app/config/themes']],
             'sessions' => ['path' => '.hatfield/sessions'],
             'logging' => ['path' => '.hatfield/logs', 'level' => 'info', 'max_files' => 14],
-            'runtime' => ['llm_worker_count' => 9],
             'ai' => [
                 'default_model' => 'deepseek/deepseek-v4-pro',
                 'providers' => [
@@ -174,10 +132,9 @@ final class RuntimeConfigLlmWorkerCountTest extends TestCase
                     ],
                 ],
             ],
-        ]);
+        ];
 
-        $this->expectException(ValidationFailedException::class);
-        $this->buildConfig();
+        return array_replace_recursive($base, $overrides);
     }
 
     /**
@@ -198,6 +155,7 @@ final class RuntimeConfigLlmWorkerCountTest extends TestCase
             $this->resources,
             $this->createSerializer(),
             $this->tmpDir,
+            $this->createValidator(),
         );
     }
 
@@ -217,5 +175,12 @@ final class RuntimeConfigLlmWorkerCountTest extends TestCase
             ],
             encoders: [],
         );
+    }
+
+    private function createValidator(): ValidatorInterface
+    {
+        return Validation::createValidatorBuilder()
+            ->enableAttributeMapping()
+            ->getValidator();
     }
 }

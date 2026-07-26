@@ -186,6 +186,7 @@ services:
       $resources: '@Ineersa\CodingAgent\Config\AppResourceLocator'
       $denormalizer: '@Symfony\Component\Serializer\SerializerInterface'
       $cwd: '%app.cwd%'
+      $validator: '@validator'
 
   Ineersa\CodingAgent\Config\CompactionConfig:
     factory: ['Ineersa\CodingAgent\Config\CompactionConfig', 'fromAppConfig']

@@ -9,7 +9,7 @@ use Ineersa\CodingAgent\Config\Ai\AiModelReference;
 use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
 use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
 use Symfony\Component\Validator\Exception\ValidationFailedException;
-use Symfony\Component\Validator\Validation;
+use Symfony\Component\Validator\Validator\ValidatorInterface;
 
 /**
  * Resolved Hatfield application configuration.
@@ -78,6 +78,7 @@ final class AppConfig
         AppResourceLocator $resources,
         DenormalizerInterface $denormalizer,
         string $cwd,
+        ValidatorInterface $validator,
     ): self {
         $data = $loader->load($resources->getDefaultsPath(), $cwd)->effective;
         $ai = AiConfig::optionalFromArray($data);
@@ -115,7 +116,7 @@ final class AppConfig
             ),
             forks: self::denormalizeForksConfig($data, $denormalizer),
             agents: AgentsConfig::fromRaw($data['agents'] ?? []),
-            runtime: self::denormalizeAndValidateRuntimeConfig($data, $denormalizer),
+            runtime: self::denormalizeAndValidateRuntimeConfig($data, $denormalizer, $validator),
             raw: $data,
             catalog: $catalog,
             cwd: $cwd,
@@ -124,21 +125,21 @@ final class AppConfig
 
     /**
      * Denormalize runtime config and enforce Symfony Validator attributes
-     * (e.g. runtime.llm_worker_count Range 1..8).
+     * (e.g. runtime.llm_worker_count Range 1..8) via the container validator.
      *
      * @param array<string, mixed> $data
      */
-    private static function denormalizeAndValidateRuntimeConfig(array $data, DenormalizerInterface $denormalizer): RuntimeConfig
-    {
+    private static function denormalizeAndValidateRuntimeConfig(
+        array $data,
+        DenormalizerInterface $denormalizer,
+        ValidatorInterface $validator,
+    ): RuntimeConfig {
         $runtime = $denormalizer->denormalize(
             (array) ($data['runtime'] ?? []),
             RuntimeConfig::class,
         );
 
-        $violations = Validation::createValidatorBuilder()
-            ->enableAttributeMapping()
-            ->getValidator()
-            ->validate($runtime);
+        $violations = $validator->validate($runtime);
 
         if (\count($violations) > 0) {
             throw new ValidationFailedException($runtime, $violations);
