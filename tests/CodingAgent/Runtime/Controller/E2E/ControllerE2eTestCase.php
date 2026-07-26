@@ -848,23 +848,6 @@ YAML;
     }
 
     /**
-     * Descendants of {@see $parentPid} discovered via /proc, filtered by teardown ownership.
-     *
-     * @return list<int>
-     */
-    protected function discoverControllerChildPids(int $parentPid): array
-    {
-        $pids = [];
-        foreach ($this->discoverControllerProcessTreePids($parentPid) as $childPid) {
-            if ($this->isProcessOwnedForTeardown($childPid)) {
-                $pids[] = $childPid;
-            }
-        }
-
-        return $pids;
-    }
-
-    /**
      * Process-tree descendants of {@see $parentPid} (same real UID only).
      *
      * Does not require HATFIELD_SESSION_ID. Used for topology assertions and for
