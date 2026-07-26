@@ -16,16 +16,18 @@ declare(strict_types=1);
  *   test:tui (180s), test:llm-real (180s), phpstan (90s), cs-check (30s).
  *   No PHAR in the gate.
  *
- * Budget for test:controller-replay (90s → 150s) reflects the current
- * replay E2E suite: 10 sequential controller-subprocess tests (9 fixture
- * replay cases + HeadlessControllerLlmWorkerPoolProcessTest fixed-pool
- * topology proof), each spawning controller + messenger consumers with
- * SIGTERM → 3s grace → SIGKILL teardown. Observed standalone sequential
- * runtime is ~88s after the pool topology case joined the group; under
- * concurrent castor-check lane load a 90s shell timeout exited 124 with
- * empty JUnit (hard-kill before suite completion). 150s keeps ~60s
- * load/teardown margin without masking a true hang; individual fixture
- * waits and Castor hard-stop (+15s pad over shell timeout) are unchanged.
+ * Budget for test:controller-replay (75s → 90s → 120s → 150s) reflects the
+ * current replay E2E suite: 10 sequential controller-subprocess tests
+ * (9 fixture replay cases + HeadlessControllerLlmWorkerPoolProcessTest
+ * fixed-pool topology proof), each spawning controller + messenger
+ * consumers with SIGTERM → 3s grace → SIGKILL teardown. Main raised the
+ * budget to 120s for the prior 9-test suite (~79s isolated; 90s failed
+ * under concurrent gate contention with GNU timeout exit 124). After the
+ * pool topology case joined this branch, standalone sequential runtime is
+ * ~88s and concurrent castor-check load still needs more headroom than
+ * 120s; 150s keeps ~60s load/teardown margin without masking a true hang.
+ * Individual fixture waits and Castor hard-stop (+15s pad over shell
+ * timeout) are unchanged.
  *
  * Budget for test:tui (120s → 180s): the replay TUI lane runs 36 tests on
  * 2 ParaTest workers; healthy gate runs are often 108–118s, so 120s left
