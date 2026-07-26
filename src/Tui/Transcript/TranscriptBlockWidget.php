@@ -19,8 +19,9 @@ use Symfony\Component\Tui\Widget\ContainerWidget;
  * per-block line cache so long transcripts do not rebuild every widget tree on
  * every render tick.
  *
- * {@see setBlocks()}, {@see addBlock()}, and {@see render()} stay stable for ChatScreen /
- * LiveTextWidget integration.
+ * Production ChatScreen uses {@see TranscriptMountedWidget}. This class remains for
+ * offscreen unit tests and non-live consumers that still render through
+ * {@see SymfonyTuiWidgetRenderer}. It is not a runtime fallback path.
  */
 final class TranscriptBlockWidget implements TuiWidget
 {

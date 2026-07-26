@@ -419,6 +419,7 @@ parameters:
 
     TuiScreen:
       - AppRuntimeContract
+      - AppRuntimeProjection
       - TuiStartup
       - TuiLayout
       - TuiExtension

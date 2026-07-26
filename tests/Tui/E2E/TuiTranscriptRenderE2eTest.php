@@ -16,9 +16,9 @@ use PHPUnit\Framework\TestCase;
  * Launches the TUI with a replay fixture that responds to "hello" with
  * "Follow-up acknowledged." — no thinking blocks, no tool calls, just
  * a clean assistant text response. Asserts the assistant glyph (◇) and
- * response text appear in the terminal output, proving the widget-tree
- * renderer path works end-to-end through ChatScreen → TranscriptBlockWidget
- * → SymfonyTuiWidgetRenderer in a real TUI process.
+ * response text appear in the terminal output, proving the production
+ * mounted transcript path works end-to-end through ChatScreen →
+ * TranscriptMountedWidget in a real TUI process.
  *
  * No live LLM. One prompt → one assertion → clean exit.
  *
