@@ -23,8 +23,8 @@ final class SubagentToolTest extends IsolatedKernelTestCase
 
         $this->assertSame('subagent', $def->name);
         $this->assertArrayHasKey('properties', $def->parametersJsonSchema);
-        $this->assertSame(8, $def->parametersJsonSchema['properties']['tasks']['maxItems']);
-        $this->assertStringContainsString('8', $def->description);
+        $this->assertSame(4, $def->parametersJsonSchema['properties']['tasks']['maxItems']);
+        $this->assertStringContainsString('4', $def->description);
     }
 
     public function testInvokeRejectsWithoutToolContext(): void
@@ -103,7 +103,7 @@ final class SubagentToolTest extends IsolatedKernelTestCase
         }
 
         $this->expectException(ToolCallException::class);
-        $this->expectExceptionMessage('at most 8 agents');
+        $this->expectExceptionMessage('at most 4 agents');
 
         $accessor->with($context, static function () use ($handler, $tasks): void {
             $handler->__invoke(['tasks' => $tasks]);

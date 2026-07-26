@@ -12,16 +12,22 @@ declare(strict_types=1);
  *   castor test:controller, castor llm:fixtures:record
  *
  * Lanes (typical shell timeouts):
- *   deptrac (30s), test ParaTest (120s), test:controller-replay (120s),
+ *   deptrac (30s), test ParaTest (120s), test:controller-replay (150s),
  *   test:tui (180s), test:llm-real (180s), phpstan (90s), cs-check (30s).
  *   No PHAR in the gate.
  *
- * Budget for test:controller-replay (75s → 90s → 120s) reflects the current
- * replay E2E suite (9 isolated controller subprocess tests, each
- * spawning controller + messenger consumers with SIGTERM → 3s grace
- * → SIGKILL teardown).  Observed sequential runtime is ~79s isolated;
- * 90s failed under concurrent gate contention (GNU timeout exit 124);
- * 120s gives bounded headroom without masking a true hang.
+ * Budget for test:controller-replay (75s → 90s → 120s → 150s) reflects the
+ * current replay E2E suite: 10 sequential controller-subprocess tests
+ * (9 fixture replay cases + HeadlessControllerLlmWorkerPoolProcessTest
+ * fixed-pool topology proof), each spawning controller + messenger
+ * consumers with SIGTERM → 3s grace → SIGKILL teardown. Main raised the
+ * budget to 120s for the prior 9-test suite (~79s isolated; 90s failed
+ * under concurrent gate contention with GNU timeout exit 124). After the
+ * pool topology case joined this branch, standalone sequential runtime is
+ * ~88s and concurrent castor-check load still needs more headroom than
+ * 120s; 150s keeps ~60s load/teardown margin without masking a true hang.
+ * Individual fixture waits and Castor hard-stop (+15s pad over shell
+ * timeout) are unchanged.
  *
  * Budget for test:tui (120s → 180s): the replay TUI lane runs 36 tests on
  * 2 ParaTest workers; healthy gate runs are often 108–118s, so 120s left
@@ -154,7 +160,7 @@ function _run_castor_check_body(string $root, string $qaRunId): void
                     .' --group=controller-replay'
                     .' '.$strictFlags.$llmFlags
                     .(is_llm_mode() ? ' --log-junit='.report_path('phpunit-controller-replay.junit.xml') : ''),
-                120,
+                150,
             ),
         ],
         'test:tui' => [

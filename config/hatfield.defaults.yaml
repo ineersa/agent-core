@@ -327,6 +327,16 @@ prompts: []
 # Agent definitions
 # ---------------------------------------------------------------------------
 #
+# Controller runtime process knobs (not tool policy).
+# Distinct from tools.execution.max_parallelism (tool workers) and agents.max_agents
+# (how many children a single subagent tool call may request).
+runtime:
+    # Fixed pool of messenger:consume llm workers launched by HeadlessController.
+    # Bounded 1..8 via Symfony Validator attributes on RuntimeConfig. Default 4
+    # enables overlapping provider calls for parallel subagents without dynamic
+    # per-batch spawning.
+    llm_worker_count: 4
+
 # Agent definitions configure named child-agent roles for your project or user
 # environment. For example, you can define agents named scout, reviewer,
 # researcher, worker, or any custom name. Each definition is a Markdown file

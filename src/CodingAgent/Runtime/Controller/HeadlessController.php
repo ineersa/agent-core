@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Runtime\Controller;
 
 use Ineersa\AgentCore\Contract\Tool\ToolExecutionSettingsInterface;
+use Ineersa\CodingAgent\Config\RuntimeConfig;
 use Ineersa\CodingAgent\Runtime\Contract\RuntimeExceptionBoundary;
 use Ineersa\CodingAgent\Runtime\Controller\Event\ControllerCommandEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\JsonlCodec;
@@ -60,11 +61,17 @@ final class HeadlessController
         private readonly ToolExecutionSettingsInterface $toolExecutionSettings,
         private readonly RuntimeExceptionBoundary $boundary,
         private readonly RuntimeEventEmitter $emitter,
+        private readonly RuntimeConfig $runtimeConfig = new RuntimeConfig(),
         /**
          * Optional override for parallel tool messenger consumers.
          * Values <= 0 use tools.execution.max_parallelism from settings.
          */
         private readonly int $toolWorkerCount = 0,
+        /**
+         * Optional override for fixed llm messenger consumer pool size.
+         * Values <= 0 use runtime.llm_worker_count from settings (default 4, range 1..8).
+         */
+        private readonly int $llmWorkerCount = 0,
         /**
          * Optional background process manager for session-scoped cleanup
          * on graceful controller shutdown (SIGTERM/SIGINT).
@@ -85,6 +92,12 @@ final class HeadlessController
         private readonly ?BackgroundProcessCompletionPoller $bgProcessCompletionPoller = null,
     ) {
         $this->sessionId = $_SERVER['HATFIELD_SESSION_ID'] ?? $_ENV['HATFIELD_SESSION_ID'] ?? 'unknown';
+        // Fail closed on invalid constructor overrides at construction time (no silent clamp).
+        // Values <= 0 mean "use RuntimeConfig"; positive values must be in RuntimeConfig range.
+        // MIN is 1, so any positive override is already >= MIN; only enforce the upper bound here.
+        if ($this->llmWorkerCount > RuntimeConfig::MAX_LLM_WORKER_COUNT) {
+            throw new \InvalidArgumentException(\sprintf('HeadlessController llmWorkerCount override must be an integer between %d and %d, got %d.', RuntimeConfig::MIN_LLM_WORKER_COUNT, RuntimeConfig::MAX_LLM_WORKER_COUNT, $this->llmWorkerCount));
+        }
     }
 
     public function run(): int
@@ -132,7 +145,12 @@ final class HeadlessController
 
         // Launch messenger consumers for async execution and command transports.
         $this->consumerSupervisor->launch('run_control');
-        $this->consumerSupervisor->launch('llm');
+        // llm consumers: fixed bounded pool for concurrent provider calls
+        // (parent turns + parallel subagent children share the llm transport).
+        // Count defaults to runtime.llm_worker_count (1..8, default 4) and is
+        // intentionally distinct from tools.execution.max_parallelism.
+        // Constructor override must already be in range; invalid overrides fail closed.
+        $this->consumerSupervisor->launchMultiple('llm', $this->resolveLlmWorkerCount());
         // tool consumers: N parallel workers for concurrent tool execution.
         // N defaults to tools.execution.max_parallelism.
         $effectiveWorkerCount = $this->toolWorkerCount > 0
@@ -425,5 +443,17 @@ final class HeadlessController
 
         $this->consumerSupervisor->shutdown();
         $this->bgProcessManager?->shutdownCleanup($this->sessionId);
+    }
+
+    /**
+     * Resolve the fixed llm consumer pool size once from either the constructor
+     * override or typed RuntimeConfig settings. Invalid overrides are rejected in
+     * the constructor; settings are validator-enforced at config load.
+     */
+    private function resolveLlmWorkerCount(): int
+    {
+        return $this->llmWorkerCount > 0
+            ? $this->llmWorkerCount
+            : $this->runtimeConfig->llmWorkerCount;
     }
 }

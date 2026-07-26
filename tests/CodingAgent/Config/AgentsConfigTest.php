@@ -31,13 +31,22 @@ final class AgentsConfigTest extends TestCase
         TestDirectoryIsolation::removeDirectory($this->tempDir);
     }
 
+    public function testDefaultMaxAgentsIsFour(): void
+    {
+        $config = AgentsConfig::fromRaw([]);
+        $this->assertSame(4, $config->maxAgents);
+
+        $explicit = AgentsConfig::fromRaw(['max_agents' => 6]);
+        $this->assertSame(6, $explicit->maxAgents);
+    }
+
     public function testDefaultValues(): void
     {
         $config = new AgentsConfig();
 
         $this->assertTrue($config->enabled);
         $this->assertCount(0, $config->paths);
-        $this->assertSame(8, $config->maxAgents);
+        $this->assertSame(4, $config->maxAgents);
         $this->assertSame(1800, $config->subagentToolTimeoutSeconds);
         $this->assertSame(['settings', 'hatfield_docs'], $config->subagentExcludedTools);
     }

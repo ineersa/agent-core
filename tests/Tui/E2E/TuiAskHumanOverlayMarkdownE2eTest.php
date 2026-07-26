@@ -178,7 +178,7 @@ final class TuiAskHumanOverlayMarkdownE2eTest extends TestCase
             ],
         ];
 
-        $yaml = Yaml::dump($settings, 6, 4);
+        $yaml = Yaml::dump(TuiE2eDatabaseEnv::withSingleLlmWorkerForReplay($settings), 6, 4);
         file_put_contents($dir.'/.hatfield/settings.yaml', $yaml);
         @mkdir($dir.'/home/.hatfield', 0o777, true);
         file_put_contents($dir.'/home/.hatfield/settings.yaml', $yaml);
