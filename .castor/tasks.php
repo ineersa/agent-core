@@ -12,16 +12,20 @@ declare(strict_types=1);
  *   castor test:controller, castor llm:fixtures:record
  *
  * Lanes (typical shell timeouts):
- *   deptrac (30s), test ParaTest (120s), test:controller-replay (90s),
+ *   deptrac (30s), test ParaTest (120s), test:controller-replay (150s),
  *   test:tui (180s), test:llm-real (180s), phpstan (90s), cs-check (30s).
  *   No PHAR in the gate.
  *
- * Budget for test:controller-replay (75s → 90s) reflects the current
- * replay E2E suite (8 isolated controller subprocess tests, each
- * spawning controller + messenger consumers with SIGTERM → 3s grace
- * → SIGKILL teardown).  Observed sequential runtime is ~59s when idle;
- * ~71s under active-session host load; 90s gives bounded headroom
- * without masking a true hang.
+ * Budget for test:controller-replay (90s → 150s) reflects the current
+ * replay E2E suite: 10 sequential controller-subprocess tests (9 fixture
+ * replay cases + HeadlessControllerLlmWorkerPoolProcessTest fixed-pool
+ * topology proof), each spawning controller + messenger consumers with
+ * SIGTERM → 3s grace → SIGKILL teardown. Observed standalone sequential
+ * runtime is ~88s after the pool topology case joined the group; under
+ * concurrent castor-check lane load a 90s shell timeout exited 124 with
+ * empty JUnit (hard-kill before suite completion). 150s keeps ~60s
+ * load/teardown margin without masking a true hang; individual fixture
+ * waits and Castor hard-stop (+15s pad over shell timeout) are unchanged.
  *
  * Budget for test:tui (120s → 180s): the replay TUI lane runs 36 tests on
  * 2 ParaTest workers; healthy gate runs are often 108–118s, so 120s left
@@ -154,7 +158,7 @@ function _run_castor_check_body(string $root, string $qaRunId): void
                     .' --group=controller-replay'
                     .' '.$strictFlags.$llmFlags
                     .(is_llm_mode() ? ' --log-junit='.report_path('phpunit-controller-replay.junit.xml') : ''),
-                90,
+                150,
             ),
         ],
         'test:tui' => [
