@@ -130,8 +130,10 @@ final class DeferredSubagentBatchProgressDeliveryRaceTest extends IsolatedKernel
 
         // Later higher aggregate revision recovers latest state.
         $em = self::getContainer()->get(EntityManagerInterface::class);
+        // Only aggregate_progress_revision gates deliverIfNeeded/claimProgressDeliveryRevision.
+        // projection_version is for entity optimistic locks on other repository write paths.
         $em->getConnection()->executeStatement(
-            'UPDATE deferred_subagent_batch SET aggregate_progress_revision = aggregate_progress_revision + 1, projection_version = projection_version + 1 WHERE lifecycle_id = :id',
+            'UPDATE deferred_subagent_batch SET aggregate_progress_revision = aggregate_progress_revision + 1 WHERE lifecycle_id = :id',
             ['id' => $lifecycle],
         );
         $em->clear();

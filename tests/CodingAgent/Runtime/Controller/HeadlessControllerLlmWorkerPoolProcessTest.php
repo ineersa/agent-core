@@ -73,7 +73,9 @@ YAML);
 
         $env = [
             'APP_ENV' => 'test',
-            'APP_DEBUG' => '0',
+            // APP_DEBUG=1 keeps Symfony verbose errors in subprocess stderr on failure
+            // (matches ControllerE2eTestCase / ControllerReplayE2eTestCase).
+            'APP_DEBUG' => '1',
             'HATFIELD_SESSION_ID' => $this->sessionId,
             'HATFIELD_TEST_DATABASE_PATH' => 'app_test-llm-pool-'.$this->sessionId.'.sqlite',
             'HATFIELD_TEST_MESSENGER_TRANSPORT_DATABASE_PATH' => 'messenger_transport_test-llm-pool-'.$this->sessionId.'.sqlite',
@@ -320,7 +322,6 @@ YAML);
         $cmdline = str_replace("\0", ' ', (string) @file_get_contents("/proc/{$pid}/cmdline"));
 
         return str_contains($cmdline, 'messenger:consume')
-            || str_contains($cmdline, 'agent --controller')
             || str_contains($cmdline, 'agent --controller');
     }
 

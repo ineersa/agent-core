@@ -172,28 +172,6 @@ final class DeferredSubagentBatchRepository extends ServiceEntityRepository
         return $affected > 0;
     }
 
-    /**
-     * @deprecated Prefer claimProgressDeliveryRevision() before append. Kept only for
-     *             forced-path callers that still mark after a non-revision-gated emit.
-     */
-    public function markDeliveredProgressRevision(
-        string $batchLifecycleId,
-        int $deliveredProgressRevision,
-        int $expectedProjectionVersion,
-    ): void {
-        $row = $this->findOneBy(['lifecycleId' => $batchLifecycleId]);
-        if (!$row instanceof DeferredSubagentBatch) {
-            throw new \RuntimeException(\sprintf('Deferred subagent batch missing for lifecycle "%s".', $batchLifecycleId));
-        }
-
-        if ($row->projectionVersion !== $expectedProjectionVersion) {
-            throw OptimisticLockException::lockFailed($row);
-        }
-
-        $row->deliveredProgressRevision = max($row->deliveredProgressRevision, $deliveredProgressRevision);
-        $this->getEntityManager()->flush();
-    }
-
     public function markTerminalCompletionEnqueued(
         string $batchLifecycleId,
         \DateTimeImmutable $enqueuedAt,
