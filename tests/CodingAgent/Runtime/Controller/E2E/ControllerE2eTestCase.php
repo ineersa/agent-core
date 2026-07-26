@@ -30,6 +30,10 @@ abstract class ControllerE2eTestCase extends TestCase
 
     /** @var list<int> PIDs in this test's controller subprocess tree (proc child + descendants). */
     protected array $trackedControllerPids = [];
+
+    /** @var list<int> Same-UID tracked PIDs still alive after the last stopProcess() teardown. */
+    protected array $lastTeardownSurvivorPids = [];
+
     protected string $stdoutBuf = '';
     protected string $stderrBuf = '';
     protected string $runId = '';
@@ -116,6 +120,15 @@ abstract class ControllerE2eTestCase extends TestCase
     protected function extraSettingsYaml(): string
     {
         return '';
+    }
+
+    /**
+     * Isolated controller E2E default is 1 (process-local FIFO / live-scenario isolation).
+     * Topology proofs may override to exercise the configured multi-worker pool.
+     */
+    protected function isolatedLlmWorkerCount(): int
+    {
+        return 1;
     }
 
     /**
@@ -252,18 +265,20 @@ abstract class ControllerE2eTestCase extends TestCase
 
         $this->refreshTrackedControllerPids();
 
+        // Tracked list is the ownership boundary (process-tree + same UID).
+        // Never signal root-owned PIDs (filtered at discovery).
         foreach ($this->trackedControllerPids as $pid) {
-            if ($this->isProcessOwnedForTeardown($pid)) {
+            if ($this->isSameUidProcess($pid) && $this->isControllerPidAlive($pid)) {
                 @posix_kill($pid, \SIGTERM);
             }
         }
 
-        $deadline = microtime(true) + 1.0;
+        $deadline = microtime(true) + 3.0;
         $stillAlive = true;
         while ($stillAlive && microtime(true) < $deadline) {
             $stillAlive = false;
             foreach ($this->trackedControllerPids as $pid) {
-                if ($this->isProcessOwnedForTeardown($pid) && $this->isControllerPidAlive($pid)) {
+                if ($this->isSameUidProcess($pid) && $this->isControllerPidAlive($pid)) {
                     $stillAlive = true;
                     break;
                 }
@@ -274,7 +289,7 @@ abstract class ControllerE2eTestCase extends TestCase
         }
 
         foreach ($this->trackedControllerPids as $pid) {
-            if ($this->isProcessOwnedForTeardown($pid) && $this->isControllerPidAlive($pid)) {
+            if ($this->isSameUidProcess($pid) && $this->isControllerPidAlive($pid)) {
                 @posix_kill($pid, \SIGKILL);
             }
         }
@@ -282,6 +297,8 @@ abstract class ControllerE2eTestCase extends TestCase
         @proc_close($this->process);
         $this->process = null;
 
+        // Capture survivors before clearing the ownership list so topology tests can assert.
+        $this->lastTeardownSurvivorPids = $this->survivingTrackedControllerPids();
         $this->logControllerProcessSurvivors();
         $this->trackedControllerPids = [];
     }
@@ -698,6 +715,17 @@ abstract class ControllerE2eTestCase extends TestCase
         ));
         $toolCalling = $modelConfig['tool_calling'] ? 'true' : 'false';
 
+        // Live llm-real / controller E2Es run concurrently under ParaTest and
+        // assert one scenario per isolated controller. Production default
+        // runtime.llm_worker_count=4 multiplies per-test messenger workers
+        // (resource pressure) and can destabilize ordering/timing/provider
+        // state across concurrent scenarios. Force a single llm consumer for
+        // all isolated live controller E2Es. Multi-worker topology (controller
+        // starts N independent messenger:consume llm processes) is proven by
+        // HeadlessControllerLlmWorkerPoolProcessTest; distinct-message claiming
+        // is trusted Symfony Messenger/Doctrine transport behavior. Replay
+        // subclasses inherit the same isolation (process-local FIFO fixtures
+        // also require one consumer).
         $settings = <<<YAML
 ai:
     default_model: llama_cpp_test/test
@@ -726,6 +754,10 @@ ai:
                     reasoning: false
                     cost: { input: 0, output: 0, cache_read: 0, cache_write: 0 }
 
+# Isolation only — not production behavior. See createIsolatedProjectDir() comment.
+runtime:
+    llm_worker_count: {$this->isolatedLlmWorkerCount()}
+
 extensions:
     enabled:
         - Ineersa\CodingAgent\Extension\Builtin\SafeGuard\SafeGuardExtension
@@ -752,6 +784,23 @@ YAML;
     }
 
     /**
+     * Root PID of the controller subprocess (proc_open child), or 0 if not running.
+     */
+    protected function controllerRootPid(): int
+    {
+        if (null === $this->process) {
+            return 0;
+        }
+
+        $status = @proc_get_status($this->process);
+        if (!\is_array($status) || !isset($status['pid'])) {
+            return 0;
+        }
+
+        return (int) $status['pid'];
+    }
+
+    /**
      * Record the controller proc child and any descendants for bounded teardown.
      */
     protected function trackControllerProcessTree(mixed $process): void
@@ -766,9 +815,12 @@ YAML;
         }
 
         $rootPid = (int) $status['pid'];
+        // Track process-tree descendants (same real UID). Messenger consumers inherit
+        // $_ENV from ConsumerSupervisor and may not always be discoverable via session
+        // env filtering alone; process-tree ownership is the durable teardown boundary.
         $this->trackedControllerPids = array_values(array_unique(array_merge(
             [$rootPid],
-            $this->discoverControllerChildPids($rootPid),
+            $this->discoverControllerProcessTreePids($rootPid),
         )));
     }
 
@@ -791,14 +843,21 @@ YAML;
         $this->trackedControllerPids = array_values(array_unique(array_merge(
             $this->trackedControllerPids,
             [$rootPid],
-            $this->discoverControllerChildPids($rootPid),
+            $this->discoverControllerProcessTreePids($rootPid),
         )));
     }
 
     /**
+     * Process-tree descendants of {@see $parentPid} (same real UID only).
+     *
+     * Does not require HATFIELD_SESSION_ID. Used for topology assertions and for
+     * teardown paths that own messenger children which inherit $_ENV but may not
+     * always surface the session tag the same way as the root proc_open env.
+     * Never includes root-owned processes.
+     *
      * @return list<int>
      */
-    protected function discoverControllerChildPids(int $parentPid): array
+    protected function discoverControllerProcessTreePids(int $parentPid): array
     {
         $pids = [];
 
@@ -807,11 +866,11 @@ YAML;
             $content = (string) @file_get_contents($childrenPath);
             foreach (explode(' ', trim($content)) as $token) {
                 $childPid = (int) $token;
-                if ($childPid <= 1 || !$this->isProcessOwnedForTeardown($childPid)) {
+                if ($childPid <= 1 || !$this->isSameUidProcess($childPid)) {
                     continue;
                 }
                 $pids[] = $childPid;
-                $pids = array_merge($pids, $this->discoverControllerChildPids($childPid));
+                $pids = array_merge($pids, $this->discoverControllerProcessTreePids($childPid));
             }
 
             return $pids;
@@ -846,56 +905,32 @@ YAML;
             if (preg_match('/^\d+\s+\(.*?\)\s+\w\s+(\d+)/', $stat, $m)
                 && (int) $m[1] === $parentPid
             ) {
-                if (!$this->isProcessOwnedForTeardown($candidatePid)) {
+                if (!$this->isSameUidProcess($candidatePid)) {
                     continue;
                 }
                 $pids[] = $candidatePid;
-                $pids = array_merge($pids, $this->discoverControllerChildPids($candidatePid));
+                $pids = array_merge($pids, $this->discoverControllerProcessTreePids($candidatePid));
             }
         }
 
         return $pids;
     }
 
-    protected function isProcessOwnedForTeardown(int $pid): bool
+    /**
+     * True when /proc/<pid>/status reports the same real UID as this test process.
+     * Prefer status Uid over stat field 2 — stat is not a reliable UID source.
+     */
+    protected function isSameUidProcess(int $pid): bool
     {
-        if ($pid <= 1) {
+        $status = @file_get_contents("/proc/{$pid}/status");
+        if (false === $status) {
+            return false;
+        }
+        if (!preg_match('/^Uid:\s+(\d+)/m', $status, $m)) {
             return false;
         }
 
-        $stat = @file_get_contents("/proc/{$pid}/stat");
-        if (false === $stat) {
-            return false;
-        }
-
-        $closeParen = strrpos($stat, ')');
-        if (false === $closeParen) {
-            return false;
-        }
-
-        $rest = trim(substr($stat, $closeParen + 1));
-        $fields = preg_split('/\s+/', $rest) ?: [];
-        if ((int) ($fields[2] ?? -1) !== posix_getuid()) {
-            return false;
-        }
-
-        if ('' === $this->sessionId) {
-            return true;
-        }
-
-        $environ = @file_get_contents("/proc/{$pid}/environ");
-        if (false === $environ) {
-            return false;
-        }
-
-        $expected = 'HATFIELD_SESSION_ID='.$this->sessionId;
-        foreach (explode("\0", $environ) as $entry) {
-            if ($entry === $expected) {
-                return true;
-            }
-        }
-
-        return false;
+        return (int) $m[1] === posix_getuid();
     }
 
     protected function isControllerPidAlive(int $pid): bool
@@ -920,14 +955,24 @@ YAML;
         return 'Z' !== ($fields[0] ?? '');
     }
 
-    protected function logControllerProcessSurvivors(): void
+    /**
+     * @return list<int>
+     */
+    protected function survivingTrackedControllerPids(): array
     {
         $survivors = [];
         foreach ($this->trackedControllerPids as $pid) {
-            if ($this->isProcessOwnedForTeardown($pid) && $this->isControllerPidAlive($pid)) {
+            if ($this->isSameUidProcess($pid) && $this->isControllerPidAlive($pid)) {
                 $survivors[] = $pid;
             }
         }
+
+        return $survivors;
+    }
+
+    protected function logControllerProcessSurvivors(): void
+    {
+        $survivors = $this->survivingTrackedControllerPids();
 
         if ([] === $survivors) {
             return;
@@ -944,6 +989,19 @@ YAML;
             '[WARNING] Controller E2E process ownership: '.\count($survivors)
             ." tracked PIDs still alive after teardown:\n"
             .implode("\n", $names)."\n",
+        );
+    }
+
+    /**
+     * Fail if any tracked same-UID controller descendants remained after the last stopProcess().
+     * Topology tests assert hard; other E2E tests only log via logControllerProcessSurvivors.
+     */
+    protected function assertNoTrackedControllerProcessSurvivors(): void
+    {
+        $this->assertSame(
+            [],
+            $this->lastTeardownSurvivorPids,
+            'No controller-owned descendants may remain after SIGTERM→3s→SIGKILL teardown',
         );
     }
 

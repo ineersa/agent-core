@@ -266,7 +266,7 @@ final class TuiImagePasteE2eTest extends TestCase
             ],
         ];
 
-        $yaml = \Symfony\Component\Yaml\Yaml::dump($settings, 6, 4);
+        $yaml = \Symfony\Component\Yaml\Yaml::dump(TuiE2eDatabaseEnv::withSingleLlmWorkerForReplay($settings), 6, 4);
         file_put_contents($dir.'/.hatfield/settings.yaml', $yaml);
 
         TestDirectoryIsolation::createHatfieldTree($dir.'/home', withSessions: true, permissions: 0o777);
