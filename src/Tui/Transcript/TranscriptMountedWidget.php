@@ -134,11 +134,12 @@ final class TranscriptMountedWidget extends ContainerWidget
         ));
 
         // 2) Update or create wrappers; new keys are pure tail appends after removals.
+        // After step 1, $this->nodes only holds survivors still present in desired order.
         $nextNodes = [];
         $nextOrder = [];
         foreach ($desired as $item) {
             $key = $item['key'];
-            $existing = $this->nodes[$key] ?? $previousNodes[$key] ?? null;
+            $existing = $this->nodes[$key] ?? null;
             $fingerprint = $item['fingerprint'];
             $streaming = $item['streaming'];
 
@@ -193,10 +194,7 @@ final class TranscriptMountedWidget extends ContainerWidget
             return null;
         }
 
-        if ([] === $desiredKeys) {
-            // Desired empty is handled by welcome node; should not reach empty desiredKeys.
-            return null;
-        }
+        // buildDesiredVisualItems() always emits at least the welcome node, so desiredKeys is never empty.
 
         $previousSet = array_fill_keys($previousOrder, true);
         $desiredSet = array_fill_keys($desiredKeys, true);
@@ -261,11 +259,12 @@ final class TranscriptMountedWidget extends ContainerWidget
             $existing = $previousNodes[$key] ?? null;
             $fingerprint = $item['fingerprint'];
             $streaming = $item['streaming'];
-            $wrapper = $existing['wrapper'] ?? new TranscriptVisualNodeWidget();
 
             if (null === $existing) {
+                $wrapper = new TranscriptVisualNodeWidget();
                 $wrapper->setContent($this->buildWidgetForItem($item));
             } else {
+                $wrapper = $existing['wrapper'];
                 $this->applyItemToExistingWrapper($wrapper, $existing, $item);
             }
 
@@ -458,7 +457,10 @@ final class TranscriptMountedWidget extends ContainerWidget
 
     /**
      * Stable presentation key for a tool call and its eventual paired exchange.
-     * Prefers tool_call_id; falls back to block id when missing.
+     *
+     * Invariant: canonical projection writes one ToolCall block per non-empty
+     * tool_call_id (`tool_call_<id>` via ToolProjectionSubscriber). Identity is
+     * that id; block id is only a degenerate fallback if meta is empty.
      */
     private function stableToolVisualKey(TranscriptBlock $callBlock): string
     {
@@ -497,19 +499,17 @@ final class TranscriptMountedWidget extends ContainerWidget
         };
     }
 
-    private function updateMarkdownWidget(MarkdownWidget $widget, TranscriptBlock $block): MarkdownWidget
+    private function updateMarkdownWidget(MarkdownWidget $widget, TranscriptBlock $block): void
     {
         // Rebuild via factory so glyph/prefix/style/thinking style stay consistent,
         // then copy resolved text/style onto the stable mounted instance.
         $fresh = $this->factory->buildWidget($block, $this->theme);
         if (!$fresh instanceof MarkdownWidget) {
-            return $widget;
+            return;
         }
 
         $widget->setText($fresh->getText());
         $widget->setStyle($fresh->getStyle());
-
-        return $widget;
     }
 
     private function isMarkdownVisual(TranscriptBlock $block): bool
