@@ -7,6 +7,8 @@ namespace Ineersa\CodingAgent\Extension\Agent;
 use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
 use Ineersa\AgentCore\Domain\Model\ModelInvocationInput;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\PlatformInvocationMetadata;
+use Ineersa\CodingAgent\Config\Ai\AiModelReference;
+use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
 use Ineersa\Hatfield\ExtensionApi\Agent\AgentCallRequestDTO;
 use Ineersa\Hatfield\ExtensionApi\Agent\AgentRunnerInterface;
 use Psr\Log\LoggerInterface;
@@ -29,8 +31,22 @@ final readonly class ConfiguredModelAgentRunner implements AgentRunnerInterface
 {
     public function __construct(
         private PlatformInterface $platform,
+        private HatfieldModelCatalog $modelCatalog,
         private LoggerInterface $logger,
     ) {
+    }
+
+    public function contextWindow(string $exactModel): ?int
+    {
+        try {
+            $model = $this->modelCatalog->requireModel(AiModelReference::parse($exactModel));
+        } catch (\InvalidArgumentException|\RuntimeException) {
+            // Missing/malformed catalog entries are durable config failures for callers.
+            // Return null rather than inventing a default window.
+            return null;
+        }
+
+        return $model->contextWindow;
     }
 
     public function run(AgentCallRequestDTO $request): void

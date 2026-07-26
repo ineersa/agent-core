@@ -444,6 +444,12 @@ services:
       $sink: '@Ineersa\CodingAgent\Runtime\InProcess\InMemoryRuntimeEventSink'
       $stdoutSink: '@Ineersa\CodingAgent\Runtime\Stream\StdoutRuntimeEventSink'
 
+  # extension_agent permanent failures write transient JSONL via STDOUT from the
+  # messenger:consume extension_agent child (same pipe as stream deltas).
+  Ineersa\CodingAgent\Extension\Agent\ExtensionAgentJobFailedEventSubscriber:
+    arguments:
+      $stdoutSink: '@Ineersa\CodingAgent\Runtime\Stream\StdoutRuntimeEventSink'
+
   # ─── App executable locator chain ───
   # Resolves the agent binary independently of the runtime working directory,
   # so messenger consumers and controller subprocesses always use the correct

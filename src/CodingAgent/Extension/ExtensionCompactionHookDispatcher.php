@@ -10,7 +10,6 @@ use Ineersa\CodingAgent\Compaction\CompactionHookResultDTO;
 use Ineersa\Hatfield\ExtensionApi\Compaction\BeforeCompactionHookContextDTO;
 use Ineersa\Hatfield\ExtensionApi\Compaction\BeforeCompactionHookResultDTO;
 use Psr\Log\LoggerInterface;
-use Psr\Log\NullLogger;
 
 /**
  * Aggregates public ExtensionApi before-compaction hooks for CompactRun only.
@@ -25,7 +24,7 @@ final readonly class ExtensionCompactionHookDispatcher
     public function __construct(
         private ExtensionHookRegistry $hookRegistry,
         private CompactionHookDispatcher $internalHookDispatcher,
-        private LoggerInterface $logger = new NullLogger(),
+        private LoggerInterface $logger,
     ) {
     }
 

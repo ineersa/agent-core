@@ -1415,6 +1415,7 @@ final class CompactRunHandlerTest extends TestCase
         return new ExtensionCompactionHookDispatcher(
             $registry,
             new CompactionHookDispatcher($internalHooks),
+            new \Psr\Log\NullLogger(),
         );
     }
 }

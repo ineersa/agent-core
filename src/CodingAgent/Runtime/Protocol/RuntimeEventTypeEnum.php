@@ -103,6 +103,13 @@ enum RuntimeEventTypeEnum: string
 
     case BackgroundProcessCompleted = 'bg_process.completed';
 
+    // ── Extension agent jobs ────────────────────────────────────────────────────────────
+    // Emitted by Extension\Agent\ExtensionAgentJobFailedEventSubscriber after the extension_agent
+    // transport exhausts retries (max_retries: 1). Transient JSONL/TUI only;
+    // does not mark the main agent run failed.
+
+    case ExtensionAgentJobFailed = 'extension_agent.job_failed';
+
     // ── Runtime lifecycle (controller process) ─────────────────────────────
 
     case RuntimeReady = 'runtime.ready';
@@ -164,6 +171,8 @@ enum RuntimeEventTypeEnum: string
             self::ToolQuestionRequested => 'tool_question',
 
             self::BackgroundProcessCompleted => 'background_process_completion',
+
+            self::ExtensionAgentJobFailed => 'extension_agent',
 
             self::ModelNotification => 'notification',
 

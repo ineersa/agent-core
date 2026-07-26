@@ -213,3 +213,31 @@ Payload:
     'tokens_per_second' => ?float,
 ]
 ```
+
+---
+
+### Extension agent jobs
+
+Transient runtime events from the dedicated `extension_agent` Messenger worker.
+These are JSONL/TUI-only (`seq=0`); they do **not** append canonical RunEvents
+and do **not** mark the main agent run failed by themselves.
+
+| Constant | Event type string | Meaning |
+|----------|-------------------|---------|
+| `ExtensionAgentJobFailed` | `extension_agent.job_failed` | Final failure after `max_retries: 1` exhausted |
+
+Payload (fixed, privacy-safe):
+
+```php
+[
+    'message'     => string,  // fixed: 'Extension background job failed after retrying.'
+    'reason'      => string,  // 'retry_exhausted'
+    'handler_id'  => string,
+    'job_id'      => ?string,
+    'retry_count' => int,     // RedeliveryStamp count
+    'attempts'    => int,     // retry_count + 1
+]
+```
+
+Emitted only when `payload.run_id` on the job is a validated non-empty scalar.
+Missing `run_id` produces a structured diagnostic log only (no TUI event).

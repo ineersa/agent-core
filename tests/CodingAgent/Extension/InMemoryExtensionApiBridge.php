@@ -191,6 +191,11 @@ final class InMemoryExtensionApiBridge implements ExtensionApiInterface
             {
                 throw new \LogicException('agent() is not supported on the InMemoryExtensionApiBridge. Use the production ExtensionToolRegistryBridge.');
             }
+
+            public function contextWindow(string $exactModel): ?int
+            {
+                throw new \LogicException('agent() is not supported on the InMemoryExtensionApiBridge. Use the production ExtensionToolRegistryBridge.');
+            }
         };
     }
 

@@ -118,6 +118,9 @@ final class RuntimeEventTypeTest extends TestCase
             // Background process completion
             RuntimeEventTypeEnum::BackgroundProcessCompleted,
 
+            // Extension agent jobs
+            RuntimeEventTypeEnum::ExtensionAgentJobFailed,
+
             // Compaction
             RuntimeEventTypeEnum::CompactionStarted,
             RuntimeEventTypeEnum::CompactionCompleted,
@@ -312,6 +315,8 @@ final class RuntimeEventTypeTest extends TestCase
         yield RuntimeEventTypeEnum::ToolQuestionRequested->name => [RuntimeEventTypeEnum::ToolQuestionRequested, 'tool_question'];
 
         yield RuntimeEventTypeEnum::BackgroundProcessCompleted->name => [RuntimeEventTypeEnum::BackgroundProcessCompleted, 'background_process_completion'];
+
+        yield RuntimeEventTypeEnum::ExtensionAgentJobFailed->name => [RuntimeEventTypeEnum::ExtensionAgentJobFailed, 'extension_agent'];
 
         $compaction = [
             RuntimeEventTypeEnum::CompactionStarted,
