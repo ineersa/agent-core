@@ -698,6 +698,15 @@ abstract class ControllerE2eTestCase extends TestCase
         ));
         $toolCalling = $modelConfig['tool_calling'] ? 'true' : 'false';
 
+        // Live llm-real / controller E2Es run concurrently under ParaTest and
+        // assert one scenario per isolated controller. Production default
+        // runtime.llm_worker_count=4 multiplies per-test messenger workers
+        // (resource pressure) and can destabilize ordering/timing/provider
+        // state across concurrent scenarios. Force a single llm consumer for
+        // all isolated live controller E2Es. Multi-worker concurrency is proven
+        // by dedicated HeadlessController pool + ExecuteLlmStep barrier tests,
+        // not by sequential live smoke scenarios. Replay subclasses inherit the
+        // same isolation (process-local FIFO fixtures also require one consumer).
         $settings = <<<YAML
 ai:
     default_model: llama_cpp_test/test
@@ -725,6 +734,10 @@ ai:
                     tool_calling: {$toolCalling}
                     reasoning: false
                     cost: { input: 0, output: 0, cache_read: 0, cache_write: 0 }
+
+# Isolation only — not production behavior. See createIsolatedProjectDir() comment.
+runtime:
+    llm_worker_count: 1
 
 extensions:
     enabled:

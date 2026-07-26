@@ -93,37 +93,10 @@ abstract class ControllerReplayE2eTestCase extends ControllerE2eTestCase
         parent::tearDown();
     }
 
-    /**
-     * Replay fixtures are selected by a process-local FIFO cursor inside each
-     * messenger:consume llm worker (ControllerReplayHttpClientFactory). With the
-     * production default runtime.llm_worker_count=4, concurrent llm workers each
-     * restart at fixture 0 and can serve the wrong turn/usage to later steps
-     * (e.g. auto-compaction token thresholds). Force a single llm consumer for
-     * all controller-replay isolation so sequential fixtures remain ordered.
-     *
-     * Live/multi-worker concurrency is covered by dedicated pool/barrier tests,
-     * not by sequential FIFO replay scenarios.
-     */
-    protected function createIsolatedProjectDir(): void
-    {
-        parent::createIsolatedProjectDir();
-
-        $path = $this->tempDir.'/.hatfield/settings.yaml';
-        $settings = \Symfony\Component\Yaml\Yaml::parseFile($path);
-        \PHPUnit\Framework\Assert::assertIsArray($settings);
-
-        $runtime = $settings['runtime'] ?? [];
-        if (!\is_array($runtime)) {
-            $runtime = [];
-        }
-        $runtime['llm_worker_count'] = 1;
-        $settings['runtime'] = $runtime;
-
-        file_put_contents(
-            $path,
-            \Symfony\Component\Yaml\Yaml::dump($settings, 6, 4),
-        );
-    }
+    // Single-llm isolation for process-local FIFO fixtures is applied in
+    // ControllerE2eTestCase::createIsolatedProjectDir() (runtime.llm_worker_count=1).
+    // Replay inherits that base seam; do not re-write settings here (duplicate keys
+    // / post-parse YAML dump would only obscure the shared isolation contract).
 
     /**
      * Subclasses MUST override to return at least one fixture.
