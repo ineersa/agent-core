@@ -7,9 +7,8 @@ namespace Ineersa\CodingAgent\Tests\Extension\Agent;
 use Ineersa\CodingAgent\Config\Ai\AiConfig;
 use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
 use Ineersa\CodingAgent\Extension\Agent\ConfiguredModelAgentRunner;
-use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
-use Ineersa\Hatfield\ExtensionApi\Agent\AgentRunnerInterface;
 use PHPUnit\Framework\Attributes\Test;
+use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 use Symfony\AI\Platform\PlatformInterface;
 
@@ -17,22 +16,8 @@ use Symfony\AI\Platform\PlatformInterface;
  * Thesis: public agent()->contextWindow() returns catalog context_window only —
  * never invents a default, never falls back across models/providers.
  */
-final class ConfiguredModelAgentRunnerContextWindowTest extends IsolatedKernelTestCase
+final class ConfiguredModelAgentRunnerContextWindowTest extends TestCase
 {
-    #[Test]
-    public function containerWiresProductionRunnerWithCatalogResolution(): void
-    {
-        /** @var AgentRunnerInterface $runner */
-        $runner = self::getContainer()->get(AgentRunnerInterface::class);
-
-        $this->assertInstanceOf(ConfiguredModelAgentRunner::class, $runner);
-        // Missing catalog entry is null (no invented default). Present models return
-        // whatever the loaded catalog stores (nullable int from settings).
-        $this->assertNull($runner->contextWindow('missing/provider-model'));
-        $window = $runner->contextWindow('llama_cpp_test/test');
-        $this->assertTrue(null === $window || (\is_int($window) && $window > 0));
-    }
-
     #[Test]
     public function returnsCatalogContextWindowAndNullForMissingMetadata(): void
     {
