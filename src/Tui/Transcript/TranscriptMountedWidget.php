@@ -12,33 +12,24 @@ use Symfony\Component\Tui\Widget\ContainerWidget;
 use Symfony\Component\Tui\Widget\TextWidget;
 
 /**
- * Keyed mounted reconciler for the production transcript region.
+ * Minimum keyed adapter from visual patches to Symfony ContainerWidget children.
  *
- * Presentation policy and retained canonical state live in
- * {@see TranscriptVisualProjector}. This class only mounts semantic/native
- * children and applies {@see TranscriptVisualPatch} values.
+ * Presentation policy and order decisions live in {@see TranscriptVisualProjector}.
+ * This class only maps stable visual keys to mounted widgets and applies patches:
+ * content (in-place), structural (remove + tail append), full (clear + ordered re-add).
  *
- * Full clear()+ordered add is reserved for relative reorder / non-tail
- * insertion that Symfony ContainerWidget cannot splice.
+ * Symfony owns render caching. Semantic widget {@see apply()} is data binding only.
  */
 final class TranscriptMountedWidget extends ContainerWidget
 {
     private readonly TranscriptVisualProjector $projector;
 
     /**
+     * Stable visual key → mounted widget (identity + O(1) lookup).
+     *
      * @var array<string, AbstractWidget>
      */
     private array $nodes = [];
-
-    /**
-     * Last applied visual node per key (source identity for native widgets).
-     *
-     * @var array<string, TranscriptVisualNode>
-     */
-    private array $appliedNodes = [];
-
-    /** @var list<string> */
-    private array $nodeOrder = [];
 
     public function __construct(
         private readonly TuiTheme $theme,
@@ -88,7 +79,7 @@ final class TranscriptMountedWidget extends ContainerWidget
     private function applyPatch(TranscriptVisualPatch $patch): void
     {
         if ($patch->isFull()) {
-            $this->reconcileToOrder($patch->nodes, $patch->order ?? [], fullSnapshot: true);
+            $this->reconcileFull($patch);
 
             return;
         }
@@ -103,48 +94,35 @@ final class TranscriptMountedWidget extends ContainerWidget
     }
 
     /**
-     * Content-only path: keyed upserts in O(changes). No removals or order/history scan.
+     * Content-only: keyed upserts in O(changes). Projector already filtered unchanged sources.
+     * Missing key or incompatible mid-list replacement falls back to explicit full snapshot.
      */
     private function reconcileContentOnly(TranscriptVisualPatch $patch): void
     {
         foreach ($patch->upserts as $node) {
             $existing = $this->nodes[$node->key] ?? null;
             if (null === $existing) {
-                // Content-only must not invent structural appends; force ordered resync.
                 $this->applyPatch($this->projector->replaceAll($this->projector->exportBlocks()));
 
                 return;
             }
 
-            $this->applyToWidget($existing, $node);
-            $this->appliedNodes[$node->key] = $node;
+            $bound = $this->bind($existing, $node);
+            if ($bound !== $existing) {
+                // ContainerWidget cannot splice a mid-list child replacement.
+                $this->applyPatch($this->projector->replaceAll($this->projector->exportBlocks()));
+
+                return;
+            }
         }
     }
 
+    /**
+     * Structural: projector guarantees survivor relative order and that new keys are tail appends.
+     * Remove gone keys, update existing, append new. No order revalidation here.
+     */
     private function reconcileStructural(TranscriptVisualPatch $patch): void
     {
-        $desiredOrder = $patch->order ?? $this->nodeOrder;
-
-        if ($this->needsOuterResync($this->nodeOrder, $desiredOrder)) {
-            $nodes = [];
-            $upsertByKey = [];
-            foreach ($patch->upserts as $node) {
-                $upsertByKey[$node->key] = $node;
-            }
-            foreach ($desiredOrder as $key) {
-                if (isset($upsertByKey[$key])) {
-                    $nodes[] = $upsertByKey[$key];
-                    continue;
-                }
-                if (isset($this->appliedNodes[$key])) {
-                    $nodes[] = $this->appliedNodes[$key];
-                }
-            }
-            $this->reconcileToOrder($nodes, $desiredOrder, fullSnapshot: true);
-
-            return;
-        }
-
         foreach ($patch->removals as $key) {
             $this->detachKey($key);
         }
@@ -152,144 +130,54 @@ final class TranscriptMountedWidget extends ContainerWidget
         foreach ($patch->upserts as $node) {
             $existing = $this->nodes[$node->key] ?? null;
             if (null === $existing) {
-                $widget = $this->createWidgetFor($node);
-                $this->applyToWidget($widget, $node);
+                $widget = $this->createAndBind($node);
                 $this->add($widget);
                 $this->nodes[$node->key] = $widget;
-                $this->appliedNodes[$node->key] = $node;
                 continue;
             }
 
-            $this->applyToWidget($existing, $node);
-            $this->appliedNodes[$node->key] = $node;
-        }
+            $bound = $this->bind($existing, $node);
+            if ($bound !== $existing) {
+                // Kind/shape change on an existing key cannot be spliced mid-list.
+                $this->applyPatch($this->projector->replaceAll($this->projector->exportBlocks()));
 
-        $this->nodeOrder = $desiredOrder;
+                return;
+            }
+        }
     }
 
     /**
-     * True when survivor relative order changed or a new key appears before an old key.
-     *
-     * @param list<string> $previousOrder
-     * @param list<string> $desiredOrder
+     * Exceptional full path: clear container and re-add in supplied order.
+     * Reuses keyed widget objects when kind-compatible; O(B) is correct here.
      */
-    private function needsOuterResync(array $previousOrder, array $desiredOrder): bool
+    private function reconcileFull(TranscriptVisualPatch $patch): void
     {
-        $desiredSet = array_fill_keys($desiredOrder, true);
-        $previousSet = array_fill_keys($previousOrder, true);
-
-        $previousSurviving = [];
-        foreach ($previousOrder as $key) {
-            if (isset($desiredSet[$key])) {
-                $previousSurviving[] = $key;
-            }
-        }
-        $desiredSurviving = [];
-        foreach ($desiredOrder as $key) {
-            if (isset($previousSet[$key])) {
-                $desiredSurviving[] = $key;
-            }
-        }
-        if ($previousSurviving !== $desiredSurviving) {
-            return true;
+        $order = $patch->order ?? [];
+        $desired = [];
+        foreach ($patch->nodes as $node) {
+            $desired[$node->key] = $node;
         }
 
-        $seenNew = false;
-        foreach ($desiredOrder as $key) {
-            $isNew = !isset($previousSet[$key]);
-            if ($isNew) {
-                $seenNew = true;
+        $previous = $this->nodes;
+        $next = [];
+        foreach ($order as $key) {
+            $node = $desired[$key] ?? null;
+            if (null === $node) {
                 continue;
             }
-            if ($seenNew) {
-                return true;
-            }
+            $existing = $previous[$key] ?? null;
+            $next[$key] = null === $existing
+                ? $this->createAndBind($node)
+                : $this->bind($existing, $node);
         }
 
-        return false;
-    }
-
-    /**
-     * @param list<TranscriptVisualNode> $desired
-     * @param list<string>               $desiredOrder
-     */
-    private function reconcileToOrder(array $desired, array $desiredOrder, bool $fullSnapshot): void
-    {
-        $desiredByKey = [];
-        foreach ($desired as $item) {
-            $desiredByKey[$item->key] = $item;
-        }
-
-        $previousOrder = $this->nodeOrder;
-        $previousNodes = $this->nodes;
-        $previousApplied = $this->appliedNodes;
-
-        $desiredSet = array_fill_keys($desiredOrder, true);
-        $needsOuterResync = $this->needsOuterResync($previousOrder, $desiredOrder);
-
-        if ($needsOuterResync || ([] === $previousOrder && $fullSnapshot)) {
-            $nextNodes = [];
-            $nextApplied = [];
-            foreach ($desiredOrder as $key) {
-                $item = $desiredByKey[$key] ?? null;
-                if (null === $item) {
-                    continue;
-                }
-                $existing = $previousNodes[$key] ?? null;
-                if (null === $existing) {
-                    $widget = $this->createWidgetFor($item);
-                    $this->applyToWidget($widget, $item);
-                } else {
-                    $this->applyToWidget($existing, $item);
-                    $widget = $existing;
-                }
-                $nextNodes[$key] = $widget;
-                $nextApplied[$key] = $item;
-            }
-
-            $this->clear();
-            foreach ($desiredOrder as $key) {
-                if (isset($nextNodes[$key])) {
-                    $this->add($nextNodes[$key]);
-                }
-            }
-            $this->nodes = $nextNodes;
-            $this->appliedNodes = $nextApplied;
-            $this->nodeOrder = $desiredOrder;
-
-            return;
-        }
-
-        // Granular: remove gone keys, append new tail, update existing.
-        foreach ($previousOrder as $key) {
-            if (!isset($desiredSet[$key])) {
-                $this->detachKey($key);
+        $this->clear();
+        foreach ($order as $key) {
+            if (isset($next[$key])) {
+                $this->add($next[$key]);
             }
         }
-
-        $nextNodes = [];
-        $nextApplied = [];
-        foreach ($desiredOrder as $key) {
-            $item = $desiredByKey[$key] ?? $previousApplied[$key] ?? null;
-            if (null === $item) {
-                continue;
-            }
-            $existing = $this->nodes[$key] ?? $previousNodes[$key] ?? null;
-            if (null === $existing) {
-                $widget = $this->createWidgetFor($item);
-                $this->applyToWidget($widget, $item);
-                $this->add($widget);
-            } else {
-                $this->applyToWidget($existing, $item);
-                $widget = $existing;
-            }
-            $nextNodes[$key] = $widget;
-            $nextApplied[$key] = $item;
-        }
-
-        $this->nodes = $nextNodes;
-        $this->appliedNodes = $nextApplied;
-        $this->nodeOrder = $desiredOrder;
+        $this->nodes = $next;
     }
 
     private function detachKey(string $key): void
@@ -298,7 +186,94 @@ final class TranscriptMountedWidget extends ContainerWidget
         if (null !== $widget) {
             $this->remove($widget);
         }
-        unset($this->nodes[$key], $this->appliedNodes[$key]);
+        unset($this->nodes[$key]);
+    }
+
+    /**
+     * Update a compatible widget in place, or return a replacement for full re-add.
+     */
+    private function bind(AbstractWidget $widget, TranscriptVisualNode $node): AbstractWidget
+    {
+        if ($widget instanceof StreamingMarkdownTranscriptWidget) {
+            if (TranscriptVisualNode::KIND_MARKDOWN !== $node->kind) {
+                return $this->createAndBind($node);
+            }
+            $widget->apply($node);
+
+            return $widget;
+        }
+
+        if ($widget instanceof ToolExchangeTranscriptWidget) {
+            if (TranscriptVisualNode::KIND_TOOL_EXCHANGE !== $node->kind) {
+                return $this->createAndBind($node);
+            }
+            $widget->apply($node);
+
+            return $widget;
+        }
+
+        if ($widget instanceof QuestionTranscriptWidget) {
+            if (TranscriptVisualNode::KIND_QUESTION !== $node->kind) {
+                return $this->createAndBind($node);
+            }
+            $widget->apply($node);
+
+            return $widget;
+        }
+
+        if ($widget instanceof SubagentTranscriptWidget) {
+            if (TranscriptVisualNode::KIND_SUBAGENT !== $node->kind) {
+                return $this->createAndBind($node);
+            }
+            $widget->apply($node);
+
+            return $widget;
+        }
+
+        if ($widget instanceof WelcomeTranscriptWidget) {
+            return TranscriptVisualNode::KIND_WELCOME === $node->kind
+                ? $widget
+                : $this->createAndBind($node);
+        }
+
+        if ($widget instanceof TurnSeparatorWidget) {
+            return TranscriptVisualNode::KIND_SEPARATOR === $node->kind
+                ? $widget
+                : $this->createAndBind($node);
+        }
+
+        // Generic TextWidget: mutate in place so mid-list content updates keep order.
+        // Theme color is already baked into factory text via ANSI escapes.
+        if ($widget instanceof TextWidget && TranscriptVisualNode::KIND_GENERIC === $node->kind) {
+            $fresh = $this->createWidgetFor($node);
+            if ($fresh instanceof TextWidget) {
+                $widget->setText($fresh->getText());
+                $style = $fresh->getStyle();
+                if (null !== $style) {
+                    $widget->setStyle($style);
+                }
+
+                return $widget;
+            }
+
+            return $fresh;
+        }
+
+        return $this->createAndBind($node);
+    }
+
+    private function createAndBind(TranscriptVisualNode $node): AbstractWidget
+    {
+        $widget = $this->createWidgetFor($node);
+        if ($widget instanceof StreamingMarkdownTranscriptWidget
+            || $widget instanceof ToolExchangeTranscriptWidget
+            || $widget instanceof QuestionTranscriptWidget
+            || $widget instanceof SubagentTranscriptWidget
+        ) {
+            $widget->apply($node);
+        }
+
+        return $widget;
     }
 
     private function createWidgetFor(TranscriptVisualNode $node): AbstractWidget
@@ -317,46 +292,5 @@ final class TranscriptMountedWidget extends ContainerWidget
                 $this->theme,
             ),
         };
-    }
-
-    private function applyToWidget(AbstractWidget $widget, TranscriptVisualNode $node): void
-    {
-        if ($widget instanceof StreamingMarkdownTranscriptWidget
-            || $widget instanceof ToolExchangeTranscriptWidget
-            || $widget instanceof QuestionTranscriptWidget
-            || $widget instanceof SubagentTranscriptWidget
-        ) {
-            $widget->apply($node);
-
-            return;
-        }
-
-        // Native static widgets (TextWidget/Welcome/Separator): skip when sources unchanged.
-        $previous = $this->appliedNodes[$node->key] ?? null;
-        if (null !== $previous && $previous->sameSources($node)) {
-            return;
-        }
-
-        if ($widget instanceof WelcomeTranscriptWidget || $widget instanceof TurnSeparatorWidget) {
-            return;
-        }
-
-        // Generic TextWidget: mutate in place (setText) so mid-list updates keep order.
-        // Theme color is already baked into the factory text via ANSI escapes.
-        if ($widget instanceof TextWidget && TranscriptVisualNode::KIND_GENERIC === $node->kind) {
-            $fresh = $this->createWidgetFor($node);
-            if ($fresh instanceof TextWidget) {
-                $widget->setText($fresh->getText());
-                $style = $fresh->getStyle();
-                if (null !== $style) {
-                    $widget->setStyle($style);
-                }
-
-                return;
-            }
-        }
-
-        // Non-TextWidget generic (rare ContainerWidget shapes): ordered resync preserves position.
-        $this->applyPatch($this->projector->replaceAll($this->projector->exportBlocks()));
     }
 }
