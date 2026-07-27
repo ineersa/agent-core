@@ -99,7 +99,13 @@ final class AgentTestExecutable
             return false;
         }
 
-        $phpBinary = \PHP_BINARY;
+        // constant() so PHPStan cannot treat PHP_BINARY as always non-empty; fused
+        // PHP-micro leaves it empty at runtime and the artifact is self-executing.
+        $phpBinary = \defined('PHP_BINARY') ? (string) \constant('PHP_BINARY') : '';
+        if ('' === $phpBinary) {
+            return true;
+        }
+
         $resolvedPath = realpath($path);
         $resolvedPhp = realpath($phpBinary);
         if (false === $resolvedPath || false === $resolvedPhp) {
