@@ -168,6 +168,53 @@ final class CompactionRepositoryTest extends IsolatedKernelTestCase
         );
     }
 
+    public function testCommitFailureCasRejectsTerminalFailedWithoutResult(): void
+    {
+        $dbPath = $this->projectDir.'/.hatfield/extensions-data/observational-memory/om.sqlite';
+        $connection = $this->omDatabaseFactory()->connectAndMigrate($dbPath, new NullLogger());
+        $repo = new CompactionRepository($connection);
+        $now = (new \DateTimeImmutable('now', new \DateTimeZone('UTC')))->format(\DateTimeInterface::ATOM);
+
+        $repo->ensureRequest('req-failed-cas', 'run-failed-cas', 1, 3, 3, 'fp-failed-cas', $now);
+        // Terminal failed request with no result row: exercises assertIdentityAndCasFailed 0-row CAS,
+        // not the early timed_out guard or same-code result noop path.
+        $connection->executeStatement(
+            'UPDATE om_compaction_request SET status = ?, updated_at = ?, completed_at = ?, failure_code = ? WHERE request_id = ?',
+            [CompactionRepository::STATUS_FAILED, $now, $now, 'prior_failure', 'req-failed-cas'],
+        );
+
+        try {
+            $repo->commitFailure(
+                requestId: 'req-failed-cas',
+                resultId: 'res-failed-cas',
+                runId: 'run-failed-cas',
+                requiredStartSeq: 1,
+                requiredEndSeq: 3,
+                requiredWatermark: 3,
+                requestFingerprint: 'fp-failed-cas',
+                failureCode: 'tool_not_called',
+                now: $now,
+                failureMetadata: ['exception_class' => 'RuntimeException'],
+            );
+            $this->fail('commitFailure against terminal failed request must conflict via CAS');
+        } catch (OmConflictException) {
+            // expected
+        }
+
+        $status = $repo->getRequestStatus('req-failed-cas');
+        $this->assertNotNull($status);
+        $this->assertSame(CompactionRepository::STATUS_FAILED, $status['status']);
+        $this->assertSame('prior_failure', $status['failure_code'] ?? null);
+        $this->assertNull($repo->getResult('req-failed-cas'));
+        $this->assertSame(
+            0,
+            (int) $connection->fetchOne(
+                'SELECT COUNT(*) FROM om_compaction_result WHERE request_id = ?',
+                ['req-failed-cas'],
+            ),
+        );
+    }
+
     private function omDatabaseFactory(): OmDatabaseFactoryTestService
     {
         /** @var OmDatabaseFactoryTestService $service */
