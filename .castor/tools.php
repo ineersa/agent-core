@@ -118,19 +118,6 @@ function cs_check(string $path = ''): void
     }
 }
 
-// ─── Legacy / alias tasks ────────────────────────────────────────
-
-/**
- * Run CS fixer (fix in place).
- *
- * Alias for cs-fix.  Kept for backwards compatibility.
- */
-#[AsTask(description: 'Run PHP CS Fixer (fix in place)')]
-function cs_fixer(): void
-{
-    cs_fix();
-}
-
 /**
  * Run static analysis (PHPStan + Deptrac).
  */
@@ -139,14 +126,4 @@ function analyse(): void
 {
     phpstan();
     deptrac();
-}
-
-// ─── Audit ────────────────────────────────────────────────────────
-
-#[AsTask(name: 'audit', description: 'Run Composer security audit')]
-function audit(): void
-{
-    $cmd = \PHP_BINARY.' '.__DIR__.'/../vendor/bin/security-checker security:check '.__DIR__.'/../composer.lock';
-    passthru($cmd, $exitCode);
-    exit($exitCode);
 }

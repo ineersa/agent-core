@@ -6,7 +6,6 @@ namespace Ineersa\AgentCore\Tests\Application\Handler;
 
 use Ineersa\AgentCore\Application\Handler\CompleteDeferredToolCallHandler;
 use Ineersa\AgentCore\Application\Handler\ExecuteToolCallWorker;
-use Ineersa\AgentCore\Application\Handler\MessageIdempotencyService;
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Application\Handler\StepDispatcher;
 use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
@@ -390,7 +389,7 @@ final class DeferredToolCompletionRuntimeTest extends IsolatedKernelTestCase
 
         $processor = new RunMessageProcessor(
             runStore: $runStore,
-            idempotency: new MessageIdempotencyService(new InMemoryIdempotencyStore()),
+            idempotency: new InMemoryIdempotencyStore(),
             runLockManager: new RunLockManager(new LockFactory(new InMemoryStore())),
             runCommit: new RunCommit(
                 runStore: $runStore,

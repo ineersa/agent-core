@@ -9,6 +9,7 @@ use Ineersa\CodingAgent\Runtime\Contract\RuntimeExceptionBoundary;
 use Ineersa\CodingAgent\Runtime\Contract\SessionTranscriptProviderInterface;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
+use Ineersa\CodingAgent\Runtime\Projection\TranscriptChangeSet;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Psr\Log\LoggerInterface;
@@ -48,9 +49,9 @@ final class RuntimeEventPoller
      *                                                               handler. Used to close stale TUI question overlays when the
      *                                                               tool returns while a local tool question is still open.
      *
-     * @return list<TranscriptBlock>|null Changed/new transcript blocks, or null if nothing new
+     * @return TranscriptChangeSet|null Canonical transcript delta for ChatScreen, or null if nothing new
      */
-    public function poll(TuiSessionState $state, AgentSessionClient $client, ?callable $onHumanInputRequested = null, ?callable $onToolQuestionRequested = null, ?callable $onToolTerminal = null): ?array
+    public function poll(TuiSessionState $state, AgentSessionClient $client, ?callable $onHumanInputRequested = null, ?callable $onToolQuestionRequested = null, ?callable $onToolTerminal = null): ?TranscriptChangeSet
     {
         if (null === $state->handle) {
             return null;
@@ -77,6 +78,7 @@ final class RuntimeEventPoller
             $hasNew = false;
             $processingRemoved = false;
             $hasRunLeafChanged = false;
+            $removedProcessing = false;
 
             foreach ($events as $runtimeEvent) {
                 $seq = $runtimeEvent->seq;
@@ -100,16 +102,17 @@ final class RuntimeEventPoller
                 // SessionTranscriptProvider (isolated projector), not TUI local replay.
                 if (RuntimeEventTypeEnum::RunLeafChanged->value === $runtimeEvent->type) {
                     $leafTurnNo = (int) ($runtimeEvent->payload['turn_no'] ?? 0);
+                    // Always treat leaf change as wholesale replace so the mounted path
+                    // receives an explicit full snapshot (including empty after failure).
+                    $hasRunLeafChanged = true;
 
                     if ($leafTurnNo > 0 && null !== $state->handle) {
-                        $hasRunLeafChanged = true;
-
                         try {
                             $snapshot = $this->sessionTranscriptProvider->transcriptForLeaf(
                                 $state->handle->runId,
                                 $leafTurnNo,
                             );
-                            $state->transcript = $snapshot->transcriptBlocks;
+                            $state->replaceTranscript($snapshot->transcriptBlocks);
                         } catch (\Throwable $e) {
                             $this->logger->warning('runtime_event_poller.leaf_changed_rebuild_failed', [
                                 'run_id' => $state->handle->runId,
@@ -118,7 +121,7 @@ final class RuntimeEventPoller
                             ]);
                             // Intentional degradation: clear transcript rather than show stale
                             // abandoned-branch content when leaf projection fails.
-                            $state->transcript = [];
+                            $state->replaceTranscript([]);
                         }
                     } else {
                         // Malformed RunLeafChanged: missing or zero turn_no, or no handle.
@@ -128,7 +131,7 @@ final class RuntimeEventPoller
                             'run_id' => null !== $state->handle ? $state->handle->runId : 'unknown',
                             'leaf_turn_no' => $leafTurnNo,
                         ]);
-                        $state->transcript = [];
+                        $state->replaceTranscript([]);
                     }
 
                     // Skip queued follow-up dispatch, callback handlers, and processing
@@ -216,26 +219,44 @@ final class RuntimeEventPoller
                 }
 
                 if (!$processingRemoved) {
-                    self::removeProcessingPlaceholder($state);
+                    $beforeCount = \count($state->transcript);
+                    $state->removeTrailingProcessingPlaceholder();
+                    if (\count($state->transcript) < $beforeCount) {
+                        $removedProcessing = true;
+                    }
                     $processingRemoved = true;
                 }
             }
 
             if ($hasRunLeafChanged) {
-                // Wholesale transcript replace: return all blocks (not just changed)
-                // so the renderer rebuilds the entire transcript display.
-                // Sync any events that arrived after RunLeafChanged in the same
-                // batch (fed to projector via apply()) into the transcript.
-                self::synchronizeProjectedBlocks($state, $this->eventApplier->projectedBlocks());
+                // Wholesale leaf replace already applied; drain projector dirty set for any
+                // post-leaf events in the same batch, then return an explicit full snapshot.
+                $postLeaf = $this->eventApplier->drainProjectedChanges();
+                if (!$postLeaf->isEmpty()) {
+                    $state->applyTranscriptChangeSet($postLeaf);
+                }
 
-                return $state->transcript;
+                return TranscriptChangeSet::full($state->transcript);
             }
 
             if (!$hasNew) {
                 return null;
             }
 
-            return self::synchronizeProjectedBlocks($state, $this->eventApplier->projectedBlocks());
+            $changes = $this->eventApplier->drainProjectedChanges();
+            if (!$changes->isEmpty()) {
+                $state->applyTranscriptChangeSet($changes);
+
+                return $changes;
+            }
+
+            // Local Processing… placeholder removal is not a projector dirty event, but the
+            // mounted transcript still needs an explicit full snapshot to drop it.
+            if ($removedProcessing) {
+                return TranscriptChangeSet::full($state->transcript);
+            }
+
+            return null;
         } catch (\Throwable $e) {
             ++$state->runtimePollErrorCount;
             $state->lastRuntimePollError = $e->getMessage();
@@ -277,9 +298,9 @@ final class RuntimeEventPoller
                 meta: ['exception' => $e::class],
             );
 
-            $state->transcript[] = $block;
+            $state->appendTranscriptBlock($block);
 
-            return [$block];
+            return TranscriptChangeSet::incremental([$block]);
         }
     }
 
@@ -330,72 +351,5 @@ final class RuntimeEventPoller
         }
 
         return $events;
-    }
-
-    /**
-     * @param list<TranscriptBlock> $projectedBlocks
-     *
-     * @return list<TranscriptBlock>
-     */
-    private static function synchronizeProjectedBlocks(TuiSessionState $state, array $projectedBlocks): array
-    {
-        $changed = [];
-
-        foreach ($projectedBlocks as $block) {
-            $idx = self::findBlockIndex($state->transcript, $block->id);
-
-            if (null === $idx) {
-                $state->transcript[] = $block;
-                $changed[] = $block;
-
-                continue;
-            }
-
-            if (self::blocksEqual($state->transcript[$idx], $block)) {
-                continue;
-            }
-
-            $state->transcript[$idx] = $block;
-            $changed[] = $block;
-        }
-
-        return $changed;
-    }
-
-    private static function blocksEqual(TranscriptBlock $left, TranscriptBlock $right): bool
-    {
-        return $left->id === $right->id
-            && $left->kind === $right->kind
-            && $left->runId === $right->runId
-            && $left->seq === $right->seq
-            && $left->text === $right->text
-            && $left->meta === $right->meta
-            && $left->streaming === $right->streaming
-            && $left->collapsed === $right->collapsed;
-    }
-
-    /** @param list<TranscriptBlock> $blocks */
-    private static function findBlockIndex(array $blocks, string $id): ?int
-    {
-        foreach ($blocks as $idx => $block) {
-            if ($block->id === $id) {
-                return $idx;
-            }
-        }
-
-        return null;
-    }
-
-    private static function removeProcessingPlaceholder(TuiSessionState $state): void
-    {
-        $lastIdx = \count($state->transcript) - 1;
-        if ($lastIdx < 0) {
-            return;
-        }
-
-        $last = $state->transcript[$lastIdx];
-        if (TranscriptBlockKindEnum::System === $last->kind && str_contains($last->text, 'Processing...')) {
-            array_pop($state->transcript);
-        }
     }
 }

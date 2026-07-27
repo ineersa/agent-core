@@ -10,7 +10,6 @@ use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\ModelResolver;
-use Ineersa\CodingAgent\Config\SessionMetadataStore;
 use Ineersa\CodingAgent\Config\SessionsConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
@@ -537,7 +536,7 @@ class ModelResolverTest extends TestCase
     {
         $appConfig = $this->makeAppConfig($aiData);
 
-        // SessionMetadataStore is not used when sessionId is empty,
+        // HatfieldSessionStore is not used when sessionId is empty,
         // but the resolver requires it in its constructor.
         // Create a real one with minimal real dependencies.
         $sessionMetaStore = $this->createSessionMetaStore();
@@ -545,14 +544,11 @@ class ModelResolverTest extends TestCase
         return new ModelResolver($appConfig, $sessionMetaStore);
     }
 
-    private function createSessionMetaStore(): SessionMetadataStore
+    private function createSessionMetaStore(): HatfieldSessionStore
     {
         // HatfieldSessionStore is final — cannot be mocked.
-        // Create it via reflection for the SessionMetadataStore constructor.
-        $hatfieldSessionStore = (new \ReflectionClass(HatfieldSessionStore::class))
+        return (new \ReflectionClass(HatfieldSessionStore::class))
             ->newInstanceWithoutConstructor();
-
-        return new SessionMetadataStore($hatfieldSessionStore);
     }
 
     private function makeAppConfig(array $aiData): AppConfig

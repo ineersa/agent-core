@@ -6,18 +6,23 @@ namespace Ineersa\Tui\Tests\Screen;
 
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
+use Ineersa\CodingAgent\Runtime\Projection\TranscriptChangeSet;
 use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
 use Ineersa\Tui\Theme\DefaultTheme;
 use Ineersa\Tui\Theme\ThemeColorEnum;
 use Ineersa\Tui\Theme\ThemePalette;
 use Ineersa\Tui\Transcript\MarkdownThemeStyleSheetFactory;
+use Ineersa\Tui\Transcript\StreamingMarkdownTranscriptWidget;
+use Ineersa\Tui\Transcript\ToolExchangeTranscriptWidget;
 use Ineersa\Tui\Transcript\TranscriptMountedWidget;
-use Ineersa\Tui\Transcript\TranscriptVisualNodeWidget;
+use Ineersa\Tui\Transcript\TranscriptVisualNode;
+use Ineersa\Tui\Transcript\TranscriptVisualProjector;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Tui\Terminal\VirtualTerminal;
 use Symfony\Component\Tui\Tui;
 use Symfony\Component\Tui\Widget\MarkdownWidget;
+use Symfony\Component\Tui\Widget\TextWidget;
 
 /**
  * Virtual proof for the production mounted transcript subtree.
@@ -25,8 +30,9 @@ use Symfony\Component\Tui\Widget\MarkdownWidget;
  * Test thesis: output-only product tests can stay green while Markdown widgets
  * remain detached, stylesheet selectors stay inactive, or reconciliation recreates
  * visual nodes. These cases prove live WidgetContext theming, identity-preserving
- * streaming/tool reconciliation, and granular tail append/removal on the real
- * mounted path.
+ * streaming/tool reconciliation, granular tail append/removal, content-only tail
+ * stream identity preservation, and mid-list generic TextWidget update order.
+ * Patch contract for pure stream is proven on TranscriptVisualProjector directly.
  */
 final class TuiMountedTranscriptVirtualTest extends TestCase
 {
@@ -125,9 +131,9 @@ final class TuiMountedTranscriptVirtualTest extends TestCase
         $this->assertCount(2, $childrenAfterMount);
         $assistantWrapper = $childrenAfterMount[0];
         $toolWrapper = $childrenAfterMount[1];
-        $this->assertInstanceOf(TranscriptVisualNodeWidget::class, $assistantWrapper);
-        $this->assertInstanceOf(TranscriptVisualNodeWidget::class, $toolWrapper);
-        $assistantMarkdown = $assistantWrapper->content();
+        $this->assertInstanceOf(StreamingMarkdownTranscriptWidget::class, $assistantWrapper);
+        $this->assertInstanceOf(ToolExchangeTranscriptWidget::class, $toolWrapper);
+        $assistantMarkdown = $assistantWrapper->markdown();
         $this->assertInstanceOf(MarkdownWidget::class, $assistantMarkdown);
 
         $assistantUpdated = $assistantStreaming->with(text: 'Hello world', streaming: true);
@@ -153,7 +159,7 @@ final class TuiMountedTranscriptVirtualTest extends TestCase
         $this->assertCount(2, $childrenAfterUpdate, 'Tool call+result must remain one visual exchange node');
         $this->assertSame($assistantWrapper, $childrenAfterUpdate[0], 'Assistant visual wrapper identity must be stable');
         $this->assertSame($toolWrapper, $childrenAfterUpdate[1], 'Tool exchange wrapper identity must be stable across result arrival');
-        $this->assertSame($assistantMarkdown, $assistantWrapper->content(), 'Assistant MarkdownWidget instance must be preserved across streaming updates');
+        $this->assertSame($assistantMarkdown, $assistantWrapper->markdown(), 'Assistant MarkdownWidget instance must be preserved across streaming updates');
         $this->assertStringContainsString('Hello world', $assistantMarkdown->getText());
 
         // Render through ChatScreen production path as product smoke for visible result text.
@@ -168,6 +174,77 @@ final class TuiMountedTranscriptVirtualTest extends TestCase
         $this->assertStringContainsString('Hello world', $text);
         $this->assertStringContainsString('read', $text);
         $this->assertStringContainsString('file contents', $text);
+    }
+
+    #[Test]
+    public function testAssistantContentUpdateAdjacentToExchangeKeepsSemanticExchange(): void
+    {
+        // Thesis: content update of an assistant that neighbors a completed tool exchange
+        // must not reclassify the exchange secondary as standalone GENERIC, remount, or
+        // reorder the semantic ToolExchangeTranscriptWidget.
+        $theme = new DefaultTheme(VirtualTuiHarness::defaultVirtualPalette());
+        $transcript = new TranscriptMountedWidget(theme: $theme);
+
+        $toolCall = new TranscriptBlock(
+            id: 'tool-call-adj',
+            kind: TranscriptBlockKindEnum::ToolCall,
+            runId: self::SESSION_ID,
+            seq: 1,
+            text: 'read',
+            meta: [
+                'tool_name' => 'read',
+                'tool_call_id' => 'call-adjacent-1',
+                'arguments' => ['path' => './target.txt'],
+            ],
+        );
+        $toolResult = new TranscriptBlock(
+            id: 'tool-result-adj',
+            kind: TranscriptBlockKindEnum::ToolResult,
+            runId: self::SESSION_ID,
+            seq: 2,
+            text: "rewound contents\nline two",
+            meta: [
+                'tool_name' => 'read',
+                'tool_call_id' => 'call-adjacent-1',
+                'is_error' => false,
+            ],
+        );
+        $assistantStreaming = new TranscriptBlock(
+            id: 'assistant-after-exchange',
+            kind: TranscriptBlockKindEnum::AssistantMessage,
+            runId: self::SESSION_ID,
+            seq: 3,
+            text: 'partial after tool',
+            streaming: true,
+        );
+        $transcript->setBlocks([$toolCall, $toolResult, $assistantStreaming]);
+
+        $before = $transcript->all();
+        $this->assertCount(2, $before, 'Call+result collapse to one exchange before assistant');
+        $exchangeWrapper = $before[0];
+        $assistantWrapper = $before[1];
+        $this->assertInstanceOf(ToolExchangeTranscriptWidget::class, $exchangeWrapper);
+        $this->assertInstanceOf(StreamingMarkdownTranscriptWidget::class, $assistantWrapper);
+        $exchangeNodeBefore = $exchangeWrapper->node();
+        $this->assertNotNull($exchangeNodeBefore);
+        $this->assertSame(TranscriptVisualNode::KIND_TOOL_EXCHANGE, $exchangeNodeBefore->kind);
+        $this->assertSame($toolResult, $exchangeNodeBefore->secondary);
+
+        $assistantUpdated = $assistantStreaming->with(text: 'partial after tool more tokens');
+        $transcript->applyChangeSet(TranscriptChangeSet::incremental([$assistantUpdated]));
+
+        $after = $transcript->all();
+        $this->assertCount(2, $after, 'Child count must stay exchange + assistant');
+        $this->assertSame($exchangeWrapper, $after[0], 'Exchange widget identity must survive adjacent stream');
+        $this->assertSame($assistantWrapper, $after[1], 'Assistant widget identity must survive stream');
+        $exchangeNodeAfter = $exchangeWrapper->node();
+        $this->assertNotNull($exchangeNodeAfter);
+        $this->assertSame(TranscriptVisualNode::KIND_TOOL_EXCHANGE, $exchangeNodeAfter->kind);
+        $this->assertSame($toolResult, $exchangeNodeAfter->secondary, 'Exchange secondary must remain the same ToolResult');
+        $this->assertSame($toolCall, $exchangeNodeAfter->primary);
+        $md = $assistantWrapper->markdown();
+        $this->assertInstanceOf(MarkdownWidget::class, $md);
+        $this->assertStringContainsString('partial after tool more tokens', $md->getText());
     }
 
     #[Test]
@@ -196,8 +273,8 @@ final class TuiMountedTranscriptVirtualTest extends TestCase
         $this->assertCount(2, $before);
         $userWrapper = $before[0];
         $assistantWrapper = $before[1];
-        $this->assertInstanceOf(TranscriptVisualNodeWidget::class, $userWrapper);
-        $this->assertInstanceOf(TranscriptVisualNodeWidget::class, $assistantWrapper);
+        $this->assertInstanceOf(StreamingMarkdownTranscriptWidget::class, $userWrapper);
+        $this->assertInstanceOf(StreamingMarkdownTranscriptWidget::class, $assistantWrapper);
 
         $extra = new TranscriptBlock(
             id: 'assistant-2',
@@ -212,7 +289,7 @@ final class TuiMountedTranscriptVirtualTest extends TestCase
         $this->assertSame($userWrapper, $afterAppend[0], 'Existing user wrapper must survive tail append');
         $this->assertSame($assistantWrapper, $afterAppend[1], 'Existing assistant wrapper must survive tail append');
         $this->assertNotSame($assistantWrapper, $afterAppend[2]);
-        $this->assertInstanceOf(TranscriptVisualNodeWidget::class, $afterAppend[2]);
+        $this->assertInstanceOf(StreamingMarkdownTranscriptWidget::class, $afterAppend[2]);
 
         $transcript->setBlocks([$user, $extra]);
         $afterRemove = $transcript->all();
@@ -224,6 +301,123 @@ final class TuiMountedTranscriptVirtualTest extends TestCase
         $this->assertNotContains($assistantWrapper, $afterRemove, 'Removed assistant wrapper must be detached');
     }
 
+    #[Test]
+    public function testTailStreamKeepsHistoricalSemanticIdentityWithoutTestOnlyPatchApi(): void
+    {
+        // Thesis: ordinary tail streaming updates must not rebuild finalized historical
+        // semantic wrappers or their Markdown content instances. Patch scope is asserted
+        // on TranscriptVisualProjector (production contract), not a test-only mount API.
+        $theme = new DefaultTheme(VirtualTuiHarness::defaultVirtualPalette());
+        $transcript = new TranscriptMountedWidget(theme: $theme);
+
+        $history = new TranscriptBlock(
+            id: 'history-user',
+            kind: TranscriptBlockKindEnum::UserMessage,
+            runId: self::SESSION_ID,
+            seq: 1,
+            text: 'finalized history that must not be rehashed',
+        );
+        $streaming = new TranscriptBlock(
+            id: 'stream-assistant',
+            kind: TranscriptBlockKindEnum::AssistantMessage,
+            runId: self::SESSION_ID,
+            seq: 2,
+            text: 'partial',
+            streaming: true,
+        );
+        $transcript->setBlocks([$history, $streaming]);
+
+        $children = $transcript->all();
+        $this->assertCount(2, $children);
+        $historyWrapper = $children[0];
+        $streamWrapper = $children[1];
+        $this->assertInstanceOf(StreamingMarkdownTranscriptWidget::class, $historyWrapper);
+        $this->assertInstanceOf(StreamingMarkdownTranscriptWidget::class, $streamWrapper);
+        $historyMarkdown = $historyWrapper->markdown();
+        $streamMarkdown = $streamWrapper->markdown();
+        $this->assertInstanceOf(MarkdownWidget::class, $historyMarkdown);
+        $this->assertInstanceOf(MarkdownWidget::class, $streamMarkdown);
+        $historyNode = $historyWrapper->node();
+        $this->assertNotNull($historyNode);
+
+        $streamed = $streaming->with(text: 'partial more tokens');
+        // Same object identity for history; new object for streaming tail.
+        $transcript->applyChangeSet(TranscriptChangeSet::incremental([$streamed]));
+
+        $after = $transcript->all();
+        $this->assertCount(2, $after);
+        $this->assertSame($historyWrapper, $after[0], 'Finalized history wrapper must keep identity on tail stream');
+        $this->assertSame($streamWrapper, $after[1], 'Streaming wrapper must keep identity on tail stream');
+        $this->assertSame($historyMarkdown, $historyWrapper->markdown(), 'Finalized history Markdown instance must not rebuild');
+        $this->assertSame($streamMarkdown, $streamWrapper->markdown(), 'Streaming Markdown instance must mutate in place');
+        $this->assertSame($historyNode, $historyWrapper->node(), 'History visual node sources unchanged (object identity skip)');
+        $this->assertSame($history, $historyWrapper->node()?->primary);
+        $this->assertStringContainsString('partial more tokens', $streamMarkdown->getText());
+    }
+
+    #[Test]
+    public function testMiddleGenericUpdateKeepsOrderAndMutatesTextInPlace(): void
+    {
+        // Thesis: mid-list KIND_GENERIC TextWidget content change must not append a fresh
+        // widget at the end (order corruption). setText in place preserves sibling order.
+        $theme = new DefaultTheme(VirtualTuiHarness::defaultVirtualPalette());
+        $transcript = new TranscriptMountedWidget(theme: $theme);
+
+        $user = new TranscriptBlock(
+            id: 'user-1',
+            kind: TranscriptBlockKindEnum::UserMessage,
+            runId: self::SESSION_ID,
+            seq: 1,
+            text: 'prompt',
+        );
+        $error = new TranscriptBlock(
+            id: 'error-mid',
+            kind: TranscriptBlockKindEnum::Error,
+            runId: self::SESSION_ID,
+            seq: 2,
+            text: 'first error text',
+        );
+        $assistant = new TranscriptBlock(
+            id: 'assistant-tail',
+            kind: TranscriptBlockKindEnum::AssistantMessage,
+            runId: self::SESSION_ID,
+            seq: 3,
+            text: 'tail answer',
+        );
+        $transcript->setBlocks([$user, $error, $assistant]);
+
+        $before = $transcript->all();
+        $this->assertCount(3, $before);
+        $this->assertInstanceOf(StreamingMarkdownTranscriptWidget::class, $before[0]);
+        $this->assertInstanceOf(TextWidget::class, $before[1], 'Error block mounts as native TextWidget');
+        $this->assertInstanceOf(StreamingMarkdownTranscriptWidget::class, $before[2]);
+        $errorWidget = $before[1];
+        $this->assertInstanceOf(TextWidget::class, $errorWidget);
+        $userWidget = $before[0];
+        $assistantWidget = $before[2];
+
+        $updatedError = $error->with(text: 'updated middle error');
+        $transcript->applyChangeSet(TranscriptChangeSet::incremental([$updatedError]));
+
+        $after = $transcript->all();
+        $this->assertCount(3, $after, 'Middle generic update must not change child count');
+        $this->assertSame($userWidget, $after[0], 'Leading markdown identity preserved');
+        $this->assertSame($errorWidget, $after[1], 'Middle TextWidget identity must be preserved (in-place setText)');
+        $this->assertSame($assistantWidget, $after[2], 'Trailing markdown must stay after middle generic');
+        $this->assertStringContainsString('updated middle error', $errorWidget->getText());
+        $this->assertStringNotContainsString('first error text', $errorWidget->getText());
+
+        // Production projector contract for pure generic content update is content-only.
+        $projector = new TranscriptVisualProjector();
+        $projector->replaceAll([$user, $error, $assistant]);
+        $patch = $projector->applyChangeSet(TranscriptChangeSet::incremental([$updatedError]));
+        $this->assertTrue($patch->isContentOnly());
+        $this->assertNull($patch->order);
+        $this->assertCount(1, $patch->upserts);
+        $this->assertSame('error-mid', $patch->upserts[0]->key);
+        $this->assertSame([], $patch->removals);
+    }
+
     /**
      * @return list<MarkdownWidget>
      */
@@ -231,12 +425,11 @@ final class TuiMountedTranscriptVirtualTest extends TestCase
     {
         $found = [];
         foreach ($transcript->all() as $child) {
-            if (!$child instanceof TranscriptVisualNodeWidget) {
-                continue;
-            }
-            $content = $child->content();
-            if ($content instanceof MarkdownWidget) {
-                $found[] = $content;
+            if ($child instanceof StreamingMarkdownTranscriptWidget) {
+                $md = $child->markdown();
+                if ($md instanceof MarkdownWidget) {
+                    $found[] = $md;
+                }
             }
         }
 

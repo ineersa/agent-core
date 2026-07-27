@@ -12,7 +12,6 @@ use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\ModelResolver;
 use Ineersa\CodingAgent\Config\ModelSelectionService;
 use Ineersa\CodingAgent\Config\ModelSettingsPersister;
-use Ineersa\CodingAgent\Config\SessionMetadataStore;
 use Ineersa\CodingAgent\Config\SessionsConfig;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Config\TuiConfig;
@@ -32,7 +31,7 @@ class ModelCommandHandlerTest extends TestCase
     private string $tempDir;
     private string $homeDir;
     private ModelSelectionService $modelService;
-    private SessionMetadataStore $sessionMetaStore;
+    private HatfieldSessionStore $sessionMetaStore;
     private TuiSessionState $state;
 
     protected function setUp(): void
@@ -61,7 +60,7 @@ class ModelCommandHandlerTest extends TestCase
             ),
             entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
         );
-        $this->sessionMetaStore = new SessionMetadataStore($hatfieldSessionStore);
+        $this->sessionMetaStore = $hatfieldSessionStore;
 
         $appConfig = $this->makeAppConfig($this->standardAiData());
         $this->modelService = new ModelSelectionService($appConfig, new ModelResolver($appConfig, $this->sessionMetaStore), new ModelSettingsPersister($homeWriter, $this->sessionMetaStore));
