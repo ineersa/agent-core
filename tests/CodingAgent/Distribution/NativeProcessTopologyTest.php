@@ -460,7 +460,7 @@ final class NativeProcessTopologyTest extends TestCase
                 throw new \RuntimeException('ps session scan failed (exit '.$exit.")\ncmd: {$psCmd}\n".implode("\n", $sessionLines));
             }
             if ([] === $sessionLines) {
-                throw new \RuntimeException('ps session scan returned zero rows (unsupported/empty ps).\ncmd: '.$psCmd);
+                throw new \RuntimeException('ps session scan returned zero rows (unsupported/empty ps).'."\ncmd: ".$psCmd);
             }
             foreach ($sessionLines as $line) {
                 $parsed = $this->parsePsProcessLine((string) $line);

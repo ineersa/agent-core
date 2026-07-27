@@ -249,12 +249,7 @@ function distribution_build_micro_sfx(string $target): array
 
     $microSfx = $workDir.'/buildroot/bin/micro.sfx';
     if (!is_file($microSfx)) {
-        // Some layouts nest under spc cwd differently.
-        $alt = $workDir.'/buildroot/bin/micro.sfx';
-        if (!is_file($alt)) {
-            throw new RuntimeException('micro.sfx not found after SPC build under '.$workDir);
-        }
-        $microSfx = $alt;
+        throw new RuntimeException('micro.sfx not found after SPC build under '.$workDir);
     }
 
     return ['spc' => $spcBin, 'micro_sfx' => $microSfx, 'work_dir' => $workDir];
@@ -549,7 +544,7 @@ function distribution_collect_descendant_cmdlines(int $rootPid): array
             throw new RuntimeException('Native topology smoke: ps session scan failed (exit '.$exit.")\ncmd: {$psCmd}\n".implode("\n", $sessionLines));
         }
         if ([] === $sessionLines) {
-            throw new RuntimeException('Native topology smoke: ps session scan returned zero rows (unsupported/empty ps).\ncmd: '.$psCmd);
+            throw new RuntimeException('Native topology smoke: ps session scan returned zero rows (unsupported/empty ps).'."\ncmd: ".$psCmd);
         }
         foreach ($sessionLines as $line) {
             $parsed = distribution_parse_ps_process_line($line);
