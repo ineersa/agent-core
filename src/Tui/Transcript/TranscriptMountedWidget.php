@@ -53,8 +53,7 @@ final class TranscriptMountedWidget extends ContainerWidget
      *     key: string,
      *     kind: string,
      *     fingerprint: string,
-     *     wrapper: TranscriptVisualNodeWidget,
-     *     streaming: bool
+     *     wrapper: TranscriptVisualNodeWidget
      * }>
      */
     private array $nodes = [];
@@ -141,8 +140,6 @@ final class TranscriptMountedWidget extends ContainerWidget
             $key = $item['key'];
             $existing = $this->nodes[$key] ?? null;
             $fingerprint = $item['fingerprint'];
-            $streaming = $item['streaming'];
-
             if (null === $existing) {
                 $wrapper = new TranscriptVisualNodeWidget();
                 $wrapper->setContent($this->buildWidgetForItem($item));
@@ -152,7 +149,6 @@ final class TranscriptMountedWidget extends ContainerWidget
                     'kind' => $item['kind'],
                     'fingerprint' => $fingerprint,
                     'wrapper' => $wrapper,
-                    'streaming' => $streaming,
                 ];
                 $nextOrder[] = $key;
                 continue;
@@ -166,7 +162,6 @@ final class TranscriptMountedWidget extends ContainerWidget
                 'kind' => $item['kind'],
                 'fingerprint' => $fingerprint,
                 'wrapper' => $wrapper,
-                'streaming' => $streaming,
             ];
             $nextOrder[] = $key;
         }
@@ -237,7 +232,6 @@ final class TranscriptMountedWidget extends ContainerWidget
      *     key: string,
      *     kind: string,
      *     fingerprint: string,
-     *     streaming: bool,
      *     primary: ?TranscriptBlock,
      *     secondary: ?TranscriptBlock
      * }> $desired
@@ -246,8 +240,7 @@ final class TranscriptMountedWidget extends ContainerWidget
      *     key: string,
      *     kind: string,
      *     fingerprint: string,
-     *     wrapper: TranscriptVisualNodeWidget,
-     *     streaming: bool
+     *     wrapper: TranscriptVisualNodeWidget
      * }> $previousNodes
      */
     private function performOuterResync(array $desired, array $desiredKeys, array $previousNodes): void
@@ -258,8 +251,6 @@ final class TranscriptMountedWidget extends ContainerWidget
             $key = $item['key'];
             $existing = $previousNodes[$key] ?? null;
             $fingerprint = $item['fingerprint'];
-            $streaming = $item['streaming'];
-
             if (null === $existing) {
                 $wrapper = new TranscriptVisualNodeWidget();
                 $wrapper->setContent($this->buildWidgetForItem($item));
@@ -273,7 +264,6 @@ final class TranscriptMountedWidget extends ContainerWidget
                 'kind' => $item['kind'],
                 'fingerprint' => $fingerprint,
                 'wrapper' => $wrapper,
-                'streaming' => $streaming,
             ];
             $nextOrder[] = $key;
         }
@@ -297,14 +287,12 @@ final class TranscriptMountedWidget extends ContainerWidget
      *     key: string,
      *     kind: string,
      *     fingerprint: string,
-     *     wrapper: TranscriptVisualNodeWidget,
-     *     streaming: bool
+     *     wrapper: TranscriptVisualNodeWidget
      * } $existing
      * @param array{
      *     key: string,
      *     kind: string,
      *     fingerprint: string,
-     *     streaming: bool,
      *     primary: ?TranscriptBlock,
      *     secondary: ?TranscriptBlock
      * } $item
@@ -336,7 +324,6 @@ final class TranscriptMountedWidget extends ContainerWidget
      *     key: string,
      *     kind: string,
      *     fingerprint: string,
-     *     streaming: bool,
      *     primary: ?TranscriptBlock,
      *     secondary: ?TranscriptBlock
      * }>
@@ -348,7 +335,6 @@ final class TranscriptMountedWidget extends ContainerWidget
                 'key' => self::WELCOME_KEY,
                 'kind' => self::VISUAL_KIND_WELCOME,
                 'fingerprint' => 'welcome:'.$this->theme->name(),
-                'streaming' => false,
                 'primary' => null,
                 'secondary' => null,
             ]];
@@ -383,7 +369,6 @@ final class TranscriptMountedWidget extends ContainerWidget
                     'key' => 'sep-before:'.$block->id,
                     'kind' => self::VISUAL_KIND_SEPARATOR,
                     'fingerprint' => 'sep:'.$themeFingerprint,
-                    'streaming' => false,
                     'primary' => null,
                     'secondary' => null,
                 ];
@@ -410,7 +395,6 @@ final class TranscriptMountedWidget extends ContainerWidget
                     'key' => $key,
                     'kind' => self::VISUAL_KIND_TOOL_EXCHANGE,
                     'fingerprint' => $this->blockFingerprint($block, $envFingerprint, $themeFingerprint, $matchedToolResult),
-                    'streaming' => $block->streaming || $matchedToolResult->streaming,
                     'primary' => $block,
                     'secondary' => $matchedToolResult,
                 ];
@@ -422,7 +406,6 @@ final class TranscriptMountedWidget extends ContainerWidget
                     'key' => $key,
                     'kind' => self::VISUAL_KIND_GENERIC,
                     'fingerprint' => $this->blockFingerprint($block, $envFingerprint, $themeFingerprint, null),
-                    'streaming' => $block->streaming,
                     'primary' => $block,
                     'secondary' => null,
                 ];
@@ -432,7 +415,6 @@ final class TranscriptMountedWidget extends ContainerWidget
                     'key' => $block->id,
                     'kind' => $kind,
                     'fingerprint' => $this->blockFingerprint($block, $envFingerprint, $themeFingerprint, null),
-                    'streaming' => $block->streaming,
                     'primary' => $block,
                     'secondary' => null,
                 ];
@@ -446,7 +428,6 @@ final class TranscriptMountedWidget extends ContainerWidget
                 'key' => self::WELCOME_KEY,
                 'kind' => self::VISUAL_KIND_WELCOME,
                 'fingerprint' => 'welcome:'.$this->theme->name(),
-                'streaming' => false,
                 'primary' => null,
                 'secondary' => null,
             ]];
@@ -477,7 +458,6 @@ final class TranscriptMountedWidget extends ContainerWidget
      *     key: string,
      *     kind: string,
      *     fingerprint: string,
-     *     streaming: bool,
      *     primary: ?TranscriptBlock,
      *     secondary: ?TranscriptBlock
      * } $item
