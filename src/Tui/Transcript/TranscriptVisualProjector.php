@@ -177,13 +177,6 @@ final class TranscriptVisualProjector
         }
 
         // Apply canonical mutations after dependency expansion uses pre-state neighbors.
-        $previousKeysByPrimary = [];
-        foreach (array_keys($expanded) as $id) {
-            if (isset($this->visualKeyByPrimaryId[$id])) {
-                $previousKeysByPrimary[$id] = $this->visualKeyByPrimaryId[$id];
-            }
-        }
-
         $this->applyRemovalsAndUpsertsToCanonical($changes);
 
         // After mutation, re-expand for new neighbors (appended question after empty assistant).
@@ -202,7 +195,6 @@ final class TranscriptVisualProjector
         // must not promote a pure content update (Error/stream) into full reproject.
         return $this->reprojectAffected(
             array_keys($expanded),
-            $previousKeysByPrimary,
             array_keys($touchedPrimaryIds),
         );
     }
@@ -544,13 +536,11 @@ final class TranscriptVisualProjector
     /**
      * Reproject only the dependency-bounded set of primary block IDs into visual keys.
      *
-     * @param list<string>          $affectedPrimaryIds     Expanded set (neighbors + dirty)
-     * @param array<string, string> $previousKeysByPrimary
-     * @param list<string>          $structuralCandidateIds Originally dirty IDs (not neighbors)
+     * @param list<string> $affectedPrimaryIds     Expanded set (neighbors + dirty)
+     * @param list<string> $structuralCandidateIds Originally dirty IDs (not neighbors)
      */
     private function reprojectAffected(
         array $affectedPrimaryIds,
-        array $previousKeysByPrimary,
         array $structuralCandidateIds,
     ): TranscriptVisualPatch {
         // Structural decision is based on originally dirty IDs only. Neighbor expansion
@@ -589,22 +579,14 @@ final class TranscriptVisualProjector
         }
 
         // Pure in-place content updates (streaming markdown / generic / thinking).
+        // Removals are always structural (classified before this branch); a missing
+        // block here is an invariant violation → explicit full reproject.
         $revision = $this->presentationRevision();
         $upserts = [];
-        $removals = [];
         foreach ($affectedPrimaryIds as $id) {
             $block = $this->blocksById[$id] ?? null;
             if (null === $block) {
-                $oldKey = $previousKeysByPrimary[$id] ?? $id;
-                if (isset($this->nodesByKey[$oldKey])) {
-                    unset($this->nodesByKey[$oldKey]);
-                    $this->nodeOrder = array_values(array_filter(
-                        $this->nodeOrder,
-                        static fn (string $k): bool => $k !== $oldKey,
-                    ));
-                    $removals[] = $oldKey;
-                }
-                continue;
+                return $this->fullReproject();
             }
 
             if ($this->factory->isTranscriptWidgetSuppressed($block)) {
@@ -640,8 +622,8 @@ final class TranscriptVisualProjector
             return $this->fullReproject();
         }
 
-        // Content-only: no order payload — mounted path applies keyed upserts O(changes).
-        return TranscriptVisualPatch::content($upserts, $removals);
+        // Content-only: keyed upserts only — mounted path is O(changes).
+        return TranscriptVisualPatch::content($upserts);
     }
 
     /**

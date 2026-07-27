@@ -55,18 +55,17 @@ final readonly class TranscriptVisualPatch
     }
 
     /**
-     * Content-only (non-structural) incremental patch: keyed upserts/removals only.
-     * No order snapshot — mounted reconciler must not scan history/order.
+     * Content-only (non-structural) incremental patch: keyed upserts only.
+     * No removals, no order snapshot — mounted reconciler applies O(changes).
      *
      * @param list<TranscriptVisualNode> $upserts
-     * @param list<string>               $removals
      */
-    public static function content(array $upserts, array $removals = []): self
+    public static function content(array $upserts): self
     {
         return new self(
             mode: self::MODE_INCREMENTAL,
             upserts: $upserts,
-            removals: $removals,
+            removals: [],
             order: null,
             orderChanged: false,
         );
@@ -90,25 +89,13 @@ final readonly class TranscriptVisualPatch
         );
     }
 
-    /**
-     * @deprecated prefer content() / structural(); kept for call-site migration clarity
-     *
-     * @param list<TranscriptVisualNode> $upserts
-     * @param list<string>               $removals
-     * @param list<string>               $order
-     */
-    public static function incremental(array $upserts, array $removals, array $order): self
-    {
-        return self::structural($upserts, $removals, $order);
-    }
-
     public function isFull(): bool
     {
         return self::MODE_FULL === $this->mode;
     }
 
     /**
-     * True when this patch is content-only (no order payload, no structural mutation).
+     * True when this patch is content-only (keyed upserts, no removals/order).
      */
     public function isContentOnly(): bool
     {

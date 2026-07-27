@@ -103,18 +103,10 @@ final class TranscriptMountedWidget extends ContainerWidget
     }
 
     /**
-     * Content-only path: keyed upserts/removals in O(changes). No order/history scan.
+     * Content-only path: keyed upserts in O(changes). No removals or order/history scan.
      */
     private function reconcileContentOnly(TranscriptVisualPatch $patch): void
     {
-        foreach ($patch->removals as $key) {
-            $this->detachKey($key);
-            $this->nodeOrder = array_values(array_filter(
-                $this->nodeOrder,
-                static fn (string $k): bool => $k !== $key,
-            ));
-        }
-
         foreach ($patch->upserts as $node) {
             $existing = $this->nodes[$node->key] ?? null;
             if (null === $existing) {
