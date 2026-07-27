@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Hatfield bash installer: downloads a release PHAR or static binary, verifies
-# SHA-256 against the published SHA256SUMS file, and installs atomically.
+# SHA-256 against the published SHA256SUMS file, smokes the candidate, then
+# installs atomically. Failures leave any previous install untouched and leave
+# no temp residue.
 set -euo pipefail
 
 HATFIELD_NAME="Hatfield"
@@ -22,6 +24,11 @@ version="latest"
 static="false"
 custom_dir="false"
 
+# Track every temp path so traps can remove install-dir temporary destinations
+# as well as the mktemp download workspace.
+TMPDIR_INSTALL=""
+INSTALL_TMP=""
+
 output() {
   local style_start="" style_end=""
   if [[ "${2:-}" != "" ]]; then
@@ -35,6 +42,23 @@ output() {
   # shellcheck disable=SC2059
   printf "%b\n" "${style_start}${1}${style_end}"
 }
+
+cleanup() {
+  local exit_code=$?
+  if [[ -n "${INSTALL_TMP}" && -e "${INSTALL_TMP}" ]]; then
+    rm -f "${INSTALL_TMP}" 2>/dev/null || true
+  fi
+  # Also sweep any leftover .hatfield-install.* temps in install_dir from this pid.
+  if [[ -n "${install_dir:-}" && -d "${install_dir}" ]]; then
+    rm -f "${install_dir}/.hatfield-install.$$" 2>/dev/null || true
+    rm -f "${install_dir}/.hatfield-install.$$."* 2>/dev/null || true
+  fi
+  if [[ -n "${TMPDIR_INSTALL}" && -d "${TMPDIR_INSTALL}" ]]; then
+    rm -rf "${TMPDIR_INSTALL}" 2>/dev/null || true
+  fi
+  return "${exit_code}"
+}
+trap cleanup EXIT INT TERM
 
 usage() {
   cat <<EOF
@@ -64,10 +88,6 @@ while [[ $# -gt 0 ]]; do
 done
 
 TMPDIR_INSTALL="$(mktemp -d "${TMPDIR:-/tmp}/hatfield-install.XXXXXX")"
-cleanup() {
-  rm -rf "${TMPDIR_INSTALL}"
-}
-trap cleanup EXIT INT TERM
 
 output "${HATFIELD_NAME} installer" "heading"
 output "\nEnvironment check" "heading"
@@ -208,30 +228,67 @@ if [[ "${actual_hash}" != "${expected_hash}" ]]; then
 fi
 output "  [*] SHA-256 verified" "success"
 
+# Candidate smoke BEFORE replacing any existing install.
+output "\nCandidate smoke" "heading"
+chmod +x "${tmp_bin}"
+if [[ "${static}" == "true" ]]; then
+  smoke_out="$("${tmp_bin}" --version 2>&1)" || {
+    output "  [ ] ERROR: candidate --version smoke failed; previous install left unchanged" "error"
+    exit 1
+  }
+else
+  smoke_out="$(php "${tmp_bin}" --version 2>&1)" || {
+    output "  [ ] ERROR: candidate --version smoke failed; previous install left unchanged" "error"
+    exit 1
+  }
+fi
+if [[ "${smoke_out}" != *"Hatfield"* ]]; then
+  output "  [ ] ERROR: candidate --version did not report Hatfield; previous install left unchanged" "error"
+  output "      output: ${smoke_out}" "error"
+  exit 1
+fi
+output "  [*] Candidate smoke ok: ${smoke_out}" "success"
+
 output "\nInstall" "heading"
 mkdir -p "${install_dir}"
-chmod +x "${tmp_bin}"
 dest="${install_dir}/${HATFIELD_EXECUTABLE}"
-# Atomic replace: write temp name in install dir then mv.
-install_tmp="${install_dir}/.hatfield-install.$$"
-cp "${tmp_bin}" "${install_tmp}"
-chmod +x "${install_tmp}"
-mv -f "${install_tmp}" "${dest}"
+# Atomic replace: write temp name in install dir then mv only after smoke+checksum.
+INSTALL_TMP="${install_dir}/.hatfield-install.$$"
+cp "${tmp_bin}" "${INSTALL_TMP}"
+chmod +x "${INSTALL_TMP}"
+# Final installed-path smoke from the install-dir temp (same inode about to move).
+if [[ "${static}" == "true" ]]; then
+  install_smoke="$("${INSTALL_TMP}" --version 2>&1)" || {
+    output "  [ ] ERROR: install-dir temp --version failed; previous install left unchanged" "error"
+    exit 1
+  }
+else
+  install_smoke="$(php "${INSTALL_TMP}" --version 2>&1)" || {
+    output "  [ ] ERROR: install-dir temp --version failed; previous install left unchanged" "error"
+    exit 1
+  }
+fi
+if [[ "${install_smoke}" != *"Hatfield"* ]]; then
+  output "  [ ] ERROR: install-dir temp --version invalid; previous install left unchanged" "error"
+  exit 1
+fi
+mv -f "${INSTALL_TMP}" "${dest}"
+INSTALL_TMP=""
 output "  [*] Installed to ${dest}" "success"
 
-output "\nSmoke" "heading"
+output "\nPost-install smoke" "heading"
 if [[ "${static}" == "true" ]]; then
-  smoke_out="$("${dest}" --version 2>&1)" || {
+  final_out="$("${dest}" --version 2>&1)" || {
     output "  [ ] Post-install --version failed" "error"
     exit 1
   }
 else
-  smoke_out="$(php "${dest}" --version 2>&1)" || {
+  final_out="$(php "${dest}" --version 2>&1)" || {
     output "  [ ] Post-install --version failed" "error"
     exit 1
   }
 fi
-output "  ${smoke_out}" "success"
+output "  ${final_out}" "success"
 
 if [[ "${custom_dir}" == "false" ]]; then
   case ":${PATH}:" in

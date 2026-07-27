@@ -207,11 +207,30 @@ function distribution_build_micro_sfx(string $target): array
     $extensions = implode(',', $pin['extensions']);
     $libsHint = 'libxml,zlib,openssl,curl,sqlite,bzip2,onig,icu'; // best-effort; spc resolves deps
 
+    // Host toolchain preflight — SPC doctor --auto-fix needs root/sudo; in
+    // restricted environments that fails and later zlib/configure errors are opaque.
+    $missingTools = [];
+    foreach (['re2c', 'flex', 'gperf', 'make', 'cmake'] as $tool) {
+        $which = trim((string) shell_exec('command -v '.escapeshellarg($tool).' 2>/dev/null'));
+        if ('' === $which) {
+            $missingTools[] = $tool;
+        }
+    }
+    $cc = trim((string) shell_exec('command -v cc 2>/dev/null || command -v gcc 2>/dev/null || command -v clang 2>/dev/null'));
+    if ('' === $cc) {
+        $missingTools[] = 'cc/gcc/clang';
+    }
+    if ([] !== $missingTools) {
+        throw new RuntimeException('Host static build requires build tools that are missing: '.implode(', ', $missingTools).'. Install them (e.g. re2c flex gperf build-essential cmake) or run on CI native runners. SPC doctor --auto-fix needs root/sudo and is not relied on here.');
+    }
+
     echo "SPC doctor...\n";
     try {
         \CastorTasks\run_checked(escapeshellarg($spcBin).' doctor --auto-fix 2>&1', $workDir);
     } catch (Throwable $e) {
-        echo "SPC doctor warning (continuing): {$e->getMessage()}\n";
+        // Intentional local degradation: doctor auto-fix often needs sudo; we already
+        // preflighted required tools above. Surface diagnostic and continue.
+        echo "SPC doctor warning (continuing after host preflight): {$e->getMessage()}\n";
     }
 
     echo "SPC download extensions={$extensions} php={$pin['php_version']}...\n";
@@ -309,16 +328,176 @@ function distribution_smoke_artifact(string $artifactPath, bool $isPhar = false)
 }
 
 /**
+ * Expected messenger transports launched after runtime.ready.
+ *
+ * runtime.ready is emitted BEFORE consumers start (HeadlessController::run),
+ * so topology verification must wait until these transports appear.
+ *
+ * @return list<string>
+ */
+function distribution_expected_messenger_transports(): array
+{
+    return [
+        'run_control',
+        'llm',
+        'tool',
+        'agent',
+        'scheduler_default',
+        'mcp',
+        'extension_agent',
+    ];
+}
+
+/**
+ * Collect descendant process command lines for a controller pid.
+ *
+ * Walks pgrep -P depth-first and also scans session members so separate-PGID
+ * messenger children are still visible. Inconclusive inspection must fail.
+ *
+ * @return list<array{pid: int, cmdline: string}>
+ */
+function distribution_collect_descendant_cmdlines(int $rootPid): array
+{
+    if ($rootPid <= 0) {
+        throw new RuntimeException('Native topology smoke: invalid controller pid');
+    }
+
+    $found = [];
+    $queue = [$rootPid];
+    $seen = [$rootPid => true];
+    while ([] !== $queue) {
+        $ppid = array_shift($queue);
+        $children = [];
+        @exec('pgrep -P '.escapeshellarg((string) $ppid).' 2>/dev/null', $children);
+        foreach ($children as $childRaw) {
+            $child = (int) trim($childRaw);
+            if ($child <= 0 || isset($seen[$child])) {
+                continue;
+            }
+            $seen[$child] = true;
+            $queue[] = $child;
+            $cmd = trim((string) @file_get_contents('/proc/'.$child.'/cmdline'));
+            if ('' === $cmd) {
+                $ps = [];
+                @exec('ps -p '.escapeshellarg((string) $child).' -o args= 2>/dev/null', $ps);
+                $cmd = trim(implode(' ', $ps));
+            } else {
+                $cmd = str_replace("\0", ' ', $cmd);
+            }
+            $found[] = ['pid' => $child, 'cmdline' => $cmd];
+        }
+    }
+
+    // Session scan catches reparented/separate-PGID messenger children.
+    $sidLines = [];
+    @exec('ps -o pid=,sid=,args= -p '.escapeshellarg((string) $rootPid).' 2>/dev/null', $sidLines);
+    $sid = 0;
+    if ([] !== $sidLines) {
+        $parts = preg_split('/\s+/', trim($sidLines[0]), 3);
+        if (is_array($parts) && isset($parts[1])) {
+            $sid = (int) $parts[1];
+        }
+    }
+    if ($sid > 0) {
+        $sessionLines = [];
+        @exec('ps -eo pid=,sid=,args= 2>/dev/null', $sessionLines);
+        foreach ($sessionLines as $line) {
+            $parts = preg_split('/\s+/', trim($line), 3);
+            if (!is_array($parts) || count($parts) < 3) {
+                continue;
+            }
+            $pid = (int) $parts[0];
+            $lineSid = (int) $parts[1];
+            if ($pid === $rootPid || $lineSid !== $sid || isset($seen[$pid])) {
+                continue;
+            }
+            $seen[$pid] = true;
+            $found[] = ['pid' => $pid, 'cmdline' => $parts[2]];
+        }
+    }
+
+    return $found;
+}
+
+/**
+ * Assert every expected messenger transport relaunches through the native binary.
+ *
+ * @param list<array{pid: int, cmdline: string}> $descendants
+ */
+function distribution_assert_native_messenger_topology(string $artifactPath, array $descendants): void
+{
+    $resolved = realpath($artifactPath);
+    $resolvedArtifact = false !== $resolved ? $resolved : $artifactPath;
+    $artifactBase = basename($resolvedArtifact);
+    $dump = [];
+    foreach ($descendants as $row) {
+        $dump[] = '#'.$row['pid'].' '.$row['cmdline'];
+    }
+    $dumpText = implode("\n", $dump);
+
+    if ([] === $descendants) {
+        throw new RuntimeException("Native topology smoke: process inspection returned zero descendants after runtime.ready.\n".'Artifact: '.$resolvedArtifact."\n".'This is a hard failure (never soft-pass). Ensure /proc and pgrep are available.');
+    }
+
+    $consumeLines = [];
+    foreach ($descendants as $row) {
+        if (str_contains($row['cmdline'], 'messenger:consume')) {
+            $consumeLines[] = $row['cmdline'];
+        }
+    }
+    if ([] === $consumeLines) {
+        throw new RuntimeException("Native topology smoke: no messenger:consume descendants observed.\nDescendants:\n".$dumpText);
+    }
+
+    $joined = implode("\n", $consumeLines);
+    foreach (distribution_expected_messenger_transports() as $transport) {
+        if (!str_contains($joined, $transport)) {
+            throw new RuntimeException("Native topology smoke: expected messenger transport '{$transport}' not observed after runtime.ready.\nmessenger:consume lines:\n".$joined."\nAll descendants:\n".$dumpText);
+        }
+    }
+
+    foreach ($consumeLines as $line) {
+        // Fused native: argv0 is the artifact alone (one-element executable), not
+        // "php <artifact>" or source bin/console.
+        $usesArtifact = str_contains($line, $resolvedArtifact) || str_contains($line, $artifactBase);
+        $usesSource = str_contains($line, 'bin/console');
+        $usesSystemPhpPrefix = (bool) preg_match('#(?:^|\s)(?:/usr/bin/php|/usr/local/bin/php|php)\s+#', $line)
+            && !str_starts_with(trim($line), $resolvedArtifact)
+            && !str_starts_with(trim($line), $artifactBase);
+
+        if ($usesSource && !$usesArtifact) {
+            throw new RuntimeException("Native topology smoke: messenger child uses source bin/console instead of native artifact.\n".'line: '.$line);
+        }
+        if ($usesSystemPhpPrefix) {
+            throw new RuntimeException("Native topology smoke: messenger child relaunched via system PHP instead of fused native binary.\n".'line: '.$line);
+        }
+        if (!$usesArtifact) {
+            throw new RuntimeException("Native topology smoke: messenger child does not reference native artifact path.\n".'expected artifact: '.$resolvedArtifact."\n".'line: '.$line);
+        }
+    }
+}
+
+/**
  * Prove native binary can spawn headless controller and messenger children through itself.
+ *
+ * Hard requirements:
+ * - wait for runtime.ready, then wait until expected messenger transports are present
+ * - every messenger:consume cmdline must relaunch the same native path (not system PHP/source)
+ * - inconclusive process inspection fails with diagnostics
+ * - after shutdown, no owned descendants may survive
  */
 function distribution_smoke_native_process_topology(string $artifactPath): void
 {
     if (!is_file($artifactPath)) {
         throw new RuntimeException('Native topology smoke: artifact missing: '.$artifactPath);
     }
+    $resolvedArtifactPath = realpath($artifactPath);
+    $artifactPath = false !== $resolvedArtifactPath ? $resolvedArtifactPath : $artifactPath;
 
     $tmp = sys_get_temp_dir().'/hatfield-native-topo-'.bin2hex(random_bytes(6));
-    mkdir($tmp, 0755, true);
+    if (!mkdir($tmp, 0755, true) && !is_dir($tmp)) {
+        throw new RuntimeException('Native topology smoke: unable to create temp dir');
+    }
     mkdir($tmp.'/home/.hatfield', 0755, true);
     mkdir($tmp.'/.hatfield', 0755, true);
     \CastorTasks\write_file_checked($tmp.'/home/.hatfield/settings.yaml', "ai:\n    default_model: null\n");
@@ -334,8 +513,9 @@ function distribution_smoke_native_process_topology(string $artifactPath): void
         'APP_DEBUG' => '0',
         'HATFIELD_CWD' => $tmp,
         'HATFIELD_BINARY_PATH' => $artifactPath,
+        // Bound llm/tool worker counts for a deterministic, smaller process set.
+        'HATFIELD_LLM_WORKER_COUNT' => '1',
     ];
-    // Merge minimal env for child.
     $fullEnv = [];
     foreach (getenv() as $k => $v) {
         $fullEnv[$k] = $v;
@@ -354,8 +534,10 @@ function distribution_smoke_native_process_topology(string $artifactPath): void
     stream_set_blocking($pipes[1], false);
     stream_set_blocking($pipes[2], false);
     $stdout = '';
-    $deadline = microtime(true) + 20.0;
+    $stderr = '';
+    $deadline = microtime(true) + 25.0;
     $ready = false;
+    $controllerPid = 0;
     try {
         while (microtime(true) < $deadline) {
             $chunk = stream_get_contents($pipes[1]);
@@ -366,31 +548,43 @@ function distribution_smoke_native_process_topology(string $artifactPath): void
                     break;
                 }
             }
+            $errChunk = stream_get_contents($pipes[2]);
+            if (is_string($errChunk) && '' !== $errChunk) {
+                $stderr .= $errChunk;
+            }
             usleep(50_000);
         }
         if (!$ready) {
-            $errRaw = stream_get_contents($pipes[2]);
-            $err = is_string($errRaw) ? $errRaw : '';
-            throw new RuntimeException("Native topology smoke: runtime.ready not observed.\nstdout:\n".substr($stdout, -2000)."\nstderr:\n".substr($err, -2000));
+            throw new RuntimeException("Native topology smoke: runtime.ready not observed.\nstdout:\n".substr($stdout, -2000)."\nstderr:\n".substr($stderr, -2000));
         }
 
-        // Inspect children of the controller: should include messenger:consume via same binary.
         $status = proc_get_status($proc);
-        $pid = $status['pid'];
-        if ($pid <= 0) {
+        $controllerPid = $status['pid'];
+        if ($controllerPid <= 0) {
             throw new RuntimeException('Native topology smoke: controller pid unavailable');
         }
-        $psRaw = shell_exec('ps --ppid '.escapeshellarg((string) $pid).' -o args= 2>/dev/null');
-        $ps = is_string($psRaw) ? $psRaw : '';
-        if (!str_contains($ps, 'messenger:consume') && !str_contains($ps, $artifactPath)) {
-            // Soft check: some platforms hide children briefly; still require ready.
-            echo "  native topology: runtime.ready ok (child listing inconclusive on this host)\n";
-        } else {
-            if (str_contains($ps, 'bin/console') && !str_contains($ps, $artifactPath)) {
-                throw new RuntimeException('Native topology smoke: children still use source bin/console: '.$ps);
+
+        // runtime.ready is emitted before ConsumerSupervisor::launch* — wait for transports.
+        $transportsReady = false;
+        $descendants = [];
+        $transportDeadline = microtime(true) + 15.0;
+        while (microtime(true) < $transportDeadline) {
+            $descendants = distribution_collect_descendant_cmdlines($controllerPid);
+            try {
+                distribution_assert_native_messenger_topology($artifactPath, $descendants);
+                $transportsReady = true;
+                break;
+            } catch (Throwable $e) {
+                // Keep polling until deadline; last error is rethrown.
+                $last = $e;
             }
-            echo "  native topology: controller ready and children observed\n";
+            usleep(100_000);
         }
+        if (!$transportsReady) {
+            $msg = isset($last) ? $last->getMessage() : 'expected messenger transports never appeared';
+            throw new RuntimeException("Native topology smoke: failed after runtime.ready while waiting for messenger consumers.\n".$msg);
+        }
+        echo "  native topology: runtime.ready + messenger consumers relaunch via {$artifactPath}\n";
     } finally {
         foreach ([0, 1, 2] as $fd) {
             if (isset($pipes[$fd]) && is_resource($pipes[$fd])) {
@@ -399,8 +593,9 @@ function distribution_smoke_native_process_topology(string $artifactPath): void
         }
         $status = proc_get_status($proc);
         if ($status['running']) {
+            // Prefer graceful controller shutdown via SIGTERM (controller signal handlers).
             posix_kill($status['pid'], \SIGTERM);
-            $waitUntil = microtime(true) + 3.0;
+            $waitUntil = microtime(true) + 5.0;
             while (microtime(true) < $waitUntil) {
                 $status = proc_get_status($proc);
                 if (!$status['running']) {
@@ -410,10 +605,40 @@ function distribution_smoke_native_process_topology(string $artifactPath): void
             }
             $status = proc_get_status($proc);
             if ($status['running']) {
+                // Last resort for this owned tree only — never signal unrelated processes.
                 posix_kill($status['pid'], \SIGKILL);
             }
         }
         proc_close($proc);
+
+        // Assert no owned descendants survive.
+        if ($controllerPid > 0) {
+            usleep(200_000);
+            $leftovers = distribution_collect_descendant_cmdlines($controllerPid);
+            // Controller itself should be gone; filter any residual with our artifact/cwd.
+            $owned = [];
+            foreach ($leftovers as $row) {
+                if (str_contains($row['cmdline'], $artifactPath)
+                    || str_contains($row['cmdline'], 'messenger:consume')
+                    || str_contains($row['cmdline'], basename($artifactPath))
+                ) {
+                    $owned[] = '#'.$row['pid'].' '.$row['cmdline'];
+                }
+            }
+            // Also scan for still-living controller pid.
+            if (is_dir('/proc/'.$controllerPid)) {
+                $owned[] = '#'.$controllerPid.' controller still alive';
+            }
+            if ([] !== $owned) {
+                try {
+                    \CastorTasks\remove_path_checked($tmp);
+                } catch (Throwable $e) {
+                    fwrite(\STDERR, 'native topology cleanup warning: '.$e->getMessage()."\n");
+                }
+                throw new RuntimeException("Native topology smoke: owned descendants survived shutdown:\n".implode("\n", $owned));
+            }
+        }
+
         try {
             \CastorTasks\remove_path_checked($tmp);
         } catch (Throwable $e) {
@@ -554,20 +779,19 @@ function distribution_build_static(
         $_ENV['HATFIELD_BUILD_COMMIT'] = $commit;
     }
 
-    // Ensure PHAR exists with embedded identity.
+    // Ensure PHAR exists with embedded identity via the canonical freshness path
+    // (fingerprint sidecar). Never use a separate mtime shortcut for dist reuse.
     $pharPath = \CastorTasks\phar_ensure();
     $dist = distribution_dir($output);
     if (!is_dir($dist) && !mkdir($dist, 0755, true) && !is_dir($dist)) {
         throw new RuntimeException('Unable to create dist dir: '.$dist);
     }
     $pharDest = $dist.'/hatfield.phar';
-    if (!is_file($pharDest) || filemtime($pharDest) < filemtime($pharPath)) {
-        if (is_file($pharDest)) {
-            \CastorTasks\remove_path_checked($pharDest);
-        }
-        \CastorTasks\copy_file_checked($pharPath, $pharDest);
-        chmod($pharDest, 0755);
+    if (is_file($pharDest)) {
+        \CastorTasks\remove_path_checked($pharDest);
     }
+    \CastorTasks\copy_file_checked($pharPath, $pharDest);
+    chmod($pharDest, 0755);
 
     $built = distribution_build_micro_sfx($target);
     $out = $dist.'/'.distribution_artifact_name($target);
@@ -602,8 +826,12 @@ function distribution_checksums(
 function distribution_verify(
     #[AsOption(description: 'Output directory (default var/tmp/dist)')]
     ?string $output = null,
-    #[AsOption(description: 'Also run native process topology smoke when host static artifact present')]
-    bool $topology = true,
+    #[AsOption(description: 'Skip native process topology smoke (still may require native artifact)')]
+    bool $skipTopology = false,
+    #[AsOption(description: 'Allow missing hatfield.phar (default: required)')]
+    bool $allowMissingPhar = false,
+    #[AsOption(description: 'Allow missing host static artifact (default: required)')]
+    bool $allowMissingNative = false,
 ): void {
     $dist = distribution_dir($output);
     if (!is_dir($dist)) {
@@ -613,6 +841,10 @@ function distribution_verify(
     $phar = $dist.'/hatfield.phar';
     if (is_file($phar)) {
         distribution_smoke_artifact($phar, isPhar: true);
+        // Hard packaged-content proof: defaults/themes/migrations/internal-docs present.
+        distribution_assert_phar_bundled_resources($phar);
+    } elseif (!$allowMissingPhar) {
+        throw new RuntimeException('distribution:verify requires hatfield.phar in '.$dist);
     } else {
         echo "Note: hatfield.phar missing in {$dist}\n";
     }
@@ -620,9 +852,11 @@ function distribution_verify(
     $hostArtifact = $dist.'/'.distribution_artifact_name(distribution_host_target());
     if (is_file($hostArtifact)) {
         distribution_smoke_artifact($hostArtifact, isPhar: false);
-        if ($topology) {
+        if (!$skipTopology) {
             distribution_smoke_native_process_topology($hostArtifact);
         }
+    } elseif (!$allowMissingNative) {
+        throw new RuntimeException('distribution:verify requires host static artifact '.$hostArtifact.' (build with castor distribution:build-static). Topology/CI must not soft-pass.');
     } else {
         echo "Note: host static artifact missing ({$hostArtifact})\n";
     }
@@ -630,10 +864,37 @@ function distribution_verify(
     if (is_file($dist.'/SHA256SUMS')) {
         distribution_verify_sha256sums($dist);
     } else {
-        echo "Note: SHA256SUMS missing\n";
+        throw new RuntimeException('distribution:verify requires SHA256SUMS in '.$dist);
     }
 
     echo "distribution:verify ok\n";
+}
+
+/**
+ * Assert the PHAR archive contains bundled defaults, themes, migrations, internal docs.
+ */
+function distribution_assert_phar_bundled_resources(string $pharPath): void
+{
+    if (!is_file($pharPath)) {
+        throw new RuntimeException('PHAR missing for bundled-resource proof: '.$pharPath);
+    }
+    $phar = new Phar($pharPath);
+    $required = [
+        'config/hatfield.defaults.yaml',
+        'config/themes/catppuccin-mocha.yaml',
+        'migrations/Version20260601152619.php',
+        'internal-docs/settings.md',
+        'internal-docs/agents.md',
+    ];
+    foreach ($required as $entry) {
+        if (!isset($phar[$entry])) {
+            throw new RuntimeException('PHAR missing bundled entry: '.$entry);
+        }
+        if ($phar[$entry]->isLink()) {
+            throw new RuntimeException('PHAR entry must be materialized file, not symlink: '.$entry);
+        }
+    }
+    echo "  phar bundled resources: ok\n";
 }
 
 #[AsTask(name: 'distribution:clean', description: 'Remove dist artifacts and static build caches')]

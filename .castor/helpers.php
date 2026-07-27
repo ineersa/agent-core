@@ -903,7 +903,87 @@ function phar_packaged_inputs(string $root): array
 }
 
 /**
- * True when $pharPath is missing/unreadable or older than any packaged input.
+ * Sidecar path storing the deterministic packaged-input fingerprint for a PHAR.
+ *
+ * Compared by phar_is_stale() so freshness tracks content (including resolved
+ * internal-docs symlink targets), not just directory mtimes.
+ */
+function phar_freshness_marker_path(string $pharPath): string
+{
+    return $pharPath.'.inputs.sha256';
+}
+
+/**
+ * Deterministic fingerprint of the complete packaged/build input set.
+ *
+ * Directories are walked recursively. Symlinks contribute the resolved target
+ * path and the target file contents (critical for internal-docs → docs/*).
+ * Missing optional paths are recorded as absent so deletions invalidate.
+ */
+function phar_input_fingerprint(string $root): string
+{
+    $inputs = phar_packaged_inputs($root);
+    $lines = [];
+
+    $recordFile = static function (string $path) use (&$lines): void {
+        if (is_link($path)) {
+            $target = readlink($path);
+            $resolved = realpath($path);
+            $hash = false !== $resolved && is_file($resolved)
+                ? hash_file('sha256', $resolved)
+                : 'missing-target';
+            $lines[] = 'link\t'.$path.'\t'.(false === $target ? '' : $target).'\t'.(false === $hash ? 'unreadable' : $hash);
+
+            return;
+        }
+        if (!is_file($path)) {
+            $lines[] = 'missing\t'.$path;
+
+            return;
+        }
+        $hash = hash_file('sha256', $path);
+        $lines[] = 'file\t'.$path.'\t'.(false === $hash ? 'unreadable' : $hash);
+    };
+
+    foreach ($inputs['files'] as $file) {
+        $recordFile($file);
+    }
+
+    foreach ($inputs['directories'] as $dir) {
+        if (!is_dir($dir) || !is_readable($dir)) {
+            $lines[] = 'missing-dir\t'.$dir;
+            continue;
+        }
+        $iterator = new \RecursiveIteratorIterator(
+            new \RecursiveDirectoryIterator($dir, \FilesystemIterator::SKIP_DOTS),
+        );
+        $paths = [];
+        foreach ($iterator as $entry) {
+            $paths[] = (string) $entry;
+        }
+        sort($paths);
+        foreach ($paths as $path) {
+            $recordFile($path);
+        }
+    }
+
+    // Build identity env inputs are part of the packaged artifact contents.
+    $version = getenv('HATFIELD_BUILD_VERSION');
+    $commit = getenv('HATFIELD_BUILD_COMMIT');
+    $lines[] = 'env\tHATFIELD_BUILD_VERSION\t'.(false === $version ? '' : trim((string) $version));
+    $lines[] = 'env\tHATFIELD_BUILD_COMMIT\t'.(false === $commit ? '' : trim((string) $commit));
+
+    sort($lines);
+
+    return hash('sha256', implode("\n", $lines)."\n");
+}
+
+/**
+ * True when $pharPath is missing/unreadable or its input fingerprint differs.
+ *
+ * Uses the same complete packaged-input set as staging (phar_packaged_inputs)
+ * plus build identity env. The lock-holder second check must call this same
+ * predicate — never a divergent mtime shortcut.
  */
 function phar_is_stale(string $root, string $pharPath): bool
 {
@@ -911,18 +991,39 @@ function phar_is_stale(string $root, string $pharPath): bool
         return true;
     }
 
-    $pharMtime = (float) filemtime($pharPath);
-    $inputs = phar_packaged_inputs($root);
-
-    foreach ($inputs['files'] as $file) {
-        if (is_file($file) && (float) filemtime($file) > $pharMtime) {
-            return true;
-        }
+    $marker = phar_freshness_marker_path($pharPath);
+    if (!is_file($marker) || !is_readable($marker)) {
+        return true;
     }
 
-    $latestDir = latest_file_mtime($inputs['directories']);
+    $stored = trim((string) file_get_contents($marker));
+    if ('' === $stored || !preg_match('/^[a-f0-9]{64}$/', $stored)) {
+        return true;
+    }
 
-    return $latestDir > $pharMtime;
+    return !hash_equals($stored, phar_input_fingerprint($root));
+}
+
+/**
+ * Persist the current packaged-input fingerprint next to a successful PHAR.
+ */
+function phar_write_freshness_marker(string $root, string $pharPath): void
+{
+    write_file_checked(phar_freshness_marker_path($pharPath), phar_input_fingerprint($root)."\n");
+}
+
+/**
+ * Remove PHAR artifact and its freshness marker (failed builds / clean).
+ */
+function phar_remove_artifact_and_marker(string $pharPath): void
+{
+    if (is_file($pharPath) || is_link($pharPath)) {
+        remove_path_checked($pharPath);
+    }
+    $marker = phar_freshness_marker_path($pharPath);
+    if (is_file($marker) || is_link($marker)) {
+        remove_path_checked($marker);
+    }
 }
 
 /**
@@ -1406,11 +1507,9 @@ function phar_build(): string
         throw new \RuntimeException('Unable to create PHAR output directory: '.\dirname($pharPath));
     }
 
-    // Delete any previous artifact before compile so a failed build cannot
-    // leave a stale successful-looking PHAR in place.
-    if (is_file($pharPath) || is_link($pharPath)) {
-        remove_path_checked($pharPath);
-    }
+    // Delete any previous artifact + freshness marker before compile so a
+    // failed build cannot leave a stale successful-looking PHAR in place.
+    phar_remove_artifact_and_marker($pharPath);
 
     if (is_dir($stagingDir)) {
         remove_path_checked($stagingDir);
@@ -1489,9 +1588,7 @@ function phar_build(): string
     try {
         $composerOutput = run_checked($composerCmd, $stagingDir);
     } catch (\Throwable $e) {
-        if (is_file($pharPath)) {
-            remove_path_checked($pharPath);
-        }
+        phar_remove_artifact_and_marker($pharPath);
         throw $e;
     }
     $composerTime = microtime(true) - $composerStart;
@@ -1519,9 +1616,7 @@ function phar_build(): string
     try {
         $boxOutput = run_checked($boxCmd, $stagingDir);
     } catch (\Throwable $e) {
-        if (is_file($pharPath)) {
-            remove_path_checked($pharPath);
-        }
+        phar_remove_artifact_and_marker($pharPath);
         throw new \RuntimeException("PHAR Box compile failed.\nComposer output:\n{$composerOutput}\n".$e->getMessage(), 0, $e);
     }
     $boxTime = microtime(true) - $boxStart;
@@ -1530,7 +1625,7 @@ function phar_build(): string
         throw new \RuntimeException("PHAR build failed: output missing.\nComposer output:\n{$composerOutput}\nBox output:\n{$boxOutput}\n".'Box command: '.$boxCmd);
     }
     if (0 === filesize($pharPath)) {
-        remove_path_checked($pharPath);
+        phar_remove_artifact_and_marker($pharPath);
         throw new \RuntimeException("PHAR build failed: output empty.\nComposer output:\n{$composerOutput}\nBox output:\n{$boxOutput}\n".'Box command: '.$boxCmd);
     }
 
@@ -1547,9 +1642,12 @@ function phar_build(): string
     } catch (\Throwable $e) {
         // Artifact exists here (we returned earlier if missing); delete so smoke
         // failure cannot leave a distributable PHAR behind.
-        remove_path_checked($pharPath);
+        phar_remove_artifact_and_marker($pharPath);
         throw $e;
     }
+
+    // Only successful smokes write the freshness marker.
+    phar_write_freshness_marker($root, $pharPath);
 
     return $pharPath;
 }

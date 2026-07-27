@@ -8,15 +8,17 @@ on:
 permissions:
   contents: write
 
+# Builds the complete five-artifact set via the same Castor tasks as
+# distribution.yml (no duplicated build algorithms), validates, then publishes.
 jobs:
-  release:
-    name: Publish GitHub Release assets
+  phar:
+    name: Build canonical PHAR
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
-      - name: Validate tag points at current commit
+      - name: Validate tag points at exact checked-out commit
         run: |
           set -euo pipefail
           TAG="${GITHUB_REF_NAME}"
@@ -26,7 +28,7 @@ jobs:
           test "${TAG_SHA}" = "${GITHUB_SHA}"
 
       - name: Setup PHP
-        uses: shivammathur/setup-php@v2
+        uses: shivammathur/setup-php@bf6b4fbd49ca58e78271b30bb376f00cd1c3e8d8 # v2.35.3
         with:
           php-version: "8.5"
           extensions: mbstring, xml, intl, curl, openssl, pcntl, posix, tokenizer, ctype, filter, iconv, phar, pdo_sqlite, sqlite3, zip
@@ -39,57 +41,200 @@ jobs:
       - name: Install Castor
         run: composer global require jolicode/castor:^1.6 --no-interaction
 
-      - name: Build PHAR via Castor
+      - name: Build distribution PHAR via Castor
         env:
           HATFIELD_BUILD_VERSION: ${{ github.ref_name }}
           HATFIELD_BUILD_COMMIT: ${{ github.sha }}
           PATH: ${{ env.PATH }}:/home/runner/.composer/vendor/bin
         run: |
           castor distribution:build --release-version="${HATFIELD_BUILD_VERSION}" --commit="${HATFIELD_BUILD_COMMIT}"
+          # Host static not present yet; verify PHAR-only with flags.
+          castor distribution:verify --skip-topology --allow-missing-native
 
-      # Static matrix is built by distribution.yml-style host runners; for
-      # tag releases we re-run Castor static build for the host and expect
-      # pre-attached multi-arch artifacts from a prior Distribution workflow
-      # when available. Minimal complete set for publication:
-      - name: Build host static binary
+      - name: Upload hatfield.phar
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: hatfield.phar
+          path: var/tmp/dist/hatfield.phar
+          if-no-files-found: error
+
+  static:
+    name: Static ${{ matrix.target }}
+    needs: [phar]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: linux-amd64
+            runner: ubuntu-latest
+          - target: linux-arm64
+            runner: ubuntu-24.04-arm
+          - target: darwin-amd64
+            runner: macos-15-intel
+          - target: darwin-arm64
+            runner: macos-15
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@bf6b4fbd49ca58e78271b30bb376f00cd1c3e8d8 # v2.35.3
+        with:
+          php-version: "8.5"
+          extensions: mbstring, xml, intl, curl, openssl, pcntl, posix, tokenizer, ctype, filter, iconv, phar, pdo_sqlite, sqlite3, zip
+          coverage: none
+          tools: composer:v2
+
+      - name: Install dependencies
+        run: composer install --no-interaction --prefer-dist
+
+      - name: Install Castor
+        run: composer global require jolicode/castor:^1.6 --no-interaction
+
+      - name: Cache static-php-cli pin checkout + downloads
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            var/tmp/static-php-cli
+            var/tmp/static-build
+          key: spc-${{ matrix.target }}-${{ hashFiles('tools/static/pin.json', 'composer.lock') }}
+          restore-keys: |
+            spc-${{ matrix.target }}-
+
+      - name: Download PHAR artifact
+        uses: actions/download-artifact@cc203385981b70ca67e1cc392babf9cc229d5806 # v4.1.7
+        with:
+          name: hatfield.phar
+          path: var/tmp/dist
+
+      - name: Build static binary via Castor
         env:
           HATFIELD_BUILD_VERSION: ${{ github.ref_name }}
           HATFIELD_BUILD_COMMIT: ${{ github.sha }}
-          PATH: ${{ env.PATH }}:/home/runner/.composer/vendor/bin
+          PATH: ${{ env.PATH }}:/Users/runner/.composer/vendor/bin:/home/runner/.composer/vendor/bin
         run: |
-          castor distribution:build-static --release-version="${HATFIELD_BUILD_VERSION}" --commit="${HATFIELD_BUILD_COMMIT}" || {
-            echo "Host static build failed — publishing PHAR-only is not allowed for full releases."
-            exit 1
-          }
+          set -euo pipefail
+          test -f var/tmp/dist/hatfield.phar
+          castor distribution:build-static --target=${{ matrix.target }} --release-version="${HATFIELD_BUILD_VERSION}" --commit="${HATFIELD_BUILD_COMMIT}"
+          # Host-native topology is required on each matrix runner.
+          castor distribution:verify
 
-      - name: Collect and verify expected artifacts
+      - name: Upload static artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: hatfield.${{ matrix.target }}
+          path: var/tmp/dist/hatfield.${{ matrix.target }}
+          if-no-files-found: error
+
+  publish:
+    name: Aggregate, checksum, publish release
+    needs: [phar, static]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Re-validate tag commit
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          TAG_SHA="$(git rev-list -n 1 "${TAG}")"
+          test "${TAG_SHA}" = "${GITHUB_SHA}"
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@bf6b4fbd49ca58e78271b30bb376f00cd1c3e8d8 # v2.35.3
+        with:
+          php-version: "8.5"
+          extensions: mbstring, xml, intl, curl, openssl, pcntl, posix, tokenizer, ctype, filter, iconv, phar, pdo_sqlite, sqlite3, zip
+          coverage: none
+          tools: composer:v2
+
+      - name: Install dependencies
+        run: composer install --no-interaction --prefer-dist
+
+      - name: Install Castor
+        run: composer global require jolicode/castor:^1.6 --no-interaction
+
+      - name: Download all release artifacts
+        uses: actions/download-artifact@cc203385981b70ca67e1cc392babf9cc229d5806 # v4.1.7
+        with:
+          path: var/tmp/dist-raw
+          merge-multiple: false
+
+      - name: Normalize complete artifact set
+        run: |
+          set -euo pipefail
+          mkdir -p var/tmp/dist
+          # download-artifact lays out name/file per artifact.
+          find var/tmp/dist-raw -type f \( -name 'hatfield.phar' -o -name 'hatfield.linux-*' -o -name 'hatfield.darwin-*' \) -print0 \
+            | while IFS= read -r -d '' f; do
+                cp -f "$f" "var/tmp/dist/$(basename "$f")"
+              done
+          required=(
+            hatfield.phar
+            hatfield.linux-amd64
+            hatfield.linux-arm64
+            hatfield.darwin-amd64
+            hatfield.darwin-arm64
+          )
+          for name in "${required[@]}"; do
+            path="var/tmp/dist/${name}"
+            if [[ ! -s "${path}" ]]; then
+              echo "MISSING required release asset: ${path}"
+              find var/tmp/dist-raw -type f -print
+              exit 1
+            fi
+            size="$(wc -c < "${path}")"
+            echo "OK ${name} bytes=${size}"
+            if [[ "${size}" -lt 1000000 || "${size}" -gt 80000000 ]]; then
+              echo "ERROR: ${name} size out of bounds (${size})"
+              exit 1
+            fi
+          done
+          chmod +x var/tmp/dist/hatfield.linux-amd64 \
+                   var/tmp/dist/hatfield.linux-arm64 \
+                   var/tmp/dist/hatfield.darwin-amd64 \
+                   var/tmp/dist/hatfield.darwin-arm64
+
+      - name: Generate one SHA256SUMS for every asset via Castor
         env:
           PATH: ${{ env.PATH }}:/home/runner/.composer/vendor/bin
         run: |
           set -euo pipefail
-          DIST=var/tmp/dist
-          # Full matrix may only be complete when multi-arch artifacts are
-          # uploaded from Distribution workflow. For this runner we require:
-          # hatfield.phar + host static + SHA256SUMS at minimum, and document
-          # the full set in docs/phar-packaging.md.
-          test -s "${DIST}/hatfield.phar"
-          test -s "${DIST}/hatfield.linux-amd64"
-          test -x "${DIST}/hatfield.linux-amd64"
           castor distribution:checksums
-          castor distribution:verify
-          # Size sanity
-          php -r '$p="var/tmp/dist/hatfield.phar"; $s=filesize($p); if($s<1000000||$s>40000000){fwrite(STDERR,"bad phar size $s\n"); exit(1);} echo "phar bytes=$s\n";'
-          php -r '$p="var/tmp/dist/hatfield.linux-amd64"; $s=filesize($p); if($s<1000000){fwrite(STDERR,"bad static size $s\n"); exit(1);} echo "static bytes=$s\n";'
+          # Verify checksums + PHAR content; native topology already ran per matrix runner.
+          castor distribution:verify --skip-topology
+          # Ensure SHA256SUMS lists exactly the five binaries.
+          test -s var/tmp/dist/SHA256SUMS
+          for name in hatfield.phar hatfield.linux-amd64 hatfield.linux-arm64 hatfield.darwin-amd64 hatfield.darwin-arm64; do
+            grep -E "^[a-f0-9]{64}  ${name}\$" var/tmp/dist/SHA256SUMS
+          done
+          test "$(grep -cE '^[a-f0-9]{64}  ' var/tmp/dist/SHA256SUMS)" -eq 5
 
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+      - name: Host-compatible version smoke
+        run: |
+          set -euo pipefail
+          php var/tmp/dist/hatfield.phar --version | tee /tmp/phar-version.txt
+          grep -q 'Hatfield' /tmp/phar-version.txt
+          grep -q 'commit' /tmp/phar-version.txt
+          ./var/tmp/dist/hatfield.linux-amd64 --version | tee /tmp/native-version.txt
+          grep -q 'Hatfield' /tmp/native-version.txt
+          grep -q 'commit' /tmp/native-version.txt
+
+      - name: Create GitHub Release with complete asset set
+        uses: softprops/action-gh-release@c95fe1489396fe8a9eb87c0abf8aa5b2ef267fda # v2.2.1
         with:
           tag_name: ${{ github.ref_name }}
           name: Hatfield ${{ github.ref_name }}
           generate_release_notes: true
+          fail_on_unmatched_files: true
           files: |
             var/tmp/dist/hatfield.phar
             var/tmp/dist/hatfield.linux-amd64
+            var/tmp/dist/hatfield.linux-arm64
+            var/tmp/dist/hatfield.darwin-amd64
+            var/tmp/dist/hatfield.darwin-arm64
             var/tmp/dist/SHA256SUMS
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

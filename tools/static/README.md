@@ -20,3 +20,16 @@ changing `static_php_cli_commit` and validating a full host static build.
 3. `castor distribution:verify` smokes the artifact and process topology.
 
 CI owns the four-target matrix; local builds only support host-compatible targets.
+
+## Host prerequisites for `castor distribution:build-static`
+
+Required on the build host (checked by Castor preflight):
+
+- C compiler (`cc`/`gcc`/`clang`)
+- `make`, `cmake`
+- `re2c`, `flex`, `gperf`
+
+SPC `doctor --auto-fix` may try to install these via sudo; that path is optional
+and fails closed in restricted containers (`no new privileges`). Install the tools
+with the host package manager instead. Without them, static builds fail during
+library configure (often opaque `zlib` / "Missing or broken C compiler" errors).

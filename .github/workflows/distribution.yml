@@ -14,10 +14,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Setup PHP
-        uses: shivammathur/setup-php@v2
+        uses: shivammathur/setup-php@bf6b4fbd49ca58e78271b30bb376f00cd1c3e8d8 # v2.35.3
         with:
           php-version: "8.5"
           extensions: mbstring, xml, intl, curl, openssl, pcntl, posix, tokenizer, ctype, filter, iconv, phar, pdo_sqlite, sqlite3, zip
@@ -37,20 +37,13 @@ jobs:
           PATH: ${{ env.PATH }}:/home/runner/.composer/vendor/bin
         run: |
           castor distribution:build --release-version="${HATFIELD_BUILD_VERSION}" --commit="${HATFIELD_BUILD_COMMIT}"
-          castor distribution:verify
+          castor distribution:verify --skip-topology --allow-missing-native
 
       - name: Upload hatfield.phar
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: hatfield.phar
           path: var/tmp/dist/hatfield.phar
-          if-no-files-found: error
-
-      - name: Upload SHA256SUMS (partial)
-        uses: actions/upload-artifact@v4
-        with:
-          name: SHA256SUMS-phar
-          path: var/tmp/dist/SHA256SUMS
           if-no-files-found: error
 
   static:
@@ -71,10 +64,10 @@ jobs:
     runs-on: ${{ matrix.runner }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Setup PHP
-        uses: shivammathur/setup-php@v2
+        uses: shivammathur/setup-php@bf6b4fbd49ca58e78271b30bb376f00cd1c3e8d8 # v2.35.3
         with:
           php-version: "8.5"
           extensions: mbstring, xml, intl, curl, openssl, pcntl, posix, tokenizer, ctype, filter, iconv, phar, pdo_sqlite, sqlite3, zip
@@ -88,7 +81,7 @@ jobs:
         run: composer global require jolicode/castor:^1.6 --no-interaction
 
       - name: Cache static-php-cli pin checkout + downloads
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: |
             var/tmp/static-php-cli
@@ -98,7 +91,7 @@ jobs:
             spc-${{ matrix.target }}-
 
       - name: Download PHAR artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@cc203385981b70ca67e1cc392babf9cc229d5806 # v4.1.7
         with:
           name: hatfield.phar
           path: var/tmp/dist
@@ -109,14 +102,15 @@ jobs:
           HATFIELD_BUILD_COMMIT: ${{ github.sha }}
           PATH: ${{ env.PATH }}:/Users/runner/.composer/vendor/bin:/home/runner/.composer/vendor/bin
         run: |
+          set -euo pipefail
           mkdir -p var/tmp/dist
-          # Seed PHAR path used by distribution tasks
           test -f var/tmp/dist/hatfield.phar
           castor distribution:build-static --target=${{ matrix.target }} --release-version="${HATFIELD_BUILD_VERSION}" --commit="${HATFIELD_BUILD_COMMIT}"
+          # Requires host static + topology + checksums for this runner's artifact.
           castor distribution:verify
 
       - name: Upload static artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: hatfield.${{ matrix.target }}
           path: var/tmp/dist/hatfield.${{ matrix.target }}

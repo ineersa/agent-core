@@ -33,7 +33,8 @@ castor distribution:build                # PHAR → var/tmp/dist/hatfield.phar +
 castor distribution:build-static         # Host-native static binary (fails on cross-target)
 castor distribution:build-static --target=linux-amd64
 castor distribution:checksums
-castor distribution:verify               # sizes, smokes, optional process topology
+castor distribution:verify               # sizes, smokes, bundled resources, native topology (required)
+castor distribution:verify --skip-topology --allow-missing-native  # PHAR-only local verify
 castor distribution:info
 castor distribution:clean [--all]
 ```
@@ -72,9 +73,12 @@ Implemented in `.castor/helpers.php` (`CastorTasks`):
 7. Fail-fast smoke (`list`, `about`, `agent --help`, `--version`, writable-dir isolation).
 
 Freshness (`phar:ensure` + lock-holder re-check) uses the **same** packaged-input
-predicate: `bin`, `src`, `config`, `migrations`, `internal-docs`, `.castor`,
-`tools/phar`, `tools/static`, plus `composer.json`/`lock`, `box.json`,
-`castor.php`, toolchain manifests/locks, and `tools/static/pin.json`.
+set as staging (`phar_packaged_inputs`) and compares a deterministic content
+fingerprint sidecar (`hatfield.phar.inputs.sha256`). The fingerprint hashes every
+packaged file **and resolved symlink targets** (critical for `internal-docs/*` →
+`docs/*`), plus build-identity env inputs. Failed builds remove both the PHAR and
+the freshness marker. Distribution PHAR reuse always calls `phar_ensure()` — never
+a separate mtime shortcut.
 
 All shell/copy/write/remove steps fail-fast with command/output diagnostics.
 Smoke failures throw and remove the artifact.
@@ -125,7 +129,10 @@ Features:
 - Linux/macOS + amd64/arm64 detection; clear unsupported-target errors
 - PHAR path: PHP ≥ 8.5 + extension checks synchronized with Composer/`bin/console`/docs
 - Downloads asset + `SHA256SUMS`, verifies **exact filename** match, fail-closed on mismatch
-- Atomic install (`mktemp` + `mv`), traps, executable bit, post-install `--version` smoke
+- Candidate checksum + `--version` smoke **before** replacing any existing install
+- Atomic install (`install-dir/.hatfield-install.$$` + `mv`), traps remove every temp
+  including install-dir temporary destinations; failures leave previous `hatfield` unchanged
+- Post-install `--version` smoke after successful replace
 - Mirror/test seam: `HATFIELD_INSTALLER_BASE_URL`
 
 ## System PHP requirements (PHAR)
@@ -139,15 +146,22 @@ Keep these synchronized across `composer.json` `ext-*`, `bin/console` PHAR guard
 
 ## CI / release
 
-- `.github/workflows/distribution.yml` — PHAR job + static matrix on native runners;
-  calls Castor only; caches static-php-cli pin checkout; `upload-artifact` with
-  `if-no-files-found: error`.
-- `.github/workflows/release.yml` — tag `v*`; validates tag SHA == commit; builds/verifies
-  artifacts; publishes GitHub Release with `hatfield.phar`, host static, `SHA256SUMS`.
+- `.github/workflows/distribution.yml` — PHAR job + static matrix on native runners
+  (`ubuntu-latest`, `ubuntu-24.04-arm`, `macos-15-intel`, `macos-15`); calls Castor
+  only; caches static-php-cli pin checkout; `upload-artifact` with
+  `if-no-files-found: error`. Each static job runs `distribution:verify` including
+  hard native process topology.
+- `.github/workflows/release.yml` — tag `v*`; validates tag SHA == exact commit;
+  builds the **complete five-artifact set** via the same Castor tasks (PHAR + four
+  native targets); aggregates into one `SHA256SUMS` containing every asset; enforces
+  non-empty/sane sizes and host-compatible `--version` smoke; publishes GitHub Release
+  with `hatfield.phar`, `hatfield.linux-amd64`, `hatfield.linux-arm64`,
+  `hatfield.darwin-amd64`, `hatfield.darwin-arm64`, and `SHA256SUMS`. Action SHAs are
+  pinned; missing files fail closed.
 
-Full multi-arch release assets are produced by the distribution matrix; the release
-workflow publishes the host-complete set and expects matrix artifacts for the rest
-when wired in the release environment.
+`distribution:verify` hard-requires `hatfield.phar`, host static artifact, and
+`SHA256SUMS` by default (use `--allow-missing-native` / `--skip-topology` only for
+PHAR-only local checks). Topology never soft-passes on inconclusive process listing.
 
 ## Runtime model (unchanged)
 
@@ -170,11 +184,11 @@ castor test --filter=BashInstallerTest
 castor phar:build
 HATFIELD_BINARY_PATH=var/tmp/phar/hatfield.phar castor test --filter=PharSmokeTest
 
-# Native topology (skips without artifact)
+# Native topology (PHPUnit skip without artifact; CI must supply it)
 HATFIELD_NATIVE_BINARY_PATH=var/tmp/dist/hatfield.linux-amd64 castor test --filter=NativeProcessTopologyTest
 
-# TUI artifact boot (tmux + prebuilt artifact)
-HATFIELD_BINARY_PATH=var/tmp/phar/hatfield.phar castor test:tui --filter=TuiArtifactBootE2eTest
+# TUI artifact boot (tmux + real packaged artifact; Castor ensures PHAR for this filter)
+castor test:tui --filter=TuiArtifactBootE2eTest
 ```
 
 Notes:
@@ -182,7 +196,11 @@ Notes:
 - Controller **replay** / default TUI E2E use **source** `bin/console` with `APP_ENV=test`
   so test DI and replay fixtures load. They do **not** require PHAR.
 - Live controller E2E also uses source console for the same reason.
-- PHAR/native artifact tests are explicit (`#[Group('phar')]` / `HATFIELD_*_PATH`).
+- `TuiArtifactBootE2eTest` hard-fails without a packaged artifact (no soft pass).
+- `NativeProcessTopologyTest` is a real PHPUnit skip when `HATFIELD_NATIVE_BINARY_PATH`
+  is absent; `distribution:verify` / CI always require the native artifact.
+- Installer tests cover checksum mismatch and candidate smoke failure rollback
+  (previous install unchanged, no install-dir temps left).
 
 ## Troubleshooting
 

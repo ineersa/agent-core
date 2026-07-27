@@ -12,8 +12,12 @@ use PHPUnit\Framework\TestCase;
  * Minimal real-terminal proof that a prebuilt/installed Hatfield artifact
  * boots the interactive TUI from an isolated directory.
  *
- * Uses HATFIELD_BINARY_PATH (PHAR or native). No live LLM / no prompt —
- * boot + logo + clean Ctrl+D exit only.
+ * Uses HATFIELD_BINARY_PATH (PHAR or native) or worktree-local built PHAR.
+ * No live LLM / no prompt — boot + logo + clean Ctrl+D exit only.
+ *
+ * Hard requirement: a real packaged artifact must be present. Castor
+ * `test:tui` ensures the PHAR via phar:ensure when filtering this test /
+ * when HATFIELD_REQUIRE_ARTIFACT is set for the gate.
  */
 #[Group('tui-e2e-replay')]
 #[Group('phar')]
@@ -28,8 +32,6 @@ final class TuiArtifactBootE2eTest extends TestCase
             $this->markTestSkipped('tmux is not installed. Skipping TUI e2e tests.');
         }
 
-        // Always construct harness so tearDown is safe; the test method
-        // no-ops when no artifact is configured (avoid --fail-on-skipped).
         $this->tmux = new TmuxHarness();
         $this->testProjectDir = $this->createIsolatedProjectDir();
     }
@@ -47,27 +49,19 @@ final class TuiArtifactBootE2eTest extends TestCase
     public function testInstalledArtifactBootsTuiInRealTerminal(): void
     {
         $binary = $this->resolvePackagedArtifactPath();
-        if (null === $binary) {
-            // Soft no-op when no artifact is present so default suites stay green.
-            // CI / castor phar:build must supply the artifact for real proof.
-            // Force hard failure with HATFIELD_REQUIRE_ARTIFACT=1.
-            if ('1' === (string) getenv('HATFIELD_REQUIRE_ARTIFACT')) {
-                $this->fail(
-                    'No packaged Hatfield artifact found. Expected var/tmp/phar/hatfield.phar or HATFIELD_BINARY_PATH. '
-                    .'Run: castor phar:build'
-                );
-            }
-            $this->assertTrue(true, 'No packaged artifact present; skipped real terminal proof.');
-
-            return;
-        }
+        $this->assertNotNull(
+            $binary,
+            'No packaged Hatfield artifact found. Expected var/tmp/phar/hatfield.phar, '
+            .'var/tmp/dist/hatfield.*, or HATFIELD_BINARY_PATH / HATFIELD_NATIVE_BINARY_PATH. '
+            .'Run: castor phar:build (Castor test:tui now ensures this for artifact filters).',
+        );
 
         // Ensure child command sees an absolute packaged path.
         putenv('HATFIELD_BINARY_PATH='.$binary);
         $_ENV['HATFIELD_BINARY_PATH'] = $binary;
 
         $pane = $this->tmux->startDetached(
-            command: $this->artifactAgentCommand(),
+            command: $this->artifactAgentCommand($binary),
             prefix: 'hatfield-artifact-boot',
             cwd: $this->testProjectDir,
         );
@@ -84,10 +78,8 @@ final class TuiArtifactBootE2eTest extends TestCase
         $this->tmux->sendKey($pane, 'C-d');
     }
 
-    private function artifactAgentCommand(): string
+    private function artifactAgentCommand(string $resolved): string
     {
-        $resolved = $this->resolvePackagedArtifactPath() ?? '';
-
         $paths = TuiE2eDatabaseEnv::allocatePaths('tui-artifact-');
         $dbPath = $paths['app'];
         $transportDbPath = $paths['transport'];
@@ -125,9 +117,13 @@ final class TuiArtifactBootE2eTest extends TestCase
             }
         }
 
-        // Default worktree-local PHAR when present (castor phar:build output).
+        // Default worktree-local PHAR / dist artifacts when present.
         $candidates[] = $root.'/var/tmp/phar/hatfield.phar';
         $candidates[] = $root.'/var/tmp/dist/hatfield.phar';
+        $candidates[] = $root.'/var/tmp/dist/hatfield.linux-amd64';
+        $candidates[] = $root.'/var/tmp/dist/hatfield.linux-arm64';
+        $candidates[] = $root.'/var/tmp/dist/hatfield.darwin-amd64';
+        $candidates[] = $root.'/var/tmp/dist/hatfield.darwin-arm64';
 
         foreach ($candidates as $binary) {
             if (!str_starts_with($binary, '/')) {

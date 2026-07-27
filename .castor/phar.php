@@ -45,9 +45,9 @@ function phar_ensure(): void
 function phar_clean(): void
 {
     $path = \CastorTasks\hatfield_phar_path();
-    if (is_file($path) || is_link($path)) {
-        \CastorTasks\remove_path_checked($path);
-        echo "Removed {$path}\n";
+    if (is_file($path) || is_link($path) || is_file(\CastorTasks\phar_freshness_marker_path($path))) {
+        \CastorTasks\phar_remove_artifact_and_marker($path);
+        echo "Removed {$path} (+ freshness marker)\n";
     } else {
         echo "No PHAR at {$path}\n";
     }
@@ -79,5 +79,10 @@ function phar_info(): void
     if (is_file($path)) {
         echo 'Size: '.filesize($path).' bytes'.\PHP_EOL;
         echo 'Modified: '.date(\DATE_ATOM, filemtime($path)).\PHP_EOL;
+        $marker = \CastorTasks\phar_freshness_marker_path($path);
+        echo 'Freshness marker: '.(is_file($marker) ? 'present' : 'missing').\PHP_EOL;
+        $rootReal = realpath(__DIR__.'/..');
+        $root = false !== $rootReal ? $rootReal : __DIR__.'/..';
+        echo 'Stale: '.(\CastorTasks\phar_is_stale($root, $path) ? 'yes' : 'no').\PHP_EOL;
     }
 }

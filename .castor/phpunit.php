@@ -50,8 +50,12 @@ function build_sequential_phpunit_command(string $pharEnv): string
     $llmFlags = is_llm_mode() ? ' --colors=never --no-progress' : '';
     $junitFlag = is_llm_mode() ? ' --log-junit='.report_path('phpunit-sequential.junit.xml') : '';
 
+    // Exclude phar/native-artifact groups from the default suite: they require
+    // packaged artifacts and use real PHPUnit skips when inputs are absent,
+    // which would fail under --fail-on-all-issues. Run them via filters with
+    // HATFIELD_BINARY_PATH / HATFIELD_NATIVE_BINARY_PATH or distribution:verify.
     return qa_observability_env_command().' APP_ENV=test '.$pharEnv.$phpBin.' vendor/bin/phpunit'
-        .' --exclude-group tui-e2e-replay --exclude-group llm-real --exclude-group recording --exclude-group controller-replay'
+        .' --exclude-group tui-e2e-replay --exclude-group llm-real --exclude-group recording --exclude-group controller-replay --exclude-group phar --exclude-group native-artifact'
         .' '.$strictFlags.$llmFlags.$junitFlag;
 }
 
@@ -111,7 +115,9 @@ function test(?string $filter = null, ?string $suite = null): void
 
     if (null !== $filter) {
         // Filtered runs use single PHPUnit (ParaTest --filter can be unreliable).
-        // Exclude groups that require live LLM or tmux (same as build_sequential_phpunit_command).
+        // Exclude groups that require live LLM or tmux. Keep phar/native-artifact
+        // available so --filter=PharSmokeTest / NativeProcessTopologyTest can run
+        // when the caller supplies the packaged artifact env vars.
         $phpunitCmd = qa_observability_env_command().' APP_ENV=test '.$pharEnv.\PHP_BINARY.' vendor/bin/phpunit'
             .$suiteFlag
             .' --filter='.escapeshellarg($filter)
@@ -151,7 +157,7 @@ function test(?string $filter = null, ?string $suite = null): void
         .' --configuration=phpunit.xml.dist'
         .' --bootstrap='.escapeshellarg($bootstrap)
         .$suiteFlag
-        .' --exclude-group=tui-e2e-replay --exclude-group=llm-real --exclude-group=recording --exclude-group=controller-replay'
+        .' --exclude-group=tui-e2e-replay --exclude-group=llm-real --exclude-group=recording --exclude-group=controller-replay --exclude-group=phar --exclude-group=native-artifact'
         .' '.$strictFlags.$llmFlags.$junitFlag;
 
     passthru($cmd, $exitCode);
@@ -189,7 +195,7 @@ function build_check_paratest_command(): string
         .' --processes='.$processes
         .' --configuration=phpunit.xml.dist'
         .' --bootstrap='.escapeshellarg($bootstrap)
-        .' --exclude-group=tui-e2e-replay --exclude-group=llm-real --exclude-group=recording --exclude-group=controller-replay --exclude-group=phar'
+        .' --exclude-group=tui-e2e-replay --exclude-group=llm-real --exclude-group=recording --exclude-group=controller-replay --exclude-group=phar --exclude-group=native-artifact'
         .' '.$strictFlags.$llmFlags.$junitFlag;
 }
 
