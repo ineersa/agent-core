@@ -34,13 +34,6 @@ final class TranscriptVisualProjector
     private array $blockIndex = [];
 
     /**
-     * tool_call_id → ToolCall block id.
-     *
-     * @var array<string, string>
-     */
-    private array $toolCallIdByCallId = [];
-
-    /**
      * tool_call_id → list of ToolResult block ids (insertion order).
      *
      * @var array<string, list<string>>
@@ -172,7 +165,6 @@ final class TranscriptVisualProjector
         $this->blocksById = [];
         $this->blockOrder = [];
         $this->blockIndex = [];
-        $this->toolCallIdByCallId = [];
         $this->toolResultIdsByCallId = [];
         $this->visualKeyByPrimaryId = [];
 
@@ -234,45 +226,39 @@ final class TranscriptVisualProjector
 
     private function indexToolSide(TranscriptBlock $block): void
     {
+        if (TranscriptBlockKindEnum::ToolResult !== $block->kind) {
+            return;
+        }
+
         $callId = $this->toolCallIdMeta($block);
         if (null === $callId) {
             return;
         }
-        if (TranscriptBlockKindEnum::ToolCall === $block->kind) {
-            $this->toolCallIdByCallId[$callId] = $block->id;
 
-            return;
-        }
-        if (TranscriptBlockKindEnum::ToolResult === $block->kind) {
-            $list = $this->toolResultIdsByCallId[$callId] ?? [];
-            if (!\in_array($block->id, $list, true)) {
-                $list[] = $block->id;
-                $this->toolResultIdsByCallId[$callId] = $list;
-            }
+        $list = $this->toolResultIdsByCallId[$callId] ?? [];
+        if (!\in_array($block->id, $list, true)) {
+            $list[] = $block->id;
+            $this->toolResultIdsByCallId[$callId] = $list;
         }
     }
 
     private function unindexToolSide(TranscriptBlock $block): void
     {
+        if (TranscriptBlockKindEnum::ToolResult !== $block->kind) {
+            return;
+        }
+
         $callId = $this->toolCallIdMeta($block);
         if (null === $callId) {
             return;
         }
-        if (TranscriptBlockKindEnum::ToolCall === $block->kind) {
-            if (($this->toolCallIdByCallId[$callId] ?? null) === $block->id) {
-                unset($this->toolCallIdByCallId[$callId]);
-            }
 
-            return;
-        }
-        if (TranscriptBlockKindEnum::ToolResult === $block->kind) {
-            $list = $this->toolResultIdsByCallId[$callId] ?? [];
-            $list = array_values(array_filter($list, static fn (string $id): bool => $id !== $block->id));
-            if ([] === $list) {
-                unset($this->toolResultIdsByCallId[$callId]);
-            } else {
-                $this->toolResultIdsByCallId[$callId] = $list;
-            }
+        $list = $this->toolResultIdsByCallId[$callId] ?? [];
+        $list = array_values(array_filter($list, static fn (string $id): bool => $id !== $block->id));
+        if ([] === $list) {
+            unset($this->toolResultIdsByCallId[$callId]);
+        } else {
+            $this->toolResultIdsByCallId[$callId] = $list;
         }
     }
 
