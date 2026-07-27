@@ -507,6 +507,14 @@ final class TranscriptVisualProjector
             }
 
             $key = $this->visualKeyByPrimaryId[$id] ?? $id;
+            $existing = $this->nodesByKey[$key] ?? null;
+            // Neighbor expansion can touch a ToolResult that is only the secondary of an
+            // already-mounted exchange. Reclassifying it standalone would emit GENERIC at
+            // the exchange key and crash ToolExchangeTranscriptWidget on apply.
+            if (null !== $existing && $existing->secondary === $block) {
+                continue;
+            }
+
             $kind = $this->classifyStandalone($block);
             $node = new TranscriptVisualNode(
                 key: $key,
@@ -516,7 +524,6 @@ final class TranscriptVisualProjector
                 presentationRevision: $revision,
             );
 
-            $existing = $this->nodesByKey[$key] ?? null;
             if (null !== $existing && $existing->sameSources($node)) {
                 continue;
             }

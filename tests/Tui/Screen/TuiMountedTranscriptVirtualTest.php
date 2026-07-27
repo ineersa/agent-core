@@ -15,6 +15,7 @@ use Ineersa\Tui\Transcript\MarkdownThemeStyleSheetFactory;
 use Ineersa\Tui\Transcript\StreamingMarkdownTranscriptWidget;
 use Ineersa\Tui\Transcript\ToolExchangeTranscriptWidget;
 use Ineersa\Tui\Transcript\TranscriptMountedWidget;
+use Ineersa\Tui\Transcript\TranscriptVisualNode;
 use Ineersa\Tui\Transcript\TranscriptVisualProjector;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
@@ -173,6 +174,77 @@ final class TuiMountedTranscriptVirtualTest extends TestCase
         $this->assertStringContainsString('Hello world', $text);
         $this->assertStringContainsString('read', $text);
         $this->assertStringContainsString('file contents', $text);
+    }
+
+    #[Test]
+    public function testAssistantContentUpdateAdjacentToExchangeKeepsSemanticExchange(): void
+    {
+        // Thesis: content update of an assistant that neighbors a completed tool exchange
+        // must not reclassify the exchange secondary as standalone GENERIC, remount, or
+        // reorder the semantic ToolExchangeTranscriptWidget.
+        $theme = new DefaultTheme(VirtualTuiHarness::defaultVirtualPalette());
+        $transcript = new TranscriptMountedWidget(theme: $theme);
+
+        $toolCall = new TranscriptBlock(
+            id: 'tool-call-adj',
+            kind: TranscriptBlockKindEnum::ToolCall,
+            runId: self::SESSION_ID,
+            seq: 1,
+            text: 'read',
+            meta: [
+                'tool_name' => 'read',
+                'tool_call_id' => 'call-adjacent-1',
+                'arguments' => ['path' => './target.txt'],
+            ],
+        );
+        $toolResult = new TranscriptBlock(
+            id: 'tool-result-adj',
+            kind: TranscriptBlockKindEnum::ToolResult,
+            runId: self::SESSION_ID,
+            seq: 2,
+            text: "rewound contents\nline two",
+            meta: [
+                'tool_name' => 'read',
+                'tool_call_id' => 'call-adjacent-1',
+                'is_error' => false,
+            ],
+        );
+        $assistantStreaming = new TranscriptBlock(
+            id: 'assistant-after-exchange',
+            kind: TranscriptBlockKindEnum::AssistantMessage,
+            runId: self::SESSION_ID,
+            seq: 3,
+            text: 'partial after tool',
+            streaming: true,
+        );
+        $transcript->setBlocks([$toolCall, $toolResult, $assistantStreaming]);
+
+        $before = $transcript->all();
+        $this->assertCount(2, $before, 'Call+result collapse to one exchange before assistant');
+        $exchangeWrapper = $before[0];
+        $assistantWrapper = $before[1];
+        $this->assertInstanceOf(ToolExchangeTranscriptWidget::class, $exchangeWrapper);
+        $this->assertInstanceOf(StreamingMarkdownTranscriptWidget::class, $assistantWrapper);
+        $exchangeNodeBefore = $exchangeWrapper->node();
+        $this->assertNotNull($exchangeNodeBefore);
+        $this->assertSame(TranscriptVisualNode::KIND_TOOL_EXCHANGE, $exchangeNodeBefore->kind);
+        $this->assertSame($toolResult, $exchangeNodeBefore->secondary);
+
+        $assistantUpdated = $assistantStreaming->with(text: 'partial after tool more tokens');
+        $transcript->applyChangeSet(TranscriptChangeSet::incremental([$assistantUpdated]));
+
+        $after = $transcript->all();
+        $this->assertCount(2, $after, 'Child count must stay exchange + assistant');
+        $this->assertSame($exchangeWrapper, $after[0], 'Exchange widget identity must survive adjacent stream');
+        $this->assertSame($assistantWrapper, $after[1], 'Assistant widget identity must survive stream');
+        $exchangeNodeAfter = $exchangeWrapper->node();
+        $this->assertNotNull($exchangeNodeAfter);
+        $this->assertSame(TranscriptVisualNode::KIND_TOOL_EXCHANGE, $exchangeNodeAfter->kind);
+        $this->assertSame($toolResult, $exchangeNodeAfter->secondary, 'Exchange secondary must remain the same ToolResult');
+        $this->assertSame($toolCall, $exchangeNodeAfter->primary);
+        $md = $assistantWrapper->markdown();
+        $this->assertInstanceOf(MarkdownWidget::class, $md);
+        $this->assertStringContainsString('partial after tool more tokens', $md->getText());
     }
 
     #[Test]
