@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\HatfieldExt\ObservationalMemory\Tests;
 
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
+use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\Hatfield\ExtensionApi\Agent\AgentCallRequestDTO;
 use Ineersa\Hatfield\ExtensionApi\Agent\AgentRunnerInterface;
 use Ineersa\Hatfield\ExtensionApi\Agent\ExtensionAgentJobHandlerInterface;
@@ -26,15 +27,14 @@ use Ineersa\HatfieldExt\ObservationalMemory\Compaction\BuildCompactionMemoryJobH
 use Ineersa\HatfieldExt\ObservationalMemory\Compaction\OmBeforeCompactionHook;
 use Ineersa\HatfieldExt\ObservationalMemory\Runtime\OmSettings;
 use Ineersa\HatfieldExt\ObservationalMemory\Storage\CompactionRepository;
-use Ineersa\HatfieldExt\ObservationalMemory\Storage\OmDatabaseFactory;
-use PHPUnit\Framework\TestCase;
+use Ineersa\HatfieldExt\ObservationalMemory\Tests\Support\OmDatabaseFactoryTestService;
 use Psr\Log\NullLogger;
 
 /**
  * Thesis: OM public compaction hook dispatches JSON-safe jobs and polls OM SQLite only;
  * success returns replacement, timeout/failure cancel without model/history calls.
  */
-final class OmBeforeCompactionHookTest extends TestCase
+final class OmBeforeCompactionHookTest extends IsolatedKernelTestCase
 {
     private string $projectDir;
 
@@ -58,7 +58,8 @@ final class OmBeforeCompactionHookTest extends TestCase
             'observer' => ['model' => 'llama_cpp_test/test', 'schema_version' => 'o1', 'renderer_version' => 'r1'],
             'reflector' => ['model' => 'llama_cpp_test/test'],
         ]);
-        $api = new class($this->projectDir, $settings) implements ExtensionApiInterface {
+        $omDb = $this->omDatabaseFactory();
+        $api = new class($this->projectDir, $settings, $omDb) implements ExtensionApiInterface {
             /** @var list<ExtensionAgentJobRequestDTO> */
             public array $jobs = [];
 
@@ -67,6 +68,7 @@ final class OmBeforeCompactionHookTest extends TestCase
             public function __construct(
                 private readonly string $cwd,
                 private readonly OmSettings $settings,
+                private readonly OmDatabaseFactoryTestService $omDb,
             ) {
             }
 
@@ -173,7 +175,7 @@ final class OmBeforeCompactionHookTest extends TestCase
             {
                 $this->jobs[] = $request;
                 $paths = \Ineersa\HatfieldExt\ObservationalMemory\Runtime\OmPaths::fromSettings($this->settings, $this->cwd);
-                $connection = OmDatabaseFactory::connectAndMigrate($paths->databasePath, new NullLogger());
+                $connection = $this->omDb->connectAndMigrate($paths->databasePath, new NullLogger());
                 $repo = new CompactionRepository($connection);
                 $now = (new \DateTimeImmutable('now', new \DateTimeZone('UTC')))->format(\DateTimeInterface::ATOM);
                 $payload = $request->payload;
@@ -363,7 +365,7 @@ final class OmBeforeCompactionHookTest extends TestCase
         $this->assertSame(1, $api->dispatches);
 
         $dbPath = $this->projectDir.'/.hatfield/extensions-data/observational-memory/om.sqlite';
-        $connection = OmDatabaseFactory::connect($dbPath, new NullLogger());
+        $connection = $this->omDatabaseFactory()->connect($dbPath, new NullLogger());
         $requestStatus = (string) $connection->fetchOne(
             "SELECT status FROM om_compaction_request WHERE run_id = 'run-timeout'",
         );
@@ -381,12 +383,13 @@ final class OmBeforeCompactionHookTest extends TestCase
             'observer' => ['model' => 'llama_cpp_test/test', 'schema_version' => 'o1', 'renderer_version' => 'r1'],
             'reflector' => ['model' => 'llama_cpp_test/test'],
         ]);
-        $api = new class($this->projectDir, $settings) implements ExtensionApiInterface {
+        $api = new class($this->projectDir, $settings, $this->omDatabaseFactory()) implements ExtensionApiInterface {
             public int $dispatches = 0;
 
             public function __construct(
                 private readonly string $cwd,
                 private readonly OmSettings $settings,
+                private readonly OmDatabaseFactoryTestService $omDb,
             ) {
             }
 
@@ -486,7 +489,7 @@ final class OmBeforeCompactionHookTest extends TestCase
             public function seedFailedRequest(string $requestId, string $runId, int $endSeq, string $fingerprint): void
             {
                 $paths = \Ineersa\HatfieldExt\ObservationalMemory\Runtime\OmPaths::fromSettings($this->settings, $this->cwd);
-                $connection = OmDatabaseFactory::connectAndMigrate($paths->databasePath, new NullLogger());
+                $connection = $this->omDb->connectAndMigrate($paths->databasePath, new NullLogger());
                 $repo = new CompactionRepository($connection);
                 $now = (new \DateTimeImmutable('now', new \DateTimeZone('UTC')))->format(\DateTimeInterface::ATOM);
                 $repo->ensureRequest($requestId, $runId, 1, $endSeq, $endSeq, $fingerprint, $now);
@@ -564,12 +567,13 @@ final class OmBeforeCompactionHookTest extends TestCase
             'observer' => ['model' => 'llama_cpp_test/test', 'schema_version' => 'o1', 'renderer_version' => 'r1'],
             'reflector' => ['model' => 'llama_cpp_test/test'],
         ]);
-        $api = new class($this->projectDir, $settings) implements ExtensionApiInterface {
+        $api = new class($this->projectDir, $settings, $this->omDatabaseFactory()) implements ExtensionApiInterface {
             public int $dispatches = 0;
 
             public function __construct(
                 private readonly string $cwd,
                 private readonly OmSettings $settings,
+                private readonly OmDatabaseFactoryTestService $omDb,
             ) {
             }
 
@@ -669,7 +673,7 @@ final class OmBeforeCompactionHookTest extends TestCase
             public function seedTerminalRequestWithoutResult(string $requestId, string $runId, int $endSeq, string $fingerprint): void
             {
                 $paths = \Ineersa\HatfieldExt\ObservationalMemory\Runtime\OmPaths::fromSettings($this->settings, $this->cwd);
-                $connection = OmDatabaseFactory::connectAndMigrate($paths->databasePath, new NullLogger());
+                $connection = $this->omDb->connectAndMigrate($paths->databasePath, new NullLogger());
                 $now = (new \DateTimeImmutable('now', new \DateTimeZone('UTC')))->format(\DateTimeInterface::ATOM);
                 $connection->insert('om_compaction_request', [
                     'request_id' => $requestId,
@@ -748,12 +752,13 @@ final class OmBeforeCompactionHookTest extends TestCase
             'observer' => ['model' => 'llama_cpp_test/test', 'schema_version' => 'o1', 'renderer_version' => 'r1'],
             'reflector' => ['model' => 'llama_cpp_test/test'],
         ]);
-        $api = new class($this->projectDir, $settings) implements ExtensionApiInterface {
+        $api = new class($this->projectDir, $settings, $this->omDatabaseFactory()) implements ExtensionApiInterface {
             public int $dispatches = 0;
 
             public function __construct(
                 private readonly string $cwd,
                 private readonly OmSettings $settings,
+                private readonly OmDatabaseFactoryTestService $omDb,
             ) {
             }
 
@@ -849,7 +854,7 @@ final class OmBeforeCompactionHookTest extends TestCase
             {
                 ++$this->dispatches;
                 $paths = \Ineersa\HatfieldExt\ObservationalMemory\Runtime\OmPaths::fromSettings($this->settings, $this->cwd);
-                $connection = OmDatabaseFactory::connectAndMigrate($paths->databasePath, new NullLogger());
+                $connection = $this->omDb->connectAndMigrate($paths->databasePath, new NullLogger());
                 $repo = new CompactionRepository($connection);
                 $now = (new \DateTimeImmutable('now', new \DateTimeZone('UTC')))->format(\DateTimeInterface::ATOM);
                 $payload = $request->payload;
@@ -898,5 +903,13 @@ final class OmBeforeCompactionHookTest extends TestCase
         $this->assertStringContainsString('metadata', (string) $result->cancelReason);
         $this->assertStringNotContainsString('SECRET_PROMPT_LEAK', (string) $result->cancelReason);
         $this->assertSame(1, $api->dispatches);
+    }
+
+    private function omDatabaseFactory(): OmDatabaseFactoryTestService
+    {
+        /** @var OmDatabaseFactoryTestService $service */
+        $service = self::getContainer()->get('test.om_database_factory');
+
+        return $service;
     }
 }

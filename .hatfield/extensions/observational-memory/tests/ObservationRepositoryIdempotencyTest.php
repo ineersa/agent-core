@@ -5,16 +5,14 @@ declare(strict_types=1);
 namespace Ineersa\HatfieldExt\ObservationalMemory\Tests;
 
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
+use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\HatfieldExt\ObservationalMemory\Storage\ObservationRepository;
-use Ineersa\HatfieldExt\ObservationalMemory\Storage\OmSchemaMigrator;
-use Ineersa\HatfieldExt\ObservationalMemory\Tests\Support\OmTestDatabase;
-use PHPUnit\Framework\TestCase;
-use Psr\Log\NullLogger;
+use Ineersa\HatfieldExt\ObservationalMemory\Tests\Support\OmDatabaseFactoryTestService;
 
 /**
  * Thesis: chunk/part coverage is idempotent; incomplete parts do not advance; complete intervals walk from 1; no MAX shortcut.
  */
-final class ObservationRepositoryIdempotencyTest extends TestCase
+final class ObservationRepositoryIdempotencyTest extends IsolatedKernelTestCase
 {
     private string $tmpDir;
 
@@ -32,9 +30,8 @@ final class ObservationRepositoryIdempotencyTest extends TestCase
 
     public function testZeroObservationPartCoverageIsIdempotentAndTracksWatermark(): void
     {
-        $db = OmTestDatabase::connect($this->tmpDir.'/om.sqlite');
-        (new OmSchemaMigrator($db->connection(), new NullLogger()))->migrate();
-        $repo = new ObservationRepository($db->connection());
+        $connection = $this->omDatabaseFactory()->connectAndMigrate($this->tmpDir.'/om.sqlite');
+        $repo = new ObservationRepository($connection);
 
         $first = $repo->commitChunkPartCoverage(
             coverageKey: 'cov-1',
@@ -80,9 +77,8 @@ final class ObservationRepositoryIdempotencyTest extends TestCase
 
     public function testIncompletePartGroupDoesNotAdvanceAndGapStops(): void
     {
-        $db = OmTestDatabase::connect($this->tmpDir.'/om-parts.sqlite');
-        (new OmSchemaMigrator($db->connection(), new NullLogger()))->migrate();
-        $repo = new ObservationRepository($db->connection());
+        $connection = $this->omDatabaseFactory()->connectAndMigrate($this->tmpDir.'/om-parts.sqlite');
+        $repo = new ObservationRepository($connection);
 
         // Incomplete multi-part chunk for seq 1.
         $repo->commitChunkPartCoverage(
@@ -143,5 +139,13 @@ final class ObservationRepositoryIdempotencyTest extends TestCase
             coveredAt: '2026-07-26T00:00:02+00:00',
         );
         $this->assertSame(1, $repo->contiguousCoveredEndSeq('run-1', 'r1', 'o1'));
+    }
+
+    private function omDatabaseFactory(): OmDatabaseFactoryTestService
+    {
+        /** @var OmDatabaseFactoryTestService $service */
+        $service = self::getContainer()->get('test.om_database_factory');
+
+        return $service;
     }
 }

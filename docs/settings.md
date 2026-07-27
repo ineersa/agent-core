@@ -1533,9 +1533,10 @@ Settings for the project Observational Memory extension
 `ExtensionApiInterface::getSettings('observational_memory')`.
 
 OM is **not enabled by default**. This repository’s tracked `.hatfield/settings.yaml`
-intentionally omits both the extension class from `extensions.enabled` and any
-`extensions.settings.observational_memory` block so local/dev sessions do not start
-Observer/Reflector workers or write `om.sqlite` until explicitly activated.
+omits the extension class from `extensions.enabled` and ships a nested
+`extensions.settings.observational_memory` example with `enabled: false` so local/dev
+sessions do not start Observer/Reflector workers or write `om.sqlite` until both the
+class is listed under `extensions.enabled` and `enabled: true` is set.
 
 Nested shape only (no flat budget compatibility keys):
 

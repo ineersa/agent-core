@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\HatfieldExt\ObservationalMemory\Tests;
 
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
+use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\Hatfield\ExtensionApi\Agent\AgentCallRequestDTO;
 use Ineersa\Hatfield\ExtensionApi\Agent\AgentRunnerInterface;
 use Ineersa\Hatfield\ExtensionApi\Agent\ExtensionAgentJobHandlerInterface;
@@ -23,15 +24,14 @@ use Ineersa\Hatfield\ExtensionApi\Tool\ToolRegistrationDTO;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolResultHookInterface;
 use Ineersa\HatfieldExt\ObservationalMemory\Observer\ObserveBoundaryJobHandler;
 use Ineersa\HatfieldExt\ObservationalMemory\Storage\ObservationRepository;
-use Ineersa\HatfieldExt\ObservationalMemory\Storage\OmDatabaseFactory;
-use PHPUnit\Framework\TestCase;
+use Ineersa\HatfieldExt\ObservationalMemory\Tests\Support\OmDatabaseFactoryTestService;
 use Psr\Log\NullLogger;
 
 /**
  * Thesis: async ObserveBoundaryJobHandler renders range, invokes agent with record_observations,
  * and persists zero-or-more observations plus coverage watermark.
  */
-final class ObserveBoundaryJobHandlerTest extends TestCase
+final class ObserveBoundaryJobHandlerTest extends IsolatedKernelTestCase
 {
     private string $projectDir;
 
@@ -118,7 +118,7 @@ final class ObserveBoundaryJobHandlerTest extends TestCase
         $this->assertFileExists($dbPath);
         $this->assertSame('0700', substr(\sprintf('%o', fileperms(\dirname($dbPath))), -4));
 
-        $connection = OmDatabaseFactory::connect($dbPath, new NullLogger());
+        $connection = $this->omDatabaseFactory()->connect($dbPath, new NullLogger());
         $repo = new ObservationRepository($connection);
         $this->assertSame(2, $repo->contiguousCoveredEndSeq('run-1', 'r1', 'o1'));
 
@@ -167,7 +167,7 @@ final class ObserveBoundaryJobHandlerTest extends TestCase
         );
 
         $dbPath = $this->projectDir.'/.hatfield/extensions-data/observational-memory/om.sqlite';
-        $connection = OmDatabaseFactory::connect($dbPath, new NullLogger());
+        $connection = $this->omDatabaseFactory()->connect($dbPath, new NullLogger());
         $repo = new ObservationRepository($connection);
         $this->assertSame(1, $repo->contiguousCoveredEndSeq('run-2', 'r1', 'o1'));
         $obs = (int) $connection->fetchOne('SELECT COUNT(*) FROM om_observation WHERE run_id = ?', ['run-2']);
@@ -323,5 +323,13 @@ final class ObserveBoundaryJobHandlerTest extends TestCase
             {
             }
         };
+    }
+
+    private function omDatabaseFactory(): OmDatabaseFactoryTestService
+    {
+        /** @var OmDatabaseFactoryTestService $service */
+        $service = self::getContainer()->get('test.om_database_factory');
+
+        return $service;
     }
 }

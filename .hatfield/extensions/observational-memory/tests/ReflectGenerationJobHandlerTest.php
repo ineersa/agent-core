@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\HatfieldExt\ObservationalMemory\Tests;
 
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
+use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\Hatfield\ExtensionApi\Agent\AgentCallRequestDTO;
 use Ineersa\Hatfield\ExtensionApi\Agent\AgentRunnerInterface;
 use Ineersa\Hatfield\ExtensionApi\Agent\ExtensionAgentJobHandlerInterface;
@@ -25,16 +26,15 @@ use Ineersa\HatfieldExt\ObservationalMemory\Compaction\ReflectGenerationJobHandl
 use Ineersa\HatfieldExt\ObservationalMemory\Observer\OmTokenEstimator;
 use Ineersa\HatfieldExt\ObservationalMemory\Runtime\OmSettings;
 use Ineersa\HatfieldExt\ObservationalMemory\Storage\MemoryGenerationRepository;
-use Ineersa\HatfieldExt\ObservationalMemory\Storage\OmDatabaseFactory;
 use Ineersa\HatfieldExt\ObservationalMemory\Support\OmIdentity;
-use PHPUnit\Framework\TestCase;
+use Ineersa\HatfieldExt\ObservationalMemory\Tests\Support\OmDatabaseFactoryTestService;
 use Psr\Log\NullLogger;
 
 /**
  * Thesis: threshold Reflector claims generation idempotently, no-ops when under threshold,
  * and promotes active generation only on success.
  */
-final class ReflectGenerationJobHandlerTest extends TestCase
+final class ReflectGenerationJobHandlerTest extends IsolatedKernelTestCase
 {
     private string $projectDir;
 
@@ -59,7 +59,7 @@ final class ReflectGenerationJobHandlerTest extends TestCase
             'reflector' => ['model' => 'llama_cpp_test/test', 'reflect_after_observation_tokens' => 40_000],
         ]);
         $paths = \Ineersa\HatfieldExt\ObservationalMemory\Runtime\OmPaths::fromSettings($settings, $this->projectDir);
-        $connection = OmDatabaseFactory::connectAndMigrate($paths->databasePath, new NullLogger());
+        $connection = $this->omDatabaseFactory()->connectAndMigrate($paths->databasePath, new NullLogger());
 
         $content = 'small observation';
         $obsId = OmIdentity::observationId('run-t', '1', '2026-07-26 12:00', $content, [['run_id' => 'run-t', 'seq' => 1]]);
@@ -117,7 +117,7 @@ final class ReflectGenerationJobHandlerTest extends TestCase
             'reflector' => ['model' => 'llama_cpp_test/test', 'reflect_after_observation_tokens' => 1],
         ]);
         $paths = \Ineersa\HatfieldExt\ObservationalMemory\Runtime\OmPaths::fromSettings($settings, $this->projectDir);
-        $connection = OmDatabaseFactory::connectAndMigrate($paths->databasePath, new NullLogger());
+        $connection = $this->omDatabaseFactory()->connectAndMigrate($paths->databasePath, new NullLogger());
 
         $content = str_repeat('important observation about rollout flags ', 20);
         $obsId = OmIdentity::observationId('run-r', '1', '2026-07-26 12:00', $content, [['run_id' => 'run-r', 'seq' => 1]]);
@@ -305,5 +305,13 @@ final class ReflectGenerationJobHandlerTest extends TestCase
             {
             }
         };
+    }
+
+    private function omDatabaseFactory(): OmDatabaseFactoryTestService
+    {
+        /** @var OmDatabaseFactoryTestService $service */
+        $service = self::getContainer()->get('test.om_database_factory');
+
+        return $service;
     }
 }

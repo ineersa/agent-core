@@ -78,8 +78,10 @@ CompactRun prepares the public hook context. Contiguous coverage never uses
 
 ## Activation
 
-OM is **not enabled by default**. Tracked project `.hatfield/settings.yaml` intentionally
-omits both the extension class and any `observational_memory` settings block.
+OM is **not enabled by default**. Tracked project `.hatfield/settings.yaml` omits the
+extension class from `extensions.enabled` and ships a nested
+`observational_memory` example with `enabled: false`. Activate by listing the class
+and setting `enabled: true` with exact models:
 
 ```yaml
 # project .hatfield/settings.yaml

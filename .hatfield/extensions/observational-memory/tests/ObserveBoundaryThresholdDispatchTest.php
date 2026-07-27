@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\HatfieldExt\ObservationalMemory\Tests;
 
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
+use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\Hatfield\ExtensionApi\Agent\AgentCallRequestDTO;
 use Ineersa\Hatfield\ExtensionApi\Agent\AgentRunnerInterface;
 use Ineersa\Hatfield\ExtensionApi\Agent\ExtensionAgentJobHandlerInterface;
@@ -23,16 +24,15 @@ use Ineersa\Hatfield\ExtensionApi\Tool\ToolRegistrationDTO;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolResultHookInterface;
 use Ineersa\HatfieldExt\ObservationalMemory\Observer\ObserveBoundaryJobHandler;
 use Ineersa\HatfieldExt\ObservationalMemory\Observer\OmTokenEstimator;
-use Ineersa\HatfieldExt\ObservationalMemory\Storage\OmDatabaseFactory;
 use Ineersa\HatfieldExt\ObservationalMemory\Support\OmIdentity;
-use PHPUnit\Framework\TestCase;
+use Ineersa\HatfieldExt\ObservationalMemory\Tests\Support\OmDatabaseFactoryTestService;
 use Psr\Log\NullLogger;
 
 /**
  * Thesis: threshold dispatch only after durable observe, when active tokens > 40k,
  * with deterministic generation/job id; suppressed when already running/succeeded for set.
  */
-final class ObserveBoundaryThresholdDispatchTest extends TestCase
+final class ObserveBoundaryThresholdDispatchTest extends IsolatedKernelTestCase
 {
     private string $projectDir;
 
@@ -159,7 +159,7 @@ final class ObserveBoundaryThresholdDispatchTest extends TestCase
 
         $this->assertSame([], $dispatched);
         $dbPath = $this->projectDir.'/.hatfield/extensions-data/observational-memory/om.sqlite';
-        $connection = OmDatabaseFactory::connect($dbPath, new NullLogger());
+        $connection = $this->omDatabaseFactory()->connect($dbPath, new NullLogger());
         $this->assertSame(1, (int) $connection->fetchOne('SELECT COUNT(*) FROM om_observation WHERE run_id = ?', ['run-s']));
     }
 
@@ -299,5 +299,13 @@ final class ObserveBoundaryThresholdDispatchTest extends TestCase
                 ($this->onDispatch)($request);
             }
         };
+    }
+
+    private function omDatabaseFactory(): OmDatabaseFactoryTestService
+    {
+        /** @var OmDatabaseFactoryTestService $service */
+        $service = self::getContainer()->get('test.om_database_factory');
+
+        return $service;
     }
 }

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\HatfieldExt\ObservationalMemory\Tests;
 
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
+use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\Hatfield\ExtensionApi\Agent\AgentCallRequestDTO;
 use Ineersa\Hatfield\ExtensionApi\Agent\AgentRunnerInterface;
 use Ineersa\Hatfield\ExtensionApi\Agent\ExtensionAgentJobHandlerInterface;
@@ -25,15 +26,14 @@ use Ineersa\Hatfield\ExtensionApi\Tool\ToolResultHookInterface;
 use Ineersa\HatfieldExt\ObservationalMemory\Compaction\BuildCompactionMemoryJobHandler;
 use Ineersa\HatfieldExt\ObservationalMemory\Runtime\OmSettings;
 use Ineersa\HatfieldExt\ObservationalMemory\Storage\CompactionRepository;
-use Ineersa\HatfieldExt\ObservationalMemory\Storage\OmDatabaseFactory;
-use PHPUnit\Framework\TestCase;
+use Ineersa\HatfieldExt\ObservationalMemory\Tests\Support\OmDatabaseFactoryTestService;
 use Psr\Log\NullLogger;
 
 /**
  * Thesis: compaction worker repairs missed coverage, reflects, persists replacement,
  * and no-ops compatible redelivery without a second model call.
  */
-final class BuildCompactionMemoryJobHandlerTest extends TestCase
+final class BuildCompactionMemoryJobHandlerTest extends IsolatedKernelTestCase
 {
     private string $projectDir;
 
@@ -122,7 +122,7 @@ final class BuildCompactionMemoryJobHandlerTest extends TestCase
             'reflector' => ['model' => 'llama_cpp_test/test'],
         ]);
         $paths = \Ineersa\HatfieldExt\ObservationalMemory\Runtime\OmPaths::fromSettings($settings, $this->projectDir);
-        $connection = OmDatabaseFactory::connectAndMigrate($paths->databasePath, new NullLogger());
+        $connection = $this->omDatabaseFactory()->connectAndMigrate($paths->databasePath, new NullLogger());
         $repo = new CompactionRepository($connection);
         $requestId = 'req-1';
         $fingerprint = 'fp-1';
@@ -203,7 +203,7 @@ final class BuildCompactionMemoryJobHandlerTest extends TestCase
             'reflector' => ['model' => 'llama_cpp_test/test'],
         ]);
         $paths = \Ineersa\HatfieldExt\ObservationalMemory\Runtime\OmPaths::fromSettings($settings, $this->projectDir);
-        $connection = OmDatabaseFactory::connectAndMigrate($paths->databasePath, new NullLogger());
+        $connection = $this->omDatabaseFactory()->connectAndMigrate($paths->databasePath, new NullLogger());
         $repo = new CompactionRepository($connection);
         $now = (new \DateTimeImmutable('now', new \DateTimeZone('UTC')))->format(\DateTimeInterface::ATOM);
         $repo->ensureRequest('req-empty', 'run-empty', 1, 1, 1, 'fp-empty', $now);
@@ -271,7 +271,7 @@ final class BuildCompactionMemoryJobHandlerTest extends TestCase
             'reflector' => ['model' => 'llama_cpp_test/test'],
         ]);
         $paths = \Ineersa\HatfieldExt\ObservationalMemory\Runtime\OmPaths::fromSettings($settings, $this->projectDir);
-        $connection = OmDatabaseFactory::connectAndMigrate($paths->databasePath, new NullLogger());
+        $connection = $this->omDatabaseFactory()->connectAndMigrate($paths->databasePath, new NullLogger());
         $repo = new CompactionRepository($connection);
         $now = (new \DateTimeImmutable('now', new \DateTimeZone('UTC')))->format(\DateTimeInterface::ATOM);
         $repo->ensureRequest('req-no-tool', 'run-no-tool', 1, 2, 2, 'fp-no-tool', $now);
@@ -314,7 +314,7 @@ final class BuildCompactionMemoryJobHandlerTest extends TestCase
             'reflector' => ['model' => 'llama_cpp_test/test'],
         ]);
         $paths = \Ineersa\HatfieldExt\ObservationalMemory\Runtime\OmPaths::fromSettings($settings, $this->projectDir);
-        $connection = OmDatabaseFactory::connectAndMigrate($paths->databasePath, new NullLogger());
+        $connection = $this->omDatabaseFactory()->connectAndMigrate($paths->databasePath, new NullLogger());
         $repo = new CompactionRepository($connection);
         $now = (new \DateTimeImmutable('now', new \DateTimeZone('UTC')))->format(\DateTimeInterface::ATOM);
         $repo->ensureRequest('req-obs-tool', 'run-obs-tool', 1, 1, 1, 'fp-obs-tool', $now);
@@ -474,5 +474,13 @@ final class BuildCompactionMemoryJobHandlerTest extends TestCase
             {
             }
         };
+    }
+
+    private function omDatabaseFactory(): OmDatabaseFactoryTestService
+    {
+        /** @var OmDatabaseFactoryTestService $service */
+        $service = self::getContainer()->get('test.om_database_factory');
+
+        return $service;
     }
 }
