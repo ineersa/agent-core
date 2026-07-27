@@ -180,10 +180,11 @@ final class ObserveBoundaryJobHandlerTest extends IsolatedKernelTestCase
     }
 
     /**
-     * Thesis: after contiguous coverage through 82, the next observe interval 83..88
-     * where 83 is non-renderable control (agent_command_queued) and 84+ are content
-     * must persist coverage through 88 without leaving a canonical hole. Prompt/source
-     * refs include renderable 84, never control 83. Redelivery does not re-invoke Observer.
+     * Thesis: after contiguous coverage through 82, observe 83..88 where 83 is
+     * non-renderable control (agent_command_queued) and 84+ are content must persist
+     * coverage through 88 without a canonical hole (83 covered, not rendered/cited).
+     * A later terminal through 90 must only observe the new 89..90 range — not re-run
+     * the already-covered 84+ content (manual session-2 failure shape).
      */
     public function testNonRenderableControlSeqDoesNotLeaveCanonicalCoverageGap(): void
     {
@@ -266,26 +267,47 @@ final class ObserveBoundaryJobHandlerTest extends IsolatedKernelTestCase
                 payload: ['reason' => 'completed'],
                 createdAt: '2026-07-27T22:01:05+00:00',
             ),
+            new SessionEventDTO(
+                runId: 'run-gap',
+                seq: 89,
+                turnNo: 3,
+                type: 'agent_command_applied',
+                payload: ['kind' => 'prompt', 'text' => 'Implement phase one only'],
+                createdAt: '2026-07-27T22:02:00+00:00',
+            ),
+            new SessionEventDTO(
+                runId: 'run-gap',
+                seq: 90,
+                turnNo: 3,
+                type: 'agent_end',
+                payload: ['reason' => 'completed'],
+                createdAt: '2026-07-27T22:02:01+00:00',
+            ),
         ];
 
         $agentCalls = 0;
-        $lastRequest = null;
+        /** @var list<AgentCallRequestDTO> $requests */
+        $requests = [];
         $api = $this->buildApi(
             events: $events,
-            onAgentRun: static function (AgentCallRequestDTO $request) use (&$agentCalls, &$lastRequest): void {
+            onAgentRun: static function (AgentCallRequestDTO $request) use (&$agentCalls, &$requests): void {
                 ++$agentCalls;
-                $lastRequest = $request;
+                $requests[] = $request;
                 $tool = $request->tools[0] ?? null;
                 if (null === $tool) {
                     throw new \RuntimeException('expected record_observations tool');
                 }
+                $seq = 1 === $agentCalls ? 84 : 89;
+                $content = 1 === $agentCalls
+                    ? 'User asked about include_archive for TODO listing'
+                    : 'User asked to implement phase one only';
                 ($tool->handler)([
                     'observations' => [[
                         'timestamp' => '2026-07-27 22:01',
-                        'content' => 'User asked about include_archive for TODO listing',
+                        'content' => $content,
                         'relevance' => 'medium',
                         'source_refs' => [
-                            ['run_id' => 'run-gap', 'seq' => 84],
+                            ['run_id' => 'run-gap', 'seq' => $seq],
                         ],
                     ]],
                 ]);
@@ -293,21 +315,22 @@ final class ObserveBoundaryJobHandlerTest extends IsolatedKernelTestCase
         );
 
         $handler = new ObserveBoundaryJobHandler(new NullLogger());
-        $payload = [
+        $handler->handle($api, [
             'run_id' => 'run-gap',
             'terminal_end_seq' => 88,
             'terminal_status' => 'completed',
             'renderer_version' => 'r1',
             'observer_schema_version' => 'o1',
-        ];
-        $handler->handle($api, $payload, 'job-gap-1', 'run-gap');
+        ], 'job-gap-1', 'run-gap');
 
         $this->assertSame(1, $agentCalls, 'Observer must run once for the uncovered 83..88 range');
-        $this->assertInstanceOf(AgentCallRequestDTO::class, $lastRequest);
-        $this->assertStringContainsString('include_archive', $lastRequest->input);
-        $this->assertStringContainsString('[Source entry id: run-gap:84]', $lastRequest->input);
-        $this->assertStringNotContainsString('[Source entry id: run-gap:83]', $lastRequest->input);
-        $this->assertStringNotContainsString('agent_command_queued', $lastRequest->input);
+        $firstRequest = $requests[0] ?? null;
+        $this->assertInstanceOf(AgentCallRequestDTO::class, $firstRequest);
+        $this->assertStringContainsString('include_archive', $firstRequest->input);
+        $this->assertStringContainsString('[Source entry id: run-gap:84]', $firstRequest->input);
+        $this->assertStringNotContainsString('[Source entry id: run-gap:83]', $firstRequest->input);
+        $this->assertStringNotContainsString('agent_command_queued', $firstRequest->input);
+        $this->assertStringNotContainsString('Implement phase one only', $firstRequest->input);
 
         $this->assertSame(88, $repo->contiguousCoveredEndSeq('run-gap', 'r1', 'o1'));
 
@@ -322,10 +345,31 @@ final class ObserveBoundaryJobHandlerTest extends IsolatedKernelTestCase
         $this->assertSame(83, (int) $coverageRows[0]['source_start_seq']);
         $this->assertSame(88, (int) $coverageRows[\count($coverageRows) - 1]['source_end_seq']);
 
-        // Redelivery / later terminal for same covered range must not re-invoke Observer.
-        $handler->handle($api, $payload, 'job-gap-2', 'run-gap');
-        $this->assertSame(1, $agentCalls, 'already-covered redelivery must not re-invoke Observer');
-        $this->assertSame(88, $repo->contiguousCoveredEndSeq('run-gap', 'r1', 'o1'));
+        // Later terminal past the repaired watermark must observe only the new tail.
+        // Without the coverage-range fix, contiguous end stuck at 82 and every later
+        // job re-observed overlapping 84+ content (manual session 2).
+        $handler->handle($api, [
+            'run_id' => 'run-gap',
+            'terminal_end_seq' => 90,
+            'terminal_status' => 'completed',
+            'renderer_version' => 'r1',
+            'observer_schema_version' => 'o1',
+        ], 'job-gap-2', 'run-gap');
+
+        $this->assertSame(2, $agentCalls, 'later terminal 90 must invoke Observer once more for 89..90 only');
+        $secondRequest = $requests[1] ?? null;
+        $this->assertInstanceOf(AgentCallRequestDTO::class, $secondRequest);
+        // Prior observation text may appear under CURRENT OBSERVATIONS (correct).
+        // The NEW source chunk must only contain the post-88 tail.
+        $newSourcePos = strpos($secondRequest->input, 'NEW SOURCE-ADDRESSED CONVERSATION CHUNK:');
+        $this->assertNotFalse($newSourcePos);
+        $newSource = substr($secondRequest->input, $newSourcePos);
+        $this->assertStringContainsString('Implement phase one only', $newSource);
+        $this->assertStringContainsString('[Source entry id: run-gap:89]', $newSource);
+        $this->assertStringNotContainsString('include_archive', $newSource);
+        $this->assertStringNotContainsString('[Source entry id: run-gap:84]', $newSource);
+        $this->assertStringNotContainsString('[Source entry id: run-gap:83]', $newSource);
+        $this->assertSame(90, $repo->contiguousCoveredEndSeq('run-gap', 'r1', 'o1'));
     }
 
     /**

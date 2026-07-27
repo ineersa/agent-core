@@ -298,24 +298,19 @@ final readonly class ObserverPipeline
         $groups[0]['start'] = min($groups[0]['start'], $sourceStartSeq);
 
         // Internal holes between chunks attach to the next chunk (backward expand start).
+        // Packer groups are monotonic (start/end non-decreasing across groups), so expanding
+        // the next start down to previous_end+1 cannot invert a range.
         $groupCount = \count($groups);
         for ($i = 0; $i < $groupCount - 1; ++$i) {
             $expectedNext = $groups[$i]['end'] + 1;
             if ($groups[$i + 1]['start'] > $expectedNext) {
                 $groups[$i + 1]['start'] = $expectedNext;
             }
-            // Guard multipart / ordering invariants: never invert a range.
-            if ($groups[$i + 1]['start'] > $groups[$i + 1]['end']) {
-                $groups[$i + 1]['start'] = $groups[$i + 1]['end'];
-            }
         }
 
         // Trailing non-renderable seqs attach to the last chunk.
         $lastIdx = $groupCount - 1;
         $groups[$lastIdx]['end'] = max($groups[$lastIdx]['end'], $terminalEndSeq);
-        if ($groups[$lastIdx]['start'] > $groups[$lastIdx]['end']) {
-            $groups[$lastIdx]['start'] = $groups[$lastIdx]['end'];
-        }
 
         foreach ($groups as $group) {
             $chunkKey = OmIdentity::chunkKey(
