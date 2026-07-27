@@ -15,12 +15,13 @@ use Ineersa\Tui\Transcript\MarkdownThemeStyleSheetFactory;
 use Ineersa\Tui\Transcript\StreamingMarkdownTranscriptWidget;
 use Ineersa\Tui\Transcript\ToolExchangeTranscriptWidget;
 use Ineersa\Tui\Transcript\TranscriptMountedWidget;
-use Ineersa\Tui\Transcript\TranscriptVisualPatch;
+use Ineersa\Tui\Transcript\TranscriptVisualProjector;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Tui\Terminal\VirtualTerminal;
 use Symfony\Component\Tui\Tui;
 use Symfony\Component\Tui\Widget\MarkdownWidget;
+use Symfony\Component\Tui\Widget\TextWidget;
 
 /**
  * Virtual proof for the production mounted transcript subtree.
@@ -28,9 +29,9 @@ use Symfony\Component\Tui\Widget\MarkdownWidget;
  * Test thesis: output-only product tests can stay green while Markdown widgets
  * remain detached, stylesheet selectors stay inactive, or reconciliation recreates
  * visual nodes. These cases prove live WidgetContext theming, identity-preserving
- * streaming/tool reconciliation, granular tail append/removal, and that ordinary
- * tail stream updates emit a dependency-bounded production visual patch that does
- * not touch finalized historical visual keys.
+ * streaming/tool reconciliation, granular tail append/removal, content-only tail
+ * stream identity preservation, and mid-list generic TextWidget update order.
+ * Patch contract for pure stream is proven on TranscriptVisualProjector directly.
  */
 final class TuiMountedTranscriptVirtualTest extends TestCase
 {
@@ -229,11 +230,11 @@ final class TuiMountedTranscriptVirtualTest extends TestCase
     }
 
     #[Test]
-    public function testTailStreamEmitsBoundedVisualPatchAndKeepsHistoricalIdentity(): void
+    public function testTailStreamKeepsHistoricalSemanticIdentityWithoutTestOnlyPatchApi(): void
     {
         // Thesis: ordinary tail streaming updates must not rebuild finalized historical
-        // semantic wrappers or their Markdown content instances, and the production
-        // visual patch must touch only the streaming visual key (operation-scope contract).
+        // semantic wrappers or their Markdown content instances. Patch scope is asserted
+        // on TranscriptVisualProjector (production contract), not a test-only mount API.
         $theme = new DefaultTheme(VirtualTuiHarness::defaultVirtualPalette());
         $transcript = new TranscriptMountedWidget(theme: $theme);
 
@@ -271,14 +272,6 @@ final class TuiMountedTranscriptVirtualTest extends TestCase
         // Same object identity for history; new object for streaming tail.
         $transcript->applyChangeSet(TranscriptChangeSet::incremental([$streamed]));
 
-        $patch = $transcript->lastVisualPatch();
-        $this->assertNotNull($patch);
-        $this->assertFalse($patch->isFull(), 'Ordinary tail stream must emit incremental visual patch');
-        $this->assertSame(TranscriptVisualPatch::MODE_INCREMENTAL, $patch->mode);
-        $this->assertSame(['stream-assistant'], $patch->touchedKeys(), 'Patch must touch only the streaming visual key');
-        $this->assertCount(1, $patch->upserts);
-        $this->assertSame([], $patch->removals);
-
         $after = $transcript->all();
         $this->assertCount(2, $after);
         $this->assertSame($historyWrapper, $after[0], 'Finalized history wrapper must keep identity on tail stream');
@@ -288,6 +281,67 @@ final class TuiMountedTranscriptVirtualTest extends TestCase
         $this->assertSame($historyNode, $historyWrapper->node(), 'History visual node sources unchanged (object identity skip)');
         $this->assertSame($history, $historyWrapper->node()?->primary);
         $this->assertStringContainsString('partial more tokens', $streamMarkdown->getText());
+    }
+
+    #[Test]
+    public function testMiddleGenericUpdateKeepsOrderAndMutatesTextInPlace(): void
+    {
+        // Thesis: mid-list KIND_GENERIC TextWidget content change must not append a fresh
+        // widget at the end (order corruption). setText in place preserves sibling order.
+        $theme = new DefaultTheme(VirtualTuiHarness::defaultVirtualPalette());
+        $transcript = new TranscriptMountedWidget(theme: $theme);
+
+        $user = new TranscriptBlock(
+            id: 'user-1',
+            kind: TranscriptBlockKindEnum::UserMessage,
+            runId: self::SESSION_ID,
+            seq: 1,
+            text: 'prompt',
+        );
+        $error = new TranscriptBlock(
+            id: 'error-mid',
+            kind: TranscriptBlockKindEnum::Error,
+            runId: self::SESSION_ID,
+            seq: 2,
+            text: 'first error text',
+        );
+        $assistant = new TranscriptBlock(
+            id: 'assistant-tail',
+            kind: TranscriptBlockKindEnum::AssistantMessage,
+            runId: self::SESSION_ID,
+            seq: 3,
+            text: 'tail answer',
+        );
+        $transcript->setBlocks([$user, $error, $assistant]);
+
+        $before = $transcript->all();
+        $this->assertCount(3, $before);
+        $this->assertInstanceOf(StreamingMarkdownTranscriptWidget::class, $before[0]);
+        $this->assertInstanceOf(TextWidget::class, $before[1], 'Error block mounts as native TextWidget');
+        $this->assertInstanceOf(StreamingMarkdownTranscriptWidget::class, $before[2]);
+        $errorWidget = $before[1];
+        $this->assertInstanceOf(TextWidget::class, $errorWidget);
+        $userWidget = $before[0];
+        $assistantWidget = $before[2];
+
+        $updatedError = $error->with(text: 'updated middle error');
+        $transcript->applyChangeSet(TranscriptChangeSet::incremental([$updatedError]));
+
+        $after = $transcript->all();
+        $this->assertCount(3, $after, 'Middle generic update must not change child count');
+        $this->assertSame($userWidget, $after[0], 'Leading markdown identity preserved');
+        $this->assertSame($errorWidget, $after[1], 'Middle TextWidget identity must be preserved (in-place setText)');
+        $this->assertSame($assistantWidget, $after[2], 'Trailing markdown must stay after middle generic');
+        $this->assertStringContainsString('updated middle error', $errorWidget->getText());
+        $this->assertStringNotContainsString('first error text', $errorWidget->getText());
+
+        // Production projector contract for pure generic content update is content-only.
+        $projector = new TranscriptVisualProjector();
+        $projector->replaceAll([$user, $error, $assistant]);
+        $patch = $projector->applyChangeSet(TranscriptChangeSet::incremental([$updatedError]));
+        $this->assertTrue($patch->isContentOnly());
+        $this->assertNull($patch->order);
+        $this->assertSame(['error-mid'], $patch->touchedKeys());
     }
 
     /**

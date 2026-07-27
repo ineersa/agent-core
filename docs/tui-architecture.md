@@ -486,7 +486,8 @@ ChatScreen (14 widgets)
   ├── headerSeparator    (LiveTextWidget)  ─── at live terminal width
   ├── loadedResourcesWidget (LiveTextWidget)  LoadedResourcesWidget (startup summary; ctrl+r)
   ├── transcriptWidget   (TranscriptMountedWidget)  first-class mounted Symfony container
-  │     └── TranscriptVisualNodeWidget…  stable wrappers → MarkdownWidget / tool cards / separators
+  │     └── semantic/native children: StreamingMarkdown / ToolExchange / Question /
+  │         Subagent widgets, Welcome/TurnSeparator, trivial TextWidget
   ├── pendingWidget      (LiveTextWidget)  PendingMessagesWidget
   ├── workingWidget      (LiveTextWidget)  WorkingStatusWidget (via registry)
   ├── statusPanelWidget  (LiveTextWidget)  StatusPanelWidget (via registry)
@@ -532,11 +533,16 @@ ID→index map → `ChatScreen::applyTranscriptChangeSet` → stateful
   copies of block objects). Upserts are O(1) via ID→index; batch removals splice
   high indices first and rebuild the index once.
 - **Presentation model** retains canonical map/order and tool call/result
-  indexes. Ordinary pure tail markdown stream updates one visual node only
-  (dependency-bounded patch). Tool result arrival / separators / empty-assistant
-  suppression expand only neighbor + exchange dependencies; when safe, the
-  emitted patch touches only changed visual keys. Explicit full reproject is the
-  defined path for bootstrap, resume, RunLeafChanged/rewind/branch, non-tail
+  indexes. High-frequency pure stream/content updates reproject only the
+  affected standalone keys and emit a **content-only** `TranscriptVisualPatch`
+  (no order payload) so the mounted reconciler applies keyed upserts in
+  O(changes) with zero order/history scans. Common structural policy changes
+  (tool exchange, question, user-turn separators, mid removals) still
+  full-reproject O(B) internally, then **diff** to a bounded mounted patch when
+  survivor relative order is stable — a deliberate ponytail ceiling. Replace
+  with a per-exchange/neighbor dependency graph only if profiling shows
+  structural scans matter. Explicit full visual snapshot remains the defined
+  path for bootstrap, resume, RunLeafChanged/rewind/branch, non-tail
   insert/reorder, ambiguous mid-list tool pairing, and global preview
   invalidation — not a dual renderer.
 - **Mounted memory/layout** is O(number of visual nodes). Symfony's widget
@@ -895,8 +901,8 @@ RuntimeEventPoller::poll(state, client)
     ▼
 ChatScreen::applyTranscriptChangeSet(changes)   // full path: setTranscriptBlocks()
     │
-    ├─ TranscriptMountedWidget keyed reconcile (SemanticTranscriptNodeWidget)
-    ├─ TranscriptVisualProjector maps blocks → typed visual nodes (no text hashing)
+    ├─ TranscriptVisualProjector → TranscriptVisualPatch (content-only or structural)
+    ├─ TranscriptMountedWidget keyed reconcile (semantic widgets / native TextWidget)
     └─ Mounted Markdown/tool widgets render with live WidgetContext + theme stylesheet
     │
     └─ FooterStateListener handler

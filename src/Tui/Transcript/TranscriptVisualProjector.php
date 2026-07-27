@@ -109,7 +109,7 @@ final class TranscriptVisualProjector
         }
 
         if ($changes->isEmpty()) {
-            return TranscriptVisualPatch::incremental([], [], $this->nodeOrder);
+            return TranscriptVisualPatch::content([]);
         }
 
         // Removals that are not pure tail (or leave tool-index ambiguity) full-reproject.
@@ -198,7 +198,13 @@ final class TranscriptVisualProjector
             }
         }
 
-        return $this->reprojectAffected(array_keys($expanded), $previousKeysByPrimary);
+        // Structural scan decision uses originally dirty IDs only — neighbor expansion
+        // must not promote a pure content update (Error/stream) into full reproject.
+        return $this->reprojectAffected(
+            array_keys($expanded),
+            $previousKeysByPrimary,
+            array_keys($touchedPrimaryIds),
+        );
     }
 
     /**
@@ -538,18 +544,22 @@ final class TranscriptVisualProjector
     /**
      * Reproject only the dependency-bounded set of primary block IDs into visual keys.
      *
-     * @param list<string>          $affectedPrimaryIds
+     * @param list<string>          $affectedPrimaryIds     Expanded set (neighbors + dirty)
      * @param array<string, string> $previousKeysByPrimary
+     * @param list<string>          $structuralCandidateIds Originally dirty IDs (not neighbors)
      */
-    private function reprojectAffected(array $affectedPrimaryIds, array $previousKeysByPrimary): TranscriptVisualPatch
-    {
-        // For tool-heavy batches or multi-key structural shifts, full reproject is safer
-        // and still explicit — not a dual renderer.
+    private function reprojectAffected(
+        array $affectedPrimaryIds,
+        array $previousKeysByPrimary,
+        array $structuralCandidateIds,
+    ): TranscriptVisualPatch {
+        // Structural decision is based on originally dirty IDs only. Neighbor expansion
+        // for separators must not force O(B) reproject on pure Error/stream content updates.
         $needsStructuralScan = false;
-        foreach ($affectedPrimaryIds as $id) {
+        foreach ($structuralCandidateIds as $id) {
             $block = $this->blocksById[$id] ?? null;
             if (null === $block) {
-                // Removal: if it was a user message, separator key may drop.
+                // Removal: separators / pairing may drop — exceptional structural path.
                 $needsStructuralScan = true;
                 break;
             }
@@ -564,8 +574,11 @@ final class TranscriptVisualProjector
         }
 
         if ($needsStructuralScan) {
-            // Still O(history) — but only for structural/tool/question cases.
-            // Pure tail markdown stream never hits this branch.
+            // ponytail: structural policy (tool/question/user/separator) full-reprojects
+            // O(B) then diffs to a bounded mounted patch when survivor order is stable.
+            // Ceiling: large sessions with frequent tool/question structure churn.
+            // Upgrade: per-exchange/neighbor dependency graph if profiling shows this
+            // structural scan matters. Pure stream/content never enters this branch.
             $beforeKeys = $this->nodeOrder;
             $beforeNodes = $this->nodesByKey;
             $full = $this->fullReproject();
@@ -627,7 +640,8 @@ final class TranscriptVisualProjector
             return $this->fullReproject();
         }
 
-        return TranscriptVisualPatch::incremental($upserts, $removals, $this->nodeOrder);
+        // Content-only: no order payload — mounted path applies keyed upserts O(changes).
+        return TranscriptVisualPatch::content($upserts, $removals);
     }
 
     /**
@@ -690,7 +704,7 @@ final class TranscriptVisualProjector
             }
         }
 
-        return TranscriptVisualPatch::incremental($upserts, $removals, $afterKeys);
+        return TranscriptVisualPatch::structural($upserts, $removals, $afterKeys);
     }
 
     /**

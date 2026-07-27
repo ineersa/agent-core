@@ -9,6 +9,7 @@ use Ineersa\CodingAgent\Runtime\Projection\TranscriptChangeSet;
 use Ineersa\Tui\Theme\TuiTheme;
 use Symfony\Component\Tui\Widget\AbstractWidget;
 use Symfony\Component\Tui\Widget\ContainerWidget;
+use Symfony\Component\Tui\Widget\TextWidget;
 
 /**
  * Keyed mounted reconciler for the production transcript region.
@@ -39,8 +40,6 @@ final class TranscriptMountedWidget extends ContainerWidget
     /** @var list<string> */
     private array $nodeOrder = [];
 
-    private ?TranscriptVisualPatch $lastPatch = null;
-
     public function __construct(
         private readonly TuiTheme $theme,
         TranscriptDisplayConfig $displayConfig = new TranscriptDisplayConfig(),
@@ -61,15 +60,6 @@ final class TranscriptMountedWidget extends ContainerWidget
     public function getBlocks(): array
     {
         return $this->projector->exportBlocks();
-    }
-
-    /**
-     * Last production visual patch applied by setBlocks/applyChangeSet.
-     * Tests assert bounded touched keys on ordinary tail updates.
-     */
-    public function lastVisualPatch(): ?TranscriptVisualPatch
-    {
-        return $this->lastPatch;
     }
 
     /**
@@ -97,20 +87,51 @@ final class TranscriptMountedWidget extends ContainerWidget
 
     private function applyPatch(TranscriptVisualPatch $patch): void
     {
-        $this->lastPatch = $patch;
-
         if ($patch->isFull()) {
-            $this->reconcileToOrder($patch->nodes, $patch->order, fullSnapshot: true);
+            $this->reconcileToOrder($patch->nodes, $patch->order ?? [], fullSnapshot: true);
 
             return;
         }
 
-        $this->reconcileIncremental($patch);
+        if ($patch->isContentOnly()) {
+            $this->reconcileContentOnly($patch);
+
+            return;
+        }
+
+        $this->reconcileStructural($patch);
     }
 
-    private function reconcileIncremental(TranscriptVisualPatch $patch): void
+    /**
+     * Content-only path: keyed upserts/removals in O(changes). No order/history scan.
+     */
+    private function reconcileContentOnly(TranscriptVisualPatch $patch): void
     {
-        $desiredOrder = $patch->order;
+        foreach ($patch->removals as $key) {
+            $this->detachKey($key);
+            $this->nodeOrder = array_values(array_filter(
+                $this->nodeOrder,
+                static fn (string $k): bool => $k !== $key,
+            ));
+        }
+
+        foreach ($patch->upserts as $node) {
+            $existing = $this->nodes[$node->key] ?? null;
+            if (null === $existing) {
+                // Content-only must not invent structural appends; force ordered resync.
+                $this->applyPatch($this->projector->replaceAll($this->projector->exportBlocks()));
+
+                return;
+            }
+
+            $this->applyToWidget($existing, $node);
+            $this->appliedNodes[$node->key] = $node;
+        }
+    }
+
+    private function reconcileStructural(TranscriptVisualPatch $patch): void
+    {
+        $desiredOrder = $patch->order ?? $this->nodeOrder;
         $desiredSet = array_fill_keys($desiredOrder, true);
 
         // Relative order of survivors — if changed, rebuild from upserts + retained nodes.
@@ -143,7 +164,6 @@ final class TranscriptMountedWidget extends ContainerWidget
         }
 
         if ($prevSurviving !== $desiredSurviving || $nonTailInsertion) {
-            // Build full node list: prefer upsert payloads, else retained applied nodes.
             $nodes = [];
             $upsertByKey = [];
             foreach ($patch->upserts as $node) {
@@ -336,30 +356,32 @@ final class TranscriptMountedWidget extends ContainerWidget
             return;
         }
 
-        // Native static widgets (TextWidget/Welcome/Separator): replace only when sources change.
+        // Native static widgets (TextWidget/Welcome/Separator): skip when sources unchanged.
         $previous = $this->appliedNodes[$node->key] ?? null;
         if (null !== $previous && $previous->sameSources($node)) {
             return;
         }
 
-        // Trivial static node with no apply API — recreate by swapping parent child.
-        // Callers that need content updates on KIND_GENERIC go through createWidgetFor again
-        // in reconcile when the widget is replaced.
         if ($widget instanceof WelcomeTranscriptWidget || $widget instanceof TurnSeparatorWidget) {
             return;
         }
 
-        // Generic TextWidget: rebuild by removing and re-adding a fresh instance at same key.
-        // Parent ContainerWidget has no replace API; detach + recreate is handled by caller
-        // when identity is wrong. Here we only no-op if sameSources; else force recreate:
-        if (null !== $previous && !$previous->sameSources($node)) {
-            // Mark for recreate: remove and put new widget in nodes map at call site.
-            // applyToWidget is only invoked when widget already matches key; recreate happens
-            // via createWidgetFor when existing is null. For source change on generic, swap:
+        // Generic TextWidget: mutate in place (setText) so mid-list updates keep order.
+        // Theme color is already baked into the factory text via ANSI escapes.
+        if ($widget instanceof TextWidget && TranscriptVisualNode::KIND_GENERIC === $node->kind) {
             $fresh = $this->createWidgetFor($node);
-            $this->remove($widget);
-            $this->add($fresh);
-            $this->nodes[$node->key] = $fresh;
+            if ($fresh instanceof TextWidget) {
+                $widget->setText($fresh->getText());
+                $style = $fresh->getStyle();
+                if (null !== $style) {
+                    $widget->setStyle($style);
+                }
+
+                return;
+            }
         }
+
+        // Non-TextWidget generic (rare ContainerWidget shapes): ordered resync preserves position.
+        $this->applyPatch($this->projector->replaceAll($this->projector->exportBlocks()));
     }
 }
