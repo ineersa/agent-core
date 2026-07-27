@@ -102,15 +102,13 @@ final class BuildCompactionMemoryJobHandlerTest extends TestCase
                     throw new \RuntimeException('observation id not found in reflector input: '.$request->input);
                 }
                 ($tool->handler)([
-                    'replacement_text' => 'Earlier work decided feature-flag rollouts.',
                     'reflections' => [
                         [
-                            'timestamp' => '2026-07-26 12:00',
                             'content' => 'Use feature flags for risky releases',
                             'supporting_observation_ids' => [$obsId],
-                            'compression_level' => 0,
                         ],
                     ],
+                    'retained_observation_ids' => [$obsId],
                 ]);
 
                 return;
@@ -145,13 +143,22 @@ final class BuildCompactionMemoryJobHandlerTest extends TestCase
         $result = $repo->getResult($requestId);
         $this->assertNotNull($result);
         $this->assertSame(CompactionRepository::STATUS_SUCCEEDED, $result['status']);
-        $this->assertSame('Earlier work decided feature-flag rollouts.', $result['replacement_text']);
+        $this->assertNotNull($result['replacement_text']);
+        $this->assertStringContainsString('These are condensed memories from earlier in this session.', (string) $result['replacement_text']);
+        $this->assertStringContainsString('## Reflections', (string) $result['replacement_text']);
+        $this->assertStringContainsString('Use feature flags for risky releases', (string) $result['replacement_text']);
+        $this->assertStringNotContainsString('replacement_text', (string) $result['replacement_text']);
 
         $refCount = (int) $connection->fetchOne(
             'SELECT COUNT(*) FROM om_reflection WHERE compaction_request_id = ?',
             [$requestId],
         );
         $this->assertSame(1, $refCount);
+        $activeGen = (int) $connection->fetchOne(
+            'SELECT COUNT(*) FROM om_active_generation WHERE run_id = ?',
+            ['run-c'],
+        );
+        $this->assertSame(1, $activeGen);
 
         $handler->handle($api, $payload, 'job-1-redeliver', 'run-c');
         $this->assertSame(2, $agentCalls, 'compatible redelivery must not re-run models');
@@ -281,7 +288,7 @@ final class BuildCompactionMemoryJobHandlerTest extends TestCase
         $result = $repo->getResult('req-no-tool');
         $this->assertNotNull($result);
         $this->assertSame(CompactionRepository::STATUS_FAILED, $result['status']);
-        $this->assertSame('reflector_tool_not_called', $result['failure_code']);
+        $this->assertSame('tool_not_called', $result['failure_code']);
     }
 
     public function testObserverNoToolCallCommitsZeroObservationCoverageThenNoObservationsFailure(): void

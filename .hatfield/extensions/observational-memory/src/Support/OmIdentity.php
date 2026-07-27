@@ -129,6 +129,27 @@ final class OmIdentity
     }
 
     /**
+     * @param list<string> $supportingObservationIds
+     */
+    public static function reflectionId(
+        string $runId,
+        string $reflectorSchemaVersion,
+        string $content,
+        array $supportingObservationIds,
+    ): string {
+        $support = array_values(array_unique(array_map(static fn (string $id): string => $id, $supportingObservationIds)));
+        sort($support, \SORT_STRING);
+
+        return OmCanonicalJson::sha256([
+            'type' => 'reflection-v1',
+            'run_id' => $runId,
+            'reflector_schema_version' => $reflectorSchemaVersion,
+            'content' => $content,
+            'supporting_observation_ids' => $support,
+        ]);
+    }
+
+    /**
      * @param list<array{run_id: string, seq: int, kind: string, rendered_text: string}> $sourceBlocks
      */
     public static function fullSourceDigest(array $sourceBlocks): string

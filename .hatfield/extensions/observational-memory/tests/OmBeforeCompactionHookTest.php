@@ -364,10 +364,14 @@ final class OmBeforeCompactionHookTest extends TestCase
 
         $dbPath = $this->projectDir.'/.hatfield/extensions-data/observational-memory/om.sqlite';
         $connection = OmDatabaseFactory::connect($dbPath, new NullLogger());
+        $requestStatus = (string) $connection->fetchOne(
+            "SELECT status FROM om_compaction_request WHERE run_id = 'run-timeout'",
+        );
+        $this->assertSame(CompactionRepository::STATUS_TIMED_OUT, $requestStatus);
         $failedTimedOut = (int) $connection->fetchOne(
             "SELECT COUNT(*) FROM om_compaction_result WHERE status = 'failed' AND failure_code = 'timed_out'",
         );
-        $this->assertSame(0, $failedTimedOut);
+        $this->assertSame(0, $failedTimedOut, 'timeout is request-terminal only; no fake failed result row');
     }
 
     public function testDurableFailedResultCancelsImmediatelyWithoutRedispatchWait(): void

@@ -164,8 +164,9 @@ final readonly class OmBeforeCompactionHook implements BeforeCompactionHookInter
             }
 
             if (microtime(true) >= $deadline) {
-                // Do not persist timed_out terminal state: late success with same
-                // request identity remains reusable on a later compaction attempt.
+                // Terminal timed_out so late worker success cannot promote/reuse this request.
+                $timeoutNow = (new \DateTimeImmutable('now', new \DateTimeZone('UTC')))->format(\DateTimeInterface::ATOM);
+                $repo->markTimedOut($requestId, $timeoutNow);
                 $this->logger->info('om.compaction.hook_timeout', [
                     'component' => 'observational_memory',
                     'event_type' => 'om.compaction.hook_timeout',
@@ -198,7 +199,7 @@ final readonly class OmBeforeCompactionHook implements BeforeCompactionHookInter
         if (CompactionRepository::STATUS_SUCCEEDED === $status) {
             $text = trim((string) ($result['replacement_text'] ?? ''));
             if ('' === $text) {
-                return BeforeCompactionHookResultDTO::cancel('observational_memory returned empty replacement_text');
+                return BeforeCompactionHookResultDTO::cancel('observational_memory returned empty server-rendered replacement');
             }
 
             try {

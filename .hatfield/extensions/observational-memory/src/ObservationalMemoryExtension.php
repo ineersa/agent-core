@@ -8,6 +8,7 @@ use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
 use Ineersa\Hatfield\ExtensionApi\HatfieldExtensionInterface;
 use Ineersa\HatfieldExt\ObservationalMemory\Compaction\BuildCompactionMemoryJobHandler;
 use Ineersa\HatfieldExt\ObservationalMemory\Compaction\OmBeforeCompactionHook;
+use Ineersa\HatfieldExt\ObservationalMemory\Compaction\ReflectGenerationJobHandler;
 use Ineersa\HatfieldExt\ObservationalMemory\Observer\ObserveBoundaryJobHandler;
 use Ineersa\HatfieldExt\ObservationalMemory\Observer\ObserveBoundaryTerminalHook;
 use Ineersa\HatfieldExt\ObservationalMemory\Runtime\OmSettings;
@@ -57,6 +58,10 @@ final class ObservationalMemoryExtension implements HatfieldExtensionInterface, 
             BuildCompactionMemoryJobHandler::HANDLER_ID,
             new BuildCompactionMemoryJobHandler($this->logger),
         );
+        $api->registerExtensionAgentJobHandler(
+            ReflectGenerationJobHandler::HANDLER_ID,
+            new ReflectGenerationJobHandler($this->logger),
+        );
 
         $api->registerAfterTurnCommitHook(
             new ObserveBoundaryTerminalHook($api, $settings, $this->logger),
@@ -70,6 +75,7 @@ final class ObservationalMemoryExtension implements HatfieldExtensionInterface, 
             'event_type' => 'om.extension.registered',
             'handler_id' => ObserveBoundaryTerminalHook::HANDLER_ID,
             'compaction_handler_id' => BuildCompactionMemoryJobHandler::HANDLER_ID,
+            'reflect_handler_id' => ReflectGenerationJobHandler::HANDLER_ID,
         ]);
     }
 }

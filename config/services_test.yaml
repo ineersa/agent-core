@@ -61,3 +61,10 @@ services:
   # Lives in tests/ — never contacts real auth files or provider networks.
   Ineersa\CodingAgent\Runtime\Contract\ProviderQuotaProbeServiceInterface:
     class: Ineersa\CodingAgent\Tests\Infrastructure\ProviderQuota\FakeProviderQuotaProbeService
+
+  # TEST-ONLY OM SQLite factory wrapper. Production OmDatabaseFactory stays static;
+  # this service calls the real factory so DB-touching OM tests boot through the
+  # Symfony test container without inventing production seams.
+  test.om_database_factory:
+    class: Ineersa\HatfieldExt\ObservationalMemory\Tests\Support\OmDatabaseFactoryTestService
+    public: true

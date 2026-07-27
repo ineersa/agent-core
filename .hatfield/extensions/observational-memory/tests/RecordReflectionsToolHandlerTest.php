@@ -5,165 +5,123 @@ declare(strict_types=1);
 namespace Ineersa\HatfieldExt\ObservationalMemory\Tests;
 
 use Ineersa\HatfieldExt\ObservationalMemory\Compaction\RecordReflectionsToolHandler;
+use Ineersa\HatfieldExt\ObservationalMemory\Support\OmIdentity;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Thesis: record_reflections validates support ids/budgets and is first-valid-wins.
+ * Thesis: complete-generation record_reflections last-valid-wins, invalid calls
+ * do not mutate candidate, retain/new ids are allowlisted, no replacement_text.
  */
 final class RecordReflectionsToolHandlerTest extends TestCase
 {
-    public function testAcceptsValidPayloadAndRejectsSecondCallAndBadSupport(): void
+    public function testLastValidCallWinsAndInvalidDoesNotMutate(): void
     {
+        $priorId = OmIdentity::reflectionId('run-1', 'v1', 'Prior durable fact', ['obs-a']);
         $handler = new RecordReflectionsToolHandler(
             runId: 'run-1',
-            requestId: 'req-1',
             reflectorSchemaVersion: 'v1',
-            compressionLevel: 0,
+            allowedReflectionIds: [$priorId => true],
             allowedObservationIds: ['obs-a' => true, 'obs-b' => true],
-            maxReflections: 2,
-            reflectionContentMaxChars: 100,
-            replacementMaxChars: 200,
-            reflectionsMaxTokens: 10_000,
-        );
-
-        $ok = $handler([
-            'replacement_text' => 'Summary text',
-            'reflections' => [
-                [
-                    'content' => 'Decision A',
+            activeReflectionsById: [
+                $priorId => [
+                    'reflection_id' => $priorId,
+                    'content' => 'Prior durable fact',
                     'supporting_observation_ids' => ['obs-a'],
-                    'compression_level' => 0,
-                ],
-                [
-                    'content' => 'Decision B',
-                    'supporting_observation_ids' => ['obs-b', 'obs-a'],
-                    'compression_level' => 0,
+                    'supporting_observation_ids_json' => '["obs-a"]',
+                    'token_count' => 4,
                 ],
             ],
+            requireNonEmptyOutput: true,
+        );
+
+        $first = $handler([
+            'reflections' => [
+                ['retain_id' => $priorId],
+                [
+                    'content' => 'New durable decision',
+                    'supporting_observation_ids' => ['obs-b', 'obs-a'],
+                ],
+            ],
+            'retained_observation_ids' => ['obs-b'],
         ]);
-        $this->assertIsArray($ok);
-        $this->assertSame('accepted', $ok['status']);
-        $this->assertTrue($handler->hasRecorded());
+        $this->assertSame('accepted', $first['status']);
+        $this->assertTrue($handler->hasCandidate());
         $this->assertCount(2, $handler->reflections());
+        $this->assertSame(['obs-b'], $handler->retainedObservationIds());
+
+        $invalid = $handler([
+            'reflections' => [
+                ['content' => "line1\nline2", 'supporting_observation_ids' => ['obs-a']],
+            ],
+            'retained_observation_ids' => ['obs-a'],
+        ]);
+        $this->assertSame('rejected', $invalid['status']);
+        $this->assertCount(2, $handler->reflections(), 'invalid call must not mutate candidate');
+        $this->assertSame(['obs-b'], $handler->retainedObservationIds());
 
         $second = $handler([
-            'replacement_text' => 'Other',
-            'reflections' => [],
-        ]);
-        $this->assertSame('already_recorded', $second['error']);
-
-        $bad = new RecordReflectionsToolHandler(
-            runId: 'run-1',
-            requestId: 'req-2',
-            reflectorSchemaVersion: 'v1',
-            compressionLevel: 0,
-            allowedObservationIds: ['obs-a' => true],
-            maxReflections: 2,
-            reflectionContentMaxChars: 100,
-            replacementMaxChars: 200,
-            reflectionsMaxTokens: 10_000,
-        );
-        $rejected = $bad([
-            'replacement_text' => 'Summary',
             'reflections' => [
                 [
-                    'content' => 'Bad support',
-                    'supporting_observation_ids' => ['missing'],
-                    'compression_level' => 0,
-                ],
-            ],
-        ]);
-        $this->assertSame('rejected', $rejected['status']);
-        $this->assertFalse($bad->hasRecorded());
-
-        $levelMismatch = new RecordReflectionsToolHandler(
-            runId: 'run-1',
-            requestId: 'req-3',
-            reflectorSchemaVersion: 'v1',
-            compressionLevel: 1,
-            allowedObservationIds: ['obs-a' => true],
-            maxReflections: 2,
-            reflectionContentMaxChars: 100,
-            replacementMaxChars: 200,
-            reflectionsMaxTokens: 10_000,
-        );
-        $levelRejected = $levelMismatch([
-            'replacement_text' => 'Summary',
-            'reflections' => [
-                [
-                    'content' => 'Wrong level',
+                    'content' => 'Only new reflection remains',
                     'supporting_observation_ids' => ['obs-a'],
-                    'compression_level' => 0,
                 ],
             ],
+            'retained_observation_ids' => ['obs-a', 'obs-b'],
         ]);
-        $this->assertSame('rejected', $levelRejected['status']);
-        $this->assertSame('compression_level_mismatch', $levelRejected['error']);
-        $this->assertFalse($levelMismatch->hasRecorded());
-    }
-
-    /**
-     * Thesis: duplicate fully-validated reflections count once toward reflections_max_tokens.
-     */
-    public function testDuplicateReflectionDoesNotDoubleCountTokenBudget(): void
-    {
-        // 20 UTF-8 chars => ceil(20 / 4) = 5 tokens. Budget fits one copy, not two.
-        $content = str_repeat('x', 20);
-        $tokens = \Ineersa\HatfieldExt\ObservationalMemory\Observer\OmTokenEstimator::estimate($content);
-        $this->assertSame(5, $tokens);
-
-        $handler = new RecordReflectionsToolHandler(
-            runId: 'run-1',
-            requestId: 'req-dedupe-budget',
-            reflectorSchemaVersion: 'v1',
-            compressionLevel: 0,
-            allowedObservationIds: ['obs-a' => true],
-            maxReflections: 2,
-            reflectionContentMaxChars: 100,
-            replacementMaxChars: 200,
-            reflectionsMaxTokens: $tokens,
-        );
-
-        $reflection = [
-            'content' => $content,
-            'supporting_observation_ids' => ['obs-a'],
-            'compression_level' => 0,
-        ];
-        $ok = $handler([
-            'replacement_text' => 'Summary text',
-            'reflections' => [$reflection, $reflection],
-        ]);
-
-        $this->assertIsArray($ok);
-        $this->assertSame('accepted', $ok['status']);
-        $this->assertTrue($handler->hasRecorded());
+        $this->assertSame('accepted', $second['status']);
         $this->assertCount(1, $handler->reflections());
-        $this->assertSame($tokens, $handler->reflections()[0]['token_count']);
+        $this->assertSame(['obs-a', 'obs-b'], $handler->retainedObservationIds());
+        $this->assertSame(
+            OmIdentity::reflectionId('run-1', 'v1', 'Only new reflection remains', ['obs-a']),
+            $handler->reflections()[0]['reflection_id'],
+        );
     }
 
-    public function testEmptyReflectionsRejectedWithoutStateMutation(): void
+    public function testEmptyBothArraysRejectedWhenActiveMemoryRequired(): void
     {
         $handler = new RecordReflectionsToolHandler(
             runId: 'run-1',
-            requestId: 'req-empty',
             reflectorSchemaVersion: 'v1',
-            compressionLevel: 0,
+            allowedReflectionIds: [],
             allowedObservationIds: ['obs-a' => true],
-            maxReflections: 2,
-            reflectionContentMaxChars: 100,
-            replacementMaxChars: 200,
-            reflectionsMaxTokens: 10_000,
+            activeReflectionsById: [],
+            requireNonEmptyOutput: true,
         );
 
         $rejected = $handler([
-            'replacement_text' => 'Summary only is not enough',
             'reflections' => [],
+            'retained_observation_ids' => [],
         ]);
-
         $this->assertSame('rejected', $rejected['status']);
-        $this->assertSame('empty_reflections', $rejected['error']);
-        $this->assertFalse($handler->hasRecorded());
-        $this->assertNull($handler->replacementText());
-        $this->assertSame([], $handler->reflections());
+        $this->assertSame('empty_generation', $rejected['error']);
+        $this->assertFalse($handler->hasCandidate());
+    }
+
+    public function testUnknownRetainAndSupportRejected(): void
+    {
+        $handler = new RecordReflectionsToolHandler(
+            runId: 'run-1',
+            reflectorSchemaVersion: 'v1',
+            allowedReflectionIds: [],
+            allowedObservationIds: ['obs-a' => true],
+            activeReflectionsById: [],
+            requireNonEmptyOutput: true,
+        );
+
+        $badRetain = $handler([
+            'reflections' => [['retain_id' => 'missing-reflection']],
+            'retained_observation_ids' => [],
+        ]);
+        $this->assertSame('rejected', $badRetain['status']);
+        $this->assertFalse($handler->hasCandidate());
+
+        $badSupport = $handler([
+            'reflections' => [
+                ['content' => 'Fact', 'supporting_observation_ids' => ['missing']],
+            ],
+            'retained_observation_ids' => [],
+        ]);
+        $this->assertSame('rejected', $badSupport['status']);
+        $this->assertFalse($handler->hasCandidate());
     }
 }

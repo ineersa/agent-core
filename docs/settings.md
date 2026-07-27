@@ -1535,36 +1535,29 @@ Settings for the project Observational Memory extension
 OM is **not enabled by default**. This repository’s tracked `.hatfield/settings.yaml`
 intentionally omits both the extension class from `extensions.enabled` and any
 `extensions.settings.observational_memory` block so local/dev sessions do not start
-Observer/Reflector workers or write `om.sqlite` until explicitly activated. When you
-enable the class, add the settings section below (or rely on package defaults for
-optional keys). Full activation steps and ownership boundaries live in
-`.hatfield/extensions/observational-memory/README.md`.
+Observer/Reflector workers or write `om.sqlite` until explicitly activated.
+
+Nested shape only (no flat budget compatibility keys):
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | `enabled` | bool | `true` (when section present) | Set `false` to keep the class loaded but skip observe/compaction work. |
-| `observer_model` | string | *(required for observe/compaction)* | Exact `provider/model` for Observer catch-up jobs. |
-| `reflector_model` | string | *(required for compaction)* | Exact `provider/model` for Reflector replacement summaries. |
-| `database_path` | string | `.hatfield/extensions-data/observational-memory/om.sqlite` | Extension-owned SQLite path (relative to project CWD or absolute). |
-| `renderer_version` | string | `om-renderer-v1` | Interaction renderer identity baked into coverage keys. |
-| `observer_schema_version` | string | `om-observer-v1` | Observer tool/schema identity baked into coverage keys. |
-| `reflector_schema_version` | string | `om-reflector-v1` | Reflector schema identity baked into request fingerprints. |
-| `max_observations` | int | `12` | Max observations per Observer tool call. |
-| `observer_input_budget_tokens` | int | `12000` | Rendered interaction token budget for Observer input. |
-| `tool_result_max_chars` | int | `4000` | Per-tool-result char bound in rendered interaction text. |
-| `content_max_chars` | int | `2000` | Max chars per observation content. |
-| `observations_max_tokens` | int | `30000` | Session observation pool pressure budget (compression level). |
-| `reflections_max_tokens` | int | `10000` | Token budget for recorded reflections. |
-| `reflector_input_budget_tokens` | int | `20000` | Reflector input truncation budget. |
-| `max_reflections` | int | `8` | Max reflections per Reflector tool call (`minItems: 1` when reflecting). |
-| `reflection_content_max_chars` | int | `4000` | Max chars per reflection content. |
-| `replacement_max_chars` | int | `12000` | Max chars for CompactRun replacement summary text. |
-| `compaction.wait_timeout_seconds` | int | `180` | Bounded CompactRun hook poll timeout waiting on `om.sqlite` result. Nested `compaction.wait_timeout_seconds` preferred; flat `wait_timeout_seconds` also accepted. |
+| `storage.database` | string | `.hatfield/extensions-data/observational-memory/om.sqlite` | Extension-owned SQLite path. |
+| `observer.model` | string | *(required)* | Exact `provider/model` for Observer jobs. |
+| `observer.thinking_level` | string | `medium` | Observer thinking level. |
+| `observer.context_window_ratio` | float | `0.65` | Fraction of model context used for Observer envelope/chunking. |
+| `observer.renderer_version` | string | `1` | Renderer identity baked into coverage keys. |
+| `observer.schema_version` | string | `1` | Observer schema identity baked into coverage/observation ids. |
+| `reflector.model` | string | *(required)* | Exact `provider/model` for Reflector jobs. |
+| `reflector.thinking_level` | string | `high` | Reflector thinking level. |
+| `reflector.context_window_ratio` | float | `0.65` | Fraction of model context for Reflector envelope. |
+| `reflector.reflect_after_observation_tokens` | int | `40000` | Threshold Reflector dispatch gate after durable observe chunks. |
+| `reflector.schema_version` | string | `1` | Reflector schema identity. |
+| `pools.observations_max_tokens` | int | `30000` | Active retained-observation pool budget after Reflector. |
+| `pools.reflections_max_tokens` | int | `10000` | Active reflection pool budget after Reflector. |
+| `compaction.wait_timeout_seconds` | int | `180` | CompactRun hook poll timeout waiting on `om.sqlite` result. |
 
-Nested aliases also accepted: `observer.model`, `reflector.model`,
-`pools.observations_max_tokens`, `pools.reflections_max_tokens`.
-
-Example (disabled-by-default project activation surface):
+Example (activation surface; keep disabled in tracked project settings):
 
 ```yaml
 extensions:
@@ -1574,16 +1567,30 @@ extensions:
     settings:
         observational_memory:
             enabled: true
-            observer_model: llama_cpp_test/test
-            reflector_model: llama_cpp_test/test
-            # database_path: .hatfield/extensions-data/observational-memory/om.sqlite
-            # compaction:
-            #     wait_timeout_seconds: 180
+            storage:
+                database: .hatfield/extensions-data/observational-memory/om.sqlite
+            observer:
+                model: llama_cpp_test/test
+                thinking_level: medium
+                context_window_ratio: 0.65
+            reflector:
+                model: llama_cpp_test/test
+                thinking_level: high
+                context_window_ratio: 0.65
+                reflect_after_observation_tokens: 40000
+            pools:
+                observations_max_tokens: 30000
+                reflections_max_tokens: 10000
+            compaction:
+                wait_timeout_seconds: 180
 ```
 
 Requires async `extension_agent` transport (process controller Doctrine DSN).
 `sync://` dispatch is fail-closed. Compaction uses session-global coverage watermark
-`1..RunState.lastSeq` and a single FIFO `extension_agent` worker (no priority queue).
+`1..RunState.lastSeq`, deterministic server-side active-memory render (no model
+`replacement_text`), single FIFO `extension_agent` worker, and `max_retries: 1`
+with no failure transport. Exhausted jobs emit sanitized `extension_agent.job_failed`
+TUI Error blocks.
 
 ## Fork tool defaults
 
