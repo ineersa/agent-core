@@ -11,9 +11,6 @@ use Ineersa\HatfieldExt\ObservationalMemory\Tests\Support\OmDatabaseFactoryTestS
 
 /**
  * Thesis: chunk/part coverage is idempotent; incomplete parts do not advance; complete intervals walk from 1; no MAX shortcut.
- */
-/**
- * Thesis: chunk/part coverage is idempotent; incomplete parts do not advance; complete intervals walk from 1; no MAX shortcut.
  * Active candidates use generation required_end_seq watermark, not created_at second precision.
  */
 final class ObservationRepositoryIdempotencyTest extends IsolatedKernelTestCase

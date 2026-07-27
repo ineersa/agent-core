@@ -463,14 +463,13 @@ final class CompactionRepository
 
         $this->connection->beginTransaction();
         try {
-            $this->assertAndTouchRequest(
+            $this->assertIdentityAndCasFailed(
                 $requestId,
                 $runId,
                 $requiredStartSeq,
                 $requiredEndSeq,
                 $requiredWatermark,
                 $requestFingerprint,
-                self::STATUS_FAILED,
                 $now,
                 $failureCode,
                 $failureMetadataJson,
@@ -541,14 +540,17 @@ final class CompactionRepository
         }
     }
 
-    private function assertAndTouchRequest(
+    /**
+     * Insert a missing request as failed, or CAS an existing request from queued/running → failed.
+     * Never overwrites timed_out/succeeded/failed terminals.
+     */
+    private function assertIdentityAndCasFailed(
         string $requestId,
         string $runId,
         int $requiredStartSeq,
         int $requiredEndSeq,
         int $requiredWatermark,
         string $requestFingerprint,
-        string $status,
         string $now,
         ?string $failureCode,
         ?string $failureMetadataJson,
@@ -567,7 +569,7 @@ final class CompactionRepository
                 'required_watermark' => $requiredWatermark,
                 'request_fingerprint' => $requestFingerprint,
                 'observation_set_hash' => null,
-                'status' => $status,
+                'status' => self::STATUS_FAILED,
                 'requested_at' => $now,
                 'updated_at' => $now,
                 'completed_at' => $now,
@@ -587,11 +589,38 @@ final class CompactionRepository
             $requestFingerprint,
         );
 
-        $this->connection->executeStatement(
+        // CAS: only non-terminal requests may become failed. timed_out/succeeded win the race.
+        $cas = $this->connection->executeStatement(
             'UPDATE om_compaction_request
              SET status = ?, updated_at = ?, completed_at = ?, failure_code = ?, failure_metadata_json = ?
-             WHERE request_id = ?',
-            [$status, $now, $now, $failureCode, $failureMetadataJson, $requestId],
+             WHERE request_id = ? AND status IN (?, ?)',
+            [
+                self::STATUS_FAILED,
+                $now,
+                $now,
+                $failureCode,
+                $failureMetadataJson,
+                $requestId,
+                self::STATUS_QUEUED,
+                self::STATUS_RUNNING,
+            ],
         );
+        if (1 === $cas) {
+            return;
+        }
+
+        $status = $this->getRequestStatus($requestId);
+        $current = null === $status ? 'missing' : $status['status'];
+        if (self::STATUS_TIMED_OUT === $current) {
+            throw new OmConflictException(\sprintf('Compaction request %s already timed out; reject late failure.', $requestId));
+        }
+        if (self::STATUS_SUCCEEDED === $current) {
+            throw new OmConflictException(\sprintf('Compaction request %s already succeeded; cannot fail.', $requestId));
+        }
+        if (self::STATUS_FAILED === $current) {
+            throw new OmConflictException(\sprintf('Compaction request %s already failed; cannot overwrite failure.', $requestId));
+        }
+
+        throw new OmConflictException(\sprintf('Compaction request %s is not queued/running (status=%s); cannot commit failure.', $requestId, $current));
     }
 }

@@ -80,6 +80,7 @@ final class CompactionRepositoryTest extends IsolatedKernelTestCase
         $this->assertSame(2, $obs->contiguousCoveredEndSeq('run-g', 'r1', 'o1'));
 
         $repo->ensureRequest('req-m', 'run-g', 1, 6, 6, 'fp-m', $now);
+        $repo->markRunning('req-m', 'fp-m', $now);
         $repo->commitSuccess(
             requestId: 'req-m',
             resultId: 'res-m',
@@ -124,6 +125,47 @@ final class CompactionRepositoryTest extends IsolatedKernelTestCase
 
         $this->expectException(OmConflictException::class);
         $repo->ensureRequest('req-m', 'run-g', 1, 7, 7, 'fp-other', $now);
+    }
+
+    public function testCommitFailureDoesNotOverwriteTimedOutRequest(): void
+    {
+        $dbPath = $this->projectDir.'/.hatfield/extensions-data/observational-memory/om.sqlite';
+        $connection = $this->omDatabaseFactory()->connectAndMigrate($dbPath, new NullLogger());
+        $repo = new CompactionRepository($connection);
+        $now = (new \DateTimeImmutable('now', new \DateTimeZone('UTC')))->format(\DateTimeInterface::ATOM);
+
+        $repo->ensureRequest('req-to', 'run-to', 1, 4, 4, 'fp-to', $now);
+        $repo->markTimedOut('req-to', $now);
+
+        try {
+            $repo->commitFailure(
+                requestId: 'req-to',
+                resultId: 'res-to-fail',
+                runId: 'run-to',
+                requiredStartSeq: 1,
+                requiredEndSeq: 4,
+                requiredWatermark: 4,
+                requestFingerprint: 'fp-to',
+                failureCode: 'tool_not_called',
+                now: $now,
+                failureMetadata: ['exception_class' => 'RuntimeException'],
+            );
+            $this->fail('commitFailure against timed_out request must conflict');
+        } catch (OmConflictException) {
+            // expected
+        }
+
+        $status = $repo->getRequestStatus('req-to');
+        $this->assertNotNull($status);
+        $this->assertSame(CompactionRepository::STATUS_TIMED_OUT, $status['status']);
+        $this->assertNull($repo->getResult('req-to'));
+        $this->assertSame(
+            0,
+            (int) $connection->fetchOne(
+                'SELECT COUNT(*) FROM om_compaction_result WHERE request_id = ?',
+                ['req-to'],
+            ),
+        );
     }
 
     private function omDatabaseFactory(): OmDatabaseFactoryTestService
