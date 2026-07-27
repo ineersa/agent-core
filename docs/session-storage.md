@@ -90,11 +90,10 @@ Parent subagent tool calls (single or parallel) use the normalized deferred batc
 ### Session metadata (database)
 
 Session identity and metadata are stored in the `hatfield_session` DB table
-(authoritative) and exposed through `HatfieldSessionStore::findSession()`
-and `SessionMetadataStore::findSession()`, which return
-`?HatfieldSession`. `updateMetadata()` and other store write APIs own
-mutations and flush; callers must treat entities from `findSession()` as
-read-only.
+(authoritative) and exposed through `HatfieldSessionStore::findSession()`,
+which returns `?HatfieldSession`. `updateMetadata()` and other store write
+APIs own mutations and flush; callers must treat entities from
+`findSession()` as read-only.
 
 Public `session_id` and AgentCore `run_id` are both the string cast of
 `HatfieldSession::$id` (auto-increment integer). There is no separate
@@ -674,7 +673,7 @@ reusable without destructive truncation or separate tree files.
 |-----|----------|-------|
 | Messenger synchronous bus wiring | High | `config/packages/messenger.yaml` buses have empty middleware arrays. `RunOrchestrator` handlers are registered but messages may not be dispatched. Required for actual run persistence end-to-end. |
 | File-backed CommandStore | Medium | `InMemoryCommandStore` loses pending commands on restart. Step IDs use `hrtime()` so duplicates are unlikely, but file backing would improve durability. |
-| File-backed MessageIdempotencyService | Low | In-memory idempotency state is lost on restart. Not critical because step IDs are time-based and won't repeat. |
+| File-backed IdempotencyStoreInterface | Low | In-memory idempotency state is lost on restart. Not critical because step IDs are time-based and won't repeat. |
 | Session listing (`listSessions()`) | **Done** | `HatfieldSessionStore::listSessions()` returns catalog rows with `displayTitle`. Turn tree read model (`TurnTreeDTO`, `TurnTreeProjector`) done (SESSION-05); `/tree` UI picker remains future (SESSION-06/07). |
 | Session pruning/cleanup | Low | No auto-expiry or `session:prune` command. Orphaned sessions accumulate. |
 | Fork command (`session:fork`) | Medium | Planned; storage model is ready. Needs rewrite logic + CLI command. |

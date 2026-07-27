@@ -62,7 +62,6 @@ interface BinaryLocator
 | Class | Change |
 |---|---|
 | `JsonlProcessAgentSessionClient` | Accept `BinaryLocator $locator` in the constructor; call `$locator->locate()` instead of building `$projectDir.'/bin/console'` |
-| `AgentProcessSupervisor` | Same — currently takes `$consolePath` directly; should accept `BinaryLocator` instead |
 | `config/services.yaml` | Wire the appropriate `BinaryLocator` implementation (auto-detected or config-driven) |
 | `AgentCommand` | No change (already receives the client via DI) |
 
@@ -73,6 +72,5 @@ interface BinaryLocator
       `ConfigBinaryLocator`, and a `ChainBinaryLocator`.
 - [ ] Wire `BinaryLocator` into container services and set the default to
       a chain that prefers explicit config → PHAR → source-tree fallback.
-- [ ] Update `AgentProcessSupervisor` to use `BinaryLocator`.
 - [ ] Add PHAR build tooling for `agent-core` itself.
 - [ ] Test both source-checkout and PHAR modes in CI.

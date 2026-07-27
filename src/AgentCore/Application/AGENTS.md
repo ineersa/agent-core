@@ -68,7 +68,6 @@ Note: `CollectToolBatch` is routed to `agent.execution.bus` in `config/messenger
 - `ExecuteLlmStepWorker` and `ExecuteToolCallWorker` emit execution spans (`llm.call`, `tool.call`) and feed latency/error metrics.
 - `RunMetrics` tracks active runs by status, turn-duration histogram, LLM/tool latency/error rates, command queue lag, stale-result count, and replay rebuild counters.
 - `HotPromptStateRebuilderInterface (SessionHotPromptReplayService in App)` increments rebuild counters and contributes replay tracing for hot-state rebuild operations.
-- `RunDebugService` exposes the current metrics snapshot for `agent-loop:run-inspect` output.
 
 ## Turn tree replay
 

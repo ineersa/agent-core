@@ -13,6 +13,7 @@ use Ineersa\AgentCore\Infrastructure\SymfonyAi\ReasoningOptionsFeatureShaper;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\ZaiToolStreamFeatureShaper;
 use Ineersa\CodingAgent\Config\Ai\AiModelReference;
 use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
+use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Symfony\AI\Platform\Message\MessageBag;
 use Symfony\Component\Uid\Uuid;
 use Symfony\Component\Uid\UuidV7;
@@ -35,7 +36,7 @@ final class SessionAwareModelResolver implements ModelResolverInterface
     public function __construct(
         private readonly ModelSelectionService $selectionService,
         private readonly HatfieldModelCatalog $catalog,
-        private readonly SessionMetadataStore $sessionMetadataStore,
+        private readonly HatfieldSessionStore $sessionMetadataStore,
     ) {
     }
 

@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Agent\Execution\Support;
 
-use Ineersa\AgentCore\Application\Handler\MessageIdempotencyService;
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Application\Handler\StepDispatcher;
 use Ineersa\AgentCore\Application\Pipeline\RunCommit;
@@ -64,7 +63,7 @@ final class PipelineCapturingAgentRunner implements AgentRunnerInterface
         );
         $processor = new RunMessageProcessor(
             runStore: $runStore,
-            idempotency: new MessageIdempotencyService(new InMemoryIdempotencyStore()),
+            idempotency: new InMemoryIdempotencyStore(),
             runLockManager: new RunLockManager(new LockFactory(new InMemoryStore())),
             runCommit: $runCommit,
             stepDispatcher: new StepDispatcher($executionBus),
