@@ -25,9 +25,9 @@ final class PharExecutableLocator implements AppExecutableLocator
     {
         $path = $this->doResolve();
 
-        // PHP-micro fuses the PHAR into the SFX binary. In that case the
-        // physical archive path equals PHP_BINARY and children must relaunch
-        // the fused executable alone (not "php <binary>").
+        // PHP-micro fuses the PHAR into the SFX binary. Children must relaunch
+        // the fused executable alone (not "php <binary>"), including when
+        // PHP_BINARY is empty on static/macOS targets.
         if (self::isFusedNativeExecutable($path)) {
             return [$path];
         }
@@ -40,13 +40,25 @@ final class PharExecutableLocator implements AppExecutableLocator
         return $this->doResolve();
     }
 
+    /**
+     * True when the resolved PHAR path is a fused PHP-micro self-executable.
+     *
+     * Empty PHP_BINARY means native self (static/micro SFX). Otherwise same
+     * path/inode as PHP_BINARY still marks fused native.
+     */
     private static function isFusedNativeExecutable(string $path): bool
     {
         if (!is_file($path)) {
             return false;
         }
 
-        $phpBinary = \PHP_BINARY;
+        // constant() so PHPStan cannot treat PHP_BINARY as always non-empty; fused
+        // PHP-micro leaves it empty at runtime and the artifact is self-executing.
+        $phpBinary = \defined('PHP_BINARY') ? (string) \constant('PHP_BINARY') : '';
+        if ('' === $phpBinary) {
+            return true;
+        }
+
         $resolvedPath = realpath($path);
         $resolvedPhp = realpath($phpBinary);
         if (false === $resolvedPath || false === $resolvedPhp) {

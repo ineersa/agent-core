@@ -28,10 +28,9 @@ final class ConfigExecutableLocator implements AppExecutableLocator
     {
         $path = $this->resolve();
 
-        // Fused PHP-micro / static native binary: the artifact is the current
-        // process executable (PHP_BINARY points at the binary itself). Relaunch
-        // as a single argv element so controller/Messenger children do not try
-        // to invoke "php <self>" with a separate PHP interpreter.
+        // Fused PHP-micro / static native binary: relaunch as a single argv
+        // element so controller/Messenger children do not try to invoke
+        // "php <self>" with a separate (often empty) PHP interpreter.
         if (self::isFusedNativeExecutable($path)) {
             return [$path];
         }
@@ -45,7 +44,12 @@ final class ConfigExecutableLocator implements AppExecutableLocator
     }
 
     /**
-     * True when $path is the fused native self (same inode/path as PHP_BINARY).
+     * True when $path is the fused native self.
+     *
+     * Fused PHP-micro reports empty PHP_BINARY on macOS (and likely all static
+     * targets), so empty PHP_BINARY is treated as native self. When PHP_BINARY
+     * is set, same-path/inode detection still applies for hosts that point it
+     * at the fused binary.
      */
     private static function isFusedNativeExecutable(string $path): bool
     {
@@ -53,7 +57,13 @@ final class ConfigExecutableLocator implements AppExecutableLocator
             return false;
         }
 
-        $phpBinary = \PHP_BINARY;
+        // constant() so PHPStan cannot treat PHP_BINARY as always non-empty; fused
+        // PHP-micro leaves it empty at runtime and the artifact is self-executing.
+        $phpBinary = \defined('PHP_BINARY') ? (string) \constant('PHP_BINARY') : '';
+        if ('' === $phpBinary) {
+            return true;
+        }
+
         $resolvedPath = realpath($path);
         $resolvedPhp = realpath($phpBinary);
         if (false === $resolvedPath || false === $resolvedPhp) {
