@@ -1,0 +1,107 @@
+# Install Castor v1.6.1 standalone STATIC binary into $RUNNER_TEMP (not Composer global, not PHAR).
+# MAINTENANCE: when bumping Castor, update VERSION, ASSET names, and all four SHA256 digests together.
+# Do not use setup-php tools: castor (hardcodes amd64 assets; broken on Linux/macOS arm64).
+name: Setup Castor
+description: >
+  Download and install the pinned Castor v1.6.1 platform-native static binary
+  into a job-local directory under $RUNNER_TEMP, append it to PATH, and prove
+  castor --version works. Avoids broken Composer-global and setup-php arm64 paths.
+
+runs:
+  using: composite
+  steps:
+    - name: Install Castor static binary
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        # Pin: bump VERSION + ASSET + SHA256 together (see header comment).
+        VERSION='v1.6.1'
+        os="$(uname -s)"
+        arch="$(uname -m)"
+
+        case "${os}:${arch}" in
+          Linux:x86_64)
+            ASSET='castor.linux-amd64'
+            EXPECTED_SHA256='6ba05579ca9f6546a22421e935fdab0f7d9e774cb05a25b10fe9f9528e1ab30a'
+            ;;
+          Linux:aarch64|Linux:arm64)
+            ASSET='castor.linux-arm64'
+            EXPECTED_SHA256='9c0aa9827e99214a8a244dc41ea94eae651b979e852167f871799c5f22f1e2b7'
+            ;;
+          Darwin:x86_64)
+            ASSET='castor.darwin-amd64'
+            EXPECTED_SHA256='740a4ed2cc3169b85c6944390562ef7178ba6fb3fbb989f2ea5833764876c52e'
+            ;;
+          Darwin:arm64)
+            ASSET='castor.darwin-arm64'
+            EXPECTED_SHA256='90bf455743e0b861175ac7739972481473e0e3e98bb21a762863582dc7684d45'
+            ;;
+          *)
+            echo "Unsupported runner for Castor static install: os=${os} arch=${arch}" >&2
+            echo "Supported: Linux x86_64/aarch64|arm64, Darwin x86_64/arm64" >&2
+            exit 1
+            ;;
+        esac
+
+        if [[ -z "${RUNNER_TEMP:-}" ]]; then
+          echo "RUNNER_TEMP is unset; cannot install job-local Castor" >&2
+          exit 1
+        fi
+
+        install_dir="${RUNNER_TEMP}/hatfield-castor-${VERSION}"
+        mkdir -p "${install_dir}"
+        dest="${install_dir}/castor"
+        url="https://github.com/jolicode/castor/releases/download/${VERSION}/${ASSET}"
+
+        tmp_dir="$(mktemp -d "${RUNNER_TEMP}/castor-dl.XXXXXX")"
+        cleanup() {
+          rm -rf "${tmp_dir}"
+        }
+        trap cleanup EXIT
+
+        tmp_file="${tmp_dir}/${ASSET}"
+        echo "Downloading Castor ${VERSION} asset ${ASSET} from ${url}"
+        if ! curl \
+          --fail \
+          --location \
+          --proto '=https' \
+          --tlsv1.2 \
+          --silent \
+          --show-error \
+          --output "${tmp_file}" \
+          "${url}"; then
+          echo "ERROR: failed to download Castor static binary from ${url}" >&2
+          exit 1
+        fi
+
+        if [[ ! -s "${tmp_file}" ]]; then
+          echo "ERROR: downloaded Castor asset is empty: ${tmp_file}" >&2
+          exit 1
+        fi
+
+        actual_sha256=''
+        if command -v sha256sum >/dev/null 2>&1; then
+          actual_sha256="$(sha256sum "${tmp_file}" | awk '{print $1}')"
+        elif command -v shasum >/dev/null 2>&1; then
+          actual_sha256="$(shasum -a 256 "${tmp_file}" | awk '{print $1}')"
+        else
+          echo "ERROR: neither sha256sum nor shasum available to verify Castor asset" >&2
+          exit 1
+        fi
+
+        if [[ "${actual_sha256}" != "${EXPECTED_SHA256}" ]]; then
+          echo "ERROR: Castor asset checksum mismatch for ${ASSET}" >&2
+          echo "  expected: ${EXPECTED_SHA256}" >&2
+          echo "  actual:   ${actual_sha256}" >&2
+          echo "  url:      ${url}" >&2
+          exit 1
+        fi
+
+        install -m 0755 "${tmp_file}" "${dest}"
+        echo "${install_dir}" >> "${GITHUB_PATH}"
+        export PATH="${install_dir}:${PATH}"
+
+        # Immediate proof via absolute path (PATH mutation is for subsequent steps).
+        echo "Installed Castor binary: ${dest}"
+        "${dest}" --version

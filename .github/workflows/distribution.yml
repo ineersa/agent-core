@@ -34,9 +34,7 @@ jobs:
         run: composer install --no-interaction --prefer-dist
 
       - name: Install Castor
-        run: |
-          composer global require jolicode/castor:^1.6 --no-interaction
-          echo "$(composer global config bin-dir --absolute)" >> "$GITHUB_PATH"
+        uses: ./.github/actions/setup-castor
 
       - name: Build distribution PHAR
         run: |
@@ -82,9 +80,7 @@ jobs:
         run: composer install --no-interaction --prefer-dist
 
       - name: Install Castor
-        run: |
-          composer global require jolicode/castor:^1.6 --no-interaction
-          echo "$(composer global config bin-dir --absolute)" >> "$GITHUB_PATH"
+        uses: ./.github/actions/setup-castor
 
       - name: Cache static-php-cli pin checkout + downloads
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0

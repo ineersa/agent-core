@@ -39,9 +39,7 @@ jobs:
         run: composer install --no-interaction --prefer-dist
 
       - name: Install Castor
-        run: |
-          composer global require jolicode/castor:^1.6 --no-interaction
-          echo "$(composer global config bin-dir --absolute)" >> "$GITHUB_PATH"
+        uses: ./.github/actions/setup-castor
 
       - name: Build distribution PHAR via Castor
         env:
@@ -91,9 +89,7 @@ jobs:
         run: composer install --no-interaction --prefer-dist
 
       - name: Install Castor
-        run: |
-          composer global require jolicode/castor:^1.6 --no-interaction
-          echo "$(composer global config bin-dir --absolute)" >> "$GITHUB_PATH"
+        uses: ./.github/actions/setup-castor
 
       - name: Cache static-php-cli pin checkout + downloads
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
@@ -159,9 +155,7 @@ jobs:
         run: composer install --no-interaction --prefer-dist
 
       - name: Install Castor
-        run: |
-          composer global require jolicode/castor:^1.6 --no-interaction
-          echo "$(composer global config bin-dir --absolute)" >> "$GITHUB_PATH"
+        uses: ./.github/actions/setup-castor
 
       - name: Download all release artifacts
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
