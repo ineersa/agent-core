@@ -14,14 +14,16 @@ use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Virtual proof that {@see ChatScreen} → {@see LiveTextWidget} →
- * {@see TranscriptBlockWidget} renders transcript blocks through the
- * Symfony TUI widget-tree renderer with correct glyph/prefix language.
+ * Virtual product proof that {@see ChatScreen} → mounted
+ * {@see \Ineersa\Tui\Transcript\TranscriptMountedWidget} renders transcript blocks
+ * with correct glyph/prefix language through the live Symfony TUI tree.
  *
  * Test thesis: when ChatScreen receives transcript blocks of normal kinds
  * via setTranscriptBlocks(), the rendered screen output contains preserved
  * glyph/prefix characters and blocks appear in insertion order. This
  * exercises the real widget -> render -> ScreenBuffer pipeline without tmux.
+ * Structural mounted-context / identity proofs live in
+ * {@see TuiMountedTranscriptVirtualTest}.
  */
 final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
 {

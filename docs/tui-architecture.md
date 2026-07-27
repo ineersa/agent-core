@@ -485,7 +485,8 @@ ChatScreen (14 widgets)
   ├── headerWidget       (LiveTextWidget)  ← HeaderWidget.render()
   ├── headerSeparator    (LiveTextWidget)  ─── at live terminal width
   ├── loadedResourcesWidget (LiveTextWidget)  LoadedResourcesWidget (startup summary; ctrl+r)
-  ├── transcriptWidget   (LiveTextWidget)  ← TranscriptWidget + entries
+  ├── transcriptWidget   (TranscriptMountedWidget)  first-class mounted Symfony container
+  │     └── TranscriptVisualNodeWidget…  stable wrappers → MarkdownWidget / tool cards / separators
   ├── pendingWidget      (LiveTextWidget)  PendingMessagesWidget
   ├── workingWidget      (LiveTextWidget)  WorkingStatusWidget (via registry)
   ├── statusPanelWidget  (LiveTextWidget)  StatusPanelWidget (via registry)
@@ -497,22 +498,31 @@ ChatScreen (14 widgets)
   └── footerWidget       (LiveTextWidget)  FooterBarWidget
 ```
 
-All `LiveTextWidget` instances carry a producer closure that reads current
-state (renderable / registry / extension slots) and re-computes content
-at the **live terminal width** on every render.  The Symfony TUI render
-cache (keyed on revision × columns × rows) ensures we only re-compute
-when dimensions change or `invalidate()` is called.  This is how
-separators and other static sections respond to terminal resize:
-unlike `TextWidget` which stores a fixed pre-computed string, the
-producer receives the current `RenderContext` and sizes output accordingly.
+Structural chrome still uses `LiveTextWidget` producers that re-compute at the
+**live terminal width**. The transcript is different: it is a mounted Symfony
+`ContainerWidget` subtree (`TranscriptMountedWidget`) whose children are real
+widgets attached to the live `WidgetContext`. Markdown sub-element styles
+(heading/link/code/quote/hr/list-bullet) come from a Hatfield theme stylesheet
+installed on the same `Tui` before mount.
+
+Reconciliation keeps stable visual wrappers keyed by presentation identity
+(including `exchange:<tool_call_id>` for tool call→result pairing). Ordinary
+streaming updates reuse Markdown instances via `setText()`/`setStyle()`; tail
+append/removal is granular. Whole-container rebuild is reserved for genuine
+relative reorder or non-tail insertion because Symfony's `ContainerWidget`
+public API is append/remove only.
+
+Hatfield uses Symfony's stock `Tui` and stock `ScreenWriter`. Residual bounce
+or flicker when transcript rows grow on non-synchronized terminals/multiplexers
+is an accepted trade-off for this migration; see Hatfield issue #303 and
+Symfony issue #64941.
 
 ### ChatScreen public API
 
 | Method | Purpose |
 |--------|---------|
 | `mount(Tui): void` | Create and attach all 14 widgets to TUI |
-| `setTranscriptBlocks(TranscriptBlock[]): void` | Replace transcript content |
-| `appendTranscriptBlock(TranscriptBlock): void` | Add one block to transcript |
+| `setTranscriptBlocks(TranscriptBlock[]): void` | Replace transcript content (mounted reconcile) |
 | `clearEditor(): void` | Reset editor to empty |
 | `editorText(): string` | Read editor content |
 | `setWorkingMessage(?string): void` | Override working indicator |
@@ -531,11 +541,11 @@ is invalidated on tick via `ChatScreen::refresh()` so live values (elapsed time
 and throughput) update even when no runtime events arrive.
 
 ```
-setTranscriptBlocks()    → transcriptRenderable + transcriptWidget.invalidate()
+setTranscriptBlocks()    → TranscriptMountedWidget::setBlocks() (mounted reconcile)
 setWorkingMessage()     → registry + workingRenderable + workingWidget.invalidate()
 setStatus()             → registry + statusPanelRenderable + footerDataProvider
                           + statusPanelWidget.invalidate() + footerWidget.invalidate()
-refresh()               → invalidates all mutable widgets (safety net)
+refresh()               → invalidates mutable LiveText regions (transcript is mounted)
 ```
 
 ### Editor module classes
@@ -850,8 +860,8 @@ RuntimeEventPoller::poll(state, client)
     ▼
 ChatScreen::setTranscriptBlocks(blocks)
     │
-    ├─ Updates transcript widget with new TranscriptBlock DTOs
-    └─ Renders blocks with role prefixes + theme colors at display time
+    ├─ TranscriptMountedWidget::setBlocks() reconciles stable visual wrappers
+    └─ Mounted Markdown/tool widgets render with live WidgetContext + theme stylesheet
     │
     └─ FooterStateListener handler
          └─ ChatScreen::refresh() so live footer values re-render
@@ -866,7 +876,7 @@ Symfony EventDispatcher to family-grouped projection subscribers
 `CancellationProjectionSubscriber`, `RunLifecycleProjectionSubscriber`).
 Each subscriber produces `TranscriptBlock` DTOs with a
 `TranscriptBlockKindEnum` kind. Theming and role prefixes (❯ ◇ ●) are
-applied at display time by `TranscriptBlockWidget`:
+applied at display time by `TranscriptMountedWidget` / `TranscriptBlockWidgetFactory`:
 
 | Block kind | Example output | Display prefix |
 |------------|----------------|----------------|
