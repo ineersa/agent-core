@@ -7,11 +7,15 @@ Related: [Distribution / release](distribution.md) · [Static / native binaries]
 ## System PHP requirements
 
 Keep synchronized across `composer.json` `ext-*`, `bin/console` PHAR guard,
-`installer/bash-installer`, `tools/static/pin.json`, and this doc:
+`installer/bash-installer`, and this doc (system-PHAR path):
 
 - `php` ≥ 8.5
 - `ext-pdo_sqlite`, `ext-mbstring`, `ext-xml`, `ext-intl`, `ext-curl`, `ext-openssl`,
   `ext-pcntl`, `ext-posix`, `ext-tokenizer`, `ext-ctype`, `ext-filter`, `ext-iconv`, `ext-phar`
+
+`tools/static/pin.json` extension list is a **deliberate SFX superset** for fused native
+builds (extra transitive micro/build deps). It is **not** required to match this system-PHAR
+guard list one-for-one — see [static-packaging.md](static-packaging.md).
 
 ## Castor tasks
 
@@ -59,6 +63,9 @@ a separate mtime shortcut.
 
 All shell/copy/write/remove steps fail-fast with command/output diagnostics.
 Smoke failures throw and remove the artifact.
+
+Release static jobs must consume the exact `distribution:build` PHAR via dist handoff
+(no rebuild). Details: [distribution.md](distribution.md).
 
 ## Runtime model
 

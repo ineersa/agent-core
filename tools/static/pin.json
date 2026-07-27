@@ -1,7 +1,10 @@
 {
     "static_php_cli_commit": "59584de4aa9d8067e4ce30d2ff990e7b9e14db43",
     "static_php_cli_repository": "https://github.com/crazywhalecc/static-php-cli.git",
-    "php_version": "8.5",
+    "php_version": "8.5.8",
+    "php_source_sha256": "58910198d19e873048fe87cdfe16bc790025417ede3d1651bfa1c4b533d573f2",
+    "phpmicro_repository": "https://github.com/static-php/phpmicro.git",
+    "phpmicro_commit": "fb6d497b6f4cf138ee3851a30c905d64b7b19aed",
     "sapi": ["cli", "micro"],
     "micro_fake_cli": true,
     "extensions": [
@@ -27,5 +30,5 @@
         "intl",
         "zlib"
     ],
-    "notes": "SPC --for-extensions names (without ext- prefix). pdo_sqlite/sqlite3 are the correct package names (not sqlite). Synchronized with composer.json ext-*, bin/console PHAR guards, installer checks, docs/phar-packaging.md. Host static builds require SPC doctor tools (re2c, flex, gperf) or a CI image that already provides them. User guide: docs/static-packaging.md."
+    "notes": "SPC --for-extensions names (without ext- prefix). Extension list is a deliberate SFX superset (transitive micro/build needs: sodium/dom/simplexml/xmlreader/xmlwriter/zlib/pdo/sqlite3) — not identical to system-PHAR Composer/bin/console/installer guards (see docs/phar-packaging.md). Core pins: exact PHP patch + official source SHA-256 + immutable phpmicro commit via --custom-local=php-micro. Libraries beyond PHP/phpmicro are not fully locked. Host static builds need re2c/flex/gperf. User guide: docs/static-packaging.md."
 }

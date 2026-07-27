@@ -22,30 +22,32 @@ No Windows native binary; Windows uses the same canonical PHAR.
 - Source checkouts: `Hatfield dev (commit <sha>)` via `ApplicationBuildIdentity`.
 - Packaged builds embed `HATFIELD_BUILD_VERSION` + `HATFIELD_BUILD_COMMIT` into
   `src/CodingAgent/Build/build-identity.generated.php` during PHAR staging.
-- `hatfield --version` / Symfony Console name+version expose that identity on PHAR
-  and native artifacts.
+- `hatfield --version` exposes that identity on PHAR and native artifacts.
 - Release tags set version to `github.ref_name` and commit to the tag SHA.
+- When Castor receives `--release-version` / `--commit`, smokes fail closed unless
+  `--version` output contains those exact values.
 
 ## Local orchestration
 
 ```bash
-castor distribution:build                # PHAR → var/tmp/dist/hatfield.phar + checksums
-castor distribution:build-static         # Host-native static (see static-packaging.md)
-castor distribution:build-static --target=linux-amd64
+castor distribution:build
+castor distribution:build-static                   # uses existing dist PHAR if present
 castor distribution:checksums
-castor distribution:verify               # sizes, smokes, resources, native topology
-castor distribution:verify --skip-topology --allow-missing-native  # PHAR-only local
-castor distribution:info
-castor distribution:clean [--all]
+castor distribution:verify
+castor distribution:verify --skip-topology --allow-missing-native
 ```
 
-Convenience wrapper (trap-safe; invokes Castor only):
+Convenience wrapper (worktree lock; Castor only):
 
 ```bash
 scripts/build-distribution.sh --version=1.2.3 --commit=$(git rev-parse HEAD)
+scripts/build-distribution.sh --release-version 1.2.3 --commit abcdef1
 scripts/build-distribution.sh --static --target=linux-amd64
-# also accepts --version=1.2.3 equals form
 ```
+
+Default/`--phar-only` runs `distribution:verify --skip-topology --allow-missing-native`.
+`--static` keeps hard verify (native + topology). Wrapper acquires
+`var/tmp/distribution-build.lock` for the whole sequence; concurrent runs fail closed.
 
 | Variable | Meaning |
 |---|---|
@@ -55,84 +57,59 @@ scripts/build-distribution.sh --static --target=linux-amd64
 | `HATFIELD_BINARY_PATH` | Runtime/test override for subprocess executable |
 | `HATFIELD_NATIVE_BINARY_PATH` | Test input for native topology tests |
 
-`distribution:verify` hard-requires `hatfield.phar`, host static artifact, and
-`SHA256SUMS` by default. Use `--allow-missing-native` / `--skip-topology` only for
-PHAR-only local checks. Topology rules: [static-packaging.md](static-packaging.md).
+## Canonical PHAR handoff
 
-Local native builds hard-fail without SPC host tools (`re2c`, `flex`, `gperf`, …) —
-see [`tools/static/README.md`](../tools/static/README.md).
+1. PHAR job builds `var/tmp/dist/hatfield.phar` and uploads it.
+2. Each static job downloads that file into `var/tmp/dist/hatfield.phar`.
+3. `distribution:build-static` **smokes the existing non-empty dist PHAR and combines it**;
+   it must not rebuild/overwrite a handoff PHAR. Local standalone static builds call
+   `phar_ensure` + copy only when the dist PHAR is absent.
+4. Release workflow re-hashes the dist PHAR before/after static build to prove identity.
 
 ## Installer
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ineersa/agent-core/main/installer/bash-installer | bash
 bash installer/bash-installer --version=v1.2.3 --install-dir=~/.local/bin
 bash installer/bash-installer --static --version=latest
 ```
 
-| Flag / env | Behavior |
-|---|---|
-| `--version` (`latest` or tag) | Release selection |
-| `--install-dir` | Default `~/.local/bin` |
-| `--static` | Platform native binary instead of PHAR |
-| `HATFIELD_GITHUB_REPO` / `HATFIELD_DOWNLOAD_BASE` | Source overrides |
-| `HATFIELD_INSTALLER_BASE_URL` | Mirror/test seam (local fixture server) |
-
 Behavior:
 
-- Linux/macOS + amd64/arm64 detection; clear unsupported-target errors
-- PHAR path: PHP ≥ 8.5 + extension checks (synced with Composer / `bin/console` /
-  [phar-packaging.md](phar-packaging.md))
-- Downloads asset + `SHA256SUMS`; verifies **exact filename** entry; fail-closed on
-  mismatch or empty download
-- Candidate `--version` smoke **before** replacing any existing install
-- Atomic install (`install-dir/.hatfield-install.$$` + `mv`); traps remove download
-  workspace **and** install-dir temps; failures leave previous `hatfield` unchanged
-- Post-install `--version` smoke after successful replace
+- Downloads asset + `SHA256SUMS`; exact-filename checksum; fail-closed
+- Candidate `--version` smoke, then same-directory install-temp smoke, then atomic `mv`
+- **No post-`mv` smoke** — success ends after replace; failures never replace previous install
+- Empty `--version=` / `--install-dir=` rejected; traps clean download + install temps
 
 ## CI and release
 
-**PRs and ordinary pushes do not build PHAR/native binaries.** They use the normal
-project gate (`castor check` and any other project CI). There is no
-`.github/workflows/distribution.yml`, no PR matrix, and no manual
-`workflow_dispatch` packaging workflow.
+**PRs and ordinary pushes do not build PHAR/native binaries.** Project gate only
+(`castor check`). No `.github/workflows/distribution.yml`.
 
 ### Tag `v*` only — `.github/workflows/release.yml`
 
-This is the **sole** GitHub Actions path that builds distribution artifacts.
+Sole Actions path that builds distribution artifacts:
 
-1. Validate tag SHA == exact checked-out commit.
-2. Build canonical PHAR via Castor (`distribution:build`).
-3. Build four native binaries on native runners (`ubuntu-latest`,
-   `ubuntu-24.04-arm`, `macos-15-intel`, `macos-15`) after
-   `.github/actions/static-prerequisites`, each with hard topology verify.
-4. Aggregate into one `SHA256SUMS` listing **exactly** those five files.
-5. Enforce non-empty/sane sizes and host-compatible `--version` smoke.
-6. Publish GitHub Release with all six files. External action SHAs are pinned;
-   missing files fail closed — no partial release.
+1. Validate tag SHA == checkout commit.
+2. Build canonical PHAR (`distribution:build`) with embedded tag/commit.
+3. Four native runners download that exact PHAR, build static, hard topology verify.
+4. Aggregate five artifacts + one `SHA256SUMS`; publish all six files fail-closed.
 
-Castor on release runners: checksum-verified platform PHAR via
-`.github/actions/setup-castor` (not Composer-global, not static Castor — both
-break `PHP_BINARY` / nested vendor).
-
-Local packaging remains available anytime via `castor distribution:*` /
-`scripts/build-distribution.sh` (host-native static only).
+Core static pins (exact PHP 8.5.8 + source SHA + phpmicro commit) live in
+`tools/static/pin.json` — see [static-packaging.md](static-packaging.md).
 
 ## Release checklist
 
-1. Green project `castor check` on the exact commit to tag.
-2. Tag `vX.Y.Z` pointing at that commit only (triggers release workflow).
-3. Confirm release workflow built PHAR + four static jobs and published six files.
-4. Smoke installer: PHAR path and `--static` path against the published tag.
+1. Green `castor check` on the exact commit to tag.
+2. Tag `vX.Y.Z` at that commit.
+3. Confirm release built PHAR + four static jobs and published six files.
+4. Smoke installer PHAR and `--static` against the published tag.
 5. Confirm `--version` shows release version + commit on both artifact kinds.
 
-## Testing (orchestration surface)
+## Testing
 
 ```bash
 castor test --filter=ApplicationBuildIdentityTest
 castor test --filter=BashInstallerTest
+castor test --filter=BuildDistributionScriptTest
+castor test --filter=CanonicalPharHandoffTest
 ```
-
-Installer tests cover checksum mismatch and candidate smoke-failure rollback
-(previous install unchanged, no install-dir temps left). PHAR/static unit/topology
-commands live in the linked guides.

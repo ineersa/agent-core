@@ -1,10 +1,10 @@
 # Static / native packaging
 
-Fused PHP-micro binaries for Linux and macOS. Built from the canonical PHAR plus a
-pinned static-php-cli (SPC) micro SFX.
+Fused PHP-micro binaries for Linux and macOS. Built from the **canonical PHAR handoff**
+plus a pinned static-php-cli (SPC) micro SFX.
 
 Related: [Distribution / release](distribution.md) · [PHAR packaging](phar-packaging.md) ·
-toolchain detail: [`tools/static/README.md`](../tools/static/README.md)
+toolchain: [`tools/static/README.md`](../tools/static/README.md)
 
 ## Artifacts and targets
 
@@ -15,131 +15,96 @@ toolchain detail: [`tools/static/README.md`](../tools/static/README.md)
 | `hatfield.darwin-amd64` | `macos-15-intel` |
 | `hatfield.darwin-arm64` | `macos-15` |
 
-No Windows native binary (use the PHAR). Local builds only support the **host**
-target; the four-target matrix runs only on tag `v*` release (see
-[distribution.md](distribution.md)).
+Local builds only support the **host** target. The four-target matrix runs only on
+tag `v*` release ([distribution.md](distribution.md)).
 
-## Pinned toolchain
+## Pinned toolchain (core reproducibility)
 
-`tools/static/pin.json`:
+`tools/static/pin.json` pins:
 
-- Immutable static-php-cli commit `59584de4aa9d8067e4ce30d2ff990e7b9e14db43`
-- PHP 8.5, SAPIs `cli` + `micro`, `micro_fake_cli=true`
-- Extension list synchronized with Composer / installer / PHAR guards
+| Key | Meaning |
+|---|---|
+| `static_php_cli_commit` | Immutable SPC commit |
+| `php_version` | Exact patch (`8.5.8`) — not `8.5` |
+| `php_source_sha256` | Official `php-8.5.8.tar.xz` digest |
+| `phpmicro_repository` / `phpmicro_commit` | Immutable phpmicro checkout |
+| `extensions` | SPC SFX extension set (deliberate **superset** of system-PHAR guards) |
+| `micro_fake_cli` | Symfony CLI-friendly micro |
 
-Do not float on SPC branches/tags from build tasks. Update only by changing the pin
-and validating a full host static build.
+**Scope:** PHP patch + official source hash + phpmicro commit + SPC commit are pinned.
+Other SPC libraries are **not** fully locked. Extension list is not identical to
+Composer/`bin/console`/installer system-PHAR guards — see [phar-packaging.md](phar-packaging.md).
+
+Build passes `--with-php=8.5.8`, `--custom-local=php-micro:<abs path>`, then
+fail-closed verifies the downloaded `php-8.5.8.tar.xz` hash. phpmicro lives under
+`var/tmp/static-php-cli/phpmicro/<commit>/` (covered by the release cache path).
 
 ## Build flow
 
 ```bash
-castor distribution:build-static                   # host target only
-castor distribution:build-static --target=linux-amd64
-castor distribution:verify                         # requires host static + topology
+castor distribution:build-static
+castor distribution:verify
 ```
 
-1. Build/ensure canonical PHAR ([phar-packaging.md](phar-packaging.md)).
-2. Clone/checkout pinned SPC under `var/tmp/static-php-cli/<commit>/`.
-3. `spc download` + `spc build` with the pin’s extension set, `--build-cli --build-micro`,
-   and `--with-micro-fake-cli` when pin says so.
-4. **Deliberate SPC smoke skip:** `--no-smoke-test=micro`  
-   Pinned PHP 8.5 bare micro smoke (including marker-payload path) segfaults on Linux
-   (`micro_ext_test` exit 139). Skip **only** upstream bare micro + Zend micro smoke.
-   Retain SPC CLI/ext smokes and **all** Hatfield fused hard proofs: version/list,
-   Composer-platform, bundled resources, native process topology. Remove this
-   workaround once upstream stabilizes.
-5. `spc micro:combine <phar> --with-micro=buildroot/bin/micro.sfx --output=<artifact>`.
-6. `chmod +x`, size/smoke, native topology after controller `runtime.ready`.
+1. Resolve canonical PHAR: existing non-empty `dist/hatfield.phar` is smoked and used
+   as-is (release handoff). Only if absent: `phar_ensure` + copy for local builds.
+2. Clone/checkout pinned SPC + pinned phpmicro under `var/tmp/static-php-cli/`.
+3. `spc download` with exact PHP + `--custom-local=php-micro:…`; verify PHP archive hash.
+4. `spc build` with pin extensions, `--build-cli --build-micro`, optional
+   `--with-micro-fake-cli`.
+5. **SPC smoke skip:** `--no-smoke-test=micro` (PHP 8.5 bare micro segfault on Linux).
+   Hatfield fused version/list/topology proofs remain hard.
+6. `spc micro:combine <handoff-phar> --with-micro=… --output=<artifact>`.
+7. Smoke (with expected version/commit when supplied) + native topology.
 
-Host prerequisites (`re2c`, `flex`, `gperf`, compiler, `make`, `cmake`, …) and CI
-install via `.github/actions/static-prerequisites` are documented in
-[`tools/static/README.md`](../tools/static/README.md). Local
-`castor distribution:build-static` hard-fails when those tools are missing.
+Host tools (`re2c`, `flex`, `gperf`, compiler, `make`, `cmake`) and CI install via
+`.github/actions/static-prerequisites`: [`tools/static/README.md`](../tools/static/README.md).
+Pass `GITHUB_TOKEN` into SPC download/build for GitHub API rate limits.
 
 ### Linux / macOS caveats
 
-- Linux: fully static musl-style binaries (no runtime `dl()` / external `.so`).
-- macOS: links dynamically against system libraries (supported macOS 12+); release
-  runners clear extended attributes where needed.
-- Pass `GITHUB_TOKEN` into SPC download/build steps so GitHub API rate limits do not
-  fail dependency fetches (CI does this).
+- Linux: fully static musl-style (no runtime `dl()` / external `.so`).
+- macOS: links system libraries (macOS 12+); runners clear xattrs where needed.
 
 ## Native relaunch
-
-`ConfigExecutableLocator` / `PharExecutableLocator` (and test mirror
-`AgentTestExecutable`) return:
 
 | Condition | `command()` |
 |---|---|
 | Ordinary PHAR / source | `[PHP_BINARY, path]` |
-| Empty `PHP_BINARY` (fused micro on static/macOS targets) | `[path]` |
-| Resolved artifact path equals `PHP_BINARY` (same path/inode) | `[path]` |
+| Empty `PHP_BINARY` (fused micro) | `[path]` |
+| Artifact path equals `PHP_BINARY` | `[path]` |
 
-Empty `PHP_BINARY` is treated as native self because fused PHP-micro leaves it empty
-while the artifact is self-executing. Same-path detection still applies when the host
-points `PHP_BINARY` at the fused binary. Controller and Messenger children therefore
-relaunch the same native binary, not system PHP or a source checkout.
-`sourceConsoleCommand()` stays source-only for replay/test DI.
-
-Writable state remains under runtime CWD `.hatfield/` (same as PHAR).
+Controller/Messenger children relaunch the same native binary. Writable state stays
+under runtime CWD `.hatfield/`.
 
 ## Topology / no-leak validation
 
-`distribution:verify` (and CI static jobs) hard-require the host native artifact.
-Topology never soft-passes on inconclusive process listing:
-
-1. Boot controller → wait for `runtime.ready`.
-2. Drain stderr while polling; collect descendant cmdlines (portable `ps`:
-   Linux `sid`/`args`, macOS `sess`/`command`).
-3. Assert messenger consumers relaunch via the **one-element** native path.
-4. Snapshot owned PIDs + cmdlines **while controller is alive**.
-5. Stop controller only; assert every captured PID is gone or reused with a different
-   cmdline.
-
-Do not rely on `pgrep -P <dead-controller>` — reparented orphans would false-pass.
+1. Boot controller → wait `runtime.ready` (consumers start after ready).
+2. Drain stderr while polling; portable `ps` (Linux `sid`/`args`, macOS `sess`/`command`).
+3. Assert messenger consumers use the one-element native path.
+4. Snapshot owned PIDs+cmdlines while controller is alive; stop controller; assert gone
+   or PID-reuse with different cmdline. Never rely on `pgrep -P <dead-controller>`.
 
 ## Release matrix ownership
 
-Only `.github/workflows/release.yml` (tag `v*`) runs the four-target static matrix.
-PRs / main pushes do **not** build natives. Release static jobs:
-
-- Install host toolchain via `.github/actions/static-prerequisites`
-- Cache SPC pin checkout + downloads keyed by pin + `composer.lock`
-- Call Castor only for build/verify; `upload-artifact` with `if-no-files-found: error`
-- Run hard native topology on each native runner; missing artifacts fail closed before publish
+Only `.github/workflows/release.yml` (tag `v*`) runs the four-target matrix. Static jobs
+download the PHAR-job artifact, prove it is unchanged across `build-static`, and hard-fail
+topology before publish.
 
 ## Testing
 
 ```bash
 castor test --filter=FusedNativeExecutableLocatorTest
-
-# Real PHPUnit skip without artifact; CI / distribution:verify always supply it
+castor test --filter=CanonicalPharHandoffTest
 HATFIELD_NATIVE_BINARY_PATH=var/tmp/dist/hatfield.linux-amd64 \
   castor test --filter=NativeProcessTopologyTest
 ```
 
-No-leak proof uses pre-shutdown owned PID snapshots (not post-exit `pgrep -P`).
-Empty-`PHP_BINARY` relaunch is proven by release-job native topology on fused artifacts.
-
 ## Troubleshooting
 
-### Host tools missing
+### Host tools missing / unsupported target / zero descendants
 
-```text
-Host static build requires build tools that are missing: re2c, flex, gperf...
-```
-
-Install via host package manager; see [`tools/static/README.md`](../tools/static/README.md).
-SPC `doctor --auto-fix` fails under `no-new-privileges`.
-
-### Unsupported local target
-
-Local static builds must match the host. Other arches are built only on the
-tag-release matrix (or a host of that architecture).
-
-### Topology zero descendants after `runtime.ready`
-
-Check empty-`PHP_BINARY` relaunch (must be one-element argv), portable `ps` columns,
-and that messenger consumers actually started. Controller exit with
-`First element must contain a non-empty program name` means the locator still returned
+See host preflight errors, host-only targets, and empty-`PHP_BINARY` relaunch notes in
+[`tools/static/README.md`](../tools/static/README.md). Controller error
+`First element must contain a non-empty program name` means locator still returned
 `['', path]`.

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Trap-safe, concurrency-safe convenience wrapper around Castor distribution tasks.
+# Concurrency-safe convenience wrapper around Castor distribution tasks.
 # Does not reimplement packaging — only invokes checked-in Castor tasks.
+# Holds a worktree-local lock directory across build/checksums/verify.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
@@ -14,36 +15,100 @@ COMMIT="${HATFIELD_BUILD_COMMIT:-}"
 STATIC="false"
 PHAR_ONLY="false"
 
+LOCK_DIR="${REPO_ROOT}/var/tmp/distribution-build.lock"
+LOCK_OWNER_FILE="${LOCK_DIR}/owner"
+LOCK_HELD="false"
+
 usage() {
   cat <<'EOF'
 Usage: scripts/build-distribution.sh [options]
 
 Options:
   --target=<linux-amd64|linux-arm64|darwin-amd64|darwin-arm64>
+  --target VALUE
   --output=<dir>          Dist output directory (default: var/tmp/dist)
-  --version=<semver>      Embed release version (alias: --release-version, also accepts space form)
-  --release-version=<semver>      Embed release version
+  --output VALUE
+  --version=<semver>      Embed release version (alias: --release-version)
+  --version VALUE
+  --release-version=<semver>
+  --release-version VALUE
   --commit=<sha>          Embed commit SHA
+  --commit VALUE
   --static                Build host static binary (after PHAR)
   --phar-only             Only build PHAR into dist (default when --static omitted)
   -h, --help              Show help
 
 Environment:
   HATFIELD_BUILD_VERSION, HATFIELD_BUILD_COMMIT, HATFIELD_DIST_DIR
+
+Concurrency:
+  Acquires ${REPO_ROOT}/var/tmp/distribution-build.lock for the whole sequence.
+  Concurrent invocations fail closed with holder diagnostics.
 EOF
+}
+
+require_value() {
+  local flag="$1"
+  local value="${2:-}"
+  if [[ -z "${value}" || "${value}" == --* ]]; then
+    echo "ERROR: ${flag} requires a non-empty value" >&2
+    usage >&2
+    exit 1
+  fi
 }
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --target=*) TARGET="${1#*=}"; shift ;;
-    --target) TARGET="${2:-}"; shift 2 ;;
-    --output=*) OUTPUT="${1#*=}"; shift ;;
-    --output) OUTPUT="${2:-}"; shift 2 ;;
-    --release-version=*) VERSION="${1#*=}"; shift ;;
-    --version=*) VERSION="${1#*=}"; shift ;;
-    --version) VERSION="${2:-}"; shift 2 ;;
-    --commit=*) COMMIT="${1#*=}"; shift ;;
-    --commit) COMMIT="${2:-}"; shift 2 ;;
+    --target=*)
+      TARGET="${1#*=}"
+      require_value "--target" "${TARGET}"
+      shift
+      ;;
+    --target)
+      require_value "--target" "${2:-}"
+      TARGET="$2"
+      shift 2
+      ;;
+    --output=*)
+      OUTPUT="${1#*=}"
+      require_value "--output" "${OUTPUT}"
+      shift
+      ;;
+    --output)
+      require_value "--output" "${2:-}"
+      OUTPUT="$2"
+      shift 2
+      ;;
+    --release-version=*)
+      VERSION="${1#*=}"
+      require_value "--release-version" "${VERSION}"
+      shift
+      ;;
+    --release-version)
+      require_value "--release-version" "${2:-}"
+      VERSION="$2"
+      shift 2
+      ;;
+    --version=*)
+      VERSION="${1#*=}"
+      require_value "--version" "${VERSION}"
+      shift
+      ;;
+    --version)
+      require_value "--version" "${2:-}"
+      VERSION="$2"
+      shift 2
+      ;;
+    --commit=*)
+      COMMIT="${1#*=}"
+      require_value "--commit" "${COMMIT}"
+      shift
+      ;;
+    --commit)
+      require_value "--commit" "${2:-}"
+      COMMIT="$2"
+      shift 2
+      ;;
     --static) STATIC="true"; shift ;;
     --phar-only) PHAR_ONLY="true"; shift ;;
     -h|--help) usage; exit 0 ;;
@@ -51,11 +116,48 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-TMPDIR_BUILD="$(mktemp -d "${TMPDIR:-/tmp}/hatfield-dist-build.XXXXXX")"
-cleanup() {
-  rm -rf "${TMPDIR_BUILD}"
+if [[ "${STATIC}" == "true" && "${PHAR_ONLY}" == "true" ]]; then
+  echo "ERROR: --static and --phar-only are mutually exclusive" >&2
+  exit 1
+fi
+
+release_lock() {
+  if [[ "${LOCK_HELD}" != "true" ]]; then
+    return 0
+  fi
+  if [[ -f "${LOCK_OWNER_FILE}" ]]; then
+    local owner
+    owner="$(cat "${LOCK_OWNER_FILE}" 2>/dev/null || true)"
+    if [[ "${owner}" == "$$" ]]; then
+      rm -f "${LOCK_OWNER_FILE}" 2>/dev/null || true
+      rmdir "${LOCK_DIR}" 2>/dev/null || true
+    fi
+  fi
+  LOCK_HELD="false"
 }
-trap cleanup EXIT INT TERM
+trap release_lock EXIT INT TERM
+
+mkdir -p "${REPO_ROOT}/var/tmp"
+if ! mkdir "${LOCK_DIR}" 2>/dev/null; then
+  holder="unknown"
+  if [[ -f "${LOCK_OWNER_FILE}" ]]; then
+    holder="$(cat "${LOCK_OWNER_FILE}" 2>/dev/null || echo unknown)"
+  fi
+  holder_alive="no"
+  if [[ "${holder}" =~ ^[0-9]+$ ]] && kill -0 "${holder}" 2>/dev/null; then
+    holder_alive="yes"
+  fi
+  cat >&2 <<EOF
+ERROR: distribution build lock is held.
+  lock:   ${LOCK_DIR}
+  holder: pid=${holder} alive=${holder_alive}
+If the previous build crashed, remove only an orphan lock you own:
+  rm -rf ${LOCK_DIR}
+EOF
+  exit 1
+fi
+printf '%s\n' "$$" >"${LOCK_OWNER_FILE}"
+LOCK_HELD="true"
 
 export HATFIELD_DIST_DIR="${OUTPUT:-${HATFIELD_DIST_DIR:-var/tmp/dist}}"
 if [[ -n "${VERSION}" ]]; then
@@ -67,7 +169,7 @@ fi
 
 echo "Repo root: ${REPO_ROOT}"
 echo "Dist dir:  ${HATFIELD_DIST_DIR}"
-echo "Work tmp:  ${TMPDIR_BUILD}"
+echo "Lock:      ${LOCK_DIR} (pid $$)"
 
 ARGS=()
 if [[ -n "${OUTPUT}" ]]; then
@@ -88,12 +190,12 @@ if [[ "${STATIC}" == "true" ]]; then
     STATIC_ARGS+=(--target="${TARGET}")
   fi
   castor distribution:build-static "${STATIC_ARGS[@]+"${STATIC_ARGS[@]}"}"
-elif [[ "${PHAR_ONLY}" != "true" ]]; then
-  # Default remains PHAR-only; --static opts into native.
-  :
+  castor distribution:checksums ${OUTPUT:+--output="${OUTPUT}"}
+  castor distribution:verify ${OUTPUT:+--output="${OUTPUT}"}
+else
+  # PHAR-only / default: hard-require PHAR+checksums, allow missing native.
+  castor distribution:checksums ${OUTPUT:+--output="${OUTPUT}"}
+  castor distribution:verify --skip-topology --allow-missing-native ${OUTPUT:+--output="${OUTPUT}"}
 fi
-
-castor distribution:checksums ${OUTPUT:+--output="${OUTPUT}"}
-castor distribution:verify ${OUTPUT:+--output="${OUTPUT}"}
 
 echo "Distribution build complete."

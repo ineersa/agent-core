@@ -100,6 +100,21 @@ final class BashInstallerTest extends TestCase
         }
     }
 
+    public function testInstallerRejectsEmptyVersionEqualsForm(): void
+    {
+        $root = ProjectDir::get();
+        $process = new Process(
+            ['bash', $root.'/installer/bash-installer', '--version='],
+            $root,
+            ['PATH' => getenv('PATH') ?: '/usr/bin:/bin'],
+        );
+        $process->setTimeout(10);
+        $process->run();
+        $this->assertFalse($process->isSuccessful());
+        $combined = $process->getOutput().$process->getErrorOutput();
+        $this->assertStringContainsString('requires a non-empty value', $combined);
+    }
+
     public function testInstallerFailsClosedOnPostDownloadSmokeFailure(): void
     {
         $root = ProjectDir::get();

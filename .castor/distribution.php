@@ -71,7 +71,16 @@ function distribution_artifact_name(string $target): string
 }
 
 /**
- * @return array{static_php_cli_commit: string, static_php_cli_repository: string, php_version: string, extensions: list<string>, micro_fake_cli: bool}
+ * @return array{
+ *     static_php_cli_commit: string,
+ *     static_php_cli_repository: string,
+ *     php_version: string,
+ *     php_source_sha256: string,
+ *     phpmicro_repository: string,
+ *     phpmicro_commit: string,
+ *     extensions: list<string>,
+ *     micro_fake_cli: bool
+ * }
  */
 function distribution_static_pin(): array
 {
@@ -86,15 +95,32 @@ function distribution_static_pin(): array
     $commit = $data['static_php_cli_commit'] ?? null;
     $repo = $data['static_php_cli_repository'] ?? null;
     $phpVersion = $data['php_version'] ?? null;
+    $phpSha = $data['php_source_sha256'] ?? null;
+    $phpmicroRepo = $data['phpmicro_repository'] ?? null;
+    $phpmicroCommit = $data['phpmicro_commit'] ?? null;
     $extensions = $data['extensions'] ?? null;
-    if (!is_string($commit) || !is_string($repo) || !is_string($phpVersion) || !is_array($extensions)) {
-        throw new RuntimeException('tools/static/pin.json missing required keys');
+    if (
+        !is_string($commit) || '' === $commit
+        || !is_string($repo) || '' === $repo
+        || !is_string($phpVersion) || '' === $phpVersion
+        || !is_string($phpSha) || 1 !== preg_match('/^[a-f0-9]{64}$/', $phpSha)
+        || !is_string($phpmicroRepo) || '' === $phpmicroRepo
+        || !is_string($phpmicroCommit) || '' === $phpmicroCommit
+        || !is_array($extensions)
+    ) {
+        throw new RuntimeException('tools/static/pin.json missing required keys (static_php_cli_*, php_version, php_source_sha256, phpmicro_*, extensions)');
+    }
+    if (1 !== preg_match('/^\d+\.\d+\.\d+$/', $phpVersion)) {
+        throw new RuntimeException('tools/static/pin.json php_version must be an exact patch version (e.g. 8.5.8), got: '.$phpVersion);
     }
 
     return [
         'static_php_cli_commit' => $commit,
         'static_php_cli_repository' => $repo,
         'php_version' => $phpVersion,
+        'php_source_sha256' => $phpSha,
+        'phpmicro_repository' => $phpmicroRepo,
+        'phpmicro_commit' => $phpmicroCommit,
         'extensions' => array_values(array_map('strval', $extensions)),
         'micro_fake_cli' => (bool) ($data['micro_fake_cli'] ?? true),
     ];
@@ -131,39 +157,120 @@ function distribution_assert_host_can_build(string $target): void
 }
 
 /**
+ * Ensure a git checkout at an exact commit under the worktree cache.
+ */
+function distribution_ensure_git_checkout(string $cacheRoot, string $repository, string $commit, string $label): string
+{
+    if (!is_dir($cacheRoot) && !mkdir($cacheRoot, 0755, true) && !is_dir($cacheRoot)) {
+        throw new RuntimeException('Unable to create cache dir: '.$cacheRoot);
+    }
+    $checkout = $cacheRoot.'/'.$commit;
+    if (!is_dir($checkout.'/.git')) {
+        if (is_dir($checkout)) {
+            \CastorTasks\remove_path_checked($checkout);
+        }
+        echo "Cloning {$label} @{$commit}...\n";
+        \CastorTasks\run_checked(
+            'git clone --filter=blob:none '.escapeshellarg($repository).' '.escapeshellarg($checkout)
+        );
+        \CastorTasks\run_checked(
+            'git -C '.escapeshellarg($checkout).' checkout '.escapeshellarg($commit)
+        );
+    } else {
+        $head = trim(\CastorTasks\run_checked('git -C '.escapeshellarg($checkout).' rev-parse HEAD'));
+        if ($head !== $commit) {
+            \CastorTasks\run_checked('git -C '.escapeshellarg($checkout).' fetch --all');
+            \CastorTasks\run_checked(
+                'git -C '.escapeshellarg($checkout).' checkout '.escapeshellarg($commit)
+            );
+            $head = trim(\CastorTasks\run_checked('git -C '.escapeshellarg($checkout).' rev-parse HEAD'));
+            if ($head !== $commit) {
+                throw new RuntimeException("Unable to checkout {$label} at {$commit} (HEAD={$head})");
+            }
+        }
+    }
+
+    return $checkout;
+}
+
+/**
  * Ensure pinned static-php-cli checkout exists and return its root path.
  */
 function distribution_ensure_spc_checkout(): string
 {
     $pin = distribution_static_pin();
-    $cacheRoot = distribution_root().'/var/tmp/static-php-cli';
-    $checkout = $cacheRoot.'/'.$pin['static_php_cli_commit'];
-    if (!is_dir($cacheRoot) && !mkdir($cacheRoot, 0755, true) && !is_dir($cacheRoot)) {
-        throw new RuntimeException('Unable to create static-php-cli cache dir: '.$cacheRoot);
-    }
 
-    if (!is_dir($checkout.'/.git')) {
-        if (is_dir($checkout)) {
-            \CastorTasks\remove_path_checked($checkout);
+    return distribution_ensure_git_checkout(
+        distribution_root().'/var/tmp/static-php-cli',
+        $pin['static_php_cli_repository'],
+        $pin['static_php_cli_commit'],
+        'static-php-cli',
+    );
+}
+
+/**
+ * Ensure pinned phpmicro checkout exists and return its absolute path.
+ * Cached under var/tmp/static-php-cli/phpmicro/<commit> so the release cache key covers it.
+ */
+function distribution_ensure_phpmicro_checkout(): string
+{
+    $pin = distribution_static_pin();
+
+    return distribution_ensure_git_checkout(
+        distribution_root().'/var/tmp/static-php-cli/phpmicro',
+        $pin['phpmicro_repository'],
+        $pin['phpmicro_commit'],
+        'phpmicro',
+    );
+}
+
+/**
+ * Locate the official PHP source archive downloaded by SPC and verify its SHA-256.
+ * Prefer exact php-{version}.tar.xz under the workdir downloads tree.
+ */
+function distribution_assert_php_source_sha256(string $workDir, string $phpVersion, string $expectedSha256): void
+{
+    $expectedName = 'php-'.$phpVersion.'.tar.xz';
+    $candidates = [];
+    $iterator = new RecursiveIteratorIterator(
+        new RecursiveDirectoryIterator($workDir, FilesystemIterator::SKIP_DOTS),
+    );
+    foreach ($iterator as $file) {
+        if (!$file->isFile()) {
+            continue;
         }
-        echo "Cloning static-php-cli @{$pin['static_php_cli_commit']}...\n";
-        \CastorTasks\run_checked(
-            'git clone --filter=blob:none '.escapeshellarg($pin['static_php_cli_repository']).' '.escapeshellarg($checkout)
-        );
-        \CastorTasks\run_checked(
-            'git -C '.escapeshellarg($checkout).' checkout '.escapeshellarg($pin['static_php_cli_commit'])
-        );
-    } else {
-        $head = trim(\CastorTasks\run_checked('git -C '.escapeshellarg($checkout).' rev-parse HEAD'));
-        if ($head !== $pin['static_php_cli_commit']) {
-            \CastorTasks\run_checked('git -C '.escapeshellarg($checkout).' fetch --all');
-            \CastorTasks\run_checked(
-                'git -C '.escapeshellarg($checkout).' checkout '.escapeshellarg($pin['static_php_cli_commit'])
-            );
+        if ($file->getFilename() === $expectedName) {
+            $candidates[] = $file->getPathname();
         }
     }
+    if ([] === $candidates) {
+        throw new RuntimeException("Official PHP source archive {$expectedName} not found under {$workDir} after SPC download.".' Refusing to continue without fail-closed hash verification.');
+    }
+    // Prefer downloads/ paths when multiple copies exist; never accept ambiguous mismatched hashes.
+    usort($candidates, static function (string $a, string $b) use ($workDir): int {
+        $aPref = str_contains($a, $workDir.'/downloads') ? 0 : 1;
+        $bPref = str_contains($b, $workDir.'/downloads') ? 0 : 1;
+        if ($aPref !== $bPref) {
+            return $aPref <=> $bPref;
+        }
 
-    return $checkout;
+        return strcmp($a, $b);
+    });
+    $path = $candidates[0];
+    $actual = hash_file('sha256', $path);
+    if (false === $actual) {
+        throw new RuntimeException('Unable to hash PHP source archive: '.$path);
+    }
+    if (!hash_equals($expectedSha256, $actual)) {
+        throw new RuntimeException("PHP source SHA-256 mismatch for {$path}: expected {$expectedSha256}, got {$actual}");
+    }
+    foreach (array_slice($candidates, 1) as $extra) {
+        $extraHash = hash_file('sha256', $extra);
+        if (false !== $extraHash && !hash_equals($expectedSha256, $extraHash)) {
+            throw new RuntimeException("Ambiguous PHP source archives: {$path} matches pin but {$extra} has hash {$extraHash}");
+        }
+    }
+    echo "  PHP source SHA-256 verified: {$path}\n";
 }
 
 /**
@@ -227,17 +334,24 @@ function distribution_build_micro_sfx(string $target): array
         echo "SPC doctor warning (continuing after host preflight): {$e->getMessage()}\n";
     }
 
-    echo "SPC download extensions={$extensions} php={$pin['php_version']}...\n";
+    $phpmicroPath = distribution_ensure_phpmicro_checkout();
+    $customLocal = 'php-micro:'.$phpmicroPath;
+
+    echo "SPC download extensions={$extensions} php={$pin['php_version']} phpmicro={$pin['phpmicro_commit']}...\n";
     \CastorTasks\run_checked(
         escapeshellarg($spcBin).' download'
         .' --for-extensions='.escapeshellarg($extensions)
         .' --with-php='.escapeshellarg($pin['php_version'])
+        .' --custom-local='.escapeshellarg($customLocal)
         .' --prefer-binary 2>&1',
         $workDir
     );
+    distribution_assert_php_source_sha256($workDir, $pin['php_version'], $pin['php_source_sha256']);
 
     $buildArgs = escapeshellarg($spcBin).' build '.escapeshellarg($extensions)
-        .' --build-cli --build-micro';
+        .' --build-cli --build-micro'
+        .' --dl-with-php='.escapeshellarg($pin['php_version'])
+        .' --dl-custom-local='.escapeshellarg($customLocal);
     if ($pin['micro_fake_cli']) {
         $buildArgs .= ' --with-micro-fake-cli';
     }
@@ -279,8 +393,16 @@ function distribution_combine_micro(string $spcBin, string $microSfx, string $ph
     chmod($outputPath, 0755);
 }
 
-function distribution_smoke_artifact(string $artifactPath, bool $isPhar = false): void
-{
+/**
+ * Smoke an artifact. When $expectedVersion/$expectedCommit are provided, require
+ * exact substrings in --version output (fail closed for release handoff identity).
+ */
+function distribution_smoke_artifact(
+    string $artifactPath,
+    bool $isPhar = false,
+    ?string $expectedVersion = null,
+    ?string $expectedCommit = null,
+): void {
     if (!is_file($artifactPath) || filesize($artifactPath) < 1024) {
         throw new RuntimeException('Artifact missing or too small: '.$artifactPath);
     }
@@ -304,6 +426,12 @@ function distribution_smoke_artifact(string $artifactPath, bool $isPhar = false)
         if (!str_contains($version, 'Hatfield') || !str_contains($version, 'commit')) {
             throw new RuntimeException('--version smoke failed for '.$artifactPath.': '.$version);
         }
+        if (null !== $expectedVersion && '' !== $expectedVersion && !str_contains($version, $expectedVersion)) {
+            throw new RuntimeException("--version missing expected version {$expectedVersion} for {$artifactPath}: {$version}");
+        }
+        if (null !== $expectedCommit && '' !== $expectedCommit && !str_contains($version, $expectedCommit)) {
+            throw new RuntimeException("--version missing expected commit {$expectedCommit} for {$artifactPath}: {$version}");
+        }
         $list = \CastorTasks\run_checked($cmdBase.' list 2>&1', $tmp);
         if (!str_contains($list, 'agent')) {
             throw new RuntimeException('list smoke failed for '.$artifactPath);
@@ -316,6 +444,55 @@ function distribution_smoke_artifact(string $artifactPath, bool $isPhar = false)
             fwrite(\STDERR, 'dist smoke cleanup warning: '.$e->getMessage()."\n");
         }
     }
+}
+
+/**
+ * Resolve the canonical PHAR used as micro:combine input.
+ *
+ * Release static jobs download the PHAR job's artifact into <dist>/hatfield.phar.
+ * That file must be used as-is (smoke only) — never rebuilt/overwritten.
+ * Local standalone static builds call phar_ensure+copy only when the dist PHAR is absent.
+ *
+ * @return array{path: string, source: 'handoff'|'built'}
+ */
+function distribution_resolve_canonical_phar_for_static(
+    string $dist,
+    ?string $expectedVersion = null,
+    ?string $expectedCommit = null,
+): array {
+    $pharDest = $dist.'/hatfield.phar';
+    if (is_file($pharDest) && filesize($pharDest) > 0) {
+        // Exact release handoff: do not rebuild or overwrite.
+        distribution_smoke_artifact(
+            $pharDest,
+            isPhar: true,
+            expectedVersion: $expectedVersion,
+            expectedCommit: $expectedCommit,
+        );
+        echo "Using existing dist PHAR handoff (no rebuild): {$pharDest}\n";
+
+        return ['path' => $pharDest, 'source' => 'handoff'];
+    }
+
+    // Local standalone: build/ensure then place into dist.
+    $pharPath = \CastorTasks\phar_ensure();
+    if (!is_dir($dist) && !mkdir($dist, 0755, true) && !is_dir($dist)) {
+        throw new RuntimeException('Unable to create dist dir: '.$dist);
+    }
+    if (is_file($pharDest) || is_link($pharDest)) {
+        \CastorTasks\remove_path_checked($pharDest);
+    }
+    \CastorTasks\copy_file_checked($pharPath, $pharDest);
+    chmod($pharDest, 0755);
+    distribution_smoke_artifact(
+        $pharDest,
+        isPhar: true,
+        expectedVersion: $expectedVersion,
+        expectedCommit: $expectedCommit,
+    );
+    echo "Built/copied local PHAR into dist: {$pharDest}\n";
+
+    return ['path' => $pharDest, 'source' => 'built'];
 }
 
 /**
@@ -961,6 +1138,9 @@ function distribution_build(
         $_ENV['HATFIELD_BUILD_COMMIT'] = $commit;
     }
 
+    $expectedVersion = (null !== $releaseVersion && '' !== $releaseVersion) ? $releaseVersion : null;
+    $expectedCommit = (null !== $commit && '' !== $commit) ? $commit : null;
+
     $pharPath = \CastorTasks\phar_build();
     $dist = distribution_dir($output);
     if (!is_dir($dist) && !mkdir($dist, 0755, true) && !is_dir($dist)) {
@@ -972,7 +1152,12 @@ function distribution_build(
     }
     \CastorTasks\copy_file_checked($pharPath, $dest);
     chmod($dest, 0755);
-    distribution_smoke_artifact($dest, isPhar: true);
+    distribution_smoke_artifact(
+        $dest,
+        isPhar: true,
+        expectedVersion: $expectedVersion,
+        expectedCommit: $expectedCommit,
+    );
     distribution_write_sha256sums($dist, ['hatfield.phar']);
     echo "Distribution PHAR ready: {$dest}\n";
 }
@@ -991,39 +1176,42 @@ function distribution_build_static(
     $target ??= distribution_host_target();
     distribution_assert_host_can_build($target);
 
-    if (null !== $releaseVersion && '' !== $releaseVersion) {
-        putenv('HATFIELD_BUILD_VERSION='.$releaseVersion);
-        $_ENV['HATFIELD_BUILD_VERSION'] = $releaseVersion;
+    $expectedVersion = (null !== $releaseVersion && '' !== $releaseVersion) ? $releaseVersion : null;
+    $expectedCommit = (null !== $commit && '' !== $commit) ? $commit : null;
+
+    // Env identity is only for local rebuild path when dist PHAR is absent.
+    // Release handoff uses the already-embedded PHAR from the PHAR job.
+    if (null !== $expectedVersion) {
+        putenv('HATFIELD_BUILD_VERSION='.$expectedVersion);
+        $_ENV['HATFIELD_BUILD_VERSION'] = $expectedVersion;
     }
-    if (null !== $commit && '' !== $commit) {
-        putenv('HATFIELD_BUILD_COMMIT='.$commit);
-        $_ENV['HATFIELD_BUILD_COMMIT'] = $commit;
+    if (null !== $expectedCommit) {
+        putenv('HATFIELD_BUILD_COMMIT='.$expectedCommit);
+        $_ENV['HATFIELD_BUILD_COMMIT'] = $expectedCommit;
     }
 
-    // Ensure PHAR exists with embedded identity via the canonical freshness path
-    // (fingerprint sidecar). Never use a separate mtime shortcut for dist reuse.
-    $pharPath = \CastorTasks\phar_ensure();
     $dist = distribution_dir($output);
     if (!is_dir($dist) && !mkdir($dist, 0755, true) && !is_dir($dist)) {
         throw new RuntimeException('Unable to create dist dir: '.$dist);
     }
-    $pharDest = $dist.'/hatfield.phar';
-    if (is_file($pharDest)) {
-        \CastorTasks\remove_path_checked($pharDest);
-    }
-    \CastorTasks\copy_file_checked($pharPath, $pharDest);
-    chmod($pharDest, 0755);
+    $resolved = distribution_resolve_canonical_phar_for_static($dist, $expectedVersion, $expectedCommit);
+    $pharDest = $resolved['path'];
 
     $built = distribution_build_micro_sfx($target);
     $out = $dist.'/'.distribution_artifact_name($target);
     distribution_combine_micro($built['spc'], $built['micro_sfx'], $pharDest, $out, $built['work_dir']);
-    distribution_smoke_artifact($out, isPhar: false);
+    distribution_smoke_artifact(
+        $out,
+        isPhar: false,
+        expectedVersion: $expectedVersion,
+        expectedCommit: $expectedCommit,
+    );
     distribution_smoke_native_process_topology($out);
     distribution_write_sha256sums($dist, array_values(array_filter(
         ($scan = scandir($dist)) !== false ? $scan : [],
         static fn (string $f): bool => str_starts_with($f, 'hatfield.')
     )));
-    echo "Static binary ready: {$out}\n";
+    echo "Static binary ready: {$out} (phar source={$resolved['source']})\n";
 }
 
 #[AsTask(name: 'distribution:checksums', description: 'Generate SHA256SUMS for artifacts in dist dir')]

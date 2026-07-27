@@ -75,12 +75,40 @@ Environment:
 EOF
 }
 
+require_opt_value() {
+  local flag="$1"
+  local value="${2:-}"
+  if [[ -z "${value}" || "${value}" == --* ]]; then
+    output "ERROR: ${flag} requires a non-empty value" "error"
+    usage
+    exit 1
+  fi
+}
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --install-dir=*) install_dir="${1#*=}"; custom_dir="true"; shift ;;
-    --install-dir) install_dir="${2:-}"; custom_dir="true"; shift 2 ;;
-    --version=*) version="${1#*=}"; shift ;;
-    --version) version="${2:-}"; shift 2 ;;
+    --install-dir=*)
+      install_dir="${1#*=}"
+      require_opt_value "--install-dir" "${install_dir}"
+      custom_dir="true"
+      shift
+      ;;
+    --install-dir)
+      require_opt_value "--install-dir" "${2:-}"
+      install_dir="$2"
+      custom_dir="true"
+      shift 2
+      ;;
+    --version=*)
+      version="${1#*=}"
+      require_opt_value "--version" "${version}"
+      shift
+      ;;
+    --version)
+      require_opt_value "--version" "${2:-}"
+      version="$2"
+      shift 2
+      ;;
     --static) static="true"; shift ;;
     -h|--help) usage; exit 0 ;;
     *) output "Unknown option $1" "error"; usage; exit 1 ;;
@@ -272,23 +300,11 @@ if [[ "${install_smoke}" != *"Hatfield"* ]]; then
   output "  [ ] ERROR: install-dir temp --version invalid; previous install left unchanged" "error"
   exit 1
 fi
+# Candidate + same-dir INSTALL_TMP already checksum/version-smoked; success ends after atomic mv.
 mv -f "${INSTALL_TMP}" "${dest}"
 INSTALL_TMP=""
 output "  [*] Installed to ${dest}" "success"
-
-output "\nPost-install smoke" "heading"
-if [[ "${static}" == "true" ]]; then
-  final_out="$("${dest}" --version 2>&1)" || {
-    output "  [ ] Post-install --version failed" "error"
-    exit 1
-  }
-else
-  final_out="$(php "${dest}" --version 2>&1)" || {
-    output "  [ ] Post-install --version failed" "error"
-    exit 1
-  }
-fi
-output "  ${final_out}" "success"
+output "  [*] Pre-replace smokes already verified candidate and install-dir temp" "success"
 
 if [[ "${custom_dir}" == "false" ]]; then
   case ":${PATH}:" in

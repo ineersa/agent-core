@@ -1,53 +1,45 @@
 # Static PHP toolchain pin
 
 Hatfield native binaries are built with [static-php-cli](https://github.com/crazywhalecc/static-php-cli)
-at the immutable commit declared in `pin.json`.
+at the immutable commit in `pin.json`, fused with the **canonical PHAR handoff**.
 
-User guide (artifacts, relaunch, topology, release matrix, troubleshooting):
-[`docs/static-packaging.md`](../../docs/static-packaging.md).
-Release overview: [`docs/distribution.md`](../../docs/distribution.md).
+User guide: [`docs/static-packaging.md`](../../docs/static-packaging.md) ·
+Release: [`docs/distribution.md`](../../docs/distribution.md).
 
-Do not float on branches or tags from build tasks. Update the pin only by
-changing `static_php_cli_commit` and validating a full host static build.
+## Core pins (fail-closed)
+
+| Field | Purpose |
+|---|---|
+| `static_php_cli_commit` / `static_php_cli_repository` | SPC checkout |
+| `php_version` | Exact patch (`8.5.8`) |
+| `php_source_sha256` | Official `php-{version}.tar.xz` digest after SPC download |
+| `phpmicro_repository` / `phpmicro_commit` | Local checkout fed as `--custom-local=php-micro:<abs>` |
+| `extensions` | SPC SFX set — **superset** of system-PHAR guards, not identical |
+| `micro_fake_cli` | Symfony CLI-friendly micro |
+
+Libraries beyond PHP + phpmicro are **not** fully locked. Do not float SPC branches/tags
+from build tasks; change the pin and validate a host static build.
 
 ## Build flow
 
-1. `castor phar:build` produces the canonical `hatfield.phar`.
-2. `castor distribution:build-static --target=linux-amd64` clones the pinned
-   static-php-cli commit (cached under `var/tmp/static-php-cli/`), builds
-   `cli,micro` with the listed extensions (and `--no-smoke-test=micro` for the
-   pinned PHP 8.5 bare-micro segfault workaround — see the user guide), then runs:
+1. Canonical PHAR already in `var/tmp/dist/hatfield.phar` (release handoff) **or**
+   built via `phar_ensure` for local standalone static.
+2. Clone pinned SPC + pinned phpmicro under `var/tmp/static-php-cli/` (phpmicro at
+   `var/tmp/static-php-cli/phpmicro/<commit>/`).
+3. `spc download --with-php=8.5.8 --custom-local=php-micro:<path> …` then verify
+   `php-8.5.8.tar.xz` SHA-256 against the pin.
+4. `spc build` with `--no-smoke-test=micro` (upstream bare-micro segfault workaround).
+5. `spc micro:combine <phar> --with-micro=buildroot/bin/micro.sfx --output=<artifact>`.
+6. `castor distribution:verify` (version/list + topology).
 
-   ```bash
-   bin/spc micro:combine <phar> --with-micro=buildroot/bin/micro.sfx --output=<artifact>
-   ```
+Release cache path includes `var/tmp/static-php-cli` (SPC + phpmicro) and
+`var/tmp/static-build`, keyed by `pin.json` + `composer.lock`.
 
-3. `castor distribution:verify` smokes the artifact and process topology.
+## Host prerequisites
 
-The four-target matrix runs only on tag `v*` release (`.github/workflows/release.yml`);
-local builds only support host-compatible targets. PRs do not build natives.
+Required (Castor preflight): `cc`/`gcc`/`clang`, `make`, `cmake`, `re2c`, `flex`,
+`gperf`, plus `pkg-config`/autotools as needed by SPC libs.
 
-## Host prerequisites for `castor distribution:build-static`
-
-Required on the build host (checked by Castor preflight):
-
-- C compiler (`cc`/`gcc`/`clang`)
-- `make`, `cmake`
-- `re2c`, `flex`, `gperf`
-- `pkg-config`, autotools (`autoconf`/`automake`/`libtool`) as needed by SPC libs
-
-SPC `doctor --auto-fix` may try to install these via sudo; that path is optional
-and fails closed in restricted containers (`no new privileges`). Install the tools
-with the host package manager instead. Without them, static builds fail during
-library configure (often opaque `zlib` / "Missing or broken C compiler" errors).
-
-### Release runners
-
-Tag-release jobs install the same host toolchain through the checked-in composite
-action `.github/actions/static-prerequisites` (used by `.github/workflows/release.yml`
-**before** any Castor static build). Linux uses apt (`build-essential`, `cmake`,
-`pkg-config`, autotools, `re2c`, `flex`, `gperf`, `bison`); macOS uses Homebrew and
-appends keg-only `flex` to `GITHUB_PATH`. Unsupported runner OS fails closed.
-
-Local native proof remains blocked until the packages above are installed on the
-developer machine — release CI does not replace a local package install.
+SPC `doctor --auto-fix` is optional and fails under `no-new-privileges`. Install via
+host packages. Tag-release jobs use `.github/actions/static-prerequisites` before any
+static Castor build. Local native proof remains blocked without those packages.
