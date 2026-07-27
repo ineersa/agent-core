@@ -137,17 +137,9 @@ final class TranscriptVisualProjector
         // Mutate canonical state first; dependency expansion uses post-mutation indexes.
         $this->applyRemovalsAndUpsertsToCanonical($changes);
 
-        // Neighbor deps + tool pairing after mutation (call/result indexes are current).
+        // Neighbor deps after mutation. ToolResult always forces structural reproject, so
+        // ToolCall pairing lives in fullReproject()/findCombinableToolResultForCall().
         $expanded = $this->expandDependencyIds(array_keys($touchedPrimaryIds));
-        foreach ($changes->upserts as $block) {
-            $expanded[$block->id] = true;
-            if (TranscriptBlockKindEnum::ToolResult === $block->kind) {
-                $callId = $this->toolCallIdMeta($block);
-                if (null !== $callId && isset($this->toolCallIdByCallId[$callId])) {
-                    $expanded[$this->toolCallIdByCallId[$callId]] = true;
-                }
-            }
-        }
 
         // Structural scan decision uses originally dirty IDs only — neighbor expansion
         // must not promote a pure content update (Error/stream) into full reproject.
