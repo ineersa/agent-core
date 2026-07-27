@@ -131,7 +131,8 @@ final readonly class TranscriptBlockWidgetFactory
     /**
      * Visual transcript collapse: render ToolCall + matching ToolResult as one compact card.
      *
-     * Canonical projection still stores separate blocks; list assembly in {@see TranscriptBlockWidget}
+     * Canonical projection still stores separate blocks; list assembly in
+     * {@see TranscriptMountedWidget} (and legacy {@see TranscriptBlockWidget} offscreen tests)
      * pairs by tool_call_id and skips the standalone ToolResult row when consumed here.
      */
     public function buildToolExchangeWidget(TranscriptBlock $callBlock, TranscriptBlock $resultBlock, TuiTheme $theme): AbstractWidget

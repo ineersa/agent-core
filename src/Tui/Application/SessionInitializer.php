@@ -114,7 +114,7 @@ final readonly class SessionInitializer
      * On fresh session, returns a welcome block.
      *
      * Returns plain projection blocks; theme colors/prefixes are applied
-     * at display time by ChatScreen/TranscriptBlockWidget.
+     * at display time by ChatScreen/TranscriptMountedWidget.
      *
      * @return list<TranscriptBlock>
      */

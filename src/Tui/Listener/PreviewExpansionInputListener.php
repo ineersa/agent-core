@@ -37,8 +37,8 @@ final class PreviewExpansionInputListener implements TuiListenerRegistrar
                 $state->transcriptDisplayState->previewableBlocksExpanded =
                     !$state->transcriptDisplayState->previewableBlocksExpanded;
 
-                // Re-push blocks so LiveTextWidget invalidates and the transcript
-                // re-renders with the updated preview budget (cache keys include expansion).
+                // Re-push blocks so TranscriptMountedWidget reconciles with the updated
+                // preview expansion fingerprint and re-renders tool/diff previews.
                 $screen->setTranscriptBlocks($state->transcript);
 
                 $tui->requestRender();

@@ -36,6 +36,7 @@ use Ineersa\Tui\Theme\DefaultTheme;
 use Ineersa\Tui\Theme\ThemePalette;
 use Ineersa\Tui\Transcript\TranscriptDisplayConfig;
 use Ineersa\Tui\Transcript\TranscriptDisplayState;
+use Ineersa\Tui\Transcript\TranscriptMountedWidget;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\Tui\Tui;
@@ -106,10 +107,16 @@ final class TickPollListenerSubagentLiveTest extends TestCase
 
         $this->assertSame(2, $state->lastSeq, 'Parent poller must advance lastSeq while live view is active');
 
-        $ref = new \ReflectionClass($screen);
-        $widget = $ref->getProperty('transcriptRenderable')->getValue($screen);
-        $blocks = (new \ReflectionClass($widget))->getProperty('blocks')->getValue($widget);
-        $text = implode(' ', array_map(static fn ($b) => $b->text, $blocks));
+        // Production ChatScreen owns a private TranscriptMountedWidget; reflect only to reach
+        // its existing public getBlocks() contract — no ChatScreen test getter.
+        $transcriptWidget = (new \ReflectionClass($screen))
+            ->getProperty('transcriptWidget')
+            ->getValue($screen);
+        $this->assertInstanceOf(TranscriptMountedWidget::class, $transcriptWidget);
+        $text = implode(' ', array_map(
+            static fn ($b) => $b->text,
+            $transcriptWidget->getBlocks(),
+        ));
         $this->assertStringContainsString('child live', $text);
         $this->assertStringNotContainsString('new parent block', $text);
     }
