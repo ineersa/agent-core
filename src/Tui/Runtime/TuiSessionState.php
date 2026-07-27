@@ -84,8 +84,10 @@ final class TuiSessionState
      *
      * Prefer {@see replaceTranscript()}, {@see appendTranscriptBlock()}, and
      * {@see applyTranscriptChangeSet()} so the ID→index map stays coherent.
-     * Direct assignment is still accepted (tests / bootstrap) and the index is
-     * rebuilt on the next apply/append path.
+     *
+     * Direct public assignment is test/bootstrap-only. Production mutation paths
+     * must use the helpers above. The next helper call rebuilds the index when
+     * length/first/last checks fail — do not rely on a stale mid-list map.
      *
      * @var list<TranscriptBlock>
      */
@@ -293,8 +295,25 @@ final class TuiSessionState
         $this->rebuildTranscriptIndexIfStale();
         $changed = false;
 
-        foreach ($changes->removals as $id) {
-            if ($this->removeTranscriptBlockById($id)) {
+        // Batch removals: splice high indices first, rebuild ID map once (near-linear).
+        if ([] !== $changes->removals) {
+            $indices = [];
+            foreach ($changes->removals as $id) {
+                $idx = $this->transcriptIndexById[$id] ?? null;
+                if (null !== $idx) {
+                    $indices[] = $idx;
+                    unset($this->transcriptIndexById[$id]);
+                }
+            }
+            if ([] !== $indices) {
+                rsort($indices, \SORT_NUMERIC);
+                foreach ($indices as $idx) {
+                    array_splice($this->transcript, $idx, 1);
+                }
+                $this->transcriptIndexById = [];
+                foreach ($this->transcript as $i => $block) {
+                    $this->transcriptIndexById[$block->id] = $i;
+                }
                 $changed = true;
             }
         }
@@ -318,25 +337,6 @@ final class TuiSessionState
         }
 
         return $changed;
-    }
-
-    private function removeTranscriptBlockById(string $id): bool
-    {
-        $idx = $this->transcriptIndexById[$id] ?? null;
-        if (null === $idx) {
-            return false;
-        }
-
-        array_splice($this->transcript, $idx, 1);
-        unset($this->transcriptIndexById[$id]);
-
-        // Rebuild trailing indices only — ordinary removals are rare vs upserts.
-        $count = \count($this->transcript);
-        for ($i = $idx; $i < $count; ++$i) {
-            $this->transcriptIndexById[$this->transcript[$i]->id] = $i;
-        }
-
-        return true;
     }
 
     /**

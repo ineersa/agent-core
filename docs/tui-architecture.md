@@ -505,34 +505,42 @@ widgets attached to the live `WidgetContext`. Markdown sub-element styles
 (heading/link/code/quote/hr/list-bullet) come from a Hatfield theme stylesheet
 installed on the same `Tui` before mount.
 
-Reconciliation keeps stable semantic wrappers keyed by presentation identity
-(including `exchange:<tool_call_id>` for tool call→result pairing). Ordinary
-streaming updates reuse Markdown instances via `setText()`/`setStyle()`; tail
-append/removal is granular. Whole-container rebuild is reserved for genuine
-relative reorder or non-tail insertion because Symfony's `ContainerWidget`
-public API is append/remove only.
+Reconciliation mounts semantic/native children keyed by presentation identity
+(including `exchange:<tool_call_id>` for tool call→result pairing):
+`StreamingMarkdownTranscriptWidget`, `ToolExchangeTranscriptWidget`,
+`QuestionTranscriptWidget`, `SubagentTranscriptWidget`, plus native
+`WelcomeTranscriptWidget` / `TurnSeparatorWidget` / trivial `TextWidget`.
+Ordinary streaming mutates Markdown via `setText()`/`setStyle()`. Whole-container
+rebuild is reserved for genuine relative reorder or non-tail insertion because
+Symfony's `ContainerWidget` public API is append/remove only.
 
 ### Incremental transcript path (performance)
 
 Hot path is projector dirty-set → `TranscriptChangeSet` → `TuiSessionState`
-ID→index map → `ChatScreen::applyTranscriptChangeSet` → mounted reproject.
+ID→index map → `ChatScreen::applyTranscriptChangeSet` → stateful
+`TranscriptVisualProjector` → bounded `TranscriptVisualPatch` →
+`TranscriptMountedWidget` keyed reconcile.
 
 - **Dirty detection** uses immutable `TranscriptBlock` object identity plus an
   explicit presentation revision for preview expansion. No full-history
   text/meta hashing on ordinary tail stream/update/remove.
-- **Projector** tracks dirty IDs and removals in `TranscriptProjectionState`;
-  `drainChanges()` emits only those deltas. `blocks()` remains for bootstrap,
-  resume, and leaf/branch replacement snapshots.
+- **Projector** tracks dirty IDs in first-mark order; `drainChanges()` is
+  O(changes), not O(history). `blocks()` remains for bootstrap, resume, and
+  leaf/branch replacement snapshots. Batch removals use an order index (no
+  per-removal `array_filter` of the full order list).
 - **Session list** is a single ordered array of block references (no duplicate
-  copies of block objects). Upserts are O(1) via ID→index; removals splice and
-  reindex the tail.
-- **Mounted memory** is O(number of visual nodes). Presentation policy
-  (`TranscriptVisualProjector`) still walks the retained block list for tool
-  pairing/suppression/separators on each apply — that is the deliberate ceiling
-  for non-tail dependency correctness. Full replacement is the explicit path for
-  bootstrap, resume, RunLeafChanged/rewind/branch, non-tail insert/reorder, and
-  global preview invalidation.
-- Symfony's widget revision/render cache remains the only rendered-output cache.
+  copies of block objects). Upserts are O(1) via ID→index; batch removals splice
+  high indices first and rebuild the index once.
+- **Presentation model** retains canonical map/order and tool call/result
+  indexes. Ordinary pure tail markdown stream updates one visual node only
+  (dependency-bounded patch). Tool result arrival / separators / empty-assistant
+  suppression expand only neighbor + exchange dependencies; when safe, the
+  emitted patch touches only changed visual keys. Explicit full reproject is the
+  defined path for bootstrap, resume, RunLeafChanged/rewind/branch, non-tail
+  insert/reorder, ambiguous mid-list tool pairing, and global preview
+  invalidation — not a dual renderer.
+- **Mounted memory/layout** is O(number of visual nodes). Symfony's widget
+  revision/render cache remains the only rendered-output cache.
   `TranscriptBlockWidget` offscreen line cache is test-only, not a production
   fallback.
 

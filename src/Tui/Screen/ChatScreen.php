@@ -400,9 +400,9 @@ final class ChatScreen
     }
 
     /**
-     * Ordinary live projector delta: tail append/update/remove without full list rebuild
-     * at the ChatScreen boundary. Mounted reconcile still reprojects presentation policy
-     * from the retained block list (object-identity dirty detection, no text hashing).
+     * Ordinary live projector delta: tail append/update/remove.
+     * Presentation model applies a dependency-bounded visual patch (no full-history
+     * walk on pure tail stream); explicit full reproject remains for structural cases.
      */
     public function applyTranscriptChangeSet(TranscriptChangeSet $changes): void
     {

@@ -57,6 +57,32 @@ final class TranscriptProjectionChangeSetTest extends TestCase
         $this->assertSame($updated, $streamDelta->upserts[0]);
         $this->assertNotSame($history, $streamDelta->upserts[0]);
         $this->assertCount(2, $state->blocks(), 'History remains in ordered snapshot');
+
+        // Drain complexity contract: only dirtied IDs are emitted even with large history.
+        for ($i = 0; $i < 50; ++$i) {
+            $state->addBlock(new TranscriptBlock(
+                id: 'hist-'.$i,
+                kind: TranscriptBlockKindEnum::UserMessage,
+                runId: 'run-1',
+                seq: $state->nextSeq(),
+                text: 'h'.$i,
+            ));
+        }
+        $bulk = $state->drainChanges();
+        $this->assertCount(50, $bulk->upserts, 'Drain emits only newly dirtied blocks, not prior history');
+
+        $tail = new TranscriptBlock(
+            id: 'tail-only',
+            kind: TranscriptBlockKindEnum::AssistantMessage,
+            runId: 'run-1',
+            seq: $state->nextSeq(),
+            text: 'x',
+            streaming: true,
+        );
+        $state->addBlock($tail);
+        $tailDelta = $state->drainChanges();
+        $this->assertCount(1, $tailDelta->upserts);
+        $this->assertSame('tail-only', $tailDelta->upserts[0]->id);
     }
 
     #[Test]

@@ -24,6 +24,13 @@ final class TranscriptProjectionState
     /** @var list<string> ordered block IDs */
     private array $order = [];
 
+    /**
+     * Block ID → index into {@see $order} for O(1) removal/reindex.
+     *
+     * @var array<string, int>
+     */
+    private array $orderIndex = [];
+
     /** Monotonic sequence counter for new blocks. Reset on replay. */
     private int $nextSeq = 0;
 
@@ -33,6 +40,14 @@ final class TranscriptProjectionState
      * @var array<string, true>
      */
     private array $dirtyIds = [];
+
+    /**
+     * Dirty IDs in first-mark order (O(changes) drain; sorted by canonical
+     * order index when emitted so multi-block batches stay ordered).
+     *
+     * @var list<string>
+     */
+    private array $dirtyOrder = [];
 
     /**
      * Removed block IDs since the last {@see drainChanges()} call.
@@ -52,6 +67,7 @@ final class TranscriptProjectionState
     public function addBlock(TranscriptBlock $block): void
     {
         if (!\array_key_exists($block->id, $this->blocks)) {
+            $this->orderIndex[$block->id] = \count($this->order);
             $this->order[] = $block->id;
         }
         $this->blocks[$block->id] = $block;
@@ -78,7 +94,8 @@ final class TranscriptProjectionState
     /**
      * Remove a block by ID (both from the map and the order list).
      *
-     * No-op when the block does not exist.
+     * No-op when the block does not exist. Order splice is O(tail), not a
+     * full {@see array_filter()} rebuild of the order list.
      */
     public function removeBlock(string $id): void
     {
@@ -86,10 +103,19 @@ final class TranscriptProjectionState
             return;
         }
         unset($this->blocks[$id]);
-        $this->order = array_values(
-            array_filter($this->order, static fn (string $oid): bool => $oid !== $id),
-        );
-        unset($this->dirtyIds[$id]);
+        $idx = $this->orderIndex[$id] ?? null;
+        if (null !== $idx) {
+            array_splice($this->order, $idx, 1);
+            unset($this->orderIndex[$id]);
+            $count = \count($this->order);
+            for ($i = $idx; $i < $count; ++$i) {
+                $this->orderIndex[$this->order[$i]] = $i;
+            }
+        }
+        if (isset($this->dirtyIds[$id])) {
+            unset($this->dirtyIds[$id]);
+            // Leave stale id in dirtyOrder; drain skips missing dirty ids.
+        }
         $this->removedIds[$id] = true;
     }
 
@@ -119,18 +145,33 @@ final class TranscriptProjectionState
      * Live TUI state always *merges* projector deltas (resume/leaf snapshots live
      * outside the projector). Full replacement is assembled by callers via
      * {@see blocks()} / {@see TranscriptChangeSet::full()}, never by this drain.
+     *
+     * Complexity: O(number of dirty/removed IDs), not O(history).
      */
     public function drainChanges(): TranscriptChangeSet
     {
-        $upserts = [];
-        foreach ($this->order as $id) {
-            if (isset($this->dirtyIds[$id])) {
-                $upserts[] = $this->blocks[$id];
+        $dirty = [];
+        foreach ($this->dirtyOrder as $id) {
+            if (!isset($this->dirtyIds[$id]) || !isset($this->blocks[$id])) {
+                continue;
             }
+            $dirty[] = $id;
+        }
+
+        // Canonical order among dirty blocks (appends stay after earlier dirty ids).
+        usort(
+            $dirty,
+            fn (string $a, string $b): int => ($this->orderIndex[$a] ?? 0) <=> ($this->orderIndex[$b] ?? 0),
+        );
+
+        $upserts = [];
+        foreach ($dirty as $id) {
+            $upserts[] = $this->blocks[$id];
         }
 
         $removals = array_keys($this->removedIds);
         $this->dirtyIds = [];
+        $this->dirtyOrder = [];
         $this->removedIds = [];
 
         return TranscriptChangeSet::incremental($upserts, $removals);
@@ -151,8 +192,10 @@ final class TranscriptProjectionState
     {
         $this->blocks = [];
         $this->order = [];
+        $this->orderIndex = [];
         $this->nextSeq = 0;
         $this->dirtyIds = [];
+        $this->dirtyOrder = [];
         $this->removedIds = [];
     }
 
@@ -327,11 +370,16 @@ final class TranscriptProjectionState
      */
     public function removeOrphanedToolCallBlocks(): void
     {
+        /** @var array<string, true> $executedIds */
         $executedIds = [];
 
         foreach ($this->blocks as $block) {
-            if (TranscriptBlockKindEnum::ToolResult === $block->kind) {
-                $executedIds[] = $block->meta['tool_call_id'] ?? '';
+            if (TranscriptBlockKindEnum::ToolResult !== $block->kind) {
+                continue;
+            }
+            $callId = $block->meta['tool_call_id'] ?? '';
+            if (\is_string($callId) && '' !== $callId) {
+                $executedIds[$callId] = true;
             }
         }
 
@@ -346,7 +394,7 @@ final class TranscriptProjectionState
             }
 
             $callId = $block->meta['tool_call_id'] ?? '';
-            if (!\in_array($callId, $executedIds, true)) {
+            if (!\is_string($callId) || '' === $callId || !isset($executedIds[$callId])) {
                 $this->removeBlock($id);
             }
         }
@@ -408,6 +456,10 @@ final class TranscriptProjectionState
     private function markDirty(string $id): void
     {
         unset($this->removedIds[$id]);
+        if (isset($this->dirtyIds[$id])) {
+            return;
+        }
         $this->dirtyIds[$id] = true;
+        $this->dirtyOrder[] = $id;
     }
 }

@@ -7,36 +7,39 @@ namespace Ineersa\Tui\Transcript;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptChangeSet;
 use Ineersa\Tui\Theme\TuiTheme;
+use Symfony\Component\Tui\Widget\AbstractWidget;
 use Symfony\Component\Tui\Widget\ContainerWidget;
 
 /**
  * Keyed mounted reconciler for the production transcript region.
  *
- * Presentation policy lives in {@see TranscriptVisualProjector}. This class only
- * mounts {@see SemanticTranscriptNodeWidget} children and keeps wrapper identity
- * across ordinary append/update/remove. Full clear()+ordered add is reserved for
- * relative reorder / non-tail insertion that Symfony ContainerWidget cannot splice.
+ * Presentation policy and retained canonical state live in
+ * {@see TranscriptVisualProjector}. This class only mounts semantic/native
+ * children and applies {@see TranscriptVisualPatch} values.
  *
- * Dirty detection uses immutable source object identity + presentation revision
- * (preview expansion). Symfony owns render caching — no app-level line caches.
+ * Full clear()+ordered add is reserved for relative reorder / non-tail
+ * insertion that Symfony ContainerWidget cannot splice.
  */
 final class TranscriptMountedWidget extends ContainerWidget
 {
-    private const string OUTER_RESYNC_REASON_RELATIVE_ORDER = 'relative_order_changed';
-    private const string OUTER_RESYNC_REASON_NON_TAIL_INSERTION = 'non_tail_insertion';
-
-    /** @var list<TranscriptBlock> */
-    private array $blocks = [];
-
     private readonly TranscriptVisualProjector $projector;
 
     /**
-     * @var array<string, SemanticTranscriptNodeWidget>
+     * @var array<string, AbstractWidget>
      */
     private array $nodes = [];
 
+    /**
+     * Last applied visual node per key (source identity for native widgets).
+     *
+     * @var array<string, TranscriptVisualNode>
+     */
+    private array $appliedNodes = [];
+
     /** @var list<string> */
     private array $nodeOrder = [];
+
+    private ?TranscriptVisualPatch $lastPatch = null;
 
     public function __construct(
         private readonly TuiTheme $theme,
@@ -47,13 +50,26 @@ final class TranscriptMountedWidget extends ContainerWidget
             displayConfig: $displayConfig,
             displayState: $displayState,
         );
-        $this->reconcile();
+        $this->applyPatch($this->projector->replaceAll([]));
     }
 
-    /** @return list<TranscriptBlock> */
+    /**
+     * Canonical blocks retained by the presentation model.
+     *
+     * @return list<TranscriptBlock>
+     */
     public function getBlocks(): array
     {
-        return $this->blocks;
+        return $this->projector->exportBlocks();
+    }
+
+    /**
+     * Last production visual patch applied by setBlocks/applyChangeSet.
+     * Tests assert bounded touched keys on ordinary tail updates.
+     */
+    public function lastVisualPatch(): ?TranscriptVisualPatch
+    {
+        return $this->lastPatch;
     }
 
     /**
@@ -64,138 +80,128 @@ final class TranscriptMountedWidget extends ContainerWidget
      */
     public function setBlocks(array $blocks): void
     {
-        // Avoid array_values() copy when already a packed list.
-        $this->blocks = $blocks;
-        $this->reconcile();
+        $this->applyPatch($this->projector->replaceAll($blocks));
     }
 
     /**
      * Incremental apply for ordinary projector deltas (tail stream/update/remove).
-     *
-     * Falls back to full reproject when the delta cannot be applied safely without
-     * reordering (explicit full mode, or removals/upserts that need policy re-run
-     * across the whole list for tool pairing/suppression). Presentation policy is
-     * re-run over the retained block list — not a dual renderer.
      */
     public function applyChangeSet(TranscriptChangeSet $changes): void
     {
-        if ($changes->isFull()) {
-            $this->setBlocks($changes->blocks());
-
+        if ($changes->isEmpty() && !$changes->isFull()) {
             return;
         }
 
-        if ($changes->isEmpty()) {
-            return;
-        }
-
-        // Apply to local block list with object-identity upserts.
-        $indexById = [];
-        foreach ($this->blocks as $idx => $block) {
-            $indexById[$block->id] = $idx;
-        }
-
-        foreach ($changes->removals as $id) {
-            $idx = $indexById[$id] ?? null;
-            if (null === $idx) {
-                continue;
-            }
-            array_splice($this->blocks, $idx, 1);
-            // Rebuild map after splice for subsequent removals in the same batch.
-            $indexById = [];
-            foreach ($this->blocks as $i => $block) {
-                $indexById[$block->id] = $i;
-            }
-        }
-
-        foreach ($changes->upserts as $block) {
-            $idx = $indexById[$block->id] ?? null;
-            if (null === $idx) {
-                $indexById[$block->id] = \count($this->blocks);
-                $this->blocks[] = $block;
-                continue;
-            }
-            $this->blocks[$idx] = $block;
-        }
-
-        // Tool pairing / empty-assistant / separator policy depends on neighbors;
-        // reproject from the retained list. Full-history text hashing is gone —
-        // dirty detection is object identity on projected nodes.
-        $this->reconcile();
+        $this->applyPatch($this->projector->applyChangeSet($changes));
     }
 
-    private function reconcile(): void
+    private function applyPatch(TranscriptVisualPatch $patch): void
     {
-        $desired = $this->projector->project($this->blocks);
+        $this->lastPatch = $patch;
 
-        $desiredKeys = [];
+        if ($patch->isFull()) {
+            $this->reconcileToOrder($patch->nodes, $patch->order, fullSnapshot: true);
+
+            return;
+        }
+
+        $this->reconcileIncremental($patch);
+    }
+
+    private function reconcileIncremental(TranscriptVisualPatch $patch): void
+    {
+        $desiredOrder = $patch->order;
+        $desiredSet = array_fill_keys($desiredOrder, true);
+
+        // Relative order of survivors — if changed, rebuild from upserts + retained nodes.
+        $prevSurviving = [];
+        foreach ($this->nodeOrder as $key) {
+            if (isset($desiredSet[$key])) {
+                $prevSurviving[] = $key;
+            }
+        }
+        $desiredSurviving = [];
+        $prevSet = array_fill_keys($this->nodeOrder, true);
+        foreach ($desiredOrder as $key) {
+            if (isset($prevSet[$key])) {
+                $desiredSurviving[] = $key;
+            }
+        }
+
+        $seenNew = false;
+        $nonTailInsertion = false;
+        foreach ($desiredOrder as $key) {
+            $isNew = !isset($prevSet[$key]);
+            if ($isNew) {
+                $seenNew = true;
+                continue;
+            }
+            if ($seenNew) {
+                $nonTailInsertion = true;
+                break;
+            }
+        }
+
+        if ($prevSurviving !== $desiredSurviving || $nonTailInsertion) {
+            // Build full node list: prefer upsert payloads, else retained applied nodes.
+            $nodes = [];
+            $upsertByKey = [];
+            foreach ($patch->upserts as $node) {
+                $upsertByKey[$node->key] = $node;
+            }
+            foreach ($desiredOrder as $key) {
+                if (isset($upsertByKey[$key])) {
+                    $nodes[] = $upsertByKey[$key];
+                    continue;
+                }
+                if (isset($this->appliedNodes[$key])) {
+                    $nodes[] = $this->appliedNodes[$key];
+                }
+            }
+            $this->reconcileToOrder($nodes, $desiredOrder, fullSnapshot: true);
+
+            return;
+        }
+
+        foreach ($patch->removals as $key) {
+            $this->detachKey($key);
+        }
+
+        foreach ($patch->upserts as $node) {
+            $existing = $this->nodes[$node->key] ?? null;
+            if (null === $existing) {
+                $widget = $this->createWidgetFor($node);
+                $this->applyToWidget($widget, $node);
+                $this->add($widget);
+                $this->nodes[$node->key] = $widget;
+                $this->appliedNodes[$node->key] = $node;
+                continue;
+            }
+
+            $this->applyToWidget($existing, $node);
+            $this->appliedNodes[$node->key] = $node;
+        }
+
+        $this->nodeOrder = $desiredOrder;
+    }
+
+    /**
+     * @param list<TranscriptVisualNode> $desired
+     * @param list<string>               $desiredOrder
+     */
+    private function reconcileToOrder(array $desired, array $desiredOrder, bool $fullSnapshot): void
+    {
         $desiredByKey = [];
         foreach ($desired as $item) {
-            $desiredKeys[] = $item->key;
             $desiredByKey[$item->key] = $item;
         }
 
         $previousOrder = $this->nodeOrder;
         $previousNodes = $this->nodes;
-        $outerResyncReason = $this->detectOuterResyncReason($previousOrder, $desiredKeys);
-
-        if (null !== $outerResyncReason) {
-            $this->performOuterResync($desired, $previousNodes);
-
-            return;
-        }
-
-        foreach ($previousOrder as $existingKey) {
-            if (isset($desiredByKey[$existingKey])) {
-                continue;
-            }
-            $node = $previousNodes[$existingKey] ?? null;
-            if (null !== $node) {
-                $this->remove($node);
-                unset($this->nodes[$existingKey]);
-            }
-        }
-        $this->nodeOrder = array_values(array_filter(
-            $this->nodeOrder,
-            static fn (string $key): bool => isset($desiredByKey[$key]),
-        ));
-
-        $nextNodes = [];
-        $nextOrder = [];
-        $factory = $this->projector->factory();
-        foreach ($desired as $item) {
-            $key = $item->key;
-            $existing = $this->nodes[$key] ?? null;
-            if (null === $existing) {
-                $wrapper = new SemanticTranscriptNodeWidget($factory, $this->theme);
-                $wrapper->apply($item);
-                $this->add($wrapper);
-                $nextNodes[$key] = $wrapper;
-                $nextOrder[] = $key;
-                continue;
-            }
-
-            $existing->apply($item);
-            $nextNodes[$key] = $existing;
-            $nextOrder[] = $key;
-        }
-
-        $this->nodes = $nextNodes;
-        $this->nodeOrder = $nextOrder;
-    }
-
-    /**
-     * @param list<string> $previousOrder
-     * @param list<string> $desiredKeys
-     */
-    private function detectOuterResyncReason(array $previousOrder, array $desiredKeys): ?string
-    {
-        if ([] === $previousOrder) {
-            return null;
-        }
+        $previousApplied = $this->appliedNodes;
 
         $previousSet = array_fill_keys($previousOrder, true);
-        $desiredSet = array_fill_keys($desiredKeys, true);
+        $desiredSet = array_fill_keys($desiredOrder, true);
 
         $previousSurviving = [];
         foreach ($previousOrder as $key) {
@@ -203,63 +209,157 @@ final class TranscriptMountedWidget extends ContainerWidget
                 $previousSurviving[] = $key;
             }
         }
-
         $desiredSurviving = [];
-        foreach ($desiredKeys as $key) {
+        foreach ($desiredOrder as $key) {
             if (isset($previousSet[$key])) {
                 $desiredSurviving[] = $key;
             }
         }
 
-        if ($previousSurviving !== $desiredSurviving) {
-            return self::OUTER_RESYNC_REASON_RELATIVE_ORDER;
+        $seenNew = false;
+        $needsOuterResync = $previousSurviving !== $desiredSurviving;
+        if (!$needsOuterResync) {
+            foreach ($desiredOrder as $key) {
+                $isNew = !isset($previousSet[$key]);
+                if ($isNew) {
+                    $seenNew = true;
+                    continue;
+                }
+                if ($seenNew) {
+                    $needsOuterResync = true;
+                    break;
+                }
+            }
         }
 
-        $seenNew = false;
-        foreach ($desiredKeys as $key) {
-            $isNew = !isset($previousSet[$key]);
-            if ($isNew) {
-                $seenNew = true;
+        if ($needsOuterResync || ([] === $previousOrder && $fullSnapshot)) {
+            $nextNodes = [];
+            $nextApplied = [];
+            foreach ($desiredOrder as $key) {
+                $item = $desiredByKey[$key] ?? null;
+                if (null === $item) {
+                    continue;
+                }
+                $existing = $previousNodes[$key] ?? null;
+                if (null === $existing) {
+                    $widget = $this->createWidgetFor($item);
+                    $this->applyToWidget($widget, $item);
+                } else {
+                    $this->applyToWidget($existing, $item);
+                    $widget = $existing;
+                }
+                $nextNodes[$key] = $widget;
+                $nextApplied[$key] = $item;
+            }
+
+            $this->clear();
+            foreach ($desiredOrder as $key) {
+                if (isset($nextNodes[$key])) {
+                    $this->add($nextNodes[$key]);
+                }
+            }
+            $this->nodes = $nextNodes;
+            $this->appliedNodes = $nextApplied;
+            $this->nodeOrder = $desiredOrder;
+
+            return;
+        }
+
+        // Granular: remove gone keys, append new tail, update existing.
+        foreach ($previousOrder as $key) {
+            if (!isset($desiredSet[$key])) {
+                $this->detachKey($key);
+            }
+        }
+
+        $nextNodes = [];
+        $nextApplied = [];
+        foreach ($desiredOrder as $key) {
+            $item = $desiredByKey[$key] ?? $previousApplied[$key] ?? null;
+            if (null === $item) {
                 continue;
             }
-            if ($seenNew) {
-                return self::OUTER_RESYNC_REASON_NON_TAIL_INSERTION;
-            }
-        }
-
-        return null;
-    }
-
-    /**
-     * @param list<TranscriptVisualNode>                  $desired
-     * @param array<string, SemanticTranscriptNodeWidget> $previousNodes
-     */
-    private function performOuterResync(array $desired, array $previousNodes): void
-    {
-        $nextNodes = [];
-        $nextOrder = [];
-        $factory = $this->projector->factory();
-        foreach ($desired as $item) {
-            $key = $item->key;
-            $existing = $previousNodes[$key] ?? null;
+            $existing = $this->nodes[$key] ?? $previousNodes[$key] ?? null;
             if (null === $existing) {
-                $wrapper = new SemanticTranscriptNodeWidget($factory, $this->theme);
-                $wrapper->apply($item);
+                $widget = $this->createWidgetFor($item);
+                $this->applyToWidget($widget, $item);
+                $this->add($widget);
             } else {
-                $existing->apply($item);
-                $wrapper = $existing;
+                $this->applyToWidget($existing, $item);
+                $widget = $existing;
             }
-
-            $nextNodes[$key] = $wrapper;
-            $nextOrder[] = $key;
-        }
-
-        $this->clear();
-        foreach ($nextOrder as $key) {
-            $this->add($nextNodes[$key]);
+            $nextNodes[$key] = $widget;
+            $nextApplied[$key] = $item;
         }
 
         $this->nodes = $nextNodes;
-        $this->nodeOrder = $nextOrder;
+        $this->appliedNodes = $nextApplied;
+        $this->nodeOrder = $desiredOrder;
+    }
+
+    private function detachKey(string $key): void
+    {
+        $widget = $this->nodes[$key] ?? null;
+        if (null !== $widget) {
+            $this->remove($widget);
+        }
+        unset($this->nodes[$key], $this->appliedNodes[$key]);
+    }
+
+    private function createWidgetFor(TranscriptVisualNode $node): AbstractWidget
+    {
+        $factory = $this->projector->factory();
+
+        return match ($node->kind) {
+            TranscriptVisualNode::KIND_WELCOME => new WelcomeTranscriptWidget($this->theme),
+            TranscriptVisualNode::KIND_SEPARATOR => new TurnSeparatorWidget($this->theme),
+            TranscriptVisualNode::KIND_MARKDOWN => new StreamingMarkdownTranscriptWidget($factory, $this->theme),
+            TranscriptVisualNode::KIND_TOOL_EXCHANGE => new ToolExchangeTranscriptWidget($factory, $this->theme),
+            TranscriptVisualNode::KIND_QUESTION => new QuestionTranscriptWidget($factory, $this->theme),
+            TranscriptVisualNode::KIND_SUBAGENT => new SubagentTranscriptWidget($factory, $this->theme),
+            default => $factory->buildWidget(
+                $node->primary ?? throw new \LogicException('Generic visual node missing primary block.'),
+                $this->theme,
+            ),
+        };
+    }
+
+    private function applyToWidget(AbstractWidget $widget, TranscriptVisualNode $node): void
+    {
+        if ($widget instanceof StreamingMarkdownTranscriptWidget
+            || $widget instanceof ToolExchangeTranscriptWidget
+            || $widget instanceof QuestionTranscriptWidget
+            || $widget instanceof SubagentTranscriptWidget
+        ) {
+            $widget->apply($node);
+
+            return;
+        }
+
+        // Native static widgets (TextWidget/Welcome/Separator): replace only when sources change.
+        $previous = $this->appliedNodes[$node->key] ?? null;
+        if (null !== $previous && $previous->sameSources($node)) {
+            return;
+        }
+
+        // Trivial static node with no apply API — recreate by swapping parent child.
+        // Callers that need content updates on KIND_GENERIC go through createWidgetFor again
+        // in reconcile when the widget is replaced.
+        if ($widget instanceof WelcomeTranscriptWidget || $widget instanceof TurnSeparatorWidget) {
+            return;
+        }
+
+        // Generic TextWidget: rebuild by removing and re-adding a fresh instance at same key.
+        // Parent ContainerWidget has no replace API; detach + recreate is handled by caller
+        // when identity is wrong. Here we only no-op if sameSources; else force recreate:
+        if (null !== $previous && !$previous->sameSources($node)) {
+            // Mark for recreate: remove and put new widget in nodes map at call site.
+            // applyToWidget is only invoked when widget already matches key; recreate happens
+            // via createWidgetFor when existing is null. For source change on generic, swap:
+            $fresh = $this->createWidgetFor($node);
+            $this->remove($widget);
+            $this->add($fresh);
+            $this->nodes[$node->key] = $fresh;
+        }
     }
 }
