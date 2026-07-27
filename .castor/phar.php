@@ -29,30 +29,42 @@ function phar_build(): void
 
 /**
  * Ensure hatfield.phar exists (build if missing or stale).
+ *
+ * Failures propagate — do not swallow exceptions.
  */
 #[AsTask(name: 'phar:ensure', description: 'Ensure hatfield.phar exists (build if missing or stale)')]
 function phar_ensure(): void
 {
-    try {
-        \CastorTasks\phar_ensure();
-    } catch (Throwable $e) {
-        echo "phar:ensure error: {$e->getMessage()}
-";
-    }
+    \CastorTasks\phar_ensure();
 }
 
 /**
- * Remove the worktree-local hatfield.phar.
+ * Remove the worktree-local hatfield.phar, staging, and lock files.
  */
-#[AsTask(name: 'phar:clean', description: 'Remove worktree-local hatfield.phar')]
+#[AsTask(name: 'phar:clean', description: 'Remove worktree-local hatfield.phar, staging, and locks')]
 function phar_clean(): void
 {
     $path = \CastorTasks\hatfield_phar_path();
-    if (is_file($path) && !unlink($path)) {
-        throw new RuntimeException("Failed to remove {$path}");
+    if (is_file($path) || is_link($path)) {
+        \CastorTasks\remove_path_checked($path);
+        echo "Removed {$path}\n";
+    } else {
+        echo "No PHAR at {$path}\n";
     }
-    echo "Removed {$path}
-";
+
+    $staging = \CastorTasks\hatfield_phar_staging_dir();
+    if (is_dir($staging)) {
+        \CastorTasks\remove_path_checked($staging);
+        echo "Removed staging {$staging}\n";
+    }
+
+    $rootReal = realpath(__DIR__.'/..');
+    $root = false !== $rootReal ? $rootReal : __DIR__.'/..';
+    $lock = $root.'/'.\CastorTasks\PHAR_BUILD_LOCK;
+    if (is_file($lock)) {
+        \CastorTasks\remove_path_checked($lock);
+        echo "Removed lock {$lock}\n";
+    }
 }
 
 /**

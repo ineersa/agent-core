@@ -31,6 +31,7 @@ import(__DIR__.'/.castor/phpunit.php');
 import(__DIR__.'/.castor/tasks.php');
 import(__DIR__.'/.castor/e2e.php');
 import(__DIR__.'/.castor/phar.php');
+import(__DIR__.'/.castor/distribution.php');
 import(__DIR__.'/.castor/tools.php');
 import(__DIR__.'/.castor/run.php');
 import(__DIR__.'/.castor/cleanup.php');

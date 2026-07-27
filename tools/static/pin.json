@@ -1,0 +1,31 @@
+{
+    "static_php_cli_commit": "59584de4aa9d8067e4ce30d2ff990e7b9e14db43",
+    "static_php_cli_repository": "https://github.com/crazywhalecc/static-php-cli.git",
+    "php_version": "8.5",
+    "sapi": ["cli", "micro"],
+    "micro_fake_cli": true,
+    "extensions": [
+        "mbstring",
+        "phar",
+        "posix",
+        "tokenizer",
+        "pcntl",
+        "curl",
+        "filter",
+        "openssl",
+        "sodium",
+        "ctype",
+        "iconv",
+        "pdo",
+        "pdo_sqlite",
+        "sqlite3",
+        "xml",
+        "dom",
+        "simplexml",
+        "xmlreader",
+        "xmlwriter",
+        "intl",
+        "zlib"
+    ],
+    "notes": "SPC --for-extensions names (without ext- prefix). pdo_sqlite/sqlite3 are the correct package names (not sqlite). Synchronized with composer.json ext-*, bin/console PHAR guards, installer checks, docs/phar-packaging.md. Host static builds require SPC doctor tools (re2c, flex, gperf) or a CI image that already provides them."
+}

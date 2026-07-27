@@ -26,12 +26,41 @@ final class ConfigExecutableLocator implements AppExecutableLocator
 
     public function command(): array
     {
-        return [\PHP_BINARY, $this->resolve()];
+        $path = $this->resolve();
+
+        // Fused PHP-micro / static native binary: the artifact is the current
+        // process executable (PHP_BINARY points at the binary itself). Relaunch
+        // as a single argv element so controller/Messenger children do not try
+        // to invoke "php <self>" with a separate PHP interpreter.
+        if (self::isFusedNativeExecutable($path)) {
+            return [$path];
+        }
+
+        return [\PHP_BINARY, $path];
     }
 
     public function path(): string
     {
         return $this->resolve();
+    }
+
+    /**
+     * True when $path is the fused native self (same inode/path as PHP_BINARY).
+     */
+    private static function isFusedNativeExecutable(string $path): bool
+    {
+        if (!is_file($path)) {
+            return false;
+        }
+
+        $phpBinary = \PHP_BINARY;
+        $resolvedPath = realpath($path);
+        $resolvedPhp = realpath($phpBinary);
+        if (false === $resolvedPath || false === $resolvedPhp) {
+            return $path === $phpBinary;
+        }
+
+        return $resolvedPath === $resolvedPhp;
     }
 
     /**

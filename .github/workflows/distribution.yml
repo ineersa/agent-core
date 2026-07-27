@@ -1,0 +1,123 @@
+name: Distribution
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  phar:
+    name: Build canonical PHAR
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.5"
+          extensions: mbstring, xml, intl, curl, openssl, pcntl, posix, tokenizer, ctype, filter, iconv, phar, pdo_sqlite, sqlite3, zip
+          coverage: none
+          tools: composer:v2
+
+      - name: Install dependencies
+        run: composer install --no-interaction --prefer-dist
+
+      - name: Install Castor
+        run: composer global require jolicode/castor:^1.6 --no-interaction
+
+      - name: Build distribution PHAR
+        env:
+          HATFIELD_BUILD_VERSION: ${{ github.ref_name }}
+          HATFIELD_BUILD_COMMIT: ${{ github.sha }}
+          PATH: ${{ env.PATH }}:/home/runner/.composer/vendor/bin
+        run: |
+          castor distribution:build --release-version="${HATFIELD_BUILD_VERSION}" --commit="${HATFIELD_BUILD_COMMIT}"
+          castor distribution:verify
+
+      - name: Upload hatfield.phar
+        uses: actions/upload-artifact@v4
+        with:
+          name: hatfield.phar
+          path: var/tmp/dist/hatfield.phar
+          if-no-files-found: error
+
+      - name: Upload SHA256SUMS (partial)
+        uses: actions/upload-artifact@v4
+        with:
+          name: SHA256SUMS-phar
+          path: var/tmp/dist/SHA256SUMS
+          if-no-files-found: error
+
+  static:
+    name: Static ${{ matrix.target }}
+    needs: [phar]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: linux-amd64
+            runner: ubuntu-latest
+          - target: linux-arm64
+            runner: ubuntu-24.04-arm
+          - target: darwin-amd64
+            runner: macos-15-intel
+          - target: darwin-arm64
+            runner: macos-15
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.5"
+          extensions: mbstring, xml, intl, curl, openssl, pcntl, posix, tokenizer, ctype, filter, iconv, phar, pdo_sqlite, sqlite3, zip
+          coverage: none
+          tools: composer:v2
+
+      - name: Install dependencies
+        run: composer install --no-interaction --prefer-dist
+
+      - name: Install Castor
+        run: composer global require jolicode/castor:^1.6 --no-interaction
+
+      - name: Cache static-php-cli pin checkout + downloads
+        uses: actions/cache@v4
+        with:
+          path: |
+            var/tmp/static-php-cli
+            var/tmp/static-build
+          key: spc-${{ matrix.target }}-${{ hashFiles('tools/static/pin.json', 'composer.lock') }}
+          restore-keys: |
+            spc-${{ matrix.target }}-
+
+      - name: Download PHAR artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: hatfield.phar
+          path: var/tmp/dist
+
+      - name: Build static binary via Castor
+        env:
+          HATFIELD_BUILD_VERSION: ${{ github.ref_name }}
+          HATFIELD_BUILD_COMMIT: ${{ github.sha }}
+          PATH: ${{ env.PATH }}:/Users/runner/.composer/vendor/bin:/home/runner/.composer/vendor/bin
+        run: |
+          mkdir -p var/tmp/dist
+          # Seed PHAR path used by distribution tasks
+          test -f var/tmp/dist/hatfield.phar
+          castor distribution:build-static --target=${{ matrix.target }} --release-version="${HATFIELD_BUILD_VERSION}" --commit="${HATFIELD_BUILD_COMMIT}"
+          castor distribution:verify
+
+      - name: Upload static artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: hatfield.${{ matrix.target }}
+          path: var/tmp/dist/hatfield.${{ matrix.target }}
+          if-no-files-found: error

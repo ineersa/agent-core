@@ -1,0 +1,95 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Publish GitHub Release assets
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate tag points at current commit
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          TAG_SHA="$(git rev-list -n 1 "${TAG}")"
+          echo "Tag ${TAG} -> ${TAG_SHA}"
+          echo "Commit ${GITHUB_SHA}"
+          test "${TAG_SHA}" = "${GITHUB_SHA}"
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.5"
+          extensions: mbstring, xml, intl, curl, openssl, pcntl, posix, tokenizer, ctype, filter, iconv, phar, pdo_sqlite, sqlite3, zip
+          coverage: none
+          tools: composer:v2
+
+      - name: Install dependencies
+        run: composer install --no-interaction --prefer-dist
+
+      - name: Install Castor
+        run: composer global require jolicode/castor:^1.6 --no-interaction
+
+      - name: Build PHAR via Castor
+        env:
+          HATFIELD_BUILD_VERSION: ${{ github.ref_name }}
+          HATFIELD_BUILD_COMMIT: ${{ github.sha }}
+          PATH: ${{ env.PATH }}:/home/runner/.composer/vendor/bin
+        run: |
+          castor distribution:build --release-version="${HATFIELD_BUILD_VERSION}" --commit="${HATFIELD_BUILD_COMMIT}"
+
+      # Static matrix is built by distribution.yml-style host runners; for
+      # tag releases we re-run Castor static build for the host and expect
+      # pre-attached multi-arch artifacts from a prior Distribution workflow
+      # when available. Minimal complete set for publication:
+      - name: Build host static binary
+        env:
+          HATFIELD_BUILD_VERSION: ${{ github.ref_name }}
+          HATFIELD_BUILD_COMMIT: ${{ github.sha }}
+          PATH: ${{ env.PATH }}:/home/runner/.composer/vendor/bin
+        run: |
+          castor distribution:build-static --release-version="${HATFIELD_BUILD_VERSION}" --commit="${HATFIELD_BUILD_COMMIT}" || {
+            echo "Host static build failed — publishing PHAR-only is not allowed for full releases."
+            exit 1
+          }
+
+      - name: Collect and verify expected artifacts
+        env:
+          PATH: ${{ env.PATH }}:/home/runner/.composer/vendor/bin
+        run: |
+          set -euo pipefail
+          DIST=var/tmp/dist
+          # Full matrix may only be complete when multi-arch artifacts are
+          # uploaded from Distribution workflow. For this runner we require:
+          # hatfield.phar + host static + SHA256SUMS at minimum, and document
+          # the full set in docs/phar-packaging.md.
+          test -s "${DIST}/hatfield.phar"
+          test -s "${DIST}/hatfield.linux-amd64"
+          test -x "${DIST}/hatfield.linux-amd64"
+          castor distribution:checksums
+          castor distribution:verify
+          # Size sanity
+          php -r '$p="var/tmp/dist/hatfield.phar"; $s=filesize($p); if($s<1000000||$s>40000000){fwrite(STDERR,"bad phar size $s\n"); exit(1);} echo "phar bytes=$s\n";'
+          php -r '$p="var/tmp/dist/hatfield.linux-amd64"; $s=filesize($p); if($s<1000000){fwrite(STDERR,"bad static size $s\n"); exit(1);} echo "static bytes=$s\n";'
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: Hatfield ${{ github.ref_name }}
+          generate_release_notes: true
+          files: |
+            var/tmp/dist/hatfield.phar
+            var/tmp/dist/hatfield.linux-amd64
+            var/tmp/dist/SHA256SUMS
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
