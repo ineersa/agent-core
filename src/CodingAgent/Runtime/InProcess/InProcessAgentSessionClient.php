@@ -13,7 +13,6 @@ use Ineersa\AgentCore\Domain\Run\StartRunInput;
 use Ineersa\CodingAgent\Agent\Context\AgentsContextBuilder;
 use Ineersa\CodingAgent\Config\Ai\AiModelReference;
 use Ineersa\CodingAgent\Config\ModelResolver;
-use Ineersa\CodingAgent\Config\SessionMetadataStore;
 use Ineersa\CodingAgent\Mcp\McpSessionLifecycleDispatcher;
 use Ineersa\CodingAgent\PromptTemplate\PromptTemplateService;
 use Ineersa\CodingAgent\Runtime\Contract\AgentSessionClient;
@@ -24,6 +23,7 @@ use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
 use Ineersa\CodingAgent\Runtime\Protocol\RunLeafChangedEventFactory;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventMapper;
+use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Skills\SkillsContextBuilder;
 use Ineersa\CodingAgent\SystemPrompt\AgentsContextDiscovery;
 use Ineersa\CodingAgent\SystemPrompt\AgentsContextRenderer;
@@ -54,7 +54,7 @@ final class InProcessAgentSessionClient implements AgentSessionClient
         private readonly SkillsContextBuilder $skillsContextBuilder,
         private readonly AgentsContextBuilder $agentsContextBuilder,
         private readonly PromptTemplateService $promptTemplateService,
-        private readonly SessionMetadataStore $sessionMetaStore,
+        private readonly HatfieldSessionStore $sessionMetaStore,
         private readonly ModelResolver $modelResolver,
         private readonly ?RuntimeEventSinkInterface $transientSink = null,
         private readonly ?ToolQuestionStoreInterface $toolQuestionStore = null,
@@ -170,7 +170,7 @@ final class InProcessAgentSessionClient implements AgentSessionClient
         // Best-effort session metadata for UI/resume. The store is a no-op for
         // missing rows (e.g. UUID child/ephemeral starts); canonical execution
         // identity still lives on RunMetadata below.
-        $this->sessionMetaStore->writeSessionMetadata($sessionId, $metaFields);
+        $this->sessionMetaStore->updateMetadata($sessionId, $metaFields);
 
         $metadata = new RunMetadata(
             session: null !== $metadata ? $metadata->session : [],

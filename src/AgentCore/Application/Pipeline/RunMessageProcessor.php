@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Application\Pipeline;
 
-use Ineersa\AgentCore\Application\Handler\MessageIdempotencyService;
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Application\Handler\RunStateReplayException;
 use Ineersa\AgentCore\Application\Handler\StepDispatcher;
+use Ineersa\AgentCore\Contract\IdempotencyStoreInterface;
 use Ineersa\AgentCore\Contract\Replay\RunStateRebuilderInterface;
 use Ineersa\AgentCore\Contract\RunStoreInterface;
 use Ineersa\AgentCore\Domain\Message\AbstractAgentBusMessage;
@@ -47,7 +47,7 @@ final readonly class RunMessageProcessor
      */
     public function __construct(
         private RunStoreInterface $runStore,
-        private MessageIdempotencyService $idempotency,
+        private IdempotencyStoreInterface $idempotency,
         private RunLockManager $runLockManager,
         private RunCommit $runCommit,
         private StepDispatcher $stepDispatcher,
@@ -72,7 +72,7 @@ final readonly class RunMessageProcessor
 
         try {
             $this->runLockManager->synchronized($runId, function () use ($scope, $message, $runId, $idempotencyKey): void {
-                if ($this->idempotency->wasHandled($scope, $runId, $idempotencyKey)) {
+                if ($this->idempotency->isHandled($scope, $runId, $idempotencyKey)) {
                     return;
                 }
 

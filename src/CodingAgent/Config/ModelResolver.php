@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Config;
 
 use Ineersa\CodingAgent\Config\Ai\AiModelReference;
+use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 
 /**
  * Read-only model and reasoning resolution with four-tier priority.
@@ -18,7 +19,7 @@ use Ineersa\CodingAgent\Config\Ai\AiModelReference;
  * Reasoning mirrors model selection, falling back to medium.
  *
  * This service has no mutation or persistence logic — it only resolves.
- * It holds a SessionMetadataStore reference for Tier 2 metadata lookup.
+ * It holds a HatfieldSessionStore reference for Tier 2 metadata lookup.
  *
  * Purely a CodingAgent config service; does not import AgentCore, Tui,
  * HttpFoundation, or FrameworkBundle.
@@ -30,7 +31,7 @@ final class ModelResolver
 
     public function __construct(
         private readonly AppConfig $appConfig,
-        private readonly SessionMetadataStore $sessionMetaStore,
+        private readonly HatfieldSessionStore $sessionMetaStore,
     ) {
     }
 

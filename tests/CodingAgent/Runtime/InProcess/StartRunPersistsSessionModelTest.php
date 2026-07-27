@@ -12,7 +12,6 @@ use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\ModelResolver;
-use Ineersa\CodingAgent\Config\SessionMetadataStore;
 use Ineersa\CodingAgent\Config\SessionsConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Entity\HatfieldSession;
@@ -341,10 +340,9 @@ final class StartRunPersistsSessionModelTest extends IsolatedKernelTestCase
         return self::getContainer()->get(InProcessAgentSessionClient::class);
     }
 
-    private function sessionMetaStore(): SessionMetadataStore
+    private function sessionMetaStore(): HatfieldSessionStore
     {
-        /* @var SessionMetadataStore */
-        return self::getContainer()->get(SessionMetadataStore::class);
+        return $this->hatfieldSessionStore();
     }
 
     private function hatfieldSessionStore(): HatfieldSessionStore

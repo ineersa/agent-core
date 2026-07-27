@@ -850,29 +850,6 @@ final class RuntimeEventMapperTest extends TestCase
         $this->assertSame('value', $result->payload['debug.raw_payload']['future_key']);
     }
 
-    // ── toRunEventData backward compat ───────────────────────────────────────
-
-    public function testToRunEventDataPreservesStableShape(): void
-    {
-        $raw = $this->runEvent('llm_step_completed', [
-            'step_id' => 's1',
-            'assistant_message' => [
-                'content' => [['type' => 'text', 'text' => 'Hi']],
-            ],
-        ]);
-        $runtime = $this->mapper->toRuntimeEvent($raw);
-
-        $this->assertNotNull($runtime);
-        $data = $this->mapper->toRunEventData($runtime);
-
-        $this->assertArrayHasKey('runId', $data);
-        $this->assertArrayHasKey('seq', $data);
-        $this->assertArrayHasKey('turnNo', $data);
-        $this->assertArrayHasKey('type', $data);
-        $this->assertArrayHasKey('payload', $data);
-        $this->assertSame(RuntimeEventTypeEnum::AssistantMessageCompleted->value, $data['type']);
-    }
-
     // ── Field mapping fidelity ───────────────────────────────────────────────
 
     public function testRunIdAndSeqArePreserved(): void

@@ -4,12 +4,12 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Runtime\Controller\CommandHandler;
 
-use Ineersa\CodingAgent\Config\SessionMetadataStore;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\Controller\Event\ControllerCommandEvent;
 use Ineersa\CodingAgent\Runtime\InProcess\InProcessAgentSessionClient;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
+use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Symfony\Component\EventDispatcher\Attribute\AsEventListener;
 
 /**
@@ -24,7 +24,7 @@ final readonly class StartRunHandler
 {
     public function __construct(
         private readonly InProcessAgentSessionClient $client,
-        private readonly SessionMetadataStore $sessionMetaStore,
+        private readonly HatfieldSessionStore $sessionMetaStore,
     ) {
     }
 

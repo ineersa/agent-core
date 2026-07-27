@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Config;
 
-use Ineersa\CodingAgent\Config\Ai\AiModelReference;
 use Symfony\Component\Serializer\Attribute\SerializedName;
 
 /**
@@ -93,22 +92,6 @@ final readonly class CompactionConfig
     public static function fromAppConfig(AppConfig $appConfig): self
     {
         return $appConfig->compaction;
-    }
-
-    /**
-     * Parse the global model override into a provider/model reference.
-     *
-     * Returns null when model is null (session model fallback).
-     * Throws \InvalidArgumentException when the string is not a valid
-     * provider/model reference.
-     */
-    public function resolveModelReference(): ?AiModelReference
-    {
-        if (null === $this->model) {
-            return null;
-        }
-
-        return AiModelReference::parse($this->model);
     }
 
     /**

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Config;
 
+use Ineersa\CodingAgent\Session\HatfieldSessionStore;
+
 /**
  * Write-only persistence for model selection and reasoning changes.
  *
@@ -14,7 +16,7 @@ final class ModelSettingsPersister
 {
     public function __construct(
         private readonly HomeSettingsWriter $homeWriter,
-        private readonly SessionMetadataStore $sessionMetaStore,
+        private readonly HatfieldSessionStore $sessionMetaStore,
     ) {
     }
 
@@ -27,7 +29,7 @@ final class ModelSettingsPersister
     public function persistModel(string $modelString, string $providerId, string $modelName, string $sessionId): void
     {
         $this->homeWriter->writeDefaultModel($modelString);
-        $this->sessionMetaStore->writeSessionMetadata($sessionId, [
+        $this->sessionMetaStore->updateMetadata($sessionId, [
             'model' => $modelString,
             'model_provider' => $providerId,
             'model_name' => $modelName,
@@ -46,7 +48,7 @@ final class ModelSettingsPersister
         }
 
         $this->homeWriter->writeDefaultReasoning($level);
-        $this->sessionMetaStore->writeSessionMetadata($sessionId, [
+        $this->sessionMetaStore->updateMetadata($sessionId, [
             'reasoning' => $level,
         ]);
     }

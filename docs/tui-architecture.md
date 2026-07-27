@@ -12,7 +12,7 @@ AgentCommand::runTui()
     ▼
 InteractiveMode::run(client, request, theme, sessionId)
     │
-    ├─ 1. ThemeFactory::create()      → TuiTheme
+    ├─ 1. DefaultTheme(ThemeRegistry) → TuiTheme
     │
     ├─ 2. SessionInitializer::initialize(sessionId, request)
     │        ├─ new with prompt → create session row + TuiSessionState
@@ -447,7 +447,7 @@ The logo is styled with the `ThemeColorEnum::Header` semantic color.
 ┌─────────────────────────────────────────────────────────────────────┐
 │                     InteractiveMode::run()                           │
 │                                                                      │
-│  1. ThemeFactory::create()           → TuiTheme                     │
+│  1. DefaultTheme(ThemeRegistry)      → TuiTheme                     │
 │  2. SessionInitializer::initialize() → TuiSessionState              │
 │  3. ChatScreen::mount(tui)           → live widget tree             │
 │  4. TuiTickDispatcher              → composable tick handlers       │

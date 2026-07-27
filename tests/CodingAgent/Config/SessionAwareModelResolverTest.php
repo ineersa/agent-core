@@ -15,7 +15,6 @@ use Ineersa\CodingAgent\Config\ModelResolver;
 use Ineersa\CodingAgent\Config\ModelSelectionService;
 use Ineersa\CodingAgent\Config\ModelSettingsPersister;
 use Ineersa\CodingAgent\Config\SessionAwareModelResolver;
-use Ineersa\CodingAgent\Config\SessionMetadataStore;
 use Ineersa\CodingAgent\Config\SessionsConfig;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Config\TuiConfig;
@@ -349,7 +348,7 @@ final class SessionAwareModelResolverTest extends IsolatedKernelTestCase
             ),
             entityManager: $this->entityManager,
         );
-        $sessionMetaStore = new SessionMetadataStore($hatfieldSessionStore);
+        $sessionMetaStore = $hatfieldSessionStore;
 
         $pathResolver = new SettingsPathResolver($this->tempDir, $this->homeDir);
         $homeWriter = new HomeSettingsWriter($pathResolver);
