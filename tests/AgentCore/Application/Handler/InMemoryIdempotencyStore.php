@@ -9,8 +9,7 @@ use Ineersa\AgentCore\Contract\IdempotencyStoreInterface;
 /**
  * In-memory idempotency store for tests.
  *
- * Mirrors the original MessageIdempotencyService behavior: an
- * in-memory array that is not cross-process safe but sufficient
+ * In-memory array that is not cross-process safe but sufficient
  * for single-process test isolation.
  */
 final class InMemoryIdempotencyStore implements IdempotencyStoreInterface

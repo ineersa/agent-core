@@ -36,9 +36,9 @@ use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\ModelResolver;
 use Ineersa\CodingAgent\Config\ModelSelectionService;
 use Ineersa\CodingAgent\Config\ModelSettingsPersister;
-use Ineersa\CodingAgent\Config\SessionMetadataStore;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Config\TuiConfig;
+use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
 use Symfony\AI\Platform\Message\TemplateRenderer\StringTemplateRenderer;
@@ -1268,7 +1268,7 @@ final class CompactRunHandlerTest extends TestCase
      * We construct it with a real AppConfig (no AI section → null catalog)
      * and a Reflection-built ModelResolver stub.  Because the catalog is
      * null, getCurrentModel() returns null without touching the DB, so the
-     * fake SessionMetadataStore / HatfieldSessionStore are never accessed.
+     * fake HatfieldSessionStore is never accessed.
      *
      * This stub lets us test the handler's structural event/effect
      * emissions without a full test kernel.  The real model resolution
@@ -1282,8 +1282,8 @@ final class CompactRunHandlerTest extends TestCase
             cwd: '/',
         );
 
-        // SessionMetadataStore is never accessed (catalog null → early return).
-        $sessionMetaRc = new \ReflectionClass(SessionMetadataStore::class);
+        // HatfieldSessionStore is never accessed (catalog null → early return).
+        $sessionMetaRc = new \ReflectionClass(HatfieldSessionStore::class);
         $sessionMetaStore = $sessionMetaRc->newInstanceWithoutConstructor();
 
         $modelResolver = new ModelResolver($appConfig, $sessionMetaStore);

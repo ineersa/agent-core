@@ -19,6 +19,8 @@ use Ineersa\Tui\Runtime\TuiSessionLifecycleEventTypeEnum;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Runtime\TuiTickDispatcher;
 use Ineersa\Tui\Screen\ChatScreen;
+use Ineersa\Tui\Theme\DefaultTheme;
+use Ineersa\Tui\Theme\ThemeRegistry;
 use Ineersa\Tui\Theme\TuiTheme;
 use Ineersa\Tui\Transcript\TranscriptBlockFactory;
 use Ineersa\Tui\Transcript\TranscriptDisplayState;
@@ -61,7 +63,7 @@ final readonly class InteractiveMode
      */
     public function __construct(
         private HatfieldSessionStore $sessionStore,
-        private ThemeFactory $themeFactory,
+        private ThemeRegistry $themeRegistry,
         private SessionInitializer $sessionInit,
         private iterable $listenerRegistrars,
         private PromptEditor $promptEditor,
@@ -119,7 +121,7 @@ final readonly class InteractiveMode
             });
         }
 
-        $theme = $this->themeFactory->create($theme);
+        $theme ??= new DefaultTheme($this->themeRegistry->getOrThrow($this->appConfig->tui->theme));
 
         // ── Session switch loop ──
         // Each iteration builds fresh TUI/session objects for the

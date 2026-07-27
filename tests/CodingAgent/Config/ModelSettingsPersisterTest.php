@@ -8,7 +8,6 @@ use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\HomeSettingsWriter;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\ModelSettingsPersister;
-use Ineersa\CodingAgent\Config\SessionMetadataStore;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Entity\HatfieldSession;
@@ -20,7 +19,7 @@ use Symfony\Component\Yaml\Yaml;
 /**
  * Tests for ModelSettingsPersister (write-only persistence).
  *
- * Requires kernel boot for SessionMetadataStore (final class, cannot be
+ * Requires kernel boot for HatfieldSessionStore (final class, cannot be
  * mocked) and a real DB session entity.  Uses {@see IsolatedKernelTestCase}
  * for per-class kernel boot; per-method temp directories isolate settings
  * files without requiring a fresh kernel per test.
@@ -30,7 +29,7 @@ class ModelSettingsPersisterTest extends IsolatedKernelTestCase
     private string $tempDir;
     private string $homeDir;
     private ModelSettingsPersister $persister;
-    private SessionMetadataStore $sessionMetaStore;
+    private HatfieldSessionStore $sessionMetaStore;
     private \Doctrine\ORM\EntityManagerInterface $entityManager;
     private string $sessionId;
 
@@ -60,7 +59,7 @@ class ModelSettingsPersisterTest extends IsolatedKernelTestCase
             ),
             entityManager: $this->entityManager,
         );
-        $this->sessionMetaStore = new SessionMetadataStore($hatfieldSessionStore);
+        $this->sessionMetaStore = $hatfieldSessionStore;
 
         $entity = new HatfieldSession();
         $entity->cwd = $this->tempDir.'/project';

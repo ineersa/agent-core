@@ -23,7 +23,6 @@ use Ineersa\CodingAgent\Config\HomeSettingsWriter;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\ModelSelectionService;
 use Ineersa\CodingAgent\Config\SessionAwareModelResolver;
-use Ineersa\CodingAgent\Config\SessionMetadataStore;
 use Ineersa\CodingAgent\Config\SessionsConfig;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Config\TuiConfig;
@@ -48,7 +47,7 @@ final class TraceReplayTest extends KernelTestCase
 {
     private string $tempDir;
     private string $homeDir;
-    private SessionMetadataStore $sessionMetaStore;
+    private HatfieldSessionStore $sessionMetaStore;
     private \Doctrine\ORM\EntityManagerInterface $entityManager;
 
     protected function setUp(): void
@@ -71,7 +70,7 @@ final class TraceReplayTest extends KernelTestCase
             ),
             entityManager: $this->entityManager,
         );
-        $this->sessionMetaStore = new SessionMetadataStore($hatfieldSessionStore);
+        $this->sessionMetaStore = $hatfieldSessionStore;
     }
 
     protected function tearDown(): void

@@ -553,6 +553,7 @@ parameters:
       - AppPromptTemplate
       - AgentCore
       - AppConfig
+      - AppSession
       - AppMcpBroker
       - SymfonyConsole
       - SymfonyMessenger

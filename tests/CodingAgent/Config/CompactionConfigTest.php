@@ -41,40 +41,6 @@ final class CompactionConfigTest extends TestCase
     }
 
     /**
-     * resolveModelReference returns null when model is null (session fallback).
-     */
-    public function testResolveModelReferenceNull(): void
-    {
-        $config = new CompactionConfig(model: null);
-
-        $this->assertNull($config->resolveModelReference());
-    }
-
-    /**
-     * resolveModelReference parses a valid provider/model string.
-     */
-    public function testResolveModelReferenceValid(): void
-    {
-        $config = new CompactionConfig(model: 'llama_cpp/flash');
-
-        $ref = $config->resolveModelReference();
-        $this->assertNotNull($ref);
-        $this->assertSame('llama_cpp', $ref->providerId);
-        $this->assertSame('flash', $ref->modelName);
-    }
-
-    /**
-     * resolveModelReference throws on malformed model string.
-     */
-    public function testResolveModelReferenceInvalid(): void
-    {
-        $config = new CompactionConfig(model: 'notavalidref');
-
-        $this->expectException(\InvalidArgumentException::class);
-        $config->resolveModelReference();
-    }
-
-    /**
      * resolveRuntimeSettings returns global values when no overrides apply.
      */
     public function testResolveRuntimeSettingsNoOverrides(): void

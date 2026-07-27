@@ -32,23 +32,4 @@ final class RuntimeEventMapper
     {
         return $this->translator->translate($runEvent);
     }
-
-    /**
-     * Convert a RuntimeEvent back to a RunEvent-like array.
-     *
-     * The type field carries the normalized runtime type by default.
-     * Raw AgentCore type is preserved in debug metadata when available.
-     *
-     * @return array{runId: string, seq: int, turnNo: int, type: string, payload: array<string, mixed>}
-     */
-    public function toRunEventData(RuntimeEvent $event): array
-    {
-        return [
-            'runId' => $event->runId,
-            'seq' => $event->seq,
-            'turnNo' => 0,
-            'type' => $event->type,
-            'payload' => $event->payload,
-        ];
-    }
 }
