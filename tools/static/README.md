@@ -3,6 +3,10 @@
 Hatfield native binaries are built with [static-php-cli](https://github.com/crazywhalecc/static-php-cli)
 at the immutable commit declared in `pin.json`.
 
+User guide (artifacts, relaunch, topology, CI matrix, troubleshooting):
+[`docs/static-packaging.md`](../../docs/static-packaging.md).
+Release overview: [`docs/distribution.md`](../../docs/distribution.md).
+
 Do not float on branches or tags from build tasks. Update the pin only by
 changing `static_php_cli_commit` and validating a full host static build.
 
@@ -11,7 +15,8 @@ changing `static_php_cli_commit` and validating a full host static build.
 1. `castor phar:build` produces the canonical `hatfield.phar`.
 2. `castor distribution:build-static --target=linux-amd64` clones the pinned
    static-php-cli commit (cached under `var/tmp/static-php-cli/`), builds
-   `cli,micro` with the listed extensions, then runs:
+   `cli,micro` with the listed extensions (and `--no-smoke-test=micro` for the
+   pinned PHP 8.5 bare-micro segfault workaround — see the user guide), then runs:
 
    ```bash
    bin/spc micro:combine <phar> --with-micro=buildroot/bin/micro.sfx --output=<artifact>

@@ -17,13 +17,20 @@ Subprocess command lines come from `RuntimeProcessConfig` → `AppExecutableLoca
 |---|---|
 | Source checkout | `[PHP_BINARY, /path/bin/console]` |
 | PHAR | `[PHP_BINARY, /path/hatfield.phar]` |
-| Fused PHP-micro native | `[/path/hatfield.<target>]` when artifact resolves to `PHP_BINARY` |
+| Fused PHP-micro native | `[/path/hatfield.<target>]` |
 
-Fused native detection: resolved artifact path equals `PHP_BINARY` (same file).
+Fused native detection (`ConfigExecutableLocator` / `PharExecutableLocator`):
+
+1. Empty `PHP_BINARY` → native self (fused micro on static/macOS targets).
+2. Else resolved artifact path equals `PHP_BINARY` (same path/inode).
+
 Do not rewrite controller/consumer construction — they spread `executableCommand()`.
 
 ## Distribution
 
-See `docs/phar-packaging.md` for PHAR/static build, installer, checksums, and CI.
+- Release/installer/CI: `docs/distribution.md`
+- PHAR pipeline: `docs/phar-packaging.md`
+- Native build/relaunch/topology: `docs/static-packaging.md`
+
 Canonical artifacts: `hatfield.phar`, `hatfield.linux-amd64`, `hatfield.linux-arm64`,
 `hatfield.darwin-amd64`, `hatfield.darwin-arm64`, `SHA256SUMS`.

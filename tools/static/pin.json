@@ -27,5 +27,5 @@
         "intl",
         "zlib"
     ],
-    "notes": "SPC --for-extensions names (without ext- prefix). pdo_sqlite/sqlite3 are the correct package names (not sqlite). Synchronized with composer.json ext-*, bin/console PHAR guards, installer checks, docs/phar-packaging.md. Host static builds require SPC doctor tools (re2c, flex, gperf) or a CI image that already provides them."
+    "notes": "SPC --for-extensions names (without ext- prefix). pdo_sqlite/sqlite3 are the correct package names (not sqlite). Synchronized with composer.json ext-*, bin/console PHAR guards, installer checks, docs/phar-packaging.md. Host static builds require SPC doctor tools (re2c, flex, gperf) or a CI image that already provides them. User guide: docs/static-packaging.md."
 }

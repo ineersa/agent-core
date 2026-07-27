@@ -18,7 +18,8 @@ bash installer/bash-installer --version=v1.2.3
 Artifacts: `hatfield.phar`, `hatfield.linux-amd64`, `hatfield.linux-arm64`,
 `hatfield.darwin-amd64`, `hatfield.darwin-arm64`, plus `SHA256SUMS`.
 Local builds: `castor distribution:build`, `scripts/build-distribution.sh`.
-Full packaging docs: [`docs/phar-packaging.md`](docs/phar-packaging.md).
+Packaging docs: [`docs/distribution.md`](docs/distribution.md) (release/installer),
+[`docs/phar-packaging.md`](docs/phar-packaging.md), [`docs/static-packaging.md`](docs/static-packaging.md).
 
 
 ## Structure
