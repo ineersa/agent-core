@@ -102,6 +102,9 @@ jobs:
           path: var/tmp/dist
 
       - name: Build static binary via Castor
+        env:
+          # SPC reads GITHUB_TOKEN for GitHub dependency API/downloads (rate limits).
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           mkdir -p var/tmp/dist

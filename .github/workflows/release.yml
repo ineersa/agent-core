@@ -114,6 +114,8 @@ jobs:
         env:
           HATFIELD_BUILD_VERSION: ${{ github.ref_name }}
           HATFIELD_BUILD_COMMIT: ${{ github.sha }}
+          # SPC reads GITHUB_TOKEN for GitHub dependency API/downloads (rate limits).
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           test -f var/tmp/dist/hatfield.phar

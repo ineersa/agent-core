@@ -241,6 +241,8 @@ function distribution_build_micro_sfx(string $target): array
     if ($pin['micro_fake_cli']) {
         $buildArgs .= ' --with-micro-fake-cli';
     }
+    // ponytail: pinned PHP 8.5 bare micro_ext_test segfaults (code 139) after successful CLI/micro build; skip only per-extension micro smoke, keep SPC basic micro/Zend smoke + Hatfield fused artifact version/list/Composer platform/native topology. Remove when SPC PHP 8.5 micro_ext_test stabilizes.
+    $buildArgs .= ' --no-smoke-test=micro-exts';
     $buildArgs .= ' 2>&1';
     echo "SPC build micro...\n";
     \CastorTasks\run_checked($buildArgs, $workDir);
@@ -399,6 +401,108 @@ function distribution_owned_pid_still_alive(int $pid, string $expectedCmdline): 
 }
 
 /**
+ * Direct children of $ppid via pgrep -P.
+ *
+ * Exit 0 = rows, exit 1 = no children, anything else = hard error.
+ *
+ * @return list<int>
+ */
+function distribution_pgrep_children(int $ppid): array
+{
+    $output = [];
+    $exit = 0;
+    // Capture stderr: a broken pgrep must not be mistaken for "no children".
+    exec('pgrep -P '.escapeshellarg((string) $ppid).' 2>&1', $output, $exit);
+    if (0 === $exit) {
+        $pids = [];
+        foreach ($output as $line) {
+            $child = (int) trim($line);
+            if ($child > 0) {
+                $pids[] = $child;
+            }
+        }
+
+        return $pids;
+    }
+    if (1 === $exit) {
+        return [];
+    }
+
+    throw new RuntimeException('Native topology smoke: pgrep -P failed (exit '.$exit.') for ppid '.$ppid.".\n".implode("\n", $output));
+}
+
+/**
+ * Portable ps column names: Linux uses sid/args, macOS uses sess/command.
+ *
+ * @return array{session: string, command: string}
+ */
+function distribution_ps_columns(): array
+{
+    if ('Darwin' === \PHP_OS_FAMILY) {
+        return ['session' => 'sess', 'command' => 'command'];
+    }
+
+    return ['session' => 'sid', 'command' => 'args'];
+}
+
+/**
+ * Parse one `ps -axo pid=,session=,command=` line into pid/session/cmd.
+ *
+ * @return array{pid: int, session: int, cmdline: string}|null
+ */
+function distribution_parse_ps_process_line(string $line): ?array
+{
+    $line = trim($line);
+    if ('' === $line) {
+        return null;
+    }
+    $parts = preg_split('/\s+/', $line, 3);
+    if (!is_array($parts) || count($parts) < 2) {
+        return null;
+    }
+    $pid = (int) $parts[0];
+    $session = (int) $parts[1];
+    if ($pid <= 0) {
+        return null;
+    }
+
+    return [
+        'pid' => $pid,
+        'session' => $session,
+        'cmdline' => $parts[2] ?? '',
+    ];
+}
+
+/**
+ * Session id for a live process. Hard-fails when ps fails (never silent zero).
+ */
+function distribution_process_session_id(int $pid): int
+{
+    if ($pid <= 0) {
+        throw new RuntimeException('Native topology smoke: invalid pid for session lookup');
+    }
+    $cols = distribution_ps_columns();
+    $output = [];
+    $exit = 0;
+    $cmd = 'ps -axo pid=,'.escapeshellarg($cols['session']).'= -p '.escapeshellarg((string) $pid).' 2>&1';
+    exec($cmd, $output, $exit);
+    if (0 !== $exit) {
+        throw new RuntimeException('Native topology smoke: ps session lookup failed (exit '.$exit.') for pid '.$pid.".\ncmd: {$cmd}\n".implode("\n", $output));
+    }
+    foreach ($output as $line) {
+        $parts = preg_split('/\s+/', trim($line), 2);
+        if (!is_array($parts) || count($parts) < 2) {
+            continue;
+        }
+        if ((int) $parts[0] === $pid) {
+            return (int) $parts[1];
+        }
+    }
+
+    throw new RuntimeException('Native topology smoke: ps session lookup returned no row for pid '.$pid.".\n".implode("\n", $output));
+}
+
+/**
  * Collect descendant process command lines for a controller pid.
  *
  * Walks pgrep -P depth-first and also scans session members so separate-PGID
@@ -420,10 +524,7 @@ function distribution_collect_descendant_cmdlines(int $rootPid): array
     $seen = [$rootPid => true];
     while ([] !== $queue) {
         $ppid = array_shift($queue);
-        $children = [];
-        @exec('pgrep -P '.escapeshellarg((string) $ppid).' 2>/dev/null', $children);
-        foreach ($children as $childRaw) {
-            $child = (int) trim($childRaw);
+        foreach (distribution_pgrep_children($ppid) as $child) {
             if ($child <= 0 || isset($seen[$child])) {
                 continue;
             }
@@ -435,30 +536,32 @@ function distribution_collect_descendant_cmdlines(int $rootPid): array
     }
 
     // Session scan catches reparented/separate-PGID messenger children.
-    $sidLines = [];
-    @exec('ps -o pid=,sid=,args= -p '.escapeshellarg((string) $rootPid).' 2>/dev/null', $sidLines);
-    $sid = 0;
-    if ([] !== $sidLines) {
-        $parts = preg_split('/\s+/', trim($sidLines[0]), 3);
-        if (is_array($parts) && isset($parts[1])) {
-            $sid = (int) $parts[1];
-        }
-    }
-    if ($sid > 0) {
+    // Portable: Linux sid+args, Darwin sess+command via ps -axo.
+    $sessionId = distribution_process_session_id($rootPid);
+    if ($sessionId > 0) {
+        $cols = distribution_ps_columns();
         $sessionLines = [];
-        @exec('ps -eo pid=,sid=,args= 2>/dev/null', $sessionLines);
+        $exit = 0;
+        $psCmd = 'ps -axo pid=,'.escapeshellarg($cols['session']).'='.
+            ','.escapeshellarg($cols['command']).'= 2>&1';
+        exec($psCmd, $sessionLines, $exit);
+        if (0 !== $exit) {
+            throw new RuntimeException('Native topology smoke: ps session scan failed (exit '.$exit.")\ncmd: {$psCmd}\n".implode("\n", $sessionLines));
+        }
+        if ([] === $sessionLines) {
+            throw new RuntimeException('Native topology smoke: ps session scan returned zero rows (unsupported/empty ps).\ncmd: '.$psCmd);
+        }
         foreach ($sessionLines as $line) {
-            $parts = preg_split('/\s+/', trim($line), 3);
-            if (!is_array($parts) || count($parts) < 3) {
+            $parsed = distribution_parse_ps_process_line($line);
+            if (null === $parsed) {
                 continue;
             }
-            $pid = (int) $parts[0];
-            $lineSid = (int) $parts[1];
-            if ($pid === $rootPid || $lineSid !== $sid || isset($seen[$pid])) {
+            $pid = $parsed['pid'];
+            if ($pid === $rootPid || $parsed['session'] !== $sessionId || isset($seen[$pid])) {
                 continue;
             }
             $seen[$pid] = true;
-            $found[] = ['pid' => $pid, 'cmdline' => $parts[2]];
+            $found[] = ['pid' => $pid, 'cmdline' => $parsed['cmdline']];
         }
     }
 
@@ -626,25 +729,39 @@ function distribution_smoke_native_process_topology(string $artifactPath): void
             $chunk = stream_get_contents($pipes[1]);
             if (is_string($chunk) && '' !== $chunk) {
                 $stdout .= $chunk;
-                if (str_contains($stdout, 'runtime.ready') || str_contains($stdout, '"type":"runtime.ready"')) {
-                    $ready = true;
-                    break;
-                }
             }
             $errChunk = stream_get_contents($pipes[2]);
             if (is_string($errChunk) && '' !== $errChunk) {
                 $stderr .= $errChunk;
             }
+            if (str_contains($stdout, 'runtime.ready') || str_contains($stdout, '"type":"runtime.ready"')) {
+                $ready = true;
+                break;
+            }
+            $status = proc_get_status($proc);
+            if (!$status['running']) {
+                // Drain remaining pipes before diagnosing early exit.
+                $chunk = stream_get_contents($pipes[1]);
+                if (is_string($chunk) && '' !== $chunk) {
+                    $stdout .= $chunk;
+                }
+                $errChunk = stream_get_contents($pipes[2]);
+                if (is_string($errChunk) && '' !== $errChunk) {
+                    $stderr .= $errChunk;
+                }
+                break;
+            }
             usleep(50_000);
         }
         if (!$ready) {
-            throw new RuntimeException("Native topology smoke: runtime.ready not observed.\nstdout:\n".substr($stdout, -2000)."\nstderr:\n".substr($stderr, -2000));
+            $status = proc_get_status($proc);
+            throw new RuntimeException("Native topology smoke: runtime.ready not observed.\n".'controller running: '.($status['running'] ? 'yes' : 'no')."\n".'controller exitcode: '.var_export($status['exitcode'], true)."\nstdout:\n".substr($stdout, -2000)."\nstderr:\n".substr($stderr, -2000));
         }
 
         $status = proc_get_status($proc);
         $controllerPid = $status['pid'];
         if ($controllerPid <= 0) {
-            throw new RuntimeException('Native topology smoke: controller pid unavailable');
+            throw new RuntimeException("Native topology smoke: controller pid unavailable\nstdout:\n".substr($stdout, -2000)."\nstderr:\n".substr($stderr, -2000));
         }
         $controllerCmdline = distribution_read_process_cmdline($controllerPid);
         if ('' === $controllerCmdline) {
@@ -655,21 +772,40 @@ function distribution_smoke_native_process_topology(string $artifactPath): void
         $transportsReady = false;
         $descendants = [];
         $transportDeadline = microtime(true) + 15.0;
+        $inspectionError = null;
         while (microtime(true) < $transportDeadline) {
-            $descendants = distribution_collect_descendant_cmdlines($controllerPid);
+            // Keep draining controller pipes so child-launch failures stay visible.
+            $chunk = stream_get_contents($pipes[1]);
+            if (is_string($chunk) && '' !== $chunk) {
+                $stdout .= $chunk;
+            }
+            $errChunk = stream_get_contents($pipes[2]);
+            if (is_string($errChunk) && '' !== $errChunk) {
+                $stderr .= $errChunk;
+            }
+            $status = proc_get_status($proc);
+            if (!$status['running']) {
+                $inspectionError = new RuntimeException(
+                    'controller exited while waiting for messenger topology (exitcode='.var_export($status['exitcode'], true).')'
+                );
+                break;
+            }
             try {
+                $descendants = distribution_collect_descendant_cmdlines($controllerPid);
                 distribution_assert_native_messenger_topology($artifactPath, $descendants);
                 $transportsReady = true;
                 break;
             } catch (Throwable $e) {
-                // Keep polling until deadline; last error is rethrown.
+                // Keep polling until deadline; last error is rethrown with pipe tails.
                 $last = $e;
             }
             usleep(100_000);
         }
         if (!$transportsReady) {
-            $msg = isset($last) ? $last->getMessage() : 'expected messenger transports never appeared';
-            throw new RuntimeException("Native topology smoke: failed after runtime.ready while waiting for messenger consumers.\n".$msg);
+            $msg = null !== $inspectionError
+                ? $inspectionError->getMessage()
+                : (isset($last) ? $last->getMessage() : 'expected messenger transports never appeared');
+            throw new RuntimeException("Native topology smoke: failed after runtime.ready while waiting for messenger consumers.\n".$msg."\nstdout:\n".substr($stdout, -2000)."\nstderr:\n".substr($stderr, -2000));
         }
 
         // Capture owned PIDs WHILE controller is still alive. After exit, orphans

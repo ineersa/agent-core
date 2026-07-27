@@ -76,14 +76,18 @@ final class NativeProcessTopologyTest extends TestCase
 
             $deadline = microtime(true) + 25.0;
             $stdout = '';
+            $stderr = '';
             $ready = false;
             while (microtime(true) < $deadline) {
                 $stdout .= $process->getIncrementalOutput();
+                $stderr .= $process->getIncrementalErrorOutput();
                 if (str_contains($stdout, 'runtime.ready')) {
                     $ready = true;
                     break;
                 }
                 if (!$process->isRunning()) {
+                    $stdout .= $process->getIncrementalOutput();
+                    $stderr .= $process->getIncrementalErrorOutput();
                     break;
                 }
                 usleep(50_000);
@@ -91,7 +95,10 @@ final class NativeProcessTopologyTest extends TestCase
 
             $this->assertTrue(
                 $ready,
-                "runtime.ready not observed.\n".$stdout."\n".$process->getErrorOutput(),
+                "runtime.ready not observed.\n".
+                'controller running: '.($process->isRunning() ? 'yes' : 'no')."\n".
+                'exitcode: '.var_export($process->getExitCode(), true)."\n".
+                "stdout:\n".$stdout."\nstderr:\n".$stderr,
             );
 
             $pid = $process->getPid();
@@ -108,8 +115,22 @@ final class NativeProcessTopologyTest extends TestCase
             $descendants = [];
             $transportDeadline = microtime(true) + 15.0;
             $lastDump = '';
+            $inspectionError = null;
             while (microtime(true) < $transportDeadline) {
-                $descendants = $this->collectDescendantCmdlines($controllerPid);
+                // Drain controller pipes throughout so mac child-launch failures are diagnosable.
+                $stdout .= $process->getIncrementalOutput();
+                $stderr .= $process->getIncrementalErrorOutput();
+                if (!$process->isRunning()) {
+                    $inspectionError = 'controller exited while waiting for messenger topology (exitcode='.var_export($process->getExitCode(), true).')';
+                    break;
+                }
+                try {
+                    $descendants = $this->collectDescendantCmdlines($controllerPid);
+                } catch (\RuntimeException $e) {
+                    $inspectionError = $e->getMessage();
+                    usleep(100_000);
+                    continue;
+                }
                 $lastDump = $this->formatDescendants($descendants);
                 $consumeLines = [];
                 foreach ($descendants as $row) {
@@ -125,14 +146,19 @@ final class NativeProcessTopologyTest extends TestCase
 
             $this->assertNotEmpty(
                 $consumeLines,
-                "No messenger:consume descendants after runtime.ready.\nDescendants:\n".$lastDump,
+                "No messenger:consume descendants after runtime.ready.\n".
+                (null !== $inspectionError ? $inspectionError."\n" : '').
+                "Descendants:\n".$lastDump."\n".
+                "stdout:\n".substr($stdout, -2000)."\nstderr:\n".substr($stderr, -2000),
             );
             $joined = implode("\n", $consumeLines);
             foreach (self::EXPECTED_TRANSPORTS as $transport) {
                 $this->assertStringContainsString(
                     $transport,
                     $joined,
-                    "Expected messenger transport '{$transport}' after runtime.ready.\n".$joined."\nAll:\n".$lastDump,
+                    "Expected messenger transport '{$transport}' after runtime.ready.\n".
+                    $joined."\nAll:\n".$lastDump."\n".
+                    "stdout:\n".substr($stdout, -2000)."\nstderr:\n".substr($stderr, -2000),
                 );
             }
 
@@ -200,6 +226,31 @@ final class NativeProcessTopologyTest extends TestCase
         $this->assertTrue($this->ownedPidStillAlive((int) $selfPid, $selfCmd));
         // Alive pid with unrelated cmdline => reuse, not a leak.
         $this->assertFalse($this->ownedPidStillAlive((int) $selfPid, 'unrelated-owned-cmdline-xyz'));
+    }
+
+    public function testPortableProcessInspectionContracts(): void
+    {
+        // pgrep exit 1 (no children) must be empty, not hard-fail.
+        $this->assertSame([], $this->pgrepChildren(999_999_999));
+
+        // Self session lookup must succeed with portable ps columns.
+        $selfPid = getmypid();
+        $this->assertNotFalse($selfPid);
+        $sessionId = $this->processSessionId((int) $selfPid);
+        $this->assertGreaterThanOrEqual(0, $sessionId);
+
+        // ps line parser must tolerate leading spaces and extract cmdline.
+        $parsed = $this->parsePsProcessLine('  12345  67890 /path/to/hatfield messenger:consume llm');
+        $this->assertNotNull($parsed);
+        $this->assertSame(12345, $parsed['pid']);
+        $this->assertSame(67890, $parsed['session']);
+        $this->assertSame('/path/to/hatfield messenger:consume llm', $parsed['cmdline']);
+        $this->assertNull($this->parsePsProcessLine(''));
+        $this->assertNull($this->parsePsProcessLine('not-a-pid'));
+
+        // Full collector must not silent-zero on a live self pid (session scan works).
+        $rows = $this->collectDescendantCmdlines((int) $selfPid);
+        $this->assertIsArray($rows);
     }
 
     /**
@@ -290,6 +341,92 @@ final class NativeProcessTopologyTest extends TestCase
     }
 
     /**
+     * @return list<int>
+     */
+    private function pgrepChildren(int $ppid): array
+    {
+        $output = [];
+        $exit = 0;
+        exec('pgrep -P '.escapeshellarg((string) $ppid).' 2>&1', $output, $exit);
+        if (0 === $exit) {
+            $pids = [];
+            foreach ($output as $line) {
+                $child = (int) trim((string) $line);
+                if ($child > 0) {
+                    $pids[] = $child;
+                }
+            }
+
+            return $pids;
+        }
+        if (1 === $exit) {
+            return [];
+        }
+
+        throw new \RuntimeException('pgrep -P failed (exit '.$exit.') for ppid '.$ppid.".\n".implode("\n", $output));
+    }
+
+    /**
+     * @return array{session: string, command: string}
+     */
+    private function psColumns(): array
+    {
+        if ('Darwin' === \PHP_OS_FAMILY) {
+            return ['session' => 'sess', 'command' => 'command'];
+        }
+
+        return ['session' => 'sid', 'command' => 'args'];
+    }
+
+    /**
+     * @return array{pid: int, session: int, cmdline: string}|null
+     */
+    private function parsePsProcessLine(string $line): ?array
+    {
+        $line = trim($line);
+        if ('' === $line) {
+            return null;
+        }
+        $parts = preg_split('/\s+/', $line, 3);
+        if (!\is_array($parts) || \count($parts) < 2) {
+            return null;
+        }
+        $pid = (int) $parts[0];
+        if ($pid <= 0) {
+            return null;
+        }
+
+        return [
+            'pid' => $pid,
+            'session' => (int) $parts[1],
+            'cmdline' => $parts[2] ?? '',
+        ];
+    }
+
+    private function processSessionId(int $pid): int
+    {
+        $cols = $this->psColumns();
+        $output = [];
+        $exit = 0;
+        $cmd = 'ps -axo pid=,'.escapeshellarg($cols['session']).'= -p '.escapeshellarg((string) $pid).' 2>&1';
+        exec($cmd, $output, $exit);
+        if (0 !== $exit) {
+            throw new \RuntimeException('ps session lookup failed (exit '.$exit.') for pid '.$pid.".\ncmd: {$cmd}\n".implode("\n", $output));
+        }
+        foreach ($output as $line) {
+            $parts = preg_split('/\s+/', trim((string) $line), 2);
+            if (!\is_array($parts) || \count($parts) < 2) {
+                continue;
+            }
+            if ((int) $parts[0] === $pid) {
+                return (int) $parts[1];
+            }
+        }
+
+        throw new \RuntimeException('ps session lookup returned no row for pid '.$pid.".\n".implode("\n", $output));
+    }
+
+    /**
      * @return list<array{pid: int, cmdline: string}>
      */
     private function collectDescendantCmdlines(int $rootPid): array
@@ -299,10 +436,7 @@ final class NativeProcessTopologyTest extends TestCase
         $seen = [$rootPid => true];
         while ([] !== $queue) {
             $ppid = array_shift($queue);
-            $children = [];
-            @exec('pgrep -P '.escapeshellarg((string) $ppid).' 2>/dev/null', $children);
-            foreach ($children as $childRaw) {
-                $child = (int) trim((string) $childRaw);
+            foreach ($this->pgrepChildren($ppid) as $child) {
                 if ($child <= 0 || isset($seen[$child])) {
                     continue;
                 }
@@ -313,30 +447,32 @@ final class NativeProcessTopologyTest extends TestCase
         }
 
         // Session scan catches separate-PGID messenger children while controller is alive.
-        $sidLines = [];
-        @exec('ps -o pid=,sid=,args= -p '.escapeshellarg((string) $rootPid).' 2>/dev/null', $sidLines);
-        $sid = 0;
-        if ([] !== $sidLines) {
-            $parts = preg_split('/\s+/', trim($sidLines[0]), 3);
-            if (\is_array($parts) && isset($parts[1])) {
-                $sid = (int) $parts[1];
-            }
-        }
-        if ($sid > 0) {
+        // Portable: Linux sid+args, Darwin sess+command via ps -axo.
+        $sessionId = $this->processSessionId($rootPid);
+        if ($sessionId > 0) {
+            $cols = $this->psColumns();
             $sessionLines = [];
-            @exec('ps -eo pid=,sid=,args= 2>/dev/null', $sessionLines);
+            $exit = 0;
+            $psCmd = 'ps -axo pid=,'.escapeshellarg($cols['session']).'='.
+                ','.escapeshellarg($cols['command']).'= 2>&1';
+            exec($psCmd, $sessionLines, $exit);
+            if (0 !== $exit) {
+                throw new \RuntimeException('ps session scan failed (exit '.$exit.")\ncmd: {$psCmd}\n".implode("\n", $sessionLines));
+            }
+            if ([] === $sessionLines) {
+                throw new \RuntimeException('ps session scan returned zero rows (unsupported/empty ps).\ncmd: '.$psCmd);
+            }
             foreach ($sessionLines as $line) {
-                $parts = preg_split('/\s+/', trim($line), 3);
-                if (!\is_array($parts) || \count($parts) < 3) {
+                $parsed = $this->parsePsProcessLine((string) $line);
+                if (null === $parsed) {
                     continue;
                 }
-                $pid = (int) $parts[0];
-                $lineSid = (int) $parts[1];
-                if ($pid === $rootPid || $lineSid !== $sid || isset($seen[$pid])) {
+                $pid = $parsed['pid'];
+                if ($pid === $rootPid || $parsed['session'] !== $sessionId || isset($seen[$pid])) {
                     continue;
                 }
                 $seen[$pid] = true;
-                $found[] = ['pid' => $pid, 'cmdline' => $parts[2]];
+                $found[] = ['pid' => $pid, 'cmdline' => $parsed['cmdline']];
             }
         }
 
