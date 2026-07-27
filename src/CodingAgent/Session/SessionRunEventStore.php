@@ -25,6 +25,17 @@ final class SessionRunEventStore implements EventStoreInterface
 {
     private readonly string $sessionsBasePath;
 
+    /**
+     * Process-local decoded snapshot cache keyed by resolved events.jsonl path.
+     *
+     * Signature is size+mtime after clearstatcache. Resume callers may call allFor()
+     * multiple times for the same unchanged file; reuse the already-parsed list rather
+     * than re-reading/decoding/sorting. Missing/unreadable/failed reads are not cached.
+     *
+     * @var array<string, array{size: int, mtime: int, events: list<RunEvent>}>
+     */
+    private array $allForCache = [];
+
     public function __construct(
         HatfieldSessionStore $hatfieldSessionStore,
         private readonly EventPayloadNormalizer $eventPayloadNormalizer,
@@ -117,12 +128,25 @@ final class SessionRunEventStore implements EventStoreInterface
     {
         $path = $this->eventsPath($runId);
 
-        if (!is_readable($path)) {
+        $preSignature = $this->fileSignature($path);
+        if (null === $preSignature) {
+            unset($this->allForCache[$path]);
+
             return [];
+        }
+
+        $cached = $this->allForCache[$path] ?? null;
+        if (null !== $cached
+            && $cached['size'] === $preSignature['size']
+            && $cached['mtime'] === $preSignature['mtime']
+        ) {
+            return $cached['events'];
         }
 
         $contents = file_get_contents($path);
         if (false === $contents) {
+            unset($this->allForCache[$path]);
+
             return [];
         }
 
@@ -174,6 +198,22 @@ final class SessionRunEventStore implements EventStoreInterface
 
         usort($events, static fn (RunEvent $left, RunEvent $right): int => $left->seq <=> $right->seq);
 
+        // Cache only when the file signature is stable across the read window.
+        // A concurrent append during file_get_contents can race; do not lock/retry — just skip caching.
+        $postSignature = $this->fileSignature($path);
+        if (null !== $postSignature
+            && $postSignature['size'] === $preSignature['size']
+            && $postSignature['mtime'] === $preSignature['mtime']
+        ) {
+            $this->allForCache[$path] = [
+                'size' => $postSignature['size'],
+                'mtime' => $postSignature['mtime'],
+                'events' => $events,
+            ];
+        } else {
+            unset($this->allForCache[$path]);
+        }
+
         return $events;
     }
 
@@ -191,6 +231,32 @@ final class SessionRunEventStore implements EventStoreInterface
         if (false === $written) {
             throw new \RuntimeException(\sprintf('Failed to append to events.jsonl for run "%s" at seq %d.', $event->runId, $event->seq));
         }
+
+        // Successful physical write only: drop any process-local snapshot for this path.
+        unset($this->allForCache[$path]);
+    }
+
+    /**
+     * @return array{size: int, mtime: int}|null
+     */
+    private function fileSignature(string $path): ?array
+    {
+        clearstatcache(true, $path);
+
+        if (!is_readable($path)) {
+            return null;
+        }
+
+        $size = filesize($path);
+        $mtime = filemtime($path);
+        if (false === $size || false === $mtime) {
+            return null;
+        }
+
+        return [
+            'size' => $size,
+            'mtime' => $mtime,
+        ];
     }
 
     /**
