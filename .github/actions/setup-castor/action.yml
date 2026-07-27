@@ -1,16 +1,21 @@
-# Install Castor v1.6.1 standalone STATIC binary into $RUNNER_TEMP (not Composer global, not PHAR).
+# Install Castor v1.6.1 platform PHAR into $RUNNER_TEMP (not Composer global, not static binary).
+# Why PHAR (not static): Castor tasks invoke host PHP via PHP_BINARY (e.g. distribution_smoke_artifact
+# for hatfield.phar). A fused static Castor leaves PHP_BINARY empty, so smoke becomes `'' hatfield.phar`.
+# A PHAR shebang uses setup-php's host PHP, so PHP_BINARY stays valid. Do not regress to static Castor.
 # MAINTENANCE: when bumping Castor, update VERSION, ASSET names, and all four SHA256 digests together.
 # Do not use setup-php tools: castor (hardcodes amd64 assets; broken on Linux/macOS arm64).
 name: Setup Castor
 description: >
-  Download and install the pinned Castor v1.6.1 platform-native static binary
-  into a job-local directory under $RUNNER_TEMP, append it to PATH, and prove
-  castor --version works. Avoids broken Composer-global and setup-php arm64 paths.
+  Download and install the pinned Castor v1.6.1 platform PHAR into a job-local
+  directory under $RUNNER_TEMP, append it to PATH, and prove castor --version
+  works. PHAR keeps PHP_BINARY set to host PHP (required by Castor tasks). Avoids
+  broken Composer-global and setup-php arm64 paths, and avoids empty PHP_BINARY
+  from static Castor.
 
 runs:
   using: composite
   steps:
-    - name: Install Castor static binary
+    - name: Install Castor platform PHAR
       shell: bash
       run: |
         set -euo pipefail
@@ -22,23 +27,23 @@ runs:
 
         case "${os}:${arch}" in
           Linux:x86_64)
-            ASSET='castor.linux-amd64'
-            EXPECTED_SHA256='6ba05579ca9f6546a22421e935fdab0f7d9e774cb05a25b10fe9f9528e1ab30a'
+            ASSET='castor.linux-amd64.phar'
+            EXPECTED_SHA256='ee7277349c346efddb9d8c5d80f6d29efbcb6719b564bfb0e623a755ca94400b'
             ;;
           Linux:aarch64|Linux:arm64)
-            ASSET='castor.linux-arm64'
-            EXPECTED_SHA256='9c0aa9827e99214a8a244dc41ea94eae651b979e852167f871799c5f22f1e2b7'
+            ASSET='castor.linux-arm64.phar'
+            EXPECTED_SHA256='60fdabae7291bcfc25aaee0f7b3ecb5ae2348f88a578f3882097d1e02a326fcd'
             ;;
           Darwin:x86_64)
-            ASSET='castor.darwin-amd64'
-            EXPECTED_SHA256='740a4ed2cc3169b85c6944390562ef7178ba6fb3fbb989f2ea5833764876c52e'
+            ASSET='castor.darwin-amd64.phar'
+            EXPECTED_SHA256='63057a0953c9523fadb932aa17e1e643f550e1223d63c7a1f3db66c9af8c4611'
             ;;
           Darwin:arm64)
-            ASSET='castor.darwin-arm64'
-            EXPECTED_SHA256='90bf455743e0b861175ac7739972481473e0e3e98bb21a762863582dc7684d45'
+            ASSET='castor.darwin-arm64.phar'
+            EXPECTED_SHA256='73ecc5d57191d5a2bdfec3053e100859939bd9b824b883b6bd2bb5d1f7342505'
             ;;
           *)
-            echo "Unsupported runner for Castor static install: os=${os} arch=${arch}" >&2
+            echo "Unsupported runner for Castor PHAR install: os=${os} arch=${arch}" >&2
             echo "Supported: Linux x86_64/aarch64|arm64, Darwin x86_64/arm64" >&2
             exit 1
             ;;
@@ -71,7 +76,7 @@ runs:
           --show-error \
           --output "${tmp_file}" \
           "${url}"; then
-          echo "ERROR: failed to download Castor static binary from ${url}" >&2
+          echo "ERROR: failed to download Castor platform PHAR from ${url}" >&2
           exit 1
         fi
 
@@ -100,8 +105,7 @@ runs:
 
         install -m 0755 "${tmp_file}" "${dest}"
         echo "${install_dir}" >> "${GITHUB_PATH}"
-        export PATH="${install_dir}:${PATH}"
 
         # Immediate proof via absolute path (PATH mutation is for subsequent steps).
-        echo "Installed Castor binary: ${dest}"
+        echo "Installed Castor PHAR: ${dest}"
         "${dest}" --version
