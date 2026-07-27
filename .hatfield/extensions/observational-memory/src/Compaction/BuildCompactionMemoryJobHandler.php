@@ -200,56 +200,62 @@ final readonly class BuildCompactionMemoryJobHandler implements ExtensionAgentJo
                 correlationId: $correlationId,
             );
 
-            // Late timeout must reject promotion/result.
-            $status = $compactionRepo->getRequestStatus($requestId);
-            if (null !== $status && CompactionRepository::STATUS_TIMED_OUT === $status['status']) {
-                $generationRepo->markFailed($generationId, 'timed_out', $now);
-                throw new OmConflictException(\sprintf('Compaction request %s already timed out; reject late success.', $requestId));
+            // Single write transaction: running CAS + generation promotion + result.
+            // Timeout either wins first (CAS fails, nothing promoted) or cannot mark
+            // a request already transitioned to succeeded inside this transaction.
+            $connection->beginTransaction();
+            try {
+                $generationRepo->commitSucceededGeneration(
+                    generationId: $generationId,
+                    runId: $runId,
+                    observationSetHash: $observationSetHash,
+                    reflectorModel: $reflectorModel,
+                    reflectorSchemaVersion: $settings->reflectorSchemaVersion,
+                    reflections: array_map(static fn (array $r): array => [
+                        'reflection_id' => $r['reflection_id'],
+                        'content' => $r['content'],
+                        'supporting_observation_ids_json' => $r['supporting_observation_ids_json'],
+                        'token_count' => $r['token_count'],
+                    ], $produced['reflections']),
+                    retainedObservationIds: $produced['retained_observation_ids'],
+                    now: $now,
+                    compactionRequestId: $requestId,
+                );
+
+                $resultId = hash('sha256', implode('|', [$requestId, $observationSetHash, $generationId, 'success']));
+                $compactionRepo->commitSuccess(
+                    requestId: $requestId,
+                    resultId: $resultId,
+                    runId: $runId,
+                    requiredStartSeq: $requiredStartSeq,
+                    requiredEndSeq: $requiredEndSeq,
+                    requiredWatermark: $requiredEndSeq,
+                    requestFingerprint: $requestFingerprint,
+                    observationSetHash: $observationSetHash,
+                    replacementText: $produced['rendered_text'],
+                    reflectorModel: $reflectorModel,
+                    reflectorSchemaVersion: $settings->reflectorSchemaVersion,
+                    reflections: [],
+                    now: $now,
+                    metadata: [
+                        'generation_id' => $generationId,
+                        'observation_set_hash' => $observationSetHash,
+                        'request_fingerprint' => $requestFingerprint,
+                        'reflection_count' => \count($produced['reflections']),
+                        'retained_observation_count' => \count($produced['retained_observation_ids']),
+                        'required_start_seq' => $requiredStartSeq,
+                        'required_end_seq' => $requiredEndSeq,
+                        'render' => 'active_memory_v1',
+                    ],
+                );
+
+                $connection->commit();
+            } catch (\Throwable $e) {
+                if ($connection->isTransactionActive()) {
+                    $connection->rollBack();
+                }
+                throw $e;
             }
-
-            $generationRepo->commitSucceededGeneration(
-                generationId: $generationId,
-                runId: $runId,
-                observationSetHash: $observationSetHash,
-                reflectorModel: $reflectorModel,
-                reflectorSchemaVersion: $settings->reflectorSchemaVersion,
-                reflections: array_map(static fn (array $r): array => [
-                    'reflection_id' => $r['reflection_id'],
-                    'content' => $r['content'],
-                    'supporting_observation_ids_json' => $r['supporting_observation_ids_json'],
-                    'token_count' => $r['token_count'],
-                ], $produced['reflections']),
-                retainedObservationIds: $produced['retained_observation_ids'],
-                now: $now,
-                compactionRequestId: $requestId,
-            );
-
-            $resultId = hash('sha256', implode('|', [$requestId, $observationSetHash, $generationId, 'success']));
-            $compactionRepo->commitSuccess(
-                requestId: $requestId,
-                resultId: $resultId,
-                runId: $runId,
-                requiredStartSeq: $requiredStartSeq,
-                requiredEndSeq: $requiredEndSeq,
-                requiredWatermark: $requiredEndSeq,
-                requestFingerprint: $requestFingerprint,
-                observationSetHash: $observationSetHash,
-                replacementText: $produced['rendered_text'],
-                reflectorModel: $reflectorModel,
-                reflectorSchemaVersion: $settings->reflectorSchemaVersion,
-                reflections: [],
-                now: $now,
-                metadata: [
-                    'generation_id' => $generationId,
-                    'observation_set_hash' => $observationSetHash,
-                    'request_fingerprint' => $requestFingerprint,
-                    'reflection_count' => \count($produced['reflections']),
-                    'retained_observation_count' => \count($produced['retained_observation_ids']),
-                    'required_start_seq' => $requiredStartSeq,
-                    'required_end_seq' => $requiredEndSeq,
-                    'render' => 'active_memory_v1',
-                ],
-            );
 
             $this->logger->info('om.compaction.succeeded', [
                 'component' => 'observational_memory',

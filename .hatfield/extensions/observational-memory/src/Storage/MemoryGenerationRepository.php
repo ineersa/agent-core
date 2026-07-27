@@ -123,6 +123,30 @@ final class MemoryGenerationRepository
         return (int) $count > 0;
     }
 
+    /**
+     * Boundary threshold dispatch guard: suppress new job creation when this exact
+     * observation set already has a running, succeeded, or failed generation.
+     *
+     * Failed remains reclaimable by Messenger redelivery of the same generation id
+     * via claimGeneration; this only blocks re-dispatch from later observe boundaries.
+     */
+    public function hasTerminalOrInFlightGenerationForSet(string $runId, string $observationSetHash): bool
+    {
+        $count = $this->connection->fetchOne(
+            'SELECT COUNT(1) FROM om_memory_generation
+             WHERE run_id = ? AND observation_set_hash = ? AND status IN (?, ?, ?)',
+            [
+                $runId,
+                $observationSetHash,
+                self::STATUS_RUNNING,
+                self::STATUS_SUCCEEDED,
+                self::STATUS_FAILED,
+            ],
+        );
+
+        return (int) $count > 0;
+    }
+
     public function hasGenerationId(string $generationId): bool
     {
         $found = $this->connection->fetchOne(
@@ -316,7 +340,12 @@ final class MemoryGenerationRepository
             throw new OmConflictException(\sprintf('Generation %s identity mismatch on success commit.', $generationId));
         }
 
-        $this->connection->beginTransaction();
+        // Participate in an outer write transaction when the caller already holds one
+        // (compaction late-timeout CAS + result commit must roll back together).
+        $ownsTransaction = !$this->connection->isTransactionActive();
+        if ($ownsTransaction) {
+            $this->connection->beginTransaction();
+        }
         try {
             foreach ($reflections as $position => $reflection) {
                 try {
@@ -358,12 +387,15 @@ final class MemoryGenerationRepository
                 ]);
             }
 
-            $this->connection->executeStatement(
+            $updated = $this->connection->executeStatement(
                 'UPDATE om_memory_generation
                  SET status = ?, completed_at = ?, failure_code = NULL
                  WHERE generation_id = ? AND status = ?',
                 [self::STATUS_SUCCEEDED, $now, $generationId, self::STATUS_RUNNING],
             );
+            if (1 !== $updated) {
+                throw new OmConflictException(\sprintf('Generation %s left running status before success commit.', $generationId));
+            }
 
             $this->connection->executeStatement(
                 'INSERT INTO om_active_generation (run_id, generation_id) VALUES (?, ?)
@@ -371,9 +403,11 @@ final class MemoryGenerationRepository
                 [$runId, $generationId],
             );
 
-            $this->connection->commit();
+            if ($ownsTransaction) {
+                $this->connection->commit();
+            }
         } catch (\Throwable $e) {
-            if ($this->connection->isTransactionActive()) {
+            if ($ownsTransaction && $this->connection->isTransactionActive()) {
                 $this->connection->rollBack();
             }
             throw $e;

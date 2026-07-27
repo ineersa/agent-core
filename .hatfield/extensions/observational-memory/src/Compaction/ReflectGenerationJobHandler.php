@@ -43,6 +43,11 @@ final readonly class ReflectGenerationJobHandler implements ExtensionAgentJobHan
         $thresholdKey = (string) ($payload['threshold_idempotency_key'] ?? $generationId);
         $priorActive = $payload['prior_active_generation_id'] ?? null;
         $priorActive = \is_string($priorActive) && '' !== $priorActive ? $priorActive : null;
+        $requiredEndSeq = isset($payload['required_end_seq']) ? (int) $payload['required_end_seq'] : null;
+        $requiredStartSeq = isset($payload['required_start_seq']) ? (int) $payload['required_start_seq'] : 1;
+        if (null !== $requiredEndSeq && $requiredEndSeq < 0) {
+            throw new \InvalidArgumentException('reflect_generation required_end_seq must be non-negative.');
+        }
 
         if ('' === $runId || '' === $generationId || '' === $observationSetHash || '' === $reflectorModel || '' === $reflectorSchemaVersion) {
             throw new \InvalidArgumentException('reflect_generation payload missing identity fields.');
@@ -72,6 +77,14 @@ final readonly class ReflectGenerationJobHandler implements ExtensionAgentJobHan
         $observationRepo = new ObservationRepository($connection);
         $now = (new \DateTimeImmutable('now', new \DateTimeZone('UTC')))->format(\DateTimeInterface::ATOM);
 
+        // Store exact active-set source watermark on the generation claim (task formula).
+        // Prefer live recompute so redelivery cannot pin a stale payload watermark after new observes.
+        $liveCandidateForClaim = $observationRepo->activeCandidateSet($runId);
+        $claimRequiredEndSeq = $liveCandidateForClaim['max_source_end_seq'];
+        if ($claimRequiredEndSeq < 1 && null !== $requiredEndSeq && $requiredEndSeq > 0) {
+            $claimRequiredEndSeq = $requiredEndSeq;
+        }
+
         $claim = $generationRepo->claimGeneration(
             generationId: $generationId,
             runId: $runId,
@@ -81,6 +94,8 @@ final readonly class ReflectGenerationJobHandler implements ExtensionAgentJobHan
             reflectorSchemaVersion: $reflectorSchemaVersion,
             now: $now,
             thresholdIdempotencyKey: $thresholdKey,
+            requiredStartSeq: $requiredStartSeq,
+            requiredEndSeq: $claimRequiredEndSeq,
         );
 
         if (\in_array($claim['status'], ['already_running', 'already_succeeded'], true)) {

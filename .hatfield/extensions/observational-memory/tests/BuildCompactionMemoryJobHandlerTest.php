@@ -337,6 +337,165 @@ final class BuildCompactionMemoryJobHandlerTest extends IsolatedKernelTestCase
         $this->assertSame(1, $cov);
     }
 
+    public function testTimedOutRequestRejectsLateSuccessWithoutPromotion(): void
+    {
+        $events = [
+            new SessionEventDTO(
+                runId: 'run-to',
+                seq: 1,
+                turnNo: 1,
+                type: 'agent_command_applied',
+                payload: ['kind' => 'prompt', 'text' => 'Remember timeout race'],
+                createdAt: '2026-07-25T00:00:00+00:00',
+            ),
+            new SessionEventDTO(
+                runId: 'run-to',
+                seq: 2,
+                turnNo: 1,
+                type: 'agent_end',
+                payload: ['reason' => 'completed'],
+                createdAt: '2026-07-25T00:00:01+00:00',
+            ),
+        ];
+
+        $api = $this->buildApi($events, static function (AgentCallRequestDTO $request): void {
+            $tool = $request->tools[0] ?? null;
+            if (null === $tool) {
+                throw new \RuntimeException('missing tool');
+            }
+            if ('record_observations' === $tool->name) {
+                ($tool->handler)([
+                    'observations' => [[
+                        'timestamp' => '2026-07-26 12:00',
+                        'relevance' => 'high',
+                        'content' => 'Timeout race fact',
+                        'source_refs' => [['run_id' => 'run-to', 'seq' => 1]],
+                    ]],
+                ]);
+
+                return;
+            }
+            if ('record_reflections' === $tool->name) {
+                if (!preg_match('/\[([a-f0-9]{64})\]/', $request->input, $m)) {
+                    throw new \RuntimeException('observation id missing');
+                }
+                ($tool->handler)([
+                    'reflections' => [[
+                        'content' => 'Durable timeout race reflection',
+                        'supporting_observation_ids' => [$m[1]],
+                    ]],
+                    'retained_observation_ids' => [$m[1]],
+                ]);
+
+                return;
+            }
+            throw new \RuntimeException('unexpected tool '.$tool->name);
+        });
+
+        $settings = OmSettings::fromArray([
+            'enabled' => true,
+            'observer' => ['model' => 'llama_cpp_test/test', 'schema_version' => 'o1', 'renderer_version' => 'r1'],
+            'reflector' => ['model' => 'llama_cpp_test/test'],
+        ]);
+        $paths = \Ineersa\HatfieldExt\ObservationalMemory\Runtime\OmPaths::fromSettings($settings, $this->projectDir);
+        $connection = $this->omDatabaseFactory()->connectAndMigrate($paths->databasePath, new NullLogger());
+        $repo = new CompactionRepository($connection);
+        $now = (new \DateTimeImmutable('now', new \DateTimeZone('UTC')))->format(\DateTimeInterface::ATOM);
+        $repo->ensureRequest('req-to', 'run-to', 1, 2, 2, 'fp-to', $now);
+        // Keep a prior active pointer so we can prove it is not overwritten by a late success.
+        $priorGen = hash('sha256', 'prior-active');
+        $connection->insert('om_memory_generation', [
+            'generation_id' => $priorGen,
+            'run_id' => 'run-to',
+            'trigger_kind' => 'threshold',
+            'status' => 'succeeded',
+            'observation_set_hash' => hash('sha256', 'prior'),
+            'reflector_model' => 'llama_cpp_test/test',
+            'reflector_schema_version' => '1',
+            'threshold_idempotency_key' => $priorGen,
+            'required_start_seq' => 1,
+            'required_end_seq' => 1,
+            'compaction_request_id' => null,
+            'request_fingerprint' => null,
+            'failure_code' => null,
+            'created_at' => $now,
+            'completed_at' => $now,
+        ]);
+        $connection->insert('om_active_generation', [
+            'run_id' => 'run-to',
+            'generation_id' => $priorGen,
+        ]);
+
+        // Race simulation: mark timed_out after worker would have started model work but before
+        // the atomic success transaction. Inject by wrapping agent so timeout lands before commit.
+        $timedOut = false;
+        $apiRace = $this->buildApi($events, static function (AgentCallRequestDTO $request) use (&$timedOut, $repo, $now): void {
+            $tool = $request->tools[0] ?? null;
+            if (null === $tool) {
+                throw new \RuntimeException('missing tool');
+            }
+            if ('record_observations' === $tool->name) {
+                ($tool->handler)([
+                    'observations' => [[
+                        'timestamp' => '2026-07-26 12:00',
+                        'relevance' => 'high',
+                        'content' => 'Timeout race fact',
+                        'source_refs' => [['run_id' => 'run-to', 'seq' => 1]],
+                    ]],
+                ]);
+
+                return;
+            }
+            if ('record_reflections' === $tool->name) {
+                // Hook timeout wins before worker success transaction.
+                $repo->markTimedOut('req-to', $now);
+                $timedOut = true;
+                if (!preg_match('/\[([a-f0-9]{64})\]/', $request->input, $m)) {
+                    throw new \RuntimeException('observation id missing');
+                }
+                ($tool->handler)([
+                    'reflections' => [[
+                        'content' => 'Durable timeout race reflection',
+                        'supporting_observation_ids' => [$m[1]],
+                    ]],
+                    'retained_observation_ids' => [$m[1]],
+                ]);
+
+                return;
+            }
+            throw new \RuntimeException('unexpected tool '.$tool->name);
+        });
+
+        $handler = new BuildCompactionMemoryJobHandler(new NullLogger());
+        try {
+            $handler->handle($apiRace, [
+                'request_id' => 'req-to',
+                'run_id' => 'run-to',
+                'required_start_seq' => 1,
+                'required_end_seq' => 2,
+                'request_fingerprint' => 'fp-to',
+            ], 'job-to', 'run-to');
+            $this->fail('late success against timed_out request must conflict');
+        } catch (\Ineersa\HatfieldExt\ObservationalMemory\Storage\OmConflictException) {
+            // expected
+        }
+
+        $this->assertTrue($timedOut, 'fixture must mark timed_out mid-handler');
+        $this->assertNull($repo->getResult('req-to'), 'timed_out request must not gain a result row');
+        $status = $repo->getRequestStatus('req-to');
+        $this->assertNotNull($status);
+        $this->assertSame(CompactionRepository::STATUS_TIMED_OUT, $status['status']);
+        $this->assertSame($priorGen, $connection->fetchOne(
+            'SELECT generation_id FROM om_active_generation WHERE run_id = ?',
+            ['run-to'],
+        ));
+        $promoted = (int) $connection->fetchOne(
+            "SELECT COUNT(*) FROM om_memory_generation WHERE run_id = ? AND trigger_kind = 'compaction' AND status = 'succeeded'",
+            ['run-to'],
+        );
+        $this->assertSame(0, $promoted);
+    }
+
     /**
      * @param list<SessionEventDTO>              $events
      * @param callable(AgentCallRequestDTO):void $onAgentRun

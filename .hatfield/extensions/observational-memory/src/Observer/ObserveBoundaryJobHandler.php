@@ -93,7 +93,10 @@ final readonly class ObserveBoundaryJobHandler implements ExtensionAgentJobHandl
         if ([] === $candidate['observation_ids']) {
             return;
         }
-        if ($generationRepository->hasRunningOrSucceededForSet($runId, $candidate['observation_set_hash'])) {
+        // Suppress re-dispatch when this exact set already has running/succeeded/failed.
+        // Failed remains reclaimable by Messenger redelivery of the same job id; new
+        // observe boundaries must not create another deterministic failed job forever.
+        if ($generationRepository->hasTerminalOrInFlightGenerationForSet($runId, $candidate['observation_set_hash'])) {
             $this->logger->info('om.observe.threshold_suppressed', [
                 'component' => 'observational_memory',
                 'event_type' => 'om.observe.threshold_suppressed',
@@ -131,6 +134,9 @@ final readonly class ObserveBoundaryJobHandler implements ExtensionAgentJobHandl
                     'reflector_model' => $reflectorModel,
                     'reflector_schema_version' => $settings->reflectorSchemaVersion,
                     'token_count' => $candidate['token_count'],
+                    // Source watermark for the exact active candidate set claimed at dispatch.
+                    'required_end_seq' => $candidate['max_source_end_seq'],
+                    'required_start_seq' => 1,
                 ],
                 jobId: $reflectJobId,
                 correlationId: $runId,

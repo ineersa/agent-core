@@ -198,94 +198,86 @@ final class ObservationRepository
      */
     public function listActiveCandidateObservations(string $runId): array
     {
+        return $this->activeCandidateSet($runId)['observations'];
+    }
+
+    /**
+     * Active candidate set for threshold tokens / observation_set_hash / Reflector input.
+     *
+     * Before first generation: all observations for the run.
+     * After a succeeded active generation: retained observations for that generation
+     * UNION observations with source_end_seq greater than the generation required_end_seq
+     * watermark (committed-source checkpoint). Same-second commits are ordered by seq,
+     * not created_at, so later source seq is included without resurrecting dropped rows.
+     *
+     * @return array{
+     *   observation_ids: list<string>,
+     *   token_count: int,
+     *   observation_set_hash: string,
+     *   max_source_end_seq: int,
+     *   observations: list<array{
+     *     observation_id: string,
+     *     content: string,
+     *     content_hash: string,
+     *     relevance: string,
+     *     timestamp: string,
+     *     token_count: int,
+     *     source_refs_json: string,
+     *     source_start_seq: int,
+     *     source_end_seq: int,
+     *     created_at: string
+     *   }>
+     * }
+     */
+    public function activeCandidateSet(string $runId): array
+    {
         $activeGenerationId = $this->connection->fetchOne(
             'SELECT generation_id FROM om_active_generation WHERE run_id = ?',
             [$runId],
         );
 
         if (!\is_string($activeGenerationId) || '' === $activeGenerationId) {
-            return $this->listObservationsForRun($runId);
+            $observations = $this->listObservationsForRun($runId);
+
+            return $this->buildCandidateSetPayload($runId, $observations);
         }
 
-        $generationCreatedAt = $this->connection->fetchOne(
-            'SELECT created_at FROM om_memory_generation WHERE generation_id = ? AND status = ?',
+        $watermark = $this->connection->fetchOne(
+            'SELECT required_end_seq FROM om_memory_generation
+             WHERE generation_id = ? AND status = ?',
             [$activeGenerationId, 'succeeded'],
         );
-        if (!\is_string($generationCreatedAt) || '' === $generationCreatedAt) {
-            return $this->listObservationsForRun($runId);
-        }
+        if (!\is_int($watermark) && !(\is_string($watermark) && is_numeric($watermark))) {
+            $observations = $this->listObservationsForRun($runId);
 
-        $retainedIds = $this->connection->fetchFirstColumn(
-            'SELECT observation_id FROM om_generation_retained_observation
-             WHERE generation_id = ?
-             ORDER BY position ASC',
-            [$activeGenerationId],
+            return $this->buildCandidateSetPayload($runId, $observations);
+        }
+        $requiredEndSeq = (int) $watermark;
+
+        // One query: retained rows for the active generation + observations committed after
+        // that generation's source watermark. No per-id fetch loop.
+        $rows = $this->connection->fetchAllAssociative(
+            'SELECT o.observation_id, o.content, o.content_hash, o.relevance, o.timestamp, o.token_count,
+                    o.source_refs_json, o.source_start_seq, o.source_end_seq, o.created_at
+             FROM om_observation o
+             WHERE o.run_id = ?
+               AND (
+                    EXISTS (
+                        SELECT 1 FROM om_generation_retained_observation r
+                        WHERE r.generation_id = ? AND r.observation_id = o.observation_id
+                    )
+                    OR o.source_end_seq > ?
+               )
+             ORDER BY o.timestamp ASC, o.observation_id ASC',
+            [$runId, $activeGenerationId, $requiredEndSeq],
         );
 
-        $byId = [];
-        foreach ($retainedIds as $id) {
-            if (!\is_string($id) || '' === $id) {
-                continue;
-            }
-            $row = $this->connection->fetchAssociative(
-                'SELECT observation_id, content, content_hash, relevance, timestamp, token_count, source_refs_json,
-                        source_start_seq, source_end_seq, created_at
-                 FROM om_observation WHERE observation_id = ?',
-                [$id],
-            );
-            if (false !== $row) {
-                $byId[$id] = $this->mapObservationRow($row);
-            }
+        $observations = [];
+        foreach ($rows as $row) {
+            $observations[] = $this->mapObservationRow($row);
         }
 
-        $later = $this->connection->fetchAllAssociative(
-            'SELECT observation_id, content, content_hash, relevance, timestamp, token_count, source_refs_json,
-                    source_start_seq, source_end_seq, created_at
-             FROM om_observation
-             WHERE run_id = ? AND created_at > ?
-             ORDER BY created_at ASC, observation_id ASC',
-            [$runId, $generationCreatedAt],
-        );
-        foreach ($later as $row) {
-            $id = (string) ($row['observation_id'] ?? '');
-            if ('' === $id || isset($byId[$id])) {
-                continue;
-            }
-            $byId[$id] = $this->mapObservationRow($row);
-        }
-
-        $out = array_values($byId);
-        usort($out, static function (array $a, array $b): int {
-            $byTs = strcmp($a['timestamp'], $b['timestamp']);
-            if (0 !== $byTs) {
-                return $byTs;
-            }
-
-            return strcmp($a['observation_id'], $b['observation_id']);
-        });
-
-        return $out;
-    }
-
-    /**
-     * @return array{observation_ids: list<string>, token_count: int, observation_set_hash: string}
-     */
-    public function activeCandidateSet(string $runId): array
-    {
-        $observations = $this->listActiveCandidateObservations($runId);
-        $ids = [];
-        $tokens = 0;
-        foreach ($observations as $observation) {
-            $ids[] = $observation['observation_id'];
-            $tokens += OmTokenEstimator::estimate($observation['content']);
-        }
-        sort($ids, \SORT_STRING);
-
-        return [
-            'observation_ids' => $ids,
-            'token_count' => $tokens,
-            'observation_set_hash' => OmIdentity::observationSetHash($runId, $ids),
-        ];
+        return $this->buildCandidateSetPayload($runId, $observations);
     }
 
     /**
@@ -412,6 +404,61 @@ final class ObservationRepository
         return [
             'status' => 'inserted',
             'observation_count' => \count($observations),
+        ];
+    }
+
+    /**
+     * @param list<array{
+     *   observation_id: string,
+     *   content: string,
+     *   content_hash: string,
+     *   relevance: string,
+     *   timestamp: string,
+     *   token_count: int,
+     *   source_refs_json: string,
+     *   source_start_seq: int,
+     *   source_end_seq: int,
+     *   created_at: string
+     * }> $observations
+     *
+     * @return array{
+     *   observation_ids: list<string>,
+     *   token_count: int,
+     *   observation_set_hash: string,
+     *   max_source_end_seq: int,
+     *   observations: list<array{
+     *     observation_id: string,
+     *     content: string,
+     *     content_hash: string,
+     *     relevance: string,
+     *     timestamp: string,
+     *     token_count: int,
+     *     source_refs_json: string,
+     *     source_start_seq: int,
+     *     source_end_seq: int,
+     *     created_at: string
+     *   }>
+     * }
+     */
+    private function buildCandidateSetPayload(string $runId, array $observations): array
+    {
+        $ids = [];
+        $tokens = 0;
+        $maxSourceEndSeq = 0;
+        foreach ($observations as $observation) {
+            $ids[] = $observation['observation_id'];
+            $tokens += OmTokenEstimator::estimate($observation['content']);
+            $maxSourceEndSeq = max($maxSourceEndSeq, $observation['source_end_seq']);
+        }
+        sort($ids, \SORT_STRING);
+
+        return [
+            'observation_ids' => $ids,
+            'token_count' => $tokens,
+            // Hash remains IDs-only (task formula observation-set-v1).
+            'observation_set_hash' => OmIdentity::observationSetHash($runId, $ids),
+            'max_source_end_seq' => $maxSourceEndSeq,
+            'observations' => $observations,
         ];
     }
 

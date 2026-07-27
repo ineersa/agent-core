@@ -41,6 +41,8 @@ final class ObserverChunkAndToolTest extends TestCase
         $system = ObserverSystemPrompt::text();
         $packer = new OmChunkPacker();
 
+        $fixed = OmTokenEstimator::estimate($system) + 50;
+
         // Large context: 128k * 0.65 admits the interaction as few parts.
         $large = $packer->pack(
             runId: 'run-1',
@@ -50,10 +52,8 @@ final class ObserverChunkAndToolTest extends TestCase
             memoryReflections: [],
             memoryObservations: [],
             envelopeTokens: (int) floor(128_000 * 0.65),
-            systemPrompt: $system,
-            toolSchemaEstimateText: 'schema',
             localTimeFallback: '2026-07-26 12:00',
-            fixedOverheadTokens: OmTokenEstimator::estimate($system) + 50,
+            fixedOverheadTokens: $fixed,
         );
         $this->assertNotSame([], $large);
         $this->assertLessThanOrEqual(3, \count($large));
@@ -67,10 +67,8 @@ final class ObserverChunkAndToolTest extends TestCase
             memoryReflections: [],
             memoryObservations: [],
             envelopeTokens: 800,
-            systemPrompt: $system,
-            toolSchemaEstimateText: 'schema',
             localTimeFallback: '2026-07-26 12:00',
-            fixedOverheadTokens: OmTokenEstimator::estimate($system) + 50,
+            fixedOverheadTokens: $fixed,
         );
         $this->assertGreaterThan(1, \count($small));
         foreach ($small as $part) {
@@ -89,14 +87,107 @@ final class ObserverChunkAndToolTest extends TestCase
             memoryReflections: [],
             memoryObservations: [],
             envelopeTokens: 800,
-            systemPrompt: $system,
-            toolSchemaEstimateText: 'schema',
             localTimeFallback: '2099-01-01 00:00',
-            fixedOverheadTokens: OmTokenEstimator::estimate($system) + 50,
+            fixedOverheadTokens: $fixed,
         );
         $this->assertSame($small[0]['source_digest'], $otherTime[0]['source_digest']);
         $this->assertSame($small[0]['chunk_key'], $otherTime[0]['chunk_key']);
         $this->assertSame($small[0]['part_digest'], $otherTime[0]['part_digest']);
+    }
+
+    public function testSeparatorAwareGroupingKeepsAtomicToolPairAndSplitsOversizedUtf8(): void
+    {
+        $builder = new OmSourceBlockBuilder();
+        $events = [
+            new SessionEventDTO(
+                'run-p',
+                1,
+                1,
+                'llm_step_completed',
+                [
+                    'assistant_message' => [
+                        'role' => 'assistant',
+                        'content' => 'Reading file',
+                        'tool_calls' => [[
+                            'id' => 'tc-1',
+                            'name' => 'read',
+                            'arguments' => ['path' => 'a.txt'],
+                        ]],
+                    ],
+                ],
+                '2026-07-26T10:00:00+00:00',
+            ),
+            new SessionEventDTO(
+                'run-p',
+                2,
+                1,
+                'tool_execution_end',
+                ['tool_call_id' => 'tc-1', 'tool_name' => 'read', 'result' => 'file body'],
+                '2026-07-26T10:00:01+00:00',
+            ),
+            new SessionEventDTO(
+                'run-p',
+                3,
+                1,
+                'agent_command_applied',
+                ['text' => str_repeat('z', 2_000)],
+                '2026-07-26T10:00:02+00:00',
+            ),
+        ];
+        $blocks = $builder->build($events);
+        $this->assertGreaterThanOrEqual(2, \count($blocks));
+        $this->assertSame('tool_group', $blocks[0]['kind']);
+
+        $packer = new OmChunkPacker();
+        $system = ObserverSystemPrompt::text();
+        $fixed = OmTokenEstimator::estimate($system) + 50;
+
+        // Envelope large enough for the atomic tool pair alone, but not tool pair + large user block.
+        $packed = $packer->pack(
+            runId: 'run-p',
+            rendererVersion: '1',
+            observerSchemaVersion: '1',
+            blocks: $blocks,
+            memoryReflections: [],
+            memoryObservations: [],
+            envelopeTokens: 900,
+            localTimeFallback: '2026-07-26 12:00',
+            fixedOverheadTokens: $fixed,
+        );
+        $this->assertGreaterThanOrEqual(2, \count($packed));
+        // Atomic tool_group is one block (call-event seq) and must not be UTF-8-split across parts.
+        $this->assertSame(1, $packed[0]['source_start_seq']);
+        $this->assertSame(1, $packed[0]['source_end_seq']);
+        $this->assertSame(1, $packed[0]['part_count']);
+        $this->assertStringContainsString('Tool call', $packed[0]['rendered_part']);
+        $this->assertStringContainsString('Tool result', $packed[0]['rendered_part']);
+        $this->assertContains(['run_id' => 'run-p', 'seq' => 2], $packed[0]['source_refs']);
+
+        // Oversized single block still UTF-8 parts.
+        $hugeBlock = [[
+            'run_id' => 'run-p',
+            'seq' => 9,
+            'kind' => 'user',
+            'rendered_text' => str_repeat('w', 5_000),
+            'source_refs' => [['run_id' => 'run-p', 'seq' => 9]],
+        ]];
+        $parts = $packer->pack(
+            runId: 'run-p',
+            rendererVersion: '1',
+            observerSchemaVersion: '1',
+            blocks: $hugeBlock,
+            memoryReflections: [],
+            memoryObservations: [],
+            envelopeTokens: 400,
+            localTimeFallback: '2026-07-26 12:00',
+            fixedOverheadTokens: $fixed,
+        );
+        $this->assertGreaterThan(1, \count($parts));
+        foreach ($parts as $part) {
+            $this->assertSame(9, $part['source_start_seq']);
+            $this->assertSame(9, $part['source_end_seq']);
+        }
+        $this->assertSame(\count($parts), $parts[0]['part_count']);
     }
 
     public function testMultiCallAccumulateAndInvalidCitationDoesNotMutate(): void

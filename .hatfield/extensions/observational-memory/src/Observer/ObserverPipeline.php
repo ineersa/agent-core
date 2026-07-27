@@ -121,8 +121,6 @@ final readonly class ObserverPipeline
             memoryReflections: $memoryReflections,
             memoryObservations: $memoryObservations,
             envelopeTokens: $envelope,
-            systemPrompt: $systemPrompt,
-            toolSchemaEstimateText: $toolSchemaText,
             localTimeFallback: $localTime,
             fixedOverheadTokens: $fixedOverhead,
         );

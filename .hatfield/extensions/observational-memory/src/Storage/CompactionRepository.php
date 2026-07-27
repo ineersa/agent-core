@@ -273,14 +273,6 @@ final class CompactionRepository
         string $now,
         ?array $metadata = null,
     ): array {
-        $request = $this->connection->fetchAssociative(
-            'SELECT status FROM om_compaction_request WHERE request_id = ?',
-            [$requestId],
-        );
-        if (false !== $request && self::STATUS_TIMED_OUT === ($request['status'] ?? '')) {
-            throw new OmConflictException(\sprintf('Compaction request %s already timed out; reject late success.', $requestId));
-        }
-
         $existing = $this->getResult($requestId);
         if (null !== $existing) {
             if (($existing['observation_set_hash'] ?? '') !== $observationSetHash
@@ -301,24 +293,56 @@ final class CompactionRepository
             }
         }
 
-        $this->connection->beginTransaction();
+        // Outer transaction may already hold the write lock (generation promotion + result).
+        $ownsTransaction = !$this->connection->isTransactionActive();
+        if ($ownsTransaction) {
+            $this->connection->beginTransaction();
+        }
         try {
-            $this->assertAndTouchRequest(
-                $requestId,
+            // CAS: only a still-running request can become succeeded. timed_out/failed win the race.
+            $cas = $this->connection->executeStatement(
+                'UPDATE om_compaction_request
+                 SET status = ?, updated_at = ?, completed_at = ?, failure_code = NULL, failure_metadata_json = NULL,
+                     observation_set_hash = ?
+                 WHERE request_id = ? AND status = ?',
+                [self::STATUS_SUCCEEDED, $now, $now, $observationSetHash, $requestId, self::STATUS_RUNNING],
+            );
+            if (1 !== $cas) {
+                $status = $this->getRequestStatus($requestId);
+                if (null !== $status && self::STATUS_TIMED_OUT === $status['status']) {
+                    throw new OmConflictException(\sprintf('Compaction request %s already timed out; reject late success.', $requestId));
+                }
+                if (null !== $status && self::STATUS_SUCCEEDED === $status['status']) {
+                    $again = $this->getResult($requestId);
+                    if (null !== $again
+                        && ($again['observation_set_hash'] ?? '') === $observationSetHash
+                        && ($again['status'] ?? '') === self::STATUS_SUCCEEDED
+                        && ($again['replacement_text'] ?? null) === $replacementText) {
+                        if ($ownsTransaction) {
+                            $this->connection->commit();
+                        }
+
+                        return ['status' => 'noop'];
+                    }
+                }
+                throw new OmConflictException(\sprintf('Compaction request %s is not running (status=%s); cannot commit success.', $requestId, null === $status ? 'missing' : $status['status']));
+            }
+
+            $existingRow = $this->connection->fetchAssociative(
+                'SELECT request_id, run_id, required_start_seq, required_end_seq, required_watermark, request_fingerprint, status
+                 FROM om_compaction_request WHERE request_id = ?',
+                [$requestId],
+            );
+            if (false === $existingRow) {
+                throw new OmConflictException(\sprintf('Compaction request %s missing after CAS.', $requestId));
+            }
+            $this->assertRequestIdentity(
+                $existingRow,
                 $runId,
                 $requiredStartSeq,
                 $requiredEndSeq,
                 $requiredWatermark,
                 $requestFingerprint,
-                self::STATUS_SUCCEEDED,
-                $now,
-                null,
-                null,
-            );
-
-            $this->connection->executeStatement(
-                'UPDATE om_compaction_request SET observation_set_hash = ? WHERE request_id = ?',
-                [$observationSetHash, $requestId],
             );
 
             foreach ($reflections as $reflection) {
@@ -363,7 +387,9 @@ final class CompactionRepository
                     'completed_at' => $now,
                 ]);
             } catch (UniqueConstraintViolationException $e) {
-                $this->connection->rollBack();
+                if ($ownsTransaction && $this->connection->isTransactionActive()) {
+                    $this->connection->rollBack();
+                }
                 $again = $this->getResult($requestId);
                 if (null === $again
                     || ($again['observation_set_hash'] ?? '') !== $observationSetHash
@@ -374,9 +400,11 @@ final class CompactionRepository
                 return ['status' => 'noop'];
             }
 
-            $this->connection->commit();
+            if ($ownsTransaction) {
+                $this->connection->commit();
+            }
         } catch (\Throwable $e) {
-            if ($this->connection->isTransactionActive()) {
+            if ($ownsTransaction && $this->connection->isTransactionActive()) {
                 $this->connection->rollBack();
             }
             throw $e;

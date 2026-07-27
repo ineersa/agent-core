@@ -124,4 +124,44 @@ final class RecordReflectionsToolHandlerTest extends TestCase
         $this->assertSame('rejected', $badSupport['status']);
         $this->assertFalse($handler->hasCandidate());
     }
+
+    public function testPrivacyAcceptsJwtFactAndRejectsCredentialAssignment(): void
+    {
+        $handler = new RecordReflectionsToolHandler(
+            runId: 'run-1',
+            reflectorSchemaVersion: 'v1',
+            allowedReflectionIds: [],
+            allowedObservationIds: ['obs-a' => true],
+            activeReflectionsById: [],
+            requireNonEmptyOutput: true,
+        );
+
+        $jwt = $handler([
+            'reflections' => [[
+                'content' => 'Service uses JWT tokens for API authentication',
+                'supporting_observation_ids' => ['obs-a'],
+            ]],
+            'retained_observation_ids' => ['obs-a'],
+        ]);
+        $this->assertSame('accepted', $jwt['status'], 'technical JWT fact must not be privacy-rejected');
+        $this->assertTrue($handler->hasCandidate());
+
+        $handler2 = new RecordReflectionsToolHandler(
+            runId: 'run-1',
+            reflectorSchemaVersion: 'v1',
+            allowedReflectionIds: [],
+            allowedObservationIds: ['obs-a' => true],
+            activeReflectionsById: [],
+            requireNonEmptyOutput: true,
+        );
+        $secret = $handler2([
+            'reflections' => [[
+                'content' => 'api_key=sk-live-should-not-be-stored',
+                'supporting_observation_ids' => ['obs-a'],
+            ]],
+            'retained_observation_ids' => ['obs-a'],
+        ]);
+        $this->assertSame('rejected', $secret['status']);
+        $this->assertFalse($handler2->hasCandidate());
+    }
 }

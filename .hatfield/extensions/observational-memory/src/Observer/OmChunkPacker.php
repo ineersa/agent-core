@@ -12,6 +12,19 @@ use Ineersa\HatfieldExt\ObservationalMemory\Support\OmIdentity;
 final class OmChunkPacker
 {
     /**
+     * Fraction of remaining envelope (after fixed overhead) reserved for CURRENT
+     * REFLECTIONS/OBSERVATIONS memory. Leaves ~45% for NEW source chunks.
+     * Not a settings knob: frozen tradeoff for MVP packer behavior.
+     */
+    private const float MEMORY_ENVELOPE_FRACTION = 0.55;
+
+    /**
+     * Separator inserted between packed source blocks; must be counted when
+     * greedily grouping so multi-block groups cannot exceed budgetForSource.
+     */
+    private const string BLOCK_SEPARATOR = "\n\n";
+
+    /**
      * @param list<array{
      *   run_id: string,
      *   seq: int,
@@ -45,8 +58,6 @@ final class OmChunkPacker
         array $memoryReflections,
         array $memoryObservations,
         int $envelopeTokens,
-        string $systemPrompt,
-        string $toolSchemaEstimateText,
         string $localTimeFallback,
         int $fixedOverheadTokens,
     ): array {
@@ -60,6 +71,7 @@ final class OmChunkPacker
         $timestampLine = 'Current local time fallback: '.$localTimeFallback;
         $timestampTokens = OmTokenEstimator::estimate($timestampLine);
         $budgetForSource = max(64, $envelopeTokens - $fixedOverheadTokens - $memoryTokens - $timestampTokens);
+        $separatorTokens = OmTokenEstimator::estimate(self::BLOCK_SEPARATOR);
 
         $chunks = [];
         $current = [];
@@ -67,7 +79,8 @@ final class OmChunkPacker
 
         foreach ($blocks as $block) {
             $blockTokens = OmTokenEstimator::estimate($block['rendered_text']);
-            if ([] !== $current && $currentTokens + $blockTokens > $budgetForSource) {
+            $joinCost = [] === $current ? 0 : $separatorTokens;
+            if ([] !== $current && $currentTokens + $joinCost + $blockTokens > $budgetForSource) {
                 foreach ($this->finalizeGroup(
                     $runId,
                     $rendererVersion,
@@ -75,8 +88,6 @@ final class OmChunkPacker
                     $current,
                     $memoryText,
                     $timestampLine,
-                    $systemPrompt,
-                    $toolSchemaEstimateText,
                     $budgetForSource,
                 ) as $part) {
                     $chunks[] = $part;
@@ -93,8 +104,6 @@ final class OmChunkPacker
                     $block,
                     $memoryText,
                     $timestampLine,
-                    $systemPrompt,
-                    $toolSchemaEstimateText,
                     $budgetForSource,
                 ) as $part) {
                     $chunks[] = $part;
@@ -102,8 +111,13 @@ final class OmChunkPacker
                 continue;
             }
 
-            $current[] = $block;
-            $currentTokens += $blockTokens;
+            if ([] === $current) {
+                $current[] = $block;
+                $currentTokens = $blockTokens;
+            } else {
+                $current[] = $block;
+                $currentTokens += $joinCost + $blockTokens;
+            }
         }
 
         if ([] !== $current) {
@@ -114,8 +128,6 @@ final class OmChunkPacker
                 $current,
                 $memoryText,
                 $timestampLine,
-                $systemPrompt,
-                $toolSchemaEstimateText,
                 $budgetForSource,
             ) as $part) {
                 $chunks[] = $part;
@@ -133,8 +145,7 @@ final class OmChunkPacker
      */
     private function trimMemory(array $reflections, array $observations, int $envelopeTokens, int $fixedOverheadTokens): array
     {
-        // Reserve at least ~40% of remaining envelope after fixed overhead for source.
-        $memoryBudget = max(64, (int) floor(($envelopeTokens - $fixedOverheadTokens) * 0.55));
+        $memoryBudget = max(64, (int) floor(($envelopeTokens - $fixedOverheadTokens) * self::MEMORY_ENVELOPE_FRACTION));
         $total = 0;
         foreach ($reflections as $r) {
             $total += $r['tokens'];
@@ -234,11 +245,9 @@ final class OmChunkPacker
         array $blocks,
         string $memoryText,
         string $timestampLine,
-        string $systemPrompt,
-        string $toolSchemaEstimateText,
         int $budgetForSource,
     ): array {
-        $sourceText = implode("\n\n", array_map(static fn (array $b): string => $b['rendered_text'], $blocks));
+        $sourceText = implode(self::BLOCK_SEPARATOR, array_map(static fn (array $b): string => $b['rendered_text'], $blocks));
         $sourceTokens = OmTokenEstimator::estimate($sourceText);
         if ($sourceTokens <= $budgetForSource) {
             return [$this->buildPart(
@@ -254,25 +263,22 @@ final class OmChunkPacker
             )];
         }
 
-        // Should not happen for multi-block groups (caller packs greedily); split as one logical range.
-        $parts = $this->utf8Parts($sourceText, $budgetForSource);
-        $out = [];
-        $partCount = \count($parts);
-        foreach ($parts as $index => $partText) {
-            $out[] = $this->buildPart(
-                $runId,
-                $rendererVersion,
-                $observerSchemaVersion,
-                $blocks,
-                $partText,
-                $index + 1,
-                $partCount,
-                $memoryText,
-                $timestampLine,
-            );
+        // Greedy grouping must keep multi-block groups under budget; splitting joined
+        // atomic tool/user groups would break source-address integrity.
+        if (\count($blocks) > 1) {
+            throw new \RuntimeException(\sprintf('OmChunkPacker invariant: multi-block group (%d blocks, %d tokens) exceeds source budget %d; separator-aware packing must not produce this state.', \count($blocks), $sourceTokens, $budgetForSource));
         }
 
-        return $out;
+        // Single oversized block: deterministic UTF-8 parts only.
+        return $this->splitOversizedBlock(
+            $runId,
+            $rendererVersion,
+            $observerSchemaVersion,
+            $blocks[0],
+            $memoryText,
+            $timestampLine,
+            $budgetForSource,
+        );
     }
 
     /**
@@ -306,8 +312,6 @@ final class OmChunkPacker
         array $block,
         string $memoryText,
         string $timestampLine,
-        string $systemPrompt,
-        string $toolSchemaEstimateText,
         int $budgetForSource,
     ): array {
         $parts = $this->utf8Parts($block['rendered_text'], $budgetForSource);

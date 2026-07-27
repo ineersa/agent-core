@@ -163,6 +163,116 @@ final class ObserveBoundaryThresholdDispatchTest extends IsolatedKernelTestCase
         $this->assertSame(1, (int) $connection->fetchOne('SELECT COUNT(*) FROM om_observation WHERE run_id = ?', ['run-s']));
     }
 
+    public function testSuppressesThresholdRedispatchWhenFailedGenerationExistsForSet(): void
+    {
+        $content = str_repeat('b', 160_004);
+        $this->assertGreaterThan(40_000, OmTokenEstimator::estimate($content));
+
+        $events = [
+            new SessionEventDTO('run-f', 1, 1, 'agent_command_applied', ['text' => 'hello'], '2026-07-26T00:00:00+00:00'),
+            new SessionEventDTO('run-f', 2, 1, 'agent_end', ['reason' => 'completed'], '2026-07-26T00:00:01+00:00'),
+        ];
+
+        $dispatched = [];
+        $api = $this->buildApi(
+            events: $events,
+            onAgentRun: static function (AgentCallRequestDTO $request) use ($content): void {
+                $tool = $request->tools[0] ?? null;
+                self::assertNotNull($tool);
+                ($tool->handler)([
+                    'observations' => [[
+                        'timestamp' => '2026-07-26 00:00',
+                        'content' => $content,
+                        'relevance' => 'medium',
+                        'source_refs' => [['run_id' => 'run-f', 'seq' => 1]],
+                    ]],
+                ]);
+            },
+            onDispatch: static function (ExtensionAgentJobRequestDTO $request) use (&$dispatched): void {
+                $dispatched[] = $request;
+            },
+            reflectAfter: 40_000,
+        );
+
+        // First boundary: observe + dispatch threshold.
+        (new ObserveBoundaryJobHandler(new NullLogger()))->handle(
+            $api,
+            [
+                'run_id' => 'run-f',
+                'terminal_end_seq' => 2,
+                'terminal_status' => 'completed',
+                'renderer_version' => '1',
+                'observer_schema_version' => '1',
+            ],
+            'job-f1',
+            'run-f',
+        );
+        $this->assertCount(1, $dispatched);
+
+        $obsId = OmIdentity::observationId(
+            'run-f',
+            '1',
+            '2026-07-26 00:00',
+            $content,
+            [['run_id' => 'run-f', 'seq' => 1]],
+        );
+        $setHash = OmIdentity::observationSetHash('run-f', [$obsId]);
+        $generationId = (string) $dispatched[0]->payload['generation_id'];
+
+        // Simulate durable Reflector failure for that exact set (Messenger max_retries exhausted).
+        $dbPath = $this->projectDir.'/.hatfield/extensions-data/observational-memory/om.sqlite';
+        $connection = $this->omDatabaseFactory()->connect($dbPath, new NullLogger());
+        $connection->insert('om_memory_generation', [
+            'generation_id' => $generationId,
+            'run_id' => 'run-f',
+            'trigger_kind' => 'threshold',
+            'status' => 'failed',
+            'observation_set_hash' => $setHash,
+            'reflector_model' => 'llama_cpp_test/test',
+            'reflector_schema_version' => '1',
+            'threshold_idempotency_key' => $generationId,
+            'required_start_seq' => 1,
+            'required_end_seq' => 2,
+            'compaction_request_id' => null,
+            'request_fingerprint' => null,
+            'failure_code' => 'tool_not_called',
+            'created_at' => '2026-07-26T00:00:00+00:00',
+            'completed_at' => '2026-07-26T00:00:01+00:00',
+        ]);
+
+        // Second boundary with same active set must not re-dispatch forever.
+        (new ObserveBoundaryJobHandler(new NullLogger()))->handle(
+            $api,
+            [
+                'run_id' => 'run-f',
+                'terminal_end_seq' => 2,
+                'terminal_status' => 'completed',
+                'renderer_version' => '1',
+                'observer_schema_version' => '1',
+            ],
+            'job-f2',
+            'run-f',
+        );
+        $this->assertCount(1, $dispatched, 'failed generation for exact set must suppress new threshold dispatch');
+
+        // claimGeneration still reclaims failed for the already-delivered Messenger retry.
+        $genRepo = new \Ineersa\HatfieldExt\ObservationalMemory\Storage\MemoryGenerationRepository($connection);
+        $this->assertTrue($genRepo->hasTerminalOrInFlightGenerationForSet('run-f', $setHash));
+        $claim = $genRepo->claimGeneration(
+            generationId: $generationId,
+            runId: 'run-f',
+            triggerKind: 'threshold',
+            observationSetHash: $setHash,
+            reflectorModel: 'llama_cpp_test/test',
+            reflectorSchemaVersion: '1',
+            now: '2026-07-26T00:01:00+00:00',
+            thresholdIdempotencyKey: $generationId,
+            requiredStartSeq: 1,
+            requiredEndSeq: 2,
+        );
+        $this->assertSame('claimed', $claim['status']);
+    }
+
     /**
      * @param list<SessionEventDTO>                      $events
      * @param callable(AgentCallRequestDTO):void         $onAgentRun

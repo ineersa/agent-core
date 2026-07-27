@@ -117,7 +117,7 @@ final class OmSourceBlockBuilder
                     $result = $event->payload['result'] ?? $event->payload['output'] ?? '';
                     $resultText = \is_string($result) ? $result : $this->jsonCompact($result);
                     $isError = (bool) ($event->payload['is_error'] ?? false);
-                    $digested = $this->digestToolResult($resultText);
+                    $digested = $this->truncateToolResultWithDigest($resultText);
                     $resultLine = \sprintf(
                         '[Tool result for %s @ %s]%s:',
                         $name,
@@ -153,7 +153,7 @@ final class OmSourceBlockBuilder
                         $blocks[] = $this->singleBlock(
                             $event,
                             'tool_message',
-                            $this->formatRoleLine('Tool', $timestamp, $this->digestToolResult($text)),
+                            $this->formatRoleLine('Tool', $timestamp, $this->truncateToolResultWithDigest($text)),
                         );
                     }
                     break;
@@ -236,7 +236,7 @@ final class OmSourceBlockBuilder
         return (new \DateTimeImmutable('now'))->format('Y-m-d H:i');
     }
 
-    private function digestToolResult(string $text): string
+    private function truncateToolResultWithDigest(string $text): string
     {
         $chars = mb_strlen($text, 'UTF-8');
         $sha = hash('sha256', $text);

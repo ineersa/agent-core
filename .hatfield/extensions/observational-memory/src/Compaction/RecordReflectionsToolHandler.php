@@ -281,8 +281,17 @@ final class RecordReflectionsToolHandler implements ExtensionToolHandlerInterfac
 
     private function looksLikeSecret(string $content): bool
     {
+        // PEM private key material.
+        if (1 === preg_match('/BEGIN (?:RSA |OPENSSH |EC )?PRIVATE KEY/i', $content)) {
+            return true;
+        }
+
+        // Credential-shaped assignments/values only — not technical facts like "uses JWT tokens".
         return 1 === preg_match(
-            '/\b(api[_-]?key|password|secret|token|private[_-]?key|BEGIN (RSA |OPENSSH |EC )?PRIVATE KEY)\b/i',
+            '/\b(?:api[_-]?key|password|client[_-]?secret|access[_-]?token|auth[_-]?token|bearer\s+token|private[_-]?key)\b\s*[:=]/i',
+            $content,
+        ) || 1 === preg_match(
+            '/\b(?:api[_-]?key|password|client[_-]?secret|access[_-]?token|auth[_-]?token)\b\s+["\']?\S+/i',
             $content,
         );
     }
