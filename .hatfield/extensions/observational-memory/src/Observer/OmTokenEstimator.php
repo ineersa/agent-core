@@ -11,8 +11,6 @@ final class OmTokenEstimator
 {
     public static function estimate(string $text): int
     {
-        $chars = max(0, mb_strlen($text, 'UTF-8'));
-
-        return (int) ceil($chars / 4);
+        return (int) ceil(mb_strlen($text, 'UTF-8') / 4);
     }
 }

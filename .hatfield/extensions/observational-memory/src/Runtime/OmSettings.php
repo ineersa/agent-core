@@ -38,7 +38,6 @@ final readonly class OmSettings
     public const string DEFAULT_REFLECTOR_THINKING_LEVEL = 'high';
 
     public function __construct(
-        public bool $enabled,
         public string $databasePath,
         public ?string $observerModel,
         public string $observerThinkingLevel,
@@ -66,11 +65,6 @@ final readonly class OmSettings
      */
     public static function fromArray(array $raw): self
     {
-        $enabled = true;
-        if (\array_key_exists('enabled', $raw)) {
-            $enabled = filter_var($raw['enabled'], \FILTER_VALIDATE_BOOL, \FILTER_NULL_ON_FAILURE) ?? true;
-        }
-
         $databasePath = self::DEFAULT_RELATIVE_DB_PATH;
         $storage = $raw['storage'] ?? null;
         if (\is_array($storage) && isset($storage['database']) && \is_string($storage['database']) && '' !== $storage['database']) {
@@ -134,7 +128,6 @@ final readonly class OmSettings
         }
 
         return new self(
-            enabled: $enabled,
             databasePath: $databasePath,
             observerModel: $observerModel,
             observerThinkingLevel: $observerThinking,
@@ -168,7 +161,6 @@ final readonly class OmSettings
     public function withRendererAndObserverVersions(string $rendererVersion, string $observerSchemaVersion): self
     {
         return new self(
-            enabled: $this->enabled,
             databasePath: $this->databasePath,
             observerModel: $this->observerModel,
             observerThinkingLevel: $this->observerThinkingLevel,
@@ -189,11 +181,6 @@ final readonly class OmSettings
     public function observerEnvelope(int $contextWindow): int
     {
         return self::envelope($contextWindow, $this->observerContextWindowRatio);
-    }
-
-    public function reflectorEnvelope(int $contextWindow): int
-    {
-        return self::envelope($contextWindow, $this->reflectorContextWindowRatio);
     }
 
     public static function envelope(int $contextWindow, float $ratio): int

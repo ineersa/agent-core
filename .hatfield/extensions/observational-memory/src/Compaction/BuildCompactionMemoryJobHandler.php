@@ -35,10 +35,6 @@ final readonly class BuildCompactionMemoryJobHandler implements ExtensionAgentJo
     public function handle(ExtensionApiInterface $api, array $payload, ?string $jobId, ?string $correlationId): void
     {
         $settings = OmSettings::fromApi($api);
-        if (!$settings->enabled) {
-            return;
-        }
-
         $requestId = (string) ($payload['request_id'] ?? '');
         $runId = (string) ($payload['run_id'] ?? '');
         $requiredStartSeq = (int) ($payload['required_start_seq'] ?? 0);
@@ -233,9 +229,6 @@ final readonly class BuildCompactionMemoryJobHandler implements ExtensionAgentJo
                     requestFingerprint: $requestFingerprint,
                     observationSetHash: $observationSetHash,
                     replacementText: $produced['rendered_text'],
-                    reflectorModel: $reflectorModel,
-                    reflectorSchemaVersion: $settings->reflectorSchemaVersion,
-                    reflections: [],
                     now: $now,
                     metadata: [
                         'generation_id' => $generationId,
@@ -396,9 +389,6 @@ final readonly class BuildCompactionMemoryJobHandler implements ExtensionAgentJo
             requestFingerprint: $requestFingerprint,
             observationSetHash: $observationSetHash,
             replacementText: $text,
-            reflectorModel: $reflectorModel,
-            reflectorSchemaVersion: $reflectorSchemaVersion,
-            reflections: [],
             now: $now,
             metadata: [
                 'generation_id' => $generationId,

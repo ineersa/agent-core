@@ -1533,16 +1533,15 @@ Settings for the project Observational Memory extension
 `ExtensionApiInterface::getSettings('observational_memory')`.
 
 OM is **not enabled by default**. This repository’s tracked `.hatfield/settings.yaml`
-omits the extension class from `extensions.enabled` and ships a nested
-`extensions.settings.observational_memory` example with `enabled: false` so local/dev
-sessions do not start Observer/Reflector workers or write `om.sqlite` until both the
-class is listed under `extensions.enabled` and `enabled: true` is set.
+omits the extension class from `extensions.enabled` and ships an inert nested
+`extensions.settings.observational_memory` example. Local/dev sessions do not start
+Observer/Reflector workers or write `om.sqlite` until the class is listed under
+`extensions.enabled`.
 
 Nested shape only (no flat budget compatibility keys):
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| `enabled` | bool | `true` (when section present) | Set `false` to keep the class loaded but skip observe/compaction work. |
 | `storage.database` | string | `.hatfield/extensions-data/observational-memory/om.sqlite` | Extension-owned SQLite path. |
 | `observer.model` | string | *(required)* | Exact `provider/model` for Observer jobs. |
 | `observer.thinking_level` | string | `medium` | Observer thinking level. |
@@ -1558,7 +1557,7 @@ Nested shape only (no flat budget compatibility keys):
 | `pools.reflections_max_tokens` | int | `10000` | Active reflection pool budget after Reflector. |
 | `compaction.wait_timeout_seconds` | int | `180` | CompactRun hook poll timeout waiting on `om.sqlite` result. |
 
-Example (activation surface; keep disabled in tracked project settings):
+Example (activation surface; tracked project settings omit the class from extensions.enabled):
 
 ```yaml
 extensions:
@@ -1567,7 +1566,6 @@ extensions:
         - Ineersa\HatfieldExt\ObservationalMemory\ObservationalMemoryExtension
     settings:
         observational_memory:
-            enabled: true
             storage:
                 database: .hatfield/extensions-data/observational-memory/om.sqlite
             observer:

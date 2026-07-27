@@ -21,7 +21,6 @@ final class ObserveBoundaryTerminalHookTest extends TestCase
     {
         $api = new InMemoryExtensionApiBridge('/tmp');
         $settings = OmSettings::fromArray([
-            'enabled' => true,
             'observer' => [
                 'model' => 'llama_cpp_test/test',
                 'schema_version' => 'o1',
@@ -56,7 +55,6 @@ final class ObserveBoundaryTerminalHookTest extends TestCase
     {
         $api = new InMemoryExtensionApiBridge('/tmp');
         $settings = OmSettings::fromArray([
-            'enabled' => true,
             'observer' => [
                 'model' => 'llama_cpp_test/test',
                 'schema_version' => 'o1',

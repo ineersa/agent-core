@@ -252,7 +252,6 @@ final class ObserverChunkAndToolTest extends TestCase
             observerSchemaVersion: '1',
             allowedSourceRefs: [['run_id' => 'run-1', 'seq' => 1]],
         );
-        $this->assertFalse($handler->hasAnyCall());
         $this->assertSame([], $handler->collected());
     }
 }

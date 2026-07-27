@@ -40,15 +40,8 @@ final class ObservationalMemoryExtension implements HatfieldExtensionInterface, 
 
     public function register(ExtensionApiInterface $api): void
     {
+        // Presence on extensions.enabled is the sole enable switch.
         $settings = OmSettings::fromApi($api);
-        if (!$settings->enabled) {
-            $this->logger->info('om.extension.disabled', [
-                'component' => 'observational_memory',
-                'event_type' => 'om.extension.disabled',
-            ]);
-
-            return;
-        }
 
         $api->registerExtensionAgentJobHandler(
             ObserveBoundaryTerminalHook::HANDLER_ID,

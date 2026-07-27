@@ -32,10 +32,6 @@ final readonly class ObserveBoundaryJobHandler implements ExtensionAgentJobHandl
     public function handle(ExtensionApiInterface $api, array $payload, ?string $jobId, ?string $correlationId): void
     {
         $settings = OmSettings::fromApi($api);
-        if (!$settings->enabled) {
-            return;
-        }
-
         $runId = (string) ($payload['run_id'] ?? '');
         $terminalEndSeq = (int) ($payload['terminal_end_seq'] ?? 0);
         $terminalStatus = (string) ($payload['terminal_status'] ?? '');

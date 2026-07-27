@@ -54,7 +54,6 @@ final class ReflectGenerationJobHandlerTest extends IsolatedKernelTestCase
     public function testThresholdNoopWhenUnderTokenGate(): void
     {
         $settings = OmSettings::fromArray([
-            'enabled' => true,
             'observer' => ['model' => 'llama_cpp_test/test'],
             'reflector' => ['model' => 'llama_cpp_test/test', 'reflect_after_observation_tokens' => 40_000],
         ]);
@@ -112,7 +111,6 @@ final class ReflectGenerationJobHandlerTest extends IsolatedKernelTestCase
     public function testThresholdReflectPromotesActiveGenerationAndIsIdempotent(): void
     {
         $settings = OmSettings::fromArray([
-            'enabled' => true,
             'observer' => ['model' => 'llama_cpp_test/test'],
             'reflector' => ['model' => 'llama_cpp_test/test', 'reflect_after_observation_tokens' => 1],
         ]);
@@ -235,7 +233,6 @@ final class ReflectGenerationJobHandlerTest extends IsolatedKernelTestCase
                 }
 
                 return [
-                    'enabled' => $this->settings->enabled,
                     'storage' => ['database' => $this->settings->databasePath],
                     'observer' => [
                         'model' => $this->settings->observerModel,

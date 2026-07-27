@@ -30,16 +30,6 @@ final class OmIdentity
         ];
     }
 
-    public static function mapLegacyRelevance(int $legacy): string
-    {
-        return match (true) {
-            $legacy <= 24 => self::RELEVANCE_LOW,
-            $legacy <= 49 => self::RELEVANCE_MEDIUM,
-            $legacy <= 74 => self::RELEVANCE_HIGH,
-            default => self::RELEVANCE_CRITICAL,
-        };
-    }
-
     public static function relevanceRank(string $relevance): int
     {
         return match ($relevance) {

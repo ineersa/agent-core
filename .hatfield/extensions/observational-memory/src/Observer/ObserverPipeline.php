@@ -11,6 +11,7 @@ use Ineersa\Hatfield\ExtensionApi\Session\SessionEventDTO;
 use Ineersa\HatfieldExt\ObservationalMemory\Runtime\OmSettings;
 use Ineersa\HatfieldExt\ObservationalMemory\Storage\MemoryGenerationRepository;
 use Ineersa\HatfieldExt\ObservationalMemory\Storage\ObservationRepository;
+use Ineersa\HatfieldExt\ObservationalMemory\Support\OmCanonicalJson;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -309,10 +310,6 @@ final readonly class ObserverPipeline
 
     private function toolSchemaEstimateText(): string
     {
-        try {
-            return json_encode($this->toolParametersSchema(), \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE);
-        } catch (\JsonException) {
-            return 'record_observations schema';
-        }
+        return OmCanonicalJson::encode($this->toolParametersSchema());
     }
 }

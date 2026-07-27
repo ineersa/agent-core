@@ -29,13 +29,10 @@ final class ReflectorPipeline
      *     content: string,
      *     supporting_observation_ids: list<string>,
      *     supporting_observation_ids_json: string,
-     *     token_count: int,
-     *     retained: bool
+     *     token_count: int
      *   }>,
      *   retained_observation_ids: list<string>,
-     *   rendered_text: string,
-     *   reflection_tokens: int,
-     *   observation_tokens: int
+     *   rendered_text: string
      * }
      */
     public function produceCandidate(
@@ -97,7 +94,6 @@ final class ReflectorPipeline
             allowedReflectionIds: $allowedReflectionIds,
             allowedObservationIds: $allowedObservationIds,
             activeById: $activeById,
-            requireNonEmptyOutput: true,
             jobId: $jobId,
             correlationId: $correlationId,
         );
@@ -132,7 +128,6 @@ final class ReflectorPipeline
             allowedReflectionIds: $allowedReflectionIds,
             allowedObservationIds: $allowedObservationIds,
             activeById: $activeById,
-            requireNonEmptyOutput: true,
             jobId: $jobId,
             correlationId: $correlationId,
         );
@@ -240,8 +235,7 @@ final class ReflectorPipeline
      *     content: string,
      *     supporting_observation_ids: list<string>,
      *     supporting_observation_ids_json: string,
-     *     token_count: int,
-     *     retained: bool
+     *     token_count: int
      *   }>,
      *   retained_observation_ids: list<string>
      * }
@@ -255,7 +249,6 @@ final class ReflectorPipeline
         array $allowedReflectionIds,
         array $allowedObservationIds,
         array $activeById,
-        bool $requireNonEmptyOutput,
         ?string $jobId,
         ?string $correlationId,
     ): array {
@@ -265,7 +258,6 @@ final class ReflectorPipeline
             allowedReflectionIds: $allowedReflectionIds,
             allowedObservationIds: $allowedObservationIds,
             activeReflectionsById: $activeById,
-            requireNonEmptyOutput: $requireNonEmptyOutput,
         );
 
         $api->agent()->run(new AgentCallRequestDTO(
@@ -389,8 +381,7 @@ final class ReflectorPipeline
      *     content: string,
      *     supporting_observation_ids: list<string>,
      *     supporting_observation_ids_json: string,
-     *     token_count: int,
-     *     retained: bool
+     *     token_count: int
      *   }>,
      *   retained_observation_ids: list<string>
      * } $candidate
@@ -402,13 +393,10 @@ final class ReflectorPipeline
      *     content: string,
      *     supporting_observation_ids: list<string>,
      *     supporting_observation_ids_json: string,
-     *     token_count: int,
-     *     retained: bool
+     *     token_count: int
      *   }>,
      *   retained_observation_ids: list<string>,
-     *   rendered_text: string,
-     *   reflection_tokens: int,
-     *   observation_tokens: int
+     *   rendered_text: string
      * }
      */
     private function finalizeCandidate(array $candidate, array $activeObservations): array
@@ -419,20 +407,16 @@ final class ReflectorPipeline
         }
 
         $retainedObs = [];
-        $observationTokens = 0;
         foreach ($candidate['retained_observation_ids'] as $id) {
             $observation = $byId[$id] ?? null;
             if (null === $observation) {
                 continue;
             }
             $retainedObs[] = $observation;
-            $observationTokens += OmTokenEstimator::estimate($observation['content']);
         }
 
-        $reflectionTokens = 0;
         $renderReflections = [];
         foreach ($candidate['reflections'] as $position => $reflection) {
-            $reflectionTokens += OmTokenEstimator::estimate($reflection['content']);
             $renderReflections[] = [
                 'reflection_id' => $reflection['reflection_id'],
                 'content' => $reflection['content'],
@@ -449,8 +433,6 @@ final class ReflectorPipeline
             'reflections' => $candidate['reflections'],
             'retained_observation_ids' => $candidate['retained_observation_ids'],
             'rendered_text' => $rendered,
-            'reflection_tokens' => $reflectionTokens,
-            'observation_tokens' => $observationTokens,
         ];
     }
 

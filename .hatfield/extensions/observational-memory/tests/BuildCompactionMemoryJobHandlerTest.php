@@ -117,7 +117,6 @@ final class BuildCompactionMemoryJobHandlerTest extends IsolatedKernelTestCase
         });
 
         $settings = OmSettings::fromArray([
-            'enabled' => true,
             'observer' => ['model' => 'llama_cpp_test/test', 'schema_version' => 'o1', 'renderer_version' => 'r1'],
             'reflector' => ['model' => 'llama_cpp_test/test'],
         ]);
@@ -198,7 +197,6 @@ final class BuildCompactionMemoryJobHandlerTest extends IsolatedKernelTestCase
         });
 
         $settings = OmSettings::fromArray([
-            'enabled' => true,
             'observer' => ['model' => 'llama_cpp_test/test', 'schema_version' => 'o1', 'renderer_version' => 'r1'],
             'reflector' => ['model' => 'llama_cpp_test/test'],
         ]);
@@ -266,7 +264,6 @@ final class BuildCompactionMemoryJobHandlerTest extends IsolatedKernelTestCase
         });
 
         $settings = OmSettings::fromArray([
-            'enabled' => true,
             'observer' => ['model' => 'llama_cpp_test/test', 'schema_version' => 'o1', 'renderer_version' => 'r1'],
             'reflector' => ['model' => 'llama_cpp_test/test'],
         ]);
@@ -309,7 +306,6 @@ final class BuildCompactionMemoryJobHandlerTest extends IsolatedKernelTestCase
         });
 
         $settings = OmSettings::fromArray([
-            'enabled' => true,
             'observer' => ['model' => 'llama_cpp_test/test', 'schema_version' => 'o1', 'renderer_version' => 'r1'],
             'reflector' => ['model' => 'llama_cpp_test/test'],
         ]);
@@ -393,7 +389,6 @@ final class BuildCompactionMemoryJobHandlerTest extends IsolatedKernelTestCase
         });
 
         $settings = OmSettings::fromArray([
-            'enabled' => true,
             'observer' => ['model' => 'llama_cpp_test/test', 'schema_version' => 'o1', 'renderer_version' => 'r1'],
             'reflector' => ['model' => 'llama_cpp_test/test'],
         ]);
@@ -531,7 +526,6 @@ final class BuildCompactionMemoryJobHandlerTest extends IsolatedKernelTestCase
             public function getSettings(string $key): array
             {
                 return [
-                    'enabled' => true,
                     'observer' => [
                         'model' => 'llama_cpp_test/test',
                         'schema_version' => 'o1',

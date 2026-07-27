@@ -141,9 +141,13 @@ final class OmLiveLlmSmokeTest extends IsolatedKernelTestCase
         ));
 
         $this->assertGreaterThanOrEqual(2, $invocationCount, 'Observer model must invoke record_observations at least twice');
-        $this->assertTrue($handler->hasAnyCall(), 'Observer model must call record_observations');
         $collected = $handler->collected();
         $this->assertGreaterThanOrEqual(2, \count($collected), 'Observer must accept at least two observations across tool calls');
+        $contents = array_map(static fn (array $observation): string => $observation['content'], $collected);
+        $this->assertNotEmpty(array_filter(
+            $contents,
+            static fn (string $content): bool => str_contains(strtolower($content), 'postgres') || str_contains(strtolower($content), 'feature flag'),
+        ), 'Collected observations must include expected multi-call content');
 
         $dbPath = $this->tmpDir.'/.hatfield/extensions-data/observational-memory/live-obs.sqlite';
         $connection = $this->omDatabaseFactory()->connectAndMigrate($dbPath, new NullLogger());
@@ -190,7 +194,6 @@ final class OmLiveLlmSmokeTest extends IsolatedKernelTestCase
             allowedReflectionIds: [],
             allowedObservationIds: [$obsId => true],
             activeReflectionsById: [],
-            requireNonEmptyOutput: true,
         );
 
         // Stable scenario tag for llama-proxy cache normalization (no random content).

@@ -91,32 +91,9 @@ final class CompactionRepositoryTest extends IsolatedKernelTestCase
             requestFingerprint: 'fp-m',
             observationSetHash: 'set-m',
             replacementText: 'summary',
-            reflectorModel: 'p/m',
-            reflectorSchemaVersion: 'rv1',
-            reflections: [
-                [
-                    'reflection_id' => 'ref-1',
-                    'content' => 'one',
-                    'supporting_observation_ids_json' => '[]',
-                    'compression_level' => '0',
-                    'token_count' => 1,
-                ],
-                [
-                    'reflection_id' => 'ref-2',
-                    'content' => 'two',
-                    'supporting_observation_ids_json' => '[]',
-                    'compression_level' => '0',
-                    'token_count' => 1,
-                ],
-            ],
             now: $now,
         );
 
-        $count = (int) $connection->fetchOne(
-            'SELECT COUNT(*) FROM om_reflection WHERE compaction_request_id = ?',
-            ['req-m'],
-        );
-        $this->assertSame(2, $count);
         $frozen = $connection->fetchOne(
             'SELECT observation_set_hash FROM om_compaction_request WHERE request_id = ?',
             ['req-m'],

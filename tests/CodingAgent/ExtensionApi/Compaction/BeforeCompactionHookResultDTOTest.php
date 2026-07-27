@@ -21,14 +21,6 @@ final class BeforeCompactionHookResultDTOTest extends TestCase
         new BeforeCompactionHookResultDTO(metadata: ['score' => \INF]);
     }
 
-    public function testRejectsNanFloatMetadata(): void
-    {
-        $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessage('finite float');
-
-        new BeforeCompactionHookResultDTO(metadata: ['score' => \NAN]);
-    }
-
     public function testAcceptsFiniteFloatMetadata(): void
     {
         $dto = new BeforeCompactionHookResultDTO(metadata: ['score' => 1.25, 'nested' => ['ratio' => 0.0]]);

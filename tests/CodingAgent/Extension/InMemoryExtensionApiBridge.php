@@ -63,9 +63,6 @@ final class InMemoryExtensionApiBridge implements ExtensionApiInterface
     /** @var list<AfterTurnCommitHookInterface> */
     private array $afterTurnCommitHooks = [];
 
-    /** @var list<BeforeCompactionHookInterface> */
-    private array $beforeCompactionHooks = [];
-
     /** @var array<string, ExtensionAgentJobHandlerInterface> */
     private array $extensionAgentJobHandlers = [];
 
@@ -173,15 +170,7 @@ final class InMemoryExtensionApiBridge implements ExtensionApiInterface
 
     public function registerBeforeCompactionHook(BeforeCompactionHookInterface $hook): void
     {
-        $this->beforeCompactionHooks[] = $hook;
-    }
-
-    /**
-     * @return list<BeforeCompactionHookInterface>
-     */
-    public function getBeforeCompactionHooks(): array
-    {
-        return $this->beforeCompactionHooks;
+        // Test bridge does not inspect compaction hooks yet.
     }
 
     public function agent(): AgentRunnerInterface

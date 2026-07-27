@@ -34,10 +34,6 @@ final readonly class OmBeforeCompactionHook implements BeforeCompactionHookInter
 
     public function beforeCompaction(BeforeCompactionHookContextDTO $context): BeforeCompactionHookResultDTO
     {
-        if (!$this->settings->enabled) {
-            return BeforeCompactionHookResultDTO::continue();
-        }
-
         if (1 !== $context->requiredStartSeq) {
             return BeforeCompactionHookResultDTO::cancel(
                 'observational_memory requires requiredStartSeq=1 for session-global coverage.',

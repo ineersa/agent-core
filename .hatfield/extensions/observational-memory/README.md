@@ -79,9 +79,9 @@ CompactRun prepares the public hook context. Contiguous coverage never uses
 ## Activation
 
 OM is **not enabled by default**. Tracked project `.hatfield/settings.yaml` omits the
-extension class from `extensions.enabled` and ships a nested
-`observational_memory` example with `enabled: false`. Activate by listing the class
-and setting `enabled: true` with exact models:
+extension class from `extensions.enabled` and ships an inert nested
+`observational_memory` settings example. Activate by listing the class under
+`extensions.enabled` and configuring exact models:
 
 ```yaml
 # project .hatfield/settings.yaml
@@ -90,7 +90,6 @@ extensions:
     - Ineersa\HatfieldExt\ObservationalMemory\ObservationalMemoryExtension
   settings:
     observational_memory:
-      enabled: true
       storage:
         database: .hatfield/extensions-data/observational-memory/om.sqlite
       observer:

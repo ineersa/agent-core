@@ -8,7 +8,7 @@ use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 
 /**
- * Durable compaction request/result + reflection persistence with immutable request identity.
+ * Durable compaction request/result persistence with immutable request identity.
  *
  * request_fingerprint is identity; observation_set_hash is frozen later by the worker.
  */
@@ -246,13 +246,6 @@ final class CompactionRepository
     }
 
     /**
-     * @param list<array{
-     *   reflection_id: string,
-     *   content: string,
-     *   supporting_observation_ids_json: string,
-     *   compression_level: string,
-     *   token_count: int
-     * }> $reflections
      * @param array<string, mixed>|null $metadata
      *
      * @return array{status: 'inserted'|'noop'}
@@ -267,9 +260,6 @@ final class CompactionRepository
         string $requestFingerprint,
         string $observationSetHash,
         string $replacementText,
-        string $reflectorModel,
-        string $reflectorSchemaVersion,
-        array $reflections,
         string $now,
         ?array $metadata = null,
     ): array {
@@ -344,32 +334,6 @@ final class CompactionRepository
                 $requiredWatermark,
                 $requestFingerprint,
             );
-
-            foreach ($reflections as $reflection) {
-                try {
-                    $this->connection->insert('om_reflection', [
-                        'reflection_id' => $reflection['reflection_id'],
-                        'run_id' => $runId,
-                        'compaction_request_id' => $requestId,
-                        'observation_set_hash' => $observationSetHash,
-                        'content' => $reflection['content'],
-                        'supporting_observation_ids_json' => $reflection['supporting_observation_ids_json'],
-                        'compression_level' => $reflection['compression_level'],
-                        'token_count' => $reflection['token_count'],
-                        'reflector_model' => $reflectorModel,
-                        'reflector_schema_version' => $reflectorSchemaVersion,
-                        'created_at' => $now,
-                    ]);
-                } catch (UniqueConstraintViolationException $e) {
-                    $prior = $this->connection->fetchOne(
-                        'SELECT content FROM om_reflection WHERE reflection_id = ?',
-                        [$reflection['reflection_id']],
-                    );
-                    if ($prior !== $reflection['content']) {
-                        throw new OmConflictException(\sprintf('Reflection conflict for id %s.', $reflection['reflection_id']), previous: $e);
-                    }
-                }
-            }
 
             try {
                 $this->connection->insert('om_compaction_result', [

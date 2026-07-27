@@ -54,7 +54,6 @@ final class OmBeforeCompactionHookTest extends IsolatedKernelTestCase
     public function testSuccessPathReturnsReplacementFromResultRow(): void
     {
         $settings = OmSettings::fromArray([
-            'enabled' => true,
             'observer' => ['model' => 'llama_cpp_test/test', 'schema_version' => 'o1', 'renderer_version' => 'r1'],
             'reflector' => ['model' => 'llama_cpp_test/test'],
         ]);
@@ -87,7 +86,6 @@ final class OmBeforeCompactionHookTest extends IsolatedKernelTestCase
             public function getSettings(string $key): array
             {
                 return [
-                    'enabled' => true,
                     'observer' => [
                         'model' => 'llama_cpp_test/test',
                         'schema_version' => 'o1',
@@ -195,9 +193,6 @@ final class OmBeforeCompactionHookTest extends IsolatedKernelTestCase
                     requestFingerprint: (string) $payload['request_fingerprint'],
                     observationSetHash: 'obs-set',
                     replacementText: 'OM replacement summary',
-                    reflectorModel: 'llama_cpp_test/test',
-                    reflectorSchemaVersion: 'om-reflector-v1',
-                    reflections: [],
                     now: $now,
                     metadata: [
                         'source' => 'test',
@@ -244,7 +239,6 @@ final class OmBeforeCompactionHookTest extends IsolatedKernelTestCase
     public function testTimeoutCancelsWithoutPersistingTimedOutState(): void
     {
         $settings = OmSettings::fromArray([
-            'enabled' => true,
             'observer' => ['model' => 'llama_cpp_test/test', 'schema_version' => 'o1', 'renderer_version' => 'r1'],
             'reflector' => ['model' => 'llama_cpp_test/test'],
         ]);
@@ -270,7 +264,6 @@ final class OmBeforeCompactionHookTest extends IsolatedKernelTestCase
             public function getSettings(string $key): array
             {
                 return [
-                    'enabled' => true,
                     'observer' => [
                         'model' => 'llama_cpp_test/test',
                         'schema_version' => 'o1',
@@ -385,7 +378,6 @@ final class OmBeforeCompactionHookTest extends IsolatedKernelTestCase
     public function testDurableFailedResultCancelsImmediatelyWithoutRedispatchWait(): void
     {
         $settings = OmSettings::fromArray([
-            'enabled' => true,
             'observer' => ['model' => 'llama_cpp_test/test', 'schema_version' => 'o1', 'renderer_version' => 'r1'],
             'reflector' => ['model' => 'llama_cpp_test/test'],
         ]);
@@ -414,7 +406,6 @@ final class OmBeforeCompactionHookTest extends IsolatedKernelTestCase
             public function getSettings(string $key): array
             {
                 return [
-                    'enabled' => true,
                     'observer' => [
                         'model' => 'llama_cpp_test/test',
                         'schema_version' => 'o1',
@@ -569,7 +560,6 @@ final class OmBeforeCompactionHookTest extends IsolatedKernelTestCase
     public function testTerminalWithoutResultCancelsImmediatelyWithoutDispatch(): void
     {
         $settings = OmSettings::fromArray([
-            'enabled' => true,
             'observer' => ['model' => 'llama_cpp_test/test', 'schema_version' => 'o1', 'renderer_version' => 'r1'],
             'reflector' => ['model' => 'llama_cpp_test/test'],
         ]);
@@ -598,7 +588,6 @@ final class OmBeforeCompactionHookTest extends IsolatedKernelTestCase
             public function getSettings(string $key): array
             {
                 return [
-                    'enabled' => true,
                     'observer' => [
                         'model' => 'llama_cpp_test/test',
                         'schema_version' => 'o1',
@@ -754,7 +743,6 @@ final class OmBeforeCompactionHookTest extends IsolatedKernelTestCase
     public function testMalformedResultMetadataCancelsWithoutLeakingRawContent(): void
     {
         $settings = OmSettings::fromArray([
-            'enabled' => true,
             'observer' => ['model' => 'llama_cpp_test/test', 'schema_version' => 'o1', 'renderer_version' => 'r1'],
             'reflector' => ['model' => 'llama_cpp_test/test'],
         ]);
@@ -783,7 +771,6 @@ final class OmBeforeCompactionHookTest extends IsolatedKernelTestCase
             public function getSettings(string $key): array
             {
                 return [
-                    'enabled' => true,
                     'observer' => [
                         'model' => 'llama_cpp_test/test',
                         'schema_version' => 'o1',
@@ -880,9 +867,6 @@ final class OmBeforeCompactionHookTest extends IsolatedKernelTestCase
                     requestFingerprint: (string) $payload['request_fingerprint'],
                     observationSetHash: 'obs-set',
                     replacementText: 'text ok',
-                    reflectorModel: 'llama_cpp_test/test',
-                    reflectorSchemaVersion: 'om-reflector-v1',
-                    reflections: [],
                     now: $now,
                     metadata: null,
                 );

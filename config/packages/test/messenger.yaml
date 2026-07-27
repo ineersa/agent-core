@@ -39,6 +39,3 @@ framework:
                 dsn: '%env(HATFIELD_MCP_TRANSPORT_DSN)%'
             extension_agent:
                 dsn: '%env(HATFIELD_EXTENSION_AGENT_TRANSPORT_DSN)%'
-                # Match production: initial attempt + one retry, no failure transport.
-                retry_strategy:
-                    max_retries: 1

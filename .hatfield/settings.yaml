@@ -81,7 +81,6 @@ extensions:
         castor_llm_mode:
             enabled: true
         observational_memory:
-            enabled: false
             storage:
                 database: .hatfield/extensions-data/observational-memory/om.sqlite
             observer:

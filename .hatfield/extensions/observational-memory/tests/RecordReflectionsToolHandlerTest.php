@@ -31,7 +31,6 @@ final class RecordReflectionsToolHandlerTest extends TestCase
                     'token_count' => 4,
                 ],
             ],
-            requireNonEmptyOutput: true,
         );
 
         $first = $handler([
@@ -85,7 +84,6 @@ final class RecordReflectionsToolHandlerTest extends TestCase
             allowedReflectionIds: [],
             allowedObservationIds: ['obs-a' => true],
             activeReflectionsById: [],
-            requireNonEmptyOutput: true,
         );
 
         $rejected = $handler([
@@ -105,7 +103,6 @@ final class RecordReflectionsToolHandlerTest extends TestCase
             allowedReflectionIds: [],
             allowedObservationIds: ['obs-a' => true],
             activeReflectionsById: [],
-            requireNonEmptyOutput: true,
         );
 
         $badRetain = $handler([
@@ -133,7 +130,6 @@ final class RecordReflectionsToolHandlerTest extends TestCase
             allowedReflectionIds: [],
             allowedObservationIds: ['obs-a' => true],
             activeReflectionsById: [],
-            requireNonEmptyOutput: true,
         );
 
         $jwt = $handler([
@@ -152,7 +148,6 @@ final class RecordReflectionsToolHandlerTest extends TestCase
             allowedReflectionIds: [],
             allowedObservationIds: ['obs-a' => true],
             activeReflectionsById: [],
-            requireNonEmptyOutput: true,
         );
         $secret = $handler2([
             'reflections' => [[

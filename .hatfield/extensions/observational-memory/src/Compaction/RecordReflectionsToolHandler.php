@@ -25,8 +25,7 @@ final class RecordReflectionsToolHandler implements ExtensionToolHandlerInterfac
      *   content: string,
      *   supporting_observation_ids: list<string>,
      *   supporting_observation_ids_json: string,
-     *   token_count: int,
-     *   retained: bool
+     *   token_count: int
      * }>
      */
     private array $reflections = [];
@@ -51,7 +50,6 @@ final class RecordReflectionsToolHandler implements ExtensionToolHandlerInterfac
         private readonly array $allowedReflectionIds,
         private readonly array $allowedObservationIds,
         private readonly array $activeReflectionsById,
-        private readonly bool $requireNonEmptyOutput,
     ) {
     }
 
@@ -65,7 +63,7 @@ final class RecordReflectionsToolHandler implements ExtensionToolHandlerInterfac
             );
         }
 
-        $rawRetained = $arguments['retained_observation_ids'] ?? $arguments['retainedObservationIds'] ?? null;
+        $rawRetained = $arguments['retained_observation_ids'] ?? null;
         if (!\is_array($rawRetained)) {
             return $this->reject(
                 'invalid_arguments',
@@ -73,7 +71,7 @@ final class RecordReflectionsToolHandler implements ExtensionToolHandlerInterfac
             );
         }
 
-        if ($this->requireNonEmptyOutput && [] === $rawReflections && [] === $rawRetained) {
+        if ([] === $rawReflections && [] === $rawRetained) {
             return $this->reject(
                 'empty_generation',
                 'When active memory is non-empty, record_reflections must retain reflections and/or observations.',
@@ -111,8 +109,7 @@ final class RecordReflectionsToolHandler implements ExtensionToolHandlerInterfac
      *   content: string,
      *   supporting_observation_ids: list<string>,
      *   supporting_observation_ids_json: string,
-     *   token_count: int,
-     *   retained: bool
+     *   token_count: int
      * }>
      */
     public function reflections(): array
@@ -148,8 +145,7 @@ final class RecordReflectionsToolHandler implements ExtensionToolHandlerInterfac
      *   content: string,
      *   supporting_observation_ids: list<string>,
      *   supporting_observation_ids_json: string,
-     *   token_count: int,
-     *   retained: bool
+     *   token_count: int
      * }>
      */
     private function validateReflections(array $rawReflections): array
@@ -162,9 +158,9 @@ final class RecordReflectionsToolHandler implements ExtensionToolHandlerInterfac
                 throw new \InvalidArgumentException(\sprintf('Reflection at index %d must be an object.', $index));
             }
 
-            $retainId = $raw['retain_id'] ?? $raw['retainId'] ?? null;
+            $retainId = $raw['retain_id'] ?? null;
             $content = $raw['content'] ?? null;
-            $support = $raw['supporting_observation_ids'] ?? $raw['supportingObservationIds'] ?? null;
+            $support = $raw['supporting_observation_ids'] ?? null;
 
             $hasRetain = null !== $retainId;
             $hasNew = null !== $content || null !== $support;
@@ -197,7 +193,6 @@ final class RecordReflectionsToolHandler implements ExtensionToolHandlerInterfac
                     'supporting_observation_ids' => $prior['supporting_observation_ids'],
                     'supporting_observation_ids_json' => $prior['supporting_observation_ids_json'],
                     'token_count' => $prior['token_count'],
-                    'retained' => true,
                 ];
                 continue;
             }
@@ -247,7 +242,6 @@ final class RecordReflectionsToolHandler implements ExtensionToolHandlerInterfac
                 'supporting_observation_ids' => $normalizedSupport,
                 'supporting_observation_ids_json' => $supportJson,
                 'token_count' => OmTokenEstimator::estimate($content),
-                'retained' => false,
             ];
         }
 

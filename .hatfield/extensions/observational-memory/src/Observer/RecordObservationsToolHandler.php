@@ -32,8 +32,6 @@ final class RecordObservationsToolHandler implements ExtensionToolHandlerInterfa
 
     private int $totalDuplicates = 0;
 
-    private bool $anyCall = false;
-
     /**
      * @param list<array{run_id: string, seq: int}> $allowedSourceRefs
      */
@@ -46,7 +44,6 @@ final class RecordObservationsToolHandler implements ExtensionToolHandlerInterfa
 
     public function __invoke(array $arguments): mixed
     {
-        $this->anyCall = true;
         $observations = $arguments['observations'] ?? null;
         if (!\is_array($observations)) {
             ++$this->totalRejected;
@@ -94,7 +91,7 @@ final class RecordObservationsToolHandler implements ExtensionToolHandlerInterfa
                 continue;
             }
 
-            $sourceRefs = $raw['source_refs'] ?? $raw['sourceRefs'] ?? null;
+            $sourceRefs = $raw['source_refs'] ?? null;
             if (!\is_array($sourceRefs) || [] === $sourceRefs) {
                 ++$rejected;
                 continue;
@@ -158,11 +155,6 @@ final class RecordObservationsToolHandler implements ExtensionToolHandlerInterfa
             message: $message,
             error: $error,
         );
-    }
-
-    public function hasAnyCall(): bool
-    {
-        return $this->anyCall;
     }
 
     /**
@@ -232,7 +224,7 @@ final class RecordObservationsToolHandler implements ExtensionToolHandlerInterfa
             if (!\is_array($ref)) {
                 throw new \InvalidArgumentException(\sprintf('Observation %d source_refs entries must be objects.', $index));
             }
-            $runId = (string) ($ref['run_id'] ?? $ref['runId'] ?? '');
+            $runId = (string) ($ref['run_id'] ?? '');
             $seq = $ref['seq'] ?? null;
             if ('' === $runId || !is_numeric($seq)) {
                 throw new \InvalidArgumentException(\sprintf('Observation %d source_refs require run_id and numeric seq.', $index));

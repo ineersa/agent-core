@@ -147,16 +147,6 @@ final class MemoryGenerationRepository
         return (int) $count > 0;
     }
 
-    public function hasGenerationId(string $generationId): bool
-    {
-        $found = $this->connection->fetchOne(
-            'SELECT 1 FROM om_memory_generation WHERE generation_id = ?',
-            [$generationId],
-        );
-
-        return false !== $found && null !== $found;
-    }
-
     /**
      * @return array{
      *   generation_id: string,

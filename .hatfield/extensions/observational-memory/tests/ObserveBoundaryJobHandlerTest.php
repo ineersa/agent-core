@@ -218,7 +218,6 @@ final class ObserveBoundaryJobHandlerTest extends IsolatedKernelTestCase
                 }
 
                 return [
-                    'enabled' => true,
                     'observer' => [
                         'model' => 'llama_cpp_test/test',
                         'schema_version' => 'o1',

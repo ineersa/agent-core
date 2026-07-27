@@ -31,10 +31,6 @@ final readonly class ReflectGenerationJobHandler implements ExtensionAgentJobHan
     public function handle(ExtensionApiInterface $api, array $payload, ?string $jobId, ?string $correlationId): void
     {
         $settings = OmSettings::fromApi($api);
-        if (!$settings->enabled) {
-            return;
-        }
-
         $runId = (string) ($payload['run_id'] ?? '');
         $generationId = (string) ($payload['generation_id'] ?? '');
         $observationSetHash = (string) ($payload['observation_set_hash'] ?? '');

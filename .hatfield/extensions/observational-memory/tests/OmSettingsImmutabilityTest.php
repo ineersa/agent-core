@@ -15,7 +15,6 @@ final class OmSettingsImmutabilityTest extends TestCase
     public function testNestedSettingsAndVersionOverride(): void
     {
         $base = OmSettings::fromArray([
-            'enabled' => true,
             'storage' => ['database' => 'custom/om.sqlite'],
             'observer' => [
                 'model' => 'provider/observer',
