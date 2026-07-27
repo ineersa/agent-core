@@ -28,7 +28,7 @@ jobs:
           test "${TAG_SHA}" = "${GITHUB_SHA}"
 
       - name: Setup PHP
-        uses: shivammathur/setup-php@bf6b4fbd49ca58e78271b30bb376f00cd1c3e8d8 # v2.35.3
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
         with:
           php-version: "8.5"
           extensions: mbstring, xml, intl, curl, openssl, pcntl, posix, tokenizer, ctype, filter, iconv, phar, pdo_sqlite, sqlite3, zip
@@ -79,7 +79,7 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Setup PHP
-        uses: shivammathur/setup-php@bf6b4fbd49ca58e78271b30bb376f00cd1c3e8d8 # v2.35.3
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
         with:
           php-version: "8.5"
           extensions: mbstring, xml, intl, curl, openssl, pcntl, posix, tokenizer, ctype, filter, iconv, phar, pdo_sqlite, sqlite3, zip
@@ -106,7 +106,7 @@ jobs:
         uses: ./.github/actions/static-prerequisites
 
       - name: Download PHAR artifact
-        uses: actions/download-artifact@cc203385981b70ca67e1cc392babf9cc229d5806 # v4.1.7
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: hatfield.phar
           path: var/tmp/dist
@@ -146,7 +146,7 @@ jobs:
           test "${TAG_SHA}" = "${GITHUB_SHA}"
 
       - name: Setup PHP
-        uses: shivammathur/setup-php@bf6b4fbd49ca58e78271b30bb376f00cd1c3e8d8 # v2.35.3
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
         with:
           php-version: "8.5"
           extensions: mbstring, xml, intl, curl, openssl, pcntl, posix, tokenizer, ctype, filter, iconv, phar, pdo_sqlite, sqlite3, zip
@@ -160,7 +160,7 @@ jobs:
         run: composer global require jolicode/castor:^1.6 --no-interaction
 
       - name: Download all release artifacts
-        uses: actions/download-artifact@cc203385981b70ca67e1cc392babf9cc229d5806 # v4.1.7
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           path: var/tmp/dist-raw
           merge-multiple: false
@@ -226,7 +226,7 @@ jobs:
           grep -q 'commit' /tmp/native-version.txt
 
       - name: Create GitHub Release with complete asset set
-        uses: softprops/action-gh-release@c95fe1489396fe8a9eb87c0abf8aa5b2ef267fda # v2.2.1
+        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
         with:
           tag_name: ${{ github.ref_name }}
           name: Hatfield ${{ github.ref_name }}

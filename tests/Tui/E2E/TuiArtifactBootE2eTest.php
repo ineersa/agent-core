@@ -76,6 +76,12 @@ final class TuiArtifactBootE2eTest extends TestCase
         $this->assertStringContainsString('█', $capture, 'Hatfield logo missing when launching artifact TUI');
 
         $this->tmux->sendKey($pane, 'C-d');
+        // Prove the packaged process exits on Ctrl+D; tearDown killAll remains fallback.
+        $this->tmux->waitUntilPaneExits($pane, 10.0);
+        $this->assertFalse(
+            $this->tmux->paneExists($pane),
+            'Packaged artifact TUI pane still alive after Ctrl+D; expected clean process exit',
+        );
     }
 
     private function artifactAgentCommand(string $resolved): string
