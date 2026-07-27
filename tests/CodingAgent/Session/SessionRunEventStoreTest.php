@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Tests\Session;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Schema\EventPayloadNormalizer;
 use Ineersa\AgentCore\Schema\SchemaVersion;
+use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
@@ -14,6 +15,8 @@ use Ineersa\CodingAgent\Session\FileRunSequenceAllocator;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\SessionRunEventStore;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\LoggerInterface;
+use Psr\Log\NullLogger;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\FlockStore;
 
@@ -33,23 +36,7 @@ final class SessionRunEventStoreTest extends TestCase
         mkdir($this->projectDir, 0777, true);
         mkdir($this->projectDir.'/.hatfield/sessions', 0777, true);
 
-        $appConfig = new AppConfig(
-            tui: new TuiConfig(theme: 'default'),
-            logging: new LoggingConfig(),
-            cwd: $this->projectDir,
-        );
-        $hatfieldSessionStore = new HatfieldSessionStore(
-            appConfig: $appConfig,
-            entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
-        );
-
-        $this->store = new SessionRunEventStore(
-            hatfieldSessionStore: $hatfieldSessionStore,
-            eventPayloadNormalizer: new EventPayloadNormalizer(),
-            lockFactory: new LockFactory(new FlockStore()),
-            logger: new \Psr\Log\NullLogger(),
-            sequenceAllocator: new FileRunSequenceAllocator(),
-        );
+        $this->store = $this->createStore();
     }
 
     protected function tearDown(): void
@@ -124,22 +111,7 @@ final class SessionRunEventStoreTest extends TestCase
         ));
 
         // New store instance (simulates recreating services after restart)
-        $appConfig = new AppConfig(
-            tui: new TuiConfig(theme: 'default'),
-            logging: new LoggingConfig(),
-            cwd: $this->projectDir,
-        );
-        $hatfieldSessionStore = new HatfieldSessionStore(
-            appConfig: $appConfig,
-            entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
-        );
-        $newStore = new SessionRunEventStore(
-            hatfieldSessionStore: $hatfieldSessionStore,
-            eventPayloadNormalizer: new EventPayloadNormalizer(),
-            lockFactory: new LockFactory(new FlockStore()),
-            logger: new \Psr\Log\NullLogger(),
-            sequenceAllocator: new FileRunSequenceAllocator(),
-        );
+        $newStore = $this->createStore();
 
         $events = $newStore->allFor($runId);
         $this->assertCount(1, $events, 'Events must survive store recreation');
@@ -226,6 +198,108 @@ final class SessionRunEventStoreTest extends TestCase
         $this->assertCount(1, $events);
         $this->assertSame(1, $events[0]->seq);
         $this->assertSame('run_started', $events[0]->type);
+    }
+
+    public function testUnchangedAllForDecodesIncompatibleSchemaOnlyOnce(): void
+    {
+        $logger = new TestLogger();
+        $store = $this->createStore($logger);
+        $runId = 'run-'.bin2hex(random_bytes(4));
+        $store->append(RunEvent::forAppend(runId: $runId, turnNo: 0, type: 'run_started', payload: ['marker' => 'once']));
+
+        $eventsPath = $this->projectDir.'/.hatfield/sessions/'.$runId.'/events.jsonl';
+        file_put_contents(
+            $eventsPath,
+            '{"schema_version":"0.1","run_id":"'.$runId.'","seq":2,"turn_no":1,"type":"old_event","payload":[]}'."\n",
+            \FILE_APPEND,
+        );
+
+        $first = $store->allFor($runId);
+        $second = $store->allFor($runId);
+
+        $this->assertCount(1, $first);
+        $this->assertSame($first, $second);
+        $this->assertSame('run_started', $first[0]->type);
+        $this->assertSame('once', $first[0]->payload['marker']);
+
+        $skipped = array_values(array_filter(
+            $logger->records,
+            static fn (array $record): bool => 'session.incompatible_schema_skipped' === ($record['context']['event_type'] ?? null),
+        ));
+        $this->assertCount(
+            1,
+            $skipped,
+            'Unchanged allFor must reuse the decoded snapshot so the skip diagnostic is emitted only once',
+        );
+    }
+
+    public function testExternalAppendIsVisibleOnNextAllForEvenWithSameMtime(): void
+    {
+        $runId = 'run-'.bin2hex(random_bytes(4));
+        $this->store->append(RunEvent::forAppend(runId: $runId, turnNo: 0, type: 'run_started', payload: []));
+
+        $first = $this->store->allFor($runId);
+        $this->assertCount(1, $first);
+
+        $eventsPath = $this->projectDir.'/.hatfield/sessions/'.$runId.'/events.jsonl';
+        clearstatcache(true, $eventsPath);
+        $mtime = filemtime($eventsPath);
+        $this->assertNotFalse($mtime);
+
+        $external = [
+            'schema_version' => SchemaVersion::CURRENT,
+            'run_id' => $runId,
+            'seq' => 2,
+            'turn_no' => 1,
+            'type' => 'agent_start',
+            'payload' => ['source' => 'external'],
+            'ts' => '2026-01-01T00:00:00+00:00',
+        ];
+        file_put_contents($eventsPath, json_encode($external, \JSON_THROW_ON_ERROR)."\n", \FILE_APPEND);
+        // Size change must invalidate even when mtime is forced equal (same-second append).
+        touch($eventsPath, $mtime);
+
+        $second = $this->store->allFor($runId);
+        $this->assertCount(2, $second);
+        $this->assertSame(['run_started', 'agent_start'], array_map(static fn (RunEvent $e): string => $e->type, $second));
+        $this->assertSame('external', $second[1]->payload['source']);
+    }
+
+    public function testStoreOwnedAppendInvalidatesAllForCache(): void
+    {
+        $runId = 'run-'.bin2hex(random_bytes(4));
+        $this->store->append(RunEvent::forAppend(runId: $runId, turnNo: 0, type: 'run_started', payload: []));
+
+        $first = $this->store->allFor($runId);
+        $this->assertCount(1, $first);
+
+        $this->store->append(RunEvent::forAppend(runId: $runId, turnNo: 1, type: 'agent_start', payload: ['via' => 'store']));
+
+        $second = $this->store->allFor($runId);
+        $this->assertCount(2, $second);
+        $this->assertSame(['run_started', 'agent_start'], array_map(static fn (RunEvent $e): string => $e->type, $second));
+        $this->assertSame('store', $second[1]->payload['via']);
+    }
+
+    private function createStore(?LoggerInterface $logger = null): SessionRunEventStore
+    {
+        $appConfig = new AppConfig(
+            tui: new TuiConfig(theme: 'default'),
+            logging: new LoggingConfig(),
+            cwd: $this->projectDir,
+        );
+        $hatfieldSessionStore = new HatfieldSessionStore(
+            appConfig: $appConfig,
+            entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
+        );
+
+        return new SessionRunEventStore(
+            hatfieldSessionStore: $hatfieldSessionStore,
+            eventPayloadNormalizer: new EventPayloadNormalizer(),
+            lockFactory: new LockFactory(new FlockStore()),
+            logger: $logger ?? new NullLogger(),
+            sequenceAllocator: new FileRunSequenceAllocator(),
+        );
     }
 
     private function rmDir(string $dir): void
