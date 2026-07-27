@@ -83,8 +83,6 @@ services:
   Ineersa\Tui\:
     resource: '%kernel.project_dir%/src/Tui/**/*.php'
 
-  # ─── Session stores — resolved via HatfieldSessionStore for path ───
-
 
   Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface:
     alias: Ineersa\CodingAgent\Entity\DeferredToolCompletionRepository
