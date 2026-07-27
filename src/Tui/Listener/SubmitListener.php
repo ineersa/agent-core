@@ -192,7 +192,7 @@ final class SubmitListener implements TuiListenerRegistrar
         if ($result instanceof TranscriptMessage) {
             // ── Append message to transcript (in-memory only) ──
             $block = self::blockForTranscriptMessage($result, $state, $blockFactory);
-            $state->transcript[] = $block;
+            $state->appendTranscriptBlock($block);
 
             $screen->setTranscriptBlocks($state->transcript);
 
@@ -201,7 +201,7 @@ final class SubmitListener implements TuiListenerRegistrar
 
         if ($result instanceof ClearTranscript) {
             // ── Clear all transcript entries ──
-            $state->transcript = [];
+            $state->replaceTranscript([]);
             $screen->setTranscriptBlocks([]);
 
             return;
@@ -230,12 +230,12 @@ final class SubmitListener implements TuiListenerRegistrar
                 $result->emptyMessage,
             );
             $seq = \count($state->transcript) + 1;
-            $state->transcript[] = $blockFactory->system(
+            $state->appendTranscriptBlock($blockFactory->system(
                 runId: $state->sessionId,
                 text: $styledText,
                 seq: $seq,
                 style: 'hotkey-table',
-            );
+            ));
             $screen->setTranscriptBlocks($state->transcript);
 
             return;
@@ -418,11 +418,11 @@ final class SubmitListener implements TuiListenerRegistrar
             }
         } catch (\Throwable $e) {
             $state->activity = RunActivityStateEnum::Failed;
-            $state->transcript[] = $blockFactory->error(
+            $state->appendTranscriptBlock($blockFactory->error(
                 runId: $state->sessionId,
                 text: 'Runtime error: '.$e->getMessage(),
                 seq: \count($state->transcript) + 1,
-            );
+            ));
             $screen->setWorkingMessage('');
             $screen->setTranscriptBlocks($state->transcript);
 
@@ -500,12 +500,12 @@ final class SubmitListener implements TuiListenerRegistrar
         if (null !== $state->pastedImagePasteInProgressIndex) {
             $inFlightPlaceholder = PastedImagePlaceholderFormatter::placeholder($state->pastedImagePasteInProgressIndex);
             if (str_contains($text, $inFlightPlaceholder)) {
-                $state->transcript[] = $blockFactory->system(
+                $state->appendTranscriptBlock($blockFactory->system(
                     runId: '' !== $state->sessionId ? $state->sessionId : 'draft',
                     text: 'Image paste is still being read from the clipboard. Wait a moment, then submit again.',
                     seq: \count($state->transcript) + 1,
                     style: 'info',
-                );
+                ));
                 $screen->setTranscriptBlocks($state->transcript);
                 $screen->requestRender();
 
@@ -619,11 +619,11 @@ final class SubmitListener implements TuiListenerRegistrar
             $screen->setTranscriptBlocks($state->transcript);
         } catch (\Throwable $e) {
             $state->activity = RunActivityStateEnum::Failed;
-            $state->transcript[] = $blockFactory->error(
+            $state->appendTranscriptBlock($blockFactory->error(
                 runId: $state->sessionId,
                 text: 'Shell command error: '.$e->getMessage(),
                 seq: \count($state->transcript) + 1,
-            );
+            ));
             $screen->setWorkingMessage('');
             $screen->setTranscriptBlocks($state->transcript);
 

@@ -7,6 +7,8 @@ namespace Ineersa\Tui\Runtime;
 use Ineersa\CodingAgent\Runtime\Contract\RunHandle;
 use Ineersa\CodingAgent\Runtime\Contract\StartRunRequest;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
+use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
+use Ineersa\CodingAgent\Runtime\Projection\TranscriptChangeSet;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Ineersa\Tui\Transcript\TranscriptDisplayConfig;
@@ -77,7 +79,18 @@ final class TuiSessionState
      */
     public array $queuedUserMessages = [];
 
-    /** @var list<TranscriptBlock> Transcript blocks (plain, un-themed) */
+    /**
+     * Ordered transcript blocks (plain, un-themed).
+     *
+     * Prefer {@see replaceTranscript()}, {@see appendTranscriptBlock()}, and
+     * {@see applyTranscriptChangeSet()} so the ID→index map stays coherent.
+     *
+     * Direct public assignment is test/bootstrap-only. Production mutation paths
+     * must use the helpers above. The next helper call rebuilds the index when
+     * length/first/last checks fail — do not rely on a stale mid-list map.
+     *
+     * @var list<TranscriptBlock>
+     */
     public array $transcript = [];
 
     public int $lastSeq = 0;
@@ -159,6 +172,13 @@ final class TuiSessionState
      */
     public ?int $pastedImagePasteInProgressIndex = null;
 
+    /**
+     * Block ID → index into {@see $transcript} for O(1) upsert/lookup.
+     *
+     * @var array<string, int>
+     */
+    private array $transcriptIndexById = [];
+
     public function __construct(
         string $sessionId,
         bool $resuming = false,
@@ -197,6 +217,152 @@ final class TuiSessionState
             if ('' !== $key && isset($this->queuedUserMessages[$key])) {
                 unset($this->queuedUserMessages[$key]);
             }
+        }
+    }
+
+    /**
+     * Replace the entire ordered transcript (bootstrap, resume, leaf/branch).
+     *
+     * @param list<TranscriptBlock> $blocks
+     */
+    public function replaceTranscript(array $blocks): void
+    {
+        $this->transcript = [];
+        $this->transcriptIndexById = [];
+        foreach ($blocks as $block) {
+            $this->transcriptIndexById[$block->id] = \count($this->transcript);
+            $this->transcript[] = $block;
+        }
+    }
+
+    /**
+     * Append a local UI block (error/system/cancel placeholders) without a full replace.
+     */
+    public function appendTranscriptBlock(TranscriptBlock $block): void
+    {
+        $this->rebuildTranscriptIndexIfStale();
+        $existingIdx = $this->transcriptIndexById[$block->id] ?? null;
+        if (null !== $existingIdx) {
+            $this->transcript[$existingIdx] = $block;
+
+            return;
+        }
+
+        $this->transcriptIndexById[$block->id] = \count($this->transcript);
+        $this->transcript[] = $block;
+    }
+
+    /**
+     * Pop the last block when it is the ephemeral Processing… placeholder.
+     */
+    public function removeTrailingProcessingPlaceholder(): void
+    {
+        $this->rebuildTranscriptIndexIfStale();
+        $lastIdx = \count($this->transcript) - 1;
+        if ($lastIdx < 0) {
+            return;
+        }
+
+        $last = $this->transcript[$lastIdx];
+        if (TranscriptBlockKindEnum::System !== $last->kind || !str_contains($last->text, 'Processing...')) {
+            return;
+        }
+
+        array_pop($this->transcript);
+        unset($this->transcriptIndexById[$last->id]);
+    }
+
+    /**
+     * Apply a canonical projector change set.
+     *
+     * Full replacement rebuilds the ordered list. Incremental mode upserts by ID
+     * (O(1) via index map) and removes missing IDs without retaining duplicates.
+     *
+     * @return bool True when the ordered transcript content changed
+     */
+    public function applyTranscriptChangeSet(TranscriptChangeSet $changes): bool
+    {
+        if ($changes->isFull()) {
+            $next = $changes->blocks();
+            if ($this->transcript === $next) {
+                return false;
+            }
+            $this->replaceTranscript($next);
+
+            return true;
+        }
+
+        $this->rebuildTranscriptIndexIfStale();
+        $changed = false;
+
+        // Batch removals: splice high indices first, rebuild ID map once (near-linear).
+        if ([] !== $changes->removals) {
+            $indices = [];
+            foreach ($changes->removals as $id) {
+                $idx = $this->transcriptIndexById[$id] ?? null;
+                if (null !== $idx) {
+                    $indices[] = $idx;
+                    unset($this->transcriptIndexById[$id]);
+                }
+            }
+            if ([] !== $indices) {
+                rsort($indices, \SORT_NUMERIC);
+                foreach ($indices as $idx) {
+                    array_splice($this->transcript, $idx, 1);
+                }
+                $this->transcriptIndexById = [];
+                foreach ($this->transcript as $i => $block) {
+                    $this->transcriptIndexById[$block->id] = $i;
+                }
+                $changed = true;
+            }
+        }
+
+        foreach ($changes->upserts as $block) {
+            $idx = $this->transcriptIndexById[$block->id] ?? null;
+            if (null === $idx) {
+                $this->transcriptIndexById[$block->id] = \count($this->transcript);
+                $this->transcript[] = $block;
+                $changed = true;
+                continue;
+            }
+
+            // Object identity: ProjectionState preserves references for unchanged IDs.
+            if ($this->transcript[$idx] === $block) {
+                continue;
+            }
+
+            $this->transcript[$idx] = $block;
+            $changed = true;
+        }
+
+        return $changed;
+    }
+
+    /**
+     * Rebuild the ID map when the public list was assigned outside helpers.
+     *
+     * Cheap structural check: same length + first/last id match. Full rebuild is O(n).
+     */
+    private function rebuildTranscriptIndexIfStale(): void
+    {
+        $count = \count($this->transcript);
+        if (\count($this->transcriptIndexById) === $count) {
+            if (0 === $count) {
+                return;
+            }
+            $first = $this->transcript[0];
+            $last = $this->transcript[$count - 1];
+            if (($this->transcriptIndexById[$first->id] ?? null) === 0
+                && ($this->transcriptIndexById[$last->id] ?? null) === $count - 1
+            ) {
+                return;
+            }
+        }
+
+        $this->transcriptIndexById = [];
+        foreach ($this->transcript as $idx => $block) {
+            $this->transcriptIndexById[$block->id] = $idx;
         }
     }
 }

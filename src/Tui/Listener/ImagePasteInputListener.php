@@ -256,12 +256,12 @@ final class ImagePasteInputListener implements TuiListenerRegistrar
         TranscriptBlockFactory $blockFactory,
         string $message,
     ): void {
-        $state->transcript[] = $blockFactory->system(
+        $state->appendTranscriptBlock($blockFactory->system(
             runId: '' !== $state->sessionId ? $state->sessionId : 'draft',
             text: $message,
             seq: \count($state->transcript) + 1,
             style: 'info',
-        );
+        ));
         $screen->setTranscriptBlocks($state->transcript);
     }
 }

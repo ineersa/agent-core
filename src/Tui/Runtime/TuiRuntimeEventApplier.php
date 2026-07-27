@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Runtime;
 
 use Ineersa\CodingAgent\Runtime\Contract\TranscriptProjectorInterface;
+use Ineersa\CodingAgent\Runtime\Projection\TranscriptChangeSet;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 
@@ -84,5 +85,16 @@ final readonly class TuiRuntimeEventApplier
     public function projectedBlocks(): array
     {
         return $this->projector->blocks();
+    }
+
+    /**
+     * Drain projector dirty changes for ordinary live polls.
+     *
+     * Prefer this over {@see projectedBlocks()} on the hot path so finalized
+     * history is not re-materialized every tick.
+     */
+    public function drainProjectedChanges(): TranscriptChangeSet
+    {
+        return $this->projector->drainChanges();
     }
 }
