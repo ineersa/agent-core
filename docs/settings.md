@@ -274,6 +274,61 @@ compaction:
             thinking_level: off
 ```
 
+## Context-budget wrap-up reminders
+
+Transient one-shot system guidance injected on **normal** agent turns when
+fresh provider-reported prompt/input usage crosses provider-neutral thresholds.
+Reminders never enter `RunState.messages`, session replay, transcripts, or
+compaction/summarization invocations. Parent, fork, and subagent runs share the
+same path.
+
+**Metric:** latest positive `input_tokens` / `prompt_tokens` from committed
+`llm_step_completed` / `llm_step_aborted` events after the latest successful
+`context_compacted` barrier (or run start when none). This is the provider's
+current prompt size for that step — not a cumulative sum of prior steps.
+
+**Usable remaining:**
+`context_window - latest_prompt_input - output_headroom_tokens`
+
+`context_window` comes from run-start metadata when present, otherwise the
+active model's catalog entry. Missing usage or window ⇒ no reminder (no silent
+estimate).
+
+Successful compaction starts a new episode: pre-compaction usage and handled
+markers are ignored until fresh post-compaction usage exists.
+
+When both thresholds are eligible on one turn, only the **urgent** reminder is
+sent and both markers are recorded. Early can fire first, then urgent later.
+
+### `context_budget_reminders.early_input_tokens`
+
+Absolute latest prompt/input usage that triggers the early wrap-up advisory.
+
+**Default:** `200000`
+
+### `context_budget_reminders.urgent_remaining_tokens`
+
+Urgent wrap-up when usable remaining context is **strictly less than** this value.
+
+**Default:** `25000`
+
+### `context_budget_reminders.output_headroom_tokens`
+
+Tokens reserved for model output when computing usable remaining context.
+Default is `0` so the early 200k checkpoint remains meaningful on ~272k-class
+windows (with headroom 0, urgent fires near 247k remaining budget usage, after
+early).
+
+**Default:** `0`
+
+**Example:**
+```yaml
+context_budget_reminders:
+    early_input_tokens: 200000
+    urgent_remaining_tokens: 25000
+    output_headroom_tokens: 0
+```
+
 ## Environment variables
 
 ### `HATFIELD_CAPTURE_ERRORS`

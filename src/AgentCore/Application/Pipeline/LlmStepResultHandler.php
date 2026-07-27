@@ -127,15 +127,18 @@ final class LlmStepResultHandler implements RunMessageHandler
                 ];
             }
 
+            $abortedPayload = [
+                'step_id' => $message->stepId(),
+                'stop_reason' => $message->stopReason ?? 'aborted',
+                'usage' => $message->usage,
+                'aborted_assistant' => $abortedAssistantPayload,
+            ];
+            $abortedPayload = $this->withContextBudgetReminderMarkers($abortedPayload, $message->contextBudgetReminderHandledKeys);
+
             $eventSpecs = [
                 [
                     'type' => RunEventTypeEnum::LlmStepAborted->value,
-                    'payload' => [
-                        'step_id' => $message->stepId(),
-                        'stop_reason' => $message->stopReason ?? 'aborted',
-                        'usage' => $message->usage,
-                        'aborted_assistant' => $abortedAssistantPayload,
-                    ],
+                    'payload' => $abortedPayload,
                 ],
                 [
                     'type' => RunEventTypeEnum::AgentEnd->value,
@@ -326,16 +329,19 @@ final class LlmStepResultHandler implements RunMessageHandler
             );
         }
 
+        $completedPayload = [
+            'step_id' => $message->stepId(),
+            'stop_reason' => $message->stopReason,
+            'usage' => $message->usage,
+            'tool_calls_count' => \count($toolCalls),
+            'assistant_message' => $assistantMessagePayload,
+            'text' => $assistantMessage->asText(),
+        ];
+        $completedPayload = $this->withContextBudgetReminderMarkers($completedPayload, $message->contextBudgetReminderHandledKeys);
+
         $eventSpecs = [[
             'type' => RunEventTypeEnum::LlmStepCompleted->value,
-            'payload' => [
-                'step_id' => $message->stepId(),
-                'stop_reason' => $message->stopReason,
-                'usage' => $message->usage,
-                'tool_calls_count' => \count($toolCalls),
-                'assistant_message' => $assistantMessagePayload,
-                'text' => $assistantMessage->asText(),
-            ],
+            'payload' => $completedPayload,
         ]];
 
         // Emit generic model_notification events for notifications
@@ -669,6 +675,26 @@ final class LlmStepResultHandler implements RunMessageHandler
                 throw new \RuntimeException(\sprintf('Failed to dispatch auto-retry Continue for run %s.', $runId), previous: $exception);
             }
         };
+    }
+
+    /**
+     * Persist non-content context-budget reminder markers on completion/abort
+     * payloads. Reminder prose itself never enters events.
+     *
+     * @param array<string, mixed> $payload
+     * @param list<string>         $handledKeys
+     *
+     * @return array<string, mixed>
+     */
+    private function withContextBudgetReminderMarkers(array $payload, array $handledKeys): array
+    {
+        if ([] === $handledKeys) {
+            return $payload;
+        }
+
+        $payload['context_budget_reminders_handled'] = array_values(array_unique($handledKeys));
+
+        return $payload;
     }
 
     /**

@@ -7,6 +7,7 @@ namespace Ineersa\AgentCore\Application\Pipeline;
 use Ineersa\AgentCore\Application\Handler\RunMetrics;
 use Ineersa\AgentCore\Application\Handler\RunTracer;
 use Ineersa\AgentCore\Contract\Compaction\PreLlmCompactionGuardInterface;
+use Ineersa\AgentCore\Contract\ContextBudget\PreLlmContextBudgetReminderPolicyInterface;
 use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AdvanceRun;
@@ -26,6 +27,7 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
         private ?RunTracer $tracer = null,
         private ?PreLlmCompactionGuardInterface $preLlmCompactionGuard = null,
         private ?MessageBusInterface $commandBus = null,
+        private ?PreLlmContextBudgetReminderPolicyInterface $contextBudgetReminderPolicy = null,
     ) {
     }
 
@@ -400,6 +402,20 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
         }
         $invocationModel = trim($invocationModel);
 
+        // Context-budget wrap-up reminder: only on the shared normal LLM path
+        // (compaction uses ExecuteCompactionStep and never reaches here). Decision
+        // is made after the pre-LLM compaction guard so we do not attach a reminder
+        // to a turn that is about to compact instead.
+        $reminderText = null;
+        $reminderHandledKeys = [];
+        if (null !== $this->contextBudgetReminderPolicy) {
+            $decision = $this->contextBudgetReminderPolicy->decide($runId, $invocationModel);
+            if (null !== $decision) {
+                $reminderText = $decision->text;
+                $reminderHandledKeys = $decision->handledThresholdKeys;
+            }
+        }
+
         $effect = new ExecuteLlmStep(
             runId: $runId,
             turnNo: $nextTurnNo,
@@ -409,6 +425,8 @@ final readonly class AdvanceRunHandler implements RunMessageHandler
             contextRef: \sprintf('hot:run:%s', $runId),
             toolsRef: \sprintf('toolset:run:%s:turn:%d', $runId, $nextTurnNo),
             model: $invocationModel,
+            contextBudgetReminderText: $reminderText,
+            contextBudgetReminderHandledKeys: $reminderHandledKeys,
         );
 
         $parentTurnNo = $preparedState->turnNo > 0 ? $preparedState->turnNo : null;

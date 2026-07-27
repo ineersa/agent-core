@@ -28,6 +28,7 @@ use Symfony\Component\Validator\Validator\ValidatorInterface;
  *  - ai         AiConfig (provider and model configuration)
  *  - prompts    PromptsConfig (custom system/user prompt overrides)
  *  - compaction CompactionConfig (auto_enabled, compact_after_tokens, keep_recent_tokens, model, thinking_level, provider_overrides, model_overrides)
+ *  - context_budget_reminders ContextBudgetReminderConfig (early_input_tokens, urgent_remaining_tokens, output_headroom_tokens)
  *  - agents     AgentsConfig (enabled, paths)
  *  - forks      ForksConfigDTO (model, thinking_level)
  *  - runtime    RuntimeConfig (llm_worker_count)
@@ -48,6 +49,7 @@ final class AppConfig
         public ?AiConfig $ai = null,
         public PromptsConfig $prompts = new PromptsConfig(),
         public CompactionConfig $compaction = new CompactionConfig(),
+        public ContextBudgetReminderConfig $contextBudgetReminders = new ContextBudgetReminderConfig(),
         public ForksConfigDTO $forks = new ForksConfigDTO(),
         public AgentsConfig $agents = new AgentsConfig(),
         public RuntimeConfig $runtime = new RuntimeConfig(),
@@ -113,6 +115,10 @@ final class AppConfig
             compaction: $denormalizer->denormalize(
                 (array) ($data['compaction'] ?? []),
                 CompactionConfig::class,
+            ),
+            contextBudgetReminders: $denormalizer->denormalize(
+                (array) ($data['context_budget_reminders'] ?? []),
+                ContextBudgetReminderConfig::class,
             ),
             forks: self::denormalizeForksConfig($data, $denormalizer),
             agents: AgentsConfig::fromRaw($data['agents'] ?? []),

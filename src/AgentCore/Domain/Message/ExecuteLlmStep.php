@@ -13,6 +13,9 @@ namespace Ineersa\AgentCore\Domain\Message;
  */
 final readonly class ExecuteLlmStep extends AbstractAgentBusMessage
 {
+    /**
+     * @param list<string> $contextBudgetReminderHandledKeys Non-content marker keys to persist on result
+     */
     public function __construct(
         string $runId,
         int $turnNo,
@@ -22,6 +25,8 @@ final readonly class ExecuteLlmStep extends AbstractAgentBusMessage
         public string $contextRef,
         public string $toolsRef,
         public string $model,
+        public ?string $contextBudgetReminderText = null,
+        public array $contextBudgetReminderHandledKeys = [],
     ) {
         parent::__construct($runId, $turnNo, $stepId, $attempt, $idempotencyKey);
 

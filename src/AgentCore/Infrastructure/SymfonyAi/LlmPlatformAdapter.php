@@ -27,6 +27,7 @@ use Symfony\AI\Platform\Message\AssistantMessage;
 use Symfony\AI\Platform\Message\Content\ContentInterface;
 use Symfony\AI\Platform\Message\Content\Text;
 use Symfony\AI\Platform\Message\Content\Thinking;
+use Symfony\AI\Platform\Message\Message;
 use Symfony\AI\Platform\Message\MessageBag;
 use Symfony\AI\Platform\PlatformInterface as SymfonyPlatformInterface;
 use Symfony\AI\Platform\Result\DeferredResult;
@@ -83,6 +84,7 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
         $baseOptions = $this->buildInputOptions($request);
 
         $messageBag = $this->applyConvertHooks($messages, $cancelToken, $request->model);
+        $messageBag = $this->applyContextBudgetReminder($messageBag, $request->input->contextBudgetReminderText);
 
         $input = new Input($request->model, $messageBag, $baseOptions);
         $this->toolDescriptionProcessor->processInput($input);
@@ -154,6 +156,24 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
         }
 
         return $this->hydrateMessages($state->messages);
+    }
+
+    /**
+     * Append/prepend transient wrap-up guidance as authoritative system text
+     * for this provider call only. Does not mutate RunState or canonical messages.
+     */
+    private function applyContextBudgetReminder(MessageBag $messageBag, ?string $reminderText): MessageBag
+    {
+        if (null === $reminderText || '' === trim($reminderText)) {
+            return $messageBag;
+        }
+
+        $existing = $messageBag->getSystemMessage();
+        $combined = null !== $existing && '' !== trim((string) $existing->getContent())
+            ? rtrim((string) $existing->getContent())."\n\n".trim($reminderText)
+            : trim($reminderText);
+
+        return $messageBag->withSystemMessage(Message::forSystem($combined));
     }
 
     /**

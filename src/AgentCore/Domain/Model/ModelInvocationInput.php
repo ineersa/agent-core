@@ -18,6 +18,11 @@ final readonly class ModelInvocationInput
         public ?string $contextRef = null,
         public ?string $toolsRef = null,
         public ?array $messages = null,
+        /**
+         * Transient wrap-up system guidance for this provider call only.
+         * Never written to RunState.messages, events, or transcript.
+         */
+        public ?string $contextBudgetReminderText = null,
     ) {
     }
 }
