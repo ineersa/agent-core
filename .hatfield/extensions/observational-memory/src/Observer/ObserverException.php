@@ -6,15 +6,12 @@ namespace Ineersa\HatfieldExt\ObservationalMemory\Observer;
 
 /**
  * Extension-local durable Observer failure (not transient provider error).
- *
- * Carries a stable machine code so compaction/worker classification does not
- * depend on exception message wording.
  */
 final class ObserverException extends \RuntimeException
 {
-    public const string CODE_INPUT_OVER_BUDGET = 'observer_input_over_budget';
+    public const string CODE_CONFIG = 'observer_config_invalid';
 
-    public const string CODE_TOOL_NOT_CALLED = 'observer_tool_not_called';
+    public const string CODE_EMPTY_RANGE = 'observer_empty_range';
 
     public function __construct(
         public readonly string $failureCode,
@@ -24,19 +21,19 @@ final class ObserverException extends \RuntimeException
         parent::__construct($message, 0, $previous);
     }
 
-    public static function inputOverBudget(int $tokenEstimate, int $budget): self
+    public static function invalidContextWindow(?int $contextWindow): self
     {
         return new self(
-            self::CODE_INPUT_OVER_BUDGET,
-            \sprintf('Observer input still exceeds budget after rendering (%d > %d).', $tokenEstimate, $budget),
+            self::CODE_CONFIG,
+            \sprintf('Observer model context_window is missing or nonpositive (%s).', null === $contextWindow ? 'null' : (string) $contextWindow),
         );
     }
 
-    public static function toolNotCalled(): self
+    public static function emptyRange(string $runId, int $start, int $end): self
     {
         return new self(
-            self::CODE_TOOL_NOT_CALLED,
-            'Observer model did not call record_observations; coverage not advanced.',
+            self::CODE_EMPTY_RANGE,
+            \sprintf('Observer received empty event range %d..%d for run %s.', $start, $end, $runId),
         );
     }
 }

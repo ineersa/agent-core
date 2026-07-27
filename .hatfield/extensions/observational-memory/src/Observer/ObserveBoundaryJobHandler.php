@@ -5,21 +5,25 @@ declare(strict_types=1);
 namespace Ineersa\HatfieldExt\ObservationalMemory\Observer;
 
 use Ineersa\Hatfield\ExtensionApi\Agent\ExtensionAgentJobHandlerInterface;
+use Ineersa\Hatfield\ExtensionApi\Agent\ExtensionAgentJobRequestDTO;
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
 use Ineersa\HatfieldExt\ObservationalMemory\Runtime\OmPaths;
 use Ineersa\HatfieldExt\ObservationalMemory\Runtime\OmSettings;
+use Ineersa\HatfieldExt\ObservationalMemory\Storage\MemoryGenerationRepository;
 use Ineersa\HatfieldExt\ObservationalMemory\Storage\ObservationRepository;
 use Ineersa\HatfieldExt\ObservationalMemory\Storage\OmDatabaseFactory;
+use Ineersa\HatfieldExt\ObservationalMemory\Support\OmIdentity;
 use Psr\Log\LoggerInterface;
 
 /**
  * Async worker-local Observer job entrypoint.
  *
- * Runs inside the Hatfield extension_agent Messenger worker with process-local
- * ExtensionApi (agent runner + session event reader).
+ * After all chunks for the boundary are durable, may dispatch threshold Reflector job.
  */
 final readonly class ObserveBoundaryJobHandler implements ExtensionAgentJobHandlerInterface
 {
+    public const string REFLECT_HANDLER_ID = 'observational_memory.reflect_generation';
+
     public function __construct(
         private LoggerInterface $logger,
     ) {
@@ -44,38 +48,115 @@ final readonly class ObserveBoundaryJobHandler implements ExtensionAgentJobHandl
         // reuse a process-wide connection that could point at another CWD.
         $connection = OmDatabaseFactory::connectAndMigrate($paths->databasePath, $this->logger);
         $repository = new ObservationRepository($connection);
+        $generationRepository = new MemoryGenerationRepository($connection);
 
         $rendererVersion = (string) ($payload['renderer_version'] ?? $settings->rendererVersion);
         $observerSchemaVersion = (string) ($payload['observer_schema_version'] ?? $settings->observerSchemaVersion);
-        // Payload may pin renderer/schema versions from dispatch time without
-        // reconstructing every OmSettings field (models/budgets must stay intact).
         $effectiveSettings = $settings->withRendererAndObserverVersions($rendererVersion, $observerSchemaVersion);
 
-        $contiguousEnd = $repository->contiguousCoveredEndSeq($runId, $rendererVersion, $observerSchemaVersion);
-        $sourceStartSeq = null === $contiguousEnd ? 1 : $contiguousEnd + 1;
-        if ($sourceStartSeq > $terminalEndSeq) {
-            $this->logger->info('om.observe.already_covered_range', [
+        (new ObserverPipeline($this->logger))->observeThrough(
+            api: $api,
+            repository: $repository,
+            generationRepository: $generationRepository,
+            settings: $effectiveSettings,
+            runId: $runId,
+            terminalEndSeq: $terminalEndSeq,
+            terminalStatus: $terminalStatus,
+            jobId: $jobId,
+            correlationId: $correlationId,
+        );
+
+        $this->maybeDispatchThresholdReflection(
+            api: $api,
+            repository: $repository,
+            generationRepository: $generationRepository,
+            settings: $settings,
+            runId: $runId,
+            jobId: $jobId,
+            correlationId: $correlationId,
+        );
+    }
+
+    private function maybeDispatchThresholdReflection(
+        ExtensionApiInterface $api,
+        ObservationRepository $repository,
+        MemoryGenerationRepository $generationRepository,
+        OmSettings $settings,
+        string $runId,
+        ?string $jobId,
+        ?string $correlationId,
+    ): void {
+        $candidate = $repository->activeCandidateSet($runId);
+        if ($candidate['token_count'] <= $settings->reflectAfterObservationTokens) {
+            return;
+        }
+        if ([] === $candidate['observation_ids']) {
+            return;
+        }
+        if ($generationRepository->hasRunningOrSucceededForSet($runId, $candidate['observation_set_hash'])) {
+            $this->logger->info('om.observe.threshold_suppressed', [
                 'component' => 'observational_memory',
-                'event_type' => 'om.observe.already_covered_range',
+                'event_type' => 'om.observe.threshold_suppressed',
                 'run_id' => $runId,
                 'job_id' => $jobId,
                 'correlation_id' => $correlationId,
-                'terminal_end_seq' => $terminalEndSeq,
+                'observation_set_hash' => $candidate['observation_set_hash'],
+                'token_count' => $candidate['token_count'],
             ]);
 
             return;
         }
 
-        (new ObserverPipeline($this->logger))->observeRange(
-            api: $api,
-            repository: $repository,
-            settings: $effectiveSettings,
-            runId: $runId,
-            sourceStartSeq: $sourceStartSeq,
-            sourceEndSeq: $terminalEndSeq,
-            terminalStatus: $terminalStatus,
-            jobId: $jobId,
-            correlationId: $correlationId,
+        $reflectorModel = $settings->requireReflectorModel();
+        $priorActive = $generationRepository->activeGenerationId($runId);
+        $generationId = OmIdentity::thresholdGenerationId(
+            $runId,
+            $priorActive,
+            $candidate['observation_set_hash'],
+            $reflectorModel,
+            $settings->reflectorSchemaVersion,
         );
+
+        $reflectJobId = $generationId;
+        try {
+            $api->dispatchExtensionAgentJob(new ExtensionAgentJobRequestDTO(
+                handlerId: self::REFLECT_HANDLER_ID,
+                payload: [
+                    'run_id' => $runId,
+                    'trigger' => 'threshold',
+                    'generation_id' => $generationId,
+                    'threshold_idempotency_key' => $generationId,
+                    'observation_set_hash' => $candidate['observation_set_hash'],
+                    'prior_active_generation_id' => $priorActive,
+                    'reflector_model' => $reflectorModel,
+                    'reflector_schema_version' => $settings->reflectorSchemaVersion,
+                    'token_count' => $candidate['token_count'],
+                ],
+                jobId: $reflectJobId,
+                correlationId: $runId,
+            ));
+        } catch (\Throwable $e) {
+            // Threshold dispatch failure must not drop observation progress; Messenger will surface job failures separately.
+            $this->logger->error('om.observe.threshold_dispatch_failed', [
+                'component' => 'observational_memory',
+                'event_type' => 'om.observe.threshold_dispatch_failed',
+                'run_id' => $runId,
+                'job_id' => $jobId,
+                'generation_id' => $generationId,
+                'exception_class' => $e::class,
+            ]);
+            throw $e;
+        }
+
+        $this->logger->info('om.observe.threshold_dispatched', [
+            'component' => 'observational_memory',
+            'event_type' => 'om.observe.threshold_dispatched',
+            'run_id' => $runId,
+            'job_id' => $jobId,
+            'correlation_id' => $correlationId,
+            'generation_id' => $generationId,
+            'observation_set_hash' => $candidate['observation_set_hash'],
+            'token_count' => $candidate['token_count'],
+        ]);
     }
 }

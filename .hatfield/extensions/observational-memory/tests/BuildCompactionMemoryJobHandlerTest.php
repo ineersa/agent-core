@@ -82,8 +82,8 @@ final class BuildCompactionMemoryJobHandlerTest extends TestCase
                 ($tool->handler)([
                     'observations' => [
                         [
-                            'content' => 'Prefer feature flags for rollout',
-                            'relevance' => 90,
+                            'timestamp' => '2026-07-26 12:00', 'relevance' => 'high', 'content' => 'Prefer feature flags for rollout',
+                            'timestamp' => '2026-07-26 12:00', 'relevance' => 'critical',
                             'source_refs' => [['run_id' => 'run-c', 'seq' => 1]],
                         ],
                     ],
@@ -93,16 +93,19 @@ final class BuildCompactionMemoryJobHandlerTest extends TestCase
             }
             if ('record_reflections' === $tool->name) {
                 $obsId = null;
-                if (preg_match('/id=([a-f0-9]{64})/', $request->input, $m)) {
+                if (preg_match('/\[([a-f0-9]{64})\]/', $request->input, $m)) {
+                    $obsId = $m[1];
+                } elseif (preg_match('/id=([a-f0-9]{64})/', $request->input, $m)) {
                     $obsId = $m[1];
                 }
                 if (null === $obsId) {
-                    throw new \RuntimeException('observation id not found in reflector input');
+                    throw new \RuntimeException('observation id not found in reflector input: '.$request->input);
                 }
                 ($tool->handler)([
                     'replacement_text' => 'Earlier work decided feature-flag rollouts.',
                     'reflections' => [
                         [
+                            'timestamp' => '2026-07-26 12:00',
                             'content' => 'Use feature flags for risky releases',
                             'supporting_observation_ids' => [$obsId],
                             'compression_level' => 0,
@@ -117,10 +120,8 @@ final class BuildCompactionMemoryJobHandlerTest extends TestCase
 
         $settings = OmSettings::fromArray([
             'enabled' => true,
-            'observer_model' => 'llama_cpp_test/test',
-            'reflector_model' => 'llama_cpp_test/test',
-            'renderer_version' => 'r1',
-            'observer_schema_version' => 'o1',
+            'observer' => ['model' => 'llama_cpp_test/test', 'schema_version' => 'o1', 'renderer_version' => 'r1'],
+            'reflector' => ['model' => 'llama_cpp_test/test'],
         ]);
         $paths = \Ineersa\HatfieldExt\ObservationalMemory\Runtime\OmPaths::fromSettings($settings, $this->projectDir);
         $connection = OmDatabaseFactory::connectAndMigrate($paths->databasePath, new NullLogger());
@@ -191,8 +192,8 @@ final class BuildCompactionMemoryJobHandlerTest extends TestCase
 
         $settings = OmSettings::fromArray([
             'enabled' => true,
-            'observer_model' => 'llama_cpp_test/test',
-            'reflector_model' => 'llama_cpp_test/test',
+            'observer' => ['model' => 'llama_cpp_test/test', 'schema_version' => 'o1', 'renderer_version' => 'r1'],
+            'reflector' => ['model' => 'llama_cpp_test/test'],
         ]);
         $paths = \Ineersa\HatfieldExt\ObservationalMemory\Runtime\OmPaths::fromSettings($settings, $this->projectDir);
         $connection = OmDatabaseFactory::connectAndMigrate($paths->databasePath, new NullLogger());
@@ -245,8 +246,8 @@ final class BuildCompactionMemoryJobHandlerTest extends TestCase
                 ($tool->handler)([
                     'observations' => [
                         [
-                            'content' => 'Rollout uses staged flags',
-                            'relevance' => 80,
+                            'timestamp' => '2026-07-26 12:00', 'relevance' => 'high', 'content' => 'Rollout uses staged flags',
+                            'timestamp' => '2026-07-26 12:00', 'relevance' => 'high',
                             'source_refs' => [['run_id' => 'run-no-tool', 'seq' => 1]],
                         ],
                     ],
@@ -259,8 +260,8 @@ final class BuildCompactionMemoryJobHandlerTest extends TestCase
 
         $settings = OmSettings::fromArray([
             'enabled' => true,
-            'observer_model' => 'llama_cpp_test/test',
-            'reflector_model' => 'llama_cpp_test/test',
+            'observer' => ['model' => 'llama_cpp_test/test', 'schema_version' => 'o1', 'renderer_version' => 'r1'],
+            'reflector' => ['model' => 'llama_cpp_test/test'],
         ]);
         $paths = \Ineersa\HatfieldExt\ObservationalMemory\Runtime\OmPaths::fromSettings($settings, $this->projectDir);
         $connection = OmDatabaseFactory::connectAndMigrate($paths->databasePath, new NullLogger());
@@ -283,7 +284,7 @@ final class BuildCompactionMemoryJobHandlerTest extends TestCase
         $this->assertSame('reflector_tool_not_called', $result['failure_code']);
     }
 
-    public function testObserverToolNotCalledPersistsTypedFailureCode(): void
+    public function testObserverNoToolCallCommitsZeroObservationCoverageThenNoObservationsFailure(): void
     {
         $events = [
             new SessionEventDTO(
@@ -297,13 +298,13 @@ final class BuildCompactionMemoryJobHandlerTest extends TestCase
         ];
 
         $api = $this->buildApi($events, static function (AgentCallRequestDTO $request): void {
-            // Observer model returns without calling record_observations.
+            // Observer model returns without calling record_observations (valid zero-obs coverage).
         });
 
         $settings = OmSettings::fromArray([
             'enabled' => true,
-            'observer_model' => 'llama_cpp_test/test',
-            'reflector_model' => 'llama_cpp_test/test',
+            'observer' => ['model' => 'llama_cpp_test/test', 'schema_version' => 'o1', 'renderer_version' => 'r1'],
+            'reflector' => ['model' => 'llama_cpp_test/test'],
         ]);
         $paths = \Ineersa\HatfieldExt\ObservationalMemory\Runtime\OmPaths::fromSettings($settings, $this->projectDir);
         $connection = OmDatabaseFactory::connectAndMigrate($paths->databasePath, new NullLogger());
@@ -323,8 +324,10 @@ final class BuildCompactionMemoryJobHandlerTest extends TestCase
         $result = $repo->getResult('req-obs-tool');
         $this->assertNotNull($result);
         $this->assertSame(CompactionRepository::STATUS_FAILED, $result['status']);
-        // Classification must use ObserverException::CODE_TOOL_NOT_CALLED, not message wording.
-        $this->assertSame('observer_tool_not_called', $result['failure_code']);
+        // Zero-obs coverage is durable; Reflector path then fails with no_observations.
+        $this->assertSame('no_observations', $result['failure_code']);
+        $cov = (int) $connection->fetchOne('SELECT COUNT(*) FROM om_coverage WHERE run_id = ?', ['run-obs-tool']);
+        $this->assertSame(1, $cov);
     }
 
     /**
@@ -363,15 +366,21 @@ final class BuildCompactionMemoryJobHandlerTest extends TestCase
             {
                 return [
                     'enabled' => true,
-                    'observer_model' => 'llama_cpp_test/test',
-                    'reflector_model' => 'llama_cpp_test/test',
-                    'renderer_version' => 'r1',
-                    'observer_schema_version' => 'o1',
-                    'max_observations' => 5,
-                    'content_max_chars' => 500,
-                    'tool_result_max_chars' => 4000,
-                    'observer_input_budget_tokens' => 50_000,
-                    'reflector_input_budget_tokens' => 50_000,
+                    'observer' => [
+                        'model' => 'llama_cpp_test/test',
+                        'schema_version' => 'o1',
+
+                        'context_window_ratio' => 0.65,
+                    ],
+                    'reflector' => [
+                        'model' => 'llama_cpp_test/test',
+                        'schema_version' => 'rv1',
+                        'context_window_ratio' => 0.65,
+                    ],
+                    'pools' => [
+                    ],
+                    'compaction' => [
+                    ],
                 ];
             }
 
@@ -420,6 +429,11 @@ final class BuildCompactionMemoryJobHandlerTest extends TestCase
                     public function run(AgentCallRequestDTO $request): void
                     {
                         ($this->onAgentRun)($request);
+                    }
+
+                    public function contextWindow(string $exactModel): ?int
+                    {
+                        return 128000;
                     }
                 };
             }

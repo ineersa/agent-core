@@ -22,14 +22,14 @@ final class ObserveBoundaryTerminalHookTest extends TestCase
         $api = new InMemoryExtensionApiBridge('/tmp');
         $settings = OmSettings::fromArray([
             'enabled' => true,
-            'observer_model' => 'llama_cpp_test/test',
-            'reflector_model' => 'llama_cpp_test/test',
-            'renderer_version' => 'r1',
-            'observer_schema_version' => 'o1',
-            'max_observations' => 12,
-            'observer_input_budget_tokens' => 12000,
-            'tool_result_max_chars' => 4000,
-            'content_max_chars' => 2000,
+            'observer' => [
+                'model' => 'llama_cpp_test/test',
+                'schema_version' => 'o1',
+                'renderer_version' => 'r1',
+            ],
+            'reflector' => [
+                'model' => 'llama_cpp_test/test',
+            ],
         ]);
         $hook = new ObserveBoundaryTerminalHook($api, $settings, new NullLogger());
 
@@ -57,14 +57,14 @@ final class ObserveBoundaryTerminalHookTest extends TestCase
         $api = new InMemoryExtensionApiBridge('/tmp');
         $settings = OmSettings::fromArray([
             'enabled' => true,
-            'observer_model' => 'llama_cpp_test/test',
-            'reflector_model' => 'llama_cpp_test/test',
-            'renderer_version' => 'r1',
-            'observer_schema_version' => 'o1',
-            'max_observations' => 12,
-            'observer_input_budget_tokens' => 12000,
-            'tool_result_max_chars' => 4000,
-            'content_max_chars' => 2000,
+            'observer' => [
+                'model' => 'llama_cpp_test/test',
+                'schema_version' => 'o1',
+                'renderer_version' => 'r1',
+            ],
+            'reflector' => [
+                'model' => 'llama_cpp_test/test',
+            ],
         ]);
         $hook = new ObserveBoundaryTerminalHook($api, $settings, new NullLogger());
 

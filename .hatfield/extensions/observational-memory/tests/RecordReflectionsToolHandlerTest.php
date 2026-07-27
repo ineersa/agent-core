@@ -107,10 +107,10 @@ final class RecordReflectionsToolHandlerTest extends TestCase
      */
     public function testDuplicateReflectionDoesNotDoubleCountTokenBudget(): void
     {
-        // 20 UTF-8 chars => ceil(20 / 3.25) = 7 tokens. Budget fits one copy, not two.
+        // 20 UTF-8 chars => ceil(20 / 4) = 5 tokens. Budget fits one copy, not two.
         $content = str_repeat('x', 20);
         $tokens = \Ineersa\HatfieldExt\ObservationalMemory\Observer\OmTokenEstimator::estimate($content);
-        $this->assertSame(7, $tokens);
+        $this->assertSame(5, $tokens);
 
         $handler = new RecordReflectionsToolHandler(
             runId: 'run-1',

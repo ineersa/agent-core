@@ -14,6 +14,7 @@ use Ineersa\HatfieldExt\ObservationalMemory\Observer\OmTokenEstimator;
 use Ineersa\HatfieldExt\ObservationalMemory\Runtime\OmPaths;
 use Ineersa\HatfieldExt\ObservationalMemory\Runtime\OmSettings;
 use Ineersa\HatfieldExt\ObservationalMemory\Storage\CompactionRepository;
+use Ineersa\HatfieldExt\ObservationalMemory\Storage\MemoryGenerationRepository;
 use Ineersa\HatfieldExt\ObservationalMemory\Storage\ObservationRepository;
 use Ineersa\HatfieldExt\ObservationalMemory\Storage\OmConflictException;
 use Ineersa\HatfieldExt\ObservationalMemory\Storage\OmDatabaseFactory;
@@ -55,6 +56,7 @@ final readonly class BuildCompactionMemoryJobHandler implements ExtensionAgentJo
         $connection = OmDatabaseFactory::connectAndMigrate($paths->databasePath, $this->logger);
         $compactionRepo = new CompactionRepository($connection);
         $observationRepo = new ObservationRepository($connection);
+        $generationRepo = new MemoryGenerationRepository($connection);
         $now = (new \DateTimeImmutable('now', new \DateTimeZone('UTC')))->format(\DateTimeInterface::ATOM);
 
         try {
@@ -96,6 +98,7 @@ final readonly class BuildCompactionMemoryJobHandler implements ExtensionAgentJo
             $this->repairCoverage(
                 api: $api,
                 observationRepo: $observationRepo,
+                generationRepo: $generationRepo,
                 settings: $settings,
                 runId: $runId,
                 requiredEndSeq: $requiredEndSeq,
@@ -103,7 +106,9 @@ final readonly class BuildCompactionMemoryJobHandler implements ExtensionAgentJo
                 correlationId: $correlationId,
             );
 
-            $observations = $observationRepo->listObservationsForRun($runId);
+            // Slice 2: catch-up uses rewritten Observer. Reflector semantics remain temporary
+            // until slice 3 rewrites generation commit + deterministic render.
+            $observations = $observationRepo->listActiveCandidateObservations($runId);
             if ([] === $observations) {
                 $compactionRepo->commitFailure(
                     requestId: $requestId,
@@ -121,7 +126,9 @@ final readonly class BuildCompactionMemoryJobHandler implements ExtensionAgentJo
                 return;
             }
 
-            $observationSetHash = $this->observationSetHash($observations);
+            $candidate = $observationRepo->activeCandidateSet($runId);
+            $observationSetHash = $candidate['observation_set_hash'];
+            $compactionRepo->freezeObservationSetHash($requestId, $observationSetHash);
             $compressionLevel = $this->chooseCompressionLevel($observations, $settings);
             $allowedIds = [];
             foreach ($observations as $observation) {
@@ -130,22 +137,25 @@ final readonly class BuildCompactionMemoryJobHandler implements ExtensionAgentJo
 
             $input = $this->renderReflectorInput($observations, $settings, $customInstructions, $compressionLevel);
             $reflectorModel = $settings->requireReflectorModel();
+            $maxReflections = 32;
+            $reflectionContentMaxChars = 4_000;
+            $replacementMaxChars = 12_000;
             $toolHandler = new RecordReflectionsToolHandler(
                 runId: $runId,
                 requestId: $requestId,
                 reflectorSchemaVersion: $settings->reflectorSchemaVersion,
                 compressionLevel: $compressionLevel,
                 allowedObservationIds: $allowedIds,
-                maxReflections: $settings->maxReflections,
-                reflectionContentMaxChars: $settings->reflectionContentMaxChars,
-                replacementMaxChars: $settings->replacementMaxChars,
+                maxReflections: $maxReflections,
+                reflectionContentMaxChars: $reflectionContentMaxChars,
+                replacementMaxChars: $replacementMaxChars,
                 reflectionsMaxTokens: $settings->reflectionsMaxTokens,
             );
 
             $api->agent()->run(new AgentCallRequestDTO(
                 model: $reflectorModel,
                 sessionId: $runId,
-                instructions: $this->reflectorInstructions($settings, $compressionLevel),
+                instructions: $this->reflectorInstructions($settings, $compressionLevel, $maxReflections, $reflectionContentMaxChars, $replacementMaxChars),
                 input: $input,
                 tools: [
                     new AgentToolDTO(
@@ -159,12 +169,12 @@ final readonly class BuildCompactionMemoryJobHandler implements ExtensionAgentJo
                                 'replacement_text' => [
                                     'type' => 'string',
                                     'minLength' => 1,
-                                    'maxLength' => $settings->replacementMaxChars,
+                                    'maxLength' => $replacementMaxChars,
                                 ],
                                 'reflections' => [
                                     'type' => 'array',
                                     'minItems' => 1,
-                                    'maxItems' => $settings->maxReflections,
+                                    'maxItems' => $maxReflections,
                                     'items' => [
                                         'type' => 'object',
                                         'additionalProperties' => false,
@@ -173,7 +183,7 @@ final readonly class BuildCompactionMemoryJobHandler implements ExtensionAgentJo
                                             'content' => [
                                                 'type' => 'string',
                                                 'minLength' => 1,
-                                                'maxLength' => $settings->reflectionContentMaxChars,
+                                                'maxLength' => $reflectionContentMaxChars,
                                             ],
                                             'supporting_observation_ids' => [
                                                 'type' => 'array',
@@ -194,7 +204,7 @@ final readonly class BuildCompactionMemoryJobHandler implements ExtensionAgentJo
                     ),
                 ],
                 correlationId: $jobId ?? $correlationId,
-                maxToolCalls: 3,
+                maxToolCalls: 100,
             ));
 
             if (!$toolHandler->hasRecorded()) {
@@ -327,6 +337,7 @@ final readonly class BuildCompactionMemoryJobHandler implements ExtensionAgentJo
     private function repairCoverage(
         ExtensionApiInterface $api,
         ObservationRepository $observationRepo,
+        MemoryGenerationRepository $generationRepo,
         OmSettings $settings,
         string $runId,
         int $requiredEndSeq,
@@ -347,13 +358,13 @@ final readonly class BuildCompactionMemoryJobHandler implements ExtensionAgentJo
             return;
         }
 
-        (new ObserverPipeline($this->logger))->observeRange(
+        (new ObserverPipeline($this->logger))->observeThrough(
             api: $api,
             repository: $observationRepo,
+            generationRepository: $generationRepo,
             settings: $settings,
             runId: $runId,
-            sourceStartSeq: $missingStart,
-            sourceEndSeq: $requiredEndSeq,
+            terminalEndSeq: $requiredEndSeq,
             terminalStatus: 'compaction_catchup',
             jobId: $jobId,
             correlationId: $correlationId,
@@ -384,10 +395,13 @@ final readonly class BuildCompactionMemoryJobHandler implements ExtensionAgentJo
     }
 
     /**
+     * Temporary slice-2 reflector input. Slice 3 replaces with normative Reflector prompt + coverage tiers.
+     *
      * @param list<array{
      *   observation_id: string,
      *   content: string,
-     *   relevance: int,
+     *   relevance: string,
+     *   timestamp: string,
      *   token_count: int,
      *   source_start_seq: int,
      *   source_end_seq: int
@@ -399,93 +413,57 @@ final readonly class BuildCompactionMemoryJobHandler implements ExtensionAgentJo
         ?string $customInstructions,
         int $compressionLevel,
     ): string {
-        // Deterministic pool ordering: relevance desc, then source range, then id.
         $pool = $observations;
         usort($pool, static function (array $a, array $b): int {
-            $rel = ((int) $b['relevance']) <=> ((int) $a['relevance']);
-            if (0 !== $rel) {
-                return $rel;
-            }
-            $start = ((int) $a['source_start_seq']) <=> ((int) $b['source_start_seq']);
-            if (0 !== $start) {
-                return $start;
-            }
-            $end = ((int) $a['source_end_seq']) <=> ((int) $b['source_end_seq']);
-            if (0 !== $end) {
-                return $end;
+            $byTs = strcmp((string) ($a['timestamp'] ?? ''), (string) ($b['timestamp'] ?? ''));
+            if (0 !== $byTs) {
+                return $byTs;
             }
 
             return strcmp((string) $a['observation_id'], (string) $b['observation_id']);
         });
 
-        // Level 1 keeps high-signal records only and shortens content previews.
-        if (1 === $compressionLevel) {
-            $pool = array_values(array_filter(
-                $pool,
-                static fn (array $observation): bool => ((int) $observation['relevance']) >= 50,
-            ));
-            if ([] === $pool) {
-                $pool = \array_slice($observations, 0, min(8, \count($observations)));
-            }
-        }
-
         $lines = [
-            'Compression level: '.$compressionLevel,
-            'Observation count: '.\count($pool),
+            'CURRENT REFLECTIONS:',
+            '(none yet)',
+            '',
+            'CURRENT OBSERVATIONS:',
         ];
         if (null !== $customInstructions && '' !== trim($customInstructions)) {
             $lines[] = 'Additional instructions: '.trim($customInstructions);
         }
-        $lines[] = 'Observations:';
 
-        $budget = $settings->reflectorInputBudgetTokens;
+        // Envelope sizing is slice-3 responsibility; keep input bounded by pool max for now.
+        $budget = $settings->observationsMaxTokens;
         $used = OmTokenEstimator::estimate(implode("\n", $lines));
         foreach ($pool as $observation) {
-            $content = (string) $observation['content'];
-            if (1 === $compressionLevel && mb_strlen($content, 'UTF-8') > 240) {
-                $content = mb_substr($content, 0, 240, 'UTF-8').'…';
-            }
             $chunk = \sprintf(
-                "- id=%s relevance=%d range=%d..%d tokens=%d\n  %s",
+                '[%s] %s [%s] [coverage: none] %s',
                 $observation['observation_id'],
+                $observation['timestamp'],
                 $observation['relevance'],
-                $observation['source_start_seq'],
-                $observation['source_end_seq'],
-                $observation['token_count'],
-                $content,
+                $observation['content'],
             );
             $chunkTokens = OmTokenEstimator::estimate($chunk);
             if ($used + $chunkTokens > $budget) {
-                $lines[] = '... truncated for reflector input budget ...';
                 break;
             }
             $lines[] = $chunk;
             $used += $chunkTokens;
         }
+        $lines[] = '';
+        $lines[] = 'Current local time fallback: '.(new \DateTimeImmutable('now'))->format('Y-m-d H:i');
 
         return implode("\n", $lines);
     }
 
-    /**
-     * @param list<array{observation_id: string, content_hash: string}> $observations
-     */
-    private function observationSetHash(array $observations): string
-    {
-        $parts = [];
-        foreach ($observations as $observation) {
-            $parts[] = $observation['observation_id'].':'.$observation['content_hash'];
-        }
-        sort($parts, \SORT_STRING);
-
-        return hash('sha256', implode('|', $parts));
-    }
-
-    private function reflectorInstructions(OmSettings $settings, int $compressionLevel): string
-    {
-        $maxReflections = $settings->maxReflections;
-        $contentMax = $settings->reflectionContentMaxChars;
-        $replacementMax = $settings->replacementMaxChars;
-
+    private function reflectorInstructions(
+        OmSettings $settings,
+        int $compressionLevel,
+        int $maxReflections,
+        int $contentMax,
+        int $replacementMax,
+    ): string {
         return <<<PROMPT
 You are the Observational Memory Reflector for Hatfield.
 

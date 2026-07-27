@@ -13,8 +13,8 @@ use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 
 /**
- * Thesis: request identity is immutable; multiple reflections per request work;
- * contiguous coverage ignores later islands when earlier gaps exist.
+ * Thesis: request fingerprint is immutable identity; observation_set_hash freezes later;
+ * multiple reflections per request work; contiguous coverage ignores later islands.
  */
 final class CompactionRepositoryTest extends TestCase
 {
@@ -41,14 +41,17 @@ final class CompactionRepositoryTest extends TestCase
         $obs = new ObservationRepository($connection);
         $now = (new \DateTimeImmutable('now', new \DateTimeZone('UTC')))->format(\DateTimeInterface::ATOM);
 
-        // Island at 5..6 without covering 1..4 must not report contiguous end 6.
-        $obs->commitBoundaryCoverage(
+        $obs->commitChunkPartCoverage(
             coverageKey: 'c-island',
             runId: 'run-g',
             boundaryKey: 'b-island',
             sourceStartSeq: 5,
             sourceEndSeq: 6,
+            chunkKey: 'chunk-island',
+            partIndex: 1,
+            partCount: 1,
             sourceDigest: 'd-island',
+            partDigest: 'd-island',
             rendererVersion: 'r1',
             observerSchemaVersion: 'o1',
             observerModel: 'p/m',
@@ -57,13 +60,17 @@ final class CompactionRepositoryTest extends TestCase
         );
         $this->assertNull($obs->contiguousCoveredEndSeq('run-g', 'r1', 'o1'));
 
-        $obs->commitBoundaryCoverage(
+        $obs->commitChunkPartCoverage(
             coverageKey: 'c-head',
             runId: 'run-g',
             boundaryKey: 'b-head',
             sourceStartSeq: 1,
             sourceEndSeq: 2,
+            chunkKey: 'chunk-head',
+            partIndex: 1,
+            partCount: 1,
             sourceDigest: 'd-head',
+            partDigest: 'd-head',
             rendererVersion: 'r1',
             observerSchemaVersion: 'o1',
             observerModel: 'p/m',
@@ -109,6 +116,11 @@ final class CompactionRepositoryTest extends TestCase
             ['req-m'],
         );
         $this->assertSame(2, $count);
+        $frozen = $connection->fetchOne(
+            'SELECT observation_set_hash FROM om_compaction_request WHERE request_id = ?',
+            ['req-m'],
+        );
+        $this->assertSame('set-m', $frozen);
 
         $this->expectException(OmConflictException::class);
         $repo->ensureRequest('req-m', 'run-g', 1, 7, 7, 'fp-other', $now);

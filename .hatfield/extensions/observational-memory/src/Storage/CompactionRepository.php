@@ -9,6 +9,8 @@ use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 
 /**
  * Durable compaction request/result + reflection persistence with immutable request identity.
+ *
+ * request_fingerprint is identity; observation_set_hash is frozen later by the worker.
  */
 final class CompactionRepository
 {
@@ -19,6 +21,8 @@ final class CompactionRepository
     public const string STATUS_SUCCEEDED = 'succeeded';
 
     public const string STATUS_FAILED = 'failed';
+
+    public const string STATUS_TIMED_OUT = 'timed_out';
 
     public function __construct(
         private readonly Connection $connection,
@@ -47,7 +51,7 @@ final class CompactionRepository
     ): array {
         $existing = $this->connection->fetchAssociative(
             'SELECT request_id, run_id, required_start_seq, required_end_seq, required_watermark,
-                    observation_set_hash, status
+                    request_fingerprint, observation_set_hash, status
              FROM om_compaction_request WHERE request_id = ?',
             [$requestId],
         );
@@ -64,7 +68,7 @@ final class CompactionRepository
 
             $status = (string) ($existing['status'] ?? self::STATUS_QUEUED);
             $result = $this->getResult($requestId);
-            $terminal = \in_array($status, [self::STATUS_SUCCEEDED, self::STATUS_FAILED], true)
+            $terminal = \in_array($status, [self::STATUS_SUCCEEDED, self::STATUS_FAILED, self::STATUS_TIMED_OUT], true)
                 || (null !== $result && \in_array((string) ($result['status'] ?? ''), [self::STATUS_SUCCEEDED, self::STATUS_FAILED], true));
 
             return [
@@ -83,7 +87,8 @@ final class CompactionRepository
                 'required_start_seq' => $requiredStartSeq,
                 'required_end_seq' => $requiredEndSeq,
                 'required_watermark' => $requiredWatermark,
-                'observation_set_hash' => $requestFingerprint,
+                'request_fingerprint' => $requestFingerprint,
+                'observation_set_hash' => null,
                 'status' => self::STATUS_QUEUED,
                 'requested_at' => $now,
                 'updated_at' => $now,
@@ -115,18 +120,18 @@ final class CompactionRepository
     public function markRunning(string $requestId, string $requestFingerprint, string $now): void
     {
         $row = $this->connection->fetchAssociative(
-            'SELECT observation_set_hash, status FROM om_compaction_request WHERE request_id = ?',
+            'SELECT request_fingerprint, status FROM om_compaction_request WHERE request_id = ?',
             [$requestId],
         );
         if (false === $row) {
             throw new \RuntimeException(\sprintf('Compaction request %s not found.', $requestId));
         }
-        if (($row['observation_set_hash'] ?? '') !== $requestFingerprint) {
+        if (($row['request_fingerprint'] ?? '') !== $requestFingerprint) {
             throw new OmConflictException(\sprintf('Compaction request %s fingerprint mismatch.', $requestId));
         }
 
         $status = (string) ($row['status'] ?? '');
-        if (\in_array($status, [self::STATUS_SUCCEEDED, self::STATUS_FAILED], true)) {
+        if (\in_array($status, [self::STATUS_SUCCEEDED, self::STATUS_FAILED, self::STATUS_TIMED_OUT], true)) {
             return;
         }
 
@@ -217,6 +222,29 @@ final class CompactionRepository
         ];
     }
 
+    public function freezeObservationSetHash(string $requestId, string $observationSetHash): void
+    {
+        $row = $this->connection->fetchAssociative(
+            'SELECT observation_set_hash, status FROM om_compaction_request WHERE request_id = ?',
+            [$requestId],
+        );
+        if (false === $row) {
+            throw new \RuntimeException(\sprintf('Compaction request %s not found.', $requestId));
+        }
+        $existing = $row['observation_set_hash'] ?? null;
+        if (null !== $existing && '' !== $existing && $existing !== $observationSetHash) {
+            throw new OmConflictException(\sprintf('Compaction request %s observation_set_hash already frozen differently.', $requestId));
+        }
+        if ($existing === $observationSetHash) {
+            return;
+        }
+
+        $this->connection->executeStatement(
+            'UPDATE om_compaction_request SET observation_set_hash = ? WHERE request_id = ? AND (observation_set_hash IS NULL OR observation_set_hash = \'\')',
+            [$observationSetHash, $requestId],
+        );
+    }
+
     /**
      * @param list<array{
      *   reflection_id: string,
@@ -245,6 +273,14 @@ final class CompactionRepository
         string $now,
         ?array $metadata = null,
     ): array {
+        $request = $this->connection->fetchAssociative(
+            'SELECT status FROM om_compaction_request WHERE request_id = ?',
+            [$requestId],
+        );
+        if (false !== $request && self::STATUS_TIMED_OUT === ($request['status'] ?? '')) {
+            throw new OmConflictException(\sprintf('Compaction request %s already timed out; reject late success.', $requestId));
+        }
+
         $existing = $this->getResult($requestId);
         if (null !== $existing) {
             if (($existing['observation_set_hash'] ?? '') !== $observationSetHash
@@ -278,6 +314,11 @@ final class CompactionRepository
                 $now,
                 null,
                 null,
+            );
+
+            $this->connection->executeStatement(
+                'UPDATE om_compaction_request SET observation_set_hash = ? WHERE request_id = ?',
+                [$observationSetHash, $requestId],
             );
 
             foreach ($reflections as $reflection) {
@@ -363,6 +404,14 @@ final class CompactionRepository
         string $now,
         ?array $failureMetadata = null,
     ): array {
+        $request = $this->connection->fetchAssociative(
+            'SELECT status FROM om_compaction_request WHERE request_id = ?',
+            [$requestId],
+        );
+        if (false !== $request && self::STATUS_TIMED_OUT === ($request['status'] ?? '')) {
+            throw new OmConflictException(\sprintf('Compaction request %s already timed out; reject late failure.', $requestId));
+        }
+
         $existing = $this->getResult($requestId);
         if (null !== $existing) {
             if (($existing['status'] ?? '') === self::STATUS_FAILED
@@ -405,7 +454,7 @@ final class CompactionRepository
                     'request_id' => $requestId,
                     'run_id' => $runId,
                     'required_watermark' => $requiredWatermark,
-                    'observation_set_hash' => $requestFingerprint,
+                    'observation_set_hash' => '',
                     'status' => self::STATUS_FAILED,
                     'replacement_text' => null,
                     'metadata_json' => null,
@@ -434,6 +483,16 @@ final class CompactionRepository
         return ['status' => 'inserted'];
     }
 
+    public function markTimedOut(string $requestId, string $now): void
+    {
+        $this->connection->executeStatement(
+            'UPDATE om_compaction_request
+             SET status = ?, updated_at = ?, completed_at = ?, failure_code = ?
+             WHERE request_id = ? AND status IN (?, ?)',
+            [self::STATUS_TIMED_OUT, $now, $now, 'timed_out', $requestId, self::STATUS_QUEUED, self::STATUS_RUNNING],
+        );
+    }
+
     /**
      * @param array<string, mixed> $existing
      */
@@ -449,7 +508,7 @@ final class CompactionRepository
             || (int) ($existing['required_start_seq'] ?? 0) !== $requiredStartSeq
             || (int) ($existing['required_end_seq'] ?? 0) !== $requiredEndSeq
             || (int) ($existing['required_watermark'] ?? 0) !== $requiredWatermark
-            || (string) ($existing['observation_set_hash'] ?? '') !== $requestFingerprint) {
+            || (string) ($existing['request_fingerprint'] ?? '') !== $requestFingerprint) {
             throw new OmConflictException(\sprintf('Compaction request identity conflict for %s.', (string) ($existing['request_id'] ?? 'unknown')));
         }
     }
@@ -467,7 +526,7 @@ final class CompactionRepository
         ?string $failureMetadataJson,
     ): void {
         $existing = $this->connection->fetchAssociative(
-            'SELECT request_id, run_id, required_start_seq, required_end_seq, required_watermark, observation_set_hash, status
+            'SELECT request_id, run_id, required_start_seq, required_end_seq, required_watermark, request_fingerprint, status
              FROM om_compaction_request WHERE request_id = ?',
             [$requestId],
         );
@@ -478,7 +537,8 @@ final class CompactionRepository
                 'required_start_seq' => $requiredStartSeq,
                 'required_end_seq' => $requiredEndSeq,
                 'required_watermark' => $requiredWatermark,
-                'observation_set_hash' => $requestFingerprint,
+                'request_fingerprint' => $requestFingerprint,
+                'observation_set_hash' => null,
                 'status' => $status,
                 'requested_at' => $now,
                 'updated_at' => $now,

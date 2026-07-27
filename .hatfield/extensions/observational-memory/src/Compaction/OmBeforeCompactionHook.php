@@ -14,6 +14,7 @@ use Ineersa\HatfieldExt\ObservationalMemory\Runtime\OmSettings;
 use Ineersa\HatfieldExt\ObservationalMemory\Storage\CompactionRepository;
 use Ineersa\HatfieldExt\ObservationalMemory\Storage\OmConflictException;
 use Ineersa\HatfieldExt\ObservationalMemory\Storage\OmDatabaseFactory;
+use Ineersa\HatfieldExt\ObservationalMemory\Support\OmIdentity;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -46,12 +47,17 @@ final readonly class OmBeforeCompactionHook implements BeforeCompactionHookInter
         try {
             $this->settings->requireReflectorModel();
             $this->settings->requireObserverModel();
+            $requestFingerprint = $this->requestFingerprint($context);
+            $requestId = OmIdentity::compactionRequestId(
+                $context->runId,
+                $context->requiredStartSeq,
+                $context->requiredEndSeq,
+                $requestFingerprint,
+            );
         } catch (\RuntimeException $e) {
             return BeforeCompactionHookResultDTO::cancel($e->getMessage());
         }
 
-        $requestId = $this->requestId($context);
-        $requestFingerprint = $this->requestFingerprint($context);
         $now = (new \DateTimeImmutable('now', new \DateTimeZone('UTC')))->format(\DateTimeInterface::ATOM);
 
         try {
@@ -276,30 +282,33 @@ final readonly class OmBeforeCompactionHook implements BeforeCompactionHookInter
         return $decoded;
     }
 
-    private function requestId(BeforeCompactionHookContextDTO $context): string
-    {
-        return hash('sha256', implode('|', [
-            $context->runId,
-            (string) $context->requiredStartSeq,
-            (string) $context->requiredEndSeq,
-            $this->requestFingerprint($context),
-        ]));
-    }
-
     private function requestFingerprint(BeforeCompactionHookContextDTO $context): string
     {
-        $parts = $this->settings->compactionIdentityParts();
-        $parts['run_id'] = $context->runId;
-        $parts['required_start_seq'] = $context->requiredStartSeq;
-        $parts['required_end_seq'] = $context->requiredEndSeq;
-        $parts['custom_instructions'] = $context->customInstructions ?? '';
-
-        ksort($parts);
-
-        try {
-            return hash('sha256', json_encode($parts, \JSON_THROW_ON_ERROR));
-        } catch (\JsonException $e) {
-            throw new \RuntimeException('Failed to encode OM compaction request fingerprint.', previous: $e);
+        $observerModel = $this->settings->requireObserverModel();
+        $reflectorModel = $this->settings->requireReflectorModel();
+        $observerWindow = $this->api->agent()->contextWindow($observerModel);
+        $reflectorWindow = $this->api->agent()->contextWindow($reflectorModel);
+        if (null === $observerWindow || $observerWindow <= 0 || null === $reflectorWindow || $reflectorWindow <= 0) {
+            throw new \RuntimeException('observational_memory compaction requires positive model context windows.');
         }
+
+        return OmIdentity::compactionRequestFingerprint([
+            'run_id' => $context->runId,
+            'required_start_seq' => $context->requiredStartSeq,
+            'required_end_seq' => $context->requiredEndSeq,
+            'required_watermark' => $context->requiredEndSeq,
+            'custom_instructions' => $context->customInstructions ?? '',
+            'observer_model' => $observerModel,
+            'observer_context_window' => $observerWindow,
+            'observer_context_window_ratio' => $this->settings->observerContextWindowRatio,
+            'renderer_version' => $this->settings->rendererVersion,
+            'observer_schema_version' => $this->settings->observerSchemaVersion,
+            'reflector_model' => $reflectorModel,
+            'reflector_context_window' => $reflectorWindow,
+            'reflector_context_window_ratio' => $this->settings->reflectorContextWindowRatio,
+            'reflector_schema_version' => $this->settings->reflectorSchemaVersion,
+            'observations_max_tokens' => $this->settings->observationsMaxTokens,
+            'reflections_max_tokens' => $this->settings->reflectionsMaxTokens,
+        ]);
     }
 }

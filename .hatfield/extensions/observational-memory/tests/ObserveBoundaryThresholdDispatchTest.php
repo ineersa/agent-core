@@ -22,23 +22,24 @@ use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallRewriteHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolRegistrationDTO;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolResultHookInterface;
 use Ineersa\HatfieldExt\ObservationalMemory\Observer\ObserveBoundaryJobHandler;
-use Ineersa\HatfieldExt\ObservationalMemory\Storage\ObservationRepository;
+use Ineersa\HatfieldExt\ObservationalMemory\Observer\OmTokenEstimator;
 use Ineersa\HatfieldExt\ObservationalMemory\Storage\OmDatabaseFactory;
+use Ineersa\HatfieldExt\ObservationalMemory\Support\OmIdentity;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 
 /**
- * Thesis: async ObserveBoundaryJobHandler renders range, invokes agent with record_observations,
- * and persists zero-or-more observations plus coverage watermark.
+ * Thesis: threshold dispatch only after durable observe, when active tokens > 40k,
+ * with deterministic generation/job id; suppressed when already running/succeeded for set.
  */
-final class ObserveBoundaryJobHandlerTest extends TestCase
+final class ObserveBoundaryThresholdDispatchTest extends TestCase
 {
     private string $projectDir;
 
     protected function setUp(): void
     {
         parent::setUp();
-        $this->projectDir = TestDirectoryIsolation::createProjectTempDir('om-observe-job');
+        $this->projectDir = TestDirectoryIsolation::createProjectTempDir('om-threshold');
         TestDirectoryIsolation::createHatfieldTree($this->projectDir);
     }
 
@@ -48,154 +49,136 @@ final class ObserveBoundaryJobHandlerTest extends TestCase
         parent::tearDown();
     }
 
-    public function testPersistsObservationsAndCoverageFromStubAgent(): void
+    public function testDispatchesThresholdWhenActiveTokensExceedLimit(): void
     {
+        // Content large enough that estimator > 40000 tokens: ceil(chars/4) > 40000 => chars > 160000.
+        $content = str_repeat('a', 160_004);
+        $this->assertGreaterThan(40_000, OmTokenEstimator::estimate($content));
+
         $events = [
-            new SessionEventDTO(
-                runId: 'run-1',
-                seq: 1,
-                turnNo: 1,
-                type: 'agent_command_applied',
-                payload: ['kind' => 'prompt', 'text' => 'Use feature flags'],
-                createdAt: '2026-07-23T00:00:00+00:00',
-            ),
-            new SessionEventDTO(
-                runId: 'run-1',
-                seq: 2,
-                turnNo: 1,
-                type: 'agent_end',
-                payload: ['reason' => 'completed'],
-                createdAt: '2026-07-23T00:00:01+00:00',
-            ),
+            new SessionEventDTO('run-t', 1, 1, 'agent_command_applied', ['text' => 'hello'], '2026-07-26T00:00:00+00:00'),
+            new SessionEventDTO('run-t', 2, 1, 'agent_end', ['reason' => 'completed'], '2026-07-26T00:00:01+00:00'),
         ];
 
-        $lastRequest = null;
+        $dispatched = [];
         $api = $this->buildApi(
             events: $events,
-            onAgentRun: static function (AgentCallRequestDTO $request) use (&$lastRequest): void {
-                $lastRequest = $request;
+            onAgentRun: static function (AgentCallRequestDTO $request) use ($content): void {
                 $tool = $request->tools[0] ?? null;
-                if (null === $tool) {
-                    throw new \RuntimeException('expected record_observations tool');
-                }
+                self::assertNotNull($tool);
                 ($tool->handler)([
-                    'observations' => [
-                        [
-                            'timestamp' => '2026-07-23 00:00',
-                            'content' => 'Prefer feature flags for rollout',
-                            'relevance' => 'high',
-                            'source_refs' => [
-                                ['run_id' => 'run-1', 'seq' => 1],
-                            ],
-                        ],
-                    ],
+                    'observations' => [[
+                        'timestamp' => '2026-07-26 00:00',
+                        'content' => $content,
+                        'relevance' => 'medium',
+                        'source_refs' => [['run_id' => 'run-t', 'seq' => 1]],
+                    ]],
                 ]);
             },
+            onDispatch: static function (ExtensionAgentJobRequestDTO $request) use (&$dispatched): void {
+                $dispatched[] = $request;
+            },
+            reflectAfter: 40_000,
         );
 
-        $handler = new ObserveBoundaryJobHandler(new NullLogger());
-        $handler->handle(
+        (new ObserveBoundaryJobHandler(new NullLogger()))->handle(
             $api,
             [
-                'run_id' => 'run-1',
+                'run_id' => 'run-t',
                 'terminal_end_seq' => 2,
                 'terminal_status' => 'completed',
-                'renderer_version' => 'r1',
-                'observer_schema_version' => 'o1',
+                'renderer_version' => '1',
+                'observer_schema_version' => '1',
             ],
-            'job-1',
-            'run-1',
+            'job-observe',
+            'run-t',
         );
 
-        $this->assertInstanceOf(AgentCallRequestDTO::class, $lastRequest);
-        $this->assertSame(100, $lastRequest->maxToolCalls);
-        $this->assertStringContainsString('Use feature flags', $lastRequest->input);
-        $this->assertStringContainsString('CURRENT REFLECTIONS:', $lastRequest->input);
-        $this->assertStringContainsString('Current local time fallback:', $lastRequest->input);
-        $this->assertStringContainsString('observation agent for a coding assistant', $lastRequest->instructions);
-
-        $dbPath = $this->projectDir.'/.hatfield/extensions-data/observational-memory/om.sqlite';
-        $this->assertFileExists($dbPath);
-        $this->assertSame('0700', substr(\sprintf('%o', fileperms(\dirname($dbPath))), -4));
-
-        $connection = OmDatabaseFactory::connect($dbPath, new NullLogger());
-        $repo = new ObservationRepository($connection);
-        $this->assertSame(2, $repo->contiguousCoveredEndSeq('run-1', 'r1', 'o1'));
-
-        $count = (int) $connection->fetchOne('SELECT COUNT(*) FROM om_observation WHERE run_id = ?', ['run-1']);
-        $this->assertSame(1, $count);
-        $content = (string) $connection->fetchOne('SELECT content FROM om_observation WHERE run_id = ?', ['run-1']);
-        $this->assertSame('Prefer feature flags for rollout', $content);
+        $this->assertCount(1, $dispatched);
+        $this->assertSame(ObserveBoundaryJobHandler::REFLECT_HANDLER_ID, $dispatched[0]->handlerId);
+        $this->assertSame('threshold', $dispatched[0]->payload['trigger']);
+        $obsId = OmIdentity::observationId(
+            'run-t',
+            '1',
+            '2026-07-26 00:00',
+            $content,
+            [['run_id' => 'run-t', 'seq' => 1]],
+        );
+        $setHash = OmIdentity::observationSetHash('run-t', [$obsId]);
+        $this->assertSame($setHash, $dispatched[0]->payload['observation_set_hash']);
+        $expectedGeneration = OmIdentity::thresholdGenerationId(
+            'run-t',
+            null,
+            $setHash,
+            'llama_cpp_test/test',
+            '1',
+        );
+        $this->assertSame($expectedGeneration, $dispatched[0]->payload['generation_id']);
+        $this->assertSame($expectedGeneration, $dispatched[0]->jobId);
     }
 
-    public function testZeroObservationCoverageIsPersisted(): void
+    public function testSuppressesThresholdWhenUnderTokenLimit(): void
     {
         $events = [
-            new SessionEventDTO(
-                runId: 'run-2',
-                seq: 1,
-                turnNo: 1,
-                type: 'agent_end',
-                payload: ['reason' => 'completed'],
-                createdAt: '2026-07-23T00:00:00+00:00',
-            ),
+            new SessionEventDTO('run-s', 1, 1, 'agent_command_applied', ['text' => 'tiny'], '2026-07-26T00:00:00+00:00'),
+            new SessionEventDTO('run-s', 2, 1, 'agent_end', ['reason' => 'completed'], '2026-07-26T00:00:01+00:00'),
         ];
-
+        $dispatched = [];
         $api = $this->buildApi(
             events: $events,
             onAgentRun: static function (AgentCallRequestDTO $request): void {
                 $tool = $request->tools[0] ?? null;
-                if (null === $tool) {
-                    throw new \RuntimeException('expected record_observations tool');
-                }
-                ($tool->handler)(['observations' => []]);
+                self::assertNotNull($tool);
+                ($tool->handler)([
+                    'observations' => [[
+                        'timestamp' => '2026-07-26 00:00',
+                        'content' => 'small fact',
+                        'relevance' => 'low',
+                        'source_refs' => [['run_id' => 'run-s', 'seq' => 1]],
+                    ]],
+                ]);
             },
+            onDispatch: static function (ExtensionAgentJobRequestDTO $request) use (&$dispatched): void {
+                $dispatched[] = $request;
+            },
+            reflectAfter: 40_000,
         );
 
-        $handler = new ObserveBoundaryJobHandler(new NullLogger());
-        $handler->handle(
+        (new ObserveBoundaryJobHandler(new NullLogger()))->handle(
             $api,
             [
-                'run_id' => 'run-2',
-                'terminal_end_seq' => 1,
+                'run_id' => 'run-s',
+                'terminal_end_seq' => 2,
                 'terminal_status' => 'completed',
-                'renderer_version' => 'r1',
-                'observer_schema_version' => 'o1',
+                'renderer_version' => '1',
+                'observer_schema_version' => '1',
             ],
-            'job-2',
-            'run-2',
+            'job-s',
+            'run-s',
         );
 
+        $this->assertSame([], $dispatched);
         $dbPath = $this->projectDir.'/.hatfield/extensions-data/observational-memory/om.sqlite';
         $connection = OmDatabaseFactory::connect($dbPath, new NullLogger());
-        $repo = new ObservationRepository($connection);
-        $this->assertSame(1, $repo->contiguousCoveredEndSeq('run-2', 'r1', 'o1'));
-        $obs = (int) $connection->fetchOne('SELECT COUNT(*) FROM om_observation WHERE run_id = ?', ['run-2']);
-        $this->assertSame(0, $obs);
-        $covCount = (int) $connection->fetchOne(
-            'SELECT observation_count FROM om_coverage WHERE run_id = ?',
-            ['run-2'],
-        );
-        $this->assertSame(0, $covCount);
+        $this->assertSame(1, (int) $connection->fetchOne('SELECT COUNT(*) FROM om_observation WHERE run_id = ?', ['run-s']));
     }
 
     /**
-     * @param list<SessionEventDTO>              $events
-     * @param callable(AgentCallRequestDTO):void $onAgentRun
+     * @param list<SessionEventDTO>                      $events
+     * @param callable(AgentCallRequestDTO):void         $onAgentRun
+     * @param callable(ExtensionAgentJobRequestDTO):void $onDispatch
      */
-    private function buildApi(array $events, callable $onAgentRun): ExtensionApiInterface
+    private function buildApi(array $events, callable $onAgentRun, callable $onDispatch, int $reflectAfter): ExtensionApiInterface
     {
         $cwd = $this->projectDir;
 
-        return new class($cwd, $events, $onAgentRun) implements ExtensionApiInterface {
-            /**
-             * @param list<SessionEventDTO>              $events
-             * @param callable(AgentCallRequestDTO):void $onAgentRun
-             */
+        return new class($cwd, $events, $onAgentRun, $onDispatch, $reflectAfter) implements ExtensionApiInterface {
             public function __construct(
                 private readonly string $cwd,
                 private readonly array $events,
                 private readonly mixed $onAgentRun,
+                private readonly mixed $onDispatch,
+                private readonly int $reflectAfter,
             ) {
             }
 
@@ -221,21 +204,19 @@ final class ObserveBoundaryJobHandlerTest extends TestCase
                     'enabled' => true,
                     'observer' => [
                         'model' => 'llama_cpp_test/test',
-                        'schema_version' => 'o1',
-                        'renderer_version' => 'r1',
+                        'schema_version' => '1',
+                        'renderer_version' => '1',
                         'context_window_ratio' => 0.65,
                     ],
                     'reflector' => [
                         'model' => 'llama_cpp_test/test',
-                        'schema_version' => 'rv1',
+                        'schema_version' => '1',
                         'context_window_ratio' => 0.65,
+                        'reflect_after_observation_tokens' => $this->reflectAfter,
                     ],
                     'pools' => [
                         'observations_max_tokens' => 30000,
                         'reflections_max_tokens' => 10000,
-                    ],
-                    'compaction' => [
-                        'wait_timeout_seconds' => 180,
                     ],
                 ];
             }
@@ -275,9 +256,6 @@ final class ObserveBoundaryJobHandlerTest extends TestCase
                 $onAgentRun = $this->onAgentRun;
 
                 return new class($onAgentRun) implements AgentRunnerInterface {
-                    /**
-                     * @param callable(AgentCallRequestDTO):void $onAgentRun
-                     */
                     public function __construct(private readonly mixed $onAgentRun)
                     {
                     }
@@ -289,7 +267,7 @@ final class ObserveBoundaryJobHandlerTest extends TestCase
 
                     public function contextWindow(string $exactModel): ?int
                     {
-                        return 128000;
+                        return 200_000;
                     }
                 };
             }
@@ -297,9 +275,6 @@ final class ObserveBoundaryJobHandlerTest extends TestCase
             public function sessionEvents(): SessionEventReaderInterface
             {
                 return new class($this->events) implements SessionEventReaderInterface {
-                    /**
-                     * @param list<SessionEventDTO> $events
-                     */
                     public function __construct(private readonly array $events)
                     {
                     }
@@ -321,6 +296,7 @@ final class ObserveBoundaryJobHandlerTest extends TestCase
 
             public function dispatchExtensionAgentJob(ExtensionAgentJobRequestDTO $request): void
             {
+                ($this->onDispatch)($request);
             }
         };
     }

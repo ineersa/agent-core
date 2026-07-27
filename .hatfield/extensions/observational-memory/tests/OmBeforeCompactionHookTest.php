@@ -55,9 +55,8 @@ final class OmBeforeCompactionHookTest extends TestCase
     {
         $settings = OmSettings::fromArray([
             'enabled' => true,
-            'observer_model' => 'llama_cpp_test/test',
-            'reflector_model' => 'llama_cpp_test/test',
-            'wait_timeout_seconds' => 2,
+            'observer' => ['model' => 'llama_cpp_test/test', 'schema_version' => 'o1', 'renderer_version' => 'r1'],
+            'reflector' => ['model' => 'llama_cpp_test/test'],
         ]);
         $api = new class($this->projectDir, $settings) implements ExtensionApiInterface {
             /** @var list<ExtensionAgentJobRequestDTO> */
@@ -87,8 +86,21 @@ final class OmBeforeCompactionHookTest extends TestCase
             {
                 return [
                     'enabled' => true,
-                    'observer_model' => 'llama_cpp_test/test',
-                    'reflector_model' => 'llama_cpp_test/test',
+                    'observer' => [
+                        'model' => 'llama_cpp_test/test',
+                        'schema_version' => 'o1',
+
+                        'context_window_ratio' => 0.65,
+                    ],
+                    'reflector' => [
+                        'model' => 'llama_cpp_test/test',
+                        'schema_version' => 'rv1',
+                        'context_window_ratio' => 0.65,
+                    ],
+                    'pools' => [
+                    ],
+                    'compaction' => [
+                    ],
                 ];
             }
 
@@ -134,6 +146,11 @@ final class OmBeforeCompactionHookTest extends TestCase
                     public function run(AgentCallRequestDTO $request): void
                     {
                         ++$this->parent->agentCalls;
+                    }
+
+                    public function contextWindow(string $exactModel): ?int
+                    {
+                        return 128000;
                     }
                 };
             }
@@ -220,9 +237,8 @@ final class OmBeforeCompactionHookTest extends TestCase
     {
         $settings = OmSettings::fromArray([
             'enabled' => true,
-            'observer_model' => 'llama_cpp_test/test',
-            'reflector_model' => 'llama_cpp_test/test',
-            'wait_timeout_seconds' => 1,
+            'observer' => ['model' => 'llama_cpp_test/test', 'schema_version' => 'o1', 'renderer_version' => 'r1'],
+            'reflector' => ['model' => 'llama_cpp_test/test'],
         ]);
         $api = new class($this->projectDir) implements ExtensionApiInterface {
             public int $dispatches = 0;
@@ -247,8 +263,21 @@ final class OmBeforeCompactionHookTest extends TestCase
             {
                 return [
                     'enabled' => true,
-                    'observer_model' => 'llama_cpp_test/test',
-                    'reflector_model' => 'llama_cpp_test/test',
+                    'observer' => [
+                        'model' => 'llama_cpp_test/test',
+                        'schema_version' => 'o1',
+
+                        'context_window_ratio' => 0.65,
+                    ],
+                    'reflector' => [
+                        'model' => 'llama_cpp_test/test',
+                        'schema_version' => 'rv1',
+                        'context_window_ratio' => 0.65,
+                    ],
+                    'pools' => [
+                    ],
+                    'compaction' => [
+                    ],
                 ];
             }
 
@@ -284,7 +313,17 @@ final class OmBeforeCompactionHookTest extends TestCase
 
             public function agent(): AgentRunnerInterface
             {
-                throw new \LogicException('agent must not be called on hot path');
+                return new class implements AgentRunnerInterface {
+                    public function run(AgentCallRequestDTO $request): void
+                    {
+                        throw new \LogicException('agent run must not be called on hot path');
+                    }
+
+                    public function contextWindow(string $exactModel): ?int
+                    {
+                        return 128000;
+                    }
+                };
             }
 
             public function sessionEvents(): SessionEventReaderInterface
@@ -335,9 +374,8 @@ final class OmBeforeCompactionHookTest extends TestCase
     {
         $settings = OmSettings::fromArray([
             'enabled' => true,
-            'observer_model' => 'llama_cpp_test/test',
-            'reflector_model' => 'llama_cpp_test/test',
-            'wait_timeout_seconds' => 30,
+            'observer' => ['model' => 'llama_cpp_test/test', 'schema_version' => 'o1', 'renderer_version' => 'r1'],
+            'reflector' => ['model' => 'llama_cpp_test/test'],
         ]);
         $api = new class($this->projectDir, $settings) implements ExtensionApiInterface {
             public int $dispatches = 0;
@@ -364,8 +402,21 @@ final class OmBeforeCompactionHookTest extends TestCase
             {
                 return [
                     'enabled' => true,
-                    'observer_model' => 'llama_cpp_test/test',
-                    'reflector_model' => 'llama_cpp_test/test',
+                    'observer' => [
+                        'model' => 'llama_cpp_test/test',
+                        'schema_version' => 'o1',
+
+                        'context_window_ratio' => 0.65,
+                    ],
+                    'reflector' => [
+                        'model' => 'llama_cpp_test/test',
+                        'schema_version' => 'rv1',
+                        'context_window_ratio' => 0.65,
+                    ],
+                    'pools' => [
+                    ],
+                    'compaction' => [
+                    ],
                 ];
             }
 
@@ -401,7 +452,17 @@ final class OmBeforeCompactionHookTest extends TestCase
 
             public function agent(): AgentRunnerInterface
             {
-                throw new \LogicException('agent must not be called on hot path');
+                return new class implements AgentRunnerInterface {
+                    public function run(AgentCallRequestDTO $request): void
+                    {
+                        throw new \LogicException('agent run must not be called on hot path');
+                    }
+
+                    public function contextWindow(string $exactModel): ?int
+                    {
+                        return 128000;
+                    }
+                };
             }
 
             public function sessionEvents(): SessionEventReaderInterface
@@ -455,19 +516,30 @@ final class OmBeforeCompactionHookTest extends TestCase
             resolvedModel: null,
             thinkingLevel: null,
         );
-        $parts = $settings->compactionIdentityParts();
-        $parts['run_id'] = $context->runId;
-        $parts['required_start_seq'] = $context->requiredStartSeq;
-        $parts['required_end_seq'] = $context->requiredEndSeq;
-        $parts['custom_instructions'] = '';
-        ksort($parts);
-        $fingerprint = hash('sha256', json_encode($parts, \JSON_THROW_ON_ERROR));
-        $requestId = hash('sha256', implode('|', [
+        $fingerprint = \Ineersa\HatfieldExt\ObservationalMemory\Support\OmIdentity::compactionRequestFingerprint([
+            'run_id' => $context->runId,
+            'required_start_seq' => $context->requiredStartSeq,
+            'required_end_seq' => $context->requiredEndSeq,
+            'required_watermark' => $context->requiredEndSeq,
+            'custom_instructions' => $context->customInstructions ?? '',
+            'observer_model' => 'llama_cpp_test/test',
+            'observer_context_window' => 128000,
+            'observer_context_window_ratio' => $settings->observerContextWindowRatio,
+            'renderer_version' => $settings->rendererVersion,
+            'observer_schema_version' => $settings->observerSchemaVersion,
+            'reflector_model' => 'llama_cpp_test/test',
+            'reflector_context_window' => 128000,
+            'reflector_context_window_ratio' => $settings->reflectorContextWindowRatio,
+            'reflector_schema_version' => $settings->reflectorSchemaVersion,
+            'observations_max_tokens' => $settings->observationsMaxTokens,
+            'reflections_max_tokens' => $settings->reflectionsMaxTokens,
+        ]);
+        $requestId = \Ineersa\HatfieldExt\ObservationalMemory\Support\OmIdentity::compactionRequestId(
             $context->runId,
-            (string) $context->requiredStartSeq,
-            (string) $context->requiredEndSeq,
+            $context->requiredStartSeq,
+            $context->requiredEndSeq,
             $fingerprint,
-        ]));
+        );
         $api->seedFailedRequest($requestId, $context->runId, $context->requiredEndSeq, $fingerprint);
 
         $started = microtime(true);
@@ -485,9 +557,8 @@ final class OmBeforeCompactionHookTest extends TestCase
     {
         $settings = OmSettings::fromArray([
             'enabled' => true,
-            'observer_model' => 'llama_cpp_test/test',
-            'reflector_model' => 'llama_cpp_test/test',
-            'wait_timeout_seconds' => 30,
+            'observer' => ['model' => 'llama_cpp_test/test', 'schema_version' => 'o1', 'renderer_version' => 'r1'],
+            'reflector' => ['model' => 'llama_cpp_test/test'],
         ]);
         $api = new class($this->projectDir, $settings) implements ExtensionApiInterface {
             public int $dispatches = 0;
@@ -514,8 +585,21 @@ final class OmBeforeCompactionHookTest extends TestCase
             {
                 return [
                     'enabled' => true,
-                    'observer_model' => 'llama_cpp_test/test',
-                    'reflector_model' => 'llama_cpp_test/test',
+                    'observer' => [
+                        'model' => 'llama_cpp_test/test',
+                        'schema_version' => 'o1',
+
+                        'context_window_ratio' => 0.65,
+                    ],
+                    'reflector' => [
+                        'model' => 'llama_cpp_test/test',
+                        'schema_version' => 'rv1',
+                        'context_window_ratio' => 0.65,
+                    ],
+                    'pools' => [
+                    ],
+                    'compaction' => [
+                    ],
                 ];
             }
 
@@ -551,7 +635,17 @@ final class OmBeforeCompactionHookTest extends TestCase
 
             public function agent(): AgentRunnerInterface
             {
-                throw new \LogicException('agent must not be called on hot path');
+                return new class implements AgentRunnerInterface {
+                    public function run(AgentCallRequestDTO $request): void
+                    {
+                        throw new \LogicException('agent run must not be called on hot path');
+                    }
+
+                    public function contextWindow(string $exactModel): ?int
+                    {
+                        return 128000;
+                    }
+                };
             }
 
             public function sessionEvents(): SessionEventReaderInterface
@@ -579,7 +673,8 @@ final class OmBeforeCompactionHookTest extends TestCase
                     'required_start_seq' => 1,
                     'required_end_seq' => $endSeq,
                     'required_watermark' => $endSeq,
-                    'observation_set_hash' => $fingerprint,
+                    'request_fingerprint' => $fingerprint,
+                    'observation_set_hash' => null,
                     'status' => CompactionRepository::STATUS_FAILED,
                     'requested_at' => $now,
                     'updated_at' => $now,
@@ -605,19 +700,30 @@ final class OmBeforeCompactionHookTest extends TestCase
             resolvedModel: null,
             thinkingLevel: null,
         );
-        $parts = $settings->compactionIdentityParts();
-        $parts['run_id'] = $context->runId;
-        $parts['required_start_seq'] = $context->requiredStartSeq;
-        $parts['required_end_seq'] = $context->requiredEndSeq;
-        $parts['custom_instructions'] = '';
-        ksort($parts);
-        $fingerprint = hash('sha256', json_encode($parts, \JSON_THROW_ON_ERROR));
-        $requestId = hash('sha256', implode('|', [
+        $fingerprint = \Ineersa\HatfieldExt\ObservationalMemory\Support\OmIdentity::compactionRequestFingerprint([
+            'run_id' => $context->runId,
+            'required_start_seq' => $context->requiredStartSeq,
+            'required_end_seq' => $context->requiredEndSeq,
+            'required_watermark' => $context->requiredEndSeq,
+            'custom_instructions' => $context->customInstructions ?? '',
+            'observer_model' => 'llama_cpp_test/test',
+            'observer_context_window' => 128000,
+            'observer_context_window_ratio' => $settings->observerContextWindowRatio,
+            'renderer_version' => $settings->rendererVersion,
+            'observer_schema_version' => $settings->observerSchemaVersion,
+            'reflector_model' => 'llama_cpp_test/test',
+            'reflector_context_window' => 128000,
+            'reflector_context_window_ratio' => $settings->reflectorContextWindowRatio,
+            'reflector_schema_version' => $settings->reflectorSchemaVersion,
+            'observations_max_tokens' => $settings->observationsMaxTokens,
+            'reflections_max_tokens' => $settings->reflectionsMaxTokens,
+        ]);
+        $requestId = \Ineersa\HatfieldExt\ObservationalMemory\Support\OmIdentity::compactionRequestId(
             $context->runId,
-            (string) $context->requiredStartSeq,
-            (string) $context->requiredEndSeq,
+            $context->requiredStartSeq,
+            $context->requiredEndSeq,
             $fingerprint,
-        ]));
+        );
         $api->seedTerminalRequestWithoutResult($requestId, $context->runId, $context->requiredEndSeq, $fingerprint);
 
         $started = microtime(true);
@@ -635,9 +741,8 @@ final class OmBeforeCompactionHookTest extends TestCase
     {
         $settings = OmSettings::fromArray([
             'enabled' => true,
-            'observer_model' => 'llama_cpp_test/test',
-            'reflector_model' => 'llama_cpp_test/test',
-            'wait_timeout_seconds' => 2,
+            'observer' => ['model' => 'llama_cpp_test/test', 'schema_version' => 'o1', 'renderer_version' => 'r1'],
+            'reflector' => ['model' => 'llama_cpp_test/test'],
         ]);
         $api = new class($this->projectDir, $settings) implements ExtensionApiInterface {
             public int $dispatches = 0;
@@ -664,8 +769,21 @@ final class OmBeforeCompactionHookTest extends TestCase
             {
                 return [
                     'enabled' => true,
-                    'observer_model' => 'llama_cpp_test/test',
-                    'reflector_model' => 'llama_cpp_test/test',
+                    'observer' => [
+                        'model' => 'llama_cpp_test/test',
+                        'schema_version' => 'o1',
+
+                        'context_window_ratio' => 0.65,
+                    ],
+                    'reflector' => [
+                        'model' => 'llama_cpp_test/test',
+                        'schema_version' => 'rv1',
+                        'context_window_ratio' => 0.65,
+                    ],
+                    'pools' => [
+                    ],
+                    'compaction' => [
+                    ],
                 ];
             }
 
@@ -701,7 +819,17 @@ final class OmBeforeCompactionHookTest extends TestCase
 
             public function agent(): AgentRunnerInterface
             {
-                throw new \LogicException('unused');
+                return new class implements AgentRunnerInterface {
+                    public function run(AgentCallRequestDTO $request): void
+                    {
+                        throw new \LogicException('agent run must not be called on hot path');
+                    }
+
+                    public function contextWindow(string $exactModel): ?int
+                    {
+                        return 128000;
+                    }
+                };
             }
 
             public function sessionEvents(): SessionEventReaderInterface
