@@ -150,13 +150,16 @@ final class TranscriptProjectionState
      */
     public function drainChanges(): TranscriptChangeSet
     {
-        $dirty = [];
+        // Deduplicate first-mark order: add → remove → re-add can append the same
+        // id twice after remove clears dirtyIds but leaves a stale dirtyOrder entry.
+        $uniqueDirty = [];
         foreach ($this->dirtyOrder as $id) {
             if (!isset($this->dirtyIds[$id]) || !isset($this->blocks[$id])) {
                 continue;
             }
-            $dirty[] = $id;
+            $uniqueDirty[$id] = true;
         }
+        $dirty = array_keys($uniqueDirty);
 
         // Canonical order among dirty blocks (appends stay after earlier dirty ids).
         usort(

@@ -124,27 +124,6 @@ final class TranscriptVisualProjector
             }
         }
 
-        // Non-tail upserts (insert into middle) cannot be applied safely incrementally.
-        foreach ($changes->upserts as $block) {
-            $idx = $this->blockIndex[$block->id] ?? null;
-            if (null === $idx) {
-                // New block must be a pure append for incremental path.
-                // (Projector only ever appends; non-tail insert is exceptional.)
-                continue;
-            }
-            // Existing id mid-list update is OK (streaming); identity-preserving.
-        }
-
-        // Detect non-tail append: new id while not extending the end of order is impossible
-        // from projector, but guard if session state reorders.
-        foreach ($changes->upserts as $block) {
-            if (isset($this->blockIndex[$block->id])) {
-                continue;
-            }
-            // New block: only safe as tail append.
-            // We accept all new blocks as tail appends (projector semantics).
-        }
-
         $touchedPrimaryIds = [];
         foreach ($changes->removals as $id) {
             if ($this->isKnownBlock($id)) {
@@ -155,31 +134,10 @@ final class TranscriptVisualProjector
             $touchedPrimaryIds[$block->id] = true;
         }
 
-        // Neighbor dependencies for separators / empty-assistant-before-question.
-        $expanded = $this->expandDependencyIds(array_keys($touchedPrimaryIds));
-
-        // Tool pairing: result arrival also dirties the call's exchange key.
-        foreach ($changes->upserts as $block) {
-            if (TranscriptBlockKindEnum::ToolResult === $block->kind) {
-                $callId = $this->toolCallIdMeta($block);
-                if (null !== $callId && isset($this->toolCallIdByCallId[$callId])) {
-                    $expanded[$this->toolCallIdByCallId[$callId]] = true;
-                }
-            }
-            if (TranscriptBlockKindEnum::ToolCall === $block->kind) {
-                $callId = $this->toolCallIdMeta($block);
-                if (null !== $callId) {
-                    foreach ($this->toolResultIdsByCallId[$callId] ?? [] as $resultId) {
-                        $expanded[$resultId] = true;
-                    }
-                }
-            }
-        }
-
-        // Apply canonical mutations after dependency expansion uses pre-state neighbors.
+        // Mutate canonical state first; dependency expansion uses post-mutation indexes.
         $this->applyRemovalsAndUpsertsToCanonical($changes);
 
-        // After mutation, re-expand for new neighbors (appended question after empty assistant).
+        // Neighbor deps + tool pairing after mutation (call/result indexes are current).
         $expanded = $this->expandDependencyIds(array_keys($touchedPrimaryIds));
         foreach ($changes->upserts as $block) {
             $expanded[$block->id] = true;
@@ -197,29 +155,6 @@ final class TranscriptVisualProjector
             array_keys($expanded),
             array_keys($touchedPrimaryIds),
         );
-    }
-
-    /**
-     * @return list<TranscriptVisualNode>
-     */
-    public function currentNodes(): array
-    {
-        $nodes = [];
-        foreach ($this->nodeOrder as $key) {
-            $nodes[] = $this->nodesByKey[$key];
-        }
-
-        return $nodes;
-    }
-
-    /**
-     * Last visual patch order (for tests / reconciler).
-     *
-     * @return list<string>
-     */
-    public function currentOrder(): array
-    {
-        return $this->nodeOrder;
     }
 
     /**

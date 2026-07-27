@@ -124,38 +124,8 @@ final class TranscriptMountedWidget extends ContainerWidget
     private function reconcileStructural(TranscriptVisualPatch $patch): void
     {
         $desiredOrder = $patch->order ?? $this->nodeOrder;
-        $desiredSet = array_fill_keys($desiredOrder, true);
 
-        // Relative order of survivors — if changed, rebuild from upserts + retained nodes.
-        $prevSurviving = [];
-        foreach ($this->nodeOrder as $key) {
-            if (isset($desiredSet[$key])) {
-                $prevSurviving[] = $key;
-            }
-        }
-        $desiredSurviving = [];
-        $prevSet = array_fill_keys($this->nodeOrder, true);
-        foreach ($desiredOrder as $key) {
-            if (isset($prevSet[$key])) {
-                $desiredSurviving[] = $key;
-            }
-        }
-
-        $seenNew = false;
-        $nonTailInsertion = false;
-        foreach ($desiredOrder as $key) {
-            $isNew = !isset($prevSet[$key]);
-            if ($isNew) {
-                $seenNew = true;
-                continue;
-            }
-            if ($seenNew) {
-                $nonTailInsertion = true;
-                break;
-            }
-        }
-
-        if ($prevSurviving !== $desiredSurviving || $nonTailInsertion) {
+        if ($this->needsOuterResync($this->nodeOrder, $desiredOrder)) {
             $nodes = [];
             $upsertByKey = [];
             foreach ($patch->upserts as $node) {
@@ -198,6 +168,48 @@ final class TranscriptMountedWidget extends ContainerWidget
     }
 
     /**
+     * True when survivor relative order changed or a new key appears before an old key.
+     *
+     * @param list<string> $previousOrder
+     * @param list<string> $desiredOrder
+     */
+    private function needsOuterResync(array $previousOrder, array $desiredOrder): bool
+    {
+        $desiredSet = array_fill_keys($desiredOrder, true);
+        $previousSet = array_fill_keys($previousOrder, true);
+
+        $previousSurviving = [];
+        foreach ($previousOrder as $key) {
+            if (isset($desiredSet[$key])) {
+                $previousSurviving[] = $key;
+            }
+        }
+        $desiredSurviving = [];
+        foreach ($desiredOrder as $key) {
+            if (isset($previousSet[$key])) {
+                $desiredSurviving[] = $key;
+            }
+        }
+        if ($previousSurviving !== $desiredSurviving) {
+            return true;
+        }
+
+        $seenNew = false;
+        foreach ($desiredOrder as $key) {
+            $isNew = !isset($previousSet[$key]);
+            if ($isNew) {
+                $seenNew = true;
+                continue;
+            }
+            if ($seenNew) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
      * @param list<TranscriptVisualNode> $desired
      * @param list<string>               $desiredOrder
      */
@@ -212,37 +224,8 @@ final class TranscriptMountedWidget extends ContainerWidget
         $previousNodes = $this->nodes;
         $previousApplied = $this->appliedNodes;
 
-        $previousSet = array_fill_keys($previousOrder, true);
         $desiredSet = array_fill_keys($desiredOrder, true);
-
-        $previousSurviving = [];
-        foreach ($previousOrder as $key) {
-            if (isset($desiredSet[$key])) {
-                $previousSurviving[] = $key;
-            }
-        }
-        $desiredSurviving = [];
-        foreach ($desiredOrder as $key) {
-            if (isset($previousSet[$key])) {
-                $desiredSurviving[] = $key;
-            }
-        }
-
-        $seenNew = false;
-        $needsOuterResync = $previousSurviving !== $desiredSurviving;
-        if (!$needsOuterResync) {
-            foreach ($desiredOrder as $key) {
-                $isNew = !isset($previousSet[$key]);
-                if ($isNew) {
-                    $seenNew = true;
-                    continue;
-                }
-                if ($seenNew) {
-                    $needsOuterResync = true;
-                    break;
-                }
-            }
-        }
+        $needsOuterResync = $this->needsOuterResync($previousOrder, $desiredOrder);
 
         if ($needsOuterResync || ([] === $previousOrder && $fullSnapshot)) {
             $nextNodes = [];

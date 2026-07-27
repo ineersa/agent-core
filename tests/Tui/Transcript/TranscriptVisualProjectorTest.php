@@ -50,10 +50,10 @@ final class TranscriptVisualProjectorTest extends TestCase
 
         $bootstrap = $projector->replaceAll([...$history, $streaming]);
         $this->assertTrue($bootstrap->isFull());
-        $orderBefore = $projector->currentOrder();
+        $this->assertNotNull($bootstrap->order);
         // History rows may insert turn separators; tail must remain the stream key.
-        $this->assertGreaterThanOrEqual(41, \count($orderBefore));
-        $this->assertSame('stream-assistant', $orderBefore[\count($orderBefore) - 1]);
+        $this->assertGreaterThanOrEqual(41, \count($bootstrap->order));
+        $this->assertSame('stream-assistant', $bootstrap->order[\count($bootstrap->order) - 1]);
 
         $streamed = $streaming->with(text: 'partial more tokens');
         $patch = $projector->applyChangeSet(TranscriptChangeSet::incremental([$streamed]));
@@ -66,9 +66,7 @@ final class TranscriptVisualProjectorTest extends TestCase
         $this->assertCount(1, $patch->upserts);
         $this->assertSame([], $patch->removals);
         $this->assertSame('partial more tokens', $patch->upserts[0]->primary?->text);
-
-        $orderAfter = $projector->currentOrder();
-        $this->assertSame($orderBefore, $orderAfter, 'Retained visual order must stay identical on content-only stream');
         $this->assertSame(TranscriptVisualPatch::MODE_INCREMENTAL, $patch->mode);
+        // Unchanged order is proven by mounted identity/render tests, not a test-only accessor.
     }
 }

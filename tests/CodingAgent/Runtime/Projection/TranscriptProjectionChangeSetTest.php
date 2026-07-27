@@ -145,4 +145,39 @@ final class TranscriptProjectionChangeSetTest extends TestCase
         $this->assertTrue($session->applyTranscriptChangeSet(TranscriptChangeSet::full($fresh)));
         $this->assertSame($fresh, $session->transcript);
     }
+
+    #[Test]
+    public function testAddRemoveReAddSameIdDrainsSingleReplacementUpsert(): void
+    {
+        // Thesis: add → remove → re-add same ID before drain must not emit
+        // duplicate upserts or a stale removal; only the replacement object.
+        $state = new TranscriptProjectionState();
+        $first = new TranscriptBlock(
+            id: 'reuse-id',
+            kind: TranscriptBlockKindEnum::AssistantMessage,
+            runId: 'run-1',
+            seq: $state->nextSeq(),
+            text: 'first body',
+            streaming: true,
+        );
+        $state->addBlock($first);
+        $state->removeBlock('reuse-id');
+        $replacement = new TranscriptBlock(
+            id: 'reuse-id',
+            kind: TranscriptBlockKindEnum::AssistantMessage,
+            runId: 'run-1',
+            seq: $state->nextSeq(),
+            text: 'replacement body',
+            streaming: true,
+        );
+        $state->addBlock($replacement);
+
+        $delta = $state->drainChanges();
+        $this->assertFalse($delta->isFull());
+        $this->assertCount(1, $delta->upserts, 'Duplicate dirtyOrder entries must collapse to one upsert');
+        $this->assertSame($replacement, $delta->upserts[0]);
+        $this->assertSame([], $delta->removals, 'Re-add clears removal; drain must not emit remove+upsert');
+        $this->assertCount(1, $state->blocks());
+        $this->assertSame($replacement, $state->blocks()[0]);
+    }
 }
