@@ -3,7 +3,7 @@
 Hatfield native binaries are built with [static-php-cli](https://github.com/crazywhalecc/static-php-cli)
 at the immutable commit declared in `pin.json`.
 
-User guide (artifacts, relaunch, topology, CI matrix, troubleshooting):
+User guide (artifacts, relaunch, topology, release matrix, troubleshooting):
 [`docs/static-packaging.md`](../../docs/static-packaging.md).
 Release overview: [`docs/distribution.md`](../../docs/distribution.md).
 
@@ -24,7 +24,8 @@ changing `static_php_cli_commit` and validating a full host static build.
 
 3. `castor distribution:verify` smokes the artifact and process topology.
 
-CI owns the four-target matrix; local builds only support host-compatible targets.
+The four-target matrix runs only on tag `v*` release (`.github/workflows/release.yml`);
+local builds only support host-compatible targets. PRs do not build natives.
 
 ## Host prerequisites for `castor distribution:build-static`
 
@@ -40,14 +41,13 @@ and fails closed in restricted containers (`no new privileges`). Install the too
 with the host package manager instead. Without them, static builds fail during
 library configure (often opaque `zlib` / "Missing or broken C compiler" errors).
 
-### CI
+### Release runners
 
-GitHub Actions install the same host toolchain through the checked-in composite
-action `.github/actions/static-prerequisites` (used by both
-`.github/workflows/distribution.yml` and `release.yml` **before** any Castor
-static build). Linux uses apt (`build-essential`, `cmake`, `pkg-config`,
-autotools, `re2c`, `flex`, `gperf`, `bison`); macOS uses Homebrew and appends
-keg-only `flex` to `GITHUB_PATH`. Unsupported runner OS fails closed.
+Tag-release jobs install the same host toolchain through the checked-in composite
+action `.github/actions/static-prerequisites` (used by `.github/workflows/release.yml`
+**before** any Castor static build). Linux uses apt (`build-essential`, `cmake`,
+`pkg-config`, autotools, `re2c`, `flex`, `gperf`, `bison`); macOS uses Homebrew and
+appends keg-only `flex` to `GITHUB_PATH`. Unsupported runner OS fails closed.
 
 Local native proof remains blocked until the packages above are installed on the
-developer machine — CI does not replace a local package install.
+developer machine — release CI does not replace a local package install.

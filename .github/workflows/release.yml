@@ -8,8 +8,9 @@ on:
 permissions:
   contents: write
 
-# Builds the complete five-artifact set via the same Castor tasks as
-# distribution.yml (no duplicated build algorithms), validates, then publishes.
+# Sole GitHub Actions path that builds PHAR + four native binaries and publishes
+# release assets. Trigger: push of tag v* only. All build/verify logic lives in
+# Castor (distribution:*); this workflow only orchestrates runners and publish.
 jobs:
   phar:
     name: Build canonical PHAR

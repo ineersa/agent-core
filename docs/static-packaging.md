@@ -16,7 +16,8 @@ toolchain detail: [`tools/static/README.md`](../tools/static/README.md)
 | `hatfield.darwin-arm64` | `macos-15` |
 
 No Windows native binary (use the PHAR). Local builds only support the **host**
-target; CI owns the four-target matrix.
+target; the four-target matrix runs only on tag `v*` release (see
+[distribution.md](distribution.md)).
 
 ## Pinned toolchain
 
@@ -97,14 +98,15 @@ Topology never soft-passes on inconclusive process listing:
 
 Do not rely on `pgrep -P <dead-controller>` — reparented orphans would false-pass.
 
-## CI ownership
+## Release matrix ownership
 
-`.github/workflows/distribution.yml` and `release.yml` static matrix jobs:
+Only `.github/workflows/release.yml` (tag `v*`) runs the four-target static matrix.
+PRs / main pushes do **not** build natives. Release static jobs:
 
 - Install host toolchain via `.github/actions/static-prerequisites`
 - Cache SPC pin checkout + downloads keyed by pin + `composer.lock`
 - Call Castor only for build/verify; `upload-artifact` with `if-no-files-found: error`
-- Run hard native topology on each native runner
+- Run hard native topology on each native runner; missing artifacts fail closed before publish
 
 ## Testing
 
@@ -117,7 +119,7 @@ HATFIELD_NATIVE_BINARY_PATH=var/tmp/dist/hatfield.linux-amd64 \
 ```
 
 No-leak proof uses pre-shutdown owned PID snapshots (not post-exit `pgrep -P`).
-Empty-`PHP_BINARY` relaunch is proven by CI native topology on fused artifacts.
+Empty-`PHP_BINARY` relaunch is proven by release-job native topology on fused artifacts.
 
 ## Troubleshooting
 
@@ -132,7 +134,8 @@ SPC `doctor --auto-fix` fails under `no-new-privileges`.
 
 ### Unsupported local target
 
-Local static builds must match the host. Use CI for other arches.
+Local static builds must match the host. Other arches are built only on the
+tag-release matrix (or a host of that architecture).
 
 ### Topology zero descendants after `runtime.ready`
 

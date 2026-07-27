@@ -1,6 +1,6 @@
 # Distribution and release
 
-Release-level packaging: five binaries + checksums, installer, CI, and tag publish.
+Release-level packaging: five binaries + checksums, installer, and tag publish.
 
 Internals: [PHAR packaging](phar-packaging.md) · [Static / native packaging](static-packaging.md)
 
@@ -24,8 +24,7 @@ No Windows native binary; Windows uses the same canonical PHAR.
   `src/CodingAgent/Build/build-identity.generated.php` during PHAR staging.
 - `hatfield --version` / Symfony Console name+version expose that identity on PHAR
   and native artifacts.
-- PR CI uses `pr-N` + pull-request head SHA; release tags use `github.ref_name` +
-  tag commit.
+- Release tags set version to `github.ref_name` and commit to the tag SHA.
 
 ## Local orchestration
 
@@ -93,33 +92,37 @@ Behavior:
 
 ## CI and release
 
-### PR / main — `.github/workflows/distribution.yml`
+**PRs and ordinary pushes do not build PHAR/native binaries.** They use the normal
+project gate (`castor check` and any other project CI). There is no
+`.github/workflows/distribution.yml`, no PR matrix, and no manual
+`workflow_dispatch` packaging workflow.
 
-Triggers: `push` to `main`, **pull requests**, `workflow_dispatch`.
+### Tag `v*` only — `.github/workflows/release.yml`
 
-1. Build canonical PHAR via Castor (`distribution:build`).
-2. Static matrix on native runners (`ubuntu-latest`, `ubuntu-24.04-arm`,
-   `macos-15-intel`, `macos-15`) after `.github/actions/static-prerequisites`.
-3. Castor-only build/verify; SPC cache; `upload-artifact` with `if-no-files-found: error`.
-4. Each static job runs hard native process topology.
-
-### Tag `v*` — `.github/workflows/release.yml`
+This is the **sole** GitHub Actions path that builds distribution artifacts.
 
 1. Validate tag SHA == exact checked-out commit.
-2. Build complete five-artifact set via the same Castor tasks (PHAR + four natives).
-3. Aggregate into one `SHA256SUMS` listing **exactly** those five files.
-4. Enforce non-empty/sane sizes and host-compatible `--version` smoke.
-5. Publish GitHub Release with all six files. External action SHAs are pinned;
+2. Build canonical PHAR via Castor (`distribution:build`).
+3. Build four native binaries on native runners (`ubuntu-latest`,
+   `ubuntu-24.04-arm`, `macos-15-intel`, `macos-15`) after
+   `.github/actions/static-prerequisites`, each with hard topology verify.
+4. Aggregate into one `SHA256SUMS` listing **exactly** those five files.
+5. Enforce non-empty/sane sizes and host-compatible `--version` smoke.
+6. Publish GitHub Release with all six files. External action SHAs are pinned;
    missing files fail closed — no partial release.
 
-Castor in CI: checksum-verified platform PHAR via `.github/actions/setup-castor`
-(not Composer-global, not static Castor — both break `PHP_BINARY` / nested vendor).
+Castor on release runners: checksum-verified platform PHAR via
+`.github/actions/setup-castor` (not Composer-global, not static Castor — both
+break `PHP_BINARY` / nested vendor).
+
+Local packaging remains available anytime via `castor distribution:*` /
+`scripts/build-distribution.sh` (host-native static only).
 
 ## Release checklist
 
-1. Green distribution matrix on the exact commit (PHAR + four static jobs).
-2. Tag `vX.Y.Z` pointing at that commit only.
-3. Confirm release assets: five binaries + `SHA256SUMS` (six files).
+1. Green project `castor check` on the exact commit to tag.
+2. Tag `vX.Y.Z` pointing at that commit only (triggers release workflow).
+3. Confirm release workflow built PHAR + four static jobs and published six files.
 4. Smoke installer: PHAR path and `--static` path against the published tag.
 5. Confirm `--version` shows release version + commit on both artifact kinds.
 

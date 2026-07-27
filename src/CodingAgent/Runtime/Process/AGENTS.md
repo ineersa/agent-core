@@ -28,7 +28,7 @@ Do not rewrite controller/consumer construction — they spread `executableComma
 
 ## Distribution
 
-- Release/installer/CI: `docs/distribution.md`
+- Release/installer (tag `v*` only for GitHub packaging): `docs/distribution.md`
 - PHAR pipeline: `docs/phar-packaging.md`
 - Native build/relaunch/topology: `docs/static-packaging.md`
 
