@@ -225,11 +225,11 @@ final class PastedImageSubmissionService
 
     private function surfaceError(TuiSessionState $state, ChatScreen $screen, string $message): void
     {
-        $state->transcript[] = $this->blockFactory->error(
+        $state->appendTranscriptBlock($this->blockFactory->error(
             runId: '' !== $state->sessionId ? $state->sessionId : 'draft',
             text: 'Image paste: '.$message,
             seq: \count($state->transcript) + 1,
-        );
+        ));
         $screen->setTranscriptBlocks($state->transcript);
         $screen->setWorkingMessage('');
 

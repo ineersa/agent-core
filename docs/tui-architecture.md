@@ -486,7 +486,8 @@ ChatScreen (14 widgets)
   ├── headerSeparator    (LiveTextWidget)  ─── at live terminal width
   ├── loadedResourcesWidget (LiveTextWidget)  LoadedResourcesWidget (startup summary; ctrl+r)
   ├── transcriptWidget   (TranscriptMountedWidget)  first-class mounted Symfony container
-  │     └── TranscriptVisualNodeWidget…  stable wrappers → MarkdownWidget / tool cards / separators
+  │     └── semantic/native children: StreamingMarkdown / ToolExchange / Question /
+  │         Subagent widgets, Welcome/TurnSeparator, trivial TextWidget
   ├── pendingWidget      (LiveTextWidget)  PendingMessagesWidget
   ├── workingWidget      (LiveTextWidget)  WorkingStatusWidget (via registry)
   ├── statusPanelWidget  (LiveTextWidget)  StatusPanelWidget (via registry)
@@ -505,12 +506,49 @@ widgets attached to the live `WidgetContext`. Markdown sub-element styles
 (heading/link/code/quote/hr/list-bullet) come from a Hatfield theme stylesheet
 installed on the same `Tui` before mount.
 
-Reconciliation keeps stable visual wrappers keyed by presentation identity
-(including `exchange:<tool_call_id>` for tool call→result pairing). Ordinary
-streaming updates reuse Markdown instances via `setText()`/`setStyle()`; tail
-append/removal is granular. Whole-container rebuild is reserved for genuine
-relative reorder or non-tail insertion because Symfony's `ContainerWidget`
-public API is append/remove only.
+Reconciliation mounts semantic/native children keyed by presentation identity
+(including `exchange:<tool_call_id>` for tool call→result pairing):
+`StreamingMarkdownTranscriptWidget`, `ToolExchangeTranscriptWidget`,
+`QuestionTranscriptWidget`, `SubagentTranscriptWidget`, plus native
+`WelcomeTranscriptWidget` / `TurnSeparatorWidget` / trivial `TextWidget`.
+Ordinary streaming mutates Markdown via `setText()`/`setStyle()`. Whole-container
+rebuild is reserved for genuine relative reorder or non-tail insertion because
+Symfony's `ContainerWidget` public API is append/remove only.
+
+### Incremental transcript path (performance)
+
+Hot path is projector dirty-set → `TranscriptChangeSet` → `TuiSessionState`
+ID→index map → `ChatScreen::applyTranscriptChangeSet` → stateful
+`TranscriptVisualProjector` → bounded `TranscriptVisualPatch` →
+`TranscriptMountedWidget` keyed reconcile.
+
+- **Dirty detection** uses immutable `TranscriptBlock` object identity plus an
+  explicit presentation revision for preview expansion. No full-history
+  text/meta hashing on ordinary tail stream/update/remove.
+- **Projector** tracks dirty IDs in first-mark order; `drainChanges()` is
+  O(changes), not O(history). `blocks()` remains for bootstrap, resume, and
+  leaf/branch replacement snapshots. Batch removals use an order index (no
+  per-removal `array_filter` of the full order list).
+- **Session list** is a single ordered array of block references (no duplicate
+  copies of block objects). Upserts are O(1) via ID→index; batch removals splice
+  high indices first and rebuild the index once.
+- **Presentation model** retains canonical map/order and tool call/result
+  indexes. High-frequency pure stream/content updates reproject only the
+  affected standalone keys and emit a **content-only** `TranscriptVisualPatch`
+  (no order payload) so the mounted reconciler applies keyed upserts in
+  O(changes) with zero order/history scans. Common structural policy changes
+  (tool exchange, question, user-turn separators, mid removals) still
+  full-reproject O(B) internally, then **diff** to a bounded mounted patch when
+  survivor relative order is stable — a deliberate ponytail ceiling. Replace
+  with a per-exchange/neighbor dependency graph only if profiling shows
+  structural scans matter. Explicit full visual snapshot remains the defined
+  path for bootstrap, resume, RunLeafChanged/rewind/branch, non-tail
+  insert/reorder, ambiguous mid-list tool pairing, and global preview
+  invalidation — not a dual renderer.
+- **Mounted memory/layout** is O(number of visual nodes). Symfony's widget
+  revision/render cache remains the only rendered-output cache.
+  `TranscriptBlockWidget` offscreen line cache is test-only, not a production
+  fallback.
 
 Hatfield uses Symfony's stock `Tui` and stock `ScreenWriter`. Residual bounce
 or flicker when transcript rows grow on non-synchronized terminals/multiplexers
@@ -522,7 +560,8 @@ Symfony issue #64941.
 | Method | Purpose |
 |--------|---------|
 | `mount(Tui): void` | Create and attach all 14 widgets to TUI |
-| `setTranscriptBlocks(TranscriptBlock[]): void` | Replace transcript content (mounted reconcile) |
+| `setTranscriptBlocks(TranscriptBlock[]): void` | Full transcript replace (bootstrap/resume/leaf/preview) |
+| `applyTranscriptChangeSet(TranscriptChangeSet): void` | Ordinary live projector delta (upserts/removals) |
 | `clearEditor(): void` | Reset editor to empty |
 | `editorText(): string` | Read editor content |
 | `setWorkingMessage(?string): void` | Override working indicator |
@@ -541,7 +580,8 @@ is invalidated on tick via `ChatScreen::refresh()` so live values (elapsed time
 and throughput) update even when no runtime events arrive.
 
 ```
-setTranscriptBlocks()    → TranscriptMountedWidget::setBlocks() (mounted reconcile)
+setTranscriptBlocks()           → TranscriptMountedWidget::setBlocks() (full reconcile)
+applyTranscriptChangeSet()      → TranscriptMountedWidget::applyChangeSet() (incremental)
 setWorkingMessage()     → registry + workingRenderable + workingWidget.invalidate()
 setStatus()             → registry + statusPanelRenderable + footerDataProvider
                           + statusPanelWidget.invalidate() + footerWidget.invalidate()
@@ -855,12 +895,14 @@ RuntimeEventPoller::poll(state, client)
     ├─ skip events with seq ≤ lastSeq  (dedup)
     ├─ ActivityStateMachine::transition()  → updates state.activity
     ├─ projector->accept(event)        → TranscriptProjector dispatches to subscribers
-    ├─ synchronizeProjectedBlocks()    → merges projector blocks into state.transcript
+    ├─ projector->drainChanges()       → TranscriptChangeSet (dirty upserts + removals)
+    ├─ state->applyTranscriptChangeSet() → O(1) ID map upserts; removals splice index
     │
     ▼
-ChatScreen::setTranscriptBlocks(blocks)
+ChatScreen::applyTranscriptChangeSet(changes)   // full path: setTranscriptBlocks()
     │
-    ├─ TranscriptMountedWidget::setBlocks() reconciles stable visual wrappers
+    ├─ TranscriptVisualProjector → TranscriptVisualPatch (content-only or structural)
+    ├─ TranscriptMountedWidget keyed reconcile (semantic widgets / native TextWidget)
     └─ Mounted Markdown/tool widgets render with live WidgetContext + theme stylesheet
     │
     └─ FooterStateListener handler

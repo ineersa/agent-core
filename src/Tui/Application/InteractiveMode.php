@@ -166,7 +166,7 @@ final readonly class InteractiveMode
                 // `bin/console agent --prompt ...` starts a run immediately.
                 $state = $this->sessionInit->initialize('', $targetRequest);
             }
-            $state->transcript = $this->sessionInit->buildInitialTranscript($state);
+            $state->replaceTranscript($this->sessionInit->buildInitialTranscript($state));
 
             // ── Initialize per-session transcript display state ──
             // The immutable config is mapped once above.  Each session
@@ -413,11 +413,11 @@ final readonly class InteractiveMode
                     'exception' => $e,
                     'session_id' => $state->sessionId,
                 ]);
-                $state->transcript[] = $this->blockFactory->error(
+                $state->appendTranscriptBlock($this->blockFactory->error(
                     runId: $state->sessionId,
                     text: 'Runtime error: '.$e->getMessage(),
                     seq: \count($state->transcript) + 1,
-                );
+                ));
             }
             $screen->setTranscriptBlocks($state->transcript);
         } elseif ($state->resuming) {
@@ -426,24 +426,24 @@ final readonly class InteractiveMode
                 $existingRunId = (string) $session->id;
                 try {
                     $state->handle = $client->attach($existingRunId);
-                    $state->transcript[] = $this->blockFactory->system(
+                    $state->appendTranscriptBlock($this->blockFactory->system(
                         runId: $state->sessionId,
                         text: \sprintf('Resumed run %s', $existingRunId),
                         seq: \count($state->transcript) + 1,
                         style: 'muted',
                         category: 'lifecycle',
-                    );
+                    ));
                 } catch (\Throwable $e) {
                     $this->logger->warning('Failed to resume run', [
                         'exception' => $e,
                         'run_id' => $existingRunId,
                     ]);
-                    $state->transcript[] = $this->blockFactory->system(
+                    $state->appendTranscriptBlock($this->blockFactory->system(
                         runId: $state->sessionId,
                         text: 'Could not resume run — starting fresh.',
                         seq: \count($state->transcript) + 1,
                         style: 'warning',
-                    );
+                    ));
                 }
                 $screen->setTranscriptBlocks($state->transcript);
             }
