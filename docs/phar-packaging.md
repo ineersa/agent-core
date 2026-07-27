@@ -146,22 +146,36 @@ Keep these synchronized across `composer.json` `ext-*`, `bin/console` PHAR guard
 
 ## CI / release
 
-- `.github/workflows/distribution.yml` — PHAR job + static matrix on native runners
+- `.github/workflows/distribution.yml` — runs on `push` to `main`, **pull requests**,
+  and `workflow_dispatch`. PHAR job + static matrix on native runners
   (`ubuntu-latest`, `ubuntu-24.04-arm`, `macos-15-intel`, `macos-15`); calls Castor
-  only; caches static-php-cli pin checkout; `upload-artifact` with
-  `if-no-files-found: error`. Each static job runs `distribution:verify` including
-  hard native process topology.
+  only for build/verify; caches static-php-cli pin checkout; `upload-artifact` with
+  `if-no-files-found: error`. Each static job installs host toolchain via the shared
+  composite action `.github/actions/static-prerequisites` (re2c/flex/gperf + compiler
+  toolchain; macOS adds keg-only flex to `PATH`), then runs `distribution:verify`
+  including hard native process topology.
 - `.github/workflows/release.yml` — tag `v*`; validates tag SHA == exact commit;
   builds the **complete five-artifact set** via the same Castor tasks (PHAR + four
-  native targets); aggregates into one `SHA256SUMS` containing every asset; enforces
-  non-empty/sane sizes and host-compatible `--version` smoke; publishes GitHub Release
-  with `hatfield.phar`, `hatfield.linux-amd64`, `hatfield.linux-arm64`,
-  `hatfield.darwin-amd64`, `hatfield.darwin-arm64`, and `SHA256SUMS`. Action SHAs are
-  pinned; missing files fail closed.
+  native targets) after the same static-prerequisites action; aggregates into one
+  `SHA256SUMS` containing every asset; enforces non-empty/sane sizes and
+  host-compatible `--version` smoke; publishes GitHub Release with `hatfield.phar`,
+  `hatfield.linux-amd64`, `hatfield.linux-arm64`, `hatfield.darwin-amd64`,
+  `hatfield.darwin-arm64`, and `SHA256SUMS`. External action SHAs are pinned; missing
+  files fail closed.
 
 `distribution:verify` hard-requires `hatfield.phar`, host static artifact, and
 `SHA256SUMS` by default (use `--allow-missing-native` / `--skip-topology` only for
 PHAR-only local checks). Topology never soft-passes on inconclusive process listing.
+Owned controller/descendant PIDs are captured **before** shutdown; after stop the
+verifier asserts those exact PIDs are gone (PID reuse with a different cmdline is OK).
+Do not rely on `pgrep -P <dead-controller>` — reparented orphans would false-pass.
+
+### Local native proof blocker
+
+Local `castor distribution:build-static` hard-fails when SPC host tools are missing
+(`re2c`, `flex`, `gperf`, compiler, `make`, `cmake`). Install them with the host
+package manager (see `tools/static/README.md`) before expecting a host native binary.
+CI installs the same set through `.github/actions/static-prerequisites` before Castor.
 
 ## Runtime model (unchanged)
 
@@ -198,7 +212,8 @@ Notes:
 - Live controller E2E also uses source console for the same reason.
 - `TuiArtifactBootE2eTest` hard-fails without a packaged artifact (no soft pass).
 - `NativeProcessTopologyTest` is a real PHPUnit skip when `HATFIELD_NATIVE_BINARY_PATH`
-  is absent; `distribution:verify` / CI always require the native artifact.
+  is absent; `distribution:verify` / CI always require the native artifact. No-leak
+  proof uses pre-shutdown owned PID snapshots (not post-exit `pgrep -P`).
 - Installer tests cover checksum mismatch and candidate smoke failure rollback
   (previous install unchanged, no install-dir temps left).
 

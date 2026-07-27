@@ -17,6 +17,9 @@ use Symfony\Component\Process\Process;
  * Opt-in via HATFIELD_NATIVE_BINARY_PATH. When unset/missing, this is a real
  * PHPUnit skip so generic source suites stay honest. CI and
  * castor distribution:verify must supply the artifact and hard-fail without it.
+ *
+ * No-leak assertion captures owned PIDs WHILE the controller is alive. After
+ * exit, orphans reparent so pgrep -P <dead-controller> would false-pass.
  */
 #[Group('phar')]
 #[Group('native-artifact')]
@@ -48,6 +51,10 @@ final class NativeProcessTopologyTest extends TestCase
 
         $tmp = TestDirectoryIsolation::createProjectTempDir('native-topo');
         $process = null;
+        /** @var list<array{pid: int, cmdline: string}> $ownedSnapshot */
+        $ownedSnapshot = [];
+        $controllerPid = 0;
+        $controllerCmdline = '';
         try {
             TestDirectoryIsolation::createHatfieldTree($tmp, withSessions: true);
             TestDirectoryIsolation::ensureDirectory($tmp.'/home/.hatfield');
@@ -90,13 +97,19 @@ final class NativeProcessTopologyTest extends TestCase
             $pid = $process->getPid();
             $this->assertNotNull($pid);
             $this->assertGreaterThan(0, $pid);
+            $controllerPid = (int) $pid;
+            $controllerCmdline = $this->readProcessCmdline($controllerPid);
+            if ('' === $controllerCmdline) {
+                $controllerCmdline = $binary.' agent --controller';
+            }
 
             // runtime.ready is emitted before ConsumerSupervisor launches — wait for transports.
             $consumeLines = [];
+            $descendants = [];
             $transportDeadline = microtime(true) + 15.0;
             $lastDump = '';
             while (microtime(true) < $transportDeadline) {
-                $descendants = $this->collectDescendantCmdlines((int) $pid);
+                $descendants = $this->collectDescendantCmdlines($controllerPid);
                 $lastDump = $this->formatDescendants($descendants);
                 $consumeLines = [];
                 foreach ($descendants as $row) {
@@ -144,35 +157,49 @@ final class NativeProcessTopologyTest extends TestCase
                     'messenger child must reference native artifact path: '.$line,
                 );
             }
-        } finally {
-            if (null !== $process && $process->isRunning()) {
-                $pid = $process->getPid();
-                $process->stop(5.0, \SIGTERM);
-                if (null !== $pid && $pid > 0) {
-                    usleep(200_000);
-                    $leftovers = $this->collectDescendantCmdlines((int) $pid);
-                    $owned = [];
-                    foreach ($leftovers as $row) {
-                        if (
-                            str_contains($row['cmdline'], $binary)
-                            || str_contains($row['cmdline'], 'messenger:consume')
-                            || str_contains($row['cmdline'], basename($binary))
-                        ) {
-                            $owned[] = '#'.$row['pid'].' '.$row['cmdline'];
-                        }
-                    }
-                    if (is_dir('/proc/'.$pid)) {
-                        $owned[] = '#'.$pid.' controller still alive';
-                    }
-                    $this->assertSame(
-                        [],
-                        $owned,
-                        "Owned descendants survived shutdown:\n".implode("\n", $owned),
-                    );
+
+            // Capture owned PIDs WHILE controller is still alive.
+            $ownedSnapshot = [];
+            foreach ($descendants as $row) {
+                if (
+                    str_contains($row['cmdline'], $binary)
+                    || str_contains($row['cmdline'], 'messenger:consume')
+                    || str_contains($row['cmdline'], $artifactBase)
+                ) {
+                    $ownedSnapshot[] = $row;
                 }
             }
+            $this->assertNotEmpty(
+                $ownedSnapshot,
+                "Owned PID snapshot empty after topology observation.\n".$lastDump,
+            );
+        } finally {
+            if (null !== $process && $process->isRunning()) {
+                // Only signal the controller this test created — never descendants.
+                $process->stop(5.0, \SIGTERM);
+            }
+
+            if ($controllerPid > 0 && [] !== $ownedSnapshot) {
+                $this->assertOwnedPidsGone($ownedSnapshot, $controllerPid, $controllerCmdline, 5.0);
+            }
+
             TestDirectoryIsolation::removeDirectory($tmp);
         }
+    }
+
+    public function testOwnedPidStillAliveTreatsPidReuseAsGone(): void
+    {
+        // Focused helper contract: dead pid / reused pid are not leaks.
+        $this->assertFalse($this->ownedPidStillAlive(0, 'anything'));
+        $this->assertFalse($this->ownedPidStillAlive(999_999_999, 'definitely-not-a-process'));
+
+        $selfPid = getmypid();
+        $this->assertNotFalse($selfPid);
+        $selfCmd = $this->readProcessCmdline((int) $selfPid);
+        $this->assertNotSame('', $selfCmd);
+        $this->assertTrue($this->ownedPidStillAlive((int) $selfPid, $selfCmd));
+        // Alive pid with unrelated cmdline => reuse, not a leak.
+        $this->assertFalse($this->ownedPidStillAlive((int) $selfPid, 'unrelated-owned-cmdline-xyz'));
     }
 
     /**
@@ -188,6 +215,78 @@ final class NativeProcessTopologyTest extends TestCase
         }
 
         return true;
+    }
+
+    private function readProcessCmdline(int $pid): string
+    {
+        if ($pid <= 0) {
+            return '';
+        }
+        $cmd = trim((string) @file_get_contents('/proc/'.$pid.'/cmdline'));
+        if ('' !== $cmd) {
+            return str_replace("\0", ' ', $cmd);
+        }
+        $ps = [];
+        @exec('ps -p '.escapeshellarg((string) $pid).' -o args= 2>/dev/null', $ps);
+
+        return trim(implode(' ', $ps));
+    }
+
+    private function ownedPidStillAlive(int $pid, string $expectedCmdline): bool
+    {
+        if ($pid <= 0) {
+            return false;
+        }
+        $alive = is_dir('/proc/'.$pid);
+        if (!$alive) {
+            $ps = [];
+            @exec('ps -p '.escapeshellarg((string) $pid).' -o pid= 2>/dev/null', $ps);
+            $alive = [] !== $ps && '' !== trim(implode('', $ps));
+        }
+        if (!$alive) {
+            return false;
+        }
+        $current = $this->readProcessCmdline($pid);
+        if ('' === $current) {
+            return true;
+        }
+        if ($current === $expectedCmdline) {
+            return true;
+        }
+        if ('' !== $expectedCmdline && (str_contains($current, $expectedCmdline) || str_contains($expectedCmdline, $current))) {
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
+     * @param list<array{pid: int, cmdline: string}> $ownedSnapshot
+     */
+    private function assertOwnedPidsGone(array $ownedSnapshot, int $controllerPid, string $controllerCmdline, float $waitSeconds): void
+    {
+        $deadline = microtime(true) + $waitSeconds;
+        $survivors = [];
+        do {
+            $survivors = [];
+            if ($this->ownedPidStillAlive($controllerPid, $controllerCmdline)) {
+                $survivors[] = '#'.$controllerPid.' controller still alive: '.$this->readProcessCmdline($controllerPid);
+            }
+            foreach ($ownedSnapshot as $row) {
+                if ($this->ownedPidStillAlive($row['pid'], $row['cmdline'])) {
+                    $survivors[] = '#'.$row['pid'].' '.$row['cmdline'].' (now: '.$this->readProcessCmdline($row['pid']).')';
+                }
+            }
+            if ([] === $survivors) {
+                return;
+            }
+            usleep(100_000);
+        } while (microtime(true) < $deadline);
+
+        $this->fail(
+            "Owned PIDs survived shutdown (pre-captured while controller alive; pgrep -P after exit is not used):\n"
+            .implode("\n", $survivors),
+        );
     }
 
     /**
@@ -209,15 +308,35 @@ final class NativeProcessTopologyTest extends TestCase
                 }
                 $seen[$child] = true;
                 $queue[] = $child;
-                $cmd = trim((string) @file_get_contents('/proc/'.$child.'/cmdline'));
-                if ('' === $cmd) {
-                    $ps = [];
-                    @exec('ps -p '.escapeshellarg((string) $child).' -o args= 2>/dev/null', $ps);
-                    $cmd = trim(implode(' ', $ps));
-                } else {
-                    $cmd = str_replace("\0", ' ', $cmd);
+                $found[] = ['pid' => $child, 'cmdline' => $this->readProcessCmdline($child)];
+            }
+        }
+
+        // Session scan catches separate-PGID messenger children while controller is alive.
+        $sidLines = [];
+        @exec('ps -o pid=,sid=,args= -p '.escapeshellarg((string) $rootPid).' 2>/dev/null', $sidLines);
+        $sid = 0;
+        if ([] !== $sidLines) {
+            $parts = preg_split('/\s+/', trim($sidLines[0]), 3);
+            if (\is_array($parts) && isset($parts[1])) {
+                $sid = (int) $parts[1];
+            }
+        }
+        if ($sid > 0) {
+            $sessionLines = [];
+            @exec('ps -eo pid=,sid=,args= 2>/dev/null', $sessionLines);
+            foreach ($sessionLines as $line) {
+                $parts = preg_split('/\s+/', trim($line), 3);
+                if (!\is_array($parts) || \count($parts) < 3) {
+                    continue;
                 }
-                $found[] = ['pid' => $child, 'cmdline' => $cmd];
+                $pid = (int) $parts[0];
+                $lineSid = (int) $parts[1];
+                if ($pid === $rootPid || $lineSid !== $sid || isset($seen[$pid])) {
+                    continue;
+                }
+                $seen[$pid] = true;
+                $found[] = ['pid' => $pid, 'cmdline' => $parts[2]];
             }
         }
 

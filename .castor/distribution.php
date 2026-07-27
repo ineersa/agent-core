@@ -349,10 +349,69 @@ function distribution_expected_messenger_transports(): array
 }
 
 /**
+ * Read a process cmdline via /proc (Linux) or portable ps (macOS).
+ */
+function distribution_read_process_cmdline(int $pid): string
+{
+    if ($pid <= 0) {
+        return '';
+    }
+    $cmd = trim((string) @file_get_contents('/proc/'.$pid.'/cmdline'));
+    if ('' !== $cmd) {
+        return str_replace("\0", ' ', $cmd);
+    }
+    $ps = [];
+    @exec('ps -p '.escapeshellarg((string) $pid).' -o args= 2>/dev/null', $ps);
+
+    return trim(implode(' ', $ps));
+}
+
+/**
+ * True when pid is alive AND still matches the captured cmdline.
+ *
+ * PID reuse with a different cmdline is treated as gone (not a leak).
+ * /proc preferred; portable `ps` fallback for macOS.
+ */
+function distribution_owned_pid_still_alive(int $pid, string $expectedCmdline): bool
+{
+    if ($pid <= 0) {
+        return false;
+    }
+    $alive = is_dir('/proc/'.$pid);
+    if (!$alive) {
+        // Portable fallback when /proc is absent (macOS CI runners).
+        $ps = [];
+        @exec('ps -p '.escapeshellarg((string) $pid).' -o pid= 2>/dev/null', $ps);
+        $alive = [] !== $ps && '' !== trim(implode('', $ps));
+    }
+    if (!$alive) {
+        return false;
+    }
+    $current = distribution_read_process_cmdline($pid);
+    if ('' === $current) {
+        // PID exists but cmdline unreadable — treat as still alive (fail closed).
+        return true;
+    }
+    if ($current === $expectedCmdline) {
+        return true;
+    }
+    // Minor argv rewriting still counts as the same owned process.
+    if ('' !== $expectedCmdline && (str_contains($current, $expectedCmdline) || str_contains($expectedCmdline, $current))) {
+        return true;
+    }
+
+    // Alive but unrelated cmdline => PID reuse, not a leak.
+    return false;
+}
+
+/**
  * Collect descendant process command lines for a controller pid.
  *
  * Walks pgrep -P depth-first and also scans session members so separate-PGID
  * messenger children are still visible. Inconclusive inspection must fail.
+ *
+ * Capture owned PIDs WHILE THE CONTROLLER IS ALIVE. After exit, orphans are
+ * reparented so pgrep -P <dead-controller> returns nothing and can false-pass.
  *
  * @return list<array{pid: int, cmdline: string}>
  */
@@ -376,14 +435,7 @@ function distribution_collect_descendant_cmdlines(int $rootPid): array
             }
             $seen[$child] = true;
             $queue[] = $child;
-            $cmd = trim((string) @file_get_contents('/proc/'.$child.'/cmdline'));
-            if ('' === $cmd) {
-                $ps = [];
-                @exec('ps -p '.escapeshellarg((string) $child).' -o args= 2>/dev/null', $ps);
-                $cmd = trim(implode(' ', $ps));
-            } else {
-                $cmd = str_replace("\0", ' ', $cmd);
-            }
+            $cmd = distribution_read_process_cmdline($child);
             $found[] = ['pid' => $child, 'cmdline' => $cmd];
         }
     }
@@ -417,6 +469,40 @@ function distribution_collect_descendant_cmdlines(int $rootPid): array
     }
 
     return $found;
+}
+
+/**
+ * After graceful controller stop, assert every pre-captured owned PID is gone
+ * (or PID reused with a different cmdline). Does not signal descendants.
+ *
+ * @param list<array{pid: int, cmdline: string}> $ownedSnapshot
+ */
+function distribution_assert_owned_pids_gone(array $ownedSnapshot, int $controllerPid, string $controllerCmdline, float $waitSeconds = 5.0): void
+{
+    $deadline = microtime(true) + $waitSeconds;
+    $survivors = [];
+    do {
+        $survivors = [];
+        if ($controllerPid > 0 && distribution_owned_pid_still_alive($controllerPid, $controllerCmdline)) {
+            $survivors[] = '#'.$controllerPid.' controller still alive: '.distribution_read_process_cmdline($controllerPid);
+        }
+        foreach ($ownedSnapshot as $row) {
+            $pid = $row['pid'];
+            $cmdline = $row['cmdline'];
+            if ($pid <= 0) {
+                continue;
+            }
+            if (distribution_owned_pid_still_alive($pid, $cmdline)) {
+                $survivors[] = '#'.$pid.' '.$cmdline.' (now: '.distribution_read_process_cmdline($pid).')';
+            }
+        }
+        if ([] === $survivors) {
+            return;
+        }
+        usleep(100_000);
+    } while (microtime(true) < $deadline);
+
+    throw new RuntimeException("Native topology smoke: owned PIDs survived shutdown (pre-captured while controller alive; pgrep -P after exit is not used):\n".implode("\n", $survivors));
 }
 
 /**
@@ -538,6 +624,9 @@ function distribution_smoke_native_process_topology(string $artifactPath): void
     $deadline = microtime(true) + 25.0;
     $ready = false;
     $controllerPid = 0;
+    $controllerCmdline = '';
+    /** @var list<array{pid: int, cmdline: string}> $ownedSnapshot */
+    $ownedSnapshot = [];
     try {
         while (microtime(true) < $deadline) {
             $chunk = stream_get_contents($pipes[1]);
@@ -563,6 +652,10 @@ function distribution_smoke_native_process_topology(string $artifactPath): void
         if ($controllerPid <= 0) {
             throw new RuntimeException('Native topology smoke: controller pid unavailable');
         }
+        $controllerCmdline = distribution_read_process_cmdline($controllerPid);
+        if ('' === $controllerCmdline) {
+            $controllerCmdline = $artifactPath.' agent --controller';
+        }
 
         // runtime.ready is emitted before ConsumerSupervisor::launch* — wait for transports.
         $transportsReady = false;
@@ -584,7 +677,24 @@ function distribution_smoke_native_process_topology(string $artifactPath): void
             $msg = isset($last) ? $last->getMessage() : 'expected messenger transports never appeared';
             throw new RuntimeException("Native topology smoke: failed after runtime.ready while waiting for messenger consumers.\n".$msg);
         }
+
+        // Capture owned PIDs WHILE controller is still alive. After exit, orphans
+        // reparent and pgrep -P <dead-controller> false-passes.
+        $ownedSnapshot = [];
+        foreach ($descendants as $row) {
+            if (
+                str_contains($row['cmdline'], $artifactPath)
+                || str_contains($row['cmdline'], 'messenger:consume')
+                || str_contains($row['cmdline'], basename($artifactPath))
+            ) {
+                $ownedSnapshot[] = $row;
+            }
+        }
+        if ([] === $ownedSnapshot) {
+            throw new RuntimeException('Native topology smoke: topology passed but owned PID snapshot is empty');
+        }
         echo "  native topology: runtime.ready + messenger consumers relaunch via {$artifactPath}\n";
+        echo '  native topology: captured '.count($ownedSnapshot)." owned descendant PIDs before shutdown\n";
     } finally {
         foreach ([0, 1, 2] as $fd) {
             if (isset($pipes[$fd]) && is_resource($pipes[$fd])) {
@@ -594,6 +704,7 @@ function distribution_smoke_native_process_topology(string $artifactPath): void
         $status = proc_get_status($proc);
         if ($status['running']) {
             // Prefer graceful controller shutdown via SIGTERM (controller signal handlers).
+            // Only signal the controller this smoke created — never descendants/unrelated.
             posix_kill($status['pid'], \SIGTERM);
             $waitUntil = microtime(true) + 5.0;
             while (microtime(true) < $waitUntil) {
@@ -605,37 +716,23 @@ function distribution_smoke_native_process_topology(string $artifactPath): void
             }
             $status = proc_get_status($proc);
             if ($status['running']) {
-                // Last resort for this owned tree only — never signal unrelated processes.
+                // Last resort for this owned controller only — never signal unrelated processes.
                 posix_kill($status['pid'], \SIGKILL);
             }
         }
         proc_close($proc);
 
-        // Assert no owned descendants survive.
-        if ($controllerPid > 0) {
-            usleep(200_000);
-            $leftovers = distribution_collect_descendant_cmdlines($controllerPid);
-            // Controller itself should be gone; filter any residual with our artifact/cwd.
-            $owned = [];
-            foreach ($leftovers as $row) {
-                if (str_contains($row['cmdline'], $artifactPath)
-                    || str_contains($row['cmdline'], 'messenger:consume')
-                    || str_contains($row['cmdline'], basename($artifactPath))
-                ) {
-                    $owned[] = '#'.$row['pid'].' '.$row['cmdline'];
-                }
-            }
-            // Also scan for still-living controller pid.
-            if (is_dir('/proc/'.$controllerPid)) {
-                $owned[] = '#'.$controllerPid.' controller still alive';
-            }
-            if ([] !== $owned) {
+        // Assert pre-captured owned PIDs are gone (or PID reused with different cmdline).
+        if ($controllerPid > 0 && [] !== $ownedSnapshot) {
+            try {
+                distribution_assert_owned_pids_gone($ownedSnapshot, $controllerPid, $controllerCmdline, 5.0);
+            } catch (Throwable $e) {
                 try {
                     \CastorTasks\remove_path_checked($tmp);
-                } catch (Throwable $e) {
-                    fwrite(\STDERR, 'native topology cleanup warning: '.$e->getMessage()."\n");
+                } catch (Throwable $cleanupError) {
+                    fwrite(\STDERR, 'native topology cleanup warning: '.$cleanupError->getMessage()."\n");
                 }
-                throw new RuntimeException("Native topology smoke: owned descendants survived shutdown:\n".implode("\n", $owned));
+                throw $e;
             }
         }
 

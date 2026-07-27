@@ -3,6 +3,7 @@ name: Distribution
 on:
   push:
     branches: [main]
+  pull_request:
   workflow_dispatch:
 
 permissions:
@@ -89,6 +90,9 @@ jobs:
           key: spc-${{ matrix.target }}-${{ hashFiles('tools/static/pin.json', 'composer.lock') }}
           restore-keys: |
             spc-${{ matrix.target }}-
+
+      - name: Install static build prerequisites
+        uses: ./.github/actions/static-prerequisites
 
       - name: Download PHAR artifact
         uses: actions/download-artifact@cc203385981b70ca67e1cc392babf9cc229d5806 # v4.1.7
