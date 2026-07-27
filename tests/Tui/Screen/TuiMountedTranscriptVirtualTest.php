@@ -341,7 +341,9 @@ final class TuiMountedTranscriptVirtualTest extends TestCase
         $patch = $projector->applyChangeSet(TranscriptChangeSet::incremental([$updatedError]));
         $this->assertTrue($patch->isContentOnly());
         $this->assertNull($patch->order);
-        $this->assertSame(['error-mid'], $patch->touchedKeys());
+        $this->assertCount(1, $patch->upserts);
+        $this->assertSame('error-mid', $patch->upserts[0]->key);
+        $this->assertSame([], $patch->removals);
     }
 
     /**

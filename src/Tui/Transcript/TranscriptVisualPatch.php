@@ -101,19 +101,4 @@ final readonly class TranscriptVisualPatch
     {
         return self::MODE_INCREMENTAL === $this->mode && !$this->orderChanged;
     }
-
-    /**
-     * Stable keys touched by this patch (upserts + removals). Operation-scope contract.
-     *
-     * @return list<string>
-     */
-    public function touchedKeys(): array
-    {
-        $keys = $this->removals;
-        foreach ($this->upserts as $node) {
-            $keys[] = $node->key;
-        }
-
-        return array_values(array_unique($keys));
-    }
 }

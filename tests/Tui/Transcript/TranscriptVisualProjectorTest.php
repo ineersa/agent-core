@@ -62,8 +62,8 @@ final class TranscriptVisualProjectorTest extends TestCase
         $this->assertTrue($patch->isContentOnly(), 'Pure tail stream must be content-only (non-structural)');
         $this->assertFalse($patch->orderChanged);
         $this->assertNull($patch->order, 'Content-only patch must not carry a full order snapshot');
-        $this->assertSame(['stream-assistant'], $patch->touchedKeys());
         $this->assertCount(1, $patch->upserts);
+        $this->assertSame('stream-assistant', $patch->upserts[0]->key);
         $this->assertSame([], $patch->removals);
         $this->assertSame('partial more tokens', $patch->upserts[0]->primary?->text);
         $this->assertSame(TranscriptVisualPatch::MODE_INCREMENTAL, $patch->mode);

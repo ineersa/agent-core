@@ -896,7 +896,7 @@ final class RuntimeEventPollerTest extends TestCase
     {
         // Thesis: after a RunLeafChanged triggers a wholesale transcript rebuild,
         // any normal event processed later in the same batch must be synchronised
-        // into $state->transcript via synchronizeProjectedBlocks, not lost.
+        // into $state->transcript via drainChanges() → applyTranscriptChangeSet(), not lost.
 
         // Real projector that tracks accepted events and returns blocks
         $projector = new class implements TranscriptProjectorInterface {
