@@ -241,6 +241,8 @@ final class OmBeforeCompactionHookTest extends IsolatedKernelTestCase
         $settings = OmSettings::fromArray([
             'observer' => ['model' => 'llama_cpp_test/test', 'schema_version' => 'o1', 'renderer_version' => 'r1'],
             'reflector' => ['model' => 'llama_cpp_test/test'],
+            // Bound the intentional empty-poll timeout; production default remains 180s.
+            'compaction' => ['wait_timeout_seconds' => 1],
         ]);
         $api = new class($this->projectDir) implements ExtensionApiInterface {
             public int $dispatches = 0;
