@@ -12,6 +12,7 @@ use Ineersa\HatfieldExt\ObservationalMemory\Runtime\OmSettings;
 use Ineersa\HatfieldExt\ObservationalMemory\Storage\MemoryGenerationRepository;
 use Ineersa\HatfieldExt\ObservationalMemory\Storage\ObservationRepository;
 use Ineersa\HatfieldExt\ObservationalMemory\Support\OmCanonicalJson;
+use Ineersa\HatfieldExt\ObservationalMemory\Support\OmIdentity;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -125,6 +126,17 @@ final readonly class ObserverPipeline
             localTimeFallback: $localTime,
             fixedOverheadTokens: $fixedOverhead,
         );
+        // Packer ranges come from renderable block seqs only. Expand coverage so the
+        // canonical interval [sourceStartSeq, terminalEndSeq] has no holes while
+        // leaving rendered text/source_refs/digests (and observation IDs) unchanged.
+        $parts = $this->normalizeChunkCoverageRanges(
+            $parts,
+            $runId,
+            $sourceStartSeq,
+            $terminalEndSeq,
+            $rendererVersion,
+            $observerSchemaVersion,
+        );
 
         $totalObservations = 0;
         $processed = 0;
@@ -212,6 +224,122 @@ final readonly class ObserverPipeline
             'source_start_seq' => $firstStart,
             'source_end_seq' => $lastEnd,
         ];
+    }
+
+    /**
+     * Expand packed chunk coverage ranges so they tile [sourceStartSeq, terminalEndSeq].
+     *
+     * Multipart same-seq chunks keep identical start/end on every part. Only identity
+     * fields that hash the source range (chunk_key, coverage_key) are recomputed.
+     *
+     * @param list<array{
+     *   source_start_seq: int,
+     *   source_end_seq: int,
+     *   part_index: int,
+     *   part_count: int,
+     *   source_digest: string,
+     *   part_digest: string,
+     *   chunk_key: string,
+     *   coverage_key: string,
+     *   rendered_part: string,
+     *   source_refs: list<array{run_id: string, seq: int}>,
+     *   user_message: string,
+     *   token_estimate: int
+     * }> $parts
+     *
+     * @return list<array{
+     *   source_start_seq: int,
+     *   source_end_seq: int,
+     *   part_index: int,
+     *   part_count: int,
+     *   source_digest: string,
+     *   part_digest: string,
+     *   chunk_key: string,
+     *   coverage_key: string,
+     *   rendered_part: string,
+     *   source_refs: list<array{run_id: string, seq: int}>,
+     *   user_message: string,
+     *   token_estimate: int
+     * }>
+     */
+    private function normalizeChunkCoverageRanges(
+        array $parts,
+        string $runId,
+        int $sourceStartSeq,
+        int $terminalEndSeq,
+        string $rendererVersion,
+        string $observerSchemaVersion,
+    ): array {
+        if ([] === $parts) {
+            return $parts;
+        }
+
+        // Group consecutive parts that form one logical chunk (same original range + part_count).
+        /** @var list<array{start: int, end: int, part_count: int, indexes: list<int>}> $groups */
+        $groups = [];
+        foreach ($parts as $index => $part) {
+            $start = (int) $part['source_start_seq'];
+            $end = (int) $part['source_end_seq'];
+            $partCount = (int) $part['part_count'];
+            $last = [] === $groups ? null : $groups[array_key_last($groups)];
+            if (null !== $last && $last['start'] === $start && $last['end'] === $end && $last['part_count'] === $partCount) {
+                $groups[array_key_last($groups)]['indexes'][] = $index;
+                continue;
+            }
+            $groups[] = [
+                'start' => $start,
+                'end' => $end,
+                'part_count' => $partCount,
+                'indexes' => [$index],
+            ];
+        }
+
+        // Leading non-renderable seqs attach to the first chunk.
+        $groups[0]['start'] = min($groups[0]['start'], $sourceStartSeq);
+
+        // Internal holes between chunks attach to the next chunk (backward expand start).
+        $groupCount = \count($groups);
+        for ($i = 0; $i < $groupCount - 1; ++$i) {
+            $expectedNext = $groups[$i]['end'] + 1;
+            if ($groups[$i + 1]['start'] > $expectedNext) {
+                $groups[$i + 1]['start'] = $expectedNext;
+            }
+            // Guard multipart / ordering invariants: never invert a range.
+            if ($groups[$i + 1]['start'] > $groups[$i + 1]['end']) {
+                $groups[$i + 1]['start'] = $groups[$i + 1]['end'];
+            }
+        }
+
+        // Trailing non-renderable seqs attach to the last chunk.
+        $lastIdx = $groupCount - 1;
+        $groups[$lastIdx]['end'] = max($groups[$lastIdx]['end'], $terminalEndSeq);
+        if ($groups[$lastIdx]['start'] > $groups[$lastIdx]['end']) {
+            $groups[$lastIdx]['start'] = $groups[$lastIdx]['end'];
+        }
+
+        foreach ($groups as $group) {
+            $chunkKey = OmIdentity::chunkKey(
+                $runId,
+                $group['start'],
+                $group['end'],
+                $rendererVersion,
+                $observerSchemaVersion,
+                $parts[$group['indexes'][0]]['source_digest'],
+                $group['part_count'],
+            );
+            foreach ($group['indexes'] as $partIndex) {
+                $parts[$partIndex]['source_start_seq'] = $group['start'];
+                $parts[$partIndex]['source_end_seq'] = $group['end'];
+                $parts[$partIndex]['chunk_key'] = $chunkKey;
+                $parts[$partIndex]['coverage_key'] = OmIdentity::coverageKey(
+                    $chunkKey,
+                    $parts[$partIndex]['part_index'],
+                    $parts[$partIndex]['part_digest'],
+                );
+            }
+        }
+
+        return $parts;
     }
 
     /**

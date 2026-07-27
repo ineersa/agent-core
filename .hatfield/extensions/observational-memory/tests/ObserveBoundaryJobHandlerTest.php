@@ -180,6 +180,155 @@ final class ObserveBoundaryJobHandlerTest extends IsolatedKernelTestCase
     }
 
     /**
+     * Thesis: after contiguous coverage through 82, the next observe interval 83..88
+     * where 83 is non-renderable control (agent_command_queued) and 84+ are content
+     * must persist coverage through 88 without leaving a canonical hole. Prompt/source
+     * refs include renderable 84, never control 83. Redelivery does not re-invoke Observer.
+     */
+    public function testNonRenderableControlSeqDoesNotLeaveCanonicalCoverageGap(): void
+    {
+        $dbPath = $this->projectDir.'/.hatfield/extensions-data/observational-memory/om.sqlite';
+        // Seed requires migrated schema before handle() opens the same path.
+        $connection = $this->omDatabaseFactory()->connectAndMigrate($dbPath, new NullLogger());
+        $repo = new ObservationRepository($connection);
+
+        // Seed prior contiguous coverage 1..82 (session-2 shape) via repository.
+        $repo->commitChunkPartCoverage(
+            coverageKey: 'seed-cov-1-82',
+            runId: 'run-gap',
+            boundaryKey: 'seed-chunk-1-82',
+            sourceStartSeq: 1,
+            sourceEndSeq: 82,
+            chunkKey: 'seed-chunk-1-82',
+            partIndex: 1,
+            partCount: 1,
+            sourceDigest: 'seed-source-digest',
+            partDigest: 'seed-part-digest',
+            rendererVersion: 'r1',
+            observerSchemaVersion: 'o1',
+            observerModel: 'llama_cpp_test/test',
+            observations: [],
+            coveredAt: '2026-07-27T22:00:00+00:00',
+        );
+        $this->assertSame(82, $repo->contiguousCoveredEndSeq('run-gap', 'r1', 'o1'));
+
+        $events = [
+            new SessionEventDTO(
+                runId: 'run-gap',
+                seq: 83,
+                turnNo: 2,
+                type: 'agent_command_queued',
+                payload: ['kind' => 'prompt'],
+                createdAt: '2026-07-27T22:01:00+00:00',
+            ),
+            new SessionEventDTO(
+                runId: 'run-gap',
+                seq: 84,
+                turnNo: 2,
+                type: 'agent_command_applied',
+                payload: ['kind' => 'prompt', 'text' => 'Follow-up about include_archive'],
+                createdAt: '2026-07-27T22:01:01+00:00',
+            ),
+            new SessionEventDTO(
+                runId: 'run-gap',
+                seq: 85,
+                turnNo: 2,
+                type: 'llm_step_completed',
+                payload: [
+                    'assistant_message' => [
+                        'role' => 'assistant',
+                        'content' => 'include_archive is unnecessary for TODO listing',
+                    ],
+                ],
+                createdAt: '2026-07-27T22:01:02+00:00',
+            ),
+            new SessionEventDTO(
+                runId: 'run-gap',
+                seq: 86,
+                turnNo: 2,
+                type: 'agent_end',
+                payload: ['reason' => 'completed'],
+                createdAt: '2026-07-27T22:01:03+00:00',
+            ),
+            new SessionEventDTO(
+                runId: 'run-gap',
+                seq: 87,
+                turnNo: 2,
+                type: 'agent_command_applied',
+                payload: ['kind' => 'prompt', 'text' => 'Proceed with four-phase plan'],
+                createdAt: '2026-07-27T22:01:04+00:00',
+            ),
+            new SessionEventDTO(
+                runId: 'run-gap',
+                seq: 88,
+                turnNo: 2,
+                type: 'agent_end',
+                payload: ['reason' => 'completed'],
+                createdAt: '2026-07-27T22:01:05+00:00',
+            ),
+        ];
+
+        $agentCalls = 0;
+        $lastRequest = null;
+        $api = $this->buildApi(
+            events: $events,
+            onAgentRun: static function (AgentCallRequestDTO $request) use (&$agentCalls, &$lastRequest): void {
+                ++$agentCalls;
+                $lastRequest = $request;
+                $tool = $request->tools[0] ?? null;
+                if (null === $tool) {
+                    throw new \RuntimeException('expected record_observations tool');
+                }
+                ($tool->handler)([
+                    'observations' => [[
+                        'timestamp' => '2026-07-27 22:01',
+                        'content' => 'User asked about include_archive for TODO listing',
+                        'relevance' => 'medium',
+                        'source_refs' => [
+                            ['run_id' => 'run-gap', 'seq' => 84],
+                        ],
+                    ]],
+                ]);
+            },
+        );
+
+        $handler = new ObserveBoundaryJobHandler(new NullLogger());
+        $payload = [
+            'run_id' => 'run-gap',
+            'terminal_end_seq' => 88,
+            'terminal_status' => 'completed',
+            'renderer_version' => 'r1',
+            'observer_schema_version' => 'o1',
+        ];
+        $handler->handle($api, $payload, 'job-gap-1', 'run-gap');
+
+        $this->assertSame(1, $agentCalls, 'Observer must run once for the uncovered 83..88 range');
+        $this->assertInstanceOf(AgentCallRequestDTO::class, $lastRequest);
+        $this->assertStringContainsString('include_archive', $lastRequest->input);
+        $this->assertStringContainsString('[Source entry id: run-gap:84]', $lastRequest->input);
+        $this->assertStringNotContainsString('[Source entry id: run-gap:83]', $lastRequest->input);
+        $this->assertStringNotContainsString('agent_command_queued', $lastRequest->input);
+
+        $this->assertSame(88, $repo->contiguousCoveredEndSeq('run-gap', 'r1', 'o1'));
+
+        $coverageRows = $connection->fetchAllAssociative(
+            'SELECT source_start_seq, source_end_seq, observation_count
+             FROM om_coverage
+             WHERE run_id = ? AND source_start_seq >= 83
+             ORDER BY source_start_seq, source_end_seq',
+            ['run-gap'],
+        );
+        $this->assertNotSame([], $coverageRows);
+        $this->assertSame(83, (int) $coverageRows[0]['source_start_seq']);
+        $this->assertSame(88, (int) $coverageRows[\count($coverageRows) - 1]['source_end_seq']);
+
+        // Redelivery / later terminal for same covered range must not re-invoke Observer.
+        $handler->handle($api, $payload, 'job-gap-2', 'run-gap');
+        $this->assertSame(1, $agentCalls, 'already-covered redelivery must not re-invoke Observer');
+        $this->assertSame(88, $repo->contiguousCoveredEndSeq('run-gap', 'r1', 'o1'));
+    }
+
+    /**
      * @param list<SessionEventDTO>              $events
      * @param callable(AgentCallRequestDTO):void $onAgentRun
      */
