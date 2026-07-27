@@ -27,6 +27,20 @@ final class TranscriptProjectionState
     /** Monotonic sequence counter for new blocks. Reset on replay. */
     private int $nextSeq = 0;
 
+    /**
+     * Dirty block IDs since the last {@see drainChanges()} call.
+     *
+     * @var array<string, true>
+     */
+    private array $dirtyIds = [];
+
+    /**
+     * Removed block IDs since the last {@see drainChanges()} call.
+     *
+     * @var array<string, true>
+     */
+    private array $removedIds = [];
+
     // ── State mutation ──────────────────────────────────────────────────────
 
     /**
@@ -41,6 +55,7 @@ final class TranscriptProjectionState
             $this->order[] = $block->id;
         }
         $this->blocks[$block->id] = $block;
+        $this->markDirty($block->id);
     }
 
     /**
@@ -57,6 +72,7 @@ final class TranscriptProjectionState
     public function updateBlock(string $id, TranscriptBlock $block): void
     {
         $this->blocks[$id] = $block;
+        $this->markDirty($id);
     }
 
     /**
@@ -73,12 +89,17 @@ final class TranscriptProjectionState
         $this->order = array_values(
             array_filter($this->order, static fn (string $oid): bool => $oid !== $id),
         );
+        unset($this->dirtyIds[$id]);
+        $this->removedIds[$id] = true;
     }
 
     // ── Accessors ────────────────────────────────────────────────────────────
 
     /**
      * Return the current ordered list of transcript blocks.
+     *
+     * Used for bootstrap/resume/leaf replacement. Ordinary live polls should
+     * prefer {@see drainChanges()} so finalized history is not re-materialized.
      *
      * @return list<TranscriptBlock>
      */
@@ -93,6 +114,37 @@ final class TranscriptProjectionState
     }
 
     /**
+     * Drain dirty/removed block IDs into an incremental change set and clear tracking.
+     *
+     * Live TUI state always *merges* projector deltas (resume/leaf snapshots live
+     * outside the projector). Full replacement is assembled by callers via
+     * {@see blocks()} / {@see TranscriptChangeSet::full()}, never by this drain.
+     */
+    public function drainChanges(): TranscriptChangeSet
+    {
+        $upserts = [];
+        foreach ($this->order as $id) {
+            if (isset($this->dirtyIds[$id])) {
+                $upserts[] = $this->blocks[$id];
+            }
+        }
+
+        $removals = array_keys($this->removedIds);
+        $this->dirtyIds = [];
+        $this->removedIds = [];
+
+        return TranscriptChangeSet::incremental($upserts, $removals);
+    }
+
+    /**
+     * Peek whether any dirty upserts or removals exist without draining.
+     */
+    public function hasPendingChanges(): bool
+    {
+        return [] !== $this->dirtyIds || [] !== $this->removedIds;
+    }
+
+    /**
      * Reset all internal state so a fresh replay produces the same output.
      */
     public function reset(): void
@@ -100,6 +152,8 @@ final class TranscriptProjectionState
         $this->blocks = [];
         $this->order = [];
         $this->nextSeq = 0;
+        $this->dirtyIds = [];
+        $this->removedIds = [];
     }
 
     // ── Sequence counter ─────────────────────────────────────────────────────
@@ -323,7 +377,7 @@ final class TranscriptProjectionState
     {
         foreach ($this->blocks as $id => $block) {
             if (($block->meta['message_id'] ?? '') === $messageId && $block->streaming) {
-                $this->blocks[$id] = $block->finalize();
+                $this->updateBlock($id, $block->finalize());
             }
         }
     }
@@ -349,5 +403,11 @@ final class TranscriptProjectionState
         }
 
         return '('.implode(', ', $parts).')';
+    }
+
+    private function markDirty(string $id): void
+    {
+        unset($this->removedIds[$id]);
+        $this->dirtyIds[$id] = true;
     }
 }

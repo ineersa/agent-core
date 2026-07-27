@@ -54,6 +54,11 @@ final readonly class TranscriptBlockWidgetFactory
         return $this->displayState;
     }
 
+    public function subagentRenderer(): SubagentResultRenderer
+    {
+        return $this->subagentRenderer;
+    }
+
     public function isTranscriptWidgetSuppressed(TranscriptBlock $block): bool
     {
         return $this->shouldSuppressTranscriptWidget($block);

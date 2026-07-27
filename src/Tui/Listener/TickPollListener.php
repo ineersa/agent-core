@@ -94,7 +94,7 @@ final class TickPollListener implements TuiListenerRegistrar
                 }
             }
 
-            $changedBlocks = $poller->poll(
+            $transcriptChanges = $poller->poll(
                 $state,
                 $client,
                 onHumanInputRequested: $onHitl,
@@ -122,8 +122,10 @@ final class TickPollListener implements TuiListenerRegistrar
                         }
                     }
                 }
-            } elseif (null !== $changedBlocks) {
-                $screen->setTranscriptBlocks($state->transcript);
+            } elseif (null !== $transcriptChanges) {
+                // Incremental projector delta (or explicit full after leaf replace).
+                // State already applied inside RuntimeEventPoller; screen merges the same set.
+                $screen->applyTranscriptChangeSet($transcriptChanges);
             }
 
             // The pending-queue widget (slot 4, above the editor) reflects transient

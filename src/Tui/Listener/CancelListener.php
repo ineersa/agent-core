@@ -178,7 +178,7 @@ final class CancelListener implements TuiListenerRegistrar
                             .' The runtime process may have crashed. Please restart the agent.',
                         meta: ['exception' => $e::class],
                     );
-                    $state->transcript[] = $block;
+                    $state->appendTranscriptBlock($block);
 
                     return;
                 }

@@ -13,6 +13,7 @@ use Ineersa\CodingAgent\Runtime\Contract\TranscriptProjectorInterface;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
+use Ineersa\CodingAgent\Runtime\Projection\TranscriptChangeSet;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEvent;
 use Ineersa\CodingAgent\Runtime\Protocol\RuntimeEventTypeEnum;
 use Ineersa\Tui\Runtime\RunActivityStateEnum;
@@ -56,6 +57,7 @@ final class RuntimeEventPollerTest extends TestCase
         $this->projector->method('accept');
         $this->projector->method('reset');
         $this->projector->method('blocks')->willReturn([]);
+        $this->projector->method('drainChanges')->willReturn(TranscriptChangeSet::incremental([]));
         $this->sessionTranscriptProvider = $this->createMock(SessionTranscriptProviderInterface::class);
         $this->sessionTranscriptProvider->method('transcriptForLeaf')->willReturn(new SessionTranscriptSnapshotDTO([], []));
         $this->logger = $this->createMock(LoggerInterface::class);
@@ -110,13 +112,13 @@ final class RuntimeEventPollerTest extends TestCase
             ->with($event->toArray());
 
         $this->projector->expects($this->once())
-            ->method('blocks')
-            ->willReturn([]);
+            ->method('drainChanges')
+            ->willReturn(TranscriptChangeSet::incremental([]));
 
         $result = $this->poller->poll($this->state, $this->client);
 
-        // Empty projected blocks returns empty array
-        $this->assertSame([], $result);
+        // Empty projected changes returns null (nothing to paint)
+        $this->assertNull($result);
         $this->assertSame(5, $this->state->lastSeq);
     }
 
@@ -161,13 +163,13 @@ final class RuntimeEventPollerTest extends TestCase
             ->method('accept');
 
         $this->projector->expects($this->once())
-            ->method('blocks')
-            ->willReturn([]);
+            ->method('drainChanges')
+            ->willReturn(TranscriptChangeSet::incremental([]));
 
         $result = $this->poller->poll($this->state, $this->client);
 
-        // Empty projected blocks returns empty array
-        $this->assertSame([], $result);
+        // Empty projected changes returns null (nothing to paint)
+        $this->assertNull($result);
     }
 
     public function testTurnStartedResetsUsage(): void
@@ -192,8 +194,8 @@ final class RuntimeEventPollerTest extends TestCase
             ->method('accept');
 
         $this->projector->expects($this->once())
-            ->method('blocks')
-            ->willReturn([]);
+            ->method('drainChanges')
+            ->willReturn(TranscriptChangeSet::incremental([]));
 
         $this->poller->poll($this->state, $this->client);
 
@@ -229,8 +231,8 @@ final class RuntimeEventPollerTest extends TestCase
             ->method('accept');
 
         $this->projector->expects($this->once())
-            ->method('blocks')
-            ->willReturn([]);
+            ->method('drainChanges')
+            ->willReturn(TranscriptChangeSet::incremental([]));
 
         $this->poller->poll($this->state, $this->client);
 
@@ -260,8 +262,8 @@ final class RuntimeEventPollerTest extends TestCase
             ->method('accept');
 
         $this->projector->expects($this->once())
-            ->method('blocks')
-            ->willReturn([]);
+            ->method('drainChanges')
+            ->willReturn(TranscriptChangeSet::incremental([]));
 
         $this->poller->poll($this->state, $this->client);
 
@@ -299,11 +301,11 @@ final class RuntimeEventPollerTest extends TestCase
 
         $result = $this->poller->poll($this->state, $this->client);
 
-        // Should return an error block (fatal on first hit since fatal errors skip retry)
-        $this->assertIsArray($result);
-        $this->assertCount(1, $result);
+        // Should return an error change set (fatal on first hit since fatal errors skip retry)
+        $this->assertInstanceOf(TranscriptChangeSet::class, $result);
+        $this->assertCount(1, $result->upserts);
         $this->assertSame(RunActivityStateEnum::Failed, $this->state->activity);
-        $this->assertStringContainsString('Runtime transport error', $result[0]->text);
+        $this->assertStringContainsString('Runtime transport error', $result->upserts[0]->text);
     }
 
     public function testPollHandlesControllerRestartLimitWithFailedStateAndPollError(): void
@@ -322,13 +324,13 @@ final class RuntimeEventPollerTest extends TestCase
 
         $result = $this->poller->poll($this->state, $this->client);
 
-        $this->assertIsArray($result);
-        $this->assertCount(1, $result);
+        $this->assertInstanceOf(TranscriptChangeSet::class, $result);
+        $this->assertCount(1, $result->upserts);
         $this->assertSame(RunActivityStateEnum::Failed, $this->state->activity);
         $this->assertSame($handleBefore, $this->state->handle);
         $this->assertSame($message, $this->state->lastRuntimePollError);
-        $this->assertStringContainsString('Runtime transport error', $result[0]->text);
-        $this->assertStringContainsString('crashed too many times', $result[0]->text);
+        $this->assertStringContainsString('Runtime transport error', $result->upserts[0]->text);
+        $this->assertStringContainsString('crashed too many times', $result->upserts[0]->text);
     }
 
     public function testErrorCountResetOnSuccessfulPoll(): void
@@ -361,7 +363,7 @@ final class RuntimeEventPollerTest extends TestCase
             ->willReturn([$event]);
 
         $this->projector->method('accept');
-        $this->projector->method('blocks')->willReturn([]);
+        $this->projector->method('drainChanges')->willReturn(TranscriptChangeSet::incremental([]));
 
         $called = null;
         $callback = static function (RuntimeEvent $e) use (&$called): void {
@@ -390,7 +392,7 @@ final class RuntimeEventPollerTest extends TestCase
             ->willReturn([$event]);
 
         $this->projector->method('accept');
-        $this->projector->method('blocks')->willReturn([]);
+        $this->projector->method('drainChanges')->willReturn(TranscriptChangeSet::incremental([]));
 
         $called = null;
         $callback = static function (RuntimeEvent $e) use (&$called): void {
@@ -432,7 +434,7 @@ final class RuntimeEventPollerTest extends TestCase
             );
 
         $this->projector->method('accept');
-        $this->projector->method('blocks')->willReturn([]);
+        $this->projector->method('drainChanges')->willReturn(TranscriptChangeSet::incremental([]));
 
         $this->poller->poll($this->state, $this->client);
 
@@ -470,7 +472,7 @@ final class RuntimeEventPollerTest extends TestCase
         $this->client->expects($this->never())->method('send');
 
         $this->projector->method('accept');
-        $this->projector->method('blocks')->willReturn([]);
+        $this->projector->method('drainChanges')->willReturn(TranscriptChangeSet::incremental([]));
 
         $this->poller->poll($this->state, $this->client);
 
@@ -503,7 +505,7 @@ final class RuntimeEventPollerTest extends TestCase
         $this->client->expects($this->never())->method('send');
 
         $this->projector->method('accept');
-        $this->projector->method('blocks')->willReturn([]);
+        $this->projector->method('drainChanges')->willReturn(TranscriptChangeSet::incremental([]));
 
         $this->poller->poll($this->state, $this->client);
 
@@ -530,7 +532,7 @@ final class RuntimeEventPollerTest extends TestCase
             ->method('send');
 
         $this->projector->method('accept');
-        $this->projector->method('blocks')->willReturn([]);
+        $this->projector->method('drainChanges')->willReturn(TranscriptChangeSet::incremental([]));
 
         $this->poller->poll($this->state, $this->client);
 
@@ -554,7 +556,7 @@ final class RuntimeEventPollerTest extends TestCase
             ->willReturn([$event]);
 
         $this->projector->method('accept');
-        $this->projector->method('blocks')->willReturn([]);
+        $this->projector->method('drainChanges')->willReturn(TranscriptChangeSet::incremental([]));
 
         $called = false;
         $callback = static function (RuntimeEvent $e) use (&$called): void {
@@ -593,7 +595,7 @@ final class RuntimeEventPollerTest extends TestCase
             ->method('send');
 
         $this->projector->method('accept');
-        $this->projector->method('blocks')->willReturn([]);
+        $this->projector->method('drainChanges')->willReturn(TranscriptChangeSet::incremental([]));
 
         $this->poller->poll($this->state, $this->client);
 
@@ -629,7 +631,7 @@ final class RuntimeEventPollerTest extends TestCase
             ->method('send');
 
         $this->projector->method('accept');
-        $this->projector->method('blocks')->willReturn([]);
+        $this->projector->method('drainChanges')->willReturn(TranscriptChangeSet::incremental([]));
 
         $this->poller->poll($this->state, $this->client);
 
@@ -661,8 +663,8 @@ final class RuntimeEventPollerTest extends TestCase
             ->method('accept');
 
         $this->projector->expects($this->once())
-            ->method('blocks')
-            ->willReturn([]);
+            ->method('drainChanges')
+            ->willReturn(TranscriptChangeSet::incremental([]));
 
         $this->logger->expects($this->once())
             ->method('warning')
@@ -747,11 +749,12 @@ final class RuntimeEventPollerTest extends TestCase
         $result = $poller->poll($this->state, $this->client);
 
         // Transcript wholesale replaced (old block gone, new block present)
-        $this->assertNotNull($result);
-        $this->assertCount(1, $result);
-        $this->assertSame($result, $this->state->transcript);
-        $this->assertSame('block-seq-35', $result[0]->id);
-        $this->assertSame('New active path response', $result[0]->text);
+        $this->assertInstanceOf(TranscriptChangeSet::class, $result);
+        $this->assertTrue($result->isFull());
+        $this->assertCount(1, $result->blocks());
+        $this->assertSame($result->blocks(), $this->state->transcript);
+        $this->assertSame('block-seq-35', $result->blocks()[0]->id);
+        $this->assertSame('New active path response', $result->blocks()[0]->text);
         $this->assertCount(1, $this->state->transcript, 'Old abandoned-branch block must be gone');
 
         // Activity becomes Idle after RunLeafChanged
@@ -818,7 +821,9 @@ final class RuntimeEventPollerTest extends TestCase
         $this->assertSame([], $this->state->transcript, 'Transcript must be empty on rebuild failure');
 
         // Poll returns the (empty) transcript so the renderer redraws as blank
-        $this->assertSame([], $result);
+        $this->assertInstanceOf(TranscriptChangeSet::class, $result);
+        $this->assertTrue($result->isFull());
+        $this->assertSame([], $result->blocks());
 
         // lastSeq still advanced to the RunLeafChanged seq
         $this->assertSame(20, $this->state->lastSeq);
@@ -875,7 +880,9 @@ final class RuntimeEventPollerTest extends TestCase
 
         // Stale blocks must be removed
         $this->assertSame([], $this->state->transcript, 'Transcript must be empty after malformed RunLeafChanged');
-        $this->assertSame([], $result);
+        $this->assertInstanceOf(TranscriptChangeSet::class, $result);
+        $this->assertTrue($result->isFull());
+        $this->assertSame([], $result->blocks());
 
         // lastSeq still advanced
         $this->assertSame(20, $this->state->lastSeq);
@@ -916,6 +923,14 @@ final class RuntimeEventPollerTest extends TestCase
                 }
 
                 return $blocks;
+            }
+
+            public function drainChanges(): TranscriptChangeSet
+            {
+                $blocks = $this->blocks();
+                $this->accepted = [];
+
+                return TranscriptChangeSet::incremental($blocks);
             }
 
             public function reset(): void
@@ -971,12 +986,13 @@ final class RuntimeEventPollerTest extends TestCase
         $result = $poller->poll($this->state, $this->client);
 
         // Both the rebuilt active-path block AND the post-leaf block must appear
-        $this->assertNotNull($result, 'Result must not be null when events were processed');
-        $this->assertCount(2, $result, 'Both rebuilt and post-leaf blocks must be present');
-        $this->assertSame('block-seq-30', $result[0]->id);
-        $this->assertSame('Rebuilt active path block', $result[0]->text);
-        $this->assertSame('block-seq-35', $result[1]->id);
-        $this->assertSame('Post-leaf event', $result[1]->text);
+        $this->assertInstanceOf(TranscriptChangeSet::class, $result, 'Result must not be null when events were processed');
+        $this->assertTrue($result->isFull());
+        $this->assertCount(2, $result->blocks(), 'Both rebuilt and post-leaf blocks must be present');
+        $this->assertSame('block-seq-30', $result->blocks()[0]->id);
+        $this->assertSame('Rebuilt active path block', $result->blocks()[0]->text);
+        $this->assertSame('block-seq-35', $result->blocks()[1]->id);
+        $this->assertSame('Post-leaf event', $result->blocks()[1]->text);
 
         // lastSeq advanced to the highest seq in the batch (35, not 20)
         $this->assertSame(35, $this->state->lastSeq);

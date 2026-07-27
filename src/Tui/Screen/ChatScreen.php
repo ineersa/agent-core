@@ -6,6 +6,7 @@ namespace Ineersa\Tui\Screen;
 
 use Ineersa\CodingAgent\Runtime\Contract\LoadedResourcesSummaryDTO;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
+use Ineersa\CodingAgent\Runtime\Projection\TranscriptChangeSet;
 use Ineersa\Tui\Editor\PromptEditor;
 use Ineersa\Tui\Extension\SlotBasedTuiExtensionContext;
 use Ineersa\Tui\Extension\TuiExtensionContext;
@@ -388,10 +389,24 @@ final class ChatScreen
         $this->loadedResourcesWidget->invalidate();
     }
 
-    /** @param list<TranscriptBlock> $blocks */
+    /**
+     * Full transcript replacement (bootstrap, resume, leaf/branch, preview invalidation).
+     *
+     * @param list<TranscriptBlock> $blocks
+     */
     public function setTranscriptBlocks(array $blocks): void
     {
-        $this->transcriptWidget->setBlocks(array_values($blocks));
+        $this->transcriptWidget->setBlocks($blocks);
+    }
+
+    /**
+     * Ordinary live projector delta: tail append/update/remove without full list rebuild
+     * at the ChatScreen boundary. Mounted reconcile still reprojects presentation policy
+     * from the retained block list (object-identity dirty detection, no text hashing).
+     */
+    public function applyTranscriptChangeSet(TranscriptChangeSet $changes): void
+    {
+        $this->transcriptWidget->applyChangeSet($changes);
     }
 
     /**
