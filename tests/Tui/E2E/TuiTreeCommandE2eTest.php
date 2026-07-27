@@ -163,11 +163,19 @@ final class TuiTreeCommandE2eTest extends TestCase
             $this->tmux->waitForCaptureContains($pane, 'SECOND_TURN_REPLY_07C', TmuxHarness::TUI_GATE_CALLBACK_TIMEOUT_PARALLEL);
 
             // Direct bang commands are canonical transcript content. The unique
-            // marker proves both the user line and shell output are present
-            // before rewind and absent afterwards. Prompt editor history is
-            // intentionally out of scope for this proof.
+            // marker plus idle status prove the bang completed (user line, shell
+            // output, and terminal tool events settled) before rewind; both must
+            // be absent afterwards. Prompt editor history is intentionally out of
+            // scope for this proof.
             $this->submitPrompt($pane, '!printf BANG_REWIND_07C');
             $this->tmux->waitForCaptureContains($pane, 'BANG_REWIND_07C', TmuxHarness::TUI_GATE_CALLBACK_TIMEOUT_PARALLEL);
+            $this->tmux->waitForCallback(
+                $pane,
+                static fn (string $cap): bool => str_contains($cap, '● idle'),
+                timeout: TmuxHarness::TUI_GATE_CALLBACK_TIMEOUT_PARALLEL,
+                message: 'Direct bang command never reached idle after BANG_REWIND_07C (tool events may still be in flight before rewind)',
+                history: 2000,
+            );
 
             $this->runSlashCommand($pane, '/tree');
             $this->tmux->waitForCallback(
