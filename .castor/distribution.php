@@ -456,14 +456,13 @@ function distribution_parse_ps_process_line(string $line): ?array
         return null;
     }
     $pid = (int) $parts[0];
-    $session = (int) $parts[1];
     if ($pid <= 0) {
         return null;
     }
 
     return [
         'pid' => $pid,
-        'session' => $session,
+        'session' => (int) $parts[1],
         'cmdline' => $parts[2] ?? '',
     ];
 }
