@@ -21,6 +21,7 @@ Usage: scripts/build-distribution.sh [options]
 Options:
   --target=<linux-amd64|linux-arm64|darwin-amd64|darwin-arm64>
   --output=<dir>          Dist output directory (default: var/tmp/dist)
+  --version=<semver>      Embed release version (alias: --release-version, also accepts space form)
   --release-version=<semver>      Embed release version
   --commit=<sha>          Embed commit SHA
   --static                Build host static binary (after PHAR)
@@ -39,6 +40,7 @@ while [[ $# -gt 0 ]]; do
     --output=*) OUTPUT="${1#*=}"; shift ;;
     --output) OUTPUT="${2:-}"; shift 2 ;;
     --release-version=*) VERSION="${1#*=}"; shift ;;
+    --version=*) VERSION="${1#*=}"; shift ;;
     --version) VERSION="${2:-}"; shift 2 ;;
     --commit=*) COMMIT="${1#*=}"; shift ;;
     --commit) COMMIT="${2:-}"; shift 2 ;;

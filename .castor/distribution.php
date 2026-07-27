@@ -177,12 +177,6 @@ function distribution_build_micro_sfx(string $target): array
     $pin = distribution_static_pin();
     $spcRoot = distribution_ensure_spc_checkout();
     $workDir = distribution_root().'/var/tmp/static-build/'.$target;
-    if (is_dir($workDir)) {
-        // Keep downloads cache when present; rebuild outputs only.
-        foreach (['buildroot', 'source', 'downloads'] as $keep) {
-            // leave downloads
-        }
-    }
     if (!is_dir($workDir) && !mkdir($workDir, 0755, true) && !is_dir($workDir)) {
         throw new RuntimeException('Unable to create static build dir: '.$workDir);
     }
