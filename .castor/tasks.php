@@ -12,9 +12,15 @@ declare(strict_types=1);
  *   castor test:controller, castor llm:fixtures:record
  *
  * Lanes (typical shell timeouts):
- *   deptrac (30s), test ParaTest (120s), test:controller-replay (150s),
+ *   deptrac (30s), test ParaTest (180s), test:controller-replay (150s),
  *   test:tui (180s), test:llm-real (180s), phpstan (90s), cs-check (30s).
  *   No PHAR in the gate.
+ *
+ * Budget for unit/integration ParaTest (120s → 180s): the gate runs this
+ * 4-worker lane concurrently with controller-replay, TUI, and llm-real.
+ * Isolated full suites finish well under 120s, but under real CODE-REVIEW
+ * gate load the lane has hit GNU timeout exit 124 with no test failures;
+ * 180s matches the TUI/live budget without a new config knob.
  *
  * Budget for test:controller-replay (75s → 90s → 120s → 150s) reflects the
  * current replay E2E suite: 10 sequential controller-subprocess tests
@@ -150,8 +156,9 @@ function _run_castor_check_body(string $root, string $qaRunId): void
         'test' => [
             'cmd' => timeout_check_command(
                 // ParaTest unit/integration; PHAR excluded (opt-in, not part of deterministic gate).
+                // 4 workers share CPU with replay/live lanes; 180s is the contention budget.
                 build_check_paratest_command(),
-                120,
+                180,
             ),
         ],
         'test:controller-replay' => [
