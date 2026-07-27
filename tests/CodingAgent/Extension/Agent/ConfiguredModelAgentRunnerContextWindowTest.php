@@ -15,9 +15,20 @@ use Symfony\AI\Platform\PlatformInterface;
 /**
  * Thesis: public agent()->contextWindow() returns catalog context_window only —
  * never invents a default, never falls back across models/providers.
+ * Null catalog (no AI settings) is also null, not a construction TypeError.
  */
 final class ConfiguredModelAgentRunnerContextWindowTest extends TestCase
 {
+    #[Test]
+    public function returnsNullWhenCatalogUnavailable(): void
+    {
+        $platform = $this->createStub(PlatformInterface::class);
+        $runner = new ConfiguredModelAgentRunner($platform, null, new NullLogger());
+
+        $this->assertNull($runner->contextWindow('llama_cpp/flash'));
+        $this->assertNull($runner->contextWindow('not-a-valid-ref'));
+    }
+
     #[Test]
     public function returnsCatalogContextWindowAndNullForMissingMetadata(): void
     {

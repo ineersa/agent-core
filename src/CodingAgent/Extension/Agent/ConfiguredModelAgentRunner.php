@@ -31,13 +31,19 @@ final readonly class ConfiguredModelAgentRunner implements AgentRunnerInterface
 {
     public function __construct(
         private PlatformInterface $platform,
-        private HatfieldModelCatalog $modelCatalog,
+        private ?HatfieldModelCatalog $modelCatalog,
         private LoggerInterface $logger,
     ) {
     }
 
     public function contextWindow(string $exactModel): ?int
     {
+        // No AI settings → no catalog. Callers (OM chunk budgets) already treat
+        // null/nonpositive as a durable config failure; never invent a window.
+        if (null === $this->modelCatalog) {
+            return null;
+        }
+
         try {
             $model = $this->modelCatalog->requireModel(AiModelReference::parse($exactModel));
         } catch (\InvalidArgumentException|\RuntimeException) {

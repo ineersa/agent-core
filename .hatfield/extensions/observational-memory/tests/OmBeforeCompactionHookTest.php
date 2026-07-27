@@ -179,6 +179,12 @@ final class OmBeforeCompactionHookTest extends IsolatedKernelTestCase
                 $repo = new CompactionRepository($connection);
                 $now = (new \DateTimeImmutable('now', new \DateTimeZone('UTC')))->format(\DateTimeInterface::ATOM);
                 $payload = $request->payload;
+                // commitSuccess CAS requires running (production worker path marks running first).
+                $repo->markRunning(
+                    requestId: (string) $payload['request_id'],
+                    requestFingerprint: (string) $payload['request_fingerprint'],
+                    now: $now,
+                );
                 $repo->commitSuccess(
                     requestId: (string) $payload['request_id'],
                     resultId: 'result-1',
@@ -858,6 +864,12 @@ final class OmBeforeCompactionHookTest extends IsolatedKernelTestCase
                 $repo = new CompactionRepository($connection);
                 $now = (new \DateTimeImmutable('now', new \DateTimeZone('UTC')))->format(\DateTimeInterface::ATOM);
                 $payload = $request->payload;
+                // commitSuccess CAS requires running (production worker path marks running first).
+                $repo->markRunning(
+                    requestId: (string) $payload['request_id'],
+                    requestFingerprint: (string) $payload['request_fingerprint'],
+                    now: $now,
+                );
                 $repo->commitSuccess(
                     requestId: (string) $payload['request_id'],
                     resultId: 'result-bad-meta',
