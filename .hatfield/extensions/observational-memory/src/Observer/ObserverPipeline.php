@@ -171,6 +171,7 @@ final readonly class ObserverPipeline
                 ],
                 correlationId: $jobId ?? $correlationId,
                 maxToolCalls: 100,
+                thinkingLevel: $settings->observerThinkingLevel,
             ));
 
             // Zero observations and/or no tool call at all is successful coverage.

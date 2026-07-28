@@ -38,6 +38,37 @@ final class MemoryGenerationRepository
     }
 
     /**
+     * Exact reflection lookup for recall (caller enforces current-run scope).
+     *
+     * @return array{
+     *   reflection_id: string,
+     *   run_id: string,
+     *   content: string,
+     *   supporting_observation_ids_json: string,
+     *   token_count: int
+     * }|null
+     */
+    public function findReflection(string $reflectionId): ?array
+    {
+        $row = $this->connection->fetchAssociative(
+            'SELECT reflection_id, run_id, content, supporting_observation_ids_json, token_count
+             FROM om_reflection WHERE reflection_id = ?',
+            [$reflectionId],
+        );
+        if (false === $row) {
+            return null;
+        }
+
+        return [
+            'reflection_id' => (string) ($row['reflection_id'] ?? ''),
+            'run_id' => (string) ($row['run_id'] ?? ''),
+            'content' => (string) ($row['content'] ?? ''),
+            'supporting_observation_ids_json' => (string) ($row['supporting_observation_ids_json'] ?? '[]'),
+            'token_count' => (int) ($row['token_count'] ?? 0),
+        ];
+    }
+
+    /**
      * @return list<array{
      *   reflection_id: string,
      *   content: string,

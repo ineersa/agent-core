@@ -237,6 +237,7 @@ services:
       $appConfig: '@Ineersa\CodingAgent\Config\AppConfig'
       $execBridge: '@Ineersa\CodingAgent\Extension\ExtensionExecBridge'
       $commandRegistry: '@Ineersa\Hatfield\ExtensionApi\Command\CommandRegistryInterface'
+      $toolContextAccessor: '@Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor'
 
   # Async extension-agent jobs share agent.execution.bus so BusNameStamp routes
   # re-dispatch to the bus that owns ExtensionAgentJobWorker.

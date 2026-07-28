@@ -175,6 +175,35 @@ final class CompactionRepository
     }
 
     /**
+     * Durable compaction request counts for one run (status surface only).
+     *
+     * @return array{queued: int, running: int, succeeded: int, failed: int, timed_out: int}
+     */
+    public function countRequestsByStatus(string $runId): array
+    {
+        $counts = [
+            self::STATUS_QUEUED => 0,
+            self::STATUS_RUNNING => 0,
+            self::STATUS_SUCCEEDED => 0,
+            self::STATUS_FAILED => 0,
+            self::STATUS_TIMED_OUT => 0,
+        ];
+
+        $rows = $this->connection->fetchAllAssociative(
+            'SELECT status, COUNT(1) AS c FROM om_compaction_request WHERE run_id = ? GROUP BY status',
+            [$runId],
+        );
+        foreach ($rows as $row) {
+            $status = (string) ($row['status'] ?? '');
+            if (\array_key_exists($status, $counts)) {
+                $counts[$status] = (int) ($row['c'] ?? 0);
+            }
+        }
+
+        return $counts;
+    }
+
+    /**
      * @return array{
      *   result_id: string,
      *   request_id: string,

@@ -121,8 +121,27 @@ composer update ineersa/hatfield-ext-observational-memory
 
 - **OM SQLite** (`.hatfield/extensions-data/observational-memory/om.sqlite`) owns
   observations, coverage, reflections, generations, and compaction request/result rows.
-- **Hatfield events.jsonl / Doctrine / Messenger** never store OM semantic memory.
+- **Hatfield** owns canonical `events.jsonl`, model infrastructure, generic
+  `extension_agent` FIFO/worker supervision, and `/tree`. OM does **not** own a
+  private consumer or failure transport.
 - **Replacement summaries** are deterministic PHP projections of the latest active
   generation. Reflector models never author final `replacement_text`.
-- **Source refs** stay SQLite-only for future recall (OM-05); compact summaries do not
-  include footnotes.
+- **Source refs** stay SQLite-only; compact summaries do not include footnotes.
+- **Session-global MVP:** non-branch-aware. Rewind/tree does not rewind the OM pool.
+- **Delivery gap:** events and OM SQLite can diverge after worker loss; later boundaries
+  and CompactRun watermark catch-up repair coverage.
+
+## Commands and recall
+
+- `/om-status` — durable OM aggregates for the current session plus honest static
+  topology (`Hatfield-managed single FIFO extension_agent`, `max_retries: 1`,
+  `failure_transport: none`). Does **not** invent Messenger pending/retry/liveness counts.
+- `/om-view` — active generation reflections and active candidate observations with
+  full 64-char OM ids, relevance/timestamp, and exact `(run_id,seq)` source refs.
+- `recall` — permanent ambient tool; exact one-id lookup (lowercase 64-char SHA-256)
+  for the current session, resolving observation source refs or reflection supporting
+  observations through `SessionEventReaderInterface`. No search / cross-session.
+
+Thinking levels (`observer.thinking_level`, `reflector.thinking_level`) are effective:
+they are passed on `AgentCallRequestDTO` and forwarded into Hatfield model options with
+the same unsupported-model no-op semantics as the main agent.

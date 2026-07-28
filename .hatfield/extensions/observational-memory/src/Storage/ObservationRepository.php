@@ -202,6 +202,41 @@ final class ObservationRepository
     }
 
     /**
+     * Exact observation lookup for recall / status-view (current-run scoped by caller).
+     *
+     * @return array{
+     *   observation_id: string,
+     *   run_id: string,
+     *   content: string,
+     *   content_hash: string,
+     *   relevance: string,
+     *   timestamp: string,
+     *   token_count: int,
+     *   source_refs_json: string,
+     *   source_start_seq: int,
+     *   source_end_seq: int,
+     *   created_at: string
+     * }|null
+     */
+    public function findObservation(string $observationId): ?array
+    {
+        $row = $this->connection->fetchAssociative(
+            'SELECT observation_id, run_id, content, content_hash, relevance, timestamp, token_count,
+                    source_refs_json, source_start_seq, source_end_seq, created_at
+             FROM om_observation WHERE observation_id = ?',
+            [$observationId],
+        );
+        if (false === $row) {
+            return null;
+        }
+
+        $mapped = $this->mapObservationRow($row);
+        $mapped['run_id'] = (string) ($row['run_id'] ?? '');
+
+        return $mapped;
+    }
+
+    /**
      * Active candidate set for threshold tokens / observation_set_hash / Reflector input.
      *
      * Before first generation: all observations for the run.

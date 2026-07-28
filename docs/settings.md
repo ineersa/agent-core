@@ -1543,12 +1543,12 @@ Nested shape only (no flat budget compatibility keys):
 |-----|------|---------|-------------|
 | `storage.database` | string | `.hatfield/extensions-data/observational-memory/om.sqlite` | Extension-owned SQLite path. |
 | `observer.model` | string | *(required)* | Exact `provider/model` for Observer jobs. |
-| `observer.thinking_level` | string | `medium` | Observer thinking level. |
+| `observer.thinking_level` | string | `medium` | Observer thinking level forwarded through `AgentCallRequestDTO` / Hatfield model options (same unsupported-model no-op semantics as the main agent). |
 | `observer.context_window_ratio` | float | `0.65` | Fraction of model context used for Observer envelope/chunking. |
 | `observer.renderer_version` | string | `1` | Renderer identity baked into coverage keys. |
 | `observer.schema_version` | string | `1` | Observer schema identity baked into coverage/observation ids. |
 | `reflector.model` | string | *(required)* | Exact `provider/model` for Reflector jobs. |
-| `reflector.thinking_level` | string | `high` | Reflector thinking level. |
+| `reflector.thinking_level` | string | `high` | Reflector thinking level forwarded through `AgentCallRequestDTO` / Hatfield model options (same unsupported-model no-op semantics as the main agent). |
 | `reflector.context_window_ratio` | float | `0.65` | Fraction of model context for Reflector envelope. |
 | `reflector.reflect_after_observation_tokens` | int | `40000` | Threshold Reflector dispatch gate after durable observe chunks. |
 | `reflector.schema_version` | string | `1` | Reflector schema identity. |
@@ -1586,9 +1586,27 @@ extensions:
 Requires async `extension_agent` transport (process controller Doctrine DSN).
 `sync://` dispatch is fail-closed. Compaction uses session-global coverage watermark
 `1..RunState.lastSeq`, deterministic server-side active-memory render (no model
-`replacement_text`), single FIFO `extension_agent` worker, and `max_retries: 1`
-with no failure transport. Exhausted jobs emit sanitized `extension_agent.job_failed`
-TUI Error blocks.
+`replacement_text`), single FIFO Hatfield-managed `extension_agent` worker, and
+`max_retries: 1` with no failure transport. Exhausted jobs emit sanitized
+`extension_agent.job_failed` TUI Error blocks.
+
+Ownership and UX notes:
+
+- **Enablement:** listing `ObservationalMemoryExtension` under `extensions.enabled` is
+  the only switch. There is **no** `compaction.mode` and **no** compaction-model
+  inheritance; Observer/Reflector models must be exact `provider/model` values.
+- **Storage gap:** OM SQLite is separate from `events.jsonl`. After worker loss, later
+  boundaries and CompactRun watermark catch-up repair coverage; do not treat OM rows as
+  a second transcript.
+- **Session-global MVP:** OM is non-branch-aware. Hatfield `/tree` ownership is unchanged
+  and does **not** rewind the external OM pool.
+- **Commands:** `/om-status` (durable OM aggregates + static topology only) and `/om-view`
+  (active generation reflections/candidate observations with stable IDs + source refs).
+  Permanent ambient tool `recall` resolves exact source events for one OM id via
+  `SessionEventReaderInterface` for the current session only.
+- **Privacy:** status/logs must not emit raw prompts, tool output, credentials, env values,
+  exception text, or full session content. Recall may return exact cited events to the
+  requesting model but must not log them.
 
 ## Fork tool defaults
 

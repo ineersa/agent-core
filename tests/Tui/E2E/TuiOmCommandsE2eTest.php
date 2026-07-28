@@ -1,0 +1,339 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Ineersa\Tui\Tests\E2E;
+
+use Ineersa\CodingAgent\Tests\Support\ProjectDir;
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
+use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
+use Ineersa\HatfieldExt\ObservationalMemory\Storage\ObservationRepository;
+use Ineersa\HatfieldExt\ObservationalMemory\Tests\Support\OmDatabaseFactoryTestService;
+use PHPUnit\Framework\Attributes\Group;
+
+/**
+ * Minimal tmux proof for /om-status and /om-view with real project extension loading.
+ *
+ * Seeds isolated OM SQLite via kernel test-container OmDatabaseFactoryTestService.
+ * Agent starts as a draft; first submit promotes a real session id. OM commands then
+ * resolve that live id lazily via TuiExtensionContext::getSessionId() (not a cached
+ * registration-time string). No live model required for local command path.
+ *
+ * @group tui-e2e-replay
+ */
+#[Group('tui-e2e-replay')]
+final class TuiOmCommandsE2eTest extends IsolatedKernelTestCase
+{
+    private TmuxHarness $tmux;
+    private string $projectRoot;
+    private string $testProjectDir;
+    private string $snapshotDir;
+    private string $observationId;
+    private string $seedDbPath;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        if (!TmuxHarness::isAvailable()) {
+            $this->markTestSkipped('tmux is not installed. Skipping TUI e2e tests.');
+        }
+
+        $this->tmux = new TmuxHarness();
+        $this->projectRoot = ProjectDir::get();
+        $this->observationId = str_repeat('d', 64);
+        $this->testProjectDir = $this->createIsolatedProjectDir();
+        $this->snapshotDir = $this->testProjectDir.'/.hatfield/tmp/tui/smoke';
+        @mkdir($this->snapshotDir, 0o777, true);
+        $this->seedDbPath = $this->testProjectDir.'/.hatfield/extensions-data/observational-memory/om.sqlite';
+        $this->seedOmDatabasePlaceholder();
+    }
+
+    protected function tearDown(): void
+    {
+        if (isset($this->tmux)) {
+            $this->tmux->killAll();
+        }
+        parent::tearDown();
+    }
+
+    public function testOmStatusAndViewRenderInRealTui(): void
+    {
+        $pane = $this->tmux->startDetached(
+            command: $this->agentCommand(),
+            prefix: 'tui-om-commands',
+            width: 140,
+            height: 60,
+            cwd: $this->testProjectDir,
+        );
+
+        try {
+            $this->tmux->waitForCaptureContains($pane, '█', TmuxHarness::TUI_STARTUP_LOGO_TIMEOUT_PARALLEL);
+            $this->tmux->waitForTuiReadyAfterLogo($pane);
+
+            // Promote draft → real session (session_id is lazy until first submit).
+            $this->tmux->sendKey($pane, 'C-u');
+            $this->tmux->sendLiteral($pane, 'om e2e seed');
+            $this->tmux->sendKey($pane, 'Enter');
+            $sessionId = $this->waitForLiveSessionId();
+            $this->rebindSeedToSession($sessionId);
+
+            // Cancel any in-flight LLM turn so local slash commands stay easy to see.
+            $this->tmux->sendKey($pane, 'Escape');
+            $this->tmux->waitForCallback(
+                $pane,
+                static fn (string $cap): bool => str_contains($cap, '◆') || str_contains($cap, 'idle') || str_contains($cap, '█'),
+                timeout: 8.0,
+                message: 'TUI did not settle after cancel',
+                history: 2000,
+            );
+
+            $this->tmux->sendKey($pane, 'C-u');
+            $this->tmux->sendLiteral($pane, '/om-status');
+            $this->tmux->sendKey($pane, 'Enter');
+
+            $this->tmux->waitForCallback(
+                $pane,
+                static fn (string $cap): bool => str_contains($cap, 'Observational memory status')
+                    && str_contains($cap, 'Hatfield-managed single FIFO')
+                    && str_contains($cap, 'covered_through_seq: 2'),
+                timeout: 12.0,
+                message: '/om-status report not visible in terminal capture',
+                history: 4000,
+            );
+
+            $this->tmux->sendKey($pane, 'C-u');
+            $this->tmux->sendLiteral($pane, '/om-view');
+            $this->tmux->sendKey($pane, 'Enter');
+
+            $capture = $this->tmux->waitForCallback(
+                $pane,
+                fn (string $cap): bool => str_contains($cap, 'Observational memory view')
+                    && str_contains($cap, $this->observationId)
+                    && str_contains($cap, 'hyphenated commands'),
+                timeout: 12.0,
+                message: '/om-view report not visible in terminal capture',
+                history: 4000,
+            );
+
+            $this->assertStringContainsString('Observational memory view', $capture);
+            $this->assertStringContainsString($this->observationId, $capture);
+            $this->assertStringContainsString('hyphenated commands', $capture);
+            $this->assertStringContainsString('sources:', $capture);
+
+            $this->saveAnsiSnapshot($pane, 'om-commands-smoke');
+            $this->tmux->sendKey($pane, 'C-d');
+        } catch (\Throwable $e) {
+            $this->saveAnsiSnapshot($pane, 'om-commands-smoke-FAILURE');
+            try {
+                $this->tmux->sendKey($pane, 'C-d');
+            } catch (\Throwable) {
+            }
+            throw $e;
+        }
+    }
+
+    private function agentCommand(): string
+    {
+        $fixturePath = $this->projectRoot.'/tests/Tui/E2E/fixtures/tui-startup-prompt-response.json';
+        $fixtureEnv = is_file($fixturePath)
+            ? 'HATFIELD_LLM_REPLAY_FIXTURE_PATH='.escapeshellarg($fixturePath).' '
+            : '';
+
+        $php = \PHP_BINARY;
+        $script = $this->projectRoot.'/bin/console';
+        $paths = TuiE2eDatabaseEnv::allocatePaths('tui-om-');
+
+        // IsolatedKernelTestCase sets HATFIELD_CWD in the parent process; the tmux
+        // agent must use the fixture project dir so sessions/OM DB land together.
+        return \sprintf(
+            'APP_ENV=test HATFIELD_CWD=%s %sHOME=%s %s %s %s agent --model=llama_cpp_test/test --tools-excluded=bash 2>&1',
+            escapeshellarg($this->testProjectDir),
+            TuiE2eDatabaseEnv::shellPrefix($paths['app'], $paths['transport']),
+            escapeshellarg($this->testProjectDir.'/home'),
+            $fixtureEnv,
+            escapeshellarg($php),
+            escapeshellarg($script),
+        );
+    }
+
+    private function createIsolatedProjectDir(): string
+    {
+        $dir = TestDirectoryIsolation::createProjectTempDir('tui-e2e-om');
+        @mkdir($dir.'/.hatfield', 0o777, true);
+
+        // Project-local extension autoload (same path ExtensionManager loads).
+        @mkdir($dir.'/.hatfield/extensions/vendor', 0o777, true);
+        $srcRoot = $this->projectRoot.'/.hatfield/extensions/observational-memory/src';
+        $autoload = "<?php\n"
+            .'$srcRoot = '.var_export($srcRoot, true).";\n"
+            ."spl_autoload_register(static function (string \$class) use (\$srcRoot): void {\n"
+            ."    \$prefix = 'Ineersa\\\\HatfieldExt\\\\ObservationalMemory\\\\';\n"
+            ."    if (!str_starts_with(\$class, \$prefix)) {\n"
+            ."        return;\n"
+            ."    }\n"
+            ."    \$relative = str_replace('\\\\', '/', substr(\$class, strlen(\$prefix)));\n"
+            ."    \$path = \$srcRoot.'/'.\$relative.'.php';\n"
+            ."    if (is_file(\$path)) {\n"
+            ."        require \$path;\n"
+            ."    }\n"
+            ."});\n";
+        file_put_contents($dir.'/.hatfield/extensions/vendor/autoload.php', $autoload);
+
+        $settings = [
+            'ai' => [
+                'default_model' => 'llama_cpp_test/test',
+                'default_reasoning' => 'off',
+                'providers' => [
+                    'llama_cpp_test' => [
+                        'type' => 'generic',
+                        'enabled' => true,
+                        'base_url' => 'http://192.168.2.38:9052/v1',
+                        'api' => 'openai-completions',
+                        'api_key' => 'dummy',
+                        'completions_path' => '/chat/completions',
+                        'supports_completions' => true,
+                        'supports_embeddings' => false,
+                        'supports_thinking_levels' => true,
+                        'models' => [
+                            'test' => [
+                                'name' => 'test',
+                                'context_window' => 32768,
+                                'max_tokens' => 32768,
+                                'input' => ['text', 'image'],
+                                'tool_calling' => true,
+                                'reasoning' => true,
+                                'thinking_level_map' => [
+                                    'off' => '0', 'minimal' => '0', 'low' => '0', 'medium' => '0', 'high' => '0', 'xhigh' => '0',
+                                ],
+                                'cost' => ['input' => 0, 'output' => 0],
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+            'extensions' => [
+                'enabled' => [
+                    'Ineersa\\CodingAgent\\Extension\\Builtin\\SafeGuard\\SafeGuardExtension',
+                    'Ineersa\\HatfieldExt\\ObservationalMemory\\ObservationalMemoryExtension',
+                ],
+                'settings' => [
+                    'safe_guard' => [
+                        'tool_names' => ['bash' => 'bash', 'write' => 'write', 'edit' => 'edit', 'read' => 'read'],
+                        'allow_command_patterns' => ['^ls\b', '^printf\b', '^echo\b'],
+                        'allow_write_outside_cwd' => [],
+                        'protected_read_patterns' => [],
+                        'dangerous_command_patterns' => [],
+                    ],
+                    'observational_memory' => [
+                        'storage' => [
+                            'database' => '.hatfield/extensions-data/observational-memory/om.sqlite',
+                        ],
+                        'observer' => [
+                            'model' => 'llama_cpp_test/test',
+                            'thinking_level' => 'medium',
+                            'context_window_ratio' => 0.65,
+                        ],
+                        'reflector' => [
+                            'model' => 'llama_cpp_test/test',
+                            'thinking_level' => 'high',
+                            'context_window_ratio' => 0.65,
+                            'reflect_after_observation_tokens' => 40000,
+                        ],
+                        'pools' => [
+                            'observations_max_tokens' => 30000,
+                            'reflections_max_tokens' => 10000,
+                        ],
+                        'compaction' => [
+                            'wait_timeout_seconds' => 180,
+                        ],
+                    ],
+                ],
+            ],
+        ];
+
+        $yaml = \Symfony\Component\Yaml\Yaml::dump(TuiE2eDatabaseEnv::withSingleLlmWorkerForReplay($settings), 8, 4);
+        file_put_contents($dir.'/.hatfield/settings.yaml', $yaml);
+        @mkdir($dir.'/home/.hatfield', 0o777, true);
+        file_put_contents($dir.'/home/.hatfield/settings.yaml', $yaml);
+
+        return $dir;
+    }
+
+    private function seedOmDatabasePlaceholder(): void
+    {
+        $connection = $this->omDatabaseFactory()->connectAndMigrate($this->seedDbPath);
+        $repo = new ObservationRepository($connection);
+        $repo->commitChunkPartCoverage(
+            coverageKey: 'cov-e2e',
+            runId: 'seed-placeholder',
+            boundaryKey: 'b1',
+            sourceStartSeq: 1,
+            sourceEndSeq: 2,
+            chunkKey: 'chunk-1',
+            partIndex: 1,
+            partCount: 1,
+            sourceDigest: 'digest-e2e',
+            partDigest: 'part-e2e',
+            rendererVersion: '1',
+            observerSchemaVersion: '1',
+            observerModel: 'llama_cpp_test/test',
+            observations: [[
+                'observation_id' => $this->observationId,
+                'content' => 'User prefers hyphenated commands for OM status and view',
+                'content_hash' => hash('sha256', 'User prefers hyphenated commands for OM status and view'),
+                'relevance' => 'high',
+                'timestamp' => '2026-07-28 14:00',
+                'token_count' => 16,
+                'source_refs_json' => json_encode([['run_id' => 'seed-placeholder', 'seq' => 1]], \JSON_THROW_ON_ERROR),
+            ]],
+            coveredAt: '2026-07-28T14:00:00+00:00',
+        );
+    }
+
+    private function waitForLiveSessionId(): string
+    {
+        $sessionsDir = $this->testProjectDir.'/.hatfield/sessions';
+        $deadline = microtime(true) + 15.0;
+        while (microtime(true) < $deadline) {
+            if (is_dir($sessionsDir)) {
+                $ids = array_values(array_filter(
+                    scandir($sessionsDir) ?: [],
+                    static fn (string $n): bool => !str_starts_with($n, '.') && is_dir($sessionsDir.'/'.$n),
+                ));
+                if ([] !== $ids) {
+                    return $ids[0];
+                }
+            }
+            usleep(50_000);
+        }
+
+        $this->fail('TUI session directory was not created after draft promotion submit');
+    }
+
+    private function rebindSeedToSession(string $sessionId): void
+    {
+        $connection = $this->omDatabaseFactory()->connect($this->seedDbPath);
+        $connection->executeStatement('UPDATE om_observation SET run_id = ? WHERE run_id = ?', [$sessionId, 'seed-placeholder']);
+        $connection->executeStatement('UPDATE om_coverage SET run_id = ? WHERE run_id = ?', [$sessionId, 'seed-placeholder']);
+        $connection->executeStatement(
+            'UPDATE om_observation SET source_refs_json = ? WHERE observation_id = ?',
+            [json_encode([['run_id' => $sessionId, 'seq' => 1]], \JSON_THROW_ON_ERROR), $this->observationId],
+        );
+    }
+
+    private function omDatabaseFactory(): OmDatabaseFactoryTestService
+    {
+        /** @var OmDatabaseFactoryTestService $service */
+        $service = self::getContainer()->get('test.om_database_factory');
+
+        return $service;
+    }
+
+    private function saveAnsiSnapshot(TmuxPane $pane, string $tag): void
+    {
+        $ansi = $this->tmux->captureAnsi($pane);
+        $ts = date('Ymd-His');
+        file_put_contents(\sprintf('%s/%s-%s.ansi', $this->snapshotDir, $tag, $ts), $ansi);
+    }
+}

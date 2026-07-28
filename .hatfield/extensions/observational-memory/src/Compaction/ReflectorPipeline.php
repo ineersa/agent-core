@@ -323,6 +323,7 @@ final class ReflectorPipeline
             ],
             correlationId: $jobId ?? $correlationId,
             maxToolCalls: 100,
+            thinkingLevel: $settings->reflectorThinkingLevel,
         ));
 
         if (!$toolHandler->hasCandidate()) {
