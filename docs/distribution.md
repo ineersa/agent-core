@@ -77,7 +77,7 @@ Behavior:
 
 - Downloads asset + `SHA256SUMS`; exact-filename checksum; fail-closed
 - Candidate `--version` smoke, then same-directory install-temp smoke, then atomic `mv`
-- **No post-`mv` smoke** — success ends after replace; failures never replace previous install
+- **No post-`mv` commands** — install exit status is `mv` status only; failures never replace previous install
 - Empty `--version=` / `--install-dir=` rejected; traps clean download + install temps
 
 ## CI and release

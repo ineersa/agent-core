@@ -58,14 +58,14 @@ set as staging (`phar_packaged_inputs`) and compares a deterministic content
 fingerprint sidecar (`hatfield.phar.inputs.sha256`). The fingerprint hashes every
 packaged file **and resolved symlink targets** (critical for `internal-docs/*` →
 `docs/*`), plus build-identity env inputs. Failed builds remove both the PHAR and
-the freshness marker. Distribution PHAR reuse always calls `phar_ensure()` — never
-a separate mtime shortcut.
+the freshness marker.
+
+Release static jobs reuse the exact smoked dist handoff PHAR as-is (no rebuild).
+Only the local missing-dist path in `distribution_resolve_canonical_phar_for_static`
+calls `phar_ensure()` then copies into dist. Details: [distribution.md](distribution.md).
 
 All shell/copy/write/remove steps fail-fast with command/output diagnostics.
 Smoke failures throw and remove the artifact.
-
-Release static jobs must consume the exact `distribution:build` PHAR via dist handoff
-(no rebuild). Details: [distribution.md](distribution.md).
 
 ## Runtime model
 

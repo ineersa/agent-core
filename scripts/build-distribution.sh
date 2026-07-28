@@ -122,6 +122,7 @@ if [[ "${STATIC}" == "true" && "${PHAR_ONLY}" == "true" ]]; then
 fi
 
 release_lock() {
+  # May remove only a lock this PID successfully acquired and still owns.
   if [[ "${LOCK_HELD}" != "true" ]]; then
     return 0
   fi
@@ -135,10 +136,22 @@ release_lock() {
   fi
   LOCK_HELD="false"
 }
-trap release_lock EXIT INT TERM
+
+on_int() {
+  release_lock
+  exit 130
+}
+
+on_term() {
+  release_lock
+  exit 143
+}
 
 mkdir -p "${REPO_ROOT}/var/tmp"
+# Close mkdir→owner orphan window: ignore signals during atomic acquire + ownership mark.
+trap '' INT TERM
 if ! mkdir "${LOCK_DIR}" 2>/dev/null; then
+  trap - INT TERM
   holder="unknown"
   if [[ -f "${LOCK_OWNER_FILE}" ]]; then
     holder="$(cat "${LOCK_OWNER_FILE}" 2>/dev/null || echo unknown)"
@@ -158,6 +171,10 @@ EOF
 fi
 printf '%s\n' "$$" >"${LOCK_OWNER_FILE}"
 LOCK_HELD="true"
+# Handlers after ownership is marked: EXIT cleans up; INT/TERM release then exit (never continue).
+trap release_lock EXIT
+trap on_int INT
+trap on_term TERM
 
 export HATFIELD_DIST_DIR="${OUTPUT:-${HATFIELD_DIST_DIR:-var/tmp/dist}}"
 if [[ -n "${VERSION}" ]]; then

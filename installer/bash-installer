@@ -300,17 +300,8 @@ if [[ "${install_smoke}" != *"Hatfield"* ]]; then
   output "  [ ] ERROR: install-dir temp --version invalid; previous install left unchanged" "error"
   exit 1
 fi
-# Candidate + same-dir INSTALL_TMP already checksum/version-smoked; success ends after atomic mv.
+# Candidate + same-dir INSTALL_TMP already checksum/version-smoked.
+# Final fallible/semantic step is atomic mv; exit status is mv status only.
+# Cleanup trap safely no-ops on the moved-away INSTALL_TMP path.
+output "Installing to ${dest}..."
 mv -f "${INSTALL_TMP}" "${dest}"
-INSTALL_TMP=""
-output "  [*] Installed to ${dest}" "success"
-output "  [*] Pre-replace smokes already verified candidate and install-dir temp" "success"
-
-if [[ "${custom_dir}" == "false" ]]; then
-  case ":${PATH}:" in
-    *":${install_dir}:"*) ;;
-    *) output "  Note: add ${install_dir} to PATH" "warning" ;;
-  esac
-fi
-
-output "\n${HATFIELD_NAME} installed successfully." "success"
