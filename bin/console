@@ -111,4 +111,35 @@ $buildIdentity = \Ineersa\CodingAgent\Build\ApplicationBuildIdentity::resolve(
     $isPhar ? null : \dirname(__DIR__),
 );
 $application->setVersion($buildIdentity->displayVersion());
+// Castor-style default task: plain `hatfield` / `bin/console` runs agent.
+// One-arg form only — single-command mode would break exact named dispatch
+// used by controller relaunch (`agent --controller`) and ConsumerSupervisor
+// (`messenger:consume`). Framework/internal commands stay registered so QA
+// and runtime can still invoke them by name; hide them from list/help only.
+$application->setDefaultCommand('agent');
+$visibleCommands = [
+    'agent' => true,
+    'auth:codex' => true,
+    'completion:file-index:refresh' => true,
+    'log:clear' => true,
+    'log:files' => true,
+    'log:search' => true,
+    'log:tail' => true,
+    'help' => true,
+    'list' => true,
+    'completion' => true,
+];
+$seenCommands = [];
+foreach ($application->all() as $command) {
+    $id = spl_object_id($command);
+    if (isset($seenCommands[$id])) {
+        continue;
+    }
+    $seenCommands[$id] = true;
+    $name = $command->getName();
+    if (null === $name || isset($visibleCommands[$name]) || $command->isHidden()) {
+        continue;
+    }
+    $command->setHidden(true);
+}
 $application->run(new ArgvInput());
