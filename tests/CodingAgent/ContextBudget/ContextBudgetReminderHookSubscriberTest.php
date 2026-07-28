@@ -75,6 +75,7 @@ final class ContextBudgetReminderHookSubscriberTest extends TestCase
                 'run-1',
                 $this->callback(static function (AgentMessage $message): bool {
                     return 'user' === $message->role
+                        && true === ($message->metadata['system_reminder'] ?? null)
                         && ($message->content[0]['text'] ?? null) === ContextBudgetReminderHookSubscriber::wrapSystemReminder(
                             ContextBudgetReminderHookSubscriber::EARLY_TEXT,
                         );
@@ -100,9 +101,10 @@ final class ContextBudgetReminderHookSubscriberTest extends TestCase
             ->with(
                 'run-1',
                 $this->callback(static function (AgentMessage $message): bool {
-                    return ($message->content[0]['text'] ?? null) === ContextBudgetReminderHookSubscriber::wrapSystemReminder(
-                        ContextBudgetReminderHookSubscriber::URGENT_TEXT,
-                    );
+                    return true === ($message->metadata['system_reminder'] ?? null)
+                        && ($message->content[0]['text'] ?? null) === ContextBudgetReminderHookSubscriber::wrapSystemReminder(
+                            ContextBudgetReminderHookSubscriber::URGENT_TEXT,
+                        );
                 }),
             );
 
@@ -131,9 +133,10 @@ final class ContextBudgetReminderHookSubscriberTest extends TestCase
             ->with(
                 'run-1',
                 $this->callback(static function (AgentMessage $message): bool {
-                    return ($message->content[0]['text'] ?? null) === ContextBudgetReminderHookSubscriber::wrapSystemReminder(
-                        ContextBudgetReminderHookSubscriber::URGENT_TEXT,
-                    );
+                    return true === ($message->metadata['system_reminder'] ?? null)
+                        && ($message->content[0]['text'] ?? null) === ContextBudgetReminderHookSubscriber::wrapSystemReminder(
+                            ContextBudgetReminderHookSubscriber::URGENT_TEXT,
+                        );
                 }),
             );
 
@@ -166,9 +169,10 @@ final class ContextBudgetReminderHookSubscriberTest extends TestCase
             ->with(
                 'run-1',
                 $this->callback(static function (AgentMessage $message): bool {
-                    return ($message->content[0]['text'] ?? null) === ContextBudgetReminderHookSubscriber::wrapSystemReminder(
-                        ContextBudgetReminderHookSubscriber::EARLY_TEXT,
-                    );
+                    return true === ($message->metadata['system_reminder'] ?? null)
+                        && ($message->content[0]['text'] ?? null) === ContextBudgetReminderHookSubscriber::wrapSystemReminder(
+                            ContextBudgetReminderHookSubscriber::EARLY_TEXT,
+                        );
                 }),
             );
 

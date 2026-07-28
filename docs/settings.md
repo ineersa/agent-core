@@ -280,9 +280,10 @@ One-shot wrap-up guidance queued as a normal user `append_message` after a
 committed `llm_step_completed` when that response's provider-reported usage
 crosses provider-neutral thresholds. The CodingAgent after-turn hook inspects
 the committed hot batch and calls `AgentRunnerInterface::appendMessage()` with
-user text wrapped in `<system-reminder>...</system-reminder>`. Parent, fork,
-and subagent runs share the same `RunCommit` hook path. AgentCore has no
-reminder-specific API.
+user text wrapped in `<system-reminder>...</system-reminder>`. The appended
+message also carries internal `system_reminder` metadata so presentation does
+not infer provenance from user text. Parent, fork, and subagent runs share the
+same `RunCommit` hook path. AgentCore has no reminder-specific API.
 
 **Metric:** positive `input_tokens` / `prompt_tokens` from the committed
 `llm_step_completed` usage payload in the hot batch. Abort/failure commits do

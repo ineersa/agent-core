@@ -276,10 +276,9 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
     }
 
     /**
-     * Test thesis: a complete <system-reminder> user.message_submitted must
-     * project through the real UserMessageProjectionSubscriber and render as
-     * ⚠ warning system guidance — not ordinary ❯ Markdown user text with
-     * hidden wrapper tags.
+     * Test thesis: a provenance-marked system_reminder user.message_submitted
+     * with exact complete wrapper projects through UserMessageProjectionSubscriber
+     * and renders as ⚠ warning system guidance — not ordinary ❯ Markdown user text.
      */
     #[Test]
     public function testSystemReminderUserMessageRendersAsWarningSystemBlock(): void
@@ -297,6 +296,7 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
             'payload' => [
                 'message_id' => 'reminder-virtual-1',
                 'text' => $wrapped,
+                'metadata' => ['system_reminder' => true],
             ],
         ]);
 

@@ -15,10 +15,11 @@ use Symfony\Component\EventDispatcher\EventSubscriberInterface;
  * Queued steer/follow-up feedback is not projected here; the TUI pending-queue
  * widget above the editor renders user.message_queued until apply.
  *
- * Entire-message `<system-reminder>...</system-reminder>` wrappers (e.g. context-
- * budget wrap-up appends) project as System/warning so the transcript shows ⚠
- * guidance instead of ordinary ❯ Markdown user text. Canonical event text is
- * unchanged; only presentation classification happens here.
+ * Context-budget wrap-up appends carry opaque AgentMessage metadata
+ * `system_reminder=true` plus model-visible `<system-reminder>` wrapper text.
+ * Only that provenance + an exact complete non-empty wrapper project as
+ * System/warning. Identical manually typed user text without the marker stays
+ * UserMessage. Initial run.started prompts are never content-sniffed.
  */
 final readonly class UserMessageProjectionSubscriber implements EventSubscriberInterface
 {
@@ -35,12 +36,14 @@ final readonly class UserMessageProjectionSubscriber implements EventSubscriberI
         $p = $event->payload();
         $state = $event->state;
         $text = (string) ($p['text'] ?? '');
+        $metadata = \is_array($p['metadata'] ?? null) ? $p['metadata'] : [];
 
-        $state->addBlock($this->projectUserTextBlock(
+        $state->addBlock($this->projectSubmittedUserTextBlock(
             id: (string) ($p['message_id'] ?? ''),
             runId: $event->runId(),
             seq: $state->nextSeq(),
             text: $text,
+            metadata: $metadata,
         ));
     }
 
@@ -68,8 +71,10 @@ final readonly class UserMessageProjectionSubscriber implements EventSubscriberI
         }
 
         foreach ($userMessages as $userMsg) {
-            $state->addBlock($this->projectUserTextBlock(
+            // Initial prompts are ordinary user text; never reclassify by content.
+            $state->addBlock(new TranscriptBlock(
                 id: (string) ($userMsg['message_id'] ?? ''),
+                kind: TranscriptBlockKindEnum::UserMessage,
                 runId: $event->runId(),
                 seq: $state->nextSeq(),
                 text: (string) ($userMsg['text'] ?? ''),
@@ -77,18 +82,28 @@ final readonly class UserMessageProjectionSubscriber implements EventSubscriberI
         }
     }
 
-    private function projectUserTextBlock(string $id, string $runId, int $seq, string $text): TranscriptBlock
-    {
-        $reminderBody = self::extractSystemReminderBody($text);
-        if (null !== $reminderBody) {
-            return new TranscriptBlock(
-                id: $id,
-                kind: TranscriptBlockKindEnum::System,
-                runId: $runId,
-                seq: $seq,
-                text: $reminderBody,
-                meta: ['severity' => 'warning'],
-            );
+    /**
+     * @param array<string, mixed> $metadata
+     */
+    private function projectSubmittedUserTextBlock(
+        string $id,
+        string $runId,
+        int $seq,
+        string $text,
+        array $metadata,
+    ): TranscriptBlock {
+        if (true === ($metadata['system_reminder'] ?? null)) {
+            $reminderBody = self::extractSystemReminderBody($text);
+            if (null !== $reminderBody) {
+                return new TranscriptBlock(
+                    id: $id,
+                    kind: TranscriptBlockKindEnum::System,
+                    runId: $runId,
+                    seq: $seq,
+                    text: $reminderBody,
+                    meta: ['severity' => 'warning'],
+                );
+            }
         }
 
         return new TranscriptBlock(

@@ -81,6 +81,7 @@ final readonly class ContextBudgetReminderHookSubscriber implements HookSubscrib
             new AgentMessage(
                 role: 'user',
                 content: [['type' => 'text', 'text' => $wrapped]],
+                metadata: ['system_reminder' => true],
             ),
         );
 

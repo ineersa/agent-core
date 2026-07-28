@@ -120,10 +120,10 @@ final class TranscriptProjectorTest extends TestCase
     }
 
     /**
-     * Test thesis: a user.message_submitted whose entire text is a complete
-     * <system-reminder> wrapper projects as System/warning with only the
-     * inner prose. Without this classification, the TUI treats the wrapper as
-     * ordinary ❯ Markdown user text and hides the tags.
+     * Test thesis: provenance-marked system_reminder + exact complete wrapper
+     * projects as System/warning with only the inner prose. Exact wrapper text
+     * without the marker must stay ordinary UserMessage so manual typing is not
+     * reclassified by content sniffing.
      */
     public function testSystemReminderUserMessageProjectsAsWarningSystemBlock(): void
     {
@@ -133,6 +133,7 @@ final class TranscriptProjectorTest extends TestCase
         $this->accept('user.message_submitted', [
             'message_id' => 'reminder-1',
             'text' => $wrapped,
+            'metadata' => ['system_reminder' => true],
         ]);
 
         $blocks = $this->projector->blocks();
@@ -143,6 +144,17 @@ final class TranscriptProjectorTest extends TestCase
         $this->assertSame('warning', $blocks[0]->meta['severity'] ?? null);
         $this->assertStringNotContainsString('<system-reminder>', $blocks[0]->text);
         $this->assertStringNotContainsString('</system-reminder>', $blocks[0]->text);
+
+        $this->accept('user.message_submitted', [
+            'message_id' => 'manual-1',
+            'text' => $wrapped,
+        ]);
+
+        $blocks = $this->projector->blocks();
+        $this->assertCount(2, $blocks);
+        $this->assertSame('manual-1', $blocks[1]->id);
+        $this->assertSame(TranscriptBlockKindEnum::UserMessage, $blocks[1]->kind);
+        $this->assertSame($wrapped, $blocks[1]->text);
     }
 
     public function testQueuedUserMessageDoesNotProjectBlock(): void

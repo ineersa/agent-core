@@ -3,12 +3,6 @@
     "type": "project",
     "license": "MIT",
     "description": "Monorepo for the agent-core ecosystem, consolidated into a single modular monolith.",
-    "repositories": [
-        {
-            "type": "vcs",
-            "url": "https://github.com/ineersa/tui"
-        }
-    ],
     "require": {
         "php": ">=8.5",
         "ext-ctype": "*",
@@ -39,7 +33,7 @@
         "symfony/ai-platform": "^0.11",
         "symfony/validator": "^8.0",
         "symfony/uid": "^8.0",
-        "symfony/tui": "dev-fix-tui-markdown-inline-html",
+        "symfony/tui": "^8.1",
         "symfony/ai-generic-platform": "^0.11",
         "symfony/ai-open-responses-platform": "^0.11",
         "monolog/monolog": "^3.10",

@@ -468,23 +468,29 @@ final class RuntimeEventTranslator
 
         if (\in_array($kind, ['steer', 'follow_up', 'append_message'], true)) {
             // Extract message text from the serialized message payload
-            // included by CommandMailboxPolicy.
+            // included by CommandMailboxPolicy. Preserve non-empty message
+            // metadata for presentation provenance (opaque to AgentCore).
             $messagePayload = $p['message'] ?? [];
             $text = \is_string($p['text'] ?? null) ? $p['text'] : '';
             if ('' === $text && \is_array($messagePayload)) {
                 $text = $this->extractTextFromContent($messagePayload['content'] ?? []);
             }
             $idempotencyKey = (string) ($p['idempotency_key'] ?? '');
+            $payload = [
+                'message_id' => \sprintf('user_%s_%d_%s', $runEvent->runId, $runEvent->seq, $idempotencyKey),
+                'text' => $text,
+                'idempotency_key' => $idempotencyKey,
+            ];
+            $metadata = \is_array($messagePayload) ? ($messagePayload['metadata'] ?? null) : null;
+            if (\is_array($metadata) && [] !== $metadata) {
+                $payload['metadata'] = $metadata;
+            }
 
             return new RuntimeEvent(
                 type: RuntimeEventTypeEnum::UserMessageSubmitted->value,
                 runId: $runEvent->runId,
                 seq: $runEvent->seq,
-                payload: [
-                    'message_id' => \sprintf('user_%s_%d_%s', $runEvent->runId, $runEvent->seq, $idempotencyKey),
-                    'text' => $text,
-                    'idempotency_key' => $idempotencyKey,
-                ],
+                payload: $payload,
             );
         }
 
