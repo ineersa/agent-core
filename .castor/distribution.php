@@ -741,7 +741,12 @@ function distribution_collect_descendant_cmdlines(int $rootPid): array
 
 /**
  * After graceful controller stop, assert every pre-captured owned PID is gone
- * (or PID reused with a different cmdline). Does not signal descendants.
+ * (or PID reused with a different cmdline).
+ *
+ * Fail-closed: still throws when survivors remain after wait. Before throw,
+ * best-effort cleanup signals ONLY pre-captured owned PIDs/controller whose
+ * current cmdline still matches the snapshot (PID-reuse protected). Never
+ * broad pgrep/session/process-group kills; never root/unrelated/session workers.
  *
  * @param list<array{pid: int, cmdline: string}> $ownedSnapshot
  */
@@ -770,7 +775,54 @@ function distribution_assert_owned_pids_gone(array $ownedSnapshot, int $controll
         usleep(100_000);
     } while (microtime(true) < $deadline);
 
-    throw new RuntimeException("Native topology smoke: owned PIDs survived shutdown (pre-captured while controller alive; pgrep -P after exit is not used):\n".implode("\n", $survivors));
+    // Pre-cleanup diagnostics are the failure contract; cleanup is best-effort only.
+    $preCleanup = $survivors;
+    distribution_signal_pre_captured_owned_survivors($ownedSnapshot, $controllerPid, $controllerCmdline);
+
+    throw new RuntimeException("Native topology smoke: owned PIDs survived shutdown (pre-captured while controller alive; pgrep -P after exit is not used):\n".implode("\n", $preCleanup));
+}
+
+/**
+ * TERM then brief wait then KILL only unchanged pre-captured owned PIDs.
+ *
+ * Re-checks distribution_owned_pid_still_alive before every signal so PID
+ * reuse cannot hit an unrelated process. Scoped to the smoke-owned snapshot
+ * only — never process groups, sessions, or discovery via pgrep.
+ *
+ * @param list<array{pid: int, cmdline: string}> $ownedSnapshot
+ */
+function distribution_signal_pre_captured_owned_survivors(array $ownedSnapshot, int $controllerPid, string $controllerCmdline): void
+{
+    /** @var list<array{pid: int, cmdline: string}> $targets */
+    $targets = [];
+    if ($controllerPid > 0) {
+        $targets[] = ['pid' => $controllerPid, 'cmdline' => $controllerCmdline];
+    }
+    foreach ($ownedSnapshot as $row) {
+        if (($row['pid'] ?? 0) > 0) {
+            $targets[] = $row;
+        }
+    }
+
+    foreach ($targets as $row) {
+        $pid = $row['pid'];
+        $cmdline = $row['cmdline'];
+        if (!distribution_owned_pid_still_alive($pid, $cmdline)) {
+            continue;
+        }
+        @posix_kill($pid, \SIGTERM);
+    }
+
+    usleep(200_000);
+
+    foreach ($targets as $row) {
+        $pid = $row['pid'];
+        $cmdline = $row['cmdline'];
+        if (!distribution_owned_pid_still_alive($pid, $cmdline)) {
+            continue;
+        }
+        @posix_kill($pid, \SIGKILL);
+    }
 }
 
 /**
@@ -1006,8 +1058,10 @@ function distribution_smoke_native_process_topology(string $artifactPath): void
         if ($status['running']) {
             // Prefer graceful controller shutdown via SIGTERM (controller signal handlers).
             // Only signal the controller this smoke created — never descendants/unrelated.
+            // Wait > ConsumerSupervisor's default 5s shared consumer grace (aligned with
+            // JsonlProcessAgentSessionClient::CONTROLLER_STOP_GRACE_SECONDS = 7s).
             posix_kill($status['pid'], \SIGTERM);
-            $waitUntil = microtime(true) + 5.0;
+            $waitUntil = microtime(true) + 7.0;
             while (microtime(true) < $waitUntil) {
                 $status = proc_get_status($proc);
                 if (!$status['running']) {

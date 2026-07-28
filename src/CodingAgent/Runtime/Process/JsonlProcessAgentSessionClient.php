@@ -37,6 +37,14 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
 
     /** Sliding window in seconds for restart rate-limiting. */
     private const float RESTART_WINDOW = 60.0;
+
+    /**
+     * SIGTERM→SIGKILL grace for the controller subprocess on every stop path.
+     *
+     * Must exceed ConsumerSupervisor's default 5s shared consumer grace so the
+     * parent never kills the controller before consumers finish TERM/escalate.
+     */
+    private const float CONTROLLER_STOP_GRACE_SECONDS = 7.0;
     private const int EVENT_BUFFER_WARNING_THRESHOLD = 1000;
     /** Advisory compact tail size at which capacity diagnostics are emitted (not a hard eviction cap). */
     private const int EVENT_BUFFER_CAPACITY_LOG_THRESHOLD = 10000;
@@ -451,17 +459,16 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
         // wasteful stopProcess() / SIGTERM wait on the very first start()
         // call, when processSessionId is still null.
         //
-        // Session-change guard: the old controller process uses stale
-        // queue DSNs from the previous session.  Since cancelCurrentRun()
-        // already dispatched the cancel command through the old controller
-        // (or skipped it for terminal runs), use a short SIGTERM grace
-        // period — the old run state is preserved in the DB regardless.
+        // Session-change and crash restarts use the same controller stop
+        // grace (CONTROLLER_STOP_GRACE_SECONDS). It must exceed ConsumerSupervisor's
+        // default 5s shared consumer grace so parent teardown cannot SIGKILL the
+        // controller mid-consumer-shutdown (observed orphan: last of N consumers).
         $sessionChanged = null !== $this->sessionId
             && null !== $this->processSessionId
             && $this->sessionId !== $this->processSessionId;
 
         if ($sessionChanged) {
-            $this->stopProcess(0.5);
+            $this->stopProcess();
         }
 
         if (null !== $this->process && $this->isProcessRunning()) {
@@ -876,13 +883,12 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
     }
 
     /**
-     * @param float $sigtermGraceSeconds How long to wait for SIGTERM before SIGKILL.
-     *                                   Default 3.0s for crash recovery (allows the controller
-     *                                   to clean up consumers).  Use 0.5s for intentional
-     *                                   session-switch stops where the cancel has already been
-     *                                   dispatched and the old run state is preserved in the DB.
+     * Stop the controller subprocess under CONTROLLER_STOP_GRACE_SECONDS.
+     *
+     * One grace for all stop paths (session switch, crash recovery, close):
+     * parent must outlive ConsumerSupervisor's shared 5s consumer shutdown.
      */
-    private function stopProcess(float $sigtermGraceSeconds = 3.0): void
+    private function stopProcess(): void
     {
         foreach ($this->pipes as $pipe) {
             if (\is_resource($pipe)) {
@@ -897,7 +903,7 @@ final class JsonlProcessAgentSessionClient implements AgentSessionClient
 
         if ($this->isProcessRunning()) {
             @proc_terminate($this->process, \SIGTERM);
-            $deadline = microtime(true) + $sigtermGraceSeconds;
+            $deadline = microtime(true) + self::CONTROLLER_STOP_GRACE_SECONDS;
             while ($this->isProcessRunning() && microtime(true) < $deadline) {
                 usleep(50_000);
             }

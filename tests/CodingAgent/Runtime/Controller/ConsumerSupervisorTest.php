@@ -8,6 +8,7 @@ use Ineersa\AgentCore\Tests\Support\TestLogger;
 use Ineersa\CodingAgent\Runtime\Controller\ConsumerSupervisor;
 use Ineersa\CodingAgent\Runtime\Process\AppExecutableLocator;
 use Ineersa\CodingAgent\Runtime\Process\RuntimeProcessConfig;
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Process\Process;
 
@@ -17,6 +18,126 @@ use Symfony\Component\Process\Process;
 final class ConsumerSupervisorTest extends TestCase
 {
     private TestLogger $logger;
+
+    /**
+     * Thesis: shutdown must SIGTERM every tracked consumer before waiting on one
+     * shared grace deadline. Sequential Process::stop(grace) delays the last
+     * child by the full grace and orphaned the linux-arm64 extension_agent.
+     */
+    public function testShutdownSignalsAllTrackedConsumersBeforeSharedGraceWait(): void
+    {
+        $dir = TestDirectoryIsolation::createProjectTempDir('consumer-shutdown-term');
+        $script = $dir.'/consumer.php';
+        $hangReady = $dir.'/hang.ready';
+        $exitReady = $dir.'/exit.ready';
+        $hangTerm = $dir.'/hang.term';
+        $exitTerm = $dir.'/exit.term';
+
+        $scriptBody = <<<'PHP'
+<?php
+declare(strict_types=1);
+pcntl_async_signals(true);
+$dir = getenv('HATFIELD_TERM_TEST_DIR');
+if (false === $dir || '' === $dir) {
+    fwrite(STDERR, "missing HATFIELD_TERM_TEST_DIR\n");
+    exit(2);
+}
+$role = \in_array('term_hang', $argv, true) ? 'hang' : 'exit';
+// Install handler before ready so phase-1 SIGTERM cannot race setup.
+pcntl_signal(\SIGTERM, static function () use ($role, $dir): void {
+    $path = $dir.'/'.$role.'.term';
+    // First TERM only — stop(0) may re-signal survivors and would overwrite timestamps.
+    if (!is_file($path)) {
+        file_put_contents($path, (string) microtime(true));
+    }
+    if ('exit' === $role) {
+        exit(0);
+    }
+    // hang role intentionally stays alive after TERM so stop(0) escalation runs.
+});
+file_put_contents($dir.'/'.$role.'.ready', (string) microtime(true));
+while (true) {
+    usleep(50_000);
+}
+PHP;
+        file_put_contents($script, $scriptBody);
+
+        $prevEnv = $_ENV['HATFIELD_TERM_TEST_DIR'] ?? null;
+        $prevGetenv = getenv('HATFIELD_TERM_TEST_DIR');
+        $_ENV['HATFIELD_TERM_TEST_DIR'] = $dir;
+        putenv('HATFIELD_TERM_TEST_DIR='.$dir);
+
+        $supervisor = null;
+        try {
+            $this->logger = new TestLogger();
+            $locator = $this->createStub(AppExecutableLocator::class);
+            $locator->method('path')->willReturn($script);
+            $locator->method('command')->willReturn([\PHP_BINARY, $script]);
+            $config = new RuntimeProcessConfig($locator, $dir);
+            // 1s shared grace: sequential stop would push second TERM >=1s later.
+            $supervisor = new ConsumerSupervisor($this->logger, $config, shutdownGraceSeconds: 1);
+
+            $supervisor->launch('term_hang', 0);
+            $supervisor->launch('term_exit', 0);
+
+            $deadline = microtime(true) + 3.0;
+            while (microtime(true) < $deadline) {
+                if (is_file($hangReady) && is_file($exitReady)) {
+                    break;
+                }
+                usleep(20_000);
+            }
+            $this->assertFileExists($hangReady, 'hang consumer must write ready marker');
+            $this->assertFileExists($exitReady, 'exit consumer must write ready marker');
+
+            $supervisor->shutdown();
+
+            $this->assertFileExists($hangTerm, 'hang consumer must observe SIGTERM');
+            $this->assertFileExists($exitTerm, 'exit consumer must observe SIGTERM');
+
+            $hangAt = (float) file_get_contents($hangTerm);
+            $exitAt = (float) file_get_contents($exitTerm);
+            $delta = abs($hangAt - $exitAt);
+            $this->assertLessThan(
+                0.5,
+                $delta,
+                \sprintf(
+                    'Both consumers must receive SIGTERM near-simultaneously under shared grace; delta=%.3fs (sequential stop delays second by full grace)',
+                    $delta,
+                ),
+            );
+
+            $running = $this->consumerKeysRunning($supervisor);
+            $this->assertSame([], $running, 'shutdown must clear tracked consumers');
+        } finally {
+            if (null !== $supervisor) {
+                // shutdown() already cleared map on success; force-clear survivors on failure.
+                $ref = new \ReflectionClass($supervisor);
+                $prop = $ref->getProperty('consumers');
+                /** @var array<string, Process> $consumers */
+                $consumers = $prop->getValue($supervisor);
+                foreach ($consumers as $process) {
+                    if ($process->isRunning()) {
+                        $process->stop(0);
+                    }
+                }
+                $prop->setValue($supervisor, []);
+            }
+
+            if (null === $prevEnv) {
+                unset($_ENV['HATFIELD_TERM_TEST_DIR']);
+            } else {
+                $_ENV['HATFIELD_TERM_TEST_DIR'] = $prevEnv;
+            }
+            if (false === $prevGetenv) {
+                putenv('HATFIELD_TERM_TEST_DIR');
+            } else {
+                putenv('HATFIELD_TERM_TEST_DIR='.$prevGetenv);
+            }
+
+            TestDirectoryIsolation::removeDirectory($dir);
+        }
+    }
 
     public function testLaunchUsesMemoryLimitNotTimeLimit(): void
     {
