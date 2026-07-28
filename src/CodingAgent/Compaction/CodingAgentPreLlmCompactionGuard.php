@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Compaction;
 
 use Ineersa\AgentCore\Contract\Compaction\PreLlmCompactionGuardInterface;
+use Ineersa\AgentCore\Contract\Model\RunModelResolverInterface;
 use Ineersa\CodingAgent\Config\CompactionConfig;
 
 /**
@@ -40,7 +41,7 @@ final class CodingAgentPreLlmCompactionGuard implements PreLlmCompactionGuardInt
     public function __construct(
         private readonly CompactionConfig $compactionConfig,
         private readonly ProviderContextUsageResolver $providerUsageResolver,
-        private readonly ActiveModelResolverInterface $modelResolver,
+        private readonly RunModelResolverInterface $modelResolver,
     ) {
     }
 
@@ -68,7 +69,7 @@ final class CodingAgentPreLlmCompactionGuard implements PreLlmCompactionGuardInt
             ? trim($activeModel)
             : null;
         if (null === $modelForSettings) {
-            $modelForSettings = $this->modelResolver->getActiveModel($runId);
+            $modelForSettings = $this->modelResolver->resolveActiveModel($runId);
         }
         $runtimeSettings = $this->compactionConfig->resolveRuntimeSettings($modelForSettings);
 

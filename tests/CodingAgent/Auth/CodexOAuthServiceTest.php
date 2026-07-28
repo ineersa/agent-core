@@ -9,6 +9,7 @@ use Ineersa\CodingAgent\Auth\CodexAuthStorage;
 use Ineersa\CodingAgent\Auth\CodexOAuthConfig;
 use Ineersa\CodingAgent\Auth\CodexOAuthService;
 use Ineersa\CodingAgent\Auth\CodexTokenRefresher;
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\FlockStore;
@@ -23,7 +24,7 @@ final class CodexOAuthServiceTest extends TestCase
     {
         parent::setUp();
 
-        $this->tmpDir = sys_get_temp_dir().'/hatfield-oauth-test-'.bin2hex(random_bytes(8));
+        $this->tmpDir = TestDirectoryIsolation::createOsTempDir('hatfield-oauth-test');
         @mkdir($this->tmpDir.'/.hatfield', 0755, true);
 
         $store = new FlockStore($this->tmpDir);

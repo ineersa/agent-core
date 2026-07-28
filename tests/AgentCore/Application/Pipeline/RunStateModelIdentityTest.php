@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Tests\Application\Pipeline;
 
-use Ineersa\AgentCore\Application\Handler\CommandHandlerRegistry;
 use Ineersa\AgentCore\Application\Handler\CommandRouter;
 use Ineersa\AgentCore\Application\Pipeline\AdvanceRunHandler;
 use Ineersa\AgentCore\Application\Pipeline\CommandMailboxPolicy;
@@ -47,7 +46,7 @@ final class RunStateModelIdentityTest extends TestCase
         $handler = new AdvanceRunHandler(
             commandMailboxPolicy: new CommandMailboxPolicy(
                 commandStore: $commandStore,
-                commandRouter: new CommandRouter(new CommandHandlerRegistry([])),
+                commandRouter: new CommandRouter([]),
             ),
             eventFactory: new EventFactory(),
         );
@@ -112,7 +111,7 @@ final class RunStateModelIdentityTest extends TestCase
         $handler = new AdvanceRunHandler(
             commandMailboxPolicy: new CommandMailboxPolicy(
                 commandStore: $commandStore,
-                commandRouter: new CommandRouter(new CommandHandlerRegistry([])),
+                commandRouter: new CommandRouter([]),
             ),
             eventFactory: new EventFactory(),
         );
@@ -139,7 +138,7 @@ final class RunStateModelIdentityTest extends TestCase
         $handler = new AdvanceRunHandler(
             commandMailboxPolicy: new CommandMailboxPolicy(
                 commandStore: new InMemoryCommandStore(),
-                commandRouter: new CommandRouter(new CommandHandlerRegistry([])),
+                commandRouter: new CommandRouter([]),
             ),
             eventFactory: new EventFactory(),
         );

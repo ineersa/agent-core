@@ -53,7 +53,7 @@ final class PipelineCapturingAgentRunner implements AgentRunnerInterface
             commandStore: $commandStore,
             hotPromptStateRebuilder: new \Ineersa\CodingAgent\Session\Replay\SessionHotPromptReplayService(
                 $eventStore,
-                new \Ineersa\AgentCore\Infrastructure\Storage\HotPromptStateStore(),
+                new \Ineersa\AgentCore\Infrastructure\Storage\InMemoryPromptStateStore(),
                 new \Ineersa\AgentCore\Application\Replay\PromptStateReplayService(),
                 new \Ineersa\AgentCore\Application\Replay\ReplayEventPreparer(),
             ),

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Application\Handler;
 
+use Ineersa\AgentCore\Contract\Extension\HookSubscriberInterface;
 use Ineersa\AgentCore\Domain\Event\BoundaryHookEvent;
 use Ineersa\AgentCore\Domain\Event\BoundaryHookName;
 use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitEventSummary;
@@ -14,8 +15,11 @@ use Symfony\Component\Serializer\Normalizer\NormalizerInterface;
 
 final readonly class HookDispatcher
 {
+    /**
+     * @param iterable<HookSubscriberInterface> $subscribers
+     */
     public function __construct(
-        private HookSubscriberRegistry $registry,
+        private iterable $subscribers,
         private EventDispatcherInterface $eventDispatcher,
         private NormalizerInterface $normalizer,
         private DenormalizerInterface $denormalizer,
@@ -32,7 +36,7 @@ final readonly class HookDispatcher
 
         $context = $this->restoreHookContext($event->context, $context);
 
-        foreach ($this->registry->all() as $subscriber) {
+        foreach ($this->subscribers as $subscriber) {
             $context = $subscriber->handleAfterTurnCommit($context);
         }
 

@@ -100,7 +100,7 @@ final readonly class LlmPlatformAdapter implements PlatformInterface
 
         // Resolve the effective model ref for cost calculation and any
         // model-aware logic.  Normal LLM steps pass the empty-string
-        // container parameter (app.default_model) as a sentinel —
+        // container parameter (empty model string) as a sentinel —
         // SessionAwareModelResolver interprets '' as "no override" and
         // picks the real model from session metadata / provider defaults.
         // Compaction and background summarization calls may pass a

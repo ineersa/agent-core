@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Tests\Skills;
 use Ineersa\CodingAgent\Markdown\MarkdownFrontmatterExtractor;
 use Ineersa\CodingAgent\Skills\SkillDefinition;
 use Ineersa\CodingAgent\Skills\SkillRegistry;
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -20,13 +21,12 @@ final class SkillRegistryTest extends TestCase
 
     protected function setUp(): void
     {
-        $this->tmpDir = sys_get_temp_dir().'/skills_registry_test_'.bin2hex(random_bytes(8));
-        mkdir($this->tmpDir, 0777, true);
+        $this->tmpDir = TestDirectoryIsolation::createOsTempDir('skills_registry_test');
     }
 
     protected function tearDown(): void
     {
-        $this->rmdirRecursive($this->tmpDir);
+        TestDirectoryIsolation::removeDirectory($this->tmpDir);
     }
 
     public function testGetReturnsSkill(): void
@@ -179,27 +179,5 @@ final class SkillRegistryTest extends TestCase
 
         $all = $registry->all();
         $this->assertCount(2, $all);
-    }
-
-    private function rmdirRecursive(string $path): void
-    {
-        if (!is_dir($path)) {
-            return;
-        }
-
-        $entries = new \RecursiveIteratorIterator(
-            new \RecursiveDirectoryIterator($path, \RecursiveDirectoryIterator::SKIP_DOTS),
-            \RecursiveIteratorIterator::CHILD_FIRST,
-        );
-
-        foreach ($entries as $entry) {
-            if ($entry->isDir()) {
-                @rmdir((string) $entry);
-            } else {
-                @unlink((string) $entry);
-            }
-        }
-
-        @rmdir($path);
     }
 }

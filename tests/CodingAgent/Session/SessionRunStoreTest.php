@@ -14,6 +14,7 @@ use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\SessionRunStore;
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\FlockStore;
@@ -39,7 +40,7 @@ final class SessionRunStoreTest extends TestCase
     {
         parent::setUp();
 
-        $this->projectDir = sys_get_temp_dir().'/hatfield-session-runstore-'.getmypid();
+        $this->projectDir = TestDirectoryIsolation::createOsTempDir('hatfield-session-runstore');
         if (is_dir($this->projectDir)) {
             $this->rmDir($this->projectDir);
         }

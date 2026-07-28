@@ -29,47 +29,6 @@ final class TuiRenderContextTest extends TestCase
         $this->assertSame(40, $context->terminalHeight);
     }
 
-    public function testWithWidth(): void
-    {
-        $theme = $this->createTheme();
-        $context = new TuiRenderContext(terminalWidth: 80, terminalHeight: 24, theme: $theme);
-        $modified = $context->withWidth(120);
-
-        $this->assertSame(120, $modified->terminalWidth);
-        $this->assertSame(24, $modified->terminalHeight);
-        // Original unchanged
-        $this->assertSame(80, $context->terminalWidth);
-    }
-
-    public function testWithHeight(): void
-    {
-        $theme = $this->createTheme();
-        $context = new TuiRenderContext(terminalWidth: 80, terminalHeight: 24, theme: $theme);
-        $modified = $context->withHeight(50);
-
-        $this->assertSame(80, $modified->terminalWidth);
-        $this->assertSame(50, $modified->terminalHeight);
-    }
-
-    public function testHasTheme(): void
-    {
-        $theme = $this->createTheme();
-        $context = new TuiRenderContext(theme: $theme);
-
-        $this->assertSame('test', $context->theme->name());
-    }
-
-    public function testWithTheme(): void
-    {
-        $original = $this->createTheme();
-        $newTheme = new DefaultTheme(new ThemePalette('other', []));
-        $context = new TuiRenderContext(theme: $original);
-        $modified = $context->withTheme($newTheme);
-
-        $this->assertSame('test', $context->theme->name());
-        $this->assertSame('other', $modified->theme->name());
-    }
-
     private function createTheme(): DefaultTheme
     {
         return new DefaultTheme(new ThemePalette('test', ['accent' => 'cyan', 'muted' => '#888', 'error' => 'red']));

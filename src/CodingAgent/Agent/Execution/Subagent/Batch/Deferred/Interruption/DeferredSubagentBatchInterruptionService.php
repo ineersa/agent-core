@@ -8,10 +8,10 @@ use Doctrine\ORM\OptimisticLockException;
 use Ineersa\AgentCore\Contract\AgentRunnerInterface;
 use Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchExecutionModeEnum;
+use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchLifecyclePolicyDTO;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Lifecycle\DeferredSubagentBatchLifecycleDeliveryService;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Projection\DeferredSubagentChildLaunchStatusEnum;
 use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Deferred\DeferredSubagentInterruptionKindEnum;
-use Ineersa\CodingAgent\Agent\Execution\Subagent\SubagentChildRunBatchLifecyclePolicyFactory;
 use Ineersa\CodingAgent\Entity\DeferredSubagentBatchRepository;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Clock\ClockInterface;
@@ -30,7 +30,7 @@ final readonly class DeferredSubagentBatchInterruptionService
         private DeferredSubagentBatchLifecycleDeliveryService $deliveryService,
         private AgentRunnerInterface $agentRunner,
         private DeferredToolCompletionRepositoryInterface $deferredToolCompletionRepository,
-        private SubagentChildRunBatchLifecyclePolicyFactory $lifecyclePolicyFactory,
+        private ChildRunBatchLifecyclePolicyDTO $lifecyclePolicy,
         private MessageBusInterface $commandBus,
         private LoggerInterface $logger,
         private ClockInterface $clock = new MonotonicClock(),
@@ -136,7 +136,7 @@ final readonly class DeferredSubagentBatchInterruptionService
             return;
         }
 
-        $policy = $this->lifecyclePolicyFactory->create();
+        $policy = $this->lifecyclePolicy;
         $isSingle = ChildRunBatchExecutionModeEnum::Single === $projection->executionMode;
         $cancelReason = match ($effectiveKind) {
             DeferredSubagentInterruptionKindEnum::Timeout => $isSingle

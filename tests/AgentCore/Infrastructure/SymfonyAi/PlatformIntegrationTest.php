@@ -305,7 +305,7 @@ final class PlatformIntegrationTest extends TestCase
      * Regression test for GitHub issue #122 cost path.
      *
      * The bug: when ModelInvocationRequest->model is empty string (the
-     * legacy app.default_model container parameter) and the real model
+     * empty model string sentinel) and the real model
      * is resolved later via ModelResolverInterface, cost calculation
      * was skipped because extractUsage received the empty model name.
      *
@@ -384,7 +384,7 @@ final class PlatformIntegrationTest extends TestCase
         );
 
         $response = $adapter->invoke(new ModelInvocationRequest(
-            model: '', // empty — the legacy app.default_model
+            model: '', // empty model string
             input: new ModelInvocationInput(
                 runId: 'run-cost-01',
                 turnNo: 1,

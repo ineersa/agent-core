@@ -9,6 +9,7 @@ use Ineersa\AgentCore\Contract\Compaction\CompactionServiceInterface;
 use Ineersa\AgentCore\Contract\Compaction\CompactResult;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\Extension\HookSubscriberInterface;
+use Ineersa\AgentCore\Contract\Model\RunModelResolverInterface;
 use Ineersa\AgentCore\Contract\RunStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
@@ -19,7 +20,6 @@ use Ineersa\AgentCore\Domain\Message\CompactRun;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\AgentCore\Tests\Support\TestMessageBus;
-use Ineersa\CodingAgent\Compaction\ActiveModelResolverInterface;
 use Ineersa\CodingAgent\Compaction\AutoCompactionHookSubscriber;
 use Ineersa\CodingAgent\Compaction\ProviderContextUsageResolver;
 use Ineersa\CodingAgent\Config\CompactionConfig;
@@ -44,7 +44,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
     private $eventStore;
     private ProviderContextUsageResolver $providerUsageResolver;
     private CompactionConfig $compactionConfig;
-    /** @var ActiveModelResolverInterface&\PHPUnit\Framework\MockObject\MockObject */
+    /** @var RunModelResolverInterface&\PHPUnit\Framework\MockObject\MockObject */
     private $modelResolver;
     /** @var CompactionServiceInterface&\PHPUnit\Framework\MockObject\MockObject */
     private $compactionService;
@@ -60,7 +60,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
             compactAfterTokens: 11000,
             keepRecentTokens: 10,
         );
-        $this->modelResolver = $this->createMock(ActiveModelResolverInterface::class);
+        $this->modelResolver = $this->createMock(RunModelResolverInterface::class);
         $this->compactionService = $this->createMock(CompactionServiceInterface::class);
         // Default: preparation is ready and contains fresh non-summary messages.
         // Individual tests that test the summary-only or preparation-failure
@@ -99,7 +99,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
     public function testDispatchesAutoCompactWhenProviderUsageExceedsThreshold(): void
     {
         $this->modelResolver->expects($this->once())
-            ->method('getActiveModel')
+            ->method('resolveActiveModel')
             ->willReturn(null);
 
         $messages = [
@@ -128,7 +128,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
     public function testDoesNotDispatchWhenProviderUsageBelowThreshold(): void
     {
         $this->modelResolver->expects($this->once())
-            ->method('getActiveModel')
+            ->method('resolveActiveModel')
             ->willReturn(null);
 
         $messages = [
@@ -156,7 +156,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
     public function testDoesNotDispatchWhenNoProviderUsageExists(): void
     {
         $this->modelResolver->expects($this->once())
-            ->method('getActiveModel')
+            ->method('resolveActiveModel')
             ->willReturn(null);
 
         $messages = [
@@ -238,7 +238,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
     public function testSkipsWhenCompactionAlreadyInFlight(): void
     {
         $this->modelResolver->expects($this->once())
-            ->method('getActiveModel')
+            ->method('resolveActiveModel')
             ->willReturn(null);
 
         $messages = [
@@ -262,7 +262,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
 
     public function testDedupPreventsDoubleDispatchWithinSameProcess(): void
     {
-        $this->modelResolver->method('getActiveModel')->willReturn(null);
+        $this->modelResolver->method('resolveActiveModel')->willReturn(null);
 
         $runState = $this->createRunState([
             $this->makeTextMessage('user', 'Hello'),
@@ -284,7 +284,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
 
     public function testDedupClearedAndEligibilityPreventsRedispatchOnStaleMeasurement(): void
     {
-        $this->modelResolver->method('getActiveModel')->willReturn(null);
+        $this->modelResolver->method('resolveActiveModel')->willReturn(null);
 
         $messages = [
             $this->makeTextMessage('user', 'Hello'),
@@ -339,9 +339,9 @@ final class AutoCompactionHookSubscriberTest extends TestCase
                 'openai/gpt-4' => ['compact_after_tokens' => 50000],
             ],
         );
-        $modelResolver = $this->createMock(ActiveModelResolverInterface::class);
+        $modelResolver = $this->createMock(RunModelResolverInterface::class);
         $modelResolver->expects($this->once())
-            ->method('getActiveModel')
+            ->method('resolveActiveModel')
             ->willReturn('openai/gpt-4');
 
         $subscriber = new AutoCompactionHookSubscriber(
@@ -377,7 +377,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
 
     public function testDoesNotDispatchWhenRunStateMissing(): void
     {
-        $this->modelResolver->method('getActiveModel')->willReturn(null);
+        $this->modelResolver->method('resolveActiveModel')->willReturn(null);
         $this->runStore->method('get')->willReturn(null);
 
         $context = $this->createHookContext();
@@ -401,7 +401,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
 
     public function testSkipsWhenRunStartedEventPresent(): void
     {
-        $this->modelResolver->method('getActiveModel')->willReturn(null);
+        $this->modelResolver->method('resolveActiveModel')->willReturn(null);
 
         $runState = $this->createRunState([
             $this->makeTextMessage('user', 'Hello'),
@@ -423,7 +423,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
 
     public function testSkipsWhenEffectsCountGreaterThanZero(): void
     {
-        $this->modelResolver->method('getActiveModel')->willReturn(null);
+        $this->modelResolver->method('resolveActiveModel')->willReturn(null);
 
         $runState = $this->createRunState([
             $this->makeTextMessage('user', 'Hello'),
@@ -451,7 +451,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
      */
     public function testSkipsAfterCompactionLifecycleWhenMeasurementIsStale(): void
     {
-        $this->modelResolver->method('getActiveModel')->willReturn(null);
+        $this->modelResolver->method('resolveActiveModel')->willReturn(null);
 
         $runState = $this->createRunState([
             $this->makeTextMessage('user', 'Hello'),
@@ -489,7 +489,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
 
     public function testCompactionResolvedClearedOnNewUserTurn(): void
     {
-        $this->modelResolver->method('getActiveModel')->willReturn(null);
+        $this->modelResolver->method('resolveActiveModel')->willReturn(null);
 
         $runState = $this->createRunState([
             $this->makeTextMessage('user', 'Hello'),
@@ -522,7 +522,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
 
     public function testDispatchedCompactRunHasAutoTrigger(): void
     {
-        $this->modelResolver->method('getActiveModel')->willReturn(null);
+        $this->modelResolver->method('resolveActiveModel')->willReturn(null);
 
         $runState = $this->createRunState([
             $this->makeTextMessage('user', 'Hello'),
@@ -556,7 +556,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
      */
     public function testFailureOnlyAutoMarkerBlocksDispatchFromFreshInstance(): void
     {
-        $this->modelResolver->method('getActiveModel')->willReturn(null);
+        $this->modelResolver->method('resolveActiveModel')->willReturn(null);
 
         $runState = $this->createRunState([
             $this->makeTextMessage('user', 'Hello'),
@@ -628,7 +628,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
      */
     public function testSkipsWhenToolExecutionStartEventPresent(): void
     {
-        $this->modelResolver->method('getActiveModel')->willReturn(null);
+        $this->modelResolver->method('resolveActiveModel')->willReturn(null);
 
         $runState = $this->createRunState([
             $this->makeTextMessage('user', 'Hello'),
@@ -672,7 +672,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
      */
     public function testSkipsWhenToolBatchCommittedEventPresent(): void
     {
-        $this->modelResolver->method('getActiveModel')->willReturn(null);
+        $this->modelResolver->method('resolveActiveModel')->willReturn(null);
 
         $runState = $this->createRunState([
             $this->makeTextMessage('user', 'Hello'),
@@ -715,7 +715,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
      */
     public function testAllowsAutoCompactionOnLaterTurnWithFreshProviderUsage(): void
     {
-        $this->modelResolver->method('getActiveModel')->willReturn(null);
+        $this->modelResolver->method('resolveActiveModel')->willReturn(null);
 
         $runState = $this->createRunState([
             $this->makeTextMessage('user', 'Hello'),
@@ -793,7 +793,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
      */
     public function testSkipsWhenAgentCommandQueuedEventPresent(): void
     {
-        $this->modelResolver->method('getActiveModel')->willReturn(null);
+        $this->modelResolver->method('resolveActiveModel')->willReturn(null);
 
         $runState = $this->createRunState([
             $this->makeTextMessage('user', 'Hello'),
@@ -829,7 +829,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
      */
     public function testSkipsWhenAgentCommandAppliedEventPresent(): void
     {
-        $this->modelResolver->method('getActiveModel')->willReturn(null);
+        $this->modelResolver->method('resolveActiveModel')->willReturn(null);
 
         $runState = $this->createRunState([
             $this->makeTextMessage('user', 'Hello'),
@@ -865,7 +865,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
      */
     public function testSkipsWhenCompactionWouldSummarizeOnlyCompactSummary(): void
     {
-        $this->modelResolver->method('getActiveModel')->willReturn(null);
+        $this->modelResolver->method('resolveActiveModel')->willReturn(null);
 
         $compactSummaryMsg = $this->makeCompactSummaryMessage();
         $freshUserMsg = $this->makeTextMessage('user', 'Hello');
@@ -953,7 +953,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
      */
     public function testAllowsCompactionWhenSummarizeIncludesFreshNonSummaryMessages(): void
     {
-        $this->modelResolver->method('getActiveModel')->willReturn(null);
+        $this->modelResolver->method('resolveActiveModel')->willReturn(null);
 
         $compactSummaryMsg = $this->makeCompactSummaryMessage();
         $freshUserMsg = $this->makeTextMessage('user', 'Long conversation turn 2...');
@@ -1041,7 +1041,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
      */
     public function testSkipsWhenPreparationIsNotReady(): void
     {
-        $this->modelResolver->method('getActiveModel')->willReturn(null);
+        $this->modelResolver->method('resolveActiveModel')->willReturn(null);
 
         $messages = [
             $this->makeTextMessage('user', 'Hello'),
@@ -1110,7 +1110,7 @@ final class AutoCompactionHookSubscriberTest extends TestCase
      */
     public function testSkipsWhenRunStateMissingBeforePreparation(): void
     {
-        $this->modelResolver->method('getActiveModel')->willReturn(null);
+        $this->modelResolver->method('resolveActiveModel')->willReturn(null);
 
         // RunState absent: no stubbed return from runStore->get()
         // Under #[AllowMockObjectsWithoutExpectations] this returns null.

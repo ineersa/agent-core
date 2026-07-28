@@ -18,7 +18,6 @@ final class SafeGuardConfigTest extends TestCase
 
         $this->assertSame([], $config->allowCommandPatterns);
         $this->assertSame([], $config->allowWriteOutsideCwd);
-        $this->assertSame([], $config->allowDestructiveInPaths);
         $this->assertNotEmpty($config->protectedReadPatterns);
         $this->assertSame([], $config->dangerousCommandPatterns);
         $this->assertSame('bash', $config->bashToolName);
@@ -55,7 +54,6 @@ final class SafeGuardConfigTest extends TestCase
         $config = SafeGuardConfig::fromArray([
             'allow_command_patterns' => ['ls -la'],
             'allow_write_outside_cwd' => ['/tmp'],
-            'allow_destructive_in_paths' => ['/safe'],
             'protected_read_patterns' => ['.my-custom'],
             'dangerous_command_patterns' => ['risky'],
             'tool_names' => [
@@ -68,7 +66,6 @@ final class SafeGuardConfigTest extends TestCase
 
         $this->assertSame(['ls -la'], $config->allowCommandPatterns);
         $this->assertSame(['/tmp'], $config->allowWriteOutsideCwd);
-        $this->assertSame(['/safe'], $config->allowDestructiveInPaths);
         $this->assertContains('.env.local', $config->protectedReadPatterns);
         $this->assertContains('.my-custom', $config->protectedReadPatterns);
         $this->assertSame(['risky'], $config->dangerousCommandPatterns);

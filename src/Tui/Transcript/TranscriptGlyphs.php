@@ -8,7 +8,7 @@ namespace Ineersa\Tui\Transcript;
  * Central registry of transcript block glyph and prefix constants.
  *
  * All glyphs, prefixes, and the streaming suffix used in transcript block
- * rendering are defined here. Both {@see TranscriptBlockWidgetFactory} and
+ * rendering are defined here. {@see TranscriptBlockWidgetFactory} and
  * {@see SubagentResultRenderer} reference these constants, ensuring a single
  * source of truth for the transcript visual language.
  *

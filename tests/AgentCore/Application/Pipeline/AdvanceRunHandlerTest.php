@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Tests\Application\Orchestrator;
 
-use Ineersa\AgentCore\Application\Handler\CommandHandlerRegistry;
 use Ineersa\AgentCore\Application\Handler\CommandRouter;
 use Ineersa\AgentCore\Application\Handler\RunMetrics;
 use Ineersa\AgentCore\Application\Pipeline\AdvanceRunHandler;
@@ -31,7 +30,7 @@ final class AdvanceRunHandlerTest extends TestCase
         $commandStore = new InMemoryCommandStore();
         $commandMailboxPolicy = new CommandMailboxPolicy(
             commandStore: $commandStore,
-            commandRouter: new CommandRouter(new CommandHandlerRegistry([])),
+            commandRouter: new CommandRouter([]),
         );
         $metrics = new RunMetrics();
 
@@ -102,7 +101,7 @@ final class AdvanceRunHandlerTest extends TestCase
 
         $commandMailboxPolicy = new CommandMailboxPolicy(
             commandStore: $commandStore,
-            commandRouter: new CommandRouter(new CommandHandlerRegistry([])),
+            commandRouter: new CommandRouter([]),
         );
 
         $handler = new AdvanceRunHandler(
@@ -158,7 +157,7 @@ final class AdvanceRunHandlerTest extends TestCase
 
         $commandMailboxPolicy = new CommandMailboxPolicy(
             commandStore: $commandStore,
-            commandRouter: new CommandRouter(new CommandHandlerRegistry([])),
+            commandRouter: new CommandRouter([]),
         );
 
         $handler = new AdvanceRunHandler(
@@ -201,7 +200,7 @@ final class AdvanceRunHandlerTest extends TestCase
         $commandStore = new InMemoryCommandStore();
         $commandMailboxPolicy = new CommandMailboxPolicy(
             commandStore: $commandStore,
-            commandRouter: new CommandRouter(new CommandHandlerRegistry([])),
+            commandRouter: new CommandRouter([]),
         );
 
         $handler = new AdvanceRunHandler(
@@ -247,7 +246,7 @@ final class AdvanceRunHandlerTest extends TestCase
         $commandStore = new InMemoryCommandStore();
         $commandMailboxPolicy = new CommandMailboxPolicy(
             commandStore: $commandStore,
-            commandRouter: new CommandRouter(new CommandHandlerRegistry([])),
+            commandRouter: new CommandRouter([]),
         );
 
         $handler = new AdvanceRunHandler(
@@ -282,7 +281,7 @@ final class AdvanceRunHandlerTest extends TestCase
         $commandStore = new InMemoryCommandStore();
         $commandMailboxPolicy = new CommandMailboxPolicy(
             commandStore: $commandStore,
-            commandRouter: new CommandRouter(new CommandHandlerRegistry([])),
+            commandRouter: new CommandRouter([]),
         );
 
         $handler = new AdvanceRunHandler(
@@ -321,7 +320,7 @@ final class AdvanceRunHandlerTest extends TestCase
         $commandStore = new InMemoryCommandStore();
         $commandMailboxPolicy = new CommandMailboxPolicy(
             commandStore: $commandStore,
-            commandRouter: new CommandRouter(new CommandHandlerRegistry([])),
+            commandRouter: new CommandRouter([]),
         );
 
         $handler = new AdvanceRunHandler(
@@ -364,7 +363,7 @@ final class AdvanceRunHandlerTest extends TestCase
         $commandStore = new InMemoryCommandStore();
         $commandMailboxPolicy = new CommandMailboxPolicy(
             commandStore: $commandStore,
-            commandRouter: new CommandRouter(new CommandHandlerRegistry([])),
+            commandRouter: new CommandRouter([]),
         );
         $metrics = new RunMetrics();
 
@@ -428,7 +427,7 @@ final class AdvanceRunHandlerTest extends TestCase
 
         $commandMailboxPolicy = new CommandMailboxPolicy(
             commandStore: $commandStore,
-            commandRouter: new CommandRouter(new CommandHandlerRegistry([])),
+            commandRouter: new CommandRouter([]),
         );
 
         $handler = new AdvanceRunHandler(
@@ -512,7 +511,7 @@ final class AdvanceRunHandlerTest extends TestCase
 
         $commandMailboxPolicy = new CommandMailboxPolicy(
             commandStore: $commandStore,
-            commandRouter: new CommandRouter(new CommandHandlerRegistry([])),
+            commandRouter: new CommandRouter([]),
         );
 
         $handler = new AdvanceRunHandler(
@@ -557,7 +556,7 @@ final class AdvanceRunHandlerTest extends TestCase
 
         $commandMailboxPolicy = new CommandMailboxPolicy(
             commandStore: $commandStore,
-            commandRouter: new CommandRouter(new CommandHandlerRegistry([])),
+            commandRouter: new CommandRouter([]),
         );
         $commandBus = new TestMessageBus();
 
@@ -607,7 +606,7 @@ final class AdvanceRunHandlerTest extends TestCase
 
         $commandMailboxPolicy = new CommandMailboxPolicy(
             commandStore: $commandStore,
-            commandRouter: new CommandRouter(new CommandHandlerRegistry([])),
+            commandRouter: new CommandRouter([]),
         );
 
         $handler = new AdvanceRunHandler(
@@ -653,7 +652,7 @@ final class AdvanceRunHandlerTest extends TestCase
 
         $commandMailboxPolicy = new CommandMailboxPolicy(
             commandStore: $commandStore,
-            commandRouter: new CommandRouter(new CommandHandlerRegistry([])),
+            commandRouter: new CommandRouter([]),
         );
         $commandBus = new TestMessageBus();
 
@@ -697,7 +696,7 @@ final class AdvanceRunHandlerTest extends TestCase
         $commandStore = new InMemoryCommandStore();
         $commandMailboxPolicy = new CommandMailboxPolicy(
             commandStore: $commandStore,
-            commandRouter: new CommandRouter(new CommandHandlerRegistry([])),
+            commandRouter: new CommandRouter([]),
         );
 
         $handler = new AdvanceRunHandler(
@@ -733,7 +732,7 @@ final class AdvanceRunHandlerTest extends TestCase
         $commandStore = new InMemoryCommandStore();
         $commandMailboxPolicy = new CommandMailboxPolicy(
             commandStore: $commandStore,
-            commandRouter: new CommandRouter(new CommandHandlerRegistry([])),
+            commandRouter: new CommandRouter([]),
         );
 
         $handler = new AdvanceRunHandler(
