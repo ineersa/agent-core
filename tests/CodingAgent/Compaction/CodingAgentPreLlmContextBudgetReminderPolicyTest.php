@@ -41,7 +41,6 @@ final class CodingAgentPreLlmContextBudgetReminderPolicyTest extends TestCase
             new ContextBudgetReminderConfig(
                 earlyInputTokens: 200000,
                 urgentRemainingTokens: 25000,
-                outputHeadroomTokens: 0,
             ),
             $this->appConfigWithCatalog(window: 272000),
         );
@@ -134,7 +133,6 @@ final class CodingAgentPreLlmContextBudgetReminderPolicyTest extends TestCase
             new ContextBudgetReminderConfig(
                 earlyInputTokens: 200000,
                 urgentRemainingTokens: 25000,
-                outputHeadroomTokens: 0,
             ),
             $this->appConfigWithCatalog(window: 50000),
         );
@@ -150,7 +148,6 @@ final class CodingAgentPreLlmContextBudgetReminderPolicyTest extends TestCase
             new ContextBudgetReminderConfig(
                 earlyInputTokens: 200000,
                 urgentRemainingTokens: 25000,
-                outputHeadroomTokens: 0,
             ),
             $this->appConfigWithCatalog(window: 50000),
         );
@@ -254,7 +251,6 @@ final class CodingAgentPreLlmContextBudgetReminderPolicyTest extends TestCase
             new ContextBudgetReminderConfig(
                 earlyInputTokens: 200000,
                 urgentRemainingTokens: 25000,
-                outputHeadroomTokens: 0,
             ),
             $this->appConfigWithCatalog(window: 272000),
         );

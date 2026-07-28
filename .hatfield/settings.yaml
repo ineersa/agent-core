@@ -86,4 +86,3 @@ forks:
 context_budget_reminders:
     early_input_tokens: 200000
     urgent_remaining_tokens: 25000
-    output_headroom_tokens: 0

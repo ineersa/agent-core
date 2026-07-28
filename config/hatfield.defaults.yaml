@@ -103,20 +103,17 @@ compaction:
 # Metric: latest provider-reported prompt/input tokens after the last successful
 # context_compacted barrier (or run start). Not a cumulative sum of usage.
 #
-# Usable remaining = context_window - latest_prompt_input - output_headroom_tokens.
-# output_headroom_tokens defaults to 0 so early remains meaningful on ~272k windows
-# (urgent remaining < 25k would otherwise dominate before 200k early).
+# Remaining = context_window - latest_prompt_input.
+# urgent_remaining_tokens is the sole wrap-up reserve (room to finish); there is
+# no separate output-headroom setting or subtraction.
 # Missing usage or context-window metadata => no reminder (no silent estimate).
 #
 context_budget_reminders:
     # Early advisory once latest prompt/input usage reaches this absolute size.
     early_input_tokens: 200000
 
-    # Urgent wrap-up when usable remaining context drops strictly below this.
+    # Urgent wrap-up when remaining context drops strictly below this (sole reserve).
     urgent_remaining_tokens: 25000
-
-    # Tokens reserved for model output when computing usable remaining context.
-    output_headroom_tokens: 0
 
 # ---------------------------------------------------------------------------
 # Tools

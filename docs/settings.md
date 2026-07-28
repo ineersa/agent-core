@@ -287,12 +287,16 @@ same path.
 `context_compacted` barrier (or run start when none). This is the provider's
 current prompt size for that step — not a cumulative sum of prior steps.
 
-**Usable remaining:**
-`context_window - latest_prompt_input - output_headroom_tokens`
+**Remaining context:**
+`context_window - latest_prompt_input`
 
 `context_window` comes from run-start metadata when present, otherwise the
 active model's catalog entry. Missing usage or window ⇒ no reminder (no silent
 estimate).
+
+`urgent_remaining_tokens` is the sole wrap-up/output reserve: it is the room
+left for the model to finish. There is no separate output-headroom setting or
+subtraction.
 
 Successful compaction starts a new episode: pre-compaction usage and handled
 markers are ignored until fresh post-compaction usage exists.
@@ -308,25 +312,17 @@ Absolute latest prompt/input usage that triggers the early wrap-up advisory.
 
 ### `context_budget_reminders.urgent_remaining_tokens`
 
-Urgent wrap-up when usable remaining context is **strictly less than** this value.
+Urgent wrap-up when remaining context is **strictly less than** this value.
+This threshold itself reserves room to finish; there is no separate
+output-headroom knob.
 
 **Default:** `25000`
-
-### `context_budget_reminders.output_headroom_tokens`
-
-Tokens reserved for model output when computing usable remaining context.
-Default is `0` so the early 200k checkpoint remains meaningful on ~272k-class
-windows (with headroom 0, urgent fires near 247k remaining budget usage, after
-early).
-
-**Default:** `0`
 
 **Example:**
 ```yaml
 context_budget_reminders:
     early_input_tokens: 200000
     urgent_remaining_tokens: 25000
-    output_headroom_tokens: 0
 ```
 
 ## Environment variables

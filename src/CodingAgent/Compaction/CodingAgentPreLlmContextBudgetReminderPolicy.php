@@ -58,7 +58,7 @@ final readonly class CodingAgentPreLlmContextBudgetReminderPolicy implements Pre
         $earlyEligible = $inputTokens >= $this->config->earlyInputTokens
             && !\in_array(ContextBudgetReminderDecision::KEY_EARLY, $handled, true);
 
-        $remaining = $contextWindow - $inputTokens - $this->config->outputHeadroomTokens;
+        $remaining = $contextWindow - $inputTokens;
         $urgentEligible = $remaining < $this->config->urgentRemainingTokens
             && !\in_array(ContextBudgetReminderDecision::KEY_URGENT, $handled, true);
 
