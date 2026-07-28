@@ -7,116 +7,245 @@ namespace Ineersa\HatfieldExt\ObservationalMemory\Runtime;
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
 
 /**
- * Extension-local settings for observational memory.
+ * Nested observational_memory settings (task §M).
  *
- * Read from extensions.settings.observational_memory via ExtensionApi.
+ * Flat budget keys are not supported; replace, do not dual-read.
  */
 final readonly class OmSettings
 {
-    public const SETTINGS_KEY = 'observational_memory';
+    public const string SETTINGS_KEY = 'observational_memory';
 
-    public const DEFAULT_RELATIVE_DB_PATH = '.hatfield/extensions-data/observational-memory/om.sqlite';
+    public const string DEFAULT_RELATIVE_DB_PATH = '.hatfield/extensions-data/observational-memory/om.sqlite';
 
-    public const DEFAULT_RENDERER_VERSION = 'om-renderer-v1';
+    public const string DEFAULT_RENDERER_VERSION = '1';
 
-    public const DEFAULT_OBSERVER_SCHEMA_VERSION = 'om-observer-v1';
+    public const string DEFAULT_OBSERVER_SCHEMA_VERSION = '1';
 
-    public const DEFAULT_MAX_OBSERVATIONS = 12;
+    public const string DEFAULT_REFLECTOR_SCHEMA_VERSION = '1';
 
-    public const DEFAULT_OBSERVER_INPUT_BUDGET_TOKENS = 12_000;
+    public const float DEFAULT_CONTEXT_WINDOW_RATIO = 0.65;
 
-    public const DEFAULT_TOOL_RESULT_MAX_CHARS = 4_000;
+    public const int DEFAULT_REFLECT_AFTER_OBSERVATION_TOKENS = 40_000;
 
-    public const DEFAULT_CONTENT_MAX_CHARS = 2_000;
+    public const int DEFAULT_WAIT_TIMEOUT_SECONDS = 180;
+
+    public const int DEFAULT_OBSERVATIONS_MAX_TOKENS = 30_000;
+
+    public const int DEFAULT_REFLECTIONS_MAX_TOKENS = 10_000;
+
+    public const string DEFAULT_OBSERVER_THINKING_LEVEL = 'medium';
+
+    public const string DEFAULT_REFLECTOR_THINKING_LEVEL = 'high';
 
     public function __construct(
-        public bool $enabled,
         public string $databasePath,
         public ?string $observerModel,
+        public string $observerThinkingLevel,
+        public float $observerContextWindowRatio,
         public string $rendererVersion,
         public string $observerSchemaVersion,
-        public int $maxObservations,
-        public int $observerInputBudgetTokens,
-        public int $toolResultMaxChars,
-        public int $contentMaxChars,
+        public ?string $reflectorModel,
+        public string $reflectorThinkingLevel,
+        public float $reflectorContextWindowRatio,
+        public int $reflectAfterObservationTokens,
+        public string $reflectorSchemaVersion,
+        public int $observationsMaxTokens,
+        public int $reflectionsMaxTokens,
+        public int $waitTimeoutSeconds,
     ) {
     }
 
     public static function fromApi(ExtensionApiInterface $api): self
     {
-        $raw = $api->getSettings(self::SETTINGS_KEY);
+        return self::fromArray($api->getSettings(self::SETTINGS_KEY));
+    }
 
-        $enabled = true;
-        if (\array_key_exists('enabled', $raw)) {
-            $enabled = filter_var($raw['enabled'], \FILTER_VALIDATE_BOOL, \FILTER_NULL_ON_FAILURE) ?? true;
-        }
-
+    /**
+     * @param array<string, mixed> $raw
+     */
+    public static function fromArray(array $raw): self
+    {
         $databasePath = self::DEFAULT_RELATIVE_DB_PATH;
-        if (isset($raw['database_path']) && \is_string($raw['database_path']) && '' !== $raw['database_path']) {
-            $databasePath = $raw['database_path'];
+        $storage = $raw['storage'] ?? null;
+        if (\is_array($storage) && isset($storage['database']) && \is_string($storage['database']) && '' !== $storage['database']) {
+            $databasePath = $storage['database'];
         }
 
-        $observerModel = null;
-        if (isset($raw['observer_model']) && \is_string($raw['observer_model']) && '' !== trim($raw['observer_model'])) {
-            $observerModel = trim($raw['observer_model']);
-        } elseif (isset($raw['observer']) && \is_array($raw['observer'])
-            && isset($raw['observer']['model']) && \is_string($raw['observer']['model']) && '' !== trim($raw['observer']['model'])) {
-            $observerModel = trim($raw['observer']['model']);
+        $observer = \is_array($raw['observer'] ?? null) ? $raw['observer'] : [];
+        $reflector = \is_array($raw['reflector'] ?? null) ? $raw['reflector'] : [];
+        $pools = \is_array($raw['pools'] ?? null) ? $raw['pools'] : [];
+        $compaction = \is_array($raw['compaction'] ?? null) ? $raw['compaction'] : [];
+
+        $observerModel = self::readNestedModel($observer);
+        $reflectorModel = self::readNestedModel($reflector);
+
+        $observerThinking = self::DEFAULT_OBSERVER_THINKING_LEVEL;
+        if (isset($observer['thinking_level']) && \is_string($observer['thinking_level']) && '' !== trim($observer['thinking_level'])) {
+            $observerThinking = trim($observer['thinking_level']);
         }
+
+        $reflectorThinking = self::DEFAULT_REFLECTOR_THINKING_LEVEL;
+        if (isset($reflector['thinking_level']) && \is_string($reflector['thinking_level']) && '' !== trim($reflector['thinking_level'])) {
+            $reflectorThinking = trim($reflector['thinking_level']);
+        }
+
+        $observerRatio = self::readRatio($observer['context_window_ratio'] ?? null, self::DEFAULT_CONTEXT_WINDOW_RATIO);
+        $reflectorRatio = self::readRatio($reflector['context_window_ratio'] ?? null, self::DEFAULT_CONTEXT_WINDOW_RATIO);
 
         $rendererVersion = self::DEFAULT_RENDERER_VERSION;
-        if (isset($raw['renderer_version']) && \is_string($raw['renderer_version']) && '' !== $raw['renderer_version']) {
-            $rendererVersion = $raw['renderer_version'];
+        if (isset($observer['renderer_version']) && \is_string($observer['renderer_version']) && '' !== $observer['renderer_version']) {
+            $rendererVersion = $observer['renderer_version'];
         }
 
         $observerSchemaVersion = self::DEFAULT_OBSERVER_SCHEMA_VERSION;
-        if (isset($raw['observer_schema_version']) && \is_string($raw['observer_schema_version']) && '' !== $raw['observer_schema_version']) {
-            $observerSchemaVersion = $raw['observer_schema_version'];
+        if (isset($observer['schema_version']) && \is_string($observer['schema_version']) && '' !== $observer['schema_version']) {
+            $observerSchemaVersion = $observer['schema_version'];
         }
 
-        $maxObservations = self::DEFAULT_MAX_OBSERVATIONS;
-        if (isset($raw['max_observations']) && is_numeric($raw['max_observations'])) {
-            $maxObservations = max(1, (int) $raw['max_observations']);
+        $reflectorSchemaVersion = self::DEFAULT_REFLECTOR_SCHEMA_VERSION;
+        if (isset($reflector['schema_version']) && \is_string($reflector['schema_version']) && '' !== $reflector['schema_version']) {
+            $reflectorSchemaVersion = $reflector['schema_version'];
         }
 
-        $budget = self::DEFAULT_OBSERVER_INPUT_BUDGET_TOKENS;
-        if (isset($raw['observer_input_budget_tokens']) && is_numeric($raw['observer_input_budget_tokens'])) {
-            $budget = max(256, (int) $raw['observer_input_budget_tokens']);
+        $reflectAfter = self::DEFAULT_REFLECT_AFTER_OBSERVATION_TOKENS;
+        if (isset($reflector['reflect_after_observation_tokens']) && is_numeric($reflector['reflect_after_observation_tokens'])) {
+            $reflectAfter = max(1, (int) $reflector['reflect_after_observation_tokens']);
         }
 
-        $toolResultMaxChars = self::DEFAULT_TOOL_RESULT_MAX_CHARS;
-        if (isset($raw['tool_result_max_chars']) && is_numeric($raw['tool_result_max_chars'])) {
-            $toolResultMaxChars = max(256, (int) $raw['tool_result_max_chars']);
+        $observationsMaxTokens = self::DEFAULT_OBSERVATIONS_MAX_TOKENS;
+        if (isset($pools['observations_max_tokens']) && is_numeric($pools['observations_max_tokens'])) {
+            $observationsMaxTokens = max(1, (int) $pools['observations_max_tokens']);
         }
 
-        $contentMaxChars = self::DEFAULT_CONTENT_MAX_CHARS;
-        if (isset($raw['content_max_chars']) && is_numeric($raw['content_max_chars'])) {
-            $contentMaxChars = max(64, (int) $raw['content_max_chars']);
+        $reflectionsMaxTokens = self::DEFAULT_REFLECTIONS_MAX_TOKENS;
+        if (isset($pools['reflections_max_tokens']) && is_numeric($pools['reflections_max_tokens'])) {
+            $reflectionsMaxTokens = max(1, (int) $pools['reflections_max_tokens']);
+        }
+
+        $waitTimeout = self::DEFAULT_WAIT_TIMEOUT_SECONDS;
+        if (isset($compaction['wait_timeout_seconds']) && is_numeric($compaction['wait_timeout_seconds'])) {
+            $waitTimeout = max(1, (int) $compaction['wait_timeout_seconds']);
         }
 
         return new self(
-            enabled: $enabled,
             databasePath: $databasePath,
             observerModel: $observerModel,
+            observerThinkingLevel: $observerThinking,
+            observerContextWindowRatio: $observerRatio,
             rendererVersion: $rendererVersion,
             observerSchemaVersion: $observerSchemaVersion,
-            maxObservations: $maxObservations,
-            observerInputBudgetTokens: $budget,
-            toolResultMaxChars: $toolResultMaxChars,
-            contentMaxChars: $contentMaxChars,
+            reflectorModel: $reflectorModel,
+            reflectorThinkingLevel: $reflectorThinking,
+            reflectorContextWindowRatio: $reflectorRatio,
+            reflectAfterObservationTokens: $reflectAfter,
+            reflectorSchemaVersion: $reflectorSchemaVersion,
+            observationsMaxTokens: $observationsMaxTokens,
+            reflectionsMaxTokens: $reflectionsMaxTokens,
+            waitTimeoutSeconds: $waitTimeout,
         );
     }
 
     public function requireObserverModel(): string
     {
-        if (null === $this->observerModel || '' === $this->observerModel) {
-            throw new \RuntimeException('observational_memory.observer_model (exact provider/model) is required for Observer jobs.');
+        return $this->requireExactModel($this->observerModel, 'observational_memory.observer.model');
+    }
+
+    public function requireReflectorModel(): string
+    {
+        return $this->requireExactModel($this->reflectorModel, 'observational_memory.reflector.model');
+    }
+
+    /**
+     * Immutable copy with job-payload renderer/observer schema versions only.
+     */
+    public function withRendererAndObserverVersions(string $rendererVersion, string $observerSchemaVersion): self
+    {
+        return new self(
+            databasePath: $this->databasePath,
+            observerModel: $this->observerModel,
+            observerThinkingLevel: $this->observerThinkingLevel,
+            observerContextWindowRatio: $this->observerContextWindowRatio,
+            rendererVersion: $rendererVersion,
+            observerSchemaVersion: $observerSchemaVersion,
+            reflectorModel: $this->reflectorModel,
+            reflectorThinkingLevel: $this->reflectorThinkingLevel,
+            reflectorContextWindowRatio: $this->reflectorContextWindowRatio,
+            reflectAfterObservationTokens: $this->reflectAfterObservationTokens,
+            reflectorSchemaVersion: $this->reflectorSchemaVersion,
+            observationsMaxTokens: $this->observationsMaxTokens,
+            reflectionsMaxTokens: $this->reflectionsMaxTokens,
+            waitTimeoutSeconds: $this->waitTimeoutSeconds,
+        );
+    }
+
+    public function observerEnvelope(int $contextWindow): int
+    {
+        return self::envelope($contextWindow, $this->observerContextWindowRatio);
+    }
+
+    public static function envelope(int $contextWindow, float $ratio): int
+    {
+        if ($contextWindow <= 0) {
+            throw new \InvalidArgumentException('context_window must be positive.');
         }
 
-        if (str_starts_with($this->observerModel, '@') || !str_contains($this->observerModel, '/')) {
-            throw new \RuntimeException('observational_memory.observer_model must be an exact provider/model reference (provider/model).');
+        return (int) floor($contextWindow * $ratio);
+    }
+
+    /**
+     * @return array<string, scalar>
+     */
+    public function compactionIdentityParts(): array
+    {
+        return [
+            'observer_model' => $this->observerModel ?? '',
+            'observer_context_window_ratio' => $this->observerContextWindowRatio,
+            'renderer_version' => $this->rendererVersion,
+            'observer_schema_version' => $this->observerSchemaVersion,
+            'reflector_model' => $this->reflectorModel ?? '',
+            'reflector_context_window_ratio' => $this->reflectorContextWindowRatio,
+            'reflector_schema_version' => $this->reflectorSchemaVersion,
+            'observations_max_tokens' => $this->observationsMaxTokens,
+            'reflections_max_tokens' => $this->reflectionsMaxTokens,
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $section
+     */
+    private static function readNestedModel(array $section): ?string
+    {
+        if (isset($section['model']) && \is_string($section['model']) && '' !== trim($section['model'])) {
+            return trim($section['model']);
         }
 
-        return $this->observerModel;
+        return null;
+    }
+
+    private static function readRatio(mixed $raw, float $default): float
+    {
+        if (!is_numeric($raw)) {
+            return $default;
+        }
+
+        $ratio = (float) $raw;
+        if ($ratio <= 0.0 || $ratio >= 1.0) {
+            throw new \InvalidArgumentException('context_window_ratio must satisfy 0 < ratio < 1.');
+        }
+
+        return $ratio;
+    }
+
+    private function requireExactModel(?string $model, string $label): string
+    {
+        if (null === $model || '' === $model) {
+            throw new \RuntimeException($label.' (exact provider/model) is required.');
+        }
+
+        if (str_starts_with($model, '@') || !str_contains($model, '/')) {
+            throw new \RuntimeException($label.' must be an exact provider/model reference (provider/model).');
+        }
+
+        return $model;
     }
 }

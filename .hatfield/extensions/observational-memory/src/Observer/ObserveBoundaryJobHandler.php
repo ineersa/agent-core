@@ -4,25 +4,26 @@ declare(strict_types=1);
 
 namespace Ineersa\HatfieldExt\ObservationalMemory\Observer;
 
-use Ineersa\Hatfield\ExtensionApi\Agent\AgentCallRequestDTO;
-use Ineersa\Hatfield\ExtensionApi\Agent\AgentToolDTO;
 use Ineersa\Hatfield\ExtensionApi\Agent\ExtensionAgentJobHandlerInterface;
+use Ineersa\Hatfield\ExtensionApi\Agent\ExtensionAgentJobRequestDTO;
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
-use Ineersa\Hatfield\ExtensionApi\Session\SessionEventDTO;
 use Ineersa\HatfieldExt\ObservationalMemory\Runtime\OmPaths;
 use Ineersa\HatfieldExt\ObservationalMemory\Runtime\OmSettings;
+use Ineersa\HatfieldExt\ObservationalMemory\Storage\MemoryGenerationRepository;
 use Ineersa\HatfieldExt\ObservationalMemory\Storage\ObservationRepository;
 use Ineersa\HatfieldExt\ObservationalMemory\Storage\OmDatabaseFactory;
+use Ineersa\HatfieldExt\ObservationalMemory\Support\OmIdentity;
 use Psr\Log\LoggerInterface;
 
 /**
- * Async worker-local Observer pipeline.
+ * Async worker-local Observer job entrypoint.
  *
- * Runs inside the Hatfield extension_agent Messenger worker with process-local
- * ExtensionApi (agent runner + session event reader).
+ * After all chunks for the boundary are durable, may dispatch threshold Reflector job.
  */
 final readonly class ObserveBoundaryJobHandler implements ExtensionAgentJobHandlerInterface
 {
+    public const string REFLECT_HANDLER_ID = 'observational_memory.reflect_generation';
+
     public function __construct(
         private LoggerInterface $logger,
     ) {
@@ -31,10 +32,6 @@ final readonly class ObserveBoundaryJobHandler implements ExtensionAgentJobHandl
     public function handle(ExtensionApiInterface $api, array $payload, ?string $jobId, ?string $correlationId): void
     {
         $settings = OmSettings::fromApi($api);
-        if (!$settings->enabled) {
-            return;
-        }
-
         $runId = (string) ($payload['run_id'] ?? '');
         $terminalEndSeq = (int) ($payload['terminal_end_seq'] ?? 0);
         $terminalStatus = (string) ($payload['terminal_status'] ?? '');
@@ -47,193 +44,121 @@ final readonly class ObserveBoundaryJobHandler implements ExtensionAgentJobHandl
         // reuse a process-wide connection that could point at another CWD.
         $connection = OmDatabaseFactory::connectAndMigrate($paths->databasePath, $this->logger);
         $repository = new ObservationRepository($connection);
+        $generationRepository = new MemoryGenerationRepository($connection);
 
         $rendererVersion = (string) ($payload['renderer_version'] ?? $settings->rendererVersion);
         $observerSchemaVersion = (string) ($payload['observer_schema_version'] ?? $settings->observerSchemaVersion);
+        $effectiveSettings = $settings->withRendererAndObserverVersions($rendererVersion, $observerSchemaVersion);
 
-        $latestEnd = $repository->latestCoveredEndSeq($runId, $rendererVersion, $observerSchemaVersion);
-        $sourceStartSeq = null === $latestEnd ? 1 : $latestEnd + 1;
-        if ($sourceStartSeq > $terminalEndSeq) {
-            $this->logger->info('om.observe.already_covered_range', [
-                'component' => 'observational_memory',
-                'event_type' => 'om.observe.already_covered_range',
-                'run_id' => $runId,
-                'job_id' => $jobId,
-                'correlation_id' => $correlationId,
-                'terminal_end_seq' => $terminalEndSeq,
-            ]);
-
-            return;
-        }
-
-        /** @var list<SessionEventDTO> $events */
-        $events = [];
-        foreach ($api->sessionEvents()->readRange($runId, $sourceStartSeq, $terminalEndSeq) as $event) {
-            if ($event instanceof SessionEventDTO) {
-                $events[] = $event;
-            }
-        }
-
-        $renderer = new OmInteractionRenderer();
-        $rendered = $renderer->render(
+        (new ObserverPipeline($this->logger))->observeThrough(
+            api: $api,
+            repository: $repository,
+            generationRepository: $generationRepository,
+            settings: $effectiveSettings,
             runId: $runId,
-            events: $events,
             terminalEndSeq: $terminalEndSeq,
             terminalStatus: $terminalStatus,
-            rendererVersion: $rendererVersion,
-            toolResultMaxChars: $settings->toolResultMaxChars,
-            inputBudgetTokens: $settings->observerInputBudgetTokens,
+            jobId: $jobId,
+            correlationId: $correlationId,
         );
 
-        $coverageKey = hash('sha256', implode('|', [
-            $runId,
-            $rendered['boundary_key'],
-            $rendererVersion,
-            $observerSchemaVersion,
-        ]));
+        $this->maybeDispatchThresholdReflection(
+            api: $api,
+            repository: $repository,
+            generationRepository: $generationRepository,
+            settings: $settings,
+            runId: $runId,
+            jobId: $jobId,
+            correlationId: $correlationId,
+        );
+    }
 
-        if ($repository->hasCompatibleCoverage($coverageKey, $rendered['source_digest'])) {
-            $this->logger->info('om.observe.coverage_noop', [
+    private function maybeDispatchThresholdReflection(
+        ExtensionApiInterface $api,
+        ObservationRepository $repository,
+        MemoryGenerationRepository $generationRepository,
+        OmSettings $settings,
+        string $runId,
+        ?string $jobId,
+        ?string $correlationId,
+    ): void {
+        $candidate = $repository->activeCandidateSet($runId);
+        if ($candidate['token_count'] <= $settings->reflectAfterObservationTokens) {
+            return;
+        }
+        if ([] === $candidate['observation_ids']) {
+            return;
+        }
+        // Suppress re-dispatch when this exact set already has running/succeeded/failed.
+        // Failed remains reclaimable by Messenger redelivery of the same job id; new
+        // observe boundaries must not create another deterministic failed job forever.
+        if ($generationRepository->hasTerminalOrInFlightGenerationForSet($runId, $candidate['observation_set_hash'])) {
+            $this->logger->info('om.observe.threshold_suppressed', [
                 'component' => 'observational_memory',
-                'event_type' => 'om.observe.coverage_noop',
+                'event_type' => 'om.observe.threshold_suppressed',
                 'run_id' => $runId,
                 'job_id' => $jobId,
                 'correlation_id' => $correlationId,
+                'observation_set_hash' => $candidate['observation_set_hash'],
+                'token_count' => $candidate['token_count'],
             ]);
 
             return;
         }
 
-        $observerModel = $settings->requireObserverModel();
-        $toolHandler = new RecordObservationsToolHandler(
-            runId: $runId,
-            boundaryKey: $rendered['boundary_key'],
-            observerSchemaVersion: $observerSchemaVersion,
-            sourceStartSeq: $rendered['source_start_seq'],
-            sourceEndSeq: $rendered['source_end_seq'],
-            allowedSourceRefs: $rendered['source_refs'],
-            maxObservations: $settings->maxObservations,
-            contentMaxChars: $settings->contentMaxChars,
+        $reflectorModel = $settings->requireReflectorModel();
+        $priorActive = $generationRepository->activeGenerationId($runId);
+        $generationId = OmIdentity::thresholdGenerationId(
+            $runId,
+            $priorActive,
+            $candidate['observation_set_hash'],
+            $reflectorModel,
+            $settings->reflectorSchemaVersion,
         );
 
-        $instructions = $this->observerInstructions(
-            maxObservations: $settings->maxObservations,
-            contentMaxChars: $settings->contentMaxChars,
-            sourceStartSeq: $rendered['source_start_seq'],
-            sourceEndSeq: $rendered['source_end_seq'],
-        );
+        $reflectJobId = $generationId;
+        try {
+            $api->dispatchExtensionAgentJob(new ExtensionAgentJobRequestDTO(
+                handlerId: self::REFLECT_HANDLER_ID,
+                payload: [
+                    'run_id' => $runId,
+                    'trigger' => 'threshold',
+                    'generation_id' => $generationId,
+                    'threshold_idempotency_key' => $generationId,
+                    'observation_set_hash' => $candidate['observation_set_hash'],
+                    'prior_active_generation_id' => $priorActive,
+                    'reflector_model' => $reflectorModel,
+                    'reflector_schema_version' => $settings->reflectorSchemaVersion,
+                    'token_count' => $candidate['token_count'],
+                    // Source watermark for the exact active candidate set claimed at dispatch.
+                    'required_end_seq' => $candidate['max_source_end_seq'],
+                    'required_start_seq' => 1,
+                ],
+                jobId: $reflectJobId,
+                correlationId: $runId,
+            ));
+        } catch (\Throwable $e) {
+            // Threshold dispatch failure must not drop observation progress; Messenger will surface job failures separately.
+            $this->logger->error('om.observe.threshold_dispatch_failed', [
+                'component' => 'observational_memory',
+                'event_type' => 'om.observe.threshold_dispatch_failed',
+                'run_id' => $runId,
+                'job_id' => $jobId,
+                'generation_id' => $generationId,
+                'exception_class' => $e::class,
+            ]);
+            throw $e;
+        }
 
-        $api->agent()->run(new AgentCallRequestDTO(
-            model: $observerModel,
-            sessionId: $runId,
-            instructions: $instructions,
-            input: $rendered['text'],
-            tools: [
-                new AgentToolDTO(
-                    name: 'record_observations',
-                    description: 'Record durable observations for the completed interaction. Call exactly once with validated observations (may be empty list).',
-                    parametersJsonSchema: [
-                        'type' => 'object',
-                        'additionalProperties' => false,
-                        'required' => ['observations'],
-                        'properties' => [
-                            'observations' => [
-                                'type' => 'array',
-                                'maxItems' => $settings->maxObservations,
-                                'items' => [
-                                    'type' => 'object',
-                                    'additionalProperties' => false,
-                                    'required' => ['content', 'relevance', 'source_refs'],
-                                    'properties' => [
-                                        'content' => [
-                                            'type' => 'string',
-                                            'minLength' => 1,
-                                            'maxLength' => $settings->contentMaxChars,
-                                        ],
-                                        'relevance' => [
-                                            'type' => 'integer',
-                                            'minimum' => 0,
-                                            'maximum' => 100,
-                                        ],
-                                        'source_refs' => [
-                                            'type' => 'array',
-                                            'minItems' => 1,
-                                            'items' => [
-                                                'type' => 'object',
-                                                'additionalProperties' => false,
-                                                'required' => ['run_id', 'seq'],
-                                                'properties' => [
-                                                    'run_id' => ['type' => 'string'],
-                                                    'seq' => ['type' => 'integer', 'minimum' => 1],
-                                                ],
-                                            ],
-                                        ],
-                                    ],
-                                ],
-                            ],
-                        ],
-                    ],
-                    handler: $toolHandler,
-                ),
-            ],
-            correlationId: $jobId ?? $correlationId,
-            // Exactly-one record tool + room for one/two model corrections.
-            maxToolCalls: 3,
-        ));
-
-        $observations = $toolHandler->collected();
-        $coveredAt = (new \DateTimeImmutable('now', new \DateTimeZone('UTC')))->format(\DateTimeInterface::ATOM);
-        $result = $repository->commitBoundaryCoverage(
-            coverageKey: $coverageKey,
-            runId: $runId,
-            boundaryKey: $rendered['boundary_key'],
-            sourceStartSeq: $rendered['source_start_seq'],
-            sourceEndSeq: $rendered['source_end_seq'],
-            sourceDigest: $rendered['source_digest'],
-            rendererVersion: $rendererVersion,
-            observerSchemaVersion: $observerSchemaVersion,
-            observerModel: $observerModel,
-            observations: $observations,
-            coveredAt: $coveredAt,
-        );
-
-        $this->logger->info('om.observe.persisted', [
+        $this->logger->info('om.observe.threshold_dispatched', [
             'component' => 'observational_memory',
-            'event_type' => 'om.observe.persisted',
+            'event_type' => 'om.observe.threshold_dispatched',
             'run_id' => $runId,
             'job_id' => $jobId,
             'correlation_id' => $correlationId,
-            'status' => $result['status'],
-            'observation_count' => $result['observation_count'],
-            'render_profile' => $rendered['profile'],
-            'token_estimate' => $rendered['token_estimate'],
-            'source_start_seq' => $rendered['source_start_seq'],
-            'source_end_seq' => $rendered['source_end_seq'],
+            'generation_id' => $generationId,
+            'observation_set_hash' => $candidate['observation_set_hash'],
+            'token_count' => $candidate['token_count'],
         ]);
-    }
-
-    private function observerInstructions(
-        int $maxObservations,
-        int $contentMaxChars,
-        int $sourceStartSeq,
-        int $sourceEndSeq,
-    ): string {
-        return <<<PROMPT
-You are the Observational Memory Observer for Hatfield.
-
-Extract durable, high-signal observations from the completed interaction.
-Call the record_observations tool exactly once.
-If nothing durable is worth storing, call it with an empty observations list.
-
-Rules:
-- Max {$maxObservations} observations.
-- Each content must be non-empty and <= {$contentMaxChars} characters.
-- relevance is an integer 0..100.
-- Every observation must cite source_refs as {run_id, seq} pairs from the provided interaction only.
-- Allowed sequence range is {$sourceStartSeq}..{$sourceEndSeq}.
-- Prefer durable facts, decisions, constraints, file/path identities, and unresolved questions.
-- Do not invent events outside the provided interaction.
-- Do not include secrets, credentials, or raw oversized tool dumps.
-PROMPT;
     }
 }

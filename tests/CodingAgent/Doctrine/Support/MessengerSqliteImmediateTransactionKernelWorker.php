@@ -61,8 +61,16 @@ $transport = MessengerSqliteImmediateTransactionKernelTestKernel::getContainerFo
 try {
     match ($mode) {
         'seed-message' => seedMessage($transport, $argv[2] ?? '', $argv[3] ?? ''),
-        'hold-writer' => holdWriter($transport, $argv[2] ?? '', $argv[3] ?? '', (int) ($argv[4] ?? '200')),
-        'claim-message' => claimMessage($transport, $argv[2] ?? '', $argv[3] ?? '', $argv[4] ?? ''),
+        'hold-writer' => holdWriter($transport, $argv[2] ?? '', $argv[3] ?? '', (int) ($argv[4] ?? '30000')),
+        'claim-message' => claimMessage(
+            $transport,
+            $argv[2] ?? '',
+            $argv[3] ?? '',
+            $argv[4] ?? '',
+            $argv[5] ?? '',
+            $argv[6] ?? '',
+            (int) ($argv[7] ?? '30000'),
+        ),
         'delete-queue' => deleteQueue($transport, $argv[2] ?? ''),
         'nested-savepoint-probe' => nestedSavepointProbe($transport),
         'rollback-probe' => rollbackProbe($transport),
@@ -100,7 +108,16 @@ function seedMessage(Connection $transport, string $queueName, string $messageId
     file_put_contents($messageIdPath, (string) $messageId);
 }
 
-function holdWriter(Connection $transport, string $readyPath, string $releasePath, int $holdMs): void
+/**
+ * Hold the SQLite writer slot until the parent signals release.
+ *
+ * Ordering invariant: parent only starts this mode after the claim worker has
+ * already booted and signaled claim-ready, so kernel startup never consumes the
+ * measured contention window.
+ *
+ * @param int $safetyDeadlineMs long upper bound so a stuck parent cannot leak this process forever
+ */
+function holdWriter(Connection $transport, string $readyPath, string $releasePath, int $safetyDeadlineMs): void
 {
     if ('' === $readyPath || '' === $releasePath) {
         throw new InvalidArgumentException('hold-writer requires ready and release paths');
@@ -108,19 +125,53 @@ function holdWriter(Connection $transport, string $readyPath, string $releasePat
     // BEGIN IMMEDIATE reserves the SQLite writer slot; no durable DDL needed for the barrier.
     $transport->beginTransaction();
     touch($readyPath);
-    $deadline = microtime(true) + max(1, $holdMs) / 1000;
+    $deadline = microtime(true) + max(1, $safetyDeadlineMs) / 1000;
     while (!is_file($releasePath) && microtime(true) < $deadline) {
         usleep(2000);
+    }
+    if (!is_file($releasePath)) {
+        $transport->rollBack();
+        throw new RuntimeException(sprintf('hold-writer safety deadline (%dms) elapsed without release signal', $safetyDeadlineMs));
     }
     $transport->commit();
 }
 
-function claimMessage(Connection $transport, string $queueName, string $expectedIdPath, string $acquiredPath): void
-{
-    if ('' === $queueName || '' === $expectedIdPath || '' === $acquiredPath) {
-        throw new InvalidArgumentException('claim-message requires queue, expected-id path, acquired path');
+/**
+ * Claim a seeded messenger row under BEGIN IMMEDIATE contention.
+ *
+ * Ordering invariant:
+ * 1. Kernel is fully booted before claim-ready is signaled.
+ * 2. beginTransaction() is not attempted until claim-go is present (holder already owns writer).
+ * 3. begin_elapsed_ms therefore measures only the deliberate writer-lock wait, not kernel boot.
+ *
+ * @param int $safetyDeadlineMs long upper bound so a stuck parent cannot leak this process forever
+ */
+function claimMessage(
+    Connection $transport,
+    string $queueName,
+    string $expectedIdPath,
+    string $acquiredPath,
+    string $claimReadyPath,
+    string $claimGoPath,
+    int $safetyDeadlineMs,
+): void {
+    if ('' === $queueName || '' === $expectedIdPath || '' === $acquiredPath || '' === $claimReadyPath || '' === $claimGoPath) {
+        throw new InvalidArgumentException('claim-message requires queue, expected-id path, acquired path, claim-ready path, claim-go path');
     }
     $expectedId = (int) trim((string) file_get_contents($expectedIdPath));
+
+    // Signal readiness only after kernel boot + connection resolve so the parent
+    // can start the holder without racing claim startup cost into the measurement.
+    touch($claimReadyPath);
+
+    $goDeadline = microtime(true) + max(1, $safetyDeadlineMs) / 1000;
+    while (!is_file($claimGoPath) && microtime(true) < $goDeadline) {
+        usleep(2000);
+    }
+    if (!is_file($claimGoPath)) {
+        throw new RuntimeException(sprintf('claim-message safety deadline (%dms) elapsed without claim-go signal', $safetyDeadlineMs));
+    }
+
     $claimStarted = microtime(true);
     $beginStarted = microtime(true);
     $transport->beginTransaction();

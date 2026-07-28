@@ -30,10 +30,6 @@ final readonly class ObserveBoundaryTerminalHook implements AfterTurnCommitHookI
 
     public function onAfterTurnCommit(AfterTurnCommitHookContextDTO $context): void
     {
-        if (!$this->settings->enabled) {
-            return;
-        }
-
         $terminal = $this->detectTerminal($context);
         if (null === $terminal) {
             return;

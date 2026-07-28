@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Extension;
 
+use Ineersa\Hatfield\ExtensionApi\Compaction\BeforeCompactionHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterTurnCommitHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Prompt\PromptContributorInterface;
 use Ineersa\Hatfield\ExtensionApi\Prompt\PromptContributorProviderInterface;
@@ -53,6 +54,9 @@ final class ExtensionHookRegistry implements PromptContributorProviderInterface,
 
     /** @var list<AfterTurnCommitHookInterface> */
     private array $afterTurnCommitHooks = [];
+
+    /** @var list<BeforeCompactionHookInterface> */
+    private array $beforeCompactionHooks = [];
 
     public function addToolCallHook(ToolCallHookInterface $hook): void
     {
@@ -132,5 +136,16 @@ final class ExtensionHookRegistry implements PromptContributorProviderInterface,
     public function afterTurnCommitHooks(): array
     {
         return $this->afterTurnCommitHooks;
+    }
+
+    public function addBeforeCompactionHook(BeforeCompactionHookInterface $hook): void
+    {
+        $this->beforeCompactionHooks[] = $hook;
+    }
+
+    /** @return list<BeforeCompactionHookInterface> */
+    public function beforeCompactionHooks(): array
+    {
+        return $this->beforeCompactionHooks;
     }
 }
