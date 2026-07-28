@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Tests\Application\Pipeline;
 
-use Ineersa\AgentCore\Application\Handler\CommandHandlerRegistry;
 use Ineersa\AgentCore\Application\Handler\CommandRouter;
 use Ineersa\AgentCore\Application\Pipeline\ApplyCommandHandler;
 use Ineersa\AgentCore\Application\Pipeline\CommandMailboxPolicy;
@@ -126,7 +125,7 @@ final class PendingHumanInputAnswerValidationTest extends TestCase
     private function applyHandler(?TestMessageBus $bus = null): ApplyCommandHandler
     {
         $store = new InMemoryCommandStore();
-        $router = new CommandRouter(new CommandHandlerRegistry([]));
+        $router = new CommandRouter([]);
 
         return new ApplyCommandHandler(
             commandStore: $store,

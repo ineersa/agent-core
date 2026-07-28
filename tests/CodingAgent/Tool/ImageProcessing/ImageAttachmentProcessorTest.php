@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Tool\ImageProcessing;
 
 use Ineersa\CodingAgent\Config\ImageToolConfig;
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tool\ImageProcessing\ImageAttachmentProcessor;
 use PHPUnit\Framework\TestCase;
 
@@ -31,8 +32,7 @@ final class ImageAttachmentProcessorTest extends TestCase
 
         $this->processor = new ImageAttachmentProcessor($this->config);
 
-        $this->tmpDir = sys_get_temp_dir().'/hatfield_view_image_proc_test_'.bin2hex(random_bytes(8));
-        mkdir($this->tmpDir, 0750, recursive: true);
+        $this->tmpDir = TestDirectoryIsolation::createOsTempDir('hatfield_view_image_proc_test');
     }
 
     protected function tearDown(): void

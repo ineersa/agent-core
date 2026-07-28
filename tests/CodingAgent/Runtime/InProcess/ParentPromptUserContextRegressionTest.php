@@ -17,8 +17,8 @@ use Ineersa\AgentCore\Domain\Event\EventFactory;
 use Ineersa\AgentCore\Domain\Message\StartRun;
 use Ineersa\AgentCore\Domain\Message\StartRunPayload;
 use Ineersa\AgentCore\Domain\Run\StartRunInput;
-use Ineersa\AgentCore\Infrastructure\Storage\HotPromptStateStore;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore;
+use Ineersa\AgentCore\Infrastructure\Storage\InMemoryPromptStateStore;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryRunStore;
 use Ineersa\AgentCore\Tests\Application\Handler\InMemoryIdempotencyStore;
 use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
@@ -194,7 +194,7 @@ final class ParentRegressionCapturingRunner implements AgentRunnerInterface
             commandStore: $commandStore,
             hotPromptStateRebuilder: new SessionHotPromptReplayService(
                 $eventStore,
-                new HotPromptStateStore(),
+                new InMemoryPromptStateStore(),
                 new PromptStateReplayService(),
                 new ReplayEventPreparer(),
             ),

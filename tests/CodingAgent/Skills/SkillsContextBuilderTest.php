@@ -13,6 +13,7 @@ use Ineersa\CodingAgent\Skills\SkillContextRenderer;
 use Ineersa\CodingAgent\Skills\SkillDiscovery;
 use Ineersa\CodingAgent\Skills\SkillsConfig;
 use Ineersa\CodingAgent\Skills\SkillsContextBuilder;
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -26,12 +27,12 @@ final class SkillsContextBuilderTest extends TestCase
 
     protected function setUp(): void
     {
-        $this->tmpDir = sys_get_temp_dir().'/skills_builder_test_'.bin2hex(random_bytes(8));
+        $this->tmpDir = TestDirectoryIsolation::createOsTempDir('skills_builder_test');
     }
 
     protected function tearDown(): void
     {
-        $this->rmdirRecursive($this->tmpDir);
+        TestDirectoryIsolation::removeDirectory($this->tmpDir);
     }
 
     public function testBuildReturnsSkillsInstructionsWhenSkillsFound(): void
@@ -203,27 +204,5 @@ ARCH_BODY_UNIQUE');
             renderer: new SkillContextRenderer(),
             extractor: new MarkdownFrontmatterExtractor(),
         );
-    }
-
-    private function rmdirRecursive(string $path): void
-    {
-        if (!is_dir($path)) {
-            return;
-        }
-
-        $entries = new \RecursiveIteratorIterator(
-            new \RecursiveDirectoryIterator($path, \RecursiveDirectoryIterator::SKIP_DOTS),
-            \RecursiveIteratorIterator::CHILD_FIRST,
-        );
-
-        foreach ($entries as $entry) {
-            if ($entry->isDir()) {
-                @rmdir((string) $entry);
-            } else {
-                @unlink((string) $entry);
-            }
-        }
-
-        @rmdir($path);
     }
 }

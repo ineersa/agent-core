@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Tests\Application\Handler;
 
-use Ineersa\AgentCore\Application\Handler\CommandHandlerRegistry;
 use Ineersa\AgentCore\Application\Handler\CommandRouter;
 use Ineersa\AgentCore\Contract\Extension\CommandHandlerInterface;
 use Ineersa\AgentCore\Domain\Command\CoreCommandKind;
@@ -16,7 +15,7 @@ final class CommandRouterContractTest extends TestCase
 {
     public function testRoutesExtensionCommandWhenHandlerAllowsCancelSafe(): void
     {
-        $router = new CommandRouter(new CommandHandlerRegistry([
+        $router = new CommandRouter([
             new class implements CommandHandlerInterface {
                 public function supports(string $kind): bool
                 {
@@ -35,7 +34,7 @@ final class CommandRouterContractTest extends TestCase
                     return [];
                 }
             },
-        ]));
+        ]);
 
         $command = $this->extensionCommand(kind: 'ext:compaction:compact', options: ['cancel_safe' => true]);
 
@@ -47,7 +46,7 @@ final class CommandRouterContractTest extends TestCase
 
     public function testRejectsExtensionCommandWhenCancelSafeCapabilityIsMissing(): void
     {
-        $router = new CommandRouter(new CommandHandlerRegistry([
+        $router = new CommandRouter([
             new class implements CommandHandlerInterface {
                 public function supports(string $kind): bool
                 {
@@ -66,7 +65,7 @@ final class CommandRouterContractTest extends TestCase
                     return [];
                 }
             },
-        ]));
+        ]);
 
         $command = $this->extensionCommand(kind: 'ext:compaction:compact', options: ['cancel_safe' => true]);
 
@@ -78,7 +77,7 @@ final class CommandRouterContractTest extends TestCase
 
     public function testRejectsUnknownExtensionCommandDeterministically(): void
     {
-        $router = new CommandRouter(new CommandHandlerRegistry([]));
+        $router = new CommandRouter([]);
 
         $command = $this->extensionCommand(kind: 'ext:compaction:compact', options: []);
 
@@ -90,7 +89,7 @@ final class CommandRouterContractTest extends TestCase
 
     public function testRejectsUnknownExtensionCommandOptionKeys(): void
     {
-        $router = new CommandRouter(new CommandHandlerRegistry([]));
+        $router = new CommandRouter([]);
 
         $command = $this->extensionCommand(kind: 'ext:compaction:compact', options: ['unknown' => true]);
 
@@ -102,7 +101,7 @@ final class CommandRouterContractTest extends TestCase
 
     public function testInvalidCancelSafeOptionTypeDefaultsToFalseForExtensionCommands(): void
     {
-        $router = new CommandRouter(new CommandHandlerRegistry([
+        $router = new CommandRouter([
             new class implements CommandHandlerInterface {
                 public function supports(string $kind): bool
                 {
@@ -121,7 +120,7 @@ final class CommandRouterContractTest extends TestCase
                     return [];
                 }
             },
-        ]));
+        ]);
 
         $command = $this->extensionCommand(kind: 'ext:compaction:compact', options: ['cancel_safe' => 'yes']);
 
@@ -133,7 +132,7 @@ final class CommandRouterContractTest extends TestCase
 
     public function testRoutesCoreContinueWithAutoRetryMetadataInPayloadOnly(): void
     {
-        $router = new CommandRouter(new CommandHandlerRegistry([]));
+        $router = new CommandRouter([]);
 
         $command = new ApplyCommand(
             runId: 'run-auto-retry-route',
@@ -160,7 +159,7 @@ final class CommandRouterContractTest extends TestCase
 
     public function testRejectsAutoRetryMetadataInOptionsForCoreContinue(): void
     {
-        $router = new CommandRouter(new CommandHandlerRegistry([]));
+        $router = new CommandRouter([]);
 
         $command = new ApplyCommand(
             runId: 'run-auto-retry-reject',
@@ -187,7 +186,7 @@ final class CommandRouterContractTest extends TestCase
 
     public function testRejectsCancelSafeOptionForCoreCommands(): void
     {
-        $router = new CommandRouter(new CommandHandlerRegistry([]));
+        $router = new CommandRouter([]);
 
         $command = new ApplyCommand(
             runId: 'run-stage-07',

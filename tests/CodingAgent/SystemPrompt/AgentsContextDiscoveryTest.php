@@ -9,6 +9,7 @@ use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\SystemPrompt\AgentsContextDiscovery;
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -33,13 +34,13 @@ final class AgentsContextDiscoveryTest extends TestCase
 
     protected function setUp(): void
     {
-        $this->tmpDir = sys_get_temp_dir().'/agents_context_test_'.bin2hex(random_bytes(8));
+        $this->tmpDir = TestDirectoryIsolation::createOsTempDir('agents_context_test');
         mkdir($this->tmpDir.'/.hatfield', 0777, true);
     }
 
     protected function tearDown(): void
     {
-        $this->rmdirRecursive($this->tmpDir);
+        TestDirectoryIsolation::removeDirectory($this->tmpDir);
     }
 
     /* ───────── Basic discovery ───────── */
@@ -304,27 +305,5 @@ final class AgentsContextDiscoveryTest extends TestCase
                 cwd: $cwd ?? $this->tmpDir,
             ),
         );
-    }
-
-    private function rmdirRecursive(string $path): void
-    {
-        if (!is_dir($path)) {
-            return;
-        }
-
-        $entries = new \RecursiveIteratorIterator(
-            new \RecursiveDirectoryIterator($path, \RecursiveDirectoryIterator::SKIP_DOTS),
-            \RecursiveIteratorIterator::CHILD_FIRST,
-        );
-
-        foreach ($entries as $entry) {
-            if ($entry->isDir()) {
-                @rmdir((string) $entry);
-            } else {
-                @unlink((string) $entry);
-            }
-        }
-
-        @rmdir($path);
     }
 }

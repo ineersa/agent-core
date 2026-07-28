@@ -299,7 +299,6 @@ Extensions interact with the TUI through explicit slots, not direct widget mutat
 - `src/Tui/Extension/TuiExtensionContext.php` — contract
 - `src/Tui/Extension/SlotBasedTuiExtensionContext.php` — delegates to TuiSlotRegistry
 - `src/Tui/Layout/TuiSlotRegistry.php` — central slot registry
-- `src/Tui/Layout/ChatLayout.php` — assembles layout from slots
 
 ### Project extensions: Symfony TUI overlays (`ExtensionApi`)
 
@@ -547,7 +546,6 @@ ID→index map → `ChatScreen::applyTranscriptChangeSet` → stateful
   invalidation — not a dual renderer.
 - **Mounted memory/layout** is O(number of visual nodes). Symfony's widget
   revision/render cache remains the only rendered-output cache.
-  `TranscriptBlockWidget` offscreen line cache is test-only, not a production
   fallback.
 
 Hatfield uses Symfony's stock `Tui` and stock `ScreenWriter`. Residual bounce
@@ -596,7 +594,6 @@ The editor subsystem has two distinct class families:
 |-------|------|------|
 | `PromptEditor` | `src/Tui/Editor/PromptEditor.php` | DI service facade wrapping Symfony TUI's `EditorWidget`. Owns text lifecycle: `extract()`, `clear()`, `getState()`. Interactive text input. |
 | `EditorState` | `src/Tui/Editor/EditorState.php` | Immutable snapshot DTO for session persistence and test fixtures. Stores logical lines only; no cursor tracking. |
-| `PromptEditorWidget` | `src/Tui/Editor/PromptEditorWidget.php` | Static `TuiWidget` renderable for placeholder display in `ChatLayout`. **Not** the interactive editor — see `PromptEditor` for that. |
 
 `PromptEditor` owns an internal `EditorWidget` (Symfony TUI). `ChatScreen`
 currently creates its own `EditorWidget` directly — EDITOR-02 will shift to

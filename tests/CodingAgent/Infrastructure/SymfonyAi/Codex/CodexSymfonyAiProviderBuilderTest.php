@@ -17,6 +17,7 @@ use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Infrastructure\SymfonyAi\Codex\CodexSymfonyAiProviderBuilder;
 use Ineersa\CodingAgent\Infrastructure\SymfonyAi\SymfonyAiProviderFactory;
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\AI\Platform\Bridge\OpenAICodex\CodexWebSocketConnectionCache;
@@ -34,7 +35,7 @@ final class CodexSymfonyAiProviderBuilderTest extends TestCase
     {
         parent::setUp();
 
-        $this->tmpDir = sys_get_temp_dir().'/hatfield-factory-test-'.bin2hex(random_bytes(8));
+        $this->tmpDir = TestDirectoryIsolation::createOsTempDir('hatfield-factory-test');
         @mkdir($this->tmpDir.'/.hatfield', 0755, true);
 
         $store = new FlockStore($this->tmpDir);

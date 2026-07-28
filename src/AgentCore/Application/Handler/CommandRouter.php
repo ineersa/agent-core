@@ -11,10 +11,17 @@ use Ineersa\AgentCore\Domain\Message\ApplyCommand;
 
 final class CommandRouter
 {
+    /** @var iterable<CommandHandlerInterface> */
+    private readonly iterable $handlers;
+
+    /**
+     * @param iterable<CommandHandlerInterface> $handlers
+     */
     public function __construct(
-        private readonly CommandHandlerRegistry $registry,
+        iterable $handlers = [],
         private readonly string $extensionPrefix = 'ext:',
     ) {
+        $this->handlers = $handlers;
     }
 
     public function route(ApplyCommand $command): RoutedCommand
@@ -42,7 +49,7 @@ final class CommandRouter
             );
         }
 
-        $handler = $this->registry->find($command->kind);
+        $handler = $this->findHandler($command->kind);
         if (null === $handler) {
             return RoutedCommand::rejected($command->kind, \sprintf('No extension command handler registered for "%s".', $command->kind));
         }
@@ -60,7 +67,18 @@ final class CommandRouter
 
     public function handlerFor(string $kind): ?CommandHandlerInterface
     {
-        return $this->registry->find($kind);
+        return $this->findHandler($kind);
+    }
+
+    private function findHandler(string $kind): ?CommandHandlerInterface
+    {
+        foreach ($this->handlers as $handler) {
+            if ($handler->supports($kind)) {
+                return $handler;
+            }
+        }
+
+        return null;
     }
 
     private function validateOptionKeys(ApplyCommand $command): ?string

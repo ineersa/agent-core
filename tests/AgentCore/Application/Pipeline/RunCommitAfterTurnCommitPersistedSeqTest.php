@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Tests\Application\Pipeline;
 
 use Ineersa\AgentCore\Application\Handler\HookDispatcher;
-use Ineersa\AgentCore\Application\Handler\HookSubscriberRegistry;
 use Ineersa\AgentCore\Application\Handler\StepDispatcher;
 use Ineersa\AgentCore\Application\Pipeline\RunCommit;
 use Ineersa\AgentCore\Application\Replay\PromptStateReplayService;
@@ -71,7 +70,7 @@ final class RunCommitAfterTurnCommitPersistedSeqTest extends TestCase
             stepDispatcher: new StepDispatcher(new TestMessageBus()),
             logger: new TestLogger(),
             hookDispatcher: new HookDispatcher(
-                new HookSubscriberRegistry([$subscriber]),
+                [$subscriber],
                 new EventDispatcher(),
                 $this->createHookSerializer(),
                 $this->createHookSerializer(),

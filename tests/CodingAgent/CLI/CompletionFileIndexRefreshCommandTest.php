@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Tests\CLI;
 
 use Ineersa\CodingAgent\CLI\CompletionFileIndexRefreshCommand;
 use Ineersa\CodingAgent\CLI\FileMentionIndexBuilder;
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
@@ -22,13 +23,12 @@ final class CompletionFileIndexRefreshCommandTest extends TestCase
 
     protected function setUp(): void
     {
-        $this->tmpDir = sys_get_temp_dir().'/editor09-cmd-'.getmypid().'-'.hrtime(true);
-        mkdir($this->tmpDir, 0755, true);
+        $this->tmpDir = TestDirectoryIsolation::createOsTempDir('editor09-cmd');
     }
 
     protected function tearDown(): void
     {
-        $this->removeDir($this->tmpDir);
+        TestDirectoryIsolation::removeDirectory($this->tmpDir);
     }
 
     #[Test]
@@ -108,32 +108,5 @@ final class CompletionFileIndexRefreshCommandTest extends TestCase
         );
 
         return new CompletionFileIndexRefreshCommand($builder, $this->createLogger());
-    }
-
-    private function removeDir(string $dir): void
-    {
-        if (!is_dir($dir)) {
-            return;
-        }
-
-        $iterator = new \RecursiveIteratorIterator(
-            new \RecursiveDirectoryIterator($dir, \RecursiveDirectoryIterator::SKIP_DOTS),
-            \RecursiveIteratorIterator::CHILD_FIRST,
-        );
-        foreach ($iterator as $fileinfo) {
-            $path = $fileinfo->getRealPath();
-            if (false === $path) {
-                continue;
-            }
-            if ($fileinfo->isDir()) {
-                @chmod($path, 0700);
-                @rmdir($path);
-            } else {
-                @chmod($path, 0600);
-                @unlink($path);
-            }
-        }
-        @chmod($dir, 0700);
-        @rmdir($dir);
     }
 }

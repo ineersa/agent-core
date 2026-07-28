@@ -81,45 +81,6 @@ function read_suite_junit_summary(string $suite): string
 /**
  * Extract risky-test summary from a PHPUnit log file.
  */
-function phpunit_risky_summary(string $logPath): string
-{
-    if (!is_file($logPath) || !is_readable($logPath)) {
-        return '';
-    }
-
-    $log = (string) file_get_contents($logPath);
-    if ('' === $log) {
-        return '';
-    }
-
-    if (!preg_match('/There were (\d+) risky tests?:/s', $log, $countMatch)) {
-        return '';
-    }
-
-    $riskyCount = (int) $countMatch[1];
-    if (0 === $riskyCount) {
-        return '';
-    }
-
-    if (!preg_match('/There were \d+ risky tests?:.*?(?=\n\nOK, |\n\nFAILURES!|\n\nERRORS!|\z)/s', $log, $blockMatch)) {
-        return 'risky='.$riskyCount;
-    }
-
-    $block = trim($blockMatch[0]);
-    $names = [];
-    foreach (explode("\n", $block) as $line) {
-        if (preg_match('/^\d+\)\s+(.+)/', $line, $nameMat)) {
-            $names[] = $nameMat[1];
-        }
-    }
-
-    $summary = 'risky='.$riskyCount;
-    if ([] !== $names) {
-        $summary .= ': '.implode(', ', $names);
-    }
-
-    return $summary;
-}
 
 // ─── Formatting helpers ────────────────────────────────────────────
 

@@ -91,9 +91,4 @@ final class FooterDataProvider
     {
         return $this->statusEntries;
     }
-
-    public function readonly(): ReadonlyFooterDataProvider
-    {
-        return new ReadonlyFooterDataProvider($this);
-    }
 }

@@ -6,7 +6,6 @@ namespace Ineersa\CodingAgent\Tests\Session;
 
 use Doctrine\ORM\EntityManagerInterface;
 use Ineersa\AgentCore\Application\Handler\HookDispatcher;
-use Ineersa\AgentCore\Application\Handler\HookSubscriberRegistry;
 use Ineersa\AgentCore\Application\Handler\StepDispatcher;
 use Ineersa\AgentCore\Application\Pipeline\RunCommit;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
@@ -186,9 +185,9 @@ final class ToolBatchSnapshotCleanupHookSubscriberTest extends TestCase
     private function createRunCommit(SessionToolBatchStore $store, InMemoryRunStore $runStore): RunCommit
     {
         $serializer = $this->createAfterTurnCommitSerializer();
-        $hookDispatcher = new HookDispatcher(new HookSubscriberRegistry([
+        $hookDispatcher = new HookDispatcher([
             new ToolBatchSnapshotCleanupHookSubscriber($store, new TestLogger()),
-        ]), new EventDispatcher(), $serializer, $serializer);
+        ], new EventDispatcher(), $serializer, $serializer);
 
         return new RunCommit(
             runStore: $runStore,

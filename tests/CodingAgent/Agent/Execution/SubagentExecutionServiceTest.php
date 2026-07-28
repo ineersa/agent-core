@@ -275,29 +275,6 @@ final class SubagentExecutionServiceTest extends IsolatedKernelTestCase
         );
     }
 
-    private function rmdirRecursive(string $dir): void
-    {
-        if (!is_dir($dir)) {
-            return;
-        }
-        $items = scandir($dir);
-        if (false === $items) {
-            return;
-        }
-        foreach ($items as $item) {
-            if ('.' === $item || '..' === $item) {
-                continue;
-            }
-            $path = $dir.'/'.$item;
-            if (is_dir($path)) {
-                $this->rmdirRecursive($path);
-            } else {
-                unlink($path);
-            }
-        }
-        rmdir($dir);
-    }
-
     private function makeService(array $overrides): SubagentExecutionService
     {
         $defaults = [

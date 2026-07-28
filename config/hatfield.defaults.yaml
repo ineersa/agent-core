@@ -272,8 +272,6 @@ extensions:
 
             # Destructive-in-paths list (reserved for serialization compatibility.
             # Currently not wired to any classification logic).
-            allow_destructive_in_paths: []
-
             # Additional filename/path patterns that require confirmation to read.
             # These are added on top of the built-in defaults (which cannot be removed).
             protected_read_patterns: []
