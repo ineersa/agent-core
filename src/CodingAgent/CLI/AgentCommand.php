@@ -26,21 +26,26 @@ use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Output\OutputInterface;
 
 /**
- * Unified agent command — TUI (default) or headless JSONL mode.
+ * Unified agent command — interactive TUI by default, plus headless/controller modes.
  *
- * Usage:
- *   agent                              # Interactive TUI mode (in-process transport)
- *   agent --headless                   # JSONL protocol on stdin/stdout
- *   agent --prompt="Do X"              # TUI with initial prompt
- *   agent --resume=<sessionId>         # Resume existing session
- *   agent --transport=process          # Use process-isolated transport in TUI mode
- *
- * Session persistence:
- *   Every TUI session creates a directory under .hatfield/sessions/<session-id>/
- *   containing state.json and events.jsonl. Transcript projection is rebuilt
- *   from events.jsonl on resume.
+ * Public installs expose this as the default `hatfield` entrypoint. Session data
+ * lives under .hatfield/sessions/<session-id>/ (state.json + events.jsonl).
  */
-#[AsCommand(name: 'agent', description: 'Agent session — TUI (default) or headless JSONL runtime')]
+#[AsCommand(
+    name: 'agent',
+    description: 'Launch an interactive Hatfield coding-agent session',
+    help: <<<'HELP'
+Starts the Hatfield coding-agent TUI in the current directory (or --cwd).
+Headless/controller options are for automation and internal process topology.
+
+  hatfield
+  hatfield --cwd=/path/to/project
+  hatfield --resume=<session-id>
+
+  hatfield list              List available commands
+  hatfield help <command>    Show help for a specific command
+HELP
+)]
 final class AgentCommand
 {
     public function __construct(
