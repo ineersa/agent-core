@@ -111,16 +111,6 @@ PHP;
             $this->assertSame([], $running, 'shutdown must clear tracked consumers');
         } finally {
             if (null !== $supervisor) {
-                foreach (['term_hang#0', 'term_exit#0'] as $key) {
-                    try {
-                        $process = $this->getConsumerProcess($supervisor, $key);
-                    } catch (\Throwable) {
-                        continue;
-                    }
-                    if ($process->isRunning()) {
-                        $process->stop(0);
-                    }
-                }
                 // shutdown() already cleared map on success; force-clear survivors on failure.
                 $ref = new \ReflectionClass($supervisor);
                 $prop = $ref->getProperty('consumers');
