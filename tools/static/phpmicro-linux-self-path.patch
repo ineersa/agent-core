@@ -1,0 +1,22 @@
+diff --git a/php_micro_fileinfo.c b/php_micro_fileinfo.c
+index 463d2c8..681a739 100644
+--- a/php_micro_fileinfo.c
++++ b/php_micro_fileinfo.c
+@@ -747,12 +747,15 @@ const char *micro_get_filename(void) {
+ }
+ 
+ #elif defined(__linux)
+-// use getauxval AT_EXECFN
++// Resolve self via /proc/self/exe (stable kernel path) instead of AT_EXECFN.
++// AT_EXECFN can place the relative argv0 at the end of a mapped arg page; musl
++// realpath() vector loads then cross into unmapped memory (SIGSEGV on relative
++// invocation of fused micro binaries).
+ const char *micro_get_filename(void) {
+     static char *self_filename = NULL;
+     if (NULL == self_filename) {
+         self_filename = malloc(PATH_MAX);
+-        (void)realpath((const char *)getauxval(AT_EXECFN), self_filename);
++        (void)realpath("/proc/self/exe", self_filename);
+     }
+     return self_filename;
+ }

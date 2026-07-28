@@ -78,6 +78,8 @@ function distribution_artifact_name(string $target): string
  *     php_source_sha256: string,
  *     phpmicro_repository: string,
  *     phpmicro_commit: string,
+ *     phpmicro_patch: string,
+ *     phpmicro_patch_sha256: string,
  *     extensions: list<string>,
  *     micro_fake_cli: bool
  * }
@@ -98,6 +100,8 @@ function distribution_static_pin(): array
     $phpSha = $data['php_source_sha256'] ?? null;
     $phpmicroRepo = $data['phpmicro_repository'] ?? null;
     $phpmicroCommit = $data['phpmicro_commit'] ?? null;
+    $phpmicroPatch = $data['phpmicro_patch'] ?? null;
+    $phpmicroPatchSha = $data['phpmicro_patch_sha256'] ?? null;
     $extensions = $data['extensions'] ?? null;
     if (
         !is_string($commit) || '' === $commit
@@ -106,9 +110,11 @@ function distribution_static_pin(): array
         || !is_string($phpSha) || 1 !== preg_match('/^[a-f0-9]{64}$/', $phpSha)
         || !is_string($phpmicroRepo) || '' === $phpmicroRepo
         || !is_string($phpmicroCommit) || '' === $phpmicroCommit
+        || !is_string($phpmicroPatch) || '' === $phpmicroPatch
+        || !is_string($phpmicroPatchSha) || 1 !== preg_match('/^[a-f0-9]{64}$/', $phpmicroPatchSha)
         || !is_array($extensions)
     ) {
-        throw new RuntimeException('tools/static/pin.json missing required keys (static_php_cli_*, php_version, php_source_sha256, phpmicro_*, extensions)');
+        throw new RuntimeException('tools/static/pin.json missing required keys (static_php_cli_*, php_version, php_source_sha256, phpmicro_*, phpmicro_patch*, extensions)');
     }
     if (1 !== preg_match('/^\d+\.\d+\.\d+$/', $phpVersion)) {
         throw new RuntimeException('tools/static/pin.json php_version must be an exact patch version (e.g. 8.5.8), got: '.$phpVersion);
@@ -121,6 +127,8 @@ function distribution_static_pin(): array
         'php_source_sha256' => $phpSha,
         'phpmicro_repository' => $phpmicroRepo,
         'phpmicro_commit' => $phpmicroCommit,
+        'phpmicro_patch' => $phpmicroPatch,
+        'phpmicro_patch_sha256' => $phpmicroPatchSha,
         'extensions' => array_values(array_map('strval', $extensions)),
         'micro_fake_cli' => (bool) ($data['micro_fake_cli'] ?? true),
     ];
@@ -222,6 +230,44 @@ function distribution_ensure_phpmicro_checkout(): string
         $pin['phpmicro_commit'],
         'phpmicro',
     );
+}
+
+/**
+ * Ensure pinned phpmicro checkout, reset the Linux self-path source file, and apply the
+ * tracked patch fail-closed. Cached tool checkout only — never touches the monorepo tree.
+ *
+ * Patch replaces realpath(getauxval(AT_EXECFN)) with realpath("/proc/self/exe") so relative
+ * invocation of fused Linux micro binaries does not SIGSEGV when AT_EXECFN sits at a page boundary.
+ */
+function distribution_prepare_phpmicro_checkout(): string
+{
+    $pin = distribution_static_pin();
+    $checkout = distribution_ensure_phpmicro_checkout();
+    $root = distribution_root();
+    $patchRel = $pin['phpmicro_patch'];
+    $patchPath = $root.'/'.$patchRel;
+    if (!is_file($patchPath)) {
+        throw new RuntimeException('Missing pinned phpmicro patch: '.$patchPath);
+    }
+    $actualSha = hash_file('sha256', $patchPath);
+    if (false === $actualSha || !hash_equals($pin['phpmicro_patch_sha256'], $actualSha)) {
+        throw new RuntimeException('phpmicro patch SHA-256 mismatch for '.$patchPath.' (expected '.$pin['phpmicro_patch_sha256'].', got '.(false === $actualSha ? 'unreadable' : $actualSha).')');
+    }
+
+    // Idempotent: dirty/cached prior apply → restore exact pinned file then re-apply.
+    \CastorTasks\run_checked(
+        'git -C '.escapeshellarg($checkout).' checkout '.escapeshellarg($pin['phpmicro_commit'])
+        .' -- '.escapeshellarg('php_micro_fileinfo.c')
+    );
+    \CastorTasks\run_checked(
+        'git -C '.escapeshellarg($checkout).' apply --check '.escapeshellarg($patchPath)
+    );
+    \CastorTasks\run_checked(
+        'git -C '.escapeshellarg($checkout).' apply '.escapeshellarg($patchPath)
+    );
+    echo "phpmicro prepared @{$pin['phpmicro_commit']} + {$patchRel}\n";
+
+    return $checkout;
 }
 
 /**
@@ -334,10 +380,10 @@ function distribution_build_micro_sfx(string $target): array
         echo "SPC doctor warning (continuing after host preflight): {$e->getMessage()}\n";
     }
 
-    $phpmicroPath = distribution_ensure_phpmicro_checkout();
+    $phpmicroPath = distribution_prepare_phpmicro_checkout();
     $customLocal = 'php-micro:'.$phpmicroPath;
 
-    echo "SPC download extensions={$extensions} php={$pin['php_version']} phpmicro={$pin['phpmicro_commit']}...\n";
+    echo "SPC download extensions={$extensions} php={$pin['php_version']} phpmicro={$pin['phpmicro_commit']} patch={$pin['phpmicro_patch']}...\n";
     \CastorTasks\run_checked(
         escapeshellarg($spcBin).' download'
         .' --for-extensions='.escapeshellarg($extensions)
@@ -419,7 +465,20 @@ function distribution_smoke_artifact(
         if ($isPhar) {
             $cmdBase = $prefix.escapeshellarg(\PHP_BINARY).' '.escapeshellarg($artifactPath);
         } else {
-            $cmdBase = $prefix.escapeshellarg($artifactPath);
+            // Relative invocation from isolated smoke CWD (v0.0.2 publish regression):
+            // absolute artifact path masks musl realpath(AT_EXECFN) SIGSEGV on Linux micro.
+            // Symlink keeps original dist bytes untouched; realpath of /proc/self/exe still
+            // resolves to the fused file after the pinned phpmicro self-path patch.
+            $absoluteArtifact = realpath($artifactPath);
+            if (false === $absoluteArtifact || !is_file($absoluteArtifact)) {
+                throw new RuntimeException('Unable to resolve absolute artifact path for relative smoke: '.$artifactPath);
+            }
+            $relativeName = 'hatfield';
+            $linkPath = $tmp.'/'.$relativeName;
+            if (!symlink($absoluteArtifact, $linkPath)) {
+                throw new RuntimeException('Unable to create relative smoke symlink: '.$linkPath.' -> '.$absoluteArtifact);
+            }
+            $cmdBase = $prefix.escapeshellarg('./'.$relativeName);
         }
 
         $version = \CastorTasks\run_checked($cmdBase.' --version 2>&1', $tmp);
@@ -1165,6 +1224,9 @@ function distribution_info(): void
     $pin = distribution_static_pin();
     echo 'SPC commit: '.$pin['static_php_cli_commit'].\PHP_EOL;
     echo 'PHP version: '.$pin['php_version'].\PHP_EOL;
+    echo 'phpmicro commit: '.$pin['phpmicro_commit'].\PHP_EOL;
+    echo 'phpmicro patch: '.$pin['phpmicro_patch'].\PHP_EOL;
+    echo 'phpmicro patch sha256: '.$pin['phpmicro_patch_sha256'].\PHP_EOL;
     echo 'Extensions: '.implode(',', $pin['extensions']).\PHP_EOL;
     foreach (HATFIELD_DIST_ARTIFACTS as $name) {
         $path = $dist.'/'.$name;

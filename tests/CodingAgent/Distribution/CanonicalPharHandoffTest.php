@@ -99,11 +99,27 @@ PHP;
         );
         $this->assertSame('https://github.com/static-php/phpmicro.git', $pin['phpmicro_repository'] ?? null);
         $this->assertSame('fb6d497b6f4cf138ee3851a30c905d64b7b19aed', $pin['phpmicro_commit'] ?? null);
+        $this->assertSame('tools/static/phpmicro-linux-self-path.patch', $pin['phpmicro_patch'] ?? null);
+        $this->assertSame(
+            '4b9b19379f76fe37a7e91ed202655b5d8b4464604e800de3bc9ea56006e70cc8',
+            $pin['phpmicro_patch_sha256'] ?? null,
+        );
+        $patchPath = $root.'/'.(string) $pin['phpmicro_patch'];
+        $this->assertFileExists($patchPath);
+        $this->assertSame(
+            $pin['phpmicro_patch_sha256'],
+            hash_file('sha256', $patchPath),
+            'tracked phpmicro patch bytes must match pin SHA-256',
+        );
+        $patchBody = (string) file_get_contents($patchPath);
+        $this->assertStringContainsString('realpath("/proc/self/exe"', $patchBody);
+        $this->assertStringContainsString('getauxval(AT_EXECFN)', $patchBody);
 
         // Invariant/format checks beyond exact literals.
         $this->assertMatchesRegularExpression('/^\d+\.\d+\.\d+$/', (string) $pin['php_version']);
         $this->assertMatchesRegularExpression('/^[a-f0-9]{64}$/', (string) $pin['php_source_sha256']);
         $this->assertMatchesRegularExpression('/^[a-f0-9]{40}$/', (string) $pin['phpmicro_commit']);
+        $this->assertMatchesRegularExpression('/^[a-f0-9]{64}$/', (string) $pin['phpmicro_patch_sha256']);
         $this->assertIsArray($pin['extensions'] ?? null);
         $this->assertNotEmpty($pin['extensions']);
         $this->assertContains('phar', $pin['extensions']);
