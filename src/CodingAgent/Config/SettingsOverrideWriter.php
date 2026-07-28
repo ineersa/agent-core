@@ -33,6 +33,9 @@ final class SettingsOverrideWriter
         $propertyPath = $this->requirePropertyPath($dottedPath);
         $filePath = $this->layerPath($layer, $cwd);
         $settings = $this->readSettings($filePath);
+        // PropertyAccessor will coerce scalar/list intermediates into mixed arrays;
+        // refuse that silently so sparse overrides stay mapping-shaped.
+        $this->assertIntermediateParentsAreMappings($settings, $dottedPath, $filePath);
         $this->propertyAccessor->setValue($settings, $propertyPath, $value);
         $this->writeSettings($filePath, $settings);
     }
@@ -129,6 +132,35 @@ final class SettingsOverrideWriter
         }
 
         return $propertyPath;
+    }
+
+    /**
+     * Existing intermediate nodes on a dotted path must already be mappings (or
+     * empty arrays). Missing parents are fine — PropertyAccessor creates them.
+     *
+     * @param array<string, mixed> $settings
+     */
+    private function assertIntermediateParentsAreMappings(array $settings, string $dottedPath, string $filePath): void
+    {
+        $segments = array_values(array_filter(explode('.', trim($dottedPath)), static fn (string $s): bool => '' !== $s));
+        // Only parents of the leaf; replacing the leaf itself is always allowed.
+        for ($depth = 1, $count = \count($segments); $depth < $count; ++$depth) {
+            $parentDotted = implode('.', \array_slice($segments, 0, $depth));
+            $parentPath = SettingsValueResolver::propertyPath($parentDotted);
+            if (null === $parentPath || !$this->propertyAccessor->isReadable($settings, $parentPath)) {
+                // Missing ancestor: deeper parents are also absent.
+                return;
+            }
+
+            $parent = $this->propertyAccessor->getValue($settings, $parentPath);
+            // Null is treated as absent so PropertyAccessor may create the mapping.
+            if (null === $parent) {
+                return;
+            }
+            if (!$this->isMapping($parent)) {
+                throw new \RuntimeException(\sprintf('Settings key "%s" must be a mapping in %s; got %s', $parentDotted, $filePath, get_debug_type($parent)));
+            }
+        }
     }
 
     private function layerPath(SettingsLayerEnum $layer, string $cwd): string

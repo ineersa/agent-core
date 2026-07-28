@@ -270,8 +270,6 @@ extensions:
             # Absolute paths where writes outside CWD are always allowed.
             allow_write_outside_cwd: []
 
-            # Destructive-in-paths list (reserved for serialization compatibility.
-            # Currently not wired to any classification logic).
             # Additional filename/path patterns that require confirmation to read.
             # These are added on top of the built-in defaults (which cannot be removed).
             protected_read_patterns: []

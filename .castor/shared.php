@@ -78,10 +78,6 @@ function read_suite_junit_summary(string $suite): string
     return summarize_junit_xml($junitPath);
 }
 
-/**
- * Extract risky-test summary from a PHPUnit log file.
- */
-
 // ─── Formatting helpers ────────────────────────────────────────────
 
 /**

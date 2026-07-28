@@ -9,6 +9,7 @@ use Ineersa\CodingAgent\Config\SettingsOverrideWriter;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Filesystem\Exception\IOException;
 use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\PropertyAccess\PropertyAccess;
 use Symfony\Component\Yaml\Yaml;
@@ -139,7 +140,18 @@ class SettingsOverrideWriterHomeAiTest extends TestCase
     {
         $this->write(['ai' => 'broken']);
 
-        $this->expectException(\Throwable::class);
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Settings key "ai" must be a mapping');
+
+        $this->writer->set(SettingsLayerEnum::User, '', 'ai.default_model', 'x');
+    }
+
+    public function testThrowsWhenAiValueIsAList(): void
+    {
+        $this->write(['ai' => ['not-a-map-entry']]);
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Settings key "ai" must be a mapping');
 
         $this->writer->set(SettingsLayerEnum::User, '', 'ai.default_model', 'x');
     }
@@ -164,7 +176,7 @@ class SettingsOverrideWriterHomeAiTest extends TestCase
         $blockedHome = $this->tmpDir.'/blocked-home';
         file_put_contents($blockedHome, 'not-a-directory');
 
-        $this->expectException(\Throwable::class);
+        $this->expectException(IOException::class);
 
         $writer = new SettingsOverrideWriter(new SettingsPathResolver('/app', $blockedHome), PropertyAccess::createPropertyAccessor(), new Filesystem());
         $writer->set(SettingsLayerEnum::User, '', 'ai.default_model', 'x');
