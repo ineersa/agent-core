@@ -4,15 +4,26 @@ Monorepo for Hatfield, a coding assistant built with PHP.
 
 ## Install (PHAR / static)
 
+Default install path is `~/.local/bin` (ensure it is on `PATH`):
+
 ```bash
-# PHAR (requires PHP >= 8.5 + extensions; see docs/phar-packaging.md)
-bash installer/bash-installer --install-dir="$HOME/.local/bin"
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+```bash
+# PHAR (requires system PHP >= 8.5 + extensions; see docs/phar-packaging.md)
+curl --proto '=https' --tlsv1.2 -fsSL \
+  https://raw.githubusercontent.com/ineersa/agent-core/main/installer/bash-installer \
+  | bash -s --
 
 # Native static binary (no system PHP)
-bash installer/bash-installer --static --install-dir="$HOME/.local/bin"
+curl --proto '=https' --tlsv1.2 -fsSL \
+  https://raw.githubusercontent.com/ineersa/agent-core/main/installer/bash-installer \
+  | bash -s -- --static
 
-# Pinned version
-bash installer/bash-installer --version=v1.2.3
+# Pin a release (optional; omit for latest)
+# ... | bash -s -- --version=vX.Y.Z
+# ... | bash -s -- --static --version=vX.Y.Z
 ```
 
 Artifacts: `hatfield.phar`, `hatfield.linux-amd64`, `hatfield.linux-arm64`,
