@@ -39,9 +39,14 @@ final class ConsoleEntrypointUxTest extends TestCase
         $help = $this->runConsole(['--help']);
         $this->assertSame(0, $help->getExitCode(), $help->getErrorOutput().$help->getOutput());
         $helpOut = $help->getOutput().$help->getErrorOutput();
-        $this->assertStringContainsString('Agent session', $helpOut);
+        $this->assertStringContainsString('Launch an interactive Hatfield coding-agent session', $helpOut);
+        $this->assertStringContainsString('hatfield', $helpOut);
+        $this->assertStringContainsString('hatfield list', $helpOut);
+        $this->assertStringContainsString('hatfield help <command>', $helpOut);
         $this->assertStringContainsString('--controller', $helpOut);
         $this->assertStringNotContainsString('list [options]', $helpOut);
+        $this->assertStringNotContainsString('display help for the list command', $helpOut);
+        $this->assertStringContainsString('display help for the agent command', $helpOut);
 
         $list = $this->runConsole(['list', '--raw']);
         $this->assertSame(0, $list->getExitCode(), $list->getErrorOutput().$list->getOutput());

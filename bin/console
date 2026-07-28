@@ -6,6 +6,7 @@ declare(strict_types=1);
 use Ineersa\CodingAgent\Kernel;
 use Symfony\Bundle\FrameworkBundle\Console\Application;
 use Symfony\Component\Console\Input\ArgvInput;
+use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Dotenv\Dotenv;
 
 // Detect PHAR mode early. Box uses an internal PHAR alias (not Phar::running())
@@ -117,6 +118,21 @@ $application->setVersion($buildIdentity->displayVersion());
 // (`messenger:consume`). Framework/internal commands stay registered so QA
 // and runtime can still invoke them by name; hide them from list/help only.
 $application->setDefaultCommand('agent');
+// FrameworkBundle materializes the global InputDefinition in its constructor
+// while defaultCommand is still "list". InputOption has no description setter,
+// so replace the baked-in --help option after agent becomes the default.
+$definition = $application->getDefinition();
+$definition->setOptions(array_map(
+    static fn (InputOption $option): InputOption => 'help' === $option->getName()
+        ? new InputOption(
+            'help',
+            'h',
+            InputOption::VALUE_NONE,
+            'Display help for the given command. When no command is given display help for the agent command',
+        )
+        : $option,
+    array_values($definition->getOptions()),
+));
 $visibleCommands = [
     'agent' => true,
     'auth:codex' => true,
