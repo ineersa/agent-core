@@ -146,6 +146,16 @@ class SettingsOverrideWriterHomeAiTest extends TestCase
         $this->writer->set(SettingsLayerEnum::User, '', 'ai.default_model', 'x');
     }
 
+    public function testThrowsWhenAiValueIsNull(): void
+    {
+        $this->write(['ai' => null]);
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Settings key "ai" must be a mapping');
+
+        $this->writer->set(SettingsLayerEnum::User, '', 'ai.default_model', 'x');
+    }
+
     public function testThrowsWhenAiValueIsAList(): void
     {
         $this->write(['ai' => ['not-a-map-entry']]);
