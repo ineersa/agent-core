@@ -32,7 +32,7 @@ final class ExecuteShellToolCallWorkerTest extends TestCase
      * Thesis: ExecuteShellToolCallWorker must write tool_execution_start,
      * tool_execution_end, and (standalone) AgentEnd in strict ascending
      * seq order from a single process, so EventStore ordering is
-     * deterministic and LifecycleOrderValidator-conformant.
+     * deterministic and lifecycle event order-conformant.
      *
      * Regression: async dispatch must not let AgentEnd race ahead of
      * tool_exec events (issue #183).

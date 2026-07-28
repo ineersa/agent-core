@@ -6,12 +6,10 @@ namespace Ineersa\CodingAgent\Agent\Execution\ChildRun\Lifecycle;
 
 use Ineersa\AgentCore\Contract\AgentRunnerInterface;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
-use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchCompletionKindEnum;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchItemSnapshotDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchLaunchAbortContextDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchLaunchAbortPhaseEnum;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchLifecyclePolicyDTO;
-use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchSupervisionResultDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunIdentityDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunTerminalFinalizationRequestDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunTerminalOutcomeDTO;
@@ -41,7 +39,7 @@ final class ChildRunBatchLaunchService
         \Throwable $cause,
         ChildRunBatchLaunchAbortContextDTO $abortContext,
         array $knownStartedChildRunIds = [],
-    ): ChildRunBatchSupervisionResultDTO {
+    ): void {
         $this->logger->warning('child_run.batch_launch_aborted', [
             'run_id' => $parentRunId,
             'component' => 'agent.execution',
@@ -112,12 +110,7 @@ final class ChildRunBatchLaunchService
                 $snapshot->markTerminalFailed($neverLaunchedMessage);
             }
 
-            return new ChildRunBatchSupervisionResultDTO(
-                $parentRunId,
-                array_values($snapshots),
-                ChildRunBatchCompletionKindEnum::LaunchAborted,
-                launchFailure: $cause,
-            );
+            return;
         }
 
         $knownStartedChildRunIds = array_values(array_unique($knownStartedChildRunIds));
@@ -199,12 +192,5 @@ final class ChildRunBatchLaunchService
                 $snapshot->markTerminalFailed($failedToStartMessage);
             }
         }
-
-        return new ChildRunBatchSupervisionResultDTO(
-            $parentRunId,
-            array_values($snapshots),
-            ChildRunBatchCompletionKindEnum::LaunchAborted,
-            launchFailure: $cause,
-        );
     }
 }

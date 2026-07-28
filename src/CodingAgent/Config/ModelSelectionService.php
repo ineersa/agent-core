@@ -118,7 +118,7 @@ final class ModelSelectionService
         // consumers — footer state initializer, model resolver, Ctrl+P
         // cycling — see the updated default immediately. Without this,
         // AppConfig holds the value from process start while
-        // HomeSettingsWriter has already mutated the YAML on disk, causing
+        // SettingsOverrideWriter has already mutated the YAML on disk, causing
         // a visibility gap on /new session switches.
         $this->syncAppConfigAi(defaultModel: $model->toString());
     }
@@ -390,7 +390,7 @@ final class ModelSelectionService
      * Sync in-memory AppConfig (and rebuild its catalog) after a mutation.
      *
      * AppConfig is built once at process start. When changeModel / changeReasoning /
-     * toggleFavorite persist mutations to the home YAML via HomeSettingsWriter,
+     * toggleFavorite persist mutations to the home YAML via SettingsOverrideWriter,
      * the in-memory AppConfig (and its HatfieldModelCatalog) still hold the
      * pre-mutation values. This causes a visibility gap: Ctrl+P changes the
      * default, but /new (which reads AppConfig) still sees the old default.

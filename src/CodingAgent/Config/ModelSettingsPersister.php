@@ -15,7 +15,7 @@ use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 final class ModelSettingsPersister
 {
     public function __construct(
-        private readonly HomeSettingsWriter $homeWriter,
+        private readonly SettingsOverrideWriter $settingsWriter,
         private readonly HatfieldSessionStore $sessionMetaStore,
     ) {
     }
@@ -28,7 +28,8 @@ final class ModelSettingsPersister
      */
     public function persistModel(string $modelString, string $providerId, string $modelName, string $sessionId): void
     {
-        $this->homeWriter->writeDefaultModel($modelString);
+        // User-layer path ignores $cwd; pass empty string.
+        $this->settingsWriter->set(SettingsLayerEnum::User, '', 'ai.default_model', $modelString);
         $this->sessionMetaStore->updateMetadata($sessionId, [
             'model' => $modelString,
             'model_provider' => $providerId,
@@ -47,7 +48,7 @@ final class ModelSettingsPersister
             throw new \InvalidArgumentException(\sprintf('Invalid reasoning level "%s". Valid levels: %s.', $level, implode(', ', ModelResolver::LEVELS)));
         }
 
-        $this->homeWriter->writeDefaultReasoning($level);
+        $this->settingsWriter->set(SettingsLayerEnum::User, '', 'ai.default_reasoning', $level);
         $this->sessionMetaStore->updateMetadata($sessionId, [
             'reasoning' => $level,
         ]);
@@ -60,6 +61,6 @@ final class ModelSettingsPersister
      */
     public function persistFavoriteModels(array $models): void
     {
-        $this->homeWriter->writeFavoriteModels($models);
+        $this->settingsWriter->set(SettingsLayerEnum::User, '', 'ai.favorite_models', $models);
     }
 }

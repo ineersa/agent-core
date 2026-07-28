@@ -7,7 +7,6 @@ namespace Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Interrupti
 use Doctrine\ORM\OptimisticLockException;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
-use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchCompletionKindEnum;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchExecutionModeEnum;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchItemSnapshotDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchSupervisionResultDTO;
@@ -202,7 +201,6 @@ final readonly class DeferredSubagentBatchInterruptionCompletionService
         $result = new ChildRunBatchSupervisionResultDTO(
             parentRunId: $batch->parentRunId,
             items: $items,
-            completionKind: ChildRunBatchCompletionKindEnum::PartialFailure,
         );
 
         $report = $this->parallelFormatter->formatReport($result);

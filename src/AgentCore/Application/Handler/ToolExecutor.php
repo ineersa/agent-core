@@ -11,7 +11,6 @@ use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Contract\Tool\ToolExecutionSettingsInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolExecutorInterface;
-use Ineersa\AgentCore\Contract\Tool\ToolIdempotencyKeyResolverInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolResultProcessorInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolSetResolverInterface;
 use Ineersa\AgentCore\Domain\Tool\DeferredToolCompletionOutcome;
@@ -48,7 +47,6 @@ final class ToolExecutor implements ToolExecutorInterface
         int $maxParallelism,
         private readonly ToolExecutionResultStore $resultStore,
         ?ToolboxInterface $toolbox = null,
-        private readonly ?ToolIdempotencyKeyResolverInterface $toolIdempotencyKeyResolver = null,
         private readonly ?StackToolExecutionContextAccessor $contextAccessor = null,
         private readonly ?ToolSetResolverInterface $toolSetResolver = null,
         iterable $toolResultProcessors = [],
@@ -69,7 +67,6 @@ final class ToolExecutor implements ToolExecutorInterface
         ToolExecutionSettingsInterface $settings,
         ToolExecutionResultStore $resultStore,
         ?ToolboxInterface $toolbox = null,
-        ?ToolIdempotencyKeyResolverInterface $toolIdempotencyKeyResolver = null,
         ?StackToolExecutionContextAccessor $contextAccessor = null,
         ?ToolSetResolverInterface $toolSetResolver = null,
         iterable $toolResultProcessors = [],
@@ -81,7 +78,6 @@ final class ToolExecutor implements ToolExecutorInterface
             maxParallelism: $settings->maxParallelism(),
             resultStore: $resultStore,
             toolbox: $toolbox,
-            toolIdempotencyKeyResolver: $toolIdempotencyKeyResolver,
             contextAccessor: $contextAccessor,
             toolSetResolver: $toolSetResolver,
             toolResultProcessors: $toolResultProcessors,
@@ -94,7 +90,7 @@ final class ToolExecutor implements ToolExecutorInterface
         $policy = $this->resolvePolicy($toolCall);
         $runId = $this->runId($toolCall);
         $cancelToken = $this->cancellationToken($toolCall);
-        $toolIdempotencyKey = $toolCall->toolIdempotencyKey ?? $this->toolIdempotencyKeyResolver?->resolveToolIdempotencyKey($toolCall);
+        $toolIdempotencyKey = $toolCall->toolIdempotencyKey;
 
         if (null !== $runId) {
             $existingByCall = $this->resultStore->findByRunToolCall($runId, $toolCall->toolCallId);

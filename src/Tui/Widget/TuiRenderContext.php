@@ -28,40 +28,4 @@ final readonly class TuiRenderContext
         ),
     ) {
     }
-
-    /**
-     * Create a context with overridden width.
-     */
-    public function withWidth(int $width): self
-    {
-        return new self(
-            terminalWidth: $width,
-            terminalHeight: $this->terminalHeight,
-            theme: $this->theme,
-        );
-    }
-
-    /**
-     * Create a context with overridden height.
-     */
-    public function withHeight(int $height): self
-    {
-        return new self(
-            terminalWidth: $this->terminalWidth,
-            terminalHeight: $height,
-            theme: $this->theme,
-        );
-    }
-
-    /**
-     * Create a context with a different theme.
-     */
-    public function withTheme(TuiTheme $theme): self
-    {
-        return new self(
-            terminalWidth: $this->terminalWidth,
-            terminalHeight: $this->terminalHeight,
-            theme: $theme,
-        );
-    }
 }

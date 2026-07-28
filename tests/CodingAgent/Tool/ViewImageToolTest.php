@@ -18,6 +18,7 @@ use Ineersa\AgentCore\Domain\Tool\ToolCall;
 use Ineersa\AgentCore\Infrastructure\SymfonyAi\AgentMessageConverter;
 use Ineersa\CodingAgent\Config\ImageToolConfig;
 use Ineersa\CodingAgent\Config\ToolSettings;
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tool\ImageProcessing\RunVisionCheckService;
 use Ineersa\CodingAgent\Tool\RegistryBackedToolbox;
 use Ineersa\CodingAgent\Tool\ToolRegistry;
@@ -55,8 +56,7 @@ final class ViewImageToolTest extends TestCase
             maxHeight: 2000,
         );
 
-        $this->tmpDir = sys_get_temp_dir().'/hatfield_view_image_test_'.bin2hex(random_bytes(8));
-        mkdir($this->tmpDir, 0750, recursive: true);
+        $this->tmpDir = TestDirectoryIsolation::createOsTempDir('hatfield_view_image_test');
 
         $this->viewImageTool = new ViewImageTool($this->toolRuntime, $this->imageConfig, $this->contextAccessor);
     }

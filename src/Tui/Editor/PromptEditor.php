@@ -12,8 +12,7 @@ use Symfony\Component\Tui\Widget\EditorWidget;
  * Interactive prompt editor facade (DI service).
  *
  * Wraps a Symfony TUI {@see EditorWidget} as the interactive text input.
- * ChatScreen wires this via DI; ChatLayout uses the separate
- * {@see PromptEditorWidget} for static rendering. Do not confuse the two.
+ * ChatScreen wires this via DI as the interactive editor widget.
  *
  * This class OWNS the EditorWidget (creates it internally) and exposes
  * Hatfield-specific lifecycle operations (extract, snapshot state).

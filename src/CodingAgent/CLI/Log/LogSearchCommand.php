@@ -7,7 +7,7 @@ namespace Ineersa\CodingAgent\CLI\Log;
 use HelgeSverre\Toon\Toon;
 use Ineersa\CodingAgent\Logging\LogEntry;
 use Ineersa\CodingAgent\Logging\LogFilter;
-use Ineersa\CodingAgent\Logging\LogReaderFactory;
+use Ineersa\CodingAgent\Logging\LogReader;
 use Symfony\Component\Console\Attribute\Argument;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Attribute\Option;
@@ -31,7 +31,7 @@ final class LogSearchCommand
     private const int MAX_RESULTS = 500;
 
     public function __construct(
-        private readonly LogReaderFactory $readerFactory,
+        private readonly LogReader $reader,
     ) {
     }
 
@@ -52,7 +52,7 @@ final class LogSearchCommand
 
         ?OutputInterface $output = null,
     ): int {
-        $reader = $this->readerFactory->create();
+        $reader = $this->reader;
         $fromDate = null !== $from ? new \DateTimeImmutable($from) : null;
         $toDate = null !== $to ? new \DateTimeImmutable($to) : null;
         $filter = new LogFilter(level: $level, search: $query, from: $fromDate, to: $toDate);

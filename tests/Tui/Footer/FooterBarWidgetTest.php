@@ -8,7 +8,6 @@ use Ineersa\Tui\Footer\FooterBarWidget;
 use Ineersa\Tui\Footer\FooterDataProvider;
 use Ineersa\Tui\Footer\FooterSegment;
 use Ineersa\Tui\Footer\FooterSegmentProvider;
-use Ineersa\Tui\Footer\ReadonlyFooterDataProvider;
 use Ineersa\Tui\Widget\TuiRenderContext;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
@@ -16,7 +15,6 @@ use PHPUnit\Framework\TestCase;
 #[CoversClass(FooterDataProvider::class)]
 #[CoversClass(FooterBarWidget::class)]
 #[CoversClass(FooterSegment::class)]
-#[CoversClass(ReadonlyFooterDataProvider::class)]
 final class FooterBarWidgetTest extends TestCase
 {
     public function testEmptyFooterShowsDefaultText(): void
@@ -113,21 +111,6 @@ final class FooterBarWidgetTest extends TestCase
         $lines = $widget->render($context);
 
         $this->assertStringContainsString('$1.23', $lines[0]);
-    }
-
-    public function testReadonlyDataProvider(): void
-    {
-        $provider = new FooterDataProvider();
-        $readonly = $provider->readonly();
-
-        $this->assertInstanceOf(ReadonlyFooterDataProvider::class, $readonly);
-        $this->assertSame([], $readonly->getSegments());
-        $this->assertSame([], $readonly->getStatusEntries());
-
-        // Add data through original provider
-        $provider->setStatus('k', 'v');
-        $readonly2 = $provider->readonly();
-        $this->assertSame(['k' => 'v'], $readonly2->getStatusEntries());
     }
 
     public function testFooterRespectsTerminalWidth(): void

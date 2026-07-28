@@ -15,6 +15,7 @@ use Ineersa\CodingAgent\Session\FileRunSequenceAllocator;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\SessionRunEventStore;
 use Ineersa\CodingAgent\Session\SessionRunStore;
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\FlockStore;
@@ -37,7 +38,7 @@ final class AggregateResumeTest extends TestCase
     {
         parent::setUp();
 
-        $this->projectDir = sys_get_temp_dir().'/hatfield-aggregate-resume-'.getmypid();
+        $this->projectDir = TestDirectoryIsolation::createOsTempDir('hatfield-aggregate-resume');
         if (is_dir($this->projectDir)) {
             $this->rmDir($this->projectDir);
         }

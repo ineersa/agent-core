@@ -72,7 +72,6 @@ final readonly class SafeGuardConfig
     /**
      * @param list<string> $allowCommandPatterns     Command substrings that bypass destructive/dangerous checks
      * @param list<string> $allowWriteOutsideCwd     Absolute paths where writes outside CWD are always allowed
-     * @param list<string> $allowDestructiveInPaths  Paths where destructive file ops are always allowed (compat — not wired)
      * @param list<string> $protectedReadPatterns    Effective protected read patterns (defaults + YAML patterns)
      * @param list<string> $dangerousCommandPatterns Extra command substrings to treat as dangerous (added to built-ins)
      * @param string       $bashToolName             Tool name used for bash (default: 'bash')
@@ -86,7 +85,6 @@ final readonly class SafeGuardConfig
     public function __construct(
         public array $allowCommandPatterns = [],
         public array $allowWriteOutsideCwd = [],
-        public array $allowDestructiveInPaths = [],
         public array $protectedReadPatterns = self::DEFAULT_PROTECTED_READ_PATTERNS,
         public array $dangerousCommandPatterns = [],
         public string $bashToolName = 'bash',
@@ -113,7 +111,6 @@ final readonly class SafeGuardConfig
         return new self(
             allowCommandPatterns: self::stringListValue($data, 'allow_command_patterns'),
             allowWriteOutsideCwd: self::stringListValue($data, 'allow_write_outside_cwd'),
-            allowDestructiveInPaths: self::stringListValue($data, 'allow_destructive_in_paths'),
             protectedReadPatterns: self::mergedProtectedReadPatterns(
                 self::stringListValue($data, 'protected_read_patterns'),
             ),
