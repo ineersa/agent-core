@@ -86,14 +86,14 @@ final class TuiStatusRowReasoningNoticeE2eTest extends TestCase
 
             $withNotice = $this->tmux->waitForCallback(
                 $pane,
-                static fn (string $cap): bool => str_contains($cap, 'reasoning') && str_contains($cap, 'minimal'),
+                static fn (string $cap): bool => 1 === preg_match('/^  reasoning\s+minimal\s*$/m', $cap),
                 timeout: 5.0,
                 message: 'Shift+Tab reasoning status panel line did not appear',
                 history: 2000,
             );
 
             $this->assertStringContainsString('◆', $withNotice, 'Footer diamond must remain after Shift+Tab');
-            $this->assertMatchesRegularExpression('/\s{2}reasoning\s+minimal/', $withNotice, 'Status panel reasoning row expected');
+            $this->assertMatchesRegularExpression('/^  reasoning\s+minimal\s*$/m', $withNotice, 'Status panel reasoning row expected');
 
             $noticeFooterIndex = $this->footerLineIndexLast($withNotice);
             $noticeSeparatorIndex = $this->footerSeparatorLineIndexAboveFooter($withNotice);

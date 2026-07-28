@@ -38,6 +38,17 @@ The main agent is an **orchestrator**, not an implementor. Work is dispatched to
 - Outer separate `subagent` tool calls are sequential; children inside one `tasks` array run concurrently. Split across multiple calls only for **cap overflow** or **true dependencies**.
 - Parallel results are bounded summaries — use `agent_retrieve` with each `Artifact:` ID for complete handoffs when needed.
 
+## Specification fidelity gate (mandatory)
+
+Before writing fork instructions or accepting review:
+
+1. Map every proposed externally visible addition (setting, API, storage field, command, user-visible behavior) to an **exact finalized task requirement**. Unmapped additions are forbidden.
+2. Fork instructions may choose minimal implementation mechanics, but **must not introduce uncited product decisions**. Unresolved ambiguity affecting behavior or public surface goes back to the user — do not invent defaults or surface.
+3. Latest explicit task clarification overrides earlier superseded scope.
+4. Reviewers must inventory changed external surface and complexity against finalized requirements and return **REQUEST CHANGES** for unmapped functionality or unnecessary complexity.
+
+Root `AGENTS.md` owns the principle; this gate enforces it in task-start and review.
+
 ## Workflow phases
 
 ```
@@ -67,13 +78,14 @@ Read-only planning. No status changes, no file edits, no forks.
 1. `move_task(to="IN-PROGRESS")` — creates worktree branch.
    - Worktree creation copies `vendor/` and `.vera/` into the worktree, and updates the parent worktree IDEA module exclusions when present.
 2. Scout codebase for context, researcher for external info. Batch independent scouts/researchers in one parallel `tasks` call; use sequential single-mode only when a later probe depends on an earlier result.
-3. Prepare exact fork instructions: files to touch, old/new patterns, validation commands, boundaries.
-4. Launch fork on worktree (`cwd=worktree`). Fork implements, you don't.
-5. When fork report arrives:
+3. Apply the **Specification fidelity gate**: map every proposed externally visible addition to an exact finalized requirement; resolve ambiguity with the user before forking; do not encode uncited product decisions into fork instructions.
+4. Prepare exact fork instructions: files to touch, old/new patterns, validation commands, boundaries (mechanics only).
+5. Launch fork on worktree (`cwd=worktree`). Fork implements, you don't.
+6. When fork report arrives:
    - Verify commit exists, inspect `git diff --stat`, confirm expected files changed.
    - Record fork run id, summary, validation results via `update_task`.
    - If fork failed or produced unacceptable output → re-launch with narrower instructions.
-6. **STOP.** Do not proceed to PR or code review.
+7. **STOP.** Do not proceed to PR or code review.
    - Do NOT run: `castor check`, `move_task(to="CODE-REVIEW")`, `gh pr create`, `git push`, reviewer subagent.
    - Inform user implementation is done. They run `task-to-pr` when ready.
 
@@ -90,7 +102,7 @@ repo. The external task board repo must be committed manually when desired.
 ### task-to-pr: Review and create PR (IN-PROGRESS → CODE-REVIEW)
 
 1. Inspect worktree state: `git status`, `git log`, `git diff --stat origin/main...HEAD`.
-2. Run reviewer subagent on worktree (`subagent agent="reviewer" cwd=worktree`).
+2. Run reviewer subagent on worktree (`subagent agent="reviewer" cwd=worktree`). Instruct the reviewer to apply the **Specification fidelity gate**: compare changed external surface/complexity to finalized requirements and REQUEST CHANGES for unmapped or unnecessary additions.
    - If REQUEST CHANGES → analyze blockers, fork fixes, re-review. Repeat until APPROVED.
 3. Run focused local validation on worktree:
    - `castor test`, `castor deptrac`, `castor phpstan`, `castor cs-check`.
@@ -104,9 +116,9 @@ repo. The external task board repo must be committed manually when desired.
 
 1. Read all PR comments via `gh pr view`. Classify blockers vs nice-to-have.
 2. `move_task(to="IN-PROGRESS")` before any implementation.
-3. Prepare exact fork instructions covering each actionable comment.
+3. Prepare exact fork instructions covering each actionable comment; re-apply the **Specification fidelity gate** so fixes do not introduce uncited product decisions.
 4. Fork fixes on worktree. Verify output, run focused Castor validation.
-5. Re-review with reviewer subagent. If REQUEST CHANGES → repeat from step 3.
+5. Re-review with reviewer subagent (include the specification fidelity gate). If REQUEST CHANGES → repeat from step 3.
 6. When APPROVED → `move_task(to="CODE-REVIEW")` (pushes branch, creates/updates PR).
 7. Record decisions, commit sha, reviewer result via `update_task`.
 
