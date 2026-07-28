@@ -1,0 +1,111 @@
+# Install Castor v1.6.1 platform PHAR into $RUNNER_TEMP (not Composer global, not static binary).
+# Why PHAR (not static): Castor tasks invoke host PHP via PHP_BINARY (e.g. distribution_smoke_artifact
+# for hatfield.phar). A fused static Castor leaves PHP_BINARY empty, so smoke becomes `'' hatfield.phar`.
+# A PHAR shebang uses setup-php's host PHP, so PHP_BINARY stays valid. Do not regress to static Castor.
+# MAINTENANCE: when bumping Castor, update VERSION, ASSET names, and all four SHA256 digests together.
+# Do not use setup-php tools: castor (hardcodes amd64 assets; broken on Linux/macOS arm64).
+name: Setup Castor
+description: >
+  Download and install the pinned Castor v1.6.1 platform PHAR into a job-local
+  directory under $RUNNER_TEMP, append it to PATH, and prove castor --version
+  works. PHAR keeps PHP_BINARY set to host PHP (required by Castor tasks). Avoids
+  broken Composer-global and setup-php arm64 paths, and avoids empty PHP_BINARY
+  from static Castor.
+
+runs:
+  using: composite
+  steps:
+    - name: Install Castor platform PHAR
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        # Pin: bump VERSION + ASSET + SHA256 together (see header comment).
+        VERSION='v1.6.1'
+        os="$(uname -s)"
+        arch="$(uname -m)"
+
+        case "${os}:${arch}" in
+          Linux:x86_64)
+            ASSET='castor.linux-amd64.phar'
+            EXPECTED_SHA256='ee7277349c346efddb9d8c5d80f6d29efbcb6719b564bfb0e623a755ca94400b'
+            ;;
+          Linux:aarch64|Linux:arm64)
+            ASSET='castor.linux-arm64.phar'
+            EXPECTED_SHA256='60fdabae7291bcfc25aaee0f7b3ecb5ae2348f88a578f3882097d1e02a326fcd'
+            ;;
+          Darwin:x86_64)
+            ASSET='castor.darwin-amd64.phar'
+            EXPECTED_SHA256='63057a0953c9523fadb932aa17e1e643f550e1223d63c7a1f3db66c9af8c4611'
+            ;;
+          Darwin:arm64)
+            ASSET='castor.darwin-arm64.phar'
+            EXPECTED_SHA256='73ecc5d57191d5a2bdfec3053e100859939bd9b824b883b6bd2bb5d1f7342505'
+            ;;
+          *)
+            echo "Unsupported runner for Castor PHAR install: os=${os} arch=${arch}" >&2
+            echo "Supported: Linux x86_64/aarch64|arm64, Darwin x86_64/arm64" >&2
+            exit 1
+            ;;
+        esac
+
+        if [[ -z "${RUNNER_TEMP:-}" ]]; then
+          echo "RUNNER_TEMP is unset; cannot install job-local Castor" >&2
+          exit 1
+        fi
+
+        install_dir="${RUNNER_TEMP}/hatfield-castor-${VERSION}"
+        mkdir -p "${install_dir}"
+        dest="${install_dir}/castor"
+        url="https://github.com/jolicode/castor/releases/download/${VERSION}/${ASSET}"
+
+        tmp_dir="$(mktemp -d "${RUNNER_TEMP}/castor-dl.XXXXXX")"
+        cleanup() {
+          rm -rf "${tmp_dir}"
+        }
+        trap cleanup EXIT
+
+        tmp_file="${tmp_dir}/${ASSET}"
+        echo "Downloading Castor ${VERSION} asset ${ASSET} from ${url}"
+        if ! curl \
+          --fail \
+          --location \
+          --proto '=https' \
+          --tlsv1.2 \
+          --silent \
+          --show-error \
+          --output "${tmp_file}" \
+          "${url}"; then
+          echo "ERROR: failed to download Castor platform PHAR from ${url}" >&2
+          exit 1
+        fi
+
+        if [[ ! -s "${tmp_file}" ]]; then
+          echo "ERROR: downloaded Castor asset is empty: ${tmp_file}" >&2
+          exit 1
+        fi
+
+        actual_sha256=''
+        if command -v sha256sum >/dev/null 2>&1; then
+          actual_sha256="$(sha256sum "${tmp_file}" | awk '{print $1}')"
+        elif command -v shasum >/dev/null 2>&1; then
+          actual_sha256="$(shasum -a 256 "${tmp_file}" | awk '{print $1}')"
+        else
+          echo "ERROR: neither sha256sum nor shasum available to verify Castor asset" >&2
+          exit 1
+        fi
+
+        if [[ "${actual_sha256}" != "${EXPECTED_SHA256}" ]]; then
+          echo "ERROR: Castor asset checksum mismatch for ${ASSET}" >&2
+          echo "  expected: ${EXPECTED_SHA256}" >&2
+          echo "  actual:   ${actual_sha256}" >&2
+          echo "  url:      ${url}" >&2
+          exit 1
+        fi
+
+        install -m 0755 "${tmp_file}" "${dest}"
+        echo "${install_dir}" >> "${GITHUB_PATH}"
+
+        # Immediate proof via absolute path (PATH mutation is for subsequent steps).
+        echo "Installed Castor PHAR: ${dest}"
+        "${dest}" --version

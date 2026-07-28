@@ -284,6 +284,27 @@ final class TmuxHarness
     }
 
     /**
+     * Poll until the pane command exits (pane/session gone) or timeout.
+     *
+     * Used by artifact boot smoke after Ctrl+D so clean process exit is
+     * proven without relying only on tearDown killSession.
+     */
+    public function waitUntilPaneExits(TmuxPane $pane, float $timeout = 10.0): void
+    {
+        $deadline = microtime(true) + $timeout;
+
+        while (microtime(true) < $deadline) {
+            if (!$this->paneExists($pane)) {
+                return;
+            }
+
+            usleep(100_000); // 100ms
+        }
+
+        throw new \RuntimeException(\sprintf('Timed out after %.1fs waiting for pane %s (session %s) to exit cleanly after shutdown key.', $timeout, $pane->paneId, $pane->session));
+    }
+
+    /**
      * Shell PID for the tmux pane (bash -c agent ...). Used to scope
      * descendant process discovery in transport E2E tests.
      */
