@@ -99,7 +99,6 @@ final readonly class ExecuteLlmStepWorker
                     stepId: $message->stepId(),
                     contextRef: $message->contextRef,
                     toolsRef: $message->toolsRef,
-                    contextBudgetReminderText: $message->contextBudgetReminderText,
                 ),
             ));
 
@@ -247,7 +246,6 @@ final readonly class ExecuteLlmStepWorker
                 error: $response->error,
                 toolsRef: $message->toolsRef,
                 modelNotifications: $response->modelNotifications,
-                contextBudgetReminderHandledKeys: $message->contextBudgetReminderHandledKeys,
             );
         } catch (\Throwable $exception) {
             $durationMs = (hrtime(true) - $startedAt) / 1_000_000;
@@ -279,7 +277,6 @@ final readonly class ExecuteLlmStepWorker
                 ],
                 toolsRef: $message->toolsRef,
                 modelNotifications: [],
-                contextBudgetReminderHandledKeys: $message->contextBudgetReminderHandledKeys,
             );
         } finally {
             RunLogContext::leave();

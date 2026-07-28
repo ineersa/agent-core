@@ -9,13 +9,14 @@ use Symfony\Component\Serializer\Attribute\SerializedName;
 /**
  * Provider-neutral context-budget wrap-up reminder thresholds.
  *
- * Remaining context is:
- *   context_window - latest_prompt_input_tokens
+ * Used by the CodingAgent after-turn hook that queues a user append_message
+ * when a committed llm_step_completed crosses a threshold.
  *
- * The urgent_remaining_tokens threshold itself is the wrap-up reserve; there is
- * no separate output-headroom subtraction. Early checkpoint uses absolute
- * latest prompt/input usage so cumulative re-counting of prior turns is not a
- * special case — providers report the full current prompt size for each step.
+ * Remaining context is:
+ *   context_window - current_response_input_tokens
+ *
+ * urgent_remaining_tokens is the sole wrap-up reserve; there is no separate
+ * output-headroom subtraction.
  */
 final readonly class ContextBudgetReminderConfig
 {

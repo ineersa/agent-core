@@ -276,37 +276,41 @@ compaction:
 
 ## Context-budget wrap-up reminders
 
-Transient one-shot system guidance injected on **normal** agent turns when
-fresh provider-reported prompt/input usage crosses provider-neutral thresholds.
-Reminders never enter `RunState.messages`, session replay, transcripts, or
-compaction/summarization invocations. Parent, fork, and subagent runs share the
-same path.
+One-shot wrap-up guidance queued as a normal user `append_message` after a
+committed `llm_step_completed` when that response's provider-reported usage
+crosses provider-neutral thresholds. The CodingAgent after-turn hook inspects
+the committed hot batch and calls `AgentRunnerInterface::appendMessage()` with
+user text wrapped in `<system-reminder>...</system-reminder>`. Parent, fork,
+and subagent runs share the same `RunCommit` hook path. AgentCore has no
+reminder-specific API.
 
-**Metric:** latest positive `input_tokens` / `prompt_tokens` from committed
-`llm_step_completed` / `llm_step_aborted` events after the latest successful
-`context_compacted` barrier (or run start when none). This is the provider's
-current prompt size for that step — not a cumulative sum of prior steps.
+**Metric:** positive `input_tokens` / `prompt_tokens` from the committed
+`llm_step_completed` usage payload in the hot batch. Abort/failure commits do
+not trigger reminders.
 
 **Remaining context:**
-`context_window - latest_prompt_input`
+`context_window - current_response_input`
 
 `context_window` comes from run-start metadata when present, otherwise the
-active model's catalog entry. Missing usage or window ⇒ no reminder (no silent
-estimate).
+active run model's catalog entry. Missing positive usage or window ⇒ no
+reminder (no silent estimate).
 
-`urgent_remaining_tokens` is the sole wrap-up/output reserve: it is the room
-left for the model to finish. There is no separate output-headroom setting or
-subtraction.
+`urgent_remaining_tokens` is the sole wrap-up reserve (room left to finish).
+There is no separate output-headroom setting or subtraction.
 
-Successful compaction starts a new episode: pre-compaction usage and handled
-markers are ignored until fresh post-compaction usage exists.
+One-shot / reset uses only existing canonical events: after the latest
+successful `context_compacted`, already-queued or applied reminders are
+detected by exact wrapped text in generic `agent_command_queued` /
+`agent_command_applied` message payloads. Successful compaction starts a new
+episode; no fresh post-compaction LLM completion means no reminder.
 
-When both thresholds are eligible on one turn, only the **urgent** reminder is
-sent and both markers are recorded. Early can fire first, then urgent later.
+When both thresholds are eligible on one response, only the **urgent** message
+is appended. Early may fire first, then urgent later. Urgent already queued or
+applied suppresses later reminders in that episode.
 
 ### `context_budget_reminders.early_input_tokens`
 
-Absolute latest prompt/input usage that triggers the early wrap-up advisory.
+Absolute prompt/input usage that triggers the early wrap-up advisory.
 
 **Default:** `200000`
 

@@ -728,14 +728,12 @@ services:
   Ineersa\AgentCore\Contract\Compaction\PreLlmCompactionGuardInterface:
     alias: Ineersa\CodingAgent\Compaction\CodingAgentPreLlmCompactionGuard
 
-  # Context-budget wrap-up reminders (transient system guidance).
+  # Context-budget wrap-up reminder thresholds (CodingAgent after-turn hook).
   Ineersa\CodingAgent\Config\ContextBudgetReminderConfig:
     factory: ['Ineersa\CodingAgent\Config\ContextBudgetReminderConfig', 'fromAppConfig']
 
-  Ineersa\CodingAgent\Compaction\CodingAgentPreLlmContextBudgetReminderPolicy: ~
-
-  Ineersa\AgentCore\Contract\ContextBudget\PreLlmContextBudgetReminderPolicyInterface:
-    alias: Ineersa\CodingAgent\Compaction\CodingAgentPreLlmContextBudgetReminderPolicy
+  # ContextBudgetReminderHookSubscriber is auto-tagged via
+  # _instanceof HookSubscriberInterface — no explicit registration.
 
   # Auto-compaction after-turn hook subscriber.
   # Tagged automatically via _instanceof HookSubscriberInterface.
