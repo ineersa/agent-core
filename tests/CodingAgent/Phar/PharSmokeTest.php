@@ -371,7 +371,7 @@ PHP;
             $home = $tmp.'/home';
             $env = 'HOME='.escapeshellarg($home).' APP_ENV=prod HATFIELD_CACHE_DIR= ';
             $process = Process::fromShellCommandline(
-                $env.implode(' ', array_map('escapeshellarg', $cmd)).' about 2>&1',
+                $env.$this->shellCommand($cmd, 'about 2>&1'),
                 cwd: $tmp,
             );
             $process->mustRun();
@@ -383,7 +383,7 @@ PHP;
 
             // Boot list from empty temp project (no source tree).
             $list = Process::fromShellCommandline(
-                $env.implode(' ', array_map('escapeshellarg', $cmd)).' list 2>&1',
+                $env.$this->shellCommand($cmd, 'list 2>&1'),
                 cwd: $tmp,
             );
             $list->mustRun();

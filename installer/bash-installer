@@ -22,7 +22,6 @@ REQUIRED_EXTENSIONS=(pdo_sqlite mbstring xml intl curl openssl pcntl posix token
 install_dir="${HOME}/.local/bin"
 version="latest"
 static="false"
-custom_dir="false"
 
 # Track every temp path so traps can remove install-dir temporary destinations
 # as well as the mktemp download workspace.
@@ -35,7 +34,6 @@ output() {
     case "$2" in
       success) style_start="\033[0;32m"; style_end="\033[0m" ;;
       error) style_start="\033[31;31m"; style_end="\033[0m" ;;
-      info|warning) style_start="\033[33m"; style_end="\033[39m" ;;
       heading) style_start="\033[1;33m"; style_end="\033[22;39m" ;;
     esac
   fi
@@ -47,11 +45,6 @@ cleanup() {
   local exit_code=$?
   if [[ -n "${INSTALL_TMP}" && -e "${INSTALL_TMP}" ]]; then
     rm -f "${INSTALL_TMP}" 2>/dev/null || true
-  fi
-  # Also sweep any leftover .hatfield-install.* temps in install_dir from this pid.
-  if [[ -n "${install_dir:-}" && -d "${install_dir}" ]]; then
-    rm -f "${install_dir}/.hatfield-install.$$" 2>/dev/null || true
-    rm -f "${install_dir}/.hatfield-install.$$."* 2>/dev/null || true
   fi
   if [[ -n "${TMPDIR_INSTALL}" && -d "${TMPDIR_INSTALL}" ]]; then
     rm -rf "${TMPDIR_INSTALL}" 2>/dev/null || true
@@ -90,13 +83,11 @@ while [[ $# -gt 0 ]]; do
     --install-dir=*)
       install_dir="${1#*=}"
       require_opt_value "--install-dir" "${install_dir}"
-      custom_dir="true"
       shift
       ;;
     --install-dir)
       require_opt_value "--install-dir" "${2:-}"
       install_dir="$2"
-      custom_dir="true"
       shift 2
       ;;
     --version=*)
@@ -266,26 +257,48 @@ if [[ "${actual_hash}" != "${expected_hash}" ]]; then
 fi
 output "  [*] SHA-256 verified" "success"
 
+# Run --version against a candidate path (PHAR via host php, static direct).
+# On failure: print fail-closed message and return 1 so previous install is untouched.
+# Must be called in the main shell (not $(...)) so diagnostics stay on stdout.
+# $2 = command-failure message; $3 = missing-Hatfield message (exact prior wording).
+# Sets SMOKE_OUT on success.
+version_smoke() {
+  local path="$1"
+  local fail_cmd="$2"
+  local fail_content="$3"
+  local out=""
+  SMOKE_OUT=""
+  if [[ "${static}" == "true" ]]; then
+    out="$("${path}" --version 2>&1)" || {
+      output "${fail_cmd}" "error"
+      return 1
+    }
+  else
+    out="$(php "${path}" --version 2>&1)" || {
+      output "${fail_cmd}" "error"
+      return 1
+    }
+  fi
+  if [[ "${out}" != *"Hatfield"* ]]; then
+    output "${fail_content}" "error"
+    if [[ "${fail_content}" == *"did not report Hatfield"* ]]; then
+      output "      output: ${out}" "error"
+    fi
+    return 1
+  fi
+  SMOKE_OUT="${out}"
+  return 0
+}
+
 # Candidate smoke BEFORE replacing any existing install.
 output "\nCandidate smoke" "heading"
 chmod +x "${tmp_bin}"
-if [[ "${static}" == "true" ]]; then
-  smoke_out="$("${tmp_bin}" --version 2>&1)" || {
-    output "  [ ] ERROR: candidate --version smoke failed; previous install left unchanged" "error"
-    exit 1
-  }
-else
-  smoke_out="$(php "${tmp_bin}" --version 2>&1)" || {
-    output "  [ ] ERROR: candidate --version smoke failed; previous install left unchanged" "error"
-    exit 1
-  }
-fi
-if [[ "${smoke_out}" != *"Hatfield"* ]]; then
-  output "  [ ] ERROR: candidate --version did not report Hatfield; previous install left unchanged" "error"
-  output "      output: ${smoke_out}" "error"
+if ! version_smoke "${tmp_bin}" \
+  "  [ ] ERROR: candidate --version smoke failed; previous install left unchanged" \
+  "  [ ] ERROR: candidate --version did not report Hatfield; previous install left unchanged"; then
   exit 1
 fi
-output "  [*] Candidate smoke ok: ${smoke_out}" "success"
+output "  [*] Candidate smoke ok: ${SMOKE_OUT}" "success"
 
 output "\nInstall" "heading"
 mkdir -p "${install_dir}"
@@ -295,19 +308,9 @@ INSTALL_TMP="${install_dir}/.hatfield-install.$$"
 cp "${tmp_bin}" "${INSTALL_TMP}"
 chmod +x "${INSTALL_TMP}"
 # Final installed-path smoke from the install-dir temp (same inode about to move).
-if [[ "${static}" == "true" ]]; then
-  install_smoke="$("${INSTALL_TMP}" --version 2>&1)" || {
-    output "  [ ] ERROR: install-dir temp --version failed; previous install left unchanged" "error"
-    exit 1
-  }
-else
-  install_smoke="$(php "${INSTALL_TMP}" --version 2>&1)" || {
-    output "  [ ] ERROR: install-dir temp --version failed; previous install left unchanged" "error"
-    exit 1
-  }
-fi
-if [[ "${install_smoke}" != *"Hatfield"* ]]; then
-  output "  [ ] ERROR: install-dir temp --version invalid; previous install left unchanged" "error"
+if ! version_smoke "${INSTALL_TMP}" \
+  "  [ ] ERROR: install-dir temp --version failed; previous install left unchanged" \
+  "  [ ] ERROR: install-dir temp --version invalid; previous install left unchanged"; then
   exit 1
 fi
 # Candidate + same-dir INSTALL_TMP already checksum/version-smoked.

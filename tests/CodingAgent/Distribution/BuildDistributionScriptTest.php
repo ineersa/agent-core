@@ -59,11 +59,17 @@ BASH);
         $this->assertStringContainsString('distribution:build', $logBody);
         $this->assertStringContainsString('--release-version=1.2.3', $logBody);
         $this->assertStringContainsString('--commit=abc1234', $logBody);
-        $this->assertStringContainsString('distribution:checksums', $logBody);
+        // build already writes SHA256SUMS — wrapper must not re-invoke checksums.
+        $this->assertStringNotContainsString('distribution:checksums', $logBody);
         $this->assertStringContainsString('distribution:verify', $logBody);
         $this->assertStringContainsString('--skip-topology', $logBody);
         $this->assertStringContainsString('--allow-missing-native', $logBody);
         $this->assertStringNotContainsString('distribution:build-static', $logBody);
+        // Exact sequence: build then verify (no intervening checksums task).
+        $this->assertMatchesRegularExpression(
+            '/ARGS: distribution:build\b.*\nARGS: distribution:verify\b/s',
+            $logBody,
+        );
         TestDirectoryIsolation::removeDirectory($work);
     }
 

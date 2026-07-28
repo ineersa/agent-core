@@ -183,18 +183,12 @@ jobs:
       - name: Download all release artifacts
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
-          path: var/tmp/dist-raw
-          merge-multiple: false
+          path: var/tmp/dist
+          merge-multiple: true
 
       - name: Normalize complete artifact set
         run: |
           set -euo pipefail
-          mkdir -p var/tmp/dist
-          # download-artifact lays out name/file per artifact.
-          find var/tmp/dist-raw -type f \( -name 'hatfield.phar' -o -name 'hatfield.linux-*' -o -name 'hatfield.darwin-*' \) -print0 \
-            | while IFS= read -r -d '' f; do
-                cp -f "$f" "var/tmp/dist/$(basename "$f")"
-              done
           required=(
             hatfield.phar
             hatfield.linux-amd64
@@ -206,7 +200,7 @@ jobs:
             path="var/tmp/dist/${name}"
             if [[ ! -s "${path}" ]]; then
               echo "MISSING required release asset: ${path}"
-              find var/tmp/dist-raw -type f -print
+              find var/tmp/dist -type f -print
               exit 1
             fi
             size="$(wc -c < "${path}")"

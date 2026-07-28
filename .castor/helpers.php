@@ -831,7 +831,6 @@ function phar_packaged_inputs(string $root): array
             $root.'/internal-docs',
             $root.'/.castor',
             $root.'/tools/phar',
-            $root.'/tools/static',
         ],
         'files' => [
             $root.'/composer.json',
@@ -840,7 +839,6 @@ function phar_packaged_inputs(string $root): array
             $root.'/castor.php',
             $root.'/tools/phar/composer.json',
             $root.'/tools/phar/composer.lock',
-            $root.'/tools/static/pin.json',
         ],
     ];
 }

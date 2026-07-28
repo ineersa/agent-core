@@ -58,9 +58,7 @@ function phar_clean(): void
         echo "Removed staging {$staging}\n";
     }
 
-    $rootReal = realpath(__DIR__.'/..');
-    $root = false !== $rootReal ? $rootReal : __DIR__.'/..';
-    $lock = $root.'/'.\CastorTasks\PHAR_BUILD_LOCK;
+    $lock = \CastorTasks\project_root_dir().'/'.\CastorTasks\PHAR_BUILD_LOCK;
     if (is_file($lock)) {
         \CastorTasks\remove_path_checked($lock);
         echo "Removed lock {$lock}\n";
@@ -81,8 +79,6 @@ function phar_info(): void
         echo 'Modified: '.date(\DATE_ATOM, filemtime($path)).\PHP_EOL;
         $marker = \CastorTasks\phar_freshness_marker_path($path);
         echo 'Freshness marker: '.(is_file($marker) ? 'present' : 'missing').\PHP_EOL;
-        $rootReal = realpath(__DIR__.'/..');
-        $root = false !== $rootReal ? $rootReal : __DIR__.'/..';
-        echo 'Stale: '.(\CastorTasks\phar_is_stale($root, $path) ? 'yes' : 'no').\PHP_EOL;
+        echo 'Stale: '.(\CastorTasks\phar_is_stale(\CastorTasks\project_root_dir(), $path) ? 'yes' : 'no').\PHP_EOL;
     }
 }

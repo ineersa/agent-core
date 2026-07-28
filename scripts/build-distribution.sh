@@ -206,12 +206,12 @@ if [[ "${STATIC}" == "true" ]]; then
   if [[ -n "${TARGET}" ]]; then
     STATIC_ARGS+=(--target="${TARGET}")
   fi
+  # build-static already writes SHA256SUMS for present hatfield.* artifacts.
   castor distribution:build-static "${STATIC_ARGS[@]+"${STATIC_ARGS[@]}"}"
-  castor distribution:checksums ${OUTPUT:+--output="${OUTPUT}"}
   castor distribution:verify ${OUTPUT:+--output="${OUTPUT}"}
 else
-  # PHAR-only / default: hard-require PHAR+checksums, allow missing native.
-  castor distribution:checksums ${OUTPUT:+--output="${OUTPUT}"}
+  # PHAR-only / default: build already wrote SHA256SUMS; hard-require PHAR,
+  # allow missing native, skip topology (no native artifact expected).
   castor distribution:verify --skip-topology --allow-missing-native ${OUTPUT:+--output="${OUTPUT}"}
 fi
 

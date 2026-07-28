@@ -61,18 +61,6 @@ final class ApplicationBuildIdentity
     }
 
     /**
-     * @return array{version: string, commit: string, channel: string}
-     */
-    public function toArray(): array
-    {
-        return [
-            'version' => $this->version,
-            'commit' => $this->commit,
-            'channel' => $this->channel,
-        ];
-    }
-
-    /**
      * PHP source for the generated identity file embedded into packaged artifacts.
      */
     public static function generatePhpSource(string $version, string $commit, string $channel = 'release'): string
@@ -135,9 +123,6 @@ PHP;
         $cwd = $projectDir;
         if (null === $cwd || '' === $cwd) {
             $cwd = \dirname(__DIR__, 3);
-        }
-        if (!is_dir($cwd.'/.git') && !is_file($cwd.'/.git')) {
-            // Worktrees store .git as a file; still allow git -C.
         }
 
         $cmd = 'git -C '.escapeshellarg($cwd).' rev-parse --short=12 HEAD 2>/dev/null';
