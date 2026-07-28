@@ -8,19 +8,20 @@ use Ineersa\CodingAgent\Config\Ai\AiConfig;
 use Ineersa\CodingAgent\Config\Ai\AiModelReference;
 use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
 use Ineersa\CodingAgent\Config\AppConfig;
-use Ineersa\CodingAgent\Config\HomeSettingsWriter;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\ModelResolver;
 use Ineersa\CodingAgent\Config\ModelSelectionService;
 use Ineersa\CodingAgent\Config\ModelSettingsPersister;
-use Ineersa\CodingAgent\Config\SessionMetadataStore;
 use Ineersa\CodingAgent\Config\SessionsConfig;
+use Ineersa\CodingAgent\Config\SettingsOverrideWriter;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Entity\HatfieldSession;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
+use Symfony\Component\Filesystem\Filesystem;
+use Symfony\Component\PropertyAccess\PropertyAccess;
 
 /**
  * Coordinator-level tests for ModelSelectionService.
@@ -40,7 +41,7 @@ class ModelSelectionServiceTest extends IsolatedKernelTestCase
     private string $tempDir;
     private string $homeDir;
     private ModelSelectionService $service;
-    private SessionMetadataStore $sessionMetaStore;
+    private HatfieldSessionStore $sessionMetaStore;
     private \Doctrine\ORM\EntityManagerInterface $entityManager;
     /** Session ID from auto-increment entity created in setUp. */
     private string $sessionId;
@@ -61,7 +62,7 @@ class ModelSelectionServiceTest extends IsolatedKernelTestCase
         $this->entityManager = $container->get('doctrine.orm.default_entity_manager');
 
         $pathResolver = new SettingsPathResolver($this->tempDir, $this->homeDir);
-        $homeWriter = new HomeSettingsWriter($pathResolver);
+        $homeWriter = new SettingsOverrideWriter($pathResolver, PropertyAccess::createPropertyAccessor(), new Filesystem());
         $hatfieldSessionStore = new HatfieldSessionStore(
             appConfig: new AppConfig(
                 tui: new TuiConfig(theme: 'default'),
@@ -70,7 +71,7 @@ class ModelSelectionServiceTest extends IsolatedKernelTestCase
             ),
             entityManager: $this->entityManager,
         );
-        $this->sessionMetaStore = new SessionMetadataStore($hatfieldSessionStore);
+        $this->sessionMetaStore = $hatfieldSessionStore;
 
         $entity = new HatfieldSession();
         $entity->cwd = $this->tempDir.'/project';
@@ -567,7 +568,7 @@ class ModelSelectionServiceTest extends IsolatedKernelTestCase
     {
         $appConfig = $this->makeAppConfig($aiData);
         $pathResolver = new SettingsPathResolver($this->tempDir, $this->homeDir);
-        $homeWriter = new HomeSettingsWriter($pathResolver);
+        $homeWriter = new SettingsOverrideWriter($pathResolver, PropertyAccess::createPropertyAccessor(), new Filesystem());
         $resolver = new ModelResolver($appConfig, $this->sessionMetaStore);
         $persister = new ModelSettingsPersister($homeWriter, $this->sessionMetaStore);
 
@@ -645,7 +646,7 @@ class ModelSelectionServiceTest extends IsolatedKernelTestCase
     {
         $appConfig = $this->makeAppConfig($aiData);
         $pathResolver = new SettingsPathResolver($this->tempDir, $this->homeDir);
-        $homeWriter = new HomeSettingsWriter($pathResolver);
+        $homeWriter = new SettingsOverrideWriter($pathResolver, PropertyAccess::createPropertyAccessor(), new Filesystem());
         $resolver = new ModelResolver($appConfig, $this->sessionMetaStore);
         $persister = new ModelSettingsPersister($homeWriter, $this->sessionMetaStore);
 

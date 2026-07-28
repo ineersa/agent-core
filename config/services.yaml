@@ -1,10 +1,5 @@
 # yaml-language-server: $schema=../vendor/symfony/dependency-injection/Loader/schema/services.schema.json
 parameters:
-    # Legacy placeholder — model selection comes from Hatfield settings
-    # (ai.default_model) or the first available configured model.
-    # SessionAwareModelResolver overrides this via ModelResolverRoutingSubscriber.
-    app.default_model: ''
-
     # Default HATFIELD_CAPTURE_ERRORS to enabled; overridable via env var.
     env(HATFIELD_CAPTURE_ERRORS): '1'
 
@@ -82,8 +77,6 @@ services:
 
   Ineersa\Tui\:
     resource: '%kernel.project_dir%/src/Tui/**/*.php'
-
-  # ─── Session stores — resolved via HatfieldSessionStore for path ───
 
 
   Ineersa\AgentCore\Contract\Tool\DeferredToolCompletionRepositoryInterface:
@@ -284,6 +277,21 @@ services:
     factory: ['Ineersa\CodingAgent\Config\LoggingConfig', 'fromAppConfig']
     arguments:
       - '@Ineersa\CodingAgent\Config\AppConfig'
+
+  Ineersa\CodingAgent\Logging\LogParser: ~
+
+  Ineersa\CodingAgent\Logging\LogReader:
+    arguments:
+      $parser: '@Ineersa\CodingAgent\Logging\LogParser'
+      $logDir: '@=service("Ineersa\\CodingAgent\\Config\\LoggingConfig").logDir'
+
+  Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchLifecyclePolicyDTO:
+    arguments:
+      $parentCancelSingleReason: 'Parent run cancelled subagent tool.'
+      $parentCancelParallelReason: 'Parent run cancelled parallel subagent tool.'
+      $singleTimeoutCancelReason: 'Subagent timed out.'
+      $parallelTimeoutCancelReason: 'Parallel subagent timed out.'
+      $launchAbortSiblingCancelReason: 'Parallel subagent launch aborted after sibling failure.'
 
   # Monolog processor — injects RunLogContext fields into every log record.
   Ineersa\CodingAgent\Logging\LogContextProcessor:
@@ -722,9 +730,6 @@ services:
   # Execution identity is RunState.model / ExecuteLlmStep.model, not this resolver.
   Ineersa\CodingAgent\Compaction\ModelSelectionActiveModelResolver: ~
 
-  Ineersa\CodingAgent\Compaction\ActiveModelResolverInterface:
-    alias: Ineersa\CodingAgent\Compaction\ModelSelectionActiveModelResolver
-
   # Provider context usage resolver — reads latest llm_step_completed usage
   # from committed events for auto-compaction trigger policy.
   Ineersa\CodingAgent\Compaction\ProviderContextUsageResolver: ~
@@ -881,11 +886,11 @@ services:
     arguments:
       $executionBus: '@agent.execution.bus'
 
-  Ineersa\AgentCore\Application\Handler\CommandHandlerRegistry:
+  Ineersa\AgentCore\Application\Handler\CommandRouter:
     arguments:
       $handlers: !tagged_iterator agent_core.command_handler
 
-  Ineersa\AgentCore\Application\Handler\HookSubscriberRegistry:
+  Ineersa\AgentCore\Application\Handler\HookDispatcher:
     arguments:
       $subscribers: !tagged_iterator agent_core.hook_subscriber
 

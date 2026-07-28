@@ -67,8 +67,8 @@ final class CancelStickinessE2eTest extends TestCase
         );
 
         try {
-            // Wait for TUI startup.
-            $this->tmux->waitForCaptureContains($pane, '█', 10.0);
+            // Wait for TUI startup (20s under parallel castor check contention).
+            $this->tmux->waitForCaptureContains($pane, '█', TmuxHarness::TUI_STARTUP_LOGO_TIMEOUT_PARALLEL);
             $this->tmux->waitForTuiReadyAfterLogo($pane);
 
             // Clear any residual editor state.

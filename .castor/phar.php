@@ -29,30 +29,40 @@ function phar_build(): void
 
 /**
  * Ensure hatfield.phar exists (build if missing or stale).
+ *
+ * Failures propagate — do not swallow exceptions.
  */
 #[AsTask(name: 'phar:ensure', description: 'Ensure hatfield.phar exists (build if missing or stale)')]
 function phar_ensure(): void
 {
-    try {
-        \CastorTasks\phar_ensure();
-    } catch (Throwable $e) {
-        echo "phar:ensure error: {$e->getMessage()}
-";
-    }
+    \CastorTasks\phar_ensure();
 }
 
 /**
- * Remove the worktree-local hatfield.phar.
+ * Remove the worktree-local hatfield.phar, staging, and lock files.
  */
-#[AsTask(name: 'phar:clean', description: 'Remove worktree-local hatfield.phar')]
+#[AsTask(name: 'phar:clean', description: 'Remove worktree-local hatfield.phar, staging, and locks')]
 function phar_clean(): void
 {
     $path = \CastorTasks\hatfield_phar_path();
-    if (is_file($path) && !unlink($path)) {
-        throw new RuntimeException("Failed to remove {$path}");
+    if (is_file($path) || is_link($path) || is_file(\CastorTasks\phar_freshness_marker_path($path))) {
+        \CastorTasks\phar_remove_artifact_and_marker($path);
+        echo "Removed {$path} (+ freshness marker)\n";
+    } else {
+        echo "No PHAR at {$path}\n";
     }
-    echo "Removed {$path}
-";
+
+    $staging = \CastorTasks\hatfield_phar_staging_dir();
+    if (is_dir($staging)) {
+        \CastorTasks\remove_path_checked($staging);
+        echo "Removed staging {$staging}\n";
+    }
+
+    $lock = \CastorTasks\project_root_dir().'/'.\CastorTasks\PHAR_BUILD_LOCK;
+    if (is_file($lock)) {
+        \CastorTasks\remove_path_checked($lock);
+        echo "Removed lock {$lock}\n";
+    }
 }
 
 /**
@@ -67,5 +77,8 @@ function phar_info(): void
     if (is_file($path)) {
         echo 'Size: '.filesize($path).' bytes'.\PHP_EOL;
         echo 'Modified: '.date(\DATE_ATOM, filemtime($path)).\PHP_EOL;
+        $marker = \CastorTasks\phar_freshness_marker_path($path);
+        echo 'Freshness marker: '.(is_file($marker) ? 'present' : 'missing').\PHP_EOL;
+        echo 'Stale: '.(\CastorTasks\phar_is_stale(\CastorTasks\project_root_dir(), $path) ? 'yes' : 'no').\PHP_EOL;
     }
 }

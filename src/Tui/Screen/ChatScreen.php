@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Screen;
 
 use Ineersa\CodingAgent\Runtime\Contract\LoadedResourcesSummaryDTO;
+use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
+use Ineersa\CodingAgent\Runtime\Projection\TranscriptChangeSet;
 use Ineersa\Tui\Editor\PromptEditor;
 use Ineersa\Tui\Extension\SlotBasedTuiExtensionContext;
 use Ineersa\Tui\Extension\TuiExtensionContext;
@@ -19,10 +21,11 @@ use Ineersa\Tui\Status\StatusPanelWidget;
 use Ineersa\Tui\Status\WorkingStatusWidget;
 use Ineersa\Tui\Theme\ThemeColorEnum;
 use Ineersa\Tui\Theme\TuiTheme;
+use Ineersa\Tui\Transcript\MarkdownThemeStyleSheetFactory;
 use Ineersa\Tui\Transcript\PendingMessagesWidget;
-use Ineersa\Tui\Transcript\TranscriptBlockWidget;
 use Ineersa\Tui\Transcript\TranscriptDisplayConfig;
 use Ineersa\Tui\Transcript\TranscriptDisplayState;
+use Ineersa\Tui\Transcript\TranscriptMountedWidget;
 use Ineersa\Tui\Widget\LiveTextWidget;
 use Ineersa\Tui\Widget\TuiRenderContext;
 use Ineersa\Tui\Widget\WidgetPlacementEnum;
@@ -38,10 +41,11 @@ use Symfony\Component\Tui\Widget\EditorWidget;
  *
  * ChatScreen owns:
  *  - TuiSlotRegistry and SlotBasedTuiExtensionContext (extension slot model)
- *  - Default renderable TuiWidget instances (HeaderWidget, TranscriptBlockWidget, etc.)
+ *  - Default renderable TuiWidget instances (HeaderWidget, etc.)
  *  - A PromptEditor facade (DI service) wrapping a real Symfony EditorWidget
  *  - LiveTextWidget adapters that re-render at the live terminal width on every
  *    tick — so separators, header, and footer respond to terminal resize.
+ *  - A first-class mounted Symfony transcript subtree ({@see TranscriptMountedWidget})
  *
  * ChatScreen receives a PromptEditor (DI service wrapping EditorWidget)
  * and provides a clean listener-friendly API so listeners never
@@ -49,13 +53,13 @@ use Symfony\Component\Tui\Widget\EditorWidget;
  *
  * ## Resize responsiveness
  *
- * All structural widgets (separators, header, footer, top margin, extension
- * slots) use {@see LiveTextWidget} with a producer closure that reads the
- * current {@see RenderContext} and re-computes content at the live terminal
- * width. Dynamic sections (transcript, working status, status panel) also
- * use {@see LiveTextWidget}; their producer closures read the mutable
- * renderables/registry and re-wrap at the new width when the terminal
- * resizes (render cache miss on changed columns).
+ * Structural widgets (separators, header, footer, top margin, extension slots)
+ * use {@see LiveTextWidget} with a producer closure that reads the current
+ * {@see RenderContext} and re-computes content at the live terminal width.
+ * Dynamic non-transcript sections (working status, status panel) also use
+ * {@see LiveTextWidget}. The transcript is a mounted Symfony container whose
+ * children re-render through the live widget tree (including MarkdownWidget
+ * sub-element styles from the active stylesheet).
  */
 final class ChatScreen
 {
@@ -73,7 +77,7 @@ final class ChatScreen
     private readonly LiveTextWidget $headerWidget;
     private readonly LiveTextWidget $headerSepWidget;
     private readonly LiveTextWidget $loadedResourcesWidget;
-    private readonly LiveTextWidget $transcriptWidget;
+    private readonly TranscriptMountedWidget $transcriptWidget;
     private readonly LiveTextWidget $pendingWidget;
     private readonly LiveTextWidget $workingWidget;
     private readonly LiveTextWidget $statusPanelWidget;
@@ -85,7 +89,6 @@ final class ChatScreen
 
     /* ── TUI renderables (theme-agnostic, read by producer closures) ── */
     private readonly HeaderWidget $headerRenderable;
-    private readonly TranscriptBlockWidget $transcriptRenderable;
     private readonly PendingMessagesWidget $pendingRenderable;
     private readonly WorkingStatusWidget $workingRenderable;
     private readonly StatusPanelWidget $statusPanelRenderable;
@@ -114,7 +117,11 @@ final class ChatScreen
 
         // ── Instantiate default renderables ──
         $this->headerRenderable = new HeaderWidget();
-        $this->transcriptRenderable = new TranscriptBlockWidget(displayConfig: $displayConfig, displayState: $displayState);
+        $this->transcriptWidget = new TranscriptMountedWidget(
+            theme: $theme,
+            displayConfig: $displayConfig,
+            displayState: $displayState,
+        );
         $this->pendingRenderable = new PendingMessagesWidget();
         $this->workingRenderable = new WorkingStatusWidget();
         $this->statusPanelRenderable = new StatusPanelWidget();
@@ -170,14 +177,8 @@ final class ChatScreen
             },
         );
 
-        // ── Transcript ──
-        $this->transcriptWidget = new LiveTextWidget(
-            function (RenderContext $symfonyCtx): string {
-                $tuiCtx = $this->tuiContext($symfonyCtx);
-
-                return implode("\n", $this->transcriptRenderable->render($tuiCtx));
-            },
-        );
+        // Transcript is mounted as a first-class Symfony widget subtree
+        // (constructed above). Markdown children receive live WidgetContext.
 
         // ── Pending messages ──
         $this->pendingWidget = new LiveTextWidget(
@@ -297,6 +298,10 @@ final class ChatScreen
         $this->mounted = true;
         $this->tui = $tui;
 
+        // Install Markdown sub-element styles before mounting transcript children so
+        // attached MarkdownWidget instances resolve Hatfield theme tokens.
+        $tui->addStyleSheet((new MarkdownThemeStyleSheetFactory())->create($this->theme));
+
         // Add widgets in display order (top → bottom).
         // LiveTextWidget producers already read live RenderContext columns,
         // so no cached terminalWidth is needed.
@@ -384,11 +389,24 @@ final class ChatScreen
         $this->loadedResourcesWidget->invalidate();
     }
 
-    /** @param array<int, object> $blocks */
+    /**
+     * Full transcript replacement (bootstrap, resume, leaf/branch, preview invalidation).
+     *
+     * @param list<TranscriptBlock> $blocks
+     */
     public function setTranscriptBlocks(array $blocks): void
     {
-        $this->transcriptRenderable->setBlocks($blocks);
-        $this->transcriptWidget->invalidate();
+        $this->transcriptWidget->setBlocks($blocks);
+    }
+
+    /**
+     * Ordinary live projector delta: tail append/update/remove.
+     * Presentation model applies a dependency-bounded visual patch (no full-history
+     * walk on pure tail stream); explicit full reproject remains for structural cases.
+     */
+    public function applyTranscriptChangeSet(TranscriptChangeSet $changes): void
+    {
+        $this->transcriptWidget->applyChangeSet($changes);
     }
 
     /**
@@ -530,7 +548,7 @@ final class ChatScreen
      */
     public function refresh(): void
     {
-        $this->transcriptWidget->invalidate();
+        // Transcript is a mounted Symfony subtree; children invalidate themselves.
         $this->pendingWidget->invalidate();
         $this->workingWidget->invalidate();
         $this->statusPanelWidget->invalidate();

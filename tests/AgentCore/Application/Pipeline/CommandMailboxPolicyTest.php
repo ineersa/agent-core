@@ -4,9 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Tests\Application\Orchestrator;
 
-use Ineersa\AgentCore\Application\Handler\CommandHandlerRegistry;
 use Ineersa\AgentCore\Application\Handler\CommandRouter;
-use Ineersa\AgentCore\Application\Handler\MessageIdempotencyService;
 use Ineersa\AgentCore\Application\Handler\RunLockManager;
 use Ineersa\AgentCore\Application\Handler\StepDispatcher;
 use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
@@ -30,8 +28,8 @@ use Ineersa\AgentCore\Domain\Message\StartRunPayload;
 use Ineersa\AgentCore\Domain\Run\RunMetadata;
 use Ineersa\AgentCore\Domain\Run\RunState;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
-use Ineersa\AgentCore\Infrastructure\Storage\HotPromptStateStore;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore;
+use Ineersa\AgentCore\Infrastructure\Storage\InMemoryPromptStateStore;
 use Ineersa\AgentCore\Infrastructure\Storage\InMemoryRunStore;
 use Ineersa\AgentCore\Tests\Application\Handler\InMemoryIdempotencyStore;
 use Ineersa\AgentCore\Tests\Support\InMemoryEventStore;
@@ -422,7 +420,7 @@ final class CommandMailboxPolicyTest extends TestCase
     {
         $policy = new CommandMailboxPolicy(
             commandStore: new InMemoryCommandStore(),
-            commandRouter: new CommandRouter(new CommandHandlerRegistry([])),
+            commandRouter: new CommandRouter([]),
         );
 
         $state = new RunState(
@@ -453,13 +451,13 @@ final class CommandMailboxPolicyTest extends TestCase
         $eventStore = new InMemoryEventStore();
         $commandStore = new InMemoryCommandStore();
 
-        $replayService = new SessionHotPromptReplayService($eventStore, new HotPromptStateStore(), new PromptStateReplayService(), new ReplayEventPreparer());
+        $replayService = new SessionHotPromptReplayService($eventStore, new InMemoryPromptStateStore(), new PromptStateReplayService(), new ReplayEventPreparer());
 
         $commandBus = new TestMessageBus();
         $executionBus = new TestMessageBus();
 
         $stepDispatcher = new StepDispatcher($executionBus);
-        $commandRouter = new CommandRouter(new CommandHandlerRegistry([]));
+        $commandRouter = new CommandRouter([]);
         $commandMailboxPolicy = new CommandMailboxPolicy(
             commandStore: $commandStore,
             commandRouter: $commandRouter,
@@ -479,7 +477,7 @@ final class CommandMailboxPolicyTest extends TestCase
 
         $runMessageProcessor = new RunMessageProcessor(
             runStore: $runStore,
-            idempotency: new MessageIdempotencyService(new InMemoryIdempotencyStore()),
+            idempotency: new InMemoryIdempotencyStore(),
             runLockManager: new RunLockManager(new LockFactory(new InMemoryStore())),
             runCommit: $runCommit,
             stepDispatcher: $stepDispatcher,

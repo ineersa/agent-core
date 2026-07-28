@@ -15,6 +15,7 @@ use Ineersa\CodingAgent\Runtime\Contract\RuntimeExceptionBoundary;
 use Ineersa\CodingAgent\Runtime\Contract\UserCommand;
 use Ineersa\CodingAgent\Runtime\Controller\BackgroundProcessCompletionPoller;
 use Ineersa\CodingAgent\Runtime\Controller\RuntimeEventEmitter;
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessLifecycle;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessStore;
@@ -99,8 +100,7 @@ final class BackgroundProcessCompletionPollerTest extends IsolatedKernelTestCase
             }
         };
 
-        $this->tmpDir = sys_get_temp_dir().'/hatfield_poller_test_'.bin2hex(random_bytes(8));
-        mkdir($this->tmpDir, 0750, recursive: true);
+        $this->tmpDir = TestDirectoryIsolation::createOsTempDir('hatfield_poller_test');
     }
 
     protected function tearDown(): void

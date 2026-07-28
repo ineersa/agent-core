@@ -19,6 +19,8 @@ use Ineersa\Tui\Runtime\TuiSessionLifecycleEventTypeEnum;
 use Ineersa\Tui\Runtime\TuiSessionState;
 use Ineersa\Tui\Runtime\TuiTickDispatcher;
 use Ineersa\Tui\Screen\ChatScreen;
+use Ineersa\Tui\Theme\DefaultTheme;
+use Ineersa\Tui\Theme\ThemeRegistry;
 use Ineersa\Tui\Theme\TuiTheme;
 use Ineersa\Tui\Transcript\TranscriptBlockFactory;
 use Ineersa\Tui\Transcript\TranscriptDisplayState;
@@ -61,7 +63,7 @@ final readonly class InteractiveMode
      */
     public function __construct(
         private HatfieldSessionStore $sessionStore,
-        private ThemeFactory $themeFactory,
+        private ThemeRegistry $themeRegistry,
         private SessionInitializer $sessionInit,
         private iterable $listenerRegistrars,
         private PromptEditor $promptEditor,
@@ -119,7 +121,7 @@ final readonly class InteractiveMode
             });
         }
 
-        $theme = $this->themeFactory->create($theme);
+        $theme ??= new DefaultTheme($this->themeRegistry->getOrThrow($this->appConfig->tui->theme));
 
         // ── Session switch loop ──
         // Each iteration builds fresh TUI/session objects for the
@@ -164,7 +166,7 @@ final readonly class InteractiveMode
                 // `bin/console agent --prompt ...` starts a run immediately.
                 $state = $this->sessionInit->initialize('', $targetRequest);
             }
-            $state->transcript = $this->sessionInit->buildInitialTranscript($state);
+            $state->replaceTranscript($this->sessionInit->buildInitialTranscript($state));
 
             // ── Initialize per-session transcript display state ──
             // The immutable config is mapped once above.  Each session
@@ -411,11 +413,11 @@ final readonly class InteractiveMode
                     'exception' => $e,
                     'session_id' => $state->sessionId,
                 ]);
-                $state->transcript[] = $this->blockFactory->error(
+                $state->appendTranscriptBlock($this->blockFactory->error(
                     runId: $state->sessionId,
                     text: 'Runtime error: '.$e->getMessage(),
                     seq: \count($state->transcript) + 1,
-                );
+                ));
             }
             $screen->setTranscriptBlocks($state->transcript);
         } elseif ($state->resuming) {
@@ -424,24 +426,24 @@ final readonly class InteractiveMode
                 $existingRunId = (string) $session->id;
                 try {
                     $state->handle = $client->attach($existingRunId);
-                    $state->transcript[] = $this->blockFactory->system(
+                    $state->appendTranscriptBlock($this->blockFactory->system(
                         runId: $state->sessionId,
                         text: \sprintf('Resumed run %s', $existingRunId),
                         seq: \count($state->transcript) + 1,
                         style: 'muted',
                         category: 'lifecycle',
-                    );
+                    ));
                 } catch (\Throwable $e) {
                     $this->logger->warning('Failed to resume run', [
                         'exception' => $e,
                         'run_id' => $existingRunId,
                     ]);
-                    $state->transcript[] = $this->blockFactory->system(
+                    $state->appendTranscriptBlock($this->blockFactory->system(
                         runId: $state->sessionId,
                         text: 'Could not resume run — starting fresh.',
                         seq: \count($state->transcript) + 1,
                         style: 'warning',
-                    );
+                    ));
                 }
                 $screen->setTranscriptBlocks($state->transcript);
             }

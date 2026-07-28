@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Runtime\ProjectionPipeline;
 
 use Ineersa\CodingAgent\Runtime\Contract\TranscriptProjectorInterface;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
+use Ineersa\CodingAgent\Runtime\Projection\TranscriptChangeSet;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 
@@ -47,6 +48,11 @@ final readonly class TranscriptProjector implements TranscriptProjectorInterface
     public function blocks(): array
     {
         return $this->state->blocks();
+    }
+
+    public function drainChanges(): TranscriptChangeSet
+    {
+        return $this->state->drainChanges();
     }
 
     /**

@@ -12,7 +12,7 @@ AgentCommand::runTui()
     ▼
 InteractiveMode::run(client, request, theme, sessionId)
     │
-    ├─ 1. ThemeFactory::create()      → TuiTheme
+    ├─ 1. DefaultTheme(ThemeRegistry) → TuiTheme
     │
     ├─ 2. SessionInitializer::initialize(sessionId, request)
     │        ├─ new with prompt → create session row + TuiSessionState
@@ -299,7 +299,6 @@ Extensions interact with the TUI through explicit slots, not direct widget mutat
 - `src/Tui/Extension/TuiExtensionContext.php` — contract
 - `src/Tui/Extension/SlotBasedTuiExtensionContext.php` — delegates to TuiSlotRegistry
 - `src/Tui/Layout/TuiSlotRegistry.php` — central slot registry
-- `src/Tui/Layout/ChatLayout.php` — assembles layout from slots
 
 ### Project extensions: Symfony TUI overlays (`ExtensionApi`)
 
@@ -447,7 +446,7 @@ The logo is styled with the `ThemeColorEnum::Header` semantic color.
 ┌─────────────────────────────────────────────────────────────────────┐
 │                     InteractiveMode::run()                           │
 │                                                                      │
-│  1. ThemeFactory::create()           → TuiTheme                     │
+│  1. DefaultTheme(ThemeRegistry)      → TuiTheme                     │
 │  2. SessionInitializer::initialize() → TuiSessionState              │
 │  3. ChatScreen::mount(tui)           → live widget tree             │
 │  4. TuiTickDispatcher              → composable tick handlers       │
@@ -485,7 +484,9 @@ ChatScreen (14 widgets)
   ├── headerWidget       (LiveTextWidget)  ← HeaderWidget.render()
   ├── headerSeparator    (LiveTextWidget)  ─── at live terminal width
   ├── loadedResourcesWidget (LiveTextWidget)  LoadedResourcesWidget (startup summary; ctrl+r)
-  ├── transcriptWidget   (LiveTextWidget)  ← TranscriptWidget + entries
+  ├── transcriptWidget   (TranscriptMountedWidget)  first-class mounted Symfony container
+  │     └── semantic/native children: StreamingMarkdown / ToolExchange / Question /
+  │         Subagent widgets, Welcome/TurnSeparator, trivial TextWidget
   ├── pendingWidget      (LiveTextWidget)  PendingMessagesWidget
   ├── workingWidget      (LiveTextWidget)  WorkingStatusWidget (via registry)
   ├── statusPanelWidget  (LiveTextWidget)  StatusPanelWidget (via registry)
@@ -497,22 +498,68 @@ ChatScreen (14 widgets)
   └── footerWidget       (LiveTextWidget)  FooterBarWidget
 ```
 
-All `LiveTextWidget` instances carry a producer closure that reads current
-state (renderable / registry / extension slots) and re-computes content
-at the **live terminal width** on every render.  The Symfony TUI render
-cache (keyed on revision × columns × rows) ensures we only re-compute
-when dimensions change or `invalidate()` is called.  This is how
-separators and other static sections respond to terminal resize:
-unlike `TextWidget` which stores a fixed pre-computed string, the
-producer receives the current `RenderContext` and sizes output accordingly.
+Structural chrome still uses `LiveTextWidget` producers that re-compute at the
+**live terminal width**. The transcript is different: it is a mounted Symfony
+`ContainerWidget` subtree (`TranscriptMountedWidget`) whose children are real
+widgets attached to the live `WidgetContext`. Markdown sub-element styles
+(heading/link/code/quote/hr/list-bullet) come from a Hatfield theme stylesheet
+installed on the same `Tui` before mount.
+
+Reconciliation mounts semantic/native children keyed by presentation identity
+(including `exchange:<tool_call_id>` for tool call→result pairing):
+`StreamingMarkdownTranscriptWidget`, `ToolExchangeTranscriptWidget`,
+`QuestionTranscriptWidget`, `SubagentTranscriptWidget`, plus native
+`WelcomeTranscriptWidget` / `TurnSeparatorWidget` / trivial `TextWidget`.
+Ordinary streaming mutates Markdown via `setText()`/`setStyle()`. Whole-container
+rebuild is reserved for genuine relative reorder or non-tail insertion because
+Symfony's `ContainerWidget` public API is append/remove only.
+
+### Incremental transcript path (performance)
+
+Hot path is projector dirty-set → `TranscriptChangeSet` → `TuiSessionState`
+ID→index map → `ChatScreen::applyTranscriptChangeSet` → stateful
+`TranscriptVisualProjector` → bounded `TranscriptVisualPatch` →
+`TranscriptMountedWidget` keyed reconcile.
+
+- **Dirty detection** uses immutable `TranscriptBlock` object identity plus an
+  explicit presentation revision for preview expansion. No full-history
+  text/meta hashing on ordinary tail stream/update/remove.
+- **Projector** tracks dirty IDs in first-mark order; `drainChanges()` is
+  O(changes), not O(history). `blocks()` remains for bootstrap, resume, and
+  leaf/branch replacement snapshots. Batch removals use an order index (no
+  per-removal `array_filter` of the full order list).
+- **Session list** is a single ordered array of block references (no duplicate
+  copies of block objects). Upserts are O(1) via ID→index; batch removals splice
+  high indices first and rebuild the index once.
+- **Presentation model** retains canonical map/order and tool call/result
+  indexes. High-frequency pure stream/content updates reproject only the
+  affected standalone keys and emit a **content-only** `TranscriptVisualPatch`
+  (no order payload) so the mounted reconciler applies keyed upserts in
+  O(changes) with zero order/history scans. Common structural policy changes
+  (tool exchange, question, user-turn separators, mid removals) still
+  full-reproject O(B) internally, then **diff** to a bounded mounted patch when
+  survivor relative order is stable — a deliberate ponytail ceiling. Replace
+  with a per-exchange/neighbor dependency graph only if profiling shows
+  structural scans matter. Explicit full visual snapshot remains the defined
+  path for bootstrap, resume, RunLeafChanged/rewind/branch, non-tail
+  insert/reorder, ambiguous mid-list tool pairing, and global preview
+  invalidation — not a dual renderer.
+- **Mounted memory/layout** is O(number of visual nodes). Symfony's widget
+  revision/render cache remains the only rendered-output cache.
+  fallback.
+
+Hatfield uses Symfony's stock `Tui` and stock `ScreenWriter`. Residual bounce
+or flicker when transcript rows grow on non-synchronized terminals/multiplexers
+is an accepted trade-off for this migration; see Hatfield issue #303 and
+Symfony issue #64941.
 
 ### ChatScreen public API
 
 | Method | Purpose |
 |--------|---------|
 | `mount(Tui): void` | Create and attach all 14 widgets to TUI |
-| `setTranscriptBlocks(TranscriptBlock[]): void` | Replace transcript content |
-| `appendTranscriptBlock(TranscriptBlock): void` | Add one block to transcript |
+| `setTranscriptBlocks(TranscriptBlock[]): void` | Full transcript replace (bootstrap/resume/leaf/preview) |
+| `applyTranscriptChangeSet(TranscriptChangeSet): void` | Ordinary live projector delta (upserts/removals) |
 | `clearEditor(): void` | Reset editor to empty |
 | `editorText(): string` | Read editor content |
 | `setWorkingMessage(?string): void` | Override working indicator |
@@ -531,11 +578,12 @@ is invalidated on tick via `ChatScreen::refresh()` so live values (elapsed time
 and throughput) update even when no runtime events arrive.
 
 ```
-setTranscriptBlocks()    → transcriptRenderable + transcriptWidget.invalidate()
+setTranscriptBlocks()           → TranscriptMountedWidget::setBlocks() (full reconcile)
+applyTranscriptChangeSet()      → TranscriptMountedWidget::applyChangeSet() (incremental)
 setWorkingMessage()     → registry + workingRenderable + workingWidget.invalidate()
 setStatus()             → registry + statusPanelRenderable + footerDataProvider
                           + statusPanelWidget.invalidate() + footerWidget.invalidate()
-refresh()               → invalidates all mutable widgets (safety net)
+refresh()               → invalidates mutable LiveText regions (transcript is mounted)
 ```
 
 ### Editor module classes
@@ -546,7 +594,6 @@ The editor subsystem has two distinct class families:
 |-------|------|------|
 | `PromptEditor` | `src/Tui/Editor/PromptEditor.php` | DI service facade wrapping Symfony TUI's `EditorWidget`. Owns text lifecycle: `extract()`, `clear()`, `getState()`. Interactive text input. |
 | `EditorState` | `src/Tui/Editor/EditorState.php` | Immutable snapshot DTO for session persistence and test fixtures. Stores logical lines only; no cursor tracking. |
-| `PromptEditorWidget` | `src/Tui/Editor/PromptEditorWidget.php` | Static `TuiWidget` renderable for placeholder display in `ChatLayout`. **Not** the interactive editor — see `PromptEditor` for that. |
 
 `PromptEditor` owns an internal `EditorWidget` (Symfony TUI). `ChatScreen`
 currently creates its own `EditorWidget` directly — EDITOR-02 will shift to
@@ -845,13 +892,15 @@ RuntimeEventPoller::poll(state, client)
     ├─ skip events with seq ≤ lastSeq  (dedup)
     ├─ ActivityStateMachine::transition()  → updates state.activity
     ├─ projector->accept(event)        → TranscriptProjector dispatches to subscribers
-    ├─ synchronizeProjectedBlocks()    → merges projector blocks into state.transcript
+    ├─ projector->drainChanges()       → TranscriptChangeSet (dirty upserts + removals)
+    ├─ state->applyTranscriptChangeSet() → O(1) ID map upserts; removals splice index
     │
     ▼
-ChatScreen::setTranscriptBlocks(blocks)
+ChatScreen::applyTranscriptChangeSet(changes)   // full path: setTranscriptBlocks()
     │
-    ├─ Updates transcript widget with new TranscriptBlock DTOs
-    └─ Renders blocks with role prefixes + theme colors at display time
+    ├─ TranscriptVisualProjector → TranscriptVisualPatch (content-only or structural)
+    ├─ TranscriptMountedWidget keyed reconcile (semantic widgets / native TextWidget)
+    └─ Mounted Markdown/tool widgets render with live WidgetContext + theme stylesheet
     │
     └─ FooterStateListener handler
          └─ ChatScreen::refresh() so live footer values re-render
@@ -866,7 +915,7 @@ Symfony EventDispatcher to family-grouped projection subscribers
 `CancellationProjectionSubscriber`, `RunLifecycleProjectionSubscriber`).
 Each subscriber produces `TranscriptBlock` DTOs with a
 `TranscriptBlockKindEnum` kind. Theming and role prefixes (❯ ◇ ●) are
-applied at display time by `TranscriptBlockWidget`:
+applied at display time by `TranscriptMountedWidget` / `TranscriptBlockWidgetFactory`:
 
 | Block kind | Example output | Display prefix |
 |------------|----------------|----------------|

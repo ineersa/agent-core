@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Tool;
 
 use Ineersa\CodingAgent\Config\OutputCapConfig;
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tool\OutputCap;
 use PHPUnit\Framework\TestCase;
 
@@ -15,14 +16,14 @@ final class OutputCapTest extends TestCase
 
     protected function setUp(): void
     {
-        $this->tmpDir = sys_get_temp_dir().'/hatfield-output-cap-test-'.bin2hex(random_bytes(4));
+        $this->tmpDir = TestDirectoryIsolation::createOsTempDir('hatfield-output-cap-test');
         $this->config = new OutputCapConfig(storageDir: $this->tmpDir);
     }
 
     protected function tearDown(): void
     {
         if (is_dir($this->tmpDir)) {
-            $this->removeDirectory($this->tmpDir);
+            TestDirectoryIsolation::removeDirectory($this->tmpDir);
         }
     }
 
@@ -384,27 +385,5 @@ final class OutputCapTest extends TestCase
         }
 
         return null;
-    }
-
-    private function removeDirectory(string $dir): void
-    {
-        if (!is_dir($dir)) {
-            return;
-        }
-
-        $items = new \RecursiveIteratorIterator(
-            new \RecursiveDirectoryIterator($dir, \RecursiveDirectoryIterator::SKIP_DOTS),
-            \RecursiveIteratorIterator::CHILD_FIRST,
-        );
-
-        foreach ($items as $item) {
-            if ($item->isDir()) {
-                @rmdir($item->getRealPath());
-            } else {
-                @unlink($item->getRealPath());
-            }
-        }
-
-        @rmdir($dir);
     }
 }

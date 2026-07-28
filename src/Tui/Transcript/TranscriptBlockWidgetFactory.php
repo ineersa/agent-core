@@ -54,6 +54,11 @@ final readonly class TranscriptBlockWidgetFactory
         return $this->displayState;
     }
 
+    public function subagentRenderer(): SubagentResultRenderer
+    {
+        return $this->subagentRenderer;
+    }
+
     public function isTranscriptWidgetSuppressed(TranscriptBlock $block): bool
     {
         return $this->shouldSuppressTranscriptWidget($block);
@@ -131,7 +136,8 @@ final readonly class TranscriptBlockWidgetFactory
     /**
      * Visual transcript collapse: render ToolCall + matching ToolResult as one compact card.
      *
-     * Canonical projection still stores separate blocks; list assembly in {@see TranscriptBlockWidget}
+     * Canonical projection still stores separate blocks; list assembly in
+     * {@see TranscriptMountedWidget}
      * pairs by tool_call_id and skips the standalone ToolResult row when consumed here.
      */
     public function buildToolExchangeWidget(TranscriptBlock $callBlock, TranscriptBlock $resultBlock, TuiTheme $theme): AbstractWidget

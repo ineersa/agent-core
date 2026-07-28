@@ -87,6 +87,17 @@ function build_test_tui_phpunit_command(?string $filter = null): string
     $llmFlags = is_llm_mode() ? ' --colors=never --no-progress --log-junit='.report_path('phpunit-tui.junit.xml') : '';
     $envPrefix = qa_check_run_env_command().' APP_ENV=test ';
 
+    // TuiArtifactBootE2eTest hard-requires a packaged binary. Always ensure the
+    // worktree PHAR for test:tui (full group + filters + castor check lane) so
+    // the proof cannot soft-pass with a missing artifact.
+    try {
+        $pharPath = phar_ensure();
+        $envPrefix .= 'HATFIELD_BINARY_PATH='.escapeshellarg($pharPath).' HATFIELD_REQUIRE_ARTIFACT=1 ';
+        echo "TUI artifact env: HATFIELD_BINARY_PATH={$pharPath}\n";
+    } catch (Throwable $e) {
+        throw new RuntimeException('TUI artifact proof requires a packaged PHAR (castor phar:ensure failed): '.$e->getMessage(), 0, $e);
+    }
+
     $filterArg = null !== $filter ? ' --filter='.escapeshellarg($filter) : '';
     if ('' === $filterArg) {
         $filterArg = ' --group=tui-e2e-replay';

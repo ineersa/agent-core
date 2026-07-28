@@ -7,13 +7,12 @@ namespace Ineersa\Tui\Tests\Picker;
 use Ineersa\CodingAgent\Config\Ai\AiConfig;
 use Ineersa\CodingAgent\Config\Ai\HatfieldModelCatalog;
 use Ineersa\CodingAgent\Config\AppConfig;
-use Ineersa\CodingAgent\Config\HomeSettingsWriter;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\ModelResolver;
 use Ineersa\CodingAgent\Config\ModelSelectionService;
 use Ineersa\CodingAgent\Config\ModelSettingsPersister;
-use Ineersa\CodingAgent\Config\SessionMetadataStore;
 use Ineersa\CodingAgent\Config\SessionsConfig;
+use Ineersa\CodingAgent\Config\SettingsOverrideWriter;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
@@ -25,6 +24,8 @@ use Ineersa\Tui\Theme\ThemePalette;
 use Ineersa\Tui\Theme\TuiTheme;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Filesystem\Filesystem;
+use Symfony\Component\PropertyAccess\PropertyAccess;
 
 /**
  * Tests for the static model picker item builder and findItemIndex.
@@ -199,7 +200,7 @@ class ModelPickerControllerTest extends TestCase
         );
 
         $pathResolver = new SettingsPathResolver($this->tempDir, $this->homeDir);
-        $homeWriter = new HomeSettingsWriter($pathResolver);
+        $homeWriter = new SettingsOverrideWriter($pathResolver, PropertyAccess::createPropertyAccessor(), new Filesystem());
         $hatfieldSessionStore = new HatfieldSessionStore(
             appConfig: new AppConfig(
                 tui: new TuiConfig(theme: 'default'),
@@ -208,7 +209,7 @@ class ModelPickerControllerTest extends TestCase
             ),
             entityManager: $this->createStub(\Doctrine\ORM\EntityManagerInterface::class),
         );
-        $sessionMetaStore = new SessionMetadataStore($hatfieldSessionStore);
+        $sessionMetaStore = $hatfieldSessionStore;
 
         return new ModelSelectionService($appConfig, new ModelResolver($appConfig, $sessionMetaStore), new ModelSettingsPersister($homeWriter, $sessionMetaStore));
     }

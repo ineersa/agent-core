@@ -19,7 +19,6 @@ final class SafeGuardPolicyTest extends TestCase
 
         $this->assertSame([], $policy->allowCommandPatterns);
         $this->assertSame([], $policy->allowWriteOutsideCwd);
-        $this->assertSame([], $policy->allowDestructiveInPaths);
         $this->assertSame([], $policy->protectedReadPatterns);
         $this->assertSame([], $policy->dangerousCommandPatterns);
     }
@@ -29,27 +28,14 @@ final class SafeGuardPolicyTest extends TestCase
         $policy = new SafeGuardPolicy(
             allowCommandPatterns: ['rm -rf'],
             allowWriteOutsideCwd: ['/tmp'],
-            allowDestructiveInPaths: ['/tmp'],
             protectedReadPatterns: ['.env.local'],
             dangerousCommandPatterns: ['risky-cmd'],
         );
 
         $this->assertSame(['rm -rf'], $policy->allowCommandPatterns);
         $this->assertSame(['/tmp'], $policy->allowWriteOutsideCwd);
-        $this->assertSame(['/tmp'], $policy->allowDestructiveInPaths);
         $this->assertSame(['.env.local'], $policy->protectedReadPatterns);
         $this->assertSame(['risky-cmd'], $policy->dangerousCommandPatterns);
-    }
-
-    public function testAllowDestructiveInPathsFieldExistsButNotWired(): void
-    {
-        // This field is declared for serialization compatibility with Pi
-        // but is deliberately never checked by classifier logic.
-        $policy = new SafeGuardPolicy(
-            allowDestructiveInPaths: ['/tmp', '/var/tmp'],
-        );
-
-        $this->assertCount(2, $policy->allowDestructiveInPaths);
     }
 
     public function testFromConfigCopiesAllFields(): void
@@ -57,7 +43,6 @@ final class SafeGuardPolicyTest extends TestCase
         $config = SafeGuardConfig::fromArray([
             'allow_command_patterns' => ['ls -la'],
             'allow_write_outside_cwd' => ['/tmp'],
-            'allow_destructive_in_paths' => ['/safe'],
             'protected_read_patterns' => ['.extra'],
             'dangerous_command_patterns' => ['risky'],
         ]);
@@ -66,7 +51,6 @@ final class SafeGuardPolicyTest extends TestCase
 
         $this->assertSame(['ls -la'], $policy->allowCommandPatterns);
         $this->assertSame(['/tmp'], $policy->allowWriteOutsideCwd);
-        $this->assertSame(['/safe'], $policy->allowDestructiveInPaths);
         $this->assertContains('.env.local', $policy->protectedReadPatterns);
         $this->assertContains('.extra', $policy->protectedReadPatterns);
         $this->assertSame(['risky'], $policy->dangerousCommandPatterns);

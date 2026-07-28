@@ -47,25 +47,4 @@ enum RunEventTypeEnum: string
     // ── Turn tree metadata (append-only canonical) ───────────────────────
     case TurnBranched = 'turn_branched';
     case LeafSet = 'leaf_set';
-
-    /**
-     * Whether the given event type string belongs to the ordered lifecycle stream
-     * (the 10 core cases: AgentStart through AgentEnd).
-     */
-    public static function isLifecycleType(string $type): bool
-    {
-        return match ($type) {
-            self::AgentStart->value,
-            self::TurnStart->value,
-            self::MessageStart->value,
-            self::MessageUpdate->value,
-            self::MessageEnd->value,
-            self::ToolExecutionStart->value,
-            self::ToolExecutionUpdate->value,
-            self::ToolExecutionEnd->value,
-            self::TurnEnd->value,
-            self::AgentEnd->value => true,
-            default => false,
-        };
-    }
 }

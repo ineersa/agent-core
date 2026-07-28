@@ -33,7 +33,8 @@ use Symfony\Component\Process\Process;
  * - Supervision: polls isRunning() every 5s; exit code 0 is treated as
  *   normal memory-limit (or other graceful) recycle with immediate relaunch;
  *   non-zero exits use crash restart policy with exponential backoff
- * - Shutdown: sends SIGTERM with configurable grace period, then SIGKILL
+ * - Shutdown: SIGTERM all tracked consumers first, one shared grace deadline,
+ *   then escalate survivors with Process::stop(0) (SIGKILL)
  * - stderr is drained incrementally during stdout reads; a bounded tail per
  *   consumer key is retained for abnormal-exit diagnostics (Symfony Process
  *   buffers are cleared so idle polling does not retain the full event bus
@@ -293,8 +294,13 @@ final class ConsumerSupervisor implements ConsumerStdoutSourceInterface
      * part of run cancellation — individual tool workers self-terminate
      * via their own cancellation token polling.
      *
-     * Sends SIGTERM, waits up to shutdownGraceSeconds for graceful exit,
-     * then escalates to SIGKILL if still running.
+     * Two-phase shutdown under ONE shared grace deadline:
+     * 1) SIGTERM every currently running tracked Process first (no wait),
+     * 2) poll until all exit or shutdownGraceSeconds elapses,
+     * 3) escalate only remaining tracked children with Process::stop(0).
+     *
+     * Sequential Process::stop(grace) per child would delay the last consumer
+     * by N×grace and orphan the tail of a large pool under parent timeout.
      */
     public function shutdown(): void
     {
@@ -305,20 +311,70 @@ final class ConsumerSupervisor implements ConsumerStdoutSourceInterface
         }
 
         $this->logger->info('Shutting down messenger consumers (controller stopping)', [
+            'component' => 'ConsumerSupervisor',
+            'event_type' => 'consumer.shutdown_begin',
             'count' => \count($this->consumers),
+            'grace_seconds' => $this->shutdownGraceSeconds,
         ]);
 
+        // Phase 1: signal every running tracked child before any wait.
         foreach ($this->consumers as $key => $process) {
-            $pid = $process->getPid();
-            $process->stop($this->shutdownGraceSeconds);
+            if (!$process->isRunning()) {
+                continue;
+            }
 
-            if ($process->isRunning()) {
-                $this->logger->warning('Messenger consumer still running after grace period, may have been killed', [
+            try {
+                $process->signal(\SIGTERM);
+            } catch (\Throwable $e) {
+                // Process may have exited between isRunning() and signal(); keep going.
+                $this->logger->info('Messenger consumer already gone during SIGTERM', [
+                    'component' => 'ConsumerSupervisor',
+                    'event_type' => 'consumer.shutdown_signal_race',
                     'key' => $key,
-                    'pid' => $pid,
+                    'pid' => $process->getPid(),
+                    'error' => $e->getMessage(),
                 ]);
             }
         }
+
+        // Phase 2: one shared grace deadline for the whole tracked set.
+        $deadline = microtime(true) + $this->shutdownGraceSeconds;
+        while (microtime(true) < $deadline) {
+            $anyRunning = false;
+            foreach ($this->consumers as $process) {
+                if ($process->isRunning()) {
+                    $anyRunning = true;
+                    break;
+                }
+            }
+            if (!$anyRunning) {
+                break;
+            }
+            usleep(50_000);
+        }
+
+        // Phase 3: escalate only survivors (Process::stop(0) => immediate SIGKILL path).
+        foreach ($this->consumers as $key => $process) {
+            if (!$process->isRunning()) {
+                continue;
+            }
+
+            $pid = $process->getPid();
+            $process->stop(0);
+            // stop(0) is best-effort; log that this key needed escalation after shared grace.
+            $this->logger->warning('Messenger consumer escalated after shared grace via stop(0)', [
+                'component' => 'ConsumerSupervisor',
+                'event_type' => 'consumer.shutdown_escalated',
+                'key' => $key,
+                'pid' => $pid,
+            ]);
+        }
+
+        $this->logger->info('Messenger consumer shutdown complete', [
+            'component' => 'ConsumerSupervisor',
+            'event_type' => 'consumer.shutdown_complete',
+            'count' => \count($this->consumers),
+        ]);
 
         $this->consumers = [];
     }

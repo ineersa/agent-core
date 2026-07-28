@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Ineersa\AgentCore\Tests\Application\Handler;
 
 use Ineersa\AgentCore\Application\Handler\HookDispatcher;
-use Ineersa\AgentCore\Application\Handler\HookSubscriberRegistry;
 use Ineersa\AgentCore\Contract\Extension\HookSubscriberInterface;
 use Ineersa\AgentCore\Domain\Event\BoundaryHookEvent;
 use Ineersa\AgentCore\Domain\Event\BoundaryHookName;
@@ -43,7 +42,7 @@ final class HookDispatcherContractTest extends TestCase
         $serializer = $this->serializer();
 
         $dispatcher = new HookDispatcher(
-            new HookSubscriberRegistry([$subscriber]),
+            [$subscriber],
             new EventDispatcher(),
             $serializer,
             $serializer,
@@ -74,7 +73,7 @@ final class HookDispatcherContractTest extends TestCase
         $serializer = $this->serializer();
 
         $dispatcher = new HookDispatcher(
-            new HookSubscriberRegistry([]),
+            [],
             $eventDispatcher,
             $serializer,
             $serializer,

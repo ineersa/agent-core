@@ -7,7 +7,6 @@ namespace Ineersa\CodingAgent\Agent\Execution\Subagent\Batch\Deferred\Completion
 use Ineersa\AgentCore\Contract\Tool\ToolCallException;
 use Ineersa\AgentCore\Domain\Run\RunStatus;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
-use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchCompletionKindEnum;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchExecutionModeEnum;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchItemSnapshotDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchSupervisionResultDTO;
@@ -118,9 +117,6 @@ final readonly class DeferredSubagentBatchTerminalCompletionService
         $result = new ChildRunBatchSupervisionResultDTO(
             parentRunId: $batch->parentRunId,
             items: $items,
-            completionKind: $allCompleted
-                ? ChildRunBatchCompletionKindEnum::AllSucceeded
-                : ChildRunBatchCompletionKindEnum::PartialFailure,
         );
 
         if ($allCompleted) {

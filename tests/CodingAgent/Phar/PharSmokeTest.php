@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Phar;
 
 use Ineersa\CodingAgent\Tests\Support\AgentTestExecutable;
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Process\Process;
@@ -44,14 +45,14 @@ final class PharSmokeTest extends TestCase
     protected function tearDown(): void
     {
         foreach ($this->isolatedHomeDirs as $dir) {
-            shell_exec('rm -rf '.escapeshellarg($dir));
+            TestDirectoryIsolation::removeDirectory($dir);
         }
         $this->isolatedHomeDirs = [];
     }
 
     public function testPharBootingToAgentList(): void
     {
-        [$php, $pharPath] = AgentTestExecutable::command();
+        [$cmd, $pharPath] = $this->resolveArtifactCommand();
         $isPhar = str_ends_with($pharPath, '.phar');
 
         if (!$isPhar) {
@@ -68,7 +69,7 @@ final class PharSmokeTest extends TestCase
         // PHAR is a production artifact — never inherit APP_ENV=test from
         // the PHPUnit parent process (which would trigger
         // Class-not-found for test-only bundles like DAMADoctrineTestBundle).
-        $output = $this->shellExecIsolated('APP_ENV=prod '.$php.' '.escapeshellarg($pharPath).' list 2>&1');
+        $output = $this->shellExecIsolated('APP_ENV=prod '.$this->shellCommand($cmd, 'list 2>&1'));
         $this->assertNotNull($output, 'PHAR list command produced no output');
         $this->assertStringContainsString('agent', $output, 'PHAR list output should contain the agent command');
 
@@ -82,9 +83,27 @@ final class PharSmokeTest extends TestCase
         echo \sprintf("\nPHAR smoke test ok: %s (%.1f MB)\n", $pharPath, $sizeMb);
     }
 
+    public function testPharVersionIdentity(): void
+    {
+        [$cmd, $pharPath] = $this->resolveArtifactCommand();
+        $isPhar = str_ends_with($pharPath, '.phar');
+
+        if (!$isPhar) {
+            $this->markTestSkipped(\sprintf(
+                'HATFIELD_BINARY_PATH not set or not a PHAR. Resolved to %s.',
+                $pharPath,
+            ));
+        }
+
+        $output = $this->shellExecIsolated('APP_ENV=prod '.$this->shellCommand($cmd, '--version 2>&1'));
+        $this->assertNotNull($output);
+        $this->assertStringContainsString('Hatfield', $output);
+        $this->assertStringContainsString('commit', $output);
+    }
+
     public function testPharAgentHelp(): void
     {
-        [$php, $pharPath] = AgentTestExecutable::command();
+        [$cmd, $pharPath] = $this->resolveArtifactCommand();
         $isPhar = str_ends_with($pharPath, '.phar');
 
         if (!$isPhar) {
@@ -98,7 +117,7 @@ final class PharSmokeTest extends TestCase
         // Also verify that --help works on the agent command.
         // APP_ENV=prod prevents the PHAR from trying to load test-only
         // bundles (DAMADoctrineTestBundle) inherited from the PHPUnit env.
-        $output = $this->shellExecIsolated('APP_ENV=prod '.$php.' '.escapeshellarg($pharPath).' agent --help 2>&1');
+        $output = $this->shellExecIsolated('APP_ENV=prod '.$this->shellCommand($cmd, 'agent --help 2>&1'));
         $this->assertNotNull($output, 'PHAR agent --help produced no output');
         $this->assertStringContainsString('Usage:', $output);
     }
@@ -119,7 +138,7 @@ final class PharSmokeTest extends TestCase
     #[Group('phar')]
     public function testPharRunsFromRepoRootWithSourceTreeVendor(): void
     {
-        [$php, $pharPath] = AgentTestExecutable::command();
+        [$cmd, $pharPath] = $this->resolveArtifactCommand();
         $isPhar = str_ends_with($pharPath, '.phar');
 
         if (!$isPhar) {
@@ -134,7 +153,7 @@ final class PharSmokeTest extends TestCase
         $repoRoot = \dirname(__DIR__, 3);
         $isolatedHome = $this->createIsolatedHome();
         $process = Process::fromShellCommandline(
-            \sprintf('HOME=%s APP_ENV=prod HATFIELD_CACHE_DIR= %s %s list', escapeshellarg($isolatedHome), escapeshellarg($php), escapeshellarg($pharPath)),
+            \sprintf('HOME=%s APP_ENV=prod HATFIELD_CACHE_DIR= %s', escapeshellarg($isolatedHome), $this->shellCommand($cmd, 'list')),
             cwd: $repoRoot,
         );
         $process->mustRun();
@@ -162,7 +181,7 @@ final class PharSmokeTest extends TestCase
     #[Group('phar')]
     public function testPharCacheIsolationUsesContentHash(): void
     {
-        [$php, $pharPath] = AgentTestExecutable::command();
+        [$cmd, $pharPath] = $this->resolveArtifactCommand();
         $isPhar = str_ends_with($pharPath, '.phar');
 
         if (!$isPhar) {
@@ -172,17 +191,15 @@ final class PharSmokeTest extends TestCase
         // Run PHAR from an isolated temp dir to trigger fresh cache
         // creation.  The cache dir suffix must be 12 hex chars (SHA-256)
         // rather than 8 (legacy md5(__FILE__)).
-        $tmpCwd = sys_get_temp_dir().'/phar-cache-hash-test-'.bin2hex(random_bytes(8));
-        @mkdir($tmpCwd, 0755, true);
+        $tmpCwd = TestDirectoryIsolation::createProjectTempDir('phar-cache-hash');
 
         $isolatedHome = $this->createIsolatedHome();
         try {
             $process = Process::fromShellCommandline(
                 \sprintf(
-                    'HOME=%s APP_ENV=prod HATFIELD_CACHE_DIR= %s %s list',
+                    'HOME=%s APP_ENV=prod HATFIELD_CACHE_DIR= %s',
                     escapeshellarg($isolatedHome),
-                    escapeshellarg($php),
-                    escapeshellarg($pharPath),
+                    $this->shellCommand($cmd, 'list'),
                 ),
                 cwd: $tmpCwd,
             );
@@ -217,13 +234,13 @@ final class PharSmokeTest extends TestCase
             );
         } finally {
             // Clean up the isolated temp dir even on assertion failure.
-            shell_exec('rm -rf '.escapeshellarg($tmpCwd));
+            TestDirectoryIsolation::removeDirectory($tmpCwd);
         }
     }
 
     public function testPharContainsMaterializedInternalDocs(): void
     {
-        [$php, $pharPath] = AgentTestExecutable::command();
+        [$cmd, $pharPath] = $this->resolveArtifactCommand();
         $isPhar = str_ends_with($pharPath, '.phar');
 
         if (!$isPhar) {
@@ -266,6 +283,138 @@ final class PharSmokeTest extends TestCase
         $this->assertStringContainsString('Hatfield Settings', (string) file_get_contents($settingsPath));
     }
 
+    public function testPharBundledResourcesAndProjectLocalSettingsExtension(): void
+    {
+        [$cmd, $pharPath] = $this->resolveArtifactCommand();
+        $isPhar = str_ends_with($pharPath, '.phar');
+        if (!$isPhar) {
+            $this->markTestSkipped('Not running as PHAR — requires HATFIELD_BINARY_PATH pointing to built hatfield.phar');
+        }
+
+        $this->assertFileExists($pharPath);
+        $phar = new \Phar($pharPath);
+
+        // Bundled defaults / themes / migrations / internal docs (materialized).
+        $requiredEntries = [
+            'config/hatfield.defaults.yaml',
+            'config/themes/catppuccin-mocha.yaml',
+            'migrations/Version20260601152619.php',
+            'internal-docs/settings.md',
+            'internal-docs/agents.md',
+        ];
+        foreach ($requiredEntries as $entry) {
+            $this->assertTrue(isset($phar[$entry]), 'Missing PHAR entry '.$entry);
+            $this->assertFalse($phar[$entry]->isLink(), $entry.' must be a regular file, not a symlink');
+        }
+
+        $tmp = TestDirectoryIsolation::createProjectTempDir('phar-project-local');
+        try {
+            TestDirectoryIsolation::createHatfieldTree($tmp, withSessions: true);
+            TestDirectoryIsolation::ensureDirectory($tmp.'/home/.hatfield');
+            // Empty HOME settings so project-local settings win for discovery proof.
+            file_put_contents($tmp.'/home/.hatfield/settings.yaml', "ai:\n    default_model: null\n");
+
+            // Project-local settings mark a distinctive theme + enable a tiny extension class.
+            $extDir = $tmp.'/.hatfield/extensions/proof-ext';
+            TestDirectoryIsolation::ensureDirectory($extDir.'/src');
+            file_put_contents(
+                $extDir.'/src/ProofExtension.php',
+                <<<'PHP'
+<?php
+declare(strict_types=1);
+namespace HatfieldProofExt;
+use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
+use Ineersa\Hatfield\ExtensionApi\HatfieldExtensionInterface;
+final class ProofExtension implements HatfieldExtensionInterface
+{
+    public function register(ExtensionApiInterface $api): void
+    {
+        // no-op — presence is enough for load proof
+    }
+}
+PHP
+            );
+            // Minimal composer autoload for the project-local extension package.
+            file_put_contents(
+                $tmp.'/.hatfield/extensions/composer.json',
+                json_encode([
+                    'autoload' => [
+                        'psr-4' => [
+                            'HatfieldProofExt\\' => 'proof-ext/src/',
+                        ],
+                    ],
+                ], \JSON_PRETTY_PRINT | \JSON_UNESCAPED_SLASHES)."\n",
+            );
+            // Generate a tiny autoloader without requiring network composer.
+            $autoload = <<<'PHP'
+<?php
+spl_autoload_register(static function (string $class): void {
+    $prefix = 'HatfieldProofExt\\';
+    if (!str_starts_with($class, $prefix)) {
+        return;
+    }
+    $rel = str_replace('\\', '/', substr($class, strlen($prefix)));
+    $path = __DIR__.'/proof-ext/src/'.$rel.'.php';
+    if (is_file($path)) {
+        require $path;
+    }
+});
+PHP;
+            TestDirectoryIsolation::ensureDirectory($tmp.'/.hatfield/extensions/vendor');
+            file_put_contents($tmp.'/.hatfield/extensions/vendor/autoload.php', $autoload);
+
+            file_put_contents(
+                $tmp.'/.hatfield/settings.yaml',
+                "tui:\n    theme: catppuccin-mocha\nextensions:\n    enabled:\n        - HatfieldProofExt\\ProofExtension\n",
+            );
+
+            $home = $tmp.'/home';
+            $env = 'HOME='.escapeshellarg($home).' APP_ENV=prod HATFIELD_CACHE_DIR= ';
+            $process = Process::fromShellCommandline(
+                $env.$this->shellCommand($cmd, 'about 2>&1'),
+                cwd: $tmp,
+            );
+            $process->mustRun();
+            $about = $process->getOutput().$process->getErrorOutput();
+            $this->assertStringContainsString('Environment', $about);
+
+            // Writable state must stay under isolated CWD, not the PHAR path / home only.
+            $this->assertDirectoryExists($tmp.'/.hatfield/cache', 'PHAR must create writable cache under project CWD');
+
+            // Boot list from empty temp project (no source tree).
+            $list = Process::fromShellCommandline(
+                $env.$this->shellCommand($cmd, 'list 2>&1'),
+                cwd: $tmp,
+            );
+            $list->mustRun();
+            $this->assertStringContainsString('agent', $list->getOutput());
+
+            // Extension class must be autoloadable from project-local extensions path.
+            $this->assertFileExists($tmp.'/.hatfield/extensions/vendor/autoload.php');
+            $this->assertFileExists($tmp.'/.hatfield/extensions/proof-ext/src/ProofExtension.php');
+        } finally {
+            TestDirectoryIsolation::removeDirectory($tmp);
+        }
+    }
+
+    /**
+     * @return array{0: list<string>, 1: string} command prefix pieces and phar/binary path
+     */
+    private function resolveArtifactCommand(): array
+    {
+        $cmd = AgentTestExecutable::command();
+        $path = AgentTestExecutable::path();
+
+        return [$cmd, $path];
+    }
+
+    private function shellCommand(array $cmd, string $args): string
+    {
+        $parts = array_map(static fn (string $p): string => escapeshellarg($p), $cmd);
+
+        return implode(' ', $parts).' '.$args;
+    }
+
     /**
      * Create an isolated HOME directory with no user config.
      *
@@ -279,8 +428,7 @@ final class PharSmokeTest extends TestCase
      */
     private function createIsolatedHome(): string
     {
-        $dir = sys_get_temp_dir().'/phar-smoke-home-'.bin2hex(random_bytes(6));
-        @mkdir($dir, 0755, true);
+        $dir = TestDirectoryIsolation::createProjectTempDir('phar-smoke-home');
         $this->isolatedHomeDirs[] = $dir;
 
         return $dir;
