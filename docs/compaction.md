@@ -263,6 +263,22 @@ There is no dedicated live compaction controller smoke in the `llm-real` group. 
 
 The `CompactHandler` in `src/CodingAgent/Runtime/Controller/CommandHandler/` routes JSONL `compact` command types through the headless controller to the same `AgentRunnerInterface::compact()` path used by the in-process client. This path is exercised indirectly by `CompactHandlerTest`.
 
+## Observational Memory compaction (optional extension)
+
+When `Ineersa\HatfieldExt\ObservationalMemory\ObservationalMemoryExtension` is enabled,
+CompactRun-only public hooks can replace the normal LLM summary path with OM active
+memory. See `.hatfield/extensions/observational-memory/README.md` and
+`docs/settings.md` → `extensions.settings.observational_memory`.
+
+Normative behavior for implementors (summary):
+
+- **Watermark:** session-global coverage range `1..RunState.lastSeq` frozen under the run lock.
+- **Hot path:** public hook upserts an immutable compaction request fingerprint, dispatches a scalar `extension_agent` job, and polls OM SQLite with `compaction.wait_timeout_seconds` (default 180). No model call on the hook path.
+- **Worker:** catch up Observer through the watermark, always run Reflector for the active candidate set (threshold gate does not apply on compaction), commit a generation, and store a **deterministic PHP** replacement summary (`ActiveMemoryRenderer`). The DB column `replacement_text` holds that PHP render only — Reflector tools must not author free-form summary text.
+- **Cancel / timeout:** terminal `failed` / `timed_out` cancels CompactRun via `context_compaction_failed` and preserves original context (no silent LLM summary fallback). Late worker success after timeout is rejected.
+- **Transport:** single FIFO `extension_agent` queue, `max_retries: 1`, no failure transport. Exhausted jobs emit sanitized `extension_agent.job_failed` TUI Error blocks when `run_id` is present.
+- **Settings:** nested keys only (`observer.*`, `reflector.*`, `pools.*`, `compaction.wait_timeout_seconds`); envelopes use `floor(context_window * context_window_ratio)` (default 0.65), not fixed 12k budgets.
+
 ## Manual smoke checklist
 
 Concise steps to verify compaction manually:

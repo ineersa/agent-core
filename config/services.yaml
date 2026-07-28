@@ -452,6 +452,12 @@ services:
       $sink: '@Ineersa\CodingAgent\Runtime\InProcess\InMemoryRuntimeEventSink'
       $stdoutSink: '@Ineersa\CodingAgent\Runtime\Stream\StdoutRuntimeEventSink'
 
+  # extension_agent permanent failures write transient JSONL via STDOUT from the
+  # messenger:consume extension_agent child (same pipe as stream deltas).
+  Ineersa\CodingAgent\Extension\Agent\ExtensionAgentJobFailedEventSubscriber:
+    arguments:
+      $stdoutSink: '@Ineersa\CodingAgent\Runtime\Stream\StdoutRuntimeEventSink'
+
   # ─── App executable locator chain ───
   # Resolves the agent binary independently of the runtime working directory,
   # so messenger consumers and controller subprocesses always use the correct
@@ -646,7 +652,15 @@ services:
     lazy: true
     factory: ['@Ineersa\CodingAgent\Infrastructure\SymfonyAi\ConfiguredSymfonyAiPlatformFactory', 'createPlatform']
 
-  # Extension API agent/event capabilities (concrete classes autowired).
+  # Extension API agent/event capabilities.
+  # Wire modelCatalog from AppConfig.catalog (nullable) — not the standalone
+  # HatfieldModelCatalog service, whose constructor requires non-null AiConfig.
+  # Without AI settings (e.g. isolated PHAR list), catalog is null and
+  # contextWindow() returns null instead of TypeError during service construction.
+  Ineersa\CodingAgent\Extension\Agent\ConfiguredModelAgentRunner:
+    arguments:
+      $modelCatalog: '@=service("Ineersa\\CodingAgent\\Config\\AppConfig").catalog'
+
   Ineersa\Hatfield\ExtensionApi\Agent\AgentRunnerInterface:
     alias: Ineersa\CodingAgent\Extension\Agent\ConfiguredModelAgentRunner
 

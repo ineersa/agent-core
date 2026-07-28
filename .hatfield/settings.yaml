@@ -80,6 +80,23 @@ extensions:
             castor_check_timeout_seconds: 480
         castor_llm_mode:
             enabled: true
+        observational_memory:
+            storage:
+                database: .hatfield/extensions-data/observational-memory/om.sqlite
+            observer:
+                model: llama_cpp_test/test
+                thinking_level: medium
+                context_window_ratio: 0.65
+            reflector:
+                model: llama_cpp_test/test
+                thinking_level: high
+                context_window_ratio: 0.65
+                reflect_after_observation_tokens: 40000
+            pools:
+                observations_max_tokens: 30000
+                reflections_max_tokens: 10000
+            compaction:
+                wait_timeout_seconds: 180
 forks:
     model: openai-codex/gpt-5.6-luna
     thinking_level: high

@@ -620,6 +620,11 @@ final class ExtensionToolRegistryBridgeTest extends TestCase
             public function run(AgentCallRequestDTO $request): void
             {
             }
+
+            public function contextWindow(string $exactModel): ?int
+            {
+                return null;
+            }
         };
     }
 

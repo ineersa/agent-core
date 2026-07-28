@@ -14,6 +14,7 @@ use Ineersa\Hatfield\ExtensionApi\Agent\ExtensionAgentJobRequestDTO;
 use Ineersa\Hatfield\ExtensionApi\Command\CommandDefinitionDTO;
 use Ineersa\Hatfield\ExtensionApi\Command\CommandRegistryInterface;
 use Ineersa\Hatfield\ExtensionApi\Command\ExtensionCommandHandlerInterface;
+use Ineersa\Hatfield\ExtensionApi\Compaction\BeforeCompactionHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Exec\ExecInterface;
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
 use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterTurnCommitHookInterface;
@@ -138,6 +139,11 @@ final readonly class ExtensionToolRegistryBridge implements ExtensionApiInterfac
     public function registerAfterTurnCommitHook(AfterTurnCommitHookInterface $hook): void
     {
         $this->hookRegistry->addAfterTurnCommitHook($hook);
+    }
+
+    public function registerBeforeCompactionHook(BeforeCompactionHookInterface $hook): void
+    {
+        $this->hookRegistry->addBeforeCompactionHook($hook);
     }
 
     public function agent(): AgentRunnerInterface

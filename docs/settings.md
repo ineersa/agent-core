@@ -1524,6 +1524,72 @@ Project extension class: `Ineersa\HatfieldExt\FileRewind\FileRewindExtension` (e
 - `max_file_bytes` (default `2097152`)
 - `git_timeout_seconds` (default `30`)
 
+### `extensions.settings.observational_memory`
+
+Settings for the project Observational Memory extension
+(`Ineersa\HatfieldExt\ObservationalMemory\ObservationalMemoryExtension`, package under
+`.hatfield/extensions/observational-memory/`). Read via
+`ExtensionApiInterface::getSettings('observational_memory')`.
+
+OM is **not enabled by default**. This repository’s tracked `.hatfield/settings.yaml`
+omits the extension class from `extensions.enabled` and ships an inert nested
+`extensions.settings.observational_memory` example. Local/dev sessions do not start
+Observer/Reflector workers or write `om.sqlite` until the class is listed under
+`extensions.enabled`.
+
+Nested shape only (no flat budget compatibility keys):
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `storage.database` | string | `.hatfield/extensions-data/observational-memory/om.sqlite` | Extension-owned SQLite path. |
+| `observer.model` | string | *(required)* | Exact `provider/model` for Observer jobs. |
+| `observer.thinking_level` | string | `medium` | Observer thinking level. |
+| `observer.context_window_ratio` | float | `0.65` | Fraction of model context used for Observer envelope/chunking. |
+| `observer.renderer_version` | string | `1` | Renderer identity baked into coverage keys. |
+| `observer.schema_version` | string | `1` | Observer schema identity baked into coverage/observation ids. |
+| `reflector.model` | string | *(required)* | Exact `provider/model` for Reflector jobs. |
+| `reflector.thinking_level` | string | `high` | Reflector thinking level. |
+| `reflector.context_window_ratio` | float | `0.65` | Fraction of model context for Reflector envelope. |
+| `reflector.reflect_after_observation_tokens` | int | `40000` | Threshold Reflector dispatch gate after durable observe chunks. |
+| `reflector.schema_version` | string | `1` | Reflector schema identity. |
+| `pools.observations_max_tokens` | int | `30000` | Active retained-observation pool budget after Reflector. |
+| `pools.reflections_max_tokens` | int | `10000` | Active reflection pool budget after Reflector. |
+| `compaction.wait_timeout_seconds` | int | `180` | CompactRun hook poll timeout waiting on `om.sqlite` result. |
+
+Example (activation surface; tracked project settings omit the class from extensions.enabled):
+
+```yaml
+extensions:
+    enabled:
+        # ...other extensions...
+        - Ineersa\HatfieldExt\ObservationalMemory\ObservationalMemoryExtension
+    settings:
+        observational_memory:
+            storage:
+                database: .hatfield/extensions-data/observational-memory/om.sqlite
+            observer:
+                model: llama_cpp_test/test
+                thinking_level: medium
+                context_window_ratio: 0.65
+            reflector:
+                model: llama_cpp_test/test
+                thinking_level: high
+                context_window_ratio: 0.65
+                reflect_after_observation_tokens: 40000
+            pools:
+                observations_max_tokens: 30000
+                reflections_max_tokens: 10000
+            compaction:
+                wait_timeout_seconds: 180
+```
+
+Requires async `extension_agent` transport (process controller Doctrine DSN).
+`sync://` dispatch is fail-closed. Compaction uses session-global coverage watermark
+`1..RunState.lastSeq`, deterministic server-side active-memory render (no model
+`replacement_text`), single FIFO `extension_agent` worker, and `max_retries: 1`
+with no failure transport. Exhausted jobs emit sanitized `extension_agent.job_failed`
+TUI Error blocks.
+
 ## Fork tool defaults
 
 The `fork` tool launches an isolated child with inherited parent conversation context. These settings apply only to fork launches (not the parent session):

@@ -87,7 +87,12 @@ framework:
             # MUST be a process transport (doctrine:// / in-memory:// for tests).
             # ExtensionAgentJobDispatcher refuses sync:// so model work cannot run
             # inline during AfterTurnCommit / on the caller thread.
-            extension_agent: '%env(HATFIELD_EXTENSION_AGENT_TRANSPORT_DSN)%'
+            # max_retries: 1 => initial attempt + one retry. No failure_transport:
+            # exhausted jobs emit a sanitized TUI runtime event instead of a dead-letter queue.
+            extension_agent:
+                dsn: '%env(HATFIELD_EXTENSION_AGENT_TRANSPORT_DSN)%'
+                retry_strategy:
+                    max_retries: 1
 
         routing:
             Ineersa\AgentCore\Domain\Message\StartRun: run_control

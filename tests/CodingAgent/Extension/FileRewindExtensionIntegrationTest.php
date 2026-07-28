@@ -48,6 +48,11 @@ final class FileRewindExtensionIntegrationTest extends TestCase
                 public function run(\Ineersa\Hatfield\ExtensionApi\Agent\AgentCallRequestDTO $request): void
                 {
                 }
+
+                public function contextWindow(string $exactModel): ?int
+                {
+                    return null;
+                }
             },
             new class implements \Ineersa\Hatfield\ExtensionApi\Session\SessionEventReaderInterface {
                 public function readRange(string $runId, int $startSeq, int $endSeq): iterable

@@ -26,4 +26,13 @@ interface AgentRunnerInterface
      * failures propagate as exceptions.
      */
     public function run(AgentCallRequestDTO $request): void;
+
+    /**
+     * Exact provider/model reference such as "llama_cpp/flash".
+     *
+     * Resolve only via HatfieldModelCatalog / AiModelReference.
+     * Null or non-positive is a durable configuration failure at every call site.
+     * No fallback table. No invented default window. Not retryable/transient.
+     */
+    public function contextWindow(string $exactModel): ?int;
 }

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\HatfieldExt\ObservationalMemory\Tests;
 
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
+use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\Hatfield\ExtensionApi\Agent\AgentCallRequestDTO;
 use Ineersa\Hatfield\ExtensionApi\Agent\AgentRunnerInterface;
 use Ineersa\Hatfield\ExtensionApi\Agent\ExtensionAgentJobHandlerInterface;
@@ -23,15 +24,14 @@ use Ineersa\Hatfield\ExtensionApi\Tool\ToolRegistrationDTO;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolResultHookInterface;
 use Ineersa\HatfieldExt\ObservationalMemory\Observer\ObserveBoundaryJobHandler;
 use Ineersa\HatfieldExt\ObservationalMemory\Storage\ObservationRepository;
-use Ineersa\HatfieldExt\ObservationalMemory\Storage\OmDatabaseFactory;
-use PHPUnit\Framework\TestCase;
+use Ineersa\HatfieldExt\ObservationalMemory\Tests\Support\OmDatabaseFactoryTestService;
 use Psr\Log\NullLogger;
 
 /**
  * Thesis: async ObserveBoundaryJobHandler renders range, invokes agent with record_observations,
  * and persists zero-or-more observations plus coverage watermark.
  */
-final class ObserveBoundaryJobHandlerTest extends TestCase
+final class ObserveBoundaryJobHandlerTest extends IsolatedKernelTestCase
 {
     private string $projectDir;
 
@@ -81,8 +81,9 @@ final class ObserveBoundaryJobHandlerTest extends TestCase
                 ($tool->handler)([
                     'observations' => [
                         [
+                            'timestamp' => '2026-07-23 00:00',
                             'content' => 'Prefer feature flags for rollout',
-                            'relevance' => 80,
+                            'relevance' => 'high',
                             'source_refs' => [
                                 ['run_id' => 'run-1', 'seq' => 1],
                             ],
@@ -107,16 +108,19 @@ final class ObserveBoundaryJobHandlerTest extends TestCase
         );
 
         $this->assertInstanceOf(AgentCallRequestDTO::class, $lastRequest);
-        $this->assertSame(3, $lastRequest->maxToolCalls);
+        $this->assertSame(100, $lastRequest->maxToolCalls);
         $this->assertStringContainsString('Use feature flags', $lastRequest->input);
+        $this->assertStringContainsString('CURRENT REFLECTIONS:', $lastRequest->input);
+        $this->assertStringContainsString('Current local time fallback:', $lastRequest->input);
+        $this->assertStringContainsString('observation agent for a coding assistant', $lastRequest->instructions);
 
         $dbPath = $this->projectDir.'/.hatfield/extensions-data/observational-memory/om.sqlite';
         $this->assertFileExists($dbPath);
         $this->assertSame('0700', substr(\sprintf('%o', fileperms(\dirname($dbPath))), -4));
 
-        $connection = OmDatabaseFactory::connect($dbPath, new NullLogger());
+        $connection = $this->omDatabaseFactory()->connect($dbPath, new NullLogger());
         $repo = new ObservationRepository($connection);
-        $this->assertSame(2, $repo->latestCoveredEndSeq('run-1', 'r1', 'o1'));
+        $this->assertSame(2, $repo->contiguousCoveredEndSeq('run-1', 'r1', 'o1'));
 
         $count = (int) $connection->fetchOne('SELECT COUNT(*) FROM om_observation WHERE run_id = ?', ['run-1']);
         $this->assertSame(1, $count);
@@ -163,9 +167,9 @@ final class ObserveBoundaryJobHandlerTest extends TestCase
         );
 
         $dbPath = $this->projectDir.'/.hatfield/extensions-data/observational-memory/om.sqlite';
-        $connection = OmDatabaseFactory::connect($dbPath, new NullLogger());
+        $connection = $this->omDatabaseFactory()->connect($dbPath, new NullLogger());
         $repo = new ObservationRepository($connection);
-        $this->assertSame(1, $repo->latestCoveredEndSeq('run-2', 'r1', 'o1'));
+        $this->assertSame(1, $repo->contiguousCoveredEndSeq('run-2', 'r1', 'o1'));
         $obs = (int) $connection->fetchOne('SELECT COUNT(*) FROM om_observation WHERE run_id = ?', ['run-2']);
         $this->assertSame(0, $obs);
         $covCount = (int) $connection->fetchOne(
@@ -173,6 +177,199 @@ final class ObserveBoundaryJobHandlerTest extends TestCase
             ['run-2'],
         );
         $this->assertSame(0, $covCount);
+    }
+
+    /**
+     * Thesis: after contiguous coverage through 82, observe 83..88 where 83 is
+     * non-renderable control (agent_command_queued) and 84+ are content must persist
+     * coverage through 88 without a canonical hole (83 covered, not rendered/cited).
+     * A later terminal through 90 must only observe the new 89..90 range — not re-run
+     * the already-covered 84+ content (manual session-2 failure shape).
+     */
+    public function testNonRenderableControlSeqDoesNotLeaveCanonicalCoverageGap(): void
+    {
+        $dbPath = $this->projectDir.'/.hatfield/extensions-data/observational-memory/om.sqlite';
+        // Seed requires migrated schema before handle() opens the same path.
+        $connection = $this->omDatabaseFactory()->connectAndMigrate($dbPath, new NullLogger());
+        $repo = new ObservationRepository($connection);
+
+        // Seed prior contiguous coverage 1..82 (session-2 shape) via repository.
+        $repo->commitChunkPartCoverage(
+            coverageKey: 'seed-cov-1-82',
+            runId: 'run-gap',
+            boundaryKey: 'seed-chunk-1-82',
+            sourceStartSeq: 1,
+            sourceEndSeq: 82,
+            chunkKey: 'seed-chunk-1-82',
+            partIndex: 1,
+            partCount: 1,
+            sourceDigest: 'seed-source-digest',
+            partDigest: 'seed-part-digest',
+            rendererVersion: 'r1',
+            observerSchemaVersion: 'o1',
+            observerModel: 'llama_cpp_test/test',
+            observations: [],
+            coveredAt: '2026-07-27T22:00:00+00:00',
+        );
+        $this->assertSame(82, $repo->contiguousCoveredEndSeq('run-gap', 'r1', 'o1'));
+
+        $events = [
+            new SessionEventDTO(
+                runId: 'run-gap',
+                seq: 83,
+                turnNo: 2,
+                type: 'agent_command_queued',
+                payload: ['kind' => 'prompt'],
+                createdAt: '2026-07-27T22:01:00+00:00',
+            ),
+            new SessionEventDTO(
+                runId: 'run-gap',
+                seq: 84,
+                turnNo: 2,
+                type: 'agent_command_applied',
+                payload: ['kind' => 'prompt', 'text' => 'Follow-up about include_archive'],
+                createdAt: '2026-07-27T22:01:01+00:00',
+            ),
+            new SessionEventDTO(
+                runId: 'run-gap',
+                seq: 85,
+                turnNo: 2,
+                type: 'llm_step_completed',
+                payload: [
+                    'assistant_message' => [
+                        'role' => 'assistant',
+                        'content' => 'include_archive is unnecessary for TODO listing',
+                    ],
+                ],
+                createdAt: '2026-07-27T22:01:02+00:00',
+            ),
+            new SessionEventDTO(
+                runId: 'run-gap',
+                seq: 86,
+                turnNo: 2,
+                type: 'agent_end',
+                payload: ['reason' => 'completed'],
+                createdAt: '2026-07-27T22:01:03+00:00',
+            ),
+            new SessionEventDTO(
+                runId: 'run-gap',
+                seq: 87,
+                turnNo: 2,
+                type: 'agent_command_applied',
+                payload: ['kind' => 'prompt', 'text' => 'Proceed with four-phase plan'],
+                createdAt: '2026-07-27T22:01:04+00:00',
+            ),
+            new SessionEventDTO(
+                runId: 'run-gap',
+                seq: 88,
+                turnNo: 2,
+                type: 'agent_end',
+                payload: ['reason' => 'completed'],
+                createdAt: '2026-07-27T22:01:05+00:00',
+            ),
+            new SessionEventDTO(
+                runId: 'run-gap',
+                seq: 89,
+                turnNo: 3,
+                type: 'agent_command_applied',
+                payload: ['kind' => 'prompt', 'text' => 'Implement phase one only'],
+                createdAt: '2026-07-27T22:02:00+00:00',
+            ),
+            new SessionEventDTO(
+                runId: 'run-gap',
+                seq: 90,
+                turnNo: 3,
+                type: 'agent_end',
+                payload: ['reason' => 'completed'],
+                createdAt: '2026-07-27T22:02:01+00:00',
+            ),
+        ];
+
+        $agentCalls = 0;
+        /** @var list<AgentCallRequestDTO> $requests */
+        $requests = [];
+        $api = $this->buildApi(
+            events: $events,
+            onAgentRun: static function (AgentCallRequestDTO $request) use (&$agentCalls, &$requests): void {
+                ++$agentCalls;
+                $requests[] = $request;
+                $tool = $request->tools[0] ?? null;
+                if (null === $tool) {
+                    throw new \RuntimeException('expected record_observations tool');
+                }
+                $seq = 1 === $agentCalls ? 84 : 89;
+                $content = 1 === $agentCalls
+                    ? 'User asked about include_archive for TODO listing'
+                    : 'User asked to implement phase one only';
+                ($tool->handler)([
+                    'observations' => [[
+                        'timestamp' => '2026-07-27 22:01',
+                        'content' => $content,
+                        'relevance' => 'medium',
+                        'source_refs' => [
+                            ['run_id' => 'run-gap', 'seq' => $seq],
+                        ],
+                    ]],
+                ]);
+            },
+        );
+
+        $handler = new ObserveBoundaryJobHandler(new NullLogger());
+        $handler->handle($api, [
+            'run_id' => 'run-gap',
+            'terminal_end_seq' => 88,
+            'terminal_status' => 'completed',
+            'renderer_version' => 'r1',
+            'observer_schema_version' => 'o1',
+        ], 'job-gap-1', 'run-gap');
+
+        $this->assertSame(1, $agentCalls, 'Observer must run once for the uncovered 83..88 range');
+        $firstRequest = $requests[0] ?? null;
+        $this->assertInstanceOf(AgentCallRequestDTO::class, $firstRequest);
+        $this->assertStringContainsString('include_archive', $firstRequest->input);
+        $this->assertStringContainsString('[Source entry id: run-gap:84]', $firstRequest->input);
+        $this->assertStringNotContainsString('[Source entry id: run-gap:83]', $firstRequest->input);
+        $this->assertStringNotContainsString('agent_command_queued', $firstRequest->input);
+        $this->assertStringNotContainsString('Implement phase one only', $firstRequest->input);
+
+        $this->assertSame(88, $repo->contiguousCoveredEndSeq('run-gap', 'r1', 'o1'));
+
+        $coverageRows = $connection->fetchAllAssociative(
+            'SELECT source_start_seq, source_end_seq, observation_count
+             FROM om_coverage
+             WHERE run_id = ? AND source_start_seq >= 83
+             ORDER BY source_start_seq, source_end_seq',
+            ['run-gap'],
+        );
+        $this->assertNotSame([], $coverageRows);
+        $this->assertSame(83, (int) $coverageRows[0]['source_start_seq']);
+        $this->assertSame(88, (int) $coverageRows[\count($coverageRows) - 1]['source_end_seq']);
+
+        // Later terminal past the repaired watermark must observe only the new tail.
+        // Without the coverage-range fix, contiguous end stuck at 82 and every later
+        // job re-observed overlapping 84+ content (manual session 2).
+        $handler->handle($api, [
+            'run_id' => 'run-gap',
+            'terminal_end_seq' => 90,
+            'terminal_status' => 'completed',
+            'renderer_version' => 'r1',
+            'observer_schema_version' => 'o1',
+        ], 'job-gap-2', 'run-gap');
+
+        $this->assertSame(2, $agentCalls, 'later terminal 90 must invoke Observer once more for 89..90 only');
+        $secondRequest = $requests[1] ?? null;
+        $this->assertInstanceOf(AgentCallRequestDTO::class, $secondRequest);
+        // Prior observation text may appear under CURRENT OBSERVATIONS (correct).
+        // The NEW source chunk must only contain the post-88 tail.
+        $newSourcePos = strpos($secondRequest->input, 'NEW SOURCE-ADDRESSED CONVERSATION CHUNK:');
+        $this->assertNotFalse($newSourcePos);
+        $newSource = substr($secondRequest->input, $newSourcePos);
+        $this->assertStringContainsString('Implement phase one only', $newSource);
+        $this->assertStringContainsString('[Source entry id: run-gap:89]', $newSource);
+        $this->assertStringNotContainsString('include_archive', $newSource);
+        $this->assertStringNotContainsString('[Source entry id: run-gap:84]', $newSource);
+        $this->assertStringNotContainsString('[Source entry id: run-gap:83]', $newSource);
+        $this->assertSame(90, $repo->contiguousCoveredEndSeq('run-gap', 'r1', 'o1'));
     }
 
     /**
@@ -214,14 +411,24 @@ final class ObserveBoundaryJobHandlerTest extends TestCase
                 }
 
                 return [
-                    'enabled' => true,
-                    'observer_model' => 'llama_cpp_test/test',
-                    'renderer_version' => 'r1',
-                    'observer_schema_version' => 'o1',
-                    'max_observations' => 5,
-                    'content_max_chars' => 500,
-                    'tool_result_max_chars' => 4000,
-                    'observer_input_budget_tokens' => 50_000,
+                    'observer' => [
+                        'model' => 'llama_cpp_test/test',
+                        'schema_version' => 'o1',
+                        'renderer_version' => 'r1',
+                        'context_window_ratio' => 0.65,
+                    ],
+                    'reflector' => [
+                        'model' => 'llama_cpp_test/test',
+                        'schema_version' => 'rv1',
+                        'context_window_ratio' => 0.65,
+                    ],
+                    'pools' => [
+                        'observations_max_tokens' => 30000,
+                        'reflections_max_tokens' => 10000,
+                    ],
+                    'compaction' => [
+                        'wait_timeout_seconds' => 180,
+                    ],
                 ];
             }
 
@@ -251,6 +458,10 @@ final class ObserveBoundaryJobHandlerTest extends TestCase
             {
             }
 
+            public function registerBeforeCompactionHook(\Ineersa\Hatfield\ExtensionApi\Compaction\BeforeCompactionHookInterface $hook): void
+            {
+            }
+
             public function agent(): AgentRunnerInterface
             {
                 $onAgentRun = $this->onAgentRun;
@@ -266,6 +477,11 @@ final class ObserveBoundaryJobHandlerTest extends TestCase
                     public function run(AgentCallRequestDTO $request): void
                     {
                         ($this->onAgentRun)($request);
+                    }
+
+                    public function contextWindow(string $exactModel): ?int
+                    {
+                        return 128000;
                     }
                 };
             }
@@ -299,5 +515,13 @@ final class ObserveBoundaryJobHandlerTest extends TestCase
             {
             }
         };
+    }
+
+    private function omDatabaseFactory(): OmDatabaseFactoryTestService
+    {
+        /** @var OmDatabaseFactoryTestService $service */
+        $service = self::getContainer()->get('test.om_database_factory');
+
+        return $service;
     }
 }

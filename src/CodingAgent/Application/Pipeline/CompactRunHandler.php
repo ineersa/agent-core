@@ -21,6 +21,7 @@ use Ineersa\CodingAgent\Compaction\CompactionHookContextDTO;
 use Ineersa\CodingAgent\Compaction\CompactionHookDispatcher;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\CompactionRuntimeSettingsDTO;
+use Ineersa\CodingAgent\Extension\ExtensionCompactionHookDispatcher;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 
@@ -42,6 +43,7 @@ final readonly class CompactRunHandler implements RunMessageHandler
         private AppConfig $appConfig,
         private EventFactory $eventFactory,
         private CompactionHookDispatcher $hookDispatcher,
+        private ExtensionCompactionHookDispatcher $extensionHookDispatcher,
         private LoggerInterface $logger = new NullLogger(),
     ) {
     }
@@ -163,7 +165,14 @@ final readonly class CompactRunHandler implements RunMessageHandler
             thinkingLevel: $thinkingLevel,
         );
 
-        $hookResult = $this->hookDispatcher->dispatch($hookContext);
+        // Public extension hooks are CompactRun-only and receive the session-global
+        // required coverage watermark 1..RunState.lastSeq captured under this lock.
+        // Snapshot/fork CompactionService keeps internal hooks only (no lastSeq).
+        $hookResult = $this->extensionHookDispatcher->dispatchForCompactRun(
+            internalContext: $hookContext,
+            requiredStartSeq: 1,
+            requiredEndSeq: $state->lastSeq,
+        );
 
         // Hook cancel: emit context_compaction_failed, no worker dispatch.
         if ($hookResult->cancels()) {
