@@ -424,7 +424,7 @@ final class TuiJourneyE2eTest extends TestCase
      * Assert that the canonical event stream ends with AgentEnd.
      *
      * Reads the most recent session's events.jsonl from the isolated test
-     * dir and verifies the final event type is agent_end (LifecycleOrderValidator
+     * dir and verifies the final event type is agent_end (lifecycle event order
      * conformance).
      */
     private function assertShellEventsOrder(string $testProjectDir, string $label, string $expectedLastType = 'agent_end'): void

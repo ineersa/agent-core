@@ -12,9 +12,9 @@ namespace Ineersa\Tui\Widget;
  * Symfony TUI's experimental API.
  *
  * Each widget renders to a list of plain text/ANSI lines. The layout
- * compositor (ChatLayout) merges widget output in display order.
+ * ChatScreen merges widget output in display order.
  *
- * @see ChatLayout
+ * @see \Ineersa\Tui\Screen\ChatScreen
  * @see TuiRenderContext
  */
 interface TuiWidget

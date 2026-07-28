@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Tests\Application\Orchestrator;
 
-use Ineersa\AgentCore\Application\Handler\CommandHandlerRegistry;
 use Ineersa\AgentCore\Application\Handler\CommandRouter;
 use Ineersa\AgentCore\Application\Handler\StepDispatcher;
 use Ineersa\AgentCore\Application\Handler\ToolBatchCollector;
@@ -40,7 +39,7 @@ final class LlmStepResultHandlerTest extends TestCase
             toolBatchCollector: new ToolBatchCollector(),
             commandMailboxPolicy: new CommandMailboxPolicy(
                 commandStore: $commandStore,
-                commandRouter: new CommandRouter(new CommandHandlerRegistry([])),
+                commandRouter: new CommandRouter([]),
             ),
             eventFactory: new EventFactory(),
             toolCallExtractor: new ToolCallExtractor(),
@@ -109,7 +108,7 @@ final class LlmStepResultHandlerTest extends TestCase
             toolBatchCollector: new ToolBatchCollector(),
             commandMailboxPolicy: new CommandMailboxPolicy(
                 commandStore: $commandStore,
-                commandRouter: new CommandRouter(new CommandHandlerRegistry([])),
+                commandRouter: new CommandRouter([]),
             ),
             eventFactory: new EventFactory(),
             toolCallExtractor: new ToolCallExtractor(),
@@ -192,7 +191,7 @@ final class LlmStepResultHandlerTest extends TestCase
             toolBatchCollector: new ToolBatchCollector(),
             commandMailboxPolicy: new CommandMailboxPolicy(
                 commandStore: $commandStore,
-                commandRouter: new CommandRouter(new CommandHandlerRegistry([])),
+                commandRouter: new CommandRouter([]),
             ),
             eventFactory: new EventFactory(),
             toolCallExtractor: new ToolCallExtractor(),
@@ -276,7 +275,7 @@ final class LlmStepResultHandlerTest extends TestCase
             toolBatchCollector: new ToolBatchCollector(),
             commandMailboxPolicy: new CommandMailboxPolicy(
                 commandStore: $commandStore,
-                commandRouter: new CommandRouter(new CommandHandlerRegistry([])),
+                commandRouter: new CommandRouter([]),
             ),
             eventFactory: new EventFactory(),
             toolCallExtractor: new ToolCallExtractor(),
@@ -346,7 +345,7 @@ final class LlmStepResultHandlerTest extends TestCase
             toolBatchCollector: new ToolBatchCollector(),
             commandMailboxPolicy: new CommandMailboxPolicy(
                 commandStore: $commandStore,
-                commandRouter: new CommandRouter(new CommandHandlerRegistry([])),
+                commandRouter: new CommandRouter([]),
             ),
             eventFactory: new EventFactory(),
             toolCallExtractor: new ToolCallExtractor(),
@@ -436,7 +435,7 @@ final class LlmStepResultHandlerTest extends TestCase
             toolBatchCollector: new ToolBatchCollector(),
             commandMailboxPolicy: new CommandMailboxPolicy(
                 commandStore: new InMemoryCommandStore(),
-                commandRouter: new CommandRouter(new CommandHandlerRegistry([])),
+                commandRouter: new CommandRouter([]),
             ),
             eventFactory: new EventFactory(),
             toolCallExtractor: new ToolCallExtractor(),
@@ -509,7 +508,7 @@ final class LlmStepResultHandlerTest extends TestCase
         $this->assertSame(1, $commandBus->messages[0]->payload['retry_attempt'] ?? null);
         $this->assertSame([], $commandBus->messages[0]->options);
 
-        $routed = (new CommandRouter(new CommandHandlerRegistry([])))->route($commandBus->messages[0]);
+        $routed = (new CommandRouter([]))->route($commandBus->messages[0]);
         $this->assertSame('core', $routed->status, (string) $routed->reason);
     }
 
@@ -524,7 +523,7 @@ final class LlmStepResultHandlerTest extends TestCase
             toolBatchCollector: new ToolBatchCollector(),
             commandMailboxPolicy: new CommandMailboxPolicy(
                 commandStore: new InMemoryCommandStore(),
-                commandRouter: new CommandRouter(new CommandHandlerRegistry([])),
+                commandRouter: new CommandRouter([]),
             ),
             eventFactory: new EventFactory(),
             toolCallExtractor: new ToolCallExtractor(),
@@ -602,7 +601,7 @@ final class LlmStepResultHandlerTest extends TestCase
             toolBatchCollector: new ToolBatchCollector(),
             commandMailboxPolicy: new CommandMailboxPolicy(
                 commandStore: new InMemoryCommandStore(),
-                commandRouter: new CommandRouter(new CommandHandlerRegistry([])),
+                commandRouter: new CommandRouter([]),
             ),
             eventFactory: new EventFactory(),
             toolCallExtractor: new ToolCallExtractor(),
@@ -682,7 +681,7 @@ final class LlmStepResultHandlerTest extends TestCase
             toolBatchCollector: new ToolBatchCollector(),
             commandMailboxPolicy: new CommandMailboxPolicy(
                 commandStore: new InMemoryCommandStore(),
-                commandRouter: new CommandRouter(new CommandHandlerRegistry([])),
+                commandRouter: new CommandRouter([]),
             ),
             eventFactory: new EventFactory(),
             toolCallExtractor: new ToolCallExtractor(),
@@ -736,7 +735,7 @@ final class LlmStepResultHandlerTest extends TestCase
             toolBatchCollector: new ToolBatchCollector(),
             commandMailboxPolicy: new CommandMailboxPolicy(
                 commandStore: new InMemoryCommandStore(),
-                commandRouter: new CommandRouter(new CommandHandlerRegistry([])),
+                commandRouter: new CommandRouter([]),
             ),
             eventFactory: new EventFactory(),
             toolCallExtractor: new ToolCallExtractor(),

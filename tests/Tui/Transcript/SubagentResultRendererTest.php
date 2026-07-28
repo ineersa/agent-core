@@ -9,16 +9,17 @@ use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\Tui\Theme\DefaultTheme;
 use Ineersa\Tui\Theme\ThemePalette;
 use Ineersa\Tui\Transcript\SubagentResultRenderer;
-use Ineersa\Tui\Transcript\TranscriptBlockRenderer;
 use Ineersa\Tui\Transcript\TranscriptBlockWidgetFactory;
 use Ineersa\Tui\Transcript\TranscriptDisplayConfig;
 use Ineersa\Tui\Transcript\TranscriptDisplayState;
 use Ineersa\Tui\Widget\TuiRenderContext;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Tui\Render\Renderer;
+use Symfony\Component\Tui\Widget\ContainerWidget;
 
 final class SubagentResultRendererTest extends TestCase
 {
-    public function testTranscriptBlockRendererDelegatesStructuredSubagentBlock(): void
+    public function testFactoryBuildsStructuredSubagentBlock(): void
     {
         $progress = [
             'mode' => 'single', 'status' => 'running', 'agent_name' => 'scout',
@@ -34,7 +35,7 @@ final class SubagentResultRendererTest extends TestCase
             streaming: true,
         );
 
-        $joined = implode("\n", $this->renderer()->renderBlock($block, $this->context()));
+        $joined = implode("\n", $this->renderBlockLines($block));
         $this->assertStringContainsString('╭─', $joined);
         $this->assertStringContainsString('╰─', $joined);
         $this->assertStringContainsString('scout', $joined);
@@ -61,7 +62,7 @@ final class SubagentResultRendererTest extends TestCase
             id: 'tool_result_tc1', kind: TranscriptBlockKindEnum::ToolResult, runId: 'run1', seq: 1,
             text: '', meta: ['tool_name' => 'subagent', 'subagent_progress' => $progress], streaming: true,
         );
-        $joined = implode("\n", $this->renderer()->renderBlock($block, $this->context()));
+        $joined = implode("\n", $this->renderBlockLines($block));
         $this->assertStringContainsString('● scout [running]', $joined);
         $this->assertStringContainsString('38 tools', $joined);
         $this->assertStringContainsString('49k tok', $joined);
@@ -84,7 +85,7 @@ final class SubagentResultRendererTest extends TestCase
             id: 'tool_result_wait', kind: TranscriptBlockKindEnum::ToolResult, runId: 'run1', seq: 1,
             text: '', meta: ['tool_name' => 'subagent', 'subagent_progress' => $progress],
         );
-        $joined = implode("\n", $this->renderer()->renderBlock($block, $this->context()));
+        $joined = implode("\n", $this->renderBlockLines($block));
         $this->assertStringContainsString('⚠ scout [needs input]', $joined);
         $this->assertStringContainsString('Ctrl+\\', $joined);
     }
@@ -100,7 +101,7 @@ final class SubagentResultRendererTest extends TestCase
             id: 'tool_result_multiline_task', kind: TranscriptBlockKindEnum::ToolResult, runId: 'run1', seq: 1,
             text: '', meta: ['tool_name' => 'subagent', 'subagent_progress' => $progress],
         );
-        $joined = implode("\n", $this->renderer()->renderBlock($block, $this->context()));
+        $joined = implode("\n", $this->renderBlockLines($block));
         $plain = preg_replace('/\x1b\[[0-9;]*m/', '', $joined) ?? $joined;
         $this->assertStringNotContainsString("\n\n1. Use", $plain);
         $this->assertStringContainsString('1. Use', $plain);
@@ -125,7 +126,7 @@ final class SubagentResultRendererTest extends TestCase
                 'result' => $handoff,
             ],
         );
-        $joined = implode("\n", $this->renderer(previewLines: 3)->renderBlock($block, $this->context()));
+        $joined = implode("\n", $this->renderBlockLines($block, previewLines: 3));
         $plain = preg_replace('/\x1b\[[0-9;]*m/', '', $joined) ?? $joined;
         $this->assertStringContainsString('│ Ctrl+O to expand handoff', $plain);
         $posHint = strpos($plain, '│ Ctrl+O to expand handoff');
@@ -151,7 +152,7 @@ final class SubagentResultRendererTest extends TestCase
             ],
             streaming: true,
         );
-        $joined = implode("\n", $this->renderer()->renderBlock($block, $this->context()));
+        $joined = implode("\n", $this->renderBlockLines($block));
         $this->assertStringContainsString('scout [running]', $joined);
         $this->assertStringNotContainsString('Handoff', $joined);
         $this->assertStringNotContainsString('Ctrl+O to expand handoff', $joined);
@@ -172,7 +173,7 @@ final class SubagentResultRendererTest extends TestCase
                 'result' => "# Draft handoff\n\nNot terminal yet.",
             ],
         );
-        $joined = implode("\n", $this->renderer()->renderBlock($block, $this->context()));
+        $joined = implode("\n", $this->renderBlockLines($block));
         $this->assertStringContainsString('needs input', $joined);
         $this->assertStringNotContainsString('Ctrl+O to expand handoff', $joined);
         $this->assertStringNotContainsString('Draft handoff', $joined);
@@ -198,7 +199,7 @@ final class SubagentResultRendererTest extends TestCase
             id: 'tool_result_tc_par', kind: TranscriptBlockKindEnum::ToolResult, runId: 'run1', seq: 1,
             text: '', meta: ['tool_name' => 'subagent', 'subagent_progress' => $progress], streaming: true,
         );
-        $joined = implode("\n", $this->renderer()->renderBlock($block, $this->context()));
+        $joined = implode("\n", $this->renderBlockLines($block));
         $this->assertStringContainsString('parallel subagents (0/2 completed)', $joined);
         $this->assertStringContainsString('├─', $joined);
         $this->assertStringContainsString('#1', $joined);
@@ -228,7 +229,7 @@ final class SubagentResultRendererTest extends TestCase
             ],
             streaming: false,
         );
-        $joined = implode("\n", $this->renderer(previewLines: 3)->renderBlock($block, $this->context()));
+        $joined = implode("\n", $this->renderBlockLines($block, previewLines: 3));
         $this->assertStringContainsString('✓ scout [completed]', $joined);
         $this->assertStringContainsString('Handoff', $joined);
         $this->assertStringNotContainsString('│ Handoff', $joined);
@@ -255,7 +256,7 @@ final class SubagentResultRendererTest extends TestCase
                 'result' => $handoff,
             ],
         );
-        $joined = implode("\n", $this->renderer(previewLines: 2, expanded: true)->renderBlock($block, $this->context()));
+        $joined = implode("\n", $this->renderBlockLines($block, previewLines: 2, expanded: true));
         $this->assertStringContainsString('line9', $joined);
         $this->assertStringNotContainsString('more line', $joined);
         $this->assertStringNotContainsString('Ctrl+O to expand handoff', $joined);
@@ -329,26 +330,35 @@ final class SubagentResultRendererTest extends TestCase
             id: 'tool_result_ctx', kind: TranscriptBlockKindEnum::ToolResult, runId: 'run1', seq: 1,
             text: '', meta: ['tool_name' => 'subagent', 'subagent_progress' => $progress],
         );
-        $joined = implode("\n", $this->renderer()->renderBlock($block, $this->context()));
+        $joined = implode("\n", $this->renderBlockLines($block));
 
         return preg_replace('/\x1b\[[0-9;]*m/', '', $joined) ?? $joined;
     }
 
-    private function renderer(int $previewLines = 8, bool $expanded = false): TranscriptBlockRenderer
-    {
+    /**
+     * @return list<string>
+     */
+    private function renderBlockLines(
+        TranscriptBlock $block,
+        int $previewLines = 8,
+        bool $expanded = false,
+        int $width = 120,
+    ): array {
         $displayConfig = new TranscriptDisplayConfig(toolResultPreviewLines: $previewLines);
         $displayState = new TranscriptDisplayState(previewableBlocksExpanded: $expanded);
-
-        return new TranscriptBlockRenderer(
-            factory: new TranscriptBlockWidgetFactory(
-                subagentRenderer: new SubagentResultRenderer(
-                    displayConfig: $displayConfig,
-                    displayState: $displayState,
-                ),
+        $factory = new TranscriptBlockWidgetFactory(
+            subagentRenderer: new SubagentResultRenderer(
                 displayConfig: $displayConfig,
                 displayState: $displayState,
             ),
+            displayConfig: $displayConfig,
+            displayState: $displayState,
         );
+        $context = $this->context($width);
+        $root = new ContainerWidget();
+        $root->add($factory->buildWidget($block, $context->theme));
+
+        return (new Renderer())->render($root, max($context->terminalWidth, 1), max($context->terminalHeight, 1));
     }
 
     private function context(int $width = 120): TuiRenderContext

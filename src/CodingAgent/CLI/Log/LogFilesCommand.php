@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\CLI\Log;
 
 use HelgeSverre\Toon\Toon;
-use Ineersa\CodingAgent\Logging\LogReaderFactory;
+use Ineersa\CodingAgent\Logging\LogReader;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Attribute\Option;
 use Symfony\Component\Console\Command\Command;
@@ -25,7 +25,7 @@ use Symfony\Component\Console\Style\SymfonyStyle;
 final class LogFilesCommand
 {
     public function __construct(
-        private readonly LogReaderFactory $readerFactory,
+        private readonly LogReader $reader,
     ) {
     }
 
@@ -35,7 +35,7 @@ final class LogFilesCommand
 
         ?OutputInterface $output = null,
     ): int {
-        $reader = $this->readerFactory->create();
+        $reader = $this->reader;
         $files = $reader->getLogFiles();
 
         if ([] === $files) {

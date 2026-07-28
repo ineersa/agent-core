@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Tests\CLI;
 
 use Ineersa\CodingAgent\CLI\FileMentionIndexBuilder;
 use Ineersa\CodingAgent\CLI\FileMentionIndexLockHeldException;
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
@@ -20,13 +21,12 @@ final class FileMentionIndexBuilderTest extends TestCase
 
     protected function setUp(): void
     {
-        $this->tmpDir = sys_get_temp_dir().'/editor09-builder-'.getmypid().'-'.hrtime(true);
-        mkdir($this->tmpDir, 0755, true);
+        $this->tmpDir = TestDirectoryIsolation::createOsTempDir('editor09-builder');
     }
 
     protected function tearDown(): void
     {
-        $this->removeDir($this->tmpDir);
+        TestDirectoryIsolation::removeDirectory($this->tmpDir);
     }
 
     #[Test]
@@ -375,33 +375,5 @@ final class FileMentionIndexBuilderTest extends TestCase
     private function createLogger(): LoggerInterface
     {
         return $this->createStub(LoggerInterface::class);
-    }
-
-    private function removeDir(string $dir): void
-    {
-        if (!is_dir($dir)) {
-            return;
-        }
-        // Restore any permissions that might block cleanup
-        // (e.g. from the unreadable-directory test).
-        $iterator = new \RecursiveIteratorIterator(
-            new \RecursiveDirectoryIterator($dir, \RecursiveDirectoryIterator::SKIP_DOTS),
-            \RecursiveIteratorIterator::CHILD_FIRST,
-        );
-        foreach ($iterator as $fileinfo) {
-            $path = $fileinfo->getRealPath();
-            if (false === $path) {
-                continue;
-            }
-            if ($fileinfo->isDir()) {
-                @chmod($path, 0700);
-                @rmdir($path);
-            } else {
-                @chmod($path, 0600);
-                @unlink($path);
-            }
-        }
-        @chmod($dir, 0700);
-        @rmdir($dir);
     }
 }

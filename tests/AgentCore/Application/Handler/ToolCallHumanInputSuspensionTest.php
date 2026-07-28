@@ -191,7 +191,7 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
         $this->assertNotNull($effects[0]->humanInputAnswer);
 
         $store = new \Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore();
-        $router = new \Ineersa\AgentCore\Application\Handler\CommandRouter(new \Ineersa\AgentCore\Application\Handler\CommandHandlerRegistry([]));
+        $router = new \Ineersa\AgentCore\Application\Handler\CommandRouter([]);
         $collector2 = new ToolBatchCollector();
         $collector2->registerExpectedBatch('run-h2', 2, 'step-h2', [$this->call('run-h2', 'step-h2', 'call-h2', 0, 2)]);
         $collector2->admitHumanInputSuspension('run-h2', 2, 'step-h2', 'call-h2', 'q-h2');
@@ -276,7 +276,7 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
     public function testCrossCorrelatedToolCallAnswerIsRejected(): void
     {
         $store = new \Ineersa\AgentCore\Infrastructure\Storage\InMemoryCommandStore();
-        $router = new \Ineersa\AgentCore\Application\Handler\CommandRouter(new \Ineersa\AgentCore\Application\Handler\CommandHandlerRegistry([]));
+        $router = new \Ineersa\AgentCore\Application\Handler\CommandRouter([]);
         $collector = new ToolBatchCollector();
         $collector->registerExpectedBatch('run-x', 1, 'step-x', [$this->call('run-x', 'step-x', 'call-x', 0)]);
         $collector->admitHumanInputSuspension('run-x', 1, 'step-x', 'call-x', 'q-x');
@@ -464,7 +464,7 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
             }
         };
 
-        $router = new \Ineersa\AgentCore\Application\Handler\CommandRouter(new \Ineersa\AgentCore\Application\Handler\CommandHandlerRegistry([]));
+        $router = new \Ineersa\AgentCore\Application\Handler\CommandRouter([]);
         $handler = new \Ineersa\AgentCore\Application\Pipeline\ApplyCommandHandler(
             commandStore: $commandStore,
             commandRouter: $router,
@@ -590,7 +590,7 @@ final class ToolCallHumanInputSuspensionTest extends TestCase
             }
         };
 
-        $router = new \Ineersa\AgentCore\Application\Handler\CommandRouter(new \Ineersa\AgentCore\Application\Handler\CommandHandlerRegistry([]));
+        $router = new \Ineersa\AgentCore\Application\Handler\CommandRouter([]);
         $handler = new \Ineersa\AgentCore\Application\Pipeline\ApplyCommandHandler(
             commandStore: $commandStore,
             commandRouter: $router,

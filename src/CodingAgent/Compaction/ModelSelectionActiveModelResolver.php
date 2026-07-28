@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Compaction;
 
+use Ineersa\AgentCore\Contract\Model\RunModelResolverInterface;
 use Ineersa\CodingAgent\Config\ModelSelectionService;
 
 /**
@@ -13,7 +14,7 @@ use Ineersa\CodingAgent\Config\ModelSelectionService;
  * ExecuteLlmStep. This resolver must not classify run IDs as child/parent domains
  * or look up deferred child definition models.
  */
-final readonly class ModelSelectionActiveModelResolver implements ActiveModelResolverInterface
+final readonly class ModelSelectionActiveModelResolver implements RunModelResolverInterface
 {
     public function __construct(
         private ModelSelectionService $modelSelectionService,
@@ -26,10 +27,5 @@ final readonly class ModelSelectionActiveModelResolver implements ActiveModelRes
             explicitModel: null,
             sessionId: $runId,
         )?->toString();
-    }
-
-    public function getActiveModel(string $runId): ?string
-    {
-        return $this->resolveActiveModel($runId);
     }
 }

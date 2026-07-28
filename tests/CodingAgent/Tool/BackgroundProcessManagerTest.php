@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Tests\Tool;
 
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
 use Ineersa\CodingAgent\Entity\BackgroundProcess;
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\LogTailResult;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\ProcessLifecycle;
@@ -41,10 +42,8 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
         parent::setUp();
 
         // Temp dir for process output files (log, status, pid files).
-        // sys_get_temp_dir() is appropriate here — this is actual OS-level
         // subprocess I/O, not ORM proxy directories.
-        $this->tmpDir = sys_get_temp_dir().'/hatfield_bg_test_'.bin2hex(random_bytes(8));
-        mkdir($this->tmpDir, 0750, recursive: true);
+        $this->tmpDir = TestDirectoryIsolation::createOsTempDir('hatfield_bg_test');
     }
 
     protected function tearDown(): void

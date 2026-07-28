@@ -17,7 +17,7 @@ use Ineersa\Tui\Widget\WidgetPlacementEnum;
  *   - Working message text and visibility flag.
  *   - Terminal input intercept handlers.
  *
- * Default widgets are supplied by ChatLayout; the registry only
+ * Default widgets are supplied by ChatScreen; the registry only
  * records overrides.
  */
 final class TuiSlotRegistry

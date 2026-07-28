@@ -212,7 +212,7 @@ TUI talks to runtime only through `src/CodingAgent/Runtime/Contract`, `Protocol`
 
 Single-column layout: header → transcript/history → pending messages → working/status → extension widgets → editor → footer.
 
-Key APIs: `TuiWidget`, `TuiSlotRegistry`, `ChatLayout`, `TuiExtensionContext`, `SlotBasedTuiExtensionContext`, `FooterDataProvider`, `FooterSegmentProvider`, `FooterBarWidget`.
+Key APIs: `TuiWidget`, `TuiSlotRegistry`, `TuiExtensionContext`, `SlotBasedTuiExtensionContext`, `FooterDataProvider`, `FooterSegmentProvider`, `FooterBarWidget`.
 
 Hotkeys: `/hotkeys` renders a live catalog of keyboard shortcuts grouped by context (Global, Editor, Completion, History, Model). Registry is in `src/Tui/Command/Hotkey/` (display-only metadata — not input routing). Editor hotkeys reflect the active EditorWidget keybindings. There is no user-configurable YAML keybinding loader.
 

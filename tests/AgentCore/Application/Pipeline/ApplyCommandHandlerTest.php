@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ineersa\AgentCore\Tests\Application\Orchestrator;
 
-use Ineersa\AgentCore\Application\Handler\CommandHandlerRegistry;
 use Ineersa\AgentCore\Application\Handler\CommandRouter;
 use Ineersa\AgentCore\Application\Pipeline\AdvanceRunHandler;
 use Ineersa\AgentCore\Application\Pipeline\ApplyCommandHandler;
@@ -28,7 +27,7 @@ final class ApplyCommandHandlerTest extends TestCase
     public function testContinueCommandProducesPostCommitFollowUpAdvance(): void
     {
         $commandStore = new InMemoryCommandStore();
-        $commandRouter = new CommandRouter(new CommandHandlerRegistry([]));
+        $commandRouter = new CommandRouter([]);
         $commandMailboxPolicy = new CommandMailboxPolicy(
             commandStore: $commandStore,
             commandRouter: $commandRouter,
@@ -94,7 +93,7 @@ final class ApplyCommandHandlerTest extends TestCase
     public function testFollowUpAllowedAfterCancelledRun(): void
     {
         $commandStore = new InMemoryCommandStore();
-        $commandRouter = new CommandRouter(new CommandHandlerRegistry([]));
+        $commandRouter = new CommandRouter([]);
         $commandMailboxPolicy = new CommandMailboxPolicy(
             commandStore: $commandStore,
             commandRouter: $commandRouter,
@@ -151,7 +150,7 @@ final class ApplyCommandHandlerTest extends TestCase
     public function testAppendMessageAllowedAfterCancelledRun(): void
     {
         $commandStore = new InMemoryCommandStore();
-        $commandRouter = new CommandRouter(new CommandHandlerRegistry([]));
+        $commandRouter = new CommandRouter([]);
         $commandMailboxPolicy = new CommandMailboxPolicy(
             commandStore: $commandStore,
             commandRouter: $commandRouter,
@@ -201,7 +200,7 @@ final class ApplyCommandHandlerTest extends TestCase
     public function testNonFollowUpCommandRejectedAfterCancelledRun(): void
     {
         $commandStore = new InMemoryCommandStore();
-        $commandRouter = new CommandRouter(new CommandHandlerRegistry([]));
+        $commandRouter = new CommandRouter([]);
         $commandMailboxPolicy = new CommandMailboxPolicy(
             commandStore: $commandStore,
             commandRouter: $commandRouter,
@@ -249,7 +248,7 @@ final class ApplyCommandHandlerTest extends TestCase
     public function testFollowUpRejectedDuringCancelling(): void
     {
         $commandStore = new InMemoryCommandStore();
-        $commandRouter = new CommandRouter(new CommandHandlerRegistry([]));
+        $commandRouter = new CommandRouter([]);
         $commandMailboxPolicy = new CommandMailboxPolicy(
             commandStore: $commandStore,
             commandRouter: $commandRouter,
@@ -297,7 +296,7 @@ final class ApplyCommandHandlerTest extends TestCase
     public function testContinueRejectedAfterCancelledRun(): void
     {
         $commandStore = new InMemoryCommandStore();
-        $commandRouter = new CommandRouter(new CommandHandlerRegistry([]));
+        $commandRouter = new CommandRouter([]);
         $commandMailboxPolicy = new CommandMailboxPolicy(
             commandStore: $commandStore,
             commandRouter: $commandRouter,
@@ -345,7 +344,7 @@ final class ApplyCommandHandlerTest extends TestCase
     public function testHumanResponseRejectedAfterCancelledRun(): void
     {
         $commandStore = new InMemoryCommandStore();
-        $commandRouter = new CommandRouter(new CommandHandlerRegistry([]));
+        $commandRouter = new CommandRouter([]);
         $commandMailboxPolicy = new CommandMailboxPolicy(
             commandStore: $commandStore,
             commandRouter: $commandRouter,
@@ -393,7 +392,7 @@ final class ApplyCommandHandlerTest extends TestCase
     public function testSteerWhileRunningQueuesButDoesNotDispatchAdvanceRun(): void
     {
         $commandStore = new InMemoryCommandStore();
-        $commandRouter = new CommandRouter(new CommandHandlerRegistry([]));
+        $commandRouter = new CommandRouter([]);
         $commandMailboxPolicy = new CommandMailboxPolicy(
             commandStore: $commandStore,
             commandRouter: $commandRouter,
@@ -453,7 +452,7 @@ final class ApplyCommandHandlerTest extends TestCase
     public function testFollowUpWhileRunningQueuesButDoesNotDispatchAdvanceRun(): void
     {
         $commandStore = new InMemoryCommandStore();
-        $commandRouter = new CommandRouter(new CommandHandlerRegistry([]));
+        $commandRouter = new CommandRouter([]);
         $commandMailboxPolicy = new CommandMailboxPolicy(
             commandStore: $commandStore,
             commandRouter: $commandRouter,
@@ -507,7 +506,7 @@ final class ApplyCommandHandlerTest extends TestCase
     public function testFollowUpAfterCancelledStillDispatchesAdvanceRun(): void
     {
         $commandStore = new InMemoryCommandStore();
-        $commandRouter = new CommandRouter(new CommandHandlerRegistry([]));
+        $commandRouter = new CommandRouter([]);
         $commandMailboxPolicy = new CommandMailboxPolicy(
             commandStore: $commandStore,
             commandRouter: $commandRouter,
@@ -566,7 +565,7 @@ final class ApplyCommandHandlerTest extends TestCase
     public function testCancelRejectsPendingSteerAndFollowUp(): void
     {
         $commandStore = new InMemoryCommandStore();
-        $commandRouter = new CommandRouter(new CommandHandlerRegistry([]));
+        $commandRouter = new CommandRouter([]);
         $commandMailboxPolicy = new CommandMailboxPolicy(
             commandStore: $commandStore,
             commandRouter: $commandRouter,
@@ -665,7 +664,7 @@ final class ApplyCommandHandlerTest extends TestCase
     public function testCancelPreservesQueuedAppendMessageForPostCancelMailboxDrain(): void
     {
         $commandStore = new InMemoryCommandStore();
-        $commandRouter = new CommandRouter(new CommandHandlerRegistry([]));
+        $commandRouter = new CommandRouter([]);
         $commandMailboxPolicy = new CommandMailboxPolicy(
             commandStore: $commandStore,
             commandRouter: $commandRouter,
@@ -741,7 +740,7 @@ final class ApplyCommandHandlerTest extends TestCase
     public function testSecondCancelWhileCancellingPreservesPendingAppendMessage(): void
     {
         $commandStore = new InMemoryCommandStore();
-        $commandRouter = new CommandRouter(new CommandHandlerRegistry([]));
+        $commandRouter = new CommandRouter([]);
         $commandMailboxPolicy = new CommandMailboxPolicy(
             commandStore: $commandStore,
             commandRouter: $commandRouter,
@@ -808,7 +807,7 @@ final class ApplyCommandHandlerTest extends TestCase
     public function testAppendMessageQueuedWhileCancelling(): void
     {
         $commandStore = new InMemoryCommandStore();
-        $commandRouter = new CommandRouter(new CommandHandlerRegistry([]));
+        $commandRouter = new CommandRouter([]);
         $commandMailboxPolicy = new CommandMailboxPolicy(
             commandStore: $commandStore,
             commandRouter: $commandRouter,
@@ -856,7 +855,7 @@ final class ApplyCommandHandlerTest extends TestCase
     public function testOrdinaryFollowUpRejectedWhileCancelling(): void
     {
         $commandStore = new InMemoryCommandStore();
-        $commandRouter = new CommandRouter(new CommandHandlerRegistry([]));
+        $commandRouter = new CommandRouter([]);
         $commandMailboxPolicy = new CommandMailboxPolicy(
             commandStore: $commandStore,
             commandRouter: $commandRouter,
@@ -906,7 +905,7 @@ final class ApplyCommandHandlerTest extends TestCase
     public function testCompactOnTerminalRunMarksAppliedNotQueued(): void
     {
         $commandStore = new InMemoryCommandStore();
-        $commandRouter = new CommandRouter(new CommandHandlerRegistry([]));
+        $commandRouter = new CommandRouter([]);
         $commandMailboxPolicy = new CommandMailboxPolicy(
             commandStore: $commandStore,
             commandRouter: $commandRouter,
@@ -990,7 +989,7 @@ final class ApplyCommandHandlerTest extends TestCase
     public function testCancelOnCompletedRunIsRejected(): void
     {
         $commandStore = new InMemoryCommandStore();
-        $commandRouter = new CommandRouter(new CommandHandlerRegistry([]));
+        $commandRouter = new CommandRouter([]);
         $commandMailboxPolicy = new CommandMailboxPolicy(
             commandStore: $commandStore,
             commandRouter: $commandRouter,
@@ -1056,7 +1055,7 @@ final class ApplyCommandHandlerTest extends TestCase
     public function testCancelOnFailedRunIsRejected(): void
     {
         $commandStore = new InMemoryCommandStore();
-        $commandRouter = new CommandRouter(new CommandHandlerRegistry([]));
+        $commandRouter = new CommandRouter([]);
         $commandMailboxPolicy = new CommandMailboxPolicy(
             commandStore: $commandStore,
             commandRouter: $commandRouter,
@@ -1115,7 +1114,7 @@ final class ApplyCommandHandlerTest extends TestCase
     public function testCompactTerminalIdempotency(): void
     {
         $commandStore = new InMemoryCommandStore();
-        $commandRouter = new CommandRouter(new CommandHandlerRegistry([]));
+        $commandRouter = new CommandRouter([]);
         $commandMailboxPolicy = new CommandMailboxPolicy(
             commandStore: $commandStore,
             commandRouter: $commandRouter,
@@ -1168,7 +1167,7 @@ final class ApplyCommandHandlerTest extends TestCase
     public function testCancelFromIdleRunningTerminalizesToCancelled(): void
     {
         $commandStore = new InMemoryCommandStore();
-        $commandRouter = new CommandRouter(new CommandHandlerRegistry([]));
+        $commandRouter = new CommandRouter([]);
         $commandMailboxPolicy = new CommandMailboxPolicy(
             commandStore: $commandStore,
             commandRouter: $commandRouter,
@@ -1242,7 +1241,7 @@ final class ApplyCommandHandlerTest extends TestCase
     public function testRepeatedCancelWhileCancellingNoActiveWorkIsIdempotent(): void
     {
         $commandStore = new InMemoryCommandStore();
-        $commandRouter = new CommandRouter(new CommandHandlerRegistry([]));
+        $commandRouter = new CommandRouter([]);
         $commandMailboxPolicy = new CommandMailboxPolicy(
             commandStore: $commandStore,
             commandRouter: $commandRouter,
@@ -1303,7 +1302,7 @@ final class ApplyCommandHandlerTest extends TestCase
     public function testCancelWithStaleActiveStepAndAllPendingToolCallsResolvedTerminalizes(): void
     {
         $commandStore = new InMemoryCommandStore();
-        $commandRouter = new CommandRouter(new CommandHandlerRegistry([]));
+        $commandRouter = new CommandRouter([]);
         $commandMailboxPolicy = new CommandMailboxPolicy(
             commandStore: $commandStore,
             commandRouter: $commandRouter,
@@ -1357,7 +1356,7 @@ final class ApplyCommandHandlerTest extends TestCase
     public function testCancelWithUnresolvedPendingToolCallEntersCancelling(): void
     {
         $commandStore = new InMemoryCommandStore();
-        $commandRouter = new CommandRouter(new CommandHandlerRegistry([]));
+        $commandRouter = new CommandRouter([]);
         $commandMailboxPolicy = new CommandMailboxPolicy(
             commandStore: $commandStore,
             commandRouter: $commandRouter,
@@ -1405,7 +1404,7 @@ final class ApplyCommandHandlerTest extends TestCase
     public function testCancelWhileAlreadyCancellingWithNoActiveWorkTerminalizes(): void
     {
         $commandStore = new InMemoryCommandStore();
-        $commandRouter = new CommandRouter(new CommandHandlerRegistry([]));
+        $commandRouter = new CommandRouter([]);
         $commandMailboxPolicy = new CommandMailboxPolicy(
             commandStore: $commandStore,
             commandRouter: $commandRouter,
@@ -1452,7 +1451,7 @@ final class ApplyCommandHandlerTest extends TestCase
     public function testChangeModelEmitsAppliedAndModelChangedEventsAndIsIdempotent(): void
     {
         $commandStore = new InMemoryCommandStore();
-        $commandRouter = new CommandRouter(new CommandHandlerRegistry([]));
+        $commandRouter = new CommandRouter([]);
         $commandMailboxPolicy = new CommandMailboxPolicy(
             commandStore: $commandStore,
             commandRouter: $commandRouter,

@@ -526,11 +526,6 @@ function hatfield_phar_composer_bin(): string
 
 // ─── ──────────────────────────────────────────────────────────────────
 
-function dev_php_exec(string $command): void
-{
-    run($command);
-}
-
 function is_llm_mode(): bool
 {
     $value = getenv('LLM_MODE');
@@ -579,18 +574,6 @@ function run_quiet_command(string $command): Process
     return run($command, context: new Context(quiet: true, allowFailure: true));
 }
 
-function persist_process_output(Process $process, string $filename): string
-{
-    $path = report_path($filename);
-    $stdout = trim($process->getOutput());
-    $stderr = trim($process->getErrorOutput());
-    $combinedOutput = trim($stdout."\n".$stderr);
-
-    file_put_contents($path, '' === $combinedOutput ? "[no output]\n" : $combinedOutput."\n");
-
-    return $path;
-}
-
 function summarize_phpstan_json(string $jsonOutput): string
 {
     $jsonOutput = trim($jsonOutput);
@@ -634,46 +617,6 @@ function summarize_php_cs_fixer_json(string $jsonOutput): string
     $fileCount = \is_array($files) ? \count($files) : 0;
 
     return \sprintf('files_fixed=%d', $fileCount);
-}
-
-function phpunit_inputs_available(): bool
-{
-    foreach (['phpunit.xml', 'phpunit.xml.dist', 'phpunit.dist.xml'] as $configFile) {
-        if (file_exists(__DIR__.'/../'.$configFile)) {
-            return true;
-        }
-    }
-
-    $testsDir = __DIR__.'/../tests';
-    if (!is_dir($testsDir)) {
-        return false;
-    }
-
-    $iterator = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($testsDir, \FilesystemIterator::SKIP_DOTS));
-    foreach ($iterator as $file) {
-        if (!$file->isFile()) {
-            continue;
-        }
-
-        $name = $file->getFilename();
-        if (str_ends_with($name, 'Test.php') || str_ends_with($name, '.phpt')) {
-            return true;
-        }
-    }
-
-    return false;
-}
-
-function write_empty_junit_report(string $filename): string
-{
-    $path = report_path($filename);
-    file_put_contents($path, <<<XML
-<?xml version="1.0" encoding="UTF-8"?>
-<testsuites tests="0" assertions="0" errors="0" failures="0" skipped="0" time="0.0"/>
-XML
-    );
-
-    return $path;
 }
 
 function summarize_junit_xml(string $xmlPath): string

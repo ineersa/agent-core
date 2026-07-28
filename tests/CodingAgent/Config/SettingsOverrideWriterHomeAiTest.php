@@ -4,10 +4,14 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Config;
 
-use Ineersa\CodingAgent\Config\HomeSettingsWriter;
+use Ineersa\CodingAgent\Config\SettingsLayerEnum;
+use Ineersa\CodingAgent\Config\SettingsOverrideWriter;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Filesystem\Exception\IOException;
+use Symfony\Component\Filesystem\Filesystem;
+use Symfony\Component\PropertyAccess\PropertyAccess;
 use Symfony\Component\Yaml\Yaml;
 
 /**
@@ -18,10 +22,10 @@ use Symfony\Component\Yaml\Yaml;
  * unreadable files, uncreatable directories, or malformed root/ai structure
  * (including non-empty YAML lists, which are not mappings).
  */
-class HomeSettingsWriterTest extends TestCase
+class SettingsOverrideWriterHomeAiTest extends TestCase
 {
     private string $tmpDir;
-    private HomeSettingsWriter $writer;
+    private SettingsOverrideWriter $writer;
     private string $file;
 
     protected function setUp(): void
@@ -29,7 +33,7 @@ class HomeSettingsWriterTest extends TestCase
         $this->tmpDir = TestDirectoryIsolation::createProjectTempDir('hatfield_writer');
         $this->file = $this->tmpDir.'/.hatfield/settings.yaml';
         $pathResolver = new SettingsPathResolver('/app', $this->tmpDir);
-        $this->writer = new HomeSettingsWriter($pathResolver);
+        $this->writer = new SettingsOverrideWriter($pathResolver, PropertyAccess::createPropertyAccessor(), new Filesystem());
     }
 
     protected function tearDown(): void
@@ -46,7 +50,7 @@ class HomeSettingsWriterTest extends TestCase
             ],
         ]);
 
-        $this->writer->writeDefaultModel('zai/glm-5.1');
+        $this->writer->set(SettingsLayerEnum::User, '', 'ai.default_model', 'zai/glm-5.1');
 
         $parsed = $this->parse();
         $this->assertSame('zai/glm-5.1', $parsed['ai']['default_model'] ?? null);
@@ -61,7 +65,7 @@ class HomeSettingsWriterTest extends TestCase
             'ai' => ['default_reasoning' => 'medium'],
         ]);
 
-        $this->writer->writeDefaultModel('llama_cpp/flash');
+        $this->writer->set(SettingsLayerEnum::User, '', 'ai.default_model', 'llama_cpp/flash');
 
         $parsed = $this->parse();
         $this->assertSame('llama_cpp/flash', $parsed['ai']['default_model'] ?? null);
@@ -76,7 +80,7 @@ class HomeSettingsWriterTest extends TestCase
             'tui' => ['theme' => 'nord'],
         ]);
 
-        $this->writer->writeDefaultReasoning('high');
+        $this->writer->set(SettingsLayerEnum::User, '', 'ai.default_reasoning', 'high');
 
         $parsed = $this->parse();
         $this->assertSame('high', $parsed['ai']['default_reasoning'] ?? null);
@@ -89,11 +93,11 @@ class HomeSettingsWriterTest extends TestCase
             'ai' => ['default_model' => 'old'],
         ]);
 
-        $this->writer->writeFavoriteModels(['zai/glm-5.1', 'llama_cpp/flash']);
+        $this->writer->set(SettingsLayerEnum::User, '', 'ai.favorite_models', ['zai/glm-5.1', 'llama_cpp/flash']);
         $parsed = $this->parse();
         $this->assertSame(['zai/glm-5.1', 'llama_cpp/flash'], $parsed['ai']['favorite_models'] ?? null);
 
-        $this->writer->writeFavoriteModels([]);
+        $this->writer->set(SettingsLayerEnum::User, '', 'ai.favorite_models', []);
         $parsed = $this->parse();
         $this->assertSame([], $parsed['ai']['favorite_models'] ?? null);
         $this->assertIsArray($parsed['ai']['favorite_models']);
@@ -103,7 +107,7 @@ class HomeSettingsWriterTest extends TestCase
     {
         $this->assertFileDoesNotExist($this->file);
 
-        $this->writer->writeDefaultModel('zai/glm-5.1');
+        $this->writer->set(SettingsLayerEnum::User, '', 'ai.default_model', 'zai/glm-5.1');
 
         $this->assertFileExists($this->file);
         $parsed = $this->parse();
@@ -118,7 +122,7 @@ class HomeSettingsWriterTest extends TestCase
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('root document must be a mapping');
 
-        $this->writer->writeDefaultModel('x');
+        $this->writer->set(SettingsLayerEnum::User, '', 'ai.default_model', 'x');
     }
 
     public function testThrowsWhenRootDocumentIsAList(): void
@@ -129,7 +133,7 @@ class HomeSettingsWriterTest extends TestCase
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('root document must be a mapping');
 
-        $this->writer->writeDefaultModel('x');
+        $this->writer->set(SettingsLayerEnum::User, '', 'ai.default_model', 'x');
     }
 
     public function testThrowsWhenAiValueIsNotAMapping(): void
@@ -137,19 +141,29 @@ class HomeSettingsWriterTest extends TestCase
         $this->write(['ai' => 'broken']);
 
         $this->expectException(\RuntimeException::class);
-        $this->expectExceptionMessage('key "ai" must be a mapping');
+        $this->expectExceptionMessage('Settings key "ai" must be a mapping');
 
-        $this->writer->writeDefaultModel('x');
+        $this->writer->set(SettingsLayerEnum::User, '', 'ai.default_model', 'x');
+    }
+
+    public function testThrowsWhenAiValueIsNull(): void
+    {
+        $this->write(['ai' => null]);
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Settings key "ai" must be a mapping');
+
+        $this->writer->set(SettingsLayerEnum::User, '', 'ai.default_model', 'x');
     }
 
     public function testThrowsWhenAiValueIsAList(): void
     {
-        $this->write(['ai' => ['one', 'two']]);
+        $this->write(['ai' => ['not-a-map-entry']]);
 
         $this->expectException(\RuntimeException::class);
-        $this->expectExceptionMessage('key "ai" must be a mapping');
+        $this->expectExceptionMessage('Settings key "ai" must be a mapping');
 
-        $this->writer->writeDefaultModel('x');
+        $this->writer->set(SettingsLayerEnum::User, '', 'ai.default_model', 'x');
     }
 
     public function testThrowsWhenExistingHomeFileIsUnreadable(): void
@@ -161,7 +175,7 @@ class HomeSettingsWriterTest extends TestCase
         try {
             $this->expectException(\RuntimeException::class);
             $this->expectExceptionMessage('Cannot read');
-            $this->writer->writeDefaultModel('new/model');
+            $this->writer->set(SettingsLayerEnum::User, '', 'ai.default_model', 'new/model');
         } finally {
             chmod($this->file, 0o644);
         }
@@ -172,11 +186,10 @@ class HomeSettingsWriterTest extends TestCase
         $blockedHome = $this->tmpDir.'/blocked-home';
         file_put_contents($blockedHome, 'not-a-directory');
 
-        $this->expectException(\RuntimeException::class);
-        $this->expectExceptionMessage('Cannot create home settings directory');
+        $this->expectException(IOException::class);
 
-        $writer = new HomeSettingsWriter(new SettingsPathResolver('/app', $blockedHome));
-        $writer->writeDefaultModel('x');
+        $writer = new SettingsOverrideWriter(new SettingsPathResolver('/app', $blockedHome), PropertyAccess::createPropertyAccessor(), new Filesystem());
+        $writer->set(SettingsLayerEnum::User, '', 'ai.default_model', 'x');
     }
 
     /** @param array<string, mixed> $data */

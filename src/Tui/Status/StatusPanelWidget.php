@@ -13,7 +13,7 @@ use Ineersa\Tui\Widget\TuiWidget;
  * Designed to be driven by setStatus() data from TuiExtensionContext.
  * Each entry renders as a line with a left-aligned label and text value.
  *
- * This is typically rendered by ChatLayout::renderStatusPanel() using
+ * This is typically rendered by ChatScreen status rendering using
  * data from the slot registry rather than as a standalone widget.
  * This class provides the same rendering logic for standalone use.
  */

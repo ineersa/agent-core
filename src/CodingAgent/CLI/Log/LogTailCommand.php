@@ -7,7 +7,7 @@ namespace Ineersa\CodingAgent\CLI\Log;
 use HelgeSverre\Toon\Toon;
 use Ineersa\CodingAgent\Logging\LogEntry;
 use Ineersa\CodingAgent\Logging\LogFilter;
-use Ineersa\CodingAgent\Logging\LogReaderFactory;
+use Ineersa\CodingAgent\Logging\LogReader;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Attribute\Option;
 use Symfony\Component\Console\Command\Command;
@@ -29,7 +29,7 @@ use Symfony\Component\Console\Style\SymfonyStyle;
 final class LogTailCommand
 {
     public function __construct(
-        private readonly LogReaderFactory $readerFactory,
+        private readonly LogReader $reader,
     ) {
     }
 
@@ -48,7 +48,7 @@ final class LogTailCommand
 
         ?OutputInterface $output = null,
     ): int {
-        $reader = $this->readerFactory->create();
+        $reader = $this->reader;
         $filter = new LogFilter(level: $level, search: $search, limit: $lines);
         $entries = $reader->tail($lines, $filter);
 

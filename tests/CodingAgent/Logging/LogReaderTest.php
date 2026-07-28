@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Tests\Logging;
 use Ineersa\CodingAgent\Logging\LogFilter;
 use Ineersa\CodingAgent\Logging\LogParser;
 use Ineersa\CodingAgent\Logging\LogReader;
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
 
 final class LogReaderTest extends TestCase
@@ -18,7 +19,7 @@ final class LogReaderTest extends TestCase
     {
         parent::setUp();
 
-        $this->logDir = sys_get_temp_dir().'/agent-core-log-test-'.getmypid();
+        $this->logDir = TestDirectoryIsolation::createOsTempDir('agent-core-log-test');
         if (is_dir($this->logDir)) {
             $this->rmDir($this->logDir);
         }

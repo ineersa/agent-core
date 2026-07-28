@@ -6,10 +6,10 @@ namespace Ineersa\CodingAgent\Tests\Compaction;
 
 use Ineersa\AgentCore\Contract\Compaction\PreLlmCompactionGuardInterface;
 use Ineersa\AgentCore\Contract\EventStoreInterface;
+use Ineersa\AgentCore\Contract\Model\RunModelResolverInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Message\AgentMessage;
-use Ineersa\CodingAgent\Compaction\ActiveModelResolverInterface;
 use Ineersa\CodingAgent\Compaction\CodingAgentPreLlmCompactionGuard;
 use Ineersa\CodingAgent\Compaction\ProviderContextUsageResolver;
 use Ineersa\CodingAgent\Config\CompactionConfig;
@@ -32,7 +32,7 @@ final class CodingAgentPreLlmCompactionGuardTest extends TestCase
     private $eventStore;
     private ProviderContextUsageResolver $providerUsageResolver;
     private CompactionConfig $compactionConfig;
-    /** @var ActiveModelResolverInterface&\PHPUnit\Framework\MockObject\MockObject */
+    /** @var RunModelResolverInterface&\PHPUnit\Framework\MockObject\MockObject */
     private $modelResolver;
 
     protected function setUp(): void
@@ -43,9 +43,9 @@ final class CodingAgentPreLlmCompactionGuardTest extends TestCase
             autoEnabled: true,
             compactAfterTokens: 11000,
         );
-        $this->modelResolver = $this->createMock(ActiveModelResolverInterface::class);
+        $this->modelResolver = $this->createMock(RunModelResolverInterface::class);
         // Most tests don't care about the model; return null by default.
-        $this->modelResolver->method('getActiveModel')->willReturn(null);
+        $this->modelResolver->method('resolveActiveModel')->willReturn(null);
 
         $this->guard = new CodingAgentPreLlmCompactionGuard(
             $this->compactionConfig,
@@ -153,9 +153,9 @@ final class CodingAgentPreLlmCompactionGuardTest extends TestCase
                 'openai/gpt-4' => ['compact_after_tokens' => 50000],
             ],
         );
-        $modelResolver = $this->createMock(ActiveModelResolverInterface::class);
+        $modelResolver = $this->createMock(RunModelResolverInterface::class);
         $modelResolver->expects($this->once())
-            ->method('getActiveModel')
+            ->method('resolveActiveModel')
             ->willReturn('openai/gpt-4');
 
         $guard = new CodingAgentPreLlmCompactionGuard(

@@ -9,6 +9,7 @@ use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\SystemPrompt\SystemPromptBuilder;
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tool\ToolHandlerInterface;
 use Ineersa\CodingAgent\Tool\ToolRegistry;
 use Ineersa\CodingAgent\Tool\ToolRegistryInterface;
@@ -40,13 +41,13 @@ final class SystemPromptBuilderTest extends TestCase
         $this->projectDir = \Ineersa\CodingAgent\Tests\Support\ProjectDir::get();
 
         // Create a temp directory for test templates without polluting real .hatfield/
-        $this->tmpDir = sys_get_temp_dir().'/system_prompt_test_'.bin2hex(random_bytes(8));
+        $this->tmpDir = TestDirectoryIsolation::createOsTempDir('system_prompt_test');
         mkdir($this->tmpDir.'/.hatfield', 0777, true);
     }
 
     protected function tearDown(): void
     {
-        $this->rmdirRecursive($this->tmpDir);
+        TestDirectoryIsolation::removeDirectory($this->tmpDir);
     }
 
     /* ───────── Built-in template rendering ───────── */
@@ -602,28 +603,7 @@ final class SystemPromptBuilderTest extends TestCase
         };
     }
 
-    /**
+    /*
      * Recursively remove a directory.
      */
-    private function rmdirRecursive(string $path): void
-    {
-        if (!is_dir($path)) {
-            return;
-        }
-
-        $entries = new \RecursiveIteratorIterator(
-            new \RecursiveDirectoryIterator($path, \RecursiveDirectoryIterator::SKIP_DOTS),
-            \RecursiveIteratorIterator::CHILD_FIRST,
-        );
-
-        foreach ($entries as $entry) {
-            if ($entry->isDir()) {
-                @rmdir((string) $entry);
-            } else {
-                @unlink((string) $entry);
-            }
-        }
-
-        @rmdir($path);
-    }
 }
