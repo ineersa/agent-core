@@ -84,9 +84,11 @@ final class TuiStatusRowReasoningNoticeE2eTest extends TestCase
 
             $this->tmux->sendLiteral($pane, self::SHIFT_TAB);
 
+            // Match the status-panel row, not footer CWD/branch substrings
+            // (e.g. tui-e2e-status-reasoning-* + ...minimality).
             $withNotice = $this->tmux->waitForCallback(
                 $pane,
-                static fn (string $cap): bool => str_contains($cap, 'reasoning') && str_contains($cap, 'minimal'),
+                static fn (string $cap): bool => 1 === preg_match('/\s{2}reasoning\s+minimal/', $cap),
                 timeout: 5.0,
                 message: 'Shift+Tab reasoning status panel line did not appear',
                 history: 2000,
