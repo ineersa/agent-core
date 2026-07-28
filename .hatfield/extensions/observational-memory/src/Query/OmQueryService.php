@@ -119,7 +119,11 @@ final class OmQueryService
             $lines[] = '(none)';
         } else {
             foreach ($reflections as $reflection) {
-                $support = $this->decodeStringList((string) ($reflection['supporting_observation_ids_json'] ?? '[]'));
+                $support = $this->currentRunSupportIds(
+                    $observations,
+                    $runId,
+                    $this->decodeStringList((string) ($reflection['supporting_observation_ids_json'] ?? '[]')),
+                );
                 $lines[] = \sprintf(
                     '- [%s] %s',
                     (string) $reflection['reflection_id'],
@@ -138,7 +142,10 @@ final class OmQueryService
             $lines[] = '(none)';
         } else {
             foreach ($candidates as $observation) {
-                $refs = $this->formatSourceRefs((string) ($observation['source_refs_json'] ?? '[]'));
+                $refs = $this->formatSourceRefs(
+                    $runId,
+                    (string) ($observation['source_refs_json'] ?? '[]'),
+                );
                 $lines[] = \sprintf(
                     '- [%s] %s [%s] %s',
                     (string) $observation['observation_id'],
@@ -173,15 +180,12 @@ final class OmQueryService
         $observations = new ObservationRepository($connection);
         $generations = new MemoryGenerationRepository($connection);
 
-        $observation = $observations->findObservation($id);
+        $observation = $observations->findObservation($runId, $id);
         if (null !== $observation) {
-            if (($observation['run_id'] ?? '') !== $runId) {
-                return [
-                    'ok' => false,
-                    'error' => 'not_found',
-                    'message' => 'No observation or reflection with that id in the current session.',
-                ];
-            }
+            $refs = $this->currentRunSourceRefs(
+                $runId,
+                $this->decodeSourceRefs((string) $observation['source_refs_json']),
+            );
 
             return [
                 'ok' => true,
@@ -190,13 +194,13 @@ final class OmQueryService
                 'content' => (string) $observation['content'],
                 'timestamp' => (string) $observation['timestamp'],
                 'relevance' => (string) $observation['relevance'],
-                'source_refs' => $this->decodeSourceRefs((string) $observation['source_refs_json']),
-                'events' => $this->loadEventsForRefs($runId, $this->decodeSourceRefs((string) $observation['source_refs_json'])),
+                'source_refs' => $refs,
+                'events' => $this->loadEventsForRefs($runId, $refs),
             ];
         }
 
-        $reflection = $generations->findReflection($id);
-        if (null === $reflection || ($reflection['run_id'] ?? '') !== $runId) {
+        $reflection = $generations->findReflection($runId, $id);
+        if (null === $reflection) {
             return [
                 'ok' => false,
                 'error' => 'not_found',
@@ -204,14 +208,21 @@ final class OmQueryService
             ];
         }
 
-        $supportIds = $this->decodeStringList((string) $reflection['supporting_observation_ids_json']);
+        $supportIds = $this->currentRunSupportIds(
+            $observations,
+            $runId,
+            $this->decodeStringList((string) $reflection['supporting_observation_ids_json']),
+        );
         $refs = [];
         foreach ($supportIds as $supportId) {
-            $support = $observations->findObservation($supportId);
-            if (null === $support || ($support['run_id'] ?? '') !== $runId) {
+            $support = $observations->findObservation($runId, $supportId);
+            if (null === $support) {
                 continue;
             }
-            foreach ($this->decodeSourceRefs((string) $support['source_refs_json']) as $ref) {
+            foreach ($this->currentRunSourceRefs(
+                $runId,
+                $this->decodeSourceRefs((string) $support['source_refs_json']),
+            ) as $ref) {
                 $key = $ref['run_id'].':'.$ref['seq'];
                 $refs[$key] = $ref;
             }
@@ -363,9 +374,9 @@ final class OmQueryService
         return $out;
     }
 
-    private function formatSourceRefs(string $json): string
+    private function formatSourceRefs(string $runId, string $json): string
     {
-        $refs = $this->decodeSourceRefs($json);
+        $refs = $this->currentRunSourceRefs($runId, $this->decodeSourceRefs($json));
         if ([] === $refs) {
             return '(none)';
         }
@@ -376,6 +387,50 @@ final class OmQueryService
         }
 
         return implode(', ', $parts);
+    }
+
+    /**
+     * @param list<array{run_id: string, seq: int}> $refs
+     *
+     * @return list<array{run_id: string, seq: int}>
+     */
+    private function currentRunSourceRefs(string $runId, array $refs): array
+    {
+        $out = [];
+        foreach ($refs as $ref) {
+            if ($ref['run_id'] !== $runId) {
+                continue;
+            }
+            $out[] = $ref;
+        }
+
+        return $out;
+    }
+
+    /**
+     * @param list<string> $supportIds
+     *
+     * @return list<string>
+     */
+    private function currentRunSupportIds(
+        ObservationRepository $observations,
+        string $runId,
+        array $supportIds,
+    ): array {
+        $out = [];
+        $seen = [];
+        foreach ($supportIds as $supportId) {
+            if (isset($seen[$supportId])) {
+                continue;
+            }
+            $seen[$supportId] = true;
+            if (null === $observations->findObservation($runId, $supportId)) {
+                continue;
+            }
+            $out[] = $supportId;
+        }
+
+        return $out;
     }
 
     private function condense(string $content): string

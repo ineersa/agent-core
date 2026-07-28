@@ -83,7 +83,11 @@ final class OmQueryServiceTest extends IsolatedKernelTestCase
                 'relevance' => 'high',
                 'timestamp' => '2026-07-28 12:00',
                 'token_count' => 12,
-                'source_refs_json' => json_encode([['run_id' => 'run-a', 'seq' => 2]], \JSON_THROW_ON_ERROR),
+                // Malformed mixed refs must not appear in /om-view sources.
+                'source_refs_json' => json_encode([
+                    ['run_id' => 'run-a', 'seq' => 2],
+                    ['run_id' => 'run-b', 'seq' => 1],
+                ], \JSON_THROW_ON_ERROR),
             ]],
             coveredAt: '2026-07-28T12:00:00+00:00',
         );
@@ -135,7 +139,8 @@ final class OmQueryServiceTest extends IsolatedKernelTestCase
             reflections: [[
                 'reflection_id' => $refId,
                 'content' => 'Commands are hyphenated',
-                'supporting_observation_ids_json' => json_encode([$obsIdA], \JSON_THROW_ON_ERROR),
+                // Foreign support id must not display under current-run view.
+                'supporting_observation_ids_json' => json_encode([$obsIdA, $obsIdB], \JSON_THROW_ON_ERROR),
                 'token_count' => 8,
             ]],
             retainedObservationIds: [$obsIdA],
@@ -250,6 +255,7 @@ final class OmQueryServiceTest extends IsolatedKernelTestCase
         $this->assertStringContainsString($refId, $view);
         $this->assertStringContainsString($obsIdA, $view);
         $this->assertStringContainsString('(run-a,2)', $view);
+        $this->assertStringNotContainsString('(run-b,1)', $view);
         $this->assertStringNotContainsString($obsIdB, $view);
         $this->assertStringNotContainsString('SECRET_OTHER_RUN_CONTENT', $view);
 

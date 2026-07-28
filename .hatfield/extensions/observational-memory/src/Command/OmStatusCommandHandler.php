@@ -22,15 +22,17 @@ final class OmStatusCommandHandler implements ExtensionCommandHandlerInterface
 
     public function handle(string $args, CommandContextInterface $context): void
     {
+        $runId = null;
         try {
             $runId = $this->sessionContext->requireSessionId();
             $context->notify($this->query->formatStatus($runId), 'info');
         } catch (\Throwable) {
             // Never surface raw exception text (paths/content). Structured log only.
+            // Capture run_id before try so a throwing lazy getSessionId() cannot rethrow in catch.
             $this->logger->error('om.command.status_failed', [
                 'component' => 'observational_memory',
                 'event_type' => 'om.command.status_failed',
-                'run_id' => $this->sessionContext->sessionIdOrNull(),
+                'run_id' => $runId,
             ]);
             $context->notify('OM status unavailable.', 'error');
         }

@@ -87,8 +87,10 @@ final class RecallToolHandlerTest extends IsolatedKernelTestCase
                 'relevance' => 'medium',
                 'timestamp' => '2026-07-28 13:00',
                 'token_count' => 10,
+                // Malformed mixed refs: foreign run must be filtered from returned source_refs.
                 'source_refs_json' => json_encode([
                     ['run_id' => 'run-current', 'seq' => 2],
+                    ['run_id' => 'run-foreign', 'seq' => 99],
                     ['run_id' => 'run-current', 'seq' => 4],
                 ], \JSON_THROW_ON_ERROR),
             ]],
@@ -187,9 +189,14 @@ final class RecallToolHandlerTest extends IsolatedKernelTestCase
         $this->assertIsArray($observationResult);
         $this->assertTrue($observationResult['ok']);
         $this->assertSame('observation', $observationResult['kind']);
+        $this->assertSame([
+            ['run_id' => 'run-current', 'seq' => 2],
+            ['run_id' => 'run-current', 'seq' => 4],
+        ], $observationResult['source_refs']);
         $this->assertCount(2, $observationResult['events']);
         $this->assertSame(2, $observationResult['events'][0]['seq']);
         $this->assertSame(4, $observationResult['events'][1]['seq']);
+        $this->assertStringNotContainsString('run-foreign', json_encode($observationResult, \JSON_THROW_ON_ERROR));
 
         $reflectionResult = $accessor->with(
             new ToolContext(
@@ -268,8 +275,10 @@ final class RecallToolHandlerTest extends IsolatedKernelTestCase
         $this->assertIsArray($foreignSupport);
         $this->assertTrue($foreignSupport['ok']);
         $this->assertSame('reflection', $foreignSupport['kind']);
+        $this->assertSame([], $foreignSupport['supporting_observation_ids']);
         $this->assertSame([], $foreignSupport['source_refs']);
         $this->assertSame([], $foreignSupport['events']);
+        $this->assertStringNotContainsString($otherId, json_encode($foreignSupport, \JSON_THROW_ON_ERROR));
     }
 
     private function api(string $cwd, SessionEventReaderInterface $reader): ExtensionApiInterface

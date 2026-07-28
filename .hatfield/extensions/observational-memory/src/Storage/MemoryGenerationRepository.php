@@ -38,7 +38,7 @@ final class MemoryGenerationRepository
     }
 
     /**
-     * Exact reflection lookup for recall (caller enforces current-run scope).
+     * Exact reflection lookup for recall (SQL-scoped to current run).
      *
      * @return array{
      *   reflection_id: string,
@@ -48,12 +48,12 @@ final class MemoryGenerationRepository
      *   token_count: int
      * }|null
      */
-    public function findReflection(string $reflectionId): ?array
+    public function findReflection(string $runId, string $reflectionId): ?array
     {
         $row = $this->connection->fetchAssociative(
             'SELECT reflection_id, run_id, content, supporting_observation_ids_json, token_count
-             FROM om_reflection WHERE reflection_id = ?',
-            [$reflectionId],
+             FROM om_reflection WHERE run_id = ? AND reflection_id = ?',
+            [$runId, $reflectionId],
         );
         if (false === $row) {
             return null;

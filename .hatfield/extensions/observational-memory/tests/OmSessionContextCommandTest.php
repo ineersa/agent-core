@@ -100,6 +100,71 @@ final class OmSessionContextCommandTest extends TestCase
         $this->assertStringNotContainsString('No active TUI session', implode("\n", $messages));
     }
 
+    #[Test]
+    public function statusCommandStaysSafeWhenLazyGetSessionIdThrows(): void
+    {
+        $sessionContext = new OmSessionContext();
+        $sessionContext->bindTui($this->throwingTui());
+        $handler = new OmStatusCommandHandler(
+            new OmQueryService($this->unusedApi(), OmSettings::fromArray([
+                'observer' => ['model' => 'llama_cpp_test/test'],
+                'reflector' => ['model' => 'llama_cpp_test/test'],
+            ])),
+            $sessionContext,
+        );
+
+        $messages = [];
+        $handler->handle('', $this->collectingContext($messages));
+
+        $this->assertSame(['error:OM status unavailable.'], $messages);
+        $this->assertStringNotContainsString('lazy session boom', implode("\n", $messages));
+    }
+
+    private function throwingTui(): object
+    {
+        return new class implements TuiExtensionContextInterface {
+            public function getSessionId(): string
+            {
+                throw new \RuntimeException('lazy session boom');
+            }
+
+            public function requestRender(bool $force = false): void
+            {
+            }
+
+            public function setStatus(string $key, ?string $text): void
+            {
+            }
+
+            public function insertOverlayAfterEditor(AbstractWidget $widget): void
+            {
+            }
+
+            public function removeOverlay(AbstractWidget $widget): void
+            {
+            }
+
+            public function setFocus(AbstractWidget $widget): void
+            {
+            }
+
+            public function formatMuted(string $text): string
+            {
+                return $text;
+            }
+
+            public function formatRolePrefix(string $displayRole): string
+            {
+                return $displayRole.':';
+            }
+
+            public function turnRowsInDisplayOrder(string $sessionId): array
+            {
+                return [];
+            }
+        };
+    }
+
     private function mutableTui(string $sessionId): object
     {
         return new class($sessionId) implements TuiExtensionContextInterface {

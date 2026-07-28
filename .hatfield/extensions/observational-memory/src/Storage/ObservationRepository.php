@@ -202,7 +202,7 @@ final class ObservationRepository
     }
 
     /**
-     * Exact observation lookup for recall / status-view (current-run scoped by caller).
+     * Exact observation lookup for recall / status-view (SQL-scoped to current run).
      *
      * @return array{
      *   observation_id: string,
@@ -218,13 +218,13 @@ final class ObservationRepository
      *   created_at: string
      * }|null
      */
-    public function findObservation(string $observationId): ?array
+    public function findObservation(string $runId, string $observationId): ?array
     {
         $row = $this->connection->fetchAssociative(
             'SELECT observation_id, run_id, content, content_hash, relevance, timestamp, token_count,
                     source_refs_json, source_start_seq, source_end_seq, created_at
-             FROM om_observation WHERE observation_id = ?',
-            [$observationId],
+             FROM om_observation WHERE run_id = ? AND observation_id = ?',
+            [$runId, $observationId],
         );
         if (false === $row) {
             return null;
