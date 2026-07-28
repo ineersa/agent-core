@@ -115,6 +115,27 @@ final class BashInstallerTest extends TestCase
         $this->assertStringContainsString('requires a non-empty value', $combined);
     }
 
+    public function testInstallerRejectsPathTraversalVersionBeforeDownload(): void
+    {
+        $root = ProjectDir::get();
+        $process = new Process(
+            ['bash', $root.'/installer/bash-installer', '--version=../../x'],
+            $root,
+            [
+                // No fixture server: path traversal must fail at validation, before network.
+                'PATH' => getenv('PATH') ?: '/usr/bin:/bin',
+            ],
+        );
+        $process->setTimeout(10);
+        $process->run();
+        $combined = $process->getOutput().$process->getErrorOutput();
+        $this->assertFalse($process->isSuccessful());
+        $this->assertStringContainsString('invalid --version', $combined);
+        $this->assertStringNotContainsString('Download', $combined);
+        $this->assertStringNotContainsString('cURL is installed', $combined);
+        $this->assertStringNotContainsString('wget is installed', $combined);
+    }
+
     public function testInstallerFailsClosedOnPostDownloadSmokeFailure(): void
     {
         $root = ProjectDir::get();

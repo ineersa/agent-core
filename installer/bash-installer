@@ -66,7 +66,7 @@ Usage: $0 [--install-dir=DIR] [--version=VERSION|latest] [--static]
 
 Options:
   --install-dir=DIR   Install directory (default: ~/.local/bin)
-  --version=VERSION   Release tag or "latest" (default: latest)
+  --version=VERSION   latest or safe semver tag (optional v, major.minor.patch, optional -prerelease/+build)
   --static            Install fused native binary instead of PHAR
   -h, --help          Show this help
 
@@ -114,6 +114,16 @@ while [[ $# -gt 0 ]]; do
     *) output "Unknown option $1" "error"; usage; exit 1 ;;
   esac
 done
+
+# Fail closed before any temp/download work: only "latest" or safe release tags.
+# Optional leading v + major.minor.patch + optional prerelease/build using [0-9A-Za-z.-].
+# Rejects path traversal, whitespace, query/fragment, and other unsafe URL path chars.
+if [[ "${version}" != "latest" ]]; then
+  if ! [[ "${version}" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+([+-][0-9A-Za-z.-]+)?$ ]]; then
+    output "ERROR: invalid --version '${version}' (use 'latest' or a semver release tag like v1.2.3)" "error"
+    exit 1
+  fi
+fi
 
 TMPDIR_INSTALL="$(mktemp -d "${TMPDIR:-/tmp}/hatfield-install.XXXXXX")"
 
