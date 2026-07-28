@@ -84,5 +84,5 @@ forks:
     model: openai-codex/gpt-5.6-luna
     thinking_level: high
 context_budget_reminders:
-    early_input_tokens: 30000
+    early_input_tokens: 200000
     urgent_remaining_tokens: 25000
