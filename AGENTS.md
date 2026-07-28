@@ -270,7 +270,9 @@ After compaction, the `task-workflow` skill documents next steps. Use `task_list
 - `docs/session-storage.md` — sessions, replay, locking, resume/fork design
 - `docs/tui-architecture.md` — layout, widgets, slots, themes
 - `docs/tui-testing.md` — tmux testing, snapshots, keybindings
+- `docs/distribution.md` — release artifacts, installer, tag-only publish checklist
 - `docs/phar-packaging.md` — PHAR build, runtime, test, and troubleshooting
+- `docs/static-packaging.md` — native PHP-micro binaries, relaunch, topology, SPC pin
 - `docs/hitl-and-approvals.md` — HITL end-to-end flow, TUI question system, extension approvals, SafeGuard modes
 - `docs/datadog.md` — local Datadog setup, structured log fields, event names, spans, and observability privacy rules
 - `src/AgentCore/Domain/AGENTS.md` — domain/event docs

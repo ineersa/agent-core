@@ -8,24 +8,35 @@ namespace Ineersa\CodingAgent\Tests\Support;
  * Resolves the agent executable command for test subprocess spawning.
  *
  * When HATFIELD_BINARY_PATH is set (e.g. by Castor tasks that build the
- * PHAR first), returns [PHP_BINARY, <phar-path>]. Falls back to the
- * source-checkout bin/console path for direct PHPUnit runs outside Castor.
+ * PHAR first), returns [PHP_BINARY, <phar-path>] for ordinary PHAR/scripts.
+ * When the resolved artifact is a fused native binary (same path as the
+ * current PHP_BINARY), returns [artifact] so tests mirror production
+ * relaunch topology. Falls back to the source-checkout bin/console path
+ * for direct PHPUnit runs outside Castor.
  *
  * Usage:
- *   [$php, $script] = AgentTestExecutable::command();
- *   // proc_open([$php, $script, 'agent', '--controller', ...], ...)
+ *   $cmd = AgentTestExecutable::command();
+ *   // PHAR/source: [PHP_BINARY, path]
+ *   // fused native: [path]
  *
  *   $path = AgentTestExecutable::path();
- *   // Returns the absolute path to bin/console or the PHAR.
+ *   // Returns the absolute path to bin/console, the PHAR, or the native binary.
+ *
+ * sourceConsoleCommand() is intentionally unchanged (always PHP + bin/console)
+ * so replay/live controller tests keep loading APP_ENV=test DI.
  */
 final class AgentTestExecutable
 {
     /**
-     * @return string[] Two-element command array: [PHP_BINARY, <executable>]
+     * @return list<string> Command array: [PHP_BINARY, <executable>] or [native-binary]
      */
     public static function command(): array
     {
         $binaryPath = self::resolveBinaryPath();
+
+        if (self::isFusedNativeExecutable($binaryPath)) {
+            return [$binaryPath];
+        }
 
         return [\PHP_BINARY, $binaryPath];
     }
@@ -80,5 +91,27 @@ final class AgentTestExecutable
         $projectDir = ProjectDir::get();
 
         return $projectDir.'/bin/console';
+    }
+
+    private static function isFusedNativeExecutable(string $path): bool
+    {
+        if (!is_file($path)) {
+            return false;
+        }
+
+        // constant() so PHPStan cannot treat PHP_BINARY as always non-empty; fused
+        // PHP-micro leaves it empty at runtime and the artifact is self-executing.
+        $phpBinary = \defined('PHP_BINARY') ? (string) \constant('PHP_BINARY') : '';
+        if ('' === $phpBinary) {
+            return true;
+        }
+
+        $resolvedPath = realpath($path);
+        $resolvedPhp = realpath($phpBinary);
+        if (false === $resolvedPath || false === $resolvedPhp) {
+            return $path === $phpBinary;
+        }
+
+        return $resolvedPath === $resolvedPhp;
     }
 }

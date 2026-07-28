@@ -2,6 +2,26 @@
 
 Monorepo for Hatfield, a coding assistant built with PHP.
 
+## Install (PHAR / static)
+
+```bash
+# PHAR (requires PHP >= 8.5 + extensions; see docs/phar-packaging.md)
+bash installer/bash-installer --install-dir="$HOME/.local/bin"
+
+# Native static binary (no system PHP)
+bash installer/bash-installer --static --install-dir="$HOME/.local/bin"
+
+# Pinned version
+bash installer/bash-installer --version=v1.2.3
+```
+
+Artifacts: `hatfield.phar`, `hatfield.linux-amd64`, `hatfield.linux-arm64`,
+`hatfield.darwin-amd64`, `hatfield.darwin-arm64`, plus `SHA256SUMS`.
+Local builds: `castor distribution:build`, `scripts/build-distribution.sh`.
+Packaging docs: [`docs/distribution.md`](docs/distribution.md) (release/installer),
+[`docs/phar-packaging.md`](docs/phar-packaging.md), [`docs/static-packaging.md`](docs/static-packaging.md).
+
+
 ## Structure
 
 ```

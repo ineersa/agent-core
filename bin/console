@@ -19,7 +19,9 @@ $isPhar = \str_starts_with(__FILE__, 'phar://');
 // PHP extensions are loaded before deep DBAL/Symfony errors obscure the
 // root cause. Source/dev execution skips this check entirely.
 if ($isPhar) {
-    $requiredExtensions = ['pdo_sqlite', 'mbstring', 'xml'];
+    // Keep synchronized with composer.json ext-* requirements,
+    // installer/bash-installer, tools/static/pin.json, and docs/phar-packaging.md.
+    $requiredExtensions = ['pdo_sqlite', 'mbstring', 'xml', 'intl', 'curl', 'openssl', 'pcntl', 'posix', 'tokenizer', 'ctype', 'filter', 'iconv', 'phar'];
     $missing = [];
     foreach ($requiredExtensions as $ext) {
         if (!\extension_loaded($ext)) {
@@ -104,4 +106,9 @@ if (!$isPhar) {
 // and APP_DEBUG via the process environment before launching the PHAR.
 $kernel = new Kernel($_SERVER['APP_ENV'] ?? 'prod', (bool) ($_SERVER['APP_DEBUG'] ?? false));
 $application = new Application($kernel);
+$application->setName('Hatfield');
+$buildIdentity = \Ineersa\CodingAgent\Build\ApplicationBuildIdentity::resolve(
+    $isPhar ? null : \dirname(__DIR__),
+);
+$application->setVersion($buildIdentity->displayVersion());
 $application->run(new ArgvInput());

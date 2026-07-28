@@ -475,7 +475,11 @@ function hatfield_phar_box_bin(): string
             escapeshellarg($root.'/tools/phar'),
             escapeshellarg($composerBin),
         );
-        $output = shell_exec($installCmd);
+        try {
+            $output = run_checked($installCmd);
+        } catch (\Throwable $e) {
+            throw new \RuntimeException('Failed to install tools/phar Box toolchain: '.$e->getMessage(), 0, $e);
+        }
         // After composer install, re-check the binary with a fresh
         // stat cache — composer install creates the file on disk.
         clearstatcache(true, $localBoxBin);
@@ -485,7 +489,7 @@ function hatfield_phar_box_bin(): string
         // If install produced output but the binary still isn't
         // executable — show diagnostic output before falling through
         // to the global Box lookup.
-        $diagnostic = \is_string($output) ? trim($output) : '';
+        $diagnostic = trim($output);
         if ('' !== $diagnostic) {
             echo "  tools/phar/ composer install output:\n  ".str_replace("\n", "\n  ", $diagnostic)."\n";
         }
@@ -684,21 +688,312 @@ function summarize_deptrac_json(string $jsonOutput): string
 }
 
 /**
- * Ensure the PHAR exists and is fresh.
+ * Run a shell command with fail-fast exit-status checking.
  *
- * If the PHAR is missing or stale (source, config, or box/composer files
- * have been updated since the last build), triggers a rebuild.
+ * Captures combined stdout/stderr. Never logs secrets intentionally: callers
+ * must not embed credentials in $command. Returns trimmed stdout on success.
  *
- * @return string absolute path to the existing or freshly built PHAR
+ * @throws \RuntimeException on non-zero exit
  */
+/**
+ * @param array<string, string> $env
+ */
+function run_checked(string $command, ?string $cwd = null, array $env = []): string
+{
+    $descriptorSpec = [
+        0 => ['pipe', 'r'],
+        1 => ['pipe', 'w'],
+        2 => ['pipe', 'w'],
+    ];
+
+    $fullEnv = null;
+    if ([] !== $env) {
+        $fullEnv = [];
+        foreach (getenv() as $k => $v) {
+            $fullEnv[$k] = $v;
+        }
+        foreach ($env as $k => $v) {
+            $fullEnv[$k] = $v;
+        }
+    }
+
+    $process = proc_open($command, $descriptorSpec, $pipes, $cwd, $fullEnv);
+    if (!\is_resource($process)) {
+        throw new \RuntimeException('Failed to start command: '.$command);
+    }
+
+    fclose($pipes[0]);
+    $stdout = stream_get_contents($pipes[1]);
+    $stderr = stream_get_contents($pipes[2]);
+    fclose($pipes[1]);
+    fclose($pipes[2]);
+    $status = proc_close($process);
+
+    $stdout = false === $stdout ? '' : $stdout;
+    $stderr = false === $stderr ? '' : $stderr;
+    $combined = trim($stdout.('' !== $stderr ? ("\n".$stderr) : ''));
+
+    if (0 !== $status) {
+        $tail = $combined;
+        if (\strlen($tail) > 4000) {
+            $tail = '...'.substr($tail, -4000);
+        }
+        throw new \RuntimeException("Command failed (exit {$status}): {$command}\n".'cwd: '.($cwd ?? (string) getcwd())."\noutput:\n{$tail}");
+    }
+
+    return $combined;
+}
+
+/**
+ * Recursively remove a path (file or directory). Fail-fast.
+ */
+function remove_path_checked(string $path): void
+{
+    if (!file_exists($path) && !is_link($path)) {
+        return;
+    }
+
+    if (is_link($path) || is_file($path)) {
+        if (!unlink($path)) {
+            throw new \RuntimeException('Failed to remove file: '.$path);
+        }
+
+        return;
+    }
+
+    if (!is_dir($path)) {
+        throw new \RuntimeException('Refusing to remove non-file/non-dir path: '.$path);
+    }
+
+    $iterator = new \RecursiveIteratorIterator(
+        new \RecursiveDirectoryIterator($path, \FilesystemIterator::SKIP_DOTS),
+        \RecursiveIteratorIterator::CHILD_FIRST,
+    );
+    foreach ($iterator as $entry) {
+        $entryPath = (string) $entry;
+        if ($entry->isDir()) {
+            if (!rmdir($entryPath)) {
+                throw new \RuntimeException('Failed to remove directory: '.$entryPath);
+            }
+        } elseif (!unlink($entryPath)) {
+            throw new \RuntimeException('Failed to remove file: '.$entryPath);
+        }
+    }
+    if (!rmdir($path)) {
+        throw new \RuntimeException('Failed to remove directory: '.$path);
+    }
+}
+
+/**
+ * Copy a file, failing if the copy does not succeed.
+ */
+function copy_file_checked(string $from, string $to): void
+{
+    $parent = \dirname($to);
+    if (!is_dir($parent) && !mkdir($parent, 0755, true) && !is_dir($parent)) {
+        throw new \RuntimeException('Unable to create parent directory: '.$parent);
+    }
+    if (!copy($from, $to)) {
+        throw new \RuntimeException("Failed to copy {$from} -> {$to}");
+    }
+}
+
+/**
+ * Write file contents, fail-fast.
+ */
+function write_file_checked(string $path, string $contents): void
+{
+    $parent = \dirname($path);
+    if (!is_dir($parent) && !mkdir($parent, 0755, true) && !is_dir($parent)) {
+        throw new \RuntimeException('Unable to create parent directory: '.$parent);
+    }
+    if (false === file_put_contents($path, $contents)) {
+        throw new \RuntimeException('Failed to write file: '.$path);
+    }
+}
+
+/**
+ * Packaged PHAR input roots and files used for both staging and freshness.
+ *
+ * Keep this list complete: any input that can change the artifact must be here
+ * so phar_ensure() and the lock-holder second freshness check stay in sync.
+ *
+ * @return array{directories: list<string>, files: list<string>}
+ */
+function phar_packaged_inputs(string $root): array
+{
+    return [
+        'directories' => [
+            $root.'/bin',
+            $root.'/src',
+            $root.'/config',
+            $root.'/migrations',
+            $root.'/internal-docs',
+            $root.'/.castor',
+            $root.'/tools/phar',
+        ],
+        'files' => [
+            $root.'/composer.json',
+            $root.'/composer.lock',
+            $root.'/box.json',
+            $root.'/castor.php',
+            $root.'/tools/phar/composer.json',
+            $root.'/tools/phar/composer.lock',
+        ],
+    ];
+}
+
+/**
+ * Sidecar path storing the deterministic packaged-input fingerprint for a PHAR.
+ *
+ * Compared by phar_is_stale() so freshness tracks content (including resolved
+ * internal-docs symlink targets), not just directory mtimes.
+ */
+function phar_freshness_marker_path(string $pharPath): string
+{
+    return $pharPath.'.inputs.sha256';
+}
+
+/**
+ * Deterministic fingerprint of the complete packaged/build input set.
+ *
+ * Directories are walked recursively. Symlinks contribute the resolved target
+ * path and the target file contents (critical for internal-docs → docs/*).
+ * Missing optional paths are recorded as absent so deletions invalidate.
+ */
+function phar_input_fingerprint(string $root): string
+{
+    $inputs = phar_packaged_inputs($root);
+    $lines = [];
+
+    $recordFile = static function (string $path) use (&$lines): void {
+        if (is_link($path)) {
+            $target = readlink($path);
+            $resolved = realpath($path);
+            $hash = false !== $resolved && is_file($resolved)
+                ? hash_file('sha256', $resolved)
+                : 'missing-target';
+            $lines[] = 'link\t'.$path.'\t'.(false === $target ? '' : $target).'\t'.(false === $hash ? 'unreadable' : $hash);
+
+            return;
+        }
+        if (!is_file($path)) {
+            $lines[] = 'missing\t'.$path;
+
+            return;
+        }
+        $hash = hash_file('sha256', $path);
+        $lines[] = 'file\t'.$path.'\t'.(false === $hash ? 'unreadable' : $hash);
+    };
+
+    foreach ($inputs['files'] as $file) {
+        $recordFile($file);
+    }
+
+    foreach ($inputs['directories'] as $dir) {
+        if (!is_dir($dir) || !is_readable($dir)) {
+            $lines[] = 'missing-dir\t'.$dir;
+            continue;
+        }
+        $iterator = new \RecursiveIteratorIterator(
+            new \RecursiveDirectoryIterator($dir, \FilesystemIterator::SKIP_DOTS),
+        );
+        $paths = [];
+        foreach ($iterator as $entry) {
+            $paths[] = (string) $entry;
+        }
+        sort($paths);
+        foreach ($paths as $path) {
+            $recordFile($path);
+        }
+    }
+
+    // Build identity env inputs are part of the packaged artifact contents.
+    $version = getenv('HATFIELD_BUILD_VERSION');
+    $commit = getenv('HATFIELD_BUILD_COMMIT');
+    $lines[] = 'env\tHATFIELD_BUILD_VERSION\t'.(false === $version ? '' : trim((string) $version));
+    $lines[] = 'env\tHATFIELD_BUILD_COMMIT\t'.(false === $commit ? '' : trim((string) $commit));
+
+    sort($lines);
+
+    return hash('sha256', implode("\n", $lines)."\n");
+}
+
+/**
+ * True when $pharPath is missing/unreadable or its input fingerprint differs.
+ *
+ * Uses the same complete packaged-input set as staging (phar_packaged_inputs)
+ * plus build identity env. The lock-holder second check must call this same
+ * predicate — never a divergent mtime shortcut.
+ */
+function phar_is_stale(string $root, string $pharPath): bool
+{
+    if (!is_file($pharPath) || !is_readable($pharPath)) {
+        return true;
+    }
+
+    $marker = phar_freshness_marker_path($pharPath);
+    if (!is_file($marker) || !is_readable($marker)) {
+        return true;
+    }
+
+    $stored = trim((string) file_get_contents($marker));
+    if ('' === $stored || !preg_match('/^[a-f0-9]{64}$/', $stored)) {
+        return true;
+    }
+
+    return !hash_equals($stored, phar_input_fingerprint($root));
+}
+
+/**
+ * Persist the current packaged-input fingerprint next to a successful PHAR.
+ */
+function phar_write_freshness_marker(string $root, string $pharPath): void
+{
+    write_file_checked(phar_freshness_marker_path($pharPath), phar_input_fingerprint($root)."\n");
+}
+
+/**
+ * Remove PHAR artifact and its freshness marker (failed builds / clean).
+ */
+function phar_remove_artifact_and_marker(string $pharPath): void
+{
+    if (is_file($pharPath) || is_link($pharPath)) {
+        remove_path_checked($pharPath);
+    }
+    $marker = phar_freshness_marker_path($pharPath);
+    if (is_file($marker) || is_link($marker)) {
+        remove_path_checked($marker);
+    }
+}
+
+/**
+ * Resolve build version/commit for packaging (env overrides + git).
+ *
+ * @return array{version: string, commit: string}
+ */
+function resolve_build_identity_for_packaging(string $root): array
+{
+    $version = getenv('HATFIELD_BUILD_VERSION');
+    $version = (false !== $version && '' !== trim((string) $version)) ? trim((string) $version) : 'dev';
+
+    $commit = getenv('HATFIELD_BUILD_COMMIT');
+    if (false === $commit || '' === trim((string) $commit)) {
+        $git = trim((string) shell_exec('git -C '.escapeshellarg($root).' rev-parse HEAD 2>/dev/null'));
+        $commit = '' !== $git ? $git : 'unknown';
+    } else {
+        $commit = trim((string) $commit);
+    }
+
+    return ['version' => $version, 'commit' => $commit];
+}
+
 /**
  * PHAR build lock file path (relative to project root).
  *
  * Used by phar_ensure() to serialize parallel workers that all try
  * to build the same PHAR simultaneously.  Without this lock,
- * concurrent shell_exec('rm -rf staging/') calls race with
- * concurrent cp/composer/box steps → "Directory not empty" / stale
- * file errors.
+ * concurrent staging cleanup races with concurrent cp/composer/box steps.
  */
 const PHAR_BUILD_LOCK = 'var/tmp/phar-build.lock';
 
@@ -711,6 +1006,14 @@ const PHAR_BUILD_LOCK = 'var/tmp/phar-build.lock';
  */
 const PHAR_BUILD_LOCK_TIMEOUT_S = 60;
 
+/**
+ * Ensure the PHAR exists and is fresh.
+ *
+ * If the PHAR is missing or stale relative to the complete packaged-input set,
+ * triggers a rebuild. Failures propagate (no swallow).
+ *
+ * @return string absolute path to the existing or freshly built PHAR
+ */
 function phar_ensure(): string
 {
     $pharPath = hatfield_phar_path();
@@ -719,36 +1022,16 @@ function phar_ensure(): string
         throw new \RuntimeException('Unable to resolve project root for PHAR ensure.');
     }
 
-    if (is_file($pharPath) && is_readable($pharPath)) {
-        // Quick stale detection: compare mtime against key meta-files
-        // and latest source/config file.
-        $pharMtime = filemtime($pharPath);
-
-        // Check meta-files that directly affect the build output.
-        foreach (['box.json', 'composer.lock'] as $file) {
-            $path = $root.'/'.$file;
-            if (is_file($path) && filemtime($path) > $pharMtime) {
-                echo "PHAR stale: {$file} changed. Rebuilding.\n";
-                phar_build_with_lock($root);
-
-                return $pharPath;
-            }
-        }
-
-        // Check the most recently changed source/config file.
-        $latestSrc = latest_file_mtime([$root.'/src', $root.'/config']);
-        if ($latestSrc > (float) $pharMtime) {
-            echo "PHAR stale: source/config files changed. Rebuilding.\n";
-            phar_build_with_lock($root);
-
-            return $pharPath;
-        }
-
+    if (!phar_is_stale($root, $pharPath)) {
         return $pharPath;
     }
 
-    // Build if missing.
-    echo "PHAR not found. Building.\n";
+    if (is_file($pharPath)) {
+        echo "PHAR stale: packaged inputs changed. Rebuilding.\n";
+    } else {
+        echo "PHAR not found. Building.\n";
+    }
+
     phar_build_with_lock($root);
 
     return $pharPath;
@@ -763,14 +1046,13 @@ function phar_ensure(): string
 function phar_build_with_lock(string $root): void
 {
     $lockPath = $root.'/'.PHAR_BUILD_LOCK;
-    @mkdir(\dirname($lockPath), 0755, true);
+    if (!is_dir(\dirname($lockPath)) && !mkdir(\dirname($lockPath), 0755, true) && !is_dir(\dirname($lockPath))) {
+        throw new \RuntimeException('Unable to create PHAR lock directory: '.\dirname($lockPath));
+    }
 
     $lockHandle = fopen($lockPath, 'c+b');
     if (false === $lockHandle) {
-        // Can't lock — build without serialization as best-effort.
-        phar_build();
-
-        return;
+        throw new \RuntimeException('Unable to open PHAR build lock: '.$lockPath);
     }
 
     $deadline = microtime(true) + PHAR_BUILD_LOCK_TIMEOUT_S;
@@ -790,17 +1072,12 @@ function phar_build_with_lock(string $root): void
     }
 
     try {
-        // Re-read the PHAR path AFTER acquiring the lock — another
-        // worker may have built it while we were waiting.
+        // Re-check freshness AFTER acquiring the lock — another worker may
+        // have built it while we were waiting. Uses the same predicate as
+        // phar_ensure() so lock-holder and first check cannot diverge.
         $pharPath = hatfield_phar_path();
-        if (is_file($pharPath) && is_readable($pharPath)) {
-            // Double-check staleness while holding the lock.
-            $pharMtime = filemtime($pharPath);
-            $latestSrc = latest_file_mtime([$root.'/src', $root.'/config']);
-            if ($latestSrc <= (float) $pharMtime) {
-                // Already up-to-date — another worker built it while we waited.
-                return;
-            }
+        if (!phar_is_stale($root, $pharPath)) {
+            return;
         }
 
         phar_build();
@@ -809,24 +1086,6 @@ function phar_build_with_lock(string $root): void
         fclose($lockHandle);
     }
 }
-
-/**
- * Deterministic Composer autoloader suffix used for PHAR builds.
- *
- * Without a fixed suffix, Composer derives the autoloader class name from
- * a hash of composer.json.  If the resulting class name collides with the
- * autoloader from a sibling PHAR or the host Composer project, class-map
- * resolution silently breaks (only one autoloader survives per process).
- *
- * Castor solves this by patching composer.json with a randomly-generated
- * suffix during PHAR builds (tools/phar/castor.php).  We use a deterministic
- * project-scoped value so the suffix is stable across builds and doesn't
- * depend on build-time randomness.
- *
- * This suffix is applied to the staging composer.json before the production
- * `composer install --optimize-autoloader` step, ensuring the generated
- * autoloader (preserved by Box with dump-autoload:false) has a unique name.
- */
 
 // ─── Full QA gate (castor check) cross-worktree lock ───────────────────
 
@@ -1149,12 +1408,16 @@ const HATFIELD_PHAR_AUTOLOADER_SUFFIX = 'HatfieldPharBuild';
  *
  * Pipeline:
  *   1. Create/refresh staging dir with only packaging inputs (no dev vendor).
- *   2. Apply a deterministic Composer autoloader suffix to prevent class-map
+ *   2. Embed build identity (version + commit).
+ *   3. Apply a deterministic Composer autoloader suffix to prevent class-map
  *      collision when the PHAR is consumed by another Composer project.
- *   3. Run `composer install --no-dev --optimize-autoloader` in staging.
- *   4. Compile with Box (from the isolated tools/phar/ toolchain).
- *   5. Smoke-test the artifact from an isolated temp directory.
- *   6. Report timings and PHAR size.
+ *   4. Run `composer install --no-dev --optimize-autoloader` in staging.
+ *   5. Compile with Box (from the isolated tools/phar/ toolchain).
+ *   6. Smoke-test the artifact from an isolated temp directory.
+ *   7. Report timings and PHAR size.
+ *
+ * Destination artifact is deleted before compile; failed compile/smoke leaves
+ * no successful-looking artifact behind.
  *
  * @return string absolute path to the built PHAR
  */
@@ -1166,10 +1429,6 @@ function phar_build(): string
         throw new \RuntimeException('Unable to resolve project root for PHAR build.');
     }
 
-    // Guard: the PHAR output path and staging dir must live under the
-    // current project root unless the caller set an explicit override
-    // (HATFIELD_PHAR_PATH / HATFIELD_PHAR_STAGING_DIR) to a non-project
-    // location.  This catches accidental global-path usage.
     $explicitPharPath = getenv('HATFIELD_PHAR_PATH');
     if ((false === $explicitPharPath || '' === $explicitPharPath) && !str_starts_with($pharPath, $root)) {
         throw new \RuntimeException(\sprintf('PHAR output path %s is not under the project root %s. This indicates a non-worktree-local default. Set HATFIELD_PHAR_PATH explicitly if this is intentional.', $pharPath, $root));
@@ -1182,20 +1441,19 @@ function phar_build(): string
     }
 
     $startTime = microtime(true);
-
-    // ── Resolve external binaries ────────────────────────────────────
-
     $boxBin = hatfield_phar_box_bin();
     $composerBin = hatfield_phar_composer_bin();
 
-    // ── 1. Prepare staging directory ─────────────────────────────────
+    if (!is_dir(\dirname($pharPath)) && !mkdir(\dirname($pharPath), 0755, true) && !is_dir(\dirname($pharPath))) {
+        throw new \RuntimeException('Unable to create PHAR output directory: '.\dirname($pharPath));
+    }
 
-    // Ensure output directory exists.
-    @mkdir(\dirname($pharPath), 0755, true);
+    // Delete any previous artifact + freshness marker before compile so a
+    // failed build cannot leave a stale successful-looking PHAR in place.
+    phar_remove_artifact_and_marker($pharPath);
 
-    // Start fresh so stale files from previous builds never leak in.
     if (is_dir($stagingDir)) {
-        shell_exec('rm -rf '.escapeshellarg($stagingDir));
+        remove_path_checked($stagingDir);
     }
     if (!mkdir($stagingDir, 0755, true) && !is_dir($stagingDir)) {
         throw new \RuntimeException('Unable to create staging directory: '.$stagingDir);
@@ -1203,133 +1461,113 @@ function phar_build(): string
 
     $copyStart = microtime(true);
 
-    // Copy source directories.
     foreach (['bin', 'src', 'config', 'migrations'] as $dir) {
         $srcPath = $root.'/'.$dir;
-        if (is_dir($srcPath)) {
-            shell_exec(
-                'cp -a '.escapeshellarg($srcPath).' '.escapeshellarg($stagingDir.'/')
-            );
+        if (!is_dir($srcPath)) {
+            throw new \RuntimeException('Required packaging directory missing: '.$srcPath);
         }
+        run_checked('cp -a '.escapeshellarg($srcPath).' '.escapeshellarg($stagingDir.'/'));
     }
 
     // Curated internal docs use source-tree symlinks; Box rejects links, so
     // materialize regular files into the staging tree before compilation.
     $internalDocsPath = $root.'/internal-docs';
     if (is_dir($internalDocsPath)) {
-        shell_exec(
-            'cp -aL '.escapeshellarg($internalDocsPath).' '.escapeshellarg($stagingDir.'/')
-        );
+        run_checked('cp -aL '.escapeshellarg($internalDocsPath).' '.escapeshellarg($stagingDir.'/'));
     }
 
-    // Copy individual root files needed by Box and Composer.
     foreach (['composer.json', 'composer.lock', 'box.json'] as $file) {
         $srcPath = $root.'/'.$file;
-        if (is_file($srcPath)) {
-            copy($srcPath, $stagingDir.'/'.$file);
+        if (!is_file($srcPath)) {
+            throw new \RuntimeException('Required packaging file missing: '.$srcPath);
         }
+        copy_file_checked($srcPath, $stagingDir.'/'.$file);
     }
+
+    $identity = resolve_build_identity_for_packaging($root);
+    $generatedRelative = 'src/CodingAgent/Build/build-identity.generated.php';
+    $generatedSource = \Ineersa\CodingAgent\Build\ApplicationBuildIdentity::generatePhpSource(
+        $identity['version'],
+        $identity['commit'],
+        'release',
+    );
+    write_file_checked($stagingDir.'/'.$generatedRelative, $generatedSource);
 
     $copyTime = microtime(true) - $copyStart;
     $copySize = dirsize_estimate($stagingDir);
 
     echo "Staging prepared: {$stagingDir} ({$copySize} MB)\n";
+    echo "Build identity: version={$identity['version']} commit={$identity['commit']}\n";
 
-    // ── 2. Apply deterministic autoloader suffix ─────────────────────
-    //
     // Without a fixed suffix, Composer derives the autoloader class name
-    // (ComposerAutoloaderInit<hex>) from a hash of composer.json.  If the
-    // PHAR is loaded inside a host project that produces the same hash —
-    // e.g. another agent-core build — the autoloader class names collide
-    // and the PHAR's autoloader silently fails to register.
-    //
-    // We set config.autoloader-suffix in the staging composer.json so the
-    // autoloader class name is always ComposerAutoloaderInitHatfieldPharBuild.
-    // This is applied to the staging copy only — the root composer.json is
-    // never modified.
-
+    // from a hash of composer.json. Apply staging-only autoloader-suffix.
     $stagingComposerJson = $stagingDir.'/composer.json';
-    if (!is_file($stagingComposerJson)) {
-        throw new \RuntimeException('Staging composer.json not found at '.$stagingComposerJson);
-    }
-
     $composerConfig = json_decode((string) file_get_contents($stagingComposerJson), true);
     if (!\is_array($composerConfig)) {
         throw new \RuntimeException('Failed to parse staging composer.json.');
     }
-
     if (!isset($composerConfig['config']) || !\is_array($composerConfig['config'])) {
         $composerConfig['config'] = [];
     }
     $composerConfig['config']['autoloader-suffix'] = HATFIELD_PHAR_AUTOLOADER_SUFFIX;
-
     $encoded = json_encode($composerConfig, \JSON_PRETTY_PRINT | \JSON_UNESCAPED_SLASHES);
     if (false === $encoded) {
         throw new \RuntimeException('Failed to encode staging composer.json with autoloader suffix.');
     }
-    if (false === file_put_contents($stagingComposerJson, $encoded."\n")) {
-        throw new \RuntimeException('Failed to write staging composer.json with autoloader suffix.');
-    }
+    write_file_checked($stagingComposerJson, $encoded."\n");
 
-    // ── 3. Install production-only Composer dependencies ─────────────
-
-    // Default APP_ENV to prod if not already set by the caller.
-    // This ensures Composer resolves Symfony config in the correct
-    // environment (e.g. bundle registration) without forcing APP_DEBUG.
     $composerEnv = getenv('APP_ENV');
     $composerEnv = (false !== $composerEnv && '' !== $composerEnv) ? $composerEnv : 'prod';
     $composerStart = microtime(true);
     $composerCmd = \sprintf(
-        'cd %s && APP_ENV=%s COMPOSER_MEMORY_LIMIT=-1 XDEBUG_MODE=off %s install'
+        'APP_ENV=%s COMPOSER_MEMORY_LIMIT=-1 XDEBUG_MODE=off %s install'
         .' --no-dev --prefer-dist --no-interaction --no-progress'
         .' --optimize-autoloader 2>&1',
-        escapeshellarg($stagingDir),
         escapeshellarg($composerEnv),
         escapeshellarg($composerBin)
     );
-    $composerOutput = shell_exec($composerCmd);
+    try {
+        $composerOutput = run_checked($composerCmd, $stagingDir);
+    } catch (\Throwable $e) {
+        phar_remove_artifact_and_marker($pharPath);
+        throw $e;
+    }
     $composerTime = microtime(true) - $composerStart;
 
-    if (null === $composerOutput) {
-        throw new \RuntimeException('composer install command returned no output (shell_exec failure).'.\PHP_EOL.'Command: '.$composerCmd);
-    }
-
-    // ── 4. Compile PHAR with Box ─────────────────────────────────────
-
-    // Update box.json output in staging to reflect the resolved PHAR path
-    // (in case the env override differs from the default in the file).
     $stagingBoxJson = $stagingDir.'/box.json';
-    if (is_file($stagingBoxJson)) {
-        $boxConfig = json_decode((string) file_get_contents($stagingBoxJson), true);
-        if (\is_array($boxConfig)) {
-            $boxConfig['output'] = $pharPath;
-            $encoded = json_encode($boxConfig, \JSON_PRETTY_PRINT | \JSON_UNESCAPED_SLASHES);
-            if (false !== $encoded) {
-                file_put_contents($stagingBoxJson, $encoded."\n");
-            }
-        }
+    $boxConfig = json_decode((string) file_get_contents($stagingBoxJson), true);
+    if (!\is_array($boxConfig)) {
+        throw new \RuntimeException('Failed to parse staging box.json.');
     }
+    $boxConfig['output'] = $pharPath;
+    $encoded = json_encode($boxConfig, \JSON_PRETTY_PRINT | \JSON_UNESCAPED_SLASHES);
+    if (false === $encoded) {
+        throw new \RuntimeException('Failed to encode staging box.json.');
+    }
+    write_file_checked($stagingBoxJson, $encoded."\n");
 
     $boxEnv = getenv('APP_ENV');
     $boxEnv = (false !== $boxEnv && '' !== $boxEnv) ? $boxEnv : 'prod';
     $boxStart = microtime(true);
     $boxCmd = \sprintf(
-        'cd %s && APP_ENV=%s php -d memory_limit=-1 -d xdebug.mode=off %s compile 2>&1',
-        escapeshellarg($stagingDir),
+        'APP_ENV=%s php -d memory_limit=-1 -d xdebug.mode=off %s compile 2>&1',
         escapeshellarg($boxEnv),
         escapeshellarg($boxBin)
     );
-    $boxOutput = shell_exec($boxCmd);
+    try {
+        $boxOutput = run_checked($boxCmd, $stagingDir);
+    } catch (\Throwable $e) {
+        phar_remove_artifact_and_marker($pharPath);
+        throw new \RuntimeException("PHAR Box compile failed.\nComposer output:\n{$composerOutput}\n".$e->getMessage(), 0, $e);
+    }
     $boxTime = microtime(true) - $boxStart;
 
     if (!is_file($pharPath)) {
-        $error = 'PHAR build failed.'.\PHP_EOL;
-        $error .= 'Composer output:'.\PHP_EOL;
-        $error .= $composerOutput.\PHP_EOL;
-        $error .= 'Box output:'.\PHP_EOL;
-        $error .= ($boxOutput ?? '<no output>').\PHP_EOL;
-        $error .= 'Box command: '.$boxCmd.\PHP_EOL;
-        throw new \RuntimeException($error);
+        throw new \RuntimeException("PHAR build failed: output missing.\nComposer output:\n{$composerOutput}\nBox output:\n{$boxOutput}\n".'Box command: '.$boxCmd);
+    }
+    if (0 === filesize($pharPath)) {
+        phar_remove_artifact_and_marker($pharPath);
+        throw new \RuntimeException("PHAR build failed: output empty.\nComposer output:\n{$composerOutput}\nBox output:\n{$boxOutput}\n".'Box command: '.$boxCmd);
     }
 
     $totalTime = microtime(true) - $startTime;
@@ -1340,15 +1578,17 @@ function phar_build(): string
         $copyTime, $composerTime, $boxTime, $totalTime
     );
 
-    // ── 5. Smoke-test the PHAR from an isolated working directory ────
-    //
-    // Running from a temp cwd (outside the repo) proves:
-    //   - The PHAR boots without any source-checkout scaffolding.
-    //   - .hatfield/cache and .hatfield/logs are created in the runtime cwd.
-    //   - Package-autoloader collision is avoided (the fixed suffix works).
-    //   - Core commands (list, about, agent --help) are functional.
+    try {
+        phar_smoke($pharPath);
+    } catch (\Throwable $e) {
+        // Artifact exists here (we returned earlier if missing); delete so smoke
+        // failure cannot leave a distributable PHAR behind.
+        phar_remove_artifact_and_marker($pharPath);
+        throw $e;
+    }
 
-    phar_smoke($pharPath);
+    // Only successful smokes write the freshness marker.
+    phar_write_freshness_marker($root, $pharPath);
 
     return $pharPath;
 }
@@ -1359,131 +1599,105 @@ function phar_build(): string
  * Executes from an isolated temporary working directory so .hatfield/* dirs
  * are created outside the repo and do not pollute the source checkout.
  *
- * Validates:
- *   - PHAR boots and Symfony Console loads all commands.
- *   - `agent` command is listed (confirmed the PHAR contains app code).
- *   - `about` reports the correct environment (prod by default).
- *   - `agent --help` renders usage text.
- *
- * Output is kept compact for Castor build logs.
+ * Failures throw. Temp cleanup always runs in finally (concurrency-safe random dir).
  */
 function phar_smoke(string $pharPath): void
 {
-    // Create an isolated temp cwd to prove writable-dir creation works.
-    // Use a random suffix (not just getpid) to avoid collisions when
-    // multiple build processes or Castor invocations share a temp dir.
-    $tmpCwd = sys_get_temp_dir().'/hatfield-phar-smoke-'.bin2hex(random_bytes(8));
-    @mkdir($tmpCwd, 0755, true);
-    if (!is_dir($tmpCwd)) {
-        echo "PHAR smoke test: SKIP (could not create isolated cwd: {$tmpCwd})\n";
-
-        return;
+    if (!is_file($pharPath) || !is_readable($pharPath)) {
+        throw new \RuntimeException('PHAR smoke: artifact missing or unreadable: '.$pharPath);
     }
 
-    // Wrap all smoke logic in try/finally so the temp dir is always
-    // cleaned up, even when a check fails or an exception is thrown.
+    $tmpCwd = sys_get_temp_dir().'/hatfield-phar-smoke-'.bin2hex(random_bytes(8));
+    if (!mkdir($tmpCwd, 0755, true) && !is_dir($tmpCwd)) {
+        throw new \RuntimeException('PHAR smoke: could not create isolated cwd: '.$tmpCwd);
+    }
+
     try {
         // Isolate HOME inside the temp cwd so the PHAR does NOT read
         // the real user's ~/.hatfield/settings.yaml which may reference
         // providers/models not available in the packaged PHAR.
         $homeDir = $tmpCwd.'/home';
-        @mkdir($homeDir.'/.hatfield', 0755, true);
-        $stubWritten = file_put_contents(
+        if (!mkdir($homeDir.'/.hatfield', 0755, true) && !is_dir($homeDir.'/.hatfield')) {
+            throw new \RuntimeException('PHAR smoke: could not create isolated home settings dir');
+        }
+        write_file_checked(
             $homeDir.'/.hatfield/settings.yaml',
             "ai:\n    default_model: null\n",
         );
-        if (false === $stubWritten) {
-            echo "PHAR smoke test: SKIP (could not write isolated home settings)\n";
-
-            return;
-        }
-        $homeEnv = 'HOME='.escapeshellarg($homeDir);
 
         $smokeEnv = getenv('APP_ENV');
         $smokeEnv = (false !== $smokeEnv && '' !== $smokeEnv) ? $smokeEnv : 'prod';
-        $failed = [];
         $phpBin = \PHP_BINARY;
+        $envPrefix = 'HOME='.escapeshellarg($homeDir).' APP_ENV='.escapeshellarg($smokeEnv).' ';
 
-        // 1. `list` — verifies the Symfony Console application boots and
-        //    all commands (including `agent`) are registered.
-        $listOutput = shell_exec(
-            'cd '.escapeshellarg($tmpCwd).' && '.$homeEnv.' APP_ENV='.$smokeEnv.' '.$phpBin.' '
-            .escapeshellarg($pharPath).' list 2>&1'
+        $listOutput = run_checked(
+            $envPrefix.$phpBin.' '.escapeshellarg($pharPath).' list 2>&1',
+            $tmpCwd,
         );
-        if (null === $listOutput || !str_contains($listOutput, 'agent')) {
-            $failed[] = 'list (agent command not found)';
-            echo "  smoke list: FAIL\n";
-        } else {
-            echo "  smoke list: ok\n";
+        if (!str_contains($listOutput, 'agent')) {
+            throw new \RuntimeException('PHAR smoke list failed: agent command not found');
         }
+        echo "  smoke list: ok\n";
 
-        // 2. `about` — verifies the kernel boots, environment is correct,
-        //    and writable directories are resolved.
-        $aboutOutput = shell_exec(
-            'cd '.escapeshellarg($tmpCwd).' && '.$homeEnv.' APP_ENV='.$smokeEnv.' '.$phpBin.' '
-            .escapeshellarg($pharPath).' about 2>&1'
+        $aboutOutput = run_checked(
+            $envPrefix.$phpBin.' '.escapeshellarg($pharPath).' about 2>&1',
+            $tmpCwd,
         );
-        if (null === $aboutOutput || !str_contains($aboutOutput, 'Environment')) {
-            $failed[] = 'about (no Environment line)';
-            echo "  smoke about: FAIL\n";
-        } else {
-            echo "  smoke about: ok\n";
+        if (!str_contains($aboutOutput, 'Environment')) {
+            throw new \RuntimeException('PHAR smoke about failed: no Environment line');
         }
+        echo "  smoke about: ok\n";
 
-        // 3. `agent --help` — verifies AgentCommand is loadable and its
-        //    options (--cwd, --model, --headless, etc.) are present.
-        $helpOutput = shell_exec(
-            'cd '.escapeshellarg($tmpCwd).' && '.$homeEnv.' APP_ENV='.$smokeEnv.' '.$phpBin.' '
-            .escapeshellarg($pharPath).' agent --help 2>&1'
+        $helpOutput = run_checked(
+            $envPrefix.$phpBin.' '.escapeshellarg($pharPath).' agent --help 2>&1',
+            $tmpCwd,
         );
-        if (null === $helpOutput || !str_contains($helpOutput, 'Usage:')) {
-            $failed[] = 'agent --help (no Usage line)';
-            echo "  smoke agent --help: FAIL\n";
-        } else {
-            echo "  smoke agent --help: ok\n";
+        if (!str_contains($helpOutput, 'Usage:')) {
+            throw new \RuntimeException('PHAR smoke agent --help failed: no Usage line');
         }
+        echo "  smoke agent --help: ok\n";
 
-        // 4. Verify .hatfield/cache was created in the isolated cwd —
-        //    proves writable-dir isolation works.
-        if (is_dir($tmpCwd.'/.hatfield/cache')) {
-            echo "  smoke writable-dir isolation: ok (.hatfield/cache created in {$tmpCwd})\n";
+        $versionOutput = run_checked(
+            $envPrefix.$phpBin.' '.escapeshellarg($pharPath).' --version 2>&1',
+            $tmpCwd,
+        );
+        if (!str_contains($versionOutput, 'Hatfield') || !str_contains($versionOutput, 'commit')) {
+            throw new \RuntimeException('PHAR smoke --version failed: expected Hatfield version with commit identity, got: '.$versionOutput);
         }
+        echo "  smoke --version: ok ({$versionOutput})\n";
 
-        // 5. Verify PHAR cache isolation: the cache directory suffix must
-        //    be derived from the PHAR archive content hash (SHA-256, 12 hex
-        //    chars), not the old stable md5(__FILE__) fixpoint that allowed
-        //    stale Symfony compiled containers to survive PHAR rebuilds.
+        if (!is_dir($tmpCwd.'/.hatfield/cache')) {
+            throw new \RuntimeException('PHAR smoke writable-dir isolation failed: .hatfield/cache not created in '.$tmpCwd);
+        }
+        echo "  smoke writable-dir isolation: ok (.hatfield/cache created in {$tmpCwd})\n";
+
         $cacheDirs = glob($tmpCwd.'/.hatfield/cache/'.$smokeEnv.'-*', \GLOB_ONLYDIR);
+        if (false === $cacheDirs) {
+            $cacheDirs = [];
+        }
         if ([] !== $cacheDirs) {
             $cacheSuffix = substr($cacheDirs[0], strrpos($cacheDirs[0], '-') + 1);
             $expectedHash = hash_file('sha256', $pharPath);
-
             if (false === $expectedHash) {
-                $failed[] = 'cache-isolation (could not hash PHAR archive)';
-                echo "  smoke cache-isolation: FAIL (hash_file returned false)\n";
-            } elseif ($cacheSuffix !== substr($expectedHash, 0, 12)) {
-                $failed[] = "cache-isolation (cache suffix {$cacheSuffix} does not match expected content hash prefix "
-                    .substr($expectedHash, 0, 12).')';
-                echo "  smoke cache-isolation: FAIL\n";
-            } else {
-                echo "  smoke cache-isolation: ok (content-based suffix {$cacheSuffix})\n";
+                throw new \RuntimeException('PHAR smoke cache-isolation failed: could not hash PHAR archive');
             }
+            if ($cacheSuffix !== substr($expectedHash, 0, 12)) {
+                throw new \RuntimeException("PHAR smoke cache-isolation failed: cache suffix {$cacheSuffix} does not match expected content hash prefix ".substr($expectedHash, 0, 12));
+            }
+            echo "  smoke cache-isolation: ok (content-based suffix {$cacheSuffix})\n";
         } else {
-            // The PHAR may not produce a cache dir on every boot (e.g. if
-            // the container was already compiled elsewhere), so this is
-            // a warning, not a hard failure.
             echo "  smoke cache-isolation: warn (no cache dirs found)\n";
         }
 
-        if ([] !== $failed) {
-            echo 'PHAR smoke test: FAIL ('.\count($failed).' failures: '.implode(', ', $failed).")\n";
-            echo "  The PHAR compiled successfully but one or more boot checks failed.\n";
-        } else {
-            echo "PHAR smoke test: ok\n";
-        }
+        echo "PHAR smoke test: ok\n";
     } finally {
-        // Clean up smoke artifacts — always runs, even on failure.
-        shell_exec('rm -rf '.escapeshellarg($tmpCwd));
+        try {
+            remove_path_checked($tmpCwd);
+        } catch (\Throwable $cleanupError) {
+            // Intentional local degradation: smoke result is more important
+            // than temp cleanup, but surface a diagnostic.
+            fwrite(\STDERR, 'PHAR smoke cleanup warning: '.$cleanupError->getMessage()."\n");
+        }
     }
 }
 

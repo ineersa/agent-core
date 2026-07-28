@@ -50,6 +50,9 @@ function cleanup(): void
         $root.'/var/tmp/tui-failures',
         $root.'/var/tmp/test-',
         $root.'/var/tmp/phar-build',
+        $root.'/var/tmp/phar',
+        $root.'/var/tmp/dist',
+        $root.'/var/tmp/static-build',
     ];
 
     $toRemove = [];
@@ -76,6 +79,17 @@ function cleanup(): void
         rmtree($dir);
         echo 'Removed '.project_relative_path($dir).\PHP_EOL;
         $noop = false;
+    }
+
+    $filesToRemove = [
+        $root.'/var/tmp/phar-build.lock',
+    ];
+    foreach ($filesToRemove as $file) {
+        if (is_file($file) || is_link($file)) {
+            unlink($file);
+            echo 'Removed '.project_relative_path($file).\PHP_EOL;
+            $noop = false;
+        }
     }
 
     if ($noop) {
