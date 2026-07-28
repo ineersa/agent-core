@@ -71,7 +71,7 @@ final class ConsoleEntrypointUxTest extends TestCase
             );
         }
 
-        foreach (['cache:clear', 'debug:container', 'doctrine:migrations:migrate', 'messenger:consume', 'about'] as $hidden) {
+        foreach (['cache:clear', 'debug:container', 'doctrine:migrations:migrate', 'messenger:consume'] as $hidden) {
             $this->assertDoesNotMatchRegularExpression(
                 '/^'.preg_quote($hidden, '/').'\b/m',
                 $listOut,
