@@ -94,7 +94,7 @@ final class CodingAgentPreLlmContextBudgetReminderPolicyTest extends TestCase
 
     public function testUrgentStrictEdge(): void
     {
-        // remaining = 272000 - 247000 - 0 = 25000 — not urgent (strict <),
+        // remaining = 272000 - 247000 = 25000 — not urgent (strict <),
         // but early still fires because 247000 >= 200000.
         $this->mockEvents([
             $this->runStarted(272000),
