@@ -6,12 +6,16 @@ namespace Ineersa\Tui\Tests\Screen;
 
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
+use Ineersa\CodingAgent\Runtime\Projection\TranscriptProjectionState;
+use Ineersa\CodingAgent\Runtime\ProjectionPipeline\TranscriptProjector;
+use Ineersa\CodingAgent\Runtime\ProjectionPipeline\UserMessageProjectionSubscriber;
 use Ineersa\Tui\Tests\Support\VirtualTuiHarness;
 use Ineersa\Tui\Transcript\TranscriptDisplayConfig;
 use Ineersa\Tui\Transcript\TranscriptDisplayState;
 use Ineersa\Tui\Transcript\TranscriptGlyphs;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\EventDispatcher\EventDispatcher;
 
 /**
  * Virtual product proof that {@see ChatScreen} → mounted
@@ -269,6 +273,48 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
 
         $this->assertStringContainsString('ℹ', $text, 'System info glyph missing');
         $this->assertStringContainsString('info note', $text, 'System text missing');
+    }
+
+    /**
+     * Test thesis: a complete <system-reminder> user.message_submitted must
+     * project through the real UserMessageProjectionSubscriber and render as
+     * ⚠ warning system guidance — not ordinary ❯ Markdown user text with
+     * hidden wrapper tags.
+     */
+    #[Test]
+    public function testSystemReminderUserMessageRendersAsWarningSystemBlock(): void
+    {
+        $inner = 'Context is nearly exhausted. Finish now with a concise final answer.';
+        $wrapped = "<system-reminder>\n{$inner}\n</system-reminder>";
+
+        $dispatcher = new EventDispatcher();
+        $dispatcher->addSubscriber(new UserMessageProjectionSubscriber());
+        $projector = new TranscriptProjector($dispatcher, new TranscriptProjectionState());
+        $projector->accept([
+            'type' => 'user.message_submitted',
+            'runId' => self::SESSION_ID,
+            'seq' => 1,
+            'payload' => [
+                'message_id' => 'reminder-virtual-1',
+                'text' => $wrapped,
+            ],
+        ]);
+
+        $blocks = $projector->blocks();
+        $this->assertCount(1, $blocks);
+        $this->assertSame(TranscriptBlockKindEnum::System, $blocks[0]->kind);
+
+        $harness = new VirtualTuiHarness(sessionId: self::SESSION_ID);
+        $harness->screen()->setTranscriptBlocks($blocks);
+        $harness->screen()->setWorkingVisible(false);
+
+        $text = $harness->plainScreenText();
+
+        $this->assertStringContainsString('⚠', $text, 'Warning system glyph missing');
+        $this->assertStringContainsString($inner, $text, 'Reminder prose missing');
+        $this->assertStringNotContainsString('❯', $text, 'User glyph must not appear for system-reminder');
+        $this->assertStringNotContainsString('<system-reminder>', $text, 'Opening wrapper tag must not render');
+        $this->assertStringNotContainsString('</system-reminder>', $text, 'Closing wrapper tag must not render');
     }
 
     #[Test]

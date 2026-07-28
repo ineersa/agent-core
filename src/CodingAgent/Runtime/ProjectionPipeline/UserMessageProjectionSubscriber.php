@@ -14,6 +14,11 @@ use Symfony\Component\EventDispatcher\EventSubscriberInterface;
  *
  * Queued steer/follow-up feedback is not projected here; the TUI pending-queue
  * widget above the editor renders user.message_queued until apply.
+ *
+ * Entire-message `<system-reminder>...</system-reminder>` wrappers (e.g. context-
+ * budget wrap-up appends) project as System/warning so the transcript shows ⚠
+ * guidance instead of ordinary ❯ Markdown user text. Canonical event text is
+ * unchanged; only presentation classification happens here.
  */
 final readonly class UserMessageProjectionSubscriber implements EventSubscriberInterface
 {
@@ -29,13 +34,13 @@ final readonly class UserMessageProjectionSubscriber implements EventSubscriberI
     {
         $p = $event->payload();
         $state = $event->state;
+        $text = (string) ($p['text'] ?? '');
 
-        $state->addBlock(new TranscriptBlock(
+        $state->addBlock($this->projectUserTextBlock(
             id: (string) ($p['message_id'] ?? ''),
-            kind: TranscriptBlockKindEnum::UserMessage,
             runId: $event->runId(),
             seq: $state->nextSeq(),
-            text: (string) ($p['text'] ?? ''),
+            text: $text,
         ));
     }
 
@@ -63,13 +68,51 @@ final readonly class UserMessageProjectionSubscriber implements EventSubscriberI
         }
 
         foreach ($userMessages as $userMsg) {
-            $state->addBlock(new TranscriptBlock(
+            $state->addBlock($this->projectUserTextBlock(
                 id: (string) ($userMsg['message_id'] ?? ''),
-                kind: TranscriptBlockKindEnum::UserMessage,
                 runId: $event->runId(),
                 seq: $state->nextSeq(),
                 text: (string) ($userMsg['text'] ?? ''),
             ));
         }
+    }
+
+    private function projectUserTextBlock(string $id, string $runId, int $seq, string $text): TranscriptBlock
+    {
+        $reminderBody = self::extractSystemReminderBody($text);
+        if (null !== $reminderBody) {
+            return new TranscriptBlock(
+                id: $id,
+                kind: TranscriptBlockKindEnum::System,
+                runId: $runId,
+                seq: $seq,
+                text: $reminderBody,
+                meta: ['severity' => 'warning'],
+            );
+        }
+
+        return new TranscriptBlock(
+            id: $id,
+            kind: TranscriptBlockKindEnum::UserMessage,
+            runId: $runId,
+            seq: $seq,
+            text: $text,
+        );
+    }
+
+    /**
+     * Return inner prose when the entire trimmed text is a complete
+     * <system-reminder> wrapper; otherwise null (partial/embedded tags stay user text).
+     */
+    private static function extractSystemReminderBody(string $text): ?string
+    {
+        $trimmed = trim($text);
+        if (1 !== preg_match('/\A<system-reminder>\s*(.*?)\s*<\/system-reminder>\z/s', $trimmed, $matches)) {
+            return null;
+        }
+
+        $inner = trim($matches[1]);
+
+        return '' !== $inner ? $inner : null;
     }
 }
