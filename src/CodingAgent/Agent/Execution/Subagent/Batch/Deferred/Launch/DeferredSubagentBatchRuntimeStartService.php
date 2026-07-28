@@ -12,7 +12,6 @@ use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunIdentityDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\PreparedAgentChildRunDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Lifecycle\ChildRunArtifactLifecycleService;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Lifecycle\ChildRunBatchLaunchService;
-use Ineersa\CodingAgent\Agent\Execution\Subagent\SubagentChildRunBatchLifecyclePolicyFactory;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -24,7 +23,7 @@ final class DeferredSubagentBatchRuntimeStartService
         private readonly AgentRunnerInterface $agentRunner,
         private readonly ChildRunArtifactLifecycleService $artifactLifecycle,
         private readonly ChildRunBatchLaunchService $batchLaunchService,
-        private readonly SubagentChildRunBatchLifecyclePolicyFactory $lifecyclePolicyFactory,
+        private readonly ChildRunBatchLifecyclePolicyDTO $lifecyclePolicy,
         private readonly LoggerInterface $logger,
     ) {
     }
@@ -41,7 +40,7 @@ final class DeferredSubagentBatchRuntimeStartService
         array $identities,
         array $preparedChildren,
     ): void {
-        $policy = $this->lifecyclePolicyFactory->create();
+        $policy = $this->lifecyclePolicy;
         /** @var list<string> $knownStartedChildRunIds */
         $knownStartedChildRunIds = [];
 
@@ -93,7 +92,7 @@ final class DeferredSubagentBatchRuntimeStartService
         \Throwable $cause,
         int $failureBatchIndex,
     ): void {
-        $policy = $this->lifecyclePolicyFactory->create();
+        $policy = $this->lifecyclePolicy;
         try {
             $this->batchLaunchService->abort(
                 $parentRunId,

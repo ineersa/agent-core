@@ -10,6 +10,7 @@ use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Extension\ExtensionManager;
 use Ineersa\CodingAgent\Tests\Extension\Support\NoOpExtensionToolHandler;
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\Hatfield\ExtensionApi\HatfieldExtensionInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallContextDTO;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallDecisionDTO;
@@ -31,7 +32,7 @@ final class ExtensionManagerTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        $this->extensionsDir = sys_get_temp_dir().'/hatfield-ext-test-'.bin2hex(random_bytes(8));
+        $this->extensionsDir = TestDirectoryIsolation::createOsTempDir('hatfield-ext-test');
         mkdir($this->extensionsDir.'/.hatfield/extensions/vendor', 0755, true);
         $this->autoloadPath = $this->extensionsDir.'/.hatfield/extensions/vendor/autoload.php';
     }
@@ -39,7 +40,7 @@ final class ExtensionManagerTest extends TestCase
     protected function tearDown(): void
     {
         parent::tearDown();
-        $this->rmdirRecursive($this->extensionsDir);
+        TestDirectoryIsolation::removeDirectory($this->extensionsDir);
     }
 
     // ── Tests: InMemoryExtensionApiBridge ──
@@ -577,28 +578,6 @@ PHP
             extensions: new ExtensionsConfig(enabled: $extensions),
             cwd: $cwd,
         );
-    }
-
-    private function rmdirRecursive(string $dir): void
-    {
-        if (!is_dir($dir)) {
-            return;
-        }
-
-        $items = new \RecursiveIteratorIterator(
-            new \RecursiveDirectoryIterator($dir, \RecursiveDirectoryIterator::SKIP_DOTS),
-            \RecursiveIteratorIterator::CHILD_FIRST
-        );
-
-        foreach ($items as $item) {
-            if ($item->isDir()) {
-                rmdir((string) $item);
-            } else {
-                unlink((string) $item);
-            }
-        }
-
-        rmdir($dir);
     }
 }
 

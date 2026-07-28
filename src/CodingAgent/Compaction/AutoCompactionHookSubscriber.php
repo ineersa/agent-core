@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Compaction;
 
 use Ineersa\AgentCore\Contract\Compaction\CompactionServiceInterface;
 use Ineersa\AgentCore\Contract\Extension\HookSubscriberInterface;
+use Ineersa\AgentCore\Contract\Model\RunModelResolverInterface;
 use Ineersa\AgentCore\Contract\RunStoreInterface;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
 use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitHookContext;
@@ -49,7 +50,7 @@ final class AutoCompactionHookSubscriber implements HookSubscriberInterface
         private readonly RunStoreInterface $runStore,
         private readonly ProviderContextUsageResolver $providerUsageResolver,
         private readonly CompactionConfig $compactionConfig,
-        private readonly ActiveModelResolverInterface $modelResolver,
+        private readonly RunModelResolverInterface $modelResolver,
         private readonly MessageBusInterface $commandBus,
         private readonly CompactionServiceInterface $compactionService,
     ) {
@@ -165,7 +166,7 @@ final class AutoCompactionHookSubscriber implements HookSubscriberInterface
         // Prefer canonical RunState.model; session/default is config-only fallback.
         $activeModel = null !== $runState && null !== $runState->model && '' !== trim($runState->model)
             ? trim($runState->model)
-            : $this->modelResolver->getActiveModel($runId);
+            : $this->modelResolver->resolveActiveModel($runId);
         $runtimeSettings = $this->compactionConfig->resolveRuntimeSettings($activeModel);
 
         if (!$runtimeSettings->autoEnabled) {

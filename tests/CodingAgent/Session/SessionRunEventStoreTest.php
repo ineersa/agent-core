@@ -14,6 +14,7 @@ use Ineersa\CodingAgent\Config\TuiConfig;
 use Ineersa\CodingAgent\Session\FileRunSequenceAllocator;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Session\SessionRunEventStore;
+use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
@@ -29,7 +30,7 @@ final class SessionRunEventStoreTest extends TestCase
     {
         parent::setUp();
 
-        $this->projectDir = sys_get_temp_dir().'/hatfield-session-eventstore-'.getmypid();
+        $this->projectDir = TestDirectoryIsolation::createOsTempDir('hatfield-session-eventstore');
         if (is_dir($this->projectDir)) {
             $this->rmDir($this->projectDir);
         }

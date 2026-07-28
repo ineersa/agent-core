@@ -145,6 +145,15 @@ Tests must protect a **user-visible behavior**, a **stable runtime/protocol cont
 
 Existing mandatory Castor QA and TUI behavior proof requirements (above) remain in full force. The goal is to improve test signal density, not to eliminate testing.
 
+## Specification fidelity and minimality
+
+- Implement only finalized task requirements. No new setting, API, storage field, command, or user-visible behavior unless explicitly requested.
+- Prefer the smallest solution using existing code and platform capabilities.
+- Do not add speculative configuration, compatibility paths, abstractions, helpers, extensibility, or future-proofing.
+- Indirection required by existing architecture boundaries is allowed, but must remain minimal.
+- Ambiguity affecting behavior or public surface is a question, not implementation authority.
+- Reviewers must treat unmapped functionality or unnecessary complexity as **REQUEST CHANGES**.
+
 ## Development rules
 
 - **Do not delete comments that explain non-obvious logic, invariants, concurrency, lifecycle, or rationale unless the described logic is removed.** When code changes, update those comments instead of deleting them. Remove only stale/noise comments that restate the obvious (e.g., "increment i" or "return the result"). Inline comments explaining why code is shaped a certain way — signal handling, crash resilience, transaction ordering, migration decisions, DB-to-filesystem interaction — are valuable and must be preserved or updated, never silently dropped.
@@ -212,7 +221,7 @@ TUI talks to runtime only through `src/CodingAgent/Runtime/Contract`, `Protocol`
 
 Single-column layout: header → transcript/history → pending messages → working/status → extension widgets → editor → footer.
 
-Key APIs: `TuiWidget`, `TuiSlotRegistry`, `ChatLayout`, `TuiExtensionContext`, `SlotBasedTuiExtensionContext`, `FooterDataProvider`, `FooterSegmentProvider`, `FooterBarWidget`.
+Key APIs: `TuiWidget`, `TuiSlotRegistry`, `TuiExtensionContext`, `SlotBasedTuiExtensionContext`, `FooterDataProvider`, `FooterSegmentProvider`, `FooterBarWidget`.
 
 Hotkeys: `/hotkeys` renders a live catalog of keyboard shortcuts grouped by context (Global, Editor, Completion, History, Model). Registry is in `src/Tui/Command/Hotkey/` (display-only metadata — not input routing). Editor hotkeys reflect the active EditorWidget keybindings. There is no user-configurable YAML keybinding loader.
 
@@ -261,7 +270,9 @@ After compaction, the `task-workflow` skill documents next steps. Use `task_list
 - `docs/session-storage.md` — sessions, replay, locking, resume/fork design
 - `docs/tui-architecture.md` — layout, widgets, slots, themes
 - `docs/tui-testing.md` — tmux testing, snapshots, keybindings
+- `docs/distribution.md` — release artifacts, installer, tag-only publish checklist
 - `docs/phar-packaging.md` — PHAR build, runtime, test, and troubleshooting
+- `docs/static-packaging.md` — native PHP-micro binaries, relaunch, topology, SPC pin
 - `docs/hitl-and-approvals.md` — HITL end-to-end flow, TUI question system, extension approvals, SafeGuard modes
 - `docs/datadog.md` — local Datadog setup, structured log fields, event names, spans, and observability privacy rules
 - `src/AgentCore/Domain/AGENTS.md` — domain/event docs

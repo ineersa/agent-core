@@ -12,9 +12,6 @@ final readonly class ChildRunBatchSupervisionResultDTO
     public function __construct(
         public string $parentRunId,
         public array $items,
-        public ChildRunBatchCompletionKindEnum $completionKind,
-        public ?string $singleChildToolResult = null,
-        public ?\Throwable $launchFailure = null,
     ) {
     }
 }
