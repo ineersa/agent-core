@@ -273,7 +273,7 @@ final class TuiMountedTranscriptVirtualTest extends TestCase
         $this->assertCount(2, $before);
         $userWrapper = $before[0];
         $assistantWrapper = $before[1];
-        $this->assertInstanceOf(TextWidget::class, $userWrapper, 'UserMessage mounts as generic TextWidget');
+        $this->assertInstanceOf(StreamingMarkdownTranscriptWidget::class, $userWrapper);
         $this->assertInstanceOf(StreamingMarkdownTranscriptWidget::class, $assistantWrapper);
 
         $extra = new TranscriptBlock(
@@ -331,11 +331,14 @@ final class TuiMountedTranscriptVirtualTest extends TestCase
         $this->assertCount(2, $children);
         $historyWrapper = $children[0];
         $streamWrapper = $children[1];
-        $this->assertInstanceOf(TextWidget::class, $historyWrapper, 'Finalized user history mounts as generic TextWidget');
+        $this->assertInstanceOf(StreamingMarkdownTranscriptWidget::class, $historyWrapper);
         $this->assertInstanceOf(StreamingMarkdownTranscriptWidget::class, $streamWrapper);
+        $historyMarkdown = $historyWrapper->markdown();
         $streamMarkdown = $streamWrapper->markdown();
+        $this->assertInstanceOf(MarkdownWidget::class, $historyMarkdown);
         $this->assertInstanceOf(MarkdownWidget::class, $streamMarkdown);
-        $historyTextBefore = $historyWrapper->getText();
+        $historyNode = $historyWrapper->node();
+        $this->assertNotNull($historyNode);
 
         $streamed = $streaming->with(text: 'partial more tokens');
         // Same object identity for history; new object for streaming tail.
@@ -345,8 +348,10 @@ final class TuiMountedTranscriptVirtualTest extends TestCase
         $this->assertCount(2, $after);
         $this->assertSame($historyWrapper, $after[0], 'Finalized history wrapper must keep identity on tail stream');
         $this->assertSame($streamWrapper, $after[1], 'Streaming wrapper must keep identity on tail stream');
-        $this->assertSame($historyTextBefore, $historyWrapper->getText(), 'Finalized history TextWidget content must not rebuild');
+        $this->assertSame($historyMarkdown, $historyWrapper->markdown(), 'Finalized history Markdown instance must not rebuild');
         $this->assertSame($streamMarkdown, $streamWrapper->markdown(), 'Streaming Markdown instance must mutate in place');
+        $this->assertSame($historyNode, $historyWrapper->node(), 'History visual node sources unchanged (object identity skip)');
+        $this->assertSame($history, $historyWrapper->node()?->primary);
         $this->assertStringContainsString('partial more tokens', $streamMarkdown->getText());
     }
 
@@ -383,7 +388,7 @@ final class TuiMountedTranscriptVirtualTest extends TestCase
 
         $before = $transcript->all();
         $this->assertCount(3, $before);
-        $this->assertInstanceOf(TextWidget::class, $before[0], 'UserMessage mounts as generic TextWidget');
+        $this->assertInstanceOf(StreamingMarkdownTranscriptWidget::class, $before[0]);
         $this->assertInstanceOf(TextWidget::class, $before[1], 'Error block mounts as native TextWidget');
         $this->assertInstanceOf(StreamingMarkdownTranscriptWidget::class, $before[2]);
         $errorWidget = $before[1];
@@ -396,7 +401,7 @@ final class TuiMountedTranscriptVirtualTest extends TestCase
 
         $after = $transcript->all();
         $this->assertCount(3, $after, 'Middle generic update must not change child count');
-        $this->assertSame($userWidget, $after[0], 'Leading user TextWidget identity preserved');
+        $this->assertSame($userWidget, $after[0], 'Leading markdown identity preserved');
         $this->assertSame($errorWidget, $after[1], 'Middle TextWidget identity must be preserved (in-place setText)');
         $this->assertSame($assistantWidget, $after[2], 'Trailing markdown must stay after middle generic');
         $this->assertStringContainsString('updated middle error', $errorWidget->getText());

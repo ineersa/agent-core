@@ -576,12 +576,8 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
     }
 
     #[Test]
-    public function testUserMessageRendersLiteralAngleTagsAndMarkdownDelimiters(): void
+    public function testUserMessageRendersCodeInlineMarkdown(): void
     {
-        // Session 4 symptom: ordinary user text must stay literal through TextWidget,
-        // including angle-bracket tags and Markdown delimiters (no Markdown parsing).
-        $raw = 'Check where we are using <system-reminder>? and `code`';
-
         $harness = new VirtualTuiHarness(sessionId: self::SESSION_ID);
         $harness->screen()->setTranscriptBlocks([
             new TranscriptBlock(
@@ -589,16 +585,18 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
                 kind: TranscriptBlockKindEnum::UserMessage,
                 runId: self::SESSION_ID,
                 seq: 1,
-                text: $raw,
+                text: 'Run `bin/console` to start',
             ),
         ]);
         $harness->screen()->setWorkingVisible(false);
 
         $text = $harness->plainScreenText();
 
-        $this->assertStringContainsString($raw, $text, 'User text must render faithfully');
-        $this->assertStringContainsString('<system-reminder>', $text, 'Raw angle tag must remain visible');
-        $this->assertStringContainsString('`code`', $text, 'Markdown backticks must remain literal');
+        // Inline code should be rendered (backticks consumed)
+        $this->assertStringContainsString('bin/console', $text);
+        $this->assertStringNotContainsString('`bin/console`', $text,
+            'Inline code backticks must not appear literally',
+        );
         $this->assertStringContainsString('❯', $text, 'User glyph missing');
     }
 

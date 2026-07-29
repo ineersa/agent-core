@@ -679,6 +679,7 @@ final class TranscriptVisualProjector
     private function isMarkdownVisual(TranscriptBlock $block): bool
     {
         if (\in_array($block->kind, [
+            TranscriptBlockKindEnum::UserMessage,
             TranscriptBlockKindEnum::AssistantMessage,
             TranscriptBlockKindEnum::AssistantThinking,
         ], true)) {
