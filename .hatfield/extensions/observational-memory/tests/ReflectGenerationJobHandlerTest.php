@@ -140,12 +140,16 @@ final class ReflectGenerationJobHandlerTest extends IsolatedKernelTestCase
         $generationId = OmIdentity::thresholdGenerationId('run-r', null, $setHash, 'llama_cpp_test/test', '1');
 
         $agentCalls = 0;
-        $api = $this->api($settings, static function (AgentCallRequestDTO $request) use (&$agentCalls, $obsId): void {
+        $seenMaxToolCalls = null;
+        $seenDescription = null;
+        $api = $this->api($settings, static function (AgentCallRequestDTO $request) use (&$agentCalls, &$seenMaxToolCalls, &$seenDescription, $obsId): void {
             ++$agentCalls;
+            $seenMaxToolCalls = $request->maxToolCalls;
             $tool = $request->tools[0] ?? null;
             if (null === $tool || 'record_reflections' !== $tool->name) {
                 throw new \RuntimeException('expected record_reflections');
             }
+            $seenDescription = $tool->description;
             ($tool->handler)([
                 'reflections' => [
                     [
@@ -169,6 +173,12 @@ final class ReflectGenerationJobHandlerTest extends IsolatedKernelTestCase
         ];
         $handler->handle($api, $payload, 'job-r', 'run-r');
         $this->assertSame(1, $agentCalls);
+        $this->assertSame(2, $seenMaxToolCalls, 'Reflector must bound tool rounds to one call + one correction');
+        $this->assertIsString($seenDescription);
+        $this->assertStringContainsString('Call once', $seenDescription);
+        $this->assertStringContainsString('retry once', $seenDescription);
+        $this->assertStringContainsString('without calling the tool again', $seenDescription);
+        $this->assertStringNotContainsString('Call as needed', $seenDescription);
         $active = (string) $connection->fetchOne(
             'SELECT generation_id FROM om_active_generation WHERE run_id = ?',
             ['run-r'],

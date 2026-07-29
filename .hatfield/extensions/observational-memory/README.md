@@ -28,7 +28,7 @@ AfterTurnCommit (any run_control/llm/tool worker)
 Threshold (after all observe chunks durable, tokens > 40000)
   → ReflectGenerationJobHandler
       → claim generation by exact threshold-generation-v1 id
-      → Reflector complete-generation tool loop (maxToolCalls=100)
+      → Reflector complete-generation tool loop (maxToolCalls=2: one call + one correction)
       → exactly one compression retry if pools exceeded
       → promote om_active_generation transactionally
 

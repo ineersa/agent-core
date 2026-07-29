@@ -245,10 +245,10 @@ final class OmLiveLlmSmokeTest extends IsolatedKernelTestCase
                     handler: $handler,
                 ),
             ],
-            maxToolCalls: 100,
+            maxToolCalls: 2,
         ));
 
-        $this->assertTrue($handler->hasCandidate(), 'Reflector model must produce a valid candidate generation');
+        $this->assertTrue($handler->hasCandidate(), 'Reflector model must produce a valid candidate generation under maxToolCalls=2');
         $this->assertNotEmpty($handler->reflections());
         $this->assertContains($obsId, $handler->retainedObservationIds());
     }

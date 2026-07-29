@@ -489,6 +489,16 @@ final class BuildCompactionMemoryJobHandlerTest extends IsolatedKernelTestCase
             ['run-to'],
         );
         $this->assertSame(0, $promoted);
+        $timedOutGeneration = (int) $connection->fetchOne(
+            "SELECT COUNT(*) FROM om_memory_generation WHERE run_id = ? AND trigger_kind = 'compaction' AND status = 'failed' AND failure_code = 'timed_out'",
+            ['run-to'],
+        );
+        $this->assertSame(1, $timedOutGeneration, 'associated running compaction generation must fail as timed_out');
+        $stillRunning = (int) $connection->fetchOne(
+            "SELECT COUNT(*) FROM om_memory_generation WHERE run_id = ? AND trigger_kind = 'compaction' AND status = 'running'",
+            ['run-to'],
+        );
+        $this->assertSame(0, $stillRunning);
     }
 
     /**

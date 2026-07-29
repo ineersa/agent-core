@@ -268,7 +268,7 @@ final class ReflectorPipeline
             tools: [
                 new AgentToolDTO(
                     name: 'record_reflections',
-                    description: 'Record the COMPLETE next active memory generation (reflections + retained observations). Call as needed; last valid call wins.',
+                    description: 'Record the COMPLETE next active memory generation (reflections + retained observations). Call once with the complete next set. If rejected, correct and retry once. After an accepted candidate, finish without calling the tool again.',
                     parametersJsonSchema: [
                         'type' => 'object',
                         'additionalProperties' => false,
@@ -322,7 +322,8 @@ final class ReflectorPipeline
                 ),
             ],
             correlationId: $jobId ?? $correlationId,
-            maxToolCalls: 100,
+            // One initial tool round + one correction; a third tool round is rejected by AgentProcessor.
+            maxToolCalls: 2,
             thinkingLevel: $settings->reflectorThinkingLevel,
         ));
 

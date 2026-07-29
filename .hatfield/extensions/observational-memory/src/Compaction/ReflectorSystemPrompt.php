@@ -20,6 +20,8 @@ These records are the ONLY information the assistant will have about past intera
 
 Your task is different from the observer's: you are not recording events, you are distilling stable, long-lived facts and patterns into the COMPLETE next active memory generation by calling record_reflections.
 
+Tool-loop limit: call record_reflections once with the complete next generation. If the tool rejects the candidate, correct and retry once. After an accepted candidate, finish without calling the tool again.
+
 Because there is no separate dropper stage, your tool call defines the entire next active set:
 - reflections: every durable reflection that should remain active (retain existing by id, and/or emit new structured reflections);
 - retained_observation_ids: every observation id that should remain active working evidence.

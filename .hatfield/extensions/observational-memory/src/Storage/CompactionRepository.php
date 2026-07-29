@@ -503,14 +503,52 @@ final class CompactionRepository
         return ['status' => 'inserted'];
     }
 
+    /**
+     * Atomically mark the request timed_out and fail any still-running generation
+     * for this request. Nested DBAL transactions on the same SQLite connection are
+     * forbidden; participate in an outer transaction when one is already open.
+     */
     public function markTimedOut(string $requestId, string $now): void
     {
-        $this->connection->executeStatement(
-            'UPDATE om_compaction_request
-             SET status = ?, updated_at = ?, completed_at = ?, failure_code = ?
-             WHERE request_id = ? AND status IN (?, ?)',
-            [self::STATUS_TIMED_OUT, $now, $now, 'timed_out', $requestId, self::STATUS_QUEUED, self::STATUS_RUNNING],
-        );
+        $ownsTransaction = !$this->connection->isTransactionActive();
+        if ($ownsTransaction) {
+            $this->connection->beginTransaction();
+        }
+
+        try {
+            $cas = $this->connection->executeStatement(
+                'UPDATE om_compaction_request
+                 SET status = ?, updated_at = ?, completed_at = ?, failure_code = ?
+                 WHERE request_id = ? AND status IN (?, ?)',
+                [self::STATUS_TIMED_OUT, $now, $now, 'timed_out', $requestId, self::STATUS_QUEUED, self::STATUS_RUNNING],
+            );
+
+            // Only fail associated running generations when this request actually timed out.
+            // If success/failure already won the CAS, leave generation state untouched.
+            if (1 === $cas) {
+                $this->connection->executeStatement(
+                    'UPDATE om_memory_generation
+                     SET status = ?, failure_code = ?, completed_at = ?
+                     WHERE compaction_request_id = ? AND status = ?',
+                    [
+                        MemoryGenerationRepository::STATUS_FAILED,
+                        'timed_out',
+                        $now,
+                        $requestId,
+                        MemoryGenerationRepository::STATUS_RUNNING,
+                    ],
+                );
+            }
+
+            if ($ownsTransaction) {
+                $this->connection->commit();
+            }
+        } catch (\Throwable $e) {
+            if ($ownsTransaction && $this->connection->isTransactionActive()) {
+                $this->connection->rollBack();
+            }
+            throw $e;
+        }
     }
 
     /**

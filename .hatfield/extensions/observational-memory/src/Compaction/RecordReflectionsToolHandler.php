@@ -94,7 +94,7 @@ final class RecordReflectionsToolHandler implements ExtensionToolHandlerInterfac
             'status' => 'accepted',
             'reflection_count' => \count($validatedReflections),
             'retained_observation_count' => \count($retainedObservationIds),
-            'guidance' => 'Candidate generation replaced. You may call record_reflections again to revise the complete next active set before finishing.',
+            'guidance' => 'Candidate generation accepted. Finish now without calling record_reflections again.',
         ];
     }
 

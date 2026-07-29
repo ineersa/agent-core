@@ -44,6 +44,8 @@ final class RecordReflectionsToolHandlerTest extends TestCase
             'retained_observation_ids' => ['obs-b'],
         ]);
         $this->assertSame('accepted', $first['status']);
+        $this->assertStringContainsString('Finish now without calling record_reflections again', (string) ($first['guidance'] ?? ''));
+        $this->assertStringNotContainsString('You may call record_reflections again', (string) ($first['guidance'] ?? ''));
         $this->assertTrue($handler->hasCandidate());
         $this->assertCount(2, $handler->reflections());
         $this->assertSame(['obs-b'], $handler->retainedObservationIds());
@@ -55,6 +57,7 @@ final class RecordReflectionsToolHandlerTest extends TestCase
             'retained_observation_ids' => ['obs-a'],
         ]);
         $this->assertSame('rejected', $invalid['status']);
+        $this->assertArrayHasKey('message', $invalid);
         $this->assertCount(2, $handler->reflections(), 'invalid call must not mutate candidate');
         $this->assertSame(['obs-b'], $handler->retainedObservationIds());
 
@@ -68,6 +71,7 @@ final class RecordReflectionsToolHandlerTest extends TestCase
             'retained_observation_ids' => ['obs-a', 'obs-b'],
         ]);
         $this->assertSame('accepted', $second['status']);
+        $this->assertStringContainsString('Finish now', (string) ($second['guidance'] ?? ''));
         $this->assertCount(1, $handler->reflections());
         $this->assertSame(['obs-a', 'obs-b'], $handler->retainedObservationIds());
         $this->assertSame(

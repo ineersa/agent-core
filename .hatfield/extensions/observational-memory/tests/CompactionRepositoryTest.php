@@ -145,6 +145,127 @@ final class CompactionRepositoryTest extends IsolatedKernelTestCase
         );
     }
 
+    public function testMarkTimedOutFailsAssociatedRunningGenerationAtomically(): void
+    {
+        $dbPath = $this->projectDir.'/.hatfield/extensions-data/observational-memory/om.sqlite';
+        $connection = $this->omDatabaseFactory()->connectAndMigrate($dbPath, new NullLogger());
+        $repo = new CompactionRepository($connection);
+        $now = (new \DateTimeImmutable('now', new \DateTimeZone('UTC')))->format(\DateTimeInterface::ATOM);
+
+        $repo->ensureRequest('req-gen-to', 'run-gen-to', 1, 5, 5, 'fp-gen-to', $now);
+        $connection->executeStatement(
+            'UPDATE om_compaction_request SET status = ?, updated_at = ? WHERE request_id = ?',
+            [CompactionRepository::STATUS_RUNNING, $now, 'req-gen-to'],
+        );
+        $generationId = hash('sha256', 'gen-timeout-running');
+        $connection->insert('om_memory_generation', [
+            'generation_id' => $generationId,
+            'run_id' => 'run-gen-to',
+            'trigger_kind' => 'compaction',
+            'status' => 'running',
+            'observation_set_hash' => hash('sha256', 'set-gen-to'),
+            'reflector_model' => 'llama_cpp_test/test',
+            'reflector_schema_version' => '1',
+            'threshold_idempotency_key' => null,
+            'required_start_seq' => 1,
+            'required_end_seq' => 5,
+            'compaction_request_id' => 'req-gen-to',
+            'request_fingerprint' => 'fp-gen-to',
+            'failure_code' => null,
+            'created_at' => $now,
+            'completed_at' => null,
+        ]);
+
+        $repo->markTimedOut('req-gen-to', $now);
+
+        $status = $repo->getRequestStatus('req-gen-to');
+        $this->assertNotNull($status);
+        $this->assertSame(CompactionRepository::STATUS_TIMED_OUT, $status['status']);
+        $this->assertNull($repo->getResult('req-gen-to'));
+
+        $generation = $connection->fetchAssociative(
+            'SELECT status, failure_code, completed_at FROM om_memory_generation WHERE generation_id = ?',
+            [$generationId],
+        );
+        $this->assertIsArray($generation);
+        $this->assertSame('failed', $generation['status']);
+        $this->assertSame('timed_out', $generation['failure_code']);
+        $this->assertSame($now, $generation['completed_at']);
+        $this->assertSame(
+            0,
+            (int) $connection->fetchOne('SELECT COUNT(*) FROM om_active_generation WHERE run_id = ?', ['run-gen-to']),
+            'timeout must not promote active generation',
+        );
+    }
+
+    public function testMarkTimedOutDoesNotCorruptSucceededGenerationWhenCasLoses(): void
+    {
+        $dbPath = $this->projectDir.'/.hatfield/extensions-data/observational-memory/om.sqlite';
+        $connection = $this->omDatabaseFactory()->connectAndMigrate($dbPath, new NullLogger());
+        $repo = new CompactionRepository($connection);
+        $now = (new \DateTimeImmutable('now', new \DateTimeZone('UTC')))->format(\DateTimeInterface::ATOM);
+
+        $repo->ensureRequest('req-success-wins', 'run-success-wins', 1, 3, 3, 'fp-success-wins', $now);
+        $connection->executeStatement(
+            'UPDATE om_compaction_request SET status = ?, updated_at = ?, completed_at = ? WHERE request_id = ?',
+            [CompactionRepository::STATUS_SUCCEEDED, $now, $now, 'req-success-wins'],
+        );
+        $generationId = hash('sha256', 'gen-success-wins');
+        $connection->insert('om_memory_generation', [
+            'generation_id' => $generationId,
+            'run_id' => 'run-success-wins',
+            'trigger_kind' => 'compaction',
+            'status' => 'succeeded',
+            'observation_set_hash' => hash('sha256', 'set-success-wins'),
+            'reflector_model' => 'llama_cpp_test/test',
+            'reflector_schema_version' => '1',
+            'threshold_idempotency_key' => null,
+            'required_start_seq' => 1,
+            'required_end_seq' => 3,
+            'compaction_request_id' => 'req-success-wins',
+            'request_fingerprint' => 'fp-success-wins',
+            'failure_code' => null,
+            'created_at' => $now,
+            'completed_at' => $now,
+        ]);
+
+        $repo->markTimedOut('req-success-wins', $now);
+
+        $status = $repo->getRequestStatus('req-success-wins');
+        $this->assertNotNull($status);
+        $this->assertSame(CompactionRepository::STATUS_SUCCEEDED, $status['status']);
+        $generation = $connection->fetchAssociative(
+            'SELECT status, failure_code FROM om_memory_generation WHERE generation_id = ?',
+            [$generationId],
+        );
+        $this->assertIsArray($generation);
+        $this->assertSame('succeeded', $generation['status']);
+        $this->assertNull($generation['failure_code']);
+    }
+
+    public function testMarkTimedOutQueuedRequestWithoutGenerationIsSafe(): void
+    {
+        $dbPath = $this->projectDir.'/.hatfield/extensions-data/observational-memory/om.sqlite';
+        $connection = $this->omDatabaseFactory()->connectAndMigrate($dbPath, new NullLogger());
+        $repo = new CompactionRepository($connection);
+        $now = (new \DateTimeImmutable('now', new \DateTimeZone('UTC')))->format(\DateTimeInterface::ATOM);
+
+        $repo->ensureRequest('req-queued-only', 'run-queued-only', 1, 2, 2, 'fp-queued-only', $now);
+        $repo->markTimedOut('req-queued-only', $now);
+
+        $status = $repo->getRequestStatus('req-queued-only');
+        $this->assertNotNull($status);
+        $this->assertSame(CompactionRepository::STATUS_TIMED_OUT, $status['status']);
+        $this->assertSame(
+            0,
+            (int) $connection->fetchOne(
+                'SELECT COUNT(*) FROM om_memory_generation WHERE compaction_request_id = ?',
+                ['req-queued-only'],
+            ),
+        );
+        $this->assertNull($repo->getResult('req-queued-only'));
+    }
+
     public function testCommitFailureCasRejectsTerminalFailedWithoutResult(): void
     {
         $dbPath = $this->projectDir.'/.hatfield/extensions-data/observational-memory/om.sqlite';
