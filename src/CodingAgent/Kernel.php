@@ -88,7 +88,7 @@ class Kernel extends BaseKernel
         //   - different builds at the same path never share a container
         //   - symlink and target share a container (realpath)
         // Default root is global XDG/HOME, not project .hatfield/cache.
-        if ($this->isInstalledArtifact()) {
+        if ($this->isPhar()) {
             return $this->resolveInstalledCacheDir();
         }
 
@@ -111,19 +111,8 @@ class Kernel extends BaseKernel
      * Whether this process is an installed PHAR or fused native artifact.
      *
      * Box PHARs and PHP-micro fused natives both execute Kernel under a
-     * phar:// stream, so __FILE__ prefix is the runtime detector. Do not
-     * use HATFIELD_BINARY_PATH — that is a subprocess override only.
-     */
-    private function isInstalledArtifact(): bool
-    {
-        return $this->isPhar();
-    }
-
-    /**
-     * Whether the current process is running inside a PHAR archive.
-     *
-     * Detects Box-compiled PHARs and PHP-micro fused natives where
-     * __FILE__ starts with phar://.
+     * phar:// stream, so the __FILE__ prefix is the runtime detector.
+     * Do not use HATFIELD_BINARY_PATH — that is a subprocess override only.
      */
     private function isPhar(): bool
     {
@@ -138,7 +127,9 @@ class Kernel extends BaseKernel
      */
     private function resolveInstalledCacheDir(): string
     {
-        $artifactPath = $this->resolveCanonicalArtifactPath();
+        // Central Box alias / fused-native path resolution lives in
+        // PharExecutableLocator — keep a single physical-path source of truth.
+        $artifactPath = (new PharExecutableLocator())->path();
         $contentHash = hash_file('sha256', $artifactPath);
         if (false === $contentHash) {
             throw new \RuntimeException(\sprintf('Unable to hash installed artifact at "%s" for cache isolation. Check file permissions.', $artifactPath));
@@ -197,17 +188,6 @@ class Kernel extends BaseKernel
         }
 
         throw new \RuntimeException('Unable to determine installed Hatfield cache root: neither XDG_CACHE_HOME nor HOME is a non-empty absolute path. Set HATFIELD_CACHE_DIR, XDG_CACHE_HOME, or HOME.');
-    }
-
-    /**
-     * Physical path of the running PHAR / fused native archive.
-     *
-     * Delegates to PharExecutableLocator so Box alias fallback and fused
-     * native detection stay in one place (no second resolver in Kernel).
-     */
-    private function resolveCanonicalArtifactPath(): string
-    {
-        return (new PharExecutableLocator())->path();
     }
 
     /**

@@ -26,17 +26,13 @@ class KernelCacheIsolationTest extends IsolatedKernelTestCase
         $this->assertNotNull($kernel, 'Kernel must be booted by IsolatedKernelTestCase::setUp()');
         $cacheDir = $kernel->getCacheDir();
 
-        // In source checkout (test env), the cache dir should end with /test
-        // without content/path hash identity segments.
-        $this->assertMatchesRegularExpression(
-            '#/test$#',
+        // Source mode: project-local .hatfield/cache/<env> under the isolated
+        // runtime CWD — no XDG/HOME installed root and no artifact identity.
+        $expected = $this->isolatedCwd().'/.hatfield/cache/test';
+        $this->assertSame(
+            $expected,
             $cacheDir,
-            'Source-checkout cache dir should end with /test (no artifact identity). Got: '.$cacheDir
-        );
-        $this->assertStringNotContainsString(
-            '/hatfield/',
-            $cacheDir,
-            'Source-checkout must not use the global installed-artifact cache root.',
+            'Source-checkout cache must stay project-local under .hatfield/cache/test (no installed XDG identity). Got: '.$cacheDir
         );
     }
 
