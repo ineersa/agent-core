@@ -183,10 +183,136 @@ final class BashInstallerTest extends TestCase
         }
     }
 
+    public function testInstallerVersionSmokesUseDisposableCacheLogHomeAndCwd(): void
+    {
+        $root = ProjectDir::get();
+        $fixture = TestDirectoryIsolation::createProjectTempDir('installer-smoke-iso');
+        $installDir = TestDirectoryIsolation::createProjectTempDir('installer-dest-iso');
+        $tmpdir = TestDirectoryIsolation::createProjectTempDir('installer-tmpdir');
+        $callerProject = TestDirectoryIsolation::createProjectTempDir('installer-caller-project');
+        $persistentCache = TestDirectoryIsolation::createProjectTempDir('installer-persistent-cache');
+        $proofLog = $fixture.'/smoke-proof.jsonl';
+        $server = null;
+
+        try {
+            TestDirectoryIsolation::createHatfieldTree($callerProject);
+            $callerCacheBefore = $this->listRelativeFiles($callerProject.'/.hatfield');
+            $persistentBefore = $this->listRelativeFiles($persistentCache);
+
+            $asset = 'hatfield.phar';
+            // Fixture records smoke env for both candidate and install-dir smokes.
+            // It is not a real Hatfield PHAR — only --version is exercised.
+            $payload = <<<'PHP'
+#!/usr/bin/env php
+<?php
+declare(strict_types=1);
+$log = getenv('HATFIELD_SMOKE_PROOF_LOG');
+if (is_string($log) && '' !== $log) {
+    $row = [
+        'HATFIELD_CACHE_DIR' => getenv('HATFIELD_CACHE_DIR') ?: '',
+        'HATFIELD_LOG_DIR' => getenv('HATFIELD_LOG_DIR') ?: '',
+        'HOME' => getenv('HOME') ?: '',
+        'CWD' => getcwd() ?: '',
+    ];
+    file_put_contents($log, json_encode($row, JSON_UNESCAPED_SLASHES)."\n", FILE_APPEND);
+    foreach (['HATFIELD_CACHE_DIR', 'HATFIELD_LOG_DIR'] as $key) {
+        $dir = getenv($key);
+        if (is_string($dir) && '' !== $dir && is_dir($dir)) {
+            file_put_contents(rtrim($dir, '/').'/.smoke-marker', '1');
+        }
+    }
+}
+echo "Hatfield 9.9.9 (commit deadbeef)\n";
+PHP;
+            file_put_contents($fixture.'/'.$asset, $payload);
+            $hash = hash_file('sha256', $fixture.'/'.$asset);
+            $this->assertNotFalse($hash);
+            file_put_contents($fixture.'/SHA256SUMS', $hash.'  '.$asset."\n");
+
+            $server = $this->startServer($fixture);
+            $process = new Process([
+                'bash', $root.'/installer/bash-installer',
+                '--install-dir='.$installDir,
+                '--version=v9.9.9',
+            ], $callerProject, [
+                'HATFIELD_INSTALLER_BASE_URL' => $server['url'],
+                'HATFIELD_SMOKE_PROOF_LOG' => $proofLog,
+                'TMPDIR' => $tmpdir,
+                'XDG_CACHE_HOME' => $persistentCache,
+                'HOME' => $callerProject.'/home-should-not-be-used-for-smoke',
+                'PATH' => getenv('PATH') ?: '/usr/bin:/bin',
+            ]);
+            $process->setTimeout(30);
+            $process->run();
+            $this->assertTrue($process->isSuccessful(), $process->getErrorOutput()."\n".$process->getOutput());
+            $this->assertFileExists($installDir.'/hatfield');
+            $this->assertNoInstallTemps($installDir);
+
+            $this->assertFileExists($proofLog);
+            $lines = array_values(array_filter(explode("\n", trim((string) file_get_contents($proofLog)))));
+            $this->assertCount(2, $lines, 'Both candidate and install-dir smokes must record env');
+
+            $tmpdirReal = realpath($tmpdir);
+            $this->assertNotFalse($tmpdirReal);
+            foreach ($lines as $line) {
+                $row = json_decode($line, true);
+                $this->assertIsArray($row);
+                foreach (['HATFIELD_CACHE_DIR', 'HATFIELD_LOG_DIR', 'HOME', 'CWD'] as $key) {
+                    $this->assertArrayHasKey($key, $row);
+                    $this->assertNotSame('', $row[$key], $key.' must be set for smoke');
+                    $this->assertStringStartsWith(
+                        $tmpdirReal,
+                        (string) realpath($row[$key]) ?: $row[$key],
+                        $key.' must live under installer TMPDIR tree during smoke: '.$row[$key],
+                    );
+                }
+                // After successful install the trap removes TMPDIR_INSTALL; smoke roots are gone.
+                $this->assertDirectoryDoesNotExist($row['HATFIELD_CACHE_DIR']);
+                $this->assertDirectoryDoesNotExist($row['HATFIELD_LOG_DIR']);
+                $this->assertDirectoryDoesNotExist($row['HOME']);
+                $this->assertDirectoryDoesNotExist($row['CWD']);
+            }
+
+            // Caller project .hatfield and persistent XDG cache must be untouched.
+            $this->assertSame($callerCacheBefore, $this->listRelativeFiles($callerProject.'/.hatfield'));
+            $this->assertSame($persistentBefore, $this->listRelativeFiles($persistentCache));
+            $this->assertDirectoryDoesNotExist($callerProject.'/.hatfield/cache');
+        } finally {
+            $this->stopServer($server);
+            TestDirectoryIsolation::removeDirectory($fixture);
+            TestDirectoryIsolation::removeDirectory($installDir);
+            TestDirectoryIsolation::removeDirectory($tmpdir);
+            TestDirectoryIsolation::removeDirectory($callerProject);
+            TestDirectoryIsolation::removeDirectory($persistentCache);
+        }
+    }
+
     private function assertNoInstallTemps(string $installDir): void
     {
         $temps = glob($installDir.'/.hatfield-install.*') ?: [];
         $this->assertSame([], $temps, 'Install-dir temporary destinations must be cleaned up');
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function listRelativeFiles(string $dir): array
+    {
+        if (!is_dir($dir)) {
+            return [];
+        }
+        $files = [];
+        $iterator = new \RecursiveIteratorIterator(
+            new \RecursiveDirectoryIterator($dir, \FilesystemIterator::SKIP_DOTS),
+        );
+        foreach ($iterator as $file) {
+            if ($file->isFile()) {
+                $files[] = substr($file->getPathname(), \strlen($dir) + 1);
+            }
+        }
+        sort($files);
+
+        return $files;
     }
 
     /**

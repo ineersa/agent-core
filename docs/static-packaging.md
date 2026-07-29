@@ -82,8 +82,17 @@ Pass `GITHUB_TOKEN` into SPC download/build for GitHub API rate limits.
 | Empty `PHP_BINARY` (fused micro) | `[path]` |
 | Artifact path equals `PHP_BINARY` | `[path]` |
 
-Controller/Messenger children relaunch the same native binary. Writable state stays
-under runtime CWD `.hatfield/`.
+Controller/Messenger children relaunch the same native binary. Project-owned writable
+state (settings, sessions, logs) stays under runtime CWD `.hatfield/`.
+
+Installed fused natives use the same global Symfony container cache layout as PHAR:
+
+```text
+${XDG_CACHE_HOME:-$HOME/.cache}/hatfield/<env>/<content-sha256>-<canonical-path-sha256>/
+```
+
+PHP-micro still exposes a `phar://` project dir for bundled resources, so content+path
+identity applies. See [phar-packaging.md](phar-packaging.md).
 
 ## Topology / no-leak validation
 

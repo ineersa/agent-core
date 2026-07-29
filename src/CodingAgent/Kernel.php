@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent;
 
+use Ineersa\CodingAgent\Runtime\Process\PharExecutableLocator;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\HttpKernel\Kernel as BaseKernel;
 
@@ -13,6 +14,10 @@ class Kernel extends BaseKernel
     // Never write to kernel.project_dir — it may point to a read-only
     // PHAR or shared source checkout. These dirs are created on demand
     // if they don't already exist.
+    //
+    // Installed PHAR/native compiled containers do NOT use this default:
+    // they live under the global XDG/HOME cache with artifact identity
+    // (see getCacheDir()). Project sessions/settings/logs stay here.
     private const string HATFIELD_CACHE_DIR = '.hatfield/cache';
     private const string HATFIELD_LOG_DIR = '.hatfield/logs';
 
@@ -74,33 +79,22 @@ class Kernel extends BaseKernel
 
     public function getCacheDir(): string
     {
-        $base = $this->resolveWritableDir('HATFIELD_CACHE_DIR', self::HATFIELD_CACHE_DIR).'/'.$this->environment;
-
-        // When running inside a PHAR, isolate the cache from source-checkout
-        // caches compiled at the same runtime CWD. A source-checkout project_dir
-        // and PHAR project_dir differ (filesystem vs phar:// URI), and stale
-        // source-checkout caches embed filesystem paths that collide with the
-        // PHAR's bundled vendor autoloader, causing Cannot-redeclare-class
-        // fatals in subprocess controllers.
-        //
-        // The suffix is a content hash of the physical PHAR archive file,
-        // NOT a hash of __FILE__ (which is a stable phar:// URI that never
-        // changes across builds). A stable suffix reuses stale compiled
-        // Symfony containers whose service definitions encode constructor
-        // signatures, paths, and class shapes from the previous PHAR build —
-        // breaking the container when any service changes its constructor
-        // parameters.
-        if ($this->isPhar()) {
-            $pharPath = $this->resolvePharPath();
-            $pharHash = hash_file('sha256', $pharPath);
-            if (false === $pharHash) {
-                throw new \RuntimeException(\sprintf('Unable to hash PHAR archive at "%s" for cache isolation. Check file permissions.', $pharPath));
-            }
-
-            $base .= '-'.substr($pharHash, 0, 12);
+        // Installed PHAR and fused PHP-micro binaries compile Symfony's
+        // container with %kernel.project_dir% = phar://<physical artifact>/...
+        // That path is baked into generated services (e.g. AppResourceLocator
+        // → ThemeRegistry). Cache identity must therefore include both the
+        // artifact content hash and the canonical physical path so:
+        //   - same bytes at different paths never share a container
+        //   - different builds at the same path never share a container
+        //   - symlink and target share a container (realpath)
+        // Default root is global XDG/HOME, not project .hatfield/cache.
+        if ($this->isInstalledArtifact()) {
+            return $this->resolveInstalledCacheDir();
         }
 
-        return $base;
+        // Source checkout: project-local (or explicit HATFIELD_CACHE_DIR root)
+        // plus environment only — no artifact identity segment.
+        return $this->resolveWritableDir('HATFIELD_CACHE_DIR', self::HATFIELD_CACHE_DIR).'/'.$this->environment;
     }
 
     public function getBuildDir(): string
@@ -114,10 +108,22 @@ class Kernel extends BaseKernel
     }
 
     /**
+     * Whether this process is an installed PHAR or fused native artifact.
+     *
+     * Box PHARs and PHP-micro fused natives both execute Kernel under a
+     * phar:// stream, so __FILE__ prefix is the runtime detector. Do not
+     * use HATFIELD_BINARY_PATH — that is a subprocess override only.
+     */
+    private function isInstalledArtifact(): bool
+    {
+        return $this->isPhar();
+    }
+
+    /**
      * Whether the current process is running inside a PHAR archive.
      *
-     * Detects Box-compiled PHARs where __FILE__ starts with phar://.
-     * Used for cache isolation and writable-dir resolution.
+     * Detects Box-compiled PHARs and PHP-micro fused natives where
+     * __FILE__ starts with phar://.
      */
     private function isPhar(): bool
     {
@@ -125,57 +131,89 @@ class Kernel extends BaseKernel
     }
 
     /**
-     * Resolve the physical filesystem path of the running PHAR archive.
+     * Installed-artifact cache:
+     *   <root>/<environment>/<content-sha256>-<canonical-path-sha256>
      *
-     * Resolution order (matches PharExecutableLocator):
-     *   1. Phar::running(false) — standard PHAR detection.
-     *   2. When Box 4.x uses an auto-generated internal alias
-     *      (Phar::running() returns empty), construct a Phar object
-     *      from __FILE__ and call getPath() to recover the physical path.
-     *
-     * Only called after isPhar() has confirmed __FILE__ starts with
-     * phar://.
-     *
-     * @throws \RuntimeException when the physical PHAR path cannot be
-     *                           resolved or does not exist on disk
+     * Full SHA-256 segments (no truncation) avoid cross-version collisions.
      */
-    private function resolvePharPath(): string
+    private function resolveInstalledCacheDir(): string
     {
-        // 1. Standard PHAR detection — works for most PHAR archives
-        //    including manually created ones with a filesystem alias.
-        $pharPath = \Phar::running(false);
-        if ('' !== $pharPath && is_file($pharPath)) {
-            return $pharPath;
+        $artifactPath = $this->resolveCanonicalArtifactPath();
+        $contentHash = hash_file('sha256', $artifactPath);
+        if (false === $contentHash) {
+            throw new \RuntimeException(\sprintf('Unable to hash installed artifact at "%s" for cache isolation. Check file permissions.', $artifactPath));
         }
 
-        // 2. Box 4.x+ fallback: the auto-generated internal alias
-        //    makes Phar::running() return empty, but the phar:// prefix
-        //    in __FILE__ lets us construct a Phar object whose getPath()
-        //    resolves back to the physical archive on disk.
-        if (str_starts_with(__FILE__, 'phar://')) {
-            $previous = null;
-            try {
-                $phar = new \Phar(__FILE__);
-                $physicalPath = $phar->getPath();
-                if ('' !== $physicalPath && is_file($physicalPath)) {
-                    return $physicalPath;
-                }
-            } catch (\Throwable $e) {
-                $previous = $e;
+        $canonicalPath = realpath($artifactPath);
+        if (false === $canonicalPath) {
+            throw new \RuntimeException(\sprintf('Unable to resolve canonical path for installed artifact at "%s". The file must exist and be readable.', $artifactPath));
+        }
+
+        $pathHash = hash('sha256', $canonicalPath);
+        $identity = $contentHash.'-'.$pathHash;
+        $dir = $this->resolveInstalledCacheRoot().'/'.$this->environment.'/'.$identity;
+        $this->ensureDirectory($dir, 'installed artifact cache');
+
+        return $dir;
+    }
+
+    /**
+     * Root for installed-artifact compiled containers.
+     *
+     * Precedence:
+     *   1. HATFIELD_CACHE_DIR (authoritative root; relative → runtime cwd)
+     *   2. $XDG_CACHE_HOME/hatfield (absolute XDG only)
+     *   3. $HOME/.cache/hatfield (absolute HOME only)
+     *
+     * Never falls back to the project working directory.
+     */
+    private function resolveInstalledCacheRoot(): string
+    {
+        $override = getenv('HATFIELD_CACHE_DIR');
+        if (false !== $override && '' !== $override) {
+            if (str_starts_with($override, '/')) {
+                return rtrim($override, '/');
             }
 
-            throw new \RuntimeException(\sprintf('Running inside a PHAR (%s) but unable to resolve the physical archive path. Phar::running(false) returned "%s". Constructing a Phar object from __FILE__ failed%s.', __FILE__, $pharPath, null !== $previous ? ': '.$previous->getMessage() : ' (resolved path is empty or not a file)'), 0, $previous);
+            return rtrim($this->getRuntimeDir().'/'.$override, '/');
         }
 
-        // This branch should be unreachable because isPhar() guards the
-        // call site in getCacheDir().  Fail loudly if reached anyway.
-        throw new \RuntimeException(\sprintf('resolvePharPath() called but __FILE__ "%s" does not contain a phar:// prefix and Phar::running(false) returned "%s".', __FILE__, $pharPath));
+        $xdg = getenv('XDG_CACHE_HOME');
+        if (false !== $xdg && '' !== $xdg) {
+            if (!str_starts_with($xdg, '/')) {
+                throw new \RuntimeException(\sprintf('XDG_CACHE_HOME must be an absolute path for installed Hatfield cache resolution, got "%s". Set an absolute XDG_CACHE_HOME, absolute HOME, or HATFIELD_CACHE_DIR.', $xdg));
+            }
+
+            return rtrim($xdg, '/').'/hatfield';
+        }
+
+        $home = getenv('HOME');
+        if (false !== $home && '' !== $home) {
+            if (!str_starts_with($home, '/')) {
+                throw new \RuntimeException(\sprintf('HOME must be an absolute path for installed Hatfield cache resolution, got "%s". Set an absolute HOME, absolute XDG_CACHE_HOME, or HATFIELD_CACHE_DIR.', $home));
+            }
+
+            return rtrim($home, '/').'/.cache/hatfield';
+        }
+
+        throw new \RuntimeException('Unable to determine installed Hatfield cache root: neither XDG_CACHE_HOME nor HOME is a non-empty absolute path. Set HATFIELD_CACHE_DIR, XDG_CACHE_HOME, or HOME.');
+    }
+
+    /**
+     * Physical path of the running PHAR / fused native archive.
+     *
+     * Delegates to PharExecutableLocator so Box alias fallback and fused
+     * native detection stay in one place (no second resolver in Kernel).
+     */
+    private function resolveCanonicalArtifactPath(): string
+    {
+        return (new PharExecutableLocator())->path();
     }
 
     /**
      * Return the runtime cwd resolved from HATFIELD_CWD or getcwd().
      *
-     * The runtime cwd is where .hatfield/ settings, sessions, logs, cache,
+     * The runtime cwd is where .hatfield/ settings, sessions, logs,
      * and the messenger DB live. It is NOT the app install root
      * (kernel.project_dir), which may be a read-only PHAR path.
      */
@@ -213,5 +251,20 @@ class Kernel extends BaseKernel
         }
 
         return $this->getRuntimeDir().'/'.$default;
+    }
+
+    private function ensureDirectory(string $dir, string $label): void
+    {
+        if (is_dir($dir)) {
+            if (!is_writable($dir)) {
+                throw new \RuntimeException(\sprintf('Hatfield %s directory "%s" exists but is not writable.', $label, $dir));
+            }
+
+            return;
+        }
+
+        if (!@mkdir($dir, 0775, true) && !is_dir($dir)) {
+            throw new \RuntimeException(\sprintf('Unable to create Hatfield %s directory "%s". Check permissions or set HATFIELD_CACHE_DIR to a writable absolute path.', $label, $dir));
+        }
     }
 }
