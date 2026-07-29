@@ -1628,7 +1628,16 @@ function phar_smoke(string $pharPath): void
         $smokeEnv = getenv('APP_ENV');
         $smokeEnv = (false !== $smokeEnv && '' !== $smokeEnv) ? $smokeEnv : 'prod';
         $phpBin = \PHP_BINARY;
-        $envPrefix = 'HOME='.escapeshellarg($homeDir).' APP_ENV='.escapeshellarg($smokeEnv).' ';
+        // Explicit override root: installed PHAR defaults to XDG/HOME cache,
+        // so smoke proves identity layout under a disposable absolute root.
+        $cacheRoot = $tmpCwd.'/cache-root';
+        if (!mkdir($cacheRoot, 0755, true) && !is_dir($cacheRoot)) {
+            throw new \RuntimeException('PHAR smoke: could not create isolated cache root');
+        }
+        $envPrefix = 'HOME='.escapeshellarg($homeDir)
+            .' APP_ENV='.escapeshellarg($smokeEnv)
+            .' HATFIELD_CACHE_DIR='.escapeshellarg($cacheRoot)
+            .' ';
 
         $listOutput = run_checked(
             $envPrefix.$phpBin.' '.escapeshellarg($pharPath).' list 2>&1',
@@ -1666,28 +1675,26 @@ function phar_smoke(string $pharPath): void
         }
         echo "  smoke --version: ok ({$versionOutput})\n";
 
-        if (!is_dir($tmpCwd.'/.hatfield/cache')) {
-            throw new \RuntimeException('PHAR smoke writable-dir isolation failed: .hatfield/cache not created in '.$tmpCwd);
+        // Installed artifacts no longer write Symfony cache under project CWD.
+        if (is_dir($tmpCwd.'/.hatfield/cache')) {
+            throw new \RuntimeException('PHAR smoke isolation failed: project .hatfield/cache must not be used for installed PHAR cache');
         }
-        echo "  smoke writable-dir isolation: ok (.hatfield/cache created in {$tmpCwd})\n";
+        echo "  smoke project-cache isolation: ok (no project .hatfield/cache)\n";
 
-        $cacheDirs = glob($tmpCwd.'/.hatfield/cache/'.$smokeEnv.'-*', \GLOB_ONLYDIR);
-        if (false === $cacheDirs) {
-            $cacheDirs = [];
+        $expectedContent = hash_file('sha256', $pharPath);
+        if (false === $expectedContent) {
+            throw new \RuntimeException('PHAR smoke cache-isolation failed: could not hash PHAR archive');
         }
-        if ([] !== $cacheDirs) {
-            $cacheSuffix = substr($cacheDirs[0], strrpos($cacheDirs[0], '-') + 1);
-            $expectedHash = hash_file('sha256', $pharPath);
-            if (false === $expectedHash) {
-                throw new \RuntimeException('PHAR smoke cache-isolation failed: could not hash PHAR archive');
-            }
-            if ($cacheSuffix !== substr($expectedHash, 0, 12)) {
-                throw new \RuntimeException("PHAR smoke cache-isolation failed: cache suffix {$cacheSuffix} does not match expected content hash prefix ".substr($expectedHash, 0, 12));
-            }
-            echo "  smoke cache-isolation: ok (content-based suffix {$cacheSuffix})\n";
-        } else {
-            echo "  smoke cache-isolation: warn (no cache dirs found)\n";
+        $canonicalPath = realpath($pharPath);
+        if (false === $canonicalPath) {
+            throw new \RuntimeException('PHAR smoke cache-isolation failed: could not realpath PHAR archive');
         }
+        $expectedPathHash = hash('sha256', $canonicalPath);
+        $expectedCacheDir = $cacheRoot.'/'.$smokeEnv.'/'.$expectedContent.'-'.$expectedPathHash;
+        if (!is_dir($expectedCacheDir)) {
+            throw new \RuntimeException('PHAR smoke cache-isolation failed: expected identity cache dir missing: '.$expectedCacheDir);
+        }
+        echo "  smoke cache-isolation: ok (env+content+path identity under override root)\n";
 
         echo "PHAR smoke test: ok\n";
     } finally {

@@ -398,11 +398,16 @@ and consumer processes resolve the same runtime directory.
 
 ### `HATFIELD_CACHE_DIR`
 
-Override the Symfony container cache directory. Absolute or relative paths
-are accepted; relative paths resolve against the runtime CWD (from
-`HATFIELD_CWD` or `getcwd()`).
+Override the **root** of the Symfony container cache directory. Absolute or
+relative paths are accepted; relative paths resolve against the runtime CWD
+(from `HATFIELD_CWD` or `getcwd()`). Hatfield still appends environment (and,
+for installed PHAR/native artifacts, content+path identity) under this root.
 
-**Default:** `.hatfield/cache/<env>` (relative to runtime CWD).
+**Default (source checkout):** `.hatfield/cache/<env>` under the runtime CWD.
+
+**Default (installed PHAR / fused native):**
+`${XDG_CACHE_HOME:-$HOME/.cache}/hatfield/<env>/<content-sha256>-<canonical-path-sha256>`
+(project `.hatfield/cache` is **not** used for compiled containers).
 
 ### `HATFIELD_LOG_DIR`
 
