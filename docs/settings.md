@@ -274,6 +274,62 @@ compaction:
             thinking_level: off
 ```
 
+## Context-budget wrap-up reminders
+
+One-shot wrap-up guidance queued as a normal user `append_message` after a
+committed `llm_step_completed` when that response's provider-reported usage
+crosses provider-neutral thresholds. The CodingAgent after-turn hook inspects
+the committed hot batch and calls `AgentRunnerInterface::appendMessage()` with
+user text wrapped in `<system-reminder>...</system-reminder>`. The appended
+message also carries internal `system_reminder` metadata so presentation does
+not infer provenance from user text. Parent, fork, and subagent runs share the
+same `RunCommit` hook path. AgentCore has no reminder-specific API.
+
+**Metric:** positive `input_tokens` / `prompt_tokens` from the committed
+`llm_step_completed` usage payload in the hot batch. Abort/failure commits do
+not trigger reminders.
+
+**Remaining context:**
+`context_window - current_response_input`
+
+`context_window` comes from run-start metadata when present, otherwise the
+active run model's catalog entry. Missing positive usage or window ⇒ no
+reminder (no silent estimate).
+
+`urgent_remaining_tokens` is the sole wrap-up reserve (room left to finish).
+There is no separate output-headroom setting or subtraction.
+
+One-shot / reset uses only existing canonical events: after the latest
+successful `context_compacted`, already-queued or applied reminders are
+detected by exact wrapped text in generic `agent_command_queued` /
+`agent_command_applied` message payloads. Successful compaction starts a new
+episode; no fresh post-compaction LLM completion means no reminder.
+
+When both thresholds are eligible on one response, only the **urgent** message
+is appended. Early may fire first, then urgent later. Urgent already queued or
+applied suppresses later reminders in that episode.
+
+### `context_budget_reminders.early_input_tokens`
+
+Absolute prompt/input usage that triggers the early wrap-up advisory.
+
+**Default:** `200000`
+
+### `context_budget_reminders.urgent_remaining_tokens`
+
+Urgent wrap-up when remaining context is **strictly less than** this value.
+This threshold itself reserves room to finish; there is no separate
+output-headroom knob.
+
+**Default:** `25000`
+
+**Example:**
+```yaml
+context_budget_reminders:
+    early_input_tokens: 200000
+    urgent_remaining_tokens: 25000
+```
+
 ## Environment variables
 
 ### `HATFIELD_CAPTURE_ERRORS`

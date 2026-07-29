@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "9b454438c04401c4f0d5674ef47f97c4",
+    "content-hash": "a6ce192eb1318d7d5ce7f2b43dac19b1",
     "packages": [
         {
             "name": "amphp/amp",
@@ -9034,16 +9034,16 @@
         },
         {
             "name": "symfony/tui",
-            "version": "v8.1.0",
+            "version": "dev-fix-tui-markdown-inline-html",
             "source": {
                 "type": "git",
-                "url": "https://github.com/symfony/tui.git",
-                "reference": "962a6ec7b07691ee4027305269a5883f449b973c"
+                "url": "https://github.com/ineersa/tui.git",
+                "reference": "130bc651f2e22919c6a4036f6fe8658cfd2df78c"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/symfony/tui/zipball/962a6ec7b07691ee4027305269a5883f449b973c",
-                "reference": "962a6ec7b07691ee4027305269a5883f449b973c",
+                "url": "https://api.github.com/repos/ineersa/tui/zipball/130bc651f2e22919c6a4036f6fe8658cfd2df78c",
+                "reference": "130bc651f2e22919c6a4036f6fe8658cfd2df78c",
                 "shasum": ""
             },
             "require": {
@@ -9065,7 +9065,6 @@
                     "/Tests/"
                 ]
             },
-            "notification-url": "https://packagist.org/downloads/",
             "license": [
                 "MIT"
             ],
@@ -9088,27 +9087,9 @@
                 "tui"
             ],
             "support": {
-                "source": "https://github.com/symfony/tui/tree/v8.1.0"
+                "source": "https://github.com/ineersa/tui/tree/fix-tui-markdown-inline-html"
             },
-            "funding": [
-                {
-                    "url": "https://symfony.com/sponsor",
-                    "type": "custom"
-                },
-                {
-                    "url": "https://github.com/fabpot",
-                    "type": "github"
-                },
-                {
-                    "url": "https://github.com/nicolas-grekas",
-                    "type": "github"
-                },
-                {
-                    "url": "https://tidelift.com/funding/github/packagist/symfony/symfony",
-                    "type": "tidelift"
-                }
-            ],
-            "time": "2026-05-29T05:06:50+00:00"
+            "time": "2026-07-29T00:48:44+00:00"
         },
         {
             "name": "symfony/type-info",
@@ -13480,7 +13461,9 @@
     ],
     "aliases": [],
     "minimum-stability": "dev",
-    "stability-flags": {},
+    "stability-flags": {
+        "symfony/tui": 20
+    },
     "prefer-stable": true,
     "prefer-lowest": false,
     "platform": {
