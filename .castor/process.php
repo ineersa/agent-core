@@ -66,6 +66,37 @@ require_once __DIR__.'/qa_tmux.php';
  *
  * @return array<string,array{exitCode:int,output:string,duration:float}>
  */
+function castor_test_runner_max_seconds(): int
+{
+    // Absolute ceiling for standalone test runners and castor check wall clock.
+    // Non-test tasks (build/packaging/composer/docker/agent) must not use this.
+    return 180;
+}
+
+/**
+ * Run a standalone Castor test-suite command with session reaping + hard timeout.
+ *
+ * Replaces uncapped passthru() for test runners so PHPUnit/ParaTest/controller
+ * children cannot hang forever. Timeout is clamped to castor_test_runner_max_seconds().
+ *
+ * @return array{exitCode:int,output:string,duration:float}
+ */
+function run_test_command_bounded(string $step, string $command, int $timeoutSeconds = 180, ?string $logPath = null): array
+{
+    $timeoutSeconds = max(1, min(castor_test_runner_max_seconds(), $timeoutSeconds));
+    $results = run_commands_parallel(
+        [
+            $step => [
+                'cmd' => $command,
+                'log' => $logPath ?? report_path('test-'.$step.'.log'),
+            ],
+        ],
+        [$step => $timeoutSeconds],
+    );
+
+    return $results[$step] ?? ['exitCode' => -1, 'output' => 'no result', 'duration' => 0.0];
+}
+
 function run_commands_parallel(array $commands, array $timeouts = []): array
 {
     $processes = [];
@@ -1143,8 +1174,60 @@ PHPCODE;
     putenv('HATFIELD_QA_RUN_ID');
     unset($_ENV['HATFIELD_QA_RUN_ID']);
 
+    // ── Test I: standalone test runner helper hard-timeout (≈1s, not 180s) ──
+    echo "\n── Test I: run_test_command_bounded hard-timeout ──\n\n";
+    $beforeI = count_alive_descendants();
+    $startI = hrtime(true);
+    $resultI = run_test_command_bounded(
+        'bounded-hang',
+        'sleep 30',
+        1,
+        report_path('check-test-timeout-hardstop-bounded.log'),
+    );
+    $elapsedI = (hrtime(true) - $startI) / 1e9;
+    if ($elapsedI >= 8.0) {
+        echo "FAIL: run_test_command_bounded took {$elapsedI}s (expected ~1s hard timeout)\n";
+        $ok = false;
+    } else {
+        echo "PASS: run_test_command_bounded returned in {$elapsedI}s\n";
+    }
+    if (124 !== $resultI['exitCode'] && 143 !== $resultI['exitCode']) {
+        echo "FAIL: expected exit 124/143, got {$resultI['exitCode']}\n";
+        $ok = false;
+    } else {
+        echo "PASS: exit code {$resultI['exitCode']}\n";
+    }
+    usleep(200000);
+    $afterI = count_alive_descendants();
+    if ($afterI > $beforeI) {
+        echo "FAIL: descendants increased after bounded hang ({$beforeI} -> {$afterI})\n";
+        $ok = false;
+    } else {
+        echo "PASS: no surviving descendants after bounded hang\n";
+    }
+
+    // ── Test J: castor check wall remaining clamps lane timeouts to <=180 ──
+    echo "\n── Test J: check wall remaining clamp math ──\n\n";
+    $shellTimeoutJ = 180;
+    // No +15 pad: pad would exceed the absolute 180s check wall.
+    $castorTimeoutJ = min(castor_test_runner_max_seconds(), $shellTimeoutJ);
+    $remainingJ = 5; // simulate late gate start
+    $effectiveJ = min($castorTimeoutJ, max(1, $remainingJ));
+    if (5 !== $effectiveJ) {
+        echo "FAIL: expected remaining clamp 5, got {$effectiveJ}\n";
+        $ok = false;
+    } else {
+        echo "PASS: remaining wall clamp yields {$effectiveJ}s\n";
+    }
+    if ($castorTimeoutJ > castor_test_runner_max_seconds()) {
+        echo "FAIL: castor timeout {$castorTimeoutJ} exceeds max\n";
+        $ok = false;
+    } else {
+        echo "PASS: shell 180 clamps to {$castorTimeoutJ} (<=180, no pad)\n";
+    }
+
     if ($ok) {
-        echo "\n✅ All timeout + normal-exit + PHAR/source startup-cleanup (C/C2) + session + separate-PGID + PHPUnit-leak + castor-check-lock + lock-acquire-timeout + QA-run-leak + QA-run-tmux assertions passed.\n";
+        echo "\n✅ All timeout + normal-exit + PHAR/source startup-cleanup (C/C2) + session + separate-PGID + PHPUnit-leak + castor-check-lock + lock-acquire-timeout + QA-run-leak + QA-run-tmux + bounded-runner + wall-clamp assertions passed.\n";
     } else {
         echo "\n❌ Some assertions FAILED.\n";
         exit(1);

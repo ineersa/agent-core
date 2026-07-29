@@ -134,27 +134,16 @@ function test_llm_real(?string $filter = null): void
 
     $cmd = build_test_llm_real_phpunit_command($filter);
 
-    // Run via session-aware process runner to prevent orphaned PHAR workers
-    // (messenger:consume children with --time-limit=3600 that outlive PHPUnit
-    // and keep the Castor task alive).  run_commands_parallel() spawns the
-    // command inside an isolated session via setsid -w and reaps the ENTIRE
-    // session tree on timeout and normal completion, killing separate-PGID
-    // grandchildren that passthru() leaves behind. 180s is a safety cap for
-    // live controller subprocess startup, multi-turn llm-real tests, and worker teardown.
-    $commands = [
-        'llm-real' => [
-            'cmd' => $cmd,
-            'log' => report_path('check-test-llm-real.log'),
-        ],
-    ];
-    $timeouts = ['llm-real' => 180]; // parallel llm-real: controller subprocess + warm proxy replay
+    // Session-aware runner reaps PHPUnit/ParaTest + messenger/controller children.
+    // Hard cap is castor_test_runner_max_seconds() (180s).
+    $result = run_test_command_bounded(
+        'llm-real',
+        $cmd,
+        castor_test_runner_max_seconds(),
+        report_path('check-test-llm-real.log'),
+    );
+    $duration = $result['duration'];
 
-    $start = hrtime(true);
-    $results = run_commands_parallel($commands, $timeouts);
-    $duration = (hrtime(true) - $start) / 1e9;
-    $result = $results['llm-real'] ?? ['exitCode' => -1, 'output' => 'no result', 'duration' => 0];
-
-    // Flush captured output.
     if ('' !== $result['output']) {
         echo $result['output'];
     }
@@ -167,12 +156,11 @@ function test_llm_real(?string $filter = null): void
         }
     }
 
-    // Timeout exit code (124) from run_commands_parallel is a hard failure.
     if (124 === $result['exitCode']) {
-        fail_quality(sprintf('LLM real smoke tests timed out after %.1fs', $result['duration'] ?? $duration));
+        fail_quality(sprintf('LLM real smoke tests timed out after %.1fs', $duration));
     }
     if (0 !== $result['exitCode']) {
-        fail_quality(sprintf('LLM real smoke tests failed in %.1fs (exit code %d)', $result['duration'] ?? $duration, $result['exitCode']));
+        fail_quality(sprintf('LLM real smoke tests failed in %.1fs (exit code %d)', $duration, $result['exitCode']));
     }
     echo sprintf('
 
@@ -205,14 +193,21 @@ function test_tui(?string $filter = null): void
 
     echo "\n=== TUI E2E journey tests (replay-backed, no live LLM) ===\n\n";
 
-    $start = hrtime(true);
-    $exitCode = 1;
+    $result = ['exitCode' => 1, 'output' => '', 'duration' => 0.0];
     try {
-        passthru($cmd, $exitCode);
+        $result = run_test_command_bounded(
+            'tui',
+            $cmd,
+            castor_test_runner_max_seconds(),
+            report_path('check-test-tui.log'),
+        );
     } finally {
         finalize_qa_run_tui_tmux_sessions($tuiQaRunId);
     }
-    $duration = (hrtime(true) - $start) / 1e9;
+    if ('' !== $result['output']) {
+        echo $result['output'];
+    }
+    $duration = $result['duration'];
 
     if (is_llm_mode()) {
         $summary = read_suite_junit_summary('tui');
@@ -221,8 +216,11 @@ function test_tui(?string $filter = null): void
         }
     }
 
-    if (0 !== $exitCode) {
-        fail_quality(sprintf('TUI E2E journey tests failed in %.1fs (exit code %d)', $duration, $exitCode));
+    if (124 === $result['exitCode']) {
+        fail_quality(sprintf('TUI E2E journey tests timed out after %.1fs', $duration));
+    }
+    if (0 !== $result['exitCode']) {
+        fail_quality(sprintf('TUI E2E journey tests failed in %.1fs (exit code %d)', $duration, $result['exitCode']));
     }
     echo sprintf('\nOK (%.1fs)\n', $duration);
     exit(0);
@@ -235,20 +233,27 @@ function test_tui_update(): void
 
     echo 'Running TUI E2E tests with snapshot update (replay-backed)...
 ';
-    passthru(
-        qa_observability_env_command().' APP_ENV=test '
+    $cmd = qa_observability_env_command().' APP_ENV=test '
         .'HATFIELD_UPDATE_SNAPSHOTS=1 '
         .\PHP_BINARY.' vendor/bin/phpunit'
         .' --group tui-e2e-replay'
         .' --colors=never --no-progress --do-not-cache-result'
-        .(is_llm_mode() ? ' --log-junit='.report_path('phpunit-tui-update.junit.xml') : ''),
-        $exitCode,
-    );
+        .(is_llm_mode() ? ' --log-junit='.report_path('phpunit-tui-update.junit.xml') : '');
+    $result = run_test_command_bounded('tui-update', $cmd, castor_test_runner_max_seconds());
+    if ('' !== $result['output']) {
+        echo $result['output'];
+    }
 
     echo sprintf('
 
 TUI snapshot update complete (exit code %d).
-', $exitCode);
+', $result['exitCode']);
+    if (124 === $result['exitCode']) {
+        exit(124);
+    }
+    if (0 !== $result['exitCode']) {
+        exit($result['exitCode']);
+    }
 }
 
 // ─── Controller E2E ──────────────────────────────────────────────
@@ -285,9 +290,11 @@ function test_controller(): void
         .' --filter=ControllerSmokeTest'
         .' '.$strictFlags.$llmFlags;
 
-    $start = hrtime(true);
-    passthru($cmd, $exitCode);
-    $duration = (hrtime(true) - $start) / 1e9;
+    $result = run_test_command_bounded('controller', $cmd, castor_test_runner_max_seconds());
+    if ('' !== $result['output']) {
+        echo $result['output'];
+    }
+    $duration = $result['duration'];
 
     if (is_llm_mode()) {
         $summary = read_suite_junit_summary('controller');
@@ -297,8 +304,11 @@ function test_controller(): void
         }
     }
 
-    if (0 !== $exitCode) {
-        fail_quality(sprintf('Controller E2E tests failed in %.1fs (exit code %d)', $duration, $exitCode));
+    if (124 === $result['exitCode']) {
+        fail_quality(sprintf('Controller E2E tests timed out after %.1fs', $duration));
+    }
+    if (0 !== $result['exitCode']) {
+        fail_quality(sprintf('Controller E2E tests failed in %.1fs (exit code %d)', $duration, $result['exitCode']));
     }
     echo sprintf('
 
@@ -338,9 +348,11 @@ function test_controller_replay(): void
 
     echo "\n=== Controller Replay E2E (deterministic, no live LLM) ===\n\n";
 
-    $start = hrtime(true);
-    passthru($cmd, $exitCode);
-    $duration = (hrtime(true) - $start) / 1e9;
+    $result = run_test_command_bounded('controller-replay', $cmd, castor_test_runner_max_seconds());
+    if ('' !== $result['output']) {
+        echo $result['output'];
+    }
+    $duration = $result['duration'];
 
     if (is_llm_mode()) {
         $summary = read_suite_junit_summary('controller-replay');
@@ -349,8 +361,11 @@ function test_controller_replay(): void
         }
     }
 
-    if (0 !== $exitCode) {
-        fail_quality(sprintf('Controller replay E2E tests failed in %.1fs (exit code %d)', $duration, $exitCode));
+    if (124 === $result['exitCode']) {
+        fail_quality(sprintf('Controller replay E2E tests timed out after %.1fs', $duration));
+    }
+    if (0 !== $result['exitCode']) {
+        fail_quality(sprintf('Controller replay E2E tests failed in %.1fs (exit code %d)', $duration, $result['exitCode']));
     }
     echo sprintf('\nOK (%.1fs)\n', $duration);
     exit(0);

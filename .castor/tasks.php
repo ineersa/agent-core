@@ -14,6 +14,8 @@ declare(strict_types=1);
  * Lanes (typical shell timeouts):
  *   deptrac (30s), test ParaTest (120s), test:controller-replay (150s),
  *   test:tui (180s), test:llm-real (180s), phpstan (90s), cs-check (30s).
+ *   Absolute castor check wall clock: castor_test_runner_max_seconds() (180s).
+ *   Per-lane Castor hard timeouts are clamped so they never exceed remaining wall.
  *   No PHAR in the gate.
  *
  * Budget for test:controller-replay (75s → 90s → 120s → 150s) reflects the
@@ -125,6 +127,8 @@ function check(): void
 function _run_castor_check_body(string $root, string $qaRunId): void
 {
     $llamaProxyCacheBaseline = begin_castor_check_llama_proxy_cache_guard();
+    // Absolute gate wall from body start (includes preflight + lanes + finalizers).
+    $checkWallDeadline = (hrtime(true) / 1e9) + castor_test_runner_max_seconds();
 
     // No PHAR ensure — the deterministic controller-replay and TUI
     // replay lanes use source bin/console with APP_ENV=test, which
@@ -166,13 +170,13 @@ function _run_castor_check_body(string $root, string $qaRunId): void
         'test:tui' => [
             'cmd' => timeout_check_command(
                 build_test_tui_phpunit_command(null),
-                180,
+                castor_test_runner_max_seconds(),
             ),
         ],
         'test:llm-real' => [
             'cmd' => timeout_check_command(
                 build_test_llm_real_phpunit_command(null),
-                180,
+                castor_test_runner_max_seconds(),
             ),
         ],
         'phpstan' => [
@@ -216,11 +220,19 @@ function _run_castor_check_body(string $root, string $qaRunId): void
 
     $GLOBALS['CASTOR_CHECK_AGGREGATING'] = true;
     try {
+        $remainingWall = $checkWallDeadline - (hrtime(true) / 1e9);
+        if ($remainingWall <= 0) {
+            fail_quality(sprintf(
+                'castor check exceeded absolute wall clock of %ds before lanes started (preflight/setup overrun)',
+                castor_test_runner_max_seconds(),
+            ));
+        }
+
         $useParallel = \PHP_SAPI === 'cli' && function_exists('proc_open');
         if ($useParallel) {
-            run_check_commands_parallel($allCheckCommands, $failures, $timings);
+            run_check_commands_parallel($allCheckCommands, $failures, $timings, $checkWallDeadline);
         } else {
-            run_check_commands_sequential($allCheckCommands, $failures, $timings);
+            run_check_commands_sequential($allCheckCommands, $failures, $timings, $checkWallDeadline);
         }
     } finally {
         unset($GLOBALS['CASTOR_CHECK_AGGREGATING']);
@@ -558,11 +570,16 @@ function cleanup_workers(): void
  * @param array<string,string>            $failures out
  * @param array<string,float|int>         $timings  out
  */
-function run_check_commands_parallel(array $steps, array &$failures, array &$timings): void
+function run_check_commands_parallel(array $steps, array &$failures, array &$timings, ?float $checkWallDeadline = null): void
 {
     $logFiles = [];
     $commands = [];
     $timeouts = [];
+    $remainingWall = null === $checkWallDeadline
+        ? castor_test_runner_max_seconds()
+        : max(1, (int) floor($checkWallDeadline - (hrtime(true) / 1e9)));
+    $remainingWall = min(castor_test_runner_max_seconds(), $remainingWall);
+
     foreach ($steps as $step => $info) {
         $logFiles[$step] = report_path("check-{$step}.log");
         $commands[$step] = [
@@ -574,20 +591,23 @@ function run_check_commands_parallel(array $steps, array &$failures, array &$tim
         // poll loop.  Shell timeouts may not kill the full descendant
         // tree; the Castor-level timeout guarantees we never hang on a
         // blocked pipe.
+        $laneTimeout = castor_test_runner_max_seconds();
         if (preg_match('/^timeout\s+.*?\s+(\d+)s\s/', $info['cmd'], $m)) {
-            // Pad 15 s to avoid racing the shell timeout.  The Castor
-            // hard timeout is the safety net; the shell timeout is the
-            // primary kill.
-            $timeouts[$step] = (int) $m[1] + 15;
+            // Prefer the shell budget itself (already the intended kill time).
+            // Do not pad past the absolute 180s wall / remaining gate budget.
+            $laneTimeout = (int) $m[1];
         }
+        $timeouts[$step] = max(1, min($laneTimeout, $remainingWall, castor_test_runner_max_seconds()));
     }
     @mkdir(\CastorTasks\reports_dir(), 0755, true);
 
     echo 'Running steps in parallel (proc_open):
 ';
     foreach (array_keys($steps) as $step) {
-        echo "  - {$step}\n";
+        $to = $timeouts[$step] ?? castor_test_runner_max_seconds();
+        echo "  - {$step} (hard timeout {$to}s)\n";
     }
+    echo "  wall remaining: {$remainingWall}s / max ".castor_test_runner_max_seconds()."s\n";
     echo '
 ';
 
@@ -597,9 +617,13 @@ function run_check_commands_parallel(array $steps, array &$failures, array &$tim
         $result = $results[$step] ?? ['exitCode' => -1, 'output' => 'proc_open failed', 'duration' => 0];
         $timings[$step] = $result['duration'];
         if (0 !== $result['exitCode']) {
-            $failures[$step] = $result['exitCode'] < 0
-                ? $result['output']
-                : 'exit code '.$result['exitCode'];
+            if (124 === $result['exitCode']) {
+                $failures[$step] = 'timed out after '.($timeouts[$step] ?? '?').'s (castor check wall/lane hard stop)';
+            } else {
+                $failures[$step] = $result['exitCode'] < 0
+                    ? $result['output']
+                    : 'exit code '.$result['exitCode'];
+            }
         }
     }
 
@@ -635,15 +659,30 @@ function run_check_commands_parallel(array $steps, array &$failures, array &$tim
  * @param array<string,string>            $failures out
  * @param array<string,float>             $timings  out
  */
-function run_check_commands_sequential(array $steps, array &$failures, array &$timings): void
+function run_check_commands_sequential(array $steps, array &$failures, array &$timings, ?float $checkWallDeadline = null): void
 {
     echo 'Running steps sequentially (proc_open not available):
 
 ';
 
     $overallStart = hrtime(true);
+    $wallDeadline = $checkWallDeadline ?? ((hrtime(true) / 1e9) + castor_test_runner_max_seconds());
 
     foreach ($steps as $step => $info) {
+        $remaining = $wallDeadline - (hrtime(true) / 1e9);
+        if ($remaining <= 0) {
+            $failures[$step] = 'castor check wall exceeded before lane started';
+            $timings[$step] = 0.0;
+            echo sprintf('  %-20s FAIL (wall exceeded)\n', $step);
+            continue;
+        }
+
+        $laneTimeout = castor_test_runner_max_seconds();
+        if (preg_match('/^timeout\s+.*?\s+(\d+)s\s/', $info['cmd'], $m)) {
+            $laneTimeout = (int) $m[1];
+        }
+        $laneTimeout = max(1, min($laneTimeout, (int) floor($remaining), castor_test_runner_max_seconds()));
+
         echo sprintf('  %-20s ... ', $step);
         $start = hrtime(true);
 
@@ -673,7 +712,8 @@ function run_check_commands_sequential(array $steps, array &$failures, array &$t
 
         $outBuf = '';
         $errBuf = '';
-        $deadline = (hrtime(true) / 1e9) + 75.0; // generous fallback
+        $deadline = (hrtime(true) / 1e9) + $laneTimeout;
+        $timedOut = false;
 
         while (true) {
             $status = proc_get_status($process);
@@ -689,9 +729,10 @@ function run_check_commands_sequential(array $steps, array &$failures, array &$t
                 break;
             }
             if ((hrtime(true) / 1e9) >= $deadline) {
+                $timedOut = true;
                 _reap_session($sid > 0 ? $sid : null);
                 _reap_process_group($sid > 0 ? $sid : null);
-                $outBuf .= "\n[Castor sequential hard timeout after 75s]";
+                $outBuf .= "\n[Castor sequential hard timeout after {$laneTimeout}s]";
                 break;
             }
             usleep(50000);
@@ -699,7 +740,7 @@ function run_check_commands_sequential(array $steps, array &$failures, array &$t
 
         @fclose($pipes[1]);
         @fclose($pipes[2]);
-        $exitCode = proc_close($process);
+        $exitCode = $timedOut ? 124 : proc_close($process);
 
         // Reap entire session (primary) + process group (belt-and-suspenders).
         _reap_session($sid > 0 ? $sid : null);
@@ -709,9 +750,11 @@ function run_check_commands_sequential(array $steps, array &$failures, array &$t
         $timings[$step] = $duration;
 
         if (0 !== $exitCode) {
-            $failures[$step] = 'exit code '.$exitCode;
-            echo sprintf('FAIL (%.1fs): exit code %d
-', $duration, $exitCode);
+            $failures[$step] = 124 === $exitCode
+                ? "timed out after {$laneTimeout}s (castor check wall/lane hard stop)"
+                : 'exit code '.$exitCode;
+            echo sprintf('FAIL (%.1fs): %s
+', $duration, $failures[$step]);
         } else {
             echo sprintf('ok (%.1fs)
 ', $duration);
