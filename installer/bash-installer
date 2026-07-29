@@ -262,19 +262,45 @@ output "  [*] SHA-256 verified" "success"
 # Must be called in the main shell (not $(...)) so diagnostics stay on stdout.
 # $2 = command-failure message; $3 = missing-Hatfield message (exact prior wording).
 # Sets SMOKE_OUT on success.
+#
+# Disposable isolation under TMPDIR_INSTALL:
+#   - HATFIELD_CACHE_DIR / HATFIELD_LOG_DIR under the install temp tree so
+#     Symfony container compilation never seeds the caller's project cache
+#     or the persistent XDG Hatfield cache.
+#   - HOME under the install temp tree so user settings cannot leak into smoke.
+#   - CWD is a throwaway directory under TMPDIR_INSTALL for the same reason.
+# Cleanup trap removes TMPDIR_INSTALL (and therefore these smoke roots).
 version_smoke() {
   local path="$1"
   local fail_cmd="$2"
   local fail_content="$3"
   local out=""
+  local smoke_root=""
+  local smoke_cache=""
+  local smoke_log=""
+  local smoke_home=""
+  local smoke_cwd=""
   SMOKE_OUT=""
+
+  if [[ -z "${TMPDIR_INSTALL}" || ! -d "${TMPDIR_INSTALL}" ]]; then
+    output "  [ ] ERROR: installer temporary directory is missing; cannot isolate smoke" "error"
+    return 1
+  fi
+
+  smoke_root="$(mktemp -d "${TMPDIR_INSTALL}/smoke.XXXXXX")"
+  smoke_cache="${smoke_root}/cache"
+  smoke_log="${smoke_root}/logs"
+  smoke_home="${smoke_root}/home"
+  smoke_cwd="${smoke_root}/cwd"
+  mkdir -p "${smoke_cache}" "${smoke_log}" "${smoke_home}" "${smoke_cwd}"
+
   if [[ "${static}" == "true" ]]; then
-    out="$("${path}" --version 2>&1)" || {
+    out="$(cd "${smoke_cwd}" && HOME="${smoke_home}" HATFIELD_CACHE_DIR="${smoke_cache}" HATFIELD_LOG_DIR="${smoke_log}" "${path}" --version 2>&1)" || {
       output "${fail_cmd}" "error"
       return 1
     }
   else
-    out="$(php "${path}" --version 2>&1)" || {
+    out="$(cd "${smoke_cwd}" && HOME="${smoke_home}" HATFIELD_CACHE_DIR="${smoke_cache}" HATFIELD_LOG_DIR="${smoke_log}" php "${path}" --version 2>&1)" || {
       output "${fail_cmd}" "error"
       return 1
     }

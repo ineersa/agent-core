@@ -79,6 +79,20 @@ Behavior:
 - Candidate `--version` smoke, then same-directory install-temp smoke, then atomic `mv`
 - **No post-`mv` commands** — install exit status is `mv` status only; failures never replace previous install
 - Empty `--version=` / `--install-dir=` rejected; traps clean download + install temps
+- Both pre-replace `--version` smokes run with disposable absolute `HATFIELD_CACHE_DIR`,
+  `HATFIELD_LOG_DIR`, `HOME`, and CWD under the installer's trap-cleaned temp tree so
+  temporary artifact filenames never seed project or persistent XDG Symfony caches
+
+### Installed Symfony container cache
+
+Installed PHAR/native compiled containers use a global XDG/HOME cache scoped by
+environment + artifact content hash + canonical install path (see
+[phar-packaging.md](phar-packaging.md) and [static-packaging.md](static-packaging.md)).
+Project settings/sessions remain under the project `.hatfield/`. Safe clear:
+
+```bash
+rm -rf "${XDG_CACHE_HOME:-$HOME/.cache}/hatfield"
+```
 
 ## CI and release
 

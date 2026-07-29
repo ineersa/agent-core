@@ -163,23 +163,11 @@ final class PharSmokeTest extends TestCase
     }
 
     /**
-     * Verify PHAR cache isolation uses a content-based hash of the archive
-     * file, not a stable __FILE__ fixpoint that allows stale Symfony
-     * compiled containers to survive PHAR rebuilds.
-     *
-     * The regression caught by this test: the old code computed
-     *   substr(md5(__FILE__), 0, 8)
-     * which inside a PHAR is a stable 8-char hex string across rebuilds.
-     * When any service constructor changed (e.g. TickPollListener gained
-     * arguments on SAFE-04), the stale container from a previous PHAR
-     * build was reused and threw ArgumentCountError on boot.
-     *
-     * The fix uses hash_file('sha256', $pharPath) to produce a 12-char
-     * content-based suffix.  This test validates both the suffix length
-     * (12 not 8) and format (lowercase hex) as a cheap regression guard.
+     * Installed PHAR cache identity: <root>/<env>/<content-sha256>-<path-sha256>
+     * under an explicit HATFIELD_CACHE_DIR root (not project .hatfield/cache).
      */
     #[Group('phar')]
-    public function testPharCacheIsolationUsesContentHash(): void
+    public function testPharCacheUsesEnvContentAndCanonicalPathIdentity(): void
     {
         [$cmd, $pharPath] = $this->resolveArtifactCommand();
         $isPhar = str_ends_with($pharPath, '.phar');
@@ -188,52 +176,55 @@ final class PharSmokeTest extends TestCase
             $this->markTestSkipped('Not running as PHAR — requires HATFIELD_BINARY_PATH pointing to built hatfield.phar');
         }
 
-        // Run PHAR from an isolated temp dir to trigger fresh cache
-        // creation.  The cache dir suffix must be 12 hex chars (SHA-256)
-        // rather than 8 (legacy md5(__FILE__)).
         $tmpCwd = TestDirectoryIsolation::createProjectTempDir('phar-cache-hash');
-
+        $cacheRoot = $tmpCwd.'/cache-root';
+        TestDirectoryIsolation::ensureDirectory($cacheRoot);
         $isolatedHome = $this->createIsolatedHome();
+
         try {
-            $process = Process::fromShellCommandline(
-                \sprintf(
-                    'HOME=%s APP_ENV=prod HATFIELD_CACHE_DIR= %s',
-                    escapeshellarg($isolatedHome),
-                    $this->shellCommand($cmd, 'list'),
-                ),
+            $process = new Process(
+                array_merge($cmd, ['list']),
                 cwd: $tmpCwd,
+                env: [
+                    'HOME' => $isolatedHome,
+                    'APP_ENV' => 'prod',
+                    'APP_DEBUG' => '0',
+                    'HATFIELD_CACHE_DIR' => $cacheRoot,
+                    'PATH' => getenv('PATH') ?: '/usr/bin:/bin',
+                ],
             );
             $process->mustRun();
 
-            // Cache should have been created with a content-hash suffix.
-            $cacheDirs = glob($tmpCwd.'/.hatfield/cache/prod-*', \GLOB_ONLYDIR);
-            $this->assertNotEmpty(
-                $cacheDirs,
-                'PHAR did not create a cache directory in the isolated CWD',
+            $this->assertDirectoryDoesNotExist(
+                $tmpCwd.'/.hatfield/cache',
+                'Installed PHAR must not write Symfony cache under project .hatfield/cache by default when override root is set',
             );
 
-            $suffix = substr($cacheDirs[0], strrpos($cacheDirs[0], '-') + 1);
+            $contentHash = hash_file('sha256', $pharPath);
+            $this->assertNotFalse($contentHash);
+            $canonical = realpath($pharPath);
+            $this->assertNotFalse($canonical);
+            $expected = $cacheRoot.'/prod/'.$contentHash.'-'.hash('sha256', $canonical);
+            $this->assertDirectoryExists($expected, 'Expected identity cache dir: '.$expected);
 
-            // Content hash (SHA-256) → 12 hex chars.
-            // Legacy md5(__FILE__) → 8 hex chars.  A suffix shorter than
-            // 12 indicates the old stable-fixpoint bug has regressed.
-            $this->assertSame(
-                12,
-                \strlen($suffix),
-                \sprintf(
-                    'Cache dir suffix "%s" should be 12 hex chars (SHA-256 content hash), got %d chars. '
-                    .'An 8-char suffix indicates the legacy md5(__FILE__) stable-fixpoint regression.',
-                    $suffix,
-                    \strlen($suffix),
-                ),
+            // Same artifact+path is stable across another invocation.
+            $process2 = new Process(
+                array_merge($cmd, ['list']),
+                cwd: $tmpCwd,
+                env: [
+                    'HOME' => $isolatedHome,
+                    'APP_ENV' => 'prod',
+                    'APP_DEBUG' => '0',
+                    'HATFIELD_CACHE_DIR' => $cacheRoot,
+                    'PATH' => getenv('PATH') ?: '/usr/bin:/bin',
+                ],
             );
-            $this->assertMatchesRegularExpression(
-                '/^[0-9a-f]{12}$/',
-                $suffix,
-                \sprintf('Cache dir suffix "%s" should be lowercase hex', $suffix),
-            );
+            $process2->mustRun();
+            $this->assertDirectoryExists($expected);
+
+            $identities = glob($cacheRoot.'/prod/*', \GLOB_ONLYDIR) ?: [];
+            $this->assertCount(1, $identities, 'Same bytes+path must reuse one identity dir');
         } finally {
-            // Clean up the isolated temp dir even on assertion failure.
             TestDirectoryIsolation::removeDirectory($tmpCwd);
         }
     }
@@ -369,22 +360,39 @@ PHP;
             );
 
             $home = $tmp.'/home';
-            $env = 'HOME='.escapeshellarg($home).' APP_ENV=prod HATFIELD_CACHE_DIR= ';
-            $process = Process::fromShellCommandline(
-                $env.$this->shellCommand($cmd, 'about 2>&1'),
+            $cacheRoot = $tmp.'/cache-root';
+            TestDirectoryIsolation::ensureDirectory($cacheRoot);
+            $env = [
+                'HOME' => $home,
+                'APP_ENV' => 'prod',
+                'APP_DEBUG' => '0',
+                'HATFIELD_CACHE_DIR' => $cacheRoot,
+                'PATH' => getenv('PATH') ?: '/usr/bin:/bin',
+            ];
+            $process = new Process(
+                array_merge($cmd, ['about']),
                 cwd: $tmp,
+                env: $env,
             );
             $process->mustRun();
             $about = $process->getOutput().$process->getErrorOutput();
             $this->assertStringContainsString('Environment', $about);
 
-            // Writable state must stay under isolated CWD, not the PHAR path / home only.
-            $this->assertDirectoryExists($tmp.'/.hatfield/cache', 'PHAR must create writable cache under project CWD');
+            // Project settings/sessions stay under CWD; Symfony container cache is global/override.
+            $this->assertDirectoryDoesNotExist($tmp.'/.hatfield/cache');
+            $contentHash = hash_file('sha256', $pharPath);
+            $this->assertNotFalse($contentHash);
+            $canonical = realpath($pharPath);
+            $this->assertNotFalse($canonical);
+            $this->assertDirectoryExists(
+                $cacheRoot.'/prod/'.$contentHash.'-'.hash('sha256', $canonical),
+            );
 
             // Boot list from empty temp project (no source tree).
-            $list = Process::fromShellCommandline(
-                $env.$this->shellCommand($cmd, 'list 2>&1'),
+            $list = new Process(
+                array_merge($cmd, ['list']),
                 cwd: $tmp,
+                env: $env,
             );
             $list->mustRun();
             $this->assertStringContainsString('agent', $list->getOutput());
