@@ -7,6 +7,7 @@ namespace Ineersa\Tui\Tests\Transcript;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlock;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptBlockKindEnum;
 use Ineersa\CodingAgent\Runtime\Projection\TranscriptChangeSet;
+use Ineersa\Tui\Transcript\TranscriptVisualNode;
 use Ineersa\Tui\Transcript\TranscriptVisualPatch;
 use Ineersa\Tui\Transcript\TranscriptVisualProjector;
 use PHPUnit\Framework\Attributes\Test;
@@ -68,5 +69,43 @@ final class TranscriptVisualProjectorTest extends TestCase
         $this->assertSame('partial more tokens', $patch->upserts[0]->primary?->text);
         $this->assertSame(TranscriptVisualPatch::MODE_INCREMENTAL, $patch->mode);
         // Unchanged order is proven by mounted identity/render tests, not a test-only accessor.
+    }
+
+    #[Test]
+    public function testUserMessageClassifiesAsGenericNotMarkdown(): void
+    {
+        $projector = new TranscriptVisualProjector();
+
+        $user = new TranscriptBlock(
+            id: 'user-literal',
+            kind: TranscriptBlockKindEnum::UserMessage,
+            runId: self::SESSION_ID,
+            seq: 1,
+            text: 'Check where we are using <system-reminder>?',
+        );
+        $assistant = new TranscriptBlock(
+            id: 'assistant-md',
+            kind: TranscriptBlockKindEnum::AssistantMessage,
+            runId: self::SESSION_ID,
+            seq: 2,
+            text: 'Use **bold**',
+        );
+
+        $patch = $projector->replaceAll([$user, $assistant]);
+        $byKey = [];
+        foreach ($patch->upserts as $node) {
+            $byKey[$node->key] = $node;
+        }
+
+        $this->assertSame(
+            TranscriptVisualNode::KIND_GENERIC,
+            $byKey['user-literal']->kind,
+            'UserMessage must use generic TextWidget path, not StreamingMarkdown',
+        );
+        $this->assertSame(
+            TranscriptVisualNode::KIND_MARKDOWN,
+            $byKey['assistant-md']->kind,
+            'AssistantMessage must remain markdown',
+        );
     }
 }

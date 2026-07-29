@@ -22,7 +22,8 @@ use Symfony\Component\Yaml\Yaml;
  * Responsibilities include glyphs, theme colors, fallback display text, system severity,
  * markdown/thinking paths, and compact tool cards.
  *
- * User / assistant / visible thinking → {@see MarkdownWidget}.
+ * Assistant / visible thinking → {@see MarkdownWidget}.
+ * UserMessage → literal {@see TextWidget} (glyph/color only; no Markdown parsing).
  * Hidden thinking → compact placeholder from {@see TranscriptDisplayConfig} only,
  * not {@see TranscriptBlock::$collapsed}.
  * {@see TranscriptBlockKindEnum::ToolCall} and normal {@see TranscriptBlockKindEnum::ToolResult}
@@ -86,7 +87,8 @@ final readonly class TranscriptBlockWidgetFactory
             return new TextWidget($theme->color(ThemeColorEnum::ThinkingText, $line));
         }
 
-        // UserMessage, AssistantMessage, visible thinking → MarkdownWidget.
+        // AssistantMessage and visible thinking → MarkdownWidget.
+        // UserMessage stays on the generic TextWidget path for faithful literal display.
         if ($this->isMarkdownBlock($block)) {
             return $this->buildMarkdownWidget($block, $theme);
         }
@@ -1127,7 +1129,6 @@ final readonly class TranscriptBlockWidgetFactory
     private function isMarkdownBlock(TranscriptBlock $block): bool
     {
         return \in_array($block->kind, [
-            TranscriptBlockKindEnum::UserMessage,
             TranscriptBlockKindEnum::AssistantMessage,
             TranscriptBlockKindEnum::AssistantThinking,
         ], true);
