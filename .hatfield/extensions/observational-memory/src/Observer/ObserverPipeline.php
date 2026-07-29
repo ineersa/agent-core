@@ -16,7 +16,7 @@ use Ineersa\HatfieldExt\ObservationalMemory\Support\OmIdentity;
 use Psr\Log\LoggerInterface;
 
 /**
- * Shared Observer model/render/persist pipeline for hot observe jobs and compaction catch-up.
+ * Shared Observer model/render/persist pipeline for async observe-boundary jobs.
  *
  * Chunks under floor(context_window * 0.65); multi-call accumulate; zero-obs coverage valid.
  */

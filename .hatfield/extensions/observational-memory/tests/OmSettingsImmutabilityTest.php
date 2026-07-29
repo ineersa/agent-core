@@ -34,9 +34,6 @@ final class OmSettingsImmutabilityTest extends TestCase
                 'observations_max_tokens' => 5555,
                 'reflections_max_tokens' => 6666,
             ],
-            'compaction' => [
-                'wait_timeout_seconds' => 44,
-            ],
         ]);
 
         $this->assertSame('custom/om.sqlite', $base->databasePath);

@@ -95,8 +95,6 @@ extensions:
             pools:
                 observations_max_tokens: 30000
                 reflections_max_tokens: 10000
-            compaction:
-                wait_timeout_seconds: 180
 forks:
     model: openai-codex/gpt-5.6-luna
     thinking_level: high

@@ -12,7 +12,6 @@ use Ineersa\Hatfield\ExtensionApi\Tui\TuiExtensionContextInterface;
 use Ineersa\Hatfield\ExtensionApi\Tui\TuiExtensionInterface;
 use Ineersa\HatfieldExt\ObservationalMemory\Command\OmStatusCommandHandler;
 use Ineersa\HatfieldExt\ObservationalMemory\Command\OmViewCommandHandler;
-use Ineersa\HatfieldExt\ObservationalMemory\Compaction\BuildCompactionMemoryJobHandler;
 use Ineersa\HatfieldExt\ObservationalMemory\Compaction\OmBeforeCompactionHook;
 use Ineersa\HatfieldExt\ObservationalMemory\Compaction\ReflectGenerationJobHandler;
 use Ineersa\HatfieldExt\ObservationalMemory\Observer\ObserveBoundaryJobHandler;
@@ -30,8 +29,8 @@ use Psr\Log\NullLogger;
  *
  * Registers:
  * - after-turn terminal detector that dispatches a scalar extension-agent job
- * - worker-local ObserveBoundaryJobHandler / BuildCompactionMemoryJobHandler
- * - public before-compaction hook (CompactRun only) for replacement summaries
+ * - worker-local ObserveBoundaryJobHandler / ReflectGenerationJobHandler
+ * - public before-compaction hook (CompactRun only): instant durable-memory projection
  * - /om-status and /om-view local commands
  * - permanent ambient recall tool
  */
@@ -61,10 +60,6 @@ final class ObservationalMemoryExtension implements HatfieldExtensionInterface, 
         $api->registerExtensionAgentJobHandler(
             ObserveBoundaryTerminalHook::HANDLER_ID,
             new ObserveBoundaryJobHandler($this->logger),
-        );
-        $api->registerExtensionAgentJobHandler(
-            BuildCompactionMemoryJobHandler::HANDLER_ID,
-            new BuildCompactionMemoryJobHandler($this->logger),
         );
         $api->registerExtensionAgentJobHandler(
             ReflectGenerationJobHandler::HANDLER_ID,
@@ -132,7 +127,6 @@ final class ObservationalMemoryExtension implements HatfieldExtensionInterface, 
             'component' => 'observational_memory',
             'event_type' => 'om.extension.registered',
             'handler_id' => ObserveBoundaryTerminalHook::HANDLER_ID,
-            'compaction_handler_id' => BuildCompactionMemoryJobHandler::HANDLER_ID,
             'reflect_handler_id' => ReflectGenerationJobHandler::HANDLER_ID,
         ]);
     }

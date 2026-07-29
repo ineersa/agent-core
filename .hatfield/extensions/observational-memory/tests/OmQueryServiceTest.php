@@ -23,7 +23,6 @@ use Ineersa\Hatfield\ExtensionApi\Tool\ToolRegistrationDTO;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolResultHookInterface;
 use Ineersa\HatfieldExt\ObservationalMemory\Query\OmQueryService;
 use Ineersa\HatfieldExt\ObservationalMemory\Runtime\OmSettings;
-use Ineersa\HatfieldExt\ObservationalMemory\Storage\CompactionRepository;
 use Ineersa\HatfieldExt\ObservationalMemory\Storage\MemoryGenerationRepository;
 use Ineersa\HatfieldExt\ObservationalMemory\Storage\ObservationRepository;
 use Ineersa\HatfieldExt\ObservationalMemory\Tests\Support\OmDatabaseFactoryTestService;
@@ -56,7 +55,6 @@ final class OmQueryServiceTest extends IsolatedKernelTestCase
         $connection = $this->omDatabaseFactory()->connectAndMigrate($dbPath);
         $obs = new ObservationRepository($connection);
         $gen = new MemoryGenerationRepository($connection);
-        $comp = new CompactionRepository($connection);
 
         $obsIdA = str_repeat('a', 64);
         $obsIdB = str_repeat('b', 64);
@@ -144,16 +142,6 @@ final class OmQueryServiceTest extends IsolatedKernelTestCase
             now: '2026-07-28T12:02:01+00:00',
         );
 
-        $comp->ensureRequest(
-            requestId: 'req-a',
-            runId: 'run-a',
-            requiredStartSeq: 1,
-            requiredEndSeq: 3,
-            requiredWatermark: 3,
-            requestFingerprint: hash('sha256', 'fp-a'),
-            now: '2026-07-28T12:03:00+00:00',
-        );
-
         $settings = OmSettings::fromArray([
             'storage' => ['database' => $dbPath],
             'observer' => ['model' => 'llama_cpp_test/test'],
@@ -178,7 +166,7 @@ final class OmQueryServiceTest extends IsolatedKernelTestCase
         $this->assertStringContainsString('- **Next reflection:** ~9 / 40,000 tokens (0%)', $status);
         $this->assertStringContainsString('- **Active observation pool:** ~9 / 30,000 max tokens (0%)', $status);
         $this->assertStringContainsString('- **Reflection pool:** ~8 / 10,000 max tokens (0%)', $status);
-        $this->assertStringContainsString('- **Compaction requests:** 1 queued', $status);
+        $this->assertStringContainsString('- **Compaction:** instant projection of current durable memory (no request rows)', $status);
         $this->assertStringContainsString('> Durable memory state only; worker and queue liveness are not tracked here.', $status);
         $this->assertStringNotContainsString('max_retries', $status);
         $this->assertStringNotContainsString('extension_agent', $status);
@@ -203,7 +191,7 @@ final class OmQueryServiceTest extends IsolatedKernelTestCase
 
         $emptyStatus = $service->formatStatus('run-empty');
         $this->assertStringContainsString('no events covered yet', $emptyStatus);
-        $this->assertStringContainsString('**Compaction requests:** none', $emptyStatus);
+        $this->assertStringContainsString('**Compaction:** instant projection of current durable memory (no request rows)', $emptyStatus);
     }
 
     #[Test]

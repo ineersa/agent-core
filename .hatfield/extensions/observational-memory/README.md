@@ -1,13 +1,14 @@
 # Observational Memory (OM) extension
 
 Extension-owned observational memory storage, asynchronous Observer pipeline,
-threshold Reflector generations, and CompactRun replacement summaries.
+threshold Reflector generations, and CompactRun replacement summaries via
+instant durable-memory projection.
 
-## Architecture (OM-03 + OM-04)
+## Architecture (OM-03 + OM-04 + OM-05)
 
 Hatfield provides a **generic** async extension-agent job facility. OM uses the
 existing single FIFO `extension_agent` transport/worker for Observer and Reflector
-model work.
+model work. Compaction does **not** wait on that worker.
 
 ```text
 AfterTurnCommit (any run_control/llm/tool worker)
@@ -32,36 +33,28 @@ Threshold (after all observe chunks durable, tokens > 40000)
       → exactly one compression retry if pools exceeded
       → promote om_active_generation transactionally
 
-CompactRun (run_control, under run lock)
+CompactRun (run_control, under run lock) — Pi-style instant projection
   → public OmBeforeCompactionHook (CompactRun only; not snapshot/fork)
-      → resolve positive context windows via api->agent()->contextWindow()
-      → ensure om_compaction_request (request_fingerprint + request_id formulas)
-      → dispatch ExtensionAgentJobRequestDTO (JSON-safe only)
-      → poll om.sqlite request/result with short autocommit reads + bounded timeout
-      → on deadline: mark request timed_out and cancel CompactRun
-      → replaceSummary(server-rendered text) or cancel(...); never silent summary fallback
-  → BuildCompactionMemoryJobHandler on extension_agent worker
-      → contiguous coverage catch-up via ObserverPipeline
-      → Reflector ALWAYS when active memory exists (no 40k gate)
-      → commit generation + deterministic PHP render + result atomically
-  → CompactRunHandler::handleReplacementSummary() (skips ExecuteCompactionStep)
+      → open/migrate om.sqlite
+      → listActiveReflections + listActiveCandidateObservations
+      → ActiveMemoryRenderer::render (deterministic PHP, 12-char display ids)
+      → non-empty → replaceSummary(text)
+      → empty → continue() so core keep-recent / LLM summary path may run
+  → no extension_agent dispatch, no model call, no session-event read, no poll/timeout
 ```
 
 OM does **not** own a private Symfony Kernel, bin/console, Messenger bus, consumer
 supervisor, Dropper stage, or priority/multi-receiver queue.
 
-### Required coverage watermark
+### Freshness tradeoff (accepted)
 
-Compaction catch-up uses session-global **`1..RunState.lastSeq`** captured when
-CompactRun prepares the public hook context. Contiguous coverage never uses
-`MAX(source_end_seq)`; incomplete chunk parts do not advance the watermark.
+Compaction renders whatever durable memory is already present. Observer/Reflector
+work finishing later affects a **later** compaction. Canonical `events.jsonl`
+remains the source of truth for recall and later Observer catch-up on turn
+boundaries.
 
-### FIFO wait / timeout / failures
+### FIFO / failures (async observe + threshold only)
 
-- Hook wait is bounded by `observational_memory.compaction.wait_timeout_seconds`
-  (default 180).
-- Timeout transitions request to terminal `timed_out` and preserves original messages.
-- Late worker success after `timed_out` is rejected (no generation promotion / no reusable result).
 - `extension_agent` uses Symfony Messenger native default `max_retries: 3` (4 attempts total) and **no** failure transport.
 - Exhausted jobs emit sanitized transient runtime event `extension_agent.job_failed`
   (seq=0) and a TUI Error block when `payload.run_id` is present.
@@ -104,8 +97,6 @@ extensions:
       pools:
         observations_max_tokens: 30000
         reflections_max_tokens: 10000
-      compaction:
-        wait_timeout_seconds: 180
 ```
 
 Install package dependencies into the project extension Composer root:
@@ -120,22 +111,24 @@ composer update ineersa/hatfield-ext-observational-memory
 ## Ownership boundaries
 
 - **OM SQLite** (`.hatfield/extensions-data/observational-memory/om.sqlite`) owns
-  observations, coverage, reflections, generations, and compaction request/result rows.
+  observations, coverage, reflections, and generations. Historical compaction
+  request/result tables may still exist from older migrations and are inert.
 - **Hatfield** owns canonical `events.jsonl`, model infrastructure, generic
   `extension_agent` FIFO/worker supervision, and `/tree`. OM does **not** own a
   private consumer or failure transport.
-- **Replacement summaries** are deterministic PHP projections of the latest active
-  generation. Reflector models never author final `replacement_text`.
+- **Replacement summaries** are deterministic PHP projections of current durable
+  active memory. Reflector models never author final compact text.
 - **Source refs** stay SQLite-only; compact summaries do not include footnotes.
   Model-facing compacted-memory IDs are lowercase first-12-char prefixes (same as `/om-view`);
   full SHA-256 identities remain in SQLite/generation links only.
 - **Session-global MVP:** non-branch-aware. Rewind/tree does not rewind the OM pool.
-- **Delivery gap:** events and OM SQLite can diverge after worker loss; later boundaries
-  and CompactRun watermark catch-up repair coverage.
+- **Delivery gap:** events and OM SQLite can diverge after worker loss; later turn
+  boundaries advance Observer coverage asynchronously.
 
 ## Commands and recall
 
-- `/om-status` — durable OM aggregates for the current session (worker/queue liveness not tracked).
+- `/om-status` — durable OM memory/activity aggregates for the current session
+  (worker/queue liveness not tracked; compaction is instant projection, not a request queue).
 - `/om-view` — active reflections and candidate observations with 12-char display ids,
   timestamp/relevance, content, and human source event sequences.
 - `recall` — permanent ambient tool; recover exact source context for one known memory id

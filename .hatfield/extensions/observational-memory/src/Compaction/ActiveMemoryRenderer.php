@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace Ineersa\HatfieldExt\ObservationalMemory\Compaction;
 
 /**
- * Deterministic CompactRun replacement text from an active generation (task §I).
+ * Deterministic CompactRun replacement text from current durable active memory.
  *
- * Source refs stay SQLite-only; never render model free-form replacement_text.
+ * Source refs stay SQLite-only; never render model free-form compact text.
  */
 final class ActiveMemoryRenderer
 {

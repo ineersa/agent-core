@@ -31,8 +31,7 @@ final class ReflectorPipeline
      *     supporting_observation_ids_json: string,
      *     token_count: int
      *   }>,
-     *   retained_observation_ids: list<string>,
-     *   rendered_text: string
+     *   retained_observation_ids: list<string>
      * }
      */
     public function produceCandidate(
@@ -397,44 +396,27 @@ final class ReflectorPipeline
      *     supporting_observation_ids_json: string,
      *     token_count: int
      *   }>,
-     *   retained_observation_ids: list<string>,
-     *   rendered_text: string
+     *   retained_observation_ids: list<string>
      * }
      */
     private function finalizeCandidate(array $candidate, array $activeObservations): array
     {
-        $byId = [];
+        // Keep only retained observation ids that still exist in the active candidate set.
+        $allowed = [];
         foreach ($activeObservations as $observation) {
-            $byId[$observation['observation_id']] = $observation;
+            $allowed[$observation['observation_id']] = true;
         }
 
-        $retainedObs = [];
+        $retainedIds = [];
         foreach ($candidate['retained_observation_ids'] as $id) {
-            $observation = $byId[$id] ?? null;
-            if (null === $observation) {
-                continue;
+            if (isset($allowed[$id])) {
+                $retainedIds[] = $id;
             }
-            $retainedObs[] = $observation;
-        }
-
-        $renderReflections = [];
-        foreach ($candidate['reflections'] as $position => $reflection) {
-            $renderReflections[] = [
-                'reflection_id' => $reflection['reflection_id'],
-                'content' => $reflection['content'],
-                'position' => $position,
-            ];
-        }
-
-        $rendered = ActiveMemoryRenderer::render($renderReflections, $retainedObs);
-        if ('' === trim($rendered)) {
-            throw new ReflectorException('empty_render', 'Deterministic active-memory render produced empty text.');
         }
 
         return [
             'reflections' => $candidate['reflections'],
-            'retained_observation_ids' => $candidate['retained_observation_ids'],
-            'rendered_text' => $rendered,
+            'retained_observation_ids' => $retainedIds,
         ];
     }
 

@@ -427,9 +427,6 @@ final class ObserveBoundaryJobHandlerTest extends IsolatedKernelTestCase
                         'observations_max_tokens' => 30000,
                         'reflections_max_tokens' => 10000,
                     ],
-                    'compaction' => [
-                        'wait_timeout_seconds' => 180,
-                    ],
                 ];
             }
 

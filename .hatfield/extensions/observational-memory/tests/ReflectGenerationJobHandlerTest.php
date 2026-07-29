@@ -262,9 +262,6 @@ final class ReflectGenerationJobHandlerTest extends IsolatedKernelTestCase
                         'observations_max_tokens' => $this->settings->observationsMaxTokens,
                         'reflections_max_tokens' => $this->settings->reflectionsMaxTokens,
                     ],
-                    'compaction' => [
-                        'wait_timeout_seconds' => $this->settings->waitTimeoutSeconds,
-                    ],
                 ];
             }
 

@@ -27,8 +27,6 @@ final readonly class OmSettings
 
     public const int DEFAULT_REFLECT_AFTER_OBSERVATION_TOKENS = 40_000;
 
-    public const int DEFAULT_WAIT_TIMEOUT_SECONDS = 180;
-
     public const int DEFAULT_OBSERVATIONS_MAX_TOKENS = 30_000;
 
     public const int DEFAULT_REFLECTIONS_MAX_TOKENS = 10_000;
@@ -51,7 +49,6 @@ final readonly class OmSettings
         public string $reflectorSchemaVersion,
         public int $observationsMaxTokens,
         public int $reflectionsMaxTokens,
-        public int $waitTimeoutSeconds,
     ) {
     }
 
@@ -74,7 +71,6 @@ final readonly class OmSettings
         $observer = \is_array($raw['observer'] ?? null) ? $raw['observer'] : [];
         $reflector = \is_array($raw['reflector'] ?? null) ? $raw['reflector'] : [];
         $pools = \is_array($raw['pools'] ?? null) ? $raw['pools'] : [];
-        $compaction = \is_array($raw['compaction'] ?? null) ? $raw['compaction'] : [];
 
         $observerModel = self::readNestedModel($observer);
         $reflectorModel = self::readNestedModel($reflector);
@@ -122,11 +118,6 @@ final readonly class OmSettings
             $reflectionsMaxTokens = max(1, (int) $pools['reflections_max_tokens']);
         }
 
-        $waitTimeout = self::DEFAULT_WAIT_TIMEOUT_SECONDS;
-        if (isset($compaction['wait_timeout_seconds']) && is_numeric($compaction['wait_timeout_seconds'])) {
-            $waitTimeout = max(1, (int) $compaction['wait_timeout_seconds']);
-        }
-
         return new self(
             databasePath: $databasePath,
             observerModel: $observerModel,
@@ -141,7 +132,6 @@ final readonly class OmSettings
             reflectorSchemaVersion: $reflectorSchemaVersion,
             observationsMaxTokens: $observationsMaxTokens,
             reflectionsMaxTokens: $reflectionsMaxTokens,
-            waitTimeoutSeconds: $waitTimeout,
         );
     }
 
@@ -174,7 +164,6 @@ final readonly class OmSettings
             reflectorSchemaVersion: $this->reflectorSchemaVersion,
             observationsMaxTokens: $this->observationsMaxTokens,
             reflectionsMaxTokens: $this->reflectionsMaxTokens,
-            waitTimeoutSeconds: $this->waitTimeoutSeconds,
         );
     }
 
@@ -190,24 +179,6 @@ final readonly class OmSettings
         }
 
         return (int) floor($contextWindow * $ratio);
-    }
-
-    /**
-     * @return array<string, scalar>
-     */
-    public function compactionIdentityParts(): array
-    {
-        return [
-            'observer_model' => $this->observerModel ?? '',
-            'observer_context_window_ratio' => $this->observerContextWindowRatio,
-            'renderer_version' => $this->rendererVersion,
-            'observer_schema_version' => $this->observerSchemaVersion,
-            'reflector_model' => $this->reflectorModel ?? '',
-            'reflector_context_window_ratio' => $this->reflectorContextWindowRatio,
-            'reflector_schema_version' => $this->reflectorSchemaVersion,
-            'observations_max_tokens' => $this->observationsMaxTokens,
-            'reflections_max_tokens' => $this->reflectionsMaxTokens,
-        ];
     }
 
     /**

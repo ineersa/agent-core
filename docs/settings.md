@@ -1554,7 +1554,6 @@ Nested shape only (no flat budget compatibility keys):
 | `reflector.schema_version` | string | `1` | Reflector schema identity. |
 | `pools.observations_max_tokens` | int | `30000` | Active retained-observation pool budget after Reflector. |
 | `pools.reflections_max_tokens` | int | `10000` | Active reflection pool budget after Reflector. |
-| `compaction.wait_timeout_seconds` | int | `180` | CompactRun hook poll timeout waiting on `om.sqlite` result. |
 
 Example (activation surface; tracked project settings omit the class from extensions.enabled):
 
@@ -1579,24 +1578,23 @@ extensions:
             pools:
                 observations_max_tokens: 30000
                 reflections_max_tokens: 10000
-            compaction:
-                wait_timeout_seconds: 180
 ```
 
-Requires async `extension_agent` transport (process controller Doctrine DSN).
-`sync://` dispatch is fail-closed. Compaction uses session-global coverage watermark
-`1..RunState.lastSeq`, deterministic server-side active-memory render (no model
-`replacement_text`), single FIFO Hatfield-managed `extension_agent` worker, and
-native Symfony Messenger default `max_retries: 3` (4 attempts total) with no failure transport. Exhausted jobs emit sanitized
-`extension_agent.job_failed` TUI Error blocks.
+Requires async `extension_agent` transport (process controller Doctrine DSN) for
+Observer/threshold Reflector jobs. `sync://` dispatch is fail-closed. CompactRun
+uses Pi-style instant durable-memory projection (no job wait/timeout). Observer and
+threshold Reflector share a single FIFO Hatfield-managed `extension_agent` worker with
+native Symfony Messenger default `max_retries: 3` (4 attempts total) and no failure
+transport. Exhausted jobs emit sanitized `extension_agent.job_failed` TUI Error blocks.
 
 Ownership and UX notes:
 
 - **Enablement:** listing `ObservationalMemoryExtension` under `extensions.enabled` is
-  the only switch. There is **no** `compaction.mode` and **no** compaction-model
-  inheritance; Observer/Reflector models must be exact `provider/model` values.
+  the only switch. There is **no** `compaction.mode`, **no** compaction wait timeout, and
+  **no** compaction-model inheritance; Observer/Reflector models must be exact
+  `provider/model` values.
 - **Storage gap:** OM SQLite is separate from `events.jsonl`. After worker loss, later
-  boundaries and CompactRun watermark catch-up repair coverage; do not treat OM rows as
+  turn boundaries advance Observer coverage asynchronously; do not treat OM rows as
   a second transcript.
 - **Session-global MVP:** OM is non-branch-aware. Hatfield `/tree` ownership is unchanged
   and does **not** rewind the external OM pool.

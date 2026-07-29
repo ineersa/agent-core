@@ -272,13 +272,11 @@ memory. See `.hatfield/extensions/observational-memory/README.md` and
 
 Normative behavior for implementors (summary):
 
-- **Watermark:** session-global coverage range `1..RunState.lastSeq` frozen under the run lock.
-- **Hot path:** public hook upserts an immutable compaction request fingerprint, dispatches a scalar `extension_agent` job, and polls OM SQLite with `compaction.wait_timeout_seconds` (default 180). No model call on the hook path.
-- **Worker:** catch up Observer through the watermark, always run Reflector for the active candidate set (threshold gate does not apply on compaction), commit a generation, and store a **deterministic PHP** replacement summary (`ActiveMemoryRenderer`). The DB column `replacement_text` holds that PHP render only — Reflector tools must not author free-form summary text.
-- **Cancel / timeout:** terminal `failed` / `timed_out` cancels CompactRun via `context_compaction_failed` and preserves original context (no silent LLM summary fallback). Late worker success after timeout is rejected.
-- **Transport:** Hatfield-managed single FIFO `extension_agent` queue, Symfony native default `max_retries: 3` (4 attempts total), no failure transport. Exhausted jobs emit sanitized `extension_agent.job_failed` TUI Error blocks when `run_id` is present.
-- **Settings:** nested keys only (`observer.*`, `reflector.*`, `pools.*`, `compaction.wait_timeout_seconds`); envelopes use `floor(context_window * context_window_ratio)` (default 0.65), not fixed 12k budgets. No `compaction.mode` gate and no compaction-model inheritance.
-- **Hard failure:** timeout/failed OM compaction cancels CompactRun and preserves original context — no silent LLM summary fallback.
+- **Hot path (Pi-style):** public CompactRun hook opens OM SQLite and deterministically renders current durable active memory (`listActiveReflections` + `listActiveCandidateObservations` → `ActiveMemoryRenderer`). Non-empty → `replaceSummary`; empty → `continue()` so core keep-recent / normal summary may run. No Observer catch-up, Reflector, `extension_agent` dispatch, poll, fingerprint, or timeout on the hook path.
+- **Async consolidation:** turn-boundary Observer remains async and event-backed; Reflector runs only after Observer when active candidate observations exceed `reflect_after_observation_tokens` (default 40000). Consolidation finishing later affects a later compaction.
+- **Transport:** Hatfield-managed single FIFO `extension_agent` queue for Observer/threshold Reflector only, Symfony native default `max_retries: 3` (4 attempts total), no failure transport. Exhausted jobs emit sanitized `extension_agent.job_failed` TUI Error blocks when `run_id` is present.
+- **Settings:** nested keys only (`observer.*`, `reflector.*`, `pools.*`); envelopes use `floor(context_window * context_window_ratio)` (default 0.65). No `compaction.wait_timeout_seconds`, no `compaction.mode`, no compaction-model inheritance.
+- **Hard failure:** DB/read/render failures on the OM hook cancel CompactRun with a privacy-safe reason (no raw exception text) and preserve original context — no silent LLM summary fallback after an extension failure.
 - **Commands / recall:** `/om-status`, `/om-view`, and permanent ambient `recall` tool are extension-owned UX on top of OM SQLite + public session event reads (session-global, non-branch-aware).
 
 ## Manual smoke checklist

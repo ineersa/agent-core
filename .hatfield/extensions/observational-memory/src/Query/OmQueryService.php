@@ -8,7 +8,6 @@ use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
 use Ineersa\Hatfield\ExtensionApi\Session\SessionEventDTO;
 use Ineersa\HatfieldExt\ObservationalMemory\Runtime\OmPaths;
 use Ineersa\HatfieldExt\ObservationalMemory\Runtime\OmSettings;
-use Ineersa\HatfieldExt\ObservationalMemory\Storage\CompactionRepository;
 use Ineersa\HatfieldExt\ObservationalMemory\Storage\MemoryGenerationRepository;
 use Ineersa\HatfieldExt\ObservationalMemory\Storage\ObservationRepository;
 use Ineersa\HatfieldExt\ObservationalMemory\Storage\OmDatabaseFactory;
@@ -38,7 +37,6 @@ final class OmQueryService
         $connection = $this->connect();
         $observations = new ObservationRepository($connection);
         $generations = new MemoryGenerationRepository($connection);
-        $compaction = new CompactionRepository($connection);
 
         $recordedObs = $observations->listObservationsForRun($runId);
         $recordedCount = \count($recordedObs);
@@ -74,9 +72,6 @@ final class OmQueryService
         $reflectAfter = $this->settings->reflectAfterObservationTokens;
         $obsMax = $this->settings->observationsMaxTokens;
         $refMax = $this->settings->reflectionsMaxTokens;
-
-        $counts = $compaction->countRequestsByStatus($runId);
-        $compactionLine = $this->formatCompactionLine($counts);
 
         $lines = [
             '## Observational memory',
@@ -115,7 +110,7 @@ final class OmQueryService
                 $this->formatInt($refMax),
                 $this->percent($reflectionTokens, $refMax),
             ),
-            \sprintf('- **Compaction requests:** %s', $compactionLine),
+            '- **Compaction:** instant projection of current durable memory (no request rows)',
             '',
             '> Durable memory state only; worker and queue liveness are not tracked here.',
         ];
@@ -482,29 +477,6 @@ final class OmQueryService
         $label = 1 === \count($parts) ? 'event' : 'events';
 
         return \sprintf('Sources: %s %s', $label, implode(', ', $parts));
-    }
-
-    /**
-     * @param array{queued:int,running:int,succeeded:int,failed:int,timed_out:int} $counts
-     */
-    private function formatCompactionLine(array $counts): string
-    {
-        $order = [
-            CompactionRepository::STATUS_QUEUED => 'queued',
-            CompactionRepository::STATUS_RUNNING => 'running',
-            CompactionRepository::STATUS_SUCCEEDED => 'succeeded',
-            CompactionRepository::STATUS_FAILED => 'failed',
-            CompactionRepository::STATUS_TIMED_OUT => 'timed_out',
-        ];
-        $parts = [];
-        foreach ($order as $status => $label) {
-            $n = (int) ($counts[$status] ?? 0);
-            if ($n > 0) {
-                $parts[] = \sprintf('%s %s', $this->formatInt($n), $label);
-            }
-        }
-
-        return [] === $parts ? 'none' : implode(' / ', $parts);
     }
 
     private function displayId(string $id): string
