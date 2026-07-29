@@ -94,6 +94,26 @@ compaction:
     #         thinking_level: off
 
 # ---------------------------------------------------------------------------
+# Context-budget wrap-up reminders (transient system guidance)
+# ---------------------------------------------------------------------------
+#
+# One-shot wrap-up reminders after committed llm_step_completed (parent/fork/subagent).
+# CodingAgent after-turn hook queues a user append_message wrapped in
+# <system-reminder>...</system-reminder> via AgentRunner::appendMessage.
+#
+# Metric: that response's provider-reported input_tokens / prompt_tokens.
+# Remaining = context_window - current_response_input.
+# One-shot/reset uses existing agent_command_queued/applied + context_compacted.
+# Missing positive usage or context-window metadata => no reminder.
+#
+context_budget_reminders:
+    # Early advisory once prompt/input usage reaches this absolute size.
+    early_input_tokens: 200000
+
+    # Urgent wrap-up when remaining context drops strictly below this (sole reserve).
+    urgent_remaining_tokens: 25000
+
+# ---------------------------------------------------------------------------
 # Tools
 # ---------------------------------------------------------------------------
 #
