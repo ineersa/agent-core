@@ -26,13 +26,22 @@ class KernelCacheIsolationTest extends IsolatedKernelTestCase
         $this->assertNotNull($kernel, 'Kernel must be booted by IsolatedKernelTestCase::setUp()');
         $cacheDir = $kernel->getCacheDir();
 
-        // Source mode: project-local .hatfield/cache/<env> under the isolated
-        // runtime CWD — no XDG/HOME installed root and no artifact identity.
-        $expected = $this->isolatedCwd().'/.hatfield/cache/test';
+        // Source mode honors HATFIELD_CACHE_DIR override (ParaTest sets a
+        // relative per-worker root) then appends /<env> only — no XDG
+        // installed root and no artifact identity segment.
+        $override = getenv('HATFIELD_CACHE_DIR');
+        if (false !== $override && '' !== $override) {
+            $root = str_starts_with($override, '/')
+                ? $override
+                : $this->isolatedCwd().'/'.$override;
+        } else {
+            $root = $this->isolatedCwd().'/.hatfield/cache';
+        }
+        $expected = $root.'/test';
         $this->assertSame(
             $expected,
             $cacheDir,
-            'Source-checkout cache must stay project-local under .hatfield/cache/test (no installed XDG identity). Got: '.$cacheDir
+            'Source-checkout cache must be override root + /test with no installed XDG identity. Got: '.$cacheDir
         );
     }
 
