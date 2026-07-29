@@ -103,9 +103,6 @@ final class ChatScreen
     /* ── Overlay management ── */
     private ?Tui $tui = null;
 
-    /** At most one temporary extension widget above the editor (not transcript). */
-    private ?AbstractWidget $transientExtensionWidget = null;
-
     /* ── Mount flag ── */
     private bool $mounted = false;
 
@@ -399,8 +396,6 @@ final class ChatScreen
      */
     public function setTranscriptBlocks(array $blocks): void
     {
-        // Full replacement / session switch: drop temporary extension content.
-        $this->clearTransientExtensionWidget();
         $this->transcriptWidget->setBlocks($blocks);
     }
 
@@ -411,10 +406,6 @@ final class ChatScreen
      */
     public function applyTranscriptChangeSet(TranscriptChangeSet $changes): void
     {
-        // Empty poll/status deltas keep transient extension widgets visible.
-        if (!$changes->isEmpty()) {
-            $this->clearTransientExtensionWidget();
-        }
         $this->transcriptWidget->applyChangeSet($changes);
     }
 
@@ -486,37 +477,6 @@ final class ChatScreen
     public function clearTransientReasoningNotice(): void
     {
         $this->setStatus('reasoning', null);
-    }
-
-    /**
-     * Show one temporary extension widget immediately above the editor.
-     *
-     * Replaces any prior transient extension widget. Not part of the canonical
-     * transcript; cleared on the next meaningful conversation transition.
-     */
-    public function showTransientExtensionWidget(AbstractWidget $widget): void
-    {
-        $this->clearTransientExtensionWidget();
-        $this->insertOverlayBeforeEditor($widget);
-        $this->transientExtensionWidget = $widget;
-        $this->requestRender(true);
-    }
-
-    /**
-     * Remove the current temporary extension widget if present.
-     *
-     * Safe when none is shown and safe before mount.
-     */
-    public function clearTransientExtensionWidget(): void
-    {
-        if (null === $this->transientExtensionWidget) {
-            return;
-        }
-
-        $widget = $this->transientExtensionWidget;
-        $this->transientExtensionWidget = null;
-        $this->removeOverlay($widget);
-        $this->requestRender(true);
     }
 
     /**

@@ -30,8 +30,8 @@ use Ineersa\HatfieldExt\ObservationalMemory\Tests\Support\OmDatabaseFactoryTestS
 use PHPUnit\Framework\Attributes\Test;
 
 /**
- * Thesis: /om-status and /om-view read current-run OM SQLite only with privacy-safe aggregates;
- * another run never leaks; empty state is explicit.
+ * Thesis: human /om-status and /om-view read current-run OM SQLite only;
+ * another run never leaks; empty state is explicit; short IDs are displayed.
  */
 final class OmQueryServiceTest extends IsolatedKernelTestCase
 {
@@ -50,7 +50,7 @@ final class OmQueryServiceTest extends IsolatedKernelTestCase
     }
 
     #[Test]
-    public function statusAndViewAreSessionScopedAndPrivacySafe(): void
+    public function statusAndViewAreSessionScopedAndHumanFormatted(): void
     {
         $dbPath = $this->tmpDir.'/om.sqlite';
         $connection = $this->omDatabaseFactory()->connectAndMigrate($dbPath);
@@ -83,7 +83,6 @@ final class OmQueryServiceTest extends IsolatedKernelTestCase
                 'relevance' => 'high',
                 'timestamp' => '2026-07-28 12:00',
                 'token_count' => 12,
-                // Malformed mixed refs must not appear in /om-view sources.
                 'source_refs_json' => json_encode([
                     ['run_id' => 'run-a', 'seq' => 2],
                     ['run_id' => 'run-b', 'seq' => 1],
@@ -92,7 +91,6 @@ final class OmQueryServiceTest extends IsolatedKernelTestCase
             coveredAt: '2026-07-28T12:00:00+00:00',
         );
 
-        // Other run must not appear in run-a status/view.
         $obs->commitChunkPartCoverage(
             coverageKey: 'cov-run-b',
             runId: 'run-b',
@@ -139,7 +137,6 @@ final class OmQueryServiceTest extends IsolatedKernelTestCase
             reflections: [[
                 'reflection_id' => $refId,
                 'content' => 'Commands are hyphenated',
-                // Foreign support id must not display under current-run view.
                 'supporting_observation_ids_json' => json_encode([$obsIdA, $obsIdB], \JSON_THROW_ON_ERROR),
                 'token_count' => 8,
             ]],
@@ -160,9 +157,132 @@ final class OmQueryServiceTest extends IsolatedKernelTestCase
         $settings = OmSettings::fromArray([
             'storage' => ['database' => $dbPath],
             'observer' => ['model' => 'llama_cpp_test/test'],
-            'reflector' => ['model' => 'llama_cpp_test/test'],
+            'reflector' => [
+                'model' => 'llama_cpp_test/test',
+                'reflect_after_observation_tokens' => 40000,
+            ],
+            'pools' => [
+                'observations_max_tokens' => 30000,
+                'reflections_max_tokens' => 10000,
+            ],
         ]);
-        $api = new class($this->tmpDir) implements ExtensionApiInterface {
+        $api = $this->api($this->tmpDir);
+        $service = new OmQueryService($api, $settings);
+
+        $status = $service->formatStatus('run-a');
+        $this->assertStringContainsString('## Observational memory', $status);
+        $this->assertStringContainsString('### Memory', $status);
+        $this->assertStringContainsString('- **Observations:** 1 recorded / 0 dropped / 1 active / 1 visible', $status);
+        $this->assertStringContainsString('- **Reflections:** 1 recorded / 1 visible', $status);
+        $this->assertStringContainsString('- **Coverage:** through event 3', $status);
+        $this->assertStringContainsString('- **Next reflection:** ~9 / 40,000 tokens (0%)', $status);
+        $this->assertStringContainsString('- **Active observation pool:** ~9 / 30,000 max tokens (0%)', $status);
+        $this->assertStringContainsString('- **Reflection pool:** ~8 / 10,000 max tokens (0%)', $status);
+        $this->assertStringContainsString('- **Compaction requests:** 1 queued', $status);
+        $this->assertStringContainsString('> Durable memory state only; worker and queue liveness are not tracked here.', $status);
+        $this->assertStringNotContainsString('max_retries', $status);
+        $this->assertStringNotContainsString('extension_agent', $status);
+        $this->assertStringNotContainsString('SECRET_OTHER_RUN_CONTENT', $status);
+
+        $view = $service->formatView('run-a');
+        $this->assertStringContainsString('## Reflections', $view);
+        $this->assertStringContainsString('## Observations', $view);
+        $this->assertStringContainsString('`[cccccccccccc]`', $view);
+        $this->assertStringContainsString('`[aaaaaaaaaaaa]`', $view);
+        $this->assertStringContainsString('**[high]**', $view);
+        $this->assertStringContainsString('> Sources: event `2`', $view);
+        $this->assertStringContainsString('> Supports observations `[aaaaaaaaaaaa]`', $view);
+        $this->assertStringNotContainsString($obsIdA, $view); // full 64-char id must not appear
+        $this->assertStringNotContainsString($obsIdB, $view);
+        $this->assertStringNotContainsString('SECRET_OTHER_RUN_CONTENT', $view);
+        $this->assertStringNotContainsString('run-b', $view);
+
+        $empty = $service->formatView('run-empty');
+        $this->assertStringContainsString('*No reflections yet.*', $empty);
+        $this->assertStringContainsString('*No observations yet.*', $empty);
+
+        $emptyStatus = $service->formatStatus('run-empty');
+        $this->assertStringContainsString('no events covered yet', $emptyStatus);
+        $this->assertStringContainsString('**Compaction requests:** none', $emptyStatus);
+    }
+
+    #[Test]
+    public function recallAcceptsUniquePrefixAndRejectsAmbiguousOrMissing(): void
+    {
+        $dbPath = $this->tmpDir.'/om-recall.sqlite';
+        $connection = $this->omDatabaseFactory()->connectAndMigrate($dbPath);
+        $obs = new ObservationRepository($connection);
+
+        // Unique at 14 chars; share first 13 so a 13-char recall is ambiguous.
+        $id1 = 'aaaaaaaaaaaaa1'.str_repeat('1', 50);
+        $id2 = 'aaaaaaaaaaaaa2'.str_repeat('2', 50);
+        $obs->commitChunkPartCoverage(
+            coverageKey: 'cov-prefix',
+            runId: 'run-prefix',
+            boundaryKey: 'b1',
+            sourceStartSeq: 1,
+            sourceEndSeq: 2,
+            chunkKey: 'chunk-1',
+            partIndex: 1,
+            partCount: 1,
+            sourceDigest: 'd1',
+            partDigest: 'p1',
+            rendererVersion: '1',
+            observerSchemaVersion: '1',
+            observerModel: 'llama_cpp_test/test',
+            observations: [
+                [
+                    'observation_id' => $id1,
+                    'content' => 'first',
+                    'content_hash' => hash('sha256', 'first'),
+                    'relevance' => 'medium',
+                    'timestamp' => '2026-07-28 12:00',
+                    'token_count' => 1,
+                    'source_refs_json' => json_encode([['run_id' => 'run-prefix', 'seq' => 1]], \JSON_THROW_ON_ERROR),
+                ],
+                [
+                    'observation_id' => $id2,
+                    'content' => 'second',
+                    'content_hash' => hash('sha256', 'second'),
+                    'relevance' => 'low',
+                    'timestamp' => '2026-07-28 12:01',
+                    'token_count' => 1,
+                    'source_refs_json' => json_encode([['run_id' => 'run-prefix', 'seq' => 2]], \JSON_THROW_ON_ERROR),
+                ],
+            ],
+            coveredAt: '2026-07-28T12:00:00+00:00',
+        );
+
+        $service = new OmQueryService(
+            $this->api($this->tmpDir),
+            OmSettings::fromArray([
+                'storage' => ['database' => $dbPath],
+                'observer' => ['model' => 'llama_cpp_test/test'],
+                'reflector' => ['model' => 'llama_cpp_test/test'],
+            ]),
+        );
+
+        $unique = $service->recall('run-prefix', substr($id1, 0, 14));
+        $this->assertTrue($unique['ok']);
+        $this->assertSame('observation', $unique['kind']);
+        $this->assertSame($id1, $unique['id']);
+
+        $ambiguous = $service->recall('run-prefix', substr($id1, 0, 13));
+        $this->assertFalse($ambiguous['ok']);
+        $this->assertSame('ambiguous_id', $ambiguous['error']);
+
+        $missing = $service->recall('run-prefix', str_repeat('f', 12));
+        $this->assertFalse($missing['ok']);
+        $this->assertSame('not_found', $missing['error']);
+
+        $invalid = $service->recall('run-prefix', 'short');
+        $this->assertFalse($invalid['ok']);
+        $this->assertSame('invalid_id', $invalid['error']);
+    }
+
+    private function api(string $cwd): ExtensionApiInterface
+    {
+        return new class($cwd) implements ExtensionApiInterface {
             public function __construct(private string $cwd)
             {
             }
@@ -237,31 +357,6 @@ final class OmQueryServiceTest extends IsolatedKernelTestCase
                 throw new \LogicException('unused');
             }
         };
-
-        $service = new OmQueryService($api, $settings);
-
-        $status = $service->formatStatus('run-a');
-        $this->assertStringContainsString('Hatfield-managed single FIFO extension_agent', $status);
-        $this->assertStringContainsString('max_retries: 1', $status);
-        $this->assertStringContainsString('failure_transport: none', $status);
-        $this->assertStringContainsString('covered_through_seq: 3', $status);
-        $this->assertStringContainsString('generation_id: gen-a', $status);
-        $this->assertStringContainsString('queued: 1', $status);
-        $this->assertStringNotContainsString('SECRET_OTHER_RUN_CONTENT', $status);
-        $this->assertStringNotContainsString('api_key', $status);
-        $this->assertStringNotContainsString('provider credential', $status);
-
-        $view = $service->formatView('run-a');
-        $this->assertStringContainsString($refId, $view);
-        $this->assertStringContainsString($obsIdA, $view);
-        $this->assertStringContainsString('(run-a,2)', $view);
-        $this->assertStringNotContainsString('(run-b,1)', $view);
-        $this->assertStringNotContainsString($obsIdB, $view);
-        $this->assertStringNotContainsString('SECRET_OTHER_RUN_CONTENT', $view);
-
-        $empty = $service->formatView('run-empty');
-        $this->assertStringContainsString('Active generation: none', $empty);
-        $this->assertStringContainsString('(none)', $empty);
     }
 
     private function omDatabaseFactory(): OmDatabaseFactoryTestService

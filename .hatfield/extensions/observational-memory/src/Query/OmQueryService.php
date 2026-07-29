@@ -22,7 +22,9 @@ use Psr\Log\NullLogger;
  */
 final class OmQueryService
 {
-    private const string ID_PATTERN = '/^[a-f0-9]{64}$/';
+    private const string ID_PATTERN = '/^[a-f0-9]{12,64}$/';
+
+    private const int DISPLAY_ID_LEN = 12;
 
     public function __construct(
         private readonly ExtensionApiInterface $api,
@@ -31,216 +33,167 @@ final class OmQueryService
     ) {
     }
 
-    /**
-     * Structured status snapshot for rich transient widgets.
-     *
-     * @return array{
-     *   covered_through_seq: ?int,
-     *   active_generation_id: ?string,
-     *   reflection_count: int,
-     *   reflection_tokens: int,
-     *   reflections_max_tokens: int,
-     *   observation_count: int,
-     *   observation_tokens: int,
-     *   observations_max_tokens: int,
-     *   compaction: array{queued:int,running:int,succeeded:int,failed:int,timed_out:int}
-     * }
-     */
-    public function statusData(string $runId): array
+    public function formatStatus(string $runId): string
     {
         $connection = $this->connect();
         $observations = new ObservationRepository($connection);
         $generations = new MemoryGenerationRepository($connection);
         $compaction = new CompactionRepository($connection);
 
+        $recordedObs = $observations->listObservationsForRun($runId);
+        $recordedCount = \count($recordedObs);
+        $candidate = $observations->activeCandidateSet($runId);
+        $activeObs = $candidate['observations'] ?? [];
+        $activeCount = \count($activeObs);
+        $droppedCount = max(0, $recordedCount - $activeCount);
+        $activeTokens = (int) ($candidate['token_count'] ?? 0);
+
+        $activeGenerationId = $generations->activeGenerationId($runId);
+        $visibleObsCount = 0;
+        if (null !== $activeGenerationId) {
+            $visibleObsCount = \count($generations->listRetainedObservationIds($activeGenerationId));
+        }
+
+        $recordedRefCount = $generations->countReflectionsForRun($runId);
+        $activeReflections = $generations->listActiveReflections($runId);
+        $visibleRefCount = \count($activeReflections);
+        $reflectionTokens = 0;
+        foreach ($activeReflections as $reflection) {
+            $reflectionTokens += (int) ($reflection['token_count'] ?? 0);
+        }
+
         $covered = $observations->contiguousCoveredEndSeq(
             $runId,
             $this->settings->rendererVersion,
             $this->settings->observerSchemaVersion,
         );
-        $activeGenerationId = $generations->activeGenerationId($runId);
-        $reflections = $generations->listActiveReflections($runId);
-        $candidate = $observations->activeCandidateSet($runId);
+        $coverageLine = null === $covered || $covered < 1
+            ? 'no events covered yet'
+            : \sprintf('through event %s', $this->formatInt($covered));
+
+        $reflectAfter = $this->settings->reflectAfterObservationTokens;
+        $obsMax = $this->settings->observationsMaxTokens;
+        $refMax = $this->settings->reflectionsMaxTokens;
+
         $counts = $compaction->countRequestsByStatus($runId);
+        $compactionLine = $this->formatCompactionLine($counts);
 
-        $reflectionTokens = 0;
-        foreach ($reflections as $reflection) {
-            $reflectionTokens += (int) ($reflection['token_count'] ?? 0);
-        }
-
-        return [
-            'covered_through_seq' => $covered,
-            'active_generation_id' => $activeGenerationId,
-            'reflection_count' => \count($reflections),
-            'reflection_tokens' => $reflectionTokens,
-            'reflections_max_tokens' => $this->settings->reflectionsMaxTokens,
-            'observation_count' => \count($candidate['observations'] ?? []),
-            'observation_tokens' => (int) ($candidate['token_count'] ?? 0),
-            'observations_max_tokens' => $this->settings->observationsMaxTokens,
-            'compaction' => [
-                'queued' => $counts[CompactionRepository::STATUS_QUEUED] ?? 0,
-                'running' => $counts[CompactionRepository::STATUS_RUNNING] ?? 0,
-                'succeeded' => $counts[CompactionRepository::STATUS_SUCCEEDED] ?? 0,
-                'failed' => $counts[CompactionRepository::STATUS_FAILED] ?? 0,
-                'timed_out' => $counts[CompactionRepository::STATUS_TIMED_OUT] ?? 0,
-            ],
-        ];
-    }
-
-    public function formatStatus(string $runId): string
-    {
-        $data = $this->statusData($runId);
         $lines = [
-            'Observational memory status',
+            '## Observational memory',
             '',
-            'Topology',
-            '- worker: Hatfield-managed single FIFO extension_agent',
-            '- max_retries: 1',
-            '- failure_transport: none',
-            '',
-            'Coverage',
-            null === $data['covered_through_seq']
-                ? '- covered_through_seq: none'
-                : \sprintf('- covered_through_seq: %d', $data['covered_through_seq']),
-            '  (OM contiguous watermark only; does not claim canonical completeness)',
-            '',
-            'Active generation',
-            null === $data['active_generation_id']
-                ? '- generation_id: none'
-                : \sprintf('- generation_id: %s', $data['active_generation_id']),
+            '### Memory',
             \sprintf(
-                '- reflections: %d tokens / limit %d (count %d)',
-                $data['reflection_tokens'],
-                $data['reflections_max_tokens'],
-                $data['reflection_count'],
+                '- **Observations:** %s recorded / %s dropped / %s active / %s visible',
+                $this->formatInt($recordedCount),
+                $this->formatInt($droppedCount),
+                $this->formatInt($activeCount),
+                $this->formatInt($visibleObsCount),
             ),
             \sprintf(
-                '- candidate observations: %d tokens / limit %d (count %d)',
-                $data['observation_tokens'],
-                $data['observations_max_tokens'],
-                $data['observation_count'],
+                '- **Reflections:** %s recorded / %s visible',
+                $this->formatInt($recordedRefCount),
+                $this->formatInt($visibleRefCount),
             ),
+            \sprintf('- **Coverage:** %s', $coverageLine),
             '',
-            'Compaction requests (durable OM SQLite)',
-            \sprintf('- queued: %d', $data['compaction']['queued']),
-            \sprintf('- running: %d', $data['compaction']['running']),
-            \sprintf('- succeeded: %d', $data['compaction']['succeeded']),
-            \sprintf('- failed: %d', $data['compaction']['failed']),
-            \sprintf('- timed_out: %d', $data['compaction']['timed_out']),
+            '### Activity',
+            \sprintf(
+                '- **Next reflection:** ~%s / %s tokens (%d%%)',
+                $this->formatInt($activeTokens),
+                $this->formatInt($reflectAfter),
+                $this->percent($activeTokens, $reflectAfter),
+            ),
+            \sprintf(
+                '- **Active observation pool:** ~%s / %s max tokens (%d%%)',
+                $this->formatInt($activeTokens),
+                $this->formatInt($obsMax),
+                $this->percent($activeTokens, $obsMax),
+            ),
+            \sprintf(
+                '- **Reflection pool:** ~%s / %s max tokens (%d%%)',
+                $this->formatInt($reflectionTokens),
+                $this->formatInt($refMax),
+                $this->percent($reflectionTokens, $refMax),
+            ),
+            \sprintf('- **Compaction requests:** %s', $compactionLine),
+            '',
+            '> Durable memory state only; worker and queue liveness are not tracked here.',
         ];
 
         return implode("\n", $lines);
     }
 
-    /**
-     * Structured view snapshot for rich transient widgets.
-     *
-     * @return array{
-     *   active_generation_id: ?string,
-     *   reflections: list<array{reflection_id:string,content:string,supporting_observation_ids:list<string>}>,
-     *   observations: list<array{observation_id:string,timestamp:string,relevance:string,content:string,source_refs:list<array{run_id:string,seq:int}>}>
-     * }
-     */
-    public function viewData(string $runId): array
+    public function formatView(string $runId): string
     {
         $connection = $this->connect();
         $observations = new ObservationRepository($connection);
         $generations = new MemoryGenerationRepository($connection);
 
-        $activeGenerationId = $generations->activeGenerationId($runId);
         $reflections = $generations->listActiveReflections($runId);
         $candidates = $observations->listActiveCandidateObservations($runId);
 
-        $reflectionRows = [];
-        foreach ($reflections as $reflection) {
-            $support = $this->currentRunSupportIds(
-                $observations,
-                $runId,
-                $this->decodeStringList((string) ($reflection['supporting_observation_ids_json'] ?? '[]')),
-            );
-            $reflectionRows[] = [
-                'reflection_id' => (string) $reflection['reflection_id'],
-                'content' => $this->condense((string) $reflection['content']),
-                'supporting_observation_ids' => $support,
-            ];
+        $lines = [
+            '## Reflections',
+            '',
+        ];
+
+        if ([] === $reflections) {
+            $lines[] = '*No reflections yet.*';
+        } else {
+            foreach ($reflections as $reflection) {
+                $support = $this->currentRunSupportIds(
+                    $observations,
+                    $runId,
+                    $this->decodeStringList((string) ($reflection['supporting_observation_ids_json'] ?? '[]')),
+                );
+                $lines[] = \sprintf(
+                    '`[%s]` %s',
+                    $this->displayId((string) $reflection['reflection_id']),
+                    $this->condense((string) $reflection['content']),
+                );
+                if ([] === $support) {
+                    $lines[] = '> Supports observations *(none)*';
+                } else {
+                    $parts = [];
+                    foreach ($support as $supportId) {
+                        $parts[] = \sprintf('`[%s]`', $this->displayId($supportId));
+                    }
+                    $lines[] = '> Supports observations '.implode(', ', $parts);
+                }
+                $lines[] = '';
+            }
         }
 
-        $observationRows = [];
-        foreach ($candidates as $observation) {
-            $observationRows[] = [
-                'observation_id' => (string) $observation['observation_id'],
-                'timestamp' => (string) $observation['timestamp'],
-                'relevance' => (string) $observation['relevance'],
-                'content' => $this->condense((string) $observation['content']),
-                'source_refs' => $this->currentRunSourceRefs(
+        $lines[] = '## Observations';
+        $lines[] = '';
+        if ([] === $candidates) {
+            $lines[] = '*No observations yet.*';
+        } else {
+            foreach ($candidates as $observation) {
+                $refs = $this->currentRunSourceRefs(
                     $runId,
                     $this->decodeSourceRefs((string) ($observation['source_refs_json'] ?? '[]')),
-                ),
-            ];
-        }
-
-        return [
-            'active_generation_id' => $activeGenerationId,
-            'reflections' => $reflectionRows,
-            'observations' => $observationRows,
-        ];
-    }
-
-    public function formatView(string $runId): string
-    {
-        $data = $this->viewData($runId);
-
-        $lines = [
-            'Observational memory view',
-            '',
-            null === $data['active_generation_id']
-                ? 'Active generation: none'
-                : \sprintf('Active generation: %s', $data['active_generation_id']),
-            '',
-            '## Reflections',
-        ];
-
-        if ([] === $data['reflections']) {
-            $lines[] = '(none)';
-        } else {
-            foreach ($data['reflections'] as $reflection) {
-                $lines[] = \sprintf(
-                    '- [%s] %s',
-                    $reflection['reflection_id'],
-                    $reflection['content'],
                 );
                 $lines[] = \sprintf(
-                    '  supporting: %s',
-                    [] === $reflection['supporting_observation_ids']
-                        ? '(none)'
-                        : implode(', ', $reflection['supporting_observation_ids']),
+                    '`[%s]` %s **[%s]** %s',
+                    $this->displayId((string) $observation['observation_id']),
+                    (string) $observation['timestamp'],
+                    (string) $observation['relevance'],
+                    $this->condense((string) $observation['content']),
                 );
+                $lines[] = '> '.$this->formatSourcesHuman($refs);
+                $lines[] = '';
             }
         }
 
-        $lines[] = '';
-        $lines[] = '## Observations';
-        if ([] === $data['observations']) {
-            $lines[] = '(none)';
-        } else {
-            foreach ($data['observations'] as $observation) {
-                $refs = $this->formatSourceRefsList($observation['source_refs']);
-                $lines[] = \sprintf(
-                    '- [%s] %s [%s] %s',
-                    $observation['observation_id'],
-                    $observation['timestamp'],
-                    $observation['relevance'],
-                    $observation['content'],
-                );
-                $lines[] = \sprintf('  sources: %s', $refs);
-            }
-        }
-
-        return implode("\n", $lines);
+        return rtrim(implode("\n", $lines));
     }
 
     /**
-     * Exact recall for one observation or reflection id in the current run.
+     * Exact or unique prefix recall for one observation or reflection id in the current run.
+     *
+     * Accepts lowercase hex prefixes of length 12..64. Resolves at most one match
+     * across observations and reflections separately; ambiguous or missing ids fail closed.
      *
      * @return array<string, mixed>
      */
@@ -251,7 +204,7 @@ final class OmQueryService
             return [
                 'ok' => false,
                 'error' => 'invalid_id',
-                'message' => 'id must be a lowercase 64-character hex SHA-256.',
+                'message' => 'id must be a lowercase hex string of 12 to 64 characters.',
             ];
         }
 
@@ -259,27 +212,43 @@ final class OmQueryService
         $observations = new ObservationRepository($connection);
         $generations = new MemoryGenerationRepository($connection);
 
-        $observation = $observations->findObservation($runId, $id);
-        if (null !== $observation) {
+        $obsMatches = $observations->findObservationsByIdPrefix($runId, $id);
+        if (\count($obsMatches) > 1) {
+            return [
+                'ok' => false,
+                'error' => 'ambiguous_id',
+                'message' => 'Multiple observations match that id prefix in the current session.',
+            ];
+        }
+        if (1 === \count($obsMatches)) {
+            $observation = $obsMatches[0];
+            $fullId = $observation['observation_id'];
             $refs = $this->currentRunSourceRefs(
                 $runId,
-                $this->decodeSourceRefs((string) $observation['source_refs_json']),
+                $this->decodeSourceRefs($observation['source_refs_json']),
             );
 
             return [
                 'ok' => true,
                 'kind' => 'observation',
-                'id' => $id,
-                'content' => (string) $observation['content'],
-                'timestamp' => (string) $observation['timestamp'],
-                'relevance' => (string) $observation['relevance'],
+                'id' => $fullId,
+                'content' => $observation['content'],
+                'timestamp' => $observation['timestamp'],
+                'relevance' => $observation['relevance'],
                 'source_refs' => $refs,
                 'events' => $this->loadEventsForRefs($runId, $refs),
             ];
         }
 
-        $reflection = $generations->findReflection($runId, $id);
-        if (null === $reflection) {
+        $refMatches = $generations->findReflectionsByIdPrefix($runId, $id);
+        if (\count($refMatches) > 1) {
+            return [
+                'ok' => false,
+                'error' => 'ambiguous_id',
+                'message' => 'Multiple reflections match that id prefix in the current session.',
+            ];
+        }
+        if ([] === $refMatches) {
             return [
                 'ok' => false,
                 'error' => 'not_found',
@@ -287,6 +256,8 @@ final class OmQueryService
             ];
         }
 
+        $reflection = $refMatches[0];
+        $fullId = (string) $reflection['reflection_id'];
         $supportIds = $this->currentRunSupportIds(
             $observations,
             $runId,
@@ -319,7 +290,7 @@ final class OmQueryService
         return [
             'ok' => true,
             'kind' => 'reflection',
-            'id' => $id,
+            'id' => $fullId,
             'content' => (string) $reflection['content'],
             'supporting_observation_ids' => $supportIds,
             'source_refs' => $refs,
@@ -455,23 +426,6 @@ final class OmQueryService
 
     /**
      * @param list<array{run_id: string, seq: int}> $refs
-     */
-    private function formatSourceRefsList(array $refs): string
-    {
-        if ([] === $refs) {
-            return '(none)';
-        }
-
-        $parts = [];
-        foreach ($refs as $ref) {
-            $parts[] = \sprintf('(%s,%d)', $ref['run_id'], $ref['seq']);
-        }
-
-        return implode(', ', $parts);
-    }
-
-    /**
-     * @param list<array{run_id: string, seq: int}> $refs
      *
      * @return list<array{run_id: string, seq: int}>
      */
@@ -512,6 +466,71 @@ final class OmQueryService
         }
 
         return $out;
+    }
+
+    /**
+     * @param list<array{run_id: string, seq: int}> $refs
+     */
+    private function formatSourcesHuman(array $refs): string
+    {
+        if ([] === $refs) {
+            return 'Sources: *(none)*';
+        }
+
+        $parts = [];
+        foreach ($refs as $ref) {
+            $parts[] = \sprintf('`%d`', $ref['seq']);
+        }
+        $label = 1 === \count($parts) ? 'event' : 'events';
+
+        return \sprintf('Sources: %s %s', $label, implode(', ', $parts));
+    }
+
+    /**
+     * @param array{queued:int,running:int,succeeded:int,failed:int,timed_out:int} $counts
+     */
+    private function formatCompactionLine(array $counts): string
+    {
+        $order = [
+            CompactionRepository::STATUS_QUEUED => 'queued',
+            CompactionRepository::STATUS_RUNNING => 'running',
+            CompactionRepository::STATUS_SUCCEEDED => 'succeeded',
+            CompactionRepository::STATUS_FAILED => 'failed',
+            CompactionRepository::STATUS_TIMED_OUT => 'timed_out',
+        ];
+        $parts = [];
+        foreach ($order as $status => $label) {
+            $n = (int) ($counts[$status] ?? 0);
+            if ($n > 0) {
+                $parts[] = \sprintf('%s %s', $this->formatInt($n), $label);
+            }
+        }
+
+        return [] === $parts ? 'none' : implode(' / ', $parts);
+    }
+
+    private function displayId(string $id): string
+    {
+        $id = strtolower($id);
+        if (\strlen($id) <= self::DISPLAY_ID_LEN) {
+            return $id;
+        }
+
+        return substr($id, 0, self::DISPLAY_ID_LEN);
+    }
+
+    private function formatInt(int $value): string
+    {
+        return number_format($value, 0, '.', ',');
+    }
+
+    private function percent(int $numerator, int $denominator): int
+    {
+        if ($denominator <= 0) {
+            return 0;
+        }
+
+        return (int) round(($numerator / $denominator) * 100);
     }
 
     private function condense(string $content): string

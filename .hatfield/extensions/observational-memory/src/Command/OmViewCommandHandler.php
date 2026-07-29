@@ -6,10 +6,9 @@ namespace Ineersa\HatfieldExt\ObservationalMemory\Command;
 
 use Ineersa\Hatfield\ExtensionApi\Command\CommandContextInterface;
 use Ineersa\Hatfield\ExtensionApi\Command\ExtensionCommandHandlerInterface;
-use Ineersa\Hatfield\ExtensionApi\Tui\TransientTuiExtensionContextInterface;
+use Ineersa\Hatfield\ExtensionApi\Command\MarkdownCommandContextInterface;
 use Ineersa\HatfieldExt\ObservationalMemory\Query\OmQueryService;
 use Ineersa\HatfieldExt\ObservationalMemory\Query\OmSessionContext;
-use Ineersa\HatfieldExt\ObservationalMemory\Tui\OmTransientWidgetFactory;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 
@@ -27,18 +26,15 @@ final class OmViewCommandHandler implements ExtensionCommandHandlerInterface
         $runId = null;
         try {
             $runId = $this->sessionContext->requireSessionId();
-            $tui = $this->sessionContext->tui();
-            if ($tui instanceof TransientTuiExtensionContextInterface) {
-                // Rich temporary widget above the editor; not transcript history.
-                $tui->showTransientWidget(
-                    OmTransientWidgetFactory::view($tui, $this->query->viewData($runId)),
-                );
+            $text = $this->query->formatView($runId);
+            if ($context instanceof MarkdownCommandContextInterface) {
+                $context->notifyMarkdown($text);
 
                 return;
             }
 
-            // Older hosts without the richer TUI surface keep plain notify().
-            $context->notify($this->query->formatView($runId), 'info');
+            // Older hosts without MarkdownCommandContextInterface keep plain notify().
+            $context->notify($text, 'info');
         } catch (\Throwable) {
             // Never surface raw exception text (paths/content). Structured log only.
             // Capture run_id before try so a throwing lazy getSessionId() cannot rethrow in catch.

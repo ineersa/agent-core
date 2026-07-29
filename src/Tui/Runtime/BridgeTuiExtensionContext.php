@@ -5,19 +5,16 @@ declare(strict_types=1);
 namespace Ineersa\Tui\Runtime;
 
 use Ineersa\CodingAgent\Runtime\Protocol\TurnTreeNodeView;
-use Ineersa\Hatfield\ExtensionApi\Tui\TransientTuiExtensionContextInterface;
-use Ineersa\Hatfield\ExtensionApi\Tui\TuiSemanticColorEnum;
+use Ineersa\Hatfield\ExtensionApi\Tui\TuiExtensionContextInterface;
 use Ineersa\Tui\Picker\PickerListLabelFormatter;
 use Ineersa\Tui\Picker\TreePickerController;
-use Ineersa\Tui\Theme\ThemeColorEnum;
-use Symfony\Component\Tui\Style\Style;
 use Symfony\Component\Tui\Tui;
 use Symfony\Component\Tui\Widget\AbstractWidget;
 
 /**
  * Adapts {@see TuiRuntimeContext} to the public ExtensionApi TUI contract.
  */
-final readonly class BridgeTuiExtensionContext implements TransientTuiExtensionContextInterface
+final readonly class BridgeTuiExtensionContext implements TuiExtensionContextInterface
 {
     public function __construct(
         private TuiRuntimeContext $runtime,
@@ -89,36 +86,5 @@ final readonly class BridgeTuiExtensionContext implements TransientTuiExtensionC
         }
 
         return $rows;
-    }
-
-    public function showTransientWidget(AbstractWidget $widget): void
-    {
-        $this->runtime->screen->showTransientExtensionWidget($widget);
-        $this->requestRender(true);
-    }
-
-    public function createTextStyle(
-        TuiSemanticColorEnum $color = TuiSemanticColorEnum::Text,
-        bool $dim = false,
-        bool $italic = false,
-    ): Style {
-        $themeColor = match ($color) {
-            TuiSemanticColorEnum::Text => ThemeColorEnum::Text,
-            TuiSemanticColorEnum::Muted => ThemeColorEnum::Muted,
-            TuiSemanticColorEnum::Accent => ThemeColorEnum::Accent,
-            TuiSemanticColorEnum::Success => ThemeColorEnum::Success,
-            TuiSemanticColorEnum::Warning => ThemeColorEnum::Warning,
-            TuiSemanticColorEnum::Error => ThemeColorEnum::Error,
-        };
-        $colorSpec = $this->runtime->screen->theme()->getPalette()->get($themeColor);
-        $style = '' !== $colorSpec ? new Style(color: $colorSpec) : new Style();
-        if ($dim) {
-            $style = $style->withDim(true);
-        }
-        if ($italic) {
-            $style = $style->withItalic(true);
-        }
-
-        return $style;
     }
 }

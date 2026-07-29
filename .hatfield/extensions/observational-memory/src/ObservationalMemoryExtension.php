@@ -109,15 +109,15 @@ final class ObservationalMemoryExtension implements HatfieldExtensionInterface, 
                 'properties' => [
                     'id' => [
                         'type' => 'string',
-                        'pattern' => '^[a-f0-9]{64}$',
-                        'description' => 'Lowercase full SHA-256 observation or reflection id.',
+                        'pattern' => '^[a-f0-9]{12,64}$',
+                        'description' => 'Lowercase hex observation or reflection id (full 64-char SHA-256 or unique 12–64 char prefix).',
                     ],
                 ],
             ],
             handler: new RecallToolHandler($query),
-            promptSummary: 'recall: resolve exact OM observation/reflection source events by id',
+            promptSummary: 'recall: resolve exact OM observation/reflection source events by id or unique short prefix',
             promptGuidelines: [
-                'Use recall only with a known observation or reflection id from active memory.',
+                'Use recall only with a known observation or reflection id from active memory (full id or unique 12+ hex prefix).',
                 'Do not use recall as broad search; request exact source context only when needed.',
             ],
         ));

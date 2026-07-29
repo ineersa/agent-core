@@ -92,48 +92,35 @@ final class TuiOmCommandsE2eTest extends IsolatedKernelTestCase
             $this->tmux->sendLiteral($pane, '/om-status');
             $this->tmux->sendKey($pane, 'Enter');
 
-            // Rich transient widget is above the editor; assert current viewport only.
+            // Local command result is an in-memory transcript Markdown block.
             $statusViewport = $this->waitForViewport(
                 $pane,
-                static fn (string $cap): bool => str_contains($cap, 'Observational memory status')
-                    && str_contains($cap, 'Hatfield-managed single FIFO')
-                    && str_contains($cap, 'covered_through_seq'),
+                static fn (string $cap): bool => str_contains($cap, 'Observational memory')
+                    && str_contains($cap, 'Observations:')
+                    && str_contains($cap, 'Coverage:'),
                 timeout: 12.0,
                 message: '/om-status report not visible in current viewport',
             );
-            $this->assertStringContainsString('Observational memory status', $statusViewport);
-            $this->assertStringContainsString('Hatfield-managed single FIFO', $statusViewport);
+            $this->assertStringContainsString('Observational memory', $statusViewport);
+            $this->assertStringContainsString('Durable memory state only', $statusViewport);
 
             $this->tmux->sendKey($pane, 'C-u');
             $this->tmux->sendLiteral($pane, '/om-view');
             $this->tmux->sendKey($pane, 'Enter');
 
+            $shortId = substr($this->observationId, 0, 12);
             $viewViewport = $this->waitForViewport(
                 $pane,
-                fn (string $cap): bool => str_contains($cap, 'Observational memory view')
-                    && str_contains($cap, $this->observationId)
+                static fn (string $cap): bool => str_contains($cap, 'Observations')
+                    && str_contains($cap, $shortId)
                     && str_contains($cap, 'hyphenated commands'),
                 timeout: 12.0,
                 message: '/om-view report not visible in current viewport',
             );
-            $this->assertStringContainsString('Observational memory view', $viewViewport);
-            $this->assertStringContainsString($this->observationId, $viewViewport);
+            $this->assertStringContainsString('Observations', $viewViewport);
+            $this->assertStringContainsString($shortId, $viewViewport);
             $this->assertStringContainsString('hyphenated commands', $viewViewport);
-            // Status widget must be replaced by view (single transient slot).
-            $this->assertStringNotContainsString('Hatfield-managed single FIFO', $viewViewport);
-
-            // Next meaningful submit clears the temporary OM widget from the current viewport.
-            $this->tmux->sendKey($pane, 'C-u');
-            $this->tmux->sendLiteral($pane, 'clear om transient');
-            $this->tmux->sendKey($pane, 'Enter');
-            $this->waitForViewport(
-                $pane,
-                fn (string $cap): bool => str_contains($cap, 'clear om transient')
-                    && !str_contains($cap, 'Observational memory view')
-                    && !str_contains($cap, $this->observationId),
-                timeout: 12.0,
-                message: 'OM transient widget remained in current viewport after next submit',
-            );
+            $this->assertStringContainsString('Sources:', $viewViewport);
 
             $this->saveAnsiSnapshot($pane, 'om-commands-smoke');
             $this->tmux->sendKey($pane, 'C-d');

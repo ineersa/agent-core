@@ -1587,7 +1587,7 @@ Requires async `extension_agent` transport (process controller Doctrine DSN).
 `sync://` dispatch is fail-closed. Compaction uses session-global coverage watermark
 `1..RunState.lastSeq`, deterministic server-side active-memory render (no model
 `replacement_text`), single FIFO Hatfield-managed `extension_agent` worker, and
-`max_retries: 1` with no failure transport. Exhausted jobs emit sanitized
+native Symfony Messenger default `max_retries: 3` (4 attempts total) with no failure transport. Exhausted jobs emit sanitized
 `extension_agent.job_failed` TUI Error blocks.
 
 Ownership and UX notes:

@@ -62,7 +62,7 @@ CompactRun prepares the public hook context. Contiguous coverage never uses
   (default 180).
 - Timeout transitions request to terminal `timed_out` and preserves original messages.
 - Late worker success after `timed_out` is rejected (no generation promotion / no reusable result).
-- `extension_agent` uses `max_retries: 1` and **no** failure transport.
+- `extension_agent` uses Symfony Messenger native default `max_retries: 3` (4 attempts total) and **no** failure transport.
 - Exhausted jobs emit sanitized transient runtime event `extension_agent.job_failed`
   (seq=0) and a TUI Error block when `payload.run_id` is present.
 
@@ -134,8 +134,7 @@ composer update ineersa/hatfield-ext-observational-memory
 ## Commands and recall
 
 - `/om-status` — durable OM aggregates for the current session plus honest static
-  topology (`Hatfield-managed single FIFO extension_agent`, `max_retries: 1`,
-  `failure_transport: none`). Does **not** invent Messenger pending/retry/liveness counts.
+  durable SQLite memory metrics only (worker/queue liveness not tracked). Does **not** invent Messenger pending/retry/liveness counts.
 - `/om-view` — active generation reflections and active candidate observations with
   full 64-char OM ids, relevance/timestamp, and exact `(run_id,seq)` source refs.
 - `recall` — permanent ambient tool; exact one-id lookup (lowercase 64-char SHA-256)

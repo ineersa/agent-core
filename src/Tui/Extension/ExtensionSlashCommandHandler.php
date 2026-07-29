@@ -19,7 +19,8 @@ use Ineersa\Tui\Command\TranscriptMessage;
  * delegates to the extension handler, then maps the collected
  * messages into the appropriate TUI CommandResult (NoOp when
  * nothing was notified, or TranscriptMessage with severity-mapped
- * role/style).
+ * role/style). Markdown notifications use style 'markdown' unless
+ * warning/error severity wins.
  */
 final class ExtensionSlashCommandHandler implements SlashCommandHandler
 {
@@ -47,6 +48,8 @@ final class ExtensionSlashCommandHandler implements SlashCommandHandler
             $style = 'error';
         } elseif ($context->highestSeverity >= 2) {
             $style = 'accent';
+        } elseif ($context->preferMarkdown) {
+            $style = 'markdown';
         }
 
         return new TranscriptMessage($text, $role, $style);

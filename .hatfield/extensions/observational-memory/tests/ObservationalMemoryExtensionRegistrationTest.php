@@ -119,6 +119,6 @@ final class ObservationalMemoryExtensionRegistrationTest extends TestCase
         $this->assertSame(['om-status', 'om-view'], $names);
         $this->assertCount(1, $tools);
         $this->assertSame('recall', $tools[0]->name);
-        $this->assertSame('^[a-f0-9]{64}$', $tools[0]->parametersJsonSchema['properties']['id']['pattern'] ?? null);
+        $this->assertSame('^[a-f0-9]{12,64}$', $tools[0]->parametersJsonSchema['properties']['id']['pattern'] ?? null);
     }
 }

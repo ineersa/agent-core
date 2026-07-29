@@ -253,4 +253,31 @@ final class TuiCommandRegistryAdapterTest extends TestCase
         $this->assertSame('error', $result->role);
         $this->assertSame('error', $result->style);
     }
+
+    public function testNotifyMarkdownProducesMarkdownStyle(): void
+    {
+        $slashRegistry = new SlashCommandRegistry();
+        $adapter = new TuiCommandRegistryAdapter($slashRegistry);
+
+        $handler = new readonly class implements ExtensionCommandHandlerInterface {
+            public function handle(string $args, CommandContextInterface $context): void
+            {
+                if ($context instanceof \Ineersa\Hatfield\ExtensionApi\Command\MarkdownCommandContextInterface) {
+                    $context->notifyMarkdown("## Hello\n- **item**");
+                }
+            }
+        };
+
+        $adapter->register(
+            new CommandDefinitionDTO(name: 'mdcmd'),
+            $handler,
+        );
+
+        $result = $slashRegistry->execute(new SlashCommand('mdcmd', '', '/mdcmd'));
+
+        $this->assertInstanceOf(TranscriptMessage::class, $result);
+        $this->assertSame('system', $result->role);
+        $this->assertSame('markdown', $result->style);
+        $this->assertStringContainsString('## Hello', $result->text);
+    }
 }
