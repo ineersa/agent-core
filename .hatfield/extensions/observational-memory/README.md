@@ -127,6 +127,8 @@ composer update ineersa/hatfield-ext-observational-memory
 - **Replacement summaries** are deterministic PHP projections of the latest active
   generation. Reflector models never author final `replacement_text`.
 - **Source refs** stay SQLite-only; compact summaries do not include footnotes.
+  Model-facing compacted-memory IDs are lowercase first-12-char prefixes (same as `/om-view`);
+  full SHA-256 identities remain in SQLite/generation links only.
 - **Session-global MVP:** non-branch-aware. Rewind/tree does not rewind the OM pool.
 - **Delivery gap:** events and OM SQLite can diverge after worker loss; later boundaries
   and CompactRun watermark catch-up repair coverage.
@@ -137,7 +139,8 @@ composer update ineersa/hatfield-ext-observational-memory
 - `/om-view` — active reflections and candidate observations with 12-char display ids,
   timestamp/relevance, content, and human source event sequences.
 - `recall` — permanent ambient tool; recover exact source context for one known memory id
-  (full lowercase 64-char SHA-256 or unique 12–64 hex prefix) in the current session.
+  shown in compacted memory or `/om-view` (unique lowercase 12–64 hex prefix, or full 64-char
+  SHA-256) in the current session.
   Use before important decisions / for exact wording, provenance, supporting sources, or
   user evidence questions. Not semantic search or transcript browsing; do not recall every id.
 

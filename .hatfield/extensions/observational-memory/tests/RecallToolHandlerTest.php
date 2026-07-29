@@ -37,6 +37,7 @@ use PHPUnit\Framework\Attributes\Test;
 /**
  * Thesis: permanent recall tool resolves exact current-run observation/reflection ids via
  * contextual adapter + SessionEventReader; invalid/not-found and cross-session isolation hold.
+ * Numeric-looking run IDs (e.g. "5") must not TypeError on SessionEventReader::readRange.
  */
 final class RecallToolHandlerTest extends IsolatedKernelTestCase
 {
@@ -279,6 +280,179 @@ final class RecallToolHandlerTest extends IsolatedKernelTestCase
         $this->assertSame([], $foreignSupport['source_refs']);
         $this->assertSame([], $foreignSupport['events']);
         $this->assertStringNotContainsString($otherId, json_encode($foreignSupport, \JSON_THROW_ON_ERROR));
+    }
+
+    #[Test]
+    public function numericLookingRunIdPassesStringToSessionEventReader(): void
+    {
+        $dbPath = $this->tmpDir.'/om-numeric-run.sqlite';
+        $connection = $this->omDatabaseFactory()->connectAndMigrate($dbPath);
+        $obs = new ObservationRepository($connection);
+        $gen = new MemoryGenerationRepository($connection);
+
+        $runId = '5';
+        $obsId = str_repeat('a', 64);
+        $refId = str_repeat('b', 64);
+
+        $obs->commitChunkPartCoverage(
+            coverageKey: 'cov-5',
+            runId: $runId,
+            boundaryKey: 'b5',
+            sourceStartSeq: 1,
+            sourceEndSeq: 3,
+            chunkKey: 'chunk-5',
+            partIndex: 1,
+            partCount: 1,
+            sourceDigest: 'd5',
+            partDigest: 'p5',
+            rendererVersion: '1',
+            observerSchemaVersion: '1',
+            observerModel: 'llama_cpp_test/test',
+            observations: [[
+                'observation_id' => $obsId,
+                'content' => 'Numeric run observation',
+                'content_hash' => hash('sha256', 'Numeric run observation'),
+                'relevance' => 'high',
+                'timestamp' => '2026-07-28 14:00',
+                'token_count' => 8,
+                'source_refs_json' => json_encode([
+                    ['run_id' => $runId, 'seq' => 1],
+                    ['run_id' => $runId, 'seq' => 3],
+                    // Foreign ref must still be filtered.
+                    ['run_id' => '99', 'seq' => 1],
+                ], \JSON_THROW_ON_ERROR),
+            ]],
+            coveredAt: '2026-07-28T14:00:00+00:00',
+        );
+
+        $gen->claimGeneration(
+            generationId: 'gen-5',
+            runId: $runId,
+            triggerKind: MemoryGenerationRepository::TRIGGER_THRESHOLD,
+            observationSetHash: hash('sha256', 'set-5'),
+            reflectorModel: 'llama_cpp_test/test',
+            reflectorSchemaVersion: '1',
+            now: '2026-07-28T14:01:00+00:00',
+            requiredStartSeq: 1,
+            requiredEndSeq: 3,
+        );
+        $gen->commitSucceededGeneration(
+            generationId: 'gen-5',
+            runId: $runId,
+            observationSetHash: hash('sha256', 'set-5'),
+            reflectorModel: 'llama_cpp_test/test',
+            reflectorSchemaVersion: '1',
+            reflections: [[
+                'reflection_id' => $refId,
+                'content' => 'Numeric run reflection',
+                'supporting_observation_ids_json' => json_encode([$obsId], \JSON_THROW_ON_ERROR),
+                'token_count' => 4,
+            ]],
+            retainedObservationIds: [$obsId],
+            now: '2026-07-28T14:01:01+00:00',
+        );
+
+        $reader = new class implements SessionEventReaderInterface {
+            /** @var list<string> */
+            public array $seenRunIds = [];
+
+            public function readRange(string $runId, int $startSeq, int $endSeq): iterable
+            {
+                $this->seenRunIds[] = $runId;
+                for ($seq = $startSeq; $seq <= $endSeq; ++$seq) {
+                    yield new SessionEventDTO(
+                        runId: $runId,
+                        seq: $seq,
+                        turnNo: 1,
+                        type: 'message',
+                        payload: ['seq' => $seq],
+                        createdAt: '2026-07-28T14:00:00+00:00',
+                    );
+                }
+            }
+        };
+
+        $api = $this->api($this->tmpDir, $reader);
+        $settings = OmSettings::fromArray([
+            'storage' => ['database' => $dbPath],
+            'observer' => ['model' => 'llama_cpp_test/test'],
+            'reflector' => ['model' => 'llama_cpp_test/test'],
+        ]);
+        $handler = new RecallToolHandler(new OmQueryService($api, $settings));
+        $accessor = new StackToolExecutionContextAccessor();
+        $adapter = new ExtensionToolHandlerAdapter($handler, $accessor);
+
+        $obsResult = $accessor->with(
+            new ToolContext(
+                runId: $runId,
+                turnNo: 1,
+                toolCallId: 'tc-num-obs',
+                toolName: 'recall',
+                cancellationToken: new NullCancellationToken(),
+                timeoutSeconds: null,
+            ),
+            static fn (): mixed => $adapter(['id' => $obsId]),
+        );
+        $this->assertIsArray($obsResult);
+        $this->assertTrue($obsResult['ok']);
+        $this->assertSame('observation', $obsResult['kind']);
+        $this->assertCount(2, $obsResult['events']);
+        $this->assertSame(['run_id' => '5', 'seq' => 1], $obsResult['source_refs'][0]);
+        $this->assertSame(['run_id' => '5', 'seq' => 3], $obsResult['source_refs'][1]);
+        $this->assertStringNotContainsString('"99"', json_encode($obsResult, \JSON_THROW_ON_ERROR));
+
+        $refResult = $accessor->with(
+            new ToolContext(
+                runId: $runId,
+                turnNo: 1,
+                toolCallId: 'tc-num-ref',
+                toolName: 'recall',
+                cancellationToken: new NullCancellationToken(),
+                timeoutSeconds: null,
+            ),
+            static fn (): mixed => $adapter(['id' => $refId]),
+        );
+        $this->assertIsArray($refResult);
+        $this->assertTrue($refResult['ok']);
+        $this->assertSame('reflection', $refResult['kind']);
+        $this->assertCount(2, $refResult['events']);
+
+        // 12-char unique prefix resolves; mistyped prefix remains not_found.
+        $prefixOk = $accessor->with(
+            new ToolContext(
+                runId: $runId,
+                turnNo: 1,
+                toolCallId: 'tc-num-prefix',
+                toolName: 'recall',
+                cancellationToken: new NullCancellationToken(),
+                timeoutSeconds: null,
+            ),
+            static fn (): mixed => $adapter(['id' => substr($obsId, 0, 12)]),
+        );
+        $this->assertIsArray($prefixOk);
+        $this->assertTrue($prefixOk['ok']);
+
+        $mistyped = $accessor->with(
+            new ToolContext(
+                runId: $runId,
+                turnNo: 1,
+                toolCallId: 'tc-num-typo',
+                toolName: 'recall',
+                cancellationToken: new NullCancellationToken(),
+                timeoutSeconds: null,
+            ),
+            // One-char typo at position 11 of the 12-char prefix (c vs a).
+            static fn (): mixed => $adapter(['id' => 'aaaaaaaaaaac']),
+        );
+        $this->assertIsArray($mistyped);
+        $this->assertFalse($mistyped['ok']);
+        $this->assertSame('not_found', $mistyped['error']);
+
+        $this->assertNotEmpty($reader->seenRunIds);
+        foreach ($reader->seenRunIds as $seen) {
+            $this->assertIsString($seen);
+            $this->assertSame('5', $seen);
+        }
     }
 
     private function api(string $cwd, SessionEventReaderInterface $reader): ExtensionApiInterface

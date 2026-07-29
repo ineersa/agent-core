@@ -316,9 +316,12 @@ final class OmQueryService
             return [];
         }
 
-        /** @var array<string, list<int>> $byRun */
-        $byRun = [];
-        /** @var array<string, true> $wanted */
+        // Never group refs by run_id as an array key: PHP coerces numeric-string
+        // keys like "5" to int, which then TypeErrors on strict-typed readRange().
+        // Upstream already filters to the current run; re-filter and load once.
+        /** @var list<int> $seqs */
+        $seqs = [];
+        /** @var array<int, true> $wanted */
         $wanted = [];
         foreach ($refs as $ref) {
             $run = (string) $ref['run_id'];
@@ -330,40 +333,35 @@ final class OmQueryService
             if ($run !== $currentRunId) {
                 continue;
             }
-            $byRun[$run][] = $seq;
-            $wanted[$run.':'.$seq] = true;
+            $seqs[] = $seq;
+            $wanted[$seq] = true;
+        }
+
+        if ([] === $seqs) {
+            return [];
         }
 
         $events = [];
-        foreach ($byRun as $runId => $seqs) {
-            $start = min($seqs);
-            $end = max($seqs);
-            foreach ($this->api->sessionEvents()->readRange($runId, $start, $end) as $event) {
-                if (!$event instanceof SessionEventDTO) {
-                    continue;
-                }
-                $key = $event->runId.':'.$event->seq;
-                if (!isset($wanted[$key])) {
-                    continue;
-                }
-                $events[] = [
-                    'run_id' => $event->runId,
-                    'seq' => $event->seq,
-                    'type' => $event->type,
-                    'created_at' => $event->createdAt,
-                    'payload' => $event->payload,
-                ];
+        $start = min($seqs);
+        $end = max($seqs);
+        foreach ($this->api->sessionEvents()->readRange($currentRunId, $start, $end) as $event) {
+            if (!$event instanceof SessionEventDTO) {
+                continue;
             }
+            // Defense: reject foreign or out-of-wanted events even if the reader is loose.
+            if ($event->runId !== $currentRunId || !isset($wanted[$event->seq])) {
+                continue;
+            }
+            $events[] = [
+                'run_id' => $event->runId,
+                'seq' => $event->seq,
+                'type' => $event->type,
+                'created_at' => $event->createdAt,
+                'payload' => $event->payload,
+            ];
         }
 
-        usort($events, static function (array $a, array $b): int {
-            $byRun = strcmp($a['run_id'], $b['run_id']);
-            if (0 !== $byRun) {
-                return $byRun;
-            }
-
-            return $a['seq'] <=> $b['seq'];
-        });
+        usort($events, static fn (array $a, array $b): int => $a['seq'] <=> $b['seq']);
 
         return $events;
     }

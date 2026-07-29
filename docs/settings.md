@@ -1603,8 +1603,9 @@ Ownership and UX notes:
 - **Commands:** `/om-status` (durable OM aggregates only) and `/om-view`
   (active reflections/candidate observations with short display IDs + source event seqs).
   Permanent ambient tool `recall` recovers exact source events for one known OM id
-  (full 64-char SHA-256 or unique lowercase 12–64 hex prefix) via
-  `SessionEventReaderInterface` for the current session only — not semantic search.
+  shown in compacted memory or `/om-view` (unique lowercase 12–64 hex prefix, or full
+  64-char SHA-256) via `SessionEventReaderInterface` for the current session only —
+  not semantic search. Compacted active-memory lines print the same 12-char display IDs.
 - **Privacy:** status/logs must not emit raw prompts, tool output, credentials, env values,
   exception text, or full session content. Recall may return exact cited events to the
   requesting model but must not log them.

@@ -21,6 +21,7 @@ Treat these as past records. When entries conflict, the most recent observation 
 
 When exact source context is needed for precision or traceability, use the recall tool with the relevant observation or reflection id. This is especially useful when a reflection materially affects a decision or is too compressed to continue confidently. Do not use recall as broad search or inject raw source unless it is needed.
 TEXT;
+    private const int DISPLAY_ID_LEN = 12;
 
     /**
      * @param list<array{reflection_id: string, content: string, position?: int}>                        $reflections
@@ -56,7 +57,7 @@ TEXT;
             $lines[] = '(none)';
         } else {
             foreach ($reflections as $reflection) {
-                $lines[] = \sprintf('[%s] %s', $reflection['reflection_id'], $reflection['content']);
+                $lines[] = \sprintf('[%s] %s', self::displayId((string) $reflection['reflection_id']), $reflection['content']);
             }
         }
 
@@ -68,7 +69,7 @@ TEXT;
             foreach ($observations as $observation) {
                 $lines[] = \sprintf(
                     '[%s] %s [%s] %s',
-                    $observation['observation_id'],
+                    self::displayId((string) $observation['observation_id']),
                     $observation['timestamp'],
                     $observation['relevance'],
                     $observation['content'],
@@ -77,5 +78,19 @@ TEXT;
         }
 
         return implode("\n", $lines);
+    }
+
+    /**
+     * Model-facing compacted-memory IDs match /om-view: lowercase first 12 hex chars.
+     * Stored SHA-256 identities remain full length in SQLite/generation links.
+     */
+    private static function displayId(string $id): string
+    {
+        $id = strtolower($id);
+        if (\strlen($id) <= self::DISPLAY_ID_LEN) {
+            return $id;
+        }
+
+        return substr($id, 0, self::DISPLAY_ID_LEN);
     }
 }
