@@ -24,7 +24,9 @@ use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Thesis: OM registers exact public command names om-status/om-view and permanent recall tool.
+ * Thesis: OM registers exact public command names om-status/om-view and permanent recall tool
+ * whose model-facing metadata retains the faithful Pi decision/provenance/no-search guidance
+ * plus the Hatfield 12..64 hex id schema (so future shortening fails this test).
  */
 final class ObservationalMemoryExtensionRegistrationTest extends TestCase
 {
@@ -118,7 +120,33 @@ final class ObservationalMemoryExtensionRegistrationTest extends TestCase
         $names = array_map(static fn (CommandDefinitionDTO $d): string => $d->name, $commands);
         $this->assertSame(['om-status', 'om-view'], $names);
         $this->assertCount(1, $tools);
-        $this->assertSame('recall', $tools[0]->name);
-        $this->assertSame('^[a-f0-9]{12,64}$', $tools[0]->parametersJsonSchema['properties']['id']['pattern'] ?? null);
+        $recall = $tools[0];
+        $this->assertSame('recall', $recall->name);
+        $this->assertSame('^[a-f0-9]{12,64}$', $recall->parametersJsonSchema['properties']['id']['pattern'] ?? null);
+
+        $this->assertStringContainsString('Recover exact evidence and source context', $recall->description);
+        $this->assertStringContainsString('current session', $recall->description);
+        $this->assertStringNotContainsString('current branch', $recall->description);
+
+        $idDescription = (string) ($recall->parametersJsonSchema['properties']['id']['description'] ?? '');
+        $this->assertStringContainsString('12–64', $idDescription);
+        $this->assertStringContainsString('does not search by topic', $idDescription);
+        $this->assertStringContainsString('/om-view', $idDescription);
+
+        $this->assertSame(
+            'Use recall(<id>) to recover exact source context behind compacted memory observations/reflections when precision matters.',
+            $recall->promptSummary,
+        );
+
+        $guidelines = implode("\n", $recall->promptGuidelines);
+        $this->assertCount(6, $recall->promptGuidelines);
+        $this->assertStringContainsString('important decision', $guidelines);
+        $this->assertStringContainsString('exact wording, rationale, file paths, commands, errors, commits, user constraints, or provenance', $guidelines);
+        $this->assertStringContainsString('supporting observations or raw sources', $guidelines);
+        $this->assertStringContainsString('user asks why you believe something', $guidelines);
+        $this->assertStringContainsString('semantic search or transcript browsing', $guidelines);
+        $this->assertStringContainsString('unique lowercase 12–64 hex memory id', $guidelines);
+        $this->assertStringContainsString('Do not recall every id preemptively', $guidelines);
+        $this->assertStringNotContainsString('12-character memory id', $guidelines);
     }
 }

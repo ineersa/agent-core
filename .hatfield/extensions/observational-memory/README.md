@@ -133,13 +133,13 @@ composer update ineersa/hatfield-ext-observational-memory
 
 ## Commands and recall
 
-- `/om-status` — durable OM aggregates for the current session plus honest static
-  durable SQLite memory metrics only (worker/queue liveness not tracked). Does **not** invent Messenger pending/retry/liveness counts.
-- `/om-view` — active generation reflections and active candidate observations with
-  full 64-char OM ids, relevance/timestamp, and exact `(run_id,seq)` source refs.
-- `recall` — permanent ambient tool; exact one-id lookup (lowercase 64-char SHA-256)
-  for the current session, resolving observation source refs or reflection supporting
-  observations through `SessionEventReaderInterface`. No search / cross-session.
+- `/om-status` — durable OM aggregates for the current session (worker/queue liveness not tracked).
+- `/om-view` — active reflections and candidate observations with 12-char display ids,
+  timestamp/relevance, content, and human source event sequences.
+- `recall` — permanent ambient tool; recover exact source context for one known memory id
+  (full lowercase 64-char SHA-256 or unique 12–64 hex prefix) in the current session.
+  Use before important decisions / for exact wording, provenance, supporting sources, or
+  user evidence questions. Not semantic search or transcript browsing; do not recall every id.
 
 Thinking levels (`observer.thinking_level`, `reflector.thinking_level`) are effective:
 they are passed on `AgentCallRequestDTO` and forwarded into Hatfield model options with

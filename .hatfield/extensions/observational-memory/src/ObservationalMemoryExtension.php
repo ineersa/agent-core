@@ -101,7 +101,9 @@ final class ObservationalMemoryExtension implements HatfieldExtensionInterface, 
 
         $api->registerTool(new ToolRegistrationDTO(
             name: 'recall',
-            description: 'Recall exact source events for one observational-memory observation or reflection id from the current session.',
+            // Faithful Pi port (recall-observation.ts): only session-global + 12..64 prefix adaptations.
+            description: 'Recover exact evidence and source context behind a compacted observational-memory observation or reflection id on the current session. '
+                .'Use when compressed memory is important and original source context is needed before acting.',
             parametersJsonSchema: [
                 'type' => 'object',
                 'additionalProperties' => false,
@@ -110,15 +112,19 @@ final class ObservationalMemoryExtension implements HatfieldExtensionInterface, 
                     'id' => [
                         'type' => 'string',
                         'pattern' => '^[a-f0-9]{12,64}$',
-                        'description' => 'Lowercase hex observation or reflection id (full 64-char SHA-256 or unique 12–64 char prefix).',
+                        'description' => 'Full lowercase hex observation or reflection id, or a unique 12–64 character prefix, shown in compacted memory, /om-view, or a previous recall result. Must be a specific id; this tool does not search by topic.',
                     ],
                 ],
             ],
             handler: new RecallToolHandler($query),
-            promptSummary: 'recall: resolve exact OM observation/reflection source events by id or unique short prefix',
+            promptSummary: 'Use recall(<id>) to recover exact source context behind compacted memory observations/reflections when precision matters.',
             promptGuidelines: [
-                'Use recall only with a known observation or reflection id from active memory (full id or unique 12+ hex prefix).',
-                'Do not use recall as broad search; request exact source context only when needed.',
+                'Use recall before making an important decision that depends on a compacted observation or reflection whose details are unclear.',
+                'Use recall when you need exact wording, rationale, file paths, commands, errors, commits, user constraints, or provenance behind a remembered claim.',
+                'Use recall when a broad reflection is relevant but you need its supporting observations or raw sources to continue safely.',
+                'Use recall when the user asks why you believe something, what supports a memory, or what was decided earlier.',
+                'Do not use recall as semantic search or transcript browsing; you must already have a specific full id or unique lowercase 12–64 hex memory id.',
+                'Do not recall every id preemptively. Recall only when exact source context will materially improve the next action.',
             ],
         ));
 

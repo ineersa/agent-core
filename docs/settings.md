@@ -1600,10 +1600,11 @@ Ownership and UX notes:
   a second transcript.
 - **Session-global MVP:** OM is non-branch-aware. Hatfield `/tree` ownership is unchanged
   and does **not** rewind the external OM pool.
-- **Commands:** `/om-status` (durable OM aggregates + static topology only) and `/om-view`
-  (active generation reflections/candidate observations with stable IDs + source refs).
-  Permanent ambient tool `recall` resolves exact source events for one OM id via
-  `SessionEventReaderInterface` for the current session only.
+- **Commands:** `/om-status` (durable OM aggregates only) and `/om-view`
+  (active reflections/candidate observations with short display IDs + source event seqs).
+  Permanent ambient tool `recall` recovers exact source events for one known OM id
+  (full 64-char SHA-256 or unique lowercase 12–64 hex prefix) via
+  `SessionEventReaderInterface` for the current session only — not semantic search.
 - **Privacy:** status/logs must not emit raw prompts, tool output, credentials, env values,
   exception text, or full session content. Recall may return exact cited events to the
   requesting model but must not log them.
