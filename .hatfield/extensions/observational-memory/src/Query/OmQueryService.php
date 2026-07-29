@@ -31,7 +31,22 @@ final class OmQueryService
     ) {
     }
 
-    public function formatStatus(string $runId): string
+    /**
+     * Structured status snapshot for rich transient widgets.
+     *
+     * @return array{
+     *   covered_through_seq: ?int,
+     *   active_generation_id: ?string,
+     *   reflection_count: int,
+     *   reflection_tokens: int,
+     *   reflections_max_tokens: int,
+     *   observation_count: int,
+     *   observation_tokens: int,
+     *   observations_max_tokens: int,
+     *   compaction: array{queued:int,running:int,succeeded:int,failed:int,timed_out:int}
+     * }
+     */
+    public function statusData(string $runId): array
     {
         $connection = $this->connect();
         $observations = new ObservationRepository($connection);
@@ -53,6 +68,28 @@ final class OmQueryService
             $reflectionTokens += (int) ($reflection['token_count'] ?? 0);
         }
 
+        return [
+            'covered_through_seq' => $covered,
+            'active_generation_id' => $activeGenerationId,
+            'reflection_count' => \count($reflections),
+            'reflection_tokens' => $reflectionTokens,
+            'reflections_max_tokens' => $this->settings->reflectionsMaxTokens,
+            'observation_count' => \count($candidate['observations'] ?? []),
+            'observation_tokens' => (int) ($candidate['token_count'] ?? 0),
+            'observations_max_tokens' => $this->settings->observationsMaxTokens,
+            'compaction' => [
+                'queued' => $counts[CompactionRepository::STATUS_QUEUED] ?? 0,
+                'running' => $counts[CompactionRepository::STATUS_RUNNING] ?? 0,
+                'succeeded' => $counts[CompactionRepository::STATUS_SUCCEEDED] ?? 0,
+                'failed' => $counts[CompactionRepository::STATUS_FAILED] ?? 0,
+                'timed_out' => $counts[CompactionRepository::STATUS_TIMED_OUT] ?? 0,
+            ],
+        ];
+    }
+
+    public function formatStatus(string $runId): string
+    {
+        $data = $this->statusData($runId);
         $lines = [
             'Observational memory status',
             '',
@@ -62,40 +99,49 @@ final class OmQueryService
             '- failure_transport: none',
             '',
             'Coverage',
-            null === $covered
+            null === $data['covered_through_seq']
                 ? '- covered_through_seq: none'
-                : \sprintf('- covered_through_seq: %d', $covered),
+                : \sprintf('- covered_through_seq: %d', $data['covered_through_seq']),
             '  (OM contiguous watermark only; does not claim canonical completeness)',
             '',
             'Active generation',
-            null === $activeGenerationId
+            null === $data['active_generation_id']
                 ? '- generation_id: none'
-                : \sprintf('- generation_id: %s', $activeGenerationId),
+                : \sprintf('- generation_id: %s', $data['active_generation_id']),
             \sprintf(
                 '- reflections: %d tokens / limit %d (count %d)',
-                $reflectionTokens,
-                $this->settings->reflectionsMaxTokens,
-                \count($reflections),
+                $data['reflection_tokens'],
+                $data['reflections_max_tokens'],
+                $data['reflection_count'],
             ),
             \sprintf(
                 '- candidate observations: %d tokens / limit %d (count %d)',
-                (int) ($candidate['token_count'] ?? 0),
-                $this->settings->observationsMaxTokens,
-                \count($candidate['observations'] ?? []),
+                $data['observation_tokens'],
+                $data['observations_max_tokens'],
+                $data['observation_count'],
             ),
             '',
             'Compaction requests (durable OM SQLite)',
-            \sprintf('- queued: %d', $counts[CompactionRepository::STATUS_QUEUED] ?? 0),
-            \sprintf('- running: %d', $counts[CompactionRepository::STATUS_RUNNING] ?? 0),
-            \sprintf('- succeeded: %d', $counts[CompactionRepository::STATUS_SUCCEEDED] ?? 0),
-            \sprintf('- failed: %d', $counts[CompactionRepository::STATUS_FAILED] ?? 0),
-            \sprintf('- timed_out: %d', $counts[CompactionRepository::STATUS_TIMED_OUT] ?? 0),
+            \sprintf('- queued: %d', $data['compaction']['queued']),
+            \sprintf('- running: %d', $data['compaction']['running']),
+            \sprintf('- succeeded: %d', $data['compaction']['succeeded']),
+            \sprintf('- failed: %d', $data['compaction']['failed']),
+            \sprintf('- timed_out: %d', $data['compaction']['timed_out']),
         ];
 
         return implode("\n", $lines);
     }
 
-    public function formatView(string $runId): string
+    /**
+     * Structured view snapshot for rich transient widgets.
+     *
+     * @return array{
+     *   active_generation_id: ?string,
+     *   reflections: list<array{reflection_id:string,content:string,supporting_observation_ids:list<string>}>,
+     *   observations: list<array{observation_id:string,timestamp:string,relevance:string,content:string,source_refs:list<array{run_id:string,seq:int}>}>
+     * }
+     */
+    public function viewData(string $runId): array
     {
         $connection = $this->connect();
         $observations = new ObservationRepository($connection);
@@ -105,53 +151,86 @@ final class OmQueryService
         $reflections = $generations->listActiveReflections($runId);
         $candidates = $observations->listActiveCandidateObservations($runId);
 
+        $reflectionRows = [];
+        foreach ($reflections as $reflection) {
+            $support = $this->currentRunSupportIds(
+                $observations,
+                $runId,
+                $this->decodeStringList((string) ($reflection['supporting_observation_ids_json'] ?? '[]')),
+            );
+            $reflectionRows[] = [
+                'reflection_id' => (string) $reflection['reflection_id'],
+                'content' => $this->condense((string) $reflection['content']),
+                'supporting_observation_ids' => $support,
+            ];
+        }
+
+        $observationRows = [];
+        foreach ($candidates as $observation) {
+            $observationRows[] = [
+                'observation_id' => (string) $observation['observation_id'],
+                'timestamp' => (string) $observation['timestamp'],
+                'relevance' => (string) $observation['relevance'],
+                'content' => $this->condense((string) $observation['content']),
+                'source_refs' => $this->currentRunSourceRefs(
+                    $runId,
+                    $this->decodeSourceRefs((string) ($observation['source_refs_json'] ?? '[]')),
+                ),
+            ];
+        }
+
+        return [
+            'active_generation_id' => $activeGenerationId,
+            'reflections' => $reflectionRows,
+            'observations' => $observationRows,
+        ];
+    }
+
+    public function formatView(string $runId): string
+    {
+        $data = $this->viewData($runId);
+
         $lines = [
             'Observational memory view',
             '',
-            null === $activeGenerationId
+            null === $data['active_generation_id']
                 ? 'Active generation: none'
-                : \sprintf('Active generation: %s', $activeGenerationId),
+                : \sprintf('Active generation: %s', $data['active_generation_id']),
             '',
             '## Reflections',
         ];
 
-        if ([] === $reflections) {
+        if ([] === $data['reflections']) {
             $lines[] = '(none)';
         } else {
-            foreach ($reflections as $reflection) {
-                $support = $this->currentRunSupportIds(
-                    $observations,
-                    $runId,
-                    $this->decodeStringList((string) ($reflection['supporting_observation_ids_json'] ?? '[]')),
-                );
+            foreach ($data['reflections'] as $reflection) {
                 $lines[] = \sprintf(
                     '- [%s] %s',
-                    (string) $reflection['reflection_id'],
-                    $this->condense((string) $reflection['content']),
+                    $reflection['reflection_id'],
+                    $reflection['content'],
                 );
                 $lines[] = \sprintf(
                     '  supporting: %s',
-                    [] === $support ? '(none)' : implode(', ', $support),
+                    [] === $reflection['supporting_observation_ids']
+                        ? '(none)'
+                        : implode(', ', $reflection['supporting_observation_ids']),
                 );
             }
         }
 
         $lines[] = '';
         $lines[] = '## Observations';
-        if ([] === $candidates) {
+        if ([] === $data['observations']) {
             $lines[] = '(none)';
         } else {
-            foreach ($candidates as $observation) {
-                $refs = $this->formatSourceRefs(
-                    $runId,
-                    (string) ($observation['source_refs_json'] ?? '[]'),
-                );
+            foreach ($data['observations'] as $observation) {
+                $refs = $this->formatSourceRefsList($observation['source_refs']);
                 $lines[] = \sprintf(
                     '- [%s] %s [%s] %s',
-                    (string) $observation['observation_id'],
-                    (string) $observation['timestamp'],
-                    (string) $observation['relevance'],
-                    $this->condense((string) $observation['content']),
+                    $observation['observation_id'],
+                    $observation['timestamp'],
+                    $observation['relevance'],
+                    $observation['content'],
                 );
                 $lines[] = \sprintf('  sources: %s', $refs);
             }
@@ -374,9 +453,11 @@ final class OmQueryService
         return $out;
     }
 
-    private function formatSourceRefs(string $runId, string $json): string
+    /**
+     * @param list<array{run_id: string, seq: int}> $refs
+     */
+    private function formatSourceRefsList(array $refs): string
     {
-        $refs = $this->currentRunSourceRefs($runId, $this->decodeSourceRefs($json));
         if ([] === $refs) {
             return '(none)';
         }

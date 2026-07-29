@@ -289,6 +289,8 @@ final class SubmitListener implements TuiListenerRegistrar
             // (runtime dispatch may still fail afterward).
             // Selected reasoning and editor/footer styling are unchanged (panel-only entry).
             $screen->clearTransientReasoningNotice();
+            // Temporary extension widgets (e.g. /om-status) leave on the next turn.
+            $screen->clearTransientExtensionWidget();
 
             // Show immediate visual feedback (◐ Working...) before heavy
             // synchronous work (session creation, system prompt discovery,

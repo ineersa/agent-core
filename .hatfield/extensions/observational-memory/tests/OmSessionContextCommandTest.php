@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\HatfieldExt\ObservationalMemory\Tests;
 
+use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\Hatfield\ExtensionApi\Agent\AgentRunnerInterface;
 use Ineersa\Hatfield\ExtensionApi\Agent\ExtensionAgentJobHandlerInterface;
 use Ineersa\Hatfield\ExtensionApi\Agent\ExtensionAgentJobRequestDTO;
@@ -20,22 +21,43 @@ use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallRewriteHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolRegistrationDTO;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolResultHookInterface;
+use Ineersa\Hatfield\ExtensionApi\Tui\TransientTuiExtensionContextInterface;
 use Ineersa\Hatfield\ExtensionApi\Tui\TuiExtensionContextInterface;
+use Ineersa\Hatfield\ExtensionApi\Tui\TuiSemanticColorEnum;
 use Ineersa\HatfieldExt\ObservationalMemory\Command\OmStatusCommandHandler;
+use Ineersa\HatfieldExt\ObservationalMemory\Command\OmViewCommandHandler;
 use Ineersa\HatfieldExt\ObservationalMemory\Query\OmQueryService;
 use Ineersa\HatfieldExt\ObservationalMemory\Query\OmSessionContext;
 use Ineersa\HatfieldExt\ObservationalMemory\Runtime\OmSettings;
+use Ineersa\HatfieldExt\ObservationalMemory\Storage\ObservationRepository;
+use Ineersa\HatfieldExt\ObservationalMemory\Tests\Support\OmDatabaseFactoryTestService;
 use PHPUnit\Framework\Attributes\Test;
-use PHPUnit\Framework\TestCase;
+use Symfony\Component\Tui\Style\Style;
 use Symfony\Component\Tui\Widget\AbstractWidget;
+use Symfony\Component\Tui\Widget\ContainerWidget;
 
 /**
  * Thesis: session id is resolved lazily from the live TUI context at command
- * invocation; registration-time string caching is forbidden. Command failures
- * surface a fixed safe message without exception text.
+ * invocation; registration-time string caching is forbidden. Rich capable TUI
+ * shows one transient widget without notify(); plain hosts keep notify();
+ * failures surface a fixed safe message without exception text.
  */
-final class OmSessionContextCommandTest extends TestCase
+final class OmSessionContextCommandTest extends IsolatedKernelTestCase
 {
+    private string $tmpDir;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $this->tmpDir = \Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation::createProjectTempDir('om-session-cmd');
+    }
+
+    protected function tearDown(): void
+    {
+        \Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation::removeDirectory($this->tmpDir);
+        parent::tearDown();
+    }
+
     #[Test]
     public function requireSessionIdReadsLiveContextAfterRegistrationBind(): void
     {
@@ -81,6 +103,60 @@ final class OmSessionContextCommandTest extends TestCase
     }
 
     #[Test]
+    public function richStatusCommandShowsTransientWidgetWithoutNotify(): void
+    {
+        $runId = 'om-rich-status-run';
+        $dbPath = $this->seedObservation($runId);
+        $sessionContext = new OmSessionContext();
+        $tui = $this->richTui($runId);
+        $sessionContext->bindTui($tui);
+
+        $handler = new OmStatusCommandHandler(
+            new OmQueryService($this->apiWithCwd($this->tmpDir), OmSettings::fromArray([
+                'storage' => ['database' => $dbPath],
+                'observer' => ['model' => 'llama_cpp_test/test'],
+                'reflector' => ['model' => 'llama_cpp_test/test'],
+            ])),
+            $sessionContext,
+        );
+
+        $messages = [];
+        $handler->handle('', $this->collectingContext($messages));
+
+        $this->assertSame([], $messages);
+        $this->assertCount(1, $tui->widgets);
+        $this->assertInstanceOf(ContainerWidget::class, $tui->widgets[0]);
+    }
+
+    #[Test]
+    public function plainHostFallsBackToNotifyForStatusAndView(): void
+    {
+        $runId = 'om-plain-host-run';
+        $dbPath = $this->seedObservation($runId);
+        $sessionContext = new OmSessionContext();
+        $sessionContext->bindTui($this->mutableTui($runId));
+
+        $query = new OmQueryService($this->apiWithCwd($this->tmpDir), OmSettings::fromArray([
+            'storage' => ['database' => $dbPath],
+            'observer' => ['model' => 'llama_cpp_test/test'],
+            'reflector' => ['model' => 'llama_cpp_test/test'],
+        ]));
+
+        $statusMessages = [];
+        (new OmStatusCommandHandler($query, $sessionContext))->handle('', $this->collectingContext($statusMessages));
+        $this->assertCount(1, $statusMessages);
+        $this->assertStringStartsWith('info:', $statusMessages[0]);
+        $this->assertStringContainsString('Observational memory status', $statusMessages[0]);
+
+        $viewMessages = [];
+        (new OmViewCommandHandler($query, $sessionContext))->handle('', $this->collectingContext($viewMessages));
+        $this->assertCount(1, $viewMessages);
+        $this->assertStringStartsWith('info:', $viewMessages[0]);
+        $this->assertStringContainsString('Observational memory view', $viewMessages[0]);
+        $this->assertStringContainsString(str_repeat('a', 64), $viewMessages[0]);
+    }
+
+    #[Test]
     public function statusCommandEmitsFixedErrorWithoutExceptionTextWhenSessionMissing(): void
     {
         $sessionContext = new OmSessionContext();
@@ -118,6 +194,118 @@ final class OmSessionContextCommandTest extends TestCase
 
         $this->assertSame(['error:OM status unavailable.'], $messages);
         $this->assertStringNotContainsString('lazy session boom', implode("\n", $messages));
+    }
+
+    private function seedObservation(string $runId): string
+    {
+        $dbPath = $this->tmpDir.'/om.sqlite';
+        $connection = $this->omDatabaseFactory()->connectAndMigrate($dbPath);
+        $observations = new ObservationRepository($connection);
+        $settings = OmSettings::fromArray([
+            'observer' => ['model' => 'llama_cpp_test/test'],
+            'reflector' => ['model' => 'llama_cpp_test/test'],
+        ]);
+        $observationId = str_repeat('a', 64);
+        $observations->commitChunkPartCoverage(
+            coverageKey: 'cov-'.$runId,
+            runId: $runId,
+            boundaryKey: 'boundary-'.$runId,
+            sourceStartSeq: 1,
+            sourceEndSeq: 2,
+            chunkKey: 'chunk-'.$runId,
+            partIndex: 1,
+            partCount: 1,
+            sourceDigest: 'digest-'.$runId,
+            partDigest: 'part-'.$runId,
+            rendererVersion: $settings->rendererVersion,
+            observerSchemaVersion: $settings->observerSchemaVersion,
+            observerModel: 'llama_cpp_test/test',
+            observations: [[
+                'observation_id' => $observationId,
+                'content' => 'hyphenated commands are preferred',
+                'content_hash' => hash('sha256', 'hyphenated commands are preferred'),
+                'relevance' => 'high',
+                'timestamp' => '2026-07-28 12:00',
+                'token_count' => 12,
+                'source_refs_json' => json_encode([['run_id' => $runId, 'seq' => 2]], \JSON_THROW_ON_ERROR),
+            ]],
+            coveredAt: '2026-07-28T12:00:00+00:00',
+        );
+
+        return $dbPath;
+    }
+
+    private function omDatabaseFactory(): OmDatabaseFactoryTestService
+    {
+        /** @var OmDatabaseFactoryTestService $service */
+        $service = self::getContainer()->get('test.om_database_factory');
+
+        return $service;
+    }
+
+    private function richTui(string $sessionId): object
+    {
+        return new class($sessionId) implements TransientTuiExtensionContextInterface {
+            /** @var list<AbstractWidget> */
+            public array $widgets = [];
+
+            public function __construct(public string $sessionId)
+            {
+            }
+
+            public function getSessionId(): string
+            {
+                return $this->sessionId;
+            }
+
+            public function requestRender(bool $force = false): void
+            {
+            }
+
+            public function setStatus(string $key, ?string $text): void
+            {
+            }
+
+            public function insertOverlayAfterEditor(AbstractWidget $widget): void
+            {
+            }
+
+            public function removeOverlay(AbstractWidget $widget): void
+            {
+            }
+
+            public function setFocus(AbstractWidget $widget): void
+            {
+            }
+
+            public function formatMuted(string $text): string
+            {
+                return $text;
+            }
+
+            public function formatRolePrefix(string $displayRole): string
+            {
+                return $displayRole.':';
+            }
+
+            public function turnRowsInDisplayOrder(string $sessionId): array
+            {
+                return [];
+            }
+
+            public function showTransientWidget(AbstractWidget $widget): void
+            {
+                $this->widgets[] = $widget;
+            }
+
+            public function createTextStyle(
+                TuiSemanticColorEnum $color = TuiSemanticColorEnum::Text,
+                bool $dim = false,
+                bool $italic = false,
+            ): Style {
+                return new Style(dim: $dim, italic: $italic);
+            }
+        };
     }
 
     private function throwingTui(): object
@@ -210,6 +398,80 @@ final class OmSessionContextCommandTest extends TestCase
             public function turnRowsInDisplayOrder(string $sessionId): array
             {
                 return [];
+            }
+        };
+    }
+
+    private function apiWithCwd(string $cwd): ExtensionApiInterface
+    {
+        return new class($cwd) implements ExtensionApiInterface {
+            public function __construct(private string $cwd)
+            {
+            }
+
+            public function getCwd(): string
+            {
+                return $this->cwd;
+            }
+
+            public function getSettings(string $key): array
+            {
+                return [];
+            }
+
+            public function registerTool(ToolRegistrationDTO $tool): void
+            {
+            }
+
+            public function registerToolCallHook(ToolCallHookInterface $hook): void
+            {
+            }
+
+            public function registerToolResultHook(ToolResultHookInterface $hook): void
+            {
+            }
+
+            public function registerToolCallRewriteHook(string $toolName, ToolCallRewriteHookInterface $hook): void
+            {
+            }
+
+            public function registerPromptContributor(PromptContributorInterface $contributor): void
+            {
+            }
+
+            public function registerCommand(CommandDefinitionDTO $definition, ExtensionCommandHandlerInterface $handler): void
+            {
+            }
+
+            public function registerAfterTurnCommitHook(AfterTurnCommitHookInterface $hook): void
+            {
+            }
+
+            public function registerBeforeCompactionHook(BeforeCompactionHookInterface $hook): void
+            {
+            }
+
+            public function registerExtensionAgentJobHandler(string $handlerId, ExtensionAgentJobHandlerInterface $handler): void
+            {
+            }
+
+            public function dispatchExtensionAgentJob(ExtensionAgentJobRequestDTO $request): void
+            {
+            }
+
+            public function agent(): AgentRunnerInterface
+            {
+                throw new \LogicException('unused');
+            }
+
+            public function sessionEvents(): SessionEventReaderInterface
+            {
+                throw new \LogicException('unused');
+            }
+
+            public function exec(): ExecInterface
+            {
+                throw new \LogicException('unused');
             }
         };
     }

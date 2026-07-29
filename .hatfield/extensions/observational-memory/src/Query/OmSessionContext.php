@@ -23,6 +23,12 @@ final class OmSessionContext
         $this->tui = $context;
     }
 
+    /** Live bound TUI context, or null when commands run outside a TUI host. */
+    public function tui(): ?TuiExtensionContextInterface
+    {
+        return $this->tui;
+    }
+
     public function sessionIdOrNull(): ?string
     {
         if (null === $this->tui) {
