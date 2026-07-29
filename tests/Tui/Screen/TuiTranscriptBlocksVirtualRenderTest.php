@@ -576,8 +576,11 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
     }
 
     #[Test]
-    public function testUserMessageRendersCodeInlineMarkdown(): void
+    public function testUserMessageRendersMarkdownAndInlineHtmlAsCode(): void
     {
+        // Ordinary UserMessage stays Markdown-rendered. Patched Symfony TUI maps
+        // parsed HtmlInline to existing inline-code style, so raw Session 4 input
+        // remains fully visible with the ❯ glyph while backtick code still works.
         $harness = new VirtualTuiHarness(sessionId: self::SESSION_ID);
         $harness->screen()->setTranscriptBlocks([
             new TranscriptBlock(
@@ -585,14 +588,16 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
                 kind: TranscriptBlockKindEnum::UserMessage,
                 runId: self::SESSION_ID,
                 seq: 1,
-                text: 'Run `bin/console` to start',
+                text: 'Check where we are using <system-reminder>? Run `bin/console`',
             ),
         ]);
         $harness->screen()->setWorkingVisible(false);
 
         $text = $harness->plainScreenText();
 
-        // Inline code should be rendered (backticks consumed)
+        $this->assertStringContainsString('Check where we are using <system-reminder>?', $text,
+            'Raw inline HTML must remain fully visible via HtmlInline-as-code rendering',
+        );
         $this->assertStringContainsString('bin/console', $text);
         $this->assertStringNotContainsString('`bin/console`', $text,
             'Inline code backticks must not appear literally',
