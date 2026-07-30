@@ -52,17 +52,17 @@ final class TuiSubagentLiveViewE2eTest extends TestCase
             SubagentProgressEventsFixture::write($this->testProjectDir, $sessionId);
 
             $this->tmux->sendKey($pane, 'C-u');
-            usleep(50_000);
             $this->tmux->sendLiteral($pane, "/resume {$sessionId}");
             $this->tmux->sendKey($pane, 'Enter');
             $this->tmux->waitForCaptureContains($pane, '█', TmuxHarness::TUI_STARTUP_LOGO_TIMEOUT_PARALLEL);
-            usleep(300_000);
-
+            $this->tmux->waitForTuiReadyAfterLogo($pane);
+            // Resume proof: fixture artifact must be visible before slash commands.
+            $this->tmux->waitForCaptureContains($pane, 'agent_e2e_progress_fixture', 12.0, 'Resumed transcript must show fixture artifact');
             $this->tmux->sendKey($pane, 'C-u');
-            usleep(50_000);
             $this->tmux->sendLiteral($pane, '/agents-live');
             $this->tmux->sendKey($pane, 'Enter');
-            $this->tmux->waitForCaptureContains($pane, 'agent_e2e_progress_fixture', 10.0, 'Picker must list subagent artifact');
+            // Transcript already contains the artifact id; wait for picker chrome.
+            $this->tmux->waitForCaptureContains($pane, 'Agents live', 10.0, 'Agents live picker must open');
             $pickerCap = $this->tmux->capturePlainWithHistory($pane, 2500);
             $this->assertStringContainsString(ChildContextStatisticsFixture::CONTEXT_DETAIL, $pickerCap, 'Picker row must show child context usage');
             $this->assertStringContainsString(ChildContextStatisticsFixture::MODEL_SHORT, $pickerCap, 'Picker row must show child model');
@@ -75,7 +75,6 @@ final class TuiSubagentLiveViewE2eTest extends TestCase
             $this->assertStringContainsString(ChildContextStatisticsFixture::MODEL_SHORT, $liveCap, 'Child live footer must show child model');
 
             $this->tmux->sendKey($pane, 'C-u');
-            usleep(50_000);
             $this->tmux->sendLiteral($pane, 'continue after completion');
             $this->tmux->sendKey($pane, 'Enter');
             $this->tmux->waitForCaptureContains($pane, 'has finished', 10.0, 'Terminal child input must show finished-subagent warning');
@@ -83,7 +82,6 @@ final class TuiSubagentLiveViewE2eTest extends TestCase
             $this->assertStringContainsString('has finished', strtolower($capAfterTerminal), 'Terminal child warning must mention finished subagent');
 
             $this->tmux->sendKey($pane, 'C-u');
-            usleep(50_000);
             $this->tmux->sendLiteral($pane, '/new');
             $this->tmux->sendKey($pane, 'Enter');
             $this->tmux->waitForCaptureContains($pane, 'Leave subagent live view', 10.0, 'Blocked slash must show leave-live-view warning');
@@ -95,7 +93,6 @@ final class TuiSubagentLiveViewE2eTest extends TestCase
             $this->assertStringNotContainsString('skills', strtolower($capLive), 'Compact header must be hidden in live view');
 
             $this->tmux->sendKey($pane, 'C-u');
-            usleep(50_000);
             $this->tmux->sendLiteral($pane, '/agents-main');
             $this->tmux->sendKey($pane, 'Enter');
             $this->tmux->waitForCaptureContains($pane, 'scout [completed]', 10.0, 'Parent transcript must restore after /agents-main');
@@ -116,7 +113,7 @@ final class TuiSubagentLiveViewE2eTest extends TestCase
     private function createSessionAndWaitForAssistant(TmuxPane $pane): string
     {
         $this->tmux->waitForCaptureContains($pane, '█', TmuxHarness::TUI_STARTUP_LOGO_TIMEOUT_PARALLEL);
-        usleep(150_000);
+        $this->tmux->waitForTuiReadyAfterLogo($pane);
         $this->tmux->sendLiteral($pane, 'hi');
         $this->tmux->sendKey($pane, 'Enter');
         $sessionId = null;

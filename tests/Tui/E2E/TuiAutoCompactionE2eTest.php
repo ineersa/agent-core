@@ -79,7 +79,6 @@ final class TuiAutoCompactionE2eTest extends TestCase
             // Submit a prompt.  The replay fixture provides a response
             // whose token count exceeds the 10-token auto threshold.
             $this->tmux->sendKey($pane, 'C-u');
-            usleep(100_000);
             $prompt = 'Respond with a paragraph about AI agents.';
             $this->tmux->sendLiteral($pane, $prompt);
             $this->tmux->sendKey($pane, 'Enter');

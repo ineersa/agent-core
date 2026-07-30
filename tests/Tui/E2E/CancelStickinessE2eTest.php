@@ -73,9 +73,7 @@ final class CancelStickinessE2eTest extends TestCase
 
             // Clear any residual editor state.
             $this->tmux->sendKey($pane, 'Escape');
-            usleep(100_000);
             $this->tmux->sendKey($pane, 'C-u');
-            usleep(100_000);
 
             // Send a slow bash tool-call prompt (sleep 4). The multi-second
             // window guarantees Escape lands during tool execution, not the

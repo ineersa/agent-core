@@ -89,7 +89,6 @@ final class TuiRepairCommandE2eTest extends TestCase
             $this->tmux->waitForTuiReadyAfterLogo($pane);
 
             $this->tmux->sendKey($pane, 'C-u');
-            usleep(50_000);
             $this->tmux->sendLiteral($pane, '/repair');
             $this->tmux->sendKey($pane, 'Enter');
 

@@ -90,7 +90,6 @@ final class TuiToolOutputE2eTest extends TestCase
             // the read tool executes for real; then the LLM fixture exhaustion
             // fallback returns "done".
             $this->tmux->sendKey($pane, 'C-u');
-            usleep(100_000);
 
             $prompt = 'Read ./test.txt';
             $this->tmux->sendLiteral($pane, $prompt);

@@ -51,18 +51,17 @@ final class TuiSubagentChildHitlCancellationE2eTest extends TestCase
             SubagentChildHitlEventsFixture::write($this->testProjectDir, $sessionId);
 
             $this->tmux->sendKey($pane, 'C-u');
-            usleep(50_000);
             $this->tmux->sendLiteral($pane, "/resume {$sessionId}");
             $this->tmux->sendKey($pane, 'Enter');
             $this->tmux->waitForCaptureContains($pane, '█', TmuxHarness::TUI_STARTUP_LOGO_TIMEOUT_PARALLEL);
-            usleep(300_000);
+            $this->tmux->waitForTuiReadyAfterLogo($pane);
 
             $this->tmux->waitForCaptureContains($pane, 'needs input', 12.0, 'Main transcript card must show child needs input');
 
             $this->tmux->sendKey($pane, 'C-u');
-            usleep(50_000);
             $this->tmux->sendLiteral($pane, '/agents-live');
             $this->tmux->sendKey($pane, 'Enter');
+            $this->tmux->waitForCaptureContains($pane, 'Agents live', 10.0, 'Agents live picker must open');
             $this->tmux->waitForCaptureContains($pane, '⚠ needs input', 10.0, 'Picker must mark waiting child');
 
             $this->tmux->sendKey($pane, 'Enter');
@@ -78,7 +77,7 @@ final class TuiSubagentChildHitlCancellationE2eTest extends TestCase
     private function createSessionAndWaitForAssistant(TmuxPane $pane): string
     {
         $this->tmux->waitForCaptureContains($pane, '█', TmuxHarness::TUI_STARTUP_LOGO_TIMEOUT_PARALLEL);
-        usleep(150_000);
+        $this->tmux->waitForTuiReadyAfterLogo($pane);
         $this->tmux->sendLiteral($pane, 'hi');
         $this->tmux->sendKey($pane, 'Enter');
         $sessionId = null;

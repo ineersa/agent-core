@@ -84,7 +84,7 @@ final class TuiResumeModelRestoreE2eTest extends TestCase
         try {
             // Wait for startup layout.
             $this->tmux->waitForCaptureContains($pane1, '█', TmuxHarness::TUI_STARTUP_LOGO_TIMEOUT_PARALLEL);
-            usleep(200_000);
+            $this->tmux->waitForTuiReadyAfterLogo($pane1);
 
             // Wait for assistant block (◇) from the replay fixture.
             $this->tmux->waitForCallback(
@@ -155,12 +155,9 @@ final class TuiResumeModelRestoreE2eTest extends TestCase
             );
 
             try {
-                // Wait for the resumed TUI to paint. The header (█) is the
-                // most reliable stable-mount signal.
+                // Wait for the resumed TUI to paint (logo + idle/work + footer).
                 $this->tmux->waitForCaptureContains($pane2, '█', TmuxHarness::TUI_STARTUP_LOGO_TIMEOUT_PARALLEL);
-                usleep(300_000);
-
-                $resumedPane = $this->tmux->capturePlain($pane2);
+                $resumedPane = $this->tmux->waitForTuiReadyAfterLogo($pane2);
 
                 // A) Header and footer present.
                 $this->assertStringContainsString('█', $resumedPane,

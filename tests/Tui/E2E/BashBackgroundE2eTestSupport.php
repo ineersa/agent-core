@@ -72,9 +72,7 @@ trait BashBackgroundE2eTestSupport
         $tmux->waitForCaptureContains($pane, '█', 10.0);
         $tmux->waitForTuiReadyAfterLogo($pane);
         $tmux->sendKey($pane, 'Escape');
-        usleep(100_000);
         $tmux->sendKey($pane, 'C-u');
-        usleep(100_000);
     }
 
     protected function waitForBashBackgroundPrompt(TmuxHarness $tmux, TmuxPane $pane): void

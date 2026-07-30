@@ -248,7 +248,6 @@ final class TuiJourneyE2eTest extends TestCase
         // AgentEnd; the follow_up should dispatch AdvanceRun and get a
         // replay-assisted response.
         $this->tmux->sendKey($pane, 'C-u');
-        usleep(100_000);
         $this->tmux->sendLiteral($pane, 'hello');
         $this->tmux->sendKey($pane, 'Enter');
 

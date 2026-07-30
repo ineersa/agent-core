@@ -51,17 +51,17 @@ final class TuiSubagentLiveChildExportE2eTest extends TestCase
             SubagentProgressEventsFixture::write($this->testProjectDir, $sessionId);
 
             $this->tmux->sendKey($pane, 'C-u');
-            usleep(50_000);
             $this->tmux->sendLiteral($pane, "/resume {$sessionId}");
             $this->tmux->sendKey($pane, 'Enter');
             $this->tmux->waitForCaptureContains($pane, '█', TmuxHarness::TUI_STARTUP_LOGO_TIMEOUT_PARALLEL);
-            usleep(300_000);
-
+            $this->tmux->waitForTuiReadyAfterLogo($pane);
+            // Resume proof: fixture artifact must be visible before slash commands.
+            $this->tmux->waitForCaptureContains($pane, 'agent_e2e_progress_fixture', 12.0, 'Resumed transcript must show fixture artifact');
             $this->tmux->sendKey($pane, 'C-u');
-            usleep(50_000);
             $this->tmux->sendLiteral($pane, '/agents-live');
             $this->tmux->sendKey($pane, 'Enter');
-            $this->tmux->waitForCaptureContains($pane, 'agent_e2e_progress_fixture', 10.0, 'Picker must list subagent artifact');
+            // Transcript already contains the artifact id; wait for picker chrome.
+            $this->tmux->waitForCaptureContains($pane, 'Agents live', 10.0, 'Agents live picker must open');
 
             $this->tmux->sendKey($pane, 'e');
             $expectedHtml = $this->testProjectDir.'/hatfield-child-agent_e2e_progress_fixture.html';
@@ -117,7 +117,7 @@ final class TuiSubagentLiveChildExportE2eTest extends TestCase
     private function createSessionAndWaitForAssistant(TmuxPane $pane): string
     {
         $this->tmux->waitForCaptureContains($pane, '█', TmuxHarness::TUI_STARTUP_LOGO_TIMEOUT_PARALLEL);
-        usleep(150_000);
+        $this->tmux->waitForTuiReadyAfterLogo($pane);
         $this->tmux->sendLiteral($pane, 'hi');
         $this->tmux->sendKey($pane, 'Enter');
         $sessionId = null;

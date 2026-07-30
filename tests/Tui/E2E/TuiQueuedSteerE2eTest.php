@@ -60,7 +60,6 @@ final class TuiQueuedSteerE2eTest extends TestCase
             $this->tmux->waitForTuiReadyAfterLogo($pane);
 
             $this->tmux->sendKey($pane, 'C-u');
-            usleep(100_000);
             $this->tmux->sendLiteral($pane, 'Run sleep 3');
             $this->tmux->sendKey($pane, 'Enter');
 
