@@ -17,13 +17,9 @@ use Ineersa\AgentCore\Domain\Run\RunStatus;
 
 final readonly class CommandMailboxPolicy
 {
-    private const string SteerDrainOneAtATime = 'one_at_a_time';
-    private const string SteerDrainAll = 'all';
-
     public function __construct(
         private CommandStoreInterface $commandStore,
         private CommandRouter $commandRouter,
-        private string $steerDrainMode = self::SteerDrainOneAtATime,
     ) {
     }
 
@@ -87,6 +83,10 @@ final readonly class CommandMailboxPolicy
      */
     private function applyPendingCommands(RunState $state, CommandApplicationBoundary $boundary): CommandApplicationResult
     {
+        // Safe-boundary cutoff under the outer per-run lock: only commands
+        // already durably enqueued (agent_command_queued) before this pending()
+        // snapshot are drained here, in store FIFO order. Later enqueues wait
+        // for the next turn-start or stop boundary.
         $pendingCommands = $this->commandStore->pending($state->runId);
         if ([] === $pendingCommands) {
             return new CommandApplicationResult($state, [], false);
@@ -96,23 +96,8 @@ final readonly class CommandMailboxPolicy
         $eventSpecs = [];
         $effects = [];
         $shouldContinue = false;
-        $supersededSteerKeys = $this->supersededSteerKeys($pendingCommands);
 
         foreach ($pendingCommands as $pendingCommand) {
-            if (isset($supersededSteerKeys[$pendingCommand->idempotencyKey])) {
-                $this->commandStore->markSuperseded($state->runId, $pendingCommand->idempotencyKey, 'Superseded by a newer steer command.');
-                $eventSpecs[] = [
-                    'type' => RunEventTypeEnum::AgentCommandSuperseded->value,
-                    'payload' => [
-                        'kind' => CoreCommandKind::Steer,
-                        'idempotency_key' => $pendingCommand->idempotencyKey,
-                        'reason' => 'Superseded by a newer steer command.',
-                    ],
-                ];
-
-                continue;
-            }
-
             if (\in_array($pendingCommand->kind, [CoreCommandKind::Steer, CoreCommandKind::FollowUp, CoreCommandKind::AppendMessage], true)) {
                 $messagePayload = $pendingCommand->payload['message'] ?? null;
                 if (!\is_array($messagePayload)) {
@@ -289,40 +274,6 @@ final readonly class CommandMailboxPolicy
         }
 
         return $eventSpecs;
-    }
-
-    /**
-     * @param list<PendingCommand> $pendingCommands
-     *
-     * @return array<string, true>
-     */
-    private function supersededSteerKeys(array $pendingCommands): array
-    {
-        if (self::SteerDrainAll === $this->steerDrainMode) {
-            return [];
-        }
-
-        $steerCommands = array_values(array_filter(
-            $pendingCommands,
-            static fn (PendingCommand $pendingCommand): bool => CoreCommandKind::Steer === $pendingCommand->kind,
-        ));
-
-        if (\count($steerCommands) <= 1) {
-            return [];
-        }
-
-        $latestSteerCommand = $steerCommands[\count($steerCommands) - 1];
-        $superseded = [];
-
-        foreach ($steerCommands as $steerCommand) {
-            if ($steerCommand->idempotencyKey === $latestSteerCommand->idempotencyKey) {
-                continue;
-            }
-
-            $superseded[$steerCommand->idempotencyKey] = true;
-        }
-
-        return $superseded;
     }
 
     private function lastMessageRole(RunState $state): ?string
