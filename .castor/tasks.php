@@ -607,6 +607,9 @@ function cleanup_workers(): void
  * @param array<string,array{cmd:string}> $steps
  * @param array<string,string>            $failures out
  * @param array<string,float|int>         $timings  out
+ *
+ * @param-out array<string,string>        $failures
+ * @param-out array<string,float|int>     $timings
  */
 function run_check_commands_parallel(array $steps, array &$failures, array &$timings, ?float $checkWallDeadline = null): void
 {

@@ -49,27 +49,11 @@ require_once __DIR__.'/qa_tmux.php';
 // ── Shared proc_open parallel runner ──────────────────────────
 
 /**
- * Run multiple shell commands concurrently via proc_open.
- *
- * Each command is spawned in an isolated process group via setsid -w
- * so Castor can cleanly reap the entire tree — including escaped
- * grandchildren like messenger:consume — after both timeout AND
- * normal completion.
- *
- * Pipe I/O is non-blocking and incremental: output is read during the
- * poll loop so that surviving grandchildren never cause a blocking
- * stream_get_contents hang after the direct child exits.
- *
- * @param array<string,array{cmd:string,log:string}> $commands
- * @param array<string,int>                          $timeouts Optional per-step timeout in seconds.
- *                                                             Defaults to empty (no Castor-enforced timeout).
- *
- * @return array<string,array{exitCode:int,output:string,duration:float}>
+ * Absolute ceiling for standalone test runners and castor check wall clock.
+ * Non-test tasks (build/packaging/composer/docker/agent) must not use this.
  */
 function castor_test_runner_max_seconds(): int
 {
-    // Absolute ceiling for standalone test runners and castor check wall clock.
-    // Non-test tasks (build/packaging/composer/docker/agent) must not use this.
     return 180;
 }
 
@@ -97,6 +81,24 @@ function run_test_command_bounded(string $step, string $command, int $timeoutSec
     return $results[$step] ?? ['exitCode' => -1, 'output' => 'no result', 'duration' => 0.0];
 }
 
+/**
+ * Run multiple shell commands concurrently via proc_open.
+ *
+ * Each command is spawned in an isolated process group via setsid -w
+ * so Castor can cleanly reap the entire tree — including escaped
+ * grandchildren like messenger:consume — after both timeout AND
+ * normal completion.
+ *
+ * Pipe I/O is non-blocking and incremental: output is read during the
+ * poll loop so that surviving grandchildren never cause a blocking
+ * stream_get_contents hang after the direct child exits.
+ *
+ * @param array<string,array{cmd:string,log?:string|null}> $commands
+ * @param array<string,int>                                $timeouts Optional per-step timeout in seconds.
+ *                                                                   Defaults to empty (no Castor-enforced timeout).
+ *
+ * @return array<string,array{exitCode:int,output:string,duration:float}>
+ */
 function run_commands_parallel(array $commands, array $timeouts = []): array
 {
     $processes = [];
@@ -1244,7 +1246,7 @@ PHPCODE;
     } else {
         echo "PASS: lock acquire timeout clamps to remaining wall at check() entry ({$lockAcquireCapK}s)\n";
     }
-    if ($remainingAfterLockK !== 3.0) {
+    if (3.0 !== $remainingAfterLockK) {
         echo "FAIL: remaining after 2s lock wait expected 3.0, got {$remainingAfterLockK}\n";
         $ok = false;
     } else {

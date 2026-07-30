@@ -1346,9 +1346,9 @@ function acquire_castor_check_lock(string $projectRoot, ?float $checkWallDeadlin
         if (null !== $checkWallDeadline) {
             $remainingWall = $checkWallDeadline - (hrtime(true) / 1e9);
             if ($remainingWall <= 0.0 || $elapsed >= $remainingWall) {
-                fail_quality(sprintf(
+                fail_quality(\sprintf(
                     'castor check exceeded absolute wall clock of %ds while waiting for lock (elapsed %.1fs, lock resource %s)',
-                    \castor_test_runner_max_seconds(),
+                    castor_test_runner_max_seconds(),
                     $elapsed,
                     $resource,
                 ));
@@ -1939,6 +1939,9 @@ function assert_castor_check_run_no_process_leaks(string $runId): void
 
 /**
  * ParaTest worker budget for check E2E lanes (conservative under parallel castor check).
+ *
+ * Under castor check, llm-real defaults to 1 worker to avoid process contention with
+ * unit/TUI lanes. Standalone castor test:llm-real keeps the higher focused budget.
  */
 function check_lane_paratest_processes(string $lane, int $default, int $max = 4): int
 {
@@ -1954,7 +1957,13 @@ function check_lane_paratest_processes(string $lane, int $default, int $max = 4)
     }
     if (false === $raw || '' === trim((string) $raw)) {
         $inCheck = false !== getenv('HATFIELD_QA_RUN_ID') && '' !== trim((string) getenv('HATFIELD_QA_RUN_ID'));
-        $processes = $inCheck ? $default : ('llm-real' === $lane ? 4 : $default);
+        if ($inCheck) {
+            // Live LLM under concurrent gate load: one worker avoids ParaTest
+            // process crashes seen when llm-real raced unit workers.
+            $processes = 'llm-real' === $lane ? 1 : $default;
+        } else {
+            $processes = 'llm-real' === $lane ? 4 : $default;
+        }
     } else {
         $processes = (int) $raw;
     }

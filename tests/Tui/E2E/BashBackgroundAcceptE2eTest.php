@@ -56,13 +56,11 @@ final class BashBackgroundAcceptE2eTest extends TestCase
             $this->tmux->sendLiteral($pane, 'Run sleep 4');
             $this->tmux->sendKey($pane, 'Enter');
 
-            $this->tmux->waitForHistoryContains($pane, 'Running', 20.0);
+            // Proof is the confirm overlay itself; do not stage on generic "Running".
             $this->waitForBashBackgroundPrompt($this->tmux, $pane);
 
             // Yes is the first SelectList item for QuestionKind::Confirm.
-            usleep(200_000);
             $this->tmux->sendKey($pane, 'Enter');
-            usleep(200_000);
 
             $this->tmux->waitForCallback(
                 $pane,
