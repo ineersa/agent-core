@@ -174,20 +174,6 @@ final class CacheCommandStore implements CommandStoreInterface
         }
     }
 
-    public function markSuperseded(string $runId, string $idempotencyKey, string $reason): void
-    {
-        $lock = $this->lockFactory->createLock(self::LOCK_KEY_PREFIX.$runId);
-        $lock->acquire(true);
-
-        try {
-            $data = $this->load($runId);
-            $data['statuses'][$idempotencyKey] = 'superseded: '.$reason;
-            $this->save($runId, $data);
-        } finally {
-            $lock->release();
-        }
-    }
-
     /**
      * Load command data for a run from the cache pool.
      *

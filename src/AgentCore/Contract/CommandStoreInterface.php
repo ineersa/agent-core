@@ -31,6 +31,4 @@ interface CommandStoreInterface
     public function markApplied(string $runId, string $idempotencyKey): void;
 
     public function markRejected(string $runId, string $idempotencyKey, string $reason): void;
-
-    public function markSuperseded(string $runId, string $idempotencyKey, string $reason): void;
 }

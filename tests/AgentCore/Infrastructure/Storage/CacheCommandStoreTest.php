@@ -204,20 +204,6 @@ final class CacheCommandStoreTest extends KernelTestCase
         $this->assertTrue($this->storeA->has('test-cross-1', 'key-mark-rejected'));
     }
 
-    public function testCrossInstanceMarkSupersededVisible(): void
-    {
-        $comm = new PendingCommand(
-            runId: 'test-cross-1',
-            kind: 'follow_up',
-            idempotencyKey: 'key-mark-superseded',
-        );
-        $this->storeA->enqueue($comm);
-
-        $this->storeB->markSuperseded('test-cross-1', 'key-mark-superseded', 'replaced');
-
-        $this->assertEmpty($this->storeA->pending('test-cross-1'));
-    }
-
     public function testIdempotencyKeyDeduplicationWorksCrossInstance(): void
     {
         $comm = new PendingCommand(
