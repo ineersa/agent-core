@@ -634,8 +634,15 @@ final class TmuxHarness
 
             // ── Timeout ──────────────────────────────────
             @proc_terminate($process, \SIGKILL);
-            // Wait briefly for the signal to take effect.
-            usleep(50_000);
+            // Boundedly wait for SIGKILL to reap before final drain.
+            $killDeadline = microtime(true) + 0.5;
+            while (microtime(true) < $killDeadline) {
+                $status = @proc_get_status($process);
+                if (!($status['running'] ?? false)) {
+                    break;
+                }
+                usleep(1_000);
+            }
             $stdout .= (string) @stream_get_contents($pipes[1]);
 
             if ($throwOnTimeout) {

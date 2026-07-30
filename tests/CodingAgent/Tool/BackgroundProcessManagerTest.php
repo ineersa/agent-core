@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tests\Tool;
 
 use Ineersa\CodingAgent\Config\BackgroundProcessConfig;
-use Ineersa\CodingAgent\Entity\BackgroundProcess;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
 use Ineersa\CodingAgent\Tool\BackgroundProcess\LogTailResult;
@@ -80,20 +79,23 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
     public function testListReturnsRunningAndFinished(): void
     {
         $this->createManager();
-        $this->manager->start('sleep 3', self::TEST_SESSION);
-        $this->manager->start('echo "done"', self::TEST_SESSION);
+        $running = $this->manager->start('sleep 3', self::TEST_SESSION);
+        $finished = $this->manager->start('echo "done"', self::TEST_SESSION);
 
-        usleep(200_000);
+        $this->waitUntilFinished($finished->pid);
 
         $entities = $this->manager->list();
 
         $this->assertCount(2, $entities);
 
-        usort($entities, static fn (BackgroundProcess $a, BackgroundProcess $b): int => $a->pid <=> $b->pid);
+        $byPid = [];
+        foreach ($entities as $entity) {
+            $byPid[$entity->pid] = $entity;
+        }
 
-        $this->assertSame('running', $entities[0]->status->value);
-        $this->assertSame('finished', $entities[1]->status->value);
-        $this->assertSame(0, $entities[1]->exitCode);
+        $this->assertSame('running', $byPid[$running->pid]->status->value);
+        $this->assertSame('finished', $byPid[$finished->pid]->status->value);
+        $this->assertSame(0, $byPid[$finished->pid]->exitCode);
 
         $this->manager->shutdownCleanup();
     }
@@ -105,7 +107,7 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
         $this->createManager();
         $result = $this->manager->start('printf "line1\nline2\n"', self::TEST_SESSION);
 
-        usleep(150_000);
+        $this->waitUntilLogContains($result->logPath, 'line2');
 
         $logResult = $this->manager->readLogTail($result->pid);
 
@@ -132,20 +134,31 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
 
     public function testStopTerminatesWithTerm(): void
     {
-        $this->createManager(stopGraceSeconds: 1);
+        // Large grace proves stop returns as soon as the process dies after TERM
+        // instead of blocking the full unconditional sleep (pre-fix path).
+        $this->createManager(stopGraceSeconds: 5);
 
         $sentinel = $this->tmpDir.'/term_sentinel';
+        $readySentinel = $this->tmpDir.'/term_ready';
         $scriptPath = $this->tmpDir.'/term_test.sh';
         file_put_contents(
             $scriptPath,
-            "#!/bin/bash\ntrap 'echo term_received > ".escapeshellarg($sentinel)."; exit 0' TERM\nsleep 3\n",
+            "#!/bin/bash\ntrap 'echo term_received > ".escapeshellarg($sentinel)."; exit 0' TERM\necho ready > ".escapeshellarg($readySentinel)."\nsleep 3\n",
         );
         chmod($scriptPath, 0755);
 
         $result = $this->manager->start($scriptPath, self::TEST_SESSION);
-        usleep(100_000);
 
+        // Bounded readiness: fixture writes after TERM trap is installed.
+        $readyDeadlineNs = hrtime(true) + 2_000_000_000;
+        while (!is_file($readySentinel) && hrtime(true) < $readyDeadlineNs) {
+            usleep(10_000);
+        }
+        $this->assertFileExists($readySentinel, 'TERM trap fixture must signal ready before stop()');
+
+        $startedNs = hrtime(true);
         $stopResult = $this->manager->stop($result->pid);
+        $elapsedSeconds = (hrtime(true) - $startedNs) / 1_000_000_000;
 
         $this->assertInstanceOf(StopResult::class, $stopResult);
         $this->assertTrue($stopResult->stoppedByUser);
@@ -153,6 +166,8 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
         $this->assertSame('term', $stopResult->signalSent);
         $this->assertFileExists($sentinel);
         $this->assertStringContainsString('term_received', file_get_contents($sentinel));
+        // Cooperative exit must not burn the 5s grace; 1.5s leaves headroom under load.
+        $this->assertLessThan(1.5, $elapsedSeconds, 'stop() must return once TERM is honored, not after full grace');
     }
 
     public function testStopEscalatesToKill(): void
@@ -172,7 +187,7 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
         $this->createManager();
         $result = $this->manager->start('echo "quick"', self::TEST_SESSION);
 
-        usleep(200_000);
+        $this->waitUntilFinished($result->pid);
 
         $stopResult = $this->manager->stop($result->pid);
 
@@ -197,7 +212,7 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
         $this->createManager(retentionSeconds: 0);
         $result = $this->manager->start('echo "stale"', self::TEST_SESSION);
 
-        usleep(200_000);
+        $this->waitUntilFinished($result->pid);
 
         $count = $this->manager->cleanupStale();
         $this->assertSame(1, $count);
@@ -233,8 +248,7 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
         $this->createManager(stopGraceSeconds: 0);
         $result = $this->manager->start('sleep 30', self::TEST_SESSION);
         $pid = $result->pid;
-
-        usleep(100_000);
+        // start() already persists ownership; no fixed delay before other-instance cleanup.
 
         $otherManager = $this->createOtherManager(stopGraceSeconds: 0);
         $this->assertSame(0, $otherManager->shutdownCleanup());
@@ -258,10 +272,11 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
     public function testListFiltersBySession(): void
     {
         $this->createManager();
-        $this->manager->start('echo "session-a"', 'session-A');
-        $this->manager->start('echo "session-b"', 'session-B');
-
-        usleep(200_000);
+        $a = $this->manager->start('echo "session-a"', 'session-A');
+        $b = $this->manager->start('echo "session-b"', 'session-B');
+        // Session scoping is on persisted rows; wait only for both rows to finish so list() is stable.
+        $this->waitUntilFinished($a->pid);
+        $this->waitUntilFinished($b->pid);
 
         $sessionA = $this->manager->list('session-A');
         $this->assertCount(1, $sessionA);
@@ -289,8 +304,7 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
     {
         $this->createManager();
         $result = $this->manager->start('echo "record-id-test"', self::TEST_SESSION);
-
-        usleep(100_000);
+        // start() persists the record id synchronously.
 
         $entity = $this->manager->findByRecordId($result->id);
         $this->assertNotNull($entity);
@@ -304,8 +318,7 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
     {
         $this->createManager();
         $result = $this->manager->start('echo "session-scope"', 'session-A');
-
-        usleep(100_000);
+        // start() persists session scope synchronously.
 
         // Same session → found
         $entity = $this->manager->findByRecordId($result->id, 'session-A');
@@ -335,8 +348,7 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
     {
         $this->createManager();
         $result = $this->manager->start('echo "exists-test"', self::TEST_SESSION);
-
-        usleep(100_000);
+        // start() persists the pid row synchronously.
 
         $this->assertTrue($this->manager->existsByPid($result->pid));
 
@@ -354,8 +366,7 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
     {
         $this->createManager();
         $result = $this->manager->start('echo "exists-record-id"', self::TEST_SESSION);
-
-        usleep(100_000);
+        // start() persists the record id synchronously.
 
         $this->assertTrue($this->manager->existsByRecordId($result->id));
 
@@ -370,6 +381,37 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
     }
 
     /* ── Helpers ── */
+
+    private function waitUntilFinished(int $pid, float $timeoutSeconds = 2.0): void
+    {
+        $deadline = microtime(true) + $timeoutSeconds;
+        while (microtime(true) < $deadline) {
+            foreach ($this->manager->list() as $entity) {
+                if ($entity->pid === $pid && null !== $entity->finishedAt) {
+                    return;
+                }
+            }
+            usleep(10_000);
+        }
+
+        $this->fail(\sprintf('Timed out waiting for pid %d to finish', $pid));
+    }
+
+    private function waitUntilLogContains(string $logPath, string $needle, float $timeoutSeconds = 2.0): void
+    {
+        $deadline = microtime(true) + $timeoutSeconds;
+        while (microtime(true) < $deadline) {
+            if (is_file($logPath)) {
+                $content = (string) @file_get_contents($logPath);
+                if (str_contains($content, $needle)) {
+                    return;
+                }
+            }
+            usleep(10_000);
+        }
+
+        $this->fail(\sprintf('Timed out waiting for log %s to contain %s', $logPath, $needle));
+    }
 
     /**
      * Create a BackgroundProcessManager using the container's Doctrine

@@ -235,14 +235,16 @@ The following tests exercise compaction. No new tests are added by this document
 
 ### Live LLM smoke
 
-There is no dedicated live compaction controller smoke in the `llm-real` group. Compaction async LLM summarization is covered by `ExecuteCompactionStepWorkerTest`, `CompactionStepResultHandlerTest`, and replay-backed controller/TUI E2E tests (`ControllerReplayAutoCompaction*`, `TuiCompactCommandE2eTest`, `TuiAutoCompactionE2eTest`). A prior `CompactionLiveSmokeTest` was removed because it was not deterministic under `castor check` (stall or upstream HTTP 500 on large summarization bodies).
+There is no dedicated live compaction controller smoke in the `llm-real` group. Compaction async LLM summarization is covered by `ExecuteCompactionStepWorkerTest`, `CompactionStepResultHandlerTest`, and replay-backed controller/TUI E2E tests (`ControllerReplayAutoCompaction*`, `TuiCompactCommandVirtualTest`, `TuiAutoCompactionE2eTest`). A prior `CompactionLiveSmokeTest` was removed because it was not deterministic under `castor check` (stall or upstream HTTP 500 on large summarization bodies).
 
-### Deterministic TUI E2E
+### Deterministic TUI proof
 
-- `TuiCompactCommandE2eTest` (`#[Group('tui-e2e-replay')]`): exercises the real interactive TUI (`TmuxHarness`) with replay-backed fixtures. Proves `/compact` command registration, no-session error, progress block, re-entrancy guard, async compaction success with visible "Conversation compacted" block, and structural failure with visible error block. Run with:
+- `TuiCompactCommandVirtualTest` (unit/virtual, `castor test`): exercises `/compact` through `VirtualTuiHarness` for progress and completed transcript blocks without tmux.
+- `TuiAutoCompactionE2eTest` / `TuiAutoCompactionCancelE2eTest` (`#[Group('tui-e2e-replay')]`): real interactive TUI (`TmuxHarness`) with replay-backed fixtures for auto-compaction visibility and Escape cancel. Run with:
 
   ```bash
-  castor test:tui --filter=TuiCompactCommandE2eTest
+  castor test --filter=TuiCompactCommandVirtualTest
+  castor test:tui --filter=TuiAutoCompactionE2eTest
   ```
 
 ### Unit and integration tests
@@ -283,9 +285,10 @@ Normative behavior for implementors (summary):
 
 Concise steps to verify compaction manually:
 
-1. **Deterministic TUI E2E (replay-backed):**
+1. **Deterministic TUI proof (virtual + auto-compaction tmux):**
    ```bash
-   castor test:tui --filter=TuiCompactCommandE2eTest
+   castor test --filter=TuiCompactCommandVirtualTest
+   castor test:tui --filter=TuiAutoCompactionE2eTest
    ```
 
 2. **Full QA gate (deterministic, before PR):**

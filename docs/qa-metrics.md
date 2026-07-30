@@ -40,7 +40,7 @@ Source: metrics from MAINT-05G `castor check` and focused runs (before live `llm
 | Concurrent full checks | serialized per repository | Sibling worktrees share Symfony Lock (FlockStore) keyed by `git rev-parse --git-common-dir`; lock under `$XDG_RUNTIME_DIR/hatfield/castor-check/`; default **60s** acquire wait (`CASTOR_CHECK_LOCK_ACQUIRE_TIMEOUT_S`, override `HATFIELD_CASTOR_CHECK_LOCK_TIMEOUT`); failure prints holder metadata; `HATFIELD_CASTOR_CHECK_LOCK=0` stress only |
 | QA run leak assertion | `castor check` only | After lanes: scan `/proc/*/environ` for current-user processes with this run's `HATFIELD_QA_RUN_ID`; fail with pid/ppid/sid/cwd/cmd diagnostics; no auto-kill |
 | Check lane artifacts | `castor check` only | Each parallel lane must write non-empty `check-<lane>.log` under `HATFIELD_QA_REPORTS_DIR` |
-| Check ParaTest budgets | `castor check` lanes | unit=4 (max 8), tui=2 (max 4), llm-real=2 (max 4); overrides `HATFIELD_CHECK_*_PARATEST_PROCESSES` |
+| Check ParaTest budgets | `castor check` lanes (historical MAINT-05G-era defaults) | unit=4 (max 8), tui=2 (max 4), llm-real=2 (max 4); overrides `HATFIELD_CHECK_*_PARATEST_PROCESSES` — see **Current baseline** for live llm-real worker default now 1 under check |
 | Llama-proxy cache guard | `castor check` only | Baseline/post `entries` from `/__llama_proxy/cache/stats`; fail if count grows (includes preflight). Warm with `castor test:llm-real` before gate; `HATFIELD_LLM_CACHE_GUARD=0` stress only |
 | check_llm_generation_ready in check | **no** | Only run by opt-in live commands |
 | Custom Castor shard discovery | **removed** | ParaTest handles parallelism for both local dev and gate |
@@ -50,13 +50,16 @@ Source: metrics from MAINT-05G `castor check` and focused runs (before live `llm
 
 ## Current baseline (llm-real in `castor check`)
 
-Source: `task/llm-proxy-deterministic-live-tests` — live `llm-real` lane restored to the gate with ParaTest (`--processes=4`) and llama-proxy cache normalization on port 9052.
+Source: `task/llm-proxy-deterministic-live-tests` originally restored live `llm-real` to the gate with llama-proxy cache normalization on port 9052; later QA hardening set check-lane llm-real default workers to **1** and absolute Castor test/`check` timeouts to **180s**.
 
 | Metric | Current | Notes |
 |--------|---------|-------|
-| `castor check` wall time | **~55–75s** (warm proxy) | 7 concurrent lanes: deptrac, ParaTest unit/integration, controller-replay, TUI replay, **test:llm-real** (~22–25s warm), phpstan, cs-check; `check_llm_generation_ready()` once (TTL cache 120s) |
-| Live LLM in `castor check` | **yes** | Dedicated `test:llm-real` lane (8 tests); not implicit TUI live calls |
-| `castor test:llm-real` (full) | **~22–25s** warm | ParaTest 4 workers; filtered runs stay sequential PHPUnit |
+| `castor check` absolute wall | **180s from task entry** | Includes lock wait, setup/preflight, lanes, finalizers; lane budgets clamp to remaining wall. Non-test Castor tasks are not subject to this cap. |
+| Castor test-runner hard timeout | **≤180s** | All Castor-started test runners (`castor test`, `test:tui`, `test:llm-real`, controller lanes, …) use session/process-tree reaping on timeout/exit. |
+| `castor check` wall time (typical warm) | **~55–75s** (warm proxy) | 7 concurrent lanes: deptrac, ParaTest unit/integration, controller-replay, TUI replay, **test:llm-real**, phpstan, cs-check; `check_llm_generation_ready()` once (TTL cache 120s). Historical timing estimate only — not a guarantee under load. |
+| Live LLM in `castor check` | **yes** | Dedicated `test:llm-real` lane; not implicit TUI live calls |
+| Check-lane `test:llm-real` workers | **1** default (max 4) | `HATFIELD_CHECK_LLM_REAL_PARATEST_PROCESSES`; reduced from earlier 2/4 defaults to avoid process contention under concurrent gate load |
+| `castor test:llm-real` (full standalone) | warm runs often ~tens of seconds | ParaTest **4** workers; filtered runs stay sequential PHPUnit; hard timeout ≤180s |
 | check_llm_generation_ready in check | **yes** | Once before parallel lanes; cached skip on repeat within TTL |
 | llama.cpp / proxy | **required** | Port 9052; proxy `cache_normalize_messages` recommended for stable cache keys |
 

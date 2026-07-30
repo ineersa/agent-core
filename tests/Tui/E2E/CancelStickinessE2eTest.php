@@ -51,7 +51,7 @@ final class CancelStickinessE2eTest extends TestCase
      * without regressing to Working.
      *
      * Strategy: submit a prompt that triggers a bash tool-call fixture
-     * (sleep 8), wait for the tool-execution indicator (ToolResult
+     * (sleep 4), wait for the tool-execution indicator (ToolResult
      * "Running…" block) so Escape is guaranteed to land during the
      * multi-second tool phase rather than the instant-replay LLM step,
      * then verify the footer never shows "Working" after "Cancelling".
@@ -73,14 +73,12 @@ final class CancelStickinessE2eTest extends TestCase
 
             // Clear any residual editor state.
             $this->tmux->sendKey($pane, 'Escape');
-            usleep(100_000);
             $this->tmux->sendKey($pane, 'C-u');
-            usleep(100_000);
 
-            // Send a slow bash tool-call prompt (sleep 8). The multi-second
+            // Send a slow bash tool-call prompt (sleep 4). The multi-second
             // window guarantees Escape lands during tool execution, not the
             // instant-replay LLM step, while keeping wall time under 15s.
-            $this->tmux->sendLiteral($pane, 'Run sleep 8');
+            $this->tmux->sendLiteral($pane, 'Run sleep 4');
             $this->tmux->sendKey($pane, 'Enter');
 
             // Wait for the tool execution indicator: the ToolResult block
@@ -165,7 +163,7 @@ final class CancelStickinessE2eTest extends TestCase
     {
         $fixturePaths = [];
 
-        // Use the bash-sleep fixture: triggers a real bash sleep 8,
+        // Use the bash-sleep fixture: triggers a real bash sleep 4,
         // giving the cancel mechanism time to propagate and the TUI time
         // to render the Cancelling status.
         $toolCallFixture = __DIR__.'/fixtures/tui-tool-call-bash-sleep.json';

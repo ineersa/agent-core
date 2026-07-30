@@ -80,7 +80,6 @@ final class TuiProviderErrorE2eTest extends TestCase
 
             // Submit a simple prompt that will trigger the LLM call.
             $this->tmux->sendKey($pane, 'C-u');
-            usleep(100_000);
 
             $prompt = 'Respond with exactly one sentence: the sky is blue.';
             $this->tmux->sendLiteral($pane, $prompt);

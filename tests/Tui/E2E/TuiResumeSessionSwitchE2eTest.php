@@ -56,14 +56,11 @@ final class TuiResumeSessionSwitchE2eTest extends TestCase
             ResumeCanonicalEventsFixture::write($this->testProjectDir, $sessionId);
 
             $this->tmux->sendKey($pane, 'C-u');
-            usleep(50_000);
             $this->tmux->sendLiteral($pane, "/resume {$sessionId}");
             $this->tmux->sendKey($pane, 'Enter');
 
             $this->tmux->waitForCaptureContains($pane, '█', TmuxHarness::TUI_STARTUP_LOGO_TIMEOUT_PARALLEL);
-            usleep(200_000);
-
-            $visiblePane = $this->tmux->capturePlain($pane);
+            $visiblePane = $this->tmux->waitForTuiReadyAfterLogo($pane);
             $this->assertStringContainsString($sessionId, $visiblePane);
             $this->assertStringContainsString('█', $visiblePane);
             $this->assertStringContainsString('◆', $visiblePane);
@@ -92,18 +89,14 @@ final class TuiResumeSessionSwitchE2eTest extends TestCase
             $sessionId = $this->createSessionAndWaitForAssistant($pane);
 
             $this->tmux->sendKey($pane, 'C-u');
-            usleep(50_000);
             $this->tmux->sendLiteral($pane, '/resume');
             $this->tmux->sendKey($pane, 'Enter');
 
             $this->tmux->waitForCaptureContains($pane, 'Resume session', 3.0);
-            usleep(150_000);
             $this->tmux->sendKey($pane, 'Enter');
 
             $this->tmux->waitForCaptureContains($pane, '█', TmuxHarness::TUI_STARTUP_LOGO_TIMEOUT_PARALLEL);
-            usleep(200_000);
-
-            $resumedPane = $this->tmux->capturePlain($pane);
+            $resumedPane = $this->tmux->waitForTuiReadyAfterLogo($pane);
             $this->assertStringContainsString($sessionId, $resumedPane);
             $this->assertStringNotContainsString('Resume session', $resumedPane);
             $this->assertStringContainsString('● idle', $resumedPane);
@@ -134,7 +127,7 @@ final class TuiResumeSessionSwitchE2eTest extends TestCase
     private function createSessionAndWaitForAssistant(TmuxPane $pane): string
     {
         $this->tmux->waitForCaptureContains($pane, '█', TmuxHarness::TUI_STARTUP_LOGO_TIMEOUT_PARALLEL);
-        usleep(150_000);
+        $this->tmux->waitForTuiReadyAfterLogo($pane);
 
         $this->tmux->sendLiteral($pane, 'hi');
         $this->tmux->sendKey($pane, 'Enter');

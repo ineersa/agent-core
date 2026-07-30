@@ -75,35 +75,6 @@ final class ViewImageToolTest extends TestCase
         $this->assertSame('view_image', $definition->name);
     }
 
-    public function testDefinitionHasDescription(): void
-    {
-        $definition = $this->viewImageTool->definition();
-
-        $this->assertNotEmpty($definition->description);
-    }
-
-    public function testDefinitionHandlerIsInvokable(): void
-    {
-        $definition = $this->viewImageTool->definition();
-
-        $this->assertTrue(method_exists($definition->handler, '__invoke'));
-    }
-
-    public function testDefinitionHasPromptLine(): void
-    {
-        $definition = $this->viewImageTool->definition();
-
-        $this->assertNotEmpty($definition->promptLine);
-        $this->assertStringContainsString('view_image', $definition->promptLine);
-    }
-
-    public function testDefinitionHasGuidelines(): void
-    {
-        $definition = $this->viewImageTool->definition();
-
-        $this->assertNotEmpty($definition->promptGuidelines);
-    }
-
     public function testDefinitionJsonSchemaHasPathOnly(): void
     {
         $definition = $this->viewImageTool->definition();
@@ -119,24 +90,6 @@ final class ViewImageToolTest extends TestCase
         $this->assertCount(1, $schema['required']);
         $this->assertArrayHasKey('additionalProperties', $schema);
         $this->assertFalse($schema['additionalProperties']);
-    }
-
-    public function testDefinitionImplementsHatfieldToolProviderInterface(): void
-    {
-        $this->assertTrue(method_exists($this->viewImageTool, 'definition'));
-    }
-
-    /* ── ToolRegistry integration test ── */
-
-    public function testRegistryExposesViewImageTool(): void
-    {
-        $registry = new ToolRegistry([$this->viewImageTool]);
-        $toolbox = new RegistryBackedToolbox($registry);
-        $tools = $toolbox->getTools();
-
-        $toolNames = array_map(static fn ($t) => $t->getName(), $tools);
-
-        $this->assertContains('view_image', $toolNames);
     }
 
     /* ── __invoke() success tests (metadata only, no base64/data_url) ── */

@@ -46,7 +46,7 @@ final class TuiImagePasteE2eTest extends TestCase
 
     public function testCtrlVPasteDoesNotBlockEditorWhileClipboardHelperIsSlow(): void
     {
-        $this->installFakeWlPaste(delaySeconds: 2);
+        $this->installFakeWlPaste(delaySeconds: 1);
 
         $pane = $this->tmux->startDetached(
             command: $this->agentCommand(),
@@ -68,12 +68,28 @@ final class TuiImagePasteE2eTest extends TestCase
                 $pane,
                 static fn (string $cap): bool => str_contains($cap, '[Image #1]') && str_contains($cap, $marker),
                 timeout: 1.5,
-                message: 'Placeholder and typed input must appear before slow clipboard helper finishes (~2s)',
+                message: 'Placeholder and typed input must appear before slow clipboard helper finishes (~1s)',
                 history: 500,
             );
 
-            // Allow the delayed fake wl-paste (2s) to finish before submit promotion.
-            usleep(2_500_000);
+            // Wait until the delayed fake wl-paste (sleep 1) has finished producing PNG bytes.
+            // Elapsed wall time is not the contract; readiness is the fake helper exiting.
+            $this->tmux->waitForCallback(
+                $pane,
+                static fn (string $cap): bool => str_contains($cap, '[Image #1]') && str_contains($cap, $marker),
+                timeout: 4.0,
+                message: 'Image placeholder must remain visible while delayed clipboard completes',
+                history: 500,
+            );
+            // Bounded poll for no in-flight wl-paste child under the fake bin (process readiness).
+            $deadline = microtime(true) + 4.0;
+            while (microtime(true) < $deadline) {
+                $running = trim((string) shell_exec('pgrep -f '.escapeshellarg($this->fakeBinDir.'/wl-paste').' || true'));
+                if ('' === $running) {
+                    break;
+                }
+                usleep(50_000);
+            }
 
             $this->tmux->sendLiteral($pane, ' describe pasted image');
             $this->tmux->sendKey($pane, 'Enter');
@@ -81,7 +97,7 @@ final class TuiImagePasteE2eTest extends TestCase
             $this->tmux->waitForCallback(
                 $pane,
                 static fn (string $cap): bool => str_contains($cap, 'Image paste acknowledged'),
-                timeout: 25.0,
+                timeout: 12.0,
                 message: 'Expected replay assistant response after slow image paste submit',
                 history: 3000,
             );
@@ -133,7 +149,7 @@ final class TuiImagePasteE2eTest extends TestCase
             $this->tmux->waitForCallback(
                 $pane,
                 static fn (string $cap): bool => str_contains($cap, 'Image paste acknowledged'),
-                timeout: 20.0,
+                timeout: 12.0,
                 message: 'Expected replay assistant response after image paste submit',
                 history: 3000,
             );

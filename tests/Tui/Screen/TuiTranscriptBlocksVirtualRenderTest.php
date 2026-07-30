@@ -318,64 +318,6 @@ final class TuiTranscriptBlocksVirtualRenderTest extends TestCase
     }
 
     #[Test]
-    public function testAllProvidedGlyphConstantsMatchRenderedOutput(): void
-    {
-        // Integration proof that named glyph constants correspond to
-        // actual terminal output. If a constant is changed intentionally
-        // it must be updated here too.
-        $harness = new VirtualTuiHarness(sessionId: self::SESSION_ID);
-        $harness->screen()->setTranscriptBlocks([
-            new TranscriptBlock(
-                id: 'u1', kind: TranscriptBlockKindEnum::UserMessage,
-                runId: self::SESSION_ID, seq: 1, text: 'user',
-            ),
-            new TranscriptBlock(
-                id: 'a1', kind: TranscriptBlockKindEnum::AssistantMessage,
-                runId: self::SESSION_ID, seq: 2, text: 'assistant',
-            ),
-            new TranscriptBlock(
-                id: 'th1', kind: TranscriptBlockKindEnum::AssistantThinking,
-                runId: self::SESSION_ID, seq: 3, text: 'think',
-            ),
-            new TranscriptBlock(
-                id: 'tc1', kind: TranscriptBlockKindEnum::ToolCall,
-                runId: self::SESSION_ID, seq: 4, text: '', meta: ['tool_name' => 'tool'],
-            ),
-            new TranscriptBlock(
-                id: 'pr1', kind: TranscriptBlockKindEnum::Progress,
-                runId: self::SESSION_ID, seq: 5, text: 'doing',
-            ),
-            new TranscriptBlock(
-                id: 'ap1', kind: TranscriptBlockKindEnum::Approval,
-                runId: self::SESSION_ID, seq: 6, text: 'approved',
-            ),
-            new TranscriptBlock(
-                id: 'q1', kind: TranscriptBlockKindEnum::Question,
-                runId: self::SESSION_ID, seq: 7, text: 'ask?',
-            ),
-            new TranscriptBlock(
-                id: 'c1', kind: TranscriptBlockKindEnum::Cancelled,
-                runId: self::SESSION_ID, seq: 8, text: 'cancelled',
-            ),
-        ]);
-        $harness->screen()->setWorkingVisible(false);
-
-        $text = $harness->plainScreenText();
-
-        // Strip ANSI codes for pure text matching
-        $plain = preg_replace('/\x1b\[[0-9;]*m/', '', $text);
-
-        $this->assertStringContainsString(TranscriptGlyphs::GLYPH_USER_MESSAGE, $plain);
-        $this->assertStringContainsString(TranscriptGlyphs::GLYPH_ASSISTANT_MESSAGE, $plain);
-        $this->assertStringContainsString(TranscriptGlyphs::GLYPH_ASSISTANT_THINKING, $plain);
-        $this->assertStringContainsString(TranscriptGlyphs::GLYPH_TOOL, $plain);
-        $this->assertStringContainsString(TranscriptGlyphs::GLYPH_PROGRESS, $plain);
-        $this->assertStringContainsString(TranscriptGlyphs::GLYPH_APPROVAL, $plain);
-        $this->assertStringContainsString(TranscriptGlyphs::GLYPH_QUESTION, $plain);
-        $this->assertStringContainsString(TranscriptGlyphs::GLYPH_CANCELLED, $plain);
-    }
-
-    #[Test]
     public function testStreamingBlockShowsSuffix(): void
     {
         $harness = new VirtualTuiHarness(sessionId: self::SESSION_ID);

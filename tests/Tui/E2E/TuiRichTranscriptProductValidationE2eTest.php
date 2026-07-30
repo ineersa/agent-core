@@ -72,7 +72,6 @@ final class TuiRichTranscriptProductValidationE2eTest extends TestCase
             $this->tmux->waitForTuiReadyAfterLogo($pane);
 
             $this->tmux->sendKey($pane, 'C-u');
-            usleep(100_000);
             $this->tmux->sendLiteral($pane, 'hello');
             $this->tmux->sendKey($pane, 'Enter');
 
@@ -85,7 +84,6 @@ final class TuiRichTranscriptProductValidationE2eTest extends TestCase
             );
 
             $this->tmux->sendKey($pane, 'C-u');
-            usleep(100_000);
             $this->tmux->sendLiteral($pane, 'Edit target.txt');
             $this->tmux->sendKey($pane, 'Enter');
 
@@ -100,9 +98,13 @@ final class TuiRichTranscriptProductValidationE2eTest extends TestCase
 
             // Expand collapsed diff preview in the real terminal (Ctrl+O).
             $this->tmux->sendKey($pane, 'C-o');
-            usleep(200_000);
-
-            $fullCapture = $this->tmux->capturePlainWithHistory($pane, 3000);
+            $fullCapture = $this->tmux->waitForCallback(
+                $pane,
+                static fn (string $cap): bool => str_contains($cap, '+after'),
+                timeout: 5.0,
+                message: 'Ctrl+O did not expand edit diff preview (+after)',
+                history: 3000,
+            );
 
             $this->assertStringContainsString(trim(TranscriptGlyphs::GLYPH_USER_MESSAGE), $fullCapture, 'User glyph missing from rich transcript path');
             $this->assertStringContainsString(trim(TranscriptGlyphs::GLYPH_ASSISTANT_MESSAGE), $fullCapture, 'Assistant glyph missing');

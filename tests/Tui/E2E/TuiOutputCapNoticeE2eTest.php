@@ -80,7 +80,6 @@ final class TuiOutputCapNoticeE2eTest extends TestCase
 
             // Submit a prompt that triggers read on the oversized file.
             $this->tmux->sendKey($pane, 'C-u');
-            usleep(100_000);
             $this->tmux->sendLiteral($pane, 'Read ./large_file.txt');
             $this->tmux->sendKey($pane, 'Enter');
 
