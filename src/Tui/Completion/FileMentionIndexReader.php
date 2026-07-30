@@ -15,8 +15,9 @@ namespace Ineersa\Tui\Completion;
  * Missing or unreadable index files are treated as empty — the caller
  * never receives an exception from index access.  This is intentional
  * local degradation: completion silently returns no suggestions until
- * the index is available.  When the index file exists and can be read
- * but every line within it is invalid JSON, the loaded index becomes
+ * {@see \Ineersa\CodingAgent\CLI\CompletionFileIndexRefreshCommand}
+ * (scheduler) produces an index.  When the index file exists and can be
+ * read but every line within it is invalid JSON, the loaded index becomes
  * empty (no previous cache is retained).  The previous in-memory
  * entries are preserved only when the file cannot be read at all
  * (missing, unreadable, or file() returns false).
