@@ -16,6 +16,7 @@ use Ineersa\AgentCore\Domain\Model\ModelInvocationRequest;
 use Ineersa\AgentCore\Infrastructure\RunLogContext;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\ModelSelectionService;
+use Ineersa\CodingAgent\Extension\ExtensionCompactionHookDispatcher;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 
@@ -35,6 +36,7 @@ final readonly class CompactionService implements CompactionServiceInterface
         private CompactionHookDispatcher $hookDispatcher,
         private PlatformInterface $platform,
         private LoggerInterface $logger = new NullLogger(),
+        private ?ExtensionCompactionHookDispatcher $extensionHookDispatcher = null,
     ) {
     }
 
@@ -194,7 +196,11 @@ final readonly class CompactionService implements CompactionServiceInterface
             resolvedModel: $resolvedModel,
             thinkingLevel: $thinkingLevel,
         );
-        $hookResult = $this->hookDispatcher->dispatch($hookContext);
+        // Snapshot path: internal tagged hooks + public BeforeSnapshotCompactionHook
+        // (not CompactRun watermark hooks). Structural no-op above skips this entirely.
+        $hookResult = null !== $this->extensionHookDispatcher
+            ? $this->extensionHookDispatcher->dispatchForSnapshot($hookContext)
+            : $this->hookDispatcher->dispatch($hookContext);
 
         if ($hookResult->cancels()) {
             $reason = 'hook_cancelled: '.$hookResult->cancelReason;

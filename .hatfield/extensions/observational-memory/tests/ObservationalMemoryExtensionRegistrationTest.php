@@ -10,6 +10,7 @@ use Ineersa\Hatfield\ExtensionApi\Agent\ExtensionAgentJobRequestDTO;
 use Ineersa\Hatfield\ExtensionApi\Command\CommandDefinitionDTO;
 use Ineersa\Hatfield\ExtensionApi\Command\ExtensionCommandHandlerInterface;
 use Ineersa\Hatfield\ExtensionApi\Compaction\BeforeCompactionHookInterface;
+use Ineersa\Hatfield\ExtensionApi\Compaction\BeforeSnapshotCompactionHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Exec\ExecInterface;
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
 use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterTurnCommitHookInterface;
@@ -35,12 +36,18 @@ final class ObservationalMemoryExtensionRegistrationTest extends TestCase
     {
         $commands = [];
         $tools = [];
-        $api = new class($commands, $tools) implements ExtensionApiInterface {
+        $compactHooks = [];
+        $snapshotHooks = [];
+        $api = new class($commands, $tools, $compactHooks, $snapshotHooks) implements ExtensionApiInterface {
             /** @param list<CommandDefinitionDTO> $commands
-             * @param list<ToolRegistrationDTO> $tools */
+             * @param list<ToolRegistrationDTO> $tools
+             * @param list<BeforeCompactionHookInterface> $compactHooks
+             * @param list<BeforeSnapshotCompactionHookInterface> $snapshotHooks */
             public function __construct(
                 private array &$commands,
                 private array &$tools,
+                private array &$compactHooks,
+                private array &$snapshotHooks,
             ) {
             }
 
@@ -90,6 +97,12 @@ final class ObservationalMemoryExtensionRegistrationTest extends TestCase
 
             public function registerBeforeCompactionHook(BeforeCompactionHookInterface $hook): void
             {
+                $this->compactHooks[] = $hook;
+            }
+
+            public function registerBeforeSnapshotCompactionHook(BeforeSnapshotCompactionHookInterface $hook): void
+            {
+                $this->snapshotHooks[] = $hook;
             }
 
             public function registerExtensionAgentJobHandler(string $handlerId, ExtensionAgentJobHandlerInterface $handler): void
@@ -117,6 +130,11 @@ final class ObservationalMemoryExtensionRegistrationTest extends TestCase
         };
 
         (new ObservationalMemoryExtension())->register($api);
+
+        $this->assertCount(1, $compactHooks);
+        $this->assertCount(1, $snapshotHooks);
+        $this->assertInstanceOf(\Ineersa\HatfieldExt\ObservationalMemory\Compaction\OmBeforeCompactionHook::class, $compactHooks[0]);
+        $this->assertInstanceOf(\Ineersa\HatfieldExt\ObservationalMemory\Compaction\OmBeforeSnapshotCompactionHook::class, $snapshotHooks[0]);
 
         $names = array_map(static fn (CommandDefinitionDTO $d): string => $d->name, $commands);
         $this->assertSame(['om-status', 'om-view'], $names);

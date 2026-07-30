@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\HatfieldExt\ObservationalMemory\Tests;
 
+use HelgeSverre\Toon\Toon;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\AgentCore\Application\Tool\ToolContext;
 use Ineersa\AgentCore\Contract\Hook\NullCancellationToken;
@@ -16,6 +17,7 @@ use Ineersa\Hatfield\ExtensionApi\Agent\ExtensionAgentJobRequestDTO;
 use Ineersa\Hatfield\ExtensionApi\Command\CommandDefinitionDTO;
 use Ineersa\Hatfield\ExtensionApi\Command\ExtensionCommandHandlerInterface;
 use Ineersa\Hatfield\ExtensionApi\Compaction\BeforeCompactionHookInterface;
+use Ineersa\Hatfield\ExtensionApi\Compaction\BeforeSnapshotCompactionHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Exec\ExecInterface;
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
 use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterTurnCommitHookInterface;
@@ -188,6 +190,9 @@ final class RecallToolHandlerTest extends IsolatedKernelTestCase
             ),
             static fn (): mixed => $adapter(['id' => $obsId]),
         );
+        $this->assertIsString($observationResult);
+        $this->assertStringNotContainsString('"ok":', $observationResult);
+        $observationResult = Toon::decode($observationResult);
         $this->assertIsArray($observationResult);
         $this->assertTrue($observationResult['ok']);
         $this->assertSame('observation', $observationResult['kind']);
@@ -211,6 +216,9 @@ final class RecallToolHandlerTest extends IsolatedKernelTestCase
             ),
             static fn (): mixed => $adapter(['id' => $refId]),
         );
+        $this->assertIsString($reflectionResult);
+        $this->assertStringNotContainsString('"ok":', $reflectionResult);
+        $reflectionResult = Toon::decode($reflectionResult);
         $this->assertIsArray($reflectionResult);
         $this->assertTrue($reflectionResult['ok']);
         $this->assertSame('reflection', $reflectionResult['kind']);
@@ -228,6 +236,9 @@ final class RecallToolHandlerTest extends IsolatedKernelTestCase
             ),
             static fn (): mixed => $adapter(['id' => 'not-a-hash']),
         );
+        $this->assertIsString($invalid);
+        $this->assertStringNotContainsString('"ok":', $invalid);
+        $invalid = Toon::decode($invalid);
         $this->assertIsArray($invalid);
         $this->assertFalse($invalid['ok']);
         $this->assertSame('invalid_id', $invalid['error']);
@@ -243,6 +254,9 @@ final class RecallToolHandlerTest extends IsolatedKernelTestCase
             ),
             static fn (): mixed => $adapter(['id' => $otherId]),
         );
+        $this->assertIsString($cross);
+        $this->assertStringNotContainsString('"ok":', $cross);
+        $cross = Toon::decode($cross);
         $this->assertIsArray($cross);
         $this->assertFalse($cross['ok']);
         $this->assertSame('not_found', $cross['error']);
@@ -274,6 +288,9 @@ final class RecallToolHandlerTest extends IsolatedKernelTestCase
             ),
             static fn (): mixed => $adapter(['id' => $refOtherSupport]),
         );
+        $this->assertIsString($foreignSupport);
+        $this->assertStringNotContainsString('"ok":', $foreignSupport);
+        $foreignSupport = Toon::decode($foreignSupport);
         $this->assertIsArray($foreignSupport);
         $this->assertTrue($foreignSupport['ok']);
         $this->assertSame('reflection', $foreignSupport['kind']);
@@ -395,6 +412,9 @@ final class RecallToolHandlerTest extends IsolatedKernelTestCase
             ),
             static fn (): mixed => $adapter(['id' => $obsId]),
         );
+        $this->assertIsString($obsResult);
+        $this->assertStringNotContainsString('"ok":', $obsResult);
+        $obsResult = Toon::decode($obsResult);
         $this->assertIsArray($obsResult);
         $this->assertTrue($obsResult['ok']);
         $this->assertSame('observation', $obsResult['kind']);
@@ -414,6 +434,9 @@ final class RecallToolHandlerTest extends IsolatedKernelTestCase
             ),
             static fn (): mixed => $adapter(['id' => $refId]),
         );
+        $this->assertIsString($refResult);
+        $this->assertStringNotContainsString('"ok":', $refResult);
+        $refResult = Toon::decode($refResult);
         $this->assertIsArray($refResult);
         $this->assertTrue($refResult['ok']);
         $this->assertSame('reflection', $refResult['kind']);
@@ -431,6 +454,9 @@ final class RecallToolHandlerTest extends IsolatedKernelTestCase
             ),
             static fn (): mixed => $adapter(['id' => substr($obsId, 0, 12)]),
         );
+        $this->assertIsString($prefixOk);
+        $this->assertStringNotContainsString('"ok":', $prefixOk);
+        $prefixOk = Toon::decode($prefixOk);
         $this->assertIsArray($prefixOk);
         $this->assertTrue($prefixOk['ok']);
 
@@ -446,6 +472,9 @@ final class RecallToolHandlerTest extends IsolatedKernelTestCase
             // One-char typo at position 11 of the 12-char prefix (c vs a).
             static fn (): mixed => $adapter(['id' => 'aaaaaaaaaaac']),
         );
+        $this->assertIsString($mistyped);
+        $this->assertStringNotContainsString('"ok":', $mistyped);
+        $mistyped = Toon::decode($mistyped);
         $this->assertIsArray($mistyped);
         $this->assertFalse($mistyped['ok']);
         $this->assertSame('not_found', $mistyped['error']);
@@ -505,6 +534,10 @@ final class RecallToolHandlerTest extends IsolatedKernelTestCase
             }
 
             public function registerBeforeCompactionHook(BeforeCompactionHookInterface $hook): void
+            {
+            }
+
+            public function registerBeforeSnapshotCompactionHook(BeforeSnapshotCompactionHookInterface $hook): void
             {
             }
 

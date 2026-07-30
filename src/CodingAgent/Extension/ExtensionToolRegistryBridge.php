@@ -16,6 +16,7 @@ use Ineersa\Hatfield\ExtensionApi\Command\CommandDefinitionDTO;
 use Ineersa\Hatfield\ExtensionApi\Command\CommandRegistryInterface;
 use Ineersa\Hatfield\ExtensionApi\Command\ExtensionCommandHandlerInterface;
 use Ineersa\Hatfield\ExtensionApi\Compaction\BeforeCompactionHookInterface;
+use Ineersa\Hatfield\ExtensionApi\Compaction\BeforeSnapshotCompactionHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Exec\ExecInterface;
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
 use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterTurnCommitHookInterface;
@@ -146,6 +147,11 @@ final readonly class ExtensionToolRegistryBridge implements ExtensionApiInterfac
     public function registerBeforeCompactionHook(BeforeCompactionHookInterface $hook): void
     {
         $this->hookRegistry->addBeforeCompactionHook($hook);
+    }
+
+    public function registerBeforeSnapshotCompactionHook(BeforeSnapshotCompactionHookInterface $hook): void
+    {
+        $this->hookRegistry->addBeforeSnapshotCompactionHook($hook);
     }
 
     public function agent(): AgentRunnerInterface

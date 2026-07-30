@@ -10,6 +10,7 @@ use Ineersa\Hatfield\ExtensionApi\Agent\ExtensionAgentJobRequestDTO;
 use Ineersa\Hatfield\ExtensionApi\Command\CommandDefinitionDTO;
 use Ineersa\Hatfield\ExtensionApi\Command\ExtensionCommandHandlerInterface;
 use Ineersa\Hatfield\ExtensionApi\Compaction\BeforeCompactionHookInterface;
+use Ineersa\Hatfield\ExtensionApi\Compaction\BeforeSnapshotCompactionHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Exec\ExecInterface;
 use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterTurnCommitHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Prompt\PromptContributorInterface;
@@ -139,10 +140,22 @@ interface ExtensionApiInterface
      * Register a public before-compaction hook for the canonical CompactRun path.
      *
      * Invoked synchronously after safe partition preparation with the session-global
-     * required coverage watermark (1..RunState.lastSeq). Snapshot/fork compaction
-     * does not invoke public extension hooks.
+     * required coverage watermark (1..RunState.lastSeq).
+     *
+     * Snapshot/fork in-memory compaction uses {@see registerBeforeSnapshotCompactionHook()}
+     * instead — CompactRun hooks are not invoked for snapshot paths.
      */
     public function registerBeforeCompactionHook(BeforeCompactionHookInterface $hook): void;
+
+    /**
+     * Register a public before-snapshot-compaction hook for in-memory message snapshots.
+     *
+     * Invoked by CompactionService::compactMessages after structural preparation is ready
+     * (fork parent snapshots and other non-CompactRun snapshot callers). Not invoked by
+     * CompactRun. Hooks may cancel, replace the summary, append instructions, or attach
+     * JSON-safe metadata. Empty/continue leaves the ordinary model snapshot path intact.
+     */
+    public function registerBeforeSnapshotCompactionHook(BeforeSnapshotCompactionHookInterface $hook): void;
 
     /**
      * Hatfield-owned background agent runner.

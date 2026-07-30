@@ -13,6 +13,7 @@ use Ineersa\Hatfield\ExtensionApi\Tui\TuiExtensionInterface;
 use Ineersa\HatfieldExt\ObservationalMemory\Command\OmStatusCommandHandler;
 use Ineersa\HatfieldExt\ObservationalMemory\Command\OmViewCommandHandler;
 use Ineersa\HatfieldExt\ObservationalMemory\Compaction\OmBeforeCompactionHook;
+use Ineersa\HatfieldExt\ObservationalMemory\Compaction\OmBeforeSnapshotCompactionHook;
 use Ineersa\HatfieldExt\ObservationalMemory\Compaction\ReflectGenerationJobHandler;
 use Ineersa\HatfieldExt\ObservationalMemory\Observer\ObserveBoundaryJobHandler;
 use Ineersa\HatfieldExt\ObservationalMemory\Observer\ObserveBoundaryTerminalHook;
@@ -32,7 +33,7 @@ use Psr\Log\NullLogger;
  * Registers:
  * - after-turn terminal detector that dispatches a scalar extension-agent job
  * - worker-local ObserveBoundaryJobHandler / ReflectGenerationJobHandler
- * - public before-compaction hook (CompactRun only): instant durable-memory projection
+ * - public CompactRun + snapshot before-compaction hooks: instant durable-memory projection
  * - /om-status and /om-view local commands
  * - permanent ambient recall tool
  * - TUI status-row poller for live Observer/Reflector/Dropper notices
@@ -77,6 +78,9 @@ final class ObservationalMemoryExtension implements HatfieldExtensionInterface, 
         );
         $api->registerBeforeCompactionHook(
             new OmBeforeCompactionHook($api, $settings, $this->logger),
+        );
+        $api->registerBeforeSnapshotCompactionHook(
+            new OmBeforeSnapshotCompactionHook($api, $settings, $this->logger),
         );
 
         $api->registerCommand(

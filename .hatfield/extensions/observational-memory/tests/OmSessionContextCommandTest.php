@@ -13,6 +13,7 @@ use Ineersa\Hatfield\ExtensionApi\Command\CommandDefinitionDTO;
 use Ineersa\Hatfield\ExtensionApi\Command\ExtensionCommandHandlerInterface;
 use Ineersa\Hatfield\ExtensionApi\Command\MarkdownCommandContextInterface;
 use Ineersa\Hatfield\ExtensionApi\Compaction\BeforeCompactionHookInterface;
+use Ineersa\Hatfield\ExtensionApi\Compaction\BeforeSnapshotCompactionHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Exec\ExecInterface;
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
 use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterTurnCommitHookInterface;
@@ -395,6 +396,10 @@ final class OmSessionContextCommandTest extends IsolatedKernelTestCase
             }
 
             public function registerBeforeCompactionHook(BeforeCompactionHookInterface $hook): void
+            {
+            }
+
+            public function registerBeforeSnapshotCompactionHook(BeforeSnapshotCompactionHookInterface $hook): void
             {
             }
 

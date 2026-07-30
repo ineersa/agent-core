@@ -4,20 +4,21 @@ declare(strict_types=1);
 
 namespace Ineersa\HatfieldExt\ObservationalMemory\Compaction;
 
-use Ineersa\Hatfield\ExtensionApi\Compaction\BeforeCompactionHookContextDTO;
-use Ineersa\Hatfield\ExtensionApi\Compaction\BeforeCompactionHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Compaction\BeforeCompactionHookResultDTO;
+use Ineersa\Hatfield\ExtensionApi\Compaction\BeforeSnapshotCompactionHookContextDTO;
+use Ineersa\Hatfield\ExtensionApi\Compaction\BeforeSnapshotCompactionHookInterface;
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
 use Ineersa\HatfieldExt\ObservationalMemory\Runtime\OmSettings;
 use Psr\Log\LoggerInterface;
 
 /**
- * CompactRun hook: instant deterministic projection of current durable OM memory.
+ * Snapshot/fork hook: instant deterministic projection of parent durable OM memory.
  *
- * Pi-style: no Observer catch-up, Reflector, extension_agent job, poll, fingerprint,
- * or request/result row. Consolidation finishing later affects a later compaction.
+ * Same render path as CompactRun {@see OmBeforeCompactionHook}. Empty → continue
+ * (legacy model snapshot compaction). Non-empty → replaceSummary (no model call).
+ * Failures cancel fail-closed. Never dispatches Observer/Reflector or writes child OM.
  */
-final readonly class OmBeforeCompactionHook implements BeforeCompactionHookInterface
+final readonly class OmBeforeSnapshotCompactionHook implements BeforeSnapshotCompactionHookInterface
 {
     public function __construct(
         private ExtensionApiInterface $api,
@@ -26,7 +27,7 @@ final readonly class OmBeforeCompactionHook implements BeforeCompactionHookInter
     ) {
     }
 
-    public function beforeCompaction(BeforeCompactionHookContextDTO $context): BeforeCompactionHookResultDTO
+    public function beforeSnapshotCompaction(BeforeSnapshotCompactionHookContextDTO $context): BeforeCompactionHookResultDTO
     {
         try {
             $text = ActiveMemoryProjector::renderActive(
@@ -43,21 +44,20 @@ final readonly class OmBeforeCompactionHook implements BeforeCompactionHookInter
             $dto->metadata = [
                 'om_source' => 'observational_memory',
                 'om_projection' => 'active_durable_memory',
+                'om_path' => 'snapshot',
             ];
 
             return $dto;
         } catch (\Throwable $e) {
-            // Privacy-safe cancel only; dispatcher would also fail-closed, but local
-            // cancel keeps an OM-specific reason without raw exception text.
-            $this->logger->error('om.compaction.hook_failed', [
+            $this->logger->error('om.snapshot_compaction.hook_failed', [
                 'component' => 'observational_memory',
-                'event_type' => 'om.compaction.hook_failed',
+                'event_type' => 'om.snapshot_compaction.hook_failed',
                 'run_id' => $context->runId,
                 'exception_class' => $e::class,
             ]);
 
             return BeforeCompactionHookResultDTO::cancel(
-                'observational_memory active-memory projection failed: '.$e::class,
+                'observational_memory snapshot active-memory projection failed: '.$e::class,
             );
         }
     }

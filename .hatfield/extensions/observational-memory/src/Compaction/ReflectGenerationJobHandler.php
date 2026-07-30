@@ -17,6 +17,8 @@ use Ineersa\HatfieldExt\ObservationalMemory\Storage\OmConflictException;
 use Ineersa\HatfieldExt\ObservationalMemory\Storage\OmDatabaseFactory;
 use Ineersa\HatfieldExt\ObservationalMemory\Support\OmIdentity;
 use Psr\Log\LoggerInterface;
+use Symfony\Component\Clock\ClockInterface;
+use Symfony\Component\Clock\NativeClock;
 
 /**
  * Threshold generation worker: delta Reflector then conditional bounded Dropper.
@@ -29,6 +31,7 @@ final readonly class ReflectGenerationJobHandler implements ExtensionAgentJobHan
 
     public function __construct(
         private LoggerInterface $logger,
+        private ClockInterface $clock = new NativeClock(),
     ) {
     }
 
@@ -78,7 +81,8 @@ final readonly class ReflectGenerationJobHandler implements ExtensionAgentJobHan
         $observationRepo = new ObservationRepository($connection);
         $activity = new OmActivityReporter($connection, $this->logger);
         $activityJobId = (null !== $jobId && '' !== $jobId) ? $jobId : null;
-        $now = (new \DateTimeImmutable('now', new \DateTimeZone('UTC')))->format(\DateTimeInterface::ATOM);
+        // Claim/created_at timestamp only. Terminal transitions use a fresh clock sample.
+        $now = $this->nowUtc();
 
         $liveCandidateForClaim = $observationRepo->activeCandidateSet($runId);
         $claimRequiredEndSeq = $liveCandidateForClaim['max_source_end_seq'];
@@ -127,7 +131,7 @@ final readonly class ReflectGenerationJobHandler implements ExtensionAgentJobHan
 
             if ($candidate['token_count'] <= $settings->reflectAfterObservationTokens
                 || [] === $candidate['observation_ids']) {
-                $generationRepo->markSucceededNoop($generationId, $now);
+                $generationRepo->markSucceededNoop($generationId, $this->nowUtc());
                 $this->logger->info('om.reflect.threshold_noop', [
                     'component' => 'observational_memory',
                     'event_type' => 'om.reflect.threshold_noop',
@@ -141,7 +145,7 @@ final readonly class ReflectGenerationJobHandler implements ExtensionAgentJobHan
 
             if ($liveGenerationId !== $generationId
                 || $candidate['observation_set_hash'] !== $observationSetHash) {
-                $generationRepo->markFailed($generationId, 'stale_observation_set', $now);
+                $generationRepo->markFailed($generationId, 'stale_observation_set', $this->nowUtc());
                 $this->logger->info('om.reflect.threshold_stale', [
                     'component' => 'observational_memory',
                     'event_type' => 'om.reflect.threshold_stale',
@@ -231,7 +235,7 @@ final readonly class ReflectGenerationJobHandler implements ExtensionAgentJobHan
             );
             if ($postGenerationId !== $generationId
                 || $postCandidate['observation_set_hash'] !== $observationSetHash) {
-                $generationRepo->markFailed($generationId, 'stale_observation_set', $now);
+                $generationRepo->markFailed($generationId, 'stale_observation_set', $this->nowUtc());
                 $this->logger->info('om.reflect.threshold_stale_after_models', [
                     'component' => 'observational_memory',
                     'event_type' => 'om.reflect.threshold_stale_after_models',
@@ -261,7 +265,7 @@ final readonly class ReflectGenerationJobHandler implements ExtensionAgentJobHan
                     'token_count' => $r['token_count'],
                 ], $finalReflections),
                 retainedObservationIds: $retainedObservationIds,
-                now: $now,
+                now: $this->nowUtc(),
             );
 
             $this->logger->info('om.reflect.threshold_succeeded', [
@@ -275,7 +279,7 @@ final readonly class ReflectGenerationJobHandler implements ExtensionAgentJobHan
                 'retained_observation_count' => \count($retainedObservationIds),
             ]);
         } catch (ReflectorException $e) {
-            $generationRepo->markFailed($generationId, $e->failureCode, $now);
+            $generationRepo->markFailed($generationId, $e->failureCode, $this->nowUtc());
             $this->logger->error('om.reflect.threshold_failed', [
                 'component' => 'observational_memory',
                 'event_type' => 'om.reflect.threshold_failed',
@@ -290,12 +294,19 @@ final readonly class ReflectGenerationJobHandler implements ExtensionAgentJobHan
         } catch (OmConflictException $e) {
             throw $e;
         } catch (\RuntimeException $e) {
-            $generationRepo->markFailed($generationId, 'transient_runtime', $now);
+            $generationRepo->markFailed($generationId, 'transient_runtime', $this->nowUtc());
             throw $e;
         } finally {
             if (null !== $activityJobId) {
                 $activity->clear($runId, $activityJobId);
             }
         }
+    }
+
+    private function nowUtc(): string
+    {
+        return $this->clock->now()
+            ->setTimezone(new \DateTimeZone('UTC'))
+            ->format(\DateTimeInterface::ATOM);
     }
 }

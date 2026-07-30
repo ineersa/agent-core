@@ -35,13 +35,21 @@ Threshold (after all observe chunks durable, tokens > 40000)
       → promote om_active_generation once: prior+new reflections, active-minus-drops
 
 CompactRun (run_control, under run lock) — Pi-style instant projection
-  → public OmBeforeCompactionHook (CompactRun only; not snapshot/fork)
-      → open/migrate om.sqlite
-      → listActiveReflections + listActiveCandidateObservations
-      → ActiveMemoryRenderer::render (deterministic PHP, 12-char display ids)
+  → public OmBeforeCompactionHook (CompactRun watermark path)
+      → ActiveMemoryProjector (listActiveReflections + listActiveCandidateObservations
+        → ActiveMemoryRenderer::render, 12-char display ids)
       → non-empty → replaceSummary(text)
       → empty → continue() so core keep-recent / LLM summary path may run
   → no extension_agent dispatch, no model call, no session-event read, no poll/timeout
+
+Snapshot / fork parent (CompactionService::compactMessages, trigger=fork)
+  → public OmBeforeSnapshotCompactionHook (no event watermark; parent run_id only)
+      → same ActiveMemoryProjector as CompactRun
+      → non-empty → replaceSummary into inherited child messages; no compaction model
+      → empty / OM not registered → continue → ordinary model snapshot compaction
+      → hook failure → fail closed (snapshot hard-fail, no silent model fallback)
+  → structural below-threshold snapshots still no-op before hooks (unchanged)
+  → child extension loading/exclusion is out of scope for OM
 ```
 
 OM does **not** own a private Symfony Kernel, bin/console, Messenger bus, consumer

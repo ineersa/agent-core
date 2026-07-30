@@ -13,6 +13,7 @@ use Ineersa\Hatfield\ExtensionApi\Agent\ExtensionAgentJobRequestDTO;
 use Ineersa\Hatfield\ExtensionApi\Command\CommandDefinitionDTO;
 use Ineersa\Hatfield\ExtensionApi\Command\ExtensionCommandHandlerInterface;
 use Ineersa\Hatfield\ExtensionApi\Compaction\BeforeCompactionHookInterface;
+use Ineersa\Hatfield\ExtensionApi\Compaction\BeforeSnapshotCompactionHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Exec\ExecInterface;
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
 use Ineersa\Hatfield\ExtensionApi\Lifecycle\AfterTurnCommitHookInterface;
@@ -29,6 +30,7 @@ use Ineersa\HatfieldExt\ObservationalMemory\Storage\MemoryGenerationRepository;
 use Ineersa\HatfieldExt\ObservationalMemory\Support\OmIdentity;
 use Ineersa\HatfieldExt\ObservationalMemory\Tests\Support\OmDatabaseFactoryTestService;
 use Psr\Log\NullLogger;
+use Symfony\Component\Clock\MockClock;
 
 /**
  * Thesis: threshold job runs shared-model delta Reflector then conditional Dropper,
@@ -107,6 +109,91 @@ final class ReflectGenerationJobHandlerTest extends IsolatedKernelTestCase
         $this->assertSame(MemoryGenerationRepository::STATUS_SUCCEEDED, $status);
         $active = $connection->fetchOne('SELECT generation_id FROM om_active_generation WHERE run_id = ?', ['run-t']);
         $this->assertFalse($active);
+    }
+
+    public function testCompletedAtUsesFreshTimestampAfterClaim(): void
+    {
+        $settings = OmSettings::fromArray([
+            'model' => 'llama_cpp_test/test',
+            'reflector' => ['reflect_after_observation_tokens' => 40_000],
+        ]);
+        $paths = \Ineersa\HatfieldExt\ObservationalMemory\Runtime\OmPaths::fromSettings($settings, $this->projectDir);
+        $connection = $this->omDatabaseFactory()->connectAndMigrate($paths->databasePath, new NullLogger());
+
+        $content = 'small observation for timestamp proof';
+        $obsId = OmIdentity::observationId('run-ts', '1', '2026-07-26 12:00', $content, [['run_id' => 'run-ts', 'seq' => 1]]);
+        $connection->insert('om_observation', [
+            'observation_id' => $obsId,
+            'run_id' => 'run-ts',
+            'boundary_key' => 'b1',
+            'source_start_seq' => 1,
+            'source_end_seq' => 1,
+            'source_refs_json' => '[{"run_id":"run-ts","seq":1}]',
+            'content' => $content,
+            'content_hash' => hash('sha256', $content),
+            'relevance' => 'high',
+            'timestamp' => '2026-07-26 12:00',
+            'token_count' => OmTokenEstimator::estimate($content),
+            'observer_model' => 'llama_cpp_test/test',
+            'observer_schema_version' => '1',
+            'created_at' => '2026-07-26T12:00:00+00:00',
+        ]);
+
+        $setHash = OmIdentity::observationSetHash('run-ts', [$obsId]);
+        $generationId = OmIdentity::thresholdGenerationId('run-ts', null, $setHash, 'llama_cpp_test/test', '1');
+
+        $base = new MockClock('2026-07-30T12:00:00+00:00');
+        $clock = new class($base) implements \Symfony\Component\Clock\ClockInterface {
+            private int $hits = 0;
+
+            public function __construct(private MockClock $inner)
+            {
+            }
+
+            public function now(): \DateTimeImmutable
+            {
+                ++$this->hits;
+                if ($this->hits > 1) {
+                    $this->inner->modify('+95 seconds');
+                }
+
+                return $this->inner->now();
+            }
+
+            public function sleep(float|int $seconds): void
+            {
+                $this->inner->sleep($seconds);
+            }
+
+            public function withTimeZone(\DateTimeZone|string $timezone): static
+            {
+                throw new \LogicException('unused');
+            }
+        };
+
+        $api = $this->api($settings, static function (): void {
+            throw new \RuntimeException('model must not run for under-threshold noop');
+        });
+        $handler = new ReflectGenerationJobHandler(new NullLogger(), $clock);
+        $handler->handle($api, [
+            'run_id' => 'run-ts',
+            'generation_id' => $generationId,
+            'threshold_idempotency_key' => $generationId,
+            'observation_set_hash' => $setHash,
+            'prior_active_generation_id' => null,
+            'reflector_model' => 'llama_cpp_test/test',
+            'reflector_schema_version' => '1',
+        ], 'job-ts', 'run-ts');
+
+        $row = $connection->fetchAssociative(
+            'SELECT created_at, completed_at, status FROM om_memory_generation WHERE generation_id = ?',
+            [$generationId],
+        );
+        $this->assertIsArray($row);
+        $this->assertSame(MemoryGenerationRepository::STATUS_SUCCEEDED, $row['status']);
+        $this->assertSame('2026-07-30T12:00:00+00:00', $row['created_at']);
+        $this->assertSame('2026-07-30T12:01:35+00:00', $row['completed_at']);
+        $this->assertNotSame($row['created_at'], $row['completed_at']);
     }
 
     public function testDeltaReflectPromotesPriorPlusNewWithoutDropperWhenPoolUnderMax(): void
@@ -485,6 +572,10 @@ final class ReflectGenerationJobHandlerTest extends IsolatedKernelTestCase
             }
 
             public function registerBeforeCompactionHook(BeforeCompactionHookInterface $hook): void
+            {
+            }
+
+            public function registerBeforeSnapshotCompactionHook(BeforeSnapshotCompactionHookInterface $hook): void
             {
             }
 

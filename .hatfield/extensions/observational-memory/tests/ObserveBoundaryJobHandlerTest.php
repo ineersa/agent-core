@@ -472,6 +472,10 @@ final class ObserveBoundaryJobHandlerTest extends IsolatedKernelTestCase
             {
             }
 
+            public function registerBeforeSnapshotCompactionHook(\Ineersa\Hatfield\ExtensionApi\Compaction\BeforeSnapshotCompactionHookInterface $hook): void
+            {
+            }
+
             public function agent(): AgentRunnerInterface
             {
                 $onAgentRun = $this->onAgentRun;

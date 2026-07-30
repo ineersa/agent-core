@@ -210,16 +210,20 @@ Logs carry correlation fields (`run_id`, `session_id`, `component`, `event_type`
 
 ### Before-compaction hooks
 
-Internal hooks (not exposed through `ExtensionApi`) can customize compaction before the LLM call via `BeforeCompactionHookInterface` (`src/CodingAgent/Compaction/`). Hooks receive a safe scalar context (`CompactionHookContextDTO`) containing token estimates, message counts, the trigger method, custom instructions, resolved model, and thinking level — but not raw message content.
+There are three related hook surfaces:
 
-Each hook returns a `CompactionHookResultDTO` and may:
+1. **Internal tagged hooks** (`Ineersa\CodingAgent\Compaction\BeforeCompactionHookInterface`) — not exposed through `ExtensionApi`. Used by both CompactRun and snapshot paths. Best-effort isolation: exceptions are logged and other hooks continue.
+2. **Public CompactRun hooks** (`Ineersa\Hatfield\ExtensionApi\Compaction\BeforeCompactionHookInterface` via `registerBeforeCompactionHook`) — invoked only by `CompactRunHandler` after safe partition preparation, with the session-global coverage watermark (`requiredStartSeq`..`requiredEndSeq`, MVP `1..RunState.lastSeq`). Fail closed on exception (cancel, no silent LLM fallback).
+3. **Public snapshot hooks** (`Ineersa\Hatfield\ExtensionApi\Compaction\BeforeSnapshotCompactionHookInterface` via `registerBeforeSnapshotCompactionHook`) — invoked only by `CompactionService::compactMessages` after structural preparation is ready (fork parent snapshots and other in-memory snapshot callers). No event watermark. Fail closed on exception. Structural no-ops (`too_few_messages`, `below_keep_recent_tokens`, …) skip hooks entirely and leave the original messages unchanged.
 
-- **Cancel** compaction with a reason (emits `context_compaction_failed` with `hook_cancelled:` prefix).
-- **Provide a replacement summary** (skips the LLM call; emits full lifecycle events with `replacement_summary: true`).
+Internal and public hooks share the same aggregation rules (first cancel wins; first non-empty replacement wins; instructions append; metadata shallow-merges). Each may:
+
+- **Cancel** compaction with a reason (CompactRun emits `context_compaction_failed` with `hook_cancelled:` prefix; snapshot returns `MessageSnapshotCompactionResult::failed`).
+- **Provide a replacement summary** (skips the LLM call).
 - **Append additional instructions** to the summarization prompt (merged in order).
-- **Attach sanitized metadata** to the compaction event.
+- **Attach sanitized metadata** to the compaction event (CompactRun path).
 
-Hooks are dispatched via `CompactionHookDispatcher` with first-cancel-wins semantics. Hook exceptions are logged as warnings but do not prevent other hooks from running. Hook metadata is sanitized before event/transport persistence — objects, resources, and closures are silently dropped.
+Internal hooks are dispatched via `CompactionHookDispatcher`. Public CompactRun/snapshot hooks are aggregated by `ExtensionCompactionHookDispatcher` after internal hooks. Hook metadata is sanitized before event/transport persistence — objects, resources, and closures are silently dropped.
 
 ### After-compaction observation
 
@@ -272,7 +276,7 @@ memory. See `.hatfield/extensions/observational-memory/README.md` and
 
 Normative behavior for implementors (summary):
 
-- **Hot path (Pi-style):** public CompactRun hook opens OM SQLite and deterministically renders current durable active memory (`listActiveReflections` + `listActiveCandidateObservations` → `ActiveMemoryRenderer`). Non-empty → `replaceSummary`; empty → `continue()` so core keep-recent / normal summary may run. No Observer catch-up, Reflector, `extension_agent` dispatch, poll, fingerprint, or timeout on the hook path.
+- **Hot path (Pi-style):** public CompactRun hook and public snapshot/fork hook both open OM SQLite and deterministically render current durable active memory (`listActiveReflections` + `listActiveCandidateObservations` → `ActiveMemoryRenderer`). Non-empty → `replaceSummary`; empty → `continue()` so core keep-recent / normal summary (CompactRun) or ordinary model snapshot compaction (fork) may run. No Observer catch-up, Reflector, `extension_agent` dispatch, poll, fingerprint, or timeout on either hook path. CompactRun receives the coverage watermark; snapshot hooks do not.
 - **Async consolidation:** turn-boundary Observer remains async and event-backed; Reflector runs only after Observer when active candidate observations exceed `reflect_after_observation_tokens` (default 40000). Consolidation finishing later affects a later compaction.
 - **Transport:** Hatfield-managed single FIFO `extension_agent` queue for Observer/threshold Reflector only, Symfony native default `max_retries: 3` (4 attempts total), no failure transport. Exhausted jobs emit sanitized `extension_agent.job_failed` TUI Error blocks when `run_id` is present.
 - **Settings:** nested keys only (`observer.*`, `reflector.*`, `pools.*`); envelopes use `floor(context_window * context_window_ratio)` (default 0.65). No `compaction.wait_timeout_seconds`, no `compaction.mode`, no compaction-model inheritance.
