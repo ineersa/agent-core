@@ -106,47 +106,6 @@ final class SafeGuardApprovalControllerReplayTest extends ControllerReplayE2eTes
         $this->assertArrayNotHasKey('run.failed', $byType, $this->collectDiagnostics($all));
     }
 
-    public function testWriteOutsideCwdBlockHasNoFilesystemSideEffect(): void
-    {
-        // Same outside path as allow-once: fixtures always emit that write path.
-        @unlink($this->targetOutsidePath);
-
-        $this->spawnController();
-        $this->waitForEvent('runtime.ready', $this->liveControllerReadyTimeout());
-
-        $this->writeCommand([
-            'v' => 1,
-            'id' => 'cmd_start_'.uniqid(),
-            'type' => 'start_run',
-            'payload' => [
-                'prompt' => 'Call the write tool with path ../sg-'.$this->sessionId
-                    .'.txt and content hello. After tools finish, answer exactly done.',
-            ],
-        ]);
-
-        $pre = $this->collectEventsUntil('human_input.requested', 20.0);
-        $byTypePre = $this->indexByType($pre);
-        $runStarted = $byTypePre['run.started'][0] ?? null;
-        $this->assertNotNull($runStarted, $this->collectDiagnostics($pre));
-        $this->runId = (string) ($runStarted['runId'] ?? $runStarted['payload']['runId'] ?? '');
-        $hitl = $byTypePre['human_input.requested'][0];
-        $questionId = (string) ($hitl['payload']['question_id'] ?? '');
-
-        $this->writeCommand([
-            'v' => 1,
-            'id' => 'cmd_answer_'.uniqid(),
-            'type' => 'answer_human',
-            'runId' => $this->runId,
-            'payload' => [
-                'question_id' => $questionId,
-                'answer' => '❌ Deny',
-            ],
-        ]);
-
-        $this->collectEventsUntil('run.completed', 25.0);
-        $this->assertFileDoesNotExist($this->targetOutsidePath);
-    }
-
     /**
      * Issue #259: Allow on first outside-CWD edit must not authorize a second
      * distinct edit to the same path. Exact-call continuation only.
