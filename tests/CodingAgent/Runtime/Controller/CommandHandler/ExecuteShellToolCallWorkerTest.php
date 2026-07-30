@@ -8,9 +8,11 @@ use Ineersa\AgentCore\Contract\EventStoreInterface;
 use Ineersa\AgentCore\Contract\Tool\ToolExecutorInterface;
 use Ineersa\AgentCore\Domain\Event\RunEvent;
 use Ineersa\AgentCore\Domain\Event\RunEventTypeEnum;
+use Ineersa\AgentCore\Domain\Message\AdvanceRun;
 use Ineersa\AgentCore\Domain\Message\ExecuteShellToolCall;
 use Ineersa\AgentCore\Domain\Tool\ToolCall;
 use Ineersa\AgentCore\Domain\Tool\ToolResult;
+use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use Ineersa\CodingAgent\Runtime\Controller\CommandHandler\ExecuteShellToolCallWorker;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
@@ -34,6 +36,10 @@ final class ExecuteShellToolCallWorkerTest extends TestCase
      * seq order from a single process, so EventStore ordering is
      * deterministic and lifecycle event order-conformant.
      *
+     * After AgentEnd, standalone must dispatch exactly one AdvanceRun with
+     * deterministic step/idempotency identity so a follow_up queued in the
+     * tool-end→AgentEnd window is drained (issue #183).
+     *
      * Regression: async dispatch must not let AgentEnd race ahead of
      * tool_exec events (issue #183).
      */
@@ -41,8 +47,9 @@ final class ExecuteShellToolCallWorkerTest extends TestCase
     {
         $eventStore = $this->createEventStore();
         $toolExecutor = $this->createToolExecutor('hello');
+        $commandBus = new TestMessageBus();
 
-        $worker = new ExecuteShellToolCallWorker($toolExecutor, $eventStore);
+        $worker = new ExecuteShellToolCallWorker($toolExecutor, $eventStore, $commandBus);
         $worker(new ExecuteShellToolCall(
             runId: 'run-standalone',
             turnNo: 2,
@@ -86,6 +93,20 @@ final class ExecuteShellToolCallWorkerTest extends TestCase
             $this->appendedEvents[array_key_last($this->appendedEvents)]->type,
             'AgentEnd must be the final event for standalone shell commands.',
         );
+
+        $this->assertCount(1, $commandBus->messages, 'Standalone shell must dispatch exactly one AdvanceRun.');
+        $this->assertInstanceOf(AdvanceRun::class, $commandBus->messages[0]);
+
+        /** @var AdvanceRun $advance */
+        $advance = $commandBus->messages[0];
+        $this->assertSame('run-standalone', $advance->runId());
+        $this->assertSame(0, $advance->turnNo());
+        $this->assertSame(1, $advance->attempt());
+        $this->assertSame('shell-standalone-advance-sh_tc_1', $advance->stepId());
+        $this->assertSame(
+            hash('sha256', 'run-standalone|shell-standalone-advance-sh_tc_1'),
+            $advance->idempotencyKey(),
+        );
     }
 
     /**
@@ -93,13 +114,15 @@ final class ExecuteShellToolCallWorkerTest extends TestCase
      * agent run) must NOT write AgentEnd.  The run is terminated by a
      * separate complete_run command or by the LLM turn's own RunCompleted.
      * Writing AgentEnd here would prematurely terminate the agent run.
+     * They also must not dispatch AdvanceRun.
      */
     public function testNonStandaloneDoesNotWriteAgentEnd(): void
     {
         $eventStore = $this->createEventStore();
         $toolExecutor = $this->createToolExecutor('result');
+        $commandBus = new TestMessageBus();
 
-        $worker = new ExecuteShellToolCallWorker($toolExecutor, $eventStore);
+        $worker = new ExecuteShellToolCallWorker($toolExecutor, $eventStore, $commandBus);
         $worker(new ExecuteShellToolCall(
             runId: 'run-inline',
             turnNo: 2,
@@ -120,6 +143,8 @@ final class ExecuteShellToolCallWorkerTest extends TestCase
                 'Non-standalone shell must not emit AgentEnd.',
             );
         }
+
+        $this->assertSame([], $commandBus->messages, 'Non-standalone shell must not dispatch AdvanceRun.');
     }
 
     /**
