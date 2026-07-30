@@ -17,6 +17,7 @@ final readonly class SubagentChildProgressSummary
      */
     public function __construct(
         public int $toolCount = 0,
+        public int $llmStepCount = 0,
         public int $inputTokens = 0,
         public int $latestInputTokens = 0,
         public int $contextWindow = 0,
@@ -40,6 +41,7 @@ final readonly class SubagentChildProgressSummary
     {
         $fields = [
             'tool_count' => $this->toolCount,
+            'llm_step_count' => $this->llmStepCount,
             'input_tokens' => $this->inputTokens,
             'latest_input_tokens' => $this->latestInputTokens,
             'output_tokens' => $this->outputTokens,
