@@ -14,15 +14,15 @@ use Symfony\Component\Scheduler\Attribute\AsPeriodicTask;
 /**
  * Rebuild the file mention completion index from the project CWD.
  *
- * Intended to be called offline (via Scheduler recurring task
- * or manually), never from the TUI input handler.  Uses Symfony
- * Finder with explicit excludes and a hard entry cap.
+ * Sole production refresh owner: Symfony Scheduler runs this every
+ * 30s (and operators may invoke it manually). Never call from the
+ * TUI input/startup path. Existing indexes are readable immediately;
+ * a missing first-ever index leaves `@` completion empty until this
+ * command succeeds (ponytail: no ad-hoc background process).
  *
- * The initial index build at TUI startup is handled by
- * {@see FileMentionIndexStartupListener}; this command provides
- * the periodic refresh via Symfony Scheduler recurring task.
- *
- * Atomic: writes to a temp file first, then renames into place.
+ * Delegates to {@see FileMentionIndexBuilder}: Git-native enumeration
+ * in worktrees, bounded Finder fallback otherwise, hard entry cap,
+ * atomic temp+rename write.
  *
  * Exit behaviour:
  *   - SUCCESS when built or lock held (another build in progress).

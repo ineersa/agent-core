@@ -101,6 +101,135 @@ final class FileMentionIndexBuilderTest extends TestCase
         }
     }
 
+    /**
+     * Non-Git Finder fallback must pre-prune cache-* / nested noisy trees
+     * (old code only excluded exact `.hatfield/cache` and still descended
+     * into cache-qa / cache-paraT variants).
+     */
+    #[Test]
+    public function nonGitFallbackExcludesCacheSuffixedAndNestedNoisyTrees(): void
+    {
+        // Bare directory tree without .git → Finder fallback path.
+        mkdir($this->tmpDir.'/src', 0755, true);
+        touch($this->tmpDir.'/src/kept.php');
+
+        mkdir($this->tmpDir.'/.hatfield/cache-qa-20260729-deadbeef', 0755, true);
+        touch($this->tmpDir.'/.hatfield/cache-qa-20260729-deadbeef/huge.cache');
+        mkdir($this->tmpDir.'/.hatfield/cache-paraT16', 0755, true);
+        touch($this->tmpDir.'/.hatfield/cache-paraT16/para.cache');
+        mkdir($this->tmpDir.'/.hatfield/cache', 0755, true);
+        touch($this->tmpDir.'/.hatfield/cache/excluded.cache');
+        mkdir($this->tmpDir.'/.hatfield/sessions/sess', 0755, true);
+        touch($this->tmpDir.'/.hatfield/sessions/sess/events.jsonl');
+        mkdir($this->tmpDir.'/.hatfield/tmp', 0755, true);
+        touch($this->tmpDir.'/.hatfield/tmp/tmp.file');
+
+        mkdir($this->tmpDir.'/tools/phar/vendor/pkg', 0755, true);
+        touch($this->tmpDir.'/tools/phar/vendor/pkg/excluded.php');
+        mkdir($this->tmpDir.'/apps/web/node_modules/pkg', 0755, true);
+        touch($this->tmpDir.'/apps/web/node_modules/pkg/excluded.js');
+        mkdir($this->tmpDir.'/packages/foo/var/cache', 0755, true);
+        touch($this->tmpDir.'/packages/foo/var/cache/excluded.log');
+
+        // Legitimate source whose basename substring is not a path component.
+        touch($this->tmpDir.'/src/vendorish.php');
+
+        $indexPath = $this->tmpDir.'/index.jsonl';
+        $builder = new FileMentionIndexBuilder($this->tmpDir, $indexPath, logger: $this->createLogger(), lockFactory: $this->createLockFactory());
+        $builder->build();
+
+        $paths = $this->indexPaths($indexPath);
+
+        $this->assertContains('src', $paths);
+        $this->assertContains('src/kept.php', $paths);
+        $this->assertContains('src/vendorish.php', $paths);
+
+        foreach ($paths as $path) {
+            $this->assertStringNotContainsString('cache-qa-', $path, $path);
+            $this->assertStringNotContainsString('cache-paraT', $path, $path);
+            $this->assertStringNotContainsString('.hatfield/cache/', $path, $path);
+            $this->assertStringNotContainsString('.hatfield/sessions', $path, $path);
+            $this->assertStringNotContainsString('.hatfield/tmp', $path, $path);
+            $this->assertStringNotContainsString('/vendor/', '/'.$path.'/');
+            $this->assertStringNotContainsString('/node_modules/', '/'.$path.'/');
+            $this->assertStringNotContainsString('/var/', '/'.$path.'/');
+        }
+    }
+
+    /**
+     * Git-native enumeration: tracked + untracked non-ignored files,
+     * inferred parent dirs, nested .gitignore, NUL-safe special names,
+     * and explicit noisy trees even when tracked.
+     */
+    #[Test]
+    public function gitWorktreeEnumeratesTrackedUntrackedAndExcludesNoisyTrees(): void
+    {
+        if (!$this->gitAvailable()) {
+            $this->markTestSkipped('git is not available.');
+        }
+
+        $repo = $this->tmpDir.'/git-repo';
+        mkdir($repo, 0755, true);
+        $this->runGit($repo, ['init', '-q']);
+        $this->runGit($repo, ['config', 'user.email', 'test@example.com']);
+        $this->runGit($repo, ['config', 'user.name', 'Test']);
+
+        // Nested ignore of build/ (must not appear even if present on disk).
+        file_put_contents($repo.'/.gitignore', "build/\n.hatfield/cache-*/\n");
+        mkdir($repo.'/src/nested', 0755, true);
+        file_put_contents($repo.'/src/nested/tracked.php', "<?php\n");
+        mkdir($repo.'/build', 0755, true);
+        file_put_contents($repo.'/build/artifact.bin', 'x');
+
+        // Path with spaces (and a newline-named file via direct write).
+        mkdir($repo.'/dir with spaces', 0755, true);
+        file_put_contents($repo.'/dir with spaces/file.php', "<?php\n");
+        $newlineName = "weird\nname.php";
+        file_put_contents($repo.'/'.$newlineName, "<?php\n");
+
+        // Explicit noisy trees (also force-add one tracked vendor file so
+        // --cached would surface it without our path-component filter).
+        mkdir($repo.'/tools/phar/vendor/pkg', 0755, true);
+        file_put_contents($repo.'/tools/phar/vendor/pkg/excluded.php', "<?php\n");
+        mkdir($repo.'/.hatfield/cache-qa-20260729-deadbeef', 0755, true);
+        file_put_contents($repo.'/.hatfield/cache-qa-20260729-deadbeef/huge.cache', 'x');
+        mkdir($repo.'/.hatfield/sessions/s1', 0755, true);
+        file_put_contents($repo.'/.hatfield/sessions/s1/events.jsonl', '{}');
+        mkdir($repo.'/var/tmp', 0755, true);
+        file_put_contents($repo.'/var/tmp/x.log', 'x');
+
+        $this->runGit($repo, ['add', '-A']);
+        // Force-add ignored noisy path if git refused it; ignore failure.
+        $this->runGitAllowFail($repo, ['add', '-f', 'tools/phar/vendor/pkg/excluded.php']);
+        $this->runGit($repo, ['commit', '-q', '-m', 'seed']);
+
+        // Untracked non-ignored file must still be indexed.
+        file_put_contents($repo.'/src/untracked.php', "<?php\n");
+
+        $indexPath = $this->tmpDir.'/git-index.jsonl';
+        $builder = new FileMentionIndexBuilder($repo, $indexPath, logger: $this->createLogger(), lockFactory: $this->createLockFactory());
+        $count = $builder->build();
+        $this->assertGreaterThan(0, $count);
+
+        $paths = $this->indexPaths($indexPath);
+
+        $this->assertContains('src', $paths);
+        $this->assertContains('src/nested', $paths);
+        $this->assertContains('src/nested/tracked.php', $paths);
+        $this->assertContains('src/untracked.php', $paths);
+        $this->assertContains('dir with spaces', $paths);
+        $this->assertContains('dir with spaces/file.php', $paths);
+        $this->assertContains($newlineName, $paths);
+
+        foreach ($paths as $path) {
+            $this->assertStringNotContainsString('build/', $path, $path);
+            $this->assertStringNotContainsString('cache-qa-', $path, $path);
+            $this->assertStringNotContainsString('.hatfield/sessions', $path, $path);
+            $this->assertStringNotContainsString('/vendor/', '/'.$path.'/');
+            $this->assertStringNotContainsString('/var/', '/'.$path.'/');
+        }
+    }
+
     #[Test]
     public function writesAtomically(): void
     {
@@ -308,10 +437,9 @@ final class FileMentionIndexBuilderTest extends TestCase
         // Simulate an isolated project nested inside a git repository
         // where the parent .gitignore ignores the project directory
         // (e.g. var/tmp/test-* in agent-core's .gitignore).
-        // The builder should skip ignoreVCSIgnored so the index is
+        // The builder should fall back to Finder so the index is
         // not empty — the explicit exclude list handles noisy dirs.
-        $gitExec = exec('which git 2>/dev/null');
-        if ('' === $gitExec) {
+        if (!$this->gitAvailable()) {
             $this->markTestSkipped('git is not available for VCS-ignored CWD test.');
         }
 
@@ -319,16 +447,7 @@ final class FileMentionIndexBuilderTest extends TestCase
         $gitRepo = $this->tmpDir.'/parent-repo';
         mkdir($gitRepo, 0755, true);
         file_put_contents($gitRepo.'/.gitignore', "/ignored-scratch/\n");
-
-        // Init git repo so .git/ exists (which is what Finder uses to
-        // detect the repo root for VcsIgnoredFilterIterator).
-        $cwd = getcwd();
-        chdir($gitRepo);
-        exec('git init -q 2>/dev/null', output: $initOut, result_code: $initCode);
-        chdir($cwd);
-        if (0 !== $initCode) {
-            $this->markTestSkipped('git init failed in '.$gitRepo);
-        }
+        $this->runGit($gitRepo, ['init', '-q']);
 
         // ── Create the CWD inside the ignored directory ──
         $cwd = $gitRepo.'/ignored-scratch/my-project';
@@ -338,12 +457,11 @@ final class FileMentionIndexBuilderTest extends TestCase
         touch($cwd.'/vendor/excluded.php');
 
         // ── Verify git sees the cwd as ignored ──
-        exec(
-            'git -C '.escapeshellarg($cwd).' check-ignore . 2>/dev/null',
-            output: $ignoreOut,
-            result_code: $isIgnored,
-        );
-        if (0 !== $isIgnored) {
+        $check = new \Symfony\Component\Process\Process([
+            'git', '-C', $cwd, 'check-ignore', '.',
+        ]);
+        $check->run();
+        if (0 !== $check->getExitCode()) {
             $this->markTestSkipped('CWD is not recognized as git-ignored; test setup may need adjustment.');
         }
 
@@ -353,9 +471,7 @@ final class FileMentionIndexBuilderTest extends TestCase
 
         $this->assertGreaterThan(0, $count, 'Index must contain entries even when CWD is VCS-ignored.');
 
-        $lines = file($indexPath, \FILE_IGNORE_NEW_LINES | \FILE_SKIP_EMPTY_LINES);
-        $this->assertNotFalse($lines);
-        $paths = array_map(static fn (string $l): string => json_decode($l, true)['path'], $lines);
+        $paths = $this->indexPaths($indexPath);
 
         // included.php should appear (not filtered by VCS ignore).
         $this->assertContains('included.php', $paths);
@@ -364,6 +480,48 @@ final class FileMentionIndexBuilderTest extends TestCase
         foreach ($paths as $path) {
             $this->assertStringNotContainsString('vendor/', $path);
         }
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function indexPaths(string $indexPath): array
+    {
+        $lines = file($indexPath, \FILE_IGNORE_NEW_LINES | \FILE_SKIP_EMPTY_LINES);
+        $this->assertNotFalse($lines);
+
+        return array_map(static fn (string $l): string => json_decode($l, true)['path'], $lines);
+    }
+
+    private function gitAvailable(): bool
+    {
+        $which = new \Symfony\Component\Process\Process(['which', 'git']);
+        $which->run();
+
+        return 0 === $which->getExitCode() && '' !== trim($which->getOutput());
+    }
+
+    /**
+     * @param list<string> $args
+     */
+    private function runGit(string $cwd, array $args): void
+    {
+        $process = new \Symfony\Component\Process\Process(array_merge(['git', '-C', $cwd], $args));
+        $process->run();
+        $this->assertSame(
+            0,
+            $process->getExitCode(),
+            'git '.implode(' ', $args).' failed: '.$process->getErrorOutput().$process->getOutput(),
+        );
+    }
+
+    /**
+     * @param list<string> $args
+     */
+    private function runGitAllowFail(string $cwd, array $args): void
+    {
+        $process = new \Symfony\Component\Process\Process(array_merge(['git', '-C', $cwd], $args));
+        $process->run();
     }
 
     private function createLockFactory(): LockFactory
