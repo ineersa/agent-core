@@ -95,7 +95,7 @@ final class RewindBranchLiveE2eTest extends ControllerE2eTestCase
             $this->assertNotSame('', $runId, 'start() must return a concrete run id');
             $this->assertTrue(ctype_digit($runId), 'Parent run id must be a pure-digit hatfield_session id');
 
-            $events1 = $this->collectEventsFromClient($runId, 30.0);
+            $events1 = $this->collectEventsFromClient($runId, $this->liveLlmRunWaitTimeout());
             $byType1 = $this->indexClientEvents($events1);
             $this->assertArrayHasKey('run.completed', $byType1,
                 'First conversational turn: expected run.completed. '
@@ -112,7 +112,7 @@ final class RewindBranchLiveE2eTest extends ControllerE2eTestCase
                 text: $this->marker.' The secret word is pineapple.',
             ));
 
-            $events2 = $this->collectEventsFromClient($runId, 30.0);
+            $events2 = $this->collectEventsFromClient($runId, $this->liveLlmRunWaitTimeout());
             $byType2 = $this->indexClientEvents($events2);
             $this->assertArrayHasKey('run.completed', $byType2,
                 'Pineapple turn: expected run.completed. '
@@ -136,7 +136,7 @@ final class RewindBranchLiveE2eTest extends ControllerE2eTestCase
                 payload: ['turn_no' => $firstTurnNo],
             ));
 
-            $events3 = $this->collectEventsFromClient($runId, 30.0);
+            $events3 = $this->collectEventsFromClient($runId, $this->liveLlmRunWaitTimeout());
             $byType3 = $this->indexClientEvents($events3);
 
             $this->assertArrayHasKey('run.leaf_changed', $byType3,
@@ -156,7 +156,7 @@ final class RewindBranchLiveE2eTest extends ControllerE2eTestCase
                 text: $this->marker.' The secret word is apple.',
             ));
 
-            $events4 = $this->collectEventsFromClient($runId, 30.0);
+            $events4 = $this->collectEventsFromClient($runId, $this->liveLlmRunWaitTimeout());
             $byType4 = $this->indexClientEvents($events4);
             $this->assertArrayHasKey('run.completed', $byType4,
                 'Apple turn: expected run.completed. '
@@ -169,7 +169,7 @@ final class RewindBranchLiveE2eTest extends ControllerE2eTestCase
                 text: $this->marker.' What is the secret word? Reply with exactly one word.',
             ));
 
-            $events5 = $this->collectEventsFromClient($runId, 30.0);
+            $events5 = $this->collectEventsFromClient($runId, $this->liveLlmRunWaitTimeout());
             $byType5 = $this->indexClientEvents($events5);
 
             $this->assertAssistantResponseContains('apple', $byType5,
@@ -188,7 +188,7 @@ final class RewindBranchLiveE2eTest extends ControllerE2eTestCase
                 payload: ['turn_no' => $pineappleTurnNo],
             ));
 
-            $events6 = $this->collectEventsFromClient($runId, 30.0);
+            $events6 = $this->collectEventsFromClient($runId, $this->liveLlmRunWaitTimeout());
             $byType6 = $this->indexClientEvents($events6);
             $this->assertArrayHasKey('run.leaf_changed', $byType6,
                 'Second rewind must emit run.leaf_changed. '
@@ -206,7 +206,7 @@ final class RewindBranchLiveE2eTest extends ControllerE2eTestCase
                 text: $this->marker.' What is the secret word? Reply with exactly one word.',
             ));
 
-            $events7 = $this->collectEventsFromClient($runId, 30.0);
+            $events7 = $this->collectEventsFromClient($runId, $this->liveLlmRunWaitTimeout());
             $byType7 = $this->indexClientEvents($events7);
 
             $this->assertAssistantResponseContains('pineapple', $byType7,

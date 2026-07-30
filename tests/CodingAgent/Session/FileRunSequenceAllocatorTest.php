@@ -129,15 +129,17 @@ fflush($fp);
 flock($fp, LOCK_UN);
 fclose($fp);
 file_put_contents($ready . '/' . $workerId, '1');
-while (!is_file($done)) {
+$deadline = microtime(true) + 15.0;
+while (!is_file($done) && microtime(true) < $deadline) {
     $h = fopen($done, 'c');
     if (false !== $h) {
         flock($h, LOCK_SH);
         flock($h, LOCK_UN);
         fclose($h);
     }
+    usleep(5_000);
 }
-exit(0);
+exit(is_file($done) ? 0 : 3);
 PHP;
 
         $workerFile = $dir.'/worker.php';
@@ -172,7 +174,8 @@ PHP;
             $processes[$w] = ['proc' => $proc, 'stdout' => $pipes[1], 'stderr' => $pipes[2]];
         }
 
-        $deadline = microtime(true) + 30.0;
+        // Workers allocate then signal ready; barrier wait is bounded in the worker script.
+        $deadline = microtime(true) + 10.0;
         $readyCount = 0;
         while (microtime(true) < $deadline) {
             $readyCount = 0;
@@ -184,12 +187,7 @@ PHP;
             if ($readyCount === $workerCount) {
                 break;
             }
-            $barrier = fopen($donePath, 'cb');
-            if (false !== $barrier) {
-                flock($barrier, \LOCK_SH);
-                flock($barrier, \LOCK_UN);
-                fclose($barrier);
-            }
+            usleep(5_000);
         }
 
         $this->assertSame($workerCount, $readyCount, 'Workers did not signal ready in time');
@@ -197,7 +195,24 @@ PHP;
         touch($donePath);
 
         foreach ($processes as $w => $meta) {
+            $waitDeadline = microtime(true) + 5.0;
+            $status = proc_get_status($meta['proc']);
+            while ($status['running'] && microtime(true) < $waitDeadline) {
+                usleep(5_000);
+                $status = proc_get_status($meta['proc']);
+            }
+            if ($status['running']) {
+                // Bounded teardown if a worker missed the done gate.
+                proc_terminate($meta['proc'], \SIGTERM);
+                usleep(50_000);
+                $status = proc_get_status($meta['proc']);
+                if ($status['running']) {
+                    proc_terminate($meta['proc'], \SIGKILL);
+                }
+            }
             $stderr = stream_get_contents($meta['stderr']);
+            fclose($meta['stdout']);
+            fclose($meta['stderr']);
             $exit = proc_close($meta['proc']);
             if (0 !== $exit) {
                 $this->fail('Worker '.$w.' exited '.$exit.': '.$stderr);

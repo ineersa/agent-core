@@ -73,13 +73,28 @@ final class TuiSubagentLiveChildExportE2eTest extends TestCase
                 'Export key must report child HTML path in picker feedback',
             );
 
-            // 600ms guarantees at least one runtime tick cycle before re-checking (anti one-frame flash).
-            usleep(600_000);
-            $this->tmux->waitForCaptureContains(
+            // Anti one-frame flash: require export feedback still present after a later capture cycle.
+            // Poll with short interval rather than fixed sleep; proof is persistent visible text.
+            $this->tmux->waitForCallback(
                 $pane,
-                'Child agent exported to:',
-                15.0,
-                'Export feedback must remain visible after subsequent render/tick activity',
+                static function (string $cap): bool {
+                    static $seenAt = null;
+                    if (!str_contains($cap, 'Child agent exported to:')) {
+                        return false;
+                    }
+                    $now = microtime(true);
+                    if (null === $seenAt) {
+                        $seenAt = $now;
+
+                        return false;
+                    }
+
+                    // At least one full 100ms poll interval after first sighting.
+                    return ($now - $seenAt) >= 0.15;
+                },
+                timeout: 5.0,
+                message: 'Export feedback must remain visible across subsequent render/tick activity',
+                history: 2000,
             );
 
             $this->assertFileExists($expectedHtml, 'Child export must write HTML in isolated project cwd');

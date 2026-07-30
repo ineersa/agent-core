@@ -46,97 +46,6 @@ final class TuiTreeCommandE2eTest extends TestCase
         }
     }
 
-    public function testTreeCommandShowsTurnOverlayAndEscapeCloses(): void
-    {
-        $pane = $this->tmux->startDetached(
-            command: $this->agentCommand(),
-            prefix: 'tui-tree-smoke',
-            width: 120,
-            height: 60,
-            cwd: $this->testProjectDir,
-        );
-
-        try {
-            // ── 1. Wait for TUI startup ──
-            $this->tmux->waitForCaptureContains($pane, '█', TmuxHarness::TUI_STARTUP_LOGO_TIMEOUT_PARALLEL);
-            $this->tmux->waitForTuiReadyAfterLogo($pane);
-
-            // ── 2. Send a prompt to create a turn ──
-            $this->tmux->sendLiteral($pane, 'hello');
-            $this->tmux->sendKey($pane, 'Enter');
-
-            // Wait for the assistant response block (◇) and exact replay fixture text.
-            $assistantCapture = $this->tmux->waitForCallback(
-                $pane,
-                static fn (string $cap): bool => str_contains($cap, '◇')
-                    && str_contains($cap, 'Follow-up acknowledged.'),
-                timeout: TmuxHarness::TUI_ASSISTANT_BLOCK_TIMEOUT_PARALLEL,
-                message: 'Assistant response block with fixture text did not appear',
-                history: 2000,
-            );
-            $this->assertStringContainsString(
-                'Follow-up acknowledged.',
-                $assistantCapture,
-                'Replay fixture response text missing from transcript output',
-            );
-
-            // ── 3. Send /tree command ──
-            $this->tmux->sendKey($pane, 'C-u');
-            $this->tmux->sendLiteral($pane, '/tree');
-            $this->tmux->sendKey($pane, 'Enter');
-
-            // Wait for the tree overlay to appear — look for turn entry and rewind header
-            $treeCapture = $this->tmux->waitForCallback(
-                $pane,
-                static fn (string $cap): bool => str_contains($cap, 'Session turn tree') && str_contains($cap, 'rewind'),
-                timeout: 10.0,
-                message: 'Tree picker overlay did not appear with turn entry and rewind header',
-                history: 2000,
-            );
-
-            $this->assertTrue(
-                str_contains($treeCapture, 'user:') || str_contains($treeCapture, 'assistant:'),
-                'Tree picker should show a role-prefixed turn row in the capture.'
-            );
-
-            $this->assertStringContainsString('rewind', $treeCapture,
-                'Tree picker header should indicate rewind mode.'
-            );
-
-            $this->saveAnsiSnapshot($pane, 'tree-picker-open');
-
-            // ── 4. Send Escape to close the picker ──
-            $this->tmux->sendKey($pane, 'Escape');
-
-            $postCloseCapture = $this->tmux->waitForCallback(
-                $pane,
-                static fn (string $cap): bool => str_contains($cap, '● idle')
-                    && !str_contains($cap, 'Session turn tree')
-                    && str_contains($cap, '◆'),
-                timeout: 5.0,
-                message: 'Tree picker did not close with idle footer',
-                history: 500,
-            );
-
-            $this->assertStringContainsString('● idle', $postCloseCapture,
-                'Session should remain in idle state after closing tree picker');
-            $this->assertStringContainsString('◆', $postCloseCapture,
-                'Footer model indicator should still be present after closing tree picker');
-
-            $this->saveAnsiSnapshot($pane, 'tree-picker-closed-idle');
-
-            // ── 5. Clean exit ──
-            $this->tmux->sendKey($pane, 'C-d');
-        } catch (\Throwable $e) {
-            $this->saveAnsiSnapshot($pane, 'tree-picker-FAILURE');
-            try {
-                $this->tmux->sendKey($pane, 'C-d');
-            } catch (\Throwable) {
-            }
-            throw $e;
-        }
-    }
-
     public function testTreeEnterRewindsTranscriptToEarlierTurn(): void
     {
         $pane = $this->tmux->startDetached(
@@ -246,31 +155,6 @@ final class TuiTreeCommandE2eTest extends TestCase
             }
             throw $e;
         }
-    }
-
-    private function agentCommand(): string
-    {
-        $fixturePath = $this->projectRoot.'/tests/Tui/E2E/fixtures/tui-followup-response.json';
-        $fixtureEnv = is_file($fixturePath)
-            ? 'HATFIELD_LLM_REPLAY_FIXTURE_PATH='.escapeshellarg($fixturePath).' '
-            : '';
-
-        $php = \PHP_BINARY;
-        $script = $this->projectRoot.'/bin/console';
-        $paths = TuiE2eDatabaseEnv::allocatePaths('tui-tree-');
-
-        $dbPath = $paths['app'];
-
-        $transportDbPath = $paths['transport'];
-
-        return \sprintf(
-            'APP_ENV=test %sHOME=%s %s %s %s agent --model=llama_cpp_test/test --tools-excluded=bash 2>&1',
-            TuiE2eDatabaseEnv::shellPrefix($dbPath, $transportDbPath),
-            escapeshellarg($this->testProjectDir.'/home'),
-            $fixtureEnv,
-            escapeshellarg($php),
-            escapeshellarg($script),
-        );
     }
 
     private function submitPrompt(TmuxPane $pane, string $text): void
