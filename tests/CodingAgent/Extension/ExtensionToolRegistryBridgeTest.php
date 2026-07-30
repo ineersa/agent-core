@@ -261,6 +261,8 @@ final class ExtensionToolRegistryBridgeTest extends TestCase
                 $this->isInstanceOf(ExtensionToolHandlerAdapter::class),
                 'mocked_tool: Mocked description',
                 ['Guideline'],
+                $this->anything(),
+                null,
             );
 
         $bridge = $this->bridgeFor($mock);

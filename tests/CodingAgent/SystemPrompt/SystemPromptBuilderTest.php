@@ -302,7 +302,7 @@ final class SystemPromptBuilderTest extends TestCase
         // contributor is registered. The contributor output MUST appear
         // in the rendered prompt — this is finding #1's regression test.
         $provider = new class implements PromptContributorProviderInterface {
-            public function promptContributors(): array
+            public function promptContributors(?array $allowedOwnerClasses = null): array
             {
                 return [
                     new class implements PromptContributorInterface {
@@ -331,7 +331,7 @@ final class SystemPromptBuilderTest extends TestCase
         );
 
         $provider = new class implements PromptContributorProviderInterface {
-            public function promptContributors(): array
+            public function promptContributors(?array $allowedOwnerClasses = null): array
             {
                 return [
                     new class implements PromptContributorInterface {

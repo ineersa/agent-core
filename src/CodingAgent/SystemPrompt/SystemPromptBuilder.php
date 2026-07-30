@@ -123,9 +123,10 @@ final readonly class SystemPromptBuilder
      * Uses child-safe placeholders ({available_tools_list}, {registered_guidelines},
      * date, cwd) and empty {appends_part} to avoid recursion.
      *
-     * @param list<string> $allowedToolNames runtime tool names for the child
+     * @param list<string>      $allowedToolNames  runtime tool names for the child
+     * @param list<string>|null $allowedExtensions null keeps all contributors (parent)
      */
-    public function buildChildAppendsFragment(array $allowedToolNames): string
+    public function buildChildAppendsFragment(array $allowedToolNames, ?array $allowedExtensions = null): string
     {
         if ('' === $this->appConfig->cwd) {
             throw new \RuntimeException('CWD is not configured. Ensure AppConfig::$cwd is set.');
@@ -133,7 +134,7 @@ final readonly class SystemPromptBuilder
 
         $cwd = rtrim($this->appConfig->cwd, '/');
 
-        return $this->buildChildAppendsContent($cwd, $allowedToolNames);
+        return $this->buildChildAppendsContent($cwd, $allowedToolNames, $allowedExtensions);
     }
 
     /**
@@ -266,15 +267,17 @@ final readonly class SystemPromptBuilder
      * Drain registered prompt contributors and concatenate their output.
      *
      * Empty contributions are skipped. Contributors run in registration order.
+     *
+     * @param list<string>|null $allowedExtensions null keeps all contributors
      */
-    private function drainContributors(): string
+    private function drainContributors(?array $allowedExtensions = null): string
     {
         if (null === $this->promptContributorProvider) {
             return '';
         }
 
         $contributions = [];
-        foreach ($this->promptContributorProvider->promptContributors() as $contributor) {
+        foreach ($this->promptContributorProvider->promptContributors($allowedExtensions) as $contributor) {
             $output = $contributor->contribute();
             if ('' !== $output) {
                 $contributions[] = $output;
@@ -311,9 +314,10 @@ final readonly class SystemPromptBuilder
     }
 
     /**
-     * @param list<string> $allowedToolNames
+     * @param list<string>      $allowedToolNames
+     * @param list<string>|null $allowedExtensions
      */
-    private function buildChildAppendsContent(string $cwd, array $allowedToolNames): string
+    private function buildChildAppendsContent(string $cwd, array $allowedToolNames, ?array $allowedExtensions = null): string
     {
         $parts = [];
 
@@ -334,7 +338,7 @@ final readonly class SystemPromptBuilder
             }
         }
 
-        $contributorOutput = $this->drainContributors();
+        $contributorOutput = $this->drainContributors($allowedExtensions);
         if ('' !== $contributorOutput) {
             // Opaque extension/user markdown: never parse or scrub contributor text.
             $parts[] = $contributorOutput;

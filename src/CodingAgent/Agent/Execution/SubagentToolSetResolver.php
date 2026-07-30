@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Agent\Execution;
 
 use Ineersa\AgentCore\Contract\Tool\ActiveToolSet;
 use Ineersa\AgentCore\Contract\Tool\ToolSetResolverInterface;
+use Ineersa\CodingAgent\Tool\ToolRegistryInterface;
 
 /**
  * Decorates the normal ToolSetResolver chain with per-run tool policy
@@ -18,7 +19,8 @@ use Ineersa\AgentCore\Contract\Tool\ToolSetResolverInterface;
  *     metadata.tools_scope.allowed_tools.
  *  3. Intersects the inner resolver's ActiveToolSet with the child's
  *     allowed tools — both toolNames and allowListNames.
- *  4. Filters executionModes to only include entries for tools that
+ *  4. Drops tools owned by extensions outside metadata.extensions.
+ *  5. Filters executionModes to only include entries for tools that
  *     remain after intersection.
  *
  * For parent (non-child) runs or when child metadata is missing,
@@ -32,6 +34,7 @@ final readonly class SubagentToolSetResolver implements ToolSetResolverInterface
     public function __construct(
         private ToolSetResolverInterface $inner,
         private SubagentRunMetadataReader $metadataReader,
+        private ToolRegistryInterface $toolRegistry,
     ) {
     }
 
@@ -60,6 +63,29 @@ final readonly class SubagentToolSetResolver implements ToolSetResolverInterface
         $filteredAllowList = array_values(
             array_intersect($inner->allowListNames, $allowedTools),
         );
+
+        // Drop tools owned by extensions not in the child's effective allowlist.
+        // Built-in tools (no extension owner) stay; only extension-owned tools filter.
+        $allowedExtensions = $this->metadataReader->readAllowedExtensions($runId);
+        if (null !== $allowedExtensions) {
+            $extensionAllowed = array_fill_keys($allowedExtensions, true);
+            $filteredToolNames = array_values(array_filter(
+                $filteredToolNames,
+                function (string $name) use ($extensionAllowed): bool {
+                    $definition = $this->toolRegistry->toolDefinition($name);
+                    if (null === $definition) {
+                        // Built-in/dynamic tools not currently visible, or unknown names:
+                        // keep the prior tools_scope decision.
+                        return true;
+                    }
+                    $owner = $definition->extensionOwnerClass;
+
+                    return null === $owner || isset($extensionAllowed[$owner]);
+                },
+            ));
+            $filteredAllowList = array_values(array_intersect($filteredAllowList, $filteredToolNames));
+            $allowedLookup = array_flip($filteredToolNames);
+        }
 
         // Filter executionModes to only include tools that remain after
         // intersection — not stale modes for removed tools.

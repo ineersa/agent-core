@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Extension;
 
+use Ineersa\AgentCore\Contract\Extension\ChildRunExtensionAllowlistReaderInterface;
 use Ineersa\AgentCore\Contract\Extension\HookSubscriberInterface;
 use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitEventSummary;
 use Ineersa\AgentCore\Domain\Extension\AfterTurnCommitHookContext;
@@ -21,6 +22,7 @@ final readonly class ExtensionAfterTurnCommitHookSubscriber implements HookSubsc
     public function __construct(
         private ExtensionHookRegistry $hookRegistry,
         private \Psr\Log\LoggerInterface $logger,
+        private ?ChildRunExtensionAllowlistReaderInterface $extensionAllowlistReader = null,
     ) {
     }
 
@@ -45,7 +47,9 @@ final readonly class ExtensionAfterTurnCommitHookSubscriber implements HookSubsc
             effectsCount: $context->effectsCount,
         );
 
-        foreach ($this->hookRegistry->afterTurnCommitHooks() as $hook) {
+        $allowed = $this->extensionAllowlistReader?->readAllowedExtensions($context->runId);
+
+        foreach ($this->hookRegistry->afterTurnCommitHooks($allowed) as $hook) {
             try {
                 $hook->onAfterTurnCommit($dto);
             } catch (\Throwable $e) {

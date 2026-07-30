@@ -20,6 +20,9 @@ tools:
   - read
   - bash
   # availability: all MCP tools are inherited automatically
+# Optional child extensions (always_on still applies from settings):
+# extensions:
+#   - Ineersa\HatfieldExt\SomeOptional\SomeOptionalExtension
 inheritProjectContext: true
 inheritAgentsMd: true
 systemPromptMode: replace
@@ -42,6 +45,7 @@ You are a scout. Explore the codebase read-only and return dense findings...
 | `model` | string\|null | no | `null` | Optional model override. |
 | `thinking` | string\|null | no | `null` | Reasoning/thinking override (`off`, `minimal`, `low`, `medium`, `high`, `xhigh`). |
 | `skills` | list\<string\> | no | `[]` | Setup skills loaded from start. |
+| `extensions` | list\<string\> | no | omit = no optional extensions | Optional child extension class names (FQCN). Effective allowlist = `agents.extensions.always_on` ∪ this list (stable first-seen dedup). Omitted means only always-on extensions apply — never inherits optional entries from global `extensions.enabled`. Blank/non-string entries are rejected. |
 | `inheritProjectContext` | bool | no | `true` | Include project context in child system prompt. |
 | `inheritAgentsMd` | bool | no | `true` | Include `AGENTS.md` in child system prompt. |
 | `systemPromptMode` | enum | no | `replace` | `replace` = harness only; `append` = also include APPEND_SYSTEM.md (+ contributors) with child placeholders. |

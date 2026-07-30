@@ -255,6 +255,7 @@ final class AgentDefinitionParser
             model: null !== $dto->model ? trim($dto->model) : null,
             thinking: null !== $dto->thinking ? trim($dto->thinking) : null,
             skills: array_values($dto->skills),
+            extensions: null === $dto->extensions ? null : array_values($dto->extensions),
             inheritProjectContext: $dto->inheritProjectContext,
             inheritAgentsMd: $dto->inheritAgentsMd,
             systemPromptMode: SystemPromptModeEnum::from($dto->systemPromptMode),

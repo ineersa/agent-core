@@ -804,6 +804,25 @@ agents:
         - hatfield_docs
 ```
 
+### `agents.extensions.always_on`
+
+Always-on extension class names for **subagent** child runs. Effective subagent
+allowlist = this list ∪ agent frontmatter `extensions` (stable first-seen dedup).
+
+Omitted frontmatter `extensions` enables **no** optional child extensions — only
+`always_on` applies. Child runs never inherit optional entries from global
+`extensions.enabled`. Selected classes must be present in process-global
+`extensions.enabled` and successfully registered; launch fails closed otherwise.
+
+**Default:** SafeGuard.
+
+```yaml
+agents:
+    extensions:
+        always_on:
+            - Ineersa\CodingAgent\Extension\Builtin\SafeGuard\SafeGuardExtension
+```
+
 See [Agent Definitions](agents.md) for the full definition format,
 discovery precedence, foreground execution (including timeout), and catalog API.
 
@@ -1659,11 +1678,18 @@ The `fork` tool launches an isolated child with inherited parent conversation co
 forks:
     model: null
     thinking_level: null
+    extensions:
+        always_on:
+            - Ineersa\CodingAgent\Extension\Builtin\SafeGuard\SafeGuardExtension
+        enabled: []
 ```
 
 Precedence:
 
 - **model**: explicit `fork` tool argument → `forks.model` → parent session model → runtime default
 - **thinking**: explicit `fork` tool argument → `forks.thinking_level` → parent session reasoning → null
+- **extensions**: effective allowlist = `forks.extensions.always_on` ∪ `forks.extensions.enabled` (stable first-seen). Does **not** inherit optional entries from global `extensions.enabled`. Empty/omitted `enabled` means always_on only.
+
+This project configures forks with Castor LLM mode as an optional enabled extension so effective project forks are SafeGuard then Castor. Selected classes must be process-available (`extensions.enabled`) and successfully registered; launch fails closed otherwise.
 
 Fork children cannot launch `fork` or `subagent`.

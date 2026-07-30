@@ -6,6 +6,7 @@ namespace Ineersa\CodingAgent\Extension;
 
 use HelgeSverre\Toon\Toon;
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
+use Ineersa\AgentCore\Contract\Extension\ChildRunExtensionAllowlistReaderInterface;
 use Ineersa\AgentCore\Domain\Run\PendingHumanInputRequestDTO;
 use Ineersa\AgentCore\Domain\Tool\ToolCallHumanInputAnswerDTO;
 use Ineersa\AgentCore\Domain\Tool\ToolExecutionHumanInputSuspension;
@@ -52,6 +53,7 @@ final readonly class ExtensionToolHookEventSubscriber implements EventSubscriber
         private ?StackToolExecutionContextAccessor $contextAccessor = null,
         private ?LoggerInterface $logger = null,
         private ?NoninteractiveChildRunProbe $noninteractiveChildProbe = null,
+        private ?ChildRunExtensionAllowlistReaderInterface $extensionAllowlistReader = null,
     ) {
     }
 
@@ -70,7 +72,7 @@ final readonly class ExtensionToolHookEventSubscriber implements EventSubscriber
         $context = $this->toolCallContext($toolCall);
         $humanInputAnswer = $this->contextAccessor?->current()?->humanInputAnswer();
 
-        foreach ($this->hookRegistry->toolCallHooks() as $hook) {
+        foreach ($this->hookRegistry->toolCallHooks($this->allowedExtensionsForCurrentRun()) as $hook) {
             // Resumed exact-call path: consume the typed answer for the originating hook only.
             if ($humanInputAnswer instanceof ToolCallHumanInputAnswerDTO
                 && $this->isAnswerForHook($humanInputAnswer, $hook::class, $context)
@@ -425,7 +427,7 @@ final readonly class ExtensionToolHookEventSubscriber implements EventSubscriber
         $currentIsError = $isError;
         $currentDetails = $details;
 
-        foreach ($this->hookRegistry->toolResultHooks() as $hook) {
+        foreach ($this->hookRegistry->toolResultHooks($this->allowedExtensionsForCurrentRun()) as $hook) {
             try {
                 $decision = $hook->onToolResult($this->toolResultContext(
                     toolCall: $toolCall,
@@ -449,6 +451,23 @@ final readonly class ExtensionToolHookEventSubscriber implements EventSubscriber
             $content = $decision->content ?? $content;
             $currentDetails = $decision->details ?? $currentDetails;
         }
+    }
+
+    /**
+     * @return list<string>|null null = parent/global (no filter)
+     */
+    private function allowedExtensionsForCurrentRun(): ?array
+    {
+        if (null === $this->extensionAllowlistReader) {
+            return null;
+        }
+
+        $runId = $this->contextAccessor?->current()?->runId();
+        if (null === $runId || '' === $runId) {
+            return null;
+        }
+
+        return $this->extensionAllowlistReader->readAllowedExtensions($runId);
     }
 
     private function toolCallContext(ToolCall $toolCall): ToolCallContextDTO

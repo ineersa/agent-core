@@ -77,7 +77,7 @@ final class Gf05ChildAppendStructuralPermanentSubsetContractTest extends \PHPUni
                 ) {
                 }
 
-                public function promptContributors(): array
+                public function promptContributors(?array $allowedOwnerClasses = null): array
                 {
                     return [
                         new class($this->benign) implements PromptContributorInterface {

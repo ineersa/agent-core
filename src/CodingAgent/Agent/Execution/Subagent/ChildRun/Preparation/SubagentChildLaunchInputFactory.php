@@ -7,6 +7,7 @@ namespace Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Preparation;
 use Ineersa\AgentCore\Contract\RunStoreInterface;
 use Ineersa\AgentCore\Domain\Run\RunMetadata;
 use Ineersa\AgentCore\Domain\Run\StartRunInput;
+use Ineersa\CodingAgent\Agent\ChildExtensionSelectionService;
 use Ineersa\CodingAgent\Agent\Context\AgentsContextBuilder;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionDTO;
 use Ineersa\CodingAgent\Agent\Execution\AgentPromptBuilder;
@@ -16,6 +17,7 @@ use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\PreparedAgentChildRunD
 use Ineersa\CodingAgent\Config\Ai\AiModelReference;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Skills\SkillsContextBuilder;
+use Ineersa\CodingAgent\Tool\ToolRegistryInterface;
 
 final class SubagentChildLaunchInputFactory
 {
@@ -25,6 +27,8 @@ final class SubagentChildLaunchInputFactory
         private readonly AgentsContextBuilder $agentsContextBuilder,
         private readonly RunStoreInterface $parentRunStore,
         private readonly AppConfig $appConfig,
+        private readonly ChildExtensionSelectionService $childExtensionSelection,
+        private readonly ToolRegistryInterface $toolRegistry,
     ) {
     }
 
@@ -39,6 +43,13 @@ final class SubagentChildLaunchInputFactory
         array $mcp,
         ?string $parentModel = null,
     ): PreparedAgentChildRunDTO {
+        $effectiveExtensions = $this->childExtensionSelection->resolveForSubagent($definition);
+        $this->childExtensionSelection->assertSelectedAvailable(
+            $effectiveExtensions,
+            \sprintf('Subagent "%s" launch', $identity->displayName),
+        );
+        $allowedTools = $this->filterToolsByExtensions($allowedTools, $effectiveExtensions);
+
         $launchContext = $this->resolveChildLaunchContext($identity->parentRunId, $definition, $allowedTools);
         $prompt = $this->promptBuilder->build(
             definition: $definition,
@@ -48,6 +59,7 @@ final class SubagentChildLaunchInputFactory
             agentsMd: $launchContext->agentsMd,
             skillsContext: $launchContext->skillsContext,
             agentsDefinitionsContext: $launchContext->agentsDefinitionsContext,
+            allowedExtensions: $effectiveExtensions,
         );
 
         // Pin the effective child model at launch from explicit override or
@@ -62,6 +74,7 @@ final class SubagentChildLaunchInputFactory
             reasoning: $definition->thinking,
             allowedTools: $allowedTools,
             mcp: $mcp,
+            extensions: $effectiveExtensions,
         );
 
         return new PreparedAgentChildRunDTO(
@@ -78,6 +91,7 @@ final class SubagentChildLaunchInputFactory
     /**
      * @param list<string>         $allowedTools
      * @param array<string, mixed> $mcp
+     * @param list<string>         $extensions
      */
     private function buildChildRunMetadata(
         string $parentRunId,
@@ -87,6 +101,7 @@ final class SubagentChildLaunchInputFactory
         ?string $reasoning,
         array $allowedTools,
         array $mcp,
+        array $extensions,
     ): RunMetadata {
         $contextWindow = $this->resolveContextWindowForModel($model);
 
@@ -105,6 +120,7 @@ final class SubagentChildLaunchInputFactory
                 'mcp' => $mcp,
             ],
             contextWindow: $contextWindow > 0 ? $contextWindow : null,
+            extensions: $extensions,
         );
     }
 
@@ -179,6 +195,30 @@ final class SubagentChildLaunchInputFactory
         }
 
         return $this->skillsContextBuilder->buildFor($definition->skills);
+    }
+
+    /**
+     * @param list<string> $allowedTools
+     * @param list<string> $allowedExtensions
+     *
+     * @return list<string>
+     */
+    private function filterToolsByExtensions(array $allowedTools, array $allowedExtensions): array
+    {
+        $allowed = array_fill_keys($allowedExtensions, true);
+
+        return array_values(array_filter(
+            $allowedTools,
+            function (string $name) use ($allowed): bool {
+                $definition = $this->toolRegistry->toolDefinition($name);
+                if (null === $definition) {
+                    return true;
+                }
+                $owner = $definition->extensionOwnerClass;
+
+                return null === $owner || isset($allowed[$owner]);
+            },
+        ));
     }
 
     private function extractUserContextBySource(string $parentRunId, string $source): string

@@ -86,6 +86,7 @@ final class ToolRegistry implements ToolRegistryInterface
         string $promptLine,
         array $promptGuidelines = [],
         ToolExecutionMode $executionMode = ToolExecutionMode::Sequential,
+        ?string $extensionOwnerClass = null,
     ): void {
         if ('' === $name || '' === $description) {
             throw new \InvalidArgumentException(\sprintf('Tool name and description must be non-empty strings, got name="%s" description="%s".', $name, $description));
@@ -104,6 +105,7 @@ final class ToolRegistry implements ToolRegistryInterface
             promptLine: $promptLine,
             promptGuidelines: $promptGuidelines,
             executionMode: $executionMode,
+            extensionOwnerClass: $extensionOwnerClass,
         );
         $this->permanentOrder[] = $name;
     }

@@ -544,7 +544,7 @@ final class RegistryBackedToolboxTest extends TestCase
             ) {
             }
 
-            public function rewriteHooksForTool(string $toolName): array
+            public function rewriteHooksForTool(string $toolName, ?array $allowedOwnerClasses = null): array
             {
                 return [$this->hook];
             }
@@ -663,7 +663,7 @@ final class RegistryBackedToolboxTest extends TestCase
             ) {
             }
 
-            public function rewriteHooksForTool(string $toolName): array
+            public function rewriteHooksForTool(string $toolName, ?array $allowedOwnerClasses = null): array
             {
                 return $this->toolName === $toolName ? $this->hooks : [];
             }

@@ -30,7 +30,8 @@ final readonly class AgentPromptBuilder
     }
 
     /**
-     * @param list<string> $allowedTools
+     * @param list<string>      $allowedTools
+     * @param list<string>|null $allowedExtensions null keeps parent-global contributors
      *
      * @return array{systemPrompt: string, messages: list<AgentMessage>}
      */
@@ -42,10 +43,12 @@ final readonly class AgentPromptBuilder
         string $agentsMd,
         string $skillsContext = '',
         string $agentsDefinitionsContext = '',
+        ?array $allowedExtensions = null,
     ): array {
         $systemPrompt = $this->buildSystemPrompt(
             definition: $definition,
             allowedTools: $allowedTools,
+            allowedExtensions: $allowedExtensions,
         );
 
         $messages = $this->buildMessages(
@@ -64,11 +67,13 @@ final readonly class AgentPromptBuilder
     }
 
     /**
-     * @param list<string> $allowedTools
+     * @param list<string>      $allowedTools
+     * @param list<string>|null $allowedExtensions
      */
     private function buildSystemPrompt(
         AgentDefinitionDTO $definition,
         array $allowedTools,
+        ?array $allowedExtensions,
     ): string {
         $parts = [];
 
@@ -80,7 +85,7 @@ final readonly class AgentPromptBuilder
         $parts[] = $this->systemPromptBuilder->buildChildHarnessFragment($allowedTools);
 
         if (SystemPromptModeEnum::Append === $definition->systemPromptMode) {
-            $appends = $this->systemPromptBuilder->buildChildAppendsFragment($allowedTools);
+            $appends = $this->systemPromptBuilder->buildChildAppendsFragment($allowedTools, $allowedExtensions);
             if ('' !== trim($appends)) {
                 $parts[] = $appends;
             }

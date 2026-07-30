@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Extension;
 
+use Ineersa\AgentCore\Contract\Extension\ChildRunExtensionAllowlistReaderInterface;
 use Ineersa\CodingAgent\Compaction\CompactionHookContextDTO;
 use Ineersa\CodingAgent\Compaction\CompactionHookDispatcher;
 use Ineersa\CodingAgent\Compaction\CompactionHookResultDTO;
@@ -25,6 +26,7 @@ final readonly class ExtensionCompactionHookDispatcher
         private ExtensionHookRegistry $hookRegistry,
         private CompactionHookDispatcher $internalHookDispatcher,
         private LoggerInterface $logger,
+        private ?ChildRunExtensionAllowlistReaderInterface $extensionAllowlistReader = null,
     ) {
     }
 
@@ -61,7 +63,9 @@ final readonly class ExtensionCompactionHookDispatcher
             thinkingLevel: $internalContext->thinkingLevel,
         );
 
-        foreach ($this->hookRegistry->beforeCompactionHooks() as $hook) {
+        $allowed = $this->extensionAllowlistReader?->readAllowedExtensions($internalContext->runId);
+
+        foreach ($this->hookRegistry->beforeCompactionHooks($allowed) as $hook) {
             try {
                 $result = $hook->beforeCompaction($publicContext);
                 $this->mergePublicResult($merged, $result);

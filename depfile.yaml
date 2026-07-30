@@ -674,6 +674,7 @@ parameters:
       - AppRuntimeContract
       - AppSkills
       - AppTool
+      - AppExtension
       - AgentCore
       - SymfonyYaml
       - SymfonySerializer

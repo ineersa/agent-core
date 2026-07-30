@@ -22,8 +22,9 @@ use Symfony\Component\Validator\Context\ExecutionContextInterface;
 final class AgentFrontmatterDTO
 {
     /**
-     * @param list<string>|null $tools  null means inherit all parent-available tools at launch (pi parity)
+     * @param list<string>|null $tools      null means inherit all parent-available tools at launch (pi parity)
      * @param list<string>      $skills
+     * @param list<string>|null $extensions null means no optional child extensions (always_on only)
      */
     public function __construct(
         // --- Required fields ---
@@ -73,6 +74,21 @@ final class AgentFrontmatterDTO
             ),
         ])]
         public readonly array $skills = [],
+
+        #[Assert\When(
+            expression: 'this.extensions !== null',
+            constraints: [
+                new Assert\All([
+                    new Assert\Type('string', '"extensions[{{ index }}]" must be a string.'),
+                    new Assert\NotBlank(message: '"extensions[{{ index }}]" must not be empty.'),
+                    new Assert\Regex(
+                        pattern: '/^\\S+$/',
+                        message: '"extensions[{{ index }}]" must not have leading or trailing whitespace.',
+                    ),
+                ]),
+            ],
+        )]
+        public readonly ?array $extensions = null,
 
         #[Assert\Type('bool', '"inheritProjectContext" must be a boolean.')]
         public readonly bool $inheritProjectContext = true,
@@ -124,6 +140,12 @@ final class AgentFrontmatterDTO
         if (!array_is_list($this->skills)) {
             $context->buildViolation('Must be a list (sequential array), got associative array.')
                 ->atPath('skills')
+                ->addViolation();
+        }
+
+        if (null !== $this->extensions && !array_is_list($this->extensions)) {
+            $context->buildViolation('Must be a list (sequential array), got associative array.')
+                ->atPath('extensions')
                 ->addViolation();
         }
 

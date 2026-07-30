@@ -21,7 +21,10 @@ interface ToolCallRewriteHookProviderInterface
      * Returns hooks registered for the exact tool name plus hooks
      * registered for the wildcard '*', in registration order.
      *
+     * @param list<string>|null $allowedOwnerClasses null keeps all hooks (parent/global);
+     *                                               a list filters to those extension owner classes
+     *
      * @return list<ToolCallRewriteHookInterface>
      */
-    public function rewriteHooksForTool(string $toolName): array;
+    public function rewriteHooksForTool(string $toolName, ?array $allowedOwnerClasses = null): array;
 }

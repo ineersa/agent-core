@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Agent\Execution\Support;
 
+use Ineersa\CodingAgent\Agent\ChildExtensionSelectionService;
 use Ineersa\CodingAgent\Agent\Definition\AgentDefinitionCatalog;
 use Ineersa\CodingAgent\Agent\Execution\AgentDepthGuard;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchLifecyclePolicyDTO;
@@ -18,6 +19,7 @@ use Ineersa\CodingAgent\Agent\Execution\Subagent\ChildRun\Preparation\SubagentLa
 use Ineersa\CodingAgent\Agent\Execution\SubagentExecutionService;
 use Ineersa\CodingAgent\Agent\Execution\SubagentLaunchPreparationService;
 use Ineersa\CodingAgent\Config\AgentsConfig;
+use Ineersa\CodingAgent\Tool\ToolRegistryInterface;
 
 final class SubagentExecutionServiceFactory
 {
@@ -46,20 +48,41 @@ final class SubagentExecutionServiceFactory
             'lifecycleListener' => null,
             'forkLaunchInputBuilder' => null,
             'forkToolPolicyResolver' => null,
+            // Prefer container services for selection validation + owner-tagged tools.
+            'childExtensionSelection' => null,
+            'toolRegistry' => null,
+            'launchInputFactory' => null,
         ];
 
         $args = array_merge($defaults, $overrides);
 
-        foreach (['policyResolver', 'promptBuilder', 'skillsContextBuilder', 'agentsContextBuilder', 'artifactRegistry', 'agentRunner', 'parentRunStore', 'metadataReader', 'childRunDirectory', 'contextAccessor', 'logger', 'appConfig', 'batchRepository', 'lifecycleListener', 'forkLaunchInputBuilder', 'forkToolPolicyResolver'] as $required) {
+        foreach (['policyResolver', 'promptBuilder', 'skillsContextBuilder', 'agentsContextBuilder', 'artifactRegistry', 'agentRunner', 'parentRunStore', 'metadataReader', 'childRunDirectory', 'contextAccessor', 'logger', 'appConfig', 'batchRepository', 'lifecycleListener', 'forkLaunchInputBuilder', 'forkToolPolicyResolver', 'childExtensionSelection', 'toolRegistry'] as $required) {
             if (null === $args[$required]) {
                 throw new \InvalidArgumentException(\sprintf('SubagentExecutionServiceFactory requires override "%s".', $required));
             }
         }
 
+        if (!$args['childExtensionSelection'] instanceof ChildExtensionSelectionService) {
+            throw new \InvalidArgumentException('SubagentExecutionServiceFactory requires childExtensionSelection to be a ChildExtensionSelectionService instance.');
+        }
+        if (!$args['toolRegistry'] instanceof ToolRegistryInterface) {
+            throw new \InvalidArgumentException('SubagentExecutionServiceFactory requires toolRegistry to be a ToolRegistryInterface instance.');
+        }
+
         $artifactLifecycle = $args['artifactLifecycle'] ?? new ChildRunArtifactLifecycleService($args['artifactRegistry'], $args['childRunDirectory']);
 
         $definitionPolicy = new SubagentLaunchDefinitionPolicyService($args['catalog'], $args['depthGuard'], $args['policyResolver'], $args['metadataReader']);
-        $launchInputFactory = new SubagentChildLaunchInputFactory($args['promptBuilder'], $args['skillsContextBuilder'], $args['agentsContextBuilder'], $args['parentRunStore'], $args['appConfig']);
+        $launchInputFactory = $args['launchInputFactory'] instanceof SubagentChildLaunchInputFactory
+            ? $args['launchInputFactory']
+            : new SubagentChildLaunchInputFactory(
+                $args['promptBuilder'],
+                $args['skillsContextBuilder'],
+                $args['agentsContextBuilder'],
+                $args['parentRunStore'],
+                $args['appConfig'],
+                $args['childExtensionSelection'],
+                $args['toolRegistry'],
+            );
         $launchPreparation = new SubagentLaunchPreparationService(
             $definitionPolicy,
             $artifactLifecycle,

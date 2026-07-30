@@ -40,6 +40,8 @@ final readonly class AgentsConfig
 
         #[SerializedName('subagent_excluded_tools')]
         public array $subagentExcludedTools = ['settings', 'hatfield_docs'],
+
+        public ChildExtensionsConfigDTO $extensions = new ChildExtensionsConfigDTO(),
     ) {
     }
 
@@ -79,6 +81,7 @@ final readonly class AgentsConfig
 
         $subagentToolTimeoutSeconds = self::resolveSubagentToolTimeoutSeconds($raw);
         $subagentExcludedTools = self::resolveSubagentExcludedTools($raw);
+        $extensions = ChildExtensionsConfigDTO::fromRaw($raw['extensions'] ?? null, 'agents.extensions');
 
         return new self(
             enabled: $enabled,
@@ -87,6 +90,7 @@ final readonly class AgentsConfig
             maxAgents: $maxAgents,
             subagentToolTimeoutSeconds: $subagentToolTimeoutSeconds,
             subagentExcludedTools: $subagentExcludedTools,
+            extensions: $extensions,
         );
     }
 
