@@ -137,15 +137,22 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
         $this->createManager(stopGraceSeconds: 5);
 
         $sentinel = $this->tmpDir.'/term_sentinel';
+        $readySentinel = $this->tmpDir.'/term_ready';
         $scriptPath = $this->tmpDir.'/term_test.sh';
         file_put_contents(
             $scriptPath,
-            "#!/bin/bash\ntrap 'echo term_received > ".escapeshellarg($sentinel)."; exit 0' TERM\nsleep 3\n",
+            "#!/bin/bash\ntrap 'echo term_received > ".escapeshellarg($sentinel)."; exit 0' TERM\necho ready > ".escapeshellarg($readySentinel)."\nsleep 3\n",
         );
         chmod($scriptPath, 0755);
 
         $result = $this->manager->start($scriptPath, self::TEST_SESSION);
-        usleep(100_000);
+
+        // Bounded readiness: fixture writes after TERM trap is installed.
+        $readyDeadlineNs = hrtime(true) + 2_000_000_000;
+        while (!is_file($readySentinel) && hrtime(true) < $readyDeadlineNs) {
+            usleep(10_000);
+        }
+        $this->assertFileExists($readySentinel, 'TERM trap fixture must signal ready before stop()');
 
         $startedNs = hrtime(true);
         $stopResult = $this->manager->stop($result->pid);
