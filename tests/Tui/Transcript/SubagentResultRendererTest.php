@@ -23,7 +23,8 @@ final class SubagentResultRendererTest extends TestCase
     {
         $progress = [
             'mode' => 'single', 'status' => 'running', 'agent_name' => 'scout',
-            'artifact_id' => 'agent_01HX', 'task_summary' => 'inspect runtime events', 'turn_no' => 3, 'elapsed_ms' => 18000,
+            'artifact_id' => 'agent_01HX', 'task_summary' => 'inspect runtime events',
+            'turn_no' => 3, 'llm_step_count' => 3, 'elapsed_ms' => 18000,
         ];
         $block = new TranscriptBlock(
             id: 'tool_result_tc1',
@@ -42,7 +43,31 @@ final class SubagentResultRendererTest extends TestCase
         $this->assertStringContainsString('[running]', $joined);
         $this->assertStringContainsString('Task inspect runtime events', $joined);
         $this->assertStringContainsString('agent_01HX', $joined);
-        $this->assertStringContainsString('3 turns', $joined);
+        $this->assertStringContainsString('3 LLM steps', $joined);
+        $this->assertStringNotContainsString(' turns', $joined);
+    }
+
+    public function testFooterRendersSingularLlmStepWithoutTurnLabel(): void
+    {
+        $progress = [
+            'mode' => 'single', 'status' => 'completed', 'agent_name' => 'scout',
+            'artifact_id' => 'agent_one', 'task_summary' => 'one step',
+            'turn_no' => 99, 'llm_step_count' => 1,
+            'input_tokens' => 100, 'output_tokens' => 20, 'model' => 'deepseek/deepseek-v4-flash',
+        ];
+        $block = new TranscriptBlock(
+            id: 'tool_result_one_step',
+            kind: TranscriptBlockKindEnum::ToolResult,
+            runId: 'run1',
+            seq: 1,
+            text: '',
+            meta: ['tool_name' => 'subagent', 'subagent_progress' => $progress],
+        );
+        $joined = implode("\n", $this->renderBlockLines($block));
+        $this->assertStringContainsString('1 LLM step', $joined);
+        $this->assertStringNotContainsString('LLM steps', $joined);
+        $this->assertStringNotContainsString('99 turns', $joined);
+        $this->assertStringNotContainsString(' turns', $joined);
     }
 
     public function testRendersRichSingleProgressCardWithoutLastPrefixOnRecentTools(): void

@@ -78,7 +78,8 @@ final class TuiSubagentProgressE2eTest extends TestCase
             $this->assertStringContainsString('Task Inspect TUI subagent rendering', $capture);
             $this->assertStringContainsString('Artifact artifacts/agents/agent_e2e_progress_fixture', $capture);
             $this->assertStringContainsString('agent_e2e_progress_fixture', $capture);
-            $this->assertStringContainsString('3 turns', $capture);
+            $this->assertStringContainsString('3 LLM steps', $capture);
+            $this->assertStringNotContainsString(' turns', $capture);
             $this->assertStringContainsString('deepseek/deepseek-v4-flash', $capture);
             $this->assertStringContainsString(ChildContextStatisticsFixture::TRANSCRIPT_CTX_LINE, $capture, 'Resumed parent transcript card must show child context usage');
             $this->assertStringContainsString('Use agent_retrieve', $capture);
