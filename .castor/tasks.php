@@ -14,8 +14,10 @@ declare(strict_types=1);
  * Lanes (typical shell timeouts):
  *   deptrac (30s), test ParaTest (120s), test:controller-replay (150s),
  *   test:tui (180s), test:llm-real (180s), phpstan (90s), cs-check (30s).
- *   Absolute castor check wall clock: castor_test_runner_max_seconds() (180s).
- *   Per-lane Castor hard timeouts are clamped so they never exceed remaining wall.
+ *   Absolute castor check wall clock: castor_test_runner_max_seconds() (180s)
+ *   from check() entry — lock wait, QA init, preflight, lanes, and finalizers
+ *   all consume the same budget. Per-lane Castor hard timeouts and preflight
+ *   subprocesses are clamped to remaining wall (no pad past 180s).
  *   No PHAR in the gate.
  *
  * Budget for test:controller-replay (75s → 90s → 120s → 150s) reflects the
@@ -28,8 +30,8 @@ declare(strict_types=1);
  * pool topology case joined this branch, standalone sequential runtime is
  * ~88s and concurrent castor-check load still needs more headroom than
  * 120s; 150s keeps ~60s load/teardown margin without masking a true hang.
- * Individual fixture waits and Castor hard-stop (+15s pad over shell
- * timeout) are unchanged.
+ * Individual fixture waits remain fixture-local; Castor lane hard-stop is
+ * the shell budget clamped to remaining wall (no +15s pad).
  *
  * Budget for test:tui (120s → 180s): the replay TUI lane runs 36 tests on
  * 2 ParaTest workers; healthy gate runs are often 108–118s, so 120s left
@@ -99,13 +101,17 @@ require_once __DIR__.'/env.php';
 function check(): void
 {
     $root = (false !== ($_rp = realpath(__DIR__.'/..')) ? $_rp : __DIR__.'/..');
+    // Absolute 180s wall starts at task entry — before lock wait and QA init.
+    $checkWallDeadline = (hrtime(true) / 1e9) + castor_test_runner_max_seconds();
     /** @var LockInterface|null $checkLock */
     $checkLock = null;
 
     try {
         if (castor_check_lock_enabled()) {
-            $checkLock = acquire_castor_check_lock($root);
+            $checkLock = acquire_castor_check_lock($root, $checkWallDeadline);
         }
+
+        castor_check_fail_if_wall_exceeded($checkWallDeadline, 'before QA run initialization');
 
         $qaRunId = initialize_qa_check_run();
         if (null !== $checkLock) {
@@ -113,7 +119,7 @@ function check(): void
         }
         echo 'QA run: '.$qaRunId."\n";
 
-        _run_castor_check_body($root, $qaRunId);
+        _run_castor_check_body($root, $qaRunId, $checkWallDeadline);
     } finally {
         if (null !== $checkLock) {
             release_castor_check_lock($checkLock, $root);
@@ -122,13 +128,42 @@ function check(): void
 }
 
 /**
- * Execute the QA gate after optional per-checkout lock and QA run initialization.
+ * Fail when the absolute castor check wall has already elapsed.
  */
-function _run_castor_check_body(string $root, string $qaRunId): void
+function castor_check_fail_if_wall_exceeded(float $checkWallDeadline, string $when): void
 {
-    $llamaProxyCacheBaseline = begin_castor_check_llama_proxy_cache_guard();
-    // Absolute gate wall from body start (includes preflight + lanes + finalizers).
-    $checkWallDeadline = (hrtime(true) / 1e9) + castor_test_runner_max_seconds();
+    $remaining = $checkWallDeadline - (hrtime(true) / 1e9);
+    if ($remaining <= 0) {
+        fail_quality(sprintf(
+            'castor check exceeded absolute wall clock of %ds %s',
+            castor_test_runner_max_seconds(),
+            $when,
+        ));
+    }
+}
+
+/**
+ * Whole seconds of remaining absolute wall (minimum 1 when still inside budget).
+ */
+function castor_check_remaining_wall_seconds(float $checkWallDeadline): int
+{
+    $remaining = $checkWallDeadline - (hrtime(true) / 1e9);
+    if ($remaining <= 0) {
+        return 0;
+    }
+
+    return max(1, min(castor_test_runner_max_seconds(), (int) floor($remaining)));
+}
+
+/**
+ * Execute the QA gate after optional per-checkout lock and QA run initialization.
+ *
+ * @param float $checkWallDeadline absolute hrtime-seconds deadline from check() entry
+ */
+function _run_castor_check_body(string $root, string $qaRunId, float $checkWallDeadline): void
+{
+    castor_check_fail_if_wall_exceeded($checkWallDeadline, 'before preflight');
+    $llamaProxyCacheBaseline = begin_castor_check_llama_proxy_cache_guard($checkWallDeadline);
 
     // No PHAR ensure — the deterministic controller-replay and TUI
     // replay lanes use source bin/console with APP_ENV=test, which
@@ -196,10 +231,14 @@ function _run_castor_check_body(string $root, string $qaRunId): void
     ];
 
     // DB schema must be ready before the test / controller-replay / TUI
-    // lanes start.  Migrate once (fast, idempotent).
-    $migrate = run_quiet_command(
-        qa_check_run_env_command().' APP_ENV=test '.\PHP_BINARY.' bin/console doctrine:migrations:migrate --no-interaction --allow-no-migration'
-    );
+    // lanes start.  Migrate once (fast, idempotent). Bound by remaining wall
+    // so an unbounded migrate cannot outlive the absolute 180s budget.
+    castor_check_fail_if_wall_exceeded($checkWallDeadline, 'before test database migration');
+    $migrateTimeout = min(30, castor_check_remaining_wall_seconds($checkWallDeadline));
+    $migrate = run_quiet_command(timeout_check_command(
+        qa_check_run_env_command().' APP_ENV=test '.\PHP_BINARY.' bin/console doctrine:migrations:migrate --no-interaction --allow-no-migration',
+        $migrateTimeout,
+    ));
     if (0 !== $migrate->getExitCode()) {
         fail_quality('test database migration failed: '.$migrate->getErrorOutput());
     }
@@ -213,20 +252,18 @@ function _run_castor_check_body(string $root, string $qaRunId): void
     }
 
     // Fail fast before spawning parallel lanes if port 9052 cannot complete generation.
-    check_llm_generation_ready();
+    castor_check_fail_if_wall_exceeded($checkWallDeadline, 'before llm generation preflight');
+    check_llm_generation_ready($checkWallDeadline);
 
     $failures = [];
     $timings = [];
 
     $GLOBALS['CASTOR_CHECK_AGGREGATING'] = true;
     try {
-        $remainingWall = $checkWallDeadline - (hrtime(true) / 1e9);
-        if ($remainingWall <= 0) {
-            fail_quality(sprintf(
-                'castor check exceeded absolute wall clock of %ds before lanes started (preflight/setup overrun)',
-                castor_test_runner_max_seconds(),
-            ));
-        }
+        castor_check_fail_if_wall_exceeded(
+            $checkWallDeadline,
+            'before lanes started (preflight/setup overrun)',
+        );
 
         $useParallel = \PHP_SAPI === 'cli' && function_exists('proc_open');
         if ($useParallel) {
@@ -243,7 +280,8 @@ function _run_castor_check_body(string $root, string $qaRunId): void
         finalize_qa_run_tui_tmux_sessions($qaRunId);
     }
 
-    assert_castor_check_llama_proxy_cache_unchanged($llamaProxyCacheBaseline);
+    castor_check_fail_if_wall_exceeded($checkWallDeadline, 'before post-lane finalizers');
+    assert_castor_check_llama_proxy_cache_unchanged($llamaProxyCacheBaseline, $checkWallDeadline);
 
     finalize_castor_check_run($qaRunId, $failures, $timings, array_keys($allCheckCommands));
 }
@@ -575,10 +613,12 @@ function run_check_commands_parallel(array $steps, array &$failures, array &$tim
     $logFiles = [];
     $commands = [];
     $timeouts = [];
-    $remainingWall = null === $checkWallDeadline
-        ? castor_test_runner_max_seconds()
-        : max(1, (int) floor($checkWallDeadline - (hrtime(true) / 1e9)));
-    $remainingWall = min(castor_test_runner_max_seconds(), $remainingWall);
+    if (null === $checkWallDeadline) {
+        $remainingWall = castor_test_runner_max_seconds();
+    } else {
+        castor_check_fail_if_wall_exceeded($checkWallDeadline, 'before parallel lanes');
+        $remainingWall = castor_check_remaining_wall_seconds($checkWallDeadline);
+    }
 
     foreach ($steps as $step => $info) {
         $logFiles[$step] = report_path("check-{$step}.log");

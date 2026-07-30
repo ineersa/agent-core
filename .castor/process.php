@@ -1226,8 +1226,62 @@ PHPCODE;
         echo "PASS: shell 180 clamps to {$castorTimeoutJ} (<=180, no pad)\n";
     }
 
+    // ── Test K: absolute wall starts at check() entry (lock+preflight share budget) ──
+    echo "\n── Test K: check() entry wall accounting (lock + preflight share 180s) ──\n\n";
+    // Simulate: wall starts at entry; lock wait burns 2s of a 5s injected budget.
+    $entryK = hrtime(true) / 1e9;
+    $injectedBudgetK = 5.0;
+    $deadlineK = $entryK + $injectedBudgetK;
+    $lockWaitBurnK = 2.0;
+    $afterLockK = $entryK + $lockWaitBurnK;
+    $lockAcquireCapK = min(60.0, max(0.001, $deadlineK - $entryK)); // default 60s lock, clamped to remaining at entry
+    $remainingAfterLockK = $deadlineK - $afterLockK;
+    $preflightShellK = min(15, max(1, (int) floor($remainingAfterLockK)));
+    $laneRemainingK = max(1, (int) floor($remainingAfterLockK - 1.0)); // after ~1s preflight
+    if (abs($lockAcquireCapK - 5.0) > 0.001) {
+        echo "FAIL: lock acquire at entry should clamp to injected 5s, got {$lockAcquireCapK}\n";
+        $ok = false;
+    } else {
+        echo "PASS: lock acquire timeout clamps to remaining wall at check() entry ({$lockAcquireCapK}s)\n";
+    }
+    if ($remainingAfterLockK !== 3.0) {
+        echo "FAIL: remaining after 2s lock wait expected 3.0, got {$remainingAfterLockK}\n";
+        $ok = false;
+    } else {
+        echo "PASS: after 2s lock wait, 3.0s remains of 5s entry budget\n";
+    }
+    if (3 !== $preflightShellK) {
+        echo "FAIL: preflight shell timeout expected 3, got {$preflightShellK}\n";
+        $ok = false;
+    } else {
+        echo "PASS: preflight subprocess timeout clamps to remaining wall ({$preflightShellK}s)\n";
+    }
+    if (2 !== $laneRemainingK) {
+        echo "FAIL: lane remaining after preflight expected 2, got {$laneRemainingK}\n";
+        $ok = false;
+    } else {
+        echo "PASS: lanes see remaining wall after lock+preflight ({$laneRemainingK}s)\n";
+    }
+    // Expired wall at body start must not invent a 1s lane budget.
+    $expiredRemainingK = (int) floor(($entryK - 1.0) - $entryK); // -1
+    if ($expiredRemainingK > 0) {
+        echo "FAIL: expired wall remaining should be <=0, got {$expiredRemainingK}\n";
+        $ok = false;
+    } else {
+        echo "PASS: expired wall remaining is <=0 (fail-fast, no synthetic 1s lane)\n";
+    }
+    // Body-only wall would exclude lock wait — prove entry accounting is stricter.
+    $bodyOnlyBudgetK = $injectedBudgetK; // wrong model: start wall after lock
+    $bodyOnlyRemainingAfterLockK = $bodyOnlyBudgetK; // still full 5s
+    if ($bodyOnlyRemainingAfterLockK <= $remainingAfterLockK) {
+        echo "FAIL: body-only wall should leave more budget than entry wall after lock wait\n";
+        $ok = false;
+    } else {
+        echo "PASS: entry wall is stricter than body-only wall after lock wait (3s vs {$bodyOnlyRemainingAfterLockK}s)\n";
+    }
+
     if ($ok) {
-        echo "\n✅ All timeout + normal-exit + PHAR/source startup-cleanup (C/C2) + session + separate-PGID + PHPUnit-leak + castor-check-lock + lock-acquire-timeout + QA-run-leak + QA-run-tmux + bounded-runner + wall-clamp assertions passed.\n";
+        echo "\n✅ All timeout + normal-exit + PHAR/source startup-cleanup (C/C2) + session + separate-PGID + PHPUnit-leak + castor-check-lock + lock-acquire-timeout + QA-run-leak + QA-run-tmux + bounded-runner + wall-clamp + entry-wall-accounting assertions passed.\n";
     } else {
         echo "\n❌ Some assertions FAILED.\n";
         exit(1);

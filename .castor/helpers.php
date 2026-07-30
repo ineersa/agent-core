@@ -1099,19 +1099,31 @@ const CASTOR_CHECK_LOCK_WAIT_HEARTBEAT_S = 15;
  * Resolved lock acquire timeout for `castor check` (seconds).
  *
  * Override with `HATFIELD_CASTOR_CHECK_LOCK_TIMEOUT` (positive number, max 3600).
+ * When `$checkWallDeadline` is set (absolute hrtime-seconds from check() entry),
+ * the acquire wait is also clamped so lock waiting cannot push total check
+ * invocation past the absolute 180s wall.
  */
-function castor_check_lock_acquire_timeout_seconds(): float
+function castor_check_lock_acquire_timeout_seconds(?float $checkWallDeadline = null): float
 {
     $raw = getenv('HATFIELD_CASTOR_CHECK_LOCK_TIMEOUT');
     if (false === $raw || '' === trim((string) $raw)) {
-        return (float) CASTOR_CHECK_LOCK_ACQUIRE_TIMEOUT_S;
+        $seconds = (float) CASTOR_CHECK_LOCK_ACQUIRE_TIMEOUT_S;
+    } else {
+        if (!is_numeric($raw)) {
+            throw new \RuntimeException('HATFIELD_CASTOR_CHECK_LOCK_TIMEOUT must be a positive number of seconds (got: '.$raw.')');
+        }
+        $seconds = (float) $raw;
+        if ($seconds <= 0.0 || $seconds > 3600.0) {
+            throw new \RuntimeException('HATFIELD_CASTOR_CHECK_LOCK_TIMEOUT must be between 0 (exclusive) and 3600 (got: '.$raw.')');
+        }
     }
-    if (!is_numeric($raw)) {
-        throw new \RuntimeException('HATFIELD_CASTOR_CHECK_LOCK_TIMEOUT must be a positive number of seconds (got: '.$raw.')');
-    }
-    $seconds = (float) $raw;
-    if ($seconds <= 0.0 || $seconds > 3600.0) {
-        throw new \RuntimeException('HATFIELD_CASTOR_CHECK_LOCK_TIMEOUT must be between 0 (exclusive) and 3600 (got: '.$raw.')');
+
+    if (null !== $checkWallDeadline) {
+        $remaining = $checkWallDeadline - (hrtime(true) / 1e9);
+        if ($remaining <= 0.0) {
+            return 0.001; // tiny positive so the acquire loop fails immediately
+        }
+        $seconds = min($seconds, $remaining);
     }
 
     return $seconds;
@@ -1311,14 +1323,16 @@ function clear_castor_check_lock_meta(string $projectRoot): void
  * seconds (override: `HATFIELD_CASTOR_CHECK_LOCK_TIMEOUT`) with periodic heartbeats.
  *
  * Sibling worktrees of the same repository share the lock resource name.
+ * When `$checkWallDeadline` is provided, acquire wait is also bounded by remaining
+ * absolute check wall so lock wait + gate cannot exceed 180s total.
  */
-function acquire_castor_check_lock(string $projectRoot): LockInterface
+function acquire_castor_check_lock(string $projectRoot, ?float $checkWallDeadline = null): LockInterface
 {
     $factory = create_castor_check_lock_factory();
     $resource = castor_check_lock_resource_name($projectRoot);
     $lock = $factory->createLock($resource, null, false);
 
-    $timeoutSeconds = castor_check_lock_acquire_timeout_seconds();
+    $timeoutSeconds = castor_check_lock_acquire_timeout_seconds($checkWallDeadline);
     $waitStart = microtime(true);
     $nextHeartbeat = $waitStart;
     $waitingAnnounced = false;
@@ -1327,6 +1341,20 @@ function acquire_castor_check_lock(string $projectRoot): LockInterface
     while (!$lock->acquire(blocking: false)) {
         $now = microtime(true);
         $elapsed = $now - $waitStart;
+        // Re-clamp each loop so an absolute wall deadline is honored even if
+        // the initial timeout was computed earlier in the wait.
+        if (null !== $checkWallDeadline) {
+            $remainingWall = $checkWallDeadline - (hrtime(true) / 1e9);
+            if ($remainingWall <= 0.0 || $elapsed >= $remainingWall) {
+                fail_quality(sprintf(
+                    'castor check exceeded absolute wall clock of %ds while waiting for lock (elapsed %.1fs, lock resource %s)',
+                    \castor_test_runner_max_seconds(),
+                    $elapsed,
+                    $resource,
+                ));
+            }
+            $timeoutSeconds = min($timeoutSeconds, max(0.001, $remainingWall));
+        }
         if ($elapsed >= $timeoutSeconds) {
             fail_quality(format_castor_check_lock_acquire_timeout_message(
                 $projectRoot,
@@ -2008,9 +2036,11 @@ function llama_proxy_cache_guard_enabled(): bool
 }
 
 /**
+ * @param float|null $checkWallDeadline absolute hrtime-seconds deadline from check() entry
+ *
  * @return array{entries: int, bytes: ?int, raw: array<string, mixed>}
  */
-function fetch_llama_proxy_cache_stats(): array
+function fetch_llama_proxy_cache_stats(?float $checkWallDeadline = null): array
 {
     $url = llama_proxy_admin_base_url().'/__llama_proxy/cache/stats';
     $headerArgs = llama_proxy_admin_curl_headers();
@@ -2019,7 +2049,18 @@ function fetch_llama_proxy_cache_stats(): array
         $headerShell .= ' '.escapeshellarg($part);
     }
 
-    $cmd = 'timeout --kill-after=3s 8s curl -sS -m 5 -f'.$headerShell.' '.escapeshellarg($url);
+    $shellTimeout = 8;
+    $curlMax = 5;
+    if (null !== $checkWallDeadline) {
+        $remaining = $checkWallDeadline - (hrtime(true) / 1e9);
+        if ($remaining <= 0.0) {
+            throw new \RuntimeException('castor check exceeded absolute wall clock before llama-proxy cache stats');
+        }
+        $shellTimeout = max(1, min($shellTimeout, (int) floor($remaining)));
+        $curlMax = max(1, min($curlMax, $shellTimeout));
+    }
+
+    $cmd = 'timeout --kill-after=3s '.$shellTimeout.'s curl -sS -m '.$curlMax.' -f'.$headerShell.' '.escapeshellarg($url);
     $process = run_quiet_command($cmd);
     if (0 !== $process->getExitCode()) {
         throw new \RuntimeException('llama-proxy cache stats unavailable at '.$url.' (curl exit '.$process->getExitCode().'). Full `castor check` requires llama-proxy on port 9052 with /__llama_proxy/cache/stats. '.trim($process->getErrorOutput().$process->getOutput()));
@@ -2057,8 +2098,10 @@ function fetch_llama_proxy_cache_stats(): array
 
 /**
  * Capture baseline cache entries for `castor check` (before generation preflight).
+ *
+ * @param float|null $checkWallDeadline absolute hrtime-seconds deadline from check() entry
  */
-function begin_castor_check_llama_proxy_cache_guard(): ?int
+function begin_castor_check_llama_proxy_cache_guard(?float $checkWallDeadline = null): ?int
 {
     if (!llama_proxy_cache_guard_enabled()) {
         echo "llama-proxy cache guard: disabled (HATFIELD_LLM_CACHE_GUARD=0)\n";
@@ -2066,20 +2109,20 @@ function begin_castor_check_llama_proxy_cache_guard(): ?int
         return null;
     }
 
-    $stats = fetch_llama_proxy_cache_stats();
+    $stats = fetch_llama_proxy_cache_stats($checkWallDeadline);
     $entries = $stats['entries'];
     echo 'llama-proxy cache guard: baseline entries='.$entries."\n";
 
     return $entries;
 }
 
-function assert_castor_check_llama_proxy_cache_unchanged(?int $baselineEntries): void
+function assert_castor_check_llama_proxy_cache_unchanged(?int $baselineEntries, ?float $checkWallDeadline = null): void
 {
     if (null === $baselineEntries) {
         return;
     }
 
-    $stats = fetch_llama_proxy_cache_stats();
+    $stats = fetch_llama_proxy_cache_stats($checkWallDeadline);
     $after = $stats['entries'];
     if ($after > $baselineEntries) {
         throw new \RuntimeException(\sprintf("llama-proxy cache grew from %d to %d entries during `castor check` — uncached live LLM request(s) occurred.\nWarm the proxy cache first: run `castor test:llm-real`, verify `curl %s/__llama_proxy/cache/stats`, then rerun `castor check`.\n".'After clearing the proxy cache you must warm again before the gate passes.', $baselineEntries, $after, llama_proxy_admin_base_url()));
@@ -2088,7 +2131,10 @@ function assert_castor_check_llama_proxy_cache_unchanged(?int $baselineEntries):
     echo 'llama-proxy cache guard: ok (entries '.$baselineEntries.' → '.$after.")\n";
 }
 
-function check_llm_generation_ready(): void
+/**
+ * @param float|null $checkWallDeadline absolute hrtime-seconds deadline from check() entry
+ */
+function check_llm_generation_ready(?float $checkWallDeadline = null): void
 {
     $tmpDir = getenv('HATFIELD_QA_TMP_DIR');
     if (false !== $tmpDir && '' !== trim((string) $tmpDir)) {
@@ -2117,7 +2163,18 @@ function check_llm_generation_ready(): void
     // preflight would cut off reasoning models and trigger server aborts.
     $payload = '{"model":"'.$model.'","messages":[{"role":"user","content":"Respond with exactly one word: hello."}],"max_tokens":512,"temperature":0,"stream":false}';
 
-    $cmd = qa_check_run_env_command().' timeout --kill-after=5s 15s curl -sS -m 10 -o /dev/null -w "%{http_code}"'
+    $shellTimeout = 15;
+    $curlMax = 10;
+    if (null !== $checkWallDeadline) {
+        $remaining = $checkWallDeadline - (hrtime(true) / 1e9);
+        if ($remaining <= 0.0) {
+            throw new \RuntimeException('castor check exceeded absolute wall clock before llm generation preflight');
+        }
+        $shellTimeout = max(1, min($shellTimeout, (int) floor($remaining)));
+        $curlMax = max(1, min($curlMax, $shellTimeout));
+    }
+
+    $cmd = qa_check_run_env_command().' timeout --kill-after=5s '.$shellTimeout.'s curl -sS -m '.$curlMax.' -o /dev/null -w "%{http_code}"'
         .' -H "Content-Type: application/json"'
         .' -d '.escapeshellarg($payload)
         .' '.escapeshellarg($url);
