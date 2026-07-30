@@ -65,7 +65,7 @@ function build_test_llm_real_phpunit_command(?string $filter = null): string
             .' --bootstrap='.escapeshellarg($bootstrap)
             .' --group=llm-real'
             .' --exclude-group=recording'
-            .' --processes='.check_lane_paratest_processes('llm-real', 2, 4)
+            .' --processes='.check_lane_paratest_processes('llm-real', 1, 4)
             .' '.$strictFlags.$llmFlags;
     }
 
