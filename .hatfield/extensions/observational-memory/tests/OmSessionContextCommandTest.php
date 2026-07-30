@@ -109,8 +109,9 @@ final class OmSessionContextCommandTest extends IsolatedKernelTestCase
 
         $query = new OmQueryService($this->apiWithCwd($this->tmpDir), OmSettings::fromArray([
             'storage' => ['database' => $dbPath],
-            'observer' => ['model' => 'llama_cpp_test/test'],
-            'reflector' => ['model' => 'llama_cpp_test/test'],
+            'model' => 'llama_cpp_test/test',
+            'observer' => [],
+            'reflector' => [],
         ]));
 
         $statusMessages = [];
@@ -137,8 +138,9 @@ final class OmSessionContextCommandTest extends IsolatedKernelTestCase
 
         $query = new OmQueryService($this->apiWithCwd($this->tmpDir), OmSettings::fromArray([
             'storage' => ['database' => $dbPath],
-            'observer' => ['model' => 'llama_cpp_test/test'],
-            'reflector' => ['model' => 'llama_cpp_test/test'],
+            'model' => 'llama_cpp_test/test',
+            'observer' => [],
+            'reflector' => [],
         ]));
 
         $statusMessages = [];
@@ -161,8 +163,9 @@ final class OmSessionContextCommandTest extends IsolatedKernelTestCase
         $sessionContext = new OmSessionContext();
         $handler = new OmStatusCommandHandler(
             new OmQueryService($this->unusedApi(), OmSettings::fromArray([
-                'observer' => ['model' => 'llama_cpp_test/test'],
-                'reflector' => ['model' => 'llama_cpp_test/test'],
+                'model' => 'llama_cpp_test/test',
+                'observer' => [],
+                'reflector' => [],
             ])),
             $sessionContext,
         );
@@ -182,8 +185,9 @@ final class OmSessionContextCommandTest extends IsolatedKernelTestCase
         $sessionContext->bindTui($this->throwingTui());
         $handler = new OmStatusCommandHandler(
             new OmQueryService($this->unusedApi(), OmSettings::fromArray([
-                'observer' => ['model' => 'llama_cpp_test/test'],
-                'reflector' => ['model' => 'llama_cpp_test/test'],
+                'model' => 'llama_cpp_test/test',
+                'observer' => [],
+                'reflector' => [],
             ])),
             $sessionContext,
         );
@@ -201,8 +205,9 @@ final class OmSessionContextCommandTest extends IsolatedKernelTestCase
         $connection = $this->omDatabaseFactory()->connectAndMigrate($dbPath);
         $observations = new ObservationRepository($connection);
         $settings = OmSettings::fromArray([
-            'observer' => ['model' => 'llama_cpp_test/test'],
-            'reflector' => ['model' => 'llama_cpp_test/test'],
+            'model' => 'llama_cpp_test/test',
+            'observer' => [],
+            'reflector' => [],
         ]);
         $observationId = str_repeat('a', 64);
         $observations->commitChunkPartCoverage(

@@ -77,7 +77,7 @@ final readonly class ObserverPipeline
             ];
         }
 
-        $observerModel = $settings->requireObserverModel();
+        $observerModel = $settings->requireModel();
         $contextWindow = $api->agent()->contextWindow($observerModel);
         if (null === $contextWindow || $contextWindow <= 0) {
             throw ObserverException::invalidContextWindow($contextWindow);
@@ -170,8 +170,7 @@ final readonly class ObserverPipeline
                     ),
                 ],
                 correlationId: $jobId ?? $correlationId,
-                maxToolCalls: 100,
-                thinkingLevel: $settings->observerThinkingLevel,
+                maxToolCalls: OmSettings::DEFAULT_AGENT_MAX_TOOL_CALLS,
             ));
 
             // Zero observations and/or no tool call at all is successful coverage.

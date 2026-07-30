@@ -169,8 +169,9 @@ final class RecallToolHandlerTest extends IsolatedKernelTestCase
         $api = $this->api($this->tmpDir, $reader);
         $settings = OmSettings::fromArray([
             'storage' => ['database' => $dbPath],
-            'observer' => ['model' => 'llama_cpp_test/test'],
-            'reflector' => ['model' => 'llama_cpp_test/test'],
+            'model' => 'llama_cpp_test/test',
+            'observer' => [],
+            'reflector' => [],
         ]);
         $handler = new RecallToolHandler(new OmQueryService($api, $settings));
         $accessor = new StackToolExecutionContextAccessor();
@@ -375,8 +376,9 @@ final class RecallToolHandlerTest extends IsolatedKernelTestCase
         $api = $this->api($this->tmpDir, $reader);
         $settings = OmSettings::fromArray([
             'storage' => ['database' => $dbPath],
-            'observer' => ['model' => 'llama_cpp_test/test'],
-            'reflector' => ['model' => 'llama_cpp_test/test'],
+            'model' => 'llama_cpp_test/test',
+            'observer' => [],
+            'reflector' => [],
         ]);
         $handler = new RecallToolHandler(new OmQueryService($api, $settings));
         $accessor = new StackToolExecutionContextAccessor();

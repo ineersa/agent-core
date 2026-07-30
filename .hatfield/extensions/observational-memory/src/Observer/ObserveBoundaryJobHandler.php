@@ -106,13 +106,13 @@ final readonly class ObserveBoundaryJobHandler implements ExtensionAgentJobHandl
             return;
         }
 
-        $reflectorModel = $settings->requireReflectorModel();
+        $model = $settings->requireModel();
         $priorActive = $generationRepository->activeGenerationId($runId);
         $generationId = OmIdentity::thresholdGenerationId(
             $runId,
             $priorActive,
             $candidate['observation_set_hash'],
-            $reflectorModel,
+            $model,
             $settings->reflectorSchemaVersion,
         );
 
@@ -127,7 +127,8 @@ final readonly class ObserveBoundaryJobHandler implements ExtensionAgentJobHandl
                     'threshold_idempotency_key' => $generationId,
                     'observation_set_hash' => $candidate['observation_set_hash'],
                     'prior_active_generation_id' => $priorActive,
-                    'reflector_model' => $reflectorModel,
+                    // Stored as reflector_model for generation identity compatibility.
+                    'reflector_model' => $model,
                     'reflector_schema_version' => $settings->reflectorSchemaVersion,
                     'token_count' => $candidate['token_count'],
                     // Source watermark for the exact active candidate set claimed at dispatch.

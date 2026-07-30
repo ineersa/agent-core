@@ -21,13 +21,12 @@ final class ObserveBoundaryTerminalHookTest extends TestCase
     {
         $api = new InMemoryExtensionApiBridge('/tmp');
         $settings = OmSettings::fromArray([
+            'model' => 'llama_cpp_test/test',
             'observer' => [
-                'model' => 'llama_cpp_test/test',
                 'schema_version' => 'o1',
                 'renderer_version' => 'r1',
             ],
             'reflector' => [
-                'model' => 'llama_cpp_test/test',
             ],
         ]);
         $hook = new ObserveBoundaryTerminalHook($api, $settings, new NullLogger());
@@ -55,13 +54,12 @@ final class ObserveBoundaryTerminalHookTest extends TestCase
     {
         $api = new InMemoryExtensionApiBridge('/tmp');
         $settings = OmSettings::fromArray([
+            'model' => 'llama_cpp_test/test',
             'observer' => [
-                'model' => 'llama_cpp_test/test',
                 'schema_version' => 'o1',
                 'renderer_version' => 'r1',
             ],
             'reflector' => [
-                'model' => 'llama_cpp_test/test',
             ],
         ]);
         $hook = new ObserveBoundaryTerminalHook($api, $settings, new NullLogger());

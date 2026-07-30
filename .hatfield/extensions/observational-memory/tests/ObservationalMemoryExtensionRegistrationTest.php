@@ -52,8 +52,9 @@ final class ObservationalMemoryExtensionRegistrationTest extends TestCase
             public function getSettings(string $key): array
             {
                 return [
-                    'observer' => ['model' => 'llama_cpp_test/test'],
-                    'reflector' => ['model' => 'llama_cpp_test/test'],
+                    'model' => 'llama_cpp_test/test',
+                    'observer' => [],
+                    'reflector' => [],
                 ];
             }
 

@@ -142,8 +142,9 @@ final class OmBeforeCompactionHookTest extends IsolatedKernelTestCase
         );
 
         $settings = OmSettings::fromArray([
-            'observer' => ['model' => 'llama_cpp_test/test'],
-            'reflector' => ['model' => 'llama_cpp_test/test'],
+            'model' => 'llama_cpp_test/test',
+            'observer' => [],
+            'reflector' => [],
         ]);
         $api = $this->failOnDispatchModelOrEvents($this->projectDir, $settings);
         $hook = new OmBeforeCompactionHook($api, $settings, new NullLogger());
@@ -230,8 +231,9 @@ final class OmBeforeCompactionHookTest extends IsolatedKernelTestCase
         );
 
         $settings = OmSettings::fromArray([
-            'observer' => ['model' => 'llama_cpp_test/test'],
-            'reflector' => ['model' => 'llama_cpp_test/test'],
+            'model' => 'llama_cpp_test/test',
+            'observer' => [],
+            'reflector' => [],
         ]);
         $api = $this->failOnDispatchModelOrEvents($this->projectDir, $settings);
         $hook = new OmBeforeCompactionHook($api, $settings, new NullLogger());
@@ -307,20 +309,18 @@ final class OmBeforeCompactionHookTest extends IsolatedKernelTestCase
             public function getSettings(string $key): array
             {
                 return [
+                    'model' => $this->settings->model,
                     'observer' => [
-                        'model' => $this->settings->observerModel,
                         'schema_version' => $this->settings->observerSchemaVersion,
                         'renderer_version' => $this->settings->rendererVersion,
                         'context_window_ratio' => $this->settings->observerContextWindowRatio,
                     ],
                     'reflector' => [
-                        'model' => $this->settings->reflectorModel,
                         'schema_version' => $this->settings->reflectorSchemaVersion,
-                        'context_window_ratio' => $this->settings->reflectorContextWindowRatio,
+                        'reflect_after_observation_tokens' => $this->settings->reflectAfterObservationTokens,
                     ],
                     'pools' => [
                         'observations_max_tokens' => $this->settings->observationsMaxTokens,
-                        'reflections_max_tokens' => $this->settings->reflectionsMaxTokens,
                     ],
                 ];
             }

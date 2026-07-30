@@ -71,7 +71,6 @@ final class OmQueryService
 
         $reflectAfter = $this->settings->reflectAfterObservationTokens;
         $obsMax = $this->settings->observationsMaxTokens;
-        $refMax = $this->settings->reflectionsMaxTokens;
 
         $lines = [
             '## Observational memory',
@@ -85,9 +84,10 @@ final class OmQueryService
                 $this->formatInt($visibleObsCount),
             ),
             \sprintf(
-                '- **Reflections:** %s recorded / %s visible',
+                '- **Reflections:** %s recorded / %s visible (~%s tokens)',
                 $this->formatInt($recordedRefCount),
                 $this->formatInt($visibleRefCount),
+                $this->formatInt($reflectionTokens),
             ),
             \sprintf('- **Coverage:** %s', $coverageLine),
             '',
@@ -104,13 +104,8 @@ final class OmQueryService
                 $this->formatInt($obsMax),
                 $this->percent($activeTokens, $obsMax),
             ),
-            \sprintf(
-                '- **Reflection pool:** ~%s / %s max tokens (%d%%)',
-                $this->formatInt($reflectionTokens),
-                $this->formatInt($refMax),
-                $this->percent($reflectionTokens, $refMax),
-            ),
-            '- **Compaction:** instant projection of current durable memory (no request rows)',
+            '- **Pipeline:** Observer → delta Reflector → bounded Dropper (async FIFO)',
+            '- **Compaction:** instant projection of current durable memory (no model wait)',
             '',
             '> Durable memory state only; worker and queue liveness are not tracked here.',
         ];

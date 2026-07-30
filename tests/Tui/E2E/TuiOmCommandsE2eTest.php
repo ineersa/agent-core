@@ -230,20 +230,16 @@ final class TuiOmCommandsE2eTest extends IsolatedKernelTestCase
                         'storage' => [
                             'database' => '.hatfield/extensions-data/observational-memory/om.sqlite',
                         ],
+                        'model' => 'llama_cpp_test/test',
                         'observer' => [
-                            'model' => 'llama_cpp_test/test',
-                            'thinking_level' => 'medium',
                             'context_window_ratio' => 0.65,
                         ],
                         'reflector' => [
-                            'model' => 'llama_cpp_test/test',
-                            'thinking_level' => 'high',
                             'context_window_ratio' => 0.65,
                             'reflect_after_observation_tokens' => 40000,
                         ],
                         'pools' => [
                             'observations_max_tokens' => 30000,
-                            'reflections_max_tokens' => 10000,
                         ],
                     ],
                 ],

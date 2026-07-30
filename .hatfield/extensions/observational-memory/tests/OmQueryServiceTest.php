@@ -144,14 +144,13 @@ final class OmQueryServiceTest extends IsolatedKernelTestCase
 
         $settings = OmSettings::fromArray([
             'storage' => ['database' => $dbPath],
-            'observer' => ['model' => 'llama_cpp_test/test'],
+            'model' => 'llama_cpp_test/test',
+            'observer' => [],
             'reflector' => [
-                'model' => 'llama_cpp_test/test',
                 'reflect_after_observation_tokens' => 40000,
             ],
             'pools' => [
                 'observations_max_tokens' => 30000,
-                'reflections_max_tokens' => 10000,
             ],
         ]);
         $api = $this->api($this->tmpDir);
@@ -165,8 +164,8 @@ final class OmQueryServiceTest extends IsolatedKernelTestCase
         $this->assertStringContainsString('- **Coverage:** through event 3', $status);
         $this->assertStringContainsString('- **Next reflection:** ~9 / 40,000 tokens (0%)', $status);
         $this->assertStringContainsString('- **Active observation pool:** ~9 / 30,000 max tokens (0%)', $status);
-        $this->assertStringContainsString('- **Reflection pool:** ~8 / 10,000 max tokens (0%)', $status);
-        $this->assertStringContainsString('- **Compaction:** instant projection of current durable memory (no request rows)', $status);
+        $this->assertStringContainsString('- **Pipeline:** Observer → delta Reflector → bounded Dropper (async FIFO)', $status);
+        $this->assertStringContainsString('- **Compaction:** instant projection of current durable memory (no model wait)', $status);
         $this->assertStringContainsString('> Durable memory state only; worker and queue liveness are not tracked here.', $status);
         $this->assertStringNotContainsString('max_retries', $status);
         $this->assertStringNotContainsString('extension_agent', $status);
@@ -191,7 +190,7 @@ final class OmQueryServiceTest extends IsolatedKernelTestCase
 
         $emptyStatus = $service->formatStatus('run-empty');
         $this->assertStringContainsString('no events covered yet', $emptyStatus);
-        $this->assertStringContainsString('**Compaction:** instant projection of current durable memory (no request rows)', $emptyStatus);
+        $this->assertStringContainsString('**Compaction:** instant projection of current durable memory (no model wait)', $emptyStatus);
     }
 
     #[Test]
@@ -245,8 +244,9 @@ final class OmQueryServiceTest extends IsolatedKernelTestCase
             $this->api($this->tmpDir),
             OmSettings::fromArray([
                 'storage' => ['database' => $dbPath],
-                'observer' => ['model' => 'llama_cpp_test/test'],
-                'reflector' => ['model' => 'llama_cpp_test/test'],
+                'model' => 'llama_cpp_test/test',
+                'observer' => [],
+                'reflector' => [],
             ]),
         );
 

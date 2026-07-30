@@ -1526,73 +1526,57 @@ Project extension class: `Ineersa\HatfieldExt\FileRewind\FileRewindExtension` (e
 
 ### `extensions.settings.observational_memory`
 
-Settings for the project Observational Memory extension
-(`Ineersa\HatfieldExt\ObservationalMemory\ObservationalMemoryExtension`, package under
-`.hatfield/extensions/observational-memory/`). Read via
+Nested settings for the Observational Memory extension. Read via
 `ExtensionApiInterface::getSettings('observational_memory')`.
 
-OM is **not enabled by default**. This repository’s tracked `.hatfield/settings.yaml`
-omits the extension class from `extensions.enabled` and ships an inert nested
-`extensions.settings.observational_memory` example. Local/dev sessions do not start
-Observer/Reflector workers or write `om.sqlite` until the class is listed under
-`extensions.enabled`.
-
-Nested shape only (no flat budget compatibility keys):
+OM is not enabled by default. Add the extension class to `extensions.enabled` and
+configure one shared exact model.
 
 | Key | Type | Default | Description |
-|-----|------|---------|-------------|
-| `storage.database` | string | `.hatfield/extensions-data/observational-memory/om.sqlite` | Extension-owned SQLite path. |
-| `observer.model` | string | *(required)* | Exact `provider/model` for Observer jobs. |
-| `observer.thinking_level` | string | `medium` | Observer thinking level forwarded through `AgentCallRequestDTO` / Hatfield model options (same unsupported-model no-op semantics as the main agent). |
-| `observer.context_window_ratio` | float | `0.65` | Fraction of model context used for Observer envelope/chunking. |
-| `observer.renderer_version` | string | `1` | Renderer identity baked into coverage keys. |
-| `observer.schema_version` | string | `1` | Observer schema identity baked into coverage/observation ids. |
-| `reflector.model` | string | *(required)* | Exact `provider/model` for Reflector jobs. |
-| `reflector.thinking_level` | string | `high` | Reflector thinking level forwarded through `AgentCallRequestDTO` / Hatfield model options (same unsupported-model no-op semantics as the main agent). |
-| `reflector.context_window_ratio` | float | `0.65` | Fraction of model context for Reflector envelope. |
-| `reflector.reflect_after_observation_tokens` | int | `40000` | Threshold Reflector dispatch gate after durable observe chunks. |
-| `reflector.schema_version` | string | `1` | Reflector schema identity. |
-| `pools.observations_max_tokens` | int | `30000` | Active retained-observation pool budget after Reflector. |
-| `pools.reflections_max_tokens` | int | `10000` | Active reflection pool budget after Reflector. |
-
-Example (activation surface; tracked project settings omit the class from extensions.enabled):
+|---|---|---|---|
+| `model` | string | required when enabled | Exact `provider/model` used by Observer, Reflector, and Dropper. |
+| `storage.database` | string | `.hatfield/extensions-data/observational-memory/om.sqlite` | Extension-owned SQLite path (relative to project root). |
+| `observer.context_window_ratio` | float | `0.65` | Observer input envelope as a fraction of model context window. |
+| `observer.schema_version` | string | `1` | Observer schema version for coverage identity. |
+| `observer.renderer_version` | string | `1` | Source renderer version for coverage identity. |
+| `reflector.reflect_after_observation_tokens` | int | `40000` | Active observation-token threshold that dispatches delta Reflector (+ conditional Dropper). |
+| `reflector.schema_version` | string | `1` | Reflector schema version for generation identity. |
+| `pools.observations_max_tokens` | int | `30000` | Dropper target for the active observation pool. |
 
 ```yaml
 extensions:
-    enabled:
-        # ...other extensions...
-        - Ineersa\HatfieldExt\ObservationalMemory\ObservationalMemoryExtension
-    settings:
-        observational_memory:
-            storage:
-                database: .hatfield/extensions-data/observational-memory/om.sqlite
-            observer:
-                model: llama_cpp_test/test
-                thinking_level: medium
-                context_window_ratio: 0.65
-            reflector:
-                model: llama_cpp_test/test
-                thinking_level: high
-                context_window_ratio: 0.65
-                reflect_after_observation_tokens: 40000
-            pools:
-                observations_max_tokens: 30000
-                reflections_max_tokens: 10000
+  settings:
+    observational_memory:
+      storage:
+        database: .hatfield/extensions-data/observational-memory/om.sqlite
+      model: llama_cpp_test/test
+      observer:
+        context_window_ratio: 0.65
+      reflector:
+        reflect_after_observation_tokens: 40000
+      pools:
+        observations_max_tokens: 30000
 ```
 
+Notes:
+- Nested `observer.model` / `reflector.model` and all `thinking_level` keys are not supported.
+- `pools.reflections_max_tokens` is removed (reflections are append-only across generations).
+- Compaction is an instant durable-memory projection and does not call models.
+- Async pipeline is Observer → delta Reflector → bounded Dropper on the shared FIFO `extension_agent` worker (`maxToolCalls=16`).
+
 Requires async `extension_agent` transport (process controller Doctrine DSN) for
-Observer/threshold Reflector jobs. `sync://` dispatch is fail-closed. CompactRun
-uses Pi-style instant durable-memory projection (no job wait/timeout). Observer and
-threshold Reflector share a single FIFO Hatfield-managed `extension_agent` worker with
-native Symfony Messenger default `max_retries: 3` (4 attempts total) and no failure
-transport. Exhausted jobs emit sanitized `extension_agent.job_failed` TUI Error blocks.
+Observer/threshold Reflector (+ conditional Dropper) jobs. `sync://` dispatch is fail-closed.
+CompactRun uses Pi-style instant durable-memory projection (no job wait/timeout). Observer,
+delta Reflector, and bounded Dropper share a single FIFO Hatfield-managed `extension_agent`
+worker with native Symfony Messenger default `max_retries: 3` (4 attempts total) and no
+failure transport. Exhausted jobs emit sanitized `extension_agent.job_failed` TUI Error blocks.
 
 Ownership and UX notes:
 
 - **Enablement:** listing `ObservationalMemoryExtension` under `extensions.enabled` is
   the only switch. There is **no** `compaction.mode`, **no** compaction wait timeout, and
-  **no** compaction-model inheritance; Observer/Reflector models must be exact
-  `provider/model` values.
+  **no** compaction-model inheritance; one top-level exact `provider/model` is shared by
+  Observer, Reflector, and Dropper.
 - **Storage gap:** OM SQLite is separate from `events.jsonl`. After worker loss, later
   turn boundaries advance Observer coverage asynchronously; do not treat OM rows as
   a second transcript.

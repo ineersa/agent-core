@@ -311,21 +311,19 @@ final class ObserveBoundaryThresholdDispatchTest extends IsolatedKernelTestCase
                 }
 
                 return [
+                    'model' => 'llama_cpp_test/test',
                     'observer' => [
-                        'model' => 'llama_cpp_test/test',
                         'schema_version' => '1',
                         'renderer_version' => '1',
                         'context_window_ratio' => 0.65,
                     ],
                     'reflector' => [
-                        'model' => 'llama_cpp_test/test',
                         'schema_version' => '1',
                         'context_window_ratio' => 0.65,
                         'reflect_after_observation_tokens' => $this->reflectAfter,
                     ],
                     'pools' => [
                         'observations_max_tokens' => 30000,
-                        'reflections_max_tokens' => 10000,
                     ],
                 ];
             }

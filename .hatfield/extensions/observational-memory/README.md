@@ -1,13 +1,13 @@
 # Observational Memory (OM) extension
 
 Extension-owned observational memory storage, asynchronous Observer pipeline,
-threshold Reflector generations, and CompactRun replacement summaries via
+threshold Reflector + Dropper generations, and CompactRun replacement summaries via
 instant durable-memory projection.
 
 ## Architecture (OM-03 + OM-04 + OM-05)
 
 Hatfield provides a **generic** async extension-agent job facility. OM uses the
-existing single FIFO `extension_agent` transport/worker for Observer and Reflector
+existing single FIFO `extension_agent` transport/worker for Observer/Reflector/Dropper
 model work. Compaction does **not** wait on that worker.
 
 ```text
@@ -22,16 +22,17 @@ AfterTurnCommit (any run_control/llm/tool worker)
           → open/migrate om.sqlite (per-job path-local DBAL connection)
           → SessionEventReader::readRange (async path)
           → deterministic 0.65 context-window chunk/part packer
-          → $api->agent()->run(... record_observations, maxToolCalls=100 ...)
+          → $api->agent()->run(... record_observations, maxToolCalls=16 ...)
           → transactionally persist observations + coverage parts
           → optional threshold dispatch observational_memory.reflect_generation
 
 Threshold (after all observe chunks durable, tokens > 40000)
   → ReflectGenerationJobHandler
       → claim generation by exact threshold-generation-v1 id
-      → Reflector complete-generation tool loop (maxToolCalls=2: one call + one correction)
-      → exactly one compression retry if pools exceeded
-      → promote om_active_generation transactionally
+      → delta Reflector (new reflections only, maxToolCalls=16, shared model)
+      → if >=1 new reflection AND active observation pool > observations_max_tokens:
+            bounded Dropper (propose ids, server ranks+caps, maxToolCalls=16)
+      → promote om_active_generation once: prior+new reflections, active-minus-drops
 
 CompactRun (run_control, under run lock) — Pi-style instant projection
   → public OmBeforeCompactionHook (CompactRun only; not snapshot/fork)
@@ -44,11 +45,11 @@ CompactRun (run_control, under run lock) — Pi-style instant projection
 ```
 
 OM does **not** own a private Symfony Kernel, bin/console, Messenger bus, consumer
-supervisor, Dropper stage, or priority/multi-receiver queue.
+supervisor, or priority/multi-receiver queue.
 
 ### Freshness tradeoff (accepted)
 
-Compaction renders whatever durable memory is already present. Observer/Reflector
+Compaction renders whatever durable memory is already present. Observer/Reflector/Dropper
 work finishing later affects a **later** compaction. Canonical `events.jsonl`
 remains the source of truth for recall and later Observer catch-up on turn
 boundaries.
@@ -74,7 +75,7 @@ boundaries.
 OM is **not enabled by default**. Tracked project `.hatfield/settings.yaml` omits the
 extension class from `extensions.enabled` and ships an inert nested
 `observational_memory` settings example. Activate by listing the class under
-`extensions.enabled` and configuring exact models:
+`extensions.enabled` and configuring one shared exact model:
 
 ```yaml
 # project .hatfield/settings.yaml
@@ -85,18 +86,13 @@ extensions:
     observational_memory:
       storage:
         database: .hatfield/extensions-data/observational-memory/om.sqlite
+      model: llama_cpp_test/test
       observer:
-        model: llama_cpp_test/test
-        thinking_level: medium
         context_window_ratio: 0.65
       reflector:
-        model: llama_cpp_test/test
-        thinking_level: high
-        context_window_ratio: 0.65
         reflect_after_observation_tokens: 40000
       pools:
         observations_max_tokens: 30000
-        reflections_max_tokens: 10000
 ```
 
 Install package dependencies into the project extension Composer root:
@@ -117,7 +113,7 @@ composer update ineersa/hatfield-ext-observational-memory
   `extension_agent` FIFO/worker supervision, and `/tree`. OM does **not** own a
   private consumer or failure transport.
 - **Replacement summaries** are deterministic PHP projections of current durable
-  active memory. Reflector models never author final compact text.
+  active memory. Reflector/Dropper models never author final compact text.
 - **Source refs** stay SQLite-only; compact summaries do not include footnotes.
   Model-facing compacted-memory IDs are lowercase first-12-char prefixes (same as `/om-view`);
   full SHA-256 identities remain in SQLite/generation links only.
@@ -128,7 +124,7 @@ composer update ineersa/hatfield-ext-observational-memory
 ## Commands and recall
 
 - `/om-status` — durable OM memory/activity aggregates for the current session
-  (worker/queue liveness not tracked; compaction is instant projection, not a request queue).
+  (Observer → delta Reflector → bounded Dropper pipeline; compaction is instant projection).
 - `/om-view` — active reflections and candidate observations with 12-char display ids,
   timestamp/relevance, content, and human source event sequences.
 - `recall` — permanent ambient tool; recover exact source context for one known memory id
@@ -137,6 +133,6 @@ composer update ineersa/hatfield-ext-observational-memory
   Use before important decisions / for exact wording, provenance, supporting sources, or
   user evidence questions. Not semantic search or transcript browsing; do not recall every id.
 
-Thinking levels (`observer.thinking_level`, `reflector.thinking_level`) are effective:
-they are passed on `AgentCallRequestDTO` and forwarded into Hatfield model options with
-the same unsupported-model no-op semantics as the main agent.
+One top-level `observational_memory.model` is shared by Observer, Reflector, and Dropper.
+Thinking levels are not configured; provider defaults apply. `maxToolCalls=16` maps Pi's
+default agent loop cap.

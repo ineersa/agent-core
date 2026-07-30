@@ -108,8 +108,8 @@ final class ObserveBoundaryJobHandlerTest extends IsolatedKernelTestCase
         );
 
         $this->assertInstanceOf(AgentCallRequestDTO::class, $lastRequest);
-        $this->assertSame(100, $lastRequest->maxToolCalls);
-        $this->assertSame('medium', $lastRequest->thinkingLevel);
+        $this->assertSame(16, $lastRequest->maxToolCalls);
+        $this->assertNull($lastRequest->thinkingLevel);
         $this->assertStringContainsString('Use feature flags', $lastRequest->input);
         $this->assertStringContainsString('CURRENT REFLECTIONS:', $lastRequest->input);
         $this->assertStringContainsString('Current local time fallback:', $lastRequest->input);
@@ -412,20 +412,18 @@ final class ObserveBoundaryJobHandlerTest extends IsolatedKernelTestCase
                 }
 
                 return [
+                    'model' => 'llama_cpp_test/test',
                     'observer' => [
-                        'model' => 'llama_cpp_test/test',
                         'schema_version' => 'o1',
                         'renderer_version' => 'r1',
                         'context_window_ratio' => 0.65,
                     ],
                     'reflector' => [
-                        'model' => 'llama_cpp_test/test',
                         'schema_version' => 'rv1',
                         'context_window_ratio' => 0.65,
                     ],
                     'pools' => [
                         'observations_max_tokens' => 30000,
-                        'reflections_max_tokens' => 10000,
                     ],
                 ];
             }

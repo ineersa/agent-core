@@ -7,6 +7,7 @@ namespace Ineersa\HatfieldExt\ObservationalMemory\Compaction;
 use Ineersa\Hatfield\ExtensionApi\Agent\ExtensionAgentJobHandlerInterface;
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
 use Ineersa\HatfieldExt\ObservationalMemory\Observer\ObserveBoundaryJobHandler;
+use Ineersa\HatfieldExt\ObservationalMemory\Observer\OmTokenEstimator;
 use Ineersa\HatfieldExt\ObservationalMemory\Runtime\OmPaths;
 use Ineersa\HatfieldExt\ObservationalMemory\Runtime\OmSettings;
 use Ineersa\HatfieldExt\ObservationalMemory\Storage\MemoryGenerationRepository;
@@ -17,7 +18,9 @@ use Ineersa\HatfieldExt\ObservationalMemory\Support\OmIdentity;
 use Psr\Log\LoggerInterface;
 
 /**
- * Threshold Reflector worker (handler id observational_memory.reflect_generation).
+ * Threshold generation worker: delta Reflector then conditional bounded Dropper.
+ *
+ * Handler id: observational_memory.reflect_generation
  */
 final readonly class ReflectGenerationJobHandler implements ExtensionAgentJobHandlerInterface
 {
@@ -34,7 +37,8 @@ final readonly class ReflectGenerationJobHandler implements ExtensionAgentJobHan
         $runId = (string) ($payload['run_id'] ?? '');
         $generationId = (string) ($payload['generation_id'] ?? '');
         $observationSetHash = (string) ($payload['observation_set_hash'] ?? '');
-        $reflectorModel = (string) ($payload['reflector_model'] ?? '');
+        // Payload field kept as reflector_model for generation identity compatibility.
+        $model = (string) ($payload['reflector_model'] ?? $payload['model'] ?? '');
         $reflectorSchemaVersion = (string) ($payload['reflector_schema_version'] ?? '');
         $thresholdKey = (string) ($payload['threshold_idempotency_key'] ?? $generationId);
         $priorActive = $payload['prior_active_generation_id'] ?? null;
@@ -45,7 +49,7 @@ final readonly class ReflectGenerationJobHandler implements ExtensionAgentJobHan
             throw new \InvalidArgumentException('reflect_generation required_end_seq must be non-negative.');
         }
 
-        if ('' === $runId || '' === $generationId || '' === $observationSetHash || '' === $reflectorModel || '' === $reflectorSchemaVersion) {
+        if ('' === $runId || '' === $generationId || '' === $observationSetHash || '' === $model || '' === $reflectorSchemaVersion) {
             throw new \InvalidArgumentException('reflect_generation payload missing identity fields.');
         }
         if ($thresholdKey !== $generationId) {
@@ -56,13 +60,13 @@ final readonly class ReflectGenerationJobHandler implements ExtensionAgentJobHan
             $runId,
             $priorActive,
             $observationSetHash,
-            $reflectorModel,
+            $model,
             $reflectorSchemaVersion,
         );
         if ($expectedId !== $generationId) {
             throw new \InvalidArgumentException('reflect_generation generation_id does not match threshold formula.');
         }
-        if ($reflectorModel !== $settings->requireReflectorModel()
+        if ($model !== $settings->requireModel()
             || $reflectorSchemaVersion !== $settings->reflectorSchemaVersion) {
             throw new \InvalidArgumentException('reflect_generation model/schema mismatch with current settings.');
         }
@@ -73,8 +77,6 @@ final readonly class ReflectGenerationJobHandler implements ExtensionAgentJobHan
         $observationRepo = new ObservationRepository($connection);
         $now = (new \DateTimeImmutable('now', new \DateTimeZone('UTC')))->format(\DateTimeInterface::ATOM);
 
-        // Store exact active-set source watermark on the generation claim (task formula).
-        // Prefer live recompute so redelivery cannot pin a stale payload watermark after new observes.
         $liveCandidateForClaim = $observationRepo->activeCandidateSet($runId);
         $claimRequiredEndSeq = $liveCandidateForClaim['max_source_end_seq'];
         if ($claimRequiredEndSeq < 1 && null !== $requiredEndSeq && $requiredEndSeq > 0) {
@@ -86,7 +88,7 @@ final readonly class ReflectGenerationJobHandler implements ExtensionAgentJobHan
             runId: $runId,
             triggerKind: MemoryGenerationRepository::TRIGGER_THRESHOLD,
             observationSetHash: $observationSetHash,
-            reflectorModel: $reflectorModel,
+            reflectorModel: $model,
             reflectorSchemaVersion: $reflectorSchemaVersion,
             now: $now,
             thresholdIdempotencyKey: $thresholdKey,
@@ -110,14 +112,13 @@ final readonly class ReflectGenerationJobHandler implements ExtensionAgentJobHan
         }
 
         try {
-            // Recompute active candidate set before model call; reject stale payloads.
             $livePrior = $generationRepo->activeGenerationId($runId);
             $candidate = $observationRepo->activeCandidateSet($runId);
             $liveGenerationId = OmIdentity::thresholdGenerationId(
                 $runId,
                 $livePrior,
                 $candidate['observation_set_hash'],
-                $reflectorModel,
+                $model,
                 $reflectorSchemaVersion,
             );
 
@@ -151,32 +152,99 @@ final readonly class ReflectGenerationJobHandler implements ExtensionAgentJobHan
                 return;
             }
 
-            $pipeline = new ReflectorPipeline($this->logger);
-            $result = $pipeline->produceCandidate(
+            $reflector = new ReflectorPipeline($this->logger);
+            $delta = $reflector->produceDelta(
                 api: $api,
                 observationRepo: $observationRepo,
                 generationRepo: $generationRepo,
                 settings: $settings,
                 runId: $runId,
-                reflectorModel: $reflectorModel,
-                customInstructions: null,
+                model: $model,
                 jobId: $jobId,
                 correlationId: $correlationId,
             );
+
+            $priorReflections = $delta['prior_reflections'];
+            $newReflections = $delta['new_reflections'];
+            $activeObservations = $delta['active_observations'];
+
+            $droppedIds = [];
+            $activeObsTokens = 0;
+            foreach ($activeObservations as $observation) {
+                $activeObsTokens += OmTokenEstimator::estimate($observation['content']);
+            }
+
+            // Dropper only after >=1 new reflection AND pool over observations_max_tokens.
+            if (\count($newReflections) >= 1 && $activeObsTokens > $settings->observationsMaxTokens) {
+                $coverageReflections = array_merge($priorReflections, $newReflections);
+                $dropper = new DropperPipeline($this->logger);
+                $droppedIds = $dropper->selectDrops(
+                    api: $api,
+                    settings: $settings,
+                    runId: $runId,
+                    model: $model,
+                    reflectionsForCoverage: $coverageReflections,
+                    activeObservations: $activeObservations,
+                    jobId: $jobId,
+                    correlationId: $correlationId,
+                );
+            }
+
+            $dropSet = [];
+            foreach ($droppedIds as $id) {
+                $dropSet[$id] = true;
+            }
+            $retainedObservationIds = [];
+            foreach ($activeObservations as $observation) {
+                $id = $observation['observation_id'];
+                if (!isset($dropSet[$id])) {
+                    $retainedObservationIds[] = $id;
+                }
+            }
+
+            // Re-check after both model stages: observation set must still match the claimed generation.
+            // No SQLite transaction spans model calls; a concurrent Observer commit can invalidate this set.
+            $postLivePrior = $generationRepo->activeGenerationId($runId);
+            $postCandidate = $observationRepo->activeCandidateSet($runId);
+            $postGenerationId = OmIdentity::thresholdGenerationId(
+                $runId,
+                $postLivePrior,
+                $postCandidate['observation_set_hash'],
+                $model,
+                $reflectorSchemaVersion,
+            );
+            if ($postGenerationId !== $generationId
+                || $postCandidate['observation_set_hash'] !== $observationSetHash) {
+                $generationRepo->markFailed($generationId, 'stale_observation_set', $now);
+                $this->logger->info('om.reflect.threshold_stale_after_models', [
+                    'component' => 'observational_memory',
+                    'event_type' => 'om.reflect.threshold_stale_after_models',
+                    'run_id' => $runId,
+                    'generation_id' => $generationId,
+                    'live_generation_id' => $postGenerationId,
+                    'payload_set_hash' => $observationSetHash,
+                    'live_set_hash' => $postCandidate['observation_set_hash'],
+                ]);
+
+                return;
+            }
+
+            // Final generation = prior active reflections + new delta reflections.
+            $finalReflections = array_merge($priorReflections, $newReflections);
 
             $generationRepo->commitSucceededGeneration(
                 generationId: $generationId,
                 runId: $runId,
                 observationSetHash: $observationSetHash,
-                reflectorModel: $reflectorModel,
+                reflectorModel: $model,
                 reflectorSchemaVersion: $reflectorSchemaVersion,
                 reflections: array_map(static fn (array $r): array => [
                     'reflection_id' => $r['reflection_id'],
                     'content' => $r['content'],
                     'supporting_observation_ids_json' => $r['supporting_observation_ids_json'],
                     'token_count' => $r['token_count'],
-                ], $result['reflections']),
-                retainedObservationIds: $result['retained_observation_ids'],
+                ], $finalReflections),
+                retainedObservationIds: $retainedObservationIds,
                 now: $now,
             );
 
@@ -185,8 +253,10 @@ final readonly class ReflectGenerationJobHandler implements ExtensionAgentJobHan
                 'event_type' => 'om.reflect.threshold_succeeded',
                 'run_id' => $runId,
                 'generation_id' => $generationId,
-                'reflection_count' => \count($result['reflections']),
-                'retained_observation_count' => \count($result['retained_observation_ids']),
+                'prior_reflection_count' => \count($priorReflections),
+                'new_reflection_count' => \count($newReflections),
+                'dropped_observation_count' => \count($droppedIds),
+                'retained_observation_count' => \count($retainedObservationIds),
             ]);
         } catch (ReflectorException $e) {
             $generationRepo->markFailed($generationId, $e->failureCode, $now);
@@ -199,12 +269,11 @@ final readonly class ReflectGenerationJobHandler implements ExtensionAgentJobHan
                 'exception_class' => $e::class,
             ]);
 
-            // Durable Reflector failures are terminal for this generation claim; do not retry model.
+            // Durable Reflector semantic failures are terminal for this generation claim.
             return;
         } catch (OmConflictException $e) {
             throw $e;
         } catch (\RuntimeException $e) {
-            // Transient provider/process failures: leave generation running/failed for Messenger retry.
             $generationRepo->markFailed($generationId, 'transient_runtime', $now);
             throw $e;
         }
