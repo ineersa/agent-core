@@ -14,7 +14,8 @@ use PHPUnit\Framework\TestCase;
 /**
  * Test thesis: committed child projection must expose only safe tool argument pairs,
  * never raw secrets or full arg blobs, while preserving assistant result text and
- * honoring parent-committed status/turn overrides.
+ * honoring parent-committed status/turn overrides. Completed and failed LLM steps
+ * each increment one durable llm_step_count that round-trips through DTO serialization.
  */
 final class DeferredChildRunEventProjectorTest extends TestCase
 {
@@ -61,6 +62,7 @@ final class DeferredChildRunEventProjectorTest extends TestCase
         $this->assertStringNotContainsString('"args"', $json);
         $this->assertSame(RunStatus::WaitingHuman, $projection->childStatus);
         $this->assertSame(4, $projection->childTurnNo);
+        $this->assertSame(2, $projection->llmStepCount);
         $this->assertSame($longText, $projection->assistantResultText);
         $this->assertLessThanOrEqual(220, mb_strlen((string) $projection->assistantExcerpt));
 
@@ -73,6 +75,7 @@ final class DeferredChildRunEventProjectorTest extends TestCase
         );
         $this->assertSame(RunStatus::Running, $projection->childStatus);
         $this->assertSame(5, $projection->childTurnNo);
+        $this->assertSame(2, $projection->llmStepCount);
 
         $malformed = new AfterTurnCommitEventSummary(5, RunEventTypeEnum::LlmStepCompleted->value, [
             'assistant_message' => [
@@ -88,6 +91,7 @@ final class DeferredChildRunEventProjectorTest extends TestCase
             committedTurnNo: 5,
         );
         $this->assertSame(RunStatus::Compacting, $projection->childStatus);
+        $this->assertSame(3, $projection->llmStepCount);
         $this->assertStringContainsString('grep', json_encode($projection, \JSON_THROW_ON_ERROR));
         $this->assertStringNotContainsString('not-json', json_encode($projection, \JSON_THROW_ON_ERROR));
 
@@ -100,5 +104,99 @@ final class DeferredChildRunEventProjectorTest extends TestCase
         );
         $this->assertSame(RunStatus::Cancelling, $projection->childStatus);
         $this->assertSame(6, $projection->childTurnNo);
+        $this->assertSame(3, $projection->llmStepCount);
+    }
+
+    public function testCompletedAndFailedLlmStepsIncrementDurableCounterAndRoundTrip(): void
+    {
+        $projector = new DeferredChildRunEventProjector();
+        $current = new DeferredChildRunLifecycleProjectionDTO(
+            childStatus: RunStatus::Running,
+            childTurnNo: 0,
+            lastCommittedSeq: 0,
+        );
+
+        $projection = $projector->apply(
+            $current,
+            [
+                new AfterTurnCommitEventSummary(1, RunEventTypeEnum::LlmStepCompleted->value, [
+                    'usage' => ['input_tokens' => 10, 'output_tokens' => 2, 'total_tokens' => 12],
+                    'assistant_message' => ['role' => 'assistant', 'content' => [['type' => 'text', 'text' => 'ok']]],
+                ]),
+                new AfterTurnCommitEventSummary(2, RunEventTypeEnum::LlmStepFailed->value, [
+                    'error' => ['message' => 'provider overloaded'],
+                ]),
+                new AfterTurnCommitEventSummary(3, RunEventTypeEnum::LlmStepCompleted->value, [
+                    'usage' => ['input_tokens' => 20, 'output_tokens' => 3, 'total_tokens' => 23],
+                ]),
+            ],
+            definitionModel: 'deepseek/deepseek-v4-flash',
+            committedStatus: RunStatus::Running,
+            committedTurnNo: 7,
+        );
+
+        $this->assertSame(3, $projection->llmStepCount);
+        $this->assertSame(7, $projection->childTurnNo);
+        $this->assertSame(30, $projection->inputTokens);
+
+        $roundTrip = DeferredChildRunLifecycleProjectionDTO::fromArray($projection->toArray());
+        $this->assertSame(3, $roundTrip->llmStepCount);
+        $this->assertSame(3, $roundTrip->toArray()['llm_step_count'] ?? null);
+        $this->assertSame(7, $roundTrip->childTurnNo);
+
+        $summary = new \Ineersa\CodingAgent\Agent\Execution\SubagentChildProgressSummary(
+            toolCount: $roundTrip->toolCount,
+            llmStepCount: $roundTrip->llmStepCount,
+            inputTokens: $roundTrip->inputTokens,
+            latestInputTokens: $roundTrip->latestInputTokens,
+            contextWindow: $roundTrip->contextWindow,
+            outputTokens: $roundTrip->outputTokens,
+            reasoningTokens: $roundTrip->reasoningTokens,
+            totalTokens: $roundTrip->totalTokens,
+            cost: $roundTrip->cost,
+            model: $roundTrip->model,
+            provider: $roundTrip->provider,
+            artifactPath: 'artifacts/agents/agent_llm_steps',
+            assistantExcerpt: $roundTrip->assistantExcerpt,
+            recentTools: $roundTrip->recentTools,
+            activeToolLine: $roundTrip->activeToolLine,
+        );
+        $fields = $summary->toProgressFields();
+        $this->assertSame(3, $fields['llm_step_count'] ?? null);
+        $this->assertArrayNotHasKey('turn_no', $fields);
+
+        $snapshot = (new \Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder())->singleTerminalFromChildTurn(
+            status: 'completed',
+            agentName: 'scout',
+            artifactId: 'agent_llm_steps',
+            agentRunId: 'child-run-llm-steps',
+            taskSummary: 'count steps',
+            childTurnNo: $roundTrip->childTurnNo,
+            elapsedMs: 1000,
+            enrichment: $summary,
+        );
+        $this->assertSame(3, $snapshot['llm_step_count'] ?? null);
+        $this->assertSame(7, $snapshot['turn_no'] ?? null);
+
+        $parallel = (new \Ineersa\CodingAgent\Agent\Execution\SubagentProgressSnapshotBuilder())->parallelSnapshot(
+            reports: [
+                'child-run-llm-steps' => [
+                    'index' => 1,
+                    'agentName' => 'scout',
+                    'task' => 'count steps',
+                    'artifactId' => 'agent_llm_steps',
+                    'agentRunId' => 'child-run-llm-steps',
+                    'terminal' => true,
+                    'status' => \Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum::Completed,
+                    'message' => 'done',
+                ],
+            ],
+            activeTurns: ['child-run-llm-steps' => $roundTrip->childTurnNo],
+            elapsedMs: 1000,
+            enrichmentByAgentRunId: ['child-run-llm-steps' => $summary],
+            aggregateStatus: 'completed',
+        );
+        $this->assertSame(3, $parallel['children'][0]['llm_step_count'] ?? null);
+        $this->assertSame(7, $parallel['children'][0]['turn_no'] ?? null);
     }
 }

@@ -77,6 +77,7 @@ final class SubagentProgressEventsFixture
         foreach ([1, 2, 3] as $turn) {
             $progress = $progressBase;
             $progress['turn_no'] = $turn;
+            $progress['llm_step_count'] = $turn;
             $progress['elapsed_ms'] = 5000 + ($turn * 3000);
             $events[] = self::event($sessionId, 5 + $turn, 1, 'tool_execution_update', [
                 'tool_call_id' => $toolCallId,
@@ -89,6 +90,7 @@ final class SubagentProgressEventsFixture
 
         $progressTerminal = $progressBase;
         $progressTerminal['turn_no'] = 3;
+        $progressTerminal['llm_step_count'] = 3;
         $progressTerminal['status'] = 'completed';
         $progressTerminal['elapsed_ms'] = 14000;
         $events[] = self::event($sessionId, 9, 1, 'tool_execution_update', [

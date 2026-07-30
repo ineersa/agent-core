@@ -39,6 +39,7 @@ final class SubagentChildProgressSummaryBuilder
 
         return new SubagentChildProgressSummary(
             toolCount: $projection->toolCount,
+            llmStepCount: $projection->llmStepCount,
             inputTokens: $projection->inputTokens,
             latestInputTokens: $projection->latestInputTokens,
             contextWindow: $projection->contextWindow,
@@ -87,6 +88,7 @@ final class SubagentChildProgressSummaryBuilder
         ?string $definitionModel,
     ): SubagentChildProgressSummary {
         $toolEnds = 0;
+        $llmStepCount = 0;
         $inputTokens = 0;
         $latestInputTokens = 0;
         $contextWindow = 0;
@@ -126,6 +128,7 @@ final class SubagentChildProgressSummaryBuilder
             }
 
             if (RunEventTypeEnum::LlmStepCompleted->value === $event->type) {
+                ++$llmStepCount;
                 $usage = \is_array($payload['usage'] ?? null) ? $payload['usage'] : [];
                 $turnInput = $this->intVal($usage['input_tokens'] ?? 0);
                 $inputTokens += $turnInput;
@@ -157,6 +160,11 @@ final class SubagentChildProgressSummaryBuilder
                         }
                     }
                 }
+                continue;
+            }
+
+            if (RunEventTypeEnum::LlmStepFailed->value === $event->type) {
+                ++$llmStepCount;
                 continue;
             }
 
@@ -199,6 +207,7 @@ final class SubagentChildProgressSummaryBuilder
 
         return new SubagentChildProgressSummary(
             toolCount: $toolEnds,
+            llmStepCount: $llmStepCount,
             inputTokens: $inputTokens,
             latestInputTokens: $latestInputTokens,
             contextWindow: $contextWindow,
