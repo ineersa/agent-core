@@ -871,6 +871,7 @@ final class RuntimeEventMapperTest extends TestCase
             'message' => [
                 'role' => 'user',
                 'content' => [['type' => 'text', 'text' => 'runtime line']],
+                'metadata' => ['system_reminder' => true],
             ],
             'text' => 'runtime line',
         ], 12);
@@ -880,6 +881,7 @@ final class RuntimeEventMapperTest extends TestCase
         $this->assertNotNull($runtimeEvent);
         $this->assertSame(RuntimeEventTypeEnum::UserMessageSubmitted->value, $runtimeEvent->type);
         $this->assertSame('runtime line', $runtimeEvent->payload['text'] ?? '');
+        $this->assertSame(['system_reminder' => true], $runtimeEvent->payload['metadata'] ?? null);
     }
 
     // ── Test helpers ─────────────────────────────────────────────────────────

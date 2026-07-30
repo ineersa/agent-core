@@ -69,7 +69,33 @@ Smoke failures throw and remove the artifact.
 
 ## Runtime model
 
-Writable state lives under the **runtime CWD** (`.hatfield/`), not the archive path.
+Project-owned writable state (settings, sessions, extension data, logs) lives under
+the **runtime CWD** (`.hatfield/`), not the archive path.
+
+### Symfony container cache (installed PHAR)
+
+Installed PHAR processes compile Symfony's DI container with
+`%kernel.project_dir% = phar://<physical-archive>/...`. That path is embedded in
+generated services (including theme resource roots). Cache identity is therefore:
+
+```text
+${XDG_CACHE_HOME:-$HOME/.cache}/hatfield/
+  <environment>/
+    <artifact-content-sha256>-<canonical-physical-path-sha256>/
+```
+
+- Full SHA-256 segments for content and `realpath()` of the archive (symlink and
+  target share a cache; distinct physical copies do not).
+- Different builds at the same install path get different content hashes.
+- `HATFIELD_CACHE_DIR` is an authoritative **root** override and still receives
+  `/<env>/<identity>` under it (no silent project-cwd fallback).
+- Source checkouts stay project-local: `.hatfield/cache/<env>` only.
+
+Clear installed container cache safely:
+
+```bash
+rm -rf "${XDG_CACHE_HOME:-$HOME/.cache}/hatfield"
+```
 
 Executable resolution for PHAR/source:
 
