@@ -688,12 +688,14 @@ parameters:
 
     AppSystemPrompt:
       - AppExtensionApi
+      - AppExtension
       - AppTool
       - AppConfig
       - SymfonyAiPlatform
 
     AppTool:
       - AppExtensionApi
+      - AppExtension
       - AgentCore
       - AppConfig
       - AppMarkdown

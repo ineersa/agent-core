@@ -16,10 +16,7 @@ namespace Ineersa\Hatfield\ExtensionApi\Prompt;
 interface PromptContributorProviderInterface
 {
     /**
-     * @param list<string>|null $allowedOwnerClasses null keeps all contributors (parent/global);
-     *                                               a list filters to those extension owner classes
-     *
      * @return list<PromptContributorInterface> In registration order
      */
-    public function promptContributors(?array $allowedOwnerClasses = null): array;
+    public function promptContributors(): array;
 }

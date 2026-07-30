@@ -4,12 +4,12 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Tool;
 
+use Ineersa\CodingAgent\Extension\ExtensionHookRegistry;
 use Ineersa\CodingAgent\Tool\RegistryBackedToolbox;
 use Ineersa\CodingAgent\Tool\ToolHandlerInterface;
 use Ineersa\CodingAgent\Tool\ToolRegistry;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallContextDTO;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallRewriteHookInterface;
-use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallRewriteHookProviderInterface;
 use PHPUnit\Framework\TestCase;
 use Symfony\AI\Agent\Toolbox\Event\ToolCallArgumentsResolved;
 use Symfony\AI\Agent\Toolbox\Event\ToolCallFailed;
@@ -538,17 +538,8 @@ final class RegistryBackedToolboxTest extends TestCase
             }
         };
 
-        $rewriteProvider = new readonly class($wildcardHook) implements ToolCallRewriteHookProviderInterface {
-            public function __construct(
-                private ToolCallRewriteHookInterface $hook,
-            ) {
-            }
-
-            public function rewriteHooksForTool(string $toolName, ?array $allowedOwnerClasses = null): array
-            {
-                return [$this->hook];
-            }
-        };
+        $rewriteProvider = new ExtensionHookRegistry();
+        $rewriteProvider->addToolCallRewriteHook('*', $wildcardHook);
 
         $toolbox = new RegistryBackedToolbox($registry, rewriteHookProvider: $rewriteProvider);
         $toolbox->execute(new ToolCall('call-rw-5', 'bash', ['command' => 'test']));
@@ -653,20 +644,13 @@ final class RegistryBackedToolboxTest extends TestCase
     /**
      * @param list<ToolCallRewriteHookInterface> $hooks
      */
-    private function stubRewriteProvider(string $toolName, array $hooks): ToolCallRewriteHookProviderInterface
+    private function stubRewriteProvider(string $toolName, array $hooks): ExtensionHookRegistry
     {
-        return new readonly class($toolName, $hooks) implements ToolCallRewriteHookProviderInterface {
-            /** @param list<ToolCallRewriteHookInterface> $hooks */
-            public function __construct(
-                private string $toolName,
-                private array $hooks,
-            ) {
-            }
+        $registry = new ExtensionHookRegistry();
+        foreach ($hooks as $hook) {
+            $registry->addToolCallRewriteHook($toolName, $hook);
+        }
 
-            public function rewriteHooksForTool(string $toolName, ?array $allowedOwnerClasses = null): array
-            {
-                return $this->toolName === $toolName ? $this->hooks : [];
-            }
-        };
+        return $registry;
     }
 }

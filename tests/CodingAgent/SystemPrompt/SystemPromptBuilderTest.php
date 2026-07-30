@@ -8,13 +8,13 @@ use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\SettingsPathResolver;
 use Ineersa\CodingAgent\Config\TuiConfig;
+use Ineersa\CodingAgent\Extension\ExtensionHookRegistry;
 use Ineersa\CodingAgent\SystemPrompt\SystemPromptBuilder;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tool\ToolHandlerInterface;
 use Ineersa\CodingAgent\Tool\ToolRegistry;
 use Ineersa\CodingAgent\Tool\ToolRegistryInterface;
 use Ineersa\Hatfield\ExtensionApi\Prompt\PromptContributorInterface;
-use Ineersa\Hatfield\ExtensionApi\Prompt\PromptContributorProviderInterface;
 use PHPUnit\Framework\TestCase;
 use Symfony\AI\Platform\Message\TemplateRenderer\StringTemplateRenderer;
 
@@ -301,19 +301,13 @@ final class SystemPromptBuilderTest extends TestCase
         // The common case: no APPEND_SYSTEM.md files, but a prompt
         // contributor is registered. The contributor output MUST appear
         // in the rendered prompt — this is finding #1's regression test.
-        $provider = new class implements PromptContributorProviderInterface {
-            public function promptContributors(?array $allowedOwnerClasses = null): array
+        $provider = new ExtensionHookRegistry();
+        $provider->addPromptContributor(new class implements PromptContributorInterface {
+            public function contribute(): string
             {
-                return [
-                    new class implements PromptContributorInterface {
-                        public function contribute(): string
-                        {
-                            return 'EXTENSION_WORKFLOW_RULES_MARKER';
-                        }
-                    },
-                ];
+                return 'EXTENSION_WORKFLOW_RULES_MARKER';
             }
-        };
+        });
 
         $builder = $this->createBuilder(promptContributorProvider: $provider);
         $result = $builder->build();
@@ -330,19 +324,13 @@ final class SystemPromptBuilderTest extends TestCase
             'Static rules from project.',
         );
 
-        $provider = new class implements PromptContributorProviderInterface {
-            public function promptContributors(?array $allowedOwnerClasses = null): array
+        $provider = new ExtensionHookRegistry();
+        $provider->addPromptContributor(new class implements PromptContributorInterface {
+            public function contribute(): string
             {
-                return [
-                    new class implements PromptContributorInterface {
-                        public function contribute(): string
-                        {
-                            return 'Dynamic rules from extension.';
-                        }
-                    },
-                ];
+                return 'Dynamic rules from extension.';
             }
-        };
+        });
 
         $builder = $this->createBuilder(promptContributorProvider: $provider);
         $result = $builder->build();
@@ -549,7 +537,7 @@ final class SystemPromptBuilderTest extends TestCase
         ?ToolRegistryInterface $registry = null,
         ?string $projectDir = null,
         ?string $cwd = null,
-        ?PromptContributorProviderInterface $promptContributorProvider = null,
+        ?ExtensionHookRegistry $promptContributorProvider = null,
     ): SystemPromptBuilder {
         return new SystemPromptBuilder(
             toolRegistry: $registry ?? $this->createEmptyRegistry(),

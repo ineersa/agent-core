@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Extension\Agent;
 
-use Ineersa\AgentCore\Contract\Extension\ChildRunExtensionAllowlistReaderInterface;
+use Ineersa\CodingAgent\Extension\ChildRunExtensionAllowlistReaderInterface;
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;

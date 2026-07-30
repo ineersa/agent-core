@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace Ineersa\CodingAgent\Tool;
 
 use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
-use Ineersa\AgentCore\Contract\Extension\ChildRunExtensionAllowlistReaderInterface;
+use Ineersa\CodingAgent\Extension\ChildRunExtensionAllowlistReaderInterface;
+use Ineersa\CodingAgent\Extension\ExtensionHookRegistry;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallContextDTO;
-use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallRewriteHookProviderInterface;
 use Symfony\AI\Agent\Toolbox\Event\ToolCallArgumentsResolved;
 use Symfony\AI\Agent\Toolbox\Event\ToolCallFailed;
 use Symfony\AI\Agent\Toolbox\Event\ToolCallRequested;
@@ -44,7 +44,7 @@ final readonly class RegistryBackedToolbox implements ToolboxInterface
     public function __construct(
         private ToolRegistryInterface $registry,
         private ?EventDispatcherInterface $eventDispatcher = null,
-        private ?ToolCallRewriteHookProviderInterface $rewriteHookProvider = null,
+        private ?ExtensionHookRegistry $rewriteHookProvider = null,
         private ?StackToolExecutionContextAccessor $contextAccessor = null,
         private ?ChildRunExtensionAllowlistReaderInterface $extensionAllowlistReader = null,
     ) {
