@@ -310,7 +310,7 @@ final class FileMentionIndexBuilder
 
             $exitCode = $process->getExitCode();
             if (0 !== $exitCode) {
-                throw new \RuntimeException(\sprintf('git ls-files failed while building file mention index (cwd=%s, exit_code=%d, error_output=%s).', $this->cwd, $exitCode ?? -1, $this->truncateDiagnostic($capturedStderr)));
+                throw new \RuntimeException(\sprintf('git ls-files failed while building file mention index (cwd=%s, exit_code=%d, error_output=%s).', $this->cwd, $exitCode ?? -1, trim($capturedStderr)));
             }
         } finally {
             if ($process->isRunning()) {
@@ -608,15 +608,5 @@ final class FileMentionIndexBuilder
         }
 
         $buffer .= substr($chunk, 0, $remaining).'…';
-    }
-
-    private function truncateDiagnostic(string $text): string
-    {
-        $trimmed = trim($text);
-        if (\strlen($trimmed) <= self::STDERR_DIAGNOSTIC_LIMIT) {
-            return $trimmed;
-        }
-
-        return substr($trimmed, 0, self::STDERR_DIAGNOSTIC_LIMIT).'…';
     }
 }
