@@ -72,9 +72,7 @@ trait BashBackgroundE2eTestSupport
         $tmux->waitForCaptureContains($pane, '█', 10.0);
         $tmux->waitForTuiReadyAfterLogo($pane);
         $tmux->sendKey($pane, 'Escape');
-        usleep(100_000);
         $tmux->sendKey($pane, 'C-u');
-        usleep(100_000);
     }
 
     protected function waitForBashBackgroundPrompt(TmuxHarness $tmux, TmuxPane $pane): void
@@ -119,7 +117,8 @@ trait BashBackgroundE2eTestSupport
         $uid = \function_exists('posix_geteuid') ? posix_geteuid() : null;
 
         $output = [];
-        @exec('ps -eo pid=,uid=,args= 2>/dev/null', $output);
+        // Bound the process-table probe so a hung `ps` cannot stall teardown forever.
+        @exec('timeout --kill-after=1s 2s ps -eo pid=,uid=,args= 2>/dev/null', $output);
         $leaks = [];
         foreach ($output as $line) {
             $trim = trim($line);

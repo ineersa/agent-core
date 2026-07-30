@@ -148,9 +148,9 @@ final class ToolQuestionStoreTest extends IsolatedKernelTestCase
         $this->forceCreatedAt($q3, $oneHourAgo);
 
         // Cleanup: cancel pending rows created before 30 minutes ago.
+        // Cutoff is wall-clock based (Q1 forced to -1h, Q2 created now); no artificial delay needed.
         $cutoff = new \DateTimeImmutable('-30 minutes');
         $cleanupTime = new \DateTimeImmutable();
-        usleep(1); // ensure cleanup timestamp is distinct from Q2 creation
         $count = $this->store->cancelPendingQuestionsCreatedBefore($cutoff);
 
         // Only Q1 was old+pending.

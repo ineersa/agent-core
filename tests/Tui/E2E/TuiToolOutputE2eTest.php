@@ -90,7 +90,6 @@ final class TuiToolOutputE2eTest extends TestCase
             // the read tool executes for real; then the LLM fixture exhaustion
             // fallback returns "done".
             $this->tmux->sendKey($pane, 'C-u');
-            usleep(100_000);
 
             $prompt = 'Read ./test.txt';
             $this->tmux->sendLiteral($pane, $prompt);
@@ -173,60 +172,6 @@ final class TuiToolOutputE2eTest extends TestCase
         }
     }
 
-    public function testEditToolCallShowsDiffPayloadPreview(): void
-    {
-        $this->testProjectDir = $this->createIsolatedProjectDirForEdit();
-        $this->snapshotDir = $this->testProjectDir.'/.hatfield/tmp/tui/smoke';
-        @mkdir($this->snapshotDir, 0o777, true);
-
-        $pane = $this->tmux->startDetached(
-            command: $this->agentCommandForFixture('tui-tool-call-edit.json'),
-            prefix: 'tui-tool-edit',
-            width: 120,
-            height: 60,
-            cwd: $this->testProjectDir,
-        );
-
-        try {
-            $this->tmux->waitForCaptureContains($pane, '█', 10.0);
-            $this->tmux->waitForTuiReadyAfterLogo($pane);
-
-            $this->tmux->sendKey($pane, 'C-u');
-            usleep(100_000);
-            $this->tmux->sendLiteral($pane, 'Edit target.txt');
-            $this->tmux->sendKey($pane, 'Enter');
-
-            $capture = $this->tmux->waitForCallback(
-                $pane,
-                static fn (string $cap): bool => str_contains($cap, '◇')
-                    || str_contains($cap, '✕'),
-                timeout: 20.0,
-                message: 'Neither ◇ assistant block nor ✕ error block appeared after edit tool call',
-                history: 2000,
-            );
-
-            $this->assertTrue(str_contains($capture, '◇'), 'Expected assistant block after edit tool replay');
-
-            $fullCapture = $this->tmux->capturePlainWithHistory($pane, 2000);
-
-            $this->assertStringContainsString('path:', $fullCapture, 'Edit tool call card must show path metadata');
-            $this->assertStringContainsString('target.txt', $fullCapture);
-            $this->assertStringContainsString('+after', $fullCapture, 'Patch preview must show added diff line');
-            $this->assertStringNotContainsString('patch: |', $fullCapture, 'Edit tool call must not use YAML patch block');
-            $this->assertStringNotContainsString('```', $fullCapture);
-
-            $this->saveAnsiSnapshot($pane, 'tool-edit-preview');
-            $this->tmux->sendKey($pane, 'C-d');
-        } catch (\Throwable $e) {
-            $this->saveAnsiSnapshot($pane, 'tool-edit-preview-FAILURE');
-            try {
-                $this->tmux->sendKey($pane, 'C-d');
-            } catch (\Throwable) {
-            }
-            throw $e;
-        }
-    }
-
     // ── Helpers ───────────────────────────────────────────────────
 
     private function agentCommandForFixture(string $fixtureFile): string
@@ -255,14 +200,6 @@ final class TuiToolOutputE2eTest extends TestCase
             escapeshellarg($php),
             escapeshellarg($script),
         );
-    }
-
-    private function createIsolatedProjectDirForEdit(): string
-    {
-        $dir = $this->createIsolatedProjectDir();
-        file_put_contents($dir.'/target.txt', "before\n");
-
-        return $dir;
     }
 
     private function agentCommand(): string

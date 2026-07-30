@@ -105,7 +105,6 @@ final class TuiStatusRowReasoningNoticeE2eTest extends TestCase
             $this->saveAnsiSnapshot($pane, 'status-reasoning-after-shift-tab');
 
             $this->tmux->sendKey($pane, 'C-u');
-            usleep(50_000);
             $this->tmux->sendLiteral($pane, self::REPLAY_PROMPT);
             $this->tmux->sendKey($pane, 'Enter');
 

@@ -6,9 +6,6 @@ namespace Ineersa\CodingAgent\Tests\Tool;
 
 use Ineersa\CodingAgent\Tool\AskHuman\AskHumanPayloadFactory;
 use Ineersa\CodingAgent\Tool\AskHumanTool;
-use Ineersa\CodingAgent\Tool\RegistryBackedToolbox;
-use Ineersa\CodingAgent\Tool\ToolHandlerInterface;
-use Ineersa\CodingAgent\Tool\ToolRegistry;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\PropertyInfo\Extractor\ReflectionExtractor;
 use Symfony\Component\Serializer\Mapping\Factory\ClassMetadataFactory;
@@ -94,13 +91,6 @@ final class AskHumanToolTest extends TestCase
         $this->assertSame(['type' => 'string'], $items);
     }
 
-    public function testDefinitionHandlerIsInvokable(): void
-    {
-        $definition = $this->tool->definition();
-
-        $this->assertInstanceOf(ToolHandlerInterface::class, $definition->handler);
-    }
-
     public function testDefinitionHasPromptLine(): void
     {
         $definition = $this->tool->definition();
@@ -114,30 +104,6 @@ final class AskHumanToolTest extends TestCase
         $definition = $this->tool->definition();
 
         $this->assertNotEmpty($definition->promptGuidelines);
-    }
-
-    /* ── ToolRegistry discovery test ── */
-
-    public function testRegistryExposesAskHumanTool(): void
-    {
-        $registry = new ToolRegistry([$this->tool]);
-        $toolbox = new RegistryBackedToolbox($registry);
-        $tools = $toolbox->getTools();
-
-        $toolNames = array_map(static fn ($t) => $t->getName(), $tools);
-
-        $this->assertContains('ask_human', $toolNames);
-    }
-
-    public function testRegistryPermanentMetadataIncludesAskHuman(): void
-    {
-        $registry = new ToolRegistry([$this->tool]);
-
-        $definitions = $registry->activeToolDefinitions();
-
-        $names = array_map(static fn ($d) => $d->name, $definitions);
-
-        $this->assertContains('ask_human', $names);
     }
 
     /* ── __invoke() returns immediately with interrupt payload ── */

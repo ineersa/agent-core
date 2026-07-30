@@ -557,7 +557,7 @@ function distribution_resolve_canonical_phar_for_static(
 /**
  * Expected messenger transports launched after runtime.ready.
  *
- * runtime.ready is emitted BEFORE consumers start (HeadlessController::run),
+ * runtime.ready is emitted AFTER consumers are launched (HeadlessController::run),
  * so topology verification must wait until these transports appear.
  *
  * @return list<string>
@@ -1050,7 +1050,7 @@ function distribution_smoke_native_process_topology(string $artifactPath): void
             $controllerCmdline = $artifactPath.' agent --controller';
         }
 
-        // runtime.ready is emitted before ConsumerSupervisor::launch* — wait for transports.
+        // Consumers are launched before runtime.ready; still wait until expected transports are visible.
         $transportsReady = false;
         $descendants = [];
         $transportDeadline = microtime(true) + 15.0;

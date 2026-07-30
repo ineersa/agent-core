@@ -295,7 +295,6 @@ final class TuiFileRewindE2eTest extends TestCase
             $beforeUp = $selectedTurn;
             for ($retry = 0; $retry < 3; ++$retry) {
                 $this->tmux->sendKey($pane, 'Up');
-                usleep(200_000);
                 try {
                     $this->tmux->waitForCallback(
                         $pane,
@@ -345,7 +344,6 @@ final class TuiFileRewindE2eTest extends TestCase
     private function submitPrompt(TmuxPane $pane, string $text): void
     {
         $this->tmux->sendKey($pane, 'C-u');
-        usleep(50_000);
         $this->tmux->sendLiteral($pane, $text);
         $this->tmux->sendKey($pane, 'Enter');
     }
@@ -353,7 +351,6 @@ final class TuiFileRewindE2eTest extends TestCase
     private function runSlashCommand(TmuxPane $pane, string $command): void
     {
         $this->tmux->sendKey($pane, 'C-u');
-        usleep(50_000);
         $this->tmux->sendLiteral($pane, $command);
         $this->tmux->sendKey($pane, 'Enter');
     }

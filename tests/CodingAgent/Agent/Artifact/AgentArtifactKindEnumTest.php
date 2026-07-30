@@ -48,12 +48,6 @@ final class AgentArtifactKindEnumTest extends TestCase
         );
     }
 
-    public function testEnumCases(): void
-    {
-        $this->assertSame('subagent', AgentArtifactKindEnum::Subagent->value);
-        $this->assertSame('fork', AgentArtifactKindEnum::Fork->value);
-    }
-
     public function testEntryDtoRoundTripWithSubagentKind(): void
     {
         $now = new \DateTimeImmutable();

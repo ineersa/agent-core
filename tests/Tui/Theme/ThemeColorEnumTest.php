@@ -14,10 +14,6 @@ final class ThemeColorEnumTest extends TestCase
     public function testForReasoningMapsMaxToThinkingMax(): void
     {
         $this->assertSame(ThemeColorEnum::ThinkingMax, ThemeColorEnum::forReasoning('max'));
-    }
-
-    public function testThinkingMaxCaseExists(): void
-    {
         $this->assertSame('thinking_max', ThemeColorEnum::ThinkingMax->value);
     }
 }

@@ -98,7 +98,6 @@ final class TuiAutoCompactionCancelE2eTest extends TestCase
             // (well above compact_after_tokens=10) so auto-compaction
             // triggers via the after-turn hook.
             $this->tmux->sendKey($pane, 'C-u');
-            usleep(100_000);
             $prompt = 'Respond with a brief sentence about automated testing.';
             $this->tmux->sendLiteral($pane, $prompt);
             $this->tmux->sendKey($pane, 'Enter');
@@ -168,11 +167,8 @@ final class TuiAutoCompactionCancelE2eTest extends TestCase
                 ."Final capture:\n".$this->tmux->captureAnsi($pane),
             );
 
-            // Post-cancellation: wait for any retry/cleanup to settle.
-            usleep(1_000_000);
-
-            // ── Structural proof from events.jsonl ──
-            $this->assertCancelCommandAfterCompactionStarted();
+            // Post-cancellation: poll events.jsonl until cancel command is durable.
+            $this->waitForCancelCommandAfterCompactionStarted();
 
             // Save ANSI snapshot for inspection.
             $this->saveAnsiSnapshot($pane, 'auto-compact-cancel-success');
@@ -195,6 +191,29 @@ final class TuiAutoCompactionCancelE2eTest extends TestCase
      * Assert events.jsonl contains a cancel command event AFTER a
      * context_compaction_started event.
      */
+    private function waitForCancelCommandAfterCompactionStarted(float $timeout = 5.0): void
+    {
+        $deadline = microtime(true) + $timeout;
+        $lastError = null;
+
+        while (microtime(true) < $deadline) {
+            try {
+                $this->assertCancelCommandAfterCompactionStarted();
+
+                return;
+            } catch (\PHPUnit\Framework\AssertionFailedError $e) {
+                $lastError = $e;
+                usleep(100_000);
+            }
+        }
+
+        if (null !== $lastError) {
+            throw $lastError;
+        }
+
+        $this->fail('Timed out waiting for cancel command after compaction started in events.jsonl');
+    }
+
     private function assertCancelCommandAfterCompactionStarted(): void
     {
         $eventLog = $this->testProjectDir.'/.hatfield/sessions/1/events.jsonl';

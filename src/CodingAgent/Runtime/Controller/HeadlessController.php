@@ -136,14 +136,9 @@ final class HeadlessController
             ));
         });
 
-        $this->emitter->emit(new RuntimeEvent(
-            type: RuntimeEventTypeEnum::RuntimeReady->value,
-            runId: '',
-            seq: 0,
-            payload: ['version' => '1.0', 'transport' => 'controller'],
-        ));
-
-        // Launch messenger consumers for async execution and command transports.
+        // Launch messenger consumers before advertising readiness. Clients that
+        // send start_run immediately after runtime.ready must not race empty
+        // run_control/llm queues under load.
         $this->consumerSupervisor->launch('run_control');
         // llm consumers: fixed bounded pool for concurrent provider calls
         // (parent turns + parallel subagent children share the llm transport).
@@ -180,6 +175,14 @@ final class HeadlessController
         // Unconditional for now (MVP) — even when no extension registers handlers,
         // an idle consumer is cheap relative to wiring conditional launch.
         $this->consumerSupervisor->launch('extension_agent');
+
+        // Same event type/payload as before; emission now follows consumer launch.
+        $this->emitter->emit(new RuntimeEvent(
+            type: RuntimeEventTypeEnum::RuntimeReady->value,
+            runId: '',
+            seq: 0,
+            payload: ['version' => '1.0', 'transport' => 'controller'],
+        ));
 
         // Non-blocking stdin: read JSONL commands from TUI.
         EventLoop::onReadable(\STDIN, function (string $watcherId, $stream): void {

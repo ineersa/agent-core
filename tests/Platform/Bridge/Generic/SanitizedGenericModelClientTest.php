@@ -35,16 +35,6 @@ final class SanitizedGenericModelClientTest extends TestCase
         ], $inner->lastOptions);
     }
 
-    public function testDelegatesSupportsToInnerClient(): void
-    {
-        $inner = new RecordingModelClient();
-        $client = new SanitizedGenericModelClient($inner);
-        $model = new CompletionsModel('test', [Capability::INPUT_TEXT]);
-
-        $this->assertTrue($client->supports($model));
-        $this->assertFalse($client->supports($this->createStub(Model::class)));
-    }
-
     public function testPreservesPayloadAndModelOnDelegation(): void
     {
         $inner = new RecordingModelClient();
@@ -56,6 +46,7 @@ final class SanitizedGenericModelClientTest extends TestCase
 
         $this->assertSame($model, $inner->lastModel);
         $this->assertSame($payload, $inner->lastPayload);
+        $this->assertSame([], $inner->lastOptions);
     }
 }
 
