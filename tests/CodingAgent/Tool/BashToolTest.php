@@ -434,10 +434,21 @@ final class BashToolTest extends IsolatedKernelTestCase
         // This confirms markBackgroundedForRecord() was made in BashTool.
         $this->assertNotNull($entities[0]->backgroundedAt, 'Background process should have backgroundedAt set');
 
-        // Verify the log contains our unique marker
-        usleep(50_000); // Brief wait for log flush
-        $logContent = file_get_contents($entities[0]->logPath);
-        $this->assertStringContainsString('background-marker-12345', $logContent ?: '');
+        // Verify the log contains our unique marker (bounded poll; log flush is async).
+        $marker = 'background-marker-12345';
+        $logPath = $entities[0]->logPath;
+        $deadline = microtime(true) + 2.0;
+        $logContent = '';
+        while (microtime(true) < $deadline) {
+            if (is_file($logPath)) {
+                $logContent = (string) @file_get_contents($logPath);
+                if (str_contains($logContent, $marker)) {
+                    break;
+                }
+            }
+            usleep(10_000);
+        }
+        $this->assertStringContainsString($marker, $logContent);
 
         // Clean up
         $this->manager->stop($pid, self::TEST_SESSION);

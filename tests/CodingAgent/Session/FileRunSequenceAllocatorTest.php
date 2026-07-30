@@ -204,8 +204,12 @@ PHP;
             if ($status['running']) {
                 // Bounded teardown if a worker missed the done gate.
                 proc_terminate($meta['proc'], \SIGTERM);
-                usleep(50_000);
+                $termDeadline = microtime(true) + 2.0;
                 $status = proc_get_status($meta['proc']);
+                while ($status['running'] && microtime(true) < $termDeadline) {
+                    usleep(5_000);
+                    $status = proc_get_status($meta['proc']);
+                }
                 if ($status['running']) {
                     proc_terminate($meta['proc'], \SIGKILL);
                 }

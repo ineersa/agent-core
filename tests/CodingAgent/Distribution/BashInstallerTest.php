@@ -328,9 +328,22 @@ PHP;
         );
         $pid = (int) trim((string) shell_exec($cmd));
         $this->assertGreaterThan(0, $pid, 'Failed to start fixture HTTP server');
-        usleep(200_000);
 
-        return ['url' => 'http://127.0.0.1:'.$port, 'pid' => $pid, 'docroot' => $docroot];
+        $url = 'http://127.0.0.1:'.$port;
+        $readyUrl = $url.'/SHA256SUMS';
+        $deadline = microtime(true) + 5.0;
+        $ready = false;
+        while (microtime(true) < $deadline) {
+            $body = @file_get_contents($readyUrl);
+            if (false !== $body && '' !== $body) {
+                $ready = true;
+                break;
+            }
+            usleep(20_000);
+        }
+        $this->assertTrue($ready, 'Fixture HTTP server did not become ready at '.$readyUrl);
+
+        return ['url' => $url, 'pid' => $pid, 'docroot' => $docroot];
     }
 
     /**
