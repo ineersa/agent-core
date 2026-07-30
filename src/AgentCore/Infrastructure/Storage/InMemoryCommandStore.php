@@ -86,9 +86,4 @@ final class InMemoryCommandStore implements CommandStoreInterface
     {
         $this->statusesByRun[$runId][$idempotencyKey] = 'rejected: '.$reason;
     }
-
-    public function markSuperseded(string $runId, string $idempotencyKey, string $reason): void
-    {
-        $this->statusesByRun[$runId][$idempotencyKey] = 'superseded: '.$reason;
-    }
 }

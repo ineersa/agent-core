@@ -33,7 +33,7 @@ final class ControllerReplayMultiSteerFifoTest extends ControllerReplayE2eTestCa
             'id' => $startCmdId,
             'type' => 'start_run',
             'payload' => [
-                'prompt' => 'Run bash sleep 8 once. Do not call any other tool.',
+                'prompt' => 'Run bash sleep 4 once. Do not call any other tool.',
             ],
         ]);
 
@@ -234,11 +234,6 @@ YAML;
         return [$bashFixture, $boundaryFixture];
     }
 
-    protected function replayExtraEnv(): array
-    {
-        return [];
-    }
-
     /**
      * @return list<array<string, mixed>>
      */
@@ -252,21 +247,8 @@ YAML;
             $batch = $this->readEvents();
             foreach ($batch as $event) {
                 $collected[] = $event;
-                $type = (string) ($event['type'] ?? '');
-                if ('user.message_queued' === $type) {
+                if ('user.message_queued' === (string) ($event['type'] ?? '')) {
                     ++$queued;
-                }
-                // Also accept raw status.updated carrying agent_command_queued if projected that way.
-                if ('status.updated' === $type) {
-                    $rawType = (string) ($event['payload']['raw_type'] ?? $event['payload']['_raw_type'] ?? '');
-                    if ('agent_command_queued' === $rawType) {
-                        $kind = (string) ($event['payload']['raw_payload']['kind']
-                            ?? $event['payload']['_raw_payload']['kind']
-                            ?? '');
-                        if ('steer' === $kind || '' === $kind) {
-                            ++$queued;
-                        }
-                    }
                 }
             }
 
