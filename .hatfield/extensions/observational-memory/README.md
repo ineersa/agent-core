@@ -47,6 +47,17 @@ CompactRun (run_control, under run lock) — Pi-style instant projection
 OM does **not** own a private Symfony Kernel, bin/console, Messenger bus, consumer
 supervisor, or priority/multi-receiver queue.
 
+
+### Live TUI status notices
+
+While an Observer/Reflector/Dropper model stage is running, the async worker writes a
+single ephemeral `om_current_activity` row (per session/run). The TUI polls that row
+through the public `TuiExtensionContextInterface::onTick` bridge (self-throttled to
+≥250ms) and sets status key `om-background` with Pi-style copy, e.g.
+`Observational memory: reflector running (~2,500 tokens)`. The row is cleared in
+handler `finally` (job-id guarded); crash leftovers older than 5 minutes are hidden.
+Status writes never fail model work.
+
 ### Freshness tradeoff (accepted)
 
 Compaction renders whatever durable memory is already present. Observer/Reflector/Dropper

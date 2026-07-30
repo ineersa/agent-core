@@ -263,6 +263,10 @@ final class OmSessionContextCommandTest extends IsolatedKernelTestCase
             {
             }
 
+            public function onTick(\Closure $listener): void
+            {
+            }
+
             public function insertOverlayAfterEditor(AbstractWidget $widget): void
             {
             }
@@ -309,6 +313,10 @@ final class OmSessionContextCommandTest extends IsolatedKernelTestCase
             }
 
             public function setStatus(string $key, ?string $text): void
+            {
+            }
+
+            public function onTick(\Closure $listener): void
             {
             }
 

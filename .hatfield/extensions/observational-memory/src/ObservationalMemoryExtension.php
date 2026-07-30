@@ -18,8 +18,10 @@ use Ineersa\HatfieldExt\ObservationalMemory\Observer\ObserveBoundaryJobHandler;
 use Ineersa\HatfieldExt\ObservationalMemory\Observer\ObserveBoundaryTerminalHook;
 use Ineersa\HatfieldExt\ObservationalMemory\Query\OmQueryService;
 use Ineersa\HatfieldExt\ObservationalMemory\Query\OmSessionContext;
+use Ineersa\HatfieldExt\ObservationalMemory\Runtime\OmPaths;
 use Ineersa\HatfieldExt\ObservationalMemory\Runtime\OmSettings;
 use Ineersa\HatfieldExt\ObservationalMemory\Tool\RecallToolHandler;
+use Ineersa\HatfieldExt\ObservationalMemory\Tui\OmBackgroundStatusPoller;
 use Psr\Log\LoggerAwareInterface;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
@@ -33,12 +35,15 @@ use Psr\Log\NullLogger;
  * - public before-compaction hook (CompactRun only): instant durable-memory projection
  * - /om-status and /om-view local commands
  * - permanent ambient recall tool
+ * - TUI status-row poller for live Observer/Reflector/Dropper notices
  */
 final class ObservationalMemoryExtension implements HatfieldExtensionInterface, TuiExtensionInterface, LoggerAwareInterface
 {
     private LoggerInterface $logger;
 
     private OmSessionContext $sessionContext;
+
+    private ?string $databasePath = null;
 
     public function __construct()
     {
@@ -55,6 +60,7 @@ final class ObservationalMemoryExtension implements HatfieldExtensionInterface, 
     {
         // Presence on extensions.enabled is the sole enable switch.
         $settings = OmSettings::fromApi($api);
+        $this->databasePath = OmPaths::fromSettings($settings, $api->getCwd())->databasePath;
         $query = new OmQueryService($api, $settings, $this->logger);
 
         $api->registerExtensionAgentJobHandler(
@@ -133,7 +139,18 @@ final class ObservationalMemoryExtension implements HatfieldExtensionInterface, 
 
     public function registerTui(TuiExtensionContextInterface $context): void
     {
-        // Keep the live public context; resolve session id lazily on each command.
+        // Keep the live public context; resolve session id lazily on each command/poll.
         $this->sessionContext->bindTui($context);
+
+        $databasePath = $this->databasePath;
+        if (null === $databasePath || '' === $databasePath) {
+            // register() always runs before registerTui when the extension is enabled.
+            return;
+        }
+
+        $poller = new OmBackgroundStatusPoller($context, $databasePath, $this->logger);
+        $context->onTick(static function () use ($poller): void {
+            $poller->tick();
+        });
     }
 }

@@ -8,6 +8,7 @@ use Ineersa\Hatfield\ExtensionApi\Agent\ExtensionAgentJobHandlerInterface;
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
 use Ineersa\HatfieldExt\ObservationalMemory\Observer\ObserveBoundaryJobHandler;
 use Ineersa\HatfieldExt\ObservationalMemory\Observer\OmTokenEstimator;
+use Ineersa\HatfieldExt\ObservationalMemory\Runtime\OmActivityReporter;
 use Ineersa\HatfieldExt\ObservationalMemory\Runtime\OmPaths;
 use Ineersa\HatfieldExt\ObservationalMemory\Runtime\OmSettings;
 use Ineersa\HatfieldExt\ObservationalMemory\Storage\MemoryGenerationRepository;
@@ -75,6 +76,8 @@ final readonly class ReflectGenerationJobHandler implements ExtensionAgentJobHan
         $connection = OmDatabaseFactory::connectAndMigrate($paths->databasePath, $this->logger);
         $generationRepo = new MemoryGenerationRepository($connection);
         $observationRepo = new ObservationRepository($connection);
+        $activity = new OmActivityReporter($connection, $this->logger);
+        $activityJobId = (null !== $jobId && '' !== $jobId) ? $jobId : null;
         $now = (new \DateTimeImmutable('now', new \DateTimeZone('UTC')))->format(\DateTimeInterface::ATOM);
 
         $liveCandidateForClaim = $observationRepo->activeCandidateSet($runId);
@@ -152,6 +155,10 @@ final readonly class ReflectGenerationJobHandler implements ExtensionAgentJobHan
                 return;
             }
 
+            if (null !== $activityJobId) {
+                $activity->set($runId, $activityJobId, 'reflector', (int) $candidate['token_count']);
+            }
+
             $reflector = new ReflectorPipeline($this->logger);
             $delta = $reflector->produceDelta(
                 api: $api,
@@ -176,6 +183,15 @@ final readonly class ReflectGenerationJobHandler implements ExtensionAgentJobHan
 
             // Dropper only after >=1 new reflection AND pool over observations_max_tokens.
             if (\count($newReflections) >= 1 && $activeObsTokens > $settings->observationsMaxTokens) {
+                if (null !== $activityJobId) {
+                    $activity->set(
+                        $runId,
+                        $activityJobId,
+                        'dropper',
+                        $activeObsTokens,
+                        $settings->observationsMaxTokens,
+                    );
+                }
                 $coverageReflections = array_merge($priorReflections, $newReflections);
                 $dropper = new DropperPipeline($this->logger);
                 $droppedIds = $dropper->selectDrops(
@@ -276,6 +292,10 @@ final readonly class ReflectGenerationJobHandler implements ExtensionAgentJobHan
         } catch (\RuntimeException $e) {
             $generationRepo->markFailed($generationId, 'transient_runtime', $now);
             throw $e;
+        } finally {
+            if (null !== $activityJobId) {
+                $activity->clear($runId, $activityJobId);
+            }
         }
     }
 }

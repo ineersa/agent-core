@@ -298,8 +298,16 @@ final class ReflectGenerationJobHandlerTest extends IsolatedKernelTestCase
         $generationId = OmIdentity::thresholdGenerationId('run-d', null, $setHash, 'llama_cpp_test/test', '1');
 
         $agentCalls = 0;
-        $api = $this->api($settings, static function (AgentCallRequestDTO $request) use (&$agentCalls, $obsA, $obsB): void {
+        $stages = [];
+        $api = $this->api($settings, static function (AgentCallRequestDTO $request) use (&$agentCalls, &$stages, $obsA, $obsB, $connection): void {
             ++$agentCalls;
+            $activity = (new \Ineersa\HatfieldExt\ObservationalMemory\Storage\ActivityRepository($connection))->findFresh('run-d');
+            $stages[] = [
+                'tool' => $request->tools[0]->name ?? null,
+                'stage' => $activity['stage'] ?? null,
+                'current_tokens' => $activity['current_tokens'] ?? null,
+                'target_tokens' => $activity['target_tokens'] ?? null,
+            ];
             if ('llama_cpp_test/test' !== $request->model) {
                 throw new \RuntimeException('expected shared model');
             }
@@ -344,6 +352,15 @@ final class ReflectGenerationJobHandlerTest extends IsolatedKernelTestCase
         ], 'job-d', 'run-d');
 
         $this->assertSame(2, $agentCalls, 'Reflector then Dropper');
+        $this->assertSame('reflector', $stages[0]['stage'] ?? null);
+        $this->assertSame('dropper', $stages[1]['stage'] ?? null);
+        $this->assertSame(50, $stages[1]['target_tokens'] ?? null);
+        $this->assertIsInt($stages[0]['current_tokens'] ?? null);
+        $this->assertGreaterThan(0, $stages[0]['current_tokens']);
+        $this->assertNull(
+            (new \Ineersa\HatfieldExt\ObservationalMemory\Storage\ActivityRepository($connection))->findFresh('run-d'),
+            'reflect/dropper finally must clear activity',
+        );
         $retained = $connection->fetchFirstColumn(
             'SELECT observation_id FROM om_generation_retained_observation WHERE generation_id = ?',
             [$generationId],

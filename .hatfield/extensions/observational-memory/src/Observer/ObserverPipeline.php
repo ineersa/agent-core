@@ -8,6 +8,7 @@ use Ineersa\Hatfield\ExtensionApi\Agent\AgentCallRequestDTO;
 use Ineersa\Hatfield\ExtensionApi\Agent\AgentToolDTO;
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
 use Ineersa\Hatfield\ExtensionApi\Session\SessionEventDTO;
+use Ineersa\HatfieldExt\ObservationalMemory\Runtime\OmActivityReporter;
 use Ineersa\HatfieldExt\ObservationalMemory\Runtime\OmSettings;
 use Ineersa\HatfieldExt\ObservationalMemory\Storage\MemoryGenerationRepository;
 use Ineersa\HatfieldExt\ObservationalMemory\Storage\ObservationRepository;
@@ -48,6 +49,7 @@ final readonly class ObserverPipeline
         string $terminalStatus,
         ?string $jobId,
         ?string $correlationId,
+        ?OmActivityReporter $activity = null,
     ): array {
         if ($terminalEndSeq < 1) {
             throw new \InvalidArgumentException(\sprintf('Invalid terminal end seq %d for run %s.', $terminalEndSeq, $runId));
@@ -155,6 +157,10 @@ final readonly class ObserverPipeline
                 observerSchemaVersion: $observerSchemaVersion,
                 allowedSourceRefs: $part['source_refs'],
             );
+
+            if (null !== $activity && null !== $jobId && '' !== $jobId) {
+                $activity->set($runId, $jobId, 'observer', (int) $part['token_estimate']);
+            }
 
             $api->agent()->run(new AgentCallRequestDTO(
                 model: $observerModel,

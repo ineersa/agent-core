@@ -37,6 +37,8 @@ final class OmSchemaMigratorTest extends IsolatedKernelTestCase
 
         $versions = $connection->fetchFirstColumn('SELECT version FROM om_schema_version');
         $this->assertContains('20260726_003_active_generation_and_relevance_text', $versions);
+        $this->assertContains('20260729_004_current_activity', $versions);
+        $this->assertTrue($connection->createSchemaManager()->tablesExist(['om_current_activity']));
 
         $columns = array_map(
             static fn (array $c): string => (string) $c['name'],
