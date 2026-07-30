@@ -82,6 +82,26 @@ function run_test_command_bounded(string $step, string $command, int $timeoutSec
 }
 
 /**
+ * Standalone test-task DB migrate with session reaping + hard timeout.
+ *
+ * Caps migrate setup at 60s (well under castor_test_runner_max_seconds).
+ * Used by `castor test` / `test:tui` filtered / `test:controller` /
+ * `test:controller-replay`. Check-lane migration remains separate and
+ * already uses timeout_check_command under the absolute check wall.
+ *
+ * @return array{exitCode:int,output:string,duration:float}
+ */
+function run_test_db_migrate_bounded(string $command, int $timeoutSeconds = 60): array
+{
+    return run_test_command_bounded(
+        'test-db-migrate',
+        $command,
+        max(1, min(60, $timeoutSeconds)),
+        report_path('test-db-migrate.log'),
+    );
+}
+
+/**
  * Run multiple shell commands concurrently via proc_open.
  *
  * Each command is spawned in an isolated process group via setsid -w
@@ -558,8 +578,10 @@ function test_timeout_hardstop(string $cmdOverride = ''): void
 
     $preCountB = count_alive_descendants();
 
+    // Explicit short bound: step exits immediately; reaping must still finish.
+    // Nested sleep 120 is the intentional leak proof — Castor must kill it.
     $startB = hrtime(true);
-    $resultsB = run_commands_parallel($commandsB, []);
+    $resultsB = run_commands_parallel($commandsB, ['exit-leak-test' => 5]);
     $durationB = (hrtime(true) - $startB) / 1e9;
 
     $resultB = $resultsB['exit-leak-test'] ?? ['exitCode' => -1, 'output' => 'no result', 'duration' => 0];
@@ -789,8 +811,10 @@ function test_timeout_hardstop(string $cmdOverride = ''): void
 
     $preCountD = count_alive_descendants();
 
+    // Explicit short bound: step exits immediately; session reaping must still finish.
+    // Nested sleep 120 is the intentional separate-PGID leak proof.
     $startD = hrtime(true);
-    $resultsD = run_commands_parallel($commandsD, []);
+    $resultsD = run_commands_parallel($commandsD, ['session-leak-test' => 5]);
     $durationD = (hrtime(true) - $startD) / 1e9;
 
     $resultD = $resultsD['session-leak-test'] ?? ['exitCode' => -1, 'output' => 'no result', 'duration' => 0];
@@ -852,8 +876,9 @@ function test_timeout_hardstop(string $cmdOverride = ''): void
 
     $preCountE = count_alive_descendants();
 
+    // Explicit short bound: simulated PHPUnit exits immediately; reaping must kill PHAR-shaped leak.
     $startE = hrtime(true);
-    $resultsE = run_commands_parallel($commandsE, []);
+    $resultsE = run_commands_parallel($commandsE, ['phpunit-leak-test' => 5]);
     $durationE = (hrtime(true) - $startE) / 1e9;
 
     $resultE = $resultsE['phpunit-leak-test'] ?? ['exitCode' => -1, 'output' => 'no result', 'duration' => 0];

@@ -27,7 +27,6 @@ use function CastorTasks\is_llm_mode;
 use function CastorTasks\phar_ensure;
 use function CastorTasks\qa_test_home_shell_prefix;
 use function CastorTasks\report_path;
-use function CastorTasks\run_quiet_command;
 
 require_once __DIR__.'/../vendor/autoload.php';
 require_once __DIR__.'/helpers.php';
@@ -88,13 +87,14 @@ function test(?string $filter = null, ?string $suite = null): void
         echo "Xdebug is loaded — tests may be significantly slower.\n";
     }
 
-    // Test DB schema readiness.
+    // Test DB schema readiness (bounded setup; session-reaped on hang).
     @mkdir('var/test', 0755, true);
-    $migrate = run_quiet_command(
+    $migrate = run_test_db_migrate_bounded(
         qa_test_home_shell_prefix().' APP_ENV=test '.\PHP_BINARY.' bin/console doctrine:migrations:migrate --no-interaction --allow-no-migration'
     );
-    if (0 !== $migrate->getExitCode()) {
-        fail_quality('test database migration failed: '.$migrate->getErrorOutput());
+    if (0 !== $migrate['exitCode']) {
+        $detail = '' !== trim($migrate['output']) ? $migrate['output'] : 'exit '.$migrate['exitCode'];
+        fail_quality('test database migration failed: '.$detail);
     }
 
     $pharPath = '';

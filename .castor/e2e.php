@@ -27,7 +27,6 @@ use function CastorTasks\is_llm_mode;
 use function CastorTasks\phar_ensure;
 use function CastorTasks\qa_test_home_shell_prefix;
 use function CastorTasks\report_path;
-use function CastorTasks\run_quiet_command;
 
 require_once __DIR__.'/../vendor/autoload.php';
 require_once __DIR__.'/helpers.php';
@@ -181,11 +180,12 @@ function test_tui(?string $filter = null): void
     // ParaTest bootstrap migrates per-worker DBs; sequential full group still needs default DB.
     if (null !== $filter || !class_exists(ParaTest\ParaTestCommand::class)) {
         @mkdir('var/test', 0755, true);
-        $migrate = run_quiet_command(
+        $migrate = run_test_db_migrate_bounded(
             qa_test_home_shell_prefix().' APP_ENV=test '.\PHP_BINARY.' bin/console doctrine:migrations:migrate --no-interaction --allow-no-migration'
         );
-        if (0 !== $migrate->getExitCode()) {
-            fail_quality('test database migration failed: '.$migrate->getErrorOutput());
+        if (0 !== $migrate['exitCode']) {
+            $detail = '' !== trim($migrate['output']) ? $migrate['output'] : 'exit '.$migrate['exitCode'];
+            fail_quality('test database migration failed: '.$detail);
         }
     }
 
@@ -264,11 +264,12 @@ function test_controller(): void
     check_llm_generation_ready();
 
     @mkdir('var/test', 0755, true);
-    $migrate = run_quiet_command(
+    $migrate = run_test_db_migrate_bounded(
         qa_test_home_shell_prefix().' APP_ENV=test '.\PHP_BINARY.' bin/console doctrine:migrations:migrate --no-interaction --allow-no-migration'
     );
-    if (0 !== $migrate->getExitCode()) {
-        fail_quality('test database migration failed: '.$migrate->getErrorOutput());
+    if (0 !== $migrate['exitCode']) {
+        $detail = '' !== trim($migrate['output']) ? $migrate['output'] : 'exit '.$migrate['exitCode'];
+        fail_quality('test database migration failed: '.$detail);
     }
 
     $pharPath = '';
@@ -326,11 +327,12 @@ OK (%.1fs)
 function test_controller_replay(): void
 {
     @mkdir('var/test', 0755, true);
-    $migrate = run_quiet_command(
+    $migrate = run_test_db_migrate_bounded(
         qa_test_home_shell_prefix().' APP_ENV=test '.\PHP_BINARY.' bin/console doctrine:migrations:migrate --no-interaction --allow-no-migration'
     );
-    if (0 !== $migrate->getExitCode()) {
-        fail_quality('test database migration failed: '.$migrate->getErrorOutput());
+    if (0 !== $migrate['exitCode']) {
+        $detail = '' !== trim($migrate['output']) ? $migrate['output'] : 'exit '.$migrate['exitCode'];
+        fail_quality('test database migration failed: '.$detail);
     }
 
     // Controller replay E2E must NOT use PHAR: the test DI replay
