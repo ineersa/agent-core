@@ -262,7 +262,7 @@ final readonly class SubagentResultRenderer
         if (str_starts_with($line, 'Use agent_retrieve')) {
             return $theme->muted($line);
         }
-        if (str_contains($line, ' turns') || str_contains($line, 'in:')) {
+        if (str_contains($line, ' LLM step') || str_contains($line, 'in:')) {
             return $theme->muted($line);
         }
         if (str_starts_with($line, 'CTX ')) {

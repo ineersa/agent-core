@@ -38,6 +38,7 @@ final class DeferredChildRunEventProjector
         $assistantResultText = $current->assistantResultText;
         $assistantExcerpt = $current->assistantExcerpt;
         $toolCount = $current->toolCount;
+        $llmStepCount = $current->llmStepCount;
         $inputTokens = $current->inputTokens;
         $latestInputTokens = $current->latestInputTokens;
         $contextWindow = $current->contextWindow;
@@ -87,6 +88,7 @@ final class DeferredChildRunEventProjector
             }
 
             if (RunEventTypeEnum::LlmStepCompleted->value === $type) {
+                ++$llmStepCount;
                 $usage = \is_array($payload['usage'] ?? null) ? $payload['usage'] : [];
                 $turnInput = $this->intVal($usage['input_tokens'] ?? 0);
                 $inputTokens += $turnInput;
@@ -149,6 +151,7 @@ final class DeferredChildRunEventProjector
             }
 
             if (RunEventTypeEnum::LlmStepFailed->value === $type) {
+                ++$llmStepCount;
                 $error = \is_array($payload['error'] ?? null) ? $payload['error'] : null;
                 $errorMessage = \is_string($error['user_message'] ?? null)
                     ? $error['user_message']
@@ -196,6 +199,7 @@ final class DeferredChildRunEventProjector
             assistantResultText: $assistantResultText,
             assistantExcerpt: $assistantExcerpt,
             toolCount: $toolCount,
+            llmStepCount: $llmStepCount,
             inputTokens: $inputTokens,
             latestInputTokens: $latestInputTokens,
             contextWindow: $contextWindow,

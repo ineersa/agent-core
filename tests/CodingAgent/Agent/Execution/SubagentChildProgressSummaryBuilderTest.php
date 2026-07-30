@@ -125,9 +125,11 @@ final class SubagentChildProgressSummaryBuilderTest extends IsolatedKernelTestCa
         $summary = $builder->summarize($parentRunId, $childRunId, $artifactId, $childState, 'deepseek/deepseek-v4-flash');
 
         $this->assertSame(2, $summary->toolCount);
+        $this->assertSame(2, $summary->llmStepCount);
         $this->assertSame(35000, $summary->inputTokens);
         $fields = $summary->toProgressFields();
         $this->assertSame(35000, $fields['input_tokens']);
+        $this->assertSame(2, $fields['llm_step_count'] ?? null);
         $this->assertSame(25000, $fields['latest_input_tokens'] ?? null, 'Latest LLM step input_tokens must be exposed separately from cumulative input_tokens');
         $this->assertSame('deepseek/deepseek-v4-flash', $fields['model'] ?? null);
         $this->assertSame(

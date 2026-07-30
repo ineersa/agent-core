@@ -69,12 +69,11 @@ final class SubagentProgressDisplayFormatter
     {
         $artifactId = $this->string($progress, 'artifact_id', '');
         $task = $this->string($progress, 'task_summary', '');
-        $turn = $this->intOrNull($progress, 'turn_no');
         $elapsed = $this->formatElapsedHuman($progress);
 
         $lines = [];
 
-        $summary = $this->formatRunningSummary($status, $agentName, $progress, $elapsed, $turn);
+        $summary = $this->formatRunningSummary($status, $agentName, $progress, $elapsed);
         if ('' !== $summary) {
             $lines[] = $summary;
         }
@@ -107,7 +106,7 @@ final class SubagentProgressDisplayFormatter
             $lines[] = $this->truncate($excerpt, 200);
         }
 
-        $footer = $this->formatFooter($progress, $turn);
+        $footer = $this->formatFooter($progress);
         if ('' !== $footer) {
             $lines[] = $footer;
         }
@@ -160,7 +159,7 @@ final class SubagentProgressDisplayFormatter
     /**
      * @param array<string, mixed> $data
      */
-    private function formatRunningSummary(string $status, string $agentName, array $data, ?string $elapsed, ?int $turn): string
+    private function formatRunningSummary(string $status, string $agentName, array $data, ?string $elapsed): string
     {
         if ('running' !== $status) {
             return $status.' '.$agentName;
@@ -177,8 +176,6 @@ final class SubagentProgressDisplayFormatter
         }
         if (null !== $elapsed) {
             $parts[] = $elapsed;
-        } elseif (null !== $turn && $turn > 0) {
-            $parts[] = \sprintf('turn %d', $turn);
         }
 
         return implode(' | ', $parts);
@@ -187,22 +184,24 @@ final class SubagentProgressDisplayFormatter
     /**
      * @param array<string, mixed> $data
      */
-    private function formatFooter(array $data, ?int $turnOverride): string
+    private function formatFooter(array $data): string
     {
-        $turn = $turnOverride ?? $this->intOrNull($data, 'turn_no');
+        $llmSteps = $this->intOrNull($data, 'llm_step_count');
         $in = $this->intOrNull($data, 'input_tokens') ?? 0;
         $out = $this->intOrNull($data, 'output_tokens') ?? 0;
         $reason = $this->intOrNull($data, 'reasoning_tokens') ?? 0;
         $cost = $data['cost'] ?? null;
         $model = $this->string($data, 'model', '');
 
-        if (0 === $in && 0 === $out && 0 === $reason && (null === $turn || $turn <= 0) && '' === $model) {
+        if (0 === $in && 0 === $out && 0 === $reason && (null === $llmSteps || $llmSteps <= 0) && '' === $model) {
             return '';
         }
 
         $parts = [];
-        if (null !== $turn && $turn > 0) {
-            $parts[] = \sprintf('%d turns', $turn);
+        if (null !== $llmSteps && $llmSteps > 0) {
+            $parts[] = 1 === $llmSteps
+                ? '1 LLM step'
+                : \sprintf('%d LLM steps', $llmSteps);
         }
         if ($in > 0 || $out > 0 || $reason > 0) {
             $tokPart = \sprintf('in:%s out:%s', $this->formatTokenCount($in), $this->formatTokenCount($out));

@@ -31,10 +31,12 @@ final class SubagentProgressProjectionTest extends TestCase
 
         $progress1 = [
             'mode' => 'single', 'status' => 'running', 'agent_name' => 'scout',
-            'artifact_id' => 'agent_abc', 'task_summary' => 'Inspect TUI', 'turn_no' => 1, 'elapsed_ms' => 1000,
+            'artifact_id' => 'agent_abc', 'task_summary' => 'Inspect TUI', 'turn_no' => 1,
+            'llm_step_count' => 1, 'elapsed_ms' => 1000,
         ];
         $progress2 = $progress1;
         $progress2['turn_no'] = 2;
+        $progress2['llm_step_count'] = 2;
         $progress2['elapsed_ms'] = 2500;
 
         $this->accept('tool_execution.output_delta', [
@@ -50,12 +52,13 @@ final class SubagentProgressProjectionTest extends TestCase
         $this->assertSame('tool_result_tc_sub', $block->id);
         $this->assertStringContainsString('subagent scout', $block->text);
         $this->assertStringContainsString('running scout', $block->text);
-        $this->assertStringContainsString('2 turns', $block->text);
+        $this->assertStringContainsString('2 LLM steps', $block->text);
+        $this->assertStringNotContainsString(' turns', $block->text);
         $this->assertStringContainsString('Task: Inspect TUI', $block->text);
         $this->assertStringContainsString('Artifacts:', $block->text);
         $this->assertStringContainsString('agent_abc', $block->text);
         $this->assertStringNotContainsString('subagent scout running | turn 1', $block->text);
-        $this->assertSame(2, $block->meta['subagent_progress']['turn_no'] ?? null);
+        $this->assertSame(2, $block->meta['subagent_progress']['llm_step_count'] ?? null);
     }
 
     public function testParallelSubagentProgressRendersChildSingleWidgetSections(): void

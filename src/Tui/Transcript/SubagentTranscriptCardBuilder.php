@@ -224,20 +224,22 @@ final class SubagentTranscriptCardBuilder
      */
     private function formatFooter(array $data): string
     {
-        $turn = $this->intOrNull($data, 'turn_no');
+        $llmSteps = $this->intOrNull($data, 'llm_step_count');
         $in = $this->intOrNull($data, 'input_tokens') ?? 0;
         $out = $this->intOrNull($data, 'output_tokens') ?? 0;
         $reason = $this->intOrNull($data, 'reasoning_tokens') ?? 0;
         $cost = $data['cost'] ?? null;
         $model = $this->string($data, 'model', '');
 
-        if (0 === $in && 0 === $out && 0 === $reason && (null === $turn || $turn <= 0) && '' === $model) {
+        if (0 === $in && 0 === $out && 0 === $reason && (null === $llmSteps || $llmSteps <= 0) && '' === $model) {
             return '';
         }
 
         $parts = [];
-        if (null !== $turn && $turn > 0) {
-            $parts[] = \sprintf('%d turns', $turn);
+        if (null !== $llmSteps && $llmSteps > 0) {
+            $parts[] = 1 === $llmSteps
+                ? '1 LLM step'
+                : \sprintf('%d LLM steps', $llmSteps);
         }
         if ($in > 0 || $out > 0 || $reason > 0) {
             $tokPart = \sprintf('in:%s out:%s', $this->formatTokenCount($in), $this->formatTokenCount($out));
