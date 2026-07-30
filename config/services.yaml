@@ -516,6 +516,14 @@ services:
     arguments:
       $commandBus: '@agent.command.bus'
 
+  # Standalone shell worker wakes run_control after AgentEnd so a follow_up
+  # queued while the shell still looked Running is drained (issue #183).
+  # $commandBus must bind agent.command.bus, not the execution bus this
+  # handler itself consumes.
+  Ineersa\CodingAgent\Runtime\Controller\CommandHandler\ExecuteShellToolCallWorker:
+    arguments:
+      $commandBus: '@agent.command.bus'
+
   # Explicit wiring overrides Ineersa\CodingAgent\ resource autowire (bool $streamCommittedEventsToStdout).
   Ineersa\CodingAgent\Runtime\Stream\StreamingCommittedRuntimeEventStore:
     arguments:
