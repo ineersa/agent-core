@@ -33,8 +33,8 @@ use Symfony\Component\Clock\Clock;
  *     the child continues in its own session.
  *  3. On subsequent list() calls, resolveEntityStatus() checks
  *     liveness via /proc/<pid> on Linux or the status file.
- *  4. stop() sends SIGTERM to the process group (negative PGID), waits
- *     the configured grace period, sends SIGKILL if still alive.
+ *  4. stop() sends SIGTERM to the process group (negative PGID), polls
+ *     until exit or the configured grace deadline, then SIGKILL if still alive.
  *  5. cleanupStale() removes DB records and log files older than
  *     retention once the process has finished.
  *
@@ -734,13 +734,26 @@ final class BackgroundProcessManager
         $signalSent = 'term';
         $this->lifecycle->sendTerm($pid, $pgid);
 
-        // Wait grace period
+        // Poll until cooperative exit or grace deadline, then KILL if still alive.
+        // Wrapper trap writes .status before /proc fully disappears; treat that as done.
+        // ponytail: 50ms poll loop (matches ProcessLifecycle::resolvePgid); waitpid/eventfd if stop latency becomes a hot path
+        $statusPath = $entity->statusPath;
         if ($graceSeconds > 0) {
-            sleep($graceSeconds);
+            $deadlineNs = hrtime(true) + ($graceSeconds * 1_000_000_000);
+            while (hrtime(true) < $deadlineNs) {
+                if (null !== $this->lifecycle->readStatusFile($statusPath)) {
+                    break;
+                }
+                if (!$this->lifecycle->isAlive($pid)) {
+                    break;
+                }
+                usleep(50_000);
+            }
         }
 
-        // Check if still alive and KILL if needed
-        if ($this->lifecycle->isAlive($pid)) {
+        // Prefer status-file proof of cooperative exit over /proc residual.
+        $cooperativelyExited = null !== $this->lifecycle->readStatusFile($statusPath);
+        if (!$cooperativelyExited && $this->lifecycle->isAlive($pid)) {
             $signalSent = 'term+kill';
             $this->lifecycle->sendKill($pid, $pgid);
         }
@@ -761,7 +774,6 @@ final class BackgroundProcessManager
         // already write a real exit code (KILL path). When TERM succeeds
         // the wrapper's trap handler writes the child's real exit code
         // before exiting; overwriting would corrupt forensic evidence.
-        $statusPath = $entity->statusPath;
         if ('' !== $statusPath) {
             $this->lifecycle->writeStopMarker($statusPath);
         }

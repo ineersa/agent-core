@@ -132,7 +132,9 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
 
     public function testStopTerminatesWithTerm(): void
     {
-        $this->createManager(stopGraceSeconds: 1);
+        // Large grace proves stop returns as soon as the process dies after TERM
+        // instead of blocking the full unconditional sleep (pre-fix path).
+        $this->createManager(stopGraceSeconds: 5);
 
         $sentinel = $this->tmpDir.'/term_sentinel';
         $scriptPath = $this->tmpDir.'/term_test.sh';
@@ -145,7 +147,9 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
         $result = $this->manager->start($scriptPath, self::TEST_SESSION);
         usleep(100_000);
 
+        $startedNs = hrtime(true);
         $stopResult = $this->manager->stop($result->pid);
+        $elapsedSeconds = (hrtime(true) - $startedNs) / 1_000_000_000;
 
         $this->assertInstanceOf(StopResult::class, $stopResult);
         $this->assertTrue($stopResult->stoppedByUser);
@@ -153,6 +157,8 @@ final class BackgroundProcessManagerTest extends IsolatedKernelTestCase
         $this->assertSame('term', $stopResult->signalSent);
         $this->assertFileExists($sentinel);
         $this->assertStringContainsString('term_received', file_get_contents($sentinel));
+        // Cooperative exit must not burn the 5s grace; 1.5s leaves headroom under load.
+        $this->assertLessThan(1.5, $elapsedSeconds, 'stop() must return once TERM is honored, not after full grace');
     }
 
     public function testStopEscalatesToKill(): void
