@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Extension;
 
+use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
 use Ineersa\CodingAgent\Config\TuiConfig;
@@ -168,6 +169,7 @@ final class ExtensionOwnerFilteringTest extends TestCase
                 new NullLogger(),
                 'in-memory://',
             ),
+            toolContextAccessor: new StackToolExecutionContextAccessor(),
         );
     }
 
