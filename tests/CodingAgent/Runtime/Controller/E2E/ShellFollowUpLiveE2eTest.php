@@ -96,6 +96,10 @@ final class ShellFollowUpLiveE2eTest extends ControllerE2eTestCase
      *   1. Start run: "Respond with exactly one word: hello."
      *   2. Shell command (!ls -1) on the completed run.
      *   3. Follow-up message ("Say hello again.") — the original hang.
+     *
+     * Thesis: a follow_up submitted in the shell tool-end→AgentEnd window must
+     * eventually produce assistant evidence and its own terminal; a delayed
+     * standalone-shell run.completed must not terminate the follow-up phase.
      */
     public function testShellThenFollowUpOnCompletedRun(): void
     {
@@ -144,6 +148,8 @@ final class ShellFollowUpLiveE2eTest extends ControllerE2eTestCase
             'payload' => ['text' => '!ls -1'],
         ]);
 
+        // Return on matching bash tool completion so the real tool-end→AgentEnd
+        // race window remains open; do not wait for shell run.completed first.
         $shellEvents = $this->collectEventsUntilToolCompleted('bash', $this->liveLlmToolWaitTimeout());
         $shellByType = $this->indexByType($shellEvents);
 
@@ -168,12 +174,9 @@ final class ShellFollowUpLiveE2eTest extends ControllerE2eTestCase
             'payload' => ['text' => 'Say hello again.'],
         ]);
 
-        $followUpEvents = $this->collectEventsUntil('assistant.message_started', $this->liveLlmRunWaitTimeout());
+        $phase = $this->collectFollowUpAfterShellPhase($followUpCmdId, $this->liveLlmRunWaitTimeout());
+        $followUpEvents = $phase['events'];
         $followUpByType = $this->indexByType($followUpEvents);
-        if (!isset($followUpByType['run.completed']) && !isset($followUpByType['run.failed'])) {
-            $followUpEvents = array_merge($followUpEvents, $this->collectEvents($this->liveLlmRunWaitTimeout()));
-            $followUpByType = $this->indexByType($followUpEvents);
-        }
 
         $this->assertTrue($this->foundAck($followUpEvents, $followUpCmdId),
             'Follow-up: expected command.ack. '.$this->collectDiagnostics($followUpEvents));
@@ -207,8 +210,9 @@ final class ShellFollowUpLiveE2eTest extends ControllerE2eTestCase
         );
 
         $this->assertTrue(
-            isset($followUpByType['run.completed']) || isset($followUpByType['run.failed']),
-            'Follow-up: expected terminal state. '
+            $phase['completed'],
+            'Follow-up: expected terminal state belonging to the follow-up phase, '
+            .'not a delayed standalone-shell terminal. '
             .'Event types: '.implode(', ', array_keys($followUpByType))."\n"
             .$this->collectDiagnostics($followUpEvents),
         );
@@ -223,5 +227,101 @@ final class ShellFollowUpLiveE2eTest extends ControllerE2eTestCase
     {
         // Do NOT exclude bash — shell commands are the feature under test.
         return [];
+    }
+
+    /**
+     * Collect the follow-up phase after a shell tool completion without treating
+     * a delayed standalone-shell parent terminal as the follow-up terminal.
+     *
+     * Returns when:
+     * - the follow-up is acked AND assistant evidence has been seen AND a later
+     *   parent terminal arrives; or
+     * - command.rejected / protocol.error arrives; or
+     * - the controller process dies (after a final drain); or
+     * - the timeout elapses.
+     *
+     * @return array{events: list<array<string, mixed>>, completed: bool}
+     */
+    private function collectFollowUpAfterShellPhase(string $followUpCmdId, float $timeout): array
+    {
+        $events = [];
+        $deadline = microtime(true) + $timeout;
+        $this->parentRunIdForCollection = '' !== $this->runId ? $this->runId : null;
+
+        $followUpAcked = false;
+        $assistantSeen = false;
+        $completed = false;
+
+        while (microtime(true) < $deadline) {
+            foreach ($this->readEvents() as $event) {
+                $events[] = $event;
+                $this->noteParentRunIdFromEvent($event);
+
+                $type = (string) ($event['type'] ?? '');
+                $payload = $event['payload'] ?? [];
+                if (!\is_array($payload)) {
+                    $payload = [];
+                }
+
+                if ('command.ack' === $type && ($payload['commandId'] ?? '') === $followUpCmdId) {
+                    $followUpAcked = true;
+                }
+
+                if (\in_array($type, [
+                    'assistant.message_started',
+                    'assistant.text_started',
+                    'assistant.text_delta',
+                    'assistant.thinking_started',
+                    'assistant.message_completed',
+                ], true)) {
+                    $assistantSeen = true;
+                }
+
+                if ('command.rejected' === $type || 'protocol.error' === $type) {
+                    return ['events' => $events, 'completed' => false];
+                }
+
+                // Ignore parent terminals until this follow-up has both been
+                // acked and produced assistant evidence — otherwise a delayed
+                // standalone-shell run.completed tears the phase down early.
+                if ($followUpAcked && $assistantSeen && $this->isParentRunTerminalEvent($event)) {
+                    $completed = true;
+
+                    return ['events' => $events, 'completed' => true];
+                }
+            }
+
+            if (!$this->isRunning()) {
+                foreach ($this->readEvents() as $event) {
+                    $events[] = $event;
+                    $this->noteParentRunIdFromEvent($event);
+
+                    $type = (string) ($event['type'] ?? '');
+                    if (\in_array($type, [
+                        'assistant.message_started',
+                        'assistant.text_started',
+                        'assistant.text_delta',
+                        'assistant.thinking_started',
+                        'assistant.message_completed',
+                    ], true)) {
+                        $assistantSeen = true;
+                    }
+                    if ('command.ack' === $type
+                        && \is_array($event['payload'] ?? null)
+                        && (($event['payload']['commandId'] ?? '') === $followUpCmdId)
+                    ) {
+                        $followUpAcked = true;
+                    }
+                    if ($followUpAcked && $assistantSeen && $this->isParentRunTerminalEvent($event)) {
+                        $completed = true;
+                    }
+                }
+                break;
+            }
+
+            usleep(10_000);
+        }
+
+        return ['events' => $events, 'completed' => $completed];
     }
 }
