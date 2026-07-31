@@ -24,7 +24,7 @@ use Psr\Log\NullLogger;
 final readonly class DeferredSubagentBatchChildOutcomeFactory
 {
     public function __construct(
-        private ?AgentChildRunStoreFactory $childRunStoreFactory = null,
+        private AgentChildRunStoreFactory $childRunStoreFactory,
         private LoggerInterface $logger = new NullLogger(),
     ) {
     }
@@ -54,7 +54,7 @@ final readonly class DeferredSubagentBatchChildOutcomeFactory
         // Failed/cancelled children already have durable state.json; load it so handoff
         // can include bounded partial context without inventing another persistence path.
         $childState = match ($projection->childStatus) {
-            RunStatus::Failed, RunStatus::Cancelled, RunStatus::Cancelling => $this->loadDurableChildState($identity),
+            RunStatus::Failed, RunStatus::Cancelled, RunStatus::Cancelling => $this->loadDurableChildStateForFailedOrCancelled($identity),
             default => null,
         };
 
@@ -91,12 +91,12 @@ final readonly class DeferredSubagentBatchChildOutcomeFactory
         return 'Completed with status completed.';
     }
 
-    private function loadDurableChildState(ChildRunIdentityDTO $identity): ?RunState
+    /**
+     * Load already-durable child state.json for failed/cancelled handoffs.
+     * Shared by natural terminal completion and interruption paths.
+     */
+    public function loadDurableChildStateForFailedOrCancelled(ChildRunIdentityDTO $identity): ?RunState
     {
-        if (null === $this->childRunStoreFactory) {
-            return null;
-        }
-
         try {
             return $this->childRunStoreFactory
                 ->create($identity->parentRunId, $identity->childRunId, $identity->artifactId)

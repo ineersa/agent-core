@@ -53,12 +53,9 @@ final class LlmProviderErrorClassifier
         'stream ended before',
         'read error',
         // Session 37: cached Codex WebSocket still looked open, send failed with
-        // Amp\Websocket\WebsocketClosedException, wrapper message stayed non-retryable.
+        // Amp\Websocket\WebsocketClosedException; wrapper message + previous class must retry.
         'request frame could not be sent',
-        'codex websocket send timeout',
         'websocketclosed',
-        'websocket closed',
-        'connection closed',
     ];
 
     /**
@@ -128,10 +125,14 @@ final class LlmProviderErrorClassifier
             'user_message' => $userMessage,
         ];
 
-        // Strip potentially sensitive fields — the user_message is the
-        // sanitized diagnostic for display.  Raw response body previews
-        // could contain prompts, tool output, or API keys.
-        unset($result['response_body_preview']);
+        // Strip classifier-only / potentially sensitive fields. user_message is the
+        // sanitized diagnostic for display. Previous-exception fields are classification
+        // inputs only and must not survive into persisted LlmStepFailed payloads.
+        unset(
+            $result['response_body_preview'],
+            $result['previous_exception_class'],
+            $result['previous_exception_message'],
+        );
 
         return $result;
     }
