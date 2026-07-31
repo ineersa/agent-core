@@ -20,6 +20,7 @@ use Ineersa\AgentCore\Tests\Support\TestMessageBus;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactKindEnum;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactRegistry;
 use Ineersa\CodingAgent\Agent\Artifact\AgentArtifactStatusEnum;
+use Ineersa\CodingAgent\Agent\Artifact\AgentChildRunStoreFactory;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunBatchExecutionModeEnum;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Contract\ChildRunIdentityDTO;
 use Ineersa\CodingAgent\Agent\Execution\ChildRun\Lifecycle\ChildRunArtifactLifecycleService;
@@ -1203,9 +1204,17 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
     private function createSnapshotFactory(): DeferredSubagentBatchProgressSnapshotFactory
     {
         return new DeferredSubagentBatchProgressSnapshotFactory(
-            new DeferredSubagentBatchChildOutcomeFactory(),
+            $this->createOutcomeFactory(),
             self::getContainer()->get(SubagentChildProgressSummaryBuilder::class),
             self::getContainer()->get(SubagentProgressSnapshotBuilder::class),
+        );
+    }
+
+    private function createOutcomeFactory(): DeferredSubagentBatchChildOutcomeFactory
+    {
+        return new DeferredSubagentBatchChildOutcomeFactory(
+            self::getContainer()->get(AgentChildRunStoreFactory::class),
+            new TestLogger(),
         );
     }
 
@@ -1224,7 +1233,7 @@ final class DeferredSubagentBatchLifecycleTest extends IsolatedKernelTestCase
             $commandBus,
             new TestLogger(),
         );
-        $outcomeFactory = new DeferredSubagentBatchChildOutcomeFactory();
+        $outcomeFactory = $this->createOutcomeFactory();
         $handoffRenderer = self::getContainer()->get(SubagentChildRunHandoffRenderer::class);
         $naturalCompletion = new DeferredSubagentBatchTerminalCompletionService(
             self::getContainer()->get(SubagentChildRunBatchLifecycleListener::class),

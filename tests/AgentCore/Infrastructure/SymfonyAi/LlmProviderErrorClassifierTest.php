@@ -286,7 +286,27 @@ final class LlmProviderErrorClassifierTest extends TestCase
             ['Broken pipe'],
             ['Could not resolve host: api.example.com'],
             ['Cannot connect to server'],
+            // Session 37: cached Codex WS send closed after cache.reused; must be retryable.
+            ['Codex WebSocket request frame could not be sent.'],
         ];
+    }
+
+    public function testClassifyCodexWebSocketClosedPreviousExceptionAsRetryableNetworkAndStripsPreviousFields(): void
+    {
+        $result = $this->classifier->classify([
+            'type' => 'RuntimeException',
+            'message' => 'Codex WebSocket request frame could not be sent.',
+            'previous_exception_class' => 'Amp\\Websocket\\WebsocketClosedException',
+            'previous_exception_message' => 'The websocket connection closed unexpectedly',
+            'response_body_preview' => 'must not persist',
+        ]);
+
+        $this->assertTrue($result['retryable']);
+        $this->assertSame(LlmProviderErrorClassifier::CATEGORY_NETWORK, $result['error_category']);
+        $this->assertArrayNotHasKey('previous_exception_class', $result);
+        $this->assertArrayNotHasKey('previous_exception_message', $result);
+        $this->assertArrayNotHasKey('response_body_preview', $result);
+        $this->assertSame('Codex WebSocket request frame could not be sent.', $result['message']);
     }
 
     // ── Quota billing from message pattern without status code ─────────────

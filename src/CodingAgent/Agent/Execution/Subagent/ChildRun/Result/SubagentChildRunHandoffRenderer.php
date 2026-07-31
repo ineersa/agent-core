@@ -32,6 +32,18 @@ final class SubagentChildRunHandoffRenderer
             );
         }
 
+        if (AgentArtifactStatusEnum::Failed === $status) {
+            return $this->buildFailedHandoffMarkdown(
+                artifactId: $artifactId,
+                agentName: $agentName,
+                agentRunId: $agentRunId,
+                summary: $summary,
+                failureReason: $failureReason,
+                needsClarification: $needsClarification,
+                childState: $childState,
+            );
+        }
+
         $lines = [
             '# Subagent handoff',
             '',
@@ -155,17 +167,93 @@ Status: cancelled
 MD;
 
         $summaryText = null !== $summary ? trim($summary) : '';
+
+        return $this->renderTerminalHandoffMarkdown(
+            template: $template,
+            artifactId: $artifactId,
+            agentName: $agentName,
+            agentRunId: $agentRunId,
+            bodyText: '' !== $summaryText ? $summaryText : 'Child run was cancelled.',
+            childState: $childState,
+        );
+    }
+
+    private function buildFailedHandoffMarkdown(
+        ?string $artifactId,
+        ?string $agentName,
+        ?string $agentRunId,
+        ?string $summary,
+        ?string $failureReason,
+        ?string $needsClarification,
+        ?RunState $childState,
+    ): string {
+        // Session 37: durable child state existed after Codex WebSocket send failure,
+        // but failed handoff only kept the generic transport error. Reuse cancelled
+        // partial-context rendering so retained work is visible without reloading state.
+        $template = <<<'MD'
+# Subagent handoff
+
+Status: failed
+{artifact_line}{agent_line}{agent_run_line}
+## Result
+
+{result_text}
+
+## Failure reason
+
+{failure_text}
+{needs_clarification_block}{partial_context_block}{retrieval_hint}
+MD;
+
+        $resultText = null !== $summary ? trim($summary) : '';
+        $failureText = null !== $failureReason ? trim($failureReason) : '';
+        if ('' === $failureText) {
+            $failureText = '' !== $resultText ? $resultText : 'Run failed without error message.';
+        }
+        if ('' === $resultText) {
+            $resultText = $failureText;
+        }
+
+        $needsBlock = '';
+        if (null !== $needsClarification && '' !== trim($needsClarification)) {
+            $needsBlock = "\n## Needs clarification\n\n".trim($needsClarification)."\n";
+        }
+
+        return $this->renderTerminalHandoffMarkdown(
+            template: $template,
+            artifactId: $artifactId,
+            agentName: $agentName,
+            agentRunId: $agentRunId,
+            bodyText: $resultText,
+            childState: $childState,
+            extraReplacements: [
+                '{result_text}' => $resultText,
+                '{failure_text}' => $failureText,
+                '{needs_clarification_block}' => $needsBlock,
+            ],
+        );
+    }
+
+    /**
+     * @param array<string, string> $extraReplacements
+     */
+    private function renderTerminalHandoffMarkdown(
+        string $template,
+        ?string $artifactId,
+        ?string $agentName,
+        ?string $agentRunId,
+        string $bodyText,
+        ?RunState $childState,
+        array $extraReplacements = [],
+    ): string {
         $replacements = [
-            '{artifact_line}' => (null !== $artifactId && '' !== $artifactId) ? 'Artifact: {artifact_id}'.'
-' : '',
-            '{agent_line}' => (null !== $agentName && '' !== $agentName) ? 'Agent: {agent_name}'.'
-' : '',
-            '{agent_run_line}' => (null !== $agentRunId && '' !== $agentRunId) ? 'Agent run: {agent_run_id}'.'
-' : '',
-            '{summary_text}' => '' !== $summaryText ? $summaryText : 'Child run was cancelled.',
+            '{artifact_line}' => (null !== $artifactId && '' !== $artifactId) ? 'Artifact: {artifact_id}'."\n" : '',
+            '{agent_line}' => (null !== $agentName && '' !== $agentName) ? 'Agent: {agent_name}'."\n" : '',
+            '{agent_run_line}' => (null !== $agentRunId && '' !== $agentRunId) ? 'Agent run: {agent_run_id}'."\n" : '',
+            '{summary_text}' => $bodyText,
             '{partial_context_block}' => '',
             '{retrieval_hint}' => '',
-        ];
+        ] + $extraReplacements;
 
         if (null !== $childState) {
             $lastActivity = $this->summarizeLastKnownActivity($childState);
@@ -186,13 +274,8 @@ MD;
                 '{last_seq}' => (string) $childState->lastSeq,
                 '{message_count}' => (string) \count($childState->messages),
                 '{pending_tool_calls}' => (string) \count($childState->pendingToolCalls),
-                '{last_activity_line}' => '' !== $lastActivity ? '- last_known_activity: {last_activity}'.'
-' : '',
-                '{assistant_excerpt_block}' => $includeExcerpt ? '
-## Last assistant excerpt'.'
-
-{assistant_excerpt}'.'
-' : '',
+                '{last_activity_line}' => '' !== $lastActivity ? '- last_known_activity: {last_activity}'."\n" : '',
+                '{assistant_excerpt_block}' => $includeExcerpt ? "\n## Last assistant excerpt\n\n{assistant_excerpt}\n" : '',
             ];
             $partial = strtr($partial, $partialReplacements);
             if ('' !== $lastActivity) {
@@ -202,9 +285,7 @@ MD;
                 $partial = strtr($partial, ['{assistant_excerpt}' => $this->truncateHandoffText($excerpt, 800)]);
             }
             $replacements['{partial_context_block}'] = $partial;
-            $replacements['{retrieval_hint}'] = '
-Use agent_retrieve (metadata/events/history) for more child details.'.'
-';
+            $replacements['{retrieval_hint}'] = "\nUse agent_retrieve (metadata/events/history) for more child details.\n";
         }
 
         $markdown = strtr($template, $replacements);

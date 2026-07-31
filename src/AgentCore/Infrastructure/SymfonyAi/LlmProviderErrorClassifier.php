@@ -52,6 +52,10 @@ final class LlmProviderErrorClassifier
         'cannot connect',
         'stream ended before',
         'read error',
+        // Session 37: cached Codex WebSocket still looked open, send failed with
+        // Amp\Websocket\WebsocketClosedException; wrapper message + previous class must retry.
+        'request frame could not be sent',
+        'websocketclosed',
     ];
 
     /**
@@ -97,11 +101,16 @@ final class LlmProviderErrorClassifier
 
         // Build a composite search text from all available structured fields.
         // This ensures billing/quota/quota codes in any field are caught.
+        $previousExceptionClass = $error['previous_exception_class'] ?? null;
+        $previousExceptionMessage = $error['previous_exception_message'] ?? null;
+
         $allErrorText = implode(' ', array_filter([
             $errorMessage,
             \is_string($responseErrorMessage) ? $responseErrorMessage : '',
             \is_string($responseErrorCode) ? $responseErrorCode : '',
             \is_string($responseErrorType) ? $responseErrorType : '',
+            \is_string($previousExceptionClass) ? $previousExceptionClass : '',
+            \is_string($previousExceptionMessage) ? $previousExceptionMessage : '',
         ], static fn (string $v): bool => '' !== $v));
 
         // Priority-based classification using composite text and structured fields
@@ -116,10 +125,14 @@ final class LlmProviderErrorClassifier
             'user_message' => $userMessage,
         ];
 
-        // Strip potentially sensitive fields — the user_message is the
-        // sanitized diagnostic for display.  Raw response body previews
-        // could contain prompts, tool output, or API keys.
-        unset($result['response_body_preview']);
+        // Strip classifier-only / potentially sensitive fields. user_message is the
+        // sanitized diagnostic for display. Previous-exception fields are classification
+        // inputs only and must not survive into persisted LlmStepFailed payloads.
+        unset(
+            $result['response_body_preview'],
+            $result['previous_exception_class'],
+            $result['previous_exception_message'],
+        );
 
         return $result;
     }
