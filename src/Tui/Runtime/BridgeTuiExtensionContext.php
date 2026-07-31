@@ -41,6 +41,16 @@ final readonly class BridgeTuiExtensionContext implements TuiExtensionContextInt
         $this->runtime->screen->setStatus($key, $text);
     }
 
+    public function onTick(\Closure $listener): void
+    {
+        // Extensions must never force active 100Hz ticks; always return null.
+        $this->runtime->ticks->add(static function () use ($listener): ?bool {
+            $listener();
+
+            return null;
+        });
+    }
+
     public function insertOverlayAfterEditor(AbstractWidget $widget): void
     {
         $this->runtime->screen->insertOverlayAfterEditor($widget);

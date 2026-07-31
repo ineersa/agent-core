@@ -7,9 +7,10 @@ namespace Ineersa\HatfieldExt\ObservationalMemory\Runtime;
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
 
 /**
- * Nested observational_memory settings (task §M).
+ * Nested observational_memory settings.
  *
- * Flat budget keys are not supported; replace, do not dual-read.
+ * One shared top-level model for Observer, Reflector, and Dropper.
+ * No thinking levels; provider defaults apply.
  */
 final readonly class OmSettings
 {
@@ -27,31 +28,20 @@ final readonly class OmSettings
 
     public const int DEFAULT_REFLECT_AFTER_OBSERVATION_TOKENS = 40_000;
 
-    public const int DEFAULT_WAIT_TIMEOUT_SECONDS = 180;
-
     public const int DEFAULT_OBSERVATIONS_MAX_TOKENS = 30_000;
 
-    public const int DEFAULT_REFLECTIONS_MAX_TOKENS = 10_000;
-
-    public const string DEFAULT_OBSERVER_THINKING_LEVEL = 'medium';
-
-    public const string DEFAULT_REFLECTOR_THINKING_LEVEL = 'high';
+    /** Closest Hatfield mapping of Pi agentMaxTurns=16. */
+    public const int DEFAULT_AGENT_MAX_TOOL_CALLS = 16;
 
     public function __construct(
         public string $databasePath,
-        public ?string $observerModel,
-        public string $observerThinkingLevel,
+        public ?string $model,
         public float $observerContextWindowRatio,
         public string $rendererVersion,
         public string $observerSchemaVersion,
-        public ?string $reflectorModel,
-        public string $reflectorThinkingLevel,
-        public float $reflectorContextWindowRatio,
         public int $reflectAfterObservationTokens,
         public string $reflectorSchemaVersion,
         public int $observationsMaxTokens,
-        public int $reflectionsMaxTokens,
-        public int $waitTimeoutSeconds,
     ) {
     }
 
@@ -71,26 +61,16 @@ final readonly class OmSettings
             $databasePath = $storage['database'];
         }
 
+        $model = null;
+        if (isset($raw['model']) && \is_string($raw['model']) && '' !== trim($raw['model'])) {
+            $model = trim($raw['model']);
+        }
+
         $observer = \is_array($raw['observer'] ?? null) ? $raw['observer'] : [];
         $reflector = \is_array($raw['reflector'] ?? null) ? $raw['reflector'] : [];
         $pools = \is_array($raw['pools'] ?? null) ? $raw['pools'] : [];
-        $compaction = \is_array($raw['compaction'] ?? null) ? $raw['compaction'] : [];
-
-        $observerModel = self::readNestedModel($observer);
-        $reflectorModel = self::readNestedModel($reflector);
-
-        $observerThinking = self::DEFAULT_OBSERVER_THINKING_LEVEL;
-        if (isset($observer['thinking_level']) && \is_string($observer['thinking_level']) && '' !== trim($observer['thinking_level'])) {
-            $observerThinking = trim($observer['thinking_level']);
-        }
-
-        $reflectorThinking = self::DEFAULT_REFLECTOR_THINKING_LEVEL;
-        if (isset($reflector['thinking_level']) && \is_string($reflector['thinking_level']) && '' !== trim($reflector['thinking_level'])) {
-            $reflectorThinking = trim($reflector['thinking_level']);
-        }
 
         $observerRatio = self::readRatio($observer['context_window_ratio'] ?? null, self::DEFAULT_CONTEXT_WINDOW_RATIO);
-        $reflectorRatio = self::readRatio($reflector['context_window_ratio'] ?? null, self::DEFAULT_CONTEXT_WINDOW_RATIO);
 
         $rendererVersion = self::DEFAULT_RENDERER_VERSION;
         if (isset($observer['renderer_version']) && \is_string($observer['renderer_version']) && '' !== $observer['renderer_version']) {
@@ -117,42 +97,21 @@ final readonly class OmSettings
             $observationsMaxTokens = max(1, (int) $pools['observations_max_tokens']);
         }
 
-        $reflectionsMaxTokens = self::DEFAULT_REFLECTIONS_MAX_TOKENS;
-        if (isset($pools['reflections_max_tokens']) && is_numeric($pools['reflections_max_tokens'])) {
-            $reflectionsMaxTokens = max(1, (int) $pools['reflections_max_tokens']);
-        }
-
-        $waitTimeout = self::DEFAULT_WAIT_TIMEOUT_SECONDS;
-        if (isset($compaction['wait_timeout_seconds']) && is_numeric($compaction['wait_timeout_seconds'])) {
-            $waitTimeout = max(1, (int) $compaction['wait_timeout_seconds']);
-        }
-
         return new self(
             databasePath: $databasePath,
-            observerModel: $observerModel,
-            observerThinkingLevel: $observerThinking,
+            model: $model,
             observerContextWindowRatio: $observerRatio,
             rendererVersion: $rendererVersion,
             observerSchemaVersion: $observerSchemaVersion,
-            reflectorModel: $reflectorModel,
-            reflectorThinkingLevel: $reflectorThinking,
-            reflectorContextWindowRatio: $reflectorRatio,
             reflectAfterObservationTokens: $reflectAfter,
             reflectorSchemaVersion: $reflectorSchemaVersion,
             observationsMaxTokens: $observationsMaxTokens,
-            reflectionsMaxTokens: $reflectionsMaxTokens,
-            waitTimeoutSeconds: $waitTimeout,
         );
     }
 
-    public function requireObserverModel(): string
+    public function requireModel(): string
     {
-        return $this->requireExactModel($this->observerModel, 'observational_memory.observer.model');
-    }
-
-    public function requireReflectorModel(): string
-    {
-        return $this->requireExactModel($this->reflectorModel, 'observational_memory.reflector.model');
+        return $this->requireExactModel($this->model, 'observational_memory.model');
     }
 
     /**
@@ -162,19 +121,13 @@ final readonly class OmSettings
     {
         return new self(
             databasePath: $this->databasePath,
-            observerModel: $this->observerModel,
-            observerThinkingLevel: $this->observerThinkingLevel,
+            model: $this->model,
             observerContextWindowRatio: $this->observerContextWindowRatio,
             rendererVersion: $rendererVersion,
             observerSchemaVersion: $observerSchemaVersion,
-            reflectorModel: $this->reflectorModel,
-            reflectorThinkingLevel: $this->reflectorThinkingLevel,
-            reflectorContextWindowRatio: $this->reflectorContextWindowRatio,
             reflectAfterObservationTokens: $this->reflectAfterObservationTokens,
             reflectorSchemaVersion: $this->reflectorSchemaVersion,
             observationsMaxTokens: $this->observationsMaxTokens,
-            reflectionsMaxTokens: $this->reflectionsMaxTokens,
-            waitTimeoutSeconds: $this->waitTimeoutSeconds,
         );
     }
 
@@ -190,36 +143,6 @@ final readonly class OmSettings
         }
 
         return (int) floor($contextWindow * $ratio);
-    }
-
-    /**
-     * @return array<string, scalar>
-     */
-    public function compactionIdentityParts(): array
-    {
-        return [
-            'observer_model' => $this->observerModel ?? '',
-            'observer_context_window_ratio' => $this->observerContextWindowRatio,
-            'renderer_version' => $this->rendererVersion,
-            'observer_schema_version' => $this->observerSchemaVersion,
-            'reflector_model' => $this->reflectorModel ?? '',
-            'reflector_context_window_ratio' => $this->reflectorContextWindowRatio,
-            'reflector_schema_version' => $this->reflectorSchemaVersion,
-            'observations_max_tokens' => $this->observationsMaxTokens,
-            'reflections_max_tokens' => $this->reflectionsMaxTokens,
-        ];
-    }
-
-    /**
-     * @param array<string, mixed> $section
-     */
-    private static function readNestedModel(array $section): ?string
-    {
-        if (isset($section['model']) && \is_string($section['model']) && '' !== trim($section['model'])) {
-            return trim($section['model']);
-        }
-
-        return null;
     }
 
     private static function readRatio(mixed $raw, float $default): float

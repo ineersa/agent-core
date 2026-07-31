@@ -14,22 +14,25 @@ namespace Ineersa\Hatfield\ExtensionApi\Tool;
  * This DTO is immutable. All properties are readonly.
  * Dynamic tool management uses separate ToolRegistry APIs and is not exposed
  * through the public Extension API in v1.
+ *
+ * Handler may be an argument-only handler or a contextual handler that
+ * receives {@see ToolInvocationContextDTO}.
  */
 final readonly class ToolRegistrationDTO
 {
     /**
-     * @param string                        $name                 unique tool name exposed to the LLM
-     * @param string                        $description          short description for the provider schema
-     * @param array<string, mixed>          $parametersJsonSchema JSON Schema describing tool parameters
-     * @param ExtensionToolHandlerInterface $handler              extension-facing tool execution handler
-     * @param string|null                   $promptSummary        optional one-line summary for the system prompt available-tools section
-     * @param string[]                      $promptGuidelines     optional bullet-point guidelines for the system prompt guidelines section
+     * @param string                                                                $name                 unique tool name exposed to the LLM
+     * @param string                                                                $description          short description for the provider schema
+     * @param array<string, mixed>                                                  $parametersJsonSchema JSON Schema describing tool parameters
+     * @param ExtensionToolHandlerInterface|ContextualExtensionToolHandlerInterface $handler              extension-facing tool execution handler
+     * @param string|null                                                           $promptSummary        optional one-line summary for the system prompt available-tools section
+     * @param string[]                                                              $promptGuidelines     optional bullet-point guidelines for the system prompt guidelines section
      */
     public function __construct(
         public readonly string $name,
         public readonly string $description,
         public readonly array $parametersJsonSchema,
-        public readonly ExtensionToolHandlerInterface $handler,
+        public readonly ExtensionToolHandlerInterface|ContextualExtensionToolHandlerInterface $handler,
         public readonly ?string $promptSummary = null,
         public readonly array $promptGuidelines = [],
     ) {

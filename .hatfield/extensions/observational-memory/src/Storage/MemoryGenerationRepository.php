@@ -38,6 +38,94 @@ final class MemoryGenerationRepository
     }
 
     /**
+     * Exact reflection lookup for recall (SQL-scoped to current run).
+     *
+     * @return array{
+     *   reflection_id: string,
+     *   run_id: string,
+     *   content: string,
+     *   supporting_observation_ids_json: string,
+     *   token_count: int
+     * }|null
+     */
+    public function findReflection(string $runId, string $reflectionId): ?array
+    {
+        $row = $this->connection->fetchAssociative(
+            'SELECT reflection_id, run_id, content, supporting_observation_ids_json, token_count
+             FROM om_reflection WHERE run_id = ? AND reflection_id = ?',
+            [$runId, $reflectionId],
+        );
+        if (false === $row) {
+            return null;
+        }
+
+        return [
+            'reflection_id' => (string) ($row['reflection_id'] ?? ''),
+            'run_id' => (string) ($row['run_id'] ?? ''),
+            'content' => (string) ($row['content'] ?? ''),
+            'supporting_observation_ids_json' => (string) ($row['supporting_observation_ids_json'] ?? '[]'),
+            'token_count' => (int) ($row['token_count'] ?? 0),
+        ];
+    }
+
+    /**
+     * Exact or unique-prefix reflection lookup (SQL-scoped to current run).
+     *
+     * @return list<array{
+     *   reflection_id: string,
+     *   run_id: string,
+     *   content: string,
+     *   supporting_observation_ids_json: string,
+     *   token_count: int
+     * }>
+     */
+    public function findReflectionsByIdPrefix(string $runId, string $idPrefix): array
+    {
+        $idPrefix = strtolower(trim($idPrefix));
+        if ('' === $idPrefix) {
+            return [];
+        }
+
+        if (64 === \strlen($idPrefix)) {
+            $exact = $this->findReflection($runId, $idPrefix);
+
+            return null === $exact ? [] : [$exact];
+        }
+
+        $rows = $this->connection->fetchAllAssociative(
+            'SELECT reflection_id, run_id, content, supporting_observation_ids_json, token_count
+             FROM om_reflection
+             WHERE run_id = ? AND reflection_id LIKE ?
+             ORDER BY reflection_id ASC
+             LIMIT 3',
+            [$runId, $idPrefix.'%'],
+        );
+
+        $out = [];
+        foreach ($rows as $row) {
+            $out[] = [
+                'reflection_id' => (string) ($row['reflection_id'] ?? ''),
+                'run_id' => (string) ($row['run_id'] ?? ''),
+                'content' => (string) ($row['content'] ?? ''),
+                'supporting_observation_ids_json' => (string) ($row['supporting_observation_ids_json'] ?? '[]'),
+                'token_count' => (int) ($row['token_count'] ?? 0),
+            ];
+        }
+
+        return $out;
+    }
+
+    public function countReflectionsForRun(string $runId): int
+    {
+        $count = $this->connection->fetchOne(
+            'SELECT COUNT(1) FROM om_reflection WHERE run_id = ?',
+            [$runId],
+        );
+
+        return (int) $count;
+    }
+
+    /**
      * @return list<array{
      *   reflection_id: string,
      *   content: string,

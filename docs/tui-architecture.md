@@ -302,7 +302,7 @@ Extensions interact with the TUI through explicit slots, not direct widget mutat
 
 ### Project extensions: Symfony TUI overlays (`ExtensionApi`)
 
-Built-in slot APIs (`TuiExtensionContext` on the host) cover header/footer/editor widgets. **Project extensions** under `.hatfield/extensions/` can additionally implement `Ineersa\Hatfield\ExtensionApi\Tui\TuiExtensionInterface` and receive `TuiExtensionContextInterface` at TUI startup. That context exposes Symfony TUI primitives (`insertOverlayAfterEditor`, `removeOverlay`, `setFocus`, `requestRender`) plus themed helpers and generic turn-row metadata for checkpoint pickers.
+Built-in slot APIs (`TuiExtensionContext` on the host) cover header/footer/editor widgets. **Project extensions** under `.hatfield/extensions/` can additionally implement `Ineersa\Hatfield\ExtensionApi\Tui\TuiExtensionInterface` and receive `TuiExtensionContextInterface` at TUI startup. That context exposes Symfony TUI primitives (`insertOverlayAfterEditor`, `removeOverlay`, `setFocus`, `requestRender`, `onTick`) plus themed helpers and generic turn-row metadata for checkpoint pickers. `onTick` is idle-safe: the host bridge always returns null so extensions cannot request the 100Hz busy cadence.
 
 The host adapts runtime state in `src/Tui/Runtime/BridgeTuiExtensionContext.php` and wires extensions from `TuiProjectExtensionRegistrar`. Extension-owned pickers (for example `/rewind`) build `SelectListWidget` / `TextWidget` trees in the extension package and mount them below the editor — no feature-specific types in `ExtensionApi` beyond the generic TUI contract.
 
@@ -349,6 +349,7 @@ Extensions have two footer integration modes:
 | `setFooter(?TuiWidget)` | Replace the entire footer bar widget |
 | `setFooterProvider(string $key, ?FooterSegmentProvider $provider)` | Add/remove keyed segments in the default footer bar |
 | `setStatus(string $key, ?string $text)` | Add/remove keyed status text shown by the status panel and footer data provider |
+| `onTick(\Closure $listener): void` | Register an idle-safe tick callback via `TuiTickDispatcher`; return value is discarded so extensions cannot force 100Hz busy ticks |
 
 `FooterDataProvider` stores providers by key, so third-party packages can
 remove or replace their own provider without mutating the built-in provider

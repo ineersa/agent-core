@@ -202,6 +202,92 @@ final class ObservationRepository
     }
 
     /**
+     * Exact observation lookup for recall / status-view (SQL-scoped to current run).
+     *
+     * @return array{
+     *   observation_id: string,
+     *   run_id: string,
+     *   content: string,
+     *   content_hash: string,
+     *   relevance: string,
+     *   timestamp: string,
+     *   token_count: int,
+     *   source_refs_json: string,
+     *   source_start_seq: int,
+     *   source_end_seq: int,
+     *   created_at: string
+     * }|null
+     */
+    public function findObservation(string $runId, string $observationId): ?array
+    {
+        $row = $this->connection->fetchAssociative(
+            'SELECT observation_id, run_id, content, content_hash, relevance, timestamp, token_count,
+                    source_refs_json, source_start_seq, source_end_seq, created_at
+             FROM om_observation WHERE run_id = ? AND observation_id = ?',
+            [$runId, $observationId],
+        );
+        if (false === $row) {
+            return null;
+        }
+
+        $mapped = $this->mapObservationRow($row);
+        $mapped['run_id'] = (string) ($row['run_id'] ?? '');
+
+        return $mapped;
+    }
+
+    /**
+     * Exact or unique-prefix observation lookup (SQL-scoped to current run).
+     *
+     * @return list<array{
+     *   observation_id: string,
+     *   run_id: string,
+     *   content: string,
+     *   content_hash: string,
+     *   relevance: string,
+     *   timestamp: string,
+     *   token_count: int,
+     *   source_refs_json: string,
+     *   source_start_seq: int,
+     *   source_end_seq: int,
+     *   created_at: string
+     * }>
+     */
+    public function findObservationsByIdPrefix(string $runId, string $idPrefix): array
+    {
+        $idPrefix = strtolower(trim($idPrefix));
+        if ('' === $idPrefix) {
+            return [];
+        }
+
+        // Exact full id first (cheap primary-key path).
+        if (64 === \strlen($idPrefix)) {
+            $exact = $this->findObservation($runId, $idPrefix);
+
+            return null === $exact ? [] : [$exact];
+        }
+
+        $rows = $this->connection->fetchAllAssociative(
+            'SELECT observation_id, run_id, content, content_hash, relevance, timestamp, token_count,
+                    source_refs_json, source_start_seq, source_end_seq, created_at
+             FROM om_observation
+             WHERE run_id = ? AND observation_id LIKE ?
+             ORDER BY observation_id ASC
+             LIMIT 3',
+            [$runId, $idPrefix.'%'],
+        );
+
+        $out = [];
+        foreach ($rows as $row) {
+            $mapped = $this->mapObservationRow($row);
+            $mapped['run_id'] = (string) ($row['run_id'] ?? '');
+            $out[] = $mapped;
+        }
+
+        return $out;
+    }
+
+    /**
      * Active candidate set for threshold tokens / observation_set_hash / Reflector input.
      *
      * Before first generation: all observations for the run.

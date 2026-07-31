@@ -6,7 +6,6 @@ namespace Ineersa\HatfieldExt\ObservationalMemory\Tests;
 
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use Ineersa\CodingAgent\Tests\TestCase\IsolatedKernelTestCase;
-use Ineersa\Hatfield\ExtensionApi\Agent\AgentCallRequestDTO;
 use Ineersa\Hatfield\ExtensionApi\Agent\AgentRunnerInterface;
 use Ineersa\Hatfield\ExtensionApi\Agent\ExtensionAgentJobHandlerInterface;
 use Ineersa\Hatfield\ExtensionApi\Agent\ExtensionAgentJobRequestDTO;
@@ -23,16 +22,17 @@ use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolCallRewriteHookInterface;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolRegistrationDTO;
 use Ineersa\Hatfield\ExtensionApi\Tool\ToolResultHookInterface;
-use Ineersa\HatfieldExt\ObservationalMemory\Compaction\BuildCompactionMemoryJobHandler;
+use Ineersa\HatfieldExt\ObservationalMemory\Compaction\ActiveMemoryRenderer;
 use Ineersa\HatfieldExt\ObservationalMemory\Compaction\OmBeforeCompactionHook;
 use Ineersa\HatfieldExt\ObservationalMemory\Runtime\OmSettings;
-use Ineersa\HatfieldExt\ObservationalMemory\Storage\CompactionRepository;
+use Ineersa\HatfieldExt\ObservationalMemory\Storage\MemoryGenerationRepository;
+use Ineersa\HatfieldExt\ObservationalMemory\Storage\ObservationRepository;
 use Ineersa\HatfieldExt\ObservationalMemory\Tests\Support\OmDatabaseFactoryTestService;
 use Psr\Log\NullLogger;
 
 /**
- * Thesis: OM public compaction hook dispatches JSON-safe jobs and polls OM SQLite only;
- * success returns replacement, timeout/failure cancel without model/history calls.
+ * Thesis: CompactRun hook is Pi-style instant durable-memory projection.
+ * Non-empty active memory replaces immediately; empty continues; no dispatch/model/event reads.
  */
 final class OmBeforeCompactionHookTest extends IsolatedKernelTestCase
 {
@@ -51,856 +51,230 @@ final class OmBeforeCompactionHookTest extends IsolatedKernelTestCase
         parent::tearDown();
     }
 
-    public function testSuccessPathReturnsReplacementFromResultRow(): void
+    public function testProjectsActiveMemoryWithoutDispatchModelOrEventReads(): void
     {
+        $dbPath = $this->projectDir.'/.hatfield/extensions-data/observational-memory/om.sqlite';
+        $connection = $this->omDatabaseFactory()->connectAndMigrate($dbPath);
+        $obs = new ObservationRepository($connection);
+        $gen = new MemoryGenerationRepository($connection);
+
+        $obsIdRetained = str_repeat('a', 64);
+        $obsIdPost = str_repeat('b', 64);
+        $refId = str_repeat('c', 64);
+
+        $obs->commitChunkPartCoverage(
+            coverageKey: 'cov-pre',
+            runId: 'run-1',
+            boundaryKey: 'b1',
+            sourceStartSeq: 1,
+            sourceEndSeq: 3,
+            chunkKey: 'chunk-1',
+            partIndex: 1,
+            partCount: 1,
+            sourceDigest: 'digest-pre',
+            partDigest: 'part-pre',
+            rendererVersion: '1',
+            observerSchemaVersion: '1',
+            observerModel: 'llama_cpp_test/test',
+            observations: [[
+                'observation_id' => $obsIdRetained,
+                'content' => 'Retained after generation',
+                'content_hash' => hash('sha256', 'Retained after generation'),
+                'relevance' => 'high',
+                'timestamp' => '2026-07-29 10:00',
+                'token_count' => 8,
+                'source_refs_json' => json_encode([['run_id' => 'run-1', 'seq' => 2]], \JSON_THROW_ON_ERROR),
+            ]],
+            coveredAt: '2026-07-29T10:00:00+00:00',
+        );
+
+        $gen->claimGeneration(
+            generationId: 'gen-1',
+            runId: 'run-1',
+            triggerKind: MemoryGenerationRepository::TRIGGER_THRESHOLD,
+            observationSetHash: hash('sha256', 'set-1'),
+            reflectorModel: 'llama_cpp_test/test',
+            reflectorSchemaVersion: '1',
+            now: '2026-07-29T10:01:00+00:00',
+            requiredStartSeq: 1,
+            requiredEndSeq: 3,
+        );
+        $gen->commitSucceededGeneration(
+            generationId: 'gen-1',
+            runId: 'run-1',
+            observationSetHash: hash('sha256', 'set-1'),
+            reflectorModel: 'llama_cpp_test/test',
+            reflectorSchemaVersion: '1',
+            reflections: [[
+                'reflection_id' => $refId,
+                'content' => 'Stable reflection fact',
+                'supporting_observation_ids_json' => json_encode([$obsIdRetained], \JSON_THROW_ON_ERROR),
+                'token_count' => 6,
+            ]],
+            retainedObservationIds: [$obsIdRetained],
+            now: '2026-07-29T10:01:01+00:00',
+        );
+
+        $obs->commitChunkPartCoverage(
+            coverageKey: 'cov-post',
+            runId: 'run-1',
+            boundaryKey: 'b2',
+            sourceStartSeq: 4,
+            sourceEndSeq: 5,
+            chunkKey: 'chunk-2',
+            partIndex: 1,
+            partCount: 1,
+            sourceDigest: 'digest-post',
+            partDigest: 'part-post',
+            rendererVersion: '1',
+            observerSchemaVersion: '1',
+            observerModel: 'llama_cpp_test/test',
+            observations: [[
+                'observation_id' => $obsIdPost,
+                'content' => 'Post-generation observation',
+                'content_hash' => hash('sha256', 'Post-generation observation'),
+                'relevance' => 'medium',
+                'timestamp' => '2026-07-29 10:02',
+                'token_count' => 7,
+                'source_refs_json' => json_encode([['run_id' => 'run-1', 'seq' => 5]], \JSON_THROW_ON_ERROR),
+            ]],
+            coveredAt: '2026-07-29T10:02:00+00:00',
+        );
+
         $settings = OmSettings::fromArray([
-            'observer' => ['model' => 'llama_cpp_test/test', 'schema_version' => 'o1', 'renderer_version' => 'r1'],
-            'reflector' => ['model' => 'llama_cpp_test/test'],
+            'model' => 'llama_cpp_test/test',
+            'observer' => [],
+            'reflector' => [],
         ]);
-        $omDb = $this->omDatabaseFactory();
-        $api = new class($this->projectDir, $settings, $omDb) implements ExtensionApiInterface {
-            /** @var list<ExtensionAgentJobRequestDTO> */
-            public array $jobs = [];
+        $api = $this->failOnDispatchModelOrEvents($this->projectDir, $settings);
+        $hook = new OmBeforeCompactionHook($api, $settings, new NullLogger());
 
-            public int $agentCalls = 0;
-
-            public function __construct(
-                private readonly string $cwd,
-                private readonly OmSettings $settings,
-                private readonly OmDatabaseFactoryTestService $omDb,
-            ) {
-            }
-
-            public function registerTool(ToolRegistrationDTO $tool): void
-            {
-            }
-
-            public function registerToolCallHook(ToolCallHookInterface $hook): void
-            {
-            }
-
-            public function registerToolResultHook(ToolResultHookInterface $hook): void
-            {
-            }
-
-            public function getSettings(string $key): array
-            {
-                return [
-                    'observer' => [
-                        'model' => 'llama_cpp_test/test',
-                        'schema_version' => 'o1',
-
-                        'context_window_ratio' => 0.65,
-                    ],
-                    'reflector' => [
-                        'model' => 'llama_cpp_test/test',
-                        'schema_version' => 'rv1',
-                        'context_window_ratio' => 0.65,
-                    ],
-                    'pools' => [
-                    ],
-                    'compaction' => [
-                    ],
-                ];
-            }
-
-            public function getCwd(): string
-            {
-                return $this->cwd;
-            }
-
-            public function exec(): ExecInterface
-            {
-                throw new \LogicException('unused');
-            }
-
-            public function registerPromptContributor(PromptContributorInterface $contributor): void
-            {
-            }
-
-            public function registerCommand(CommandDefinitionDTO $definition, ExtensionCommandHandlerInterface $handler): void
-            {
-            }
-
-            public function registerToolCallRewriteHook(string $toolName, ToolCallRewriteHookInterface $hook): void
-            {
-            }
-
-            public function registerAfterTurnCommitHook(AfterTurnCommitHookInterface $hook): void
-            {
-            }
-
-            public function registerBeforeCompactionHook(BeforeCompactionHookInterface $hook): void
-            {
-            }
-
-            public function agent(): AgentRunnerInterface
-            {
-                $self = $this;
-
-                return new class($self) implements AgentRunnerInterface {
-                    public function __construct(private readonly object $parent)
-                    {
-                    }
-
-                    public function run(AgentCallRequestDTO $request): void
-                    {
-                        ++$this->parent->agentCalls;
-                    }
-
-                    public function contextWindow(string $exactModel): ?int
-                    {
-                        return 128000;
-                    }
-                };
-            }
-
-            public function sessionEvents(): SessionEventReaderInterface
-            {
-                return new class implements SessionEventReaderInterface {
-                    public function readRange(string $runId, int $startSeq, int $endSeq): iterable
-                    {
-                        return [];
-                    }
-                };
-            }
-
-            public function registerExtensionAgentJobHandler(string $handlerId, ExtensionAgentJobHandlerInterface $handler): void
-            {
-            }
-
-            public function dispatchExtensionAgentJob(ExtensionAgentJobRequestDTO $request): void
-            {
-                $this->jobs[] = $request;
-                $paths = \Ineersa\HatfieldExt\ObservationalMemory\Runtime\OmPaths::fromSettings($this->settings, $this->cwd);
-                $connection = $this->omDb->connectAndMigrate($paths->databasePath, new NullLogger());
-                $repo = new CompactionRepository($connection);
-                $now = (new \DateTimeImmutable('now', new \DateTimeZone('UTC')))->format(\DateTimeInterface::ATOM);
-                $payload = $request->payload;
-                // commitSuccess CAS requires running (production worker path marks running first).
-                $repo->markRunning(
-                    requestId: (string) $payload['request_id'],
-                    requestFingerprint: (string) $payload['request_fingerprint'],
-                    now: $now,
-                );
-                $repo->commitSuccess(
-                    requestId: (string) $payload['request_id'],
-                    resultId: 'result-1',
-                    runId: (string) $payload['run_id'],
-                    requiredStartSeq: (int) $payload['required_start_seq'],
-                    requiredEndSeq: (int) $payload['required_end_seq'],
-                    requiredWatermark: (int) $payload['required_end_seq'],
-                    requestFingerprint: (string) $payload['request_fingerprint'],
-                    observationSetHash: 'obs-set',
-                    replacementText: 'OM replacement summary',
-                    now: $now,
-                    metadata: [
-                        'source' => 'test',
-                        'compression_level' => 0,
-                        'observation_count' => 3,
-                        'reflection_count' => 1,
-                    ],
-                );
-            }
-        };
-
-        $hook = new OmBeforeCompactionHook($api, $settings, new NullLogger(), pollIntervalMicros: 1_000);
         $result = $hook->beforeCompaction(new BeforeCompactionHookContextDTO(
             runId: 'run-1',
             turnNo: 1,
             trigger: 'manual',
             requiredStartSeq: 1,
-            requiredEndSeq: 10,
-            tokenEstimateBefore: 100,
-            messagesCompacted: 3,
-            messagesRetained: 2,
-            firstRetainedIndex: 3,
-            priorSummaryPresent: false,
-            customInstructions: null,
-            resolvedModel: 'provider/model',
-            thinkingLevel: null,
-        ));
-
-        $this->assertTrue($result->hasReplacementSummary());
-        $this->assertSame('OM replacement summary', $result->replacementSummary);
-        $this->assertCount(1, $api->jobs);
-        $this->assertSame(BuildCompactionMemoryJobHandler::HANDLER_ID, $api->jobs[0]->handlerId);
-        $this->assertSame(0, $api->agentCalls);
-        $this->assertArrayHasKey('request_id', $api->jobs[0]->payload);
-        $this->assertSame(1, $api->jobs[0]->payload['required_start_seq']);
-        $this->assertSame(10, $api->jobs[0]->payload['required_end_seq']);
-        $this->assertSame('observational_memory', $result->metadata['om_source'] ?? null);
-        $this->assertIsArray($result->metadata['om_provenance'] ?? null);
-        $this->assertSame(0, $result->metadata['om_provenance']['compression_level'] ?? null);
-        $this->assertSame(3, $result->metadata['om_provenance']['observation_count'] ?? null);
-        $this->assertSame(1, $result->metadata['om_provenance']['reflection_count'] ?? null);
-    }
-
-    public function testTimeoutCancelsWithoutPersistingTimedOutState(): void
-    {
-        $settings = OmSettings::fromArray([
-            'observer' => ['model' => 'llama_cpp_test/test', 'schema_version' => 'o1', 'renderer_version' => 'r1'],
-            'reflector' => ['model' => 'llama_cpp_test/test'],
-            // Bound the intentional empty-poll timeout; production default remains 180s.
-            'compaction' => ['wait_timeout_seconds' => 1],
-        ]);
-        $api = new class($this->projectDir) implements ExtensionApiInterface {
-            public int $dispatches = 0;
-
-            public function __construct(private readonly string $cwd)
-            {
-            }
-
-            public function registerTool(ToolRegistrationDTO $tool): void
-            {
-            }
-
-            public function registerToolCallHook(ToolCallHookInterface $hook): void
-            {
-            }
-
-            public function registerToolResultHook(ToolResultHookInterface $hook): void
-            {
-            }
-
-            public function getSettings(string $key): array
-            {
-                return [
-                    'observer' => [
-                        'model' => 'llama_cpp_test/test',
-                        'schema_version' => 'o1',
-
-                        'context_window_ratio' => 0.65,
-                    ],
-                    'reflector' => [
-                        'model' => 'llama_cpp_test/test',
-                        'schema_version' => 'rv1',
-                        'context_window_ratio' => 0.65,
-                    ],
-                    'pools' => [
-                    ],
-                    'compaction' => [
-                    ],
-                ];
-            }
-
-            public function getCwd(): string
-            {
-                return $this->cwd;
-            }
-
-            public function exec(): ExecInterface
-            {
-                throw new \LogicException('unused');
-            }
-
-            public function registerPromptContributor(PromptContributorInterface $contributor): void
-            {
-            }
-
-            public function registerCommand(CommandDefinitionDTO $definition, ExtensionCommandHandlerInterface $handler): void
-            {
-            }
-
-            public function registerToolCallRewriteHook(string $toolName, ToolCallRewriteHookInterface $hook): void
-            {
-            }
-
-            public function registerAfterTurnCommitHook(AfterTurnCommitHookInterface $hook): void
-            {
-            }
-
-            public function registerBeforeCompactionHook(BeforeCompactionHookInterface $hook): void
-            {
-            }
-
-            public function agent(): AgentRunnerInterface
-            {
-                return new class implements AgentRunnerInterface {
-                    public function run(AgentCallRequestDTO $request): void
-                    {
-                        throw new \LogicException('agent run must not be called on hot path');
-                    }
-
-                    public function contextWindow(string $exactModel): ?int
-                    {
-                        return 128000;
-                    }
-                };
-            }
-
-            public function sessionEvents(): SessionEventReaderInterface
-            {
-                throw new \LogicException('sessionEvents must not be called on hot path');
-            }
-
-            public function registerExtensionAgentJobHandler(string $handlerId, ExtensionAgentJobHandlerInterface $handler): void
-            {
-            }
-
-            public function dispatchExtensionAgentJob(ExtensionAgentJobRequestDTO $request): void
-            {
-                ++$this->dispatches;
-            }
-        };
-
-        $hook = new OmBeforeCompactionHook($api, $settings, new NullLogger(), pollIntervalMicros: 20_000);
-        $result = $hook->beforeCompaction(new BeforeCompactionHookContextDTO(
-            runId: 'run-timeout',
-            turnNo: 1,
-            trigger: 'auto',
-            requiredStartSeq: 1,
             requiredEndSeq: 5,
-            tokenEstimateBefore: 100,
-            messagesCompacted: 2,
-            messagesRetained: 1,
-            firstRetainedIndex: 2,
+            tokenEstimateBefore: 1000,
+            messagesCompacted: 10,
+            messagesRetained: 5,
+            firstRetainedIndex: 10,
             priorSummaryPresent: false,
             customInstructions: null,
-            resolvedModel: null,
+            resolvedModel: 'llama_cpp_test/test',
             thinkingLevel: null,
         ));
 
-        $this->assertTrue($result->cancels());
-        $this->assertStringContainsString('timed out', (string) $result->cancelReason);
-        $this->assertSame(1, $api->dispatches);
+        $this->assertFalse($result->cancels());
+        $this->assertNotNull($result->replacementSummary);
+        $expected = ActiveMemoryRenderer::render(
+            [
+                ['reflection_id' => $refId, 'content' => 'Stable reflection fact', 'position' => 0],
+            ],
+            [
+                [
+                    'observation_id' => $obsIdRetained,
+                    'content' => 'Retained after generation',
+                    'relevance' => 'high',
+                    'timestamp' => '2026-07-29 10:00',
+                ],
+                [
+                    'observation_id' => $obsIdPost,
+                    'content' => 'Post-generation observation',
+                    'relevance' => 'medium',
+                    'timestamp' => '2026-07-29 10:02',
+                ],
+            ],
+        );
+        $this->assertSame($expected, $result->replacementSummary);
+        $this->assertSame('observational_memory', $result->metadata['om_source'] ?? null);
+        $this->assertSame('active_durable_memory', $result->metadata['om_projection'] ?? null);
 
+        // No compaction request/result rows are created on the Pi path.
+        $requestCount = (int) $connection->fetchOne('SELECT COUNT(1) FROM om_compaction_request');
+        $resultCount = (int) $connection->fetchOne('SELECT COUNT(1) FROM om_compaction_result');
+        $this->assertSame(0, $requestCount);
+        $this->assertSame(0, $resultCount);
+    }
+
+    public function testPreGenerationObservationsRenderAndEmptyContinues(): void
+    {
         $dbPath = $this->projectDir.'/.hatfield/extensions-data/observational-memory/om.sqlite';
-        $connection = $this->omDatabaseFactory()->connect($dbPath, new NullLogger());
-        $requestStatus = (string) $connection->fetchOne(
-            "SELECT status FROM om_compaction_request WHERE run_id = 'run-timeout'",
-        );
-        $this->assertSame(CompactionRepository::STATUS_TIMED_OUT, $requestStatus);
-        $failedTimedOut = (int) $connection->fetchOne(
-            "SELECT COUNT(*) FROM om_compaction_result WHERE status = 'failed' AND failure_code = 'timed_out'",
-        );
-        $this->assertSame(0, $failedTimedOut, 'timeout is request-terminal only; no fake failed result row');
-    }
+        $connection = $this->omDatabaseFactory()->connectAndMigrate($dbPath);
+        $obs = new ObservationRepository($connection);
+        $obsId = str_repeat('d', 64);
 
-    public function testDurableFailedResultCancelsImmediatelyWithoutRedispatchWait(): void
-    {
+        $obs->commitChunkPartCoverage(
+            coverageKey: 'cov-only',
+            runId: 'run-2',
+            boundaryKey: 'b1',
+            sourceStartSeq: 1,
+            sourceEndSeq: 2,
+            chunkKey: 'chunk-1',
+            partIndex: 1,
+            partCount: 1,
+            sourceDigest: 'digest-only',
+            partDigest: 'part-only',
+            rendererVersion: '1',
+            observerSchemaVersion: '1',
+            observerModel: 'llama_cpp_test/test',
+            observations: [[
+                'observation_id' => $obsId,
+                'content' => 'Only observation before generation',
+                'content_hash' => hash('sha256', 'Only observation before generation'),
+                'relevance' => 'low',
+                'timestamp' => '2026-07-29 11:00',
+                'token_count' => 5,
+                'source_refs_json' => json_encode([['run_id' => 'run-2', 'seq' => 1]], \JSON_THROW_ON_ERROR),
+            ]],
+            coveredAt: '2026-07-29T11:00:00+00:00',
+        );
+
         $settings = OmSettings::fromArray([
-            'observer' => ['model' => 'llama_cpp_test/test', 'schema_version' => 'o1', 'renderer_version' => 'r1'],
-            'reflector' => ['model' => 'llama_cpp_test/test'],
+            'model' => 'llama_cpp_test/test',
+            'observer' => [],
+            'reflector' => [],
         ]);
-        $api = new class($this->projectDir, $settings, $this->omDatabaseFactory()) implements ExtensionApiInterface {
-            public int $dispatches = 0;
-
-            public function __construct(
-                private readonly string $cwd,
-                private readonly OmSettings $settings,
-                private readonly OmDatabaseFactoryTestService $omDb,
-            ) {
-            }
-
-            public function registerTool(ToolRegistrationDTO $tool): void
-            {
-            }
-
-            public function registerToolCallHook(ToolCallHookInterface $hook): void
-            {
-            }
-
-            public function registerToolResultHook(ToolResultHookInterface $hook): void
-            {
-            }
-
-            public function getSettings(string $key): array
-            {
-                return [
-                    'observer' => [
-                        'model' => 'llama_cpp_test/test',
-                        'schema_version' => 'o1',
-
-                        'context_window_ratio' => 0.65,
-                    ],
-                    'reflector' => [
-                        'model' => 'llama_cpp_test/test',
-                        'schema_version' => 'rv1',
-                        'context_window_ratio' => 0.65,
-                    ],
-                    'pools' => [
-                    ],
-                    'compaction' => [
-                    ],
-                ];
-            }
-
-            public function getCwd(): string
-            {
-                return $this->cwd;
-            }
-
-            public function exec(): ExecInterface
-            {
-                throw new \LogicException('unused');
-            }
-
-            public function registerPromptContributor(PromptContributorInterface $contributor): void
-            {
-            }
-
-            public function registerCommand(CommandDefinitionDTO $definition, ExtensionCommandHandlerInterface $handler): void
-            {
-            }
-
-            public function registerToolCallRewriteHook(string $toolName, ToolCallRewriteHookInterface $hook): void
-            {
-            }
-
-            public function registerAfterTurnCommitHook(AfterTurnCommitHookInterface $hook): void
-            {
-            }
-
-            public function registerBeforeCompactionHook(BeforeCompactionHookInterface $hook): void
-            {
-            }
-
-            public function agent(): AgentRunnerInterface
-            {
-                return new class implements AgentRunnerInterface {
-                    public function run(AgentCallRequestDTO $request): void
-                    {
-                        throw new \LogicException('agent run must not be called on hot path');
-                    }
-
-                    public function contextWindow(string $exactModel): ?int
-                    {
-                        return 128000;
-                    }
-                };
-            }
-
-            public function sessionEvents(): SessionEventReaderInterface
-            {
-                throw new \LogicException('sessionEvents must not be called on hot path');
-            }
-
-            public function registerExtensionAgentJobHandler(string $handlerId, ExtensionAgentJobHandlerInterface $handler): void
-            {
-            }
-
-            public function dispatchExtensionAgentJob(ExtensionAgentJobRequestDTO $request): void
-            {
-                ++$this->dispatches;
-            }
-
-            public function seedFailedRequest(string $requestId, string $runId, int $endSeq, string $fingerprint): void
-            {
-                $paths = \Ineersa\HatfieldExt\ObservationalMemory\Runtime\OmPaths::fromSettings($this->settings, $this->cwd);
-                $connection = $this->omDb->connectAndMigrate($paths->databasePath, new NullLogger());
-                $repo = new CompactionRepository($connection);
-                $now = (new \DateTimeImmutable('now', new \DateTimeZone('UTC')))->format(\DateTimeInterface::ATOM);
-                $repo->ensureRequest($requestId, $runId, 1, $endSeq, $endSeq, $fingerprint, $now);
-                $repo->commitFailure(
-                    requestId: $requestId,
-                    resultId: 'fail-result',
-                    runId: $runId,
-                    requiredStartSeq: 1,
-                    requiredEndSeq: $endSeq,
-                    requiredWatermark: $endSeq,
-                    requestFingerprint: $fingerprint,
-                    failureCode: 'no_observations',
-                    now: $now,
-                );
-            }
-        };
-
-        // Pre-seed using the same deterministic request id the hook will compute.
-        $context = new BeforeCompactionHookContextDTO(
-            runId: 'run-failed',
-            turnNo: 1,
-            trigger: 'manual',
-            requiredStartSeq: 1,
-            requiredEndSeq: 4,
-            tokenEstimateBefore: 100,
-            messagesCompacted: 2,
-            messagesRetained: 1,
-            firstRetainedIndex: 2,
-            priorSummaryPresent: false,
-            customInstructions: null,
-            resolvedModel: null,
-            thinkingLevel: null,
-        );
-        $fingerprint = \Ineersa\HatfieldExt\ObservationalMemory\Support\OmIdentity::compactionRequestFingerprint([
-            'run_id' => $context->runId,
-            'required_start_seq' => $context->requiredStartSeq,
-            'required_end_seq' => $context->requiredEndSeq,
-            'required_watermark' => $context->requiredEndSeq,
-            'custom_instructions' => $context->customInstructions ?? '',
-            'observer_model' => 'llama_cpp_test/test',
-            'observer_context_window' => 128000,
-            'observer_context_window_ratio' => $settings->observerContextWindowRatio,
-            'renderer_version' => $settings->rendererVersion,
-            'observer_schema_version' => $settings->observerSchemaVersion,
-            'reflector_model' => 'llama_cpp_test/test',
-            'reflector_context_window' => 128000,
-            'reflector_context_window_ratio' => $settings->reflectorContextWindowRatio,
-            'reflector_schema_version' => $settings->reflectorSchemaVersion,
-            'observations_max_tokens' => $settings->observationsMaxTokens,
-            'reflections_max_tokens' => $settings->reflectionsMaxTokens,
-        ]);
-        $requestId = \Ineersa\HatfieldExt\ObservationalMemory\Support\OmIdentity::compactionRequestId(
-            $context->runId,
-            $context->requiredStartSeq,
-            $context->requiredEndSeq,
-            $fingerprint,
-        );
-        $api->seedFailedRequest($requestId, $context->runId, $context->requiredEndSeq, $fingerprint);
-
-        $started = microtime(true);
-        $hook = new OmBeforeCompactionHook($api, $settings, new NullLogger(), pollIntervalMicros: 50_000);
-        $result = $hook->beforeCompaction($context);
-        $elapsed = microtime(true) - $started;
-
-        $this->assertTrue($result->cancels());
-        $this->assertStringContainsString('no_observations', (string) $result->cancelReason);
-        $this->assertSame(0, $api->dispatches, 'durable failed result must not redispatch');
-        $this->assertLessThan(2.0, $elapsed, 'must cancel immediately without timeout wait');
-    }
-
-    public function testTerminalWithoutResultCancelsImmediatelyWithoutDispatch(): void
-    {
-        $settings = OmSettings::fromArray([
-            'observer' => ['model' => 'llama_cpp_test/test', 'schema_version' => 'o1', 'renderer_version' => 'r1'],
-            'reflector' => ['model' => 'llama_cpp_test/test'],
-        ]);
-        $api = new class($this->projectDir, $settings, $this->omDatabaseFactory()) implements ExtensionApiInterface {
-            public int $dispatches = 0;
-
-            public function __construct(
-                private readonly string $cwd,
-                private readonly OmSettings $settings,
-                private readonly OmDatabaseFactoryTestService $omDb,
-            ) {
-            }
-
-            public function registerTool(ToolRegistrationDTO $tool): void
-            {
-            }
-
-            public function registerToolCallHook(ToolCallHookInterface $hook): void
-            {
-            }
-
-            public function registerToolResultHook(ToolResultHookInterface $hook): void
-            {
-            }
-
-            public function getSettings(string $key): array
-            {
-                return [
-                    'observer' => [
-                        'model' => 'llama_cpp_test/test',
-                        'schema_version' => 'o1',
-
-                        'context_window_ratio' => 0.65,
-                    ],
-                    'reflector' => [
-                        'model' => 'llama_cpp_test/test',
-                        'schema_version' => 'rv1',
-                        'context_window_ratio' => 0.65,
-                    ],
-                    'pools' => [
-                    ],
-                    'compaction' => [
-                    ],
-                ];
-            }
-
-            public function getCwd(): string
-            {
-                return $this->cwd;
-            }
-
-            public function exec(): ExecInterface
-            {
-                throw new \LogicException('unused');
-            }
-
-            public function registerPromptContributor(PromptContributorInterface $contributor): void
-            {
-            }
-
-            public function registerCommand(CommandDefinitionDTO $definition, ExtensionCommandHandlerInterface $handler): void
-            {
-            }
-
-            public function registerToolCallRewriteHook(string $toolName, ToolCallRewriteHookInterface $hook): void
-            {
-            }
-
-            public function registerAfterTurnCommitHook(AfterTurnCommitHookInterface $hook): void
-            {
-            }
-
-            public function registerBeforeCompactionHook(BeforeCompactionHookInterface $hook): void
-            {
-            }
-
-            public function agent(): AgentRunnerInterface
-            {
-                return new class implements AgentRunnerInterface {
-                    public function run(AgentCallRequestDTO $request): void
-                    {
-                        throw new \LogicException('agent run must not be called on hot path');
-                    }
-
-                    public function contextWindow(string $exactModel): ?int
-                    {
-                        return 128000;
-                    }
-                };
-            }
-
-            public function sessionEvents(): SessionEventReaderInterface
-            {
-                throw new \LogicException('sessionEvents must not be called on hot path');
-            }
-
-            public function registerExtensionAgentJobHandler(string $handlerId, ExtensionAgentJobHandlerInterface $handler): void
-            {
-            }
-
-            public function dispatchExtensionAgentJob(ExtensionAgentJobRequestDTO $request): void
-            {
-                ++$this->dispatches;
-            }
-
-            public function seedTerminalRequestWithoutResult(string $requestId, string $runId, int $endSeq, string $fingerprint): void
-            {
-                $paths = \Ineersa\HatfieldExt\ObservationalMemory\Runtime\OmPaths::fromSettings($this->settings, $this->cwd);
-                $connection = $this->omDb->connectAndMigrate($paths->databasePath, new NullLogger());
-                $now = (new \DateTimeImmutable('now', new \DateTimeZone('UTC')))->format(\DateTimeInterface::ATOM);
-                $connection->insert('om_compaction_request', [
-                    'request_id' => $requestId,
-                    'run_id' => $runId,
-                    'required_start_seq' => 1,
-                    'required_end_seq' => $endSeq,
-                    'required_watermark' => $endSeq,
-                    'request_fingerprint' => $fingerprint,
-                    'observation_set_hash' => null,
-                    'status' => CompactionRepository::STATUS_FAILED,
-                    'requested_at' => $now,
-                    'updated_at' => $now,
-                    'completed_at' => $now,
-                    'failure_code' => 'corrupt_state',
-                    'failure_metadata_json' => null,
-                ]);
-            }
-        };
-
-        $context = new BeforeCompactionHookContextDTO(
-            runId: 'run-terminal-gap',
-            turnNo: 1,
-            trigger: 'manual',
-            requiredStartSeq: 1,
-            requiredEndSeq: 3,
-            tokenEstimateBefore: 100,
-            messagesCompacted: 1,
-            messagesRetained: 1,
-            firstRetainedIndex: 1,
-            priorSummaryPresent: false,
-            customInstructions: null,
-            resolvedModel: null,
-            thinkingLevel: null,
-        );
-        $fingerprint = \Ineersa\HatfieldExt\ObservationalMemory\Support\OmIdentity::compactionRequestFingerprint([
-            'run_id' => $context->runId,
-            'required_start_seq' => $context->requiredStartSeq,
-            'required_end_seq' => $context->requiredEndSeq,
-            'required_watermark' => $context->requiredEndSeq,
-            'custom_instructions' => $context->customInstructions ?? '',
-            'observer_model' => 'llama_cpp_test/test',
-            'observer_context_window' => 128000,
-            'observer_context_window_ratio' => $settings->observerContextWindowRatio,
-            'renderer_version' => $settings->rendererVersion,
-            'observer_schema_version' => $settings->observerSchemaVersion,
-            'reflector_model' => 'llama_cpp_test/test',
-            'reflector_context_window' => 128000,
-            'reflector_context_window_ratio' => $settings->reflectorContextWindowRatio,
-            'reflector_schema_version' => $settings->reflectorSchemaVersion,
-            'observations_max_tokens' => $settings->observationsMaxTokens,
-            'reflections_max_tokens' => $settings->reflectionsMaxTokens,
-        ]);
-        $requestId = \Ineersa\HatfieldExt\ObservationalMemory\Support\OmIdentity::compactionRequestId(
-            $context->runId,
-            $context->requiredStartSeq,
-            $context->requiredEndSeq,
-            $fingerprint,
-        );
-        $api->seedTerminalRequestWithoutResult($requestId, $context->runId, $context->requiredEndSeq, $fingerprint);
-
-        $started = microtime(true);
-        $hook = new OmBeforeCompactionHook($api, $settings, new NullLogger(), pollIntervalMicros: 50_000);
-        $result = $hook->beforeCompaction($context);
-        $elapsed = microtime(true) - $started;
-
-        $this->assertTrue($result->cancels());
-        $this->assertStringContainsString('no result row', (string) $result->cancelReason);
-        $this->assertSame(0, $api->dispatches);
-        $this->assertLessThan(2.0, $elapsed);
-    }
-
-    public function testMalformedResultMetadataCancelsWithoutLeakingRawContent(): void
-    {
-        $settings = OmSettings::fromArray([
-            'observer' => ['model' => 'llama_cpp_test/test', 'schema_version' => 'o1', 'renderer_version' => 'r1'],
-            'reflector' => ['model' => 'llama_cpp_test/test'],
-        ]);
-        $api = new class($this->projectDir, $settings, $this->omDatabaseFactory()) implements ExtensionApiInterface {
-            public int $dispatches = 0;
-
-            public function __construct(
-                private readonly string $cwd,
-                private readonly OmSettings $settings,
-                private readonly OmDatabaseFactoryTestService $omDb,
-            ) {
-            }
-
-            public function registerTool(ToolRegistrationDTO $tool): void
-            {
-            }
-
-            public function registerToolCallHook(ToolCallHookInterface $hook): void
-            {
-            }
-
-            public function registerToolResultHook(ToolResultHookInterface $hook): void
-            {
-            }
-
-            public function getSettings(string $key): array
-            {
-                return [
-                    'observer' => [
-                        'model' => 'llama_cpp_test/test',
-                        'schema_version' => 'o1',
-
-                        'context_window_ratio' => 0.65,
-                    ],
-                    'reflector' => [
-                        'model' => 'llama_cpp_test/test',
-                        'schema_version' => 'rv1',
-                        'context_window_ratio' => 0.65,
-                    ],
-                    'pools' => [
-                    ],
-                    'compaction' => [
-                    ],
-                ];
-            }
-
-            public function getCwd(): string
-            {
-                return $this->cwd;
-            }
-
-            public function exec(): ExecInterface
-            {
-                throw new \LogicException('unused');
-            }
-
-            public function registerPromptContributor(PromptContributorInterface $contributor): void
-            {
-            }
-
-            public function registerCommand(CommandDefinitionDTO $definition, ExtensionCommandHandlerInterface $handler): void
-            {
-            }
-
-            public function registerToolCallRewriteHook(string $toolName, ToolCallRewriteHookInterface $hook): void
-            {
-            }
-
-            public function registerAfterTurnCommitHook(AfterTurnCommitHookInterface $hook): void
-            {
-            }
-
-            public function registerBeforeCompactionHook(BeforeCompactionHookInterface $hook): void
-            {
-            }
-
-            public function agent(): AgentRunnerInterface
-            {
-                return new class implements AgentRunnerInterface {
-                    public function run(AgentCallRequestDTO $request): void
-                    {
-                        throw new \LogicException('agent run must not be called on hot path');
-                    }
-
-                    public function contextWindow(string $exactModel): ?int
-                    {
-                        return 128000;
-                    }
-                };
-            }
-
-            public function sessionEvents(): SessionEventReaderInterface
-            {
-                throw new \LogicException('unused');
-            }
-
-            public function registerExtensionAgentJobHandler(string $handlerId, ExtensionAgentJobHandlerInterface $handler): void
-            {
-            }
-
-            public function dispatchExtensionAgentJob(ExtensionAgentJobRequestDTO $request): void
-            {
-                ++$this->dispatches;
-                $paths = \Ineersa\HatfieldExt\ObservationalMemory\Runtime\OmPaths::fromSettings($this->settings, $this->cwd);
-                $connection = $this->omDb->connectAndMigrate($paths->databasePath, new NullLogger());
-                $repo = new CompactionRepository($connection);
-                $now = (new \DateTimeImmutable('now', new \DateTimeZone('UTC')))->format(\DateTimeInterface::ATOM);
-                $payload = $request->payload;
-                // commitSuccess CAS requires running (production worker path marks running first).
-                $repo->markRunning(
-                    requestId: (string) $payload['request_id'],
-                    requestFingerprint: (string) $payload['request_fingerprint'],
-                    now: $now,
-                );
-                $repo->commitSuccess(
-                    requestId: (string) $payload['request_id'],
-                    resultId: 'result-bad-meta',
-                    runId: (string) $payload['run_id'],
-                    requiredStartSeq: (int) $payload['required_start_seq'],
-                    requiredEndSeq: (int) $payload['required_end_seq'],
-                    requiredWatermark: (int) $payload['required_end_seq'],
-                    requestFingerprint: (string) $payload['request_fingerprint'],
-                    observationSetHash: 'obs-set',
-                    replacementText: 'text ok',
-                    now: $now,
-                    metadata: null,
-                );
-                // Corrupt metadata after insert to prove fail-closed decoding.
-                $connection->executeStatement(
-                    'UPDATE om_compaction_result SET metadata_json = ? WHERE request_id = ?',
-                    ['not-json-at-all SECRET_PROMPT_LEAK', (string) $payload['request_id']],
-                );
-            }
-        };
-
-        $hook = new OmBeforeCompactionHook($api, $settings, new NullLogger(), pollIntervalMicros: 1_000);
-        $result = $hook->beforeCompaction(new BeforeCompactionHookContextDTO(
-            runId: 'run-bad-meta',
+        $api = $this->failOnDispatchModelOrEvents($this->projectDir, $settings);
+        $hook = new OmBeforeCompactionHook($api, $settings, new NullLogger());
+
+        $withMemory = $hook->beforeCompaction(new BeforeCompactionHookContextDTO(
+            runId: 'run-2',
             turnNo: 1,
             trigger: 'manual',
             requiredStartSeq: 1,
             requiredEndSeq: 2,
-            tokenEstimateBefore: 50,
-            messagesCompacted: 1,
+            tokenEstimateBefore: 100,
+            messagesCompacted: 2,
             messagesRetained: 1,
-            firstRetainedIndex: 1,
+            firstRetainedIndex: 2,
             priorSummaryPresent: false,
             customInstructions: null,
-            resolvedModel: null,
+            resolvedModel: 'llama_cpp_test/test',
             thinkingLevel: null,
         ));
+        $this->assertFalse($withMemory->cancels());
+        $this->assertStringContainsString('Only observation before generation', (string) $withMemory->replacementSummary);
+        $this->assertStringContainsString('[dddddddddddd]', (string) $withMemory->replacementSummary);
 
-        $this->assertTrue($result->cancels());
-        $this->assertStringContainsString('metadata', (string) $result->cancelReason);
-        $this->assertStringNotContainsString('SECRET_PROMPT_LEAK', (string) $result->cancelReason);
-        $this->assertSame(1, $api->dispatches);
+        $empty = $hook->beforeCompaction(new BeforeCompactionHookContextDTO(
+            runId: 'run-empty',
+            turnNo: 1,
+            trigger: 'manual',
+            requiredStartSeq: 1,
+            requiredEndSeq: 0,
+            tokenEstimateBefore: 10,
+            messagesCompacted: 0,
+            messagesRetained: 0,
+            firstRetainedIndex: 0,
+            priorSummaryPresent: false,
+            customInstructions: null,
+            resolvedModel: 'llama_cpp_test/test',
+            thinkingLevel: null,
+        ));
+        $this->assertFalse($empty->cancels());
+        $this->assertNull($empty->replacementSummary);
+        $this->assertFalse($empty->hasReplacementSummary());
     }
 
     private function omDatabaseFactory(): OmDatabaseFactoryTestService
@@ -909,5 +283,101 @@ final class OmBeforeCompactionHookTest extends IsolatedKernelTestCase
         $service = self::getContainer()->get('test.om_database_factory');
 
         return $service;
+    }
+
+    private function failOnDispatchModelOrEvents(string $cwd, OmSettings $settings): ExtensionApiInterface
+    {
+        return new class($cwd, $settings) implements ExtensionApiInterface {
+            public function __construct(
+                private readonly string $cwd,
+                private readonly OmSettings $settings,
+            ) {
+            }
+
+            public function registerTool(ToolRegistrationDTO $tool): void
+            {
+            }
+
+            public function registerToolCallHook(ToolCallHookInterface $hook): void
+            {
+            }
+
+            public function registerToolResultHook(ToolResultHookInterface $hook): void
+            {
+            }
+
+            public function getSettings(string $key): array
+            {
+                return [
+                    'model' => $this->settings->model,
+                    'observer' => [
+                        'schema_version' => $this->settings->observerSchemaVersion,
+                        'renderer_version' => $this->settings->rendererVersion,
+                        'context_window_ratio' => $this->settings->observerContextWindowRatio,
+                    ],
+                    'reflector' => [
+                        'schema_version' => $this->settings->reflectorSchemaVersion,
+                        'reflect_after_observation_tokens' => $this->settings->reflectAfterObservationTokens,
+                    ],
+                    'pools' => [
+                        'observations_max_tokens' => $this->settings->observationsMaxTokens,
+                    ],
+                ];
+            }
+
+            public function getCwd(): string
+            {
+                return $this->cwd;
+            }
+
+            public function registerCommand(CommandDefinitionDTO $definition, ExtensionCommandHandlerInterface $handler): void
+            {
+            }
+
+            public function registerAfterTurnCommitHook(AfterTurnCommitHookInterface $hook): void
+            {
+            }
+
+            public function registerBeforeCompactionHook(BeforeCompactionHookInterface $hook): void
+            {
+            }
+
+            public function registerPromptContributor(PromptContributorInterface $contributor): void
+            {
+            }
+
+            public function registerToolCallRewriteHook(string $toolName, ToolCallRewriteHookInterface $hook): void
+            {
+            }
+
+            public function registerExtensionAgentJobHandler(string $handlerId, ExtensionAgentJobHandlerInterface $handler): void
+            {
+            }
+
+            public function dispatchExtensionAgentJob(ExtensionAgentJobRequestDTO $request): void
+            {
+                throw new \LogicException('Pi-style compaction must not dispatch extension_agent jobs.');
+            }
+
+            public function agent(): AgentRunnerInterface
+            {
+                throw new \LogicException('Pi-style compaction must not invoke AgentRunner.');
+            }
+
+            public function sessionEvents(): SessionEventReaderInterface
+            {
+                return new class implements SessionEventReaderInterface {
+                    public function readRange(string $runId, int $startSeq, int $endSeq): iterable
+                    {
+                        throw new \LogicException('Pi-style compaction must not read session events.');
+                    }
+                };
+            }
+
+            public function exec(): ExecInterface
+            {
+                throw new \LogicException('unused');
+            }
+        };
     }
 }

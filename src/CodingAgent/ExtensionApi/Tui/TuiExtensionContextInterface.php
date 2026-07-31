@@ -23,6 +23,18 @@ interface TuiExtensionContextInterface
 
     public function setStatus(string $key, ?string $text): void;
 
+    /**
+     * Register an idle-safe TUI tick callback.
+     *
+     * Invoked via the host {@see \Ineersa\Tui\Runtime\TuiTickDispatcher}. The bridge
+     * always discards the listener return value so extensions cannot request the
+     * 100Hz busy tick cadence. Pollers that need work while idle must self-throttle
+     * (Symfony TUI idle interval is ~250ms).
+     *
+     * @param \Closure(): mixed $listener
+     */
+    public function onTick(\Closure $listener): void;
+
     public function insertOverlayAfterEditor(AbstractWidget $widget): void;
 
     public function removeOverlay(AbstractWidget $widget): void;

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Extension;
 
+use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Extension\Agent\ExtensionAgentJobDispatcher;
 use Ineersa\CodingAgent\Extension\Agent\ExtensionAgentJobRegistry;
@@ -52,6 +53,7 @@ final readonly class ExtensionToolRegistryBridge implements ExtensionApiInterfac
         private SessionEventReaderInterface $sessionEventReader,
         private ExtensionAgentJobRegistry $extensionAgentJobRegistry,
         private ExtensionAgentJobDispatcher $extensionAgentJobDispatcher,
+        private StackToolExecutionContextAccessor $toolContextAccessor,
     ) {
     }
 
@@ -69,8 +71,8 @@ final readonly class ExtensionToolRegistryBridge implements ExtensionApiInterfac
      */
     public function registerTool(ToolRegistrationDTO $tool): void
     {
-        // ToolRegistrationDTO enforces ExtensionToolHandlerInterface at construction.
-        $adapter = new ExtensionToolHandlerAdapter($tool->handler);
+        // Accepts argument-only ExtensionToolHandlerInterface or contextual handlers.
+        $adapter = new ExtensionToolHandlerAdapter($tool->handler, $this->toolContextAccessor);
 
         $this->toolRegistry->registerTool(
             name: $tool->name,

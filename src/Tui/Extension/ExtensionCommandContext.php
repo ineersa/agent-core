@@ -10,7 +10,7 @@ use Ineersa\Hatfield\ExtensionApi\Command\CommandContextInterface;
  * Mutable message collector for extension slash command execution.
  *
  * Collects notify() messages and tracks the highest severity level
- * to allow callers to choose the appropriate TUI transcript rendering.
+ * so the host adapter can choose the appropriate transcript rendering.
  */
 final class ExtensionCommandContext implements CommandContextInterface
 {

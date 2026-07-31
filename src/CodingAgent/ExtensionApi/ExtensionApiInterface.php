@@ -136,11 +136,13 @@ interface ExtensionApiInterface
     public function registerAfterTurnCommitHook(AfterTurnCommitHookInterface $hook): void;
 
     /**
-     * Register a public before-compaction hook for the canonical CompactRun path.
+     * Register a public before-compaction hook.
      *
-     * Invoked synchronously after safe partition preparation with the session-global
-     * required coverage watermark (1..RunState.lastSeq). Snapshot/fork compaction
-     * does not invoke public extension hooks.
+     * Invoked synchronously after safe partition preparation for both CompactRun
+     * (paired coverage watermark 1..RunState.lastSeq) and snapshot/fork compaction
+     * (watermark null/null). Hooks may cancel, replace the summary, append
+     * instructions, or attach JSON-safe metadata. Empty/continue leaves the
+     * ordinary model compaction path intact.
      */
     public function registerBeforeCompactionHook(BeforeCompactionHookInterface $hook): void;
 
