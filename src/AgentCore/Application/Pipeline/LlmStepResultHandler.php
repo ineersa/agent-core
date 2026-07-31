@@ -212,11 +212,11 @@ final class LlmStepResultHandler implements RunMessageHandler
                 $error['retryable'] = false;
                 // Keep actionable provider/transport detail, but drop stale retry-policy
                 // prose from the classified user_message (e.g. "Will retry automatically.").
-                $originalDetail = trim(preg_replace(
+                $originalDetail = rtrim(trim(preg_replace(
                     '/\s*Will retry automatically\.?/i',
                     '',
                     $userMessage,
-                ) ?? $userMessage);
+                ) ?? $userMessage), '. ');
                 $userMessage = \sprintf(
                     'Automatic LLM retry attempts exhausted after %d retry attempt(s)%s. Please retry manually or change provider/model.',
                     $maxAttempts,
