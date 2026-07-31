@@ -9,18 +9,16 @@ use Ineersa\HatfieldExt\ObservationalMemory\Observer\OmTokenEstimator;
 use Ineersa\HatfieldExt\ObservationalMemory\Support\OmIdentity;
 
 /**
- * In-process tool that validates complete Reflector candidate generations.
+ * In-process delta Reflector tool — accumulates new durable reflections only.
  *
- * Each valid call atomically replaces the in-memory candidate. Persistence is
- * owned by ReflectorPipeline after AgentRunner returns. Model-correctable
- * validation failures return structured rejections without mutating state.
+ * Multiple valid calls accumulate and dedupe by reflection id. Existing active
+ * reflection ids are skipped as duplicates. Persistence is owned by the job after
+ * AgentRunner returns. Model-correctable failures return structured rejections.
  */
 final class RecordReflectionsToolHandler implements ExtensionToolHandlerInterface
 {
-    private bool $hasCandidate = false;
-
     /**
-     * @var list<array{
+     * @var array<string, array{
      *   reflection_id: string,
      *   content: string,
      *   supporting_observation_ids: list<string>,
@@ -28,28 +26,17 @@ final class RecordReflectionsToolHandler implements ExtensionToolHandlerInterfac
      *   token_count: int
      * }>
      */
-    private array $reflections = [];
-
-    /** @var list<string> */
-    private array $retainedObservationIds = [];
+    private array $newById = [];
 
     /**
-     * @param array<string, true> $allowedReflectionIds
+     * @param array<string, true> $existingReflectionIds
      * @param array<string, true> $allowedObservationIds
-     * @param array<string, array{
-     *   reflection_id: string,
-     *   content: string,
-     *   supporting_observation_ids: list<string>,
-     *   supporting_observation_ids_json: string,
-     *   token_count: int
-     * }> $activeReflectionsById
      */
     public function __construct(
         private readonly string $runId,
         private readonly string $reflectorSchemaVersion,
-        private readonly array $allowedReflectionIds,
+        private readonly array $existingReflectionIds,
         private readonly array $allowedObservationIds,
-        private readonly array $activeReflectionsById,
     ) {
     }
 
@@ -62,45 +49,55 @@ final class RecordReflectionsToolHandler implements ExtensionToolHandlerInterfac
                 'record_reflections requires reflections as a list (array).',
             );
         }
-
-        $rawRetained = $arguments['retained_observation_ids'] ?? null;
-        if (!\is_array($rawRetained)) {
+        if ([] === $rawReflections) {
             return $this->reject(
                 'invalid_arguments',
-                'record_reflections requires retained_observation_ids as a list (array).',
+                'record_reflections requires at least one new reflection per call, or do not call the tool.',
             );
         }
 
-        if ([] === $rawReflections && [] === $rawRetained) {
-            return $this->reject(
-                'empty_generation',
-                'When active memory is non-empty, record_reflections must retain reflections and/or observations.',
-            );
-        }
+        $added = 0;
+        $duplicates = 0;
+        $rejected = 0;
 
-        try {
-            $validatedReflections = $this->validateReflections($rawReflections);
-            $retainedObservationIds = $this->normalizeObservationIds($rawRetained, 'retained_observation_ids');
-        } catch (\InvalidArgumentException $e) {
-            return $this->reject('invalid_generation', $e->getMessage());
-        }
+        foreach ($rawReflections as $index => $raw) {
+            if (!\is_array($raw)) {
+                ++$rejected;
+                continue;
+            }
 
-        // Atomically replace previous candidate (last valid wins).
-        $this->reflections = $validatedReflections;
-        $this->retainedObservationIds = $retainedObservationIds;
-        $this->hasCandidate = true;
+            try {
+                $validated = $this->validateNewReflection($raw, $index);
+            } catch (\InvalidArgumentException) {
+                ++$rejected;
+                continue;
+            }
+
+            $id = $validated['reflection_id'];
+            if (isset($this->existingReflectionIds[$id]) || isset($this->newById[$id])) {
+                ++$duplicates;
+                continue;
+            }
+            $this->newById[$id] = $validated;
+            ++$added;
+        }
 
         return [
             'status' => 'accepted',
-            'reflection_count' => \count($validatedReflections),
-            'retained_observation_count' => \count($retainedObservationIds),
-            'guidance' => 'Candidate generation replaced. You may call record_reflections again to revise the complete next active set before finishing.',
+            'added' => $added,
+            'duplicates' => $duplicates,
+            'rejected' => $rejected,
+            'total_this_run' => \count($this->newById),
+            'guidance' => \sprintf(
+                'Recorded %d reflection%s; %d duplicate%s; %d rejected. Total this run: %d.',
+                $added,
+                1 === $added ? '' : 's',
+                $duplicates,
+                1 === $duplicates ? '' : 's',
+                $rejected,
+                \count($this->newById),
+            ),
         ];
-    }
-
-    public function hasCandidate(): bool
-    {
-        return $this->hasCandidate;
     }
 
     /**
@@ -112,17 +109,9 @@ final class RecordReflectionsToolHandler implements ExtensionToolHandlerInterfac
      *   token_count: int
      * }>
      */
-    public function reflections(): array
+    public function newReflections(): array
     {
-        return $this->reflections;
-    }
-
-    /**
-     * @return list<string>
-     */
-    public function retainedObservationIds(): array
-    {
-        return $this->retainedObservationIds;
+        return array_values($this->newById);
     }
 
     /**
@@ -138,114 +127,66 @@ final class RecordReflectionsToolHandler implements ExtensionToolHandlerInterfac
     }
 
     /**
-     * @param list<mixed> $rawReflections
+     * @param array<string, mixed> $raw
      *
-     * @return list<array{
+     * @return array{
      *   reflection_id: string,
      *   content: string,
      *   supporting_observation_ids: list<string>,
      *   supporting_observation_ids_json: string,
      *   token_count: int
-     * }>
+     * }
      */
-    private function validateReflections(array $rawReflections): array
+    private function validateNewReflection(array $raw, int $index): array
     {
-        $out = [];
-        $seenReflectionIds = [];
-
-        foreach ($rawReflections as $index => $raw) {
-            if (!\is_array($raw)) {
-                throw new \InvalidArgumentException(\sprintf('Reflection at index %d must be an object.', $index));
-            }
-
-            $retainId = $raw['retain_id'] ?? null;
-            $content = $raw['content'] ?? null;
-            $support = $raw['supporting_observation_ids'] ?? null;
-
-            $hasRetain = null !== $retainId;
-            $hasNew = null !== $content || null !== $support;
-            if ($hasRetain && $hasNew) {
-                throw new \InvalidArgumentException(\sprintf('Reflection at index %d must be either retain_id or new content/supporting_observation_ids, not both.', $index));
-            }
-            if (!$hasRetain && !$hasNew) {
-                throw new \InvalidArgumentException(\sprintf('Reflection at index %d must include retain_id or content+supporting_observation_ids.', $index));
-            }
-
-            if ($hasRetain) {
-                if (!\is_string($retainId) || '' === trim($retainId)) {
-                    throw new \InvalidArgumentException(\sprintf('Reflection at index %d retain_id must be a non-empty string.', $index));
-                }
-                $retainId = trim($retainId);
-                if (!isset($this->allowedReflectionIds[$retainId])) {
-                    throw new \InvalidArgumentException(\sprintf('Reflection at index %d retain_id %s is not in the active reflection allowlist.', $index, $retainId));
-                }
-                if (isset($seenReflectionIds[$retainId])) {
-                    continue;
-                }
-                $prior = $this->activeReflectionsById[$retainId] ?? null;
-                if (null === $prior) {
-                    throw new \InvalidArgumentException(\sprintf('Reflection at index %d retain_id %s is unknown.', $index, $retainId));
-                }
-                $seenReflectionIds[$retainId] = true;
-                $out[] = [
-                    'reflection_id' => $prior['reflection_id'],
-                    'content' => $prior['content'],
-                    'supporting_observation_ids' => $prior['supporting_observation_ids'],
-                    'supporting_observation_ids_json' => $prior['supporting_observation_ids_json'],
-                    'token_count' => $prior['token_count'],
-                ];
-                continue;
-            }
-
-            if (!\is_string($content)) {
-                throw new \InvalidArgumentException(\sprintf('Reflection at index %d content must be a string.', $index));
-            }
-            // Trim outer whitespace only; otherwise byte-preserve single-line content.
-            $content = trim($content);
-            if ('' === $content) {
-                throw new \InvalidArgumentException(\sprintf('Reflection at index %d content is empty after trim.', $index));
-            }
-            if (str_contains($content, "\n") || str_contains($content, "\r")) {
-                throw new \InvalidArgumentException(\sprintf('Reflection at index %d content must be a single line.', $index));
-            }
-            if ($this->looksLikeSecret($content)) {
-                throw new \InvalidArgumentException(\sprintf('Reflection at index %d appears to contain secrets and was rejected.', $index));
-            }
-            if (!\is_array($support) || [] === $support) {
-                throw new \InvalidArgumentException(\sprintf('Reflection at index %d must include non-empty supporting_observation_ids.', $index));
-            }
-
-            $normalizedSupport = $this->normalizeObservationIds($support, \sprintf('reflection[%d].supporting_observation_ids', $index));
-            try {
-                $supportJson = json_encode(
-                    $normalizedSupport,
-                    \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE,
-                );
-            } catch (\JsonException $e) {
-                throw new \RuntimeException('Failed to encode supporting_observation_ids.', previous: $e);
-            }
-
-            $reflectionId = OmIdentity::reflectionId(
-                $this->runId,
-                $this->reflectorSchemaVersion,
-                $content,
-                $normalizedSupport,
-            );
-            if (isset($seenReflectionIds[$reflectionId])) {
-                continue;
-            }
-            $seenReflectionIds[$reflectionId] = true;
-
-            $out[] = [
-                'reflection_id' => $reflectionId,
-                'content' => $content,
-                'supporting_observation_ids' => $normalizedSupport,
-                'supporting_observation_ids_json' => $supportJson,
-                'token_count' => OmTokenEstimator::estimate($content),
-            ];
+        if (isset($raw['retain_id']) || isset($raw['retained_observation_ids'])) {
+            throw new \InvalidArgumentException(\sprintf('Reflection at index %d must be a new delta reflection (content + supporting_observation_ids only).', $index));
         }
 
-        return $out;
+        $content = $raw['content'] ?? null;
+        if (!\is_string($content)) {
+            throw new \InvalidArgumentException(\sprintf('Reflection at index %d content must be a string.', $index));
+        }
+        $content = trim($content);
+        if ('' === $content) {
+            throw new \InvalidArgumentException(\sprintf('Reflection at index %d content is empty after trim.', $index));
+        }
+        if (str_contains($content, "\n") || str_contains($content, "\r")) {
+            throw new \InvalidArgumentException(\sprintf('Reflection at index %d content must be a single line.', $index));
+        }
+        if ($this->looksLikeSecret($content)) {
+            throw new \InvalidArgumentException(\sprintf('Reflection at index %d appears to contain secrets and was rejected.', $index));
+        }
+
+        $support = $raw['supporting_observation_ids'] ?? null;
+        if (!\is_array($support) || [] === $support) {
+            throw new \InvalidArgumentException(\sprintf('Reflection at index %d must include non-empty supporting_observation_ids.', $index));
+        }
+
+        $normalizedSupport = $this->normalizeObservationIds($support, \sprintf('reflection[%d].supporting_observation_ids', $index));
+        try {
+            $supportJson = json_encode(
+                $normalizedSupport,
+                \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_SLASHES | \JSON_UNESCAPED_UNICODE,
+            );
+        } catch (\JsonException $e) {
+            throw new \RuntimeException('Failed to encode supporting_observation_ids.', previous: $e);
+        }
+
+        $reflectionId = OmIdentity::reflectionId(
+            $this->runId,
+            $this->reflectorSchemaVersion,
+            $content,
+            $normalizedSupport,
+        );
+
+        return [
+            'reflection_id' => $reflectionId,
+            'content' => $content,
+            'supporting_observation_ids' => $normalizedSupport,
+            'supporting_observation_ids_json' => $supportJson,
+            'token_count' => OmTokenEstimator::estimate($content),
+        ];
     }
 
     /**
@@ -275,12 +216,10 @@ final class RecordReflectionsToolHandler implements ExtensionToolHandlerInterfac
 
     private function looksLikeSecret(string $content): bool
     {
-        // PEM private key material.
         if (1 === preg_match('/BEGIN (?:RSA |OPENSSH |EC )?PRIVATE KEY/i', $content)) {
             return true;
         }
 
-        // Credential-shaped assignments/values only — not technical facts like "uses JWT tokens".
         return 1 === preg_match(
             '/\b(?:api[_-]?key|password|client[_-]?secret|access[_-]?token|auth[_-]?token|bearer\s+token|private[_-]?key)\b\s*[:=]/i',
             $content,

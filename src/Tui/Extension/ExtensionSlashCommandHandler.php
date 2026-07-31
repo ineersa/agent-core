@@ -19,7 +19,8 @@ use Ineersa\Tui\Command\TranscriptMessage;
  * delegates to the extension handler, then maps the collected
  * messages into the appropriate TUI CommandResult (NoOp when
  * nothing was notified, or TranscriptMessage with severity-mapped
- * role/style).
+ * role/style). Informational/success output uses the native markdown
+ * transcript style; warning/error severity remains authoritative.
  */
 final class ExtensionSlashCommandHandler implements SlashCommandHandler
 {
@@ -41,7 +42,7 @@ final class ExtensionSlashCommandHandler implements SlashCommandHandler
         $text = implode("\n", $context->messages);
 
         $role = 'system';
-        $style = '';
+        $style = 'markdown';
         if ($context->highestSeverity >= 3) {
             $role = 'error';
             $style = 'error';

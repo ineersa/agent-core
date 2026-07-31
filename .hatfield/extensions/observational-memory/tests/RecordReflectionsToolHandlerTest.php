@@ -9,154 +9,133 @@ use Ineersa\HatfieldExt\ObservationalMemory\Support\OmIdentity;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Thesis: complete-generation record_reflections last-valid-wins, invalid calls
- * do not mutate candidate, retain/new ids are allowlisted, no replacement_text.
+ * Thesis: delta Reflector accumulates/dedupes new reflections; cannot prune or retain_id.
  */
 final class RecordReflectionsToolHandlerTest extends TestCase
 {
-    public function testLastValidCallWinsAndInvalidDoesNotMutate(): void
+    public function testAccumulateDedupeAndSkipExistingIds(): void
     {
         $priorId = OmIdentity::reflectionId('run-1', 'v1', 'Prior durable fact', ['obs-a']);
         $handler = new RecordReflectionsToolHandler(
             runId: 'run-1',
             reflectorSchemaVersion: 'v1',
-            allowedReflectionIds: [$priorId => true],
+            existingReflectionIds: [$priorId => true],
             allowedObservationIds: ['obs-a' => true, 'obs-b' => true],
-            activeReflectionsById: [
-                $priorId => [
-                    'reflection_id' => $priorId,
-                    'content' => 'Prior durable fact',
-                    'supporting_observation_ids' => ['obs-a'],
-                    'supporting_observation_ids_json' => '["obs-a"]',
-                    'token_count' => 4,
-                ],
-            ],
         );
 
         $first = $handler([
             'reflections' => [
-                ['retain_id' => $priorId],
                 [
                     'content' => 'New durable decision',
                     'supporting_observation_ids' => ['obs-b', 'obs-a'],
                 ],
             ],
-            'retained_observation_ids' => ['obs-b'],
         ]);
         $this->assertSame('accepted', $first['status']);
-        $this->assertTrue($handler->hasCandidate());
-        $this->assertCount(2, $handler->reflections());
-        $this->assertSame(['obs-b'], $handler->retainedObservationIds());
-
-        $invalid = $handler([
-            'reflections' => [
-                ['content' => "line1\nline2", 'supporting_observation_ids' => ['obs-a']],
-            ],
-            'retained_observation_ids' => ['obs-a'],
-        ]);
-        $this->assertSame('rejected', $invalid['status']);
-        $this->assertCount(2, $handler->reflections(), 'invalid call must not mutate candidate');
-        $this->assertSame(['obs-b'], $handler->retainedObservationIds());
+        $this->assertSame(1, $first['added']);
+        $this->assertCount(1, $handler->newReflections());
 
         $second = $handler([
             'reflections' => [
                 [
-                    'content' => 'Only new reflection remains',
+                    'content' => 'New durable decision',
+                    'supporting_observation_ids' => ['obs-a', 'obs-b'],
+                ],
+                [
+                    'content' => 'Second durable fact',
                     'supporting_observation_ids' => ['obs-a'],
                 ],
             ],
-            'retained_observation_ids' => ['obs-a', 'obs-b'],
         ]);
         $this->assertSame('accepted', $second['status']);
-        $this->assertCount(1, $handler->reflections());
-        $this->assertSame(['obs-a', 'obs-b'], $handler->retainedObservationIds());
-        $this->assertSame(
-            OmIdentity::reflectionId('run-1', 'v1', 'Only new reflection remains', ['obs-a']),
-            $handler->reflections()[0]['reflection_id'],
-        );
+        $this->assertSame(1, $second['duplicates'], 'same content+support must dedupe');
+        $this->assertSame(1, $second['added']);
+        $this->assertCount(2, $handler->newReflections());
+
+        $priorDup = $handler([
+            'reflections' => [
+                [
+                    'content' => 'Prior durable fact',
+                    'supporting_observation_ids' => ['obs-a'],
+                ],
+            ],
+        ]);
+        $this->assertSame(1, $priorDup['duplicates']);
+        $this->assertSame(0, $priorDup['added']);
+        $this->assertCount(2, $handler->newReflections());
     }
 
-    public function testEmptyBothArraysRejectedWhenActiveMemoryRequired(): void
+    public function testZeroCallLeavesEmptyAndRejectsRetainIdOrRetainedObs(): void
     {
         $handler = new RecordReflectionsToolHandler(
             runId: 'run-1',
             reflectorSchemaVersion: 'v1',
-            allowedReflectionIds: [],
+            existingReflectionIds: [],
             allowedObservationIds: ['obs-a' => true],
-            activeReflectionsById: [],
         );
 
-        $rejected = $handler([
-            'reflections' => [],
-            'retained_observation_ids' => [],
+        $this->assertSame([], $handler->newReflections());
+
+        $retain = $handler([
+            'reflections' => [
+                ['retain_id' => 'anything'],
+            ],
         ]);
-        $this->assertSame('rejected', $rejected['status']);
-        $this->assertSame('empty_generation', $rejected['error']);
-        $this->assertFalse($handler->hasCandidate());
+        $this->assertSame('accepted', $retain['status']);
+        $this->assertSame(1, $retain['rejected']);
+        $this->assertSame([], $handler->newReflections());
+
+        $withRetained = $handler([
+            'reflections' => [
+                [
+                    'content' => 'Fact',
+                    'supporting_observation_ids' => ['obs-a'],
+                    'retained_observation_ids' => ['obs-a'],
+                ],
+            ],
+        ]);
+        $this->assertSame(1, $withRetained['rejected']);
+        $this->assertSame([], $handler->newReflections());
     }
 
-    public function testUnknownRetainAndSupportRejected(): void
+    public function testUnknownSupportRejectedAndPrivacyRules(): void
     {
         $handler = new RecordReflectionsToolHandler(
             runId: 'run-1',
             reflectorSchemaVersion: 'v1',
-            allowedReflectionIds: [],
+            existingReflectionIds: [],
             allowedObservationIds: ['obs-a' => true],
-            activeReflectionsById: [],
         );
 
-        $badRetain = $handler([
-            'reflections' => [['retain_id' => 'missing-reflection']],
-            'retained_observation_ids' => [],
-        ]);
-        $this->assertSame('rejected', $badRetain['status']);
-        $this->assertFalse($handler->hasCandidate());
-
-        $badSupport = $handler([
+        $bad = $handler([
             'reflections' => [
                 ['content' => 'Fact', 'supporting_observation_ids' => ['missing']],
             ],
-            'retained_observation_ids' => [],
         ]);
-        $this->assertSame('rejected', $badSupport['status']);
-        $this->assertFalse($handler->hasCandidate());
-    }
-
-    public function testPrivacyAcceptsJwtFactAndRejectsCredentialAssignment(): void
-    {
-        $handler = new RecordReflectionsToolHandler(
-            runId: 'run-1',
-            reflectorSchemaVersion: 'v1',
-            allowedReflectionIds: [],
-            allowedObservationIds: ['obs-a' => true],
-            activeReflectionsById: [],
-        );
+        $this->assertSame(1, $bad['rejected']);
+        $this->assertSame([], $handler->newReflections());
 
         $jwt = $handler([
             'reflections' => [[
                 'content' => 'Service uses JWT tokens for API authentication',
                 'supporting_observation_ids' => ['obs-a'],
             ]],
-            'retained_observation_ids' => ['obs-a'],
         ]);
-        $this->assertSame('accepted', $jwt['status'], 'technical JWT fact must not be privacy-rejected');
-        $this->assertTrue($handler->hasCandidate());
+        $this->assertSame(1, $jwt['added']);
 
         $handler2 = new RecordReflectionsToolHandler(
             runId: 'run-1',
             reflectorSchemaVersion: 'v1',
-            allowedReflectionIds: [],
+            existingReflectionIds: [],
             allowedObservationIds: ['obs-a' => true],
-            activeReflectionsById: [],
         );
         $secret = $handler2([
             'reflections' => [[
                 'content' => 'api_key=sk-live-should-not-be-stored',
                 'supporting_observation_ids' => ['obs-a'],
             ]],
-            'retained_observation_ids' => ['obs-a'],
         ]);
-        $this->assertSame('rejected', $secret['status']);
-        $this->assertFalse($handler2->hasCandidate());
+        $this->assertSame(1, $secret['rejected']);
+        $this->assertSame([], $handler2->newReflections());
     }
 }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ineersa\CodingAgent\Tests\Extension;
 
+use Ineersa\AgentCore\Application\Tool\StackToolExecutionContextAccessor;
 use Ineersa\CodingAgent\Config\AppConfig;
 use Ineersa\CodingAgent\Config\ExtensionsConfig;
 use Ineersa\CodingAgent\Config\LoggingConfig;
@@ -67,6 +68,7 @@ final class FileRewindExtensionIntegrationTest extends TestCase
                     return new \Symfony\Component\Messenger\Envelope($message);
                 }
             }, new NullLogger(), 'in-memory://'),
+            new StackToolExecutionContextAccessor(),
         );
 
         $diagnostics = (new ExtensionManager($appConfig, $bridge, new NullLogger(), new \Symfony\Component\EventDispatcher\EventDispatcher()))->loadExtensions();

@@ -12,12 +12,15 @@ use Ineersa\Hatfield\ExtensionApi\Compaction\BeforeCompactionHookResultDTO;
 use Psr\Log\LoggerInterface;
 
 /**
- * Aggregates public ExtensionApi before-compaction hooks for CompactRun only.
+ * Aggregates public ExtensionApi before-compaction hooks for CompactRun and snapshots.
  *
  * Internal tagged hooks stay on {@see CompactionHookDispatcher} and continue
  * best-effort isolation. Public extension hooks fail closed: an exception is
- * converted to an actionable cancel so CompactRun never silently falls through
- * to summary-mode LLM compaction after an extension failure.
+ * converted to an actionable cancel so CompactRun/snapshot never silently falls
+ * through to summary-mode LLM compaction after an extension failure.
+ *
+ * One public hook set serves both paths; only the optional coverage watermark
+ * differs (present for CompactRun, null/null for snapshot).
  */
 final readonly class ExtensionCompactionHookDispatcher
 {
@@ -29,7 +32,7 @@ final readonly class ExtensionCompactionHookDispatcher
     }
 
     /**
-     * Dispatch internal tagged hooks, then public extension hooks.
+     * Dispatch internal tagged hooks, then public CompactRun extension hooks.
      *
      * Aggregation rules match CompactionHookDispatcher:
      * cancel first wins; first non-empty replacement wins; instructions append;
@@ -39,6 +42,33 @@ final readonly class ExtensionCompactionHookDispatcher
         CompactionHookContextDTO $internalContext,
         int $requiredStartSeq,
         int $requiredEndSeq,
+    ): CompactionHookResultDTO {
+        return $this->dispatchPublic(
+            $internalContext,
+            requiredStartSeq: $requiredStartSeq,
+            requiredEndSeq: $requiredEndSeq,
+        );
+    }
+
+    /**
+     * Dispatch internal tagged hooks, then public snapshot extension hooks.
+     *
+     * Used by CompactionService::compactMessages (fork/parent snapshots). Same
+     * public hook set and aggregation rules as CompactRun; coverage watermark is null.
+     */
+    public function dispatchForSnapshot(CompactionHookContextDTO $internalContext): CompactionHookResultDTO
+    {
+        return $this->dispatchPublic(
+            $internalContext,
+            requiredStartSeq: null,
+            requiredEndSeq: null,
+        );
+    }
+
+    private function dispatchPublic(
+        CompactionHookContextDTO $internalContext,
+        ?int $requiredStartSeq,
+        ?int $requiredEndSeq,
     ): CompactionHookResultDTO {
         $merged = $this->internalHookDispatcher->dispatch($internalContext);
         if ($merged->cancels()) {
@@ -76,6 +106,7 @@ final readonly class ExtensionCompactionHookDispatcher
                     'turn_no' => $internalContext->turnNo,
                     'hook_class' => $hook::class,
                     'exception_class' => $e::class,
+                    'has_coverage_watermark' => $publicContext->hasCoverageWatermark(),
                 ]);
 
                 $merged->cancelReason = 'extension_hook_failed: '.$hook::class;

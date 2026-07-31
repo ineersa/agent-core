@@ -83,12 +83,76 @@ final class ExtensionCompactionHookDispatcherTest extends TestCase
         $this->assertFalse($result->hasReplacementSummary());
     }
 
-    private function context(): CompactionHookContextDTO
+    public function testSnapshotDispatchUsesNullWatermarkOnSamePublicHookSet(): void
+    {
+        $registry = new ExtensionHookRegistry();
+        $captured = null;
+        $seen = [];
+        $registry->addBeforeCompactionHook(new class($captured, $seen) implements BeforeCompactionHookInterface {
+            /**
+             * @param list<bool> $seen
+             */
+            public function __construct(private mixed &$captured, private array &$seen)
+            {
+            }
+
+            public function beforeCompaction(BeforeCompactionHookContextDTO $context): BeforeCompactionHookResultDTO
+            {
+                $this->seen[] = $context->hasCoverageWatermark();
+                $this->captured = $context;
+
+                return BeforeCompactionHookResultDTO::replaceSummary('snapshot OM summary');
+            }
+        });
+
+        $dispatcher = new ExtensionCompactionHookDispatcher(
+            $registry,
+            new CompactionHookDispatcher([]),
+            new NullLogger(),
+        );
+
+        $result = $dispatcher->dispatchForSnapshot($this->context(trigger: 'fork'));
+
+        $this->assertSame([false], $seen);
+        $this->assertTrue($result->hasReplacementSummary());
+        $this->assertSame('snapshot OM summary', $result->replacementSummary);
+        $this->assertInstanceOf(BeforeCompactionHookContextDTO::class, $captured);
+        $this->assertSame('fork', $captured->trigger);
+        $this->assertSame('run-1', $captured->runId);
+        $this->assertNull($captured->requiredStartSeq);
+        $this->assertNull($captured->requiredEndSeq);
+        $this->assertFalse($captured->hasCoverageWatermark());
+    }
+
+    public function testSnapshotHookExceptionFailsClosedAsCancel(): void
+    {
+        $registry = new ExtensionHookRegistry();
+        $registry->addBeforeCompactionHook(new class implements BeforeCompactionHookInterface {
+            public function beforeCompaction(BeforeCompactionHookContextDTO $context): BeforeCompactionHookResultDTO
+            {
+                throw new \RuntimeException('boom');
+            }
+        });
+
+        $dispatcher = new ExtensionCompactionHookDispatcher(
+            $registry,
+            new CompactionHookDispatcher([]),
+            new NullLogger(),
+        );
+
+        $result = $dispatcher->dispatchForSnapshot($this->context(trigger: 'fork'));
+
+        $this->assertTrue($result->cancels());
+        $this->assertStringContainsString('extension_hook_failed', (string) $result->cancelReason);
+        $this->assertFalse($result->hasReplacementSummary());
+    }
+
+    private function context(string $trigger = 'manual'): CompactionHookContextDTO
     {
         return new CompactionHookContextDTO(
             runId: 'run-1',
             turnNo: 3,
-            trigger: 'manual',
+            trigger: $trigger,
             tokenEstimateBefore: 1000,
             messagesCompacted: 5,
             messagesRetained: 2,

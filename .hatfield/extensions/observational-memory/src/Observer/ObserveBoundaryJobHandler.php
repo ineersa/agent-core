@@ -7,6 +7,7 @@ namespace Ineersa\HatfieldExt\ObservationalMemory\Observer;
 use Ineersa\Hatfield\ExtensionApi\Agent\ExtensionAgentJobHandlerInterface;
 use Ineersa\Hatfield\ExtensionApi\Agent\ExtensionAgentJobRequestDTO;
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
+use Ineersa\HatfieldExt\ObservationalMemory\Runtime\OmActivityReporter;
 use Ineersa\HatfieldExt\ObservationalMemory\Runtime\OmPaths;
 use Ineersa\HatfieldExt\ObservationalMemory\Runtime\OmSettings;
 use Ineersa\HatfieldExt\ObservationalMemory\Storage\MemoryGenerationRepository;
@@ -45,32 +46,41 @@ final readonly class ObserveBoundaryJobHandler implements ExtensionAgentJobHandl
         $connection = OmDatabaseFactory::connectAndMigrate($paths->databasePath, $this->logger);
         $repository = new ObservationRepository($connection);
         $generationRepository = new MemoryGenerationRepository($connection);
+        $activity = new OmActivityReporter($connection, $this->logger);
+        $activityJobId = (null !== $jobId && '' !== $jobId) ? $jobId : null;
 
         $rendererVersion = (string) ($payload['renderer_version'] ?? $settings->rendererVersion);
         $observerSchemaVersion = (string) ($payload['observer_schema_version'] ?? $settings->observerSchemaVersion);
         $effectiveSettings = $settings->withRendererAndObserverVersions($rendererVersion, $observerSchemaVersion);
 
-        (new ObserverPipeline($this->logger))->observeThrough(
-            api: $api,
-            repository: $repository,
-            generationRepository: $generationRepository,
-            settings: $effectiveSettings,
-            runId: $runId,
-            terminalEndSeq: $terminalEndSeq,
-            terminalStatus: $terminalStatus,
-            jobId: $jobId,
-            correlationId: $correlationId,
-        );
+        try {
+            (new ObserverPipeline($this->logger))->observeThrough(
+                api: $api,
+                repository: $repository,
+                generationRepository: $generationRepository,
+                settings: $effectiveSettings,
+                runId: $runId,
+                terminalEndSeq: $terminalEndSeq,
+                terminalStatus: $terminalStatus,
+                jobId: $jobId,
+                correlationId: $correlationId,
+                activity: $activity,
+            );
 
-        $this->maybeDispatchThresholdReflection(
-            api: $api,
-            repository: $repository,
-            generationRepository: $generationRepository,
-            settings: $settings,
-            runId: $runId,
-            jobId: $jobId,
-            correlationId: $correlationId,
-        );
+            $this->maybeDispatchThresholdReflection(
+                api: $api,
+                repository: $repository,
+                generationRepository: $generationRepository,
+                settings: $settings,
+                runId: $runId,
+                jobId: $jobId,
+                correlationId: $correlationId,
+            );
+        } finally {
+            if (null !== $activityJobId) {
+                $activity->clear($runId, $activityJobId);
+            }
+        }
     }
 
     private function maybeDispatchThresholdReflection(
@@ -106,13 +116,13 @@ final readonly class ObserveBoundaryJobHandler implements ExtensionAgentJobHandl
             return;
         }
 
-        $reflectorModel = $settings->requireReflectorModel();
+        $model = $settings->requireModel();
         $priorActive = $generationRepository->activeGenerationId($runId);
         $generationId = OmIdentity::thresholdGenerationId(
             $runId,
             $priorActive,
             $candidate['observation_set_hash'],
-            $reflectorModel,
+            $model,
             $settings->reflectorSchemaVersion,
         );
 
@@ -127,7 +137,8 @@ final readonly class ObserveBoundaryJobHandler implements ExtensionAgentJobHandl
                     'threshold_idempotency_key' => $generationId,
                     'observation_set_hash' => $candidate['observation_set_hash'],
                     'prior_active_generation_id' => $priorActive,
-                    'reflector_model' => $reflectorModel,
+                    // Stored as reflector_model for generation identity compatibility.
+                    'reflector_model' => $model,
                     'reflector_schema_version' => $settings->reflectorSchemaVersion,
                     'token_count' => $candidate['token_count'],
                     // Source watermark for the exact active candidate set claimed at dispatch.

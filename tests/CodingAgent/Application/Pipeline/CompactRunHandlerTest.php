@@ -43,6 +43,7 @@ use Ineersa\CodingAgent\Extension\ExtensionHookRegistry;
 use Ineersa\CodingAgent\Session\HatfieldSessionStore;
 use Ineersa\CodingAgent\Tests\Support\TestDirectoryIsolation;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\NullLogger;
 use Symfony\AI\Platform\Message\TemplateRenderer\StringTemplateRenderer;
 
 /**
@@ -516,8 +517,8 @@ final class CompactRunHandlerTest extends TestCase
                 $sessionCompactor,
                 $appConfig,
                 $this->createModelSelectionStub(),
-                new CompactionHookDispatcher([$hook]),
                 $platform,
+                new ExtensionCompactionHookDispatcher(new ExtensionHookRegistry(), new CompactionHookDispatcher([$hook]), new NullLogger()),
             );
 
             // Enough body text for prepare() to be ready under keepRecentTokens=50.
@@ -620,8 +621,8 @@ final class CompactRunHandlerTest extends TestCase
                 $sessionCompactor,
                 $appConfig,
                 $this->createModelSelectionStub(),
-                new CompactionHookDispatcher([]),
                 $platform,
+                new ExtensionCompactionHookDispatcher(new ExtensionHookRegistry(), new CompactionHookDispatcher([]), new NullLogger()),
             );
 
             // Enough body text for prepare() to be ready under keepRecentTokens=50.
@@ -1415,7 +1416,7 @@ final class CompactRunHandlerTest extends TestCase
         return new ExtensionCompactionHookDispatcher(
             $registry,
             new CompactionHookDispatcher($internalHooks),
-            new \Psr\Log\NullLogger(),
+            new NullLogger(),
         );
     }
 }

@@ -8,6 +8,7 @@ use Ineersa\Hatfield\ExtensionApi\Agent\AgentCallRequestDTO;
 use Ineersa\Hatfield\ExtensionApi\Agent\AgentToolDTO;
 use Ineersa\Hatfield\ExtensionApi\ExtensionApiInterface;
 use Ineersa\Hatfield\ExtensionApi\Session\SessionEventDTO;
+use Ineersa\HatfieldExt\ObservationalMemory\Runtime\OmActivityReporter;
 use Ineersa\HatfieldExt\ObservationalMemory\Runtime\OmSettings;
 use Ineersa\HatfieldExt\ObservationalMemory\Storage\MemoryGenerationRepository;
 use Ineersa\HatfieldExt\ObservationalMemory\Storage\ObservationRepository;
@@ -16,7 +17,7 @@ use Ineersa\HatfieldExt\ObservationalMemory\Support\OmIdentity;
 use Psr\Log\LoggerInterface;
 
 /**
- * Shared Observer model/render/persist pipeline for hot observe jobs and compaction catch-up.
+ * Shared Observer model/render/persist pipeline for async observe-boundary jobs.
  *
  * Chunks under floor(context_window * 0.65); multi-call accumulate; zero-obs coverage valid.
  */
@@ -48,6 +49,7 @@ final readonly class ObserverPipeline
         string $terminalStatus,
         ?string $jobId,
         ?string $correlationId,
+        ?OmActivityReporter $activity = null,
     ): array {
         if ($terminalEndSeq < 1) {
             throw new \InvalidArgumentException(\sprintf('Invalid terminal end seq %d for run %s.', $terminalEndSeq, $runId));
@@ -77,7 +79,7 @@ final readonly class ObserverPipeline
             ];
         }
 
-        $observerModel = $settings->requireObserverModel();
+        $observerModel = $settings->requireModel();
         $contextWindow = $api->agent()->contextWindow($observerModel);
         if (null === $contextWindow || $contextWindow <= 0) {
             throw ObserverException::invalidContextWindow($contextWindow);
@@ -156,6 +158,10 @@ final readonly class ObserverPipeline
                 allowedSourceRefs: $part['source_refs'],
             );
 
+            if (null !== $activity && null !== $jobId && '' !== $jobId) {
+                $activity->set($runId, $jobId, 'observer', (int) $part['token_estimate']);
+            }
+
             $api->agent()->run(new AgentCallRequestDTO(
                 model: $observerModel,
                 sessionId: $runId,
@@ -170,7 +176,7 @@ final readonly class ObserverPipeline
                     ),
                 ],
                 correlationId: $jobId ?? $correlationId,
-                maxToolCalls: 100,
+                maxToolCalls: OmSettings::DEFAULT_AGENT_MAX_TOOL_CALLS,
             ));
 
             // Zero observations and/or no tool call at all is successful coverage.

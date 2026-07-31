@@ -200,6 +200,25 @@ final class OmSchemaMigrator
                 'CREATE INDEX IF NOT EXISTS idx_om_compaction_request_run_status ON om_compaction_request (run_id, status, updated_at)',
             ],
             '20260726_003_active_generation_and_relevance_text' => $this->migration003Statements(),
+            '20260729_004_current_activity' => $this->migration004Statements(),
+        ];
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function migration004Statements(): array
+    {
+        return [
+            // Ephemeral cross-process TUI status row only — one row per session/run.
+            'CREATE TABLE IF NOT EXISTS om_current_activity (
+                run_id TEXT PRIMARY KEY NOT NULL,
+                job_id TEXT NOT NULL,
+                stage TEXT NOT NULL CHECK (stage IN (\'observer\',\'reflector\',\'dropper\')),
+                current_tokens INTEGER NOT NULL CHECK (current_tokens >= 0),
+                target_tokens INTEGER DEFAULT NULL CHECK (target_tokens IS NULL OR target_tokens > 0),
+                updated_at TEXT NOT NULL
+            )',
         ];
     }
 
@@ -402,6 +421,7 @@ final class OmSchemaMigrator
             '20260722_001_domain' => 'OM domain tables: observation, coverage, reflection, compaction request/result',
             '20260725_002_reflection_multi_and_indexes' => 'Allow multiple reflections per request; add coverage/observation/request indexes',
             '20260726_003_active_generation_and_relevance_text' => 'Relevance TEXT + timestamp; chunk/part coverage; request_fingerprint; active generation tables',
+            '20260729_004_current_activity' => 'Ephemeral om_current_activity for live TUI status notices',
         ];
     }
 }

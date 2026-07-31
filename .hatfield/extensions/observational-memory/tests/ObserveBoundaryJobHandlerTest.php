@@ -70,10 +70,17 @@ final class ObserveBoundaryJobHandlerTest extends IsolatedKernelTestCase
         ];
 
         $lastRequest = null;
+        $dbPath = $this->projectDir.'/.hatfield/extensions-data/observational-memory/om.sqlite';
+        $seenActivityStage = null;
+        $seenActivityTokens = null;
         $api = $this->buildApi(
             events: $events,
-            onAgentRun: static function (AgentCallRequestDTO $request) use (&$lastRequest): void {
+            onAgentRun: function (AgentCallRequestDTO $request) use (&$lastRequest, &$seenActivityStage, &$seenActivityTokens, $dbPath): void {
                 $lastRequest = $request;
+                $connection = $this->omDatabaseFactory()->connect($dbPath, new NullLogger());
+                $activity = (new \Ineersa\HatfieldExt\ObservationalMemory\Storage\ActivityRepository($connection))->findFresh('run-1');
+                $seenActivityStage = $activity['stage'] ?? null;
+                $seenActivityTokens = $activity['current_tokens'] ?? null;
                 $tool = $request->tools[0] ?? null;
                 if (null === $tool) {
                     throw new \RuntimeException('expected record_observations tool');
@@ -107,14 +114,21 @@ final class ObserveBoundaryJobHandlerTest extends IsolatedKernelTestCase
             'run-1',
         );
 
+        $this->assertSame('observer', $seenActivityStage);
+        $this->assertIsInt($seenActivityTokens);
+        $this->assertGreaterThan(0, $seenActivityTokens);
+        $cleared = (new \Ineersa\HatfieldExt\ObservationalMemory\Storage\ActivityRepository(
+            $this->omDatabaseFactory()->connect($dbPath, new NullLogger()),
+        ))->findFresh('run-1');
+        $this->assertNull($cleared, 'observer finally must clear activity');
+
         $this->assertInstanceOf(AgentCallRequestDTO::class, $lastRequest);
-        $this->assertSame(100, $lastRequest->maxToolCalls);
+        $this->assertSame(16, $lastRequest->maxToolCalls);
         $this->assertStringContainsString('Use feature flags', $lastRequest->input);
         $this->assertStringContainsString('CURRENT REFLECTIONS:', $lastRequest->input);
         $this->assertStringContainsString('Current local time fallback:', $lastRequest->input);
         $this->assertStringContainsString('observation agent for a coding assistant', $lastRequest->instructions);
 
-        $dbPath = $this->projectDir.'/.hatfield/extensions-data/observational-memory/om.sqlite';
         $this->assertFileExists($dbPath);
         $this->assertSame('0700', substr(\sprintf('%o', fileperms(\dirname($dbPath))), -4));
 
@@ -411,23 +425,18 @@ final class ObserveBoundaryJobHandlerTest extends IsolatedKernelTestCase
                 }
 
                 return [
+                    'model' => 'llama_cpp_test/test',
                     'observer' => [
-                        'model' => 'llama_cpp_test/test',
                         'schema_version' => 'o1',
                         'renderer_version' => 'r1',
                         'context_window_ratio' => 0.65,
                     ],
                     'reflector' => [
-                        'model' => 'llama_cpp_test/test',
                         'schema_version' => 'rv1',
                         'context_window_ratio' => 0.65,
                     ],
                     'pools' => [
                         'observations_max_tokens' => 30000,
-                        'reflections_max_tokens' => 10000,
-                    ],
-                    'compaction' => [
-                        'wait_timeout_seconds' => 180,
                     ],
                 ];
             }
